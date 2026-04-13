@@ -150,7 +150,7 @@ DATABASE_URL=postgresql://user:password@localhost:5432/nuvanx
 FRONTEND_URL=http://localhost:5173
 ```
 
-> ⚠️ **NEVER** commit `.env` files. API keys are stored encrypted in the database, not in environment variables.
+> ⚠️ **NEVER** commit `.env` files. User-submitted API keys are stored encrypted in the database/credential vault, while server-level environment variables may be configured as optional defaults or fallbacks.
 
 ### Frontend (`frontend/.env`)
 
