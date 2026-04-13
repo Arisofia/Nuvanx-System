@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build artifacts
+dist/
+build/
+**/dist/
+**/build/
+
+# Environment files (NEVER commit — contain secrets)
+.env
+**/.env
+
+# Logs
+*.log
+logs/
+**/logs/
+npm-debug.log*
+
+# Test coverage
+coverage/
+**/coverage/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# OS
+Thumbs.db
