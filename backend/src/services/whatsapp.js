@@ -12,6 +12,9 @@ const WA_BASE = 'https://graph.facebook.com/v18.0';
  * @returns {{ connected: boolean, displayPhoneNumber?: string, error?: string }}
  */
 async function testConnection(accessToken, phoneNumberId) {
+  if (!/^\d{10,20}$/.test(phoneNumberId)) {
+    return { connected: false, error: 'Invalid phoneNumberId format' };
+  }
   try {
     const { data } = await axios.get(`${WA_BASE}/${phoneNumberId}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -34,6 +37,9 @@ async function testConnection(accessToken, phoneNumberId) {
  * @param {string} message
  */
 async function sendMessage(accessToken, phoneNumberId, to, message) {
+  if (!/^\d{10,20}$/.test(phoneNumberId)) {
+    throw new Error('Invalid phoneNumberId format');
+  }
   const { data } = await axios.post(
     `${WA_BASE}/${phoneNumberId}/messages`,
     {
@@ -61,6 +67,9 @@ async function sendMessage(accessToken, phoneNumberId, to, message) {
  * @param {Array}  components    Template variable components
  */
 async function sendTemplateMessage(accessToken, phoneNumberId, to, templateName, languageCode = 'es', components = []) {
+  if (!/^\d{10,20}$/.test(phoneNumberId)) {
+    throw new Error('Invalid phoneNumberId format');
+  }
   const { data } = await axios.post(
     `${WA_BASE}/${phoneNumberId}/messages`,
     {
