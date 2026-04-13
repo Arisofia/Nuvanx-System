@@ -28,6 +28,10 @@ const config = {
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '24h',
 
+  // Supabase JWT secret — Project Settings → API → JWT Settings → JWT Secret
+  // When set, the backend will also accept Supabase access tokens as Bearer JWTs.
+  supabaseJwtSecret: process.env.SUPABASE_JWT_SECRET || null,
+
   // Third-party API keys (server-level defaults; per-user vault credentials take priority)
   openaiApiKey: process.env.OPENAI_API_KEY,
   geminiApiKey: process.env.GEMINI_API_KEY,
