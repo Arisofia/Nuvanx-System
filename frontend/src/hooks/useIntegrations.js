@@ -1,5 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '../config/api';
+import {
+  fetchIntegrationStatus,
+  saveIntegrationStatus,
+  subscribeIntegrationStatus,
+} from '../lib/supabase/integrations';
+import { isSupabaseAvailable, supabase } from '../lib/supabase/client';
 
 // Initial empty integrations structure - will be populated from backend
 const EMPTY_INTEGRATIONS = [
@@ -33,6 +39,29 @@ export function useIntegrations() {
       })
     );
   }, []);
+
+  // Seed local state from Supabase whenever the user's session is available
+  useEffect(() => {
+    if (!isSupabaseAvailable()) return;
+
+    let unsubscribe = () => {};
+
+    async function loadFromSupabase() {
+      const rows = await fetchIntegrationStatus();
+      if (rows.length > 0) mergeServerData(rows);
+
+      // Also subscribe to real-time updates
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        unsubscribe = subscribeIntegrationStatus(user.id, (row) => {
+          mergeServerData([row]);
+        });
+      }
+    }
+
+    loadFromSupabase();
+    return () => unsubscribe();
+  }, [mergeServerData]);
 
   const fetchIntegrations = useCallback(async () => {
     setLoading(true);
@@ -101,12 +130,15 @@ export function useIntegrations() {
       ...(Object.keys(extraFields).length > 0 && { metadata: extraFields }),
     };
     await api.post(`/api/integrations/${service}/connect`, body);
-    updateIntegration(service, {
+    const statusUpdate = {
       status: 'connected',
       lastSync: new Date().toISOString(),
       error: null,
       metadata: extraFields,
-    });
+    };
+    updateIntegration(service, statusUpdate);
+    // Persist connection status to Supabase (fire-and-forget)
+    saveIntegrationStatus(service, statusUpdate);
   }, [updateIntegration]);
 
   const testIntegration = useCallback(async (service) => {
@@ -119,12 +151,14 @@ export function useIntegrations() {
         : {};
 
       const res = await api.post(`/api/integrations/${service}/test`, body);
-      updateIntegration(service, {
+      const statusUpdate = {
         status: 'connected',
         lastSync: new Date().toISOString(),
         error: null,
         metadata: res.data?.metadata,
-      });
+      };
+      updateIntegration(service, statusUpdate);
+      saveIntegrationStatus(service, statusUpdate);
       return res.data;
     } catch (err) {
       const msg = err.response?.data?.message || 'Connection test failed';
