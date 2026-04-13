@@ -41,6 +41,68 @@ router.get('/', (req, res) => {
   res.json({ success: true, integrations });
 });
 
+/**
+ * GET /api/integrations/validate-all
+ * Test every service that has an available credential (vault or env-var).
+ * WhatsApp is skipped (requires phoneNumberId which is not available here).
+ * Runs all tests in parallel and returns the aggregated results.
+ */
+router.get('/validate-all', async (req, res) => {
+  const userId = req.user.id;
+
+  // Services testable without extra parameters
+  const TESTABLE = [
+    { service: 'meta', test: (k) => metaService.testConnection(k) },
+    { service: 'google-calendar', test: (k) => googleService.testConnection(k) },
+    { service: 'google-gmail', test: (k) => googleService.testConnection(k) },
+    { service: 'github', test: (k) => githubService.testConnection(k) },
+    { service: 'hubspot', test: (k) => hubspotService.testConnection(k) },
+    {
+      service: 'openai',
+      test: () => Promise.resolve({ connected: true, message: 'Credential stored and accessible' }),
+    },
+    {
+      service: 'gemini',
+      test: () => Promise.resolve({ connected: true, message: 'Credential stored and accessible' }),
+    },
+  ];
+
+  const results = await Promise.allSettled(
+    TESTABLE.map(async ({ service, test }) => {
+      const credential = resolveCredential(userId, service);
+      if (!credential) {
+        return { service, status: 'disconnected', connected: false, skipped: true };
+      }
+
+      try {
+        const result = await test(credential);
+        const status = result.connected ? 'connected' : 'error';
+        integrationModel.upsert(userId, service, {
+          status,
+          lastSync: result.connected ? new Date().toISOString() : undefined,
+          lastError: result.error || null,
+          metadata: {
+            accountName: result.accountName,
+            login: result.login,
+            email: result.email,
+            portalId: result.portalId,
+          },
+        });
+        return { service, status, connected: result.connected, ...result };
+      } catch (err) {
+        integrationModel.upsert(userId, service, { status: 'error', lastError: err.message });
+        return { service, status: 'error', connected: false, error: err.message };
+      }
+    }),
+  );
+
+  const validated = results.map((r) => (r.status === 'fulfilled' ? r.value : { service: '?', status: 'error', error: r.reason?.message }));
+  const connected = validated.filter((r) => r.connected).length;
+  logger.info('validate-all completed', { userId, connected, total: validated.length });
+
+  res.json({ success: true, validated, connected, total: validated.length });
+});
+
 /** POST /api/integrations/:service/test - test stored credential connection */
 router.post(
   '/:service/test',

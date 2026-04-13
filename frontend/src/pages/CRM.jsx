@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import { MessageSquare, Calendar, FileText, Search, ChevronDown, UserPlus } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { MessageSquare, Calendar, FileText, Search, UserPlus, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import api from '../config/api';
 
 const MOCK_LEADS = [
   { id: 1, name: 'Sofia Martínez', source: 'Meta Ads', status: 'New', lastContact: '2025-01-14', value: 450, email: 'sofia@email.com', phone: '+1 555 0101' },
@@ -14,6 +15,28 @@ const MOCK_LEADS = [
   { id: 9, name: 'Luciana Flores', source: 'Meta Ads', status: 'Converted', lastContact: '2025-01-09', value: 2200, email: 'luci@email.com', phone: '+1 555 0109' },
   { id: 10, name: 'Roberto Jiménez', source: 'Organic', status: 'Contacted', lastContact: '2025-01-12', value: 670, email: 'roberto@email.com', phone: '+1 555 0110' },
 ];
+
+// Map backend stage names to display status labels
+const STAGE_TO_STATUS = {
+  lead: 'New',
+  whatsapp: 'Contacted',
+  appointment: 'Appointment',
+  treatment: 'Converted',
+  closed: 'Converted',
+};
+
+function normalizeLead(lead) {
+  return {
+    id: lead.id,
+    name: lead.name || '—',
+    source: lead.source || 'manual',
+    status: STAGE_TO_STATUS[lead.stage] || 'New',
+    lastContact: lead.updatedAt ? lead.updatedAt.split('T')[0] : lead.createdAt?.split('T')[0] || '',
+    value: lead.revenue || 0,
+    email: lead.email || '',
+    phone: lead.phone || '',
+  };
+}
 
 const statusConfig = {
   New: { class: 'bg-blue-500/10 text-blue-400 border border-blue-500/20', dot: 'bg-blue-400' },
@@ -30,12 +53,35 @@ const sourceColors = {
 };
 
 export default function CRM() {
+  const [leads, setLeads] = useState(MOCK_LEADS);
+  const [usingLiveData, setUsingLiveData] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('All');
   const [search, setSearch] = useState('');
 
+  const fetchLeads = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/api/leads');
+      const serverLeads = res.data?.leads || [];
+      if (serverLeads.length > 0) {
+        setLeads(serverLeads.map(normalizeLead));
+        setUsingLiveData(true);
+      }
+    } catch {
+      // Backend unavailable — keep mock data
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchLeads();
+  }, [fetchLeads]);
+
   const statuses = ['All', 'New', 'Contacted', 'Appointment', 'Converted'];
 
-  const filtered = MOCK_LEADS.filter(l => {
+  const filtered = leads.filter(l => {
     const matchStatus = filter === 'All' || l.status === filter;
     const matchSearch = !search || l.name.toLowerCase().includes(search.toLowerCase()) ||
       l.source.toLowerCase().includes(search.toLowerCase());
@@ -53,7 +99,7 @@ export default function CRM() {
   }
 
   const counts = statuses.slice(1).reduce((acc, s) => {
-    acc[s] = MOCK_LEADS.filter(l => l.status === s).length;
+    acc[s] = leads.filter(l => l.status === s).length;
     return acc;
   }, {});
 
@@ -61,11 +107,21 @@ export default function CRM() {
     <div className="space-y-6 max-w-7xl mx-auto">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h2 className="text-2xl font-bold text-white">CRM & Lead Pipeline</h2>
-          <p className="text-gray-400 mt-0.5">{MOCK_LEADS.length} total leads tracked</p>
+          <div className="flex items-center gap-2">
+            <h2 className="text-2xl font-bold text-white">CRM & Lead Pipeline</h2>
+            {usingLiveData && (
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                Live Data
+              </span>
+            )}
+          </div>
+          <p className="text-gray-400 mt-0.5">
+            {loading ? 'Loading…' : `${leads.length} total leads tracked`}
+          </p>
         </div>
         <button className="btn-primary flex items-center gap-2">
-          <UserPlus size={16} />
+          {loading ? <Loader2 size={16} className="animate-spin" /> : <UserPlus size={16} />}
           Add Lead
         </button>
       </div>
