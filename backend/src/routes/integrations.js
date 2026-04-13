@@ -53,7 +53,8 @@ router.get('/', async (req, res, next) => {
  * WhatsApp is skipped (requires phoneNumberId which is not available here).
  * Runs all tests in parallel and returns the aggregated results.
  */
-router.get('/validate-all', async (req, res) => {
+router.get('/validate-all', async (req, res, next) => {
+  try {
   const userId = req.user.id;
 
   // Services testable without extra parameters
@@ -102,11 +103,18 @@ router.get('/validate-all', async (req, res) => {
     }),
   );
 
-  const validated = results.map((r) => (r.status === 'fulfilled' ? r.value : { service: '?', status: 'error', error: r.reason?.message }));
+  const validated = results.map((r, i) =>
+    r.status === 'fulfilled'
+      ? r.value
+      : { service: TESTABLE[i].service, status: 'error', connected: false, error: r.reason?.message },
+  );
   const connected = validated.filter((r) => r.connected).length;
   logger.info('validate-all completed', { userId, connected, total: validated.length });
 
   res.json({ success: true, validated, connected, total: validated.length });
+  } catch (err) {
+    next(err);
+  }
 });
 
 /**

@@ -29,7 +29,7 @@ export default function Integrations() {
           <p className="font-medium text-brand-300 text-sm">Security Notice</p>
           <p className="text-sm text-gray-400 mt-0.5 leading-relaxed">
             🔒 All API credentials are encrypted with <strong className="text-gray-300">AES-256</strong> and stored securely on the backend.
-            Keys are <strong className="text-gray-300">never transmitted to or stored in the browser</strong> after submission.
+            Keys are <strong className="text-gray-300">stored encrypted on the server and never returned to the client</strong>.
             Connections are validated server-side only.
           </p>
         </div>
