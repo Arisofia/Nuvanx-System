@@ -3,9 +3,10 @@
   "version": "1.0.0",
   "repository": "Arisofia/Nuvanx-System",
   "figma": {
-    "fileKey": "REPLACE_WITH_FIGMA_FILE_KEY",
-    "fileUrl": "https://www.figma.com/design/REPLACE_WITH_FIGMA_FILE_KEY/Nuvanx-Revenue-Intelligence-Platform",
-    "lastSync": "2026-04-13T18:00:00.000Z"
+    "fileKey": "uJkwaJl7MIf5DE2VaqV8Vd",
+    "fileUrl": "https://www.figma.com/make/uJkwaJl7MIf5DE2VaqV8Vd/Crear-presentaci%C3%B3n-ejecutiva",
+    "lastSync": "2026-04-13T20:00:00.000Z",
+    "notes": "Figma Make presentation linked by @Arisofia. For design node IDs: open the file in Figma, right-click any frame → Copy/Paste as → Copy link, then extract the node-id parameter."
   },
   "designSystem": {
     "tokens": {
