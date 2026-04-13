@@ -12,16 +12,20 @@ const router = express.Router();
 router.use(authenticate);
 
 /** GET /api/credentials - list stored services (metadata only, no keys) */
-router.get('/', (req, res) => {
-  const credentials = credentialModel.listByUser(req.user.id);
-  res.json({ success: true, credentials });
+router.get('/', async (req, res, next) => {
+  try {
+    const credentials = await credentialModel.listByUser(req.user.id);
+    res.json({ success: true, credentials });
+  } catch (err) {
+    next(err);
+  }
 });
 
 /** POST /api/credentials - save or update a credential (encrypted) */
-router.post('/', credentialRules, handleValidationErrors, (req, res, next) => {
+router.post('/', credentialRules, handleValidationErrors, async (req, res, next) => {
   try {
     const { service, apiKey } = req.body;
-    const meta = credentialModel.save(req.user.id, service, apiKey);
+    const meta = await credentialModel.save(req.user.id, service, apiKey);
     logger.info('Credential saved', { userId: req.user.id, service });
     res.status(201).json({ success: true, credential: meta });
   } catch (err) {
@@ -30,14 +34,18 @@ router.post('/', credentialRules, handleValidationErrors, (req, res, next) => {
 });
 
 /** DELETE /api/credentials/:service - remove a credential */
-router.delete('/:service', serviceParamRule, handleValidationErrors, (req, res) => {
-  const { service } = req.params;
-  const deleted = credentialModel.remove(req.user.id, service);
-  if (!deleted) {
-    return res.status(404).json({ success: false, message: 'Credential not found' });
+router.delete('/:service', serviceParamRule, handleValidationErrors, async (req, res, next) => {
+  try {
+    const { service } = req.params;
+    const deleted = await credentialModel.remove(req.user.id, service);
+    if (!deleted) {
+      return res.status(404).json({ success: false, message: 'Credential not found' });
+    }
+    logger.info('Credential deleted', { userId: req.user.id, service });
+    res.json({ success: true, message: `Credential for ${service} deleted` });
+  } catch (err) {
+    next(err);
   }
-  logger.info('Credential deleted', { userId: req.user.id, service });
-  res.json({ success: true, message: `Credential for ${service} deleted` });
 });
 
 module.exports = router;

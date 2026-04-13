@@ -1,16 +1,7 @@
 'use strict';
 
-// TODO: Replace with PostgreSQL persistence.
-//   CREATE TABLE integrations (
-//     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-//     user_id UUID NOT NULL REFERENCES users(id),
-//     service VARCHAR(64) NOT NULL,
-//     status VARCHAR(32) NOT NULL DEFAULT 'disconnected',
-//     last_sync TIMESTAMPTZ,
-//     last_error TEXT,
-//     metadata JSONB,
-//     UNIQUE(user_id, service)
-//   );
+const { pool, isAvailable } = require('../db');
+const logger = require('../utils/logger');
 
 const SERVICES = [
   'meta',
@@ -23,30 +14,114 @@ const SERVICES = [
   'hubspot',
 ];
 
-const store = new Map();
+// ---------------------------------------------------------------------------
+// In-memory fallback store
+// ---------------------------------------------------------------------------
+const memStore = new Map();
 
-function _key(userId, service) {
+function _memKey(userId, service) {
   return `${userId}:${service}`;
 }
 
-function getAll(userId) {
+// ---------------------------------------------------------------------------
+// Database helpers
+// ---------------------------------------------------------------------------
+async function _dbGetAll(userId) {
+  const { rows } = await pool.query(
+    'SELECT service, status, last_sync, last_error, metadata FROM integrations WHERE user_id = $1',
+    [userId],
+  );
+  // Fill in any services not yet in the database
+  const byService = Object.fromEntries(rows.map((r) => [r.service, r]));
   return SERVICES.map((service) => {
-    const record = store.get(_key(userId, service));
-    return record
-      ? { ...record }
-      : {
+    const row = byService[service];
+    return row
+      ? {
           service,
-          status: 'disconnected',
-          lastSync: null,
-          lastError: null,
-          metadata: {},
-        };
+          status: row.status,
+          lastSync: row.last_sync,
+          lastError: row.last_error,
+          metadata: row.metadata || {},
+        }
+      : { service, status: 'disconnected', lastSync: null, lastError: null, metadata: {} };
   });
 }
 
-function upsert(userId, service, update) {
-  const k = _key(userId, service);
-  const existing = store.get(k) || {
+async function _dbUpsert(userId, service, update) {
+  const { rows } = await pool.query(
+    `INSERT INTO integrations (user_id, service, status, last_sync, last_error, metadata)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (user_id, service) DO UPDATE
+       SET status     = EXCLUDED.status,
+           last_sync  = COALESCE(EXCLUDED.last_sync, integrations.last_sync),
+           last_error = EXCLUDED.last_error,
+           metadata   = integrations.metadata || EXCLUDED.metadata,
+           updated_at = NOW()
+     RETURNING service, status, last_sync, last_error, metadata`,
+    [
+      userId,
+      service,
+      update.status,
+      update.lastSync || null,
+      update.lastError || null,
+      JSON.stringify(update.metadata || {}),
+    ],
+  );
+  return rows[0];
+}
+
+// ---------------------------------------------------------------------------
+// Public API (all async)
+// ---------------------------------------------------------------------------
+
+/**
+ * Return all integration records for a user, filling missing ones with defaults.
+ * @returns {object[]}
+ */
+async function getAll(userId) {
+  if (isAvailable()) {
+    try {
+      return await _dbGetAll(userId);
+    } catch (err) {
+      logger.warn('DB integration getAll failed, falling back to memory', { error: err.message });
+    }
+  }
+
+  // In-memory fallback
+  return SERVICES.map((service) => {
+    const record = memStore.get(_memKey(userId, service));
+    return record
+      ? { ...record }
+      : { service, status: 'disconnected', lastSync: null, lastError: null, metadata: {} };
+  });
+}
+
+/**
+ * Create or update an integration record.
+ * @param {string} userId
+ * @param {string} service
+ * @param {object} update - Fields to set: status, lastSync, lastError, metadata
+ * @returns {object} Updated record
+ */
+async function upsert(userId, service, update) {
+  if (isAvailable()) {
+    try {
+      const row = await _dbUpsert(userId, service, update);
+      return {
+        service: row.service,
+        status: row.status,
+        lastSync: row.last_sync,
+        lastError: row.last_error,
+        metadata: row.metadata || {},
+      };
+    } catch (err) {
+      logger.warn('DB integration upsert failed, falling back to memory', { error: err.message });
+    }
+  }
+
+  // In-memory fallback
+  const k = _memKey(userId, service);
+  const existing = memStore.get(k) || {
     service,
     userId,
     status: 'disconnected',
@@ -55,7 +130,7 @@ function upsert(userId, service, update) {
     metadata: {},
   };
   const updated = { ...existing, ...update };
-  store.set(k, updated);
+  memStore.set(k, updated);
   return updated;
 }
 

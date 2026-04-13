@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'copilot/**', 'feature/**', 'fix/**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ─── Backend: lint, test ────────────────────────────────────────────────────
+  backend:
+    name: Backend — test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+        env:
+          NODE_ENV: test
+          JWT_SECRET: ci-jwt-secret-minimum-32-characters!
+          ENCRYPTION_KEY: ci-encryption-key-minimum-32-chars!
+
+  # ─── Frontend: install, build ───────────────────────────────────────────────
+  frontend:
+    name: Frontend — build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+        env:
+          NODE_ENV: production

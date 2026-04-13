@@ -2,62 +2,140 @@
 
 const { v4: uuidv4 } = require('uuid');
 const { encrypt, decrypt } = require('../services/encryption');
+const { pool, isAvailable } = require('../db');
 const logger = require('../utils/logger');
 
-// TODO: Replace this in-memory store with a PostgreSQL table:
-//   CREATE TABLE credentials (
-//     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-//     user_id UUID NOT NULL REFERENCES users(id),
-//     service VARCHAR(64) NOT NULL,
-//     encrypted_key TEXT NOT NULL,
-//     created_at TIMESTAMPTZ DEFAULT NOW(),
-//     last_used TIMESTAMPTZ,
-//     UNIQUE(user_id, service)
-//   );
-const store = new Map();
+// ---------------------------------------------------------------------------
+// In-memory fallback store
+// Used when DATABASE_URL is not configured (local dev, tests).
+// Data is lost on process exit.
+// ---------------------------------------------------------------------------
+const memStore = new Map();
 
-function _storeKey(userId, service) {
+function _memKey(userId, service) {
   return `${userId}:${service}`;
 }
+
+// ---------------------------------------------------------------------------
+// Database helpers
+// ---------------------------------------------------------------------------
+async function _dbSave(userId, service, encryptedKey) {
+  const { rows } = await pool.query(
+    `INSERT INTO credentials (user_id, service, encrypted_key)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (user_id, service) DO UPDATE
+       SET encrypted_key = EXCLUDED.encrypted_key
+     RETURNING id, service, created_at`,
+    [userId, service, encryptedKey],
+  );
+  return rows[0];
+}
+
+async function _dbGetEncrypted(userId, service) {
+  await pool.query(
+    'UPDATE credentials SET last_used = NOW() WHERE user_id = $1 AND service = $2',
+    [userId, service],
+  );
+  const { rows } = await pool.query(
+    'SELECT encrypted_key FROM credentials WHERE user_id = $1 AND service = $2',
+    [userId, service],
+  );
+  return rows[0]?.encrypted_key || null;
+}
+
+async function _dbList(userId) {
+  const { rows } = await pool.query(
+    'SELECT id, service, created_at, last_used FROM credentials WHERE user_id = $1 ORDER BY created_at DESC',
+    [userId],
+  );
+  return rows;
+}
+
+async function _dbRemove(userId, service) {
+  const { rowCount } = await pool.query(
+    'DELETE FROM credentials WHERE user_id = $1 AND service = $2',
+    [userId, service],
+  );
+  return rowCount > 0;
+}
+
+// ---------------------------------------------------------------------------
+// Public API (all async)
+// ---------------------------------------------------------------------------
 
 /**
  * Save (or overwrite) a credential for a user+service pair.
  * The raw apiKey is encrypted before storage.
+ * @returns {object} Metadata only (id, service, createdAt) — never the raw key.
  */
-function save(userId, service, rawApiKey) {
-  const key = _storeKey(userId, service);
-  const existing = store.get(key);
+async function save(userId, service, rawApiKey) {
+  const encryptedKey = encrypt(rawApiKey);
+
+  if (isAvailable()) {
+    try {
+      const row = await _dbSave(userId, service, encryptedKey);
+      logger.debug('Credential saved to DB', { userId, service });
+      return { id: row.id, service: row.service, createdAt: row.created_at };
+    } catch (err) {
+      logger.warn('DB credential save failed, falling back to memory', { error: err.message });
+    }
+  }
+
+  // In-memory fallback
+  const k = _memKey(userId, service);
+  const existing = memStore.get(k);
   const record = {
     id: existing ? existing.id : uuidv4(),
     userId,
     service,
-    encryptedKey: encrypt(rawApiKey),
+    encryptedKey,
     createdAt: existing ? existing.createdAt : new Date().toISOString(),
     lastUsed: null,
   };
-  store.set(key, record);
-  logger.debug('Credential saved', { userId, service });
+  memStore.set(k, record);
+  logger.debug('Credential saved to memory', { userId, service });
   return { id: record.id, service: record.service, createdAt: record.createdAt };
 }
 
 /**
  * Retrieve and decrypt the API key for a user+service pair.
  * MUST only be called server-side; never pass the result to the client.
+ * @returns {string|null}
  */
-function getDecryptedKey(userId, service) {
-  const record = store.get(_storeKey(userId, service));
-  if (!record) return null;
+async function getDecryptedKey(userId, service) {
+  if (isAvailable()) {
+    try {
+      const encryptedKey = await _dbGetEncrypted(userId, service);
+      if (!encryptedKey) return null;
+      return decrypt(encryptedKey);
+    } catch (err) {
+      logger.warn('DB credential get failed, falling back to memory', { error: err.message });
+    }
+  }
 
+  // In-memory fallback
+  const record = memStore.get(_memKey(userId, service));
+  if (!record) return null;
   record.lastUsed = new Date().toISOString();
   return decrypt(record.encryptedKey);
 }
 
 /**
  * Return metadata (no keys) for all credentials belonging to a user.
+ * @returns {object[]}
  */
-function listByUser(userId) {
+async function listByUser(userId) {
+  if (isAvailable()) {
+    try {
+      return await _dbList(userId);
+    } catch (err) {
+      logger.warn('DB credential list failed, falling back to memory', { error: err.message });
+    }
+  }
+
+  // In-memory fallback
   const results = [];
-  for (const record of store.values()) {
+  for (const record of memStore.values()) {
     if (record.userId === userId) {
       results.push({
         id: record.id,
@@ -72,11 +150,21 @@ function listByUser(userId) {
 
 /**
  * Delete a credential for a user+service pair.
+ * @returns {boolean} true if the credential existed and was removed.
  */
-function remove(userId, service) {
-  const key = _storeKey(userId, service);
-  const existed = store.has(key);
-  store.delete(key);
+async function remove(userId, service) {
+  if (isAvailable()) {
+    try {
+      return await _dbRemove(userId, service);
+    } catch (err) {
+      logger.warn('DB credential remove failed, falling back to memory', { error: err.message });
+    }
+  }
+
+  // In-memory fallback
+  const k = _memKey(userId, service);
+  const existed = memStore.has(k);
+  memStore.delete(k);
   return existed;
 }
 
