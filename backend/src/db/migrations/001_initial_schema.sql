@@ -2,9 +2,14 @@
 -- Nuvanx Revenue Intelligence Platform — Initial Schema
 -- Run against Supabase PostgreSQL (or any PostgreSQL >= 14).
 --
--- Row Level Security (RLS) is enabled on every table.  The application uses the
--- service-role key so RLS policies that depend on auth.uid() are enforced at
--- the database layer in addition to the application-layer JWT checks.
+-- Row Level Security (RLS) is enabled on every table.  The application enforces
+-- user isolation at the query layer (every query filters by user_id via the
+-- application-layer JWT).  RLS is kept enabled here so the audit_log
+-- insert-only policy remains effective; user-scoping policies are expressed
+-- as permissive USING (TRUE) because the Node backend uses a shared service
+-- role connection and sets user_id filters in each query rather than via
+-- SET LOCAL app.user_id.  Tighten these policies if you switch to row-level
+-- JWT propagation (e.g. Supabase auth.uid()).
 --
 -- IMPORTANT: Enable the pgcrypto extension first:
 --   CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -27,8 +32,8 @@ CREATE TABLE IF NOT EXISTS users (
 
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY users_self_only ON users
-  USING (id = current_setting('app.user_id', TRUE)::UUID);
+-- Application enforces user isolation via query-level user_id filters.
+CREATE POLICY users_self_only ON users USING (TRUE);
 
 -- ---------------------------------------------------------------------------
 -- Table: credentials
@@ -49,8 +54,8 @@ CREATE INDEX IF NOT EXISTS credentials_user_id_idx ON credentials(user_id);
 
 ALTER TABLE credentials ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY credentials_owner_only ON credentials
-  USING (user_id = current_setting('app.user_id', TRUE)::UUID);
+-- Application enforces user isolation via query-level user_id filters.
+CREATE POLICY credentials_owner_only ON credentials USING (TRUE);
 
 -- ---------------------------------------------------------------------------
 -- Table: integrations
@@ -75,8 +80,8 @@ CREATE INDEX IF NOT EXISTS integrations_user_id_idx ON integrations(user_id);
 
 ALTER TABLE integrations ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY integrations_owner_only ON integrations
-  USING (user_id = current_setting('app.user_id', TRUE)::UUID);
+-- Application enforces user isolation via query-level user_id filters.
+CREATE POLICY integrations_owner_only ON integrations USING (TRUE);
 
 -- ---------------------------------------------------------------------------
 -- Table: leads
@@ -101,8 +106,8 @@ CREATE INDEX IF NOT EXISTS leads_source_idx   ON leads(user_id, source);
 
 ALTER TABLE leads ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY leads_owner_only ON leads
-  USING (user_id = current_setting('app.user_id', TRUE)::UUID);
+-- Application enforces user isolation via query-level user_id filters.
+CREATE POLICY leads_owner_only ON leads USING (TRUE);
 
 -- ---------------------------------------------------------------------------
 -- Table: audit_log
