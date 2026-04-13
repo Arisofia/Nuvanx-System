@@ -9,16 +9,33 @@
 
 ## Executive Summary
 
-**Current State:** ❌ No Figma integration infrastructure exists
-**Design System Maturity:** 🟡 Partial (Tailwind-based, no token sync)
-**Validation Readiness:** ❌ Not implemented
+> **Note:** This document is a historical pre-Phase-0 audit snapshot. Phase 0 has since been implemented (see below).
 
-### Critical Findings
+**Pre-Phase-0 State:** ❌ No Figma integration infrastructure existed
+**Current State (Phase 0 complete):** ✅ Figma mapping layer + CI validation implemented
+**Design System Maturity:** 🟡 Partial (Tailwind-based, no token sync yet)
+**Validation Readiness:** ✅ Phase 0 implemented — component map, CI validation workflow, and validation script in place
 
-1. **Zero Figma traceability** — No node IDs, Code Connect mappings, or Figma URLs in codebase
-2. **No design token sync** — Colors/spacing hardcoded in Tailwind config, not synced from Figma
-3. **No component mapping** — React components exist but have no formal link to Figma counterparts
-4. **No validation workflow** — No CI check, no manual validation script, no documented process
+### Phase 0 Implementation Summary
+
+The following were added to establish the Figma ↔ GitHub validation foundation:
+
+- **`docs/figma-component-map.json`** — formal mapping of 7 screens + 6 components to Figma node IDs and source files
+- **`docs/figma-component-map.example.json`** — example/template mapping for onboarding
+- **`docs/figma-validation-spec.md`** — specification for the validation system
+- **`scripts/validate-figma-mapping.js`** — CLI tool: checks JSON schema, file existence, route matching; exits 0 on pass/warn, non-zero on error
+- **`.github/workflows/ci.yml`** (figma-validate job) — warn-only CI job that posts a Figma validation report as a PR comment
+- **`.github/workflows/validate-figma-mapping.yml`** — strict-mode workflow that fails on validation errors
+
+### Remaining gaps (Phase 1+)
+
+1. **Figma node IDs** — `figmaNodeId` values are still placeholders; real node IDs must be filled in from the Figma file
+2. **No design token sync** — Colors/spacing are hardcoded in Tailwind config, not synced from Figma
+3. **No Code Connect annotations** — React components have no inline Figma Code Connect mappings
+
+---
+
+### Pre-Phase-0 Critical Findings (historical record)
 
 ---
 
