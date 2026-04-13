@@ -134,9 +134,10 @@ function validateRoutes(screens) {
   const missingRoutes = [];
 
   screens.forEach(screen => {
-    // Check if route is defined in App.jsx
-    // Look for pattern: path="route" or <Route path="route"
-    const routePattern = new RegExp(`path=["']${screen.route.replace(/^\//, '')}["']`);
+    // Check if route is defined in App.jsx.
+    // Match both path="route" and path="/route" (with or without leading slash).
+    const bare = screen.route.replace(/^\//, '');
+    const routePattern = new RegExp(`path=["']\/?${bare}["']`);
     if (!routePattern.test(appContent)) {
       missingRoutes.push(screen.route);
     }
