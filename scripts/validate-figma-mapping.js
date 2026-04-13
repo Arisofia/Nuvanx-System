@@ -38,7 +38,6 @@ const apiCheck = args.includes('--api-check');
 // Paths
 const repoRoot = path.resolve(__dirname, '..');
 const mappingFilePath = path.join(repoRoot, 'docs', 'figma-component-map.json');
-const exampleFilePath = path.join(repoRoot, 'docs', 'figma-component-map.example.json');
 const appFilePath = path.join(repoRoot, 'frontend', 'src', 'App.jsx');
 
 // Validation state
@@ -359,16 +358,11 @@ async function validateFigmaAPI(mapping) {
 async function main() {
   header('🎨 Figma Validation Report');
 
-  // Check if mapping file exists, if not suggest copying from example
+  // Check if mapping file exists
   if (!fs.existsSync(mappingFilePath)) {
-    if (fs.existsSync(exampleFilePath)) {
-      log('Mapping file not found. Copy from example:', 'warn');
-      log(`  cp ${exampleFilePath} ${mappingFilePath}`, 'info');
-      log('  Then populate with real Figma file key and node IDs', 'info');
-    } else {
-      log('Neither mapping file nor example file found', 'error');
-      errors++;
-    }
+    log('Mapping file not found: docs/figma-component-map.json', 'error');
+    log('Create docs/figma-component-map.json with your real Figma file key and node IDs', 'info');
+    errors++;
     process.exit(2);
   }
 

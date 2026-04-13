@@ -77,7 +77,7 @@ This document defines the validation rules, processes, and tooling for maintaini
 
 ## Component Mapping Schema
 
-**Location:** `docs/figma-component-map.json` (copy from `.example.json` and populate)
+**Location:** `docs/figma-component-map.json` (production mapping file, populate with real values)
 
 ### Required Top-Level Fields
 

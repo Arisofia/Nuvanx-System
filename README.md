@@ -102,6 +102,17 @@ Nuvanx-System/
 
 ## Quick Start
 
+### Unified Commands (Repo Root)
+
+```bash
+npm run install:all   # Install backend + frontend dependencies
+npm run dev:backend   # Start backend in dev mode
+npm run dev:frontend  # Start frontend in dev mode
+npm run test:backend  # Run backend tests
+npm run build:frontend
+npm run validate:figma
+```
+
 ### Prerequisites
 - Node.js 18+
 - PostgreSQL 14+ (or Supabase)
@@ -244,10 +255,7 @@ This repository includes a **Figma ↔ GitHub validation system** to maintain de
 ### Quick Start
 
 ```bash
-# Copy example mapping file
-cp docs/figma-component-map.example.json docs/figma-component-map.json
-
-# Populate with your Figma file key and node IDs (see FIGMA_SETUP.md)
+# Ensure docs/figma-component-map.json is populated with your real Figma file key and node IDs (see FIGMA_SETUP.md)
 # Then run validation:
 node scripts/validate-figma-mapping.js
 ```
