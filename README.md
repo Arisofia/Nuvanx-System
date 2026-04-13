@@ -233,7 +233,7 @@ VITE_API_URL=http://localhost:3001
 
 ```bash
 cd backend
-npm test          # Run all 22 tests
+npm test          # Run all 30 tests
 npm test -- --watch   # Watch mode
 ```
 
@@ -241,8 +241,8 @@ Test coverage:
 - ✅ AES-256 encrypt/decrypt roundtrip
 - ✅ Credential vault (no raw keys returned)
 - ✅ Integration connectors (mocked HTTP)
-- ✅ Auth middleware
-- ✅ Dashboard metrics endpoint
+- ✅ Auth middleware (custom JWT + Supabase JWT)
+- ✅ Credential CRUD (save, retrieve, list, delete)
 
 ---
 
@@ -286,10 +286,12 @@ node scripts/validate-figma-mapping.js
 
 ## Roadmap
 
-- [ ] PostgreSQL persistence (replace in-memory stores)
+- [ ] PostgreSQL persistence (replace in-memory user store in auth.js)
 - [ ] OAuth 2.0 flow for Google (currently token-based)
 - [ ] Meta Webhooks receiver endpoint
 - [ ] WhatsApp incoming message webhook
+- [ ] WhatsApp send route (`/api/integrations/whatsapp/send`)
+- [ ] Meta access token refresh mechanism
 - [ ] Supabase deployment option
 - [ ] Docker Compose setup
 - [ ] Automated campaign AI loop
