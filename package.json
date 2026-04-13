@@ -12,7 +12,6 @@
     "test:backend": "npm --prefix backend run test",
     "lint:frontend": "npm --prefix frontend run lint",
     "validate:figma": "node scripts/validate-figma-mapping.js",
-    "validate:figma:strict": "node scripts/validate-figma-mapping.js",
     "validate:figma:ci": "node scripts/validate-figma-mapping.js --ci"
   }
 }

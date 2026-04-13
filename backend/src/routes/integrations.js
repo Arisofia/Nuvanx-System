@@ -19,6 +19,10 @@ router.use(authenticate);
 /**
  * Resolve a credential for the given service (async).
  * Priority: per-user vault → server-level env var defaults.
+ *
+ * WARNING: In production with multiple users, falling back to a shared env var
+ * credential means all users share the same API key. Set per-user credentials
+ * via the vault to avoid unintended cost attribution or access issues.
  */
 async function resolveCredential(userId, service) {
   const stored = await credentialModel.getDecryptedKey(userId, service);
@@ -34,7 +38,12 @@ async function resolveCredential(userId, service) {
     meta: config.metaAccessToken,
     whatsapp: config.whatsappAccessToken,
   };
-  return envDefaults[service] || null;
+
+  const envKey = envDefaults[service] || null;
+  if (envKey && config.nodeEnv === 'production') {
+    logger.warn('Using shared server-level env var credential in production — set per-user credentials via the vault', { userId, service });
+  }
+  return envKey;
 }
 
 /** GET /api/integrations - list all integrations with their status */
