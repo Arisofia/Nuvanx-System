@@ -31,3 +31,7 @@ coverage/
 
 # OS
 Thumbs.db
+
+# Local agent/workflow artifacts
+.zencoder/
+.zenflow/
