@@ -3,7 +3,7 @@
 const axios = require('axios');
 const logger = require('../utils/logger');
 
-const META_GRAPH_BASE = 'https://graph.facebook.com/v18.0';
+const META_GRAPH_BASE = 'https://graph.facebook.com/v21.0';
 
 /**
  * Test a Meta Marketing API access token.
