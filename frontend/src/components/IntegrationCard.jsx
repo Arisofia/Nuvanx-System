@@ -25,19 +25,21 @@ function ConnectModal({ integration, onClose, onConnect }) {
   const fieldLabels = {
     meta: 'Meta Business API Access Token',
     'google-calendar': 'Google OAuth Refresh Token',
-    gmail: 'Gmail OAuth Refresh Token',
+    'google-gmail': 'Gmail OAuth Refresh Token',
     whatsapp: 'WhatsApp Business API Token',
     github: 'GitHub Personal Access Token',
     openai: 'OpenAI API Key (or Gemini API Key)',
+    hubspot: 'HubSpot Private App Access Token',
   };
 
   const fieldHints = {
     meta: 'Found in Meta Business Manager → System Users → Generate Token',
     'google-calendar': 'Use OAuth2 flow in Google Cloud Console → Credentials',
-    gmail: 'Use OAuth2 flow with Gmail scopes in Google Cloud Console',
+    'google-gmail': 'Use OAuth2 flow with Gmail scopes in Google Cloud Console',
     whatsapp: 'Found in Meta Business Manager → WhatsApp → API Setup',
     github: 'Generate at github.com/settings/tokens with repo scope',
     openai: 'Found at platform.openai.com/api-keys or ai.google.dev for Gemini',
+    hubspot: 'Create a Private App in HubSpot Settings → Integrations → Private Apps',
   };
 
   async function handleSubmit(e) {
@@ -109,9 +111,13 @@ function ConnectModal({ integration, onClose, onConnect }) {
   );
 }
 
-export default function IntegrationCard({ service, name, description, icon, status, lastSync, error, onConnect, onTest }) {
+export default function IntegrationCard({ service, name, description, icon, status, lastSync, error, metadata, onConnect, onTest }) {
   const [showModal, setShowModal] = useState(false);
   const [testResult, setTestResult] = useState(null);
+
+  const accountLabel = metadata?.accountName || metadata?.login || metadata?.email
+    ? (metadata.accountName || metadata.login || metadata.email)
+    : null;
 
   const formatSync = (ts) => {
     if (!ts) return 'Never';
@@ -172,6 +178,11 @@ export default function IntegrationCard({ service, name, description, icon, stat
 
         <div className="flex items-center justify-between text-xs text-gray-500 border-t border-dark-600 pt-3">
           <span>Last sync: <span className="text-gray-400">{formatSync(lastSync)}</span></span>
+          {accountLabel && (
+            <span className="text-gray-500 truncate max-w-[130px]" title={accountLabel}>
+              {accountLabel}
+            </span>
+          )}
         </div>
 
         <div className="flex gap-2">

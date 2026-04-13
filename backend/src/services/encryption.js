@@ -12,7 +12,9 @@ const { config } = require('../config/env');
 function encrypt(text, key = config.encryptionKey) {
   if (typeof text !== 'string') throw new TypeError('encrypt: text must be a string');
   if (!key) throw new Error('encrypt: encryption key is required');
-  // AES-256 symmetric encryption for API key/secret storage (not password hashing)
+  // AES-256 symmetric encryption for API key/secret storage (not password hashing).
+  // Reversibility is required so the key can be retrieved and sent to third-party APIs.
+  // lgtm[js/insufficient-password-hash]
   return CryptoJS.AES.encrypt(text, key).toString();
 }
 
