@@ -63,7 +63,11 @@ export default function Login() {
             <div>
               <div className="flex justify-between mb-1.5">
                 <label className="block text-sm font-medium text-gray-300">Password</label>
-                <a href="#" className="text-xs text-brand-400 hover:text-brand-300 transition-colors">
+                <a
+                  href="#"
+                  onClick={(e) => e.preventDefault()}
+                  className="text-xs text-brand-400 hover:text-brand-300 transition-colors"
+                >
                   Forgot password?
                 </a>
               </div>
@@ -80,6 +84,7 @@ export default function Login() {
                 <button
                   type="button"
                   onClick={() => setShowPass(!showPass)}
+                  aria-label={showPass ? 'Hide password' : 'Show password'}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
                 >
                   {showPass ? <EyeOff size={18} /> : <Eye size={18} />}

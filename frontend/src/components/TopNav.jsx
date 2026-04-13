@@ -30,6 +30,7 @@ export default function TopNav() {
           <input
             type="text"
             placeholder="Search…"
+            aria-label="Search"
             className="bg-dark-700 border border-dark-600 text-sm text-gray-300 placeholder-gray-500 rounded-lg pl-9 pr-4 py-2 w-48 focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500/50 transition"
           />
         </div>

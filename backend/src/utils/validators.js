@@ -49,12 +49,19 @@ const aiAnalyzeRules = [
     .withMessage('campaignData must be a string or object'),
 ];
 
+const connectRules = [
+  body('token').optional().isString().isLength({ min: 1 }).withMessage('token must be a non-empty string'),
+  body('apiKey').optional().isString().isLength({ min: 1 }).withMessage('apiKey must be a non-empty string'),
+  body('metadata').optional().isObject().withMessage('metadata must be an object'),
+];
+
 module.exports = {
   handleValidationErrors,
   authLoginRules,
   authRegisterRules,
   credentialRules,
   serviceParamRule,
+  connectRules,
   aiGenerateRules,
   aiAnalyzeRules,
 };
