@@ -8,11 +8,12 @@ let pool = null;
 
 function getPool() {
   if (!pool) {
-    if (!config.databaseUrl) {
-      logger.warn('DATABASE_URL not set — PostgreSQL pool not initialised');
+    const connectionString = config.databaseUrl;
+    if (!connectionString) {
+      logger.warn('DATABASE_URL / SUPABASE_DATABASE_KEY not set — PostgreSQL pool not initialised');
       return null;
     }
-    pool = new Pool({ connectionString: config.databaseUrl });
+    pool = new Pool({ connectionString });
 
     pool.on('error', (err) => {
       logger.error('Unexpected PostgreSQL client error', { error: err.message });

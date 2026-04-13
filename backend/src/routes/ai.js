@@ -6,6 +6,7 @@ const { aiLimiter } = require('../middleware/rateLimiter');
 const credentialModel = require('../models/credential');
 const openaiService = require('../services/openai');
 const geminiService = require('../services/gemini');
+const { config } = require('../config/env');
 const { aiGenerateRules, aiAnalyzeRules, handleValidationErrors } = require('../utils/validators');
 const { body } = require('express-validator');
 const logger = require('../utils/logger');
@@ -22,10 +23,17 @@ function resolveAiCredential(userId, provider) {
   const key = credentialModel.getDecryptedKey(userId, provider);
   if (key) return { key, provider };
 
-  // Fallback: try the other provider
+  // Fallback 1: try the other provider's vault credential
   const fallback = provider === 'openai' ? 'gemini' : 'openai';
   const fallbackKey = credentialModel.getDecryptedKey(userId, fallback);
   if (fallbackKey) return { key: fallbackKey, provider: fallback };
+
+  // Fallback 2: server-level env var keys (Codespaces secrets)
+  const envKey = provider === 'gemini' ? config.geminiApiKey : config.openaiApiKey;
+  if (envKey) return { key: envKey, provider };
+
+  const envFallbackKey = provider === 'gemini' ? config.openaiApiKey : config.geminiApiKey;
+  if (envFallbackKey) return { key: envFallbackKey, provider: fallback };
 
   return null;
 }
