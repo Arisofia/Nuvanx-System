@@ -193,7 +193,7 @@ VITE_API_URL=http://localhost:3001
 ### API Security
 - **JWT authentication** on all protected routes
 - **Helmet.js** security headers
-- **Rate limiting**: 100 req/15min (general), 20 req/15min (auth), 30 req/15min (AI)
+- **Rate limiting**: 100 req/15min (general), 20 req/15min (auth), 10 req/min (AI)
 - **CORS**: locked to frontend URL only
 - **Input validation**: express-validator on all inputs
 
