@@ -81,7 +81,7 @@ function ConnectModal({ integration, onClose, onConnect }) {
           <span className="text-brand-400 mt-0.5 shrink-0">🔒</span>
           <p className="text-xs text-brand-300 leading-relaxed">
             Your credentials are encrypted with <strong>AES-256</strong> and stored securely on the server.
-            They are <strong>never exposed to the browser</strong> after submission.
+            They are <strong>never returned to the client</strong> after being saved.
           </p>
         </div>
 
