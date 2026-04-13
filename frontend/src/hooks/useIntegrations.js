@@ -7,7 +7,8 @@ const MOCK_INTEGRATIONS = [
   { service: 'google-gmail', name: 'Gmail', description: 'Email campaigns and automated follow-ups', icon: '✉️', status: 'disconnected', lastSync: null, error: null },
   { service: 'whatsapp', name: 'WhatsApp Business', description: 'Automated messaging and lead nurturing', icon: '💬', status: 'disconnected', lastSync: null, error: null },
   { service: 'github', name: 'GitHub', description: 'Repository access for deployment triggers', icon: '🐙', status: 'disconnected', lastSync: null, error: null },
-  { service: 'openai', name: 'OpenAI / Gemini AI', description: 'AI content generation and campaign analysis', icon: '🤖', status: 'disconnected', lastSync: null, error: null },
+  { service: 'openai', name: 'OpenAI', description: 'GPT-4 content generation and analysis', icon: '🤖', status: 'disconnected', lastSync: null, error: null },
+  { service: 'gemini', name: 'Google Gemini', description: 'Gemini AI content generation and campaign insights', icon: '✨', status: 'disconnected', lastSync: null, error: null },
   { service: 'hubspot', name: 'HubSpot CRM', description: 'CRM contacts, deals and pipeline management', icon: '🟠', status: 'disconnected', lastSync: null, error: null },
 ];
 
@@ -80,18 +81,33 @@ export function useIntegrations() {
   }, []);
 
   const connectIntegration = useCallback(async (service, credentials) => {
-    await api.post(`/api/integrations/${service}/connect`, credentials);
+    // The backend expects { token } for the API key plus an optional metadata object.
+    // Extra fields (e.g. phoneNumberId for WhatsApp) are forwarded as metadata so the
+    // backend can persist them alongside the integration record.
+    const { apiKey, ...extraFields } = credentials;
+    const body = {
+      token: apiKey,
+      ...(Object.keys(extraFields).length > 0 && { metadata: extraFields }),
+    };
+    await api.post(`/api/integrations/${service}/connect`, body);
     updateIntegration(service, {
       status: 'connected',
       lastSync: new Date().toISOString(),
       error: null,
+      metadata: extraFields,
     });
   }, [updateIntegration]);
 
   const testIntegration = useCallback(async (service) => {
     updateIntegration(service, { status: 'testing' });
     try {
-      const res = await api.post(`/api/integrations/${service}/test`);
+      // WhatsApp test requires phoneNumberId which is stored in the integration metadata
+      const current = integrations.find(i => i.service === service);
+      const body = service === 'whatsapp' && current?.metadata?.phoneNumberId
+        ? { phoneNumberId: current.metadata.phoneNumberId }
+        : {};
+
+      const res = await api.post(`/api/integrations/${service}/test`, body);
       updateIntegration(service, {
         status: 'connected',
         lastSync: new Date().toISOString(),
@@ -104,7 +120,7 @@ export function useIntegrations() {
       updateIntegration(service, { status: 'error', error: msg });
       throw err;
     }
-  }, [updateIntegration]);
+  }, [integrations, updateIntegration]);
 
   return { integrations, loading, fetchIntegrations, validateAll, connectIntegration, testIntegration, updateIntegration };
 }
