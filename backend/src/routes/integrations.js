@@ -8,11 +8,32 @@ const metaService = require('../services/meta');
 const googleService = require('../services/google');
 const whatsappService = require('../services/whatsapp');
 const githubService = require('../services/github');
+const hubspotService = require('../services/hubspot');
+const { config } = require('../config/env');
 const { serviceParamRule, handleValidationErrors } = require('../utils/validators');
 const logger = require('../utils/logger');
 
 const router = express.Router();
 router.use(authenticate);
+
+/**
+ * Resolve a credential for the given service.
+ * Priority: per-user vault → server-level env var defaults.
+ */
+function resolveCredential(userId, service) {
+  const stored = credentialModel.getDecryptedKey(userId, service);
+  if (stored) return stored;
+
+  // Env-var fallbacks keyed by service name
+  const envDefaults = {
+    openai: config.openaiApiKey,
+    gemini: config.geminiApiKey,
+    'google-calendar': config.googleApiKey,
+    'google-gmail': config.googleApiKey,
+    hubspot: config.hubspotAccessToken || config.hubspotApiKey,
+  };
+  return envDefaults[service] || null;
+}
 
 /** GET /api/integrations - list all integrations with their status */
 router.get('/', (req, res) => {
@@ -28,7 +49,7 @@ router.post(
   async (req, res, next) => {
     const { service } = req.params;
     try {
-      const apiKey = credentialModel.getDecryptedKey(req.user.id, service);
+      const apiKey = resolveCredential(req.user.id, service);
       if (!apiKey) {
         return res.status(404).json({ success: false, message: `No credential found for ${service}` });
       }
@@ -53,6 +74,9 @@ router.post(
         case 'github':
           result = await githubService.testConnection(apiKey);
           break;
+        case 'hubspot':
+          result = await hubspotService.testConnection(apiKey);
+          break;
         case 'openai':
         case 'gemini':
           // Basic key presence check — real validation happens on first generate call
@@ -67,7 +91,12 @@ router.post(
         status,
         lastSync: result.connected ? new Date().toISOString() : undefined,
         lastError: result.error || null,
-        metadata: { accountName: result.accountName, login: result.login, email: result.email },
+        metadata: {
+          accountName: result.accountName,
+          login: result.login,
+          email: result.email,
+          portalId: result.portalId,
+        },
       });
 
       logger.info('Integration test', { userId: req.user.id, service, connected: result.connected });

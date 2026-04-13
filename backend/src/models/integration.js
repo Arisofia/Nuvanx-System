@@ -20,6 +20,7 @@ const SERVICES = [
   'github',
   'openai',
   'gemini',
+  'hubspot',
 ];
 
 const store = new Map();
