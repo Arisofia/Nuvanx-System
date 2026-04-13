@@ -29,16 +29,20 @@ export default function Dashboard() {
   const [funnel, setFunnel] = useState([]);
   const [revenueData, setRevenueData] = useState([]);
   const [aiSuggestions, setAiSuggestions] = useState([]);
+  const [metaTrends, setMetaTrends] = useState(null);
+  const [hubspotTrends, setHubspotTrends] = useState(null);
   const [loadingMetrics, setLoadingMetrics] = useState(true);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [error, setError] = useState(null);
 
   async function fetchData() {
     setLoadingMetrics(true);
     setError(null);
     try {
-      const [metricsRes, funnelRes] = await Promise.all([
+      const [metricsRes, funnelRes, revenueRes] = await Promise.all([
         api.get('/api/dashboard/metrics'),
         api.get('/api/dashboard/funnel'),
+        api.get('/api/dashboard/revenue-trend'),
       ]);
       setMetrics(metricsRes.data.metrics);
 
@@ -46,11 +50,26 @@ export default function Dashboard() {
       const stages = funnelRes.data.funnel || [];
       setFunnel(stages.map(s => ({ label: s.label, value: s.count })));
 
-      // TODO: Add revenue trend endpoint to backend - currently empty
-      setRevenueData([]);
+      // Set revenue trend data
+      setRevenueData(revenueRes.data.trend || []);
 
-      // TODO: Add AI suggestions endpoint to backend - currently empty
-      setAiSuggestions([]);
+      // Fetch Meta trends if user has connected Meta
+      try {
+        const metaRes = await api.get('/api/dashboard/meta-trends', {
+          params: { adAccountId: 'act_123456789' }, // TODO: Get from user settings
+        });
+        setMetaTrends(metaRes.data);
+      } catch (err) {
+        console.log('Meta trends not available:', err.response?.data?.message);
+      }
+
+      // Fetch HubSpot trends if user has connected HubSpot
+      try {
+        const hubspotRes = await api.get('/api/dashboard/hubspot-trends');
+        setHubspotTrends(hubspotRes.data);
+      } catch (err) {
+        console.log('HubSpot trends not available:', err.response?.data?.message);
+      }
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to load dashboard data');
       console.error('Dashboard fetch error:', err);
@@ -59,8 +78,22 @@ export default function Dashboard() {
     }
   }
 
+  async function fetchAiSuggestions() {
+    setLoadingSuggestions(true);
+    try {
+      const res = await api.post('/api/ai/suggestions', { provider: 'openai' });
+      setAiSuggestions(res.data.suggestions || []);
+    } catch (err) {
+      console.error('AI suggestions error:', err);
+      // Don't set error state for suggestions - it's optional
+    } finally {
+      setLoadingSuggestions(false);
+    }
+  }
+
   useEffect(() => {
     fetchData();
+    fetchAiSuggestions();
   }, []);
 
   const totalRevenue = metrics?.totalRevenue ?? 0;
@@ -199,13 +232,146 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Meta Trends Section */}
+      {metaTrends && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-white">Meta Marketing Metrics</h3>
+            <div className="flex gap-2 text-xs">
+              <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                WoW: {metaTrends.wow.impressions > 0 ? '+' : ''}{metaTrends.wow.impressions}%
+              </span>
+              <span className="px-2 py-1 rounded bg-brand-500/10 text-brand-400 border border-brand-500/20">
+                MoM: {metaTrends.mom.impressions > 0 ? '+' : ''}{metaTrends.mom.impressions}%
+              </span>
+            </div>
+          </div>
+
+          {/* Meta Metrics Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+            {[
+              { label: 'Impressions', value: metaTrends.summary.thisWeek.impressions, change: metaTrends.wow.impressions },
+              { label: 'Reach', value: metaTrends.summary.thisWeek.reach, change: metaTrends.wow.reach },
+              { label: 'Clicks', value: metaTrends.summary.thisWeek.clicks, change: metaTrends.wow.clicks },
+              { label: 'Spend', value: `$${metaTrends.summary.thisWeek.spend.toFixed(2)}`, change: metaTrends.wow.spend },
+              { label: 'Conversions', value: metaTrends.summary.thisWeek.conversions, change: metaTrends.wow.conversions },
+            ].map(metric => (
+              <div key={metric.label} className="card p-4">
+                <p className="text-xs text-gray-500 mb-1">{metric.label}</p>
+                <p className="text-xl font-bold text-white mb-1">{metric.value.toLocaleString()}</p>
+                <p className={`text-xs font-medium ${metric.change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {metric.change > 0 ? '+' : ''}{metric.change}% WoW
+                </p>
+              </div>
+            ))}
+          </div>
+
+          {/* Meta Trends Chart */}
+          {metaTrends.trends.length > 0 && (
+            <div className="card">
+              <div className="mb-6">
+                <h3 className="font-semibold text-white">Meta Performance Trend</h3>
+                <p className="text-xs text-gray-500 mt-0.5">Daily breakdown of key metrics</p>
+              </div>
+              <ResponsiveContainer width="100%" height={300}>
+                <AreaChart data={metaTrends.trends} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="impressionsGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="clicksGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                  <XAxis
+                    dataKey="date"
+                    stroke="#6b7280"
+                    tick={{ fill: '#9ca3af', fontSize: 11 }}
+                    tickFormatter={(d) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  />
+                  <YAxis stroke="#6b7280" tick={{ fill: '#9ca3af', fontSize: 11 }} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Area
+                    type="monotone"
+                    dataKey="impressions"
+                    stroke="#0ea5e9"
+                    strokeWidth={2}
+                    fill="url(#impressionsGrad)"
+                    name="Impressions"
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="clicks"
+                    stroke="#8b5cf6"
+                    strokeWidth={2}
+                    fill="url(#clicksGrad)"
+                    name="Clicks"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* HubSpot Trends Section */}
+      {hubspotTrends && hubspotTrends.trends.length > 0 && (
+        <div className="card">
+          <div className="mb-6">
+            <h3 className="font-semibold text-white">HubSpot CRM Trends</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {hubspotTrends.totalContacts} contacts, {hubspotTrends.totalDeals} deals, $
+              {hubspotTrends.totalRevenue.toLocaleString()} revenue
+            </p>
+          </div>
+          <ResponsiveContainer width="100%" height={240}>
+            <AreaChart data={hubspotTrends.trends} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="contactsGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <XAxis
+                dataKey="date"
+                stroke="#6b7280"
+                tick={{ fill: '#9ca3af', fontSize: 11 }}
+                tickFormatter={(d) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              />
+              <YAxis stroke="#6b7280" tick={{ fill: '#9ca3af', fontSize: 11 }} />
+              <Tooltip content={<CustomTooltip />} />
+              <Area
+                type="monotone"
+                dataKey="contacts"
+                stroke="#10b981"
+                strokeWidth={2}
+                fill="url(#contactsGrad)"
+                name="Contacts"
+              />
+              <Area
+                type="monotone"
+                dataKey="deals"
+                stroke="#f59e0b"
+                strokeWidth={2}
+                fill="none"
+                name="Deals"
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
       {/* AI Suggestions */}
       <div className="card border-brand-500/20 bg-gradient-to-br from-brand-500/5 to-transparent">
         <div className="flex items-center gap-3 mb-4">
           <div className="p-2 rounded-lg bg-brand-500/20">
             <Sparkles size={18} className="text-brand-400" />
           </div>
-          <div>
+          <div className="flex-1">
             <h3 className="font-semibold text-white">AI Optimization Suggestions</h3>
             <p className="text-xs text-gray-500">Generated from your campaign data</p>
           </div>
@@ -214,8 +380,21 @@ export default function Dashboard() {
               {aiSuggestions.length} new
             </span>
           )}
+          {!loadingSuggestions && aiSuggestions.length === 0 && (
+            <button
+              onClick={fetchAiSuggestions}
+              className="btn-secondary text-xs"
+            >
+              Generate Suggestions
+            </button>
+          )}
         </div>
-        {aiSuggestions.length > 0 ? (
+        {loadingSuggestions ? (
+          <div className="text-center py-8 text-gray-500">
+            <Loader2 size={32} className="mx-auto mb-2 opacity-50 animate-spin" />
+            <p className="text-sm">Analyzing your data...</p>
+          </div>
+        ) : aiSuggestions.length > 0 ? (
           <div className="space-y-3">
             {aiSuggestions.map((s, i) => (
               <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-dark-800/60 border border-dark-600/50">

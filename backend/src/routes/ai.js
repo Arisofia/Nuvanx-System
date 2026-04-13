@@ -91,4 +91,140 @@ router.post(
   },
 );
 
+/**
+ * POST /api/ai/suggestions
+ * Generate AI-powered optimization suggestions based on real campaign data.
+ * Fetches actual Meta and lead data to generate actionable insights.
+ */
+router.post('/suggestions', async (req, res, next) => {
+  try {
+    const { provider = 'openai' } = req.body;
+    const userId = req.user.id;
+
+    // Get AI credential
+    const credential = await resolveAiCredential(userId, provider);
+    if (!credential) {
+      return res.status(404).json({
+        success: false,
+        message: 'No AI credential found. Please add an OpenAI or Gemini API key in Settings.',
+      });
+    }
+
+    // Fetch real data from the system
+    const leadModel = require('../models/lead');
+    const integrationModel = require('../models/integration');
+    const metaService = require('../services/meta');
+
+    const [leads, integrations] = await Promise.all([
+      leadModel.findByUser(userId),
+      integrationModel.getAll(userId),
+    ]);
+
+    // Build comprehensive data summary for AI analysis
+    const totalLeads = leads.length;
+    const totalRevenue = leads.reduce((sum, l) => sum + (l.revenue || 0), 0);
+    const conversions = leads.filter(l => l.stage === 'treatment' || l.stage === 'closed').length;
+    const conversionRate = totalLeads > 0 ? ((conversions / totalLeads) * 100).toFixed(1) : 0;
+
+    const byStage = {};
+    leads.forEach(lead => {
+      byStage[lead.stage] = (byStage[lead.stage] || 0) + 1;
+    });
+
+    const bySource = {};
+    leads.forEach(lead => {
+      bySource[lead.source] = (bySource[lead.source] || 0) + 1;
+    });
+
+    const connectedServices = integrations.filter(i => i.status === 'connected').map(i => i.service);
+
+    // Try to fetch Meta metrics if connected
+    let metaMetrics = null;
+    const metaIntegration = integrations.find(i => i.service === 'meta' && i.status === 'connected');
+    if (metaIntegration) {
+      try {
+        const metaToken = await credentialModel.getDecryptedKey(userId, 'meta');
+        const adAccountId = metaIntegration.metadata?.adAccountId;
+        if (metaToken && adAccountId) {
+          const insights = await metaService.getMetrics(metaToken, adAccountId);
+          if (insights.length > 0) {
+            metaMetrics = insights[0];
+          }
+        }
+      } catch (err) {
+        logger.warn('Could not fetch Meta metrics for AI suggestions', { error: err.message });
+      }
+    }
+
+    // Build prompt for AI
+    const prompt = `You are a revenue intelligence expert for aesthetic clinics. Analyze the following REAL business data and provide 3-5 specific, actionable optimization suggestions.
+
+**Current Performance:**
+- Total Leads: ${totalLeads}
+- Total Revenue: $${totalRevenue.toFixed(2)}
+- Conversions: ${conversions}
+- Conversion Rate: ${conversionRate}%
+- Lead Pipeline: ${JSON.stringify(byStage)}
+- Lead Sources: ${JSON.stringify(bySource)}
+- Connected Integrations: ${connectedServices.join(', ') || 'None'}
+
+${metaMetrics ? `**Meta Ads Performance:**
+- Impressions: ${metaMetrics.impressions}
+- Reach: ${metaMetrics.reach}
+- Clicks: ${metaMetrics.clicks}
+- Spend: $${metaMetrics.spend}
+- CTR: ${metaMetrics.ctr}%
+- CPC: $${metaMetrics.cpc}
+- CPM: $${metaMetrics.cpm}
+` : '**Meta Ads:** Not connected'}
+
+Provide suggestions as a JSON array of strings. Each suggestion should be specific, measurable, and immediately actionable. Focus on:
+1. Improving conversion rates
+2. Optimizing marketing spend
+3. Better lead nurturing
+4. Integration opportunities
+5. Revenue growth tactics
+
+Respond ONLY with valid JSON: ["suggestion 1", "suggestion 2", "suggestion 3", ...]`;
+
+    const service = getAiService(credential.provider);
+    const rawResponse = await service.generateContent(credential.key, prompt);
+
+    // Parse JSON response
+    let suggestions = [];
+    try {
+      const jsonMatch = rawResponse.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        suggestions = JSON.parse(jsonMatch[0]);
+      } else {
+        // Fallback: split by lines and clean up
+        suggestions = rawResponse
+          .split('\n')
+          .filter(line => line.trim().length > 20)
+          .slice(0, 5);
+      }
+    } catch (err) {
+      logger.warn('Could not parse AI suggestions as JSON, using raw text', { error: err.message });
+      suggestions = [rawResponse];
+    }
+
+    logger.info('AI suggestions generated', { userId, provider: credential.provider, count: suggestions.length });
+
+    res.json({
+      success: true,
+      suggestions,
+      provider: credential.provider,
+      dataSource: {
+        leads: totalLeads,
+        revenue: totalRevenue,
+        metaConnected: !!metaMetrics,
+        integrationsConnected: connectedServices.length,
+      },
+    });
+  } catch (err) {
+    logger.error('AI suggestions error', { error: err.message });
+    next(err);
+  }
+});
+
 module.exports = router;

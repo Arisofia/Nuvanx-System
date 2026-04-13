@@ -87,4 +87,68 @@ async function createDeal(credential, dealData) {
   return data;
 }
 
-module.exports = { testConnection, getContacts, createContact, createDeal };
+/**
+ * Fetch analytics/trends from HubSpot CRM.
+ * Returns aggregated metrics for contacts, deals, and revenue over time.
+ * @param {string} credential
+ * @param {{ since?: string, until?: string }} dateRange ISO date strings
+ * @returns {Promise<object>} Trends data with metrics over time
+ */
+async function getTrends(credential, dateRange = {}) {
+  const authCfg = _authConfig(credential);
+
+  // Fetch recent contacts with creation dates
+  const contactsRes = await axios.get(`${HUBSPOT_BASE}/crm/v3/objects/contacts`, {
+    ...authCfg,
+    params: {
+      ...authCfg.params,
+      limit: 500,
+      properties: 'firstname,lastname,email,createdate,lifecyclestage',
+    },
+    timeout: 15000,
+  });
+
+  // Fetch recent deals with creation dates and amounts
+  const dealsRes = await axios.get(`${HUBSPOT_BASE}/crm/v3/objects/deals`, {
+    ...authCfg,
+    params: {
+      ...authCfg.params,
+      limit: 500,
+      properties: 'dealname,amount,dealstage,createdate,closedate',
+    },
+    timeout: 15000,
+  });
+
+  const contacts = contactsRes.data?.results || [];
+  const deals = dealsRes.data?.results || [];
+
+  // Group by date for trends
+  const trendsMap = {};
+
+  contacts.forEach(contact => {
+    const date = contact.properties?.createdate?.split('T')[0];
+    if (!date) return;
+    if (!trendsMap[date]) trendsMap[date] = { date, contacts: 0, deals: 0, revenue: 0 };
+    trendsMap[date].contacts++;
+  });
+
+  deals.forEach(deal => {
+    const date = deal.properties?.createdate?.split('T')[0];
+    const amount = parseFloat(deal.properties?.amount || 0);
+    if (!date) return;
+    if (!trendsMap[date]) trendsMap[date] = { date, contacts: 0, deals: 0, revenue: 0 };
+    trendsMap[date].deals++;
+    trendsMap[date].revenue += amount;
+  });
+
+  const trends = Object.values(trendsMap).sort((a, b) => a.date.localeCompare(b.date));
+
+  return {
+    totalContacts: contacts.length,
+    totalDeals: deals.length,
+    totalRevenue: deals.reduce((sum, d) => sum + parseFloat(d.properties?.amount || 0), 0),
+    trends,
+  };
+}
+
+module.exports = { testConnection, getContacts, createContact, createDeal, getTrends };

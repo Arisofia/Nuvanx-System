@@ -63,4 +63,83 @@ async function getMetrics(accessToken, adAccountId, dateRange = {}) {
   return data.data || [];
 }
 
-module.exports = { testConnection, getCampaigns, getMetrics };
+/**
+ * Fetch comprehensive Meta ad insights with all available metrics.
+ * @param {string} accessToken
+ * @param {string} adAccountId
+ * @param {{ since: string, until: string }} dateRange  ISO date strings
+ * @returns {Promise<object[]>} Array of insight objects with full metrics
+ */
+async function getComprehensiveMetrics(accessToken, adAccountId, dateRange = {}) {
+  const params = {
+    access_token: accessToken,
+    fields: [
+      'impressions',
+      'reach',
+      'clicks',
+      'spend',
+      'cpc',
+      'cpm',
+      'ctr',
+      'cpp',
+      'frequency',
+      'conversions',
+      'cost_per_conversion',
+      'conversion_rate_ranking',
+      'quality_ranking',
+      'engagement_rate_ranking',
+      'actions',
+      'action_values',
+      'cost_per_action_type',
+      'video_30_sec_watched_actions',
+      'video_p25_watched_actions',
+      'video_p50_watched_actions',
+      'video_p75_watched_actions',
+      'video_p100_watched_actions',
+      'link_clicks',
+      'outbound_clicks',
+      'unique_clicks',
+      'unique_link_clicks_ctr',
+      'website_ctr',
+    ].join(','),
+    time_range: JSON.stringify({
+      since: dateRange.since || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+      until: dateRange.until || new Date().toISOString().slice(0, 10),
+    }),
+    time_increment: 1, // Daily breakdown
+    limit: 1000,
+  };
+  const { data } = await axios.get(`${META_GRAPH_BASE}/${adAccountId}/insights`, {
+    params,
+    timeout: 30000,
+  });
+  return data.data || [];
+}
+
+/**
+ * Fetch time series data for trend analysis (daily breakdown).
+ * @param {string} accessToken
+ * @param {string} adAccountId
+ * @param {{ since: string, until: string }} dateRange
+ * @returns {Promise<object[]>} Daily metrics array
+ */
+async function getTrendsData(accessToken, adAccountId, dateRange = {}) {
+  const defaultSince = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const params = {
+    access_token: accessToken,
+    fields: 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,actions',
+    time_range: JSON.stringify({
+      since: dateRange.since || defaultSince,
+      until: dateRange.until || new Date().toISOString().slice(0, 10),
+    }),
+    time_increment: 1,
+    limit: 1000,
+  };
+  const { data } = await axios.get(`${META_GRAPH_BASE}/${adAccountId}/insights`, {
+    params,
+    timeout: 30000,
+  });
+  return data.data || [];
+}
+
+module.exports = { testConnection, getCampaigns, getMetrics, getComprehensiveMetrics, getTrendsData };
