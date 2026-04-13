@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Loader2, Copy, CheckCheck, Sparkles, BarChart2, ChevronDown } from 'lucide-react';
+import { Loader2, Copy, CheckCheck, Sparkles, BarChart2, ChevronDown, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useApi } from '../hooks/useApi';
 
@@ -13,46 +13,17 @@ const CONTENT_TYPES = [
   'SMS Blast',
 ];
 
-const MOCK_RESULTS = {
-  'Ad Copy': `🌟 Transform Your Look This Season!\n\nDiscover our exclusive aesthetic treatments designed for natural, radiant results.\n✅ 15+ specialized procedures\n✅ Board-certified specialists\n✅ Results in 1 visit\n\n👉 Book your free consultation today — limited slots available!\n\n#AestheticClinic #GlowUp #NaturalBeauty`,
-  'Email Subject Line': `"Your complimentary consultation is waiting, [Name] ✨" | "Last chance: 20% off this weekend only" | "We noticed you haven't visited in a while — here's a gift"`,
-  'WhatsApp Message': `Hi [Name]! 👋 It's the team at [Clinic]. We wanted to follow up on your recent inquiry about our treatments. We have availability this week that matches your schedule perfectly. Would you like me to send you a few options? 😊`,
-  'Campaign Concept': `Campaign: "New Year, New You" — Q1 Reactivation\n\nAngle: Transformation story + before/after social proof\nChannel mix: Meta Reels + WhatsApp broadcast + Email\nOffers: 3-treatment package at 25% off\nTimeline: 2-week campaign, 5 touchpoints per lead\nExpected conversion lift: +18% based on historical data`,
-  'Follow-up Script': `Day 1: "Hi [Name], thank you for your consultation today! Here's your personalized care guide: [link]"\n\nDay 3: "How are you feeling? Any questions about your treatment plan?"\n\nDay 7: "Ready to maximize your results? Book your follow-up treatment at a 15% discount this week only."\n\nDay 30: "It's been a month! We'd love to hear your experience. Would you mind leaving us a quick review? [link]"`,
-  'Referral Invite': `[Name], you're amazing! 🌟\n\nAs one of our favorite clients, we'd love to share something special with you. For every friend you refer, you'll receive $50 credit toward your next treatment — and your friend gets 15% off their first visit!\n\nYour unique referral link: [link]\n\nThank you for being part of our community! 💛`,
-  'SMS Blast': `Hi [Name]! Nuvanx Clinic here. 🌟 Our Spring promotion ends Sunday — 20% off all facial treatments. Reply BOOK or call 555-0100. Opt-out: STOP`,
-};
-
-const MOCK_ANALYSIS = `## Campaign Performance Analysis
-
-**Overall Score: 7.2/10**
-
-### Strengths
-- Strong click-through rate (3.2%) — 40% above industry average
-- WhatsApp response rate at 68% (excellent engagement)
-- Cost per lead at $12.40 is within target range
-
-### Optimization Opportunities
-1. **Audience Fatigue** — Ad frequency at 4.2x; rotate creatives every 7 days
-2. **Drop-off at WhatsApp Stage** — 31% of leads don't respond to first message; test sending within 5 min instead of 15 min of lead capture
-3. **Appointment Show Rate** — 78% show rate; add SMS reminder 2h before appointment to reach 85%+
-4. **Best Performing Creative** — Video reels outperform static 2.4x — increase video budget allocation to 70%
-
-### Recommended Actions
-- Increase retargeting audience from 30 to 60-day window
-- Add lookalike audience based on top 20% converted clients
-- Test promotional offer in first WhatsApp message (conversion +22% in A/B tests)
-- Run campaigns Tuesday–Thursday for 35% lower CPL`;
-
 export default function AILayer() {
   const [engine, setEngine] = useState('openai');
   const [contentType, setContentType] = useState(CONTENT_TYPES[0]);
   const [prompt, setPrompt] = useState('');
   const [result, setResult] = useState('');
   const [copied, setCopied] = useState(false);
+  const [generateError, setGenerateError] = useState(null);
 
   const [campaignData, setCampaignData] = useState('');
   const [analysisResult, setAnalysisResult] = useState('');
+  const [analyzeError, setAnalyzeError] = useState(null);
 
   const { loading: generating, post: postGenerate } = useApi();
   const { loading: analyzing, post: postAnalyze } = useApi();
@@ -62,14 +33,16 @@ export default function AILayer() {
       toast.error('Please enter a prompt first');
       return;
     }
+    setGenerateError(null);
     try {
       const res = await postGenerate('/api/ai/generate', { prompt, provider: engine });
       setResult(res.result || res.content || '');
-    } catch {
-      // Backend not available — use mock
-      const mock = MOCK_RESULTS[contentType] || 'AI-generated content will appear here when the backend is connected.';
-      setResult(mock);
-      toast('Using demo response — connect OpenAI in Integrations to go live', { icon: '💡' });
+      toast.success('Content generated successfully!');
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Failed to generate content. Please ensure AI integration is connected.';
+      setGenerateError(msg);
+      console.error('AI generation error:', err);
+      toast.error(msg);
     }
   }
 
@@ -78,12 +51,16 @@ export default function AILayer() {
       toast.error('Please paste your campaign data first');
       return;
     }
+    setAnalyzeError(null);
     try {
       const res = await postAnalyze('/api/ai/analyze-campaign', { campaignData, provider: engine });
       setAnalysisResult(res.analysis || res.result || '');
-    } catch {
-      setAnalysisResult(MOCK_ANALYSIS);
-      toast('Using demo analysis — connect AI in Integrations to go live', { icon: '💡' });
+      toast.success('Campaign analyzed successfully!');
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Failed to analyze campaign. Please ensure AI integration is connected.';
+      setAnalyzeError(msg);
+      console.error('AI analysis error:', err);
+      toast.error(msg);
     }
   }
 
@@ -165,6 +142,13 @@ export default function AILayer() {
             {generating ? 'Generating…' : 'Generate Content'}
           </button>
 
+          {generateError && (
+            <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-3 flex items-start gap-2">
+              <AlertCircle className="text-red-400 shrink-0 mt-0.5" size={16} />
+              <p className="text-xs text-red-400">{generateError}</p>
+            </div>
+          )}
+
           {result && (
             <div className="relative">
               <div className="flex items-center justify-between mb-2">
@@ -209,6 +193,13 @@ export default function AILayer() {
             {analyzing ? <Loader2 size={16} className="animate-spin" /> : <BarChart2 size={16} />}
             {analyzing ? 'Analyzing…' : 'Analyze & Optimize'}
           </button>
+
+          {analyzeError && (
+            <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-3 flex items-start gap-2">
+              <AlertCircle className="text-red-400 shrink-0 mt-0.5" size={16} />
+              <p className="text-xs text-red-400">{analyzeError}</p>
+            </div>
+          )}
 
           {analysisResult && (
             <div>
