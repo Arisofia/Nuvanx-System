@@ -58,9 +58,10 @@ export default function LiveDashboard() {
   // Countdown ticker — triggers real API refresh (no mock mutation)
   useEffect(() => {
     const tick = setInterval(() => {
-      countdownRef.current -= 1;
-      setCountdown(countdownRef.current);
-      if (countdownRef.current <= 0) {
+      const next = Math.max(countdownRef.current - 1, 0);
+      countdownRef.current = next;
+      setCountdown(next);
+      if (next <= 0) {
         fetchMetrics();
       }
     }, 1000);

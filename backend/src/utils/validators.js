@@ -44,7 +44,9 @@ const aiGenerateRules = [
 ];
 
 const aiAnalyzeRules = [
-  body('campaignData').isObject().withMessage('campaignData must be an object'),
+  body('campaignData')
+    .custom((value) => typeof value === 'string' || (typeof value === 'object' && value !== null))
+    .withMessage('campaignData must be a string or object'),
 ];
 
 module.exports = {

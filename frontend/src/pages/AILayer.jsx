@@ -63,7 +63,7 @@ export default function AILayer() {
       return;
     }
     try {
-      const res = await postGenerate('/api/ai/generate', { engine, contentType, prompt });
+      const res = await postGenerate('/api/ai/generate', { prompt, provider: engine });
       setResult(res.result || res.content || '');
     } catch {
       // Backend not available — use mock
@@ -79,7 +79,7 @@ export default function AILayer() {
       return;
     }
     try {
-      const res = await postAnalyze('/api/ai/analyze-campaign', { engine, campaignData });
+      const res = await postAnalyze('/api/ai/analyze-campaign', { campaignData, provider: engine });
       setAnalysisResult(res.analysis || res.result || '');
     } catch {
       setAnalysisResult(MOCK_ANALYSIS);
