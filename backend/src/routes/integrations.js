@@ -109,6 +109,25 @@ router.get('/validate-all', async (req, res) => {
   res.json({ success: true, validated, connected, total: validated.length });
 });
 
+/**
+ * GET /api/integrations/whatsapp/phone-numbers
+ * Discover all WhatsApp phone numbers and their IDs registered to this business.
+ * Uses the stored WHATSAPP_ACCESS_TOKEN (vault or env-var fallback).
+ */
+router.get('/whatsapp/phone-numbers', async (req, res, next) => {
+  try {
+    const token = await resolveCredential(req.user.id, 'whatsapp');
+    if (!token) {
+      return res.status(404).json({ success: false, message: 'No WhatsApp credential found. Set WHATSAPP_ACCESS_TOKEN.' });
+    }
+    const phoneNumbers = await whatsappService.discoverPhoneNumbers(token);
+    logger.info('WhatsApp phone numbers discovered', { userId: req.user.id, count: phoneNumbers.length });
+    res.json({ success: true, phoneNumbers });
+  } catch (err) {
+    next(err);
+  }
+});
+
 /** POST /api/integrations/:service/test - test stored credential connection */
 router.post(
   '/:service/test',

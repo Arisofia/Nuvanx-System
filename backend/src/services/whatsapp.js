@@ -90,4 +90,63 @@ async function sendTemplateMessage(accessToken, phoneNumberId, to, templateName,
   return data;
 }
 
-module.exports = { testConnection, sendMessage, sendTemplateMessage };
+/**
+ * Discover all WhatsApp phone numbers registered under the business associated
+ * with the given access token.
+ *
+ * Flow: /me/businesses → owned_whatsapp_business_accounts → phone_numbers
+ *
+ * @param {string} accessToken  Meta System User or Page access token
+ * @returns {Array<{ id: string, display_phone_number: string, verified_name: string, waba_id: string }>}
+ */
+async function discoverPhoneNumbers(accessToken) {
+  const headers = { Authorization: `Bearer ${accessToken}` };
+
+  // 1. Fetch businesses for this token
+  const meRes = await axios.get(`${WA_BASE}/me/businesses`, {
+    headers,
+    params: { fields: 'id,name' },
+    timeout: 10000,
+  });
+  const businesses = meRes.data.data || [];
+  if (businesses.length === 0) {
+    return [];
+  }
+
+  const allPhoneNumbers = [];
+
+  for (const biz of businesses) {
+    // 2. Fetch WhatsApp Business Accounts owned by this business
+    let wabaList = [];
+    try {
+      const wabaRes = await axios.get(`${WA_BASE}/${biz.id}/owned_whatsapp_business_accounts`, {
+        headers,
+        params: { fields: 'id,name' },
+        timeout: 10000,
+      });
+      wabaList = wabaRes.data.data || [];
+    } catch (err) {
+      logger.warn('discoverPhoneNumbers: could not fetch WABAs for business', { bizId: biz.id, error: err.message });
+      continue;
+    }
+
+    for (const waba of wabaList) {
+      // 3. Fetch phone numbers for this WABA
+      try {
+        const pnRes = await axios.get(`${WA_BASE}/${waba.id}/phone_numbers`, {
+          headers,
+          params: { fields: 'id,display_phone_number,verified_name,quality_rating' },
+          timeout: 10000,
+        });
+        const numbers = (pnRes.data.data || []).map((pn) => ({ ...pn, waba_id: waba.id }));
+        allPhoneNumbers.push(...numbers);
+      } catch (err) {
+        logger.warn('discoverPhoneNumbers: could not fetch phone numbers for WABA', { wabaId: waba.id, error: err.message });
+      }
+    }
+  }
+
+  return allPhoneNumbers;
+}
+
+module.exports = { testConnection, sendMessage, sendTemplateMessage, discoverPhoneNumbers };
