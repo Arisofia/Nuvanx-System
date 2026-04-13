@@ -1,19 +1,20 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '../config/api';
 
-const MOCK_INTEGRATIONS = [
-  { service: 'meta', name: 'Meta Business', description: 'Marketing API + Webhooks for lead capture', icon: '📘', status: 'disconnected', lastSync: null, error: null },
-  { service: 'google-calendar', name: 'Google Calendar', description: 'Sync appointments and scheduling', icon: '📅', status: 'disconnected', lastSync: null, error: null },
-  { service: 'google-gmail', name: 'Gmail', description: 'Email campaigns and automated follow-ups', icon: '✉️', status: 'disconnected', lastSync: null, error: null },
-  { service: 'whatsapp', name: 'WhatsApp Business', description: 'Automated messaging and lead nurturing', icon: '💬', status: 'disconnected', lastSync: null, error: null },
-  { service: 'github', name: 'GitHub', description: 'Repository access for deployment triggers', icon: '🐙', status: 'disconnected', lastSync: null, error: null },
-  { service: 'openai', name: 'OpenAI', description: 'GPT-4 content generation and analysis', icon: '🤖', status: 'disconnected', lastSync: null, error: null },
-  { service: 'gemini', name: 'Google Gemini', description: 'Gemini AI content generation and campaign insights', icon: '✨', status: 'disconnected', lastSync: null, error: null },
-  { service: 'hubspot', name: 'HubSpot CRM', description: 'CRM contacts, deals and pipeline management', icon: '🟠', status: 'disconnected', lastSync: null, error: null },
-];
+// Initial empty integrations structure - will be populated from backend
+const EMPTY_INTEGRATIONS = [
+  { service: 'meta', name: 'Meta Business', description: 'Marketing API + Webhooks for lead capture', icon: '📘' },
+  { service: 'google-calendar', name: 'Google Calendar', description: 'Sync appointments and scheduling', icon: '📅' },
+  { service: 'google-gmail', name: 'Gmail', description: 'Email campaigns and automated follow-ups', icon: '✉️' },
+  { service: 'whatsapp', name: 'WhatsApp Business', description: 'Automated messaging and lead nurturing', icon: '💬' },
+  { service: 'github', name: 'GitHub', description: 'Repository access for deployment triggers', icon: '🐙' },
+  { service: 'openai', name: 'OpenAI', description: 'GPT-4 content generation and analysis', icon: '🤖' },
+  { service: 'gemini', name: 'Google Gemini', description: 'Gemini AI content generation and campaign insights', icon: '✨' },
+  { service: 'hubspot', name: 'HubSpot CRM', description: 'CRM contacts, deals and pipeline management', icon: '🟠' },
+].map(item => ({ ...item, status: 'disconnected', lastSync: null, error: null }));
 
 export function useIntegrations() {
-  const [integrations, setIntegrations] = useState(MOCK_INTEGRATIONS);
+  const [integrations, setIntegrations] = useState(EMPTY_INTEGRATIONS);
   const [loading, setLoading] = useState(false);
 
   const mergeServerData = useCallback((serverData) => {
@@ -38,8 +39,9 @@ export function useIntegrations() {
     try {
       const res = await api.get('/api/integrations');
       mergeServerData(res.data?.integrations || []);
-    } catch {
-      // Backend not available — use mock data
+    } catch (err) {
+      console.error('Failed to fetch integrations:', err);
+      // Keep EMPTY_INTEGRATIONS structure, don't fallback to mock data
     } finally {
       setLoading(false);
     }
@@ -70,7 +72,8 @@ export function useIntegrations() {
         })
       );
       return res.data;
-    } catch {
+    } catch (err) {
+      console.error('Failed to validate integrations:', err);
       // Fall back to individual fetch if validate-all fails
       await fetchIntegrations();
     } finally {
