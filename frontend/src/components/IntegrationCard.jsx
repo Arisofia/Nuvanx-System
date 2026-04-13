@@ -20,7 +20,10 @@ function StatusBadge({ status }) {
 
 function ConnectModal({ integration, onClose, onConnect }) {
   const [apiKey, setApiKey] = useState('');
+  const [phoneNumberId, setPhoneNumberId] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  const isWhatsApp = integration.service === 'whatsapp';
 
   const fieldLabels = {
     meta: 'Meta Business API Access Token',
@@ -28,7 +31,8 @@ function ConnectModal({ integration, onClose, onConnect }) {
     'google-gmail': 'Gmail OAuth Refresh Token',
     whatsapp: 'WhatsApp Business API Token',
     github: 'GitHub Personal Access Token',
-    openai: 'OpenAI API Key (or Gemini API Key)',
+    openai: 'OpenAI API Key',
+    gemini: 'Google Gemini API Key',
     hubspot: 'HubSpot Private App Access Token',
   };
 
@@ -38,16 +42,20 @@ function ConnectModal({ integration, onClose, onConnect }) {
     'google-gmail': 'Use OAuth2 flow with Gmail scopes in Google Cloud Console',
     whatsapp: 'Found in Meta Business Manager → WhatsApp → API Setup',
     github: 'Generate at github.com/settings/tokens with repo scope',
-    openai: 'Found at platform.openai.com/api-keys or ai.google.dev for Gemini',
+    openai: 'Found at platform.openai.com/api-keys',
+    gemini: 'Found at ai.google.dev → Get API Key',
     hubspot: 'Create a Private App in HubSpot Settings → Integrations → Private Apps',
   };
 
   async function handleSubmit(e) {
     e.preventDefault();
     if (!apiKey.trim()) return;
+    if (isWhatsApp && !phoneNumberId.trim()) return;
     setSubmitting(true);
     try {
-      await onConnect(integration.service, { apiKey });
+      const credentials = { apiKey };
+      if (isWhatsApp) credentials.phoneNumberId = phoneNumberId.trim();
+      await onConnect(integration.service, credentials);
       toast.success(`${integration.name} connected successfully`);
       onClose();
     } catch (err) {
@@ -96,11 +104,35 @@ function ConnectModal({ integration, onClose, onConnect }) {
             )}
           </div>
 
+          {isWhatsApp && (
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-1.5">
+                Phone Number ID
+              </label>
+              <input
+                type="text"
+                value={phoneNumberId}
+                onChange={(e) => setPhoneNumberId(e.target.value)}
+                placeholder="e.g. 123456789012345"
+                className="input"
+                autoComplete="off"
+                required
+              />
+              <p className="mt-1.5 text-xs text-gray-500">
+                Found in Meta Business Manager → WhatsApp → API Setup → Phone Number ID
+              </p>
+            </div>
+          )}
+
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose} className="btn-secondary flex-1">
               Cancel
             </button>
-            <button type="submit" disabled={submitting || !apiKey.trim()} className="btn-primary flex-1 flex items-center justify-center gap-2">
+            <button
+              type="submit"
+              disabled={submitting || !apiKey.trim() || (isWhatsApp && !phoneNumberId.trim())}
+              className="btn-primary flex-1 flex items-center justify-center gap-2"
+            >
               {submitting && <Loader2 size={16} className="animate-spin" />}
               {submitting ? 'Connecting…' : 'Connect'}
             </button>
