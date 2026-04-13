@@ -184,8 +184,11 @@ function checkStaleness(mapping) {
 function validateFigmaNodeIds(items, type) {
   const invalidNodeIds = items.filter(item => {
     // Figma node IDs should match pattern: digits:digits (e.g., "123:456")
+    // Placeholder value 'REPLACE_WITH_NODE_ID' is treated as missing (warning), not invalid (error)
     const nodeIdPattern = /^\d+:\d+$/;
-    return item.figmaNodeId && !nodeIdPattern.test(item.figmaNodeId);
+    return item.figmaNodeId &&
+      item.figmaNodeId !== 'REPLACE_WITH_NODE_ID' &&
+      !nodeIdPattern.test(item.figmaNodeId);
   });
 
   if (invalidNodeIds.length > 0) {
