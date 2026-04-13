@@ -21,23 +21,31 @@ const leadRules = [
 ];
 
 /** GET /api/leads */
-router.get('/', (req, res) => {
-  const { stage, source } = req.query;
-  const leads = leadModel.findByUser(req.user.id, { stage, source });
-  res.json({ success: true, leads, total: leads.length });
+router.get('/', async (req, res, next) => {
+  try {
+    const { stage, source } = req.query;
+    const leads = await leadModel.findByUser(req.user.id, { stage, source });
+    res.json({ success: true, leads, total: leads.length });
+  } catch (err) {
+    next(err);
+  }
 });
 
 /** GET /api/leads/:id */
-router.get('/:id', (req, res) => {
-  const lead = leadModel.findById(req.params.id, req.user.id);
-  if (!lead) return res.status(404).json({ success: false, message: 'Lead not found' });
-  res.json({ success: true, lead });
+router.get('/:id', async (req, res, next) => {
+  try {
+    const lead = await leadModel.findById(req.params.id, req.user.id);
+    if (!lead) return res.status(404).json({ success: false, message: 'Lead not found' });
+    res.json({ success: true, lead });
+  } catch (err) {
+    next(err);
+  }
 });
 
 /** POST /api/leads */
-router.post('/', leadRules, handleValidationErrors, (req, res, next) => {
+router.post('/', leadRules, handleValidationErrors, async (req, res, next) => {
   try {
-    const lead = leadModel.create(req.user.id, req.body);
+    const lead = await leadModel.create(req.user.id, req.body);
     logger.info('Lead created', { userId: req.user.id, leadId: lead.id });
     res.status(201).json({ success: true, lead });
   } catch (err) {
@@ -50,9 +58,9 @@ router.put(
   '/:id',
   [...leadRules, param('id').isUUID()],
   handleValidationErrors,
-  (req, res, next) => {
+  async (req, res, next) => {
     try {
-      const lead = leadModel.update(req.params.id, req.user.id, req.body);
+      const lead = await leadModel.update(req.params.id, req.user.id, req.body);
       if (!lead) return res.status(404).json({ success: false, message: 'Lead not found' });
       res.json({ success: true, lead });
     } catch (err) {
@@ -62,10 +70,14 @@ router.put(
 );
 
 /** DELETE /api/leads/:id */
-router.delete('/:id', [param('id').isUUID(), handleValidationErrors], (req, res) => {
-  const deleted = leadModel.remove(req.params.id, req.user.id);
-  if (!deleted) return res.status(404).json({ success: false, message: 'Lead not found' });
-  res.json({ success: true, message: 'Lead deleted' });
+router.delete('/:id', [param('id').isUUID(), handleValidationErrors], async (req, res, next) => {
+  try {
+    const deleted = await leadModel.remove(req.params.id, req.user.id);
+    if (!deleted) return res.status(404).json({ success: false, message: 'Lead not found' });
+    res.json({ success: true, message: 'Lead deleted' });
+  } catch (err) {
+    next(err);
+  }
 });
 
 module.exports = router;

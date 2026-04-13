@@ -19,13 +19,13 @@ function getAiService(provider) {
   return openaiService; // default to openai
 }
 
-function resolveAiCredential(userId, provider) {
-  const key = credentialModel.getDecryptedKey(userId, provider);
+async function resolveAiCredential(userId, provider) {
+  const key = await credentialModel.getDecryptedKey(userId, provider);
   if (key) return { key, provider };
 
   // Fallback 1: try the other provider's vault credential
   const fallback = provider === 'openai' ? 'gemini' : 'openai';
-  const fallbackKey = credentialModel.getDecryptedKey(userId, fallback);
+  const fallbackKey = await credentialModel.getDecryptedKey(userId, fallback);
   if (fallbackKey) return { key: fallbackKey, provider: fallback };
 
   // Fallback 2: server-level env var keys (Codespaces secrets)

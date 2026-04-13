@@ -17,11 +17,11 @@ const router = express.Router();
 router.use(authenticate);
 
 /**
- * Resolve a credential for the given service.
+ * Resolve a credential for the given service (async).
  * Priority: per-user vault → server-level env var defaults.
  */
-function resolveCredential(userId, service) {
-  const stored = credentialModel.getDecryptedKey(userId, service);
+async function resolveCredential(userId, service) {
+  const stored = await credentialModel.getDecryptedKey(userId, service);
   if (stored) return stored;
 
   // Env-var fallbacks keyed by service name
@@ -36,9 +36,13 @@ function resolveCredential(userId, service) {
 }
 
 /** GET /api/integrations - list all integrations with their status */
-router.get('/', (req, res) => {
-  const integrations = integrationModel.getAll(req.user.id);
-  res.json({ success: true, integrations });
+router.get('/', async (req, res, next) => {
+  try {
+    const integrations = await integrationModel.getAll(req.user.id);
+    res.json({ success: true, integrations });
+  } catch (err) {
+    next(err);
+  }
 });
 
 /**
@@ -69,7 +73,7 @@ router.get('/validate-all', async (req, res) => {
 
   const results = await Promise.allSettled(
     TESTABLE.map(async ({ service, test }) => {
-      const credential = resolveCredential(userId, service);
+      const credential = await resolveCredential(userId, service);
       if (!credential) {
         return { service, status: 'disconnected', connected: false, skipped: true };
       }
@@ -77,7 +81,7 @@ router.get('/validate-all', async (req, res) => {
       try {
         const result = await test(credential);
         const status = result.connected ? 'connected' : 'error';
-        integrationModel.upsert(userId, service, {
+        await integrationModel.upsert(userId, service, {
           status,
           lastSync: result.connected ? new Date().toISOString() : undefined,
           lastError: result.error || null,
@@ -90,7 +94,7 @@ router.get('/validate-all', async (req, res) => {
         });
         return { service, status, connected: result.connected, ...result };
       } catch (err) {
-        integrationModel.upsert(userId, service, { status: 'error', lastError: err.message });
+        await integrationModel.upsert(userId, service, { status: 'error', lastError: err.message });
         return { service, status: 'error', connected: false, error: err.message };
       }
     }),
@@ -111,7 +115,7 @@ router.post(
   async (req, res, next) => {
     const { service } = req.params;
     try {
-      const apiKey = resolveCredential(req.user.id, service);
+      const apiKey = await resolveCredential(req.user.id, service);
       if (!apiKey) {
         return res.status(404).json({ success: false, message: `No credential found for ${service}` });
       }
@@ -149,7 +153,7 @@ router.post(
       }
 
       const status = result.connected ? 'connected' : 'error';
-      integrationModel.upsert(req.user.id, service, {
+      await integrationModel.upsert(req.user.id, service, {
         status,
         lastSync: result.connected ? new Date().toISOString() : undefined,
         lastError: result.error || null,
@@ -164,7 +168,7 @@ router.post(
       logger.info('Integration test', { userId: req.user.id, service, connected: result.connected });
       res.json({ success: true, service, ...result });
     } catch (err) {
-      integrationModel.upsert(req.user.id, service, { status: 'error', lastError: err.message });
+      await integrationModel.upsert(req.user.id, service, { status: 'error', lastError: err.message });
       next(err);
     }
   },
@@ -175,7 +179,7 @@ router.post(
   '/:service/connect',
   serviceParamRule,
   handleValidationErrors,
-  (req, res, next) => {
+  async (req, res, next) => {
     const { service } = req.params;
     const { token, metadata = {} } = req.body;
 
@@ -184,8 +188,8 @@ router.post(
     }
 
     try {
-      credentialModel.save(req.user.id, service, token);
-      integrationModel.upsert(req.user.id, service, {
+      await credentialModel.save(req.user.id, service, token);
+      await integrationModel.upsert(req.user.id, service, {
         status: 'connected',
         lastSync: new Date().toISOString(),
         lastError: null,
