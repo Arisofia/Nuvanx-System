@@ -12,6 +12,7 @@ const { config } = require('../config/env');
 function encrypt(text, key = config.encryptionKey) {
   if (typeof text !== 'string') throw new TypeError('encrypt: text must be a string');
   if (!key) throw new Error('encrypt: encryption key is required');
+  // AES-256 symmetric encryption for API key/secret storage (not password hashing)
   return CryptoJS.AES.encrypt(text, key).toString();
 }
 
@@ -29,7 +30,11 @@ function decrypt(ciphertext, key = config.encryptionKey) {
   if (bytes.sigBytes < 0) {
     throw new Error('decrypt: decryption failed — invalid key or corrupted ciphertext');
   }
-  return bytes.toString(CryptoJS.enc.Utf8);
+  try {
+    return bytes.toString(CryptoJS.enc.Utf8);
+  } catch {
+    throw new Error('decrypt: decryption failed — invalid key or corrupted ciphertext');
+  }
 }
 
 module.exports = { encrypt, decrypt };
