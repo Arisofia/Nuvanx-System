@@ -5,8 +5,8 @@
   "figma": {
     "fileKey": "uJkwaJl7MIf5DE2VaqV8Vd",
     "fileUrl": "https://www.figma.com/make/uJkwaJl7MIf5DE2VaqV8Vd/Crear-presentaci%C3%B3n-ejecutiva",
-    "lastSync": "2026-04-13T20:00:00.000Z",
-    "notes": "Figma Make presentation linked by @Arisofia. For design node IDs: open the file in Figma, right-click any frame → Copy/Paste as → Copy link, then extract the node-id parameter."
+    "lastSync": "2026-04-13T22:00:00.000Z",
+    "notes": "Figma Make presentation linked by @Arisofia. File key confirmed: uJkwaJl7MIf5DE2VaqV8Vd. To obtain real node IDs: open the file in Figma, right-click any frame → Copy/Paste as → Copy link, extract the node-id parameter, then replace REPLACE_WITH_NODE_ID in this file. Run 'FIGMA_ACCESS_TOKEN=<token> node scripts/validate-figma-mapping.js --api-check' to validate."
   },
   "designSystem": {
     "tokens": {
@@ -35,7 +35,7 @@
       "name": "Login",
       "route": "/login",
       "figmaNodeId": "REPLACE_WITH_NODE_ID",
-      "figmaUrl": "https://www.figma.com/design/FILE_KEY?node-id=LOGIN_NODE_ID",
+      "figmaUrl": "https://www.figma.com/design/uJkwaJl7MIf5DE2VaqV8Vd?node-id=LOGIN_NODE_ID",
       "component": "frontend/src/pages/Login.jsx",
       "status": "implemented",
       "lastValidated": "2026-04-13T18:00:00.000Z",
@@ -46,7 +46,7 @@
       "name": "Dashboard",
       "route": "/dashboard",
       "figmaNodeId": "REPLACE_WITH_NODE_ID",
-      "figmaUrl": "https://www.figma.com/design/FILE_KEY?node-id=DASHBOARD_NODE_ID",
+      "figmaUrl": "https://www.figma.com/design/uJkwaJl7MIf5DE2VaqV8Vd?node-id=DASHBOARD_NODE_ID",
       "component": "frontend/src/pages/Dashboard.jsx",
       "status": "implemented",
       "lastValidated": "2026-04-13T18:00:00.000Z",
@@ -57,7 +57,7 @@
       "name": "Playbooks (Operativo)",
       "route": "/operativo",
       "figmaNodeId": "REPLACE_WITH_NODE_ID",
-      "figmaUrl": "https://www.figma.com/design/FILE_KEY?node-id=PLAYBOOKS_NODE_ID",
+      "figmaUrl": "https://www.figma.com/design/uJkwaJl7MIf5DE2VaqV8Vd?node-id=PLAYBOOKS_NODE_ID",
       "component": "frontend/src/pages/Playbooks.jsx",
       "status": "implemented",
       "lastValidated": "2026-04-13T18:00:00.000Z",
@@ -68,7 +68,7 @@
       "name": "CRM",
       "route": "/crm",
       "figmaNodeId": "REPLACE_WITH_NODE_ID",
-      "figmaUrl": "https://www.figma.com/design/FILE_KEY?node-id=CRM_NODE_ID",
+      "figmaUrl": "https://www.figma.com/design/uJkwaJl7MIf5DE2VaqV8Vd?node-id=CRM_NODE_ID",
       "component": "frontend/src/pages/CRM.jsx",
       "status": "implemented",
       "lastValidated": "2026-04-13T18:00:00.000Z",
@@ -79,7 +79,7 @@
       "name": "Live Dashboard",
       "route": "/live",
       "figmaNodeId": "REPLACE_WITH_NODE_ID",
-      "figmaUrl": "https://www.figma.com/design/FILE_KEY?node-id=LIVE_NODE_ID",
+      "figmaUrl": "https://www.figma.com/design/uJkwaJl7MIf5DE2VaqV8Vd?node-id=LIVE_NODE_ID",
       "component": "frontend/src/pages/LiveDashboard.jsx",
       "status": "implemented",
       "lastValidated": "2026-04-13T18:00:00.000Z",
@@ -90,7 +90,7 @@
       "name": "Integrations",
       "route": "/integrations",
       "figmaNodeId": "REPLACE_WITH_NODE_ID",
-      "figmaUrl": "https://www.figma.com/design/FILE_KEY?node-id=INTEGRATIONS_NODE_ID",
+      "figmaUrl": "https://www.figma.com/design/uJkwaJl7MIf5DE2VaqV8Vd?node-id=INTEGRATIONS_NODE_ID",
       "component": "frontend/src/pages/Integrations.jsx",
       "status": "implemented",
       "lastValidated": "2026-04-13T18:00:00.000Z",
@@ -101,7 +101,7 @@
       "name": "AI Layer",
       "route": "/ai",
       "figmaNodeId": "REPLACE_WITH_NODE_ID",
-      "figmaUrl": "https://www.figma.com/design/FILE_KEY?node-id=AI_NODE_ID",
+      "figmaUrl": "https://www.figma.com/design/uJkwaJl7MIf5DE2VaqV8Vd?node-id=AI_NODE_ID",
       "component": "frontend/src/pages/AILayer.jsx",
       "status": "implemented",
       "lastValidated": "2026-04-13T18:00:00.000Z",
@@ -113,7 +113,7 @@
     {
       "name": "MetricCard",
       "figmaNodeId": "REPLACE_WITH_NODE_ID",
-      "figmaUrl": "https://www.figma.com/design/FILE_KEY?node-id=METRIC_CARD_NODE_ID",
+      "figmaUrl": "https://www.figma.com/design/uJkwaJl7MIf5DE2VaqV8Vd?node-id=METRIC_CARD_NODE_ID",
       "component": "frontend/src/components/MetricCard.jsx",
       "status": "implemented",
       "lastValidated": "2026-04-13T18:00:00.000Z",
@@ -134,7 +134,7 @@
     {
       "name": "FunnelChart",
       "figmaNodeId": "REPLACE_WITH_NODE_ID",
-      "figmaUrl": "https://www.figma.com/design/FILE_KEY?node-id=FUNNEL_CHART_NODE_ID",
+      "figmaUrl": "https://www.figma.com/design/uJkwaJl7MIf5DE2VaqV8Vd?node-id=FUNNEL_CHART_NODE_ID",
       "component": "frontend/src/components/FunnelChart.jsx",
       "status": "implemented",
       "lastValidated": "2026-04-13T18:00:00.000Z",
@@ -147,7 +147,7 @@
     {
       "name": "TopNav",
       "figmaNodeId": "REPLACE_WITH_NODE_ID",
-      "figmaUrl": "https://www.figma.com/design/FILE_KEY?node-id=TOPNAV_NODE_ID",
+      "figmaUrl": "https://www.figma.com/design/uJkwaJl7MIf5DE2VaqV8Vd?node-id=TOPNAV_NODE_ID",
       "component": "frontend/src/components/TopNav.jsx",
       "status": "implemented",
       "lastValidated": "2026-04-13T18:00:00.000Z",
@@ -158,7 +158,7 @@
     {
       "name": "IntegrationCard",
       "figmaNodeId": "REPLACE_WITH_NODE_ID",
-      "figmaUrl": "https://www.figma.com/design/FILE_KEY?node-id=INTEGRATION_CARD_NODE_ID",
+      "figmaUrl": "https://www.figma.com/design/uJkwaJl7MIf5DE2VaqV8Vd?node-id=INTEGRATION_CARD_NODE_ID",
       "component": "frontend/src/components/IntegrationCard.jsx",
       "status": "implemented",
       "lastValidated": "2026-04-13T18:00:00.000Z",
@@ -171,7 +171,7 @@
     {
       "name": "Layout",
       "figmaNodeId": "REPLACE_WITH_NODE_ID",
-      "figmaUrl": "https://www.figma.com/design/FILE_KEY?node-id=LAYOUT_NODE_ID",
+      "figmaUrl": "https://www.figma.com/design/uJkwaJl7MIf5DE2VaqV8Vd?node-id=LAYOUT_NODE_ID",
       "component": "frontend/src/components/Layout.jsx",
       "status": "implemented",
       "lastValidated": "2026-04-13T18:00:00.000Z",
@@ -181,7 +181,7 @@
     {
       "name": "Sidebar",
       "figmaNodeId": "REPLACE_WITH_NODE_ID",
-      "figmaUrl": "https://www.figma.com/design/FILE_KEY?node-id=SIDEBAR_NODE_ID",
+      "figmaUrl": "https://www.figma.com/design/uJkwaJl7MIf5DE2VaqV8Vd?node-id=SIDEBAR_NODE_ID",
       "component": "frontend/src/components/Sidebar.jsx",
       "status": "implemented",
       "lastValidated": "2026-04-13T18:00:00.000Z",
@@ -200,7 +200,7 @@
   "metadata": {
     "maintainers": ["@Arisofia"],
     "reviewers": ["design-team"],
-    "lastUpdated": "2026-04-13T18:00:00.000Z",
+    "lastUpdated": "2026-04-13T22:00:00.000Z",
     "ciIntegration": "warn-only"
   }
 }

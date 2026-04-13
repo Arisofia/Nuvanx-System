@@ -212,6 +212,129 @@ function validateFigmaNodeIds(items, type) {
   return true;
 }
 
+/**
+ * Phase 1 – Figma REST API validation.
+ * Verifies that the configured file is accessible and that every non-placeholder
+ * figmaNodeId in the mapping actually exists inside the Figma document.
+ *
+ * Uses Node.js built-in `https` module so no extra dependencies are required.
+ */
+async function validateFigmaAPI(mapping) {
+  const token = process.env.FIGMA_ACCESS_TOKEN;
+  const fileKey = mapping.figma?.fileKey;
+
+  if (!fileKey) {
+    errors++;
+    log('figma.fileKey is missing from the mapping – cannot run API checks', 'error');
+    return;
+  }
+
+  // ── Helper: make a GET request to the Figma API ──────────────────────────
+  function figmaGet(pathStr) {
+    return new Promise((resolve, reject) => {
+      const https = require('https');
+      const options = {
+        hostname: 'api.figma.com',
+        path: pathStr,
+        method: 'GET',
+        headers: { 'X-Figma-Token': token },
+      };
+
+      const req = https.request(options, (res) => {
+        let body = '';
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => {
+          if (res.statusCode !== 200) {
+            reject(new Error(`Figma API responded with ${res.statusCode}: ${body}`));
+          } else {
+            try {
+              resolve(JSON.parse(body));
+            } catch (e) {
+              reject(new Error(`Failed to parse Figma API response: ${e.message}`));
+            }
+          }
+        });
+      });
+
+      req.on('error', reject);
+      req.end();
+    });
+  }
+
+  // ── 1. Verify the file is accessible ─────────────────────────────────────
+  log(`Fetching Figma file ${fileKey} …`, 'info');
+  let fileData;
+  try {
+    fileData = await figmaGet(`/v1/files/${fileKey}?depth=1`);
+    passed++;
+    log(`Figma file accessible: "${fileData.name}"`, 'pass');
+  } catch (err) {
+    errors++;
+    log(`Cannot access Figma file: ${err.message}`, 'error');
+    log('Note: Figma Make files may require special permissions or a team token', 'info');
+    return;
+  }
+
+  // ── 2. Collect non-placeholder node IDs ──────────────────────────────────
+  const allItems = [
+    ...(mapping.screens || []),
+    ...(mapping.components || []),
+  ];
+
+  const nodeIdPattern = /^\d+:\d+$/;
+  const idsToCheck = allItems
+    .filter(item => item.figmaNodeId && nodeIdPattern.test(item.figmaNodeId))
+    .map(item => ({ name: item.name, id: item.figmaNodeId }));
+
+  const placeholderCount = allItems.filter(
+    item => !item.figmaNodeId || item.figmaNodeId === 'REPLACE_WITH_NODE_ID'
+  ).length;
+
+  if (placeholderCount > 0) {
+    warnings++;
+    log(
+      `${placeholderCount} item(s) still use placeholder node IDs – open the Figma file, ` +
+      'right-click a frame → Copy link, then extract the node-id parameter',
+      'warn'
+    );
+  }
+
+  if (idsToCheck.length === 0) {
+    warnings++;
+    log('No real figmaNodeIds to validate via API (all are placeholders)', 'warn');
+    return;
+  }
+
+  // ── 3. Validate node IDs via /v1/files/:key/nodes ────────────────────────
+  const idList = [...new Set(idsToCheck.map(i => i.id))].join(',');
+  log(`Validating ${idsToCheck.length} node ID(s) against Figma API …`, 'info');
+
+  let nodesData;
+  try {
+    nodesData = await figmaGet(`/v1/files/${fileKey}/nodes?ids=${encodeURIComponent(idList)}`);
+  } catch (err) {
+    errors++;
+    log(`Node ID lookup failed: ${err.message}`, 'error');
+    return;
+  }
+
+  const returnedIds = new Set(Object.keys(nodesData.nodes || {}));
+  const missing = idsToCheck.filter(item => !returnedIds.has(item.id));
+  const found = idsToCheck.filter(item => returnedIds.has(item.id));
+
+  if (found.length > 0) {
+    passed++;
+    log(`${found.length} node ID(s) confirmed in Figma file`, 'pass');
+    found.forEach(item => log(`  ✓ ${item.name} (${item.id})`, 'pass'));
+  }
+
+  if (missing.length > 0) {
+    errors++;
+    log(`${missing.length} node ID(s) not found in Figma file:`, 'error');
+    missing.forEach(item => log(`  ✗ ${item.name}: ${item.id}`, 'error'));
+  }
+}
+
 async function main() {
   header('🎨 Figma Validation Report');
 
@@ -297,15 +420,14 @@ async function main() {
   header('📅 Checking Freshness');
   checkStaleness(mapping);
 
-  // Figma API validation (if enabled)
+  // Figma API validation (Phase 1)
   if (apiCheck) {
     header('🔌 Figma API Validation');
     if (!process.env.FIGMA_ACCESS_TOKEN) {
       errors++;
-      log('FIGMA_ACCESS_TOKEN not set, skipping API checks', 'error');
+      log('FIGMA_ACCESS_TOKEN not set. Export it before running --api-check', 'error');
     } else {
-      log('Figma API validation not yet implemented (Phase 1)', 'warn');
-      warnings++;
+      await validateFigmaAPI(mapping);
     }
   }
 
