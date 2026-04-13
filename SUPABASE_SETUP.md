@@ -2,21 +2,25 @@
 
 ## ¿Por qué Supabase?
 
-Actualmente, las credenciales de integraciones (HubSpot, Meta, Gmail, etc.) se guardan
-**solo en localStorage** del navegador, lo que significa:
+En la arquitectura actual de Nuvanx, las credenciales reales de integraciones
+(HubSpot, Meta, Gmail, etc.) **no se almacenan en `localStorage` del navegador**.
+Se guardan en el **backend credential vault**, cifradas con **AES-256-GCM**.
 
-❌ Se pierden al cambiar de navegador  
-❌ No se sincronizan entre dispositivos  
-❌ No están disponibles para otros usuarios del equipo  
-❌ Se pierden al limpiar caché
+Supabase se utiliza para gestionar el **estado de la integración**, la **sesión** y
+otros metadatos necesarios para que la experiencia sea persistente entre inicios
+de sesión y dispositivos.
 
-Con Supabase, las credenciales:
+Esto significa:
 
-✅ **Se sincronizan** entre todos tus dispositivos  
-✅ **Persisten** en la nube de forma segura  
-✅ **Se cargan** automáticamente al iniciar sesión  
-✅ **Funcionan** en cualquier navegador
+✅ **Las credenciales reales** se almacenan de forma segura en el backend  
+✅ **El estado de integración** puede persistir entre dispositivos y sesiones  
+✅ **La sesión y metadatos** se cargan automáticamente al iniciar sesión  
+✅ **No es necesario ni recomendable** guardar claves reales en el navegador
 
+> **Importante:** No almacenes API keys, tokens ni secretos reales en `localStorage`
+> ni en otras capas de almacenamiento del navegador basándote en documentación
+> antigua. Supabase en esta configuración no es el almacén de secretos; el vault
+> backend es quien cumple ese rol.
 ---
 
 ## 📋 Paso 1: Crear Proyecto en Supabase
