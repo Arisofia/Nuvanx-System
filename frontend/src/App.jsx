@@ -37,7 +37,8 @@ function AppRoutes() {
       >
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
-        <Route path="playbooks" element={<Playbooks />} />
+        <Route path="operativo" element={<Playbooks />} />
+        <Route path="playbooks" element={<Navigate to="/operativo" replace />} />
         <Route path="crm" element={<CRM />} />
         <Route path="live" element={<LiveDashboard />} />
         <Route path="integrations" element={<Integrations />} />

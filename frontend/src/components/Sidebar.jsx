@@ -9,7 +9,7 @@ const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/live', icon: Activity, label: 'Live Metrics' },
   { to: '/crm', icon: Users, label: 'CRM' },
-  { to: '/playbooks', icon: BookOpen, label: 'Playbooks' },
+  { to: '/operativo', icon: BookOpen, label: 'Playbooks' },
   { to: '/integrations', icon: Plug, label: 'Integrations' },
   { to: '/ai', icon: Bot, label: 'AI Layer' },
 ];
