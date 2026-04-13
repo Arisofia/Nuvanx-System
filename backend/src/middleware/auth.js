@@ -42,9 +42,9 @@ function authenticate(req, res, next) {
     const decoded = jwt.verify(token, config.supabaseJwtSecret);
     // Normalize Supabase payload fields to the shape the rest of the app expects
     req.user = {
-      id: decoded.sub,
-      email: decoded.email,
-      name: decoded.user_metadata?.name || decoded.email,
+      id: decoded.sub || decoded.id,
+      email: decoded.email || null,
+      name: (decoded.user_metadata && decoded.user_metadata.name) || decoded.email || decoded.sub,
     };
     return next();
   } catch (supabaseErr) {

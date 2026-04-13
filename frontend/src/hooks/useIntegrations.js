@@ -51,8 +51,8 @@ export function useIntegrations() {
       if (rows.length > 0) mergeServerData(rows);
 
       // Also subscribe to real-time updates
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
+      const { data: { user }, error: userErr } = await supabase.auth.getUser();
+      if (!userErr && user) {
         unsubscribe = subscribeIntegrationStatus(user.id, (row) => {
           mergeServerData([row]);
         });
