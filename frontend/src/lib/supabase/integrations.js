@@ -20,8 +20,8 @@ import { supabase, isSupabaseAvailable } from './client';
 export async function fetchIntegrationStatus() {
   if (!isSupabaseAvailable()) return [];
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return [];
+  const { data: { user }, error: userErr } = await supabase.auth.getUser();
+  if (userErr || !user) return [];
 
   const { data, error } = await supabase
     .from('user_integrations')
@@ -51,8 +51,8 @@ export async function fetchIntegrationStatus() {
 export async function saveIntegrationStatus(service, updates) {
   if (!isSupabaseAvailable()) return;
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
+  const { data: { user }, error: userErr } = await supabase.auth.getUser();
+  if (userErr || !user) return;
 
   const row = {
     user_id: user.id,

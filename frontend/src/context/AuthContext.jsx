@@ -57,8 +57,11 @@ export function AuthProvider({ children }) {
     if (isSupabaseAvailable()) {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
-        // Wrap in an axios-like error shape so Login.jsx toast works the same way
-        throw { response: { data: { message: error.message } } };
+        // Re-throw as a plain object matching axios error shape so Login.jsx
+        // toast handling works the same way for both auth paths.
+        const wrapped = new Error(error.message);
+        wrapped.response = { data: { message: error.message } };
+        throw wrapped;
       }
       const shaped = toUserShape(data.user);
       setToken(data.session.access_token);
