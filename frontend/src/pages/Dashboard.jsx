@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { DollarSign, Users, TrendingUp, Ticket, Sparkles, RefreshCw, Loader2 } from 'lucide-react';
+import { DollarSign, Users, TrendingUp, Ticket, Sparkles, RefreshCw, Loader2, AlertCircle } from 'lucide-react';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Area, AreaChart,
@@ -7,30 +7,6 @@ import {
 import MetricCard from '../components/MetricCard';
 import FunnelChart from '../components/FunnelChart';
 import api from '../config/api';
-
-const STATIC_REVENUE = [
-  { month: 'Aug', revenue: 42000, leads: 180 },
-  { month: 'Sep', revenue: 51000, leads: 210 },
-  { month: 'Oct', revenue: 47500, leads: 195 },
-  { month: 'Nov', revenue: 63000, leads: 260 },
-  { month: 'Dec', revenue: 71000, leads: 295 },
-  { month: 'Jan', revenue: 68500, leads: 285 },
-];
-
-const STATIC_FUNNEL = [
-  { label: 'Meta Ads Impressions', value: 45000 },
-  { label: 'Landing Page Clicks', value: 3200 },
-  { label: 'WhatsApp Contacts', value: 890 },
-  { label: 'Appointments Booked', value: 312 },
-  { label: 'Treatments Completed', value: 248 },
-  { label: 'Revenue Generated', value: 186 },
-];
-
-const STATIC_SUGGESTIONS = [
-  'Increase Meta Ads budget by 20% on Thursdays — 34% higher CTR observed',
-  'Send re-engagement campaign to 47 dormant leads from November',
-  'Add WhatsApp follow-up 2h after consultation — converts 28% more',
-];
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload?.length) {
@@ -50,28 +26,34 @@ const CustomTooltip = ({ active, payload, label }) => {
 
 export default function Dashboard() {
   const [metrics, setMetrics] = useState(null);
-  const [funnel, setFunnel] = useState(null);
-  const [aiSuggestions, setAiSuggestions] = useState(STATIC_SUGGESTIONS);
+  const [funnel, setFunnel] = useState([]);
+  const [revenueData, setRevenueData] = useState([]);
+  const [aiSuggestions, setAiSuggestions] = useState([]);
   const [loadingMetrics, setLoadingMetrics] = useState(true);
-  const [usingLiveData, setUsingLiveData] = useState(false);
+  const [error, setError] = useState(null);
 
   async function fetchData() {
     setLoadingMetrics(true);
+    setError(null);
     try {
       const [metricsRes, funnelRes] = await Promise.all([
         api.get('/api/dashboard/metrics'),
         api.get('/api/dashboard/funnel'),
       ]);
       setMetrics(metricsRes.data.metrics);
+
       // Build funnel display from real funnel stages
       const stages = funnelRes.data.funnel || [];
-      if (stages.length > 0) {
-        setFunnel(stages.map(s => ({ label: s.label, value: s.count })));
-      }
-      setUsingLiveData(true);
-    } catch {
-      // Backend unavailable — stay with static values
-      setUsingLiveData(false);
+      setFunnel(stages.map(s => ({ label: s.label, value: s.count })));
+
+      // TODO: Add revenue trend endpoint to backend - currently empty
+      setRevenueData([]);
+
+      // TODO: Add AI suggestions endpoint to backend - currently empty
+      setAiSuggestions([]);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to load dashboard data');
+      console.error('Dashboard fetch error:', err);
     } finally {
       setLoadingMetrics(false);
     }
@@ -81,12 +63,30 @@ export default function Dashboard() {
     fetchData();
   }, []);
 
-  const totalRevenue = metrics?.totalRevenue ?? 68500;
-  const totalLeads = metrics?.totalLeads ?? 285;
-  const conversionRate = metrics?.conversionRate ?? 21.4;
+  const totalRevenue = metrics?.totalRevenue ?? 0;
+  const totalLeads = metrics?.totalLeads ?? 0;
+  const conversionRate = metrics?.conversionRate ?? 0;
   const connectedIntegrations = metrics?.connectedIntegrations ?? 0;
-  const revenueData = STATIC_REVENUE;
-  const funnelStages = funnel ?? STATIC_FUNNEL;
+  const totalIntegrations = metrics?.totalIntegrations ?? 0;
+
+  if (error) {
+    return (
+      <div className="space-y-6 max-w-7xl mx-auto">
+        <div className="card border-red-500/20 bg-red-500/5">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="text-red-400 shrink-0 mt-0.5" size={20} />
+            <div className="flex-1">
+              <h3 className="font-semibold text-white mb-1">Error Loading Dashboard</h3>
+              <p className="text-sm text-gray-300 mb-3">{error}</p>
+              <button onClick={fetchData} className="btn-secondary text-sm">
+                <RefreshCw size={14} /> Try Again
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -96,22 +96,14 @@ export default function Dashboard() {
           <h2 className="text-2xl font-bold text-white">Revenue Intelligence Platform</h2>
           <p className="text-gray-400 mt-0.5">AI-powered insights for your clinic's growth</p>
         </div>
-        <div className="flex items-center gap-3">
-          {usingLiveData && (
-            <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              Live Data
-            </span>
-          )}
-          <button
-            onClick={fetchData}
-            disabled={loadingMetrics}
-            className="btn-secondary flex items-center gap-2 text-sm"
-          >
-            {loadingMetrics ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-            Refresh
-          </button>
-        </div>
+        <button
+          onClick={fetchData}
+          disabled={loadingMetrics}
+          className="btn-secondary flex items-center gap-2 text-sm"
+        >
+          {loadingMetrics ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+          Refresh
+        </button>
       </div>
 
       {/* Metric Cards */}
@@ -120,16 +112,14 @@ export default function Dashboard() {
           title="Total Revenue"
           value={totalRevenue}
           prefix="$"
-          change={12.4}
-          changeLabel="vs last month"
+          change={null}
           icon={DollarSign}
           color="brand"
         />
         <MetricCard
           title="New Leads"
           value={totalLeads}
-          change={8.7}
-          changeLabel="vs last month"
+          change={null}
           icon={Users}
           color="emerald"
         />
@@ -137,15 +127,14 @@ export default function Dashboard() {
           title="Conversion Rate"
           value={typeof conversionRate === 'number' ? conversionRate.toFixed(1) : conversionRate}
           suffix="%"
-          change={3.2}
-          changeLabel="vs last month"
+          change={null}
           icon={TrendingUp}
           color="violet"
         />
         <MetricCard
           title="Connected Integrations"
-          value={usingLiveData ? connectedIntegrations : 0}
-          suffix={` / ${metrics?.totalIntegrations ?? 8}`}
+          value={connectedIntegrations}
+          suffix={` / ${totalIntegrations}`}
           change={null}
           changeLabel="services active"
           icon={Ticket}
@@ -160,36 +149,53 @@ export default function Dashboard() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h3 className="font-semibold text-white">Revenue Trend</h3>
-              <p className="text-xs text-gray-500 mt-0.5">6-month performance overview</p>
+              <p className="text-xs text-gray-500 mt-0.5">Historical performance data</p>
             </div>
-            <span className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-1 rounded-full font-medium">
-              ↑ 12.4% MoM
-            </span>
           </div>
-          <ResponsiveContainer width="100%" height={240}>
-            <AreaChart data={revenueData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-              <defs>
-                <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-              <XAxis dataKey="month" stroke="#6b7280" tick={{ fill: '#9ca3af', fontSize: 12 }} />
-              <YAxis stroke="#6b7280" tick={{ fill: '#9ca3af', fontSize: 12 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
-              <Tooltip content={<CustomTooltip />} />
-              <Area type="monotone" dataKey="revenue" stroke="#0ea5e9" strokeWidth={2} fill="url(#revenueGrad)" dot={{ fill: '#0ea5e9', r: 4 }} activeDot={{ r: 6 }} />
-            </AreaChart>
-          </ResponsiveContainer>
+          {revenueData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={240}>
+              <AreaChart data={revenueData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                <XAxis dataKey="month" stroke="#6b7280" tick={{ fill: '#9ca3af', fontSize: 12 }} />
+                <YAxis stroke="#6b7280" tick={{ fill: '#9ca3af', fontSize: 12 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+                <Tooltip content={<CustomTooltip />} />
+                <Area type="monotone" dataKey="revenue" stroke="#0ea5e9" strokeWidth={2} fill="url(#revenueGrad)" dot={{ fill: '#0ea5e9', r: 4 }} activeDot={{ r: 6 }} />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-60 flex items-center justify-center text-gray-500">
+              <div className="text-center">
+                <AlertCircle size={32} className="mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No revenue trend data available</p>
+                <p className="text-xs mt-1">Add leads with revenue to see the trend</p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Funnel */}
         <div className="card">
           <div className="mb-5">
             <h3 className="font-semibold text-white">Revenue Funnel</h3>
-            <p className="text-xs text-gray-500 mt-0.5">Meta Ads → Revenue conversion</p>
+            <p className="text-xs text-gray-500 mt-0.5">Lead → Revenue conversion</p>
           </div>
-          <FunnelChart stages={funnelStages} />
+          {funnel.length > 0 ? (
+            <FunnelChart stages={funnel} />
+          ) : (
+            <div className="h-60 flex items-center justify-center text-gray-500">
+              <div className="text-center">
+                <AlertCircle size={32} className="mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No funnel data available</p>
+                <p className="text-xs mt-1">Add leads to see the funnel</p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -203,23 +209,33 @@ export default function Dashboard() {
             <h3 className="font-semibold text-white">AI Optimization Suggestions</h3>
             <p className="text-xs text-gray-500">Generated from your campaign data</p>
           </div>
-          <span className="ml-auto text-xs bg-brand-500/10 text-brand-400 border border-brand-500/20 px-2.5 py-1 rounded-full font-medium">
-            {aiSuggestions.length} new
-          </span>
+          {aiSuggestions.length > 0 && (
+            <span className="ml-auto text-xs bg-brand-500/10 text-brand-400 border border-brand-500/20 px-2.5 py-1 rounded-full font-medium">
+              {aiSuggestions.length} new
+            </span>
+          )}
         </div>
-        <div className="space-y-3">
-          {aiSuggestions.map((s, i) => (
-            <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-dark-800/60 border border-dark-600/50">
-              <span className="w-6 h-6 rounded-full bg-brand-500/20 text-brand-400 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
-                {i + 1}
-              </span>
-              <p className="text-sm text-gray-300">{s}</p>
-              <button className="ml-auto shrink-0 text-xs text-brand-400 hover:text-brand-300 font-medium whitespace-nowrap">
-                Apply →
-              </button>
-            </div>
-          ))}
-        </div>
+        {aiSuggestions.length > 0 ? (
+          <div className="space-y-3">
+            {aiSuggestions.map((s, i) => (
+              <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-dark-800/60 border border-dark-600/50">
+                <span className="w-6 h-6 rounded-full bg-brand-500/20 text-brand-400 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
+                  {i + 1}
+                </span>
+                <p className="text-sm text-gray-300">{s}</p>
+                <button className="ml-auto shrink-0 text-xs text-brand-400 hover:text-brand-300 font-medium whitespace-nowrap">
+                  Apply →
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-gray-500">
+            <Sparkles size={32} className="mx-auto mb-2 opacity-50" />
+            <p className="text-sm">No AI suggestions yet</p>
+            <p className="text-xs mt-1">Connect integrations and add campaign data to get AI-powered insights</p>
+          </div>
+        )}
       </div>
     </div>
   );

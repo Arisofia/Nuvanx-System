@@ -1,20 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { MessageSquare, Calendar, FileText, Search, UserPlus, Loader2 } from 'lucide-react';
+import { MessageSquare, Calendar, FileText, Search, UserPlus, Loader2, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../config/api';
-
-const MOCK_LEADS = [
-  { id: 1, name: 'Sofia Martínez', source: 'Meta Ads', status: 'New', lastContact: '2025-01-14', value: 450, email: 'sofia@email.com', phone: '+1 555 0101' },
-  { id: 2, name: 'Carlos Herrera', source: 'Referral', status: 'Contacted', lastContact: '2025-01-13', value: 780, email: 'carlos@email.com', phone: '+1 555 0102' },
-  { id: 3, name: 'Valentina Cruz', source: 'Google Ads', status: 'Appointment', lastContact: '2025-01-12', value: 1200, email: 'vale@email.com', phone: '+1 555 0103' },
-  { id: 4, name: 'Miguel Torres', source: 'Meta Ads', status: 'Converted', lastContact: '2025-01-11', value: 340, email: 'miguel@email.com', phone: '+1 555 0104' },
-  { id: 5, name: 'Isabella Reyes', source: 'Organic', status: 'New', lastContact: '2025-01-14', value: 560, email: 'isa@email.com', phone: '+1 555 0105' },
-  { id: 6, name: 'Diego Morales', source: 'Meta Ads', status: 'Contacted', lastContact: '2025-01-10', value: 920, email: 'diego@email.com', phone: '+1 555 0106' },
-  { id: 7, name: 'Camila López', source: 'Referral', status: 'Appointment', lastContact: '2025-01-13', value: 1500, email: 'cami@email.com', phone: '+1 555 0107' },
-  { id: 8, name: 'Andrés García', source: 'Google Ads', status: 'New', lastContact: '2025-01-14', value: 380, email: 'andres@email.com', phone: '+1 555 0108' },
-  { id: 9, name: 'Luciana Flores', source: 'Meta Ads', status: 'Converted', lastContact: '2025-01-09', value: 2200, email: 'luci@email.com', phone: '+1 555 0109' },
-  { id: 10, name: 'Roberto Jiménez', source: 'Organic', status: 'Contacted', lastContact: '2025-01-12', value: 670, email: 'roberto@email.com', phone: '+1 555 0110' },
-];
 
 // Map backend stage names to display status labels
 const STAGE_TO_STATUS = {
@@ -53,23 +40,22 @@ const sourceColors = {
 };
 
 export default function CRM() {
-  const [leads, setLeads] = useState(MOCK_LEADS);
-  const [usingLiveData, setUsingLiveData] = useState(false);
+  const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [filter, setFilter] = useState('All');
   const [search, setSearch] = useState('');
 
   const fetchLeads = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await api.get('/api/leads');
       const serverLeads = res.data?.leads || [];
-      if (serverLeads.length > 0) {
-        setLeads(serverLeads.map(normalizeLead));
-        setUsingLiveData(true);
-      }
-    } catch {
-      // Backend unavailable — keep mock data
+      setLeads(serverLeads.map(normalizeLead));
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to load leads');
+      console.error('CRM fetch error:', err);
     } finally {
       setLoading(false);
     }
@@ -90,12 +76,15 @@ export default function CRM() {
 
   function handleWhatsApp(lead) {
     toast.success(`Opening WhatsApp for ${lead.name}`);
+    // TODO: Integrate with real WhatsApp API
   }
   function handleCalendar(lead) {
     toast.success(`Scheduling appointment for ${lead.name}`);
+    // TODO: Integrate with Google Calendar API
   }
   function handleNotes(lead) {
     toast(`Notes for ${lead.name}`, { icon: '📝' });
+    // TODO: Implement notes functionality
   }
 
   const counts = statuses.slice(1).reduce((acc, s) => {
@@ -103,19 +92,30 @@ export default function CRM() {
     return acc;
   }, {});
 
+  if (error) {
+    return (
+      <div className="space-y-6 max-w-7xl mx-auto">
+        <div className="card border-red-500/20 bg-red-500/5">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="text-red-400 shrink-0 mt-0.5" size={20} />
+            <div className="flex-1">
+              <h3 className="font-semibold text-white mb-1">Error Loading CRM</h3>
+              <p className="text-sm text-gray-300 mb-3">{error}</p>
+              <button onClick={fetchLeads} className="btn-secondary text-sm">
+                Try Again
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-2xl font-bold text-white">CRM & Lead Pipeline</h2>
-            {usingLiveData && (
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                Live Data
-              </span>
-            )}
-          </div>
+          <h2 className="text-2xl font-bold text-white">CRM & Lead Pipeline</h2>
           <p className="text-gray-400 mt-0.5">
             {loading ? 'Loading…' : `${leads.length} total leads tracked`}
           </p>
@@ -247,8 +247,16 @@ export default function CRM() {
               })}
             </tbody>
           </table>
-          {filtered.length === 0 && (
-            <div className="text-center py-12 text-gray-500">No leads found matching your filters.</div>
+          {filtered.length === 0 && !loading && (
+            <div className="text-center py-12 text-gray-500">
+              <UserPlus size={48} className="mx-auto mb-3 opacity-30" />
+              <p className="text-sm font-medium mb-1">
+                {leads.length === 0 ? 'No leads yet' : 'No leads found matching your filters'}
+              </p>
+              <p className="text-xs">
+                {leads.length === 0 ? 'Add your first lead to get started' : 'Try adjusting your filters'}
+              </p>
+            </div>
           )}
         </div>
       </div>
