@@ -95,7 +95,9 @@ export function subscribeIntegrationStatus(userId, onUpdate) {
         filter: `user_id=eq.${userId}`,
       },
       (payload) => {
+        // DELETE events have payload.new === null; skip them (or handle separately if needed)
         const row = payload.new;
+        if (!row) return;
         onUpdate({
           service: row.service,
           status: row.status,

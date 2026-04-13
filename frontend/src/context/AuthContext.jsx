@@ -63,6 +63,11 @@ export function AuthProvider({ children }) {
         wrapped.response = { data: { message: error.message } };
         throw wrapped;
       }
+      if (!data.session) {
+        const wrapped = new Error('Email confirmation required. Please check your inbox.');
+        wrapped.response = { data: { message: wrapped.message } };
+        throw wrapped;
+      }
       const shaped = toUserShape(data.user);
       setToken(data.session.access_token);
       setUser(shaped);
