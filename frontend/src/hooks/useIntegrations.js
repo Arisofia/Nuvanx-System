@@ -20,7 +20,15 @@ export function useIntegrations() {
     setIntegrations(prev =>
       prev.map(item => {
         const match = serverData.find(s => s.service === item.service);
-        return match ? { ...item, ...match } : item;
+        if (!match) return item;
+        // Normalise backend field names: lastError → error, keep lastSync consistent
+        const { lastError, lastSync, ...rest } = match;
+        return {
+          ...item,
+          ...rest,
+          ...(lastSync !== undefined && { lastSync }),
+          error: lastError !== undefined ? lastError : (rest.error ?? item.error),
+        };
       })
     );
   }, []);

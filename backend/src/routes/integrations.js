@@ -181,14 +181,15 @@ router.post(
   handleValidationErrors,
   async (req, res, next) => {
     const { service } = req.params;
-    const { token, metadata = {} } = req.body;
+    const { token, apiKey, metadata = {} } = req.body;
+    const credential = token || apiKey;
 
-    if (!token) {
+    if (!credential) {
       return res.status(400).json({ success: false, message: 'token is required' });
     }
 
     try {
-      await credentialModel.save(req.user.id, service, token);
+      await credentialModel.save(req.user.id, service, credential);
       await integrationModel.upsert(req.user.id, service, {
         status: 'connected',
         lastSync: new Date().toISOString(),

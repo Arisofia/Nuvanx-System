@@ -1,7 +1,6 @@
 import { Shield } from 'lucide-react';
 import IntegrationCard from '../components/IntegrationCard';
 import { useIntegrations } from '../hooks/useIntegrations';
-import toast from 'react-hot-toast';
 
 export default function Integrations() {
   const { integrations, connectIntegration, testIntegration } = useIntegrations();

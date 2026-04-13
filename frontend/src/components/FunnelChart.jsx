@@ -1,5 +1,5 @@
 export default function FunnelChart({ stages }) {
-  const maxValue = stages[0]?.value || 1;
+  const maxValue = Math.max(...stages.map(s => s.value), 1);
 
   const colors = [
     { bg: 'bg-brand-500', text: 'text-brand-400', border: 'border-brand-500/30' },
@@ -14,7 +14,7 @@ export default function FunnelChart({ stages }) {
       {stages.map((stage, index) => {
         const width = Math.max((stage.value / maxValue) * 100, 8);
         const color = colors[index % colors.length];
-        const conversionRate = index > 0
+        const conversionRate = index > 0 && stages[index - 1].value > 0
           ? ((stage.value / stages[index - 1].value) * 100).toFixed(1)
           : null;
 
