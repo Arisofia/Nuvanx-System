@@ -222,7 +222,7 @@ VITE_API_URL=http://localhost:3001
 
 ```bash
 cd backend
-npm test          # Run all 20 tests
+npm test          # Run all 22 tests
 npm test -- --watch   # Watch mode
 ```
 
@@ -232,6 +232,47 @@ Test coverage:
 - ✅ Integration connectors (mocked HTTP)
 - ✅ Auth middleware
 - ✅ Dashboard metrics endpoint
+
+---
+
+## Design-to-Code Validation (Figma)
+
+This repository includes a **Figma ↔ GitHub validation system** to maintain design-code consistency.
+
+**Current Status:** Phase 0 (Foundation) — ⚠️ Warn-only mode
+
+### Quick Start
+
+```bash
+# Copy example mapping file
+cp docs/figma-component-map.example.json docs/figma-component-map.json
+
+# Populate with your Figma file key and node IDs (see FIGMA_SETUP.md)
+# Then run validation:
+node scripts/validate-figma-mapping.js
+```
+
+**CI Integration:**
+- ✅ Runs automatically on every PR
+- 💬 Posts validation report as PR comment
+- ⚠️ Currently in warn-only mode (does not block merges)
+
+**Documentation:**
+- 📖 [Setup Guide](docs/FIGMA_SETUP.md) — Quick start + workflows
+- 📋 [Validation Spec](docs/figma-validation-spec.md) — Full technical spec
+- 🔍 [Audit Report](docs/figma-validation-audit.md) — Initial audit findings
+
+**What It Validates:**
+- ✅ All screens/components mapped to Figma nodes
+- ✅ Code files exist at specified paths
+- ✅ Routes match `App.jsx` definitions
+- ✅ No duplicate component/screen names
+- ✅ Mapping file freshness (staleness warnings)
+
+**Future Phases:**
+- 🔮 Phase 1: Figma API integration (strict mode)
+- 🔮 Phase 2: Design token sync automation
+- 🔮 Phase 3: Visual regression testing
 
 ---
 
