@@ -262,7 +262,19 @@ async function validateFigmaAPI(mapping) {
     });
   }
 
-  // ── 1. Verify the file is accessible ─────────────────────────────────────
+  // ── 1. Verify the token is valid via /v1/me ──────────────────────────────
+  log('Verifying Figma token via /v1/me …', 'info');
+  try {
+    const me = await figmaGet('/v1/me');
+    passed++;
+    log(`Token valid – authenticated as: ${me.handle || me.email || 'unknown'}`, 'pass');
+  } catch (err) {
+    errors++;
+    log(`Figma token validation failed: ${err.message}`, 'error');
+    return;
+  }
+
+  // ── 2. Verify the file is accessible ─────────────────────────────────────
   log(`Fetching Figma file ${fileKey} …`, 'info');
   let fileData;
   try {
@@ -270,9 +282,17 @@ async function validateFigmaAPI(mapping) {
     passed++;
     log(`Figma file accessible: "${fileData.name}"`, 'pass');
   } catch (err) {
-    errors++;
-    log(`Cannot access Figma file: ${err.message}`, 'error');
-    log('Note: Figma Make files may require special permissions or a team token', 'info');
+    // Figma Make files return 400 "File type not supported by this endpoint".
+    // This is expected – treat it as a warning, not a hard error.
+    if (err.message.includes('400') && err.message.includes('not supported')) {
+      warnings++;
+      log('This is a Figma Make file – /v1/files endpoint is not supported for Make files.', 'warn');
+      log('Node ID validation via API is not available for Figma Make projects.', 'warn');
+      log('To get node IDs: open the file in Figma Make, inspect each frame and copy the node-id from the URL.', 'info');
+    } else {
+      errors++;
+      log(`Cannot access Figma file: ${err.message}`, 'error');
+    }
     return;
   }
 
