@@ -1,0 +1,222 @@
+'use strict';
+
+const { v4: uuidv4 } = require('uuid');
+const { pool, isAvailable } = require('../db');
+const logger = require('../utils/logger');
+
+const STAGES = ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'];
+
+// ---------------------------------------------------------------------------
+// In-memory fallback store
+// ---------------------------------------------------------------------------
+const memStore = new Map();
+
+// ---------------------------------------------------------------------------
+// Database helpers — map snake_case DB rows to camelCase app objects
+// ---------------------------------------------------------------------------
+function _rowToLead(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    name: row.name || '',
+    email: row.email || '',
+    phone: row.phone || '',
+    source: row.source || 'manual',
+    stage: row.stage || 'lead',
+    revenue: parseFloat(row.revenue) || 0,
+    notes: row.notes || '',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Public API (all async)
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a new lead.
+ * @returns {object} The created lead.
+ */
+async function create(userId, data) {
+  const stage = STAGES.includes(data.stage) ? data.stage : 'lead';
+
+  if (isAvailable()) {
+    try {
+      const { rows } = await pool.query(
+        `INSERT INTO leads (user_id, name, email, phone, source, stage, revenue, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING *`,
+        [
+          userId,
+          data.name || '',
+          data.email || '',
+          data.phone || '',
+          data.source || 'manual',
+          stage,
+          parseFloat(data.revenue) || 0,
+          data.notes || '',
+        ],
+      );
+      logger.debug('Lead created in DB', { userId, leadId: rows[0].id });
+      return _rowToLead(rows[0]);
+    } catch (err) {
+      logger.warn('DB lead create failed, falling back to memory', { error: err.message });
+    }
+  }
+
+  // In-memory fallback
+  const id = uuidv4();
+  const now = new Date().toISOString();
+  const lead = {
+    id,
+    userId,
+    name: data.name || '',
+    email: data.email || '',
+    phone: data.phone || '',
+    source: data.source || 'manual',
+    stage,
+    revenue: parseFloat(data.revenue) || 0,
+    notes: data.notes || '',
+    createdAt: now,
+    updatedAt: now,
+  };
+  memStore.set(id, lead);
+  return lead;
+}
+
+/**
+ * Return all leads for a user, optionally filtered by stage/source.
+ * @returns {object[]} Sorted newest-first.
+ */
+async function findByUser(userId, filters = {}) {
+  if (isAvailable()) {
+    try {
+      const conditions = ['user_id = $1'];
+      const params = [userId];
+      if (filters.stage) { conditions.push(`stage = $${params.length + 1}`); params.push(filters.stage); }
+      if (filters.source) { conditions.push(`source = $${params.length + 1}`); params.push(filters.source); }
+      const { rows } = await pool.query(
+        `SELECT * FROM leads WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC`,
+        params,
+      );
+      return rows.map(_rowToLead);
+    } catch (err) {
+      logger.warn('DB lead findByUser failed, falling back to memory', { error: err.message });
+    }
+  }
+
+  // In-memory fallback
+  const results = [];
+  for (const lead of memStore.values()) {
+    if (lead.userId !== userId) continue;
+    if (filters.stage && lead.stage !== filters.stage) continue;
+    if (filters.source && lead.source !== filters.source) continue;
+    results.push({ ...lead });
+  }
+  return results.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+/**
+ * Find a single lead by ID, scoped to the user.
+ * @returns {object|null}
+ */
+async function findById(id, userId) {
+  if (isAvailable()) {
+    try {
+      const { rows } = await pool.query(
+        'SELECT * FROM leads WHERE id = $1 AND user_id = $2',
+        [id, userId],
+      );
+      return rows[0] ? _rowToLead(rows[0]) : null;
+    } catch (err) {
+      logger.warn('DB lead findById failed, falling back to memory', { error: err.message });
+    }
+  }
+
+  // In-memory fallback
+  const lead = memStore.get(id);
+  if (!lead || lead.userId !== userId) return null;
+  return { ...lead };
+}
+
+/**
+ * Update a lead.
+ * @returns {object|null} Updated lead, or null if not found.
+ */
+async function update(id, userId, data) {
+  if (isAvailable()) {
+    try {
+      const stage = data.stage && STAGES.includes(data.stage) ? data.stage : undefined;
+      const { rows } = await pool.query(
+        `UPDATE leads
+         SET
+           name    = COALESCE($3, name),
+           email   = COALESCE($4, email),
+           phone   = COALESCE($5, phone),
+           source  = COALESCE($6, source),
+           stage   = COALESCE($7, stage),
+           revenue = COALESCE($8, revenue),
+           notes   = COALESCE($9, notes)
+         WHERE id = $1 AND user_id = $2
+         RETURNING *`,
+        [
+          id,
+          userId,
+          data.name ?? null,
+          data.email ?? null,
+          data.phone ?? null,
+          data.source ?? null,
+          stage ?? null,
+          data.revenue != null ? parseFloat(data.revenue) : null,
+          data.notes ?? null,
+        ],
+      );
+      if (!rows[0]) return null;
+      logger.debug('Lead updated in DB', { userId, leadId: id });
+      return _rowToLead(rows[0]);
+    } catch (err) {
+      logger.warn('DB lead update failed, falling back to memory', { error: err.message });
+    }
+  }
+
+  // In-memory fallback
+  const lead = memStore.get(id);
+  if (!lead || lead.userId !== userId) return null;
+  const updated = {
+    ...lead,
+    ...data,
+    id,
+    userId,
+    stage: data.stage && STAGES.includes(data.stage) ? data.stage : lead.stage,
+    updatedAt: new Date().toISOString(),
+  };
+  memStore.set(id, updated);
+  return updated;
+}
+
+/**
+ * Delete a lead.
+ * @returns {boolean}
+ */
+async function remove(id, userId) {
+  if (isAvailable()) {
+    try {
+      const { rowCount } = await pool.query(
+        'DELETE FROM leads WHERE id = $1 AND user_id = $2',
+        [id, userId],
+      );
+      return rowCount > 0;
+    } catch (err) {
+      logger.warn('DB lead remove failed, falling back to memory', { error: err.message });
+    }
+  }
+
+  // In-memory fallback
+  const lead = memStore.get(id);
+  if (!lead || lead.userId !== userId) return false;
+  memStore.delete(id);
+  return true;
+}
+
+module.exports = { create, findByUser, findById, update, remove, STAGES };
