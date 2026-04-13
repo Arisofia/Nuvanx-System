@@ -62,6 +62,7 @@ export default function LiveDashboard() {
       countdownRef.current = next;
       setCountdown(next);
       if (next <= 0) {
+        countdownRef.current = REFRESH_INTERVAL; // prevent re-triggering while refresh is in flight
         fetchMetrics();
       }
     }, 1000);

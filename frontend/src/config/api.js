@@ -17,8 +17,11 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('nuvanx_token');
-      window.location.href = '/login';
+      const isAuthEndpoint = error.config?.url?.includes('/api/auth/');
+      if (!isAuthEndpoint && window.location.pathname !== '/login') {
+        localStorage.removeItem('nuvanx_token');
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }

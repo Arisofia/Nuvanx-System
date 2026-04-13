@@ -10,7 +10,7 @@ const whatsappService = require('../services/whatsapp');
 const githubService = require('../services/github');
 const hubspotService = require('../services/hubspot');
 const { config } = require('../config/env');
-const { serviceParamRule, handleValidationErrors } = require('../utils/validators');
+const { serviceParamRule, handleValidationErrors, connectRules } = require('../utils/validators');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -66,11 +66,11 @@ router.get('/validate-all', async (req, res, next) => {
     { service: 'hubspot', test: (k) => hubspotService.testConnection(k) },
     {
       service: 'openai',
-      test: () => Promise.resolve({ connected: true, message: 'Credential stored and accessible' }),
+      test: () => Promise.resolve({ connected: false, stored: true, message: 'Credential present — not validated in bulk check' }),
     },
     {
       service: 'gemini',
-      test: () => Promise.resolve({ connected: true, message: 'Credential stored and accessible' }),
+      test: () => Promise.resolve({ connected: false, stored: true, message: 'Credential present — not validated in bulk check' }),
     },
   ];
 
@@ -83,7 +83,7 @@ router.get('/validate-all', async (req, res, next) => {
 
       try {
         const result = await test(credential);
-        const status = result.connected ? 'connected' : 'error';
+        const status = result.connected ? 'connected' : result.stored ? 'stored' : 'error';
         await integrationModel.upsert(userId, service, {
           status,
           lastSync: result.connected ? new Date().toISOString() : undefined,
@@ -207,6 +207,7 @@ router.post(
 router.post(
   '/:service/connect',
   serviceParamRule,
+  connectRules,
   handleValidationErrors,
   async (req, res, next) => {
     const { service } = req.params;
