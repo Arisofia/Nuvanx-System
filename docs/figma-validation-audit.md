@@ -21,7 +21,7 @@
 The following were added to establish the Figma ↔ GitHub validation foundation:
 
 - **`docs/figma-component-map.json`** — formal mapping of 7 screens + 6 components to Figma node IDs and source files
-- **`docs/figma-component-map.example.json`** — example/template mapping for onboarding
+- **`docs/figma-component-map.json`** — production mapping for onboarding and validation
 - **`docs/figma-validation-spec.md`** — specification for the validation system
 - **`scripts/validate-figma-mapping.js`** — CLI tool: checks JSON schema, file existence, route matching; exits 0 on pass/warn, non-zero on error
 - **`.github/workflows/ci.yml`** (figma-validate job) — warn-only CI job that posts a Figma validation report as a PR comment
@@ -161,7 +161,7 @@ Based on the comment request mentioning "Figma is connected", we hypothesize:
 
 **Deliverables:**
 1. ✅ `docs/figma-validation-audit.md` (this file)
-2. `docs/figma-component-map.example.json` — Mapping schema
+2. `docs/figma-component-map.json` — Production mapping schema
 3. `docs/figma-validation-spec.md` — Validation rules/spec
 4. `scripts/validate-figma-mapping.js` — CLI validation tool
 5. Update CI to run validation (warn-only mode initially)
@@ -208,7 +208,7 @@ Based on the comment request mentioning "Figma is connected", we hypothesize:
 ## Next Steps
 
 1. ✅ Complete this audit
-2. ⏳ Create `figma-component-map.example.json` schema
+2. ✅ Define `figma-component-map.json` production schema
 3. ⏳ Write `figma-validation-spec.md`
 4. ⏳ Implement `scripts/validate-figma-mapping.js`
 5. ⏳ Update CI workflow (warn-only mode)

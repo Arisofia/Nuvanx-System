@@ -1,0 +1,16 @@
+{
+  "name": "nuvanx-system",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Unified workspace commands for Nuvanx System",
+  "scripts": {
+    "install:all": "npm --prefix backend install; npm --prefix frontend install",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "start:backend": "npm --prefix backend run start",
+    "build:frontend": "npm --prefix frontend run build",
+    "test:backend": "npm --prefix backend run test",
+    "lint:frontend": "npm --prefix frontend run lint",
+    "validate:figma": "node scripts/validate-figma-mapping.js"
+  }
+}

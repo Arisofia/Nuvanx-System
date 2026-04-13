@@ -6,10 +6,10 @@ This guide explains how to set up and use the Figma ↔ GitHub validation system
 
 ## Quick Start
 
-### 1. Copy the Example Mapping File
+### 1. Prepare the Production Mapping File
 
 ```bash
-cp docs/figma-component-map.example.json docs/figma-component-map.json
+# Ensure docs/figma-component-map.json exists and contains real values
 ```
 
 ### 2. Populate Figma File Key
@@ -160,7 +160,6 @@ The validation script runs automatically on every pull request via GitHub Action
 docs/
 ├── figma-validation-audit.md         # Initial audit findings
 ├── figma-validation-spec.md          # Full specification
-├── figma-component-map.example.json  # Template/schema
 └── figma-component-map.json          # Active mapping (gitignored if contains secrets)
 
 scripts/
@@ -201,7 +200,7 @@ FIGMA_ACCESS_TOKEN=<token> node scripts/validate-figma-mapping.js --api-check
 
 **Solution:**
 ```bash
-cp docs/figma-component-map.example.json docs/figma-component-map.json
+# Create docs/figma-component-map.json with real values
 ```
 
 ### "Invalid figmaNodeId format"
