@@ -185,7 +185,7 @@ router.post(
     const credential = token || apiKey;
 
     if (!credential) {
-      return res.status(400).json({ success: false, message: 'token is required' });
+      return res.status(400).json({ success: false, message: 'token or apiKey is required' });
     }
 
     try {

@@ -27,7 +27,7 @@ export function useIntegrations() {
           ...item,
           ...rest,
           ...(lastSync !== undefined && { lastSync }),
-          error: lastError !== undefined ? lastError : (rest.error ?? item.error),
+          error: lastError ?? rest.error ?? item.error,
         };
       })
     );
