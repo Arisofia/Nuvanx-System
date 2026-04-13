@@ -210,7 +210,9 @@ export default function CRM() {
                       </span>
                     </td>
                     <td className="px-4 py-3.5 text-sm text-gray-400">
-                      {new Date(lead.lastContact).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      {lead.lastContact
+                        ? new Date(lead.lastContact).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                        : '—'}
                     </td>
                     <td className="px-4 py-3.5">
                       <span className="text-sm font-semibold text-white">${lead.value.toLocaleString()}</span>

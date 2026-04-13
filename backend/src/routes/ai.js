@@ -42,7 +42,7 @@ async function resolveAiCredential(userId, provider) {
 router.post('/generate', aiGenerateRules, handleValidationErrors, async (req, res, next) => {
   try {
     const { prompt, model, provider = 'openai' } = req.body;
-    const credential = resolveAiCredential(req.user.id, provider);
+    const credential = await resolveAiCredential(req.user.id, provider);
 
     if (!credential) {
       return res.status(404).json({
@@ -70,7 +70,7 @@ router.post(
   async (req, res, next) => {
     try {
       const { campaignData, provider = 'openai' } = req.body;
-      const credential = resolveAiCredential(req.user.id, provider);
+      const credential = await resolveAiCredential(req.user.id, provider);
 
       if (!credential) {
         return res.status(404).json({
