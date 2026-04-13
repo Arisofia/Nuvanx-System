@@ -3,7 +3,7 @@
 const axios = require('axios');
 const logger = require('../utils/logger');
 
-const WA_BASE = 'https://graph.facebook.com/v18.0';
+const WA_BASE = 'https://graph.facebook.com/v21.0';
 
 /**
  * Test the WhatsApp Business Cloud API connection.

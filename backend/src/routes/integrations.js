@@ -31,6 +31,8 @@ async function resolveCredential(userId, service) {
     'google-calendar': config.googleApiKey,
     'google-gmail': config.googleApiKey,
     hubspot: config.hubspotAccessToken || config.hubspotApiKey,
+    meta: config.metaAccessToken,
+    whatsapp: config.whatsappAccessToken,
   };
   return envDefaults[service] || null;
 }

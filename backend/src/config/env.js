@@ -37,6 +37,14 @@ const config = {
   hubspotApiKey: process.env.HUBSPOT_API_KEY,
   // Note: Codespaces secret name has a typo (HUSPOT_PORTAL_ID); support both spellings
   hubspotPortalId: process.env.HUBSPOT_PORTAL_ID || process.env.HUSPOT_PORTAL_ID,
+
+  // Meta (Facebook) Marketing API
+  metaAccessToken: process.env.META_ACCESS_TOKEN,
+  metaAdAccountId: process.env.META_AD_ACCOUNT_ID,
+
+  // WhatsApp Business Cloud API
+  whatsappAccessToken: process.env.WHATSAPP_ACCESS_TOKEN,
+  whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
 };
 
 module.exports = { config, validate };
