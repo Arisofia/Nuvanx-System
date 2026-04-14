@@ -7,16 +7,12 @@ const HUBSPOT_BASE = 'https://api.hubapi.com';
 
 /**
  * Build Axios request config for HubSpot.
- * Supports both Private App access tokens (Bearer) and legacy API keys (hapikey).
- * @param {string} credential  Access token (starts with "pat-") or legacy API key
+ * Uses Bearer token authentication (Private App access tokens).
+ * Legacy hapikey auth was deprecated by HubSpot on 2022-11-30.
+ * @param {string} credential  Private App access token
  */
 function _authConfig(credential) {
-  if (credential.startsWith('pat-') || credential.length > 40) {
-    // Private App access token
-    return { headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' } };
-  }
-  // Legacy hapikey (deprecated but still supported)
-  return { params: { hapikey: credential }, headers: { 'Content-Type': 'application/json' } };
+  return { headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' } };
 }
 
 /**
