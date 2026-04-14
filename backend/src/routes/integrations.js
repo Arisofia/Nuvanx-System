@@ -19,6 +19,10 @@ router.use(authenticate);
 /**
  * Resolve a credential for the given service (async).
  * Priority: per-user vault → server-level env var defaults.
+ *
+ * WARNING: In production with multiple users, falling back to a shared env var
+ * credential means all users share the same API key. Set per-user credentials
+ * via the vault to avoid unintended cost attribution or access issues.
  */
 async function resolveCredential(userId, service) {
   const stored = await credentialModel.getDecryptedKey(userId, service);
@@ -34,7 +38,12 @@ async function resolveCredential(userId, service) {
     meta: config.metaAccessToken,
     whatsapp: config.whatsappAccessToken,
   };
-  return envDefaults[service] || null;
+
+  const envKey = envDefaults[service] || null;
+  if (envKey && config.nodeEnv === 'production') {
+    logger.warn('Using shared server-level env var credential in production — set per-user credentials via the vault', { userId, service });
+  }
+  return envKey;
 }
 
 /** GET /api/integrations - list all integrations with their status */
@@ -50,7 +59,7 @@ router.get('/', async (req, res, next) => {
 /**
  * GET /api/integrations/validate-all
  * Test every service that has an available credential (vault or env-var).
- * WhatsApp is skipped (requires phoneNumberId which is not available here).
+ * WhatsApp is included when WHATSAPP_PHONE_NUMBER_ID is configured.
  * Runs all tests in parallel and returns the aggregated results.
  */
 router.get('/validate-all', async (req, res, next) => {
@@ -73,6 +82,14 @@ router.get('/validate-all', async (req, res, next) => {
       test: () => Promise.resolve({ connected: true, message: 'Credential present — not validated in bulk check' }),
     },
   ];
+
+  // Include WhatsApp when a default phone number ID is configured
+  if (config.whatsappPhoneNumberId) {
+    TESTABLE.push({
+      service: 'whatsapp',
+      test: (k) => whatsappService.testConnection(k, config.whatsappPhoneNumberId),
+    });
+  }
 
   const results = await Promise.allSettled(
     TESTABLE.map(async ({ service, test }) => {

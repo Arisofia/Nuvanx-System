@@ -71,7 +71,7 @@ Nuvanx-System/
 │   │   └── utils/
 │   │       ├── logger.js       # Winston structured logging
 │   │       └── validators.js   # express-validator rules
-│   ├── tests/                  # Jest test suite (20 tests)
+│   ├── tests/                  # Jest test suite (30 tests)
 │   └── .env.example            # Required environment variables
 │
 └── frontend/                   # React/Vite SPA
@@ -217,15 +217,18 @@ VITE_API_URL=http://localhost:3001
 
 ## Supported Integrations
 
-| Service | Type | Functionality |
-|---------|------|---------------|
-| **Meta Business** | Marketing API | Campaigns, ad metrics, content creation |
-| **Google Calendar** | OAuth 2.0 | Create appointments, read agenda |
-| **Gmail** | OAuth 2.0 | Automated follow-up emails |
-| **WhatsApp Business** | Cloud API | Messaging automation, conversation tracking |
-| **GitHub** | Personal Access Token | Script versioning, campaign storage |
-| **OpenAI GPT-4** | API Key | Content generation, campaign optimization |
-| **Google Gemini** | API Key | Creative evaluation, copy optimization |
+> **Integration status:** All services support credential storage and connection testing via the Integrations page. Features marked ✅ are accessible via exposed API routes. Features marked ⚠️ are implemented in the service layer but not yet exposed via routes or frontend UI.
+
+| Service | Auth Type | Available Functionality |
+|---------|-----------|------------------------|
+| **Meta Business** | Access Token | ✅ Connection test · ✅ Ad metrics and trends (`/api/dashboard/meta-trends`) |
+| **HubSpot CRM** | Private App Token | ✅ Connection test · ✅ Pipeline trends (`/api/dashboard/hubspot-trends`) |
+| **OpenAI GPT-4** | API Key | ✅ Content generation · ✅ Campaign analysis (`/api/ai/*`) |
+| **Google Gemini** | API Key | ✅ Content generation · ✅ Campaign analysis (`/api/ai/*`) |
+| **WhatsApp Business** | Cloud API Token | ✅ Connection test · ✅ Phone number discovery · ⚠️ Message send (service only, no route yet) |
+| **Google Calendar** | OAuth2 Token | ✅ Connection test · ⚠️ Create/list events (service only, no route yet) |
+| **Gmail** | OAuth2 Token | ✅ Connection test · ⚠️ Send email (service only, no route yet) |
+| **GitHub** | Personal Access Token | ✅ Connection test |
 
 ---
 
@@ -233,7 +236,7 @@ VITE_API_URL=http://localhost:3001
 
 ```bash
 cd backend
-npm test          # Run all 22 tests
+npm test          # Run all 30 tests
 npm test -- --watch   # Watch mode
 ```
 
@@ -241,8 +244,8 @@ Test coverage:
 - ✅ AES-256 encrypt/decrypt roundtrip
 - ✅ Credential vault (no raw keys returned)
 - ✅ Integration connectors (mocked HTTP)
-- ✅ Auth middleware
-- ✅ Dashboard metrics endpoint
+- ✅ Auth middleware (custom JWT + Supabase JWT)
+- ✅ Credential CRUD (save, retrieve, list, delete)
 
 ---
 
@@ -286,10 +289,12 @@ node scripts/validate-figma-mapping.js
 
 ## Roadmap
 
-- [ ] PostgreSQL persistence (replace in-memory stores)
+- [ ] PostgreSQL persistence (replace in-memory user store in auth.js)
 - [ ] OAuth 2.0 flow for Google (currently token-based)
 - [ ] Meta Webhooks receiver endpoint
 - [ ] WhatsApp incoming message webhook
+- [ ] WhatsApp send route (`/api/integrations/whatsapp/send`)
+- [ ] Meta access token refresh mechanism
 - [ ] Supabase deployment option
 - [ ] Docker Compose setup
 - [ ] Automated campaign AI loop
