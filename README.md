@@ -71,7 +71,7 @@ Nuvanx-System/
 │   │   └── utils/
 │   │       ├── logger.js       # Winston structured logging
 │   │       └── validators.js   # express-validator rules
-│   ├── tests/                  # Jest test suite (20 tests)
+│   ├── tests/                  # Jest test suite (30 tests)
 │   └── .env.example            # Required environment variables
 │
 └── frontend/                   # React/Vite SPA
@@ -217,15 +217,18 @@ VITE_API_URL=http://localhost:3001
 
 ## Supported Integrations
 
-| Service | Type | Functionality |
-|---------|------|---------------|
-| **Meta Business** | Marketing API | Campaigns, ad metrics, content creation |
-| **Google Calendar** | OAuth 2.0 | Create appointments, read agenda |
-| **Gmail** | OAuth 2.0 | Automated follow-up emails |
-| **WhatsApp Business** | Cloud API | Messaging automation, conversation tracking |
-| **GitHub** | Personal Access Token | Script versioning, campaign storage |
-| **OpenAI GPT-4** | API Key | Content generation, campaign optimization |
-| **Google Gemini** | API Key | Creative evaluation, copy optimization |
+> **Integration status:** All services support credential storage and connection testing via the Integrations page. Features marked ✅ are accessible via exposed API routes. Features marked ⚠️ are implemented in the service layer but not yet exposed via routes or frontend UI.
+
+| Service | Auth Type | Available Functionality |
+|---------|-----------|------------------------|
+| **Meta Business** | Access Token | ✅ Connection test · ✅ Ad metrics and trends (`/api/dashboard/meta-trends`) |
+| **HubSpot CRM** | Private App Token | ✅ Connection test · ✅ Pipeline trends (`/api/dashboard/hubspot-trends`) |
+| **OpenAI GPT-4** | API Key | ✅ Content generation · ✅ Campaign analysis (`/api/ai/*`) |
+| **Google Gemini** | API Key | ✅ Content generation · ✅ Campaign analysis (`/api/ai/*`) |
+| **WhatsApp Business** | Cloud API Token | ✅ Connection test · ✅ Phone number discovery · ⚠️ Message send (service only, no route yet) |
+| **Google Calendar** | OAuth2 Token | ✅ Connection test · ⚠️ Create/list events (service only, no route yet) |
+| **Gmail** | OAuth2 Token | ✅ Connection test · ⚠️ Send email (service only, no route yet) |
+| **GitHub** | Personal Access Token | ✅ Connection test |
 
 ---
 

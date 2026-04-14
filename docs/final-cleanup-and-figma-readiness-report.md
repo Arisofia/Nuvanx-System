@@ -44,7 +44,7 @@
 
 | File | Purpose |
 |------|---------|
-| `scripts/validate-figma-mapping.mjs` | ESM wrapper for `validate-figma-mapping.js`; enables `node --input-type=module` and ESM import contexts |
+| `scripts/validate-figma-mapping.mjs` | ~~ESM wrapper for `validate-figma-mapping.js`~~ — **removed** (redundant; the `.js` file works in all contexts) |
 
 ### npm Scripts (root `package.json`)
 
@@ -173,7 +173,7 @@ CI runs (`.github/workflows/ci.yml`):
 - `docs/agents-and-integrations-architecture.md`
 - `docs/backend-readiness-gap.md`
 - `docs/final-cleanup-and-figma-readiness-report.md` (this file)
-- `scripts/validate-figma-mapping.mjs`
+- ~~`scripts/validate-figma-mapping.mjs`~~ — removed (redundant ESM wrapper)
 
 ### Modified
 - `README.md` — fixed test count (22→30), improved roadmap
