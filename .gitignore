@@ -35,3 +35,6 @@ Thumbs.db
 # Local agent/workflow artifacts
 .zencoder/
 .zenflow/
+
+# HubSpot config file
+hubspot.config.yml
