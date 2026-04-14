@@ -348,7 +348,7 @@ All 6 components exist and are actively used.
 - `backend/src/config/database.js` — A PostgreSQL pool config that predates `backend/src/db/index.js`. No active `require()` calls point to this path. **Verify before removing:** `grep -r "config/database" backend/src/` returns zero results — file is unused.
 
 ### Stale Test Count in README
-- README says "22 tests" but the backend actually has **30 tests** (verified by running `npm test`).
+- README says "20 tests" but the backend actually has **30 tests** (verified by running `npm test`).
 
 ### Stale Branch Reference in Audit
 - `docs/figma-validation-audit.md` says "Branch: feat/figma-validation-foundation" — this is a historical artifact from when Phase 0 was implemented. The current working branch is `copilot/full-repo-harden-design-code-align`.
