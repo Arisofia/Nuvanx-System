@@ -67,9 +67,13 @@ Success. No rows returned
 ### 2.3. Verificar que se Crearon las Tablas
 
 1. En el panel izquierdo, click en **"Table Editor"**
-2. Deberías ver 2 tablas:
+2. Deberías ver las siguientes tablas:
    - `user_integrations` — Estado de conexión de cada integración por usuario
    - `user_credentials` — Credenciales API cifradas (AES-256-GCM)
+   - `monitoring.operational_events` — Log de eventos operativos
+   - `monitoring.commands` — Cola de comandos de automatización
+   - `kpi_definitions` — Definiciones de KPIs
+   - `kpi_values` — Valores históricos de KPIs
 
 ---
 
