@@ -7,8 +7,8 @@
  * are safe for server-side operations only — never expose to the browser.
  *
  * Two clients are exported:
- *   supabaseAdmin        — main project (pljjgdtczxmrxydfuaep)
- *   supabaseFigmaAdmin   — Figma V.1 project (zpowfbeftxexzidlxndy)
+ *   supabaseAdmin        — main project (ssvvuuysgxyqvmovrlvk)
+ *   supabaseFigmaAdmin   — Figma V.1 project (ssvvuuysgxyqvmovrlvk)
  *
  * Both are null when the required env vars are not set so the rest of the
  * app can degrade gracefully.
