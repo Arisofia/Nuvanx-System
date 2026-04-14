@@ -2,13 +2,13 @@ import { useLocation } from 'react-router-dom';
 import { Bell, Search } from 'lucide-react';
 
 const pageTitles = {
-  '/dashboard': 'Executive Dashboard',
-  '/live': 'Live Metrics',
+  '/dashboard': 'Dashboard',
+  '/live': 'Operational Snapshot',
   '/crm': 'CRM & Lead Pipeline',
-  '/operativo': 'Operational Playbooks',
-  '/playbooks': 'Operational Playbooks',
-  '/integrations': 'Integration Management',
-  '/ai': 'AI Content Layer',
+  '/operativo': 'Operativo (Playbooks)',
+  '/playbooks': 'Operativo (Playbooks)',
+  '/integrations': 'Integrations',
+  '/ai': 'AI Layer',
 };
 
 export default function TopNav() {

@@ -75,16 +75,13 @@ export default function CRM() {
   });
 
   function handleWhatsApp(lead) {
-    toast.success(`Opening WhatsApp for ${lead.name}`);
-    // TODO: Integrate with real WhatsApp API
+    toast('Placeholder action: WhatsApp launch is not wired yet.', { icon: 'ℹ️' });
   }
   function handleCalendar(lead) {
-    toast.success(`Scheduling appointment for ${lead.name}`);
-    // TODO: Integrate with Google Calendar API
+    toast('Placeholder action: Calendar scheduling is not wired yet.', { icon: 'ℹ️' });
   }
   function handleNotes(lead) {
-    toast(`Notes for ${lead.name}`, { icon: '📝' });
-    // TODO: Implement notes functionality
+    toast('Placeholder action: Lead notes editor is not implemented yet.', { icon: 'ℹ️' });
   }
 
   const counts = statuses.slice(1).reduce((acc, s) => {
@@ -119,8 +116,13 @@ export default function CRM() {
           <p className="text-gray-400 mt-0.5">
             {loading ? 'Loading…' : `${leads.length} total leads tracked`}
           </p>
+          <p className="text-xs text-gray-500 mt-1">Lead list is sourced from backend endpoint /api/leads.</p>
         </div>
-        <button className="btn-primary flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => toast('Placeholder action: lead creation modal is pending implementation.', { icon: 'ℹ️' })}
+          className="btn-primary flex items-center gap-2"
+        >
           {loading ? <Loader2 size={16} className="animate-spin" /> : <UserPlus size={16} />}
           Add Lead
         </button>

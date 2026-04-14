@@ -16,8 +16,8 @@ export default function Integrations() {
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       <div>
-        <h2 className="text-2xl font-bold text-white">Integration Management</h2>
-        <p className="text-gray-400 mt-0.5">Connect your tools to power the Revenue Intelligence Platform</p>
+        <h2 className="text-2xl font-bold text-white">Integrations</h2>
+        <p className="text-gray-400 mt-0.5">Connection status comes from backend /api/integrations and credential tests.</p>
       </div>
 
       {/* Security Banner */}
