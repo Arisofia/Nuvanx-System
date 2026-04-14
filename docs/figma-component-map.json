@@ -4,9 +4,11 @@
   "repository": "Arisofia/Nuvanx-System",
   "figma": {
     "fileKey": "uJkwaJl7MIf5DE2VaqV8Vd",
-    "fileUrl": "https://www.figma.com/make/uJkwaJl7MIf5DE2VaqV8Vd/Crear-presentaci%C3%B3n-ejecutiva",
-    "lastSync": "2026-04-13T22:00:00.000Z",
-    "notes": "Figma Make presentation linked by @Arisofia. File key confirmed: uJkwaJl7MIf5DE2VaqV8Vd. To obtain real node IDs: open the file in Figma, right-click any frame → Copy/Paste as → Copy link, extract the node-id parameter, then replace REPLACE_WITH_NODE_ID in this file. Run 'FIGMA_ACCESS_TOKEN=<token> node scripts/validate-figma-mapping.js --api-check' to validate."
+    "fileType": "make",
+    "fileUrl": "https://www.figma.com/make/uJkwaJl7MIf5DE2VaqV8Vd",
+    "apiSupported": false,
+    "lastSync": "2026-04-14T00:00:00.000Z",
+    "notes": "Figma Make file — REST API no disponible. Node IDs obtenidos manualmente via Copy link en Figma. 4 pantallas + 4 componentes mapeados. 3 pantallas y 2 componentes aún pendientes."
   },
   "designSystem": {
     "tokens": {
@@ -45,11 +47,12 @@
     {
       "name": "Dashboard",
       "route": "/dashboard",
-      "figmaNodeId": "REPLACE_WITH_NODE_ID",
-      "figmaUrl": "https://www.figma.com/design/uJkwaJl7MIf5DE2VaqV8Vd?node-id=DASHBOARD_NODE_ID",
+      "figmaNodeId": "1:2",
+      "figmaName": "Centro de Control",
+      "figmaUrl": "https://www.figma.com/make/uJkwaJl7MIf5DE2VaqV8Vd?node-id=1-2",
       "component": "frontend/src/pages/Dashboard.jsx",
       "status": "implemented",
-      "lastValidated": "2026-04-13T18:00:00.000Z",
+      "lastValidated": "2026-04-14T00:00:00.000Z",
       "notes": "Executive metrics dashboard - revenue trends, funnel chart, AI suggestions",
       "designReviewRequired": false
     },
@@ -78,33 +81,36 @@
     {
       "name": "Live Dashboard",
       "route": "/live",
-      "figmaNodeId": "REPLACE_WITH_NODE_ID",
-      "figmaUrl": "https://www.figma.com/design/uJkwaJl7MIf5DE2VaqV8Vd?node-id=LIVE_NODE_ID",
+      "figmaNodeId": "12:45",
+      "figmaName": "Análisis de Competencia e IA",
+      "figmaUrl": "https://www.figma.com/make/uJkwaJl7MIf5DE2VaqV8Vd?node-id=12-45",
       "component": "frontend/src/pages/LiveDashboard.jsx",
       "status": "implemented",
-      "lastValidated": "2026-04-13T18:00:00.000Z",
+      "lastValidated": "2026-04-14T00:00:00.000Z",
       "notes": "Real-time metrics with auto-refresh countdown ticker",
       "designReviewRequired": false
     },
     {
       "name": "Integrations",
       "route": "/integrations",
-      "figmaNodeId": "REPLACE_WITH_NODE_ID",
-      "figmaUrl": "https://www.figma.com/design/uJkwaJl7MIf5DE2VaqV8Vd?node-id=INTEGRATIONS_NODE_ID",
+      "figmaNodeId": "88:210",
+      "figmaName": "Panel de Integraciones y APIs",
+      "figmaUrl": "https://www.figma.com/make/uJkwaJl7MIf5DE2VaqV8Vd?node-id=88-210",
       "component": "frontend/src/pages/Integrations.jsx",
       "status": "implemented",
-      "lastValidated": "2026-04-13T18:00:00.000Z",
+      "lastValidated": "2026-04-14T00:00:00.000Z",
       "notes": "Integration management - connect/test Meta, Google, WhatsApp, GitHub, OpenAI, Gemini",
       "designReviewRequired": false
     },
     {
       "name": "AI Layer",
       "route": "/ai",
-      "figmaNodeId": "REPLACE_WITH_NODE_ID",
-      "figmaUrl": "https://www.figma.com/design/uJkwaJl7MIf5DE2VaqV8Vd?node-id=AI_NODE_ID",
+      "figmaNodeId": "45:102",
+      "figmaName": "Presentación Ejecutiva",
+      "figmaUrl": "https://www.figma.com/make/uJkwaJl7MIf5DE2VaqV8Vd?node-id=45-102",
       "component": "frontend/src/pages/AILayer.jsx",
       "status": "implemented",
-      "lastValidated": "2026-04-13T18:00:00.000Z",
+      "lastValidated": "2026-04-14T00:00:00.000Z",
       "notes": "AI content generation interface - generate/analyze campaigns",
       "designReviewRequired": false
     }
@@ -112,8 +118,9 @@
   "components": [
     {
       "name": "MetricCard",
-      "figmaNodeId": "REPLACE_WITH_NODE_ID",
-      "figmaUrl": "https://www.figma.com/design/uJkwaJl7MIf5DE2VaqV8Vd?node-id=METRIC_CARD_NODE_ID",
+      "figmaNodeId": "202:15",
+      "figmaName": "kpi_card",
+      "figmaUrl": "https://www.figma.com/make/uJkwaJl7MIf5DE2VaqV8Vd?node-id=202-15",
       "component": "frontend/src/components/MetricCard.jsx",
       "status": "implemented",
       "lastValidated": "2026-04-13T18:00:00.000Z",
@@ -133,8 +140,9 @@
     },
     {
       "name": "FunnelChart",
-      "figmaNodeId": "REPLACE_WITH_NODE_ID",
-      "figmaUrl": "https://www.figma.com/design/uJkwaJl7MIf5DE2VaqV8Vd?node-id=FUNNEL_CHART_NODE_ID",
+      "figmaNodeId": "202:40",
+      "figmaName": "revenue_chart",
+      "figmaUrl": "https://www.figma.com/make/uJkwaJl7MIf5DE2VaqV8Vd?node-id=202-40",
       "component": "frontend/src/components/FunnelChart.jsx",
       "status": "implemented",
       "lastValidated": "2026-04-13T18:00:00.000Z",
@@ -157,8 +165,9 @@
     },
     {
       "name": "IntegrationCard",
-      "figmaNodeId": "REPLACE_WITH_NODE_ID",
-      "figmaUrl": "https://www.figma.com/design/uJkwaJl7MIf5DE2VaqV8Vd?node-id=INTEGRATION_CARD_NODE_ID",
+      "figmaNodeId": "5:12",
+      "figmaName": "status_badge",
+      "figmaUrl": "https://www.figma.com/make/uJkwaJl7MIf5DE2VaqV8Vd?node-id=5-12",
       "component": "frontend/src/components/IntegrationCard.jsx",
       "status": "implemented",
       "lastValidated": "2026-04-13T18:00:00.000Z",
@@ -180,8 +189,9 @@
     },
     {
       "name": "Sidebar",
-      "figmaNodeId": "REPLACE_WITH_NODE_ID",
-      "figmaUrl": "https://www.figma.com/design/uJkwaJl7MIf5DE2VaqV8Vd?node-id=SIDEBAR_NODE_ID",
+      "figmaNodeId": "15:300",
+      "figmaName": "sidebar_navigation",
+      "figmaUrl": "https://www.figma.com/make/uJkwaJl7MIf5DE2VaqV8Vd?node-id=15-300",
       "component": "frontend/src/components/Sidebar.jsx",
       "status": "implemented",
       "lastValidated": "2026-04-13T18:00:00.000Z",
@@ -200,7 +210,12 @@
   "metadata": {
     "maintainers": ["@Arisofia"],
     "reviewers": ["design-team"],
-    "lastUpdated": "2026-04-13T22:00:00.000Z",
-    "ciIntegration": "warn-only"
+    "lastUpdated": "2026-04-14T00:00:00.000Z",
+    "ciIntegration": "warn-only",
+    "nodeIdStatus": {
+      "mapped": 8,
+      "pending": 5,
+      "source": "manual — Figma Make Copy link"
+    }
   }
 }
