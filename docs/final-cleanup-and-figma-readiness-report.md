@@ -11,7 +11,7 @@
 
 | Item | Action | File(s) |
 |------|--------|---------|
-| README test count | Fixed "22 tests" → "30 tests" (verified by running `npm test`) | `README.md` |
+| README test count | Fixed "20 tests" → "30 tests" (verified by running `npm test`) | `README.md` |
 | README roadmap | Added missing roadmap items (in-memory user store, WhatsApp send route, Meta token refresh) | `README.md` |
 | Dashboard hardcoded adAccountId | Removed hardcoded `act_123456789` placeholder; Meta trends now gracefully absent when no account ID is configured | `frontend/src/pages/Dashboard.jsx` |
 | Dead code identified | `backend/src/config/database.js` is an unused re-export shim (safe to delete, not removed to preserve git history) | identified only |
@@ -23,7 +23,7 @@
 | Item | Before | After |
 |------|--------|-------|
 | Dashboard Meta trends | Silently sent a hardcoded fake adAccountId to Meta API | Sends no adAccountId (returns 400 from backend → silently ignored, Meta section not shown) |
-| README test count | Claimed 22 tests | Correctly states 30 tests |
+| README test count | Claimed 20 tests | Correctly states 30 tests |
 | Roadmap accuracy | Missing several known gaps | Now includes user store, WhatsApp send, Meta token refresh |
 
 ---
@@ -176,7 +176,7 @@ CI runs (`.github/workflows/ci.yml`):
 - ~~`scripts/validate-figma-mapping.mjs`~~ — removed (redundant ESM wrapper)
 
 ### Modified
-- `README.md` — fixed test count (22→30), improved roadmap
+- `README.md` — fixed test count (20→30), improved roadmap
 - `frontend/src/pages/Dashboard.jsx` — removed hardcoded adAccountId
 - `package.json` — added `validate:figma:ci` and `validate:figma:strict` npm scripts
 
