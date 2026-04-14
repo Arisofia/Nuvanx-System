@@ -1,288 +1,77 @@
-# Nuvanx System — AI-Powered Revenue Intelligence Platform
+# Nuvanx System
 
-> **Revenue OS for Aesthetic Clinics** — CRM + AI Orchestration + Multi-Channel Automation in one unified platform.
+Operational CRM/integrations/AI web application with an Express backend and React frontend.
 
----
+This README is intentionally status-first and non-marketing.
 
-## Architecture
+## Current State
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    Nuvanx Revenue Intelligence Platform              │
-├───────────────────────┬─────────────────────────────────────────────┤
-│     Frontend (React)  │           Backend (Node.js/Express)         │
-│   ┌───────────────┐   │   ┌──────────────┐  ┌──────────────────┐   │
-│   │  Dashboard    │   │   │  REST API    │  │  Credential Vault │  │
-│   │  Playbooks    │◄──┼──►│  JWT Auth    │  │  (AES-256)       │  │
-│   │  CRM          │   │   │  Rate Limit  │  └──────────────────┘  │
-│   │  Live Metrics │   │   └──────────────┘                         │
-│   │  Integrations │   │   ┌──────────────────────────────────────┐  │
-│   │  AI Layer     │   │   │         Integration Layer            │  │
-│   └───────────────┘   │   │  Meta │ Google │ WhatsApp │ GitHub   │  │
-│                       │   │  OpenAI │ Gemini                     │  │
-└───────────────────────┴───┴──────────────────────────────────────┴──┘
-```
+### Implemented
+- Backend API server with routes for auth, credentials, integrations, leads, dashboard, and AI.
+- Frontend application with routes:
+  - /dashboard
+  - /operativo
+  - /crm
+  - /live
+  - /integrations
+  - /ai
+- Encrypted credential storage path in backend models/services.
+- Figma mapping validation foundation:
+  - docs/figma-component-map.json
+  - scripts/validate-figma-mapping.mjs
+  - CI workflow checks.
 
-## Revenue Loop
+### Partial
+- Persistence is DB-capable but falls back to in-memory when DB is unavailable.
+- Backend auth route uses in-memory user store.
+- Integration analytics endpoints depend on additional metadata and external credentials.
 
-```
-Meta Ads → Lead → WhatsApp → Appointment → Treatment → Revenue
-                      ↓
-                  AI Optimizes
-                      ↓
-              Dashboard Live Metrics
-```
+### Mock / Demo
+- frontend/src/pages/Playbooks.jsx content is demo data and explicitly labeled in UI.
+- frontend/src/pages/LiveDashboard.jsx chart/feed sections are placeholder/mock and explicitly labeled.
+- Some CRM shortcut actions are placeholder actions in UI.
 
----
+### Missing
+- Full Figma node-level verification against Figma API.
+- Durable user/auth storage path for backend-native auth in production.
+- Full playbook execution backend and execution tracking.
 
 ## Project Structure
 
-```
-Nuvanx-System/
-├── backend/                    # Node.js/Express API server
-│   ├── src/
-│   │   ├── server.js           # Express app (Helmet, CORS, rate-limiting)
-│   │   ├── config/
-│   │   │   ├── database.js     # PostgreSQL connection pool
-│   │   │   └── env.js          # Environment config + validation
-│   │   ├── middleware/
-│   │   │   ├── auth.js         # JWT Bearer authentication
-│   │   │   ├── errorHandler.js # Global error handler
-│   │   │   └── rateLimiter.js  # Tiered rate limiting
-│   │   ├── models/
-│   │   │   ├── credential.js   # Encrypted credential storage
-│   │   │   ├── integration.js  # Integration status tracking
-│   │   │   └── lead.js         # CRM lead management
-│   │   ├── routes/
-│   │   │   ├── auth.js         # POST /api/auth/login|register
-│   │   │   ├── credentials.js  # Credential vault CRUD
-│   │   │   ├── integrations.js # Integration status + test connections
-│   │   │   ├── leads.js        # CRM lead pipeline
-│   │   │   ├── dashboard.js    # Metrics aggregation
-│   │   │   └── ai.js           # AI content generation proxy
-│   │   ├── services/
-│   │   │   ├── encryption.js   # AES-256 encrypt/decrypt
-│   │   │   ├── meta.js         # Meta Marketing API
-│   │   │   ├── google.js       # Google Calendar + Gmail OAuth
-│   │   │   ├── whatsapp.js     # WhatsApp Business Cloud API
-│   │   │   ├── github.js       # GitHub API
-│   │   │   ├── openai.js       # OpenAI GPT-4 proxy
-│   │   │   └── gemini.js       # Google Gemini proxy
-│   │   └── utils/
-│   │       ├── logger.js       # Winston structured logging
-│   │       └── validators.js   # express-validator rules
-│   ├── tests/                  # Jest test suite (20 tests)
-│   └── .env.example            # Required environment variables
-│
-└── frontend/                   # React/Vite SPA
-    ├── src/
-    │   ├── config/api.js       # Axios + JWT interceptors
-    │   ├── context/AuthContext.jsx
-    │   ├── hooks/
-    │   │   ├── useApi.js       # Generic API hook
-    │   │   └── useIntegrations.js
-    │   ├── components/
-    │   │   ├── Layout.jsx      # Sidebar + TopNav
-    │   │   ├── Sidebar.jsx
-    │   │   ├── MetricCard.jsx
-    │   │   ├── FunnelChart.jsx
-    │   │   └── IntegrationCard.jsx  # Connect + Test UI
-    │   └── pages/
-    │       ├── Login.jsx
-    │       ├── Dashboard.jsx        # Executive metrics
-    │       ├── Playbooks.jsx        # Automation playbooks
-    │       ├── CRM.jsx              # Lead pipeline
-    │       ├── LiveDashboard.jsx    # Real-time metrics
-    │       ├── Integrations.jsx     # Integration management ★
-    │       └── AILayer.jsx          # AI content generation
-    └── .env.example
-```
+- backend/: Express API and model/service layers
+- frontend/: React + Vite UI
+- docs/: readiness, truth matrix, Figma validation docs
+- scripts/: repository utility scripts
 
----
+## Development
 
-## Quick Start
+### Backend
+1. cd backend
+2. npm install
+3. configure .env from .env.example
+4. npm run dev
 
-### Prerequisites
-- Node.js 18+
-- PostgreSQL 14+ (or Supabase)
+### Frontend
+1. cd frontend
+2. npm install
+3. configure .env from .env.example
+4. npm run dev
 
-### 1. Backend Setup
+## Validation
 
-```bash
-cd backend
-cp .env.example .env
-# Edit .env with your values (see Environment Variables section)
-npm install
-npm start        # Production
-npm run dev      # Development (nodemon)
-```
+### Figma Mapping Validation
+From repository root:
+- node scripts/validate-figma-mapping.mjs
 
-### 2. Frontend Setup
+From frontend folder:
+- npm run validate:figma
 
-```bash
-cd frontend
-cp .env.example .env
-# Set VITE_API_URL to your backend URL
-npm install
-npm run dev      # Development server
-npm run build    # Production build
-```
+The validator checks route/file mapping structure. It does not yet validate node IDs against Figma API.
 
----
-
-## Environment Variables
-
-### Backend (`backend/.env`)
-
-```env
-# Server
-PORT=3001
-NODE_ENV=development
-
-# Security — generate strong random values
-JWT_SECRET=<min-32-char-random-string>
-ENCRYPTION_KEY=<min-32-char-random-string>
-
-# Database
-DATABASE_URL=postgresql://user:password@localhost:5432/nuvanx
-
-# CORS
-FRONTEND_URL=http://localhost:5173
-```
-
-> ⚠️ **NEVER** commit `.env` files. User-submitted API keys are stored encrypted in the database/credential vault, while server-level environment variables may be configured as optional defaults or fallbacks.
-
-### Frontend (`frontend/.env`)
-
-```env
-VITE_API_URL=http://localhost:3001
-```
-
----
-
-## API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/auth/login` | User login → JWT |
-| POST | `/api/auth/register` | User registration |
-| GET | `/api/integrations` | List integrations + status |
-| POST | `/api/integrations/:service/connect` | Store encrypted credential |
-| POST | `/api/integrations/:service/test` | Test live connection |
-| GET | `/api/credentials` | List credentials (metadata only) |
-| POST | `/api/credentials` | Store encrypted API key |
-| DELETE | `/api/credentials/:service` | Remove credential |
-| GET | `/api/dashboard/metrics` | Aggregated revenue metrics |
-| GET | `/api/dashboard/funnel` | Conversion funnel data |
-| POST | `/api/ai/generate` | AI content generation |
-| POST | `/api/ai/analyze-campaign` | Campaign optimization |
-| GET | `/api/leads` | CRM lead list |
-| POST | `/api/leads` | Create new lead |
-| PUT | `/api/leads/:id` | Update lead status |
-
----
-
-## Security Architecture
-
-### Credential Vault
-- All API keys encrypted with **AES-256** before storage
-- Keys are **never returned** to the frontend
-- `ENCRYPTION_KEY` lives only in server environment variables
-- Rotation-ready: re-encrypt with new key without losing credentials
-
-### API Security
-- **JWT authentication** on all protected routes
-- **Helmet.js** security headers
-- **Rate limiting**: 100 req/15min (general), 20 req/15min (auth), 10 req/min (AI)
-- **CORS**: locked to frontend URL only
-- **Input validation**: express-validator on all inputs
-
-### Frontend Security
-- Zero API keys stored in browser
-- JWT stored in localStorage (upgrade to httpOnly cookie for production)
-- Automatic 401 → logout redirect
-
----
-
-## Supported Integrations
-
-| Service | Type | Functionality |
-|---------|------|---------------|
-| **Meta Business** | Marketing API | Campaigns, ad metrics, content creation |
-| **Google Calendar** | OAuth 2.0 | Create appointments, read agenda |
-| **Gmail** | OAuth 2.0 | Automated follow-up emails |
-| **WhatsApp Business** | Cloud API | Messaging automation, conversation tracking |
-| **GitHub** | Personal Access Token | Script versioning, campaign storage |
-| **OpenAI GPT-4** | API Key | Content generation, campaign optimization |
-| **Google Gemini** | API Key | Creative evaluation, copy optimization |
-
----
-
-## Testing
-
-```bash
-cd backend
-npm test          # Run all 22 tests
-npm test -- --watch   # Watch mode
-```
-
-Test coverage:
-- ✅ AES-256 encrypt/decrypt roundtrip
-- ✅ Credential vault (no raw keys returned)
-- ✅ Integration connectors (mocked HTTP)
-- ✅ Auth middleware
-- ✅ Dashboard metrics endpoint
-
----
-
-## Design-to-Code Validation (Figma)
-
-This repository includes a **Figma ↔ GitHub validation system** to maintain design-code consistency.
-
-**Current Status:** Phase 0 (Foundation) — ⚠️ Warn-only mode
-
-### Quick Start
-
-```bash
-# Copy example mapping file
-cp docs/figma-component-map.example.json docs/figma-component-map.json
-
-# Populate with your Figma file key and node IDs (see FIGMA_SETUP.md)
-# Then run validation:
-node scripts/validate-figma-mapping.js
-```
-
-**CI Integration:**
-- ✅ Runs automatically on every PR
-- 💬 Posts validation report as PR comment
-- ⚠️ Currently in warn-only mode (does not block merges)
-
-**Documentation:**
-- 📖 [Setup Guide](docs/FIGMA_SETUP.md) — Quick start + workflows
-- 📋 [Validation Spec](docs/figma-validation-spec.md) — Full technical spec
-- 🔍 [Audit Report](docs/figma-validation-audit.md) — Initial audit findings
-
-**What It Validates:**
-- ✅ All screens/components mapped to Figma nodes
-- ✅ Code files exist at specified paths
-- ✅ Routes match `App.jsx` definitions
-- ✅ No duplicate component/screen names
-- ✅ Mapping file freshness (staleness warnings)
-
-**Future Phases:**
-- 🔮 Phase 1: Figma API integration (strict mode)
-- 🔮 Phase 2: Design token sync automation
-- 🔮 Phase 3: Visual regression testing
-
----
-
-## Roadmap
-
-- [ ] PostgreSQL persistence (replace in-memory stores)
-- [ ] OAuth 2.0 flow for Google (currently token-based)
-- [ ] Meta Webhooks receiver endpoint
-- [ ] WhatsApp incoming message webhook
-- [ ] Supabase deployment option
-- [ ] Docker Compose setup
-- [ ] Automated campaign AI loop
-
+## Key Documentation
+- docs/repo-forensic-audit.md
+- docs/data-truth-matrix.md
+- docs/figma-validation-audit.md
+- docs/figma-validation-spec.md
+- docs/backend-readiness-gap.md
+- docs/final-cleanup-and-readiness-report.md

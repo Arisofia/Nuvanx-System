@@ -7,9 +7,9 @@ import { useAuth } from '../context/AuthContext';
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/live', icon: Activity, label: 'Live Metrics' },
+  { to: '/live', icon: Activity, label: 'Operational Snapshot' },
   { to: '/crm', icon: Users, label: 'CRM' },
-  { to: '/operativo', icon: BookOpen, label: 'Playbooks' },
+  { to: '/operativo', icon: BookOpen, label: 'Operativo (Playbooks)' },
   { to: '/integrations', icon: Plug, label: 'Integrations' },
   { to: '/ai', icon: Bot, label: 'AI Layer' },
 ];
