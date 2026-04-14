@@ -3,12 +3,24 @@ param(
     [string]$SupabaseAccessToken,
 
     [Parameter(Mandatory = $true)]
-    [string]$DbPassword,
+    [SecureString]$DbPassword,
 
     [string]$ProjectRef = "sddviizcgheusvwqpthm"
 )
 
 $ErrorActionPreference = "Stop"
+
+function ConvertTo-PlainText {
+    param([Parameter(Mandatory = $true)][SecureString]$SecureValue)
+
+    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureValue)
+    try {
+        [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+    }
+    finally {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+    }
+}
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $sqlFile = Join-Path $repoRoot "frontend/src/lib/supabase/database.sql"
@@ -32,7 +44,8 @@ Push-Location $repoRoot
 npx supabase login --token $SupabaseAccessToken | Out-Host
 
 Write-Host "[4/5] Enlazando proyecto remoto..."
-npx supabase link --project-ref $ProjectRef --password $DbPassword | Out-Host
+$plainDbPassword = ConvertTo-PlainText -SecureValue $DbPassword
+npx supabase link --project-ref $ProjectRef --password $plainDbPassword | Out-Host
 
 Write-Host "[5/5] Aplicando schema desde database.sql al proyecto vinculado..."
 Get-Content -Raw $sqlFile | npx supabase db query | Out-Host
