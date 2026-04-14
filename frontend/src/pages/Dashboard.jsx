@@ -31,6 +31,8 @@ export default function Dashboard() {
   const [aiSuggestions, setAiSuggestions] = useState([]);
   const [metaTrends, setMetaTrends] = useState(null);
   const [hubspotTrends, setHubspotTrends] = useState(null);
+  const [metaTrendsState, setMetaTrendsState] = useState('pending');
+  const [hubspotTrendsState, setHubspotTrendsState] = useState('pending');
   const [loadingMetrics, setLoadingMetrics] = useState(true);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [error, setError] = useState(null);
@@ -39,10 +41,11 @@ export default function Dashboard() {
     setLoadingMetrics(true);
     setError(null);
     try {
-      const [metricsRes, funnelRes, revenueRes] = await Promise.all([
+      const [metricsRes, funnelRes, revenueRes, integrationsRes] = await Promise.all([
         api.get('/api/dashboard/metrics'),
         api.get('/api/dashboard/funnel'),
         api.get('/api/dashboard/revenue-trend'),
+        api.get('/api/integrations'),
       ]);
       setMetrics(metricsRes.data.metrics);
 
@@ -53,23 +56,44 @@ export default function Dashboard() {
       // Set revenue trend data
       setRevenueData(revenueRes.data.trend || []);
 
-      // Fetch Meta trends if user has connected Meta.
-      // adAccountId is optional: backend will return 400 if missing,
-      // which is silently ignored here (Meta simply not shown on dashboard).
-      // TODO: surface adAccountId input in user settings page.
-      try {
-        const metaRes = await api.get('/api/dashboard/meta-trends');
-        setMetaTrends(metaRes.data);
-      } catch (err) {
-        console.log('Meta trends not available:', err.response?.data?.message);
+      const integrations = integrationsRes.data?.integrations || [];
+      const metaIntegration = integrations.find((i) => i.service === 'meta');
+      const hubspotIntegration = integrations.find((i) => i.service === 'hubspot');
+
+      // Fetch Meta trends only when adAccountId is provided in saved metadata.
+      const adAccountId = metaIntegration?.metadata?.adAccountId;
+      if (metaIntegration?.status === 'connected' && adAccountId) {
+        try {
+          const metaRes = await api.get('/api/dashboard/meta-trends', { params: { adAccountId } });
+          setMetaTrends(metaRes.data);
+          setMetaTrendsState('real');
+        } catch (err) {
+          setMetaTrends(null);
+          setMetaTrendsState('error');
+          console.log('Meta trends not available:', err.response?.data?.message);
+        }
+      } else if (metaIntegration?.status === 'connected') {
+        setMetaTrends(null);
+        setMetaTrendsState('missing-config');
+      } else {
+        setMetaTrends(null);
+        setMetaTrendsState('not-connected');
       }
 
-      // Fetch HubSpot trends if user has connected HubSpot
-      try {
-        const hubspotRes = await api.get('/api/dashboard/hubspot-trends');
-        setHubspotTrends(hubspotRes.data);
-      } catch (err) {
-        console.log('HubSpot trends not available:', err.response?.data?.message);
+      // Fetch HubSpot trends only when integration is connected.
+      if (hubspotIntegration?.status === 'connected') {
+        try {
+          const hubspotRes = await api.get('/api/dashboard/hubspot-trends');
+          setHubspotTrends(hubspotRes.data);
+          setHubspotTrendsState('real');
+        } catch (err) {
+          setHubspotTrends(null);
+          setHubspotTrendsState('error');
+          console.log('HubSpot trends not available:', err.response?.data?.message);
+        }
+      } else {
+        setHubspotTrends(null);
+        setHubspotTrendsState('not-connected');
       }
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to load dashboard data');
@@ -127,8 +151,9 @@ export default function Dashboard() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h2 className="text-2xl font-bold text-white">Revenue Intelligence Platform</h2>
-          <p className="text-gray-400 mt-0.5">AI-powered insights for your clinic's growth</p>
+          <h2 className="text-2xl font-bold text-white">Dashboard</h2>
+          <p className="text-gray-400 mt-0.5">Primary cards and charts are sourced from backend dashboard APIs.</p>
+          <p className="text-xs text-gray-500 mt-1">Data truth mode: API-backed sections are shown as real; missing sections are labeled as pending.</p>
         </div>
         <button
           onClick={fetchData}
@@ -318,6 +343,22 @@ export default function Dashboard() {
         </div>
       )}
 
+      {metaTrendsState === 'missing-config' && (
+        <div className="card border-amber-500/20 bg-amber-500/5">
+          <h3 className="font-semibold text-white">Meta Trends</h3>
+          <p className="text-xs text-amber-200/90 mt-1">
+            Pending backend support: connect Meta with a stored adAccountId in integration metadata to enable this section.
+          </p>
+        </div>
+      )}
+
+      {metaTrendsState === 'not-connected' && (
+        <div className="card border-dark-600">
+          <h3 className="font-semibold text-white">Meta Trends</h3>
+          <p className="text-xs text-gray-400 mt-1">Not connected. Connect Meta in Integrations to load API data.</p>
+        </div>
+      )}
+
       {/* HubSpot Trends Section */}
       {hubspotTrends && hubspotTrends.trends.length > 0 && (
         <div className="card">
@@ -366,6 +407,13 @@ export default function Dashboard() {
         </div>
       )}
 
+      {hubspotTrendsState === 'not-connected' && (
+        <div className="card border-dark-600">
+          <h3 className="font-semibold text-white">HubSpot CRM Trends</h3>
+          <p className="text-xs text-gray-400 mt-1">Not connected. Connect HubSpot in Integrations to load API data.</p>
+        </div>
+      )}
+
       {/* AI Suggestions */}
       <div className="card border-brand-500/20 bg-gradient-to-br from-brand-500/5 to-transparent">
         <div className="flex items-center gap-3 mb-4">
@@ -374,7 +422,7 @@ export default function Dashboard() {
           </div>
           <div className="flex-1">
             <h3 className="font-semibold text-white">AI Optimization Suggestions</h3>
-            <p className="text-xs text-gray-500">Generated from your campaign data</p>
+            <p className="text-xs text-gray-500">Generated by /api/ai/suggestions when AI credentials are configured.</p>
           </div>
           {aiSuggestions.length > 0 && (
             <span className="ml-auto text-xs bg-brand-500/10 text-brand-400 border border-brand-500/20 px-2.5 py-1 rounded-full font-medium">
@@ -403,9 +451,6 @@ export default function Dashboard() {
                   {i + 1}
                 </span>
                 <p className="text-sm text-gray-300">{s}</p>
-                <button className="ml-auto shrink-0 text-xs text-brand-400 hover:text-brand-300 font-medium whitespace-nowrap">
-                  Apply →
-                </button>
               </div>
             ))}
           </div>
@@ -413,7 +458,7 @@ export default function Dashboard() {
           <div className="text-center py-8 text-gray-500">
             <Sparkles size={32} className="mx-auto mb-2 opacity-50" />
             <p className="text-sm">No AI suggestions yet</p>
-            <p className="text-xs mt-1">Connect integrations and add campaign data to get AI-powered insights</p>
+            <p className="text-xs mt-1">No placeholder suggestions are shown. Configure AI credentials to load real suggestions.</p>
           </div>
         )}
       </div>

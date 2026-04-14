@@ -27,9 +27,8 @@ export default function LiveDashboard() {
   const [metrics, setMetrics] = useState(null);
   const [chartData] = useState(generateHourlyData);
   const [feed] = useState(INITIAL_FEED);
-  const [campaigns] = useState([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [usingLiveData, setUsingLiveData] = useState(false);
+  const [usingApiData, setUsingApiData] = useState(false);
   const countdownRef = useRef(REFRESH_INTERVAL);
 
   const fetchMetrics = useCallback(async () => {
@@ -39,7 +38,7 @@ export default function LiveDashboard() {
       const m = res.data?.metrics;
       if (m) {
         setMetrics(m);
-        setUsingLiveData(true);
+        setUsingApiData(true);
       }
     } catch {
       // Backend not available — keep previous or null values
@@ -83,19 +82,20 @@ export default function LiveDashboard() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-2xl font-bold text-white">Live Metrics</h2>
-            {usingLiveData ? (
+            <h2 className="text-2xl font-bold text-white">Operational Snapshot</h2>
+            {usingApiData ? (
               <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                Live
+                API Data
               </span>
             ) : (
               <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-gray-500/10 text-gray-400 border border-gray-500/20">
-                Connecting…
+                Waiting for API
               </span>
             )}
           </div>
-          <p className="text-gray-400 mt-0.5">Real-time clinic performance data</p>
+          <p className="text-gray-400 mt-0.5">Metrics refresh every 30s from /api/dashboard/metrics.</p>
+          <p className="text-xs text-amber-300 mt-1">Chart and activity feed on this page are Placeholder Data.</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 text-sm text-gray-400">
@@ -118,7 +118,7 @@ export default function LiveDashboard() {
         </div>
       </div>
 
-      {/* Live metrics */}
+      {/* API metrics */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
         {[
           { label: 'Connected Services', value: activeCampaigns, icon: Megaphone, color: 'text-brand-400', bg: 'bg-brand-500/10' },
@@ -149,7 +149,7 @@ export default function LiveDashboard() {
             <div>
               <h3 className="font-semibold text-white">Lead Flow — Last 24 Hours</h3>
               <p className="text-xs text-gray-500 mt-0.5">
-                Hourly time-series will appear once real leads are recorded
+                Placeholder Data. Hourly series endpoint is not implemented yet.
               </p>
             </div>
           </div>
@@ -182,6 +182,7 @@ export default function LiveDashboard() {
         {/* Activity Feed */}
         <div className="card flex flex-col">
           <h3 className="font-semibold text-white mb-4">Activity Feed</h3>
+          <p className="text-xs text-gray-500 mb-3">Mock Activity. Event streaming endpoint is not implemented yet.</p>
           <div className="space-y-3 flex-1 overflow-y-auto max-h-64 xl:max-h-none">
             {feed.map(event => (
               <div key={event.id} className="flex items-start gap-3 p-2.5 rounded-lg bg-dark-800/60 border border-dark-600/40">
@@ -195,30 +196,6 @@ export default function LiveDashboard() {
           </div>
         </div>
       </div>
-
-      {/* Campaigns / Connected integrations */}
-      {campaigns.length > 0 && (
-        <div className="card">
-          <h3 className="font-semibold text-white mb-4">Active Campaigns</h3>
-          <div className="space-y-3">
-            {campaigns.map(c => (
-              <div key={c.name} className="flex items-center justify-between gap-4 p-3 rounded-lg bg-dark-800/60 border border-dark-600/40">
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className={`w-2 h-2 rounded-full shrink-0 ${c.status === 'active' ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'}`} />
-                  <p className="text-sm text-gray-300 truncate">{c.name}</p>
-                </div>
-                <div className="flex items-center gap-6 shrink-0 text-xs text-gray-500">
-                  <span>Impressions: <span className="text-gray-300">{c.impressions}</span></span>
-                  <span>CTR: <span className="text-gray-300">{c.ctr}</span></span>
-                  <span className={`font-medium ${c.status === 'active' ? 'text-emerald-400' : 'text-gray-500'}`}>
-                    {c.status === 'active' ? '● Active' : '⏸ Paused'}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

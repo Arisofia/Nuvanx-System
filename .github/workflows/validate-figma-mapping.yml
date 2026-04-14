@@ -8,7 +8,7 @@ name: Validate Figma Mapping
 #
 # Assumptions:
 # 1. The mapping file exists at docs/figma-component-map.json
-# 2. The validation script exists at scripts/validate-figma-mapping.js
+# 2. The validation script exists at scripts/validate-figma-mapping.mjs
 # 3. The script uses exit code 1 for validation failures (when not in --ci mode)
 # 4. Frontend dependencies are not required for file existence checks
 #    (validation only checks file paths, doesn't parse/build)
@@ -46,12 +46,7 @@ jobs:
         run: npm ci
 
       - name: Run Figma validation (strict mode)
-        run: node scripts/validate-figma-mapping.js
-        # Note: Without --ci flag, the script runs in strict mode and will
-        # exit with code 1 if validationRules.strictMode is true OR if there
-        # are errors and strictMode is false. Currently strictMode defaults to
-        # false in the mapping file, so errors will exit with code 2 (non-CI),
-        # which GitHub Actions treats as a failure.
+        run: node scripts/validate-figma-mapping.mjs
 
       - name: Validation passed
         if: success()
