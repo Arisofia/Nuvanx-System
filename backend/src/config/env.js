@@ -28,9 +28,18 @@ const config = {
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '24h',
 
+  // Supabase — main project
+  supabaseUrl: process.env.SUPABASE_URL || null,
+  supabaseAnonKey: process.env.SUPABASE_ANON_KEY || null,
+  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || null,
   // Supabase JWT secret — Project Settings → API → JWT Settings → JWT Secret
   // When set, the backend will also accept Supabase access tokens as Bearer JWTs.
   supabaseJwtSecret: process.env.SUPABASE_JWT_SECRET || null,
+
+  // Supabase — Figma V.1 project
+  supabaseFigmaUrl: process.env.SUPABASE_FIGMA_URL || null,
+  supabaseFigmaAnonKey: process.env.SUPABASE_FIGMA_ANON_KEY || null,
+  supabaseFigmaServiceRoleKey: process.env.SUPABASE_FIGMA_SERVICE_ROLE || null,
 
   // Third-party API keys (server-level defaults; per-user vault credentials take priority)
   openaiApiKey: process.env.OPENAI_API_KEY,
