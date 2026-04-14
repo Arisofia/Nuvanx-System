@@ -46,6 +46,7 @@ app.use('/api/integrations', require('./routes/integrations'));
 app.use('/api/leads', require('./routes/leads'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/ai', require('./routes/ai'));
+app.use('/api/figma', require('./routes/figma'));
 
 // ─── 404 handler ────────────────────────────────────────────────────────────
 app.use((req, res) => {
