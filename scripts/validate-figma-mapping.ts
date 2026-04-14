@@ -82,6 +82,11 @@ interface FigmaMapping {
   metadata?: Record<string, unknown>;
 }
 
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+/** Valid Figma node ID format: digits:digits (e.g. "123:456") */
+const NODE_ID_PATTERN = /^\d+:\d+$/;
+
 // ── State ─────────────────────────────────────────────────────────────────────
 
 const args = process.argv.slice(2);
@@ -231,13 +236,11 @@ function checkStaleness(mapping: FigmaMapping): void {
 }
 
 function validateFigmaNodeIds(items: MappingItem[], type: string): boolean {
-  const nodeIdPattern = /^\d+:\d+$/;
-
   const invalidNodeIds = items.filter(
     (item) =>
       item.figmaNodeId &&
       item.figmaNodeId !== 'REPLACE_WITH_NODE_ID' &&
-      !nodeIdPattern.test(item.figmaNodeId),
+      !NODE_ID_PATTERN.test(item.figmaNodeId),
   );
 
   if (invalidNodeIds.length > 0) {
@@ -358,9 +361,8 @@ async function validateFigmaAPI(mapping: FigmaMapping): Promise<void> {
 
   // 3. Collect non-placeholder node IDs
   const allItems = [...(mapping.screens ?? []), ...(mapping.components ?? [])];
-  const nodeIdPattern = /^\d+:\d+$/;
   const idsToCheck = allItems
-    .filter((item) => item.figmaNodeId && nodeIdPattern.test(item.figmaNodeId))
+    .filter((item) => item.figmaNodeId && NODE_ID_PATTERN.test(item.figmaNodeId))
     .map((item) => ({ name: item.name, id: item.figmaNodeId }));
 
   const placeholderCount = allItems.filter(
