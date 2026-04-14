@@ -123,23 +123,30 @@ export default function Playbooks() {
     if (pb.status === 'Draft') {
       toast('This playbook is in Draft mode. Publish it first.', { icon: '📝' });
     } else {
-      toast.success(`Playbook "${pb.title}" triggered successfully!`);
+      toast('Demo action only. Playbook execution is not implemented in backend yet.', { icon: 'ℹ️' });
     }
   }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       <div>
-        <h2 className="text-2xl font-bold text-white">Operational Playbooks</h2>
-        <p className="text-gray-400 mt-0.5">Automated revenue sequences for your clinic</p>
+        <h2 className="text-2xl font-bold text-white">Operativo (Playbooks)</h2>
+        <p className="text-gray-400 mt-0.5">Demo data. Backend playbook orchestration is pending implementation.</p>
+      </div>
+
+      <div className="card border-amber-500/20 bg-amber-500/5">
+        <p className="text-sm text-amber-300 font-medium">Demo Data</p>
+        <p className="text-xs text-amber-200/80 mt-1">
+          Runs, success rates, and steps in this screen are static sample values for UI validation.
+        </p>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4 sm:grid-cols-3">
         {[
-          { label: 'Total Playbooks', value: playbooks.length },
+          { label: 'Sample Playbooks', value: playbooks.length },
           { label: 'Active', value: playbooks.filter(p => p.status === 'Active').length },
-          { label: 'Total Runs', value: playbooks.reduce((a, p) => a + p.runs, 0) },
+          { label: 'Sample Runs', value: playbooks.reduce((a, p) => a + p.runs, 0) },
         ].map(s => (
           <div key={s.label} className="card text-center py-4">
             <p className="text-2xl font-bold text-white">{s.value}</p>
