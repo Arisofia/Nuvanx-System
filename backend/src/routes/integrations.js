@@ -59,7 +59,7 @@ router.get('/', async (req, res, next) => {
 /**
  * GET /api/integrations/validate-all
  * Test every service that has an available credential (vault or env-var).
- * WhatsApp is skipped (requires phoneNumberId which is not available here).
+ * WhatsApp is included when WHATSAPP_PHONE_NUMBER_ID is configured.
  * Runs all tests in parallel and returns the aggregated results.
  */
 router.get('/validate-all', async (req, res, next) => {
@@ -82,6 +82,14 @@ router.get('/validate-all', async (req, res, next) => {
       test: () => Promise.resolve({ connected: true, message: 'Credential present — not validated in bulk check' }),
     },
   ];
+
+  // Include WhatsApp when a default phone number ID is configured
+  if (config.whatsappPhoneNumberId) {
+    TESTABLE.push({
+      service: 'whatsapp',
+      test: (k) => whatsappService.testConnection(k, config.whatsappPhoneNumberId),
+    });
+  }
 
   const results = await Promise.allSettled(
     TESTABLE.map(async ({ service, test }) => {
