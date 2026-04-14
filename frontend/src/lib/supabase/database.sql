@@ -1,5 +1,6 @@
 -- =============================================================================
 -- Nuvanx Revenue Intelligence Platform — Supabase Schema
+-- Project: ssvvuuysgxyqvmovrlvk.supabase.co
 -- =============================================================================
 -- Instructions:
 --   1. Open your Supabase project → SQL Editor → New query

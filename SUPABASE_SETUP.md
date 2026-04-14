@@ -1,5 +1,8 @@
 # 🔧 Configuración de Supabase — Nuvanx
 
+> **Proyecto de producción activo:** `ssvvuuysgxyqvmovrlvk` (`nuvanx-prod`)  
+> URL: `https://ssvvuuysgxyqvmovrlvk.supabase.co`
+
 ## ¿Por qué Supabase?
 
 En la arquitectura actual de Nuvanx, las credenciales reales de integraciones
@@ -105,7 +108,7 @@ En la raíz de la carpeta `frontend/`, crea el archivo `.env.local`:
 
 ```bash
 # frontend/.env.local
-VITE_SUPABASE_URL=https://tu-proyecto.supabase.co
+VITE_SUPABASE_URL=https://ssvvuuysgxyqvmovrlvk.supabase.co
 VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
@@ -116,7 +119,7 @@ Reemplaza los valores con los que copiaste en el Paso 3.
 En `backend/.env`:
 
 ```bash
-DATABASE_URL=postgresql://postgres:[tu-contraseña]@db.[tu-proyecto].supabase.co:5432/postgres
+DATABASE_URL=postgresql://postgres:[tu-contraseña]@db.ssvvuuysgxyqvmovrlvk.supabase.co:5432/postgres
 ```
 
 La `DATABASE_URL` completa se encuentra en:  
@@ -166,6 +169,11 @@ Si la configuración es correcta, en la consola del navegador **no verás** el a
 ## 🛠️ Estructura de Archivos Relevantes
 
 ```
+supabase/
+├── config.toml                  # Supabase CLI configuration
+├── complete_nuvanx_schema.sql   # Full idempotent schema (run on new projects)
+└── fix_rls_warnings.sql         # RLS policy hardening patch
+
 frontend/src/lib/supabase/
 ├── client.js        # Singleton del cliente Supabase
 └── database.sql     # Script SQL para crear las tablas en Supabase
