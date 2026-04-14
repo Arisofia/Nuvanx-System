@@ -53,11 +53,12 @@ export default function Dashboard() {
       // Set revenue trend data
       setRevenueData(revenueRes.data.trend || []);
 
-      // Fetch Meta trends if user has connected Meta
+      // Fetch Meta trends if user has connected Meta.
+      // adAccountId is optional: backend will return 400 if missing,
+      // which is silently ignored here (Meta simply not shown on dashboard).
+      // TODO: surface adAccountId input in user settings page.
       try {
-        const metaRes = await api.get('/api/dashboard/meta-trends', {
-          params: { adAccountId: 'act_123456789' }, // TODO: Get from user settings
-        });
+        const metaRes = await api.get('/api/dashboard/meta-trends');
         setMetaTrends(metaRes.data);
       } catch (err) {
         console.log('Meta trends not available:', err.response?.data?.message);
