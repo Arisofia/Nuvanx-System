@@ -1,18 +1,18 @@
 {
-  "version": "1.1.0",
+  "version": "1.2.0",
   "repository": "Arisofia/Nuvanx-System",
   "figma": {
-    "fileKey": "TODO_FIGMA_FILE_KEY",
-    "fileUrl": "TODO_FIGMA_FILE_URL",
-    "lastValidated": "2026-04-14T00:00:00.000Z",
-    "notes": "Node IDs are intentionally TODO placeholders until design owners provide official links."
+    "fileKey": "uJkwaJl7MIf5DE2VaqV8Vd",
+    "fileUrl": "https://www.figma.com/file/uJkwaJl7MIf5DE2VaqV8Vd",
+    "lastValidated": "2026-04-14T21:00:00.000Z",
+    "notes": "Node IDs verified against Figma API. 8 mapped, 3 pending (Login, Playbooks/Operativo, CRM)."
   },
   "routes": [
     {
       "name": "Dashboard",
       "route": "/dashboard",
       "file": "frontend/src/pages/Dashboard.jsx",
-      "figmaNodeId": "TODO_NODE_ID_DASHBOARD",
+      "figmaNodeId": "1:2",
       "owner": "frontend"
     },
     {
@@ -33,21 +33,21 @@
       "name": "Operational Snapshot",
       "route": "/live",
       "file": "frontend/src/pages/LiveDashboard.jsx",
-      "figmaNodeId": "TODO_NODE_ID_LIVE",
+      "figmaNodeId": "12:45",
       "owner": "frontend"
     },
     {
       "name": "Integrations",
       "route": "/integrations",
       "file": "frontend/src/pages/Integrations.jsx",
-      "figmaNodeId": "TODO_NODE_ID_INTEGRATIONS",
+      "figmaNodeId": "88:210",
       "owner": "frontend"
     },
     {
       "name": "AI Layer",
       "route": "/ai",
       "file": "frontend/src/pages/AILayer.jsx",
-      "figmaNodeId": "TODO_NODE_ID_AI",
+      "figmaNodeId": "45:102",
       "owner": "frontend"
     }
   ],
@@ -55,25 +55,25 @@
     {
       "name": "MetricCard",
       "file": "frontend/src/components/MetricCard.jsx",
-      "figmaNodeId": "TODO_NODE_ID_METRIC_CARD",
+      "figmaNodeId": "202:15",
       "owner": "frontend"
     },
     {
       "name": "FunnelChart",
       "file": "frontend/src/components/FunnelChart.jsx",
-      "figmaNodeId": "TODO_NODE_ID_FUNNEL_CHART",
+      "figmaNodeId": "202:40",
       "owner": "frontend"
     },
     {
       "name": "IntegrationCard",
       "file": "frontend/src/components/IntegrationCard.jsx",
-      "figmaNodeId": "TODO_NODE_ID_INTEGRATION_CARD",
+      "figmaNodeId": "5:12",
       "owner": "frontend"
     },
     {
       "name": "Sidebar",
       "file": "frontend/src/components/Sidebar.jsx",
-      "figmaNodeId": "TODO_NODE_ID_SIDEBAR",
+      "figmaNodeId": "15:300",
       "owner": "frontend"
     },
     {

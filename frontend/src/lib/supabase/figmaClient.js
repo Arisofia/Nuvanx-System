@@ -1,11 +1,11 @@
 /**
- * Supabase client for the Figma V.1 project (zpowfbeftxexzidlxndy).
+ * Supabase client for the Figma V.1 project (ssvvuuysgxyqvmovrlvk).
  *
  * Used for features tied to Figma design-system data stored in this
  * separate Supabase project.
  *
  * Required environment variables (set in frontend/.env):
- *   VITE_SUPABASE_FIGMA_URL      — e.g. https://zpowfbeftxexzidlxndy.supabase.co
+ *   VITE_SUPABASE_FIGMA_URL      — e.g. https://ssvvuuysgxyqvmovrlvk.supabase.co
  *   VITE_SUPABASE_FIGMA_ANON_KEY — public anon key from Figma project → Settings → API
  */
 
