@@ -14,11 +14,23 @@
  * app can degrade gracefully.
  */
 
-const { createClient } = require('@supabase/supabase-js');
 const { config } = require('./env');
 const logger = require('../utils/logger');
 
+let createClient = null;
+try {
+  ({ createClient } = require('@supabase/supabase-js'));
+} catch (err) {
+  logger.warn('[Supabase] @supabase/supabase-js not installed — clients disabled', {
+    error: err.message,
+  });
+}
+
 function buildClient(url, serviceRoleKey, label) {
+  if (!createClient) {
+    logger.warn(`[Supabase] ${label} admin client not initialised — client library unavailable`);
+    return null;
+  }
   if (!url || !serviceRoleKey) {
     logger.warn(`[Supabase] ${label} admin client not initialised — missing env vars`);
     return null;
