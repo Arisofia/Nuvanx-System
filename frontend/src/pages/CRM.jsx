@@ -1,7 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
-import { MessageSquare, Calendar, FileText, Search, UserPlus, Loader2, AlertCircle } from 'lucide-react';
+import { MessageSquare, Calendar, FileText, Search, UserPlus, Loader2, AlertCircle, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../config/api';
+
+// Backend stage values, in pipeline order
+const STAGES = ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'];
+const STAGE_LABELS = { lead: 'New', whatsapp: 'Contacted', appointment: 'Appointment', treatment: 'Converted', closed: 'Closed' };
+const SOURCE_OPTIONS = ['manual', 'Meta Ads', 'Google Ads', 'Referral', 'Organic', 'WhatsApp'];
+
+const EMPTY_FORM = { name: '', email: '', phone: '', source: 'manual', stage: 'lead', revenue: '', notes: '' };
 
 // Map backend stage names to display status labels
 const STAGE_TO_STATUS = {
@@ -39,12 +46,175 @@ const sourceColors = {
   'Organic': 'text-gray-400',
 };
 
+// ---------------------------------------------------------------------------
+// Add Lead Modal
+// ---------------------------------------------------------------------------
+function AddLeadModal({ onClose, onCreated }) {
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
+  const [fieldError, setFieldError] = useState(null);
+
+  function set(field, value) {
+    setForm(prev => ({ ...prev, [field]: value }));
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!form.name.trim()) {
+      setFieldError('Name is required.');
+      return;
+    }
+    setFieldError(null);
+    setSaving(true);
+    try {
+      const rawRevenue = parseFloat(form.revenue);
+      const payload = {
+        name: form.name.trim(),
+        email: form.email.trim() || undefined,
+        phone: form.phone.trim() || undefined,
+        source: form.source || 'manual',
+        stage: form.stage,
+        revenue: form.revenue !== '' && !Number.isNaN(rawRevenue) ? rawRevenue : undefined,
+        notes: form.notes.trim() || undefined,
+      };
+      const res = await api.post('/api/leads', payload);
+      const leadName = String(res.data.lead?.name ?? 'Lead');
+      toast.success(`Lead "${leadName}" created.`);
+      onCreated(res.data.lead);
+      onClose();
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Failed to create lead.';
+      setFieldError(msg);
+      toast.error(msg);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div className="w-full max-w-lg bg-dark-800 border border-dark-600 rounded-2xl shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-dark-600">
+          <h2 className="text-lg font-semibold text-white">Add New Lead</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-dark-600 transition-colors">
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+          {/* Name */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1">
+              Name <span className="text-red-400">*</span>
+            </label>
+            <input
+              type="text"
+              value={form.name}
+              onChange={e => set('name', e.target.value)}
+              placeholder="Full name"
+              className="input w-full"
+              autoFocus
+            />
+          </div>
+
+          {/* Email + Phone */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-1">Email</label>
+              <input
+                type="email"
+                value={form.email}
+                onChange={e => set('email', e.target.value)}
+                placeholder="email@example.com"
+                className="input w-full"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-1">Phone</label>
+              <input
+                type="text"
+                value={form.phone}
+                onChange={e => set('phone', e.target.value)}
+                placeholder="+1 555 000 0000"
+                className="input w-full"
+              />
+            </div>
+          </div>
+
+          {/* Source + Stage */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-1">Source</label>
+              <select value={form.source} onChange={e => set('source', e.target.value)} className="input w-full">
+                {SOURCE_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-1">Stage</label>
+              <select value={form.stage} onChange={e => set('stage', e.target.value)} className="input w-full">
+                {STAGES.map(s => <option key={s} value={s}>{STAGE_LABELS[s]}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Revenue */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1">Revenue ($)</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.revenue}
+              onChange={e => set('revenue', e.target.value)}
+              placeholder="0.00"
+              className="input w-full"
+            />
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1">Notes</label>
+            <textarea
+              value={form.notes}
+              onChange={e => set('notes', e.target.value)}
+              placeholder="Optional notes about this lead…"
+              className="input w-full resize-none"
+              rows={2}
+            />
+          </div>
+
+          {fieldError && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/5 border border-red-500/20">
+              <AlertCircle size={16} className="text-red-400 shrink-0 mt-0.5" />
+              <p className="text-xs text-red-400">{fieldError}</p>
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={onClose} className="btn-secondary text-sm">
+              Cancel
+            </button>
+            <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2 text-sm">
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <UserPlus size={14} />}
+              {saving ? 'Saving…' : 'Create Lead'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function CRM() {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState('All');
   const [search, setSearch] = useState('');
+  const [showAddModal, setShowAddModal] = useState(false);
 
   const fetchLeads = useCallback(async () => {
     setLoading(true);
@@ -74,14 +244,18 @@ export default function CRM() {
     return matchStatus && matchSearch;
   });
 
-  function handleWhatsApp(lead) {
+  function handleWhatsApp() {
     toast('Placeholder action: WhatsApp launch is not wired yet.', { icon: 'ℹ️' });
   }
-  function handleCalendar(lead) {
+  function handleCalendar() {
     toast('Placeholder action: Calendar scheduling is not wired yet.', { icon: 'ℹ️' });
   }
-  function handleNotes(lead) {
+  function handleNotes() {
     toast('Placeholder action: Lead notes editor is not implemented yet.', { icon: 'ℹ️' });
+  }
+
+  function handleLeadCreated(newLead) {
+    setLeads(prev => [normalizeLead(newLead), ...prev]);
   }
 
   const counts = statuses.slice(1).reduce((acc, s) => {
@@ -120,13 +294,20 @@ export default function CRM() {
         </div>
         <button
           type="button"
-          onClick={() => toast('Placeholder action: lead creation modal is pending implementation.', { icon: 'ℹ️' })}
+          onClick={() => setShowAddModal(true)}
           className="btn-primary flex items-center gap-2"
         >
           {loading ? <Loader2 size={16} className="animate-spin" /> : <UserPlus size={16} />}
           Add Lead
         </button>
       </div>
+
+      {showAddModal && (
+        <AddLeadModal
+          onClose={() => setShowAddModal(false)}
+          onCreated={handleLeadCreated}
+        />
+      )}
 
       {/* Pipeline summary */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
