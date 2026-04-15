@@ -1,15 +1,24 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext.jsx';
 import { useAuth } from './context/useAuth';
 import Layout from './components/Layout';
 import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import Playbooks from './pages/Playbooks';
-import CRM from './pages/CRM';
-import LiveDashboard from './pages/LiveDashboard';
-import Integrations from './pages/Integrations';
-import AILayer from './pages/AILayer';
+
+// Lazy-load heavy pages so each route is its own JS chunk
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Playbooks = lazy(() => import('./pages/Playbooks'));
+const CRM = lazy(() => import('./pages/CRM'));
+const LiveDashboard = lazy(() => import('./pages/LiveDashboard'));
+const Integrations = lazy(() => import('./pages/Integrations'));
+const AILayer = lazy(() => import('./pages/AILayer'));
+
+const PageLoader = () => (
+  <div className="min-h-screen bg-dark-900 flex items-center justify-center">
+    <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+  </div>
+);
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
@@ -26,27 +35,29 @@ function ProtectedRoute({ children }) {
 function AppRoutes() {
   const { isAuthenticated } = useAuth();
   return (
-    <Routes>
-      <Route path="/login" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />} />
-      <Route
-        path="/"
-        element={
-          <ProtectedRoute>
-            <Layout />
-          </ProtectedRoute>
-        }
-      >
-        <Route index element={<Navigate to="/dashboard" replace />} />
-        <Route path="dashboard" element={<Dashboard />} />
-        <Route path="operativo" element={<Playbooks />} />
-        <Route path="playbooks" element={<Navigate to="/operativo" replace />} />
-        <Route path="crm" element={<CRM />} />
-        <Route path="live" element={<LiveDashboard />} />
-        <Route path="integrations" element={<Integrations />} />
-        <Route path="ai" element={<AILayer />} />
-      </Route>
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
-    </Routes>
+    <Suspense fallback={<PageLoader />}>
+      <Routes>
+        <Route path="/login" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />} />
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <Layout />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="operativo" element={<Playbooks />} />
+          <Route path="playbooks" element={<Navigate to="/operativo" replace />} />
+          <Route path="crm" element={<CRM />} />
+          <Route path="live" element={<LiveDashboard />} />
+          <Route path="integrations" element={<Integrations />} />
+          <Route path="ai" element={<AILayer />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Routes>
+    </Suspense>
   );
 }
 

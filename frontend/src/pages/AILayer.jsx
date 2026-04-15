@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Loader2, Copy, CheckCheck, Sparkles, BarChart2, ChevronDown, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useApi } from '../hooks/useApi';
+import api from '../config/api';
 
 const CONTENT_TYPES = [
   'Ad Copy',
@@ -25,8 +26,21 @@ export default function AILayer() {
   const [analysisResult, setAnalysisResult] = useState('');
   const [analyzeError, setAnalyzeError] = useState(null);
 
+  const [aiAvailable, setAiAvailable] = useState(null); // null = checking, true/false = result
+  const [aiProvider, setAiProvider] = useState(null);
+
   const { loading: generating, post: postGenerate } = useApi();
   const { loading: analyzing, post: postAnalyze } = useApi();
+
+  // Check AI key availability on mount
+  useEffect(() => {
+    api.get('/api/ai/status')
+      .then((res) => {
+        setAiAvailable(res.data?.available ?? false);
+        setAiProvider(res.data?.provider || null);
+      })
+      .catch(() => setAiAvailable(false));
+  }, []);
 
   async function handleGenerate() {
     if (!prompt.trim()) {
@@ -77,6 +91,25 @@ export default function AILayer() {
         <h2 className="text-2xl font-bold text-white">AI Content Layer</h2>
         <p className="text-gray-400 mt-0.5">Generate, optimize, and analyze with GPT-4 or Gemini</p>
       </div>
+
+      {/* AI key status banner */}
+      {aiAvailable === false && (
+        <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300">
+          <AlertCircle size={16} className="shrink-0 mt-0.5" />
+          <p className="text-sm leading-relaxed">
+            No AI engine configured. Connect an <strong>OpenAI</strong> or <strong>Gemini</strong> key in{' '}
+            <a href="/integrations" className="underline hover:text-amber-200">Integrations</a> to
+            enable content generation.
+          </p>
+        </div>
+      )}
+      {aiAvailable === true && (
+        <div className="flex items-center gap-2 text-xs text-emerald-400">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+          AI engine ready
+          {aiProvider && <span className="text-gray-500">· {aiProvider}</span>}
+        </div>
+      )}
 
       {/* Engine Toggle */}
       <div className="flex items-center gap-3">

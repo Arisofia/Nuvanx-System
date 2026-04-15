@@ -60,8 +60,13 @@ const config = {
   googleClientId: process.env.GOOGLE_CLIENT_ID,
   hubspotAccessToken: process.env.HUBSPOT_ACCESS_TOKEN,
   hubspotApiKey: process.env.HUBSPOT_API_KEY,
+  // Personal Access Key — long-lived credential used to auto-refresh OAuth tokens.
+  // Generate at: HubSpot → Settings → Integrations → HubSpot CLI and Local Development
+  hubspotPak: process.env.HUBSPOT_PAK || null,
   // Note: Codespaces secret name has a typo (HUSPOT_PORTAL_ID); support both spellings
   hubspotPortalId: process.env.HUBSPOT_PORTAL_ID || process.env.HUSPOT_PORTAL_ID,
+  // Used to verify webhook signatures from HubSpot (Private App → Webhooks → Client secret)
+  hubspotClientSecret: process.env.HUBSPOT_CLIENT_SECRET || null,
 
   // Meta (Facebook) Marketing API
   metaAccessToken: process.env.META_ACCESS_TOKEN,
@@ -70,6 +75,11 @@ const config = {
   // WhatsApp Business Cloud API
   whatsappAccessToken: process.env.WHATSAPP_ACCESS_TOKEN,
   whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
+
+  // GitHub — server-level personal access token fallback (fine-grained or classic).
+  // Checks GITHUB_PAT first (recommended naming to avoid collision with the built-in
+  // GitHub Actions token), then GITHUB_TOKEN_CLASSIC, then GITHUB_TOKEN.
+  githubToken: process.env.GITHUB_PAT || process.env.GITHUB_TOKEN_CLASSIC || process.env.GITHUB_TOKEN || null,
 };
 
 module.exports = { config, validate };

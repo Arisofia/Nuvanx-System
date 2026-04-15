@@ -28,25 +28,30 @@ Date: 2026-04-15
 
 ### Domain agent candidates
 
-1. Market and competition intelligence agent
-- Purpose: ingest external unstructured signals and produce structured competitor matrices.
-- Dependencies: third-party signal ingestion/scraping providers plus vector indexing.
-- Data path: normalized external text -> embeddings -> pgvector-backed retrieval.
+1. **Growth Agent**
+   - **Purpose**: Identify high-intent lead segments and recommend expansion opportunities.
+   - **Dependencies**: CRM lead scoring, historical conversion data, external market signals.
+   - **Data Path**: Lead attributes + behavioral signals -> scoring model -> growth recommendations.
 
-2. Marketing and content generation agent
-- Purpose: generate and optimize campaign assets using performance feedback.
-- Dependencies: Meta Graph API read/write scope, campaign telemetry ingestion, outbound delivery tooling.
-- Data path: campaign state + historical outcomes -> content variants -> approval -> execution.
+2. **Content Agent**
+   - **Purpose**: Generate and optimize multi-channel campaign assets (ads, emails, WhatsApp).
+   - **Dependencies**: Brand voice guidelines, performance feedback from Meta/HubSpot, LLM providers.
+   - **Data Path**: Campaign brief + historical performance -> content variants -> human approval -> deployment.
 
-3. Sales and CRM follow-up agent
-- Purpose: detect lead state transitions and draft contextual follow-up actions/messages.
-- Dependencies: durable HubSpot OAuth lifecycle, encrypted token storage, lead timeline context.
-- Data path: lead event -> context assembly -> recommendation or draft -> optional human approval.
+3. **Campaign Monitoring Agent**
+   - **Purpose**: Real-time anomaly detection and budget pacing for active ad campaigns.
+   - **Dependencies**: Meta Ads Insights API, Google Ads API, internal spend targets.
+   - **Data Path**: Hourly spend/performance metrics -> threshold checks -> automated alerts or pause actions.
 
-4. Finance and KPI intelligence agent
-- Purpose: deterministic anomaly detection on pipeline and revenue KPIs.
-- Dependencies: stable metric views in Postgres, optional federated SQL acceleration.
-- Data path: KPI snapshots + trend windows -> rule/stat checks -> actionable alerts.
+4. **CRM / Reactivation Agent**
+   - **Purpose**: Detect dormant leads or customers and trigger personalized re-engagement flows.
+   - **Dependencies**: HubSpot/Salesforce lifecycle events, last-interaction timestamps.
+   - **Data Path**: Inactivity detection -> context assembly -> personalized outreach draft -> automated/manual send.
+
+5. **Reporting Agent**
+   - **Purpose**: Automate the generation of cross-platform performance summaries and insights.
+   - **Dependencies**: Aggregated data from all connected integrations, custom KPI definitions.
+   - **Data Path**: Raw integration data -> SQL/vector aggregation -> natural language summary -> delivery.
 
 ## Orchestration Layer Blueprint
 

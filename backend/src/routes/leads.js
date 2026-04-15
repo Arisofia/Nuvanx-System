@@ -3,6 +3,7 @@
 const express = require('express');
 const { body, param } = require('express-validator');
 const { authenticate } = require('../middleware/auth');
+const { leadsWriteLimiter } = require('../middleware/rateLimiter');
 const leadModel = require('../models/lead');
 const { handleValidationErrors } = require('../utils/validators');
 const logger = require('../utils/logger');
@@ -43,7 +44,7 @@ router.get('/:id', async (req, res, next) => {
 });
 
 /** POST /api/leads */
-router.post('/', leadRules, handleValidationErrors, async (req, res, next) => {
+router.post('/', leadsWriteLimiter, leadRules, handleValidationErrors, async (req, res, next) => {
   try {
     const lead = await leadModel.create(req.user.id, req.body);
     logger.info('Lead created', { userId: req.user.id, leadId: lead.id });
@@ -56,6 +57,7 @@ router.post('/', leadRules, handleValidationErrors, async (req, res, next) => {
 /** PUT /api/leads/:id */
 router.put(
   '/:id',
+  leadsWriteLimiter,
   [...leadRules, param('id').isUUID()],
   handleValidationErrors,
   async (req, res, next) => {
@@ -70,7 +72,7 @@ router.put(
 );
 
 /** DELETE /api/leads/:id */
-router.delete('/:id', [param('id').isUUID(), handleValidationErrors], async (req, res, next) => {
+router.delete('/:id', leadsWriteLimiter, [param('id').isUUID(), handleValidationErrors], async (req, res, next) => {
   try {
     const deleted = await leadModel.remove(req.params.id, req.user.id);
     if (!deleted) return res.status(404).json({ success: false, message: 'Lead not found' });

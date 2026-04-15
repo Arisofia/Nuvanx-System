@@ -1,48 +1,103 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { RefreshCw, Megaphone, MessageSquare, Calendar, TrendingUp, Circle, Loader2 } from 'lucide-react';
+import { RefreshCw, Megaphone, MessageSquare, Calendar, TrendingUp, Circle, Loader2, GitBranch, Radio } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import api from '../config/api';
 import { normalizeDashboardMetrics } from '../lib/normalizeDashboardMetrics';
+import { supabase, isSupabaseAvailable } from '../lib/supabase/client';
 
-// Static hourly skeleton shown while/if the backend has no real time-series
-function generateHourlyData() {
+const REFRESH_INTERVAL = 30;
+
+/** Build a 24-slot hourly series from an array of leads (each with createdAt). */
+function buildHourlyFromLeads(leads) {
   const now = new Date();
-  return Array.from({ length: 24 }, (_, i) => {
+  const slots = Array.from({ length: 24 }, (_, i) => {
     const h = new Date(now);
     h.setHours(now.getHours() - (23 - i), 0, 0, 0);
     const label = h.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-    return { time: label, leads: 0, messages: 0 };
+    return { time: label, hour: h.getHours(), leads: 0 };
   });
+
+  const today = now.toISOString().split('T')[0];
+  for (const lead of leads) {
+    const created = lead.createdAt || lead.created_at || '';
+    if (!created || !created.startsWith(today)) continue;
+    const h = new Date(created).getHours();
+    const slot = slots.find((s) => s.hour === h);
+    if (slot) slot.leads += 1;
+  }
+
+  return slots;
 }
 
-const INITIAL_FEED = [
-  { id: 1, type: 'lead', msg: 'Waiting for real activity data…', time: '', color: 'text-gray-500' },
-];
+const EVENT_COLORS = {
+  github_sync: 'text-violet-400',
+  figma_sync: 'text-brand-400',
+  lead_created: 'text-emerald-400',
+  integration_connected: 'text-amber-400',
+  default: 'text-gray-400',
+};
 
-const REFRESH_INTERVAL = 30;
+function eventColor(type) {
+  return EVENT_COLORS[type] || EVENT_COLORS.default;
+}
+
+function timeAgo(isoString) {
+  if (!isoString) return '';
+  const now = Date.now();
+  const diff = Math.max(0, Math.floor((now - new Date(isoString).getTime()) / 1000));
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return new Date(isoString).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
 
 export default function LiveDashboard() {
   const [countdown, setCountdown] = useState(REFRESH_INTERVAL);
   const [metrics, setMetrics] = useState(null);
-  const [chartData] = useState(generateHourlyData);
-  const [feed] = useState(INITIAL_FEED);
+  const [chartData, setChartData] = useState(() => buildHourlyFromLeads([]));
+  const [feed, setFeed] = useState([]);
+  const [feedLoading, setFeedLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [usingApiData, setUsingApiData] = useState(false);
+  const [isRealtime, setIsRealtime] = useState(false);
   const countdownRef = useRef(REFRESH_INTERVAL);
+
+  const fetchEvents = useCallback(async () => {
+    setFeedLoading(true);
+    try {
+      const res = await api.get('/api/figma/events', { params: { limit: 30 } });
+      setFeed(res.data?.events || []);
+    } catch {
+      // Figma Supabase may not be configured — silent degradation
+    } finally {
+      setFeedLoading(false);
+    }
+  }, []);
 
   const fetchMetrics = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      const res = await api.get('/api/dashboard/metrics');
-      const m = normalizeDashboardMetrics(res.data);
-      if (m) {
-        setMetrics(m);
-        setUsingApiData(true);
+      const [metricsRes, leadsRes] = await Promise.allSettled([
+        api.get('/api/dashboard/metrics'),
+        api.get('/api/leads'),
+      ]);
+
+      if (metricsRes.status === 'fulfilled') {
+        const m = normalizeDashboardMetrics(metricsRes.value.data);
+        if (m) {
+          setMetrics(m);
+          setUsingApiData(true);
+        }
+      }
+
+      if (leadsRes.status === 'fulfilled') {
+        const leads = leadsRes.value.data?.leads || [];
+        setChartData(buildHourlyFromLeads(leads));
       }
     } catch {
-      // Backend not available — keep previous or null values
+      // Backend not available — keep previous values
     } finally {
       setIsRefreshing(false);
       countdownRef.current = REFRESH_INTERVAL;
@@ -53,29 +108,50 @@ export default function LiveDashboard() {
   // Initial fetch
   useEffect(() => {
     fetchMetrics();
-  }, [fetchMetrics]);
+    fetchEvents();
+  }, [fetchMetrics, fetchEvents]);
 
-  // Countdown ticker — triggers real API refresh (no mock mutation)
+  // Countdown ticker — triggers real API refresh
   useEffect(() => {
     const tick = setInterval(() => {
       const next = Math.max(countdownRef.current - 1, 0);
       countdownRef.current = next;
       setCountdown(next);
       if (next <= 0) {
-        countdownRef.current = REFRESH_INTERVAL; // prevent re-triggering while refresh is in flight
+        countdownRef.current = REFRESH_INTERVAL;
         fetchMetrics();
+        fetchEvents();
       }
     }, 1000);
     return () => clearInterval(tick);
+  }, [fetchMetrics, fetchEvents]);
+
+  // Supabase Realtime — subscribe to leads INSERT for instant chart updates
+  useEffect(() => {
+    if (!isSupabaseAvailable()) return;
+
+    const channel = supabase
+      .channel('live-dashboard-leads')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'leads' },
+        () => { fetchMetrics(); },
+      )
+      .subscribe((status) => {
+        setIsRealtime(status === 'SUBSCRIBED');
+      });
+
+    return () => { supabase.removeChannel(channel); };
   }, [fetchMetrics]);
 
   const progress = ((REFRESH_INTERVAL - countdown) / REFRESH_INTERVAL) * 100;
 
-  // Map backend metrics to display values
   const activeCampaigns = metrics?.connectedIntegrations ?? '—';
   const messagesToday = metrics?.totalLeads ?? '—';
   const appointmentsToday = metrics?.byStage?.appointment ?? '—';
   const conversionRate = metrics?.conversionRate != null ? `${metrics.conversionRate}%` : '—';
+
+  const hasChartData = chartData.some((d) => d.leads > 0);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -83,8 +159,13 @@ export default function LiveDashboard() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-2xl font-bold text-white">Operational Snapshot</h2>
-            {usingApiData ? (
+            <h2 className="text-2xl font-bold text-white">Live</h2>
+            {isRealtime ? (
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-violet-500/10 text-violet-400 border border-violet-500/20">
+                <Radio size={10} className="animate-pulse" />
+                Realtime
+              </span>
+            ) : usingApiData ? (
               <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                 API Data
@@ -95,8 +176,7 @@ export default function LiveDashboard() {
               </span>
             )}
           </div>
-          <p className="text-gray-400 mt-0.5">Metrics refresh every 30s from /api/dashboard/metrics.</p>
-          <p className="text-xs text-amber-300 mt-1">Chart and activity feed on this page are Placeholder Data.</p>
+          <p className="text-gray-400 mt-0.5">Metrics and activity feed refresh every 30s from backend APIs.</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 text-sm text-gray-400">
@@ -109,7 +189,7 @@ export default function LiveDashboard() {
             <span className="tabular-nums">{countdown}s</span>
           </div>
           <button
-            onClick={fetchMetrics}
+            onClick={() => { fetchMetrics(); fetchEvents(); }}
             disabled={isRefreshing}
             className="btn-secondary flex items-center gap-2 text-sm"
           >
@@ -150,7 +230,7 @@ export default function LiveDashboard() {
             <div>
               <h3 className="font-semibold text-white">Lead Flow — Last 24 Hours</h3>
               <p className="text-xs text-gray-500 mt-0.5">
-                Placeholder Data. Hourly series endpoint is not implemented yet.
+                {hasChartData ? 'Hourly lead activity for today.' : 'No lead activity recorded today yet.'}
               </p>
             </div>
           </div>
@@ -161,39 +241,53 @@ export default function LiveDashboard() {
                   <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.3} />
                   <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0} />
                 </linearGradient>
-                <linearGradient id="msgG" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
               <XAxis dataKey="time" stroke="#6b7280" tick={{ fill: '#9ca3af', fontSize: 10 }} interval={3} />
-              <YAxis stroke="#6b7280" tick={{ fill: '#9ca3af', fontSize: 11 }} />
+              <YAxis stroke="#6b7280" tick={{ fill: '#9ca3af', fontSize: 11 }} allowDecimals={false} />
               <Tooltip
                 contentStyle={{ background: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
                 labelStyle={{ color: '#9ca3af', fontSize: 11 }}
                 itemStyle={{ fontSize: 12 }}
               />
               <Area type="monotone" dataKey="leads" stroke="#0ea5e9" strokeWidth={2} fill="url(#leadsG)" name="Leads" dot={false} />
-              <Area type="monotone" dataKey="messages" stroke="#10b981" strokeWidth={2} fill="url(#msgG)" name="Messages" dot={false} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
 
         {/* Activity Feed */}
         <div className="card flex flex-col">
-          <h3 className="font-semibold text-white mb-4">Activity Feed</h3>
-          <p className="text-xs text-gray-500 mb-3">Mock Activity. Event streaming endpoint is not implemented yet.</p>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-white">Activity Feed</h3>
+            {feedLoading && <Loader2 size={14} className="animate-spin text-gray-500" />}
+          </div>
           <div className="space-y-3 flex-1 overflow-y-auto max-h-64 xl:max-h-none">
-            {feed.map(event => (
-              <div key={event.id} className="flex items-start gap-3 p-2.5 rounded-lg bg-dark-800/60 border border-dark-600/40">
-                <Circle size={8} className={`${event.color} shrink-0 mt-1.5`} fill="currentColor" />
+            {feed.length === 0 && !feedLoading ? (
+              <div className="flex items-start gap-3 p-2.5 rounded-lg bg-dark-800/60 border border-dark-600/40">
+                <Circle size={8} className="text-gray-500 shrink-0 mt-1.5" fill="currentColor" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs text-gray-300 leading-relaxed">{event.msg}</p>
-                  {event.time && <p className="text-xs text-gray-600 mt-0.5">{event.time}</p>}
+                  <p className="text-xs text-gray-400 leading-relaxed">
+                    No events yet. Run a Figma sync or GitHub sync to populate the feed.
+                  </p>
                 </div>
               </div>
-            ))}
+            ) : (
+              feed.map(event => (
+                <div key={event.id} className="flex items-start gap-3 p-2.5 rounded-lg bg-dark-800/60 border border-dark-600/40">
+                  {event.type === 'github_sync' ? (
+                    <GitBranch size={12} className="text-violet-400 shrink-0 mt-1" />
+                  ) : (
+                    <Circle size={8} className={`${eventColor(event.type)} shrink-0 mt-1.5`} fill="currentColor" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-gray-300 leading-relaxed truncate">{event.message}</p>
+                    {event.createdAt && (
+                      <p className="text-xs text-gray-600 mt-0.5">{timeAgo(event.createdAt)}</p>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
