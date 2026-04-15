@@ -16,7 +16,7 @@ Last updated: 2026-04-15 — applied remediations marked ✅
 - ✅ In production (`NODE_ENV=production`) the backend now aborts startup if `DATABASE_URL` (or `SUPABASE_DATABASE_KEY`) is not set — no silent fallback.
 - ✅ `env.js` validates `DATABASE_URL` presence at startup in production, before the pool module is loaded.
 - ✅ `db/index.js` calls `process.exit(1)` if the connectivity check fails in production.
-- The in-memory fallback in credential, integration, and lead models is now unreachable in production because the process would have already exited during startup without a valid DB.
+- The in-memory fallback in credential, integration, and lead models is now unreachable in production for startup misconfiguration, because the process exits before serving traffic without a valid DB; however, the model-level runtime fallback paths may still activate if the DB becomes unavailable or a query fails after startup, so that remains an open gap.
 
 ## Credential Storage Model
 - Positive:
