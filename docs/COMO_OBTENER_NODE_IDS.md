@@ -104,7 +104,7 @@ AI Layer
 Después de actualizar los node IDs en `figma-component-map.json`:
 
 ```bash
-node scripts/validate-figma-mapping.js
+node scripts/validate-figma-mapping.mjs
 ```
 
 Los 13 warnings de "placeholder node ID" deberían desaparecer.
