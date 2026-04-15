@@ -106,26 +106,20 @@ Figma Make files (`figma.com/make/…`) expose node IDs the same way. Note that 
 
 ### Prerequisites
 
-Install `tsx` (required to run the TypeScript script):
+Install dependencies:
 
 ```bash
-npm install   # installs tsx from devDependencies
+npm install
 ```
 
 ### Commands
 
 ```bash
-# TypeScript script (recommended)
-npm run validate-figma
-
-# JavaScript script (legacy, no tsx required)
+# Canonical validator command
 npm run validate:figma
 
-# CI mode — exits 0 even on warnings
-npm run validate:figma:ci
-
 # API check — validates node IDs against the live Figma file
-FIGMA_ACCESS_TOKEN=<your-token> npm run validate-figma -- --api-check
+FIGMA_ACCESS_TOKEN=<your-token> npm run validate:figma -- --api-check
 ```
 
 ### What the validator checks
@@ -150,11 +144,11 @@ Two GitHub Actions workflows run the validator automatically:
 
 ### `ci.yml` — warn-only
 
-Runs on every push and pull request. Posts a validation report as a PR comment. **Never fails the build** (uses `--ci` flag).
+Runs on every push and pull request. Uses the same validator entrypoint and reports validation results in CI.
 
 ### `validate-figma-mapping.yml` — strict
 
-Runs on PRs to `main` and pushes to `main`, `copilot/**`, `feature/**`, `fix/**`. Uses the standard exit codes — will fail if `strictMode: true` is set in `validationRules`.
+Runs on PRs to `main` and pushes to `main`, `copilot/**`, `feature/**`, `fix/**`. Uses standard exit codes and fails on validation errors.
 
 ---
 
@@ -166,7 +160,7 @@ Runs on PRs to `main` and pushes to `main`, `copilot/**`, `feature/**`, `fix/**`
    - Set `figmaNodeId` to the real node ID once you have it, or leave `REPLACE_WITH_NODE_ID` temporarily.
    - Set `status` to `"implemented"` (or `"in-progress"` / `"planned"`).
 4. Update `figma.lastSync` to the current ISO timestamp.
-5. Run `npm run validate-figma` and fix any errors before pushing.
+5. Run `npm run validate:figma` and fix any errors before pushing.
 
 ---
 
@@ -189,5 +183,5 @@ Generate a personal access token at **Figma → Account Settings → Personal ac
 
 ```bash
 export FIGMA_ACCESS_TOKEN=figd_...
-npm run validate-figma -- --api-check
+npm run validate:figma -- --api-check
 ```

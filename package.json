@@ -11,10 +11,8 @@
     "build:frontend": "npm --prefix frontend run build",
     "test:backend": "npm --prefix backend run test",
     "lint:frontend": "npm --prefix frontend run lint",
-    "validate:figma": "node scripts/validate-figma-mapping.js",
-    "validate-figma": "tsx scripts/validate-figma-mapping.ts"
+    "validate:figma": "node scripts/validate-figma-mapping.mjs"
   },
   "devDependencies": {
-    "tsx": "^4.21.0"
   }
 }
