@@ -244,13 +244,13 @@ export default function CRM() {
     return matchStatus && matchSearch;
   });
 
-  function handleWhatsApp(lead) {
+  function handleWhatsApp() {
     toast('Placeholder action: WhatsApp launch is not wired yet.', { icon: 'ℹ️' });
   }
-  function handleCalendar(lead) {
+  function handleCalendar() {
     toast('Placeholder action: Calendar scheduling is not wired yet.', { icon: 'ℹ️' });
   }
-  function handleNotes(lead) {
+  function handleNotes() {
     toast('Placeholder action: Lead notes editor is not implemented yet.', { icon: 'ℹ️' });
   }
 
