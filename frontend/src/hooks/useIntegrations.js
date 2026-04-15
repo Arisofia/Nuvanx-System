@@ -146,9 +146,13 @@ export function useIntegrations() {
     try {
       // WhatsApp test requires phoneNumberId which is stored in the integration metadata
       const current = integrations.find(i => i.service === service);
-      const body = service === 'whatsapp' && current?.metadata?.phoneNumberId
-        ? { phoneNumberId: current.metadata.phoneNumberId }
-        : {};
+      const body = {};
+      if (service === 'whatsapp' && current?.metadata?.phoneNumberId) {
+        body.phoneNumberId = current.metadata.phoneNumberId;
+      }
+      if (service === 'meta' && current?.metadata?.adAccountId) {
+        body.adAccountId = current.metadata.adAccountId;
+      }
 
       const res = await api.post(`/api/integrations/${service}/test`, body);
       const statusUpdate = {

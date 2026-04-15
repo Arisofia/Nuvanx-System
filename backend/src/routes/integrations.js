@@ -211,6 +211,7 @@ router.post(
           login: result.login,
           email: result.email,
           portalId: result.portalId,
+          ...(service === 'meta' && { adAccountId: req.body.adAccountId || null }),
         },
       });
 

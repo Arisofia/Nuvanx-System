@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { RefreshCw, Megaphone, MessageSquare, Calendar, TrendingUp, Circle, Loader2, GitBranch } from 'lucide-react';
+import { RefreshCw, Megaphone, MessageSquare, Calendar, TrendingUp, Circle, Loader2, GitBranch, Radio } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import api from '../config/api';
 import { normalizeDashboardMetrics } from '../lib/normalizeDashboardMetrics';
+import { supabase, isSupabaseAvailable } from '../lib/supabase/client';
 
 const REFRESH_INTERVAL = 30;
 
@@ -60,6 +61,7 @@ export default function LiveDashboard() {
   const [feedLoading, setFeedLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [usingApiData, setUsingApiData] = useState(false);
+  const [isRealtime, setIsRealtime] = useState(false);
   const countdownRef = useRef(REFRESH_INTERVAL);
 
   const fetchEvents = useCallback(async () => {
@@ -124,6 +126,24 @@ export default function LiveDashboard() {
     return () => clearInterval(tick);
   }, [fetchMetrics, fetchEvents]);
 
+  // Supabase Realtime — subscribe to leads INSERT for instant chart updates
+  useEffect(() => {
+    if (!isSupabaseAvailable()) return;
+
+    const channel = supabase
+      .channel('live-dashboard-leads')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'leads' },
+        () => { fetchMetrics(); },
+      )
+      .subscribe((status) => {
+        setIsRealtime(status === 'SUBSCRIBED');
+      });
+
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchMetrics]);
+
   const progress = ((REFRESH_INTERVAL - countdown) / REFRESH_INTERVAL) * 100;
 
   const activeCampaigns = metrics?.connectedIntegrations ?? '—';
@@ -140,7 +160,12 @@ export default function LiveDashboard() {
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-2xl font-bold text-white">Live</h2>
-            {usingApiData ? (
+            {isRealtime ? (
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-violet-500/10 text-violet-400 border border-violet-500/20">
+                <Radio size={10} className="animate-pulse" />
+                Realtime
+              </span>
+            ) : usingApiData ? (
               <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                 API Data
