@@ -130,7 +130,7 @@ export default function Playbooks() {
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       <div>
-        <h2 className="text-2xl font-bold text-white">Operativo (Playbooks)</h2>
+        <h2 className="text-2xl font-bold text-white">Operativo</h2>
         <p className="text-gray-400 mt-0.5">Demo data. Backend playbook orchestration is pending implementation.</p>
       </div>
 
