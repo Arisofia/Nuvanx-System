@@ -18,6 +18,7 @@ const { config } = require('../config/env');
 const logger = require('../utils/logger');
 
 let pool = null;
+const isProduction = config.nodeEnv === 'production';
 
 if (config.databaseUrl) {
   pool = new Pool({
@@ -36,14 +37,25 @@ if (config.databaseUrl) {
     logger.error('pg pool: idle client error', { error: err.message });
   });
 
-  // Verify connectivity at startup (non-blocking — log warning but don't crash)
+  // Verify connectivity at startup.
   pool.query('SELECT 1').catch((err) => {
-    logger.warn('pg pool: initial connectivity check failed — running in in-memory mode', {
-      error: err.message,
-    });
-    pool = null;
+    if (isProduction) {
+      logger.error('pg pool: initial connectivity check failed in production — exiting', {
+        error: err.message,
+      });
+      process.exit(1);
+    } else {
+      logger.warn('pg pool: initial connectivity check failed — running in in-memory mode', {
+        error: err.message,
+      });
+      pool = null;
+    }
   });
 } else {
+  if (isProduction) {
+    logger.error('DATABASE_URL not set in production — exiting');
+    process.exit(1);
+  }
   logger.warn('DATABASE_URL not set — using in-memory storage (data will be lost on restart)');
 }
 
@@ -51,4 +63,4 @@ function isAvailable() {
   return pool !== null;
 }
 
-module.exports = { pool, isAvailable };
+module.exports = { pool, isAvailable, isProduction };

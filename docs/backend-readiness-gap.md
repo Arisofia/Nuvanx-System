@@ -1,20 +1,21 @@
 # Backend Readiness Gap Report
 
-Date: 2026-04-14
+Date: 2026-04-15
+Last updated: 2026-04-15 17:20 UTC
 
 ## In-Memory Models and Fallbacks
 
 | area | current behavior | production risk |
 |---|---|---|
-| auth users | backend/src/routes/auth.js stores users in an in-memory Map | user accounts disappear on process restart |
-| credentials | backend/src/models/credential.js falls back to memory when DB unavailable | credential metadata can disappear after restart |
-| integrations | backend/src/models/integration.js falls back to memory when DB unavailable | integration states may reset unexpectedly |
-| leads | backend/src/models/lead.js falls back to memory when DB unavailable | lead history and revenue metrics can be lost |
+| auth users | backend/src/routes/auth.js uses PostgreSQL users table when DB is available; memory fallback is dev/test only | low in production after DB enforcement; fallback remains non-prod only |
+| credentials | backend/src/models/credential.js falls back to memory only when DB unavailable in non-production | low in production due fail-fast DB policy |
+| integrations | backend/src/models/integration.js falls back to memory only when DB unavailable in non-production | low in production due fail-fast DB policy |
+| leads | backend/src/models/lead.js falls back to memory only when DB unavailable in non-production | low in production due fail-fast DB policy |
 
 ## Persistence Gaps
-- DATABASE_URL is optional; backend can run without durable persistence.
-- db startup check in backend/src/db/index.js can nullify pool and silently shift to memory.
-- This is useful for local dev/tests but unsafe as a production default.
+- Resolved: In production, `DATABASE_URL` (or `SUPABASE_DATABASE_KEY`) is mandatory at env validation.
+- Resolved: `backend/src/db/index.js` now hard-fails process startup if DB config is missing or initial connectivity check fails in production.
+- Non-production environments still allow in-memory mode for local development and tests.
 
 ## Credential Storage Model
 - Positive:
@@ -25,7 +26,8 @@ Date: 2026-04-14
   - fallback-to-memory mode can undermine operational guarantees.
 
 ## Auth Limitations
-- Backend auth register/login path is non-durable unless replaced by external auth.
+- Resolved: Backend auth register/login now persists users in PostgreSQL (`users` table) when DB is available.
+- Non-production fallback remains in-memory to preserve local workflow and test portability.
 - JWT revocation/session management not implemented.
 - Hybrid auth (custom JWT + optional Supabase JWT verification) can be valid but needs explicit environment-level policy documentation.
 
@@ -39,8 +41,7 @@ Date: 2026-04-14
 - Hardcoded Meta adAccountId usage removed from dashboard page.
 
 ## Blocks to Production Readiness
-1. Durable user store for auth path used in production.
-2. Mandatory DB availability for critical data domains.
-3. Migration and deployment guardrails.
-4. End-to-end execution flows for CRM actions and playbook orchestration.
-5. Monitoring/alerting around integration health and data freshness.
+1. Migration and deployment guardrails (automated migration verification in CI/CD).
+2. JWT revocation/session invalidation strategy.
+3. End-to-end execution flows for CRM actions and playbook orchestration.
+4. Monitoring/alerting around integration health and data freshness.
