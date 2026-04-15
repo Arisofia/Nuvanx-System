@@ -41,11 +41,13 @@ CREATE TABLE IF NOT EXISTS public.dashboard_metrics (
 -- Allow the backend service role to read/write freely
 ALTER TABLE public.dashboard_metrics ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY IF NOT EXISTS dashboard_metrics_service_role ON public.dashboard_metrics
+DROP POLICY IF EXISTS dashboard_metrics_service_role ON public.dashboard_metrics;
+CREATE POLICY dashboard_metrics_service_role ON public.dashboard_metrics
   FOR ALL TO service_role USING (TRUE) WITH CHECK (TRUE);
 
 -- Allow anonymous read (Figma Make uses anon key for data binding)
-CREATE POLICY IF NOT EXISTS dashboard_metrics_anon_read ON public.dashboard_metrics
+DROP POLICY IF EXISTS dashboard_metrics_anon_read ON public.dashboard_metrics;
+CREATE POLICY dashboard_metrics_anon_read ON public.dashboard_metrics
   FOR SELECT TO anon USING (TRUE);
 
 -- Seed initial row so Figma can discover the schema immediately
