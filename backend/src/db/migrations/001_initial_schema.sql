@@ -2,14 +2,20 @@
 -- Nuvanx Revenue Intelligence Platform — Initial Schema
 -- Run against Supabase PostgreSQL (or any PostgreSQL >= 14).
 --
--- Row Level Security (RLS) is enabled on every table.  The application enforces
--- user isolation at the query layer (every query filters by user_id via the
--- application-layer JWT).  RLS is kept enabled here so the audit_log
--- insert-only policy remains effective; user-scoping policies are expressed
--- as permissive USING (TRUE) because the Node backend uses a shared service
--- role connection and sets user_id filters in each query rather than via
--- SET LOCAL app.user_id.  Tighten these policies if you switch to row-level
--- JWT propagation (e.g. Supabase auth.uid()).
+-- RLS model (two-tier):
+--   Service role (DATABASE_URL / backend): bypasses RLS entirely; Node backend
+--     enforces user isolation at the query layer (WHERE user_id = $1).
+--   Authenticated role (Supabase JS client / browser): scoped by auth.uid().
+--
+-- Policy matrix:
+--   users        — SELECT + UPDATE for authenticated (auth.uid() = id)
+--                  INSERT via service role only (backend /register route)
+--   credentials  — no authenticated-role policies; encrypted keys are never
+--                  accessible from the browser
+--   integrations — SELECT for authenticated (auth.uid() = user_id);
+--                  INSERT/UPDATE/DELETE via service role only
+--   leads        — no authenticated-role policies; PII served via API only
+--   audit_log    — INSERT only (append-only); UPDATE/DELETE blocked for all
 --
 -- IMPORTANT: Enable the pgcrypto extension first:
 --   CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -32,8 +38,16 @@ CREATE TABLE IF NOT EXISTS users (
 
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 
--- Application enforces user isolation via query-level user_id filters.
-CREATE POLICY users_self_only ON users USING (TRUE);
+-- Authenticated users can read/update their own row.
+-- INSERT is handled by the backend service role only (/register route).
+CREATE POLICY "users_select_own" ON users
+  FOR SELECT TO authenticated
+  USING ((SELECT auth.uid()) = id);
+
+CREATE POLICY "users_update_own" ON users
+  FOR UPDATE TO authenticated
+  USING ((SELECT auth.uid()) = id)
+  WITH CHECK ((SELECT auth.uid()) = id);
 
 -- ---------------------------------------------------------------------------
 -- Table: credentials
@@ -54,8 +68,9 @@ CREATE INDEX IF NOT EXISTS credentials_user_id_idx ON credentials(user_id);
 
 ALTER TABLE credentials ENABLE ROW LEVEL SECURITY;
 
--- Application enforces user isolation via query-level user_id filters.
-CREATE POLICY credentials_owner_only ON credentials USING (TRUE);
+-- No authenticated-role policies: encrypted keys must never be reachable from
+-- the browser. The backend service role bypasses RLS and enforces user
+-- isolation via WHERE user_id = $1 in every query.
 
 -- ---------------------------------------------------------------------------
 -- Table: integrations
@@ -80,8 +95,11 @@ CREATE INDEX IF NOT EXISTS integrations_user_id_idx ON integrations(user_id);
 
 ALTER TABLE integrations ENABLE ROW LEVEL SECURITY;
 
--- Application enforces user isolation via query-level user_id filters.
-CREATE POLICY integrations_owner_only ON integrations USING (TRUE);
+-- Authenticated users can read their own integration status (used for status
+-- display in the browser). INSERT/UPDATE/DELETE are backend service-role only.
+CREATE POLICY "integrations_select_own" ON integrations
+  FOR SELECT TO authenticated
+  USING ((SELECT auth.uid()) = user_id);
 
 -- ---------------------------------------------------------------------------
 -- Table: leads
@@ -106,8 +124,9 @@ CREATE INDEX IF NOT EXISTS leads_source_idx   ON leads(user_id, source);
 
 ALTER TABLE leads ENABLE ROW LEVEL SECURITY;
 
--- Application enforces user isolation via query-level user_id filters.
-CREATE POLICY leads_owner_only ON leads USING (TRUE);
+-- No authenticated-role policies: leads contain PII (name, email, phone) and
+-- must be served via the backend API only, never directly from the browser.
+-- The backend service role bypasses RLS and enforces user isolation via WHERE.
 
 -- ---------------------------------------------------------------------------
 -- Table: audit_log
