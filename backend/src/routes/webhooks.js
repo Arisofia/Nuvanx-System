@@ -23,7 +23,10 @@ const { pool: getPool, isAvailable } = require('../db');
 const { supabaseAdmin } = require('../config/supabase');
 const logger = require('../utils/logger');
 
+const { webhookLimiter } = require('../middleware/rateLimiter');
+
 const router = express.Router();
+router.use(webhookLimiter);
 
 router.post('/hubspot', async (req, res) => {
   // ── Signature verification ────────────────────────────────────────────────

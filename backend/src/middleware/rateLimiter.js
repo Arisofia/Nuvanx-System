@@ -26,4 +26,22 @@ const aiLimiter = rateLimit({
   message: { success: false, message: 'AI request rate limit exceeded, please slow down.' },
 });
 
-module.exports = { defaultLimiter, authLimiter, aiLimiter };
+/** Mutations on the leads table — tighter window to prevent bulk-insert abuse. */
+const leadsWriteLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Lead write rate limit exceeded, please slow down.' },
+});
+
+/** Inbound webhook rate limiter — prevents flooding from misconfigured callers. */
+const webhookLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Webhook rate limit exceeded.' },
+});
+
+module.exports = { defaultLimiter, authLimiter, aiLimiter, leadsWriteLimiter, webhookLimiter };
