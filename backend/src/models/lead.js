@@ -1,7 +1,7 @@
 'use strict';
 
 const { v4: uuidv4 } = require('uuid');
-const { pool, isAvailable } = require('../db');
+const { getPool, isAvailable } = require('../db');
 const logger = require('../utils/logger');
 
 const STAGES = ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'];
@@ -43,7 +43,7 @@ async function create(userId, data) {
 
   if (isAvailable()) {
     try {
-      const { rows } = await pool.query(
+      const { rows } = await getPool().query(
         `INSERT INTO leads (user_id, name, email, phone, source, stage, revenue, notes)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING *`,
@@ -96,7 +96,7 @@ async function findByUser(userId, filters = {}) {
       const params = [userId];
       if (filters.stage) { conditions.push(`stage = $${params.length + 1}`); params.push(filters.stage); }
       if (filters.source) { conditions.push(`source = $${params.length + 1}`); params.push(filters.source); }
-      const { rows } = await pool.query(
+      const { rows } = await getPool().query(
         `SELECT * FROM leads WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC`,
         params,
       );
@@ -124,7 +124,7 @@ async function findByUser(userId, filters = {}) {
 async function findById(id, userId) {
   if (isAvailable()) {
     try {
-      const { rows } = await pool.query(
+      const { rows } = await getPool().query(
         'SELECT * FROM leads WHERE id = $1 AND user_id = $2',
         [id, userId],
       );
@@ -148,7 +148,7 @@ async function update(id, userId, data) {
   if (isAvailable()) {
     try {
       const stage = data.stage && STAGES.includes(data.stage) ? data.stage : undefined;
-      const { rows } = await pool.query(
+      const { rows } = await getPool().query(
         `UPDATE leads
          SET
            name    = COALESCE($3, name),
@@ -202,7 +202,7 @@ async function update(id, userId, data) {
 async function remove(id, userId) {
   if (isAvailable()) {
     try {
-      const { rowCount } = await pool.query(
+      const { rowCount } = await getPool().query(
         'DELETE FROM leads WHERE id = $1 AND user_id = $2',
         [id, userId],
       );

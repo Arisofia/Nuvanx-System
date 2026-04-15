@@ -1,8 +1,9 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase, isSupabaseAvailable } from '../lib/supabase/client';
 import api from '../config/api';
+import { AuthContext } from './authContext';
 
-const AuthContext = createContext(null);
+export { AuthContext };
 
 function toUserShape(sbUser) {
   return {
@@ -36,20 +37,21 @@ export function AuthProvider({ children }) {
 
       return () => subscription.unsubscribe();
     } else {
-      // Fall back to custom backend JWT stored in localStorage
+      // Fall back to custom backend JWT stored in localStorage.
+      // Both token and user are set together once the API confirms the token is valid.
+      // Always use a Promise so setState is never called synchronously in the effect body.
       const savedToken = localStorage.getItem('nuvanx_token');
-      setToken(savedToken);
-      if (savedToken) {
-        api.get('/api/auth/me')
-          .then((res) => setUser(res.data.user))
-          .catch(() => {
-            localStorage.removeItem('nuvanx_token');
-            setToken(null);
-          })
-          .finally(() => setLoading(false));
-      } else {
-        setLoading(false);
-      }
+      const loadPromise = savedToken
+        ? api.get('/api/auth/me')
+            .then((res) => {
+              setToken(savedToken);
+              setUser(res.data.user);
+            })
+            .catch(() => {
+              localStorage.removeItem('nuvanx_token');
+            })
+        : Promise.resolve();
+      loadPromise.finally(() => setLoading(false));
     }
   }, []);
 
@@ -100,10 +102,4 @@ export function AuthProvider({ children }) {
       {children}
     </AuthContext.Provider>
   );
-}
-
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
-  return ctx;
 }
