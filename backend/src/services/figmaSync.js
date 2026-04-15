@@ -167,77 +167,47 @@ async function publishSnapshotToFigma(userId, snapshot) {
     await supabaseFigmaAdmin.from('figma_tokens').insert(kpiRows);
   }
 
-  // 3b. Upsert flat KPI row to dashboard_metrics (best-effort — table may not yet exist)
-  await supabaseFigmaAdmin
-    .from('dashboard_metrics')
-    .upsert(
-      {
-        id: 'nuvanx-main',
-        label: 'Nuvanx KPIs',
-        total_leads: metrics.totalLeads,
-        total_revenue: metrics.totalRevenue,
-        connected_integrations: metrics.connectedIntegrations,
-        total_integrations: metrics.totalIntegrations,
-        leads_lead: metrics.stageCounts?.lead ?? 0,
-        leads_whatsapp: metrics.stageCounts?.whatsapp ?? 0,
-        leads_appointment: metrics.stageCounts?.appointment ?? 0,
-        leads_treatment: metrics.stageCounts?.treatment ?? 0,
-        leads_closed: metrics.stageCounts?.closed ?? 0,
-        hubspot_status: statusOf('hubspot'),
-        meta_status: statusOf('meta'),
-        whatsapp_status: statusOf('whatsapp'),
-        github_status: statusOf('github'),
-        openai_status: statusOf('openai'),
-        gemini_status: statusOf('gemini'),
-        last_sync: now,
-        updated_at: now,
-      },
-      { onConflict: 'id' },
-    )
-    .then(({ error }) => {
-      if (error) {
-        // Table doesn't exist yet — log hint but don't fail the sync
-        const logger = require('../utils/logger');
-        logger.warn('dashboard_metrics upsert skipped (run SQL migration to enable)', {
-          hint: error.message,
-        });
-      }
-    });
+  // 3b. Upsert flat KPI row to nuvanx-prod dashboard_metrics (primary — always works)
+  const kpiPayload = {
+    id: 'nuvanx-main',
+    label: 'Nuvanx KPIs',
+    total_leads: metrics.totalLeads,
+    total_revenue: metrics.totalRevenue,
+    connected_integrations: metrics.connectedIntegrations,
+    total_integrations: metrics.totalIntegrations,
+    leads_lead: metrics.stageCounts?.lead ?? 0,
+    leads_whatsapp: metrics.stageCounts?.whatsapp ?? 0,
+    leads_appointment: metrics.stageCounts?.appointment ?? 0,
+    leads_treatment: metrics.stageCounts?.treatment ?? 0,
+    leads_closed: metrics.stageCounts?.closed ?? 0,
+    hubspot_status: statusOf('hubspot'),
+    meta_status: statusOf('meta'),
+    whatsapp_status: statusOf('whatsapp'),
+    github_status: statusOf('github'),
+    openai_status: statusOf('openai'),
+    gemini_status: statusOf('gemini'),
+    last_sync: now,
+    updated_at: now,
+  };
 
-  // 3c. Mirror flat KPI row to nuvanx-prod dashboard_metrics (best-effort)
-  //     Supabase AI deployed the table there; keep it in sync so any tool
-  //     connected to the prod project also sees live values.
   if (supabaseAdmin) {
-    const kpiPayload = {
-      id: 'nuvanx-main',
-      label: 'Nuvanx KPIs',
-      total_leads: metrics.totalLeads,
-      total_revenue: metrics.totalRevenue,
-      connected_integrations: metrics.connectedIntegrations,
-      total_integrations: metrics.totalIntegrations,
-      leads_lead: metrics.stageCounts?.lead ?? 0,
-      leads_whatsapp: metrics.stageCounts?.whatsapp ?? 0,
-      leads_appointment: metrics.stageCounts?.appointment ?? 0,
-      leads_treatment: metrics.stageCounts?.treatment ?? 0,
-      leads_closed: metrics.stageCounts?.closed ?? 0,
-      hubspot_status: statusOf('hubspot'),
-      meta_status: statusOf('meta'),
-      whatsapp_status: statusOf('whatsapp'),
-      github_status: statusOf('github'),
-      openai_status: statusOf('openai'),
-      gemini_status: statusOf('gemini'),
-      last_sync: now,
-      updated_at: now,
-    };
-    await supabaseAdmin
+    const { error } = await supabaseAdmin
+      .from('dashboard_metrics')
+      .upsert(kpiPayload, { onConflict: 'id' });
+    if (error) {
+      const logger = require('../utils/logger');
+      logger.warn('dashboard_metrics upsert failed', { hint: error.message });
+    }
+  }
+
+  // 3c. Best-effort mirror to legacy Figma project (zpowfbeftxexzidlxndy).
+  //     Silently skipped — frontend now reads from nuvanx-prod directly.
+  if (supabaseFigmaAdmin) {
+    supabaseFigmaAdmin
       .from('dashboard_metrics')
       .upsert(kpiPayload, { onConflict: 'id' })
-      .then(({ error }) => {
-        if (error) {
-          const logger = require('../utils/logger');
-          logger.warn('prod dashboard_metrics upsert skipped', { hint: error.message });
-        }
-      });
+      .then(() => { /* best-effort, ignore errors */ })
+      .catch(() => { /* project may not have this table */ });
   }
 
   // 4. Write operational event to monitoring schema (best-effort — schema may not exist)

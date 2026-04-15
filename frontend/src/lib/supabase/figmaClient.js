@@ -1,23 +1,25 @@
 /**
- * Supabase client for the Figma V.1 project (zpowfbeftxexzidlxndy).
+ * Supabase client for Figma design-system data (dashboard_metrics, figma_tokens).
  *
- * Used for features tied to Figma design-system data stored in this
- * separate Supabase project.
- *
- * Required environment variables (set in frontend/.env):
- *   VITE_SUPABASE_FIGMA_URL      — e.g. https://zpowfbeftxexzidlxndy.supabase.co
- *   VITE_SUPABASE_FIGMA_ANON_KEY — public anon key from Figma project → Settings → API
+ * Reads from nuvanx-prod (ssvvuuysgxyqvmovrlvk) — the single source of truth.
+ * VITE_SUPABASE_FIGMA_URL / VITE_SUPABASE_FIGMA_ANON_KEY are kept for back-compat
+ * but fall back to the main VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY so the
+ * frontend works out of the box without a separate Figma Supabase project.
  */
 
 import { createClient } from '@supabase/supabase-js';
 
-const figmaUrl = import.meta.env.VITE_SUPABASE_FIGMA_URL;
-const figmaAnonKey = import.meta.env.VITE_SUPABASE_FIGMA_ANON_KEY;
+const figmaUrl =
+  import.meta.env.VITE_SUPABASE_FIGMA_URL ||
+  import.meta.env.VITE_SUPABASE_URL;
+const figmaAnonKey =
+  import.meta.env.VITE_SUPABASE_FIGMA_ANON_KEY ||
+  import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!figmaUrl || !figmaAnonKey) {
   console.warn(
-    '[Supabase Figma] VITE_SUPABASE_FIGMA_URL or VITE_SUPABASE_FIGMA_ANON_KEY is not set. ' +
-      'Figma project features will be disabled.',
+    '[Supabase Figma] No Supabase URL/key configured. ' +
+      'Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in frontend/.env.',
   );
 }
 
