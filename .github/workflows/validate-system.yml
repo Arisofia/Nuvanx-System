@@ -1,0 +1,131 @@
+name: Validate System
+
+# Comprehensive structural validation pipeline.
+# Philosophy: high-velocity, high-value checks over brittle E2E browser tests.
+# Every step must pass before a PR can be merged.
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, 'copilot/**', 'feature/**', 'fix/**']
+
+jobs:
+  # ─── 1. Backend: install dependencies + run Jest tests ──────────────────────
+  backend-tests:
+    name: Backend — tests (Jest)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies (clean install)
+        run: npm ci
+
+      - name: Run backend test suite
+        run: npm test
+        env:
+          NODE_ENV: test
+          JWT_SECRET: ci-jwt-secret-must-be-at-least-32-chars!
+          ENCRYPTION_KEY: ci-encryption-key-must-be-32-chars!!
+
+  # ─── 2. Frontend: lint + static analysis ────────────────────────────────────
+  frontend-lint:
+    name: Frontend — ESLint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies (clean install)
+        run: npm ci
+
+      - name: Run ESLint
+        # Enforces: react-hooks rules, react-refresh fast-refresh compliance,
+        # no-unused-vars. Any error fails the pipeline.
+        run: npm run lint
+
+  # ─── 3. Frontend: production build verification ──────────────────────────────
+  frontend-build:
+    name: Frontend — Vite build
+    runs-on: ubuntu-latest
+    needs: frontend-lint
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies (clean install)
+        run: npm ci
+
+      - name: Build for production
+        run: npm run build
+        env:
+          NODE_ENV: production
+
+  # ─── 4. Figma: design-to-code mapping validation ────────────────────────────
+  figma-validation:
+    name: Figma — mapping validation (strict)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run Figma mapping validation
+        # Validates that all routes in figma-component-map.json exist in App.jsx
+        # and all mapped component files exist on disk.
+        # Failure here blocks the PR — design-to-code traceability is mandatory.
+        run: npm run validate:figma
+        working-directory: frontend
