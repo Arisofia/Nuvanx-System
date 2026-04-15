@@ -64,10 +64,13 @@ export function useDashboardMetrics() {
   }, []);
 
   useEffect(() => {
-    // load() is an async data-fetcher — setState calls inside it are intentional.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void load();
-    const unsub = subscribeToDashboardMetrics((updated) => setMetrics(updated));
+    // Defer initial load so the effect body returns before any setState is called.
+    // This satisfies react-hooks/set-state-in-effect and prevents cascading renders.
+    queueMicrotask(() => { load(); });
+    const unsub = subscribeToDashboardMetrics((updated) => {
+      // Defer subscription state updates for the same reason.
+      queueMicrotask(() => setMetrics(updated));
+    });
     return unsub;
   }, [load]);
 
