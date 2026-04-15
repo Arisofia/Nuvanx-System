@@ -19,7 +19,7 @@ const express = require('express');
 const { config } = require('../config/env');
 const hubspotService = require('../services/hubspot');
 const leadModel = require('../models/lead');
-const { getPool, isAvailable } = require('../db');
+const { pool: getPool, isAvailable } = require('../db');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -72,7 +72,7 @@ router.post('/hubspot', async (req, res) => {
 
       // Upsert by hubspot ID stored in notes — if DB is available use ON CONFLICT
       if (isAvailable()) {
-        await getPool().query(
+        await getPool.query(
           `INSERT INTO leads (user_id, name, email, phone, source, stage, revenue, notes)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
            ON CONFLICT DO NOTHING`,

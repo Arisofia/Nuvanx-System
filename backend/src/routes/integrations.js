@@ -10,7 +10,7 @@ const whatsappService = require('../services/whatsapp');
 const githubService = require('../services/github');
 const hubspotService = require('../services/hubspot');
 const leadModel = require('../models/lead');
-const { getPool, isAvailable } = require('../db');
+const { pool, isAvailable } = require('../db');
 const { config } = require('../config/env');
 const { serviceParamRule, handleValidationErrors, connectRules } = require('../utils/validators');
 const logger = require('../utils/logger');
@@ -244,7 +244,7 @@ router.post('/hubspot/sync', async (req, res, next) => {
     for (const leadData of leads) {
       if (isAvailable() && leadData.email) {
         // Upsert by (user_id, email) — update if exists, insert otherwise
-        const { rowCount } = await getPool().query(
+        const { rowCount } = await pool.query(
           `UPDATE leads SET name=$3, phone=$4, stage=$5, notes=$6, source='hubspot'
            WHERE user_id=$1 AND email=$2`,
           [req.user.id, leadData.email, leadData.name, leadData.phone, leadData.stage, leadData.notes],

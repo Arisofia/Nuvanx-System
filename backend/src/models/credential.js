@@ -2,7 +2,7 @@
 
 const { v4: uuidv4 } = require('uuid');
 const { encrypt, decrypt } = require('../services/encryption');
-const { getPool, isAvailable } = require('../db');
+const { pool: getPool, isAvailable } = require('../db');
 const logger = require('../utils/logger');
 
 // ---------------------------------------------------------------------------
@@ -22,7 +22,7 @@ function _memKey(userId, service) {
 // Database helpers
 // ---------------------------------------------------------------------------
 async function _dbSave(userId, service, encryptedKey) {
-  const { rows } = await getPool().query(
+  const { rows } = await getPool.query(
     `INSERT INTO credentials (user_id, service, encrypted_key)
      VALUES ($1, $2, $3)
      ON CONFLICT (user_id, service) DO UPDATE
@@ -34,11 +34,11 @@ async function _dbSave(userId, service, encryptedKey) {
 }
 
 async function _dbGetEncrypted(userId, service) {
-  await getPool().query(
+  await getPool.query(
     'UPDATE credentials SET last_used = NOW() WHERE user_id = $1 AND service = $2',
     [userId, service],
   );
-  const { rows } = await getPool().query(
+  const { rows } = await getPool.query(
     'SELECT encrypted_key FROM credentials WHERE user_id = $1 AND service = $2',
     [userId, service],
   );
@@ -46,7 +46,7 @@ async function _dbGetEncrypted(userId, service) {
 }
 
 async function _dbList(userId) {
-  const { rows } = await getPool().query(
+  const { rows } = await getPool.query(
     'SELECT id, service, created_at, last_used FROM credentials WHERE user_id = $1 ORDER BY created_at DESC',
     [userId],
   );
@@ -54,7 +54,7 @@ async function _dbList(userId) {
 }
 
 async function _dbRemove(userId, service) {
-  const { rowCount } = await getPool().query(
+  const { rowCount } = await getPool.query(
     'DELETE FROM credentials WHERE user_id = $1 AND service = $2',
     [userId, service],
   );

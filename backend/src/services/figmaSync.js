@@ -1,6 +1,6 @@
 'use strict';
 
-const { getPool, isAvailable } = require('../db');
+const { pool, isAvailable } = require('../db');
 const { supabaseFigmaAdmin } = require('../config/supabase');
 const integrationModel = require('../models/integration');
 const leadModel = require('../models/lead');
@@ -8,7 +8,7 @@ const credentialModel = require('../models/credential');
 
 async function getAuditLog(userId, limit = 100) {
   if (!isAvailable()) return [];
-  const { rows } = await getPool().query(
+  const { rows } = await pool.query(
     `SELECT action, resource_type, resource_id, metadata, created_at
        FROM audit_log
       WHERE actor_id = $1
@@ -23,7 +23,7 @@ async function getUserProfile(userId) {
   if (!isAvailable()) {
     return { id: userId, email: null, name: null };
   }
-  const { rows } = await getPool().query(
+  const { rows } = await pool.query(
     'SELECT id, email, name, created_at, updated_at FROM users WHERE id = $1 LIMIT 1',
     [userId],
   );
