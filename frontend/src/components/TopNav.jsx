@@ -6,7 +6,6 @@ const pageTitles = {
   '/live': 'Operational Snapshot',
   '/crm': 'CRM & Lead Pipeline',
   '/operativo': 'Operativo (Playbooks)',
-  '/playbooks': 'Operativo (Playbooks)',
   '/integrations': 'Integrations',
   '/ai': 'AI Layer',
 };

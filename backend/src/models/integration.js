@@ -1,6 +1,6 @@
 'use strict';
 
-const { pool, isAvailable } = require('../db');
+const { getPool, isAvailable } = require('../db');
 const logger = require('../utils/logger');
 
 const SERVICES = [
@@ -27,7 +27,7 @@ function _memKey(userId, service) {
 // Database helpers
 // ---------------------------------------------------------------------------
 async function _dbGetAll(userId) {
-  const { rows } = await pool.query(
+  const { rows } = await getPool().query(
     'SELECT service, status, last_sync, last_error, metadata FROM integrations WHERE user_id = $1',
     [userId],
   );
@@ -48,7 +48,7 @@ async function _dbGetAll(userId) {
 }
 
 async function _dbUpsert(userId, service, update) {
-  const { rows } = await pool.query(
+  const { rows } = await getPool().query(
     `INSERT INTO integrations (user_id, service, status, last_sync, last_error, metadata)
      VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (user_id, service) DO UPDATE
