@@ -38,7 +38,7 @@ export default function Dashboard() {
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [error, setError] = useState(null);
 
-  async function fetchData() {
+  const fetchData = async () => {
     setLoadingMetrics(true);
     setError(null);
     try {
@@ -102,9 +102,9 @@ export default function Dashboard() {
     } finally {
       setLoadingMetrics(false);
     }
-  }
+  };
 
-  async function fetchAiSuggestions() {
+  const fetchAiSuggestions = async () => {
     setLoadingSuggestions(true);
     try {
       const res = await api.post('/api/ai/suggestions', { provider: 'openai' });
@@ -115,7 +115,7 @@ export default function Dashboard() {
     } finally {
       setLoadingSuggestions(false);
     }
-  }
+  };
 
   useEffect(() => {
     fetchData();

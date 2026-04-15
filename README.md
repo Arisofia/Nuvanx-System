@@ -22,9 +22,12 @@ This README is intentionally status-first and non-marketing.
   - CI workflow checks.
 
 ### Partial
-- Persistence is DB-capable but falls back to in-memory when DB is unavailable.
-- Backend auth route uses in-memory user store.
+- In-memory fallback still exists for non-production development/testing paths in several backend models.
 - Integration analytics endpoints depend on additional metadata and external credentials.
+
+### Production Guardrails
+- In production, backend startup requires a valid DB connection string and exits fast when PostgreSQL is unavailable.
+- Backend-native auth persists users in PostgreSQL in production-capable paths.
 
 ### Mock / Demo
 - frontend/src/pages/Playbooks.jsx content is demo data and explicitly labeled in UI.
@@ -74,4 +77,8 @@ The validator checks route/file mapping structure. It does not yet validate node
 - docs/figma-validation-audit.md
 - docs/figma-validation-spec.md
 - docs/backend-readiness-gap.md
+- docs/agents-and-integrations-architecture.md
+- docs/ci-cd-status.md
+- docs/production-readiness-gap.md
+- docs/final-execution-report.md
 - docs/final-cleanup-and-readiness-report.md
