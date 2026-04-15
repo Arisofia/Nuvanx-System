@@ -64,14 +64,15 @@ export function useDashboardMetrics() {
   }, []);
 
   useEffect(() => {
+    let alive = true;
     // Defer initial load so the effect body returns before any setState is called.
     // This satisfies react-hooks/set-state-in-effect and prevents cascading renders.
-    queueMicrotask(() => { load(); });
+    queueMicrotask(() => { if (alive) load(); });
     const unsub = subscribeToDashboardMetrics((updated) => {
       // Defer subscription state updates for the same reason.
-      queueMicrotask(() => setMetrics(updated));
+      queueMicrotask(() => { if (alive) setMetrics(updated); });
     });
-    return unsub;
+    return () => { alive = false; unsub?.(); };
   }, [load]);
 
   return { metrics, loading, error, reload: load };
