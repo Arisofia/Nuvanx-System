@@ -60,6 +60,9 @@ const config = {
   googleClientId: process.env.GOOGLE_CLIENT_ID,
   hubspotAccessToken: process.env.HUBSPOT_ACCESS_TOKEN,
   hubspotApiKey: process.env.HUBSPOT_API_KEY,
+  // Personal Access Key — long-lived credential used to auto-refresh OAuth tokens.
+  // Generate at: HubSpot → Settings → Integrations → HubSpot CLI and Local Development
+  hubspotPak: process.env.HUBSPOT_PAK || null,
   // Note: Codespaces secret name has a typo (HUSPOT_PORTAL_ID); support both spellings
   hubspotPortalId: process.env.HUBSPOT_PORTAL_ID || process.env.HUSPOT_PORTAL_ID,
   // Used to verify webhook signatures from HubSpot (Private App → Webhooks → Client secret)

@@ -3,27 +3,93 @@
 const crypto = require('crypto');
 const axios = require('axios');
 const logger = require('../utils/logger');
+const { config } = require('../config/env');
 
 const HUBSPOT_BASE = 'https://api.hubapi.com';
+const PAK_REFRESH_URL = 'https://api.hubspot.com/localdevauth/v1/auth/refresh';
+// Refresh 5 minutes before expiry to avoid using a nearly-expired token
+const REFRESH_BUFFER_MS = 5 * 60 * 1000;
+
+/** In-memory token cache — refreshed automatically from the PAK */
+let _cachedToken = null;      // string
+let _tokenExpiresAt = 0;      // epoch ms
+let _refreshPromise = null;   // deduplicate concurrent refresh requests
+
+/**
+ * Exchange the Personal Access Key (PAK) for a short-lived OAuth access token.
+ * PAK itself never expires; tokens last ~30 minutes.
+ * Endpoint discovered from HubSpot CLI source: @hubspot/local-dev-lib.
+ */
+async function _refreshTokenFromPak() {
+  const pak = config.hubspotPak;
+  const portalId = config.hubspotPortalId;
+  if (!pak) throw new Error('HUBSPOT_PAK not set — cannot auto-refresh token');
+
+  const { data } = await axios.post(
+    PAK_REFRESH_URL + (portalId ? `?portalId=${portalId}` : ''),
+    { encodedOAuthRefreshToken: pak },
+    { timeout: 10000 },
+  );
+  _cachedToken = data.oauthAccessToken;
+  _tokenExpiresAt = data.expiresAtMillis;
+  logger.info('HubSpot token refreshed via PAK', {
+    expiresAt: new Date(_tokenExpiresAt).toISOString(),
+  });
+  return _cachedToken;
+}
+
+/**
+ * Return a valid access token, refreshing via PAK when needed.
+ * Falls back to HUBSPOT_ACCESS_TOKEN env var if no PAK is configured.
+ * @returns {Promise<string>} Valid access token
+ */
+async function _getToken() {
+  const pak = config.hubspotPak;
+
+  // No PAK — use static token from env (may be stale)
+  if (!pak) {
+    const staticToken = config.hubspotAccessToken;
+    if (!staticToken) throw new Error('Neither HUBSPOT_PAK nor HUBSPOT_ACCESS_TOKEN is set');
+    return staticToken;
+  }
+
+  // Token still valid
+  if (_cachedToken && Date.now() + REFRESH_BUFFER_MS < _tokenExpiresAt) {
+    return _cachedToken;
+  }
+
+  // Deduplicate concurrent refresh requests
+  if (!_refreshPromise) {
+    _refreshPromise = _refreshTokenFromPak().finally(() => { _refreshPromise = null; });
+  }
+  return _refreshPromise;
+}
 
 /**
  * Build Axios request config for HubSpot.
  * Uses Bearer token authentication (Private App access tokens).
  * Legacy hapikey auth was deprecated by HubSpot on 2022-11-30.
- * @param {string} credential  Private App access token
+ * @param {string} [credential]  Token override; auto-refreshed from PAK if omitted
  */
+async function _authConfigAsync(credential) {
+  const token = credential || await _getToken();
+  return { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } };
+}
+
+// Synchronous variant kept for paths that already have a credential param
 function _authConfig(credential) {
   return { headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' } };
 }
 
 /**
  * Verify a HubSpot credential by fetching the account details.
- * @param {string} credential  Access token or API key
+ * Omit credential to let the PAK auto-refresh token handle authentication.
+ * @param {string} [credential]  Access token override
  * @returns {{ connected: boolean, portalId?: number, accountName?: string, error?: string }}
  */
 async function testConnection(credential) {
   try {
-    const authCfg = _authConfig(credential);
+    const authCfg = await _authConfigAsync(credential);
     const { data } = await axios.get(`${HUBSPOT_BASE}/account-info/v3/details`, {
       ...authCfg,
       timeout: 10000,
@@ -43,7 +109,7 @@ async function testConnection(credential) {
  * @returns {object[]} Array of HubSpot contact objects
  */
 async function getContacts(credential, limit = 50) {
-  const authCfg = _authConfig(credential);
+  const authCfg = await _authConfigAsync(credential);
   const { data } = await axios.get(`${HUBSPOT_BASE}/crm/v3/objects/contacts`, {
     ...authCfg,
     params: { ...authCfg.params, limit, properties: 'firstname,lastname,email,phone,lifecyclestage' },
@@ -208,7 +274,7 @@ function verifyWebhookSignature(clientSecret, rawBody, signature) {
  * @returns {{ leads: object[], total: number }}
  */
 async function fetchLeadsFromHubSpot(credential) {
-  const authCfg = _authConfig(credential);
+  const authCfg = await _authConfigAsync(credential);
   const { data } = await axios.get(`${HUBSPOT_BASE}/crm/v3/objects/contacts`, {
     ...authCfg,
     params: {
@@ -230,4 +296,6 @@ module.exports = {
   mapContactToLead,
   verifyWebhookSignature,
   fetchLeadsFromHubSpot,
+  // Exposed for testing / forced refresh
+  refreshToken: _refreshTokenFromPak,
 };
