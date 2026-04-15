@@ -1,9 +1,10 @@
-import { Shield } from 'lucide-react';
+import { Shield, RefreshCw, Loader2 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import IntegrationCard from '../components/IntegrationCard';
 import { useIntegrations } from '../hooks/useIntegrations';
 
 export default function Integrations() {
-  const { integrations, connectIntegration, testIntegration } = useIntegrations();
+  const { integrations, loading, connectIntegration, testIntegration, validateAll } = useIntegrations();
 
   async function handleConnect(service, credentials) {
     await connectIntegration(service, credentials);
@@ -13,6 +14,16 @@ export default function Integrations() {
     await testIntegration(service);
   }
 
+  async function handleSync() {
+    try {
+      const res = await validateAll();
+      const connected = res?.validated?.filter(v => v.status === 'connected').length ?? 0;
+      toast.success(`Vault sincronizado — ${connected} servicio${connected !== 1 ? 's' : ''} conectado${connected !== 1 ? 's' : ''}`);
+    } catch {
+      toast.error('Error al sincronizar el vault');
+    }
+  }
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -20,8 +31,12 @@ export default function Integrations() {
           <h2 className="text-2xl font-bold text-white uppercase tracking-tight">Centro de Integraciones</h2>
           <p className="text-gray-400 mt-0.5">Conexión segura con el ecosistema de datos de Nuvanx. Las credenciales se cifran y persisten en Supabase Cloud.</p>
         </div>
-        <button className="btn-primary flex items-center gap-2 text-sm px-5">
-          <RefreshCw size={16} />
+        <button
+          className="btn-primary flex items-center gap-2 text-sm px-5"
+          onClick={handleSync}
+          disabled={loading}
+        >
+          {loading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
           Sincronizar Vault
         </button>
       </div>

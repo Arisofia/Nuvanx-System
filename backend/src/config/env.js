@@ -77,9 +77,9 @@ const config = {
   whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
 
   // GitHub — server-level personal access token fallback (fine-grained or classic).
-  // Use GITHUB_PAT, not GITHUB_TOKEN, to avoid collision with the built-in
-  // GitHub Actions token which has limited permissions.
-  githubToken: process.env.GITHUB_PAT || null,
+  // Checks GITHUB_PAT first (recommended naming to avoid collision with the built-in
+  // GitHub Actions token), then GITHUB_TOKEN_CLASSIC, then GITHUB_TOKEN.
+  githubToken: process.env.GITHUB_PAT || process.env.GITHUB_TOKEN_CLASSIC || process.env.GITHUB_TOKEN || null,
 };
 
 module.exports = { config, validate };

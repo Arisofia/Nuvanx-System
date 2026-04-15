@@ -55,6 +55,7 @@ app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/ai', require('./routes/ai'));
 app.use('/api/figma', require('./routes/figma'));
 app.use('/api/github', require('./routes/github'));
+app.use('/api/playbooks', require('./routes/playbooks'));
 
 // ─── 404 handler ────────────────────────────────────────────────────────────
 app.use((req, res) => {

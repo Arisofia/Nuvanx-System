@@ -27,12 +27,15 @@ function authenticate(req, res, next) {
     req.user = decoded;
     return next();
   } catch (primaryErr) {
-    // Only fall through to Supabase verification if we have a Supabase JWT secret
+    // TokenExpiredError is always definitive — the signature was valid but the token is stale.
+    // Return immediately regardless of whether a Supabase secret is configured.
+    if (primaryErr.name === 'TokenExpiredError') {
+      return res.status(401).json({ success: false, message: 'Token expired' });
+    }
+    // Only fall through to Supabase verification when we have a Supabase JWT secret.
+    // An invalid signature against the custom secret might still be valid as a Supabase JWT.
     if (!config.supabaseJwtSecret) {
       logger.debug('JWT verification failed', { error: primaryErr.message });
-      if (primaryErr.name === 'TokenExpiredError') {
-        return res.status(401).json({ success: false, message: 'Token expired' });
-      }
       return res.status(401).json({ success: false, message: 'Invalid token' });
     }
   }
