@@ -70,6 +70,11 @@ const config = {
   // WhatsApp Business Cloud API
   whatsappAccessToken: process.env.WHATSAPP_ACCESS_TOKEN,
   whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
+
+  // GitHub — server-level personal access token fallback (fine-grained or classic).
+  // Use GITHUB_PAT, not GITHUB_TOKEN, to avoid collision with the built-in
+  // GitHub Actions token which has limited permissions.
+  githubToken: process.env.GITHUB_PAT || null,
 };
 
 module.exports = { config, validate };

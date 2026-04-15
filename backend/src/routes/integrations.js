@@ -37,6 +37,7 @@ async function resolveCredential(userId, service) {
     hubspot: config.hubspotAccessToken || config.hubspotApiKey,
     meta: config.metaAccessToken,
     whatsapp: config.whatsappAccessToken,
+    github: config.githubToken,
   };
 
   const envKey = envDefaults[service] || null;

@@ -5,6 +5,8 @@ const { supabaseFigmaAdmin } = require('../config/supabase');
 const integrationModel = require('../models/integration');
 const leadModel = require('../models/lead');
 const credentialModel = require('../models/credential');
+const githubService = require('./github');
+const { config } = require('../config/env');
 
 async function getAuditLog(userId, limit = 100) {
   if (!isAvailable()) return [];
@@ -49,6 +51,28 @@ function buildMetrics(leads, integrations, credentials) {
   };
 }
 
+async function getGitHubStats(userId, credentials) {
+  const ghCredential = credentials.find((c) => c.service === 'github');
+  const token = ghCredential ? await credentialModel.getDecryptedKey(userId, 'github') : null;
+  const effectiveToken = token || config.githubToken;
+  if (!effectiveToken) return null;
+
+  try {
+    const repos = await githubService.listRepositories(effectiveToken, { perPage: 30 });
+    return {
+      repoCount: repos.length,
+      repos: repos.slice(0, 5).map((r) => ({
+        name: r.full_name,
+        language: r.language,
+        openIssues: r.open_issues_count,
+        updatedAt: r.updated_at,
+      })),
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function buildSnapshot(userId) {
   const [user, integrations, leads, credentials, auditLog] = await Promise.all([
     getUserProfile(userId),
@@ -58,6 +82,8 @@ async function buildSnapshot(userId) {
     getAuditLog(userId),
   ]);
 
+  const githubStats = await getGitHubStats(userId, credentials);
+
   return {
     user,
     metrics: buildMetrics(leads, integrations, credentials),
@@ -65,6 +91,7 @@ async function buildSnapshot(userId) {
     leads,
     credentials,
     auditLog,
+    ...(githubStats && { githubStats }),
   };
 }
 
@@ -84,6 +111,7 @@ async function publishSnapshotToFigma(userId, snapshot) {
       integrationCount: snapshot.integrations.length,
       credentialCount: snapshot.credentials.length,
       auditLogCount: snapshot.auditLog.length,
+      ...(snapshot.githubStats && { githubRepoCount: snapshot.githubStats.repoCount }),
     },
   };
 
@@ -104,10 +132,13 @@ async function publishSnapshotToFigma(userId, snapshot) {
     .insert({
       user_id: userId,
       event_type: 'figma_sync',
-      message: 'Real Supabase snapshot synced for Figma consumption',
+      message: snapshot.githubStats
+        ? `Supabase snapshot synced: ${snapshot.leads.length} leads, ${snapshot.githubStats.repoCount} GitHub repos`
+        : `Supabase snapshot synced: ${snapshot.leads.length} leads, ${snapshot.integrations.length} integrations`,
       metadata: {
         commandId: commandRow.id,
         syncedAt: new Date().toISOString(),
+        ...(snapshot.githubStats && { githubStats: snapshot.githubStats }),
       },
     });
 
