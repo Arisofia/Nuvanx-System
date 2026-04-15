@@ -16,7 +16,7 @@
       "owner": "frontend"
     },
     {
-      "name": "Operativo (Playbooks)",
+      "name": "Operativo",
       "route": "/operativo",
       "file": "frontend/src/pages/Playbooks.jsx",
       "figmaNodeId": "TODO_NODE_ID_OPERATIVO",
@@ -30,7 +30,7 @@
       "owner": "frontend"
     },
     {
-      "name": "Operational Snapshot",
+      "name": "Live",
       "route": "/live",
       "file": "frontend/src/pages/LiveDashboard.jsx",
       "figmaNodeId": "12:45",

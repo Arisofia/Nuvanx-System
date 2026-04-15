@@ -7,7 +7,9 @@ const logger = require('../utils/logger');
 
 // ---------------------------------------------------------------------------
 // In-memory fallback store
-// Used when DATABASE_URL is not configured (local dev, tests).
+// WARNING: This store is for development and testing only.
+// In production, isAvailable() check and environment validation ensure
+// that PostgreSQL persistence is used.
 // Data is lost on process exit.
 // ---------------------------------------------------------------------------
 const memStore = new Map();

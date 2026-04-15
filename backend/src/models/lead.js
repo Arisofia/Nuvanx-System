@@ -8,6 +8,9 @@ const STAGES = ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'];
 
 // ---------------------------------------------------------------------------
 // In-memory fallback store
+// WARNING: This store is for development and testing only.
+// In production, isAvailable() check and environment validation ensure
+// that PostgreSQL persistence is used.
 // ---------------------------------------------------------------------------
 const memStore = new Map();
 
