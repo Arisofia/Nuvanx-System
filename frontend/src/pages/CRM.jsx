@@ -67,17 +67,19 @@ function AddLeadModal({ onClose, onCreated }) {
     setFieldError(null);
     setSaving(true);
     try {
+      const rawRevenue = parseFloat(form.revenue);
       const payload = {
         name: form.name.trim(),
         email: form.email.trim() || undefined,
         phone: form.phone.trim() || undefined,
         source: form.source || 'manual',
         stage: form.stage,
-        revenue: form.revenue !== '' ? parseFloat(form.revenue) : undefined,
+        revenue: form.revenue !== '' && !Number.isNaN(rawRevenue) ? rawRevenue : undefined,
         notes: form.notes.trim() || undefined,
       };
       const res = await api.post('/api/leads', payload);
-      toast.success(`Lead "${res.data.lead.name}" created.`);
+      const leadName = String(res.data.lead?.name ?? 'Lead');
+      toast.success(`Lead "${leadName}" created.`);
       onCreated(res.data.lead);
       onClose();
     } catch (err) {
