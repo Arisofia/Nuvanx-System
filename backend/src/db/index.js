@@ -13,8 +13,8 @@
  * for local dev and the Jest test suite.
  *
  * Usage:
- *   const { pool, isAvailable } = require('../db');
- *   if (isAvailable()) { const { rows } = await pool.query(...); }
+ *   const { getPool, isAvailable } = require('../db');
+ *   if (isAvailable()) { const { rows } = await getPool().query(...); }
  */
 
 const { Pool } = require('pg');
@@ -45,7 +45,7 @@ if (config.databaseUrl) {
   // Verify connectivity at startup.
   // In production: any failure is fatal — the process must not start without DB.
   // In development/test: log a warning and fall back to in-memory storage.
-  pool.query('SELECT 1').catch((err) => {
+  pool.query('SELECT 1').catch(async (err) => {
     if (isProduction) {
       logger.error('pg pool: connectivity check failed in production — aborting startup', {
         error: err.message,
@@ -55,17 +55,25 @@ if (config.databaseUrl) {
     logger.warn('pg pool: initial connectivity check failed — running in in-memory mode', {
       error: err.message,
     });
+    await pool.end().catch((endErr) => {
+      logger.warn('pg pool: error closing pool during cleanup', { error: endErr.message });
+    });
     pool = null;
   });
 } else if (isProduction) {
-  logger.error('DATABASE_URL is required in production — aborting startup');
+  logger.error('DATABASE_URL or SUPABASE_DATABASE_KEY is required in production — aborting startup');
   process.exit(1);
 } else {
-  logger.warn('DATABASE_URL not set — using in-memory storage (data will be lost on restart)');
+  logger.warn('DATABASE_URL or SUPABASE_DATABASE_KEY not set — using in-memory storage (data will be lost on restart)');
 }
 
 function isAvailable() {
   return pool !== null;
 }
 
-module.exports = { pool, isAvailable };
+/** Always returns the current pool reference. Never cache the return value. */
+function getPool() {
+  return pool;
+}
+
+module.exports = { getPool, isAvailable };
