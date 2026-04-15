@@ -2,6 +2,17 @@ import { useState } from 'react';
 import { CheckCircle, XCircle, Loader2, RefreshCw, Link, Unlink } from 'lucide-react';
 import toast from 'react-hot-toast';
 
+function formatSync(ts) {
+  if (!ts) return 'Never';
+  const diff = Date.now() - new Date(ts).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins} min${mins > 1 ? 's' : ''} ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} hour${hrs > 1 ? 's' : ''} ago`;
+  return `${Math.floor(hrs / 24)} day(s) ago`;
+}
+
 function StatusBadge({ status }) {
   const map = {
     connected: { dot: 'bg-emerald-400', text: 'text-emerald-400', label: 'Connected' },
@@ -150,17 +161,6 @@ export default function IntegrationCard({ service, name, description, icon, stat
   const accountLabel = metadata?.accountName || metadata?.login || metadata?.email
     ? (metadata.accountName || metadata.login || metadata.email)
     : null;
-
-  const formatSync = (ts) => {
-    if (!ts) return 'Never';
-    const diff = Date.now() - new Date(ts).getTime();
-    const mins = Math.floor(diff / 60000);
-    if (mins < 1) return 'Just now';
-    if (mins < 60) return `${mins} min${mins > 1 ? 's' : ''} ago`;
-    const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs} hour${hrs > 1 ? 's' : ''} ago`;
-    return `${Math.floor(hrs / 24)} day(s) ago`;
-  };
 
   async function handleTest() {
     setTestResult(null);

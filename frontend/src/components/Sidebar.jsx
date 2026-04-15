@@ -3,7 +3,7 @@ import {
   LayoutDashboard, BookOpen, Users, Activity, Plug, Bot,
   Zap, LogOut, ChevronRight
 } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/useAuth';
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -13,6 +13,29 @@ const navItems = [
   { to: '/integrations', icon: Plug, label: 'Integrations' },
   { to: '/ai', icon: Bot, label: 'AI Layer' },
 ];
+
+function NavItem({ to, icon, label }) {
+  const NavIcon = icon;
+  return (
+    <NavLink
+      to={to}
+      className={({ isActive }) =>
+        `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 group
+        ${isActive
+          ? 'bg-brand-500/15 text-brand-400 border border-brand-500/20'
+          : 'text-gray-400 hover:text-white hover:bg-dark-700'}`
+      }
+    >
+      {({ isActive }) => (
+        <>
+          <NavIcon size={18} className={isActive ? 'text-brand-400' : 'text-gray-500 group-hover:text-gray-300'} />
+          <span className="flex-1">{label}</span>
+          {isActive && <ChevronRight size={14} className="text-brand-400/60" />}
+        </>
+      )}
+    </NavLink>
+  );
+}
 
 export default function Sidebar() {
   const { user, logout } = useAuth();
@@ -41,25 +64,8 @@ export default function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
         <p className="text-xs font-medium text-gray-600 uppercase tracking-wider px-3 mb-2">Platform</p>
-        {navItems.map(({ to, icon: Icon, label }) => (
-          <NavLink
-            key={to}
-            to={to}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 group
-              ${isActive
-                ? 'bg-brand-500/15 text-brand-400 border border-brand-500/20'
-                : 'text-gray-400 hover:text-white hover:bg-dark-700'}`
-            }
-          >
-            {({ isActive }) => (
-              <>
-                <Icon size={18} className={isActive ? 'text-brand-400' : 'text-gray-500 group-hover:text-gray-300'} />
-                <span className="flex-1">{label}</span>
-                {isActive && <ChevronRight size={14} className="text-brand-400/60" />}
-              </>
-            )}
-          </NavLink>
+        {navItems.map((item) => (
+          <NavItem key={item.to} to={item.to} icon={item.icon} label={item.label} />
         ))}
       </nav>
 
