@@ -64,7 +64,9 @@ export function useDashboardMetrics() {
   }, []);
 
   useEffect(() => {
-    load();
+    // load() is an async data-fetcher — setState calls inside it are intentional.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
     const unsub = subscribeToDashboardMetrics((updated) => setMetrics(updated));
     return unsub;
   }, [load]);
