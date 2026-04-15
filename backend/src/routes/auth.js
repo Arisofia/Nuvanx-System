@@ -5,7 +5,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const { config } = require('../config/env');
-const { pool, isAvailable } = require('../db');
+const { getPool, isAvailable } = require('../db');
 const { authLimiter } = require('../middleware/rateLimiter');
 const { authLoginRules, authRegisterRules, handleValidationErrors } = require('../utils/validators');
 const logger = require('../utils/logger');
@@ -36,7 +36,7 @@ function verifyPassword(password, hash) {
 // Database helpers (users table from 001_initial_schema.sql)
 // ---------------------------------------------------------------------------
 async function _dbFindByEmail(email) {
-  const { rows } = await pool.query(
+  const { rows } = await getPool().query(
     'SELECT id, email, name, password_hash, created_at FROM users WHERE email = $1',
     [email],
   );
@@ -44,7 +44,7 @@ async function _dbFindByEmail(email) {
 }
 
 async function _dbCreate(email, name, passwordHash) {
-  const { rows } = await pool.query(
+  const { rows } = await getPool().query(
     `INSERT INTO users (email, name, password_hash)
      VALUES ($1, $2, $3)
      RETURNING id, email, name, created_at`,
@@ -62,55 +62,64 @@ router.post('/register', authLimiter, authRegisterRules, handleValidationErrors,
 
     if (isAvailable()) {
       // ── Database path ───────────────────────────────────────────────────
-      const existing = await _dbFindByEmail(email);
-      if (existing) {
-        return res.status(409).json({ success: false, message: 'Email already registered' });
-      }
-
-      const passwordHash = await hashPassword(password);
-      let row;
       try {
-        row = await _dbCreate(email, name || '', passwordHash);
-      } catch (err) {
-        if (err && err.code === '23505') {
+        const existing = await _dbFindByEmail(email);
+        if (existing) {
           return res.status(409).json({ success: false, message: 'Email already registered' });
         }
-        throw err;
+
+        const passwordHash = await hashPassword(password);
+        let row;
+        try {
+          row = await _dbCreate(email, name || '', passwordHash);
+        } catch (err) {
+          if (err && err.code === '23505') {
+            return res.status(409).json({ success: false, message: 'Email already registered' });
+          }
+          throw err;
+        }
+        const { id } = row;
+
+        const token = jwt.sign({ id, email, name: row.name }, config.jwtSecret, {
+          expiresIn: config.jwtExpiresIn,
+        });
+        logger.info('User registered (db)', { userId: id, email });
+
+        return res.status(201).json({
+          success: true,
+          token,
+          user: { id, email, name: row.name },
+        });
+      } catch (err) {
+        if (config.nodeEnv !== 'production') {
+          logger.warn('DB register failed in dev/test, falling back to in-memory', { error: err.message });
+          // fall through to in-memory path
+        } else {
+          throw err;
+        }
       }
-      const { id } = row;
-
-      const token = jwt.sign({ id, email, name: row.name }, config.jwtSecret, {
-        expiresIn: config.jwtExpiresIn,
-      });
-      logger.info('User registered (db)', { userId: id, email });
-
-      return res.status(201).json({
-        success: true,
-        token,
-        user: { id, email, name: row.name },
-      });
-    } else {
-      // ── In-memory fallback (dev/test only) ──────────────────────────────
-      if (memStore.has(email)) {
-        return res.status(409).json({ success: false, message: 'Email already registered' });
-      }
-
-      const passwordHash = await hashPassword(password);
-      const id = uuidv4();
-      const user = { id, email, name: name || '', passwordHash, createdAt: new Date().toISOString() };
-      memStore.set(email, user);
-
-      const token = jwt.sign({ id, email, name: user.name }, config.jwtSecret, {
-        expiresIn: config.jwtExpiresIn,
-      });
-      logger.info('User registered (in-memory)', { userId: id, email });
-
-      return res.status(201).json({
-        success: true,
-        token,
-        user: { id, email, name: user.name },
-      });
     }
+
+    // ── In-memory fallback (dev/test only, or DB failure in non-production) ──
+    if (memStore.has(email)) {
+      return res.status(409).json({ success: false, message: 'Email already registered' });
+    }
+
+    const passwordHash = await hashPassword(password);
+    const id = uuidv4();
+    const user = { id, email, name: name || '', passwordHash, createdAt: new Date().toISOString() };
+    memStore.set(email, user);
+
+    const token = jwt.sign({ id, email, name: user.name }, config.jwtSecret, {
+      expiresIn: config.jwtExpiresIn,
+    });
+    logger.info('User registered (in-memory)', { userId: id, email });
+
+    return res.status(201).json({
+      success: true,
+      token,
+      user: { id, email, name: user.name },
+    });
   } catch (err) {
     next(err);
   }
@@ -125,53 +134,62 @@ router.post('/login', authLimiter, authLoginRules, handleValidationErrors, async
 
     if (isAvailable()) {
       // ── Database path ───────────────────────────────────────────────────
-      const user = await _dbFindByEmail(email);
-      if (!user) {
-        return res.status(401).json({ success: false, message: 'Invalid email or password' });
+      try {
+        const user = await _dbFindByEmail(email);
+        if (!user) {
+          return res.status(401).json({ success: false, message: 'Invalid email or password' });
+        }
+
+        const valid = await verifyPassword(password, user.password_hash);
+        if (!valid) {
+          return res.status(401).json({ success: false, message: 'Invalid email or password' });
+        }
+
+        const token = jwt.sign(
+          { id: user.id, email: user.email, name: user.name },
+          config.jwtSecret,
+          { expiresIn: config.jwtExpiresIn },
+        );
+        logger.info('User logged in (db)', { userId: user.id });
+
+        return res.json({
+          success: true,
+          token,
+          user: { id: user.id, email: user.email, name: user.name },
+        });
+      } catch (err) {
+        if (config.nodeEnv !== 'production') {
+          logger.warn('DB login failed in dev/test, falling back to in-memory', { error: err.message });
+          // fall through to in-memory path
+        } else {
+          throw err;
+        }
       }
-
-      const valid = await verifyPassword(password, user.password_hash);
-      if (!valid) {
-        return res.status(401).json({ success: false, message: 'Invalid email or password' });
-      }
-
-      const token = jwt.sign(
-        { id: user.id, email: user.email, name: user.name },
-        config.jwtSecret,
-        { expiresIn: config.jwtExpiresIn },
-      );
-      logger.info('User logged in (db)', { userId: user.id });
-
-      return res.json({
-        success: true,
-        token,
-        user: { id: user.id, email: user.email, name: user.name },
-      });
-    } else {
-      // ── In-memory fallback (dev/test only) ──────────────────────────────
-      const user = memStore.get(email);
-      if (!user) {
-        return res.status(401).json({ success: false, message: 'Invalid email or password' });
-      }
-
-      const valid = await verifyPassword(password, user.passwordHash);
-      if (!valid) {
-        return res.status(401).json({ success: false, message: 'Invalid email or password' });
-      }
-
-      const token = jwt.sign(
-        { id: user.id, email: user.email, name: user.name },
-        config.jwtSecret,
-        { expiresIn: config.jwtExpiresIn },
-      );
-      logger.info('User logged in (in-memory)', { userId: user.id });
-
-      return res.json({
-        success: true,
-        token,
-        user: { id: user.id, email: user.email, name: user.name },
-      });
     }
+
+    // ── In-memory fallback (dev/test only, or DB failure in non-production) ──
+    const user = memStore.get(email);
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'Invalid email or password' });
+    }
+
+    const valid = await verifyPassword(password, user.passwordHash);
+    if (!valid) {
+      return res.status(401).json({ success: false, message: 'Invalid email or password' });
+    }
+
+    const token = jwt.sign(
+      { id: user.id, email: user.email, name: user.name },
+      config.jwtSecret,
+      { expiresIn: config.jwtExpiresIn },
+    );
+    logger.info('User logged in (in-memory)', { userId: user.id });
+
+    return res.json({
+      success: true,
+      token,
+      user: { id: user.id, email: user.email, name: user.name },
+    });
   } catch (err) {
     next(err);
   }
