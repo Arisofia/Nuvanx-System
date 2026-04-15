@@ -22,6 +22,17 @@ const BCRYPT_ROUNDS = 12;
 const memStore = new Map();
 
 // ---------------------------------------------------------------------------
+// Password helpers
+// ---------------------------------------------------------------------------
+function hashPassword(password) {
+  return bcrypt.hash(password, BCRYPT_ROUNDS);
+}
+
+function verifyPassword(password, hash) {
+  return bcrypt.compare(password, hash);
+}
+
+// ---------------------------------------------------------------------------
 // Database helpers (users table from 001_initial_schema.sql)
 // ---------------------------------------------------------------------------
 async function _dbFindByEmail(email) {
@@ -56,7 +67,7 @@ router.post('/register', authLimiter, authRegisterRules, handleValidationErrors,
         return res.status(409).json({ success: false, message: 'Email already registered' });
       }
 
-      const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+      const passwordHash = await hashPassword(password);
       const row = await _dbCreate(email, name || '', passwordHash);
       const { id } = row;
 
@@ -76,7 +87,7 @@ router.post('/register', authLimiter, authRegisterRules, handleValidationErrors,
         return res.status(409).json({ success: false, message: 'Email already registered' });
       }
 
-      const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+      const passwordHash = await hashPassword(password);
       const id = uuidv4();
       const user = { id, email, name: name || '', passwordHash, createdAt: new Date().toISOString() };
       memStore.set(email, user);
@@ -111,7 +122,7 @@ router.post('/login', authLimiter, authLoginRules, handleValidationErrors, async
         return res.status(401).json({ success: false, message: 'Invalid email or password' });
       }
 
-      const valid = await bcrypt.compare(password, user.password_hash);
+      const valid = await verifyPassword(password, user.password_hash);
       if (!valid) {
         return res.status(401).json({ success: false, message: 'Invalid email or password' });
       }
@@ -135,7 +146,7 @@ router.post('/login', authLimiter, authLoginRules, handleValidationErrors, async
         return res.status(401).json({ success: false, message: 'Invalid email or password' });
       }
 
-      const valid = await bcrypt.compare(password, user.passwordHash);
+      const valid = await verifyPassword(password, user.passwordHash);
       if (!valid) {
         return res.status(401).json({ success: false, message: 'Invalid email or password' });
       }
