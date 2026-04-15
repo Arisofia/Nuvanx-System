@@ -28,7 +28,11 @@ app.use(
 );
 
 // ─── Body parsing ───────────────────────────────────────────────────────────
-app.use(express.json({ limit: '1mb' }));
+// Capture rawBody for webhook signature verification (HubSpot, etc.)
+app.use(express.json({
+  limit: '1mb',
+  verify: (req, _res, buf) => { req.rawBody = buf.toString(); },
+}));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // ─── Rate limiting (global) ─────────────────────────────────────────────────
@@ -40,6 +44,9 @@ app.get('/health', (req, res) => {
 });
 
 // ─── API routes ──────────────────────────────────────────────────────────────
+// ─── Webhooks (no auth — signature-verified at route level) ────────────────
+app.use('/api/webhooks', require('./routes/webhooks'));
+
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/credentials', require('./routes/credentials'));
 app.use('/api/integrations', require('./routes/integrations'));

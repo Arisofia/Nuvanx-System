@@ -30,7 +30,7 @@
 ```
 GRAFANA_PROM_URL=https://prometheus-prod-10-prod-eu-west-0.grafana.net/api/prom/push
 GRAFANA_PROM_USER=1234567
-GRAFANA_TOKEN=GRAFANA_TOKEN_REMOVED
+GRAFANA_TOKEN=<your-grafana-service-account-token>
 ```
 
 ## Step 3 — Start Alloy

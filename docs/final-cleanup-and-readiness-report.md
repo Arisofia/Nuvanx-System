@@ -34,7 +34,7 @@ Last updated: 2026-04-15 17:40 UTC
 
 ## 6) Figma Validation Foundation
 Implemented and executable:
-- `docs/figma-component-map.json` (real repo paths, TODO node placeholders)
+- `docs/figma-component-map.json` (aligned with new Figma Slides presentation: /make/uJkwaJl7MIf5DE2VaqV8Vd)
 - `scripts/validate-figma-mapping.mjs`
 - `docs/figma-validation-spec.md` (updated with normalized naming)
 - GitHub Action validation workflow.

@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('crypto');
 const axios = require('axios');
 const logger = require('../utils/logger');
 
@@ -147,4 +148,86 @@ async function getTrends(credential, dateRange = {}) {
   };
 }
 
-module.exports = { testConnection, getContacts, createContact, createDeal, getTrends };
+// ── Lifecycle stage → internal lead stage mapping ─────────────────────────
+const STAGE_MAP = {
+  subscriber: 'lead',
+  lead: 'lead',
+  marketingqualifiedlead: 'lead',
+  salesqualifiedlead: 'whatsapp',
+  opportunity: 'appointment',
+  customer: 'treatment',
+  evangelist: 'closed',
+};
+
+/**
+ * Map a single HubSpot contact object to the internal lead schema.
+ * @param {object} contact  HubSpot contact result (from CRM v3 objects)
+ * @returns {object} Partial lead data ready for create/update
+ */
+function mapContactToLead(contact) {
+  const p = contact.properties || {};
+  const name =
+    [p.firstname, p.lastname].filter(Boolean).join(' ') || p.email || 'HubSpot Contact';
+  const lifecycle = (p.lifecyclestage || '').toLowerCase().replace(/\s/g, '');
+  return {
+    name,
+    email: p.email || '',
+    phone: p.phone || '',
+    source: 'hubspot',
+    stage: STAGE_MAP[lifecycle] || 'lead',
+    revenue: 0,
+    notes: `HubSpot ID: ${contact.id}`,
+  };
+}
+
+/**
+ * Verify a HubSpot webhook request signature (v1 — HMAC-SHA256).
+ * HubSpot sends: X-HubSpot-Signature = hex(HMAC-SHA256(clientSecret + rawBody))
+ * @param {string} clientSecret  HUBSPOT_CLIENT_SECRET env var
+ * @param {string|Buffer} rawBody  Raw request body string
+ * @param {string} signature  Value of X-HubSpot-Signature header
+ * @returns {boolean}
+ */
+function verifyWebhookSignature(clientSecret, rawBody, signature) {
+  if (!clientSecret || !signature) return false;
+  const expected = crypto
+    .createHmac('sha256', clientSecret)
+    .update(rawBody)
+    .digest('hex');
+  try {
+    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Fetch HubSpot contacts and return them mapped to internal lead objects.
+ * Up to 100 contacts, newest first.
+ * @param {string} credential  Private App access token
+ * @returns {{ leads: object[], total: number }}
+ */
+async function fetchLeadsFromHubSpot(credential) {
+  const authCfg = _authConfig(credential);
+  const { data } = await axios.get(`${HUBSPOT_BASE}/crm/v3/objects/contacts`, {
+    ...authCfg,
+    params: {
+      limit: 100,
+      properties: 'firstname,lastname,email,phone,lifecyclestage,createdate',
+    },
+    timeout: 20000,
+  });
+  const results = data.results || [];
+  return { leads: results.map(mapContactToLead), total: results.length };
+}
+
+module.exports = {
+  testConnection,
+  getContacts,
+  createContact,
+  createDeal,
+  getTrends,
+  mapContactToLead,
+  verifyWebhookSignature,
+  fetchLeadsFromHubSpot,
+};

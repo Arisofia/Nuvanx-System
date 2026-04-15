@@ -3,9 +3,11 @@
   "repository": "Arisofia/Nuvanx-System",
   "figma": {
     "fileKey": "uJkwaJl7MIf5DE2VaqV8Vd",
-    "fileUrl": "https://www.figma.com/file/uJkwaJl7MIf5DE2VaqV8Vd",
-    "lastValidated": "2026-04-14T21:00:00.000Z",
-    "notes": "Node IDs verified against Figma API. 8 mapped, 3 pending (Login, Playbooks/Operativo, CRM)."
+    "fileUrl": "https://www.figma.com/make/uJkwaJl7MIf5DE2VaqV8Vd/Crear-presentación-ejecutiva?p=f&t=d8MTtFd5olqQbLCU-0&preview-route=%2Fintegraciones",
+    "fileType": "figma-slides",
+    "note": "This is a Figma Slides (/make/) presentation file. Design component mapping aligned to new Figma presentation file.",
+    "lastValidated": "2026-04-15T13:10:00.000Z",
+    "notes": "Node IDs verified against Figma API. 8 mapped, 3 pending (Login, Playbooks/Operativo, CRM). Integrations mapping aligned to new Figma presentation file."
   },
   "routes": [
     {

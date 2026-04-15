@@ -62,6 +62,8 @@ const config = {
   hubspotApiKey: process.env.HUBSPOT_API_KEY,
   // Note: Codespaces secret name has a typo (HUSPOT_PORTAL_ID); support both spellings
   hubspotPortalId: process.env.HUBSPOT_PORTAL_ID || process.env.HUSPOT_PORTAL_ID,
+  // Used to verify webhook signatures from HubSpot (Private App → Webhooks → Client secret)
+  hubspotClientSecret: process.env.HUBSPOT_CLIENT_SECRET || null,
 
   // Meta (Facebook) Marketing API
   metaAccessToken: process.env.META_ACCESS_TOKEN,
