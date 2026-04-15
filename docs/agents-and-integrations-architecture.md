@@ -1,80 +1,101 @@
-# Agents and Integrations Architecture
+# Agent Orchestration and Integrations Architecture
 
-Date: 2026-04-14
+Date: 2026-04-15
 
-## Current AI Layer in Code
-- Frontend entrypoint: frontend/src/pages/AILayer.jsx
-- Backend routes: backend/src/routes/ai.js
-- Implemented operations:
-  - /api/ai/generate
-  - /api/ai/analyze-campaign
-  - /api/ai/suggestions
-- Provider resolution: OpenAI/Gemini based on per-user credential vault, with env-var fallbacks.
+## Current Reality (Implemented Today)
 
-Reality check:
-- This is API-proxied generation/analysis, not autonomous multi-agent orchestration.
+### AI layer
+- Frontend entrypoint: `frontend/src/pages/AILayer.jsx`
+- Backend route surface: `backend/src/routes/ai.js`
+- Supported endpoints:
+  - `POST /api/ai/generate`
+  - `POST /api/ai/analyze-campaign`
+  - `POST /api/ai/suggestions`
+- Execution model today: synchronous, user-triggered prompt/response calls.
 
-## Current Integrations in Code
-- Supported service catalog in backend/src/models/integration.js and frontend/src/hooks/useIntegrations.js:
-  - meta
-  - google-calendar
-  - google-gmail
-  - whatsapp
-  - github
-  - openai
-  - gemini
-  - hubspot
-- Credential handling:
-  - encrypted at rest via backend/src/services/encryption.js
-  - access through backend/src/models/credential.js
-- Validation endpoints:
-  - /api/integrations/:service/test
-  - /api/integrations/validate-all
+### Integrations layer
+- Service catalog is modeled in `backend/src/models/integration.js` and consumed by `frontend/src/hooks/useIntegrations.js`.
+- Credentials are encrypted at rest (`backend/src/services/encryption.js` + `backend/src/models/credential.js`).
+- Validation endpoints exist (`/api/integrations/:service/test`, `/api/integrations/validate-all`).
 
-## Real vs Shallow/Test-Only
-- Real in code:
-  - encrypted credential storage
-  - connect/test integration APIs
-  - dashboard core metrics from leads/integrations models
-  - AI proxy endpoints with provider selection
-- Shallow or conditional:
-  - trends depending on extra metadata (Meta adAccountId)
-  - no inbound webhook processing loop for channels
-  - no durable user auth storage in backend default path
+### Hard constraints today
+- No autonomous background agent loop.
+- No internal scheduler/queue worker for long-running tasks.
+- No generalized inbound webhook orchestration pipeline.
+- External API-dependent capabilities remain gated by vendor approvals and credentials.
 
-## What "Agents" Can Mean Today
-Reasonable interpretation today:
-- task-focused API wrappers that consume existing endpoints and generate recommendations.
-- no stateful planner/executor runtime in this repository yet.
+## Long-Term Target (Event-Driven Multi-Agent)
 
-## Forward-Looking Agent Architecture
+### Domain agent candidates
 
-### 1) Growth Agent
-- Inputs: /api/dashboard/metrics, /api/dashboard/revenue-trend, /api/ai/suggestions
-- Output: weekly growth actions and KPI deltas
-- Needed next: persisted action log and acceptance workflow
+1. Market and competition intelligence agent
+- Purpose: ingest external unstructured signals and produce structured competitor matrices.
+- Dependencies: third-party signal ingestion/scraping providers plus vector indexing.
+- Data path: normalized external text -> embeddings -> pgvector-backed retrieval.
 
-### 2) Campaign Monitoring Agent
-- Inputs: Meta/HubSpot trend APIs (when configured)
-- Output: spend anomalies, conversion alerts
-- Needed next: alert scheduler + threshold config store
+2. Marketing and content generation agent
+- Purpose: generate and optimize campaign assets using performance feedback.
+- Dependencies: Meta Graph API read/write scope, campaign telemetry ingestion, outbound delivery tooling.
+- Data path: campaign state + historical outcomes -> content variants -> approval -> execution.
 
-### 3) CRM/Reactivation Agent
-- Inputs: /api/leads stage/source data
-- Output: reactivation cohorts and contact sequencing recommendations
-- Needed next: execution endpoints for messaging/calendar steps
+3. Sales and CRM follow-up agent
+- Purpose: detect lead state transitions and draft contextual follow-up actions/messages.
+- Dependencies: durable HubSpot OAuth lifecycle, encrypted token storage, lead timeline context.
+- Data path: lead event -> context assembly -> recommendation or draft -> optional human approval.
 
-### 4) Reporting Agent
-- Inputs: dashboard + integrations status + lead lifecycle
-- Output: executive summary markdown/PDF payload
-- Needed next: report persistence/versioning and export job runner
+4. Finance and KPI intelligence agent
+- Purpose: deterministic anomaly detection on pipeline and revenue KPIs.
+- Dependencies: stable metric views in Postgres, optional federated SQL acceleration.
+- Data path: KPI snapshots + trend windows -> rule/stat checks -> actionable alerts.
 
-### 5) Content Agent
-- Inputs: campaign context + lead segments
-- Output: generated copy variants via /api/ai/generate
-- Needed next: approval queue, prompt templates, experiment tracking
+## Orchestration Layer Blueprint
 
-## Minimal Structural Recommendations
-- Add a small backend agent orchestration layer (job + run history table).
-- Store agent outputs as records with status and reviewer decision.
-- Gate all outbound actions behind explicit user approval until execution APIs are mature.
+Principle: event-driven routing over periodic polling.
+
+- Event source: database mutations and integration webhooks.
+- Router: backend orchestration module (future) to fan out event payloads to domain handlers.
+- State: durable run log (`queued`, `running`, `succeeded`, `failed`) and decision audit trail.
+- Guardrails: approval gates for outbound side effects (email/send/update) until reliability targets are met.
+
+## Sequence Diagram (DB-Backed Auth Registration with Fallback)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant U as User
+  participant FE as Frontend
+  participant API as /api/auth/register
+  participant DB as PostgreSQL users
+  participant MEM as In-memory Store
+
+  U->>FE: Submit email/password/name
+  FE->>API: POST /api/auth/register
+  API->>API: Validate input + hash password
+
+  alt DB available
+    API->>DB: SELECT user by email
+    DB-->>API: none
+    API->>DB: INSERT user(email, name, password_hash)
+    DB-->>API: user row
+    API-->>FE: 201 token + user
+  else DB unavailable and non-production
+    API->>MEM: check existing email
+    MEM-->>API: none
+    API->>MEM: store user record
+    API-->>FE: 201 token + user
+  else DB unavailable in production
+    API-->>FE: 503 Database unavailable
+  end
+```
+
+## Engineering Requirements to Reach Target
+
+1. Implement orchestration persistence (`agent_runs`, `agent_events`, `agent_outputs`).
+2. Add webhook ingestion endpoints with signature verification and retry semantics.
+3. Introduce worker runtime (queue + backoff + dead-letter handling).
+4. Add per-agent policy controls (manual approval, rate limits, budget limits).
+5. Add observability for every run (latency, failure reason, external API quota impact).
+
+## Honesty Policy
+
+All UI and docs must explicitly label pending agent behaviors as planned or placeholder until backed by executable code paths and production telemetry.
