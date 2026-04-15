@@ -52,8 +52,8 @@ router.get('/repos', async (req, res, next) => {
 
     const { page = 1, perPage = 30 } = req.query;
     const repos = await githubService.listRepositories(token, {
-      page: parseInt(page, 10),
-      perPage: Math.min(parseInt(perPage, 10), 100),
+      page: parseInt(page, 10) || 1,
+      perPage: Math.min(parseInt(perPage, 10) || 30, 100),
     });
 
     res.json({
@@ -146,10 +146,11 @@ router.post('/sync', async (req, res, next) => {
 
     // Optionally fetch issues for a specific repo
     let issues = [];
-    const { owner, repo } = req.body || {};
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const { owner, repo } = body;
     // Validate owner/repo before using them in a URL to prevent request-forgery
-    const ownerValid = !owner || GITHUB_SLUG_RE.test(owner);
-    const repoValid = !repo || GITHUB_SLUG_RE.test(repo);
+    const ownerValid = !owner || (typeof owner === 'string' && GITHUB_SLUG_RE.test(owner));
+    const repoValid = !repo || (typeof repo === 'string' && GITHUB_SLUG_RE.test(repo));
     if (!ownerValid || !repoValid) {
       return res.status(400).json({ success: false, message: 'Invalid owner or repository name' });
     }

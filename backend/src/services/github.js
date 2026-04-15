@@ -39,10 +39,14 @@ async function listRepositories(token, { page = 1, perPage = 30 } = {}) {
 /**
  * Get open issues / pull requests for a repository.
  * @param {string} token
- * @param {string} owner
- * @param {string} repo
+ * @param {string} owner  Must match /^[a-zA-Z0-9_.-]{1,100}$/
+ * @param {string} repo   Must match /^[a-zA-Z0-9_.-]{1,100}$/
  */
 async function getIssues(token, owner, repo) {
+  const SLUG_RE = /^[a-zA-Z0-9_.-]{1,100}$/;
+  if (!SLUG_RE.test(owner) || !SLUG_RE.test(repo)) {
+    throw new Error('Invalid owner or repository name');
+  }
   const { data } = await axios.get(`https://api.github.com/repos/${owner}/${repo}/issues`, {
     headers: { Authorization: `Bearer ${token}`, 'X-GitHub-Api-Version': '2022-11-28' },
     params: { state: 'open', per_page: 50 },
