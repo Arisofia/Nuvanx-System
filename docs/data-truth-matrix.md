@@ -18,7 +18,7 @@ Status values:
 | /dashboard | AI optimization suggestions | /api/ai/suggestions | wired to real API | Removed implied always-available language and placeholder-style apply action. |
 | /operativo | playbooks list, runs, success rates | local constant array in page | mock but clearly labeled | Added Demo Data banner and changed action toast to demo-only behavior. |
 | /crm | lead table and counts | /api/leads | wired to real API | Added explicit note that list is API-backed. |
-| /crm | add lead button | no create UI flow wired | still pending backend support | Marked action as placeholder in toast. |
+| /crm | add lead button | no create UI flow wired | wired to real API | Implemented AddLeadModal in CRM.jsx; form calls POST /api/leads and prepends new lead to table on success. |
 | /crm | whatsapp/calendar/notes row actions | no backend action endpoints wired from UI | still pending backend support | Marked actions as placeholders in toasts. |
 | /live | top cards | /api/dashboard/metrics | wired to real API | Retained backend polling and labeled source clearly. |
 | /live | 24h chart | local generated zero series | mock but clearly labeled | Labeled Placeholder Data and explained missing endpoint. |
