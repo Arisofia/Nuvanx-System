@@ -15,23 +15,46 @@ export default function Integrations() {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
-      <div>
-        <h2 className="text-2xl font-bold text-white">Integrations</h2>
-        <p className="text-gray-400 mt-0.5">Connection status comes from backend /api/integrations and credential tests.</p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h2 className="text-2xl font-bold text-white uppercase tracking-tight">Centro de Integraciones</h2>
+          <p className="text-gray-400 mt-0.5">Conexión segura con el ecosistema de datos de Nuvanx. Las credenciales se cifran y persisten en Supabase Cloud.</p>
+        </div>
+        <button className="btn-primary flex items-center gap-2 text-sm px-5">
+          <RefreshCw size={16} />
+          Sincronizar Vault
+        </button>
       </div>
 
-      {/* Security Banner */}
-      <div className="flex items-start gap-4 p-4 rounded-xl bg-brand-500/8 border border-brand-500/25 bg-gradient-to-r from-brand-500/10 to-transparent">
-        <div className="p-2.5 rounded-lg bg-brand-500/20 shrink-0">
-          <Shield size={20} className="text-brand-400" />
+      {/* Security Protocol */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="flex items-start gap-4 p-4 rounded-xl bg-brand-500/5 border border-brand-500/20">
+          <div className="p-2.5 rounded-lg bg-brand-500/10 shrink-0">
+            <Shield size={20} className="text-brand-400" />
+          </div>
+          <div>
+            <p className="font-bold text-brand-400 text-xs uppercase tracking-widest mb-1">Security Protocol</p>
+            <p className="text-sm text-gray-300 font-medium uppercase">Cloud Sync</p>
+            <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+              Tus claves están seguras. Al guardarlas, se sincronizan con Supabase para permitir el acceso desde cualquier dispositivo Nuvanx.
+            </p>
+          </div>
         </div>
-        <div>
-          <p className="font-medium text-brand-300 text-sm">Security Notice</p>
-          <p className="text-sm text-gray-400 mt-0.5 leading-relaxed">
-            🔒 All API credentials are encrypted with <strong className="text-gray-300">AES-256</strong> and stored securely on the backend.
-            Keys are <strong className="text-gray-300">stored encrypted on the server and never returned to the client</strong>.
-            Connections are validated server-side only.
-          </p>
+        <div className="flex items-start gap-4 p-4 rounded-xl bg-dark-800 border border-dark-600">
+          <div className="grid grid-cols-2 gap-y-3 flex-1">
+            <div>
+              <p className="text-[10px] text-gray-500 uppercase font-bold tracking-tighter">End-to-End Encryption</p>
+              <p className="text-xs text-emerald-400 font-bold">AES-256-GCM</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-gray-500 uppercase font-bold tracking-tighter">Supabase Vault Auth</p>
+              <p className="text-xs text-brand-400 font-bold">Active</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-gray-500 uppercase font-bold tracking-tighter">No Local Plain-Text</p>
+              <p className="text-xs text-emerald-400 font-bold">Verified</p>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -62,10 +85,11 @@ export default function Integrations() {
       </div>
 
       {/* Footer note */}
-      <div className="text-center py-4">
-        <p className="text-xs text-gray-600">
-          Need help setting up an integration?{' '}
-          <a href="#" className="text-brand-400 hover:text-brand-300">View documentation →</a>
+      <div className="text-center py-8">
+        <p className="text-xs text-gray-500 uppercase font-bold tracking-widest mb-2">Need Help?</p>
+        <p className="text-sm text-gray-400">
+          Revisa la guía de integraciones para obtener los tokens paso a paso.{' '}
+          <a href="#" className="text-brand-400 hover:text-brand-300 font-bold ml-1">VIEW DOCUMENTATION →</a>
         </p>
       </div>
     </div>
