@@ -4,6 +4,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import api from '../config/api';
+import { normalizeDashboardMetrics } from '../lib/normalizeDashboardMetrics';
 
 // Static hourly skeleton shown while/if the backend has no real time-series
 function generateHourlyData() {
@@ -35,7 +36,7 @@ export default function LiveDashboard() {
     setIsRefreshing(true);
     try {
       const res = await api.get('/api/dashboard/metrics');
-      const m = res.data?.metrics;
+      const m = normalizeDashboardMetrics(res.data);
       if (m) {
         setMetrics(m);
         setUsingApiData(true);

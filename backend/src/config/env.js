@@ -10,6 +10,16 @@ function validate() {
     throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
   }
 
+  const nodeEnv = process.env.NODE_ENV || 'development';
+  if (nodeEnv === 'production' && !process.env.DATABASE_URL && !process.env.SUPABASE_DATABASE_KEY) {
+    throw new Error('In production, DATABASE_URL or SUPABASE_DATABASE_KEY is required');
+  }
+
+  const bcryptRounds = parseInt(process.env.BCRYPT_ROUNDS || '12', 10);
+  if (!Number.isFinite(bcryptRounds) || bcryptRounds < 4 || bcryptRounds > 31) {
+    throw new Error('BCRYPT_ROUNDS must be an integer between 4 and 31');
+  }
+
   if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
     throw new Error('JWT_SECRET must be at least 32 characters');
   }
@@ -39,6 +49,7 @@ const config = {
   databaseUrl: process.env.DATABASE_URL || process.env.SUPABASE_DATABASE_KEY,
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '24h',
+  bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS || '12', 10),
 
   // Supabase — main project
   supabaseUrl: process.env.SUPABASE_URL || null,
