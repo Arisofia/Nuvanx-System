@@ -27,17 +27,6 @@ function validate() {
     throw new Error('ENCRYPTION_KEY must be at least 32 characters');
   }
 
-  // In production, a real database connection is mandatory.
-  // The check here surfaces the misconfiguration at startup before the pool
-  // module even attempts to connect.
-  if (process.env.NODE_ENV === 'production') {
-    if (!process.env.DATABASE_URL && !process.env.SUPABASE_DATABASE_KEY) {
-      throw new Error(
-        'DATABASE_URL (or SUPABASE_DATABASE_KEY) is required in production. ' +
-          'Set this variable to a valid PostgreSQL connection string.',
-      );
-    }
-  }
 }
 
 const config = {
