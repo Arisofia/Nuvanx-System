@@ -39,16 +39,45 @@ export function isFigmaSupabaseAvailable() {
  */
 export async function loadDashboardMetrics() {
   if (!supabaseFigma) return null;
+
+  // 1. Try the flat dashboard_metrics row (preferred — single read, realtime-subscribed)
   const { data, error } = await supabaseFigma
     .from('dashboard_metrics')
     .select('*')
     .eq('id', 'nuvanx-main')
     .single();
-  if (error) {
-    console.error('[Supabase Figma] loadDashboardMetrics error:', error.message);
-    return null;
-  }
-  return data;
+  if (!error && data) return data;
+
+  // 2. Fallback: assemble from figma_tokens KV pairs (always up-to-date via figmaSync)
+  //    This path is used when dashboard_metrics hasn't been created yet in the Figma project.
+  const tokens = await loadKPITokens();
+  if (!tokens || Object.keys(tokens).length === 0) return null;
+
+  const int = (k, d = 0) => parseInt(tokens[k] ?? String(d), 10);
+  const flt = (k, d = 0) => parseFloat(tokens[k] ?? String(d));
+  const str = (k, d = 'disconnected') => tokens[k] ?? d;
+
+  return {
+    id: 'nuvanx-main',
+    label: 'Nuvanx KPIs',
+    total_leads: int('total_leads'),
+    total_revenue: flt('total_revenue'),
+    connected_integrations: int('connected_integrations'),
+    total_integrations: int('total_integrations'),
+    leads_lead: int('leads_lead'),
+    leads_whatsapp: int('leads_whatsapp'),
+    leads_appointment: int('leads_appointment'),
+    leads_treatment: int('leads_treatment'),
+    leads_closed: int('leads_closed'),
+    hubspot_status: str('hubspot_status'),
+    meta_status: str('meta_status'),
+    whatsapp_status: str('whatsapp_status'),
+    github_status: str('github_status'),
+    openai_status: str('openai_status'),
+    gemini_status: str('gemini_status'),
+    last_sync: null,
+    updated_at: null,
+  };
 }
 
 /**
