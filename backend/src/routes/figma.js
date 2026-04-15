@@ -25,8 +25,8 @@ router.post('/sync', async (req, res, next) => {
     res.json({
       success: true,
       message: 'Real data synced to Figma project',
-      commandId: result.command.id,
-      commandCreatedAt: result.command.created_at,
+      syncLogId: result.command.id,
+      syncedAt: result.command.created_at,
       metrics: result.metrics,
     });
   } catch (err) {

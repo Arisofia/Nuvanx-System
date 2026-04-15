@@ -73,49 +73,37 @@ async function publishSnapshotToFigma(userId, snapshot) {
     throw new Error('Supabase Figma admin client is not configured');
   }
 
-  const commandPayload = {
-    user_id: userId,
-    command_type: 'figma_data_sync',
-    status: 'completed',
-    payload: snapshot,
-    result: {
-      syncedAt: new Date().toISOString(),
-      leadCount: snapshot.leads.length,
-      integrationCount: snapshot.integrations.length,
-      credentialCount: snapshot.credentials.length,
-      auditLogCount: snapshot.auditLog.length,
-    },
-  };
+  const now = new Date().toISOString();
+  const FILE_KEY = 'uJkwaJl7MIf5DE2VaqV8Vd';
 
-  const { data: commandRow, error: commandError } = await supabaseFigmaAdmin
-    .schema('monitoring')
-    .from('commands')
-    .insert(commandPayload)
+  // 1. Update last_synced on all components for this file
+  const { error: compError } = await supabaseFigmaAdmin
+    .from('figma_components')
+    .update({ last_synced: now })
+    .eq('file_key', FILE_KEY);
+
+  if (compError) {
+    throw new Error(`Failed to update figma_components: ${compError.message}`);
+  }
+
+  // 2. Write a sync log entry with live metrics
+  const { data: logRow, error: logError } = await supabaseFigmaAdmin
+    .from('figma_sync_log')
+    .insert({
+      file_key: FILE_KEY,
+      status: 'success',
+      message: `Live sync: ${snapshot.metrics.totalLeads} leads, ${snapshot.metrics.totalRevenue} revenue, ${snapshot.metrics.connectedIntegrations}/${snapshot.metrics.totalIntegrations} integrations`,
+      components_synced: snapshot.metrics.totalIntegrations,
+      tokens_synced: snapshot.metrics.totalLeads,
+    })
     .select('id, created_at')
     .single();
 
-  if (commandError) {
-    throw new Error(`Failed to write monitoring.commands: ${commandError.message}`);
+  if (logError) {
+    throw new Error(`Failed to write figma_sync_log: ${logError.message}`);
   }
 
-  const { error: eventError } = await supabaseFigmaAdmin
-    .schema('monitoring')
-    .from('operational_events')
-    .insert({
-      user_id: userId,
-      event_type: 'figma_sync',
-      message: 'Real Supabase snapshot synced for Figma consumption',
-      metadata: {
-        commandId: commandRow.id,
-        syncedAt: new Date().toISOString(),
-      },
-    });
-
-  if (eventError) {
-    throw new Error(`Failed to write monitoring.operational_events: ${eventError.message}`);
-  }
-
-  return commandRow;
+  return logRow;
 }
 
 async function syncUserDataToFigma(userId) {
