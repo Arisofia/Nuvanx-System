@@ -95,7 +95,7 @@ router.get('/events', async (req, res, next) => {
       });
     }
 
-    const limit = Math.min(parseInt(req.query.limit || '50', 10), 200);
+    const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
 
     const { data, error } = await supabaseFigmaAdmin
       .schema('monitoring')

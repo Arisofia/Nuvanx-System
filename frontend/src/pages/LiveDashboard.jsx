@@ -21,7 +21,7 @@ function buildHourlyFromLeads(leads) {
   const today = now.toISOString().split('T')[0];
   for (const lead of leads) {
     const created = lead.createdAt || lead.created_at || '';
-    if (!created.startsWith(today)) continue;
+    if (!created || !created.startsWith(today)) continue;
     const h = new Date(created).getHours();
     const slot = slots.find((s) => s.hour === h);
     if (slot) slot.leads += 1;
@@ -45,7 +45,7 @@ function eventColor(type) {
 function timeAgo(isoString) {
   if (!isoString) return '';
   const now = Date.now();
-  const diff = Math.floor((now - new Date(isoString).getTime()) / 1000);
+  const diff = Math.max(0, Math.floor((now - new Date(isoString).getTime()) / 1000));
   if (diff < 60) return `${diff}s ago`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
