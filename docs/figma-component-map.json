@@ -3,9 +3,11 @@
   "repository": "Arisofia/Nuvanx-System",
   "figma": {
     "fileKey": "uJkwaJl7MIf5DE2VaqV8Vd",
-    "fileUrl": "https://www.figma.com/file/uJkwaJl7MIf5DE2VaqV8Vd",
-    "lastValidated": "2026-04-14T21:00:00.000Z",
-    "notes": "Node IDs verified against Figma API. 8 mapped, 3 pending (Login, Playbooks/Operativo, CRM)."
+    "fileUrl": "https://www.figma.com/make/uJkwaJl7MIf5DE2VaqV8Vd/Crear-presentación-ejecutiva?p=f&t=d8MTtFd5olqQbLCU-0&preview-route=%2Fintegraciones",
+    "fileType": "figma-slides",
+    "note": "This is a Figma Make presentation file. Node IDs for Figma Make cannot be retrieved via the Figma REST API (returns 'File type not supported'). Obtain them manually: open the file, right-click each slide/frame → Copy link → extract ?node-id=XX-YY → convert to XX:YY format.",
+    "lastValidated": "2026-04-15T14:00:00.000Z",
+    "notes": "8 routes/components mapped with node IDs. 5 pending manual node ID lookup: Login, Playbooks/Operativo, CRM, TopNav, Layout."
   },
   "routes": [
     {
@@ -16,21 +18,21 @@
       "owner": "frontend"
     },
     {
-      "name": "Operativo (Playbooks)",
+      "name": "Operativo",
       "route": "/operativo",
       "file": "frontend/src/pages/Playbooks.jsx",
-      "figmaNodeId": "TODO_NODE_ID_OPERATIVO",
+      "figmaNodeId": "PENDING_MANUAL_LOOKUP",
       "owner": "frontend"
     },
     {
       "name": "CRM",
       "route": "/crm",
       "file": "frontend/src/pages/CRM.jsx",
-      "figmaNodeId": "TODO_NODE_ID_CRM",
+      "figmaNodeId": "PENDING_MANUAL_LOOKUP",
       "owner": "frontend"
     },
     {
-      "name": "Operational Snapshot",
+      "name": "Live",
       "route": "/live",
       "file": "frontend/src/pages/LiveDashboard.jsx",
       "figmaNodeId": "12:45",
@@ -79,7 +81,7 @@
     {
       "name": "TopNav",
       "file": "frontend/src/components/TopNav.jsx",
-      "figmaNodeId": "TODO_NODE_ID_TOPNAV",
+      "figmaNodeId": "PENDING_MANUAL_LOOKUP",
       "owner": "frontend"
     }
   ]

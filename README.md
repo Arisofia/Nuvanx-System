@@ -9,12 +9,12 @@ This README is intentionally status-first and non-marketing.
 ### Implemented
 - Backend API server with routes for auth, credentials, integrations, leads, dashboard, and AI.
 - Frontend application with routes:
-  - /dashboard
-  - /operativo
-  - /crm
-  - /live
-  - /integrations
-  - /ai
+  - /dashboard (Dashboard)
+  - /operativo (Operativo)
+  - /crm (CRM)
+  - /live (Live)
+  - /integrations (Integrations)
+  - /ai (AI Layer)
 - Encrypted credential storage path in backend models/services.
 - Figma mapping validation foundation:
   - docs/figma-component-map.json

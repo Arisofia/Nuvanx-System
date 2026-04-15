@@ -7,9 +7,9 @@ Date: 2026-04-14
 - CSS custom properties: frontend/src/index.css
 
 ## Colors
-- Brand palette: brand.50-900 in frontend/tailwind.config.js
-- Dark palette: dark.500-900 in frontend/tailwind.config.js
-- Semantic CSS vars: --color-success, --color-error, --color-warning in frontend/src/index.css
+- **Brand palette**: Sky/Light Blue variants (e.g., brand.500: #0ea5e9)
+- **Dark palette**: Deep slate variants (e.g., dark.900: #0a0e1a)
+- **Semantic CSS vars**: --color-success, --color-error, --color-warning in frontend/src/index.css
 
 ## Spacing and Radius
 - Primary spacing uses Tailwind utility scale throughout pages/components.

@@ -69,7 +69,9 @@ CI:
 - Route naming in mapping must match frontend route behavior.
 - Primary naming decision:
   - route: /operativo
-  - label: Operativo (Playbooks)
+  - label: Operativo
+  - route: /live
+  - label: Live
 - /playbooks remains a redirect alias and is not a primary mapping target.
 
 ## What This Spec Does Not Claim

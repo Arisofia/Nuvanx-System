@@ -32,19 +32,23 @@ function StatusBadge({ status }) {
 function ConnectModal({ integration, onClose, onConnect }) {
   const [apiKey, setApiKey] = useState('');
   const [phoneNumberId, setPhoneNumberId] = useState('');
+  const [adAccountId, setAdAccountId] = useState('');
+  const [portalId, setPortalId] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const isWhatsApp = integration.service === 'whatsapp';
+  const isMeta = integration.service === 'meta';
+  const isHubSpot = integration.service === 'hubspot';
 
   const fieldLabels = {
-    meta: 'Meta Business API Access Token',
+    meta: 'ACCESS TOKEN',
     'google-calendar': 'Google OAuth Refresh Token',
     'google-gmail': 'Gmail OAuth Refresh Token',
     whatsapp: 'WhatsApp Business API Token',
     github: 'GitHub Personal Access Token',
-    openai: 'OpenAI API Key',
-    gemini: 'Google Gemini API Key',
-    hubspot: 'HubSpot Private App Access Token',
+    openai: 'API KEY',
+    gemini: 'API KEY',
+    hubspot: 'ACCESS TOKEN',
   };
 
   const fieldHints = {
@@ -62,10 +66,16 @@ function ConnectModal({ integration, onClose, onConnect }) {
     e.preventDefault();
     if (!apiKey.trim()) return;
     if (isWhatsApp && !phoneNumberId.trim()) return;
+    if (isMeta && !adAccountId.trim()) return;
+    if (isHubSpot && !portalId.trim()) return;
+
     setSubmitting(true);
     try {
       const credentials = { apiKey };
       if (isWhatsApp) credentials.phoneNumberId = phoneNumberId.trim();
+      if (isMeta) credentials.adAccountId = adAccountId.trim();
+      if (isHubSpot) credentials.portalId = portalId.trim();
+
       await onConnect(integration.service, credentials);
       toast.success(`${integration.name} connected successfully`);
       onClose();
@@ -114,6 +124,40 @@ function ConnectModal({ integration, onClose, onConnect }) {
               <p className="mt-1.5 text-xs text-gray-500">{fieldHints[integration.service]}</p>
             )}
           </div>
+
+          {isHubSpot && (
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-1.5 uppercase">
+                Portal ID
+              </label>
+              <input
+                type="text"
+                value={portalId}
+                onChange={(e) => setPortalId(e.target.value)}
+                placeholder="e.g. 12345678"
+                className="input"
+                autoComplete="off"
+                required
+              />
+            </div>
+          )}
+
+          {isMeta && (
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-1.5 uppercase">
+                Ad Account ID
+              </label>
+              <input
+                type="text"
+                value={adAccountId}
+                onChange={(e) => setAdAccountId(e.target.value)}
+                placeholder="e.g. act_123456789"
+                className="input"
+                autoComplete="off"
+                required
+              />
+            </div>
+          )}
 
           {isWhatsApp && (
             <div>

@@ -38,6 +38,20 @@ async function resolveAiCredential(userId, provider) {
   return null;
 }
 
+/** GET /api/ai/status — check whether an AI credential is available for the current user */
+router.get('/status', async (req, res, next) => {
+  try {
+    const credential = await resolveAiCredential(req.user.id, 'openai');
+    res.json({
+      success: true,
+      available: credential !== null,
+      provider: credential?.provider || null,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 /** POST /api/ai/generate */
 router.post('/generate', aiGenerateRules, handleValidationErrors, async (req, res, next) => {
   try {

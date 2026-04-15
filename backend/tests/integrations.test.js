@@ -3,6 +3,17 @@
 process.env.JWT_SECRET = 'test-jwt-secret-32-chars-minimum!!';
 process.env.ENCRYPTION_KEY = 'test-encryption-key-32-chars-min!';
 process.env.NODE_ENV = 'test';
+// Set service API keys to empty strings BEFORE dotenv.config() runs inside server.js.
+// dotenv.config() skips variables that are already set, so empty strings prevent the
+// .env file values from leaking into tests that expect 404 on missing credentials.
+process.env.GITHUB_PAT = '';
+process.env.GITHUB_TOKEN_CLASSIC = '';
+process.env.GITHUB_TOKEN = '';
+process.env.HUBSPOT_ACCESS_TOKEN = '';
+process.env.HUBSPOT_PAK = '';
+process.env.META_ACCESS_TOKEN = '';
+process.env.OPENAI_API_KEY = '';
+process.env.GEMINI_API_KEY = '';
 
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
