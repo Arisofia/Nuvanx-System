@@ -68,7 +68,15 @@ router.post('/register', authLimiter, authRegisterRules, handleValidationErrors,
       }
 
       const passwordHash = await hashPassword(password);
-      const row = await _dbCreate(email, name || '', passwordHash);
+      let row;
+      try {
+        row = await _dbCreate(email, name || '', passwordHash);
+      } catch (err) {
+        if (err && err.code === '23505') {
+          return res.status(409).json({ success: false, message: 'Email already registered' });
+        }
+        throw err;
+      }
       const { id } = row;
 
       const token = jwt.sign({ id, email, name: row.name }, config.jwtSecret, {
