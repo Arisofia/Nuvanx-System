@@ -20,6 +20,7 @@ const { config } = require('../config/env');
 const hubspotService = require('../services/hubspot');
 const leadModel = require('../models/lead');
 const { pool: getPool, isAvailable } = require('../db');
+const { supabaseAdmin } = require('../config/supabase');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -96,7 +97,33 @@ router.post('/hubspot', async (req, res) => {
     } catch (err) {
       logger.error('HubSpot webhook event error', { error: err.message, event });
       errors.push({ objectId: event.objectId, error: err.message });
+
+      // Dead-letter: write failed events to monitoring for visibility and replay
+      if (supabaseAdmin) {
+        supabaseAdmin
+          .schema('monitoring')
+          .from('operational_events')
+          .insert({
+            user_id: null,
+            event_type: 'webhook_dead_letter',
+            message: `HubSpot webhook event failed: ${err.message}`,
+            metadata: {
+              objectId: event.objectId,
+              subscriptionType: event.subscriptionType,
+              portalId: event.portalId,
+              error: err.message,
+            },
+          })
+          .then(() => {})
+          .catch((e) => logger.warn('webhook dead-letter write failed', { error: e.message }));
+      }
     }
+  }
+
+  // If all events failed, signal the caller to retry after 60s
+  if (errors.length > 0 && processed.length === 0) {
+    res.setHeader('Retry-After', '60');
+    return res.status(503).json({ received: true, processed: 0, errors: errors.length, retryAfter: 60 });
   }
 
   res.json({ received: true, processed: processed.length, errors: errors.length });
