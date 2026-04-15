@@ -5,199 +5,124 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const { config } = require('../config/env');
-const { getPool, isAvailable } = require('../db');
+const { pool, isAvailable, isProduction } = require('../db');
 const { authLimiter } = require('../middleware/rateLimiter');
 const { authLoginRules, authRegisterRules, handleValidationErrors } = require('../utils/validators');
 const logger = require('../utils/logger');
 
 const router = express.Router();
 
-const BCRYPT_ROUNDS = 12;
+const BCRYPT_ROUNDS = config.bcryptRounds;
+const DUMMY_PASSWORD_HASH = '$2b$10$C/wSDSBx/6CkXbkqVKgfHOmC9ZwTe74MkRUyvMh35vj0IadB1iKs6';
 
-// ---------------------------------------------------------------------------
-// In-memory fallback — only used in development/test when DATABASE_URL is
-// absent.  In production the DB pool module exits the process if the database
-// is unavailable, so this path is never reached in production.
-// ---------------------------------------------------------------------------
+// In-memory fallback store for local development/testing only.
 const memStore = new Map();
 
-// ---------------------------------------------------------------------------
-// Password helpers
-// ---------------------------------------------------------------------------
-function hashPassword(password) {
-  return bcrypt.hash(password, BCRYPT_ROUNDS);
-}
-
-function verifyPassword(password, hash) {
-  return bcrypt.compare(password, hash);
-}
-
-// ---------------------------------------------------------------------------
-// Database helpers (users table from 001_initial_schema.sql)
-// ---------------------------------------------------------------------------
-async function _dbFindByEmail(email) {
-  const { rows } = await getPool().query(
-    'SELECT id, email, name, password_hash, created_at FROM users WHERE email = $1',
-    [email],
+function issueTokenAndResponse(res, user, statusCode = 200) {
+  const token = jwt.sign(
+    { id: user.id, email: user.email, name: user.name },
+    config.jwtSecret,
+    { expiresIn: config.jwtExpiresIn },
   );
-  return rows[0] || null;
+
+  return res.status(statusCode).json({
+    success: true,
+    token,
+    user: { id: user.id, email: user.email, name: user.name },
+  });
 }
 
-async function _dbCreate(email, name, passwordHash) {
-  const { rows } = await getPool().query(
-    `INSERT INTO users (email, name, password_hash)
-     VALUES ($1, $2, $3)
-     RETURNING id, email, name, created_at`,
-    [email, name, passwordHash],
+function normalizeUserRow(row) {
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    passwordHash: row.password_hash,
+  };
+}
+
+async function dbFindByEmail(email) {
+  const { rows } = await pool.query('SELECT id, email, name, password_hash FROM users WHERE email = $1', [email]);
+  return rows[0] ? normalizeUserRow(rows[0]) : null;
+}
+
+async function dbCreateUser({ email, name, passwordHash }) {
+  const id = uuidv4();
+  const { rows } = await pool.query(
+    `INSERT INTO users (id, email, name, password_hash)
+     VALUES ($1, $2, $3, $4)
+     RETURNING id, email, name, password_hash`,
+    [id, email, name, passwordHash],
   );
-  return rows[0];
+  return normalizeUserRow(rows[0]);
 }
 
-// ---------------------------------------------------------------------------
-// POST /api/auth/register
-// ---------------------------------------------------------------------------
+function memoryFindByEmail(email) {
+  return memStore.get(email) || null;
+}
+
+function memoryCreateUser({ email, name, passwordHash }) {
+  const id = uuidv4();
+  const user = { id, email, name, passwordHash, createdAt: new Date().toISOString() };
+  memStore.set(email, user);
+  return user;
+}
+
 router.post('/register', authLimiter, authRegisterRules, handleValidationErrors, async (req, res, next) => {
   try {
-    const { email, password, name } = req.body;
+    const email = req.body.email.toLowerCase();
+    const { password, name } = req.body;
 
-    if (isAvailable()) {
-      // ── Database path ───────────────────────────────────────────────────
-      try {
-        const existing = await _dbFindByEmail(email);
-        if (existing) {
-          return res.status(409).json({ success: false, message: 'Email already registered' });
-        }
-
-        const passwordHash = await hashPassword(password);
-        let row;
-        try {
-          row = await _dbCreate(email, name || '', passwordHash);
-        } catch (err) {
-          if (err && err.code === '23505') {
-            return res.status(409).json({ success: false, message: 'Email already registered' });
-          }
-          throw err;
-        }
-        const { id } = row;
-
-        const token = jwt.sign({ id, email, name: row.name }, config.jwtSecret, {
-          expiresIn: config.jwtExpiresIn,
-        });
-        logger.info('User registered (db)', { userId: id, email });
-
-        return res.status(201).json({
-          success: true,
-          token,
-          user: { id, email, name: row.name },
-        });
-      } catch (err) {
-        if (config.nodeEnv !== 'production') {
-          logger.warn('DB register failed in dev/test, falling back to in-memory', { error: err.message });
-          // fall through to in-memory path
-        } else {
-          throw err;
-        }
-      }
+    const dbReady = isAvailable();
+    if (!dbReady && isProduction) {
+      return res.status(503).json({ success: false, message: 'Database unavailable' });
     }
 
-    // ── In-memory fallback (dev/test only, or DB failure in non-production) ──
-    if (memStore.has(email)) {
+    const findUser = dbReady ? dbFindByEmail : memoryFindByEmail;
+    const createUser = dbReady ? dbCreateUser : memoryCreateUser;
+
+    const existing = await findUser(email);
+    if (existing) {
       return res.status(409).json({ success: false, message: 'Email already registered' });
     }
 
-    const passwordHash = await hashPassword(password);
-    const id = uuidv4();
-    const user = { id, email, name: name || '', passwordHash, createdAt: new Date().toISOString() };
-    memStore.set(email, user);
+    const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+    const user = await createUser({ email, name, passwordHash });
 
-    const token = jwt.sign({ id, email, name: user.name }, config.jwtSecret, {
-      expiresIn: config.jwtExpiresIn,
-    });
-    logger.info('User registered (in-memory)', { userId: id, email });
-
-    return res.status(201).json({
-      success: true,
-      token,
-      user: { id, email, name: user.name },
-    });
+    logger.info('User registered', { userId: user.id, email, storage: dbReady ? 'db' : 'memory' });
+    return issueTokenAndResponse(res, user, 201);
   } catch (err) {
     next(err);
   }
 });
 
-// ---------------------------------------------------------------------------
-// POST /api/auth/login
-// ---------------------------------------------------------------------------
 router.post('/login', authLimiter, authLoginRules, handleValidationErrors, async (req, res, next) => {
   try {
-    const { email, password } = req.body;
+    const email = req.body.email.toLowerCase();
+    const { password } = req.body;
 
-    if (isAvailable()) {
-      // ── Database path ───────────────────────────────────────────────────
-      try {
-        const user = await _dbFindByEmail(email);
-        if (!user) {
-          return res.status(401).json({ success: false, message: 'Invalid email or password' });
-        }
-
-        const valid = await verifyPassword(password, user.password_hash);
-        if (!valid) {
-          return res.status(401).json({ success: false, message: 'Invalid email or password' });
-        }
-
-        const token = jwt.sign(
-          { id: user.id, email: user.email, name: user.name },
-          config.jwtSecret,
-          { expiresIn: config.jwtExpiresIn },
-        );
-        logger.info('User logged in (db)', { userId: user.id });
-
-        return res.json({
-          success: true,
-          token,
-          user: { id: user.id, email: user.email, name: user.name },
-        });
-      } catch (err) {
-        if (config.nodeEnv !== 'production') {
-          logger.warn('DB login failed in dev/test, falling back to in-memory', { error: err.message });
-          // fall through to in-memory path
-        } else {
-          throw err;
-        }
-      }
+    const dbReady = isAvailable();
+    if (!dbReady && isProduction) {
+      return res.status(503).json({ success: false, message: 'Database unavailable' });
     }
 
-    // ── In-memory fallback (dev/test only, or DB failure in non-production) ──
-    const user = memStore.get(email);
-    if (!user) {
+    const findUser = dbReady ? dbFindByEmail : memoryFindByEmail;
+    const user = await findUser(email);
+
+    // Always compare against a hash to reduce timing side-channels.
+    const passwordHashToCompare = user ? user.passwordHash : DUMMY_PASSWORD_HASH;
+    const valid = await bcrypt.compare(password, passwordHashToCompare);
+    if (!user || !valid) {
       return res.status(401).json({ success: false, message: 'Invalid email or password' });
     }
 
-    const valid = await verifyPassword(password, user.passwordHash);
-    if (!valid) {
-      return res.status(401).json({ success: false, message: 'Invalid email or password' });
-    }
-
-    const token = jwt.sign(
-      { id: user.id, email: user.email, name: user.name },
-      config.jwtSecret,
-      { expiresIn: config.jwtExpiresIn },
-    );
-    logger.info('User logged in (in-memory)', { userId: user.id });
-
-    return res.json({
-      success: true,
-      token,
-      user: { id: user.id, email: user.email, name: user.name },
-    });
+    logger.info('User logged in', { userId: user.id, storage: dbReady ? 'db' : 'memory' });
+    return issueTokenAndResponse(res, user);
   } catch (err) {
     next(err);
   }
 });
 
-// ---------------------------------------------------------------------------
-// GET /api/auth/me
-// ---------------------------------------------------------------------------
 router.get('/me', require('../middleware/auth').authenticate, (req, res) => {
   res.json({ success: true, user: req.user });
 });

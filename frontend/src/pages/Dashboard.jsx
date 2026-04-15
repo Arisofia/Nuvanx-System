@@ -7,6 +7,7 @@ import {
 import MetricCard from '../components/MetricCard';
 import FunnelChart from '../components/FunnelChart';
 import api from '../config/api';
+import { normalizeDashboardMetrics } from '../lib/normalizeDashboardMetrics';
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload?.length) {
@@ -37,7 +38,7 @@ export default function Dashboard() {
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [error, setError] = useState(null);
 
-  async function fetchData() {
+  const fetchData = async () => {
     setLoadingMetrics(true);
     setError(null);
     try {
@@ -47,7 +48,7 @@ export default function Dashboard() {
         api.get('/api/dashboard/revenue-trend'),
         api.get('/api/integrations'),
       ]);
-      setMetrics(metricsRes.data.metrics);
+      setMetrics(normalizeDashboardMetrics(metricsRes.data));
 
       // Build funnel display from real funnel stages
       const stages = funnelRes.data.funnel || [];
@@ -101,9 +102,9 @@ export default function Dashboard() {
     } finally {
       setLoadingMetrics(false);
     }
-  }
+  };
 
-  async function fetchAiSuggestions() {
+  const fetchAiSuggestions = async () => {
     setLoadingSuggestions(true);
     try {
       const res = await api.post('/api/ai/suggestions', { provider: 'openai' });
@@ -114,7 +115,7 @@ export default function Dashboard() {
     } finally {
       setLoadingSuggestions(false);
     }
-  }
+  };
 
   useEffect(() => {
     fetchData();
