@@ -12,6 +12,8 @@ const logger = require('../utils/logger');
 
 const router = express.Router();
 
+const BCRYPT_ROUNDS = 12;
+
 // ---------------------------------------------------------------------------
 // In-memory fallback — only used in development/test when DATABASE_URL is
 // absent.  In production the DB pool module exits the process if the database
@@ -54,7 +56,7 @@ router.post('/register', authLimiter, authRegisterRules, handleValidationErrors,
         return res.status(409).json({ success: false, message: 'Email already registered' });
       }
 
-      const passwordHash = await bcrypt.hash(password, 12);
+      const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
       const row = await _dbCreate(email, name || '', passwordHash);
       const { id } = row;
 
@@ -74,7 +76,7 @@ router.post('/register', authLimiter, authRegisterRules, handleValidationErrors,
         return res.status(409).json({ success: false, message: 'Email already registered' });
       }
 
-      const passwordHash = await bcrypt.hash(password, 12);
+      const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
       const id = uuidv4();
       const user = { id, email, name: name || '', passwordHash, createdAt: new Date().toISOString() };
       memStore.set(email, user);
