@@ -13,6 +13,7 @@ const leadModel = require('../models/lead');
 const { pool, isAvailable } = require('../db');
 const { config } = require('../config/env');
 const { serviceParamRule, handleValidationErrors, connectRules } = require('../utils/validators');
+const { integrationTestLimiter } = require('../middleware/rateLimiter');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -159,6 +160,7 @@ router.get('/whatsapp/phone-numbers', async (req, res, next) => {
 /** POST /api/integrations/:service/test - test stored credential connection */
 router.post(
   '/:service/test',
+  integrationTestLimiter,
   serviceParamRule,
   handleValidationErrors,
   async (req, res, next) => {

@@ -4,6 +4,7 @@ const express = require('express');
 const { authenticate } = require('../middleware/auth');
 const credentialModel = require('../models/credential');
 const { credentialRules, serviceParamRule, handleValidationErrors } = require('../utils/validators');
+const { credentialsWriteLimiter } = require('../middleware/rateLimiter');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -22,7 +23,7 @@ router.get('/', async (req, res, next) => {
 });
 
 /** POST /api/credentials - save or update a credential (encrypted) */
-router.post('/', credentialRules, handleValidationErrors, async (req, res, next) => {
+router.post('/', credentialsWriteLimiter, credentialRules, handleValidationErrors, async (req, res, next) => {
   try {
     const { service, apiKey } = req.body;
     const meta = await credentialModel.save(req.user.id, service, apiKey);
