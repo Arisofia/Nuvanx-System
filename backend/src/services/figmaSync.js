@@ -51,6 +51,8 @@ function buildMetrics(leads, integrations, credentials) {
   };
 }
 
+const GITHUB_STATS_REPO_LIMIT = 30;
+
 async function getGitHubStats(userId, credentials) {
   const ghCredential = credentials.find((c) => c.service === 'github');
   const token = ghCredential ? await credentialModel.getDecryptedKey(userId, 'github') : null;
@@ -58,7 +60,7 @@ async function getGitHubStats(userId, credentials) {
   if (!effectiveToken) return null;
 
   try {
-    const repos = await githubService.listRepositories(effectiveToken, { perPage: 30 });
+    const repos = await githubService.listRepositories(effectiveToken, { perPage: GITHUB_STATS_REPO_LIMIT });
     return {
       repoCount: repos.length,
       repos: repos.slice(0, 5).map((r) => ({
