@@ -18,7 +18,7 @@ function buildHourlyFromLeads(leads) {
     return { time: label, hour: h.getHours(), leads: 0 };
   });
 
-  const today = now.toISOString().slice(0, 10);
+  const today = now.toISOString().split('T')[0];
   for (const lead of leads) {
     const created = lead.createdAt || lead.created_at || '';
     if (!created.startsWith(today)) continue;
@@ -44,7 +44,8 @@ function eventColor(type) {
 
 function timeAgo(isoString) {
   if (!isoString) return '';
-  const diff = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000);
+  const now = Date.now();
+  const diff = Math.floor((now - new Date(isoString).getTime()) / 1000);
   if (diff < 60) return `${diff}s ago`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;

@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const { param } = require('express-validator');
 const { authenticate } = require('../middleware/auth');
+const { handleValidationErrors } = require('../utils/validators');
 const credentialModel = require('../models/credential');
 const integrationModel = require('../models/integration');
 const githubService = require('../services/github');
@@ -12,9 +14,17 @@ const logger = require('../utils/logger');
 const router = express.Router();
 router.use(authenticate);
 
+/** Allowed characters for a GitHub owner or repository name. */
+const GITHUB_SLUG_RE = /^[a-zA-Z0-9_.-]{1,100}$/;
+
+const githubSlugRules = [
+  param('owner').matches(GITHUB_SLUG_RE).withMessage('Invalid owner name'),
+  param('repo').matches(GITHUB_SLUG_RE).withMessage('Invalid repository name'),
+];
+
 /**
  * Resolve the GitHub credential for the requesting user.
- * Priority: per-user vault → GITHUB_TOKEN env var.
+ * Priority: per-user vault → GITHUB_PAT env var.
  */
 async function resolveGitHubCredential(userId) {
   const stored = await credentialModel.getDecryptedKey(userId, 'github');
@@ -22,8 +32,12 @@ async function resolveGitHubCredential(userId) {
   return config.githubToken || null;
 }
 
+/** Returns `count singular` or `count plural` (e.g. "1 repo" / "2 repos"). */
+function pluralize(count, singular, plural) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 /**
- * GET /api/github/repos
  * Lists GitHub repositories for the authenticated user.
  */
 router.get('/repos', async (req, res, next) => {
@@ -69,39 +83,44 @@ router.get('/repos', async (req, res, next) => {
  * GET /api/github/repos/:owner/:repo/issues
  * Lists open issues for a specific repository.
  */
-router.get('/repos/:owner/:repo/issues', async (req, res, next) => {
-  try {
-    const token = await resolveGitHubCredential(req.user.id);
-    if (!token) {
-      return res.status(404).json({
-        success: false,
-        message: 'GitHub integration not connected. Please connect GitHub in Integrations.',
+router.get(
+  '/repos/:owner/:repo/issues',
+  githubSlugRules,
+  handleValidationErrors,
+  async (req, res, next) => {
+    try {
+      const token = await resolveGitHubCredential(req.user.id);
+      if (!token) {
+        return res.status(404).json({
+          success: false,
+          message: 'GitHub integration not connected. Please connect GitHub in Integrations.',
+        });
+      }
+
+      const { owner, repo } = req.params;
+      const issues = await githubService.getIssues(token, owner, repo);
+
+      res.json({
+        success: true,
+        issues: issues.map((i) => ({
+          id: i.id,
+          number: i.number,
+          title: i.title,
+          state: i.state,
+          htmlUrl: i.html_url,
+          labels: (i.labels || []).map((l) => l.name),
+          user: i.user?.login,
+          createdAt: i.created_at,
+          updatedAt: i.updated_at,
+          isPullRequest: Boolean(i.pull_request),
+        })),
       });
+    } catch (err) {
+      logger.error('GitHub issues error', { userId: req.user.id, error: err.message });
+      next(err);
     }
-
-    const { owner, repo } = req.params;
-    const issues = await githubService.getIssues(token, owner, repo);
-
-    res.json({
-      success: true,
-      issues: issues.map((i) => ({
-        id: i.id,
-        number: i.number,
-        title: i.title,
-        state: i.state,
-        htmlUrl: i.html_url,
-        labels: (i.labels || []).map((l) => l.name),
-        user: i.user?.login,
-        createdAt: i.created_at,
-        updatedAt: i.updated_at,
-        isPullRequest: Boolean(i.pull_request),
-      })),
-    });
-  } catch (err) {
-    logger.error('GitHub issues error', { userId: req.user.id, error: err.message });
-    next(err);
-  }
-});
+  },
+);
 
 /**
  * POST /api/github/sync
@@ -128,6 +147,12 @@ router.post('/sync', async (req, res, next) => {
     // Optionally fetch issues for a specific repo
     let issues = [];
     const { owner, repo } = req.body || {};
+    // Validate owner/repo before using them in a URL to prevent request-forgery
+    const ownerValid = !owner || GITHUB_SLUG_RE.test(owner);
+    const repoValid = !repo || GITHUB_SLUG_RE.test(repo);
+    if (!ownerValid || !repoValid) {
+      return res.status(400).json({ success: false, message: 'Invalid owner or repository name' });
+    }
     if (owner && repo) {
       issues = await githubService.getIssues(token, owner, repo);
     }
@@ -138,9 +163,9 @@ router.post('/sync', async (req, res, next) => {
     const openPrCount = issues.filter((i) => i.pull_request).length;
 
     const summary = [
-      `${repoCount} repo${repoCount !== 1 ? 's' : ''}`,
-      owner && repo ? `${openIssueCount} open issue${openIssueCount !== 1 ? 's' : ''} in ${owner}/${repo}` : null,
-      owner && repo && openPrCount > 0 ? `${openPrCount} open PR${openPrCount !== 1 ? 's' : ''}` : null,
+      pluralize(repoCount, 'repo', 'repos'),
+      owner && repo ? `${pluralize(openIssueCount, 'open issue', 'open issues')} in ${owner}/${repo}` : null,
+      owner && repo && openPrCount > 0 ? pluralize(openPrCount, 'open PR', 'open PRs') : null,
     ]
       .filter(Boolean)
       .join(', ');
