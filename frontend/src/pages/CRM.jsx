@@ -244,20 +244,23 @@ export default function CRM() {
     return matchStatus && matchSearch;
   });
 
-  const handleWhatsApp = async (lead) => {
-    if (!lead?.phone) {
-      toast.error('This lead has no phone number.');
+  async function handleWhatsApp(lead) {
+    if (!lead.phone) {
+      toast.error('Este lead no tiene número de teléfono registrado.');
       return;
     }
-    const message = `Hola ${lead.name || ''}, gracias por tu interés. ¿En qué podemos ayudarte?`;
+    const message = window.prompt(
+      `Enviar WhatsApp a ${lead.name} (${lead.phone})\n\nEscribe el mensaje:`,
+      `Hola ${lead.name}, te contactamos desde nuestra clínica. ¿Podemos ayudarte?`,
+    );
+    if (!message) return;
     try {
-      await api.post('/api/whatsapp/send', { to: lead.phone, message });
-      toast.success(`WhatsApp message sent to ${lead.phone}`);
+      await api.post('/api/whatsapp/send', { to: lead.phone, message, leadId: lead.id });
+      toast.success(`WhatsApp enviado a ${lead.name}`);
     } catch (err) {
-      const msg = err.response?.data?.message || err.message;
-      toast.error(`WhatsApp failed: ${msg}`);
+      toast.error(err.response?.data?.message || 'Error enviando WhatsApp');
     }
-  };
+  }
   const handleCalendar = () => {
     toast('Placeholder action: Calendar scheduling is not wired yet.', { icon: 'ℹ️' });
   };
