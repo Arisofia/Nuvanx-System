@@ -23,9 +23,6 @@ jest.mock('../src/services/github', () => ({
 jest.mock('../src/services/meta', () => ({
   testConnection: jest.fn().mockResolvedValue({ connected: false, error: 'Invalid OAuth access token' }),
 }));
-jest.mock('../src/services/google', () => ({
-  testConnection: jest.fn().mockResolvedValue({ connected: true, email: 'user@gmail.com' }),
-}));
 jest.mock('../src/services/whatsapp', () => ({
   testConnection: jest.fn().mockResolvedValue({ connected: true, displayPhoneNumber: '+1234567890' }),
 }));

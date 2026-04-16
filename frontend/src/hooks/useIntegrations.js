@@ -10,12 +10,10 @@ import { isSupabaseAvailable, supabase } from '../lib/supabase/client';
 // Initial empty integrations structure - will be populated from backend
 const EMPTY_INTEGRATIONS = [
   { service: 'meta', name: 'Meta Business', description: 'Marketing API + Webhooks for lead capture', icon: '📘' },
-  { service: 'google-calendar', name: 'Google Calendar', description: 'Sync appointments and scheduling', icon: '📅' },
-  { service: 'google-gmail', name: 'Gmail', description: 'Email campaigns and automated follow-ups', icon: '✉️' },
   { service: 'whatsapp', name: 'WhatsApp Business', description: 'Automated messaging and lead nurturing', icon: '💬' },
-  { service: 'github', name: 'GitHub', description: 'Repository access for deployment triggers', icon: '🐙' },
   { service: 'openai', name: 'OpenAI', description: 'GPT-4 content generation and analysis', icon: '🤖' },
   { service: 'gemini', name: 'Google Gemini', description: 'Gemini AI content generation and campaign insights', icon: '✨' },
+  { service: 'github', name: 'GitHub', description: 'Repository access for deployment triggers', icon: '🐙' },
 ].map(item => ({ ...item, status: 'disconnected', lastSync: null, error: null }));
 
 export function useIntegrations() {

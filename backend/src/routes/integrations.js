@@ -5,7 +5,6 @@ const { authenticate } = require('../middleware/auth');
 const integrationModel = require('../models/integration');
 const credentialModel = require('../models/credential');
 const metaService = require('../services/meta');
-const googleService = require('../services/google');
 const whatsappService = require('../services/whatsapp');
 const githubService = require('../services/github');
 const leadModel = require('../models/lead');
@@ -34,8 +33,6 @@ async function resolveCredential(userId, service) {
   const envDefaults = {
     openai: config.openaiApiKey,
     gemini: config.geminiApiKey,
-    'google-calendar': config.googleApiKey,
-    'google-gmail': config.googleApiKey,
     meta: config.metaAccessToken,
     whatsapp: config.whatsappAccessToken,
     github: config.githubToken,
@@ -90,8 +87,6 @@ router.get('/validate-all', async (req, res, next) => {
   // Services testable without extra parameters
   const TESTABLE = [
     { service: 'meta', test: (k) => metaService.testConnection(k) },
-    { service: 'google-calendar', test: (k) => googleService.testConnection(k) },
-    { service: 'google-gmail', test: (k) => googleService.testConnection(k) },
     { service: 'github', test: (k) => githubService.testConnection(k) },
     {
       service: 'openai',
@@ -191,10 +186,6 @@ router.post(
       switch (service) {
         case 'meta':
           result = await metaService.testConnection(apiKey);
-          break;
-        case 'google-calendar':
-        case 'google-gmail':
-          result = await googleService.testConnection(apiKey);
           break;
         case 'whatsapp': {
           const { phoneNumberId } = req.body;
