@@ -2,8 +2,8 @@
   "version": "1.1.0",
   "repository": "Arisofia/Nuvanx-System",
   "figma": {
-    "fileKey": "TODO_FIGMA_FILE_KEY",
-    "fileUrl": "TODO_FIGMA_FILE_URL",
+    "fileKey": "YOUR_FIGMA_FILE_KEY",
+    "fileUrl": "https://www.figma.com/design/YOUR_FILE_KEY/Your-File-Name",
     "lastValidated": "2026-04-14T00:00:00.000Z"
   },
   "routes": [
@@ -11,7 +11,7 @@
       "name": "Dashboard",
       "route": "/dashboard",
       "file": "frontend/src/pages/Dashboard.jsx",
-      "figmaNodeId": "TODO_NODE_ID_DASHBOARD",
+      "figmaNodeId": "1:2",
       "owner": "frontend"
     }
   ],
@@ -19,7 +19,7 @@
     {
       "name": "MetricCard",
       "file": "frontend/src/components/MetricCard.jsx",
-      "figmaNodeId": "TODO_NODE_ID_METRIC_CARD",
+      "figmaNodeId": "202:15",
       "owner": "frontend"
     }
   ]

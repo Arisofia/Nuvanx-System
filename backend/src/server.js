@@ -2,6 +2,7 @@
 
 require('dotenv').config();
 
+const Sentry = require('@sentry/node');
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
@@ -15,6 +16,16 @@ const { errorHandler } = require('./middleware/errorHandler');
 
 // Validate required environment variables before anything else
 validate();
+
+// ─── Sentry error tracking ─────────────────────────────────────────────────
+if (config.sentryDsn) {
+  Sentry.init({
+    dsn: config.sentryDsn,
+    environment: config.nodeEnv,
+    tracesSampleRate: config.nodeEnv === 'production' ? 0.2 : 1.0,
+  });
+  logger.info('Sentry initialized');
+}
 
 const app = express();
 
@@ -90,11 +101,17 @@ app.use('/api/ai', require('./routes/ai'));
 app.use('/api/figma', require('./routes/figma'));
 app.use('/api/github', require('./routes/github'));
 app.use('/api/playbooks', require('./routes/playbooks'));
+app.use('/api/whatsapp', require('./routes/whatsapp'));
 
 // ─── 404 handler ────────────────────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ success: false, message: `Route ${req.method} ${req.originalUrl} not found` });
 });
+
+// ─── Sentry error handler (must be before custom errorHandler) ──────────────
+if (config.sentryDsn) {
+  Sentry.setupExpressErrorHandler(app);
+}
 
 // ─── Global error handler ───────────────────────────────────────────────────
 app.use(errorHandler);

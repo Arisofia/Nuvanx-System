@@ -132,4 +132,139 @@ router.post('/hubspot', async (req, res) => {
   res.json({ received: true, processed: processed.length, errors: errors.length });
 });
 
+// ─── Meta Lead Ads Webhook ──────────────────────────────────────────────────
+// Docs: https://developers.facebook.com/docs/marketing-api/guides/lead-ads/retrieving/
+
+const crypto = require('crypto');
+const metaService = require('../services/meta');
+
+/**
+ * GET /api/webhooks/meta
+ * Webhook verification — Meta sends hub.mode, hub.verify_token, hub.challenge.
+ */
+router.get('/meta', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  if (mode === 'subscribe' && config.metaVerifyToken && token === config.metaVerifyToken) {
+    logger.info('Meta webhook verified');
+    return res.status(200).send(challenge);
+  }
+  return res.status(403).json({ error: 'Verification failed' });
+});
+
+/**
+ * POST /api/webhooks/meta
+ * Receives lead-gen events from Meta Lead Ads.
+ * Payload: { object, entry: [{ id, time, changes: [{ field, value: { leadgen_id, ... } }] }] }
+ */
+router.post('/meta', async (req, res) => {
+  // ── Signature verification ────────────────────────────────────────────────
+  if (config.metaAppSecret) {
+    const signature = req.headers['x-hub-signature-256'] || '';
+    const rawBody = req.rawBody || '';
+    const expected = 'sha256=' + crypto
+      .createHmac('sha256', config.metaAppSecret)
+      .update(rawBody)
+      .digest('hex');
+
+    if (!signature || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+      logger.warn('Meta webhook: invalid signature');
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+  }
+
+  const { object, entry } = req.body;
+  if (object !== 'page' && object !== 'instagram') {
+    return res.status(200).json({ received: true, skipped: true });
+  }
+
+  const processed = [];
+
+  for (const e of (entry || [])) {
+    for (const change of (e.changes || [])) {
+      if (change.field !== 'leadgen') continue;
+
+      const { leadgen_id, page_id, form_id } = change.value || {};
+      if (!leadgen_id) continue;
+
+      try {
+        // Try to fetch full lead data from Meta Graph API
+        let leadData = {
+          name: `Meta Lead ${leadgen_id}`,
+          email: '',
+          phone: '',
+          source: 'Meta Ads',
+          stage: 'lead',
+          revenue: 0,
+          notes: `Leadgen ID: ${leadgen_id} | Page: ${page_id || ''} | Form: ${form_id || ''}`,
+        };
+
+        if (config.metaAccessToken) {
+          try {
+            const axios = require('axios');
+            const { data } = await axios.get(
+              `https://graph.facebook.com/v21.0/${leadgen_id}`,
+              {
+                params: { access_token: config.metaAccessToken },
+                timeout: 10000,
+              },
+            );
+            const fields = {};
+            for (const fd of (data.field_data || [])) {
+              fields[fd.name] = fd.values?.[0] || '';
+            }
+            leadData.name = fields.full_name || fields.first_name || leadData.name;
+            leadData.email = fields.email || '';
+            leadData.phone = fields.phone_number || '';
+          } catch (fetchErr) {
+            logger.warn('Meta webhook: failed to fetch lead details', { leadgen_id, error: fetchErr.message });
+          }
+        }
+
+        // Insert into DB
+        if (isAvailable()) {
+          await getPool.query(
+            `INSERT INTO leads (user_id, name, email, phone, source, stage, revenue, notes)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             ON CONFLICT DO NOTHING`,
+            [
+              null,
+              leadData.name,
+              leadData.email,
+              leadData.phone,
+              leadData.source,
+              leadData.stage,
+              leadData.revenue,
+              leadData.notes,
+            ],
+          );
+        }
+
+        logger.info('Meta lead webhook processed', { leadgen_id, page_id });
+        processed.push({ leadgen_id });
+      } catch (err) {
+        logger.error('Meta lead webhook error', { leadgen_id, error: err.message });
+
+        if (supabaseAdmin) {
+          supabaseAdmin
+            .schema('monitoring')
+            .from('operational_events')
+            .insert({
+              user_id: null,
+              event_type: 'webhook_dead_letter',
+              message: `Meta lead webhook failed: ${err.message}`,
+              metadata: { leadgen_id, page_id, form_id, error: err.message },
+            })
+            .then(() => {})
+            .catch((e) => logger.warn('meta webhook dead-letter write failed', { error: e.message }));
+        }
+      }
+    }
+  }
+
+  res.json({ received: true, processed: processed.length });
+});
+
 module.exports = router;

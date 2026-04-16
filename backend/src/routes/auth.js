@@ -2,6 +2,7 @@
 
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const { config } = require('../config/env');
@@ -125,6 +126,111 @@ router.post('/login', authLimiter, authLoginRules, handleValidationErrors, async
 
 router.get('/me', require('../middleware/auth').authenticate, (req, res) => {
   res.json({ success: true, user: req.user });
+});
+
+// ─── Password reset ─────────────────────────────────────────────────────────
+
+// In-memory reset-token store (maps token → { email, expiresAt }).
+// In production with multiple replicas, replace this with a DB table or Redis.
+const resetTokens = new Map();
+
+/**
+ * POST /api/auth/forgot-password
+ * Body: { email }
+ * Generates a reset token (valid 1h). For now, returns it in the response
+ * because no email transport is configured. Once an email provider is wired,
+ * send the token via email and return a generic success message instead.
+ */
+router.post('/forgot-password', authLimiter, async (req, res, next) => {
+  try {
+    const email = (req.body.email || '').toLowerCase().trim();
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Email is required.' });
+    }
+
+    // Always return 200 to prevent email enumeration — but we still generate a
+    // real token only if the user exists.
+    const dbReady = isAvailable();
+    if (!dbReady && isProduction) {
+      return res.status(503).json({ success: false, message: 'Database unavailable' });
+    }
+
+    const findUser = dbReady ? dbFindByEmail : memoryFindByEmail;
+    const user = await findUser(email);
+
+    if (user) {
+      const token = crypto.randomBytes(32).toString('hex');
+      resetTokens.set(token, { email, expiresAt: Date.now() + 3600000 }); // 1h
+      logger.info('Password reset token generated', { email });
+
+      // TODO: send token via email. For now return it so the frontend can use it.
+      return res.json({
+        success: true,
+        message: 'If that email is registered, a reset link has been generated.',
+        resetToken: token,
+      });
+    }
+
+    // User not found — return same message to prevent enumeration
+    return res.json({
+      success: true,
+      message: 'If that email is registered, a reset link has been generated.',
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/auth/reset-password
+ * Body: { token, newPassword }
+ * Validates the reset token and updates the password.
+ */
+router.post('/reset-password', authLimiter, async (req, res, next) => {
+  try {
+    const { token, newPassword } = req.body;
+    if (!token || !newPassword) {
+      return res.status(400).json({ success: false, message: 'Token and newPassword are required.' });
+    }
+    if (newPassword.length < 8) {
+      return res.status(400).json({ success: false, message: 'Password must be at least 8 characters.' });
+    }
+
+    const entry = resetTokens.get(token);
+    if (!entry || Date.now() > entry.expiresAt) {
+      resetTokens.delete(token);
+      return res.status(400).json({ success: false, message: 'Invalid or expired reset token.' });
+    }
+
+    const dbReady = isAvailable();
+    if (!dbReady && isProduction) {
+      return res.status(503).json({ success: false, message: 'Database unavailable' });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+
+    if (dbReady) {
+      const { rowCount } = await pool.query(
+        'UPDATE users SET password_hash = $1 WHERE email = $2',
+        [passwordHash, entry.email],
+      );
+      if (rowCount === 0) {
+        return res.status(404).json({ success: false, message: 'User not found.' });
+      }
+    } else {
+      const user = memoryFindByEmail(entry.email);
+      if (!user) {
+        return res.status(404).json({ success: false, message: 'User not found.' });
+      }
+      user.passwordHash = passwordHash;
+    }
+
+    resetTokens.delete(token);
+    logger.info('Password reset completed', { email: entry.email });
+    return res.json({ success: true, message: 'Password updated successfully.' });
+  } catch (err) {
+    next(err);
+  }
 });
 
 module.exports = router;

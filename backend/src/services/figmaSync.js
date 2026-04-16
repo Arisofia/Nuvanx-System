@@ -133,7 +133,7 @@ async function publishSnapshotToFigma(userId, snapshot) {
     throw new Error(`Failed to write figma_sync_log: ${logError.message}`);
   }
 
-  // 3a. Refresh KPI rows in figma_tokens (works immediately — no DDL needed)
+  // 3a. Refresh KPI rows in design_tokens (works immediately — no DDL needed)
   const statusOf = (svc) => {
     const found = integrations.find((i) => i.service === svc);
     return found ? found.status : 'disconnected';
@@ -159,12 +159,12 @@ async function publishSnapshotToFigma(userId, snapshot) {
 
   // Replace previous KPI tokens with fresh values
   const { error: delErr } = await supabaseFigmaAdmin
-    .from('figma_tokens')
+    .from('design_tokens')
     .delete()
     .eq('file_key', FILE_KEY)
     .eq('token_type', 'kpi');
   if (!delErr) {
-    await supabaseFigmaAdmin.from('figma_tokens').insert(kpiRows);
+    await supabaseFigmaAdmin.from('design_tokens').insert(kpiRows);
   }
 
   // 3b. Upsert flat KPI row to nuvanx-prod dashboard_metrics (primary — always works)

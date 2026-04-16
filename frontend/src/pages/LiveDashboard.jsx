@@ -79,9 +79,9 @@ export default function LiveDashboard() {
   const fetchMetrics = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      const [metricsRes, leadsRes] = await Promise.allSettled([
+      const [metricsRes, leadFlowRes] = await Promise.allSettled([
         api.get('/api/dashboard/metrics'),
-        api.get('/api/leads'),
+        api.get('/api/dashboard/lead-flow'),
       ]);
 
       if (metricsRes.status === 'fulfilled') {
@@ -92,9 +92,11 @@ export default function LiveDashboard() {
         }
       }
 
-      if (leadsRes.status === 'fulfilled') {
-        const leads = leadsRes.value.data?.leads || [];
-        setChartData(buildHourlyFromLeads(leads));
+      if (leadFlowRes.status === 'fulfilled') {
+        const chart = leadFlowRes.value.data?.chart;
+        if (Array.isArray(chart)) {
+          setChartData(chart);
+        }
       }
     } catch {
       // Backend not available — keep previous values
