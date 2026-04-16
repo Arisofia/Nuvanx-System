@@ -54,7 +54,26 @@ async function resolveCredential(userId, service) {
 router.get('/', async (req, res, next) => {
   try {
     const integrations = await integrationModel.getAll(req.user.id);
-    res.json({ success: true, integrations });
+
+    // Enrich each integration with credential availability so the UI
+    // can distinguish "actually connected" from "status was seeded but
+    // no credential exists".
+    const enriched = await Promise.all(
+      integrations.map(async (integ) => {
+        const credential = await resolveCredential(req.user.id, integ.service);
+        const hasCredential = !!credential;
+
+        // Downgrade stale "connected" status when no credential is available
+        let effectiveStatus = integ.status;
+        if (integ.status === 'connected' && !hasCredential) {
+          effectiveStatus = 'disconnected';
+        }
+
+        return { ...integ, status: effectiveStatus, hasCredential };
+      }),
+    );
+
+    res.json({ success: true, integrations: enriched });
   } catch (err) {
     next(err);
   }
