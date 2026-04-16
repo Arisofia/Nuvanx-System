@@ -106,7 +106,6 @@ UPDATE public.dashboard_metrics SET
   leads_appointment      = 0,
   leads_treatment        = 0,
   leads_closed           = 0,
-  hubspot_status         = 'disconnected',
   meta_status            = 'disconnected',
   whatsapp_status        = 'disconnected',
   github_status          = 'disconnected',
