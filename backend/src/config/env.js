@@ -58,6 +58,7 @@ const config = {
   geminiApiKey: process.env.GEMINI_API_KEY,
   googleApiKey: process.env.GOOGLE_API_KEY,
   googleClientId: process.env.GOOGLE_CLIENT_ID,
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || null,
   hubspotAccessToken: process.env.HUBSPOT_ACCESS_TOKEN,
   hubspotApiKey: process.env.HUBSPOT_API_KEY,
   // Personal Access Key — long-lived credential used to auto-refresh OAuth tokens.
@@ -85,6 +86,10 @@ const config = {
 
   // Sentry error tracking
   sentryDsn: process.env.SENTRY_DSN || null,
+
+  // UUID of the admin/owner user that receives webhook-originated leads (Meta, HubSpot)
+  // Set this to the UUID of the main platform user in Supabase Auth.
+  webhookAdminUserId: process.env.WEBHOOK_ADMIN_USER_ID || null,
 };
 
 module.exports = { config, validate };
