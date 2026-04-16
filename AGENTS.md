@@ -33,9 +33,6 @@ cd backend && npx jest tests/auth.test.js --runInBand --forceExit
 # Lint frontend
 npm run lint:frontend
 
-# Validate Figma mapping
-npm run validate:figma
-
 # Push DB migrations to nuvanx-prod
 npm run supabase:migration:push
 

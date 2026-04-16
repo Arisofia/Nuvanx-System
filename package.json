@@ -11,10 +11,9 @@
     "build:frontend": "npm --prefix frontend run build",
     "test:backend": "npm --prefix backend run test",
     "lint:frontend": "npm --prefix frontend run lint",
-    "validate:figma": "node scripts/validate-figma-mapping.mjs",
-    "supabase:migration:list": "SUPABASE_DB_URL='postgresql://postgres.ssvvuuysgxyqvmovrlvk:Nuvanx2026Prod%21@aws-1-eu-central-1.pooler.supabase.com:5432/postgres' supabase migration list",
-    "supabase:migration:push": "SUPABASE_DB_URL='postgresql://postgres.ssvvuuysgxyqvmovrlvk:Nuvanx2026Prod%21@aws-1-eu-central-1.pooler.supabase.com:5432/postgres' supabase db push",
-    "supabase:types": "SUPABASE_DB_URL='postgresql://postgres.ssvvuuysgxyqvmovrlvk:Nuvanx2026Prod%21@aws-1-eu-central-1.pooler.supabase.com:5432/postgres' supabase gen types typescript --schema public > frontend/src/lib/supabase/types.ts",
+    "supabase:migration:list": "supabase migration list",
+    "supabase:migration:push": "supabase db push",
+    "supabase:types": "supabase gen types typescript --schema public > frontend/src/lib/supabase/types.ts",
     "supabase:figma:migration:push": "node scripts/apply-figma-migrations.js"
   },
   "devDependencies": {

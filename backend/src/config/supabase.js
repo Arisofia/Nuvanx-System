@@ -8,7 +8,7 @@
  *
  * Two clients are exported:
  *   supabaseAdmin        — main project (ssvvuuysgxyqvmovrlvk)
- *   supabaseFigmaAdmin   — Figma V.1 project (ssvvuuysgxyqvmovrlvk)
+ *   supabaseFigmaAdmin   — Figma V.1 project (zpowfbeftxexzidlxndy)
  *
  * Both are null when the required env vars are not set so the rest of the
  * app can degrade gracefully.

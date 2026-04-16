@@ -262,10 +262,10 @@ export default function CRM() {
     }
   }
   const handleCalendar = () => {
-    toast('Placeholder action: Calendar scheduling is not wired yet.', { icon: 'ℹ️' });
+    toast('Calendar scheduling is coming soon.', { icon: '📅' });
   };
   const handleNotes = () => {
-    toast('Placeholder action: Lead notes editor is not implemented yet.', { icon: 'ℹ️' });
+    toast('Lead notes editor is coming soon.', { icon: '📝' });
   };
 
   const handleLeadCreated = (newLead) => {

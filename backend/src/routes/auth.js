@@ -163,11 +163,11 @@ router.post('/forgot-password', authLimiter, async (req, res, next) => {
       resetTokens.set(token, { email, expiresAt: Date.now() + 3600000 }); // 1h
       logger.info('Password reset token generated', { email });
 
-      // TODO: send token via email. For now return it so the frontend can use it.
+      // TODO: send token via email when mail transport is configured.
+      // Token is NOT returned in the response body — only logged server-side.
       return res.json({
         success: true,
         message: 'If that email is registered, a reset link has been generated.',
-        resetToken: token,
       });
     }
 

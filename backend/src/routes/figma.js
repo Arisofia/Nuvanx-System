@@ -121,51 +121,6 @@ router.get('/events', async (req, res, next) => {
   }
 });
 
-/**
- * GET /api/figma/events
- * Returns the most recent operational events for the authenticated user from
- * the Figma monitoring project.  Used by the LiveDashboard activity feed.
- *
- * Query params:
- *   limit  — max events to return (default 50, max 200)
- */
-router.get('/events', async (req, res, next) => {
-  try {
-    if (!supabaseFigmaAdmin) {
-      return res.status(503).json({
-        success: false,
-        message: 'Supabase Figma client not configured',
-        events: [],
-      });
-    }
 
-    const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
-
-    const { data, error } = await supabaseFigmaAdmin
-      .schema('monitoring')
-      .from('operational_events')
-      .select('id, event_type, message, metadata, created_at')
-      .eq('user_id', req.user.id)
-      .order('created_at', { ascending: false })
-      .limit(limit);
-
-    if (error) {
-      return next(error);
-    }
-
-    res.json({
-      success: true,
-      events: (data || []).map((e) => ({
-        id: e.id,
-        type: e.event_type,
-        message: e.message,
-        metadata: e.metadata || {},
-        createdAt: e.created_at,
-      })),
-    });
-  } catch (err) {
-    next(err);
-  }
-});
 
 module.exports = router;
