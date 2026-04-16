@@ -91,6 +91,42 @@ router.get('/funnel', async (req, res, next) => {
 });
 
 /**
+ * GET /api/dashboard/lead-flow
+ * Returns a 24-slot hourly series of leads created today (server-side).
+ */
+router.get('/lead-flow', async (req, res, next) => {
+  try {
+    const leads = await leadModel.findByUser(req.user.id);
+
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+
+    // Build 24-slot array covering the last 24 hours
+    const slots = Array.from({ length: 24 }, (_, i) => {
+      const h = new Date(now);
+      h.setHours(now.getHours() - (23 - i), 0, 0, 0);
+      return {
+        time: h.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }),
+        hour: h.getHours(),
+        leads: 0,
+      };
+    });
+
+    for (const lead of leads) {
+      const created = lead.createdAt || lead.created_at || '';
+      if (!created || !created.startsWith(todayStr)) continue;
+      const h = new Date(created).getHours();
+      const slot = slots.find((s) => s.hour === h);
+      if (slot) slot.leads += 1;
+    }
+
+    res.json({ success: true, chart: slots });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * GET /api/dashboard/revenue-trend
  * Returns historical revenue data grouped by time period for charting.
  */

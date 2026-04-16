@@ -1,14 +1,18 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Zap, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Zap, Eye, EyeOff, Loader2, ArrowLeft } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/useAuth';
+import api from '../config/api';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [forgotMode, setForgotMode] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
 
@@ -22,6 +26,21 @@ export default function Login() {
       toast.error(err.response?.data?.message || 'Invalid credentials. Please try again.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleForgotPassword(e) {
+    e.preventDefault();
+    if (!resetEmail) return;
+    setResetLoading(true);
+    try {
+      await api.post('/api/auth/forgot-password', { email: resetEmail });
+      toast.success('If that email is registered, a reset link has been sent.');
+      setForgotMode(false);
+    } catch {
+      toast.error('Something went wrong. Please try again.');
+    } finally {
+      setResetLoading(false);
     }
   }
 
@@ -46,6 +65,40 @@ export default function Login() {
             <p className="text-gray-400 mt-1.5 text-sm">Revenue Intelligence Platform</p>
           </div>
 
+          {forgotMode ? (
+            <form onSubmit={handleForgotPassword} className="space-y-5">
+              <button
+                type="button"
+                onClick={() => setForgotMode(false)}
+                className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-white transition-colors"
+              >
+                <ArrowLeft size={14} />
+                Back to login
+              </button>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1.5">
+                  Enter your email to reset your password
+                </label>
+                <input
+                  type="email"
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  placeholder="admin@clinic.com"
+                  className="input"
+                  required
+                  autoComplete="email"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={resetLoading}
+                className="btn-primary w-full flex items-center justify-center gap-2 py-3 text-base"
+              >
+                {resetLoading && <Loader2 size={18} className="animate-spin" />}
+                {resetLoading ? 'Sending…' : 'Send reset link'}
+              </button>
+            </form>
+          ) : (
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-1.5">Email address</label>
@@ -63,13 +116,13 @@ export default function Login() {
             <div>
               <div className="flex justify-between mb-1.5">
                 <label className="block text-sm font-medium text-gray-300">Password</label>
-                <a
-                  href="#"
-                  onClick={(e) => e.preventDefault()}
+                <button
+                  type="button"
+                  onClick={() => { setForgotMode(true); setResetEmail(email); }}
                   className="text-xs text-brand-400 hover:text-brand-300 transition-colors"
                 >
                   Forgot password?
-                </a>
+                </button>
               </div>
               <div className="relative">
                 <input
@@ -101,6 +154,7 @@ export default function Login() {
               {loading ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
+          )}
 
           <div className="mt-6 pt-6 border-t border-dark-600 text-center">
             <p className="text-xs text-gray-500">

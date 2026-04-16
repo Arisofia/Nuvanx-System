@@ -244,8 +244,19 @@ export default function CRM() {
     return matchStatus && matchSearch;
   });
 
-  const handleWhatsApp = () => {
-    toast('Placeholder action: WhatsApp launch is not wired yet.', { icon: 'ℹ️' });
+  const handleWhatsApp = async (lead) => {
+    if (!lead?.phone) {
+      toast.error('This lead has no phone number.');
+      return;
+    }
+    const message = `Hola ${lead.name || ''}, gracias por tu interés. ¿En qué podemos ayudarte?`;
+    try {
+      await api.post('/api/whatsapp/send', { to: lead.phone, message });
+      toast.success(`WhatsApp message sent to ${lead.phone}`);
+    } catch (err) {
+      const msg = err.response?.data?.message || err.message;
+      toast.error(`WhatsApp failed: ${msg}`);
+    }
   };
   const handleCalendar = () => {
     toast('Placeholder action: Calendar scheduling is not wired yet.', { icon: 'ℹ️' });

@@ -11,6 +11,7 @@
     "validate:figma": "node ../scripts/validate-figma-mapping.mjs"
   },
   "dependencies": {
+    "@sentry/react": "^10.48.0",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.103.0",
     "axios": "^1.15.0",
