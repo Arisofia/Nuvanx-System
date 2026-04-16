@@ -3,85 +3,69 @@
 process.env.JWT_SECRET = 'test-jwt-secret-32-chars-minimum!!';
 process.env.ENCRYPTION_KEY = 'test-encryption-key-32-chars-min!';
 process.env.NODE_ENV = 'test';
-process.env.HUBSPOT_CLIENT_SECRET = '';
+process.env.META_APP_SECRET = '';
+process.env.META_VERIFY_TOKEN = 'test-verify-token';
 
 const request = require('supertest');
-
-// Prevent real HubSpot service calls
-jest.mock('../src/services/hubspot', () => ({
-  verifyWebhookSignature: jest.fn().mockReturnValue(true),
-  fetchContacts: jest.fn(),
-  getPipelineStats: jest.fn(),
-  testConnection: jest.fn().mockResolvedValue({ connected: true }),
-  fetchLeadsFromHubSpot: jest.fn().mockResolvedValue({ leads: [], total: 0 }),
-}));
 
 const app = require('../src/server');
 
 describe('Webhooks API', () => {
-  test('POST /api/webhooks/hubspot - accepts empty events array', async () => {
+  test('GET /api/webhooks/meta - verifies with correct token', async () => {
     const res = await request(app)
-      .post('/api/webhooks/hubspot')
-      .send([]);
+      .get('/api/webhooks/meta')
+      .query({
+        'hub.mode': 'subscribe',
+        'hub.verify_token': 'test-verify-token',
+        'hub.challenge': 'test-challenge-123',
+      });
 
-    // Empty array → 200 with processed=0 errors=0 (or the Retry-After 503 path)
-    expect([200, 503]).toContain(res.status);
-    if (res.status === 200) {
-      expect(res.body.received).toBe(true);
-      expect(res.body.processed).toBe(0);
-      expect(res.body.errors).toBe(0);
-    }
+    expect(res.status).toBe(200);
+    expect(res.text).toBe('test-challenge-123');
   });
 
-  test('POST /api/webhooks/hubspot - processes contact.creation event', async () => {
-    const event = {
-      subscriptionType: 'contact.creation',
-      objectId: '12345',
-      portalId: '9876',
-    };
-
+  test('GET /api/webhooks/meta - rejects wrong verify token', async () => {
     const res = await request(app)
-      .post('/api/webhooks/hubspot')
-      .send([event]);
+      .get('/api/webhooks/meta')
+      .query({
+        'hub.mode': 'subscribe',
+        'hub.verify_token': 'wrong-token',
+        'hub.challenge': 'test-challenge',
+      });
 
-    expect([200, 503]).toContain(res.status);
-    if (res.status === 200) {
-      expect(res.body.received).toBe(true);
-      expect(typeof res.body.processed).toBe('number');
-    }
+    expect(res.status).toBe(403);
   });
 
-  test('POST /api/webhooks/hubspot - skips non-contact events', async () => {
-    const event = {
-      subscriptionType: 'deal.creation',
-      objectId: '99999',
-      portalId: '9876',
-    };
-
+  test('POST /api/webhooks/meta - skips non-page/whatsapp objects', async () => {
     const res = await request(app)
-      .post('/api/webhooks/hubspot')
-      .send([event]);
+      .post('/api/webhooks/meta')
+      .send({ object: 'user', entry: [] });
 
-    // deal.creation is skipped — still 200 but processed=0
-    expect([200, 503]).toContain(res.status);
+    expect(res.status).toBe(200);
+    expect(res.body.skipped).toBe(true);
   });
 
-  test('POST /api/webhooks/hubspot - rejects with 401 on bad signature when secret configured', async () => {
-    // Temporarily set a client secret so the signature check runs
-    const overrideProcess = { ...process.env, HUBSPOT_CLIENT_SECRET: 'test-secret-value' };
-    jest.resetModules();
-
-    // Override the mock to return invalid for this test
-    const hubspotService = require('../src/services/hubspot');
-    hubspotService.verifyWebhookSignature.mockReturnValueOnce(false);
-
+  test('POST /api/webhooks/meta - processes leadgen entry', async () => {
     const res = await request(app)
-      .post('/api/webhooks/hubspot')
-      .set('x-hubspot-signature', 'bad-sig')
-      .send([{ subscriptionType: 'contact.creation', objectId: '1' }]);
+      .post('/api/webhooks/meta')
+      .send({
+        object: 'page',
+        entry: [
+          {
+            id: '12345',
+            time: Date.now(),
+            changes: [
+              {
+                field: 'leadgen',
+                value: { leadgen_id: 'lg_001', page_id: 'p_001', form_id: 'f_001' },
+              },
+            ],
+          },
+        ],
+      });
 
-    // With no secret configured in test env, signature check is skipped → 200
-    // This test verifies the route is reachable
-    expect([200, 401, 503]).toContain(res.status);
+    expect(res.status).toBe(200);
+    expect(res.body.received).toBe(true);
+    expect(typeof res.body.processed).toBe('number');
   });
 });

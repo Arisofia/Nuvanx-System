@@ -7,8 +7,6 @@ process.env.GITHUB_TOKEN = '';
 process.env.META_ACCESS_TOKEN = '';
 process.env.OPENAI_API_KEY = '';
 process.env.GEMINI_API_KEY = '';
-process.env.HUBSPOT_ACCESS_TOKEN = '';
-process.env.HUBSPOT_PAK = '';
 
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
@@ -17,11 +15,6 @@ const jwt = require('jsonwebtoken');
 jest.mock('../src/services/meta', () => ({
   testConnection: jest.fn(),
   getAdInsights: jest.fn(),
-}));
-jest.mock('../src/services/hubspot', () => ({
-  testConnection: jest.fn(),
-  fetchContacts: jest.fn(),
-  getPipelineStats: jest.fn(),
 }));
 
 const app = require('../src/server');
@@ -84,14 +77,5 @@ describe('Dashboard API', () => {
 
     // No adAccountId → 400 or 404 (no connected Meta integration)
     expect([400, 404]).toContain(res.status);
-  });
-
-  test('GET /api/dashboard/hubspot-trends - returns 404 or 200 depending on credential', async () => {
-    const res = await request(app)
-      .get('/api/dashboard/hubspot-trends')
-      .set('Authorization', authHeader);
-
-    // No HubSpot credential stored → 404
-    expect([200, 404]).toContain(res.status);
   });
 });

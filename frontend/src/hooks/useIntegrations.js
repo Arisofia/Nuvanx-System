@@ -16,7 +16,6 @@ const EMPTY_INTEGRATIONS = [
   { service: 'github', name: 'GitHub', description: 'Repository access for deployment triggers', icon: '🐙' },
   { service: 'openai', name: 'OpenAI', description: 'GPT-4 content generation and analysis', icon: '🤖' },
   { service: 'gemini', name: 'Google Gemini', description: 'Gemini AI content generation and campaign insights', icon: '✨' },
-  { service: 'hubspot', name: 'HubSpot CRM', description: 'CRM contacts, deals and pipeline management', icon: '🟠' },
 ].map(item => ({ ...item, status: 'disconnected', lastSync: null, error: null }));
 
 export function useIntegrations() {
