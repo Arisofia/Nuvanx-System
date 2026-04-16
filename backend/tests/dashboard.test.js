@@ -78,4 +78,45 @@ describe('Dashboard API', () => {
     // No adAccountId → 400 or 404 (no connected Meta integration)
     expect([400, 404]).toContain(res.status);
   });
+
+  test('GET /api/dashboard/lead-flow - returns 24-slot chart array', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/lead-flow')
+      .set('Authorization', authHeader);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(Array.isArray(res.body.chart)).toBe(true);
+    expect(res.body.chart).toHaveLength(24);
+    if (res.body.chart.length > 0) {
+      expect(res.body.chart[0]).toHaveProperty('time');
+      expect(res.body.chart[0]).toHaveProperty('leads');
+    }
+  });
+
+  test('GET /api/dashboard/metrics - byStage covers all pipeline stages', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/metrics')
+      .set('Authorization', authHeader);
+
+    expect(res.status).toBe(200);
+    const { byStage } = res.body.metrics;
+    for (const stage of ['lead', 'whatsapp', 'appointment', 'treatment', 'closed']) {
+      expect(byStage).toHaveProperty(stage);
+      expect(typeof byStage[stage]).toBe('number');
+    }
+  });
+
+  test('GET /api/dashboard/funnel - percentage and revenue fields present', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/funnel')
+      .set('Authorization', authHeader);
+
+    expect(res.status).toBe(200);
+    if (res.body.funnel.length > 0) {
+      const s = res.body.funnel[0];
+      expect(typeof s.percentage).toBe('number');
+      expect(typeof s.revenue).toBe('number');
+    }
+  });
 });

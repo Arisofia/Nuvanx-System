@@ -80,10 +80,10 @@ router.post('/meta', async (req, res) => {
 
           if (webhookUserId && isAvailable()) {
             await getPool.query(
-              `INSERT INTO leads (user_id, name, phone, source, stage, revenue, notes)
-               VALUES ($1, $2, $3, 'whatsapp', 'lead', 0, $4)
-               ON CONFLICT DO NOTHING`,
-              [webhookUserId, contactName, phone, `WA msg: ${text.substring(0, 500)}`],
+              `INSERT INTO leads (user_id, name, phone, source, stage, revenue, notes, external_id)
+               VALUES ($1, $2, $3, 'whatsapp', 'lead', 0, $4, $5)
+               ON CONFLICT (user_id, source, external_id) WHERE external_id IS NOT NULL DO NOTHING`,
+              [webhookUserId, contactName, phone, `WA msg: ${text.substring(0, 500)}`, phone],
             ).catch(dbErr => logger.warn('WA webhook: DB insert failed', { error: dbErr.message }));
           }
         }
@@ -139,9 +139,9 @@ router.post('/meta', async (req, res) => {
         const webhookUserId = config.webhookAdminUserId;
         if (webhookUserId && isAvailable()) {
           await getPool.query(
-            `INSERT INTO leads (user_id, name, email, phone, source, stage, revenue, notes)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-             ON CONFLICT DO NOTHING`,
+            `INSERT INTO leads (user_id, name, email, phone, source, stage, revenue, notes, external_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             ON CONFLICT (user_id, source, external_id) WHERE external_id IS NOT NULL DO NOTHING`,
             [
               webhookUserId,
               leadData.name,
@@ -151,6 +151,7 @@ router.post('/meta', async (req, res) => {
               leadData.stage,
               leadData.revenue,
               leadData.notes,
+              leadgen_id,
             ],
           );
         }

@@ -49,4 +49,26 @@ describe('Playbooks API', () => {
 
     expect([404, 500, 503]).toContain(res.status);
   });
+
+  test('POST /api/playbooks/:id/run - 401 without token (by id)', async () => {
+    const res = await request(app).post('/api/playbooks/some-uuid/run');
+    expect(res.status).toBe(401);
+  });
+
+  test('GET /api/playbooks - shape includes required fields when 200', async () => {
+    const res = await request(app)
+      .get('/api/playbooks')
+      .set('Authorization', authHeader);
+
+    if (res.status === 200) {
+      expect(res.body.success).toBe(true);
+      expect(Array.isArray(res.body.playbooks)).toBe(true);
+      if (res.body.playbooks.length > 0) {
+        const p = res.body.playbooks[0];
+        expect(p).toHaveProperty('id');
+        expect(p).toHaveProperty('name');
+        expect(p).toHaveProperty('status');
+      }
+    }
+  });
 });
