@@ -16,7 +16,7 @@ export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  async function handleSubmit(e) {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
@@ -27,9 +27,9 @@ export default function Login() {
     } finally {
       setLoading(false);
     }
-  }
+  };
 
-  async function handleForgotPassword(e) {
+  const handleForgotPassword = async (e) => {
     e.preventDefault();
     if (!resetEmail) return;
     setResetLoading(true);
@@ -42,7 +42,7 @@ export default function Login() {
     } finally {
       setResetLoading(false);
     }
-  }
+  };
 
   return (
     <div className="min-h-screen bg-dark-900 flex items-center justify-center p-4 relative overflow-hidden">
