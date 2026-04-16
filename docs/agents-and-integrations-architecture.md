@@ -35,7 +35,7 @@ Date: 2026-04-15
 
 2. **Content Agent**
    - **Purpose**: Generate and optimize multi-channel campaign assets (ads, emails, WhatsApp).
-   - **Dependencies**: Brand voice guidelines, performance feedback from Meta/HubSpot, LLM providers.
+   - **Dependencies**: Brand voice guidelines, performance feedback from Meta, LLM providers.
    - **Data Path**: Campaign brief + historical performance -> content variants -> human approval -> deployment.
 
 3. **Campaign Monitoring Agent**
@@ -45,7 +45,7 @@ Date: 2026-04-15
 
 4. **CRM / Reactivation Agent**
    - **Purpose**: Detect dormant leads or customers and trigger personalized re-engagement flows.
-   - **Dependencies**: HubSpot/Salesforce lifecycle events, last-interaction timestamps.
+   - **Dependencies**: Meta/CRM lifecycle events, last-interaction timestamps.
    - **Data Path**: Inactivity detection -> context assembly -> personalized outreach draft -> automated/manual send.
 
 5. **Reporting Agent**

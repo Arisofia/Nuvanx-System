@@ -5,7 +5,6 @@ process.env.ENCRYPTION_KEY = 'test-encryption-key-32-chars-min!';
 process.env.NODE_ENV = 'test';
 // Blank service keys
 process.env.GITHUB_TOKEN = '';
-process.env.HUBSPOT_ACCESS_TOKEN = '';
 process.env.META_ACCESS_TOKEN = '';
 process.env.OPENAI_API_KEY = '';
 process.env.GEMINI_API_KEY = '';

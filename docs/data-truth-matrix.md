@@ -14,7 +14,6 @@ Status values:
 | /dashboard | revenue trend chart | /api/dashboard/revenue-trend | wired to real API | Kept chart, improved empty-state messaging. |
 | /dashboard | funnel chart | /api/dashboard/funnel | wired to real API | Kept chart, explicit no-data messaging. |
 | /dashboard | meta trends section | /api/dashboard/meta-trends with metadata.adAccountId | still pending backend support | Removed hardcoded adAccountId and added pending/not-connected labels when missing config. |
-| /dashboard | hubspot trends section | /api/dashboard/hubspot-trends | wired to real API | Fetch only when hubspot integration is connected; otherwise explicit not-connected state. |
 | /dashboard | AI optimization suggestions | /api/ai/suggestions | wired to real API | Removed implied always-available language and placeholder-style apply action. |
 | /operativo | playbooks list, runs, success rates | local constant array in page | mock but clearly labeled | Added Demo Data banner and changed action toast to demo-only behavior. |
 | /crm | lead table and counts | /api/leads | wired to real API | Added explicit note that list is API-backed. |

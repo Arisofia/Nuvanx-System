@@ -6,8 +6,6 @@ Monorepo with three independent sub-projects sharing a single git history:
 
 - **`backend/`** — Node.js/Express REST API (`src/server.js` entry). Routes in `routes/`, business logic in `services/`, Supabase clients in `config/supabase.js`, DB migrations in `db/migrations/`.
 - **`frontend/`** — React 19 + Vite SPA. Pages in `src/pages/`, reusable hooks in `src/hooks/`, Supabase client + Figma client in `src/lib/supabase/`.
-- **`hubspot/`** — HubSpot CLI project (`hsproject.json` marks the boundary). See `hubspot/AGENTS.md` for HubSpot-specific rules.
-
 **Key architectural constraints:**
 - The backend uses two separate Supabase clients: `supabaseAdmin` (nuvanx-prod, `ssvvuuysgxyqvmovrlvk`) and `supabaseFigmaAdmin` (Figma project, `zpowfbeftxexzidlxndy`). Never mix them — routes/services must use the correct client for the target schema.
 - All env config is centralised in `backend/src/config/env.js`. Add new env vars there; never read `process.env` directly in routes or services.
@@ -81,4 +79,4 @@ Conventional Commits format is enforced by convention (not a hook). Use:
 <body listing specific changes — bullets preferred for multi-file commits>
 ```
 
-Common types seen in history: `feat`, `fix`, `chore`, `refactor`. Scopes match subsystems: `auth`, `figma`, `hubspot`, `rls`, `env`.
+Common types seen in history: `feat`, `fix`, `chore`, `refactor`. Scopes match subsystems: `auth`, `figma`, `rls`, `env`.
