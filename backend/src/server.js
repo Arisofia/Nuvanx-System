@@ -102,7 +102,6 @@ app.use('/api/whatsapp', require('./routes/whatsapp'));
 app.use('/api/figma', require('./routes/figma'));
 app.use('/api/github', require('./routes/github'));
 app.use('/api/playbooks', require('./routes/playbooks'));
-app.use('/api/whatsapp', require('./routes/whatsapp'));
 
 // ─── 404 handler ────────────────────────────────────────────────────────────
 app.use((req, res) => {
