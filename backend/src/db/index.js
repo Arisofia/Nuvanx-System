@@ -56,11 +56,21 @@ if (config.databaseUrl) {
     logger.error('DATABASE_URL not set in production — exiting');
     process.exit(1);
   }
-  logger.warn('DATABASE_URL not set — using in-memory storage (data will be lost on restart)');
+  logger.warn(
+    'DATABASE_URL not set — using in-memory storage (data will be lost on restart). ' +
+    'Set DATABASE_URL in your .env file to your Supabase PostgreSQL connection string: ' +
+    'Supabase Dashboard → Project Settings → Database → Connection string → URI',
+  );
 }
 
 function isAvailable() {
   return pool !== null;
 }
 
-module.exports = { pool, isAvailable, isProduction };
+// Use a getter so that callers always see the current value of `pool`
+// (it can be set to null asynchronously if the initial connectivity check fails).
+module.exports = {
+  get pool() { return pool; },
+  isAvailable,
+  isProduction,
+};
