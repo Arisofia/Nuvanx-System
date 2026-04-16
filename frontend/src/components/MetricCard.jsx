@@ -8,14 +8,16 @@ export default function MetricCard({ title, value, change, changeLabel, icon: Ic
     brand: 'from-brand-500/10 to-brand-600/5 border-brand-500/20',
     emerald: 'from-emerald-500/10 to-emerald-600/5 border-emerald-500/20',
     violet: 'from-violet-500/10 to-violet-600/5 border-violet-500/20',
-    amber: 'from-amber-500/10 to-amber-600/5 border-amber-500/20',
+    metal: 'from-metal-300/10 to-metal-500/5 border-metal-300/25',
+    amber: 'from-metal-300/10 to-metal-500/5 border-metal-300/25',
   };
 
   const iconColorMap = {
     brand: 'bg-brand-500/20 text-brand-400',
     emerald: 'bg-emerald-500/20 text-emerald-400',
     violet: 'bg-violet-500/20 text-violet-400',
-    amber: 'bg-amber-500/20 text-amber-400',
+    metal: 'bg-metal-300/20 text-metal-200',
+    amber: 'bg-metal-300/20 text-metal-200',
   };
 
   return (
