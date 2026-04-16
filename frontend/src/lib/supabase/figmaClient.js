@@ -28,6 +28,39 @@ export const supabaseFigma =
     ? createClient(figmaUrl, figmaAnonKey)
     : null;
 
+function asNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function asString(value, fallback = 'disconnected') {
+  return typeof value === 'string' && value.length > 0 ? value : fallback;
+}
+
+function normalizeMetricsRow(row) {
+  if (!row || typeof row !== 'object') return null;
+
+  return {
+    ...row,
+    id: row.id || 'nuvanx-main',
+    total_leads: asNumber(row.total_leads),
+    total_revenue: asNumber(row.total_revenue),
+    connected_integrations: asNumber(row.connected_integrations),
+    total_integrations: asNumber(row.total_integrations),
+    leads_lead: asNumber(row.leads_lead),
+    leads_whatsapp: asNumber(row.leads_whatsapp),
+    leads_appointment: asNumber(row.leads_appointment),
+    leads_treatment: asNumber(row.leads_treatment),
+    leads_closed: asNumber(row.leads_closed),
+    hubspot_status: asString(row.hubspot_status),
+    meta_status: asString(row.meta_status),
+    whatsapp_status: asString(row.whatsapp_status),
+    github_status: asString(row.github_status),
+    openai_status: asString(row.openai_status),
+    gemini_status: asString(row.gemini_status),
+  };
+}
+
 /** Returns true when the Figma Supabase project is configured and available. */
 export function isFigmaSupabaseAvailable() {
   return supabaseFigma !== null;
@@ -48,7 +81,7 @@ export async function loadDashboardMetrics() {
     .select('*')
     .eq('id', 'nuvanx-main')
     .single();
-  if (!error && data) return data;
+  if (!error && data) return normalizeMetricsRow(data);
 
   // 2. Fallback: assemble from figma_tokens KV pairs (always up-to-date via figmaSync)
   //    This path is used when dashboard_metrics hasn't been created yet in the Figma project.
@@ -127,7 +160,8 @@ export function subscribeToDashboardMetrics(onUpdate) {
         filter: 'id=eq.nuvanx-main',
       },
       (payload) => {
-        if (payload.new) onUpdate(payload.new);
+        const normalized = normalizeMetricsRow(payload.new);
+        if (normalized) onUpdate(normalized);
       },
     )
     .subscribe();

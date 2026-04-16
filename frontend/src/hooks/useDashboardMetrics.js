@@ -40,13 +40,36 @@ const DEFAULT_METRICS = {
   updated_at: null,
 };
 
+function toNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function normalizeMetrics(input) {
+  const source = input && typeof input === 'object' ? input : {};
+
+  return {
+    ...DEFAULT_METRICS,
+    ...source,
+    total_leads: toNumber(source.total_leads, DEFAULT_METRICS.total_leads),
+    total_revenue: toNumber(source.total_revenue, DEFAULT_METRICS.total_revenue),
+    connected_integrations: toNumber(source.connected_integrations, DEFAULT_METRICS.connected_integrations),
+    total_integrations: toNumber(source.total_integrations, DEFAULT_METRICS.total_integrations),
+    leads_lead: toNumber(source.leads_lead, DEFAULT_METRICS.leads_lead),
+    leads_whatsapp: toNumber(source.leads_whatsapp, DEFAULT_METRICS.leads_whatsapp),
+    leads_appointment: toNumber(source.leads_appointment, DEFAULT_METRICS.leads_appointment),
+    leads_treatment: toNumber(source.leads_treatment, DEFAULT_METRICS.leads_treatment),
+    leads_closed: toNumber(source.leads_closed, DEFAULT_METRICS.leads_closed),
+  };
+}
+
 /**
  * Primary hook — returns live dashboard metrics with loading/error state.
  *
  * @returns {{ metrics: object, loading: boolean, error: string|null, reload: () => void }}
  */
 export function useDashboardMetrics() {
-  const [metrics, setMetrics] = useState(null);
+  const [metrics, setMetrics] = useState(DEFAULT_METRICS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -58,7 +81,7 @@ export function useDashboardMetrics() {
     setLoading(true);
     setError(null);
     const data = await loadDashboardMetrics();
-    if (data) setMetrics(data);
+    if (data) setMetrics(normalizeMetrics(data));
     else setError('dashboard_metrics unavailable');
     setLoading(false);
   }, []);
@@ -70,7 +93,7 @@ export function useDashboardMetrics() {
     queueMicrotask(() => { if (alive) load(); });
     const unsub = subscribeToDashboardMetrics((updated) => {
       // Defer subscription state updates for the same reason.
-      queueMicrotask(() => { if (alive) setMetrics(updated); });
+      queueMicrotask(() => { if (alive) setMetrics(normalizeMetrics(updated)); });
     });
     return () => { alive = false; unsub?.(); };
   }, [load]);
@@ -86,9 +109,10 @@ export function useDashboardMetrics() {
  */
 export function useMetricsWithDefaults() {
   const { metrics, loading, error } = useDashboardMetrics();
+  const safeMetrics = normalizeMetrics(metrics);
   return {
-    metrics: metrics ?? DEFAULT_METRICS,
+    metrics: safeMetrics,
     loading,
-    isLive: !!metrics && !error,
+    isLive: !error,
   };
 }

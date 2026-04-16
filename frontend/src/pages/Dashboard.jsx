@@ -1,119 +1,119 @@
-import { useState, useEffect } from 'react';
-import { DollarSign, Users, TrendingUp, Ticket, Sparkles, RefreshCw, Loader2, AlertCircle } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Area, AreaChart,
-} from 'recharts';
+  AlertCircle,
+  Bot,
+  Brain,
+  Circle,
+  GitBranch,
+  Loader2,
+  RefreshCw,
+  ShieldCheck,
+  Sparkles,
+  TrendingUp,
+  Zap,
+} from 'lucide-react';
 import MetricCard from '../components/MetricCard';
-import FunnelChart from '../components/FunnelChart';
 import api from '../config/api';
 import { normalizeDashboardMetrics } from '../lib/normalizeDashboardMetrics';
 
-const CustomTooltip = ({ active, payload, label }) => {
-  if (active && payload?.length) {
-    return (
-      <div className="bg-dark-700 border border-dark-600 rounded-lg p-3 shadow-lg">
-        <p className="text-gray-400 text-xs mb-2">{label}</p>
-        {payload.map((p) => (
-          <p key={p.name} className="text-sm font-medium" style={{ color: p.color }}>
-            {p.name === 'revenue' ? `$${p.value.toLocaleString()}` : p.value} {p.name}
-          </p>
-        ))}
-      </div>
-    );
-  }
-  return null;
-};
+const REFRESH_SECONDS = 60;
+
+function formatNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toLocaleString() : '0';
+}
+
+function formatCurrency(value) {
+  const n = Number(value);
+  return `€${Number.isFinite(n) ? n.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '0'}`;
+}
+
+function toPercent(value) {
+  const n = Number(value);
+  return `${Number.isFinite(n) ? n.toFixed(1) : '0.0'}%`;
+}
+
+function normalizeMetaSummary(summary) {
+  const raw = summary?.thisWeek || {};
+  return {
+    impressions: Number(raw.impressions || 0),
+    reach: Number(raw.reach || 0),
+    clicks: Number(raw.clicks || 0),
+    spend: Number(raw.spend || 0),
+    conversions: Number(raw.conversions || 0),
+    ctr: Number(raw.ctr || 0),
+    cpc: Number(raw.cpc || 0),
+    cpm: Number(raw.cpm || 0),
+  };
+}
 
 export default function Dashboard() {
   const [metrics, setMetrics] = useState(null);
-  const [funnel, setFunnel] = useState([]);
-  const [revenueData, setRevenueData] = useState([]);
-  const [aiSuggestions, setAiSuggestions] = useState([]);
+  const [integrations, setIntegrations] = useState([]);
+  const [aiStatus, setAiStatus] = useState({ available: false, provider: null });
   const [metaTrends, setMetaTrends] = useState(null);
-  const [hubspotTrends, setHubspotTrends] = useState(null);
-  const [metaTrendsState, setMetaTrendsState] = useState('pending');
-  const [hubspotTrendsState, setHubspotTrendsState] = useState('pending');
-  const [loadingMetrics, setLoadingMetrics] = useState(true);
+  const [metaState, setMetaState] = useState('pending');
+  const [aiSuggestions, setAiSuggestions] = useState([]);
+  const [activityEvents, setActivityEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [error, setError] = useState(null);
-
-  const fetchData = async () => {
-    setLoadingMetrics(true);
-    setError(null);
-    try {
-      const [metricsRes, funnelRes, revenueRes, integrationsRes] = await Promise.all([
-        api.get('/api/dashboard/metrics'),
-        api.get('/api/dashboard/funnel'),
-        api.get('/api/dashboard/revenue-trend'),
-        api.get('/api/integrations'),
-      ]);
-      setMetrics(normalizeDashboardMetrics(metricsRes.data));
-
-      // Build funnel display from real funnel stages
-      const stages = funnelRes.data.funnel || [];
-      setFunnel(stages.map(s => ({ label: s.label, value: s.count })));
-
-      // Set revenue trend data
-      setRevenueData(revenueRes.data.trend || []);
-
-      const integrations = integrationsRes.data?.integrations || [];
-      const metaIntegration = integrations.find((i) => i.service === 'meta');
-      const hubspotIntegration = integrations.find((i) => i.service === 'hubspot');
-
-      // Fetch Meta trends only when adAccountId is provided in saved metadata.
-      const adAccountId = metaIntegration?.metadata?.adAccountId;
-      if (metaIntegration?.status === 'connected' && adAccountId) {
-        try {
-          const metaRes = await api.get('/api/dashboard/meta-trends', { params: { adAccountId } });
-          setMetaTrends(metaRes.data);
-          setMetaTrendsState('real');
-        } catch (err) {
-          setMetaTrends(null);
-          setMetaTrendsState('error');
-          console.log('Meta trends not available:', err.response?.data?.message);
-        }
-      } else if (metaIntegration?.status === 'connected') {
-        setMetaTrends(null);
-        setMetaTrendsState('missing-config');
-      } else {
-        setMetaTrends(null);
-        setMetaTrendsState('not-connected');
-      }
-
-      // Fetch HubSpot trends only when integration is connected.
-      if (hubspotIntegration?.status === 'connected') {
-        try {
-          const hubspotRes = await api.get('/api/dashboard/hubspot-trends');
-          setHubspotTrends(hubspotRes.data);
-          setHubspotTrendsState('real');
-        } catch (err) {
-          setHubspotTrends(null);
-          setHubspotTrendsState('error');
-          console.log('HubSpot trends not available:', err.response?.data?.message);
-        }
-      } else {
-        setHubspotTrends(null);
-        setHubspotTrendsState('not-connected');
-      }
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to load dashboard data');
-      console.error('Dashboard fetch error:', err);
-    } finally {
-      setLoadingMetrics(false);
-    }
-  };
+  const [countdown, setCountdown] = useState(REFRESH_SECONDS);
 
   const fetchAiSuggestions = async () => {
     setLoadingSuggestions(true);
     try {
       const res = await api.post('/api/ai/suggestions', { provider: 'openai' });
-      setAiSuggestions(res.data.suggestions || []);
-    } catch (err) {
-      console.error('AI suggestions error:', err);
-      // Don't set error state for suggestions - it's optional
+      setAiSuggestions(res.data?.suggestions || []);
+    } catch {
+      setAiSuggestions([]);
     } finally {
       setLoadingSuggestions(false);
+    }
+  };
+
+  const fetchData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [metricsRes, integrationsRes, aiStatusRes, eventsRes] = await Promise.all([
+        api.get('/api/dashboard/metrics'),
+        api.get('/api/integrations'),
+        api.get('/api/ai/status'),
+        api.get('/api/figma/events', { params: { limit: 12 } }),
+      ]);
+
+      const parsedMetrics = normalizeDashboardMetrics(metricsRes.data);
+      setMetrics(parsedMetrics);
+
+      const integrationList = integrationsRes.data?.integrations || [];
+      setIntegrations(integrationList);
+      setAiStatus(aiStatusRes.data || { available: false, provider: null });
+      setActivityEvents(eventsRes.data?.events || []);
+
+      const metaIntegration = integrationList.find((i) => i.service === 'meta');
+      const adAccountId = metaIntegration?.metadata?.adAccountId;
+      if (metaIntegration?.status === 'connected' && adAccountId) {
+        try {
+          const metaRes = await api.get('/api/dashboard/meta-trends', { params: { adAccountId } });
+          setMetaTrends(metaRes.data);
+          setMetaState('real');
+        } catch {
+          setMetaTrends(null);
+          setMetaState('error');
+        }
+      } else if (metaIntegration?.status === 'connected') {
+        setMetaTrends(null);
+        setMetaState('missing-config');
+      } else {
+        setMetaTrends(null);
+        setMetaState('not-connected');
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'No se pudo cargar el dashboard en vivo');
+    } finally {
+      setLoading(false);
+      setCountdown(REFRESH_SECONDS);
     }
   };
 
@@ -122,11 +122,83 @@ export default function Dashboard() {
     fetchAiSuggestions();
   }, []);
 
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          fetchData();
+          return REFRESH_SECONDS;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
   const totalRevenue = metrics?.totalRevenue ?? 0;
   const totalLeads = metrics?.totalLeads ?? 0;
   const conversionRate = metrics?.conversionRate ?? 0;
   const connectedIntegrations = metrics?.connectedIntegrations ?? 0;
   const totalIntegrations = metrics?.totalIntegrations ?? 0;
+
+  const metaSummary = normalizeMetaSummary(metaTrends?.summary);
+
+  const agents = useMemo(() => {
+    const github = integrations.find((i) => i.service === 'github');
+    return [
+      {
+        name: 'Agente de Sincronizacion GitHub',
+        status: github?.status || 'disconnected',
+        detail: github?.lastSync ? `Ultima sync: ${new Date(github.lastSync).toLocaleString()}` : 'Sin sincronizacion reciente',
+        icon: GitBranch,
+      },
+      {
+        name: 'Agente de Analisis AI',
+        status: aiStatus?.available ? 'connected' : 'disconnected',
+        detail: aiStatus?.provider ? `Proveedor: ${aiStatus.provider}` : 'Sin credenciales de IA',
+        icon: Brain,
+      },
+      {
+        name: 'Agente Observador Meta',
+        status: metaState === 'real' ? 'connected' : metaState === 'error' ? 'error' : 'pending',
+        detail:
+          metaState === 'real'
+            ? 'Vista Meta en vivo activa'
+            : metaState === 'missing-config'
+              ? 'Falta adAccountId en metadata'
+              : 'Conecta Meta para activar vista viva',
+        icon: Zap,
+      },
+    ];
+  }, [integrations, aiStatus, metaState]);
+
+  const adaptivePlan = useMemo(() => {
+    const rules = [];
+
+    if (Number(conversionRate) < 20) {
+      rules.push('Subir prioridad de seguimiento en las primeras 2 horas para leads nuevos.');
+    }
+
+    if (metaSummary.spend > 0 && metaSummary.conversions === 0) {
+      rules.push('Reducir gasto en conjuntos sin conversion y reorientar a audiencias de mayor CTR.');
+    }
+
+    if (metaSummary.cpc > 2) {
+      rules.push('Probar nuevas creatividades para bajar CPC y mantener volumen de clics.');
+    }
+
+    if ((metrics?.bySource?.meta || 0) > 0 && (metrics?.byStage?.appointment || 0) === 0) {
+      rules.push('Implementar automatizacion WhatsApp para mover leads Meta a cita en menos de 24h.');
+    }
+
+    const fromAi = aiSuggestions.slice(0, 4);
+    const merged = [...fromAi, ...rules];
+    if (merged.length === 0) {
+      return ['No hay recomendaciones aun. Activa Meta + AI para generar un plan dinamico diario.'];
+    }
+    return merged.slice(0, 6);
+  }, [aiSuggestions, conversionRate, metaSummary, metrics]);
 
   if (error) {
     return (
@@ -135,10 +207,10 @@ export default function Dashboard() {
           <div className="flex items-start gap-3">
             <AlertCircle className="text-red-400 shrink-0 mt-0.5" size={20} />
             <div className="flex-1">
-              <h3 className="font-semibold text-white mb-1">Error Loading Dashboard</h3>
+              <h3 className="font-semibold text-white mb-1">Error cargando dashboard</h3>
               <p className="text-sm text-gray-300 mb-3">{error}</p>
               <button onClick={fetchData} className="btn-secondary text-sm">
-                <RefreshCw size={14} /> Try Again
+                <RefreshCw size={14} /> Reintentar
               </button>
             </div>
           </div>
@@ -149,317 +221,179 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h2 className="text-2xl font-bold text-white">Dashboard</h2>
-          <p className="text-gray-400 mt-0.5">Primary cards and charts are sourced from backend dashboard APIs.</p>
-          <p className="text-xs text-gray-500 mt-1">Data truth mode: API-backed sections are shown as real; missing sections are labeled as pending.</p>
+          <h2 className="text-2xl font-bold text-white">Control en Vivo</h2>
+          <p className="text-gray-400 mt-0.5">Frontend gobernado por GitHub + Supabase con refresco automatico diario y vista Meta en vivo.</p>
         </div>
-        <button
-          onClick={fetchData}
-          disabled={loadingMetrics}
-          className="btn-secondary flex items-center gap-2 text-sm"
-        >
-          {loadingMetrics ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-          Refresh
-        </button>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-gray-400 tabular-nums">Refresh {countdown}s</span>
+          <button
+            onClick={() => {
+              fetchData();
+              fetchAiSuggestions();
+            }}
+            disabled={loading}
+            className="btn-secondary flex items-center gap-2 text-sm"
+          >
+            {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+            Actualizar
+          </button>
+        </div>
       </div>
 
-      {/* Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <MetricCard
-          title="Total Revenue"
+          title="Revenue Actual"
           value={totalRevenue}
-          prefix="$"
-          change={null}
-          icon={DollarSign}
+          prefix="€"
+          icon={TrendingUp}
           color="brand"
         />
         <MetricCard
-          title="New Leads"
+          title="Leads Totales"
           value={totalLeads}
-          change={null}
-          icon={Users}
+          icon={ShieldCheck}
           color="emerald"
         />
         <MetricCard
-          title="Conversion Rate"
-          value={typeof conversionRate === 'number' ? conversionRate.toFixed(1) : conversionRate}
-          suffix="%"
-          change={null}
-          icon={TrendingUp}
+          title="Conversion"
+          value={toPercent(conversionRate)}
+          icon={Sparkles}
           color="violet"
         />
         <MetricCard
-          title="Connected Integrations"
+          title="Integraciones"
           value={connectedIntegrations}
           suffix={` / ${totalIntegrations}`}
-          change={null}
-          changeLabel="services active"
-          icon={Ticket}
-          color="amber"
+          icon={Bot}
+          color="metal"
         />
       </div>
 
-      {/* Charts Row */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {/* Revenue Chart */}
-        <div className="card xl:col-span-2">
-          <div className="flex items-center justify-between mb-6">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <div className="card border-brand-500/20 bg-gradient-to-br from-brand-500/5 to-transparent">
+          <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="font-semibold text-white">Revenue Trend</h3>
-              <p className="text-xs text-gray-500 mt-0.5">Historical performance data</p>
+              <h3 className="font-semibold text-white">Plan de Accion Adaptativo</h3>
+              <p className="text-xs text-gray-500">Se regenera con datos nuevos de Meta, CRM e IA. No es estatico.</p>
             </div>
+            <button onClick={fetchAiSuggestions} className="btn-secondary text-xs" disabled={loadingSuggestions}>
+              {loadingSuggestions ? <Loader2 size={12} className="animate-spin" /> : 'Regenerar'}
+            </button>
           </div>
-          {revenueData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={240}>
-              <AreaChart data={revenueData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                <XAxis dataKey="month" stroke="#6b7280" tick={{ fill: '#9ca3af', fontSize: 12 }} />
-                <YAxis stroke="#6b7280" tick={{ fill: '#9ca3af', fontSize: 12 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
-                <Tooltip content={<CustomTooltip />} />
-                <Area type="monotone" dataKey="revenue" stroke="#0ea5e9" strokeWidth={2} fill="url(#revenueGrad)" dot={{ fill: '#0ea5e9', r: 4 }} activeDot={{ r: 6 }} />
-              </AreaChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="h-60 flex items-center justify-center text-gray-500">
-              <div className="text-center">
-                <AlertCircle size={32} className="mx-auto mb-2 opacity-50" />
-                <p className="text-sm">No revenue trend data available</p>
-                <p className="text-xs mt-1">Add leads with revenue to see the trend</p>
+          <div className="space-y-3">
+            {adaptivePlan.map((item, idx) => (
+              <div key={`${item}-${idx}`} className="flex items-start gap-3 p-3 rounded-lg bg-dark-800/70 border border-dark-600/60">
+                <span className="w-6 h-6 rounded-full bg-brand-500/20 text-brand-300 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
+                  {idx + 1}
+                </span>
+                <p className="text-sm text-gray-200">{item}</p>
               </div>
-            </div>
-          )}
+            ))}
+          </div>
         </div>
 
-        {/* Funnel */}
         <div className="card">
-          <div className="mb-5">
-            <h3 className="font-semibold text-white">Revenue Funnel</h3>
-            <p className="text-xs text-gray-500 mt-0.5">Lead → Revenue conversion</p>
+          <h3 className="font-semibold text-white mb-4">Agentes Activos</h3>
+          <div className="space-y-3">
+            {agents.map((agent) => {
+              const Icon = agent.icon;
+              const statusTone =
+                agent.status === 'connected'
+                  ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10'
+                  : agent.status === 'error'
+                    ? 'text-red-400 border-red-500/30 bg-red-500/10'
+                    : 'text-gray-400 border-dark-500 bg-dark-800/80';
+              return (
+                <div key={agent.name} className="p-3 rounded-lg border border-dark-600/70 bg-dark-800/60">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Icon size={16} className="text-brand-300 shrink-0" />
+                      <p className="text-sm font-medium text-white truncate">{agent.name}</p>
+                    </div>
+                    <span className={`text-xs px-2 py-1 rounded-full border ${statusTone}`}>
+                      {agent.status}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-2">{agent.detail}</p>
+                </div>
+              );
+            })}
           </div>
-          {funnel.length > 0 ? (
-            <FunnelChart stages={funnel} />
-          ) : (
-            <div className="h-60 flex items-center justify-center text-gray-500">
-              <div className="text-center">
-                <AlertCircle size={32} className="mx-auto mb-2 opacity-50" />
-                <p className="text-sm">No funnel data available</p>
-                <p className="text-xs mt-1">Add leads to see the funnel</p>
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
-      {/* Meta Trends Section */}
-      {metaTrends && (
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-white">Meta Marketing Metrics</h3>
-            <div className="flex gap-2 text-xs">
-              <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                WoW: {metaTrends.wow.impressions > 0 ? '+' : ''}{metaTrends.wow.impressions}%
-              </span>
-              <span className="px-2 py-1 rounded bg-brand-500/10 text-brand-400 border border-brand-500/20">
-                MoM: {metaTrends.mom.impressions > 0 ? '+' : ''}{metaTrends.mom.impressions}%
-              </span>
-            </div>
+      <div className="card">
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+          <div>
+            <h3 className="font-semibold text-white">Meta en Vivo</h3>
+            <p className="text-xs text-gray-500">Sin historicos locales. Solo snapshot operativo actual desde API de Meta.</p>
           </div>
-
-          {/* Meta Metrics Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-            {[
-              { label: 'Impressions', value: metaTrends.summary.thisWeek.impressions, change: metaTrends.wow.impressions },
-              { label: 'Reach', value: metaTrends.summary.thisWeek.reach, change: metaTrends.wow.reach },
-              { label: 'Clicks', value: metaTrends.summary.thisWeek.clicks, change: metaTrends.wow.clicks },
-              { label: 'Spend', value: `$${metaTrends.summary.thisWeek.spend.toFixed(2)}`, change: metaTrends.wow.spend },
-              { label: 'Conversions', value: metaTrends.summary.thisWeek.conversions, change: metaTrends.wow.conversions },
-            ].map(metric => (
-              <div key={metric.label} className="card p-4">
-                <p className="text-xs text-gray-500 mb-1">{metric.label}</p>
-                <p className="text-xl font-bold text-white mb-1">{metric.value.toLocaleString()}</p>
-                <p className={`text-xs font-medium ${metric.change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {metric.change > 0 ? '+' : ''}{metric.change}% WoW
-                </p>
-              </div>
-            ))}
-          </div>
-
-          {/* Meta Trends Chart */}
-          {metaTrends.trends.length > 0 && (
-            <div className="card">
-              <div className="mb-6">
-                <h3 className="font-semibold text-white">Meta Performance Trend</h3>
-                <p className="text-xs text-gray-500 mt-0.5">Daily breakdown of key metrics</p>
-              </div>
-              <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={metaTrends.trends} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="impressionsGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0} />
-                    </linearGradient>
-                    <linearGradient id="clicksGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis
-                    dataKey="date"
-                    stroke="#6b7280"
-                    tick={{ fill: '#9ca3af', fontSize: 11 }}
-                    tickFormatter={(d) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                  />
-                  <YAxis stroke="#6b7280" tick={{ fill: '#9ca3af', fontSize: 11 }} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Area
-                    type="monotone"
-                    dataKey="impressions"
-                    stroke="#0ea5e9"
-                    strokeWidth={2}
-                    fill="url(#impressionsGrad)"
-                    name="Impressions"
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="clicks"
-                    stroke="#8b5cf6"
-                    strokeWidth={2}
-                    fill="url(#clicksGrad)"
-                    name="Clicks"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
-      )}
-
-      {metaTrendsState === 'missing-config' && (
-        <div className="card border-amber-500/20 bg-amber-500/5">
-          <h3 className="font-semibold text-white">Meta Trends</h3>
-          <p className="text-xs text-amber-200/90 mt-1">
-            Pending backend support: connect Meta with a stored adAccountId in integration metadata to enable this section.
-          </p>
-        </div>
-      )}
-
-      {metaTrendsState === 'not-connected' && (
-        <div className="card border-dark-600">
-          <h3 className="font-semibold text-white">Meta Trends</h3>
-          <p className="text-xs text-gray-400 mt-1">Not connected. Connect Meta in Integrations to load API data.</p>
-        </div>
-      )}
-
-      {/* HubSpot Trends Section */}
-      {hubspotTrends && hubspotTrends.trends.length > 0 && (
-        <div className="card">
-          <div className="mb-6">
-            <h3 className="font-semibold text-white">HubSpot CRM Trends</h3>
-            <p className="text-xs text-gray-500 mt-0.5">
-              {hubspotTrends.totalContacts} contacts, {hubspotTrends.totalDeals} deals, $
-              {hubspotTrends.totalRevenue.toLocaleString()} revenue
-            </p>
-          </div>
-          <ResponsiveContainer width="100%" height={240}>
-            <AreaChart data={hubspotTrends.trends} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-              <defs>
-                <linearGradient id="contactsGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-              <XAxis
-                dataKey="date"
-                stroke="#6b7280"
-                tick={{ fill: '#9ca3af', fontSize: 11 }}
-                tickFormatter={(d) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-              />
-              <YAxis stroke="#6b7280" tick={{ fill: '#9ca3af', fontSize: 11 }} />
-              <Tooltip content={<CustomTooltip />} />
-              <Area
-                type="monotone"
-                dataKey="contacts"
-                stroke="#10b981"
-                strokeWidth={2}
-                fill="url(#contactsGrad)"
-                name="Contacts"
-              />
-              <Area
-                type="monotone"
-                dataKey="deals"
-                stroke="#f59e0b"
-                strokeWidth={2}
-                fill="none"
-                name="Deals"
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-
-      {hubspotTrendsState === 'not-connected' && (
-        <div className="card border-dark-600">
-          <h3 className="font-semibold text-white">HubSpot CRM Trends</h3>
-          <p className="text-xs text-gray-400 mt-1">Not connected. Connect HubSpot in Integrations to load API data.</p>
-        </div>
-      )}
-
-      {/* AI Suggestions */}
-      <div className="card border-brand-500/20 bg-gradient-to-br from-brand-500/5 to-transparent">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="p-2 rounded-lg bg-brand-500/20">
-            <Sparkles size={18} className="text-brand-400" />
-          </div>
-          <div className="flex-1">
-            <h3 className="font-semibold text-white">AI Optimization Suggestions</h3>
-            <p className="text-xs text-gray-500">Generated by /api/ai/suggestions when AI credentials are configured.</p>
-          </div>
-          {aiSuggestions.length > 0 && (
-            <span className="ml-auto text-xs bg-brand-500/10 text-brand-400 border border-brand-500/20 px-2.5 py-1 rounded-full font-medium">
-              {aiSuggestions.length} new
+          {metaState === 'real' ? (
+            <span className="text-xs px-2 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
+              Conectado
+            </span>
+          ) : (
+            <span className="text-xs px-2 py-1 rounded-full border border-dark-500 bg-dark-800 text-gray-400">
+              {metaState}
             </span>
           )}
-          {!loadingSuggestions && aiSuggestions.length === 0 && (
-            <button
-              onClick={fetchAiSuggestions}
-              className="btn-secondary text-xs"
-            >
-              Generate Suggestions
-            </button>
-          )}
         </div>
-        {loadingSuggestions ? (
-          <div className="text-center py-8 text-gray-500">
-            <Loader2 size={32} className="mx-auto mb-2 opacity-50 animate-spin" />
-            <p className="text-sm">Analyzing your data...</p>
+
+        {metaState === 'real' ? (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
+              {[
+                { label: 'Impressions', value: formatNumber(metaSummary.impressions) },
+                { label: 'Reach', value: formatNumber(metaSummary.reach) },
+                { label: 'Clicks', value: formatNumber(metaSummary.clicks) },
+                { label: 'Spend', value: formatCurrency(metaSummary.spend) },
+                { label: 'Conversions', value: formatNumber(metaSummary.conversions) },
+                { label: 'CTR', value: toPercent(metaSummary.ctr) },
+                { label: 'CPC', value: formatCurrency(metaSummary.cpc) },
+                { label: 'CPM', value: formatCurrency(metaSummary.cpm) },
+              ].map((metric) => (
+                <div key={metric.label} className="rounded-lg p-3 bg-dark-800/70 border border-dark-600/70">
+                  <p className="text-xs text-gray-500 mb-1">{metric.label}</p>
+                  <p className="text-lg font-semibold text-white">{metric.value}</p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 flex gap-2 flex-wrap text-xs">
+              <span className="px-2 py-1 rounded-full bg-brand-500/10 text-brand-300 border border-brand-500/20">
+                WoW impressions: {metaTrends?.wow?.impressions > 0 ? '+' : ''}{metaTrends?.wow?.impressions || 0}%
+              </span>
+              <span className="px-2 py-1 rounded-full bg-metal-300/10 text-metal-200 border border-metal-300/30">
+                MoM spend: {metaTrends?.mom?.spend > 0 ? '+' : ''}{metaTrends?.mom?.spend || 0}%
+              </span>
+            </div>
+          </>
+        ) : (
+          <div className="p-4 rounded-lg border border-dark-600/70 bg-dark-800/60 text-sm text-gray-300">
+            {metaState === 'missing-config' && 'Meta conectado, pero falta adAccountId en metadata de la integracion.'}
+            {metaState === 'not-connected' && 'Meta no esta conectado. Activalo en Integrations para ver datos en vivo.'}
+            {metaState === 'error' && 'No fue posible obtener datos de Meta en este momento.'}
+            {metaState === 'pending' && 'Cargando estado de Meta...'}
           </div>
-        ) : aiSuggestions.length > 0 ? (
-          <div className="space-y-3">
-            {aiSuggestions.map((s, i) => (
-              <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-dark-800/60 border border-dark-600/50">
-                <span className="w-6 h-6 rounded-full bg-brand-500/20 text-brand-400 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
-                  {i + 1}
-                </span>
-                <p className="text-sm text-gray-300">{s}</p>
+        )}
+      </div>
+
+      <div className="card">
+        <h3 className="font-semibold text-white mb-4">Actividad GitHub + Supabase</h3>
+        {activityEvents.length === 0 ? (
+          <p className="text-sm text-gray-400">Sin eventos recientes. Ejecuta sincronizacion para poblar el feed.</p>
+        ) : (
+          <div className="space-y-2">
+            {activityEvents.slice(0, 8).map((event) => (
+              <div key={event.id} className="flex items-start gap-3 p-3 rounded-lg bg-dark-800/70 border border-dark-600/60">
+                <Circle size={8} className="text-brand-300 shrink-0 mt-1.5" fill="currentColor" />
+                <div className="min-w-0">
+                  <p className="text-sm text-gray-200 break-words">{event.message}</p>
+                  <p className="text-xs text-gray-500 mt-1">{event.type}</p>
+                </div>
               </div>
             ))}
-          </div>
-        ) : (
-          <div className="text-center py-8 text-gray-500">
-            <Sparkles size={32} className="mx-auto mb-2 opacity-50" />
-            <p className="text-sm">No AI suggestions yet</p>
-            <p className="text-xs mt-1">No placeholder suggestions are shown. Configure AI credentials to load real suggestions.</p>
           </div>
         )}
       </div>
