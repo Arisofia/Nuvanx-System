@@ -33,14 +33,14 @@ function normalizeLead(lead) {
 }
 
 const statusConfig = {
-  New: { class: 'bg-blue-500/10 text-blue-400 border border-blue-500/20', dot: 'bg-blue-400' },
+  New: { class: 'bg-brand-500/10 text-brand-400 border border-brand-500/20', dot: 'bg-brand-400' },
   Contacted: { class: 'bg-amber-500/10 text-amber-400 border border-amber-500/20', dot: 'bg-amber-400' },
   Appointment: { class: 'bg-violet-500/10 text-violet-400 border border-violet-500/20', dot: 'bg-violet-400' },
   Converted: { class: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20', dot: 'bg-emerald-400' },
 };
 
 const sourceColors = {
-  'Meta Ads': 'text-blue-400',
+  'Meta Ads': 'text-brand-400',
   'Referral': 'text-emerald-400',
   'Google Ads': 'text-amber-400',
   'Organic': 'text-gray-400',
