@@ -22,7 +22,6 @@ This README is intentionally status-first and non-marketing.
   - `docs/figma-component-map.json`
   - `scripts/validate-figma-mapping.mjs`
   - CI workflow checks.
-- HubSpot CLI sub-project (`hubspot/`).
 - Grafana Alloy monitoring stack (`monitoring/`).
 - Supabase migrations under `supabase/migrations/`.
 
@@ -50,7 +49,6 @@ This README is intentionally status-first and non-marketing.
 
 - `backend/` — Express API and model/service layers.
 - `frontend/` — React + Vite UI.
-- `hubspot/` — HubSpot CLI project (see `hubspot/AGENTS.md`).
 - `monitoring/` — Grafana Alloy observability stack.
 - `supabase/` — DB schema and migrations.
 - `docs/` — Readiness, truth matrix, Figma validation docs.

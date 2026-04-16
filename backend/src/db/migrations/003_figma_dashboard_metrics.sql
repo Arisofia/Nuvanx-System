@@ -26,7 +26,6 @@ CREATE TABLE IF NOT EXISTS public.dashboard_metrics (
   leads_closed           INTEGER      NOT NULL DEFAULT 0,
 
   -- Integration connection status (connected | disconnected | error)
-  hubspot_status         TEXT         NOT NULL DEFAULT 'disconnected',
   meta_status            TEXT         NOT NULL DEFAULT 'disconnected',
   whatsapp_status        TEXT         NOT NULL DEFAULT 'disconnected',
   github_status          TEXT         NOT NULL DEFAULT 'disconnected',
