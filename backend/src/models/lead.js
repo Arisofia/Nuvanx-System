@@ -28,6 +28,7 @@ function _rowToLead(row) {
     stage: row.stage || 'lead',
     revenue: parseFloat(row.revenue) || 0,
     notes: row.notes || '',
+    externalId: row.external_id || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -47,8 +48,9 @@ async function create(userId, data) {
   if (isAvailable()) {
     try {
       const { rows } = await getPool.query(
-        `INSERT INTO leads (user_id, name, email, phone, source, stage, revenue, notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `INSERT INTO leads (user_id, name, email, phone, source, stage, revenue, notes, external_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (user_id, source, external_id) WHERE external_id IS NOT NULL DO NOTHING
          RETURNING *`,
         [
           userId,
@@ -59,8 +61,13 @@ async function create(userId, data) {
           stage,
           parseFloat(data.revenue) || 0,
           data.notes || '',
+          data.externalId || null,
         ],
       );
+      if (!rows[0]) {
+        logger.debug('Lead skipped (duplicate external_id)', { userId, externalId: data.externalId });
+        return null;
+      }
       logger.debug('Lead created in DB', { userId, leadId: rows[0].id });
       return _rowToLead(rows[0]);
     } catch (err) {
