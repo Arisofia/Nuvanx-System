@@ -76,7 +76,7 @@ ALTER TABLE credentials ENABLE ROW LEVEL SECURITY;
 -- Table: integrations
 -- Tracks connection state per user per service.  The actual credential is in
 -- the credentials table.  metadata is a JSONB bag for service-specific data
--- (e.g. Meta ad account ID, HubSpot portal ID).
+-- (e.g. Meta ad account ID).
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS integrations (
   id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),

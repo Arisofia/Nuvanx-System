@@ -56,9 +56,6 @@ const config = {
   // Third-party API keys (server-level defaults; per-user vault credentials take priority)
   openaiApiKey: process.env.OPENAI_API_KEY,
   geminiApiKey: process.env.GEMINI_API_KEY,
-  googleApiKey: process.env.GOOGLE_API_KEY,
-  googleClientId: process.env.GOOGLE_CLIENT_ID,
-  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || null,
 
   // Meta (Facebook) Marketing API
   metaAccessToken: process.env.META_ACCESS_TOKEN,

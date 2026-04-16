@@ -5,8 +5,6 @@ const logger = require('../utils/logger');
 
 const SERVICES = [
   'meta',
-  'google-calendar',
-  'google-gmail',
   'whatsapp',
   'github',
   'openai',
