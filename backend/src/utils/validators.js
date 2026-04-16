@@ -27,14 +27,14 @@ const authRegisterRules = [
 const credentialRules = [
   body('service')
     .trim()
-    .isIn(['meta', 'google-calendar', 'google-gmail', 'whatsapp', 'github', 'openai', 'gemini'])
+    .isIn(['meta', 'whatsapp', 'github', 'openai', 'gemini'])
     .withMessage('Invalid service name'),
   body('apiKey').trim().isLength({ min: 1 }).withMessage('API key is required'),
 ];
 
 const serviceParamRule = [
   param('service')
-    .isIn(['meta', 'google-calendar', 'google-gmail', 'whatsapp', 'github', 'openai', 'gemini'])
+    .isIn(['meta', 'whatsapp', 'github', 'openai', 'gemini'])
     .withMessage('Invalid service name'),
 ];
 
