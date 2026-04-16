@@ -58,25 +58,18 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (email, password) => {
     if (isSupabaseAvailable()) {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) {
-        // Re-throw as a plain object matching axios error shape so Login.jsx
-        // toast handling works the same way for both auth paths.
-        const wrapped = new Error(error.message);
-        wrapped.response = { data: { message: error.message } };
-        throw wrapped;
+      if (!error && data.session) {
+        // Supabase Auth succeeded — use the session token
+        const shaped = toUserShape(data.user);
+        setToken(data.session.access_token);
+        setUser(shaped);
+        return shaped;
       }
-      if (!data.session) {
-        const wrapped = new Error('Email confirmation required. Please check your inbox.');
-        wrapped.response = { data: { message: wrapped.message } };
-        throw wrapped;
-      }
-      const shaped = toUserShape(data.user);
-      setToken(data.session.access_token);
-      setUser(shaped);
-      return shaped;
+      // Supabase Auth failed (user may only exist in public.users, not in Auth).
+      // Fall through to backend JWT path.
     }
 
-    // Backend-JWT fallback
+    // Backend-JWT path — works against public.users table directly.
     const res = await api.post('/api/auth/login', { email, password });
     const { token: jwt, user: userData } = res.data;
     localStorage.setItem('nuvanx_token', jwt);
@@ -88,9 +81,8 @@ export function AuthProvider({ children }) {
   const logout = useCallback(async () => {
     if (isSupabaseAvailable()) {
       await supabase.auth.signOut();
-    } else {
-      localStorage.removeItem('nuvanx_token');
     }
+    localStorage.removeItem('nuvanx_token');
     setToken(null);
     setUser(null);
   }, []);

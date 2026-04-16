@@ -9,10 +9,13 @@ const api = axios.create({
 api.interceptors.request.use(async (config) => {
   let token;
   if (isSupabaseAvailable()) {
-    // Use the Supabase session token (auto-refreshed by Supabase JS)
+    // Prefer the Supabase session token (auto-refreshed by Supabase JS)
     const { data: { session } } = await supabase.auth.getSession();
     token = session?.access_token;
-  } else {
+  }
+  // Fall back to backend JWT stored in localStorage (used when login went via
+  // the backend-JWT path, e.g. user exists in public.users but not in Supabase Auth)
+  if (!token) {
     token = localStorage.getItem('nuvanx_token');
   }
   if (token) {
