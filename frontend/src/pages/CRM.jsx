@@ -54,11 +54,11 @@ function AddLeadModal({ onClose, onCreated }) {
   const [saving, setSaving] = useState(false);
   const [fieldError, setFieldError] = useState(null);
 
-  function set(field, value) {
+  const set = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
-  }
+  };
 
-  async function handleSubmit(e) {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.name.trim()) {
       setFieldError('Name is required.');
@@ -244,19 +244,19 @@ export default function CRM() {
     return matchStatus && matchSearch;
   });
 
-  function handleWhatsApp() {
+  const handleWhatsApp = () => {
     toast('Placeholder action: WhatsApp launch is not wired yet.', { icon: 'ℹ️' });
-  }
-  function handleCalendar() {
+  };
+  const handleCalendar = () => {
     toast('Placeholder action: Calendar scheduling is not wired yet.', { icon: 'ℹ️' });
-  }
-  function handleNotes() {
+  };
+  const handleNotes = () => {
     toast('Placeholder action: Lead notes editor is not implemented yet.', { icon: 'ℹ️' });
-  }
+  };
 
-  function handleLeadCreated(newLead) {
+  const handleLeadCreated = (newLead) => {
     setLeads(prev => [normalizeLead(newLead), ...prev]);
-  }
+  };
 
   const counts = statuses.slice(1).reduce((acc, s) => {
     acc[s] = leads.filter(l => l.status === s).length;
