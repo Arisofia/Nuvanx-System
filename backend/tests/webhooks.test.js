@@ -4,7 +4,6 @@ process.env.JWT_SECRET = 'test-jwt-secret-32-chars-minimum!!';
 process.env.ENCRYPTION_KEY = 'test-encryption-key-32-chars-min!';
 process.env.NODE_ENV = 'test';
 process.env.META_APP_SECRET = '';
-process.env.HUBSPOT_CLIENT_SECRET = '';
 process.env.META_VERIFY_TOKEN = 'test-meta-verify-token';
 
 const request = require('supertest');

@@ -40,8 +40,6 @@ function ConnectModal({ integration, onClose, onConnect }) {
 
   const fieldLabels = {
     meta: 'ACCESS TOKEN',
-    'google-calendar': 'Google OAuth Refresh Token',
-    'google-gmail': 'Gmail OAuth Refresh Token',
     whatsapp: 'WhatsApp Business API Token',
     github: 'GitHub Personal Access Token',
     openai: 'API KEY',
@@ -50,8 +48,6 @@ function ConnectModal({ integration, onClose, onConnect }) {
 
   const fieldHints = {
     meta: 'Found in Meta Business Manager → System Users → Generate Token',
-    'google-calendar': 'Use OAuth2 flow in Google Cloud Console → Credentials',
-    'google-gmail': 'Use OAuth2 flow with Gmail scopes in Google Cloud Console',
     whatsapp: 'Found in Meta Business Manager → WhatsApp → API Setup',
     github: 'Generate at github.com/settings/tokens with repo scope',
     openai: 'Found at platform.openai.com/api-keys',

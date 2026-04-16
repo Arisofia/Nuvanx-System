@@ -40,5 +40,3 @@ Thumbs.db
 .zencoder/
 .zenflow/
 
-# HubSpot config file
-hubspot.config.yml

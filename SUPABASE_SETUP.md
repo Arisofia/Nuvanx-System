@@ -6,7 +6,7 @@
 ## ¿Por qué Supabase?
 
 En la arquitectura actual de Nuvanx, las credenciales reales de integraciones
-(Meta, Gmail, etc.) **no se almacenan en `localStorage` del navegador**.
+(Meta, etc.) **no se almacenan en `localStorage` del navegador**.
 Se guardan en el **backend credential vault**, cifradas con **AES-256-GCM**.
 
 Supabase se utiliza para gestionar el **estado de la integración**, la **sesión** y
