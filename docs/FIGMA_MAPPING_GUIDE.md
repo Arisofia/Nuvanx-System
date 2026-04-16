@@ -185,3 +185,33 @@ Generate a personal access token at **Figma → Account Settings → Personal ac
 export FIGMA_ACCESS_TOKEN=figd_...
 npm run validate:figma -- --api-check
 ```
+
+---
+
+## Current Screens & Components to Map
+
+Figma Make file key: `uJkwaJl7MIf5DE2VaqV8Vd`
+URL: https://www.figma.com/make/uJkwaJl7MIf5DE2VaqV8Vd
+
+| Screen           | Route            | File                                     |
+|------------------|------------------|------------------------------------------|
+| Login            | `/login`         | `frontend/src/pages/Login.jsx`           |
+| Dashboard        | `/dashboard`     | `frontend/src/pages/Dashboard.jsx`       |
+| Playbooks        | `/operativo`     | `frontend/src/pages/Playbooks.jsx`       |
+| CRM              | `/crm`           | `frontend/src/pages/CRM.jsx`             |
+| Live Dashboard   | `/live`          | `frontend/src/pages/LiveDashboard.jsx`   |
+| Integrations     | `/integrations`  | `frontend/src/pages/Integrations.jsx`    |
+| AI Layer         | `/ai`            | `frontend/src/pages/AILayer.jsx`         |
+
+| Component        | File                                             |
+|------------------|--------------------------------------------------|
+| MetricCard       | `frontend/src/components/MetricCard.jsx`         |
+| FunnelChart      | `frontend/src/components/FunnelChart.jsx`        |
+| TopNav           | `frontend/src/components/TopNav.jsx`             |
+| IntegrationCard  | `frontend/src/components/IntegrationCard.jsx`    |
+| Layout           | `frontend/src/components/Layout.jsx`             |
+| Sidebar          | `frontend/src/components/Sidebar.jsx`            |
+
+### Migrating to Figma Design (future)
+
+If you want automatic sync via API, create a Figma **Design** file (not Make), copy frames from the Make file, and update `fileKey` in `figma-component-map.json`. The REST API `/v1/files/:key` only supports Design files.

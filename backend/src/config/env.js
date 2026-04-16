@@ -59,15 +59,6 @@ const config = {
   googleApiKey: process.env.GOOGLE_API_KEY,
   googleClientId: process.env.GOOGLE_CLIENT_ID,
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || null,
-  hubspotAccessToken: process.env.HUBSPOT_ACCESS_TOKEN,
-  hubspotApiKey: process.env.HUBSPOT_API_KEY,
-  // Personal Access Key — long-lived credential used to auto-refresh OAuth tokens.
-  // Generate at: HubSpot → Settings → Integrations → HubSpot CLI and Local Development
-  hubspotPak: process.env.HUBSPOT_PAK || null,
-  // Note: Codespaces secret name has a typo (HUSPOT_PORTAL_ID); support both spellings
-  hubspotPortalId: process.env.HUBSPOT_PORTAL_ID || process.env.HUSPOT_PORTAL_ID,
-  // Used to verify webhook signatures from HubSpot (Private App → Webhooks → Client secret)
-  hubspotClientSecret: process.env.HUBSPOT_CLIENT_SECRET || null,
 
   // Meta (Facebook) Marketing API
   metaAccessToken: process.env.META_ACCESS_TOKEN,
@@ -87,7 +78,7 @@ const config = {
   // Sentry error tracking
   sentryDsn: process.env.SENTRY_DSN || null,
 
-  // UUID of the admin/owner user that receives webhook-originated leads (Meta, HubSpot)
+  // UUID of the admin/owner user that receives webhook-originated leads (Meta, WhatsApp)
   // Set this to the UUID of the main platform user in Supabase Auth.
   webhookAdminUserId: process.env.WEBHOOK_ADMIN_USER_ID || null,
 };
