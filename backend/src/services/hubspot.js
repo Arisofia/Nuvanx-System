@@ -125,7 +125,7 @@ async function getContacts(credential, limit = 50) {
  * @returns {object} Created contact resource
  */
 async function createContact(credential, contactData) {
-  const authCfg = _authConfig(credential);
+  const authCfg = await _authConfigAsync(credential);
   const { data } = await axios.post(
     `${HUBSPOT_BASE}/crm/v3/objects/contacts`,
     { properties: contactData },

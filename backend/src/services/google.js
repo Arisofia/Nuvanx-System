@@ -88,4 +88,32 @@ async function sendEmail(accessToken, emailData) {
   return data;
 }
 
-module.exports = { testConnection, createCalendarEvent, listCalendarEvents, sendEmail };
+/**
+ * Exchange a refresh token for a new access token using Google OAuth2.
+ * Store client_id and client_secret in env (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET).
+ * @param {string} refreshToken
+ * @returns {{ accessToken: string, expiresInSeconds: number }}
+ */
+async function refreshAccessToken(refreshToken) {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    throw new Error('GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set to refresh Google tokens');
+  }
+  const { data } = await axios.post(
+    'https://oauth2.googleapis.com/token',
+    new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: clientId,
+      client_secret: clientSecret,
+    }).toString(),
+    {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      timeout: 10000,
+    },
+  );
+  return { accessToken: data.access_token, expiresInSeconds: data.expires_in };
+}
+
+module.exports = { testConnection, createCalendarEvent, listCalendarEvents, sendEmail, refreshAccessToken };

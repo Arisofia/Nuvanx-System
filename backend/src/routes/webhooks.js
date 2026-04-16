@@ -74,16 +74,15 @@ router.post('/hubspot', async (req, res) => {
         notes: `HubSpot ID: ${objectId} | Portal: ${portalId} | Event: ${subscriptionType}`,
       };
 
-      // Upsert by hubspot ID stored in notes — if DB is available use ON CONFLICT
-      if (isAvailable()) {
+      // Upsert into leads under the admin user (webhook-originated leads are tenant-scoped)
+      const webhookUserId = config.webhookAdminUserId;
+      if (webhookUserId && isAvailable()) {
         await getPool.query(
           `INSERT INTO leads (user_id, name, email, phone, source, stage, revenue, notes)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
            ON CONFLICT DO NOTHING`,
           [
-            // Webhook events are not user-scoped — store under a sentinel webhook user
-            // or skip DB insert and log only. Here we log only to avoid cross-user data.
-            null, // user_id intentionally null for webhook-originated leads
+            webhookUserId,
             leadData.name,
             leadData.email,
             leadData.phone,
@@ -92,7 +91,7 @@ router.post('/hubspot', async (req, res) => {
             leadData.revenue,
             leadData.notes,
           ],
-        ).catch(() => {}); // non-fatal — log and continue
+        ).catch((dbErr) => logger.warn('hubspot webhook: DB insert failed', { error: dbErr.message }));
       }
 
       logger.info('HubSpot webhook event processed', { subscriptionType, objectId, portalId });
@@ -176,8 +175,43 @@ router.post('/meta', async (req, res) => {
   }
 
   const { object, entry } = req.body;
-  if (object !== 'page' && object !== 'instagram') {
+  if (object !== 'page' && object !== 'instagram' && object !== 'whatsapp_business_account') {
     return res.status(200).json({ received: true, skipped: true });
+  }
+
+  // ── WhatsApp incoming messages ──────────────────────────────────────────
+  if (object === 'whatsapp_business_account') {
+    const webhookUserId = config.webhookAdminUserId;
+    for (const e of (entry || [])) {
+      for (const change of (e.changes || [])) {
+        if (change.field !== 'messages') continue;
+        for (const msg of (change.value?.messages || [])) {
+          if (msg.type !== 'text') continue;
+          const phone = msg.from; // international format e.g. 34612345678
+          const text = msg.text?.body || '';
+          const contactName = change.value?.contacts?.find(c => c.wa_id === phone)?.profile?.name || `WA ${phone}`;
+
+          logger.info('WhatsApp message received', { phone, preview: text.substring(0, 60) });
+
+          if (webhookUserId && isAvailable()) {
+            await getPool.query(
+              `INSERT INTO leads (user_id, name, phone, source, stage, revenue, notes)
+               VALUES ($1, $2, $3, 'whatsapp', 'lead', 0, $4)
+               ON CONFLICT DO NOTHING`,
+              [webhookUserId, contactName, phone, `WA msg: ${text.substring(0, 500)}`],
+            ).catch(dbErr => logger.warn('WA webhook: DB insert failed', { error: dbErr.message }));
+          }
+
+          // Sync to HubSpot
+          try {
+            await hubspotService.createContact(null, { phone, firstname: contactName.split(' ')[0], lastname: contactName.split(' ').slice(1).join(' ') || '', hs_lead_status: 'NEW', leadsource: 'SOCIAL_MEDIA' });
+          } catch (hsErr) {
+            logger.warn('WA webhook: HubSpot sync failed (non-fatal)', { phone, error: hsErr.message });
+          }
+        }
+      }
+    }
+    return res.json({ received: true });
   }
 
   const processed = [];
@@ -223,14 +257,15 @@ router.post('/meta', async (req, res) => {
           }
         }
 
-        // Insert into DB
-        if (isAvailable()) {
+        // Insert into DB under admin user
+        const webhookUserId = config.webhookAdminUserId;
+        if (webhookUserId && isAvailable()) {
           await getPool.query(
             `INSERT INTO leads (user_id, name, email, phone, source, stage, revenue, notes)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
              ON CONFLICT DO NOTHING`,
             [
-              null,
+              webhookUserId,
               leadData.name,
               leadData.email,
               leadData.phone,
@@ -240,6 +275,21 @@ router.post('/meta', async (req, res) => {
               leadData.notes,
             ],
           );
+        }
+
+        // ── Sync to HubSpot ────────────────────────────────────────────────
+        try {
+          await hubspotService.createContact(null, {
+            email: leadData.email || undefined,
+            firstname: leadData.name.split(' ')[0],
+            lastname: leadData.name.split(' ').slice(1).join(' ') || '',
+            phone: leadData.phone || undefined,
+            hs_lead_status: 'NEW',
+            leadsource: 'SOCIAL_MEDIA',
+          });
+          logger.info('Meta lead synced to HubSpot', { leadgen_id });
+        } catch (hsErr) {
+          logger.warn('Meta lead: HubSpot sync failed (non-fatal)', { leadgen_id, error: hsErr.message });
         }
 
         logger.info('Meta lead webhook processed', { leadgen_id, page_id });
