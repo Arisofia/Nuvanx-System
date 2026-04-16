@@ -69,15 +69,13 @@ function normalizeMetrics(input) {
  * @returns {{ metrics: object, loading: boolean, error: string|null, reload: () => void }}
  */
 export function useDashboardMetrics() {
+  const available = isFigmaSupabaseAvailable();
   const [metrics, setMetrics] = useState(DEFAULT_METRICS);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(available);
   const [error, setError] = useState(null);
 
-  const load = useCallback(async () => {
-    if (!isFigmaSupabaseAvailable()) {
-      setLoading(false);
-      return;
-    }
+  const reload = useCallback(async () => {
+    if (!isFigmaSupabaseAvailable()) return;
     setLoading(true);
     setError(null);
     const data = await loadDashboardMetrics();
@@ -87,18 +85,27 @@ export function useDashboardMetrics() {
   }, []);
 
   useEffect(() => {
-    let alive = true;
-    // Defer initial load so the effect body returns before any setState is called.
-    // This satisfies react-hooks/set-state-in-effect and prevents cascading renders.
-    queueMicrotask(() => { if (alive) load(); });
-    const unsub = subscribeToDashboardMetrics((updated) => {
-      // Defer subscription state updates for the same reason.
-      queueMicrotask(() => { if (alive) setMetrics(normalizeMetrics(updated)); });
-    });
-    return () => { alive = false; unsub?.(); };
-  }, [load]);
+    if (!available) return;
 
-  return { metrics, loading, error, reload: load };
+    let cancelled = false;
+
+    (async () => {
+      const data = await loadDashboardMetrics();
+      if (cancelled) return;
+      if (data) setMetrics(normalizeMetrics(data));
+      else setError('dashboard_metrics unavailable');
+      setLoading(false);
+    })();
+
+    const unsub = subscribeToDashboardMetrics((updated) => setMetrics(normalizeMetrics(updated)));
+
+    return () => {
+      cancelled = true;
+      unsub();
+    };
+  }, [available]);
+
+  return { metrics, loading, error, reload };
 }
 
 /**
