@@ -41,7 +41,7 @@ app.use(
 );
 
 // ─── Body parsing ───────────────────────────────────────────────────────────
-// Capture rawBody for webhook signature verification (HubSpot, etc.)
+// Capture rawBody for webhook signature verification (Meta, etc.)
 app.use(express.json({
   limit: '1mb',
   verify: (req, _res, buf) => { req.rawBody = buf.toString(); },

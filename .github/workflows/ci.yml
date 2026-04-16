@@ -37,10 +37,37 @@ jobs:
           JWT_SECRET: ci-jwt-secret-minimum-32-characters!
           ENCRYPTION_KEY: ci-encryption-key-minimum-32-chars!
 
+  # ─── Frontend: lint ──────────────────────────────────────────────────────
+  frontend-lint:
+    name: Frontend — ESLint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
   # ─── Frontend: install, build ───────────────────────────────────────────────
   frontend:
     name: Frontend — build
     runs-on: ubuntu-latest
+    needs: frontend-lint
     permissions:
       contents: read
     defaults:
