@@ -127,7 +127,6 @@ export default function LiveDashboard() {
     }, 1000);
     return () => clearInterval(tick);
   }, [fetchMetrics, fetchEvents]);
-
   // Supabase Realtime — subscribe to leads INSERT for instant chart updates
   useEffect(() => {
     if (!isSupabaseAvailable()) return;
