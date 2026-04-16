@@ -125,7 +125,7 @@ if (require.main === module) {
   // ─── Graceful shutdown ────────────────────────────────────────────
   // Drain in-flight requests before exiting so clients receive complete responses.
   // Cloud platforms (Railway, Render, k8s) send SIGTERM before SIGKILL.
-  function gracefulShutdown(signal) {
+  const gracefulShutdown = (signal) => {
     logger.info(`${signal} received — closing HTTP server`);
     server.close(() => {
       logger.info('HTTP server closed. Exiting.');
@@ -136,7 +136,7 @@ if (require.main === module) {
       logger.warn('Graceful shutdown timed out — forcing exit');
       process.exit(1);
     }, 10_000).unref();
-  }
+  };
 
   process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
   process.on('SIGINT', () => gracefulShutdown('SIGINT'));

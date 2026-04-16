@@ -200,7 +200,7 @@ router.post(
           result = await googleService.testConnection(apiKey);
           break;
         case 'whatsapp': {
-          const phoneNumberId = req.body.phoneNumberId;
+          const { phoneNumberId } = req.body;
           if (!phoneNumberId) {
             return res.status(400).json({ success: false, message: 'phoneNumberId is required for WhatsApp' });
           }

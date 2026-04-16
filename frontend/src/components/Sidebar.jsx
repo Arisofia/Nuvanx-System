@@ -41,10 +41,10 @@ export default function Sidebar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  function handleLogout() {
+  const handleLogout = () => {
     logout();
     navigate('/login');
-  }
+  };
 
   return (
     <aside className="w-60 shrink-0 bg-dark-800 border-r border-dark-600 flex flex-col h-screen sticky top-0">
