@@ -8,7 +8,6 @@ const metaService = require('../services/meta');
 const googleService = require('../services/google');
 const whatsappService = require('../services/whatsapp');
 const githubService = require('../services/github');
-const hubspotService = require('../services/hubspot');
 const leadModel = require('../models/lead');
 const { pool, isAvailable } = require('../db');
 const { config } = require('../config/env');
@@ -37,7 +36,6 @@ async function resolveCredential(userId, service) {
     gemini: config.geminiApiKey,
     'google-calendar': config.googleApiKey,
     'google-gmail': config.googleApiKey,
-    hubspot: config.hubspotAccessToken || config.hubspotApiKey,
     meta: config.metaAccessToken,
     whatsapp: config.whatsappAccessToken,
     github: config.githubToken,
@@ -95,7 +93,6 @@ router.get('/validate-all', async (req, res, next) => {
     { service: 'google-calendar', test: (k) => googleService.testConnection(k) },
     { service: 'google-gmail', test: (k) => googleService.testConnection(k) },
     { service: 'github', test: (k) => githubService.testConnection(k) },
-    { service: 'hubspot', test: (k) => hubspotService.testConnection(k) },
     {
       service: 'openai',
       test: () => Promise.resolve({ connected: true, message: 'Credential present — not validated in bulk check' }),
@@ -210,9 +207,6 @@ router.post(
         case 'github':
           result = await githubService.testConnection(apiKey);
           break;
-        case 'hubspot':
-          result = await hubspotService.testConnection(apiKey);
-          break;
         case 'openai':
         case 'gemini':
           // Basic key presence check — real validation happens on first generate call
@@ -244,58 +238,6 @@ router.post(
     }
   },
 );
-
-/** POST /api/integrations/hubspot/sync
- * Pull up to 100 HubSpot contacts and upsert them into the local leads table.
- * Returns a count of created/updated leads.
- */
-router.post('/hubspot/sync', async (req, res, next) => {
-  try {
-    const credential = await resolveCredential(req.user.id, 'hubspot');
-    if (!credential) {
-      return res.status(404).json({
-        success: false,
-        message: 'No HubSpot credential found. Connect HubSpot first via POST /api/integrations/hubspot/connect',
-      });
-    }
-
-    const { leads, total } = await hubspotService.fetchLeadsFromHubSpot(credential);
-
-    let created = 0;
-    let updated = 0;
-
-    for (const leadData of leads) {
-      if (isAvailable() && leadData.email) {
-        // Upsert by (user_id, email) — update if exists, insert otherwise
-        const { rowCount } = await pool.query(
-          `UPDATE leads SET name=$3, phone=$4, stage=$5, notes=$6, source='hubspot'
-           WHERE user_id=$1 AND email=$2`,
-          [req.user.id, leadData.email, leadData.name, leadData.phone, leadData.stage, leadData.notes],
-        );
-        if (rowCount > 0) {
-          updated++;
-        } else {
-          await leadModel.create(req.user.id, leadData);
-          created++;
-        }
-      } else {
-        await leadModel.create(req.user.id, leadData);
-        created++;
-      }
-    }
-
-    await integrationModel.upsert(req.user.id, 'hubspot', {
-      status: 'connected',
-      lastSync: new Date().toISOString(),
-      lastError: null,
-    });
-
-    logger.info('HubSpot sync completed', { userId: req.user.id, total, created, updated });
-    res.json({ success: true, total, created, updated });
-  } catch (err) {
-    next(err);
-  }
-});
 
 /** POST /api/integrations/:service/connect - store OAuth token and mark connected */
 router.post(

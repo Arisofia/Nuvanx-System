@@ -6,7 +6,6 @@ const leadModel = require('../models/lead');
 const integrationModel = require('../models/integration');
 const credentialModel = require('../models/credential');
 const metaService = require('../services/meta');
-const hubspotService = require('../services/hubspot');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -266,37 +265,6 @@ router.get('/meta-trends', async (req, res, next) => {
     });
   } catch (err) {
     logger.error('Meta trends error', { error: err.message });
-    next(err);
-  }
-});
-
-/**
- * GET /api/dashboard/hubspot-trends
- * Fetch HubSpot CRM trends data.
- * Requires connected HubSpot integration.
- */
-router.get('/hubspot-trends', async (req, res, next) => {
-  try {
-    const userId = req.user.id;
-    const { since, until } = req.query;
-
-    // Get HubSpot credentials
-    const hubspotToken = await credentialModel.getDecryptedKey(userId, 'hubspot');
-    if (!hubspotToken) {
-      return res.status(404).json({
-        success: false,
-        message: 'HubSpot integration not connected. Please connect HubSpot in Settings.',
-      });
-    }
-
-    const data = await hubspotService.getTrends(hubspotToken, { since, until });
-
-    res.json({
-      success: true,
-      ...data,
-    });
-  } catch (err) {
-    logger.error('HubSpot trends error', { error: err.message });
     next(err);
   }
 });

@@ -1,24 +1,15 @@
 'use strict';
 
 /**
- * POST /api/webhooks/hubspot
+ * Webhook endpoints for Meta Lead Ads and WhatsApp Business.
  *
- * Receives HubSpot webhook events (contact.creation, contact.propertyChange,
- * deal.creation) and upserts them into the local leads table.
- *
- * Authentication: HubSpot signature v1 (HMAC-SHA256) — no user JWT.
- * The rawBody is attached by server.js via the express.json({ verify }) option.
- *
- * To register this webhook in HubSpot:
- *   HubSpot → Private App → Webhooks → Add subscription
- *   URL: https://<your-domain>/api/webhooks/hubspot
- *   Events: contact.creation, contact.propertyChange, deal.creation
+ * All incoming leads are stored directly in the leads table under
+ * WEBHOOK_ADMIN_USER_ID. No external CRM sync — the platform IS the CRM.
  */
 
 const express = require('express');
+const crypto = require('crypto');
 const { config } = require('../config/env');
-const hubspotService = require('../services/hubspot');
-const leadModel = require('../models/lead');
 const { pool: getPool, isAvailable } = require('../db');
 const { supabaseAdmin } = require('../config/supabase');
 const logger = require('../utils/logger');
@@ -28,114 +19,8 @@ const { webhookLimiter } = require('../middleware/rateLimiter');
 const router = express.Router();
 router.use(webhookLimiter);
 
-router.post('/hubspot', async (req, res) => {
-  // ── Signature verification ────────────────────────────────────────────────
-  const signature = req.headers['x-hubspot-signature'];
-  if (config.hubspotClientSecret) {
-    const rawBody = req.rawBody || '';
-    const valid = hubspotService.verifyWebhookSignature(
-      config.hubspotClientSecret,
-      rawBody,
-      signature,
-    );
-    if (!valid) {
-      logger.warn('HubSpot webhook: invalid signature', { signature });
-      return res.status(401).json({ error: 'Invalid signature' });
-    }
-  }
-
-  const events = Array.isArray(req.body) ? req.body : [req.body];
-  const processed = [];
-  const errors = [];
-
-  for (const event of events) {
-    try {
-      const { subscriptionType, objectId, portalId } = event;
-
-      // Only handle contact events for now
-      if (!subscriptionType?.startsWith('contact.')) {
-        processed.push({ objectId, skipped: true, reason: 'non-contact event' });
-        continue;
-      }
-
-      // Fetch full contact details from HubSpot (needs stored credential)
-      // If unavailable, fall back to the event payload properties
-      const eventProps = event.propertyValue
-        ? { email: event.propertyValue }
-        : {};
-
-      const leadData = {
-        name: eventProps.name || `HubSpot Contact ${objectId}`,
-        email: eventProps.email || '',
-        phone: eventProps.phone || '',
-        source: 'hubspot',
-        stage: 'lead',
-        revenue: 0,
-        notes: `HubSpot ID: ${objectId} | Portal: ${portalId} | Event: ${subscriptionType}`,
-      };
-
-      // Upsert into leads under the admin user (webhook-originated leads are tenant-scoped)
-      const webhookUserId = config.webhookAdminUserId;
-      if (webhookUserId && isAvailable()) {
-        await getPool.query(
-          `INSERT INTO leads (user_id, name, email, phone, source, stage, revenue, notes)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           ON CONFLICT DO NOTHING`,
-          [
-            webhookUserId,
-            leadData.name,
-            leadData.email,
-            leadData.phone,
-            leadData.source,
-            leadData.stage,
-            leadData.revenue,
-            leadData.notes,
-          ],
-        ).catch((dbErr) => logger.warn('hubspot webhook: DB insert failed', { error: dbErr.message }));
-      }
-
-      logger.info('HubSpot webhook event processed', { subscriptionType, objectId, portalId });
-      processed.push({ objectId, subscriptionType });
-    } catch (err) {
-      logger.error('HubSpot webhook event error', { error: err.message, event });
-      errors.push({ objectId: event.objectId, error: err.message });
-
-      // Dead-letter: write failed events to monitoring for visibility and replay
-      if (supabaseAdmin) {
-        supabaseAdmin
-          .schema('monitoring')
-          .from('operational_events')
-          .insert({
-            user_id: null,
-            event_type: 'webhook_dead_letter',
-            message: `HubSpot webhook event failed: ${err.message}`,
-            metadata: {
-              objectId: event.objectId,
-              subscriptionType: event.subscriptionType,
-              portalId: event.portalId,
-              error: err.message,
-            },
-          })
-          .then(() => {})
-          .catch((e) => logger.warn('webhook dead-letter write failed', { error: e.message }));
-      }
-    }
-  }
-
-  // If all events failed, signal the caller to retry after 60s
-  if (errors.length > 0 && processed.length === 0) {
-    res.setHeader('Retry-After', '60');
-    return res.status(503).json({ received: true, processed: 0, errors: errors.length, retryAfter: 60 });
-  }
-
-  res.json({ received: true, processed: processed.length, errors: errors.length });
-});
-
 // ─── Meta Lead Ads Webhook ──────────────────────────────────────────────────
 // Docs: https://developers.facebook.com/docs/marketing-api/guides/lead-ads/retrieving/
-
-const crypto = require('crypto');
-const metaService = require('../services/meta');
 
 /**
  * GET /api/webhooks/meta
@@ -200,13 +85,6 @@ router.post('/meta', async (req, res) => {
                ON CONFLICT DO NOTHING`,
               [webhookUserId, contactName, phone, `WA msg: ${text.substring(0, 500)}`],
             ).catch(dbErr => logger.warn('WA webhook: DB insert failed', { error: dbErr.message }));
-          }
-
-          // Sync to HubSpot
-          try {
-            await hubspotService.createContact(null, { phone, firstname: contactName.split(' ')[0], lastname: contactName.split(' ').slice(1).join(' ') || '', hs_lead_status: 'NEW', leadsource: 'SOCIAL_MEDIA' });
-          } catch (hsErr) {
-            logger.warn('WA webhook: HubSpot sync failed (non-fatal)', { phone, error: hsErr.message });
           }
         }
       }
@@ -275,21 +153,6 @@ router.post('/meta', async (req, res) => {
               leadData.notes,
             ],
           );
-        }
-
-        // ── Sync to HubSpot ────────────────────────────────────────────────
-        try {
-          await hubspotService.createContact(null, {
-            email: leadData.email || undefined,
-            firstname: leadData.name.split(' ')[0],
-            lastname: leadData.name.split(' ').slice(1).join(' ') || '',
-            phone: leadData.phone || undefined,
-            hs_lead_status: 'NEW',
-            leadsource: 'SOCIAL_MEDIA',
-          });
-          logger.info('Meta lead synced to HubSpot', { leadgen_id });
-        } catch (hsErr) {
-          logger.warn('Meta lead: HubSpot sync failed (non-fatal)', { leadgen_id, error: hsErr.message });
         }
 
         logger.info('Meta lead webhook processed', { leadgen_id, page_id });
