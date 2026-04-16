@@ -18,8 +18,13 @@
 - **Risk:** Current AES master key is a raw env var. In production, use a KMS (AWS KMS, Doppler, HashiCorp Vault).
 
 ### 3. Authorization (Row-Level Security)
-- **Status:** Application-level user ID filtering only.
-- **Required:** PostgreSQL Row Level Security policies enabled (included in migration). Verify user A cannot access user B's data with an explicit authorization test.
+- **Status:** ✅ RLS policies deployed (migration 005). `credentials` and `leads` deny anon + block authenticated writes. `integrations` scoped to owner. `dashboard_metrics` anon read removed (migration 006).
+- **Remaining:** Verify user A cannot access user B's data with an explicit authorization test. Consider penetration testing before go-live.
+
+### 3a. Git History — Leaked Identifiers
+- **Status:** `WHATSAPP_PHONE_NUMBER_ID=2786365854888664` was committed in `.env.example` before commit `bf1d4e9`. The value is removed from HEAD but recoverable from git history.
+- **Risk:** Low — it's a phone number ID (not an auth token), but it identifies the business WhatsApp account.
+- **Required:** If this repo becomes public, run `git filter-repo` or `BFG Repo-Cleaner` to purge the value. For private repos, rotate the WhatsApp phone number ID in the Meta Business dashboard if concerned.
 
 ### 4. Authentication
 - **Status:** JWT verification with 24h expiry. No refresh token. No revocation.
