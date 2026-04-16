@@ -98,6 +98,7 @@ app.use('/api/integrations', require('./routes/integrations'));
 app.use('/api/leads', require('./routes/leads'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/ai', require('./routes/ai'));
+app.use('/api/whatsapp', require('./routes/whatsapp'));
 app.use('/api/figma', require('./routes/figma'));
 app.use('/api/github', require('./routes/github'));
 app.use('/api/playbooks', require('./routes/playbooks'));
