@@ -64,7 +64,7 @@ app.get('/health', async (req, res) => {
       checks.pg = 'error';
     }
   } else {
-    checks.pg = 'unavailable';
+    checks.pg = 'in-memory';
   }
 
   // Supabase
@@ -120,6 +120,8 @@ app.use(errorHandler);
 if (require.main === module) {
   const server = app.listen(config.port, () => {
     logger.info(`RIP backend running on port ${config.port} [${config.nodeEnv}]`);
+    logger.info(`Database: ${isAvailable() ? 'PostgreSQL connected' : 'IN-MEMORY (data lost on restart) — set DATABASE_URL in .env'}`);
+    logger.info(`Supabase client: ${supabaseAdmin ? 'configured' : 'not configured — set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY'}`);
   });
 
   // ─── Graceful shutdown ────────────────────────────────────────────
