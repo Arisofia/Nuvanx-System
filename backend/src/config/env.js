@@ -70,6 +70,10 @@ const config = {
   whatsappAccessToken: process.env.WHATSAPP_ACCESS_TOKEN,
   whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
 
+  // Threads API
+  threadsAppId: process.env.THREADS_APP_ID || null,
+  threadsAppSecret: process.env.THREADS_APP_SECRET || null,
+
   // GitHub — server-level personal access token fallback (fine-grained or classic).
   // Checks GITHUB_PAT first (recommended naming to avoid collision with the built-in
   // GitHub Actions token), then GITHUB_TOKEN_CLASSIC, then GITHUB_TOKEN.
