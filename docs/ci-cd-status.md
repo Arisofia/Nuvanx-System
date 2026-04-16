@@ -46,7 +46,7 @@ Behavior:
 ## What Is Not Yet Enforced
 
 1. No automated DB migration test against a disposable/staging database.
-2. No integration test suite for external APIs (Meta/HubSpot/Google) with mocked network contracts.
+2. No integration test suite for external APIs (Meta/Google) with mocked network contracts.
 3. No deployment pipeline (build artifact -> deploy -> smoke test) in this repo.
 4. No required security scans (dependency audit/SAST/secrets) configured in workflows.
 

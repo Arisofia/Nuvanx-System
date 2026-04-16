@@ -36,7 +36,7 @@
 
 ### 6. GDPR / LOPD Compliance (Spain)
 - **Status:** No consent records, no erasure endpoint, no DPA with sub-processors.
-- **Required before handling any EU personal data:** Article 30 Records of Processing, data subject rights endpoints, DPAs with Google/Meta/OpenAI/HubSpot.
+- **Required before handling any EU personal data:** Article 30 Records of Processing, data subject rights endpoints, DPAs with Google/Meta/OpenAI.
 
 ### 7. HIPAA (if US clinics served)
 - **Status:** No audit controls, no integrity controls, no BAA.

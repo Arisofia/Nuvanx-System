@@ -20,10 +20,9 @@ Date: 2026-04-15
 
 ## External Blockers
 
-1. HubSpot production app approval and production credentials.
-2. Meta Graph API business verification plus high-risk scope approvals.
+1. Meta Graph API business verification plus high-risk scope approvals.
 
-These two blockers limit full bidirectional automation regardless of internal code quality.
+This blocker limits full bidirectional automation regardless of internal code quality.
 
 ## Readiness Delta (Honest)
 
@@ -31,7 +30,7 @@ Current system state is suitable for controlled operation with explicit limits. 
 
 ## Required Next Actions
 
-1. Complete Meta and HubSpot app review/approval tracks.
+1. Complete Meta app review/approval track.
 2. Implement resilient webhook ingestion pattern:
    - signed request verification
    - queued processing

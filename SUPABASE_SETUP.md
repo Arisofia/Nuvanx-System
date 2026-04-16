@@ -6,7 +6,7 @@
 ## ¿Por qué Supabase?
 
 En la arquitectura actual de Nuvanx, las credenciales reales de integraciones
-(HubSpot, Meta, Gmail, etc.) **no se almacenan en `localStorage` del navegador**.
+(Meta, Gmail, etc.) **no se almacenan en `localStorage` del navegador**.
 Se guardan en el **backend credential vault**, cifradas con **AES-256-GCM**.
 
 Supabase se utiliza para gestionar el **estado de la integración**, la **sesión** y
@@ -159,7 +159,7 @@ Si la configuración es correcta, en la consola del navegador **no verás** el a
 
 ## 🔒 Seguridad
 
-- Las credenciales de API (HubSpot, Meta, etc.) se cifran con **AES-256-GCM** antes de guardarse en Supabase.
+- Las credenciales de API (Meta, etc.) se cifran con **AES-256-GCM** antes de guardarse en Supabase.
 - La clave de cifrado reside en el servidor (variable `ENCRYPTION_KEY`) y nunca llega al navegador.
 - Supabase **Row Level Security (RLS)** está activado: cada usuario solo puede ver y modificar sus propios registros.
 - La clave `anon` del frontend solo puede acceder a registros del usuario autenticado (gracias a las políticas RLS).
