@@ -4,8 +4,8 @@
 
 .DESCRIPTION
   Reads backend/.env, filters to the deploy-critical secrets, and pushes
-  them to GitHub repo secrets via the gh CLI. Also handles the 5 CI/CD
-  deploy secrets (RENDER_*, VERCEL_*) which are prompted interactively
+  them to GitHub repo secrets via the gh CLI. Also handles the CI/CD
+  deploy secrets (RAILWAY_*, VERCEL_*) which are prompted interactively
   if not already in .env.
 
 .EXAMPLE
@@ -38,6 +38,7 @@ $INCLUDE = @(
     'JWT_SECRET'
     'ENCRYPTION_KEY'
     'DATABASE_URL'
+    'FRONTEND_URL'
     'SUPABASE_URL'
     'SUPABASE_ANON_KEY'
     'SUPABASE_SERVICE_ROLE_KEY'
@@ -64,11 +65,8 @@ $INCLUDE = @(
 
 # ── CI/CD deploy secrets (prompted if not in .env) ──────────────────────────
 $DEPLOY_SECRETS = @(
-    'RENDER_API_KEY'
-    'RENDER_SERVICE_ID'
-    'VERCEL_TOKEN'
-    'VERCEL_ORG_ID'
-    'VERCEL_PROJECT_ID'
+    'RAILWAY_TOKEN'
+    'RAILWAY_SERVICE_ID'
 )
 
 Write-Host "`n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan

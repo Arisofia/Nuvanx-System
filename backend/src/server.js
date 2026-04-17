@@ -85,6 +85,7 @@ app.get('/health', async (req, res) => {
     status: allOk ? 'ok' : 'degraded',
     timestamp: new Date().toISOString(),
     env: config.nodeEnv,
+    database: checks.pg === 'ok' ? 'postgres' : checks.pg,
     checks,
   });
 });

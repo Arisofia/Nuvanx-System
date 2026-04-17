@@ -16,10 +16,15 @@ router.use(authenticate);
 router.get('/metrics', async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const [leads, integrations] = await Promise.all([
+    const [leads, integrations, credentials] = await Promise.all([
       leadModel.findByUser(userId),
       integrationModel.getAll(userId),
+      credentialModel.listByUser(userId),
     ]);
+
+    // Cross-check: only count an integration as "connected" if a
+    // credential actually exists for that service.
+    const credentialServices = new Set(credentials.map((c) => c.service));
 
     const totalLeads = leads.length;
     const totalRevenue = leads.reduce((sum, l) => sum + (l.revenue || 0), 0);
@@ -36,7 +41,9 @@ router.get('/metrics', async (req, res, next) => {
       return acc;
     }, {});
 
-    const connectedIntegrations = integrations.filter((i) => i.status === 'connected').length;
+    const connectedIntegrations = integrations.filter(
+      (i) => i.status === 'connected' && credentialServices.has(i.service),
+    ).length;
 
     res.json({
       success: true,
