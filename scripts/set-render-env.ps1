@@ -33,7 +33,7 @@ $envVars = @(
     @{ key = "JWT_SECRET";              value = "4b8a484bc5f61ec5533b990fff657922dce43fccd21d7136cdbbfefdaa3ac9db" }
     @{ key = "ENCRYPTION_KEY";          value = "e04756b46dacf0e74233cf41a02103f27fdadcbd72c83153be7d7ec5e3ac46a9" }
     @{ key = "DATABASE_URL";            value = "postgresql://postgres.ssvvuuysgxyqvmovrlvk:n5SNU4AYoEmuJ6RXiVqMchLCxOWlwfeB@aws-1-eu-central-1.pooler.supabase.com:6543/postgres" }
-    @{ key = "FRONTEND_URL";            value = "https://frontend-gilt-rho-15.vercel.app,http://localhost:5173" }
+    @{ key = "FRONTEND_URL";            value = "https://frontend-beta-ten-49.vercel.app,https://frontend-arisofias-projects-c2217452.vercel.app,http://localhost:5173" }
     @{ key = "SUPABASE_URL";            value = "https://ssvvuuysgxyqvmovrlvk.supabase.co" }
     @{ key = "SUPABASE_ANON_KEY";       value = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzdnZ1dXlzZ3h5cXZtb3ZybHZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ2NTkwMTQsImV4cCI6MjA2MDIzNTAxNH0.qkCPMBzJfOu2HzCF6OkTz0RLKtSfnFaDXRnONpSbvJo" }
     @{ key = "SUPABASE_SERVICE_ROLE_KEY"; value = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzdnZ1dXlzZ3h5cXZtb3ZybHZrIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0NDY1OTAxNCwiZXhwIjoyMDYwMjM1MDE0fQ.X3BKBG3Gxljd29LMmZp3cGlKBnHNb8xSPJ7zUxJmjQw" }
