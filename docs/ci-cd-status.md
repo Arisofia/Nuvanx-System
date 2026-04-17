@@ -2,6 +2,14 @@
 
 Date: 2026-04-17
 
+## Platforms
+
+| Layer    | Platform | Trigger                     |
+|----------|----------|-----------------------------|
+| Backend  | **Render** (free tier) | Deploy hook after CI passes |
+| Frontend | **Vercel**             | Vercel CLI after CI passes  |
+| Database | **Supabase** (free tier) | Manual migrations           |
+
 ## Workflows
 
 ### 1. CI (`ci.yml`)
@@ -11,23 +19,52 @@ Trigger:
 - Pull request to `main`
 
 Jobs:
-- `backend`: Node setup → `npm ci` → `npm test` (86 tests)
+- `backend`: Node setup → `npm ci` → `npm test`
 - `frontend-lint`: ESLint check
 - `frontend`: Node setup → `npm ci` → `npm run build`
 
 ### 2. Deploy (`deploy.yml`)
 
-Trigger: Runs after CI passes on `main` (workflow_run)
+Trigger: Runs after CI passes on `main` (`workflow_run` with `conclusion == 'success'`)
 
 Jobs:
-- `deploy-backend`: Deploys backend to **Render** via Render deploy hook URL
-- `deploy-frontend`: Deploys frontend to **Vercel** via Vercel CLI
+- `deploy-backend`: Triggers **Render** deploy via deploy hook URL
+- `deploy-frontend`: Deploys frontend to **Vercel** via Vercel CLI (`vercel deploy --prod`)
 
-Required GitHub secrets:
-- `RENDER_DEPLOY_HOOK_URL` — Render service deploy hook (Render Dashboard → Service → Settings → Deploy Hook)
-- `VERCEL_TOKEN` — Vercel personal access token (Vercel → Account Settings → Tokens)
-- `VERCEL_ORG_ID` — Vercel team ID 
-- `VERCEL_PROJECT_ID` — Vercel project ID (Vercel → Project → Settings → General)
+### Required GitHub Secrets
+
+| Secret                 | Used by          | Description                                      |
+|------------------------|------------------|--------------------------------------------------|
+| `RENDER_DEPLOY_HOOK_URL` | `deploy-backend` | Render deploy hook URL (Dashboard → Service → Settings → Deploy Hook) |
+| `VERCEL_TOKEN`         | `deploy-frontend` | Vercel personal access token                     |
+| `VERCEL_ORG_ID`        | `deploy-frontend` | Vercel team/org ID                               |
+| `VERCEL_PROJECT_ID`    | `deploy-frontend` | Vercel project ID (from `.vercel/project.json`)  |
+
+### Required Production Environment Variables
+
+**Render backend:**
+
+| Variable                     | Description                          |
+|------------------------------|--------------------------------------|
+| `NODE_ENV`                   | `production`                         |
+| `PORT`                       | Port (Render sets automatically)     |
+| `JWT_SECRET`                 | JWT signing secret (≥32 chars)       |
+| `ENCRYPTION_KEY`             | AES encryption key (≥32 chars)       |
+| `SUPABASE_URL`               | Supabase project URL (nuvanx-prod)   |
+| `SUPABASE_ANON_KEY`          | Supabase anon key                    |
+| `SUPABASE_SERVICE_ROLE_KEY`  | Supabase service-role key            |
+| `SUPABASE_FIGMA_URL`         | Supabase Figma project URL           |
+| `SUPABASE_FIGMA_ANON_KEY`    | Supabase Figma anon key              |
+| `SUPABASE_FIGMA_SERVICE_ROLE`| Supabase Figma service-role key      |
+| `DATABASE_URL`               | Pooler connection string             |
+
+**Vercel frontend (environment variables in Vercel dashboard):**
+
+| Variable                     | Description                          |
+|------------------------------|--------------------------------------|
+| `VITE_API_URL`               | Backend API base URL (Render URL)    |
+| `VITE_SUPABASE_URL`          | Supabase project URL                 |
+| `VITE_SUPABASE_ANON_KEY`     | Supabase anon key (public)           |
 
 ## What Is Enforced
 
@@ -36,25 +73,6 @@ Required GitHub secrets:
 3. Frontend build validity before merge.
 4. Automatic backend deployment to Render on successful CI.
 5. Automatic frontend deployment to Vercel on successful CI.
-
-## Required Production Environment Variables
-
-### Backend (set in Render dashboard)
-- `NODE_ENV=production`
-- `PORT=10000`
-- `JWT_SECRET` — minimum 32 characters
-- `ENCRYPTION_KEY` — minimum 32 characters
-- `DATABASE_URL` or `SUPABASE_DATABASE_KEY` — either one satisfies the production database requirement; set it to the Supabase PostgreSQL connection string
-- `FRONTEND_URL` — deployed Vercel URL (e.g. `https://nuvanx.vercel.app`)
-- `SUPABASE_URL` — Supabase project URL
-- `SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `SUPABASE_JWT_SECRET` — enables backend to accept Supabase access tokens
-
-### Frontend (set in Vercel dashboard → Project → Settings → Environment Variables)
-- `VITE_API_URL` — Render backend URL (e.g. `https://nuvanx-backend.onrender.com`)
-- `VITE_SUPABASE_URL` — Supabase project URL
-- `VITE_SUPABASE_ANON_KEY`
 
 ## Not Yet Enforced
 
