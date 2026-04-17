@@ -1,6 +1,5 @@
 -- =============================================================================
 -- Supabase migration: Create clinics table + FK from users.clinic_id
--- Mirrors backend/src/db/migrations/011_clinics.sql
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS clinics (
