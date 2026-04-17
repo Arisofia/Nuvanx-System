@@ -34,7 +34,7 @@ jobs:
     steps:
       - name: Trigger Render deploy
         env:
-          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+          RENDER_DEPLOY_HOOK_URL: "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
         run: |
           if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
             echo "::warning::RENDER_DEPLOY_HOOK_URL secret is not set — skipping deploy."
@@ -76,9 +76,9 @@ jobs:
 
       - name: Deploy to Vercel
         env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TOKEN: "${{ secrets.VERCEL_TOKEN }}"
+          VERCEL_ORG_ID: "${{ secrets.VERCEL_ORG_ID }}"
+          VERCEL_PROJECT_ID: "${{ secrets.VERCEL_PROJECT_ID }}"
         run: |
           if [ -z "$VERCEL_TOKEN" ]; then
             echo "::warning::VERCEL_TOKEN secret is not set — skipping frontend deploy."
