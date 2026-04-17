@@ -18,6 +18,17 @@ jest.mock('../src/services/meta', () => ({
   getAdInsights: jest.fn(),
 }));
 
+// Lead model no longer has in-memory fallback — mock it for unit tests
+jest.mock('../src/models/lead', () => ({
+  STAGES: ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'],
+  findByUser: jest.fn().mockResolvedValue([]),
+  findById: jest.fn().mockResolvedValue(null),
+  create: jest.fn().mockResolvedValue(null),
+  update: jest.fn().mockResolvedValue(null),
+  remove: jest.fn().mockResolvedValue(false),
+  findOrMerge: jest.fn().mockResolvedValue({ lead: null, merged: false }),
+}));
+
 const app = require('../src/server');
 
 const TEST_USER = { id: 'dash-test-user-001', email: 'dash@nuvanx.com', name: 'Dash Tester' };
