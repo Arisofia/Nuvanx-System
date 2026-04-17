@@ -15,7 +15,5 @@
     "supabase:migration:push": "supabase db push",
     "supabase:types": "supabase gen types typescript --schema public > frontend/src/lib/supabase/types.ts",
     "supabase:figma:migration:push": "node scripts/apply-figma-migrations.js"
-  },
-  "devDependencies": {
   }
 }
