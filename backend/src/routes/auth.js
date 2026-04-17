@@ -50,13 +50,23 @@ async function dbFindByEmail(email) {
 
 async function dbCreateUser({ email, name, passwordHash }) {
   const id = uuidv4();
-  const { rows } = await pool.query(
-    `INSERT INTO users (id, email, name, password_hash)
-     VALUES ($1, $2, $3, $4)
-     RETURNING id, email, name, password_hash`,
-    [id, email, name, passwordHash],
-  );
-  return normalizeUserRow(rows[0]);
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO users (id, email, name, password_hash)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, email, name, password_hash`,
+      [id, email, name, passwordHash],
+    );
+    return normalizeUserRow(rows[0]);
+  } catch (err) {
+    // Postgres unique_violation — race condition between findByEmail and INSERT
+    if (err.code === '23505') {
+      const e = new Error('Email already registered');
+      e.status = 409;
+      throw e;
+    }
+    throw err;
+  }
 }
 
 function memoryFindByEmail(email) {
@@ -89,7 +99,15 @@ router.post('/register', authLimiter, authRegisterRules, handleValidationErrors,
     }
 
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
-    const user = await createUser({ email, name, passwordHash });
+    let user;
+    try {
+      user = await createUser({ email, name, passwordHash });
+    } catch (err) {
+      if (err.status === 409) {
+        return res.status(409).json({ success: false, message: 'Email already registered' });
+      }
+      throw err;
+    }
 
     logger.info('User registered', { userId: user.id, email, storage: dbReady ? 'db' : 'memory' });
     return issueTokenAndResponse(res, user, 201);
@@ -131,9 +149,46 @@ router.get('/me', require('../middleware/auth').authenticate, (req, res) => {
 
 // ─── Password reset ─────────────────────────────────────────────────────────
 
-// In-memory reset-token store (maps token → { email, expiresAt }).
-// In production with multiple replicas, replace this with a DB table or Redis.
-const resetTokens = new Map();
+// In-memory fallback for reset tokens (used when DB is unavailable).
+const memoryResetTokens = new Map();
+
+// DB-backed token helpers — use the users table's reset columns when available,
+// otherwise fall back to the in-memory Map.
+async function storeResetToken(email, token, expiresAt) {
+  if (isAvailable()) {
+    await pool.query(
+      `UPDATE users SET reset_token = $1, reset_token_expires = $2 WHERE email = $3`,
+      [token, new Date(expiresAt).toISOString(), email],
+    );
+  } else {
+    memoryResetTokens.set(token, { email, expiresAt });
+  }
+}
+
+async function findResetToken(token) {
+  if (isAvailable()) {
+    const { rows } = await pool.query(
+      `SELECT email, reset_token_expires FROM users WHERE reset_token = $1`,
+      [token],
+    );
+    if (!rows[0]) return null;
+    const expiresAt = new Date(rows[0].reset_token_expires).getTime();
+    if (Date.now() > expiresAt) {
+      await pool.query(`UPDATE users SET reset_token = NULL, reset_token_expires = NULL WHERE reset_token = $1`, [token]);
+      return null;
+    }
+    return { email: rows[0].email, expiresAt };
+  }
+  return memoryResetTokens.get(token) || null;
+}
+
+async function clearResetToken(token, email) {
+  if (isAvailable()) {
+    await pool.query(`UPDATE users SET reset_token = NULL, reset_token_expires = NULL WHERE email = $1`, [email]);
+  } else {
+    memoryResetTokens.delete(token);
+  }
+}
 
 /**
  * POST /api/auth/forgot-password
@@ -161,7 +216,7 @@ router.post('/forgot-password', authLimiter, async (req, res, next) => {
 
     if (user) {
       const token = crypto.randomBytes(32).toString('hex');
-      resetTokens.set(token, { email, expiresAt: Date.now() + 3600000 }); // 1h
+      await storeResetToken(email, token, Date.now() + 3600000); // 1h
       logger.info('Password reset token generated', { email });
 
       await sendPasswordResetEmail(email, token);
@@ -192,9 +247,8 @@ router.post('/reset-password', authLimiter, async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Password must be at least 8 characters.' });
     }
 
-    const entry = resetTokens.get(token);
-    if (!entry || Date.now() > entry.expiresAt) {
-      resetTokens.delete(token);
+    const entry = await findResetToken(token);
+    if (!entry) {
       return res.status(400).json({ success: false, message: 'Invalid or expired reset token.' });
     }
 
@@ -221,7 +275,7 @@ router.post('/reset-password', authLimiter, async (req, res, next) => {
       user.passwordHash = passwordHash;
     }
 
-    resetTokens.delete(token);
+    await clearResetToken(token, entry.email);
     logger.info('Password reset completed', { email: entry.email });
     return res.json({ success: true, message: 'Password updated successfully.' });
   } catch (err) {
