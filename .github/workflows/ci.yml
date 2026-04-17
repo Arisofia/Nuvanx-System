@@ -102,4 +102,4 @@ jobs:
           NODE_ENV: production
           VITE_SUPABASE_URL: http://localhost:54321
           VITE_SUPABASE_ANON_KEY: ci-supabase-anon-key-placeholder-32-chars
-          VITE_BACKEND_URL: http://localhost:3001
+          VITE_API_URL: http://localhost:3001
