@@ -30,5 +30,17 @@ jobs:
     if: github.event.workflow_run.conclusion == 'success'
     steps:
       - name: Trigger Render deploy
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
-          curl -s -o /dev/null -w "%{http_code}" "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "::warning::RENDER_DEPLOY_HOOK_URL secret is not set — skipping deploy."
+            echo "Set it in GitHub → Settings → Secrets → Actions."
+            exit 0
+          fi
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$RENDER_DEPLOY_HOOK_URL")
+          echo "Render responded with HTTP $STATUS"
+          if [ "$STATUS" -lt 200 ] || [ "$STATUS" -ge 400 ]; then
+            echo "::error::Render deploy hook returned HTTP $STATUS"
+            exit 1
+          fi
