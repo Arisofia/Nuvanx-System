@@ -39,8 +39,18 @@ jobs:
     steps:
       - name: Trigger Render deploy
         run: |
-          curl -s -o /dev/null -w "%{http_code}" "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+          render_hook_url="${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+          http_code="$(curl --silent --show-error --fail-with-body --output /dev/null --write-out "%{http_code}" "$render_hook_url")"
 
+          case "$http_code" in
+            2*)
+              echo "Render deploy hook accepted (HTTP $http_code)"
+              ;;
+            *)
+              echo "Render deploy hook returned unexpected HTTP status: $http_code" >&2
+              exit 1
+              ;;
+          esac
   # ─── Frontend → Vercel ─────────────────────────────────────────────────────
   deploy-frontend:
     name: Deploy frontend to Vercel
