@@ -29,8 +29,8 @@ export default function AILayer() {
   const [aiAvailable, setAiAvailable] = useState(null); // null = checking, true/false = result
   const [aiProvider, setAiProvider] = useState(null);
 
-  const { loading: generating, post: postGenerate } = useApi();
-  const { loading: analyzing, post: postAnalyze } = useApi();
+  const { loading: generating, post: postGenerate } = useApi(),
+    { loading: analyzing, post: postAnalyze } = useApi();
 
   // Check AI key availability on mount
   useEffect(() => {
@@ -42,7 +42,7 @@ export default function AILayer() {
       .catch(() => setAiAvailable(false));
   }, []);
 
-  async function handleGenerate() {
+  const handleGenerate = async () => {
     if (!prompt.trim()) {
       toast.error('Please enter a prompt first');
       return;
@@ -58,9 +58,9 @@ export default function AILayer() {
       console.error('AI generation error:', err);
       toast.error(msg);
     }
-  }
+  };
 
-  async function handleAnalyze() {
+  const handleAnalyze = async () => {
     if (!campaignData.trim()) {
       toast.error('Please paste your campaign data first');
       return;
@@ -76,14 +76,14 @@ export default function AILayer() {
       console.error('AI analysis error:', err);
       toast.error(msg);
     }
-  }
+  };
 
-  function handleCopy() {
+  const handleCopy = () => {
     navigator.clipboard.writeText(result);
     setCopied(true);
     toast.success('Copied to clipboard!');
     setTimeout(() => setCopied(false), 2000);
-  }
+  };
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">

@@ -46,7 +46,7 @@ export default function Playbooks() {
   const categories = ['All', ...Array.from(new Set(playbooks.map(p => p.category)))];
   const filtered = filter === 'All' ? playbooks : playbooks.filter(p => p.category === filter);
 
-  async function handleRun(pb) {
+  const handleRun = async (pb) => {
     if (pb.status === 'draft') {
       toast('This playbook is in draft. Activate it first.', { icon: '📝' });
       return;
@@ -67,7 +67,7 @@ export default function Playbooks() {
     } finally {
       setRunning(null);
     }
-  }
+  };
 
   const totalRuns = playbooks.reduce((a, p) => a + p.runs, 0);
   const activeCount = playbooks.filter(p => p.status === 'active').length;

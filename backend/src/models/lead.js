@@ -229,4 +229,54 @@ async function remove(id, userId) {
   return true;
 }
 
-module.exports = { create, findByUser, findById, update, remove, STAGES };
+/**
+ * Find an existing lead by phone or email and merge new data, or create.
+ * Used by webhook handlers to avoid duplicate leads while enriching data.
+ * @returns {{ lead: object, merged: boolean }}
+ */
+async function findOrMerge(userId, data) {
+  if (!isAvailable()) {
+    const lead = await create(userId, data);
+    return { lead, merged: false };
+  }
+
+  const phone = (data.phone || '').trim();
+  const email = (data.email || '').trim().toLowerCase();
+
+  let existing = null;
+  if (phone) {
+    const { rows } = await getPool.query(
+      'SELECT * FROM leads WHERE user_id = $1 AND phone = $2 LIMIT 1',
+      [userId, phone]
+    );
+    existing = rows[0] || null;
+  }
+  if (!existing && email) {
+    const { rows } = await getPool.query(
+      'SELECT * FROM leads WHERE user_id = $1 AND LOWER(email) = $2 LIMIT 1',
+      [userId, email]
+    );
+    existing = rows[0] || null;
+  }
+
+  if (existing) {
+    // Merge: fill empty fields, never downgrade stage or overwrite notes
+    const mergeFields = {};
+    if (!existing.name && data.name) mergeFields.name = data.name;
+    if (!existing.email && data.email) mergeFields.email = data.email;
+    if (!existing.phone && data.phone) mergeFields.phone = data.phone;
+    if (data.source && existing.source === 'manual') mergeFields.source = data.source;
+
+    if (Object.keys(mergeFields).length > 0) {
+      const updated = await update(existing.id, userId, mergeFields);
+      logger.info('Lead merged with existing', { userId, leadId: existing.id, mergeFields });
+      return { lead: updated || _rowToLead(existing), merged: true };
+    }
+    return { lead: _rowToLead(existing), merged: true };
+  }
+
+  const lead = await create(userId, data);
+  return { lead, merged: false };
+}
+
+module.exports = { create, findByUser, findById, update, remove, findOrMerge, STAGES };

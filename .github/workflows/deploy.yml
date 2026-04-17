@@ -1,0 +1,74 @@
+###############################################################################
+# Deploy — runs after CI passes on main
+# Deploys backend to Render and frontend to Vercel.
+#
+# Required secrets (set in GitHub → Settings → Secrets):
+#   RENDER_API_KEY     — Render API key (Account Settings → API Keys)
+#   RENDER_SERVICE_ID  — Render backend service ID (srv-xxx)
+#   VERCEL_TOKEN       — Vercel personal access token
+#   VERCEL_ORG_ID      — Vercel team/org ID
+#   VERCEL_PROJECT_ID  — Vercel project ID (for frontend)
+###############################################################################
+
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  # ─── Backend → Render ──────────────────────────────────────────────────────
+  deploy-backend:
+    name: Deploy backend to Render
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Trigger Render deploy
+        run: |
+          curl -sf "https://api.render.com/deploy/srv-${{ secrets.RENDER_SERVICE_ID }}?key=${{ secrets.RENDER_API_KEY }}" \
+            || echo "::warning::Render deploy trigger returned non-zero. Check Render dashboard."
+
+  # ─── Frontend → Vercel ─────────────────────────────────────────────────────
+  deploy-frontend:
+    name: Deploy frontend to Vercel
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4.1.0
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Pull Vercel project settings
+        working-directory: frontend
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Build
+        working-directory: frontend
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Deploy
+        working-directory: frontend
+        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
