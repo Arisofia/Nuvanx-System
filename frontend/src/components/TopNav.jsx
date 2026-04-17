@@ -5,7 +5,7 @@ const pageTitles = {
   '/dashboard': 'Dashboard',
   '/live': 'Operational Snapshot',
   '/crm': 'CRM & Lead Pipeline',
-  '/operativo': 'Operativo (Playbooks)',
+  '/operativo': 'Playbooks',
   '/integrations': 'Integrations',
   '/ai': 'AI Layer',
 };

@@ -21,13 +21,17 @@ router.use(authenticate);
  * Resolve a credential for the given service (async).
  * Priority: per-user vault → server-level env var defaults.
  *
- * WARNING: In production with multiple users, falling back to a shared env var
- * credential means all users share the same API key. Set per-user credentials
- * via the vault to avoid unintended cost attribution or access issues.
+ * The env-var fallback is gated by config.allowSharedCredentials (default true).
+ * In production multi-tenant deployments, set ALLOW_SHARED_CREDENTIALS=false
+ * to force every user to store their own key in the vault.
  */
 async function resolveCredential(userId, service) {
   const stored = await credentialModel.getDecryptedKey(userId, service);
   if (stored) return stored;
+
+  if (!config.allowSharedCredentials) {
+    return null;
+  }
 
   // Env-var fallbacks keyed by service name
   const envDefaults = {

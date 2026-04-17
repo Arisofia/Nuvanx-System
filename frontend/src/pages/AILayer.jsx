@@ -213,7 +213,7 @@ export default function AILayer() {
             <textarea
               value={campaignData}
               onChange={e => setCampaignData(e.target.value)}
-              placeholder={`Paste your campaign metrics here...\n\nExample:\nCampaign: Spring Aesthetics\nBudget: $2,400\nImpressions: 45,200\nClicks: 1,440 (3.2% CTR)\nLeads: 89\nCost per lead: $26.97\nAppointments: 34\nConversions: 12\nRevenue: $8,400`}
+              placeholder={'Paste your campaign metrics here (budget, impressions, clicks, leads, conversions, revenue).\nThe AI will analyze performance and suggest optimizations.'}
               className="input min-h-[180px] resize-none leading-relaxed font-mono text-xs"
             />
           </div>

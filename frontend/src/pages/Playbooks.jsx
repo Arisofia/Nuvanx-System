@@ -35,7 +35,7 @@ export default function Playbooks() {
       const res = await api.get('/api/playbooks');
       setPlaybooks(res.data.playbooks || []);
     } catch (err) {
-      setError(err.response?.data?.message || 'Error al cargar los playbooks');
+      setError(err.response?.data?.message || 'Error loading playbooks');
     } finally {
       setLoading(false);
     }
@@ -48,13 +48,13 @@ export default function Playbooks() {
 
   async function handleRun(pb) {
     if (pb.status === 'draft') {
-      toast('Este playbook está en borrador. Actívalo primero.', { icon: '📝' });
+      toast('This playbook is in draft. Activate it first.', { icon: '📝' });
       return;
     }
     setRunning(pb.slug);
     try {
       const res = await api.post(`/api/playbooks/${pb.slug}/run`);
-      toast.success(`"${pb.title}" ejecutado correctamente`);
+      toast.success(`"${pb.title}" executed successfully`);
       // Update run count locally without a full refetch
       setPlaybooks(prev => prev.map(p =>
         p.slug === pb.slug
@@ -62,7 +62,7 @@ export default function Playbooks() {
           : p
       ));
     } catch (err) {
-      const msg = err.response?.data?.message || 'Error al ejecutar el playbook';
+      const msg = err.response?.data?.message || 'Error running playbook';
       toast.error(msg);
     } finally {
       setRunning(null);
@@ -79,10 +79,10 @@ export default function Playbooks() {
           <div className="flex items-start gap-3">
             <AlertCircle className="text-red-400 shrink-0 mt-0.5" size={20} />
             <div>
-              <h3 className="font-semibold text-white">Error cargando Operativo</h3>
+              <h3 className="font-semibold text-white">Error loading Playbooks</h3>
               <p className="text-sm text-gray-300 mt-1">{error}</p>
               <button onClick={fetchPlaybooks} className="btn-secondary text-sm mt-3">
-                <RefreshCw size={14} /> Reintentar
+                <RefreshCw size={14} /> Retry
               </button>
             </div>
           </div>
@@ -95,8 +95,8 @@ export default function Playbooks() {
     <div className="space-y-6 max-w-7xl mx-auto">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h2 className="text-2xl font-bold text-white">Operativo</h2>
-          <p className="text-gray-400 mt-0.5">Automatizaciones de negocio. Los contadores de ejecución son reales y persisten en base de datos.</p>
+          <h2 className="text-2xl font-bold text-white">Playbooks</h2>
+          <p className="text-gray-400 mt-0.5">Business automations. Run counters are real and persisted in the database.</p>
         </div>
         <button
           onClick={fetchPlaybooks}
@@ -104,7 +104,7 @@ export default function Playbooks() {
           className="btn-secondary flex items-center gap-2 text-sm"
         >
           {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-          Actualizar
+          Refresh
         </button>
       </div>
 
@@ -112,8 +112,8 @@ export default function Playbooks() {
       <div className="grid grid-cols-3 gap-4">
         {[
           { label: 'Playbooks', value: loading ? '—' : playbooks.length },
-          { label: 'Activos', value: loading ? '—' : activeCount },
-          { label: 'Ejecuciones totales', value: loading ? '—' : totalRuns },
+          { label: 'Active', value: loading ? '—' : activeCount },
+          { label: 'Total Runs', value: loading ? '—' : totalRuns },
         ].map(s => (
           <div key={s.label} className="card text-center py-4">
             <p className="text-2xl font-bold text-white">{s.value}</p>
@@ -152,7 +152,7 @@ export default function Playbooks() {
       {!loading && filtered.length === 0 && (
         <div className="card text-center py-16">
           <AlertCircle size={32} className="mx-auto mb-3 text-gray-600" />
-          <p className="text-gray-400 font-medium">Sin playbooks en esta categoría</p>
+          <p className="text-gray-400 font-medium">No playbooks in this category</p>
         </div>
       )}
 
