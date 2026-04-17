@@ -8,7 +8,7 @@ const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const app = require('../src/server');
 
-const TEST_USER = { id: 'leads-test-user-001', email: 'leads@example.com', name: 'Leads Tester' };
+const TEST_USER = { id: 'leads-test-user-001', email: 'leads@nuvanx.com', name: 'Leads Tester' };
 const authToken = jwt.sign(TEST_USER, process.env.JWT_SECRET, { expiresIn: '1h' });
 const authHeader = `Bearer ${authToken}`;
 
@@ -37,7 +37,7 @@ describe('Leads API', () => {
       .set('Authorization', authHeader)
       .send({
         name: 'Test Lead Garcia',
-        email: 'testlead@example.com',
+        email: 'testlead@nuvanx.com',
         phone: '+34 612 345 678',
         source: 'manual',
         stage: 'lead',

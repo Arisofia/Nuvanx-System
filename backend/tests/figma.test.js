@@ -14,7 +14,7 @@ const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const app = require('../src/server');
 
-const TEST_USER = { id: 'figma-test-user-001', email: 'figma@example.com', name: 'Figma Tester' };
+const TEST_USER = { id: 'figma-test-user-001', email: 'figma@nuvanx.com', name: 'Figma Tester' };
 const authToken = jwt.sign(TEST_USER, process.env.JWT_SECRET, { expiresIn: '1h' });
 const authHeader = `Bearer ${authToken}`;
 

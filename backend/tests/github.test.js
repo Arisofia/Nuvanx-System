@@ -45,7 +45,7 @@ jest.mock('../src/services/github', () => ({
 
 const app = require('../src/server');
 
-const TEST_USER = { id: 'github-test-user-001', email: 'gh@example.com', name: 'GH Tester' };
+const TEST_USER = { id: 'github-test-user-001', email: 'gh@nuvanx.com', name: 'GH Tester' };
 const authToken = jwt.sign(TEST_USER, process.env.JWT_SECRET, { expiresIn: '1h' });
 const authHeader = `Bearer ${authToken}`;
 

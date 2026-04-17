@@ -20,7 +20,7 @@ jest.mock('../src/services/meta', () => ({
 
 const app = require('../src/server');
 
-const TEST_USER = { id: 'dash-test-user-001', email: 'dash@example.com', name: 'Dash Tester' };
+const TEST_USER = { id: 'dash-test-user-001', email: 'dash@nuvanx.com', name: 'Dash Tester' };
 const authToken = jwt.sign(TEST_USER, process.env.JWT_SECRET, { expiresIn: '1h' });
 const authHeader = `Bearer ${authToken}`;
 

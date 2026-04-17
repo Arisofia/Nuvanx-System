@@ -30,6 +30,9 @@ if (config.sentryDsn) {
 
 const app = express();
 
+// Trust first proxy (Railway / Render / Vercel reverse proxy)
+app.set('trust proxy', 1);
+
 // ─── Security middleware ────────────────────────────────────────────────────
 app.use(helmet());
 app.use(

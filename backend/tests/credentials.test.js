@@ -8,7 +8,7 @@ const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const app = require('../src/server');
 
-const TEST_USER = { id: 'user-001', email: 'test@example.com', name: 'Test User' };
+const TEST_USER = { id: 'user-001', email: 'test@nuvanx.com', name: 'Test User' };
 const authToken = jwt.sign(TEST_USER, process.env.JWT_SECRET, { expiresIn: '1h' });
 const authHeader = `Bearer ${authToken}`;
 

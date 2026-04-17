@@ -29,7 +29,7 @@ jest.mock('../src/services/whatsapp', () => ({
 
 const app = require('../src/server');
 
-const TEST_USER = { id: 'integration-user-001', email: 'int@example.com', name: 'Integration Tester' };
+const TEST_USER = { id: 'integration-user-001', email: 'int@nuvanx.com', name: 'Integration Tester' };
 const authToken = jwt.sign(TEST_USER, process.env.JWT_SECRET, { expiresIn: '1h' });
 const authHeader = `Bearer ${authToken}`;
 

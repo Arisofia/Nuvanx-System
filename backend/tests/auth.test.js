@@ -8,7 +8,7 @@ const request = require('supertest');
 const jwt = require('jsonwebtoken');
 
 const SUPABASE_TEST_SECRET = 'supabase-test-secret-32-chars-min!';
-const TEST_USER = { id: 'user-001', email: 'test@example.com', name: 'Test User' };
+const TEST_USER = { id: 'user-001', email: 'test@nuvanx.com', name: 'Test User' };
 
 describe('Auth middleware — custom JWT', () => {
   let app;
@@ -71,7 +71,7 @@ describe('Auth middleware — Supabase JWT', () => {
     // Supabase tokens use "sub" for the user UUID
     const payload = {
       sub: 'supabase-user-uuid-001',
-      email: 'sb@example.com',
+      email: 'sb@nuvanx.com',
       user_metadata: { name: 'Supabase User' },
       aud: 'authenticated',
       role: 'authenticated',
@@ -92,7 +92,7 @@ describe('Auth middleware — Supabase JWT', () => {
   });
 
   test('expired Supabase JWT returns 401 with "Token expired"', async () => {
-    const payload = { sub: 'supabase-user-uuid-002', email: 'exp@example.com' };
+    const payload = { sub: 'supabase-user-uuid-002', email: 'exp@nuvanx.com' };
     const token = jwt.sign(payload, SUPABASE_TEST_SECRET, { expiresIn: -1 });
     const res = await request(app)
       .get('/api/integrations')
@@ -102,7 +102,7 @@ describe('Auth middleware — Supabase JWT', () => {
   });
 
   test('Supabase JWT signed with wrong secret returns 401', async () => {
-    const payload = { sub: 'supabase-user-uuid-003', email: 'bad@example.com' };
+    const payload = { sub: 'supabase-user-uuid-003', email: 'bad@nuvanx.com' };
     const token = jwt.sign(payload, 'wrong-supabase-secret-32-chars!!!', { expiresIn: '1h' });
     const res = await request(app)
       .get('/api/integrations')
