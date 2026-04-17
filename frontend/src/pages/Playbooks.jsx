@@ -201,7 +201,7 @@ export default function Playbooks() {
                 <div className="flex items-center justify-between pt-3 border-t border-dark-600 mt-auto">
                   <div className="flex gap-4 text-xs text-gray-500">
                     <span className="flex items-center gap-1">
-                      <Clock size={12} /> {pb.runs} ejecuciones
+                      <Clock size={12} /> {pb.runs} runs
                     </span>
                     {pb.successRate !== null && (
                       <span className="flex items-center gap-1">
@@ -219,7 +219,7 @@ export default function Playbooks() {
                     }`}
                   >
                     {isRunning ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
-                    {isRunning ? 'Ejecutando...' : 'Run Playbook'}
+                    {isRunning ? 'Running...' : 'Run Playbook'}
                   </button>
                 </div>
               </div>
