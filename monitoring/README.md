@@ -64,7 +64,5 @@ curl http://localhost:12345/metrics | head -5
 
 ## ⚠️ Security reminder
 
-The `glsa_*` token in `.env` was found in plaintext in  
-`/Users/MARIA/Downloads/cedar-league-465204-j0-a477171afb68.json`  
-alongside Google Cloud, OpenAI, Anthropic, GitHub, and other credentials.  
-**Rotate all tokens in that file** — see the alert raised during this session.
+Never commit Grafana tokens or Supabase service-role keys to the repository.
+All secrets should live in `backend/.env` (gitignored) and in GitHub Actions secrets.

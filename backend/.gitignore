@@ -1,7 +1,0 @@
-node_modules/
-.env
-*.log
-coverage/
-dist/
-google-service-account.json
-*.json.key
