@@ -35,9 +35,16 @@ app.set('trust proxy', 1);
 
 // ─── Security middleware ────────────────────────────────────────────────────
 app.use(helmet());
+
+// Support comma-separated FRONTEND_URL for multiple allowed origins
+// e.g. "https://nuvanx.vercel.app,https://nuvanx-preview.vercel.app"
+const allowedOrigins = config.frontendUrl
+  ? config.frontendUrl.split(',').map((o) => o.trim()).filter(Boolean)
+  : [];
+
 app.use(
   cors({
-    origin: config.frontendUrl,
+    origin: allowedOrigins.length === 1 ? allowedOrigins[0] : allowedOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
