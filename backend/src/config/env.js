@@ -83,6 +83,11 @@ const config = {
   resendApiKey: process.env.RESEND_API_KEY || null,
   emailFrom: process.env.EMAIL_FROM || 'Nuvanx <noreply@nuvanx.com>',
 
+  // Google Calendar API — OAuth2 credentials for booking appointments
+  googleClientId: process.env.GOOGLE_CLIENT_ID || null,
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || null,
+  googleRedirectUri: process.env.GOOGLE_REDIRECT_URI || null,
+
   // Allow falling back to server-level env var credentials when a user has
   // no per-user vault credential.  Safe for single-tenant; set to 'false'
   // in production multi-tenant to enforce per-user vault credentials.

@@ -79,6 +79,9 @@ Set these on your hosting platform (Render, Vercel) and in `.env` for local dev.
 | `WEBHOOK_ADMIN_USER_ID` | UUID of admin user who receives webhook-originated leads |
 | `ALLOW_SHARED_CREDENTIALS` | `true` (single-tenant) or `false` (multi-tenant) |
 | `FRONTEND_URL` | Frontend origin for CORS (default: `http://localhost:5173`) |
+| `GOOGLE_CLIENT_ID` | Google OAuth2 client ID (for Calendar integration) |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth2 client secret |
+| `GOOGLE_REDIRECT_URI` | OAuth2 redirect URI (e.g., `https://YOUR_BACKEND_URL/api/google-calendar/callback`) |
 
 ---
 
@@ -203,7 +206,90 @@ Leads arriving via Meta/WhatsApp webhooks are automatically created and de-dupli
 
 ---
 
-## 10. Verify Health
+## 10. Connect Google Calendar (Appointment Booking)
+
+1. Go to **Google Cloud Console → APIs & Services → Credentials**.
+2. Create an **OAuth 2.0 Client ID** (Web application).
+3. Set the redirect URI to `https://YOUR_BACKEND_URL/api/google-calendar/callback`.
+4. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` in env.
+5. Enable **Google Calendar API** in the Cloud Console.
+6. From the frontend or API, get the auth URL:
+
+```bash
+curl https://YOUR_BACKEND_URL/api/google-calendar/auth-url \
+  -H "Authorization: Bearer YOUR_JWT"
+```
+
+7. Open the returned URL in a browser, sign in with your Google account, and authorize.
+8. After the callback completes, you can create calendar events:
+
+```bash
+curl -X POST https://YOUR_BACKEND_URL/api/google-calendar/events \
+  -H "Authorization: Bearer YOUR_JWT" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "summary": "Cita con Jane Doe",
+    "startDateTime": "2026-04-20T10:00:00-05:00",
+    "endDateTime": "2026-04-20T10:30:00-05:00",
+    "attendees": ["jane@example.com"],
+    "timeZone": "America/Mexico_City"
+  }'
+```
+
+---
+
+## 11. Playbook Automation
+
+Playbook automations run automatically when leads arrive via webhooks:
+
+- **lead_capture_nurture**: When a new Meta or WhatsApp lead arrives with a phone number, a WhatsApp welcome message is sent automatically (requires WhatsApp integration connected).
+
+To verify the `lead_capture_nurture` playbook exists in the DB:
+
+```sql
+SELECT id, slug, status FROM playbooks WHERE slug = 'lead_capture_nurture';
+```
+
+If missing, insert it:
+
+```sql
+INSERT INTO playbooks (slug, title, description, category, status, steps)
+VALUES (
+  'lead_capture_nurture',
+  'Lead Capture & Nurture',
+  'Automatically welcomes new leads via WhatsApp',
+  'automation',
+  'active',
+  '[{"action": "whatsapp_welcome", "trigger": "lead_created"}]'
+);
+```
+
+---
+
+## 12. RLS Policies (Security)
+
+The latest migration (`014_rls_with_check.sql`) adds WITH CHECK policies on `integrations` and `credentials` tables. Push it:
+
+```bash
+psql "$DATABASE_URL" -f backend/src/db/migrations/014_rls_with_check.sql
+```
+
+---
+
+## 13. Dashboard Metrics Sync
+
+The backend automatically syncs computed KPIs (leads, revenue, integration statuses) to the Figma Supabase `dashboard_metrics` table every 5 minutes. No setup required beyond having `SUPABASE_FIGMA_URL` and `SUPABASE_FIGMA_SERVICE_KEY` set.
+
+Manual trigger:
+
+```bash
+curl -X POST https://YOUR_BACKEND_URL/api/dashboard/sync \
+  -H "Authorization: Bearer YOUR_JWT"
+```
+
+---
+
+## 14. Verify Health
 
 ```bash
 # Backend health check

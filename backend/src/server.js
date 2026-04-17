@@ -13,6 +13,7 @@ const { pool, isAvailable } = require('./db');
 const { supabaseAdmin } = require('./config/supabase');
 const { defaultLimiter } = require('./middleware/rateLimiter');
 const { errorHandler } = require('./middleware/errorHandler');
+const { startPeriodicSync, stopPeriodicSync } = require('./services/dashboardSync');
 
 // Validate required environment variables before anything else
 validate();
@@ -102,6 +103,7 @@ app.use('/api/whatsapp', require('./routes/whatsapp'));
 app.use('/api/figma', require('./routes/figma'));
 app.use('/api/github', require('./routes/github'));
 app.use('/api/playbooks', require('./routes/playbooks'));
+app.use('/api/google-calendar', require('./routes/googleCalendar'));
 
 // ─── 404 handler ────────────────────────────────────────────────────────────
 app.use((req, res) => {
@@ -122,6 +124,9 @@ if (require.main === module) {
     logger.info(`RIP backend running on port ${config.port} [${config.nodeEnv}]`);
     logger.info(`Database: ${isAvailable() ? 'PostgreSQL connected' : 'IN-MEMORY (data lost on restart) — set DATABASE_URL in .env'}`);
     logger.info(`Supabase client: ${supabaseAdmin ? 'configured' : 'not configured — set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY'}`);
+
+    // Start periodic dashboard_metrics sync (every 5 min) when Figma Supabase is configured
+    startPeriodicSync();
   });
 
   // ─── Graceful shutdown ────────────────────────────────────────────
@@ -129,6 +134,7 @@ if (require.main === module) {
   // Cloud platforms (Railway, Render, k8s) send SIGTERM before SIGKILL.
   const gracefulShutdown = (signal) => {
     logger.info(`${signal} received — closing HTTP server`);
+    stopPeriodicSync();
     server.close(() => {
       logger.info('HTTP server closed. Exiting.');
       process.exit(0);
