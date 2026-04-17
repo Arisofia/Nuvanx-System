@@ -6,15 +6,15 @@ import { useIntegrations } from '../hooks/useIntegrations';
 export default function Integrations() {
   const { integrations, loading, connectIntegration, testIntegration, validateAll } = useIntegrations();
 
-  async function handleConnect(service, credentials) {
+  const handleConnect = async (service, credentials) => {
     await connectIntegration(service, credentials);
-  }
+  };
 
-  async function handleTest(service) {
+  const handleTest = async (service) => {
     await testIntegration(service);
-  }
+  };
 
-  async function handleSync() {
+  const handleSync = async () => {
     try {
       const res = await validateAll();
       const connected = res?.validated?.filter(v => v.status === 'connected').length ?? 0;
@@ -22,7 +22,7 @@ export default function Integrations() {
     } catch {
       toast.error('Error syncing vault');
     }
-  }
+  };
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">

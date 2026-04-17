@@ -244,7 +244,7 @@ export default function CRM() {
     return matchStatus && matchSearch;
   });
 
-  async function handleWhatsApp(lead) {
+  const handleWhatsApp = async (lead) => {
     if (!lead.phone) {
       toast.error('This lead has no phone number on file.');
       return;
@@ -260,7 +260,7 @@ export default function CRM() {
     } catch (err) {
       toast.error(err.response?.data?.message || 'Error sending WhatsApp');
     }
-  }
+  };
   const handleCalendar = () => {
     toast('Calendar scheduling is coming soon.', { icon: '📅' });
   };
