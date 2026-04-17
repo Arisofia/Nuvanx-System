@@ -5,7 +5,7 @@
 .DESCRIPTION
   Reads backend/.env, filters to the deploy-critical secrets, and pushes
   them to GitHub repo secrets via the gh CLI. Also handles the CI/CD
-  deploy secrets (RAILWAY_*, VERCEL_*) which are prompted interactively
+  deploy secrets (RAILWAY_*) which are prompted interactively
   if not already in .env.
 
 .EXAMPLE
@@ -57,9 +57,6 @@ $INCLUDE = @(
     'GITHUB_PAT'
     'RESEND_API_KEY'
     'SENTRY_DSN'
-    'GOOGLE_CLIENT_ID'
-    'GOOGLE_CLIENT_SECRET'
-    'GOOGLE_REDIRECT_URI'
     'WEBHOOK_ADMIN_USER_ID'
 )
 

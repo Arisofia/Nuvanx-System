@@ -1,7 +1,6 @@
 ###############################################################################
 # Deploy — runs after CI passes on main
 # Deploys backend to Railway.
-# Frontend is served locally or via manual hosting (no Vercel).
 #
 # Required secrets (set in GitHub → Settings → Secrets):
 #   RAILWAY_TOKEN      — Railway project token (Project Settings → Tokens)
