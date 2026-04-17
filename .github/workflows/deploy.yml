@@ -31,8 +31,8 @@ jobs:
     steps:
       - name: Trigger Render deploy
         env:
-          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: "${{ secrets.RENDER_SERVICE_ID }}"
+          RENDER_API_KEY: "${{ secrets.RENDER_API_KEY }}"
         run: |
           curl -sf "https://api.render.com/deploy/srv-$RENDER_SERVICE_ID?key=$RENDER_API_KEY" \
             || echo "::warning::Render deploy trigger returned non-zero. Check Render dashboard."
@@ -58,23 +58,23 @@ jobs:
       - name: Pull Vercel project settings
         working-directory: frontend
         env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TOKEN: "${{ secrets.VERCEL_TOKEN }}"
+          VERCEL_ORG_ID: "${{ secrets.VERCEL_ORG_ID }}"
+          VERCEL_PROJECT_ID: "${{ secrets.VERCEL_PROJECT_ID }}"
         run: vercel pull --yes --environment=production --token=$VERCEL_TOKEN
 
       - name: Build
         working-directory: frontend
         env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TOKEN: "${{ secrets.VERCEL_TOKEN }}"
+          VERCEL_ORG_ID: "${{ secrets.VERCEL_ORG_ID }}"
+          VERCEL_PROJECT_ID: "${{ secrets.VERCEL_PROJECT_ID }}"
         run: vercel build --prod --token=$VERCEL_TOKEN
 
       - name: Deploy
         working-directory: frontend
         env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TOKEN: "${{ secrets.VERCEL_TOKEN }}"
+          VERCEL_ORG_ID: "${{ secrets.VERCEL_ORG_ID }}"
+          VERCEL_PROJECT_ID: "${{ secrets.VERCEL_PROJECT_ID }}"
         run: vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
