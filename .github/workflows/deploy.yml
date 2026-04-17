@@ -1,10 +1,10 @@
 ###############################################################################
 # Deploy — runs after CI passes on main
-# Deploys backend to Railway.
+# Deploys backend to Render (free tier).
 #
 # Required secrets (set in GitHub → Settings → Secrets):
-#   RAILWAY_TOKEN      — Railway project token (Project Settings → Tokens)
-#   RAILWAY_SERVICE_ID — Railway service ID for the backend
+#   RENDER_DEPLOY_HOOK_URL — Render deploy hook URL
+#                            (Dashboard → Service → Settings → Deploy Hook)
 ###############################################################################
 
 name: Deploy
@@ -23,21 +23,12 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  # ─── Backend → Railway ─────────────────────────────────────────────────────
+  # ─── Backend → Render ──────────────────────────────────────────────────────
   deploy-backend:
-    name: Deploy backend to Railway
+    name: Deploy backend to Render
     runs-on: ubuntu-latest
     if: github.event.workflow_run.conclusion == 'success'
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli
-
-      - name: Deploy to Railway
-        env:
-          RAILWAY_TOKEN: "${{ secrets.RAILWAY_TOKEN }}"
-          RAILWAY_SERVICE_ID: "${{ secrets.RAILWAY_SERVICE_ID }}"
+      - name: Trigger Render deploy
         run: |
-          set -euo pipefail
-          railway up backend --path-as-root --service "$RAILWAY_SERVICE_ID" --detach
+          curl -s -o /dev/null -w "%{http_code}" "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
