@@ -6,6 +6,7 @@ const leadModel = require('../models/lead');
 const integrationModel = require('../models/integration');
 const credentialModel = require('../models/credential');
 const metaService = require('../services/meta');
+const { syncMetrics } = require('../services/dashboardSync');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -265,6 +266,19 @@ router.get('/meta-trends', async (req, res, next) => {
     });
   } catch (err) {
     logger.error('Meta trends error', { error: err.message });
+    next(err);
+  }
+});
+
+/**
+ * POST /api/dashboard/sync
+ * Manually trigger a sync of computed KPIs to the Figma Supabase dashboard_metrics table.
+ */
+router.post('/sync', async (req, res, next) => {
+  try {
+    const result = await syncMetrics(req.user.id);
+    res.json({ success: result.synced, ...result });
+  } catch (err) {
     next(err);
   }
 });

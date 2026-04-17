@@ -15,6 +15,7 @@ const { supabaseAdmin } = require('../config/supabase');
 const logger = require('../utils/logger');
 
 const { webhookLimiter } = require('../middleware/rateLimiter');
+const { onLeadCreated } = require('../services/playbookAutomation');
 
 const router = express.Router();
 router.use(webhookLimiter);
@@ -85,6 +86,13 @@ router.post('/meta', async (req, res) => {
                ON CONFLICT (user_id, source, external_id) WHERE external_id IS NOT NULL DO NOTHING`,
               [webhookUserId, contactName, phone, `WA msg: ${text.substring(0, 500)}`, phone],
             ).catch(dbErr => logger.warn('WA webhook: DB insert failed', { error: dbErr.message }));
+
+            // Trigger playbook automations for WhatsApp leads (best-effort)
+            onLeadCreated({
+              userId: webhookUserId,
+              lead: { id: phone, name: contactName, phone, email: '' },
+              source: 'whatsapp',
+            }).catch((autoErr) => logger.warn('WA webhook: playbook automation error', { error: autoErr.message }));
           }
         }
       }
@@ -158,6 +166,13 @@ router.post('/meta', async (req, res) => {
 
         logger.info('Meta lead webhook processed', { leadgen_id, page_id });
         processed.push({ leadgen_id });
+
+        // Trigger playbook automations (best-effort, non-blocking)
+        onLeadCreated({
+          userId: webhookUserId,
+          lead: { id: leadgen_id, name: leadData.name, phone: leadData.phone, email: leadData.email },
+          source: 'meta',
+        }).catch((autoErr) => logger.warn('Meta webhook: playbook automation error', { error: autoErr.message }));
       } catch (err) {
         logger.error('Meta lead webhook error', { leadgen_id, error: err.message });
 
