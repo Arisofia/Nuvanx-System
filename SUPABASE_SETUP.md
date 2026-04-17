@@ -16,11 +16,10 @@
 
 ## Database Schema
 
-The schema is managed through numbered migrations in two locations:
+The schema is managed through timestamp-prefixed migrations in a single location:
 
 ```
-backend/src/db/migrations/     # Backend migrations (001_ through 016_+)
-supabase/migrations/           # Supabase CLI migrations (timestamp-prefixed)
+supabase/migrations/           # Supabase CLI migrations (source of truth)
 ```
 
 Key tables (nuvanx-prod):
@@ -77,7 +76,6 @@ All env vars are centralized in `backend/src/config/env.js`. Never read `process
 ```
 backend/src/config/supabase.js         # Admin clients (nuvanx-prod + Figma)
 backend/src/config/env.js              # Centralized env config
-backend/src/db/migrations/             # Sequential numbered migrations
 frontend/src/lib/supabase/client.js    # Frontend Supabase singleton
 supabase/config.toml                   # Supabase CLI config
 supabase/migrations/                   # Supabase CLI migrations

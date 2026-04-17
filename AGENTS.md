@@ -4,12 +4,12 @@
 
 Monorepo with three independent sub-projects sharing a single git history:
 
-- **`backend/`** — Node.js/Express REST API (`src/server.js` entry). Routes in `routes/`, business logic in `services/`, Supabase clients in `config/supabase.js`, DB migrations in `db/migrations/`.
+- **`backend/`** — Node.js/Express REST API (`src/server.js` entry). Routes in `routes/`, business logic in `services/`, Supabase clients in `config/supabase.js`.
 - **`frontend/`** — React 19 + Vite SPA. Pages in `src/pages/`, reusable hooks in `src/hooks/`, Supabase client + Figma client in `src/lib/supabase/`.
 **Key architectural constraints:**
 - The backend uses two separate Supabase clients: `supabaseAdmin` (nuvanx-prod, `ssvvuuysgxyqvmovrlvk`) and `supabaseFigmaAdmin` (Figma project, `zpowfbeftxexzidlxndy`). Never mix them — routes/services must use the correct client for the target schema.
 - All env config is centralised in `backend/src/config/env.js`. Add new env vars there; never read `process.env` directly in routes or services.
-- Migrations are numbered sequentially (`001_`, `002_`, …). Do not reuse a prefix — duplicates break `supabase db push` ordering.
+- Migrations live in `supabase/migrations/` (timestamp-prefixed). Do not reuse a prefix — duplicates break `supabase db push` ordering.
 - Frontend calls the backend API only via `src/config/api.js` (base URL config). Do not hardcode `localhost` URLs in components.
 
 ## Build, Test, and Development Commands
