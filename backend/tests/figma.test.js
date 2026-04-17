@@ -3,6 +3,9 @@
 process.env.JWT_SECRET = 'test-jwt-secret-32-chars-minimum!!';
 process.env.ENCRYPTION_KEY = 'test-encryption-key-32-chars-min!';
 process.env.NODE_ENV = 'test';
+process.env.SUPABASE_FIGMA_URL = '';
+process.env.SUPABASE_FIGMA_ANON_KEY = '';
+process.env.SUPABASE_FIGMA_SERVICE_ROLE = '';
 
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
