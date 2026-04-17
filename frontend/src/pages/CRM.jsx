@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { MessageSquare, Calendar, FileText, Search, UserPlus, Loader2, AlertCircle, X } from 'lucide-react';
+import { MessageSquare, FileText, Search, UserPlus, Loader2, AlertCircle, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../config/api';
 
@@ -261,9 +261,6 @@ export default function CRM() {
       toast.error(err.response?.data?.message || 'Error sending WhatsApp');
     }
   };
-  const handleCalendar = () => {
-    toast('Calendar scheduling is coming soon.', { icon: '📅' });
-  };
   const handleNotes = () => {
     toast('Lead notes editor is coming soon.', { icon: '📝' });
   };
@@ -422,13 +419,6 @@ export default function CRM() {
                           className="p-1.5 rounded-lg text-emerald-400 hover:bg-emerald-500/10 transition-colors"
                         >
                           <MessageSquare size={15} />
-                        </button>
-                        <button
-                          onClick={() => handleCalendar(lead)}
-                          title="Schedule"
-                          className="p-1.5 rounded-lg text-brand-400 hover:bg-brand-500/10 transition-colors"
-                        >
-                          <Calendar size={15} />
                         </button>
                         <button
                           onClick={() => handleNotes(lead)}
