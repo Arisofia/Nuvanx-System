@@ -4,6 +4,82 @@ process.env.JWT_SECRET = 'test-jwt-secret-32-chars-minimum!!';
 process.env.ENCRYPTION_KEY = 'test-encryption-key-32-chars-min!';
 process.env.NODE_ENV = 'test';
 
+// Lead model no longer has in-memory fallback — provide a stateful mock
+const mockStore = new Map();
+const mockSTAGES = ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'];
+
+function mockCreateLead(userId, data) {
+  const id = require('crypto').randomUUID();
+  const now = new Date().toISOString();
+  const lead = {
+    id, userId,
+    name: data.name || '', email: data.email || '', phone: data.phone || '',
+    source: data.source || 'manual',
+    stage: mockSTAGES.includes(data.stage) ? data.stage : 'lead',
+    revenue: parseFloat(data.revenue) || 0,
+    notes: data.notes || '',
+    createdAt: now, updatedAt: now,
+  };
+  mockStore.set(id, lead);
+  return lead;
+}
+
+jest.mock('../src/models/lead', () => ({
+  STAGES: mockSTAGES,
+  create: jest.fn(async (userId, data) => mockCreateLead(userId, data)),
+  findByUser: jest.fn(async (userId, filters = {}) => {
+    const results = [];
+    for (const l of mockStore.values()) {
+      if (l.userId !== userId) continue;
+      if (filters.stage && l.stage !== filters.stage) continue;
+      if (filters.source && l.source !== filters.source) continue;
+      results.push({ ...l });
+    }
+    return results.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  }),
+  findById: jest.fn(async (id, userId) => {
+    const l = mockStore.get(id);
+    if (!l || l.userId !== userId) return null;
+    return { ...l };
+  }),
+  update: jest.fn(async (id, userId, data) => {
+    const l = mockStore.get(id);
+    if (!l || l.userId !== userId) return null;
+    const updated = {
+      ...l, ...data, id, userId,
+      stage: data.stage && mockSTAGES.includes(data.stage) ? data.stage : l.stage,
+      updatedAt: new Date().toISOString(),
+    };
+    mockStore.set(id, updated);
+    return updated;
+  }),
+  remove: jest.fn(async (id, userId) => {
+    const l = mockStore.get(id);
+    if (!l || l.userId !== userId) return false;
+    mockStore.delete(id);
+    return true;
+  }),
+  findOrMerge: jest.fn(async (userId, data) => {
+    const phone = (data.phone || '').trim();
+    const email = (data.email || '').trim().toLowerCase();
+    for (const l of mockStore.values()) {
+      if (l.userId !== userId) continue;
+      if (phone && l.phone === phone) {
+        const merged = { ...l, ...data, userId, updatedAt: new Date().toISOString() };
+        mockStore.set(l.id, merged);
+        return { lead: merged, merged: true };
+      }
+      if (email && (l.email || '').toLowerCase() === email) {
+        const merged = { ...l, ...data, userId, updatedAt: new Date().toISOString() };
+        mockStore.set(l.id, merged);
+        return { lead: merged, merged: true };
+      }
+    }
+    const lead = mockCreateLead(userId, data);
+    return { lead, merged: false };
+  }),
+}));
+
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const app = require('../src/server');
