@@ -44,7 +44,7 @@ Required GitHub secrets:
 - `PORT=10000`
 - `JWT_SECRET` — minimum 32 characters
 - `ENCRYPTION_KEY` — minimum 32 characters
-- `DATABASE_URL` — Supabase PostgreSQL connection string
+- `DATABASE_URL` or `SUPABASE_DATABASE_KEY` — either one satisfies the production database requirement; set it to the Supabase PostgreSQL connection string
 - `FRONTEND_URL` — deployed Vercel URL (e.g. `https://nuvanx.vercel.app`)
 - `SUPABASE_URL` — Supabase project URL
 - `SUPABASE_ANON_KEY`
