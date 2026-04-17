@@ -85,4 +85,6 @@ jobs:
             echo "Set VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_PROJECT_ID in GitHub → Settings → Secrets → Actions."
             exit 0
           fi
-          vercel deploy --prod --token="$VERCEL_TOKEN" --yes
+          vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+          vercel build --prod --token="$VERCEL_TOKEN"
+          vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
