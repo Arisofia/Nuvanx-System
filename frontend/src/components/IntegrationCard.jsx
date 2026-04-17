@@ -54,7 +54,7 @@ function ConnectModal({ integration, onClose, onConnect }) {
     gemini: 'Found at ai.google.dev → Get API Key',
   };
 
-  async function handleSubmit(e) {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!apiKey.trim()) return;
     if (isWhatsApp && !phoneNumberId.trim()) return;
@@ -74,7 +74,7 @@ function ConnectModal({ integration, onClose, onConnect }) {
     } finally {
       setSubmitting(false);
     }
-  }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -179,7 +179,7 @@ export default function IntegrationCard({ service, name, description, icon, stat
     ? (metadata.accountName || metadata.login || metadata.email)
     : null;
 
-  async function handleTest() {
+  const handleTest = async () => {
     setTestResult(null);
     try {
       await onTest(service);
@@ -188,7 +188,7 @@ export default function IntegrationCard({ service, name, description, icon, stat
     } catch (err) {
       setTestResult({ ok: false, message: err.response?.data?.message || 'Test failed' });
     }
-  }
+  };
 
   const isConnected = status === 'connected';
   const isTesting = status === 'testing';

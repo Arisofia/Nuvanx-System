@@ -18,9 +18,9 @@ export default function Integrations() {
     try {
       const res = await validateAll();
       const connected = res?.validated?.filter(v => v.status === 'connected').length ?? 0;
-      toast.success(`Vault sincronizado — ${connected} servicio${connected !== 1 ? 's' : ''} conectado${connected !== 1 ? 's' : ''}`);
+      toast.success(`Vault synced — ${connected} service${connected !== 1 ? 's' : ''} connected`);
     } catch {
-      toast.error('Error al sincronizar el vault');
+      toast.error('Error syncing vault');
     }
   }
 
@@ -28,8 +28,8 @@ export default function Integrations() {
     <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h2 className="text-2xl font-bold text-white uppercase tracking-tight">Centro de Integraciones</h2>
-          <p className="text-gray-400 mt-0.5">Conexión segura con el ecosistema de datos de Nuvanx. Las credenciales se cifran y persisten en Supabase Cloud.</p>
+          <h2 className="text-2xl font-bold text-white uppercase tracking-tight">Integration Center</h2>
+          <p className="text-gray-400 mt-0.5">Secure connection to the Nuvanx data ecosystem. Credentials are encrypted and persisted in Supabase Cloud.</p>
         </div>
         <button
           className="btn-primary flex items-center gap-2 text-sm px-5"
@@ -37,7 +37,7 @@ export default function Integrations() {
           disabled={loading}
         >
           {loading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-          Sincronizar Vault
+          Sync Vault
         </button>
       </div>
 
@@ -51,7 +51,7 @@ export default function Integrations() {
             <p className="font-bold text-brand-400 text-xs uppercase tracking-widest mb-1">Security Protocol</p>
             <p className="text-sm text-gray-300 font-medium uppercase">Cloud Sync</p>
             <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-              Tus claves están seguras. Al guardarlas, se sincronizan con Supabase para permitir el acceso desde cualquier dispositivo Nuvanx.
+              Your keys are secure. Once saved, they sync with Supabase so you can access them from any Nuvanx device.
             </p>
           </div>
         </div>
@@ -103,7 +103,7 @@ export default function Integrations() {
       <div className="text-center py-8">
         <p className="text-xs text-gray-500 uppercase font-bold tracking-widest mb-2">Need Help?</p>
         <p className="text-sm text-gray-400">
-          Revisa la guía de integraciones para obtener los tokens paso a paso.{' '}
+          Check the integrations guide for step-by-step token setup.{' '}
           <a href="#" className="text-brand-400 hover:text-brand-300 font-bold ml-1">VIEW DOCUMENTATION →</a>
         </p>
       </div>

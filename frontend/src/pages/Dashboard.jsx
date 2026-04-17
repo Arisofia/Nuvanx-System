@@ -110,7 +110,7 @@ export default function Dashboard() {
         setMetaState('not-connected');
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'No se pudo cargar el dashboard en vivo');
+      setError(err.response?.data?.message || 'Failed to load live dashboard');
     } finally {
       setLoading(false);
       setCountdown(REFRESH_SECONDS);
@@ -148,26 +148,26 @@ export default function Dashboard() {
     const github = integrations.find((i) => i.service === 'github');
     return [
       {
-        name: 'Agente de Sincronizacion GitHub',
+        name: 'GitHub Sync Agent',
         status: github?.status || 'disconnected',
-        detail: github?.lastSync ? `Ultima sync: ${new Date(github.lastSync).toLocaleString()}` : 'Sin sincronizacion reciente',
+        detail: github?.lastSync ? `Last sync: ${new Date(github.lastSync).toLocaleString()}` : 'No recent sync',
         icon: GitBranch,
       },
       {
-        name: 'Agente de Analisis AI',
+        name: 'AI Analysis Agent',
         status: aiStatus?.available ? 'connected' : 'disconnected',
-        detail: aiStatus?.provider ? `Proveedor: ${aiStatus.provider}` : 'Sin credenciales de IA',
+        detail: aiStatus?.provider ? `Provider: ${aiStatus.provider}` : 'No AI credentials',
         icon: Brain,
       },
       {
-        name: 'Agente Observador Meta',
+        name: 'Meta Observer Agent',
         status: metaState === 'real' ? 'connected' : metaState === 'error' ? 'error' : 'pending',
         detail:
           metaState === 'real'
-            ? 'Vista Meta en vivo activa'
+            ? 'Live Meta view active'
             : metaState === 'missing-config'
-              ? 'Falta adAccountId en metadata'
-              : 'Conecta Meta para activar vista viva',
+              ? 'Missing adAccountId in metadata'
+              : 'Connect Meta to enable live view',
         icon: Zap,
       },
     ];
@@ -177,25 +177,25 @@ export default function Dashboard() {
     const rules = [];
 
     if (Number(conversionRate) < 20) {
-      rules.push('Subir prioridad de seguimiento en las primeras 2 horas para leads nuevos.');
+      rules.push('Prioritize follow-up within the first 2 hours for new leads.');
     }
 
     if (metaSummary.spend > 0 && metaSummary.conversions === 0) {
-      rules.push('Reducir gasto en conjuntos sin conversion y reorientar a audiencias de mayor CTR.');
+      rules.push('Cut spend on ad sets with no conversions and shift to higher-CTR audiences.');
     }
 
     if (metaSummary.cpc > 2) {
-      rules.push('Probar nuevas creatividades para bajar CPC y mantener volumen de clics.');
+      rules.push('Test new creatives to lower CPC while maintaining click volume.');
     }
 
     if ((metrics?.bySource?.meta || 0) > 0 && (metrics?.byStage?.appointment || 0) === 0) {
-      rules.push('Implementar automatizacion WhatsApp para mover leads Meta a cita en menos de 24h.');
+      rules.push('Set up WhatsApp automation to move Meta leads to appointment within 24h.');
     }
 
     const fromAi = aiSuggestions.slice(0, 4);
     const merged = [...fromAi, ...rules];
     if (merged.length === 0) {
-      return ['No hay recomendaciones aun. Activa Meta + AI para generar un plan dinamico diario.'];
+      return ['No recommendations yet. Enable Meta + AI to generate a daily adaptive plan.'];
     }
     return merged.slice(0, 6);
   }, [aiSuggestions, conversionRate, metaSummary, metrics]);
@@ -207,10 +207,10 @@ export default function Dashboard() {
           <div className="flex items-start gap-3">
             <AlertCircle className="text-red-400 shrink-0 mt-0.5" size={20} />
             <div className="flex-1">
-              <h3 className="font-semibold text-white mb-1">Error cargando dashboard</h3>
+              <h3 className="font-semibold text-white mb-1">Error loading dashboard</h3>
               <p className="text-sm text-gray-300 mb-3">{error}</p>
               <button onClick={fetchData} className="btn-secondary text-sm">
-                <RefreshCw size={14} /> Reintentar
+                <RefreshCw size={14} /> Retry
               </button>
             </div>
           </div>
@@ -223,8 +223,8 @@ export default function Dashboard() {
     <div className="space-y-6 max-w-7xl mx-auto">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h2 className="text-2xl font-bold text-white">Control en Vivo</h2>
-          <p className="text-gray-400 mt-0.5">Frontend gobernado por GitHub + Supabase con refresco automatico diario y vista Meta en vivo.</p>
+          <h2 className="text-2xl font-bold text-white">Live Control</h2>
+          <p className="text-gray-400 mt-0.5">Frontend governed by GitHub + Supabase with daily auto-refresh and live Meta view.</p>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs text-gray-400 tabular-nums">Refresh {countdown}s</span>
@@ -237,21 +237,21 @@ export default function Dashboard() {
             className="btn-secondary flex items-center gap-2 text-sm"
           >
             {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-            Actualizar
+            Refresh
           </button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <MetricCard
-          title="Revenue Actual"
+          title="Current Revenue"
           value={totalRevenue}
           prefix="€"
           icon={TrendingUp}
           color="brand"
         />
         <MetricCard
-          title="Leads Totales"
+          title="Total Leads"
           value={totalLeads}
           icon={ShieldCheck}
           color="emerald"
@@ -275,11 +275,11 @@ export default function Dashboard() {
         <div className="card border-brand-500/20 bg-gradient-to-br from-brand-500/5 to-transparent">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="font-semibold text-white">Plan de Accion Adaptativo</h3>
-              <p className="text-xs text-gray-500">Se regenera con datos nuevos de Meta, CRM e IA. No es estatico.</p>
+              <h3 className="font-semibold text-white">Adaptive Action Plan</h3>
+              <p className="text-xs text-gray-500">Regenerates with fresh data from Meta, CRM, and AI. Not static.</p>
             </div>
             <button onClick={fetchAiSuggestions} className="btn-secondary text-xs" disabled={loadingSuggestions}>
-              {loadingSuggestions ? <Loader2 size={12} className="animate-spin" /> : 'Regenerar'}
+              {loadingSuggestions ? <Loader2 size={12} className="animate-spin" /> : 'Regenerate'}
             </button>
           </div>
           <div className="space-y-3">
@@ -295,7 +295,7 @@ export default function Dashboard() {
         </div>
 
         <div className="card">
-          <h3 className="font-semibold text-white mb-4">Agentes Activos</h3>
+          <h3 className="font-semibold text-white mb-4">Active Agents</h3>
           <div className="space-y-3">
             {agents.map((agent) => {
               const Icon = agent.icon;
@@ -327,12 +327,12 @@ export default function Dashboard() {
       <div className="card">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <div>
-            <h3 className="font-semibold text-white">Meta en Vivo</h3>
-            <p className="text-xs text-gray-500">Sin historicos locales. Solo snapshot operativo actual desde API de Meta.</p>
+            <h3 className="font-semibold text-white">Live Meta</h3>
+            <p className="text-xs text-gray-500">No local history. Current operational snapshot from Meta API only.</p>
           </div>
           {metaState === 'real' ? (
             <span className="text-xs px-2 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
-              Conectado
+              Connected
             </span>
           ) : (
             <span className="text-xs px-2 py-1 rounded-full border border-dark-500 bg-dark-800 text-gray-400">
@@ -371,18 +371,18 @@ export default function Dashboard() {
           </>
         ) : (
           <div className="p-4 rounded-lg border border-dark-600/70 bg-dark-800/60 text-sm text-gray-300">
-            {metaState === 'missing-config' && 'Meta conectado, pero falta adAccountId en metadata de la integracion.'}
-            {metaState === 'not-connected' && 'Meta no esta conectado. Activalo en Integrations para ver datos en vivo.'}
-            {metaState === 'error' && 'No fue posible obtener datos de Meta en este momento.'}
-            {metaState === 'pending' && 'Cargando estado de Meta...'}
+            {metaState === 'missing-config' && 'Meta connected, but adAccountId is missing in the integration metadata.'}
+            {metaState === 'not-connected' && 'Meta is not connected. Enable it in Integrations to see live data.'}
+            {metaState === 'error' && 'Unable to fetch Meta data at this time.'}
+            {metaState === 'pending' && 'Loading Meta status…'}
           </div>
         )}
       </div>
 
       <div className="card">
-        <h3 className="font-semibold text-white mb-4">Actividad GitHub + Supabase</h3>
+        <h3 className="font-semibold text-white mb-4">GitHub + Supabase Activity</h3>
         {activityEvents.length === 0 ? (
-          <p className="text-sm text-gray-400">Sin eventos recientes. Ejecuta sincronizacion para poblar el feed.</p>
+          <p className="text-sm text-gray-400">No recent events. Run a sync to populate the feed.</p>
         ) : (
           <div className="space-y-2">
             {activityEvents.slice(0, 8).map((event) => (

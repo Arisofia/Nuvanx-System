@@ -79,6 +79,15 @@ const config = {
   // Sentry error tracking
   sentryDsn: process.env.SENTRY_DSN || null,
 
+  // Resend email service — used for password reset emails
+  resendApiKey: process.env.RESEND_API_KEY || null,
+  emailFrom: process.env.EMAIL_FROM || 'Nuvanx <noreply@nuvanx.com>',
+
+  // Allow falling back to server-level env var credentials when a user has
+  // no per-user vault credential.  Safe for single-tenant; set to 'false'
+  // in production multi-tenant to enforce per-user vault credentials.
+  allowSharedCredentials: process.env.ALLOW_SHARED_CREDENTIALS !== 'false',
+
   // UUID of the admin/owner user that receives webhook-originated leads (Meta, WhatsApp)
   // Set this to the UUID of the main platform user in Supabase Auth.
   webhookAdminUserId: process.env.WEBHOOK_ADMIN_USER_ID || null,

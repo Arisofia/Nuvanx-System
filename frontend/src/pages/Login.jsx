@@ -83,7 +83,7 @@ export default function Login() {
                   type="email"
                   value={resetEmail}
                   onChange={(e) => setResetEmail(e.target.value)}
-                  placeholder="admin@clinic.com"
+                  placeholder="you@company.com"
                   className="input"
                   required
                   autoComplete="email"
@@ -106,7 +106,7 @@ export default function Login() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@clinic.com"
+                placeholder="you@company.com"
                 className="input"
                 required
                 autoComplete="email"

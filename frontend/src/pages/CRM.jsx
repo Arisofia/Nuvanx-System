@@ -246,19 +246,19 @@ export default function CRM() {
 
   async function handleWhatsApp(lead) {
     if (!lead.phone) {
-      toast.error('Este lead no tiene número de teléfono registrado.');
+      toast.error('This lead has no phone number on file.');
       return;
     }
     const message = window.prompt(
-      `Enviar WhatsApp a ${lead.name} (${lead.phone})\n\nEscribe el mensaje:`,
-      `Hola ${lead.name}, te contactamos desde nuestra clínica. ¿Podemos ayudarte?`,
+      `Send WhatsApp to ${lead.name} (${lead.phone})\n\nType your message:`,
+      `Hi ${lead.name}, we're reaching out from our clinic. How can we help you?`,
     );
     if (!message) return;
     try {
       await api.post('/api/whatsapp/send', { to: lead.phone, message, leadId: lead.id });
-      toast.success(`WhatsApp enviado a ${lead.name}`);
+      toast.success(`WhatsApp sent to ${lead.name}`);
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Error enviando WhatsApp');
+      toast.error(err.response?.data?.message || 'Error sending WhatsApp');
     }
   }
   const handleCalendar = () => {

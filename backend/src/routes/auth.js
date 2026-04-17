@@ -9,6 +9,7 @@ const { config } = require('../config/env');
 const { pool, isAvailable, isProduction } = require('../db');
 const { authLimiter } = require('../middleware/rateLimiter');
 const { authLoginRules, authRegisterRules, handleValidationErrors } = require('../utils/validators');
+const { sendPasswordResetEmail } = require('../services/email');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -163,12 +164,7 @@ router.post('/forgot-password', authLimiter, async (req, res, next) => {
       resetTokens.set(token, { email, expiresAt: Date.now() + 3600000 }); // 1h
       logger.info('Password reset token generated', { email });
 
-      // TODO: send token via email when mail transport is configured.
-      // Token is NOT returned in the response body — only logged server-side.
-      return res.json({
-        success: true,
-        message: 'If that email is registered, a reset link has been generated.',
-      });
+      await sendPasswordResetEmail(email, token);
     }
 
     // User not found — return same message to prevent enumeration
