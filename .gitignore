@@ -3,6 +3,7 @@
 
 # Build artifacts
 **/dist/
+**/dist-ssr/
 **/build/
 
 # Environment files (NEVER commit — contain secrets)
@@ -19,8 +20,14 @@
 
 # Editor / OS
 .idea/
+.vscode/*
+!.vscode/extensions.json
 *.swp
 *.swo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
 .DS_Store
 Thumbs.db
 
