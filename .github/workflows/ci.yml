@@ -39,6 +39,12 @@ jobs:
           NODE_ENV: test
           JWT_SECRET: ci-jwt-secret-minimum-32-characters!
           ENCRYPTION_KEY: ci-encryption-key-minimum-32-chars!
+          SUPABASE_URL: http://localhost:54321
+          SUPABASE_ANON_KEY: ci-supabase-anon-key-placeholder-32-chars
+          SUPABASE_SERVICE_ROLE_KEY: ci-supabase-service-role-key-placeholder-32-chars
+          SUPABASE_FIGMA_URL: http://localhost:54321
+          SUPABASE_FIGMA_ANON_KEY: ci-supabase-figma-anon-key-placeholder-32-chars
+          SUPABASE_FIGMA_SERVICE_ROLE: ci-supabase-figma-service-role-key-placeholder-32-chars
 
   # ─── Frontend: lint ──────────────────────────────────────────────────────
   frontend-lint:
@@ -94,3 +100,6 @@ jobs:
         run: npm run build
         env:
           NODE_ENV: production
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: ci-supabase-anon-key-placeholder-32-chars
+          VITE_BACKEND_URL: http://localhost:3001

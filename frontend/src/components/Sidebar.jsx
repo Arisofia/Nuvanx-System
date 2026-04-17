@@ -76,8 +76,8 @@ export default function Sidebar() {
             {user?.name?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || 'U'}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-white truncate">{user?.name || 'User'}</p>
-            <p className="text-xs text-gray-500 truncate">{user?.email || 'user@example.com'}</p>
+            <p className="text-sm font-medium text-white truncate">{user?.name || 'Nuvanx User'}</p>
+            <p className="text-xs text-gray-500 truncate">{user?.email || ''}</p>
           </div>
         </div>
         <button

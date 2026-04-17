@@ -127,7 +127,7 @@ function AddLeadModal({ onClose, onCreated }) {
                 type="email"
                 value={form.email}
                 onChange={e => set('email', e.target.value)}
-                placeholder="email@example.com"
+                placeholder="email@company.com"
                 className="input w-full"
               />
             </div>

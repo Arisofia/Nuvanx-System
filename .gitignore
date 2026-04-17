@@ -11,13 +11,6 @@
 **/.env.local
 **/.env.*.local
 
-# Logs
-*.log
-**/logs/
-
-# Test coverage
-**/coverage/
-
 # Editor / OS
 .idea/
 .vscode/*
