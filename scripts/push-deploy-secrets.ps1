@@ -27,7 +27,7 @@ if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
 }
 
 if (-not $env:GH_TOKEN) {
-    Write-Host "`n❌  GH_TOKEN not set. Run:`n    `$env:GH_TOKEN = 'ghp_YourToken'" -ForegroundColor Red
+    Write-Host "`n[ERROR] GH_TOKEN not set. Run:`n    `$env:GH_TOKEN = 'ghp_YourToken'" -ForegroundColor Red
     Write-Host "    Then re-run this script.`n"
     exit 1
 }
@@ -67,9 +67,9 @@ $DEPLOY_SECRETS = @(
     'RAILWAY_SERVICE_ID'
 )
 
-Write-Host "`n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan
+Write-Host "`n===============================================" -ForegroundColor Cyan
 Write-Host "  Pushing secrets to $REPO" -ForegroundColor Cyan
-Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`n" -ForegroundColor Cyan
+Write-Host "===============================================`n" -ForegroundColor Cyan
 
 $pass = 0; $skip = 0; $fail = 0
 
@@ -96,39 +96,39 @@ foreach ($key in $INCLUDE) {
     }
     try {
         $val | gh secret set $key --repo $REPO 2>$null
-        Write-Host "  ✅  $key" -ForegroundColor Green
+        Write-Host "  [OK]  $key" -ForegroundColor Green
         $pass++
     } catch {
-        Write-Host "  ❌  $key (failed)" -ForegroundColor Red
+        Write-Host "  [FAIL]  $key (failed)" -ForegroundColor Red
         $fail++
     }
 }
 
-# ── Deploy secrets (prompt if missing) ───────────────────────────────────────
-Write-Host "`n── CI/CD Deploy Secrets ──────────────────────────" -ForegroundColor Yellow
+# -- Deploy secrets (prompt if missing) ----------------------------------------
+Write-Host "`n-- CI/CD Deploy Secrets ----------------------------------" -ForegroundColor Yellow
 
 foreach ($key in $DEPLOY_SECRETS) {
     $val = $envVars[$key]
     if (-not $val -or $val -match 'PASTE_YOUR|YOUR-') {
-        Write-Host "  $key not in .env — enter value (or press Enter to skip):" -ForegroundColor Yellow -NoNewline
+        Write-Host "  $key not in .env -- enter value (or press Enter to skip):" -ForegroundColor Yellow -NoNewline
         $val = Read-Host " "
         if (-not $val) {
-            Write-Host "  ⏭️   $key (skipped)" -ForegroundColor DarkGray
+            Write-Host "  [SKIP]  $key (skipped)" -ForegroundColor DarkGray
             $skip++
             continue
         }
     }
     try {
         $val | gh secret set $key --repo $REPO 2>$null
-        Write-Host "  ✅  $key" -ForegroundColor Green
+        Write-Host "  [OK]  $key" -ForegroundColor Green
         $pass++
     } catch {
-        Write-Host "  ❌  $key (failed)" -ForegroundColor Red
+        Write-Host "  [FAIL]  $key (failed)" -ForegroundColor Red
         $fail++
     }
 }
 
-# ── Summary ──────────────────────────────────────────────────────────────────
-Write-Host "`n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan
-Write-Host "  Result: ✅ $pass pushed | ⏭️  $skip skipped | ❌ $fail failed" -ForegroundColor Cyan
-Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`n" -ForegroundColor Cyan
+# -- Summary -------------------------------------------------------------------
+Write-Host "`n===============================================" -ForegroundColor Cyan
+Write-Host "  Result: $pass pushed | $skip skipped | $fail failed" -ForegroundColor Cyan
+Write-Host "===============================================`n" -ForegroundColor Cyan
