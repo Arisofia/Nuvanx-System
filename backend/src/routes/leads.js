@@ -46,9 +46,9 @@ router.get('/:id', async (req, res, next) => {
 /** POST /api/leads */
 router.post('/', leadsWriteLimiter, leadRules, handleValidationErrors, async (req, res, next) => {
   try {
-    const lead = await leadModel.create(req.user.id, req.body);
-    logger.info('Lead created', { userId: req.user.id, leadId: lead.id });
-    res.status(201).json({ success: true, lead });
+    const { lead, merged } = await leadModel.findOrMerge(req.user.id, req.body);
+    logger.info(merged ? 'Lead merged' : 'Lead created', { userId: req.user.id, leadId: lead.id });
+    res.status(merged ? 200 : 201).json({ success: true, lead, merged });
   } catch (err) {
     next(err);
   }

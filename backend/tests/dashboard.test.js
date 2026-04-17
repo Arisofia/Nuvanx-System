@@ -3,6 +3,7 @@
 process.env.JWT_SECRET = 'test-jwt-secret-32-chars-minimum!!';
 process.env.ENCRYPTION_KEY = 'test-encryption-key-32-chars-min!';
 process.env.NODE_ENV = 'test';
+process.env.DATABASE_URL = '';
 process.env.GITHUB_TOKEN = '';
 process.env.META_ACCESS_TOKEN = '';
 process.env.OPENAI_API_KEY = '';

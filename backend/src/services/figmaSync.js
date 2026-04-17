@@ -40,11 +40,15 @@ function buildMetrics(leads, integrations, credentials) {
     return acc;
   }, {});
 
+  // Only count as "connected" if a credential actually exists
+  const credentialServices = new Set(credentials.map((c) => c.service));
   return {
     generatedAt: new Date().toISOString(),
     totalLeads,
     totalRevenue: Number(totalRevenue.toFixed(2)),
-    connectedIntegrations: integrations.filter((i) => i.status === 'connected').length,
+    connectedIntegrations: integrations.filter(
+      (i) => i.status === 'connected' && credentialServices.has(i.service),
+    ).length,
     totalIntegrations: integrations.length,
     totalCredentials: credentials.length,
     stageCounts,

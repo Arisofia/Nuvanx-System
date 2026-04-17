@@ -15,6 +15,7 @@
 const { supabaseFigmaAdmin } = require('../config/supabase');
 const leadModel = require('../models/lead');
 const integrationModel = require('../models/integration');
+const credentialModel = require('../models/credential');
 const logger = require('../utils/logger');
 const { config } = require('../config/env');
 
@@ -36,14 +37,19 @@ async function syncMetrics(userId) {
     return { synced: false, reason: 'no_user_id' };
   }
 
-  const [leads, integrations] = await Promise.all([
+  const [leads, integrations, credentials] = await Promise.all([
     leadModel.findByUser(userId),
     integrationModel.getAll(userId),
+    credentialModel.listByUser(userId),
   ]);
 
+  // Only count integrations as "connected" if a real credential exists
+  const credentialServices = new Set(credentials.map((c) => c.service));
   const totalLeads = leads.length;
   const totalRevenue = leads.reduce((sum, l) => sum + (l.revenue || 0), 0);
-  const connectedIntegrations = integrations.filter((i) => i.status === 'connected').length;
+  const connectedIntegrations = integrations.filter(
+    (i) => i.status === 'connected' && credentialServices.has(i.service),
+  ).length;
 
   const byStage = {};
   for (const stage of leadModel.STAGES) {

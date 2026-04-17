@@ -1,13 +1,11 @@
 ###############################################################################
 # Deploy — runs after CI passes on main
-# Deploys backend to Render and frontend to Vercel.
+# Deploys backend to Railway.
+# Frontend is served locally or via manual hosting (no Vercel).
 #
 # Required secrets (set in GitHub → Settings → Secrets):
-#   RENDER_API_KEY     — Render API key (Account Settings → API Keys)
-#   RENDER_SERVICE_ID  — Render backend service ID (srv-xxx)
-#   VERCEL_TOKEN       — Vercel personal access token
-#   VERCEL_ORG_ID      — Vercel team/org ID
-#   VERCEL_PROJECT_ID  — Vercel project ID (for frontend)
+#   RAILWAY_TOKEN      — Railway project token (Project Settings → Tokens)
+#   RAILWAY_SERVICE_ID — Railway service ID for the backend
 ###############################################################################
 
 name: Deploy
@@ -23,58 +21,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # ─── Backend → Render ──────────────────────────────────────────────────────
+  # ─── Backend → Railway ─────────────────────────────────────────────────────
   deploy-backend:
-    name: Deploy backend to Render
-    runs-on: ubuntu-latest
-    if: github.event.workflow_run.conclusion == 'success'
-    steps:
-      - name: Trigger Render deploy
-        env:
-          RENDER_SERVICE_ID: "${{ secrets.RENDER_SERVICE_ID }}"
-          RENDER_API_KEY: "${{ secrets.RENDER_API_KEY }}"
-        run: |
-          curl -sf "https://api.render.com/deploy/srv-$RENDER_SERVICE_ID?key=$RENDER_API_KEY" \
-            || echo "::warning::Render deploy trigger returned non-zero. Check Render dashboard."
-
-  # ─── Frontend → Vercel ─────────────────────────────────────────────────────
-  deploy-frontend:
-    name: Deploy frontend to Vercel
+    name: Deploy backend to Railway
     runs-on: ubuntu-latest
     if: github.event.workflow_run.conclusion == 'success'
     steps:
       - uses: actions/checkout@v4.2.2
 
-      - name: Use Node.js
-        uses: actions/setup-node@v4.1.0
-        with:
-          node-version-file: '.nvmrc'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
 
-      - name: Install Vercel CLI
-        run: npm install -g vercel@latest
-
-      - name: Pull Vercel project settings
-        working-directory: frontend
+      - name: Deploy to Railway
         env:
-          VERCEL_TOKEN: "${{ secrets.VERCEL_TOKEN }}"
-          VERCEL_ORG_ID: "${{ secrets.VERCEL_ORG_ID }}"
-          VERCEL_PROJECT_ID: "${{ secrets.VERCEL_PROJECT_ID }}"
-        run: vercel pull --yes --environment=production --token=$VERCEL_TOKEN
-
-      - name: Build
-        working-directory: frontend
-        env:
-          VERCEL_TOKEN: "${{ secrets.VERCEL_TOKEN }}"
-          VERCEL_ORG_ID: "${{ secrets.VERCEL_ORG_ID }}"
-          VERCEL_PROJECT_ID: "${{ secrets.VERCEL_PROJECT_ID }}"
-        run: vercel build --prod --token=$VERCEL_TOKEN
-
-      - name: Deploy
-        working-directory: frontend
-        env:
-          VERCEL_TOKEN: "${{ secrets.VERCEL_TOKEN }}"
-          VERCEL_ORG_ID: "${{ secrets.VERCEL_ORG_ID }}"
-          VERCEL_PROJECT_ID: "${{ secrets.VERCEL_PROJECT_ID }}"
-        run: vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
+          RAILWAY_TOKEN: "${{ secrets.RAILWAY_TOKEN }}"
+        run: |
+          railway up --service "${{ secrets.RAILWAY_SERVICE_ID }}" --detach \
+            || echo "::warning::Railway deploy returned non-zero. Check Railway dashboard."

@@ -42,6 +42,18 @@ router.delete('/:service', serviceParamRule, handleValidationErrors, async (req,
     if (!deleted) {
       return res.status(404).json({ success: false, message: 'Credential not found' });
     }
+
+    // Cascade: mark integration as disconnected when its credential is removed
+    try {
+      const integrationModel = require('../models/integration');
+      await integrationModel.upsert(req.user.id, service, {
+        status: 'disconnected',
+        lastError: 'credential removed',
+      });
+    } catch (cascadeErr) {
+      logger.warn('Failed to cascade integration status on credential delete', { error: cascadeErr.message });
+    }
+
     logger.info('Credential deleted', { userId: req.user.id, service });
     res.json({ success: true, message: `Credential for ${service} deleted` });
   } catch (err) {
