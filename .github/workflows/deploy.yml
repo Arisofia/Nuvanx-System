@@ -40,4 +40,4 @@ jobs:
           RAILWAY_SERVICE_ID: "${{ secrets.RAILWAY_SERVICE_ID }}"
         run: |
           set -euo pipefail
-          railway up --service "$RAILWAY_SERVICE_ID" --detach
+          railway up backend --path-as-root --service "$RAILWAY_SERVICE_ID" --detach
