@@ -106,83 +106,108 @@ router.post(
       let patientsUpserted = 0;
       const rowErrors = [];
 
-      for (const row of inputRows) {
-        try {
-          const opId = String(row.idoperacion || '').trim();
-          if (!opId) { rowErrors.push({ row, reason: 'missing idoperacion' }); continue; }
+      // Wrap the entire batch in a transaction.  Per-row errors use SAVEPOINTs
+      // so a single bad row does not abort the whole import.
+      await pool.query('BEGIN');
+      try {
+        for (const row of inputRows) {
+          await pool.query('SAVEPOINT sp');
+          try {
+            const opId = String(row.idoperacion || '').trim();
+            if (!opId) {
+              rowErrors.push({ row, reason: 'missing idoperacion' });
+              await pool.query('RELEASE SAVEPOINT sp');
+              continue;
+            }
 
-          const patientName = parseName(row.paciente || row.nombre || '');
-          const dni = row.dni ? String(row.dni).trim().toUpperCase() : null;
-          const templateId = row.plantillaid ? String(row.plantillaid).trim() : null;
-          const templateName = row.plantilladescr ? String(row.plantilladescr).trim() : null;
-          const amountGross = parseAmount(row.importebruto);
-          const amountDiscount = parseAmount(row.importedescuento);
-          const amountNet = parseAmount(row.importeneto);
-          const settledAt = parseDate(row.fechaoperacion);
-          const intakeAt = parseDate(row.fechaentrada);
-          const paymentMethod = row.metodopago ? String(row.metodopago).trim() : null;
-          const isCancelled = CANCELLED_ESTADOS.has((row.estado || '').toLowerCase().trim());
-          const cancelledAt = isCancelled ? (settledAt || new Date().toISOString().slice(0, 10)) : null;
+            const patientName = parseName(row.paciente || row.nombre || '');
+            const dni = row.dni ? String(row.dni).trim().toUpperCase() : null;
+            const templateId = row.plantillaid ? String(row.plantillaid).trim() : null;
+            const templateName = row.plantilladescr ? String(row.plantilladescr).trim() : null;
+            const amountGross = parseAmount(row.importebruto);
+            const amountDiscount = parseAmount(row.importedescuento);
+            const amountNet = parseAmount(row.importeneto);
+            const settledAt = parseDate(row.fechaoperacion);
+            const intakeAt = parseDate(row.fechaentrada);
+            const paymentMethod = row.metodopago ? String(row.metodopago).trim() : null;
+            const isCancelled = CANCELLED_ESTADOS.has((row.estado || '').toLowerCase().trim());
+            const cancelledAt = isCancelled ? (settledAt || new Date().toISOString().slice(0, 10)) : null;
 
-          if (!settledAt) { rowErrors.push({ row: opId, reason: 'missing or invalid fechaoperacion' }); continue; }
+            if (!settledAt) {
+              rowErrors.push({ row: opId, reason: 'missing or invalid fechaoperacion' });
+              await pool.query('RELEASE SAVEPOINT sp');
+              continue;
+            }
 
-          // Upsert patient
-          let patientId = null;
-          if (patientName) {
-            const patRes = await pool.query(
-              `INSERT INTO patients (clinic_id, name, dni)
-               VALUES ($1, $2, $3)
-               ON CONFLICT (clinic_id, dni) WHERE dni IS NOT NULL DO UPDATE
-                 SET name = EXCLUDED.name, updated_at = NOW()
-               RETURNING id`,
-              [clinicId, patientName, dni],
+            // Upsert patient — uses the clinic-scoped unique index on (clinic_id, dni)
+            let patientId = null;
+            if (patientName) {
+              const patRes = await pool.query(
+                `INSERT INTO patients (clinic_id, name, dni)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT (clinic_id, dni) WHERE dni IS NOT NULL DO UPDATE
+                   SET name = EXCLUDED.name, updated_at = NOW()
+                 RETURNING id`,
+                [clinicId, patientName, dni],
+              );
+              patientId = patRes.rows[0]?.id || null;
+              patientsUpserted += 1;
+            }
+
+            // Upsert settlement
+            const upsertRes = await pool.query(
+              `INSERT INTO financial_settlements
+                 (id, clinic_id, patient_id, template_id, template_name,
+                  amount_gross, amount_discount, amount_net,
+                  payment_method, settled_at, intake_at, cancelled_at,
+                  source_system)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'doctoralia')
+               ON CONFLICT (id) DO UPDATE SET
+                 patient_id      = COALESCE(EXCLUDED.patient_id, financial_settlements.patient_id),
+                 template_id     = COALESCE(EXCLUDED.template_id, financial_settlements.template_id),
+                 template_name   = COALESCE(EXCLUDED.template_name, financial_settlements.template_name),
+                 amount_gross    = EXCLUDED.amount_gross,
+                 amount_discount = EXCLUDED.amount_discount,
+                 amount_net      = EXCLUDED.amount_net,
+                 payment_method  = COALESCE(EXCLUDED.payment_method, financial_settlements.payment_method),
+                 intake_at       = COALESCE(EXCLUDED.intake_at, financial_settlements.intake_at),
+                 cancelled_at    = EXCLUDED.cancelled_at
+               RETURNING (xmax = 0) AS is_insert`,
+              [opId, clinicId, patientId, templateId, templateName,
+                amountGross, amountDiscount, amountNet,
+                paymentMethod, settledAt, intakeAt, cancelledAt],
             );
-            patientId = patRes.rows[0]?.id || null;
-            patientsUpserted += 1;
-          }
 
-          // Upsert settlement
-          const upsertRes = await pool.query(
-            `INSERT INTO financial_settlements
-               (id, clinic_id, patient_id, template_id, template_name,
-                amount_gross, amount_discount, amount_net,
-                payment_method, settled_at, intake_at, cancelled_at,
-                source_system)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'doctoralia')
-             ON CONFLICT (id) DO UPDATE SET
-               patient_id      = COALESCE(EXCLUDED.patient_id, financial_settlements.patient_id),
-               template_id     = COALESCE(EXCLUDED.template_id, financial_settlements.template_id),
-               template_name   = COALESCE(EXCLUDED.template_name, financial_settlements.template_name),
-               amount_gross    = EXCLUDED.amount_gross,
-               amount_discount = EXCLUDED.amount_discount,
-               amount_net      = EXCLUDED.amount_net,
-               payment_method  = COALESCE(EXCLUDED.payment_method, financial_settlements.payment_method),
-               intake_at       = COALESCE(EXCLUDED.intake_at, financial_settlements.intake_at),
-               cancelled_at    = EXCLUDED.cancelled_at
-             RETURNING (xmax = 0) AS is_insert`,
-            [opId, clinicId, patientId, templateId, templateName,
-              amountGross, amountDiscount, amountNet,
-              paymentMethod, settledAt, intakeAt, cancelledAt],
-          );
+            if (upsertRes.rows[0]?.is_insert) {
+              inserted += 1;
+            } else {
+              updated += 1;
+            }
 
-          if (upsertRes.rows[0]?.is_insert) {
-            inserted += 1;
-          } else {
-            updated += 1;
-          }
+            await pool.query('RELEASE SAVEPOINT sp');
 
-          // Run reconcile_lead_to_patient for newly inserted patients (best-effort)
-          if (patientId) {
-            pool.query(
-              'SELECT reconcile_lead_to_patient($1)',
-              [patientId],
-            ).catch((e) => logger.warn('reconcile_lead_to_patient failed', { patientId, error: e.message }));
+            // Reconcile any existing leads that match this patient — fire-and-forget
+            // after SAVEPOINT release so reconcile errors don't affect the ingest.
+            // Uses reconcile_patient_leads(patient_id) which finds matching leads
+            // by dni_hash/phone_normalized and calls reconcile_lead_to_patient(lead_id)
+            // for each, correctly linking them to the patient.
+            if (patientId) {
+              pool.query(
+                'SELECT reconcile_patient_leads($1)',
+                [patientId],
+              ).catch((e) => logger.warn('reconcile_patient_leads failed', { patientId, error: e.message }));
+            }
+          } catch (rowErr) {
+            await pool.query('ROLLBACK TO SAVEPOINT sp');
+            const opId = row.idoperacion || '?';
+            logger.warn('doctoralia ingest: row error', { opId, error: rowErr.message });
+            rowErrors.push({ row: opId, reason: rowErr.message });
           }
-        } catch (rowErr) {
-          const opId = row.idoperacion || '?';
-          logger.warn('doctoralia ingest: row error', { opId, error: rowErr.message });
-          rowErrors.push({ row: opId, reason: rowErr.message });
         }
+        await pool.query('COMMIT');
+      } catch (txErr) {
+        await pool.query('ROLLBACK');
+        throw txErr;
       }
 
       logger.info('Doctoralia ingest complete', {

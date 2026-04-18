@@ -50,6 +50,13 @@ ALTER TABLE patients
   ADD COLUMN IF NOT EXISTS phone_normalized TEXT,
   ADD COLUMN IF NOT EXISTS dni_hash         VARCHAR(128);
 
+-- Clinic-scoped unique constraint on (clinic_id, dni) — required by the
+-- Doctoralia ingest ON CONFLICT clause.  The global UNIQUE on dni remains
+-- for backward compatibility but we add a partial clinic-scoped one so that
+-- the same DNI can appear in different clinics without cross-clinic collisions.
+CREATE UNIQUE INDEX IF NOT EXISTS patients_clinic_dni_uq ON patients (clinic_id, dni)
+  WHERE dni IS NOT NULL;
+
 CREATE UNIQUE INDEX IF NOT EXISTS patients_clinic_dni_hash_uq ON patients (clinic_id, dni_hash)
   WHERE dni_hash IS NOT NULL;
 
@@ -107,10 +114,12 @@ BEGIN
   IF raw_phone IS NULL OR raw_phone = '' THEN RETURN NULL; END IF;
   -- Remove every character that is not a digit
   cleaned := regexp_replace(raw_phone, '[^0-9]', '', 'g');
-  -- Strip Spanish country code (+34 → 34xxxxxxxxx, 0034 → 0034xxxxxxxxx)
+  -- Strip Spanish country code:
+  --   +34XXXXXXXXX → after stripping '+': 34XXXXXXXXX → 11 digits, starts with '34'
+  --   0034XXXXXXXXX → after stripping:    0034XXXXXXXXX → 13 digits, starts with '0034'
   IF length(cleaned) = 11 AND left(cleaned, 2) = '34' THEN
     cleaned := right(cleaned, 9);
-  ELSIF length(cleaned) = 12 AND left(cleaned, 3) = '034' THEN
+  ELSIF length(cleaned) = 13 AND left(cleaned, 4) = '0034' THEN
     cleaned := right(cleaned, 9);
   END IF;
   IF length(cleaned) < 7 THEN RETURN NULL; END IF;
@@ -139,6 +148,37 @@ DROP TRIGGER IF EXISTS leads_normalize_before_upsert ON leads;
 CREATE TRIGGER leads_normalize_before_upsert
   BEFORE INSERT OR UPDATE ON leads
   FOR EACH ROW EXECUTE FUNCTION leads_normalize_fields();
+
+-- reconcile_patient_leads: given a patient id, find every unlinked lead that
+-- matches by dni_hash or phone_normalized and call reconcile_lead_to_patient
+-- on each one.  Used by the Doctoralia ingest endpoint after upserting a
+-- patient row so that existing CRM leads are linked immediately.
+-- Returns the count of leads reconciled.
+CREATE OR REPLACE FUNCTION reconcile_patient_leads(p_patient_id UUID)
+RETURNS INTEGER LANGUAGE plpgsql AS $$
+DECLARE
+  v_patient    patients%ROWTYPE;
+  v_lead_id    UUID;
+  v_count      INTEGER := 0;
+BEGIN
+  SELECT * INTO v_patient FROM patients WHERE id = p_patient_id;
+  IF NOT FOUND THEN RETURN 0; END IF;
+
+  FOR v_lead_id IN
+    SELECT id FROM leads
+    WHERE converted_patient_id IS NULL
+      AND (
+        (v_patient.dni_hash IS NOT NULL      AND dni_hash        = v_patient.dni_hash)
+        OR (v_patient.phone_normalized IS NOT NULL AND phone_normalized = v_patient.phone_normalized)
+      )
+  LOOP
+    PERFORM reconcile_lead_to_patient(v_lead_id);
+    v_count := v_count + 1;
+  END LOOP;
+
+  RETURN v_count;
+END;
+$$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 6. BACKFILL existing rows
