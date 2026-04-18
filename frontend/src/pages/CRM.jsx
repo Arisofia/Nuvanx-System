@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { MessageSquare, FileText, Search, UserPlus, Loader2, AlertCircle, X } from 'lucide-react';
+import { MessageSquare, Calendar, FileText, Search, UserPlus, Loader2, AlertCircle, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../config/api';
 
@@ -127,7 +127,7 @@ function AddLeadModal({ onClose, onCreated }) {
                 type="email"
                 value={form.email}
                 onChange={e => set('email', e.target.value)}
-                placeholder="email@company.com"
+                placeholder="email@example.com"
                 className="input w-full"
               />
             </div>
@@ -244,25 +244,28 @@ export default function CRM() {
     return matchStatus && matchSearch;
   });
 
-  const handleWhatsApp = async (lead) => {
+  async function handleWhatsApp(lead) {
     if (!lead.phone) {
-      toast.error('This lead has no phone number on file.');
+      toast.error('Este lead no tiene número de teléfono registrado.');
       return;
     }
     const message = window.prompt(
-      `Send WhatsApp to ${lead.name} (${lead.phone})\n\nType your message:`,
-      `Hi ${lead.name}, we're reaching out from our clinic. How can we help you?`,
+      `Enviar WhatsApp a ${lead.name} (${lead.phone})\n\nEscribe el mensaje:`,
+      `Hola ${lead.name}, te contactamos desde nuestra clínica. ¿Podemos ayudarte?`,
     );
     if (!message) return;
     try {
       await api.post('/api/whatsapp/send', { to: lead.phone, message, leadId: lead.id });
-      toast.success(`WhatsApp sent to ${lead.name}`);
+      toast.success(`WhatsApp enviado a ${lead.name}`);
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Error sending WhatsApp');
+      toast.error(err.response?.data?.message || 'Error enviando WhatsApp');
     }
+  }
+  const handleCalendar = () => {
+    toast('Calendar scheduling — coming soon.', { icon: '📅' });
   };
   const handleNotes = () => {
-    toast('Lead notes editor is coming soon.', { icon: '📝' });
+    toast('Lead notes editor — coming soon.', { icon: '📝' });
   };
 
   const handleLeadCreated = (newLead) => {
@@ -419,6 +422,13 @@ export default function CRM() {
                           className="p-1.5 rounded-lg text-emerald-400 hover:bg-emerald-500/10 transition-colors"
                         >
                           <MessageSquare size={15} />
+                        </button>
+                        <button
+                          onClick={() => handleCalendar(lead)}
+                          title="Schedule"
+                          className="p-1.5 rounded-lg text-brand-400 hover:bg-brand-500/10 transition-colors"
+                        >
+                          <Calendar size={15} />
                         </button>
                         <button
                           onClick={() => handleNotes(lead)}
