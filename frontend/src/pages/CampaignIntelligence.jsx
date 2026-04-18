@@ -19,7 +19,8 @@ const MONTH_LABEL = (iso) => {
 };
 const COLORS = ['#a78bfa', '#60a5fa', '#34d399', '#fbbf24', '#f87171', '#818cf8'];
 
-function KpiCard({ title, value, sub, icon: Icon, color = 'purple', blocked = false }) {
+function KpiCard({ title, value, sub, icon, color = 'purple', blocked = false }) {
+  const Icon = icon;
   const border = {
     purple: 'border-purple-700/30 from-purple-600/20 to-purple-800/10',
     blue:   'border-blue-700/30   from-blue-600/20   to-blue-800/10',
