@@ -271,15 +271,28 @@ Deno.serve(async (req: Request) => {
 
     // ── GET /api/dashboard/metrics ───────────────────────────────────────────
     if (resource === 'dashboard' && sub === 'metrics') {
-      const [leadsRes, intRes] = await Promise.all([
+      const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+      const clinicId = usr?.clinic_id;
+
+      const [leadsRes, intRes, settlementsRes] = await Promise.all([
         adminClient.from('leads').select('stage, revenue').eq('user_id', userId),
         adminClient.from('integrations').select('service, status').eq('user_id', userId),
+        clinicId
+          ? adminClient.from('financial_settlements')
+              .select('amount_net, cancelled_at, settled_at, template_name')
+              .eq('clinic_id', clinicId)
+          : Promise.resolve({ data: [], error: null }),
       ]);
       if (leadsRes.error) throw leadsRes.error;
       const leads = leadsRes.data ?? [];
       const integrations = intRes.data ?? [];
+      const settlements = (settlementsRes.data ?? []).filter((r: any) => !r.cancelled_at);
+
       const totalLeads = leads.length;
       const totalRevenue = leads.reduce((s: number, l: any) => s + Number(l.revenue || 0), 0);
+      const verifiedRevenue = settlements.reduce((s: number, r: any) => s + Number(r.amount_net), 0);
+      const settledCount = settlements.length;
+
       const conversions = leads.filter((l: any) => l.stage === 'treatment' || l.stage === 'closed').length;
       const conversionRate = totalLeads > 0 ? parseFloat(((conversions / totalLeads) * 100).toFixed(1)) : 0;
       const stages = ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'];
@@ -292,6 +305,8 @@ Deno.serve(async (req: Request) => {
         success: true,
         metrics: {
           totalLeads, totalRevenue: parseFloat(totalRevenue.toFixed(2)),
+          verifiedRevenue: parseFloat(verifiedRevenue.toFixed(2)),
+          settledCount,
           conversions, conversionRate, byStage, bySource,
           connectedIntegrations, totalIntegrations: integrations.length,
         },

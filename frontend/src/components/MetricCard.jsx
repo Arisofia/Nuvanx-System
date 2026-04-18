@@ -1,6 +1,6 @@
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
-export default function MetricCard({ title, value, change, changeLabel, icon: Icon, color = 'brand', prefix = '', suffix = '' }) {
+export default function MetricCard({ title, value, change, changeLabel, icon: Icon, color = 'brand', prefix = '', suffix = '', subtitle }) {
   const isPositive = change > 0;
   const isNeutral = change === 0;
 
@@ -28,6 +28,7 @@ export default function MetricCard({ title, value, change, changeLabel, icon: Ic
           <p className="text-3xl font-bold text-white tracking-tight">
             {prefix}{typeof value === 'number' ? value.toLocaleString() : value}{suffix}
           </p>
+          {subtitle && <p className="text-xs text-gray-500 mt-1">{subtitle}</p>}
         </div>
         {Icon && (
           <div className={`p-3 rounded-xl ${iconColorMap[color]}`}>
