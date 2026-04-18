@@ -12,7 +12,7 @@
 | Credential storage | ✅ AES-256-GCM encrypted, persisted to `credentials` table in PostgreSQL. |
 | Row-Level Security | ✅ RLS policies deployed on all tables. Anon read removed from `dashboard_metrics`. |
 | Backend auth | ✅ JWT bearer auth with PostgreSQL-backed user registration/login. |
-| CI/CD | ✅ Backend tests + frontend lint/build in CI; auto-deploy to Railway on main. |
+| CI/CD | ✅ Backend tests + frontend lint/build in CI; frontend auto-deploy to Vercel; Edge Function deployed manually via Supabase CLI. |
 
 ## Open Gaps
 

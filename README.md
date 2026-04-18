@@ -1,61 +1,72 @@
 # Nuvanx System
 
-Operational CRM/integrations/AI web application with an Express backend and React frontend.
+Revenue Intelligence Platform — Meta/Instagram lead acquisition → WhatsApp follow-up → appointment flow → Doctoralia settlement reconciliation.
 
-## Current State
+## Architecture
 
-### Implemented
-- Backend API server with routes for auth, credentials, integrations, leads, dashboard, AI, GitHub sync, Figma events, playbooks, and webhooks.
-- Frontend application (React 19 + Vite) with routes:
-  - `/dashboard` — Control center with Meta Ads KPIs, agent status, action plan, and activity feed.
-  - `/playbooks` — Automation playbooks.
-  - `/crm` — Lead pipeline with stages, add-lead modal, and search/filter.
-  - `/live` — Live dashboard with charts.
-  - `/integrations` — Integration status and configuration.
-  - `/ai` — AI Layer.
-- Dark theme design system: purple (`brand-*`), near-black (`dark-*`), silver (`metal-*`), Manrope font.
-- Encrypted credential storage (AES-256-GCM) in backend vault.
-- Figma sync via Supabase: KPIs written to `design_tokens`, `dashboard_metrics`, and `figma_sync_log` tables.
-- Supabase migrations under `supabase/migrations/`.
-- CI/CD: GitHub Actions CI + auto-deploy backend to Railway.
+- **Frontend**: React 19 + Vite → deployed to **Vercel**
+- **Backend**: Supabase Edge Functions (primary API) + Express server (webhooks, credential vault)
+- **Database**: Supabase (`ssvvuuysgxyqvmovrlvk` — nuvanx-prod)
+- **Figma sync**: Secondary Supabase project (`zpowfbeftxexzidlxndy`)
 
-### Partial
-- In-memory fallback exists for dev/test paths in several backend models.
-- Integration analytics endpoints depend on additional metadata and external credentials.
+## Frontend Routes
 
-### Missing
-- Email transport for password reset (token generated but not sent).
-- Full playbook execution backend.
-- Some CRM shortcut actions (Notes) are not yet wired.
+| Path | Page | Data source |
+|---|---|---|
+| `/dashboard` | Control centre — Meta KPIs, agent status, adaptive plan | Live API |
+| `/live` | Real-time lead flow + activity feed | Supabase Realtime + polling |
+| `/crm` | Lead pipeline — stages, DNI, lost_reason | Edge Function |
+| `/marketing` | Meta Ads + Google Ads intelligence | Edge Function |
+| `/financials` | Verified Financials — Doctoralia settlements, LTV | Edge Function |
+| `/intelligence` | Campaign attribution, WhatsApp funnel, conversation log | Edge Function |
+| `/playbooks` | Automation playbooks | Edge Function |
+| `/integrations` | Credential vault — Meta, WhatsApp, OpenAI, Gemini, GitHub, Google Ads | Edge Function |
+| `/ai` | AI content generation + campaign analysis | Edge Function |
 
-## Project Structure
+## Active Integrations
 
-- `backend/` — Express API and model/service layers.
-- `frontend/` — React + Vite UI.
-- `monitoring/` — Grafana Alloy observability stack.
-- `supabase/` — DB schema and migrations.
-- `docs/` — Architecture and CI/CD docs.
-- `scripts/` — Repository utility scripts.
+| Integration | Status | Notes |
+|---|---|---|
+| Meta Lead Ads | Active | Webhook ingestion + Graph API attribution |
+| WhatsApp Business | Active | Outbound send + conversation recording |
+| Meta Ads Insights | Active | Campaign / adset / ad KPIs |
+| Google Ads | Active | Service account JWT; requires GOOGLE_ADS_SERVICE_ACCOUNT secret |
+| OpenAI / Gemini | Active | Vault credential; used for AI content generation |
+| GitHub | Active | Repo sync + stats |
+| Doctoralia | Ingestion active | CSV upload → settlements table; no live API |
+| HubSpot | **Purged** | Removed in migration `20260416170000` |
+
+## Revenue Truth Model
+
+- `leads.revenue` = **estimated** (entered manually in CRM, never verified)
+- `financial_settlements.amount_net` = **verified** (Doctoralia settled operations, financing-only)
+- Dashboard revenue KPI shows estimated CRM values. Verified revenue is under `/financials` only.
+- DNI is the deterministic reconciliation key between leads and settlements. Currently populated only from Doctoralia CSV uploads, not from Meta webhooks.
 
 ## Development
 
 ```bash
-# Full monorepo (from root)
 npm run install:all
-npm run dev:backend   # nodemon
+npm run dev:backend   # Express server on :3001 (webhooks + credential vault)
 npm run dev:frontend  # Vite on http://localhost:5173
 ```
 
 ## Testing
 
 ```bash
-npm run test:backend                                        # all tests
-cd backend && npx jest tests/auth.test.js --runInBand --forceExit  # single file
+npm run test:backend
+cd backend && npx jest tests/auth.test.js --runInBand --forceExit
 ```
 
+## CI/CD
+
+- GitHub Actions CI: backend tests + frontend lint/build on every push to `main`
+- Deploy: frontend → Vercel (auto), Edge Function → Supabase (manual: `npx supabase functions deploy api`)
+- No Railway, no Render.
+
 ## Key Documentation
-- [SECURITY.md](SECURITY.md) — Security gaps and production readiness
-- [SUPABASE_SETUP.md](SUPABASE_SETUP.md) — Database setup (both Supabase projects)
+
+- [SECURITY.md](SECURITY.md) — Security posture and production readiness
+- [SUPABASE_SETUP.md](SUPABASE_SETUP.md) — Database setup and schema overview
 - [docs/agents-and-integrations-architecture.md](docs/agents-and-integrations-architecture.md) — Architecture and agent roadmap
-- [docs/ci-cd-status.md](docs/ci-cd-status.md) — CI/CD pipeline status
-- [monitoring/README.md](monitoring/README.md) — Grafana Alloy monitoring setup
+

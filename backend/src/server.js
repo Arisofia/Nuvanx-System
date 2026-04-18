@@ -30,7 +30,7 @@ if (config.sentryDsn) {
 
 const app = express();
 
-// Trust first proxy (Railway / Render / Vercel reverse proxy)
+// Trust first proxy (Vercel / reverse proxy in front of Express)
 app.set('trust proxy', 1);
 
 // ─── Security middleware ────────────────────────────────────────────────────
@@ -153,7 +153,7 @@ if (require.main === module) {
 
   // ─── Graceful shutdown ────────────────────────────────────────────
   // Drain in-flight requests before exiting so clients receive complete responses.
-  // Cloud platforms (Railway, Render, k8s) send SIGTERM before SIGKILL.
+  // Cloud platforms send SIGTERM before SIGKILL.
   const gracefulShutdown = (signal) => {
     logger.info(`${signal} received — closing HTTP server`);
     stopPeriodicSync();
