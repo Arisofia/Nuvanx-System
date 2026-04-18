@@ -752,6 +752,112 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // ── GET /api/financials/summary ─────────────────────────────────────────
+    if (resource === 'financials' && sub === 'summary') {
+      const { data: { user } } = await adminClient.auth.getUser(token!);
+      if (!user) return json({ success: false, message: 'Unauthorized' }, 401);
+      const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', user.id).single();
+      const clinicId = usr?.clinic_id;
+      if (!clinicId) return json({ success: false, message: 'No clinic' }, 400);
+
+      const { data: rows } = await adminClient
+        .from('financial_settlements')
+        .select('amount_gross, amount_discount, amount_net, template_name, settled_at, intake_at, cancelled_at')
+        .eq('clinic_id', clinicId)
+        .order('settled_at', { ascending: false });
+
+      const settled = (rows || []).filter((r: any) => !r.cancelled_at);
+      const totalNet = settled.reduce((s: number, r: any) => s + Number(r.amount_net), 0);
+      const totalGross = settled.reduce((s: number, r: any) => s + Number(r.amount_gross), 0);
+      const totalDiscount = settled.reduce((s: number, r: any) => s + Number(r.amount_discount), 0);
+      const avgTicket = settled.length ? totalNet / settled.length : 0;
+      const discountRate = totalGross ? (totalDiscount / totalGross) * 100 : 0;
+
+      const liquidationDays = settled
+        .filter((r: any) => r.intake_at)
+        .map((r: any) => (new Date(r.settled_at).getTime() - new Date(r.intake_at).getTime()) / 86400000);
+      const avgLiquidationDays = liquidationDays.length
+        ? liquidationDays.reduce((a: number, b: number) => a + b, 0) / liquidationDays.length
+        : 0;
+
+      // Template mix
+      const templateMap: Record<string, { count: number; net: number }> = {};
+      for (const r of settled) {
+        const t = r.template_name || 'Unknown';
+        if (!templateMap[t]) templateMap[t] = { count: 0, net: 0 };
+        templateMap[t].count++;
+        templateMap[t].net += Number(r.amount_net);
+      }
+      const templateMix = Object.entries(templateMap).map(([name, v]) => ({
+        name,
+        count: v.count,
+        net: Math.round(v.net * 100) / 100,
+        pct: Math.round((v.net / totalNet) * 1000) / 10,
+      })).sort((a, b) => b.net - a.net);
+
+      // Monthly trend (last 6 months)
+      const monthMap: Record<string, number> = {};
+      for (const r of settled) {
+        const m = r.settled_at?.slice(0, 7);
+        if (m) monthMap[m] = (monthMap[m] || 0) + Number(r.amount_net);
+      }
+      const monthly = Object.entries(monthMap)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .slice(-6)
+        .map(([month, net]) => ({ month, net: Math.round(net * 100) / 100 }));
+
+      return json({
+        success: true,
+        summary: {
+          totalNet: Math.round(totalNet * 100) / 100,
+          totalGross: Math.round(totalGross * 100) / 100,
+          totalDiscount: Math.round(totalDiscount * 100) / 100,
+          avgTicket: Math.round(avgTicket * 100) / 100,
+          discountRate: Math.round(discountRate * 10) / 10,
+          avgLiquidationDays: Math.round(avgLiquidationDays * 10) / 10,
+          settledCount: settled.length,
+          cancelledCount: (rows || []).length - settled.length,
+        },
+        templateMix,
+        monthly,
+      });
+    }
+
+    // ── GET /api/financials/settlements ──────────────────────────────────────
+    if (resource === 'financials' && sub === 'settlements') {
+      const { data: { user } } = await adminClient.auth.getUser(token!);
+      if (!user) return json({ success: false, message: 'Unauthorized' }, 401);
+      const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', user.id).single();
+      const clinicId = usr?.clinic_id;
+      if (!clinicId) return json({ success: false, message: 'No clinic' }, 400);
+
+      const { data: rows } = await adminClient
+        .from('financial_settlements')
+        .select('id, patient_dni, patient_name, template_name, amount_gross, amount_discount, amount_net, settled_at, intake_at, cancelled_at')
+        .eq('clinic_id', clinicId)
+        .order('settled_at', { ascending: false })
+        .limit(100);
+
+      return json({ success: true, settlements: rows || [] });
+    }
+
+    // ── GET /api/financials/patients ─────────────────────────────────────────
+    if (resource === 'financials' && sub === 'patients') {
+      const { data: { user } } = await adminClient.auth.getUser(token!);
+      if (!user) return json({ success: false, message: 'Unauthorized' }, 401);
+      const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', user.id).single();
+      const clinicId = usr?.clinic_id;
+      if (!clinicId) return json({ success: false, message: 'No clinic' }, 400);
+
+      const { data: rows } = await adminClient
+        .from('patients')
+        .select('id, dni, name, email, phone, total_ltv, last_visit, created_at')
+        .eq('clinic_id', clinicId)
+        .order('total_ltv', { ascending: false });
+
+      return json({ success: true, patients: rows || [] });
+    }
+
     // ── GET /api/figma/events ────────────────────────────────────────────────
     if (resource === 'figma' && sub === 'events') {
       return json({ success: true, events: [] });
