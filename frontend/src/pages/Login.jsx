@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Zap, Eye, EyeOff, Loader2, ArrowLeft } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/useAuth';
-import api from '../config/api';
+import { supabase, isSupabaseAvailable } from '../lib/supabase/client';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -34,7 +34,12 @@ export default function Login() {
     if (!resetEmail) return;
     setResetLoading(true);
     try {
-      await api.post('/api/auth/forgot-password', { email: resetEmail });
+      if (isSupabaseAvailable()) {
+        const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
+          redirectTo: `${window.location.origin}/reset-password`,
+        });
+        if (error) throw error;
+      }
       toast.success('If that email is registered, a reset link has been sent.');
       setForgotMode(false);
     } catch {
