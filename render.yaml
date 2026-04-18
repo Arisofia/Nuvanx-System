@@ -1,0 +1,33 @@
+# Render.com deployment (free tier alternative to Railway)
+# Docs: https://render.com/docs/yaml-spec
+services:
+  - type: web
+    name: nuvanx-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Set the following in the Render dashboard (never commit real values):
+      # JWT_SECRET              — minimum 32 characters
+      # ENCRYPTION_KEY          — minimum 32 characters
+      # DATABASE_URL            — Supabase PostgreSQL connection string
+      # SUPABASE_URL
+      # SUPABASE_SERVICE_ROLE_KEY
+      # SUPABASE_JWT_SECRET
+      # FRONTEND_URL            — comma-separated if multiple (e.g. Vercel preview URLs)
+      # WEBHOOK_ADMIN_USER_ID   — UUID of admin user for webhook lead ingestion
+      # META_ACCESS_TOKEN       — long-lived Meta System User token
+      # META_AD_ACCOUNT_ID      — act_XXXXXXXXX format
+      # META_APP_SECRET         — for webhook signature verification
+      # META_VERIFY_TOKEN       — for Meta webhook challenge verification
+      # WHATSAPP_ACCESS_TOKEN
+      # WHATSAPP_PHONE_NUMBER_ID
+      # OPENAI_API_KEY
+      # GEMINI_API_KEY
+      # SENTRY_DSN              — (optional) Sentry error tracking
+      # RESEND_API_KEY          — (optional) for email notifications

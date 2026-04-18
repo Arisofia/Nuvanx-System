@@ -142,4 +142,57 @@ async function getTrendsData(accessToken, adAccountId, dateRange = {}) {
   return data.data || [];
 }
 
-module.exports = { testConnection, getCampaigns, getMetrics, getComprehensiveMetrics, getTrendsData };
+/**
+ * Fetch campaigns with per-campaign insights in a single API call.
+ * Uses the insights edge with a time_range filter so each campaign row
+ * includes spend, impressions, clicks, reach, CTR, CPC, CPM, CPP, and
+ * conversions for the requested date window.
+ *
+ * @param {string} accessToken
+ * @param {string} adAccountId
+ * @param {{ since: string, until: string }} dateRange  ISO date strings
+ * @returns {Promise<object[]>}
+ */
+async function getCampaignsWithInsights(accessToken, adAccountId, dateRange = {}) {
+  const since = dateRange.since || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const until = dateRange.until || new Date().toISOString().slice(0, 10);
+
+  const { data } = await axios.get(`${META_GRAPH_BASE}/${adAccountId}/campaigns`, {
+    params: {
+      access_token: accessToken,
+      fields: 'id,name,status,objective,daily_budget,lifetime_budget,' +
+              'insights{spend,impressions,reach,clicks,ctr,cpc,cpm,cpp,conversions}',
+      time_range: JSON.stringify({ since, until }),
+      limit: 50,
+    },
+    timeout: 30000,
+  });
+
+  const campaigns = data.data || [];
+  return campaigns.map((c) => {
+    const ins = c.insights?.data?.[0] ?? null;
+    return {
+      id: c.id,
+      name: c.name,
+      status: c.status,
+      objective: c.objective,
+      daily_budget: c.daily_budget,
+      lifetime_budget: c.lifetime_budget,
+      insights: ins
+        ? {
+            spend: parseFloat(ins.spend || 0),
+            impressions: parseFloat(ins.impressions || 0),
+            reach: parseFloat(ins.reach || 0),
+            clicks: parseFloat(ins.clicks || 0),
+            ctr: parseFloat(ins.ctr || 0),
+            cpc: parseFloat(ins.cpc || 0),
+            cpm: parseFloat(ins.cpm || 0),
+            cpp: parseFloat(ins.cpp || 0),
+            conversions: parseFloat(ins.conversions || 0),
+          }
+        : null,
+    };
+  });
+}
+
+module.exports = { testConnection, getCampaigns, getCampaignsWithInsights, getMetrics, getComprehensiveMetrics, getTrendsData };

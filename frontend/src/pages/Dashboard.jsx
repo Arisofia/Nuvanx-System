@@ -136,7 +136,6 @@ export default function Dashboard() {
     return () => clearInterval(timer);
   }, []);
 
-  const totalRevenue = metrics?.totalRevenue ?? 0;
   const verifiedRevenue = metrics?.verifiedRevenue ?? 0;
   const settledCount = metrics?.settledCount ?? 0;
   const totalLeads = metrics?.totalLeads ?? 0;

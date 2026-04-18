@@ -324,8 +324,8 @@ function AIAnalysisPanel({ insights, campaigns, platform }) {
     if (!insights) return;
     setAnalyzing(true); setAnalysis(''); setErr('');
     try {
-      const res = await api.post('/api/ai/analyze', {
-        data: {
+      const res = await api.post('/api/ai/analyze-campaign', {
+        campaignData: JSON.stringify({
           platform: platform === 'google' ? 'Google Ads' : 'Meta Ads',
           period: insights.period,
           summary: insights.summary,
@@ -335,8 +335,8 @@ function AIAnalysisPanel({ insights, campaigns, platform }) {
             objective: c.objective ?? c.type,
             insights: c.insights,
           })),
-        },
-        context: 'Clínica de medicina estética premium en Madrid. Objetivo: citas para tratamientos faciales, corporales y rejuvenecimiento.',
+          context: 'Clínica de medicina estética premium en Madrid. Objetivo: citas para tratamientos faciales, corporales y rejuvenecimiento.',
+        }),
       });
       if (res.data.success) setAnalysis(res.data.analysis);
       else setErr(res.data.message || 'Análisis IA no disponible');

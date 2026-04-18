@@ -234,6 +234,34 @@ router.post(
   },
 );
 
+/**
+ * PATCH /api/integrations/:service — update metadata fields for an integration
+ * (e.g. adAccountId for Meta, phoneNumberId for WhatsApp).
+ * Does not touch the credential vault or connection status.
+ */
+router.patch(
+  '/:service',
+  serviceParamRule,
+  handleValidationErrors,
+  async (req, res, next) => {
+    const { service } = req.params;
+    const { metadata = {} } = req.body;
+
+    try {
+      const integrations = await integrationModel.getAll(req.user.id);
+      const existing = integrations.find((i) => i.service === service);
+      await integrationModel.upsert(req.user.id, service, {
+        status: existing?.status || 'disconnected',
+        metadata: { ...(existing?.metadata || {}), ...metadata },
+      });
+      logger.info('Integration metadata updated', { userId: req.user.id, service });
+      res.json({ success: true, message: `${service} metadata updated` });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 /** POST /api/integrations/:service/connect - store OAuth token and mark connected */
 router.post(
   '/:service/connect',
