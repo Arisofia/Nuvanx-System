@@ -126,6 +126,12 @@ app.use('/api/whatsapp', require('./routes/whatsapp'));
 app.use('/api/figma', require('./routes/figma'));
 app.use('/api/github', require('./routes/github'));
 app.use('/api/playbooks', require('./routes/playbooks'));
+app.use('/api/meta', require('./routes/meta'));
+app.use('/api/financials', require('./routes/financials'));
+app.use('/api/kpis', require('./routes/kpis'));
+app.use('/api/reports', require('./routes/reports'));
+app.use('/api/traceability', require('./routes/traceability'));
+app.use('/api/doctoralia', require('./routes/doctoralia'));
 
 // ─── 404 handler ────────────────────────────────────────────────────────────
 app.use((req, res) => {
@@ -146,6 +152,9 @@ if (require.main === module) {
     logger.info(`RIP backend running on port ${config.port} [${config.nodeEnv}]`);
     logger.info(`Database: ${isAvailable() ? 'PostgreSQL connected' : 'IN-MEMORY (data lost on restart) — set DATABASE_URL in .env'}`);
     logger.info(`Supabase client: ${supabaseAdmin ? 'configured' : 'not configured — set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY'}`);
+    if (!config.webhookAdminUserId) {
+      logger.warn('WEBHOOK_ADMIN_USER_ID is not set — Meta and WhatsApp webhook leads will be silently discarded. Set this to the UUID of the main platform user.');
+    }
 
     // Start periodic dashboard_metrics sync (every 5 min) when Figma Supabase is configured
     startPeriodicSync();
