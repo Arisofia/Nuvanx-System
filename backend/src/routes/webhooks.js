@@ -121,13 +121,19 @@ router.post('/meta', async (req, res) => {
           notes: `Leadgen ID: ${leadgen_id} | Page: ${page_id || ''} | Form: ${form_id || ''}`,
         };
 
+        // Attribution data from Meta Graph API
+        let attribution = { campaign_id: null, campaign_name: null, adset_id: null, adset_name: null, ad_id: null, ad_name: null, form_id: form_id || null };
+
         if (config.metaAccessToken) {
           try {
             const axios = require('axios');
             const { data } = await axios.get(
               `https://graph.facebook.com/v21.0/${leadgen_id}`,
               {
-                params: { access_token: config.metaAccessToken },
+                params: {
+                  access_token: config.metaAccessToken,
+                  fields: 'field_data,ad_id,adset_id,campaign_id,form_id,created_time',
+                },
                 timeout: 10000,
               },
             );
@@ -135,9 +141,42 @@ router.post('/meta', async (req, res) => {
             for (const fd of (data.field_data || [])) {
               fields[fd.name] = fd.values?.[0] || '';
             }
-            leadData.name = fields.full_name || fields.first_name || leadData.name;
+            leadData.name  = fields.full_name || fields.first_name || leadData.name;
             leadData.email = fields.email || '';
             leadData.phone = fields.phone_number || '';
+            attribution.ad_id       = data.ad_id || null;
+            attribution.adset_id    = data.adset_id || null;
+            attribution.campaign_id = data.campaign_id || null;
+            attribution.form_id     = data.form_id || form_id || null;
+
+            // Resolve human-readable names (best-effort, non-blocking)
+            if (attribution.campaign_id) {
+              try {
+                const campRes = await axios.get(
+                  `https://graph.facebook.com/v21.0/${attribution.campaign_id}`,
+                  { params: { access_token: config.metaAccessToken, fields: 'name' }, timeout: 6000 },
+                );
+                attribution.campaign_name = campRes.data?.name || null;
+              } catch (_) { /* non-fatal */ }
+            }
+            if (attribution.adset_id) {
+              try {
+                const adsetRes = await axios.get(
+                  `https://graph.facebook.com/v21.0/${attribution.adset_id}`,
+                  { params: { access_token: config.metaAccessToken, fields: 'name' }, timeout: 6000 },
+                );
+                attribution.adset_name = adsetRes.data?.name || null;
+              } catch (_) { /* non-fatal */ }
+            }
+            if (attribution.ad_id) {
+              try {
+                const adRes = await axios.get(
+                  `https://graph.facebook.com/v21.0/${attribution.ad_id}`,
+                  { params: { access_token: config.metaAccessToken, fields: 'name' }, timeout: 6000 },
+                );
+                attribution.ad_name = adRes.data?.name || null;
+              } catch (_) { /* non-fatal */ }
+            }
           } catch (fetchErr) {
             logger.warn('Meta webhook: failed to fetch lead details', { leadgen_id, error: fetchErr.message });
           }
@@ -146,10 +185,12 @@ router.post('/meta', async (req, res) => {
         // Insert into DB under admin user
         const webhookUserId = config.webhookAdminUserId;
         if (webhookUserId && isAvailable()) {
-          await getPool.query(
-            `INSERT INTO leads (user_id, name, email, phone, source, stage, revenue, notes, external_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-             ON CONFLICT (user_id, source, external_id) WHERE external_id IS NOT NULL DO NOTHING`,
+          const insertResult = await getPool.query(
+            `INSERT INTO leads (user_id, name, email, phone, source, stage, revenue, notes, external_id,
+                                campaign_id, campaign_name, adset_id, adset_name, ad_id, ad_name, form_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+             ON CONFLICT (user_id, source, external_id) WHERE external_id IS NOT NULL DO NOTHING
+             RETURNING id`,
             [
               webhookUserId,
               leadData.name,
@@ -160,8 +201,32 @@ router.post('/meta', async (req, res) => {
               leadData.revenue,
               leadData.notes,
               leadgen_id,
+              attribution.campaign_id,
+              attribution.campaign_name,
+              attribution.adset_id,
+              attribution.adset_name,
+              attribution.ad_id,
+              attribution.ad_name,
+              attribution.form_id,
             ],
           );
+
+          // Write meta_attribution row for the inserted lead (via Supabase admin for RLS bypass)
+          const newLeadId = insertResult.rows[0]?.id;
+          if (newLeadId && supabaseAdmin) {
+            supabaseAdmin.from('meta_attribution').insert({
+              lead_id:       newLeadId,
+              leadgen_id,
+              page_id:       page_id || null,
+              form_id:       attribution.form_id,
+              campaign_id:   attribution.campaign_id,
+              campaign_name: attribution.campaign_name,
+              adset_id:      attribution.adset_id,
+              adset_name:    attribution.adset_name,
+              ad_id:         attribution.ad_id,
+              ad_name:       attribution.ad_name,
+            }).then(() => {}).catch((e) => logger.warn('meta_attribution insert failed', { error: e.message }));
+          }
         }
 
         logger.info('Meta lead webhook processed', { leadgen_id, page_id });

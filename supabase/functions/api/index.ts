@@ -858,6 +858,62 @@ Deno.serve(async (req: Request) => {
       return json({ success: true, patients: rows || [] });
     }
 
+    // ── GET /api/traceability/leads ──────────────────────────────────────────
+    if (resource === 'traceability' && sub === 'leads') {
+      const { data: { user } } = await adminClient.auth.getUser(token!);
+      if (!user) return json({ success: false, message: 'Unauthorized' }, 401);
+      const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', user.id).single();
+      const clinicId = usr?.clinic_id;
+      if (!clinicId) return json({ success: false, message: 'No clinic' }, 400);
+
+      const { data: rows } = await adminClient
+        .from('v_lead_traceability')
+        .select('*')
+        .limit(250);
+
+      return json({ success: true, leads: rows || [] });
+    }
+
+    // ── GET /api/traceability/funnel ─────────────────────────────────────────
+    if (resource === 'traceability' && sub === 'funnel') {
+      const { data: { user } } = await adminClient.auth.getUser(token!);
+      if (!user) return json({ success: false, message: 'Unauthorized' }, 401);
+
+      const { data: rows } = await adminClient.from('v_whatsapp_funnel').select('*');
+      return json({ success: true, funnel: rows || [] });
+    }
+
+    // ── GET /api/traceability/campaigns ─────────────────────────────────────
+    if (resource === 'traceability' && sub === 'campaigns') {
+      const { data: { user } } = await adminClient.auth.getUser(token!);
+      if (!user) return json({ success: false, message: 'Unauthorized' }, 401);
+
+      const { data: rows } = await adminClient.from('v_campaign_roi').select('*').order('total_leads', { ascending: false });
+      return json({ success: true, campaigns: rows || [] });
+    }
+
+    // ── GET /api/conversations ───────────────────────────────────────────────
+    if (resource === 'conversations' && !sub) {
+      const { data: { user } } = await adminClient.auth.getUser(token!);
+      if (!user) return json({ success: false, message: 'Unauthorized' }, 401);
+      const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', user.id).single();
+      const clinicId = usr?.clinic_id;
+      if (!clinicId) return json({ success: false, message: 'No clinic' }, 400);
+
+      const leadId = url.searchParams.get('lead_id');
+      let query = adminClient
+        .from('whatsapp_conversations')
+        .select('id, lead_id, phone, direction, message_type, message_preview, sent_at, delivered_at, read_at, replied_at')
+        .eq('clinic_id', clinicId)
+        .order('sent_at', { ascending: false })
+        .limit(200);
+
+      if (leadId) query = query.eq('lead_id', leadId);
+
+      const { data: rows } = await query;
+      return json({ success: true, conversations: rows || [] });
+    }
+
     // ── GET /api/figma/events ────────────────────────────────────────────────
     if (resource === 'figma' && sub === 'events') {
       return json({ success: true, events: [] });

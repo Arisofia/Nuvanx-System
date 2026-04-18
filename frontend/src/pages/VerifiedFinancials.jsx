@@ -8,6 +8,8 @@ import api from '../config/api';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (n) => new Intl.NumberFormat('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n ?? 0);
+// GDPR: only show last 4 chars of DNI in dashboards
+const maskDni = (dni) => dni ? ('***' + String(dni).slice(-4)) : '—';
 const fmtEur = (n) => `€${fmt(n)}`;
 const fmtPct = (n) => `${(n ?? 0).toFixed(1)}%`;
 
@@ -294,7 +296,7 @@ export default function VerifiedFinancials() {
                       <td className="px-4 py-3 text-xs font-mono text-gray-500">{s.id}</td>
                       <td className="px-4 py-3 text-xs text-white font-medium">{s.patient_name || '—'}</td>
                       <td className="px-4 py-3">
-                        <span className="text-xs font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded">{s.patient_dni || '—'}</span>
+                        <span className="text-xs font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded" title="DNI masked per GDPR">{maskDni(s.patient_dni)}</span>
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-400 max-w-[160px] truncate">{s.template_name}</td>
                       <td className="px-4 py-3 text-xs text-gray-300">{fmtEur(s.amount_gross)}</td>
@@ -347,7 +349,7 @@ export default function VerifiedFinancials() {
                       </div>
                     </td>
                     <td className="px-4 py-3.5">
-                      <span className="text-xs font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded">{p.dni || '—'}</span>
+                      <span className="text-xs font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded" title="DNI masked per GDPR">{maskDni(p.dni)}</span>
                     </td>
                     <td className="px-4 py-3.5 text-xs text-gray-400">{p.phone || '—'}</td>
                     <td className="px-4 py-3.5 text-xs text-gray-400">{p.email || '—'}</td>
