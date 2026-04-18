@@ -30,7 +30,7 @@ async function getClinicId(userId) {
 
 router.get('/doctoralia-financials', async (req, res, next) => {
   try {
-    if (!isAvailable()) return res.json({ byMonth: [], templateSummary: [] });
+    if (!isAvailable()) return res.status(503).json({ success: false, message: 'Database not available' });
 
     const clinicId = await getClinicId(req.user.id);
     if (!clinicId) return res.json({ byMonth: [], templateSummary: [] });
@@ -96,7 +96,7 @@ router.get('/doctoralia-financials', async (req, res, next) => {
 
 router.get('/campaign-performance', async (req, res, next) => {
   try {
-    if (!isAvailable()) return res.json({ campaigns: [] });
+    if (!isAvailable()) return res.status(503).json({ success: false, message: 'Database not available' });
 
     const { rows } = await pool.query(
       `SELECT

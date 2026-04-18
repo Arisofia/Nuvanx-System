@@ -33,7 +33,7 @@ async function getClinicId(userId) {
 
 router.get('/funnel', async (req, res, next) => {
   try {
-    if (!isAvailable()) return res.json({ funnel: [] });
+    if (!isAvailable()) return res.status(503).json({ success: false, message: 'Database not available' });
 
     const { rows } = await pool.query(
       `SELECT
@@ -70,7 +70,7 @@ router.get('/funnel', async (req, res, next) => {
 
 router.get('/leads', async (req, res, next) => {
   try {
-    if (!isAvailable()) return res.json({ leads: [] });
+    if (!isAvailable()) return res.status(503).json({ success: false, message: 'Database not available' });
 
     const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
     const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);

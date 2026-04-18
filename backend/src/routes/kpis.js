@@ -37,7 +37,7 @@ router.get('/', async (req, res, next) => {
     const userId = req.user.id;
 
     if (!isAvailable()) {
-      return res.json({ doctoralia: {}, acquisition: {}, blocked: [] });
+      return res.status(503).json({ success: false, message: 'Database not available' });
     }
 
     const clinicId = await getClinicId(userId);
