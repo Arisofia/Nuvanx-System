@@ -54,6 +54,20 @@ Deno.serve(async (req: Request) => {
       return json({ success: true, status: 'ok', timestamp: new Date().toISOString() });
     }
 
+    // ── GET /api/auth/me ─────────────────────────────────────────────────────
+    if (resource === 'auth' && sub === 'me' && req.method === 'GET') {
+      const { data: { user: sbUser } } = await adminClient.auth.admin.getUserById(userId);
+      if (!sbUser) return json({ success: false, message: 'User not found' }, 404);
+      return json({
+        success: true,
+        user: {
+          id: sbUser.id,
+          email: sbUser.email,
+          name: sbUser.user_metadata?.name ?? sbUser.email,
+        },
+      });
+    }
+
     // ── GET /api/leads ───────────────────────────────────────────────────────
     if (resource === 'leads' && req.method === 'GET' && !sub) {
       const { data, error } = await adminClient
