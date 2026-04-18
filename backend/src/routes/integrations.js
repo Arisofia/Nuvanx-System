@@ -252,7 +252,7 @@ router.patch(
       const existing = integrations.find((i) => i.service === service);
       await integrationModel.upsert(req.user.id, service, {
         status: existing?.status || 'disconnected',
-        metadata,
+        metadata: { ...(existing?.metadata || {}), ...metadata },
       });
       logger.info('Integration metadata updated', { userId: req.user.id, service });
       res.json({ success: true, message: `${service} metadata updated` });
