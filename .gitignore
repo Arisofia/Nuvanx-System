@@ -11,6 +11,8 @@
 **/.env.local
 **/.env.*.local
 .secrets.local
+backend/google-service-account.json
+*service-account*.json
 
 # Editor / OS
 .idea/
