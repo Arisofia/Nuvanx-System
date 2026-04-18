@@ -115,8 +115,8 @@ BEGIN
   -- Remove every character that is not a digit
   cleaned := regexp_replace(raw_phone, '[^0-9]', '', 'g');
   -- Strip Spanish country code:
-  --   +34XXXXXXXXX → after stripping '+': 34XXXXXXXXX → 11 digits, starts with '34'
-  --   0034XXXXXXXXX → after stripping:    0034XXXXXXXXX → 13 digits, starts with '0034'
+  --   +34XXXXXXXXX  → after stripping non-digits: 34XXXXXXXXX  → 11 digits, starts with '34'
+  --   0034XXXXXXXXX → after stripping non-digits: 0034XXXXXXXXX → 13 digits, starts with '0034'
   IF length(cleaned) = 11 AND left(cleaned, 2) = '34' THEN
     cleaned := right(cleaned, 9);
   ELSIF length(cleaned) = 13 AND left(cleaned, 4) = '0034' THEN

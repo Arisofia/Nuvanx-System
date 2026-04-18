@@ -105,6 +105,7 @@ router.post(
       let updated = 0;
       let patientsUpserted = 0;
       const rowErrors = [];
+      const patientIdsToReconcile = [];
 
       // Wrap the entire batch in a transaction.  Per-row errors use SAVEPOINTs
       // so a single bad row does not abort the whole import.
@@ -186,16 +187,9 @@ router.post(
 
             await pool.query('RELEASE SAVEPOINT sp');
 
-            // Reconcile any existing leads that match this patient — fire-and-forget
-            // after SAVEPOINT release so reconcile errors don't affect the ingest.
-            // Uses reconcile_patient_leads(patient_id) which finds matching leads
-            // by dni_hash/phone_normalized and calls reconcile_lead_to_patient(lead_id)
-            // for each, correctly linking them to the patient.
+            // Collect patients to reconcile after the transaction commits
             if (patientId) {
-              pool.query(
-                'SELECT reconcile_patient_leads($1)',
-                [patientId],
-              ).catch((e) => logger.warn('reconcile_patient_leads failed', { patientId, error: e.message }));
+              patientIdsToReconcile.push(patientId);
             }
           } catch (rowErr) {
             await pool.query('ROLLBACK TO SAVEPOINT sp');
@@ -208,6 +202,17 @@ router.post(
       } catch (txErr) {
         await pool.query('ROLLBACK');
         throw txErr;
+      }
+
+      // Fire-and-forget lead reconciliation after transaction completes.
+      // Uses reconcile_patient_leads(patient_id) which finds unlinked leads by
+      // dni_hash/phone_normalized and calls reconcile_lead_to_patient(lead_id)
+      // for each, correctly linking existing CRM leads to the Doctoralia patient.
+      for (const patientId of patientIdsToReconcile) {
+        pool.query(
+          'SELECT reconcile_patient_leads($1)',
+          [patientId],
+        ).catch((e) => logger.warn('reconcile_patient_leads failed', { patientId, error: e.message }));
       }
 
       logger.info('Doctoralia ingest complete', {

@@ -330,8 +330,9 @@ describe('Doctoralia Ingest API', () => {
       .set('Authorization', authHeader)
       .send({ rows: [validRow] });
 
-    // Give the fire-and-forget promise a tick to resolve
-    await new Promise((r) => setImmediate(r));
+    // The reconcile call is fire-and-forget but dispatched synchronously after COMMIT.
+    // Drain the microtask queue so all pending promise callbacks have run.
+    await Promise.resolve();
 
     const reconcileCalls = mockQuery.mock.calls.filter(
       (c) => typeof c[0] === 'string' && c[0].includes('reconcile_patient_leads'),
