@@ -22,8 +22,7 @@ const FUNNEL_STAGES = [
   { key: 'closed_won',    label: 'Closed',    color: '#22c55e' },
 ];
 
-function KpiCard({ label, value, sub, icon, accent = 'brand' }) {
-  const Icon = icon;
+function KpiCard({ label, value, sub, icon: Icon, accent = 'brand' }) {
   const accents = {
     brand:  'text-indigo-400 bg-indigo-500/10',
     green:  'text-emerald-400 bg-emerald-500/10',
@@ -34,9 +33,11 @@ function KpiCard({ label, value, sub, icon, accent = 'brand' }) {
     <div className="card py-5">
       <div className="flex items-start justify-between mb-3">
         <p className="text-sm text-gray-400">{label}</p>
-        <span className={`p-2 rounded-lg ${accents[accent]}`}>
-          <Icon size={16} className={accents[accent].split(' ')[0]} />
-        </span>
+        {Icon && (
+          <span className={`p-2 rounded-lg ${accents[accent]}`}>
+            <Icon size={16} className={accents[accent].split(' ')[0]} />
+          </span>
+        )}
       </div>
       <p className="text-2xl font-bold text-white">{value}</p>
       {sub && <p className="text-xs text-gray-500 mt-1">{sub}</p>}

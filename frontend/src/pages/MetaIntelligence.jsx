@@ -54,12 +54,13 @@ function ChangeBadge({ value, inverse = false }) {
   );
 }
 
-function KpiCard({ label, value, unit = '', change, inverse = false, icon, color, bg }) {
-  const Icon = icon;
+function KpiCard({ label, value, unit = '', change, inverse = false, icon: Icon, color, bg }) {
   return (
     <div className="card flex flex-col gap-2">
       <div className="flex items-center justify-between">
-        <div className={`p-2 rounded-lg ${bg}`}><Icon size={16} className={color} /></div>
+        <div className={`p-2 rounded-lg ${bg}`}>
+          {Icon ? <Icon size={16} className={color} /> : null}
+        </div>
         <ChangeBadge value={change} inverse={inverse} />
       </div>
       <div>
