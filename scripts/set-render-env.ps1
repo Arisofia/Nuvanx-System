@@ -30,17 +30,24 @@ Write-Host "Found service: $serviceId ($($svc.service.name))" -ForegroundColor G
 $envVars = @(
     @{ key = "NODE_ENV";                value = "production" }
     @{ key = "PORT";                    value = "10000" }
-    @{ key = "JWT_SECRET";              value = "4b8a484bc5f61ec5533b990fff657922dce43fccd21d7136cdbbfefdaa3ac9db" }
-    @{ key = "ENCRYPTION_KEY";          value = "e04756b46dacf0e74233cf41a02103f27fdadcbd72c83153be7d7ec5e3ac46a9" }
-    @{ key = "DATABASE_URL";            value = "postgresql://postgres.ssvvuuysgxyqvmovrlvk:n5SNU4AYoEmuJ6RXiVqMchLCxOWlwfeB@aws-1-eu-central-1.pooler.supabase.com:6543/postgres" }
-    @{ key = "FRONTEND_URL";            value = "https://frontend-beta-ten-49.vercel.app,https://frontend-arisofias-projects-c2217452.vercel.app,http://localhost:5173" }
-    @{ key = "SUPABASE_URL";            value = "https://ssvvuuysgxyqvmovrlvk.supabase.co" }
-    @{ key = "SUPABASE_ANON_KEY";       value = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzdnZ1dXlzZ3h5cXZtb3ZybHZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ2NTkwMTQsImV4cCI6MjA2MDIzNTAxNH0.qkCPMBzJfOu2HzCF6OkTz0RLKtSfnFaDXRnONpSbvJo" }
-    @{ key = "SUPABASE_SERVICE_ROLE_KEY"; value = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzdnZ1dXlzZ3h5cXZtb3ZybHZrIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0NDY1OTAxNCwiZXhwIjoyMDYwMjM1MDE0fQ.X3BKBG3Gxljd29LMmZp3cGlKBnHNb8xSPJ7zUxJmjQw" }
-    @{ key = "SUPABASE_JWT_SECRET";     value = "7PV9B5MxqJGMD9Gb3L5VJQzq5gNTJ0IijSlsT7eSH+3VEoVxLmWTFmA0Jb9lEkpGVMGlIwVFlXJJ3Vv6bY/Dw==" }
-    @{ key = "SUPABASE_FIGMA_URL";      value = "https://ssvvuuysgxyqvmovrlvk.supabase.co" }
-    @{ key = "SUPABASE_FIGMA_ANON_KEY"; value = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzdnZ1dXlzZ3h5cXZtb3ZybHZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ2NTkwMTQsImV4cCI6MjA2MDIzNTAxNH0.qkCPMBzJfOu2HzCF6OkTz0RLKtSfnFaDXRnONpSbvJo" }
-    @{ key = "SUPABASE_FIGMA_SERVICE_ROLE"; value = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzdnZ1dXlzZ3h5cXZtb3ZybHZrIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0NDY1OTAxNCwiZXhwIjoyMDYwMjM1MDE0fQ.X3BKBG3Gxljd29LMmZp3cGlKBnHNb8xSPJ7zUxJmjQw" }
+    # SECURITY: Never hardcode secrets here. Pass them as parameters or read from a local .env file.
+    # Generate JWT_SECRET: openssl rand -hex 32
+    @{ key = "JWT_SECRET";              value = $env:JWT_SECRET }
+    # Generate ENCRYPTION_KEY: openssl rand -hex 32
+    @{ key = "ENCRYPTION_KEY";          value = $env:ENCRYPTION_KEY }
+    # Supabase → Project Settings → Database → Connection Pooling (Transaction mode, port 6543)
+    @{ key = "DATABASE_URL";            value = $env:DATABASE_URL }
+    # Space-separated or comma-separated Vercel frontend URL(s) + localhost for dev
+    @{ key = "FRONTEND_URL";            value = $env:FRONTEND_URL }
+    # Supabase → Project Settings → API
+    @{ key = "SUPABASE_URL";            value = $env:SUPABASE_URL }
+    @{ key = "SUPABASE_ANON_KEY";       value = $env:SUPABASE_ANON_KEY }
+    @{ key = "SUPABASE_SERVICE_ROLE_KEY"; value = $env:SUPABASE_SERVICE_ROLE_KEY }
+    # Supabase → Project Settings → API → JWT Settings → JWT Secret
+    @{ key = "SUPABASE_JWT_SECRET";     value = $env:SUPABASE_JWT_SECRET }
+    @{ key = "SUPABASE_FIGMA_URL";      value = $env:SUPABASE_FIGMA_URL }
+    @{ key = "SUPABASE_FIGMA_ANON_KEY"; value = $env:SUPABASE_FIGMA_ANON_KEY }
+    @{ key = "SUPABASE_FIGMA_SERVICE_ROLE"; value = $env:SUPABASE_FIGMA_SERVICE_ROLE }
 )
 
 # --- Set env vars via Render API ---
