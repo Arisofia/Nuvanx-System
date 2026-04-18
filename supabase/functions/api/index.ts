@@ -82,8 +82,7 @@ async function callOpenAI(prompt: string, apiKey: string): Promise<string> {
 }
 
 // ── Meta credential resolver ──────────────────────────────────────────────────
-async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: string) {
-  const { data: credRow } = await adminClient
+async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: string) {  const { data: credRow } = await adminClient
     .from('credentials').select('encrypted_key').eq('user_id', userId).eq('service', 'meta').single();
   if (!credRow) return { notConnected: true } as const;
   const accessToken = await decryptCred(credRow.encrypted_key);
@@ -95,6 +94,97 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
   }
   if (adAccountId && !adAccountId.startsWith('act_')) adAccountId = `act_${adAccountId}`;
   return { notConnected: false, accessToken, adAccountId } as const;
+}
+
+// ── Google Ads helpers ────────────────────────────────────────────────────────
+function b64url(data: ArrayBuffer | string): string {
+  let str: string;
+  if (typeof data === 'string') {
+    str = btoa(data);
+  } else {
+    str = btoa(String.fromCharCode(...new Uint8Array(data)));
+  }
+  return str.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+async function importRSAPrivateKey(pem: string): Promise<CryptoKey> {
+  const pemBody = pem.replace(/-----BEGIN PRIVATE KEY-----/, '')
+    .replace(/-----END PRIVATE KEY-----/, '')
+    .replace(/\s+/g, '');
+  const binary = atob(pemBody);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return crypto.subtle.importKey(
+    'pkcs8', bytes.buffer,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false, ['sign'],
+  );
+}
+
+async function getGoogleAccessToken(serviceAccount: any): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  const headerB64 = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+  const payloadB64 = b64url(JSON.stringify({
+    iss: serviceAccount.client_email,
+    scope: 'https://www.googleapis.com/auth/adwords',
+    aud: serviceAccount.token_uri ?? 'https://oauth2.googleapis.com/token',
+    iat: now,
+    exp: now + 3600,
+  }));
+  const signingInput = `${headerB64}.${payloadB64}`;
+  const key = await importRSAPrivateKey(serviceAccount.private_key);
+  const sigBytes = await crypto.subtle.sign(
+    'RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(signingInput),
+  );
+  const jwt = `${signingInput}.${b64url(sigBytes)}`;
+  const tokenRes = await fetch(serviceAccount.token_uri ?? 'https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`,
+  });
+  const tokenData = await tokenRes.json();
+  if (!tokenRes.ok) throw new Error(tokenData.error_description ?? `Google OAuth: ${tokenData.error}`);
+  return tokenData.access_token;
+}
+
+async function googleAdsSearch(customerId: string, devToken: string, accessToken: string, query: string) {
+  const cleanId = customerId.replace(/-/g, '');
+  const r = await fetch(`https://googleads.googleapis.com/v17/customers/${cleanId}/googleAds:search`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${accessToken}`,
+      'developer-token': devToken,
+    },
+    body: JSON.stringify({ query }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  const d = await r.json();
+  if (!r.ok) {
+    const msg = d.error?.details?.[0]?.errors?.[0]?.message ?? d.error?.message ?? `Google Ads ${r.status}`;
+    throw new Error(msg);
+  }
+  return (d.results ?? []) as any[];
+}
+
+async function resolveGoogleAdsCreds(adminClient: any, userId: string, qCustomerId: string) {
+  const saRaw = Deno.env.get('GOOGLE_ADS_SERVICE_ACCOUNT');
+  if (!saRaw) return { noServiceAccount: true } as const;
+  let serviceAccount: any;
+  try { serviceAccount = JSON.parse(saRaw); } catch { return { noServiceAccount: true } as const; }
+
+  const { data: credRow } = await adminClient
+    .from('credentials').select('encrypted_key').eq('user_id', userId).eq('service', 'google_ads').single();
+  if (!credRow) return { notConnected: true } as const;
+  const devToken = await decryptCred(credRow.encrypted_key);
+
+  let customerId = qCustomerId;
+  if (!customerId) {
+    const { data: intg } = await adminClient
+      .from('integrations').select('metadata').eq('user_id', userId).eq('service', 'google_ads').single();
+    customerId = intg?.metadata?.customerId ?? intg?.metadata?.customer_id ?? '';
+  }
+  return { notConnected: false, noServiceAccount: false, devToken, customerId, serviceAccount } as const;
 }
 
 Deno.serve(async (req: Request) => {
@@ -544,6 +634,122 @@ Deno.serve(async (req: Request) => {
             `Total pipeline value: €${(leads ?? []).reduce((s: number, l: any) => s + Number(l.revenue || 0), 0).toLocaleString()}`,
           ];
       return json({ success: true, suggestions });
+    }
+
+    // ── GET /api/google-ads/insights ─────────────────────────────────────────
+    if (resource === 'google-ads' && sub === 'insights' && req.method === 'GET') {
+      const g = await resolveGoogleAdsCreds(adminClient, userId, url.searchParams.get('customerId') ?? '');
+      if ('noServiceAccount' in g && g.noServiceAccount) return json({ success: false, noServiceAccount: true, message: 'Google Ads service account not configured.' });
+      if ('notConnected' in g && g.notConnected) return json({ success: false, notConnected: true, message: 'Google Ads not connected. Add your developer token in Integrations.' });
+      if (!(g as any).customerId) return json({ success: false, noAccountId: true, message: 'Google Ads Customer ID not configured.' });
+      const { devToken, customerId, serviceAccount } = g as any;
+
+      const days = parseInt(url.searchParams.get('days') ?? '30');
+      const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
+      const until = new Date().toISOString().slice(0, 10);
+      const prevSince = new Date(Date.now() - days * 2 * 86400_000).toISOString().slice(0, 10);
+
+      const accessToken = await getGoogleAccessToken(serviceAccount);
+
+      const [currRows, prevRows] = await Promise.allSettled([
+        googleAdsSearch(customerId, devToken, accessToken, `
+          SELECT segments.date, metrics.impressions, metrics.clicks, metrics.cost_micros,
+                 metrics.conversions, metrics.ctr, metrics.average_cpc, metrics.average_cpm
+          FROM customer
+          WHERE segments.date BETWEEN '${since}' AND '${until}'
+          ORDER BY segments.date
+        `),
+        googleAdsSearch(customerId, devToken, accessToken, `
+          SELECT metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions
+          FROM customer
+          WHERE segments.date BETWEEN '${prevSince}' AND '${since}'
+        `),
+      ]);
+
+      const daily = currRows.status === 'fulfilled' ? currRows.value : [];
+      const prevData = prevRows.status === 'fulfilled' ? prevRows.value : [];
+
+      const micros2eur = (m: number) => parseFloat((m / 1_000_000).toFixed(2));
+      const sumF = (rows: any[], field: string) => rows.reduce((s, r) => s + (Number(r.metrics?.[field] ?? 0)), 0);
+
+      const currImp = Math.round(sumF(daily, 'impressions'));
+      const currClicks = Math.round(sumF(daily, 'clicks'));
+      const currSpend = micros2eur(sumF(daily, 'costMicros'));
+      const currConv = Math.round(sumF(daily, 'conversions'));
+      const prevImp = Math.round(sumF(prevData, 'impressions'));
+      const prevClicks = Math.round(sumF(prevData, 'clicks'));
+      const prevSpend = micros2eur(sumF(prevData, 'costMicros'));
+      const prevConv = Math.round(sumF(prevData, 'conversions'));
+
+      const ctr = currImp > 0 ? parseFloat(((currClicks / currImp) * 100).toFixed(2)) : 0;
+      const cpc = currClicks > 0 ? parseFloat((currSpend / currClicks).toFixed(2)) : 0;
+      const cpm = currImp > 0 ? parseFloat((currSpend / currImp * 1000).toFixed(2)) : 0;
+      const cpp = currConv > 0 ? parseFloat((currSpend / currConv).toFixed(2)) : 0;
+      const pct = (c: number, p: number) => p === 0 ? (c > 0 ? 100 : 0) : parseFloat(((c - p) / p * 100).toFixed(1));
+
+      return json({
+        success: true,
+        period: { since, until, days },
+        summary: { impressions: currImp, clicks: currClicks, spend: currSpend, conversions: currConv, ctr, cpc, cpm, cpp },
+        changes: {
+          impressions: pct(currImp, prevImp),
+          clicks: pct(currClicks, prevClicks),
+          spend: pct(currSpend, prevSpend),
+          conversions: pct(currConv, prevConv),
+        },
+        daily: daily.map((r: any) => ({
+          date: r.segments?.date ?? '',
+          impressions: Number(r.metrics?.impressions ?? 0),
+          clicks: Number(r.metrics?.clicks ?? 0),
+          spend: micros2eur(Number(r.metrics?.costMicros ?? 0)),
+          ctr: parseFloat(Number(r.metrics?.ctr ?? 0).toFixed(4)) * 100,
+          cpc: micros2eur(Number(r.metrics?.averageCpc ?? 0)),
+          cpm: micros2eur(Number(r.metrics?.averageCpm ?? 0)),
+        })),
+      });
+    }
+
+    // ── GET /api/google-ads/campaigns ────────────────────────────────────────
+    if (resource === 'google-ads' && sub === 'campaigns' && req.method === 'GET') {
+      const g = await resolveGoogleAdsCreds(adminClient, userId, url.searchParams.get('customerId') ?? '');
+      if ('noServiceAccount' in g && g.noServiceAccount) return json({ success: false, noServiceAccount: true, message: 'Google Ads service account not configured.' });
+      if ('notConnected' in g && g.notConnected) return json({ success: false, notConnected: true, message: 'Google Ads not connected.' });
+      if (!(g as any).customerId) return json({ success: false, noAccountId: true, message: 'Google Ads Customer ID not configured.' });
+      const { devToken, customerId, serviceAccount } = g as any;
+
+      const accessToken = await getGoogleAccessToken(serviceAccount);
+      const rows = await googleAdsSearch(customerId, devToken, accessToken, `
+        SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type,
+               campaign_budget.amount_micros,
+               metrics.impressions, metrics.clicks, metrics.cost_micros,
+               metrics.conversions, metrics.ctr, metrics.average_cpc, metrics.cost_per_conversion
+        FROM campaign
+        WHERE segments.date DURING LAST_30_DAYS
+          AND campaign.status != 'REMOVED'
+        ORDER BY metrics.cost_micros DESC
+        LIMIT 50
+      `);
+
+      const micros2eur = (m: number) => m > 0 ? parseFloat((m / 1_000_000).toFixed(2)) : null;
+      return json({
+        success: true,
+        campaigns: rows.map((r: any) => ({
+          id: r.campaign?.id ?? '',
+          name: r.campaign?.name ?? '',
+          status: r.campaign?.status ?? '',
+          type: (r.campaign?.advertisingChannelType ?? '').replace(/_/g, ' '),
+          budget: micros2eur(Number(r.campaignBudget?.amountMicros ?? 0)),
+          insights: {
+            impressions: Number(r.metrics?.impressions ?? 0),
+            clicks: Number(r.metrics?.clicks ?? 0),
+            spend: micros2eur(Number(r.metrics?.costMicros ?? 0)) ?? 0,
+            conversions: Number(r.metrics?.conversions ?? 0),
+            ctr: parseFloat((Number(r.metrics?.ctr ?? 0) * 100).toFixed(2)),
+            cpc: micros2eur(Number(r.metrics?.averageCpc ?? 0)),
+            cpp: micros2eur(Number(r.metrics?.costPerConversion ?? 0)),
+          },
+        })),
+      });
     }
 
     // ── GET /api/figma/events ────────────────────────────────────────────────
