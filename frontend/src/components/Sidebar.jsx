@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, BookOpen, Users, Activity, Plug, Bot,
-  Zap, LogOut, ChevronRight
+  Zap, LogOut, ChevronRight, BarChart2
 } from 'lucide-react';
 import { useAuth } from '../context/useAuth';
 
@@ -12,6 +12,7 @@ const navItems = [
   { to: '/playbooks', icon: BookOpen, label: 'Playbooks' },
   { to: '/integrations', icon: Plug, label: 'Integrations' },
   { to: '/ai', icon: Bot, label: 'AI Layer' },
+  { to: '/marketing', icon: BarChart2, label: 'Marketing' },
 ];
 
 function NavItem({ to, icon, label }) {
