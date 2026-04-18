@@ -22,7 +22,8 @@ const FUNNEL_STAGES = [
   { key: 'closed_won',    label: 'Closed',    color: '#22c55e' },
 ];
 
-function KpiCard({ label, value, sub, icon: Icon, accent = 'brand' }) {
+function KpiCard({ label, value, sub, icon, accent = 'brand' }) {
+  const Icon = icon;
   const accents = {
     brand:  'text-indigo-400 bg-indigo-500/10',
     green:  'text-emerald-400 bg-emerald-500/10',
@@ -83,9 +84,9 @@ export default function CampaignIntelligence() {
     } finally {
       setLoading(false);
     }
-  }, [refreshKey]);
+  }, []);
 
-  useEffect(() => { fetchAll(); }, [fetchAll]);
+  useEffect(() => { fetchAll(); }, [fetchAll, refreshKey]);
 
   // Aggregate funnel totals across all sources
   const totalFunnel = FUNNEL_STAGES.map(stage => ({

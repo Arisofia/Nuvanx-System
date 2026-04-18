@@ -15,7 +15,8 @@ const fmtPct = (n) => `${(n ?? 0).toFixed(1)}%`;
 
 const TEMPLATE_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 
-function KpiCard({ label, value, sub, icon: Icon, accent = 'brand' }) {
+function KpiCard({ label, value, sub, icon, accent = 'brand' }) {
+  const Icon = icon;
   const accents = {
     brand: 'text-brand-400 bg-brand-500/10',
     green: 'text-emerald-400 bg-emerald-500/10',
@@ -77,9 +78,9 @@ export default function VerifiedFinancials() {
     } finally {
       setLoading(false);
     }
-  }, [refreshKey]);
+  }, []);
 
-  useEffect(() => { fetchAll(); }, [fetchAll]);
+  useEffect(() => { fetchAll(); }, [fetchAll, refreshKey]);
 
   if (loading) {
     return (
