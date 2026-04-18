@@ -10,20 +10,19 @@
  * 4. Updates 'total_ltv' on the 'patients' table.
  */
 
-const { Pool } = require('pg');
-require('dotenv').config();
+const { createClient } = require('@supabase/supabase-js');
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '../backend/.env') });
 
-const databaseUrl = process.env.DATABASE_URL || process.env.SUPABASE_DATABASE_KEY;
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-if (!databaseUrl) {
-  console.error('Error: DATABASE_URL or SUPABASE_DATABASE_KEY not found in environment.');
+if (!supabaseUrl || !supabaseKey) {
+  console.error('Error: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not found in environment.');
   process.exit(1);
 }
 
-const pool = new Pool({
-  connectionString: databaseUrl,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-});
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 const doctoraliaCsv = `Id Intermediario,Id Op,idplantilla,plantilladescr,Nombre Intermediario,DNI,Nombre Apellidos,Fecha Liquidacion,Fecha Ingreso,Fecha Cancelacion,Importe Bruto,Importe Descuento,Importe Neto
 74587,4339835,8747,CAMPAÑA GENERICA EXPRÉS ESTETICA,NUVANX. MEDICINA ESTÉTICA LÁSER,54692486G,BIANCA  MENDEZ PICHARDO,17/03/2026,17/03/2026, ,"1000,00","0,00","1000,00"
@@ -34,46 +33,50 @@ const doctoraliaCsv = `Id Intermediario,Id Op,idplantilla,plantilladescr,Nombre 
 74587,4348128,10520,CAMPAÑA PLUS INTERÉS CLIENTE,NUVANX. MEDICINA ESTÉTICA LÁSER,50194418T,BEATRIZ PEÑA VELASCO,23/03/2026,23/03/2026, ,"3054,00","0,00","3054,00"`;
 
 async function main() {
-  const client = await pool.connect();
   try {
-    console.log('--- Phase 3: Backfill and Ingestion starting ---');
+    console.log('--- Phase 3: Backfill and Ingestion starting (via Supabase SDK) ---');
 
-    // 1. Backfill patients from leads (deterministic: phone or email)
+    // 0. Get first clinic id
+    const { data: clinics } = await supabase.from('clinics').select('id').limit(1);
+    const clinicId = clinics?.[0]?.id;
+    if (!clinicId) throw new Error('No clinics found in database.');
+
+    // 1. Backfill patients from leads
     console.log('1. Backfilling patients from leads...');
-    const backfillRes = await client.query(`
-      INSERT INTO patients (clinic_id, dni, name, email, phone)
-      SELECT 
-        COALESCE(clinic_id, (SELECT id FROM clinics LIMIT 1)), 
-        dni, 
-        name, 
-        email, 
-        phone
-      FROM leads
-      WHERE (dni IS NOT NULL OR phone IS NOT NULL OR email IS NOT NULL)
-      ON CONFLICT (dni) DO NOTHING
-      RETURNING id, dni, phone, email;
-    `);
-    console.log(`   Processed ${backfillRes.rowCount} potential patient backfills.`);
+    const { data: leads } = await supabase.from('leads').select('*').not('dni', 'is', null);
+    
+    for (const lead of (leads || [])) {
+      await supabase.from('patients').upsert({
+        clinic_id: lead.clinic_id || clinicId,
+        dni: lead.dni,
+        name: lead.name,
+        email: lead.email,
+        phone: lead.phone
+      }, { onConflict: 'dni' });
+    }
+    console.log(`   Processed ${leads?.length || 0} potential patient backfills.`);
 
-    // 2. Parse and Ingest Doctoralia CSV
+    // 2. Ingest Doctoralia financial settlements
     console.log('2. Ingesting Doctoralia financial settlements...');
     const lines = doctoraliaCsv.trim().split('\n').slice(1);
     let ingestedCount = 0;
 
     for (const line of lines) {
-      // Very basic CSV parser (doesn't handle commas inside quotes, but our data is predictable here)
-      // Actually, let's split by "," but handle the quotes for the amounts.
-      const parts = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
-      if (parts.length < 13) continue;
+      console.log(`   Processing line: ${line.substring(0, 50)}...`);
+      const parts = line.split(',').map(p => p.trim());
+      if (parts.length < 13) {
+        console.log(`   Skipped line: insufficient parts (${parts.length})`);
+        continue;
+      }
 
       const [
         idIntermediario, idOp, idPlantilla, plantillaDescr, nombreIntermediario,
         dni, nombreApellidos, fechaLiquidacion, fechaIngreso, fechaCancelacion,
         importeBruto, importeDescuento, importeNeto
-      ] = parts.map(p => p.replace(/"/g, '').trim());
+      ] = parts;
 
       const parseDate = (d) => {
-        if (!d || d === '') return null;
+        if (!d || d === ' ' || d === '') return null;
         const [day, month, year] = d.split('/');
         return `${year}-${month}-${day}`;
       };
@@ -86,61 +89,50 @@ async function main() {
       const settledAt = parseDate(fechaLiquidacion) || parseDate(fechaIngreso);
       if (!settledAt) continue;
 
-      // First, ensure patient exists for this DNI
-      const patientRes = await client.query(
-        'INSERT INTO patients (clinic_id, dni, name) VALUES ((SELECT id FROM clinics LIMIT 1), $1, $2) ON CONFLICT (dni) DO UPDATE SET updated_at = NOW() RETURNING id',
-        [dni, nombreApellidos]
-      );
-      const patientId = patientRes.rows[0].id;
+      // Ensure patient exists
+      const { data: p } = await supabase.from('patients').upsert({
+        clinic_id: clinicId,
+        dni: dni,
+        name: nombreApellidos
+      }, { onConflict: 'dni' }).select().single();
 
-      await client.query(`
-        INSERT INTO financial_settlements (
-          id, clinic_id, patient_id, amount_gross, amount_discount, amount_net, 
-          template_name, settled_at
-        ) VALUES ($1, (SELECT id FROM clinics LIMIT 1), $2, $3, $4, $5, $6, $7)
-        ON CONFLICT (id) DO NOTHING
-      `, [
-        idOp, patientId, parseAmount(importeBruto), parseAmount(importeDescuento), 
-        parseAmount(importeNeto), plantillaDescr, settledAt
-      ]);
-      ingestedCount++;
+      if (p) {
+        await supabase.from('financial_settlements').upsert({
+          id: idOp,
+          clinic_id: clinicId,
+          patient_id: p.id,
+          amount_gross: parseAmount(importeBruto),
+          amount_discount: parseAmount(importeDescuento),
+          amount_net: parseAmount(importeNeto),
+          template_name: plantillaDescr,
+          settled_at: settledAt
+        }, { onConflict: 'id' });
+        ingestedCount++;
+      }
     }
     console.log(`   Ingested ${ingestedCount} financial settlements.`);
 
     // 3. Update Patient LTV
     console.log('3. Updating patient total_ltv from settlements...');
-    await client.query(`
-      UPDATE patients
-      SET total_ltv = (
-        SELECT SUM(amount_net)
-        FROM financial_settlements
-        WHERE patient_id = patients.id
-      )
-      WHERE id IN (SELECT DISTINCT patient_id FROM financial_settlements);
-    `);
+    const { data: pData } = await supabase.from('patients').select('id');
+    for (const pat of (pData || [])) {
+       const { data: sets } = await supabase.from('financial_settlements').select('amount_net').eq('patient_id', pat.id);
+       const ltv = (sets || []).reduce((sum, s) => sum + Number(s.amount_net), 0);
+       await supabase.from('patients').update({ total_ltv: ltv }).eq('id', pat.id);
+    }
     console.log('   LTV updated.');
 
-    // 4. Link leads to patients and update stages
+    // 4. Link leads to patients
     console.log('4. Linking leads to patients via DNI...');
-    const linkRes = await client.query(`
-      UPDATE leads
-      SET 
-        converted_patient_id = p.id,
-        stage = CASE 
-          WHEN stage = 'lead' THEN 'appointment_booked'::lead_stage -- placeholder enum conversion if we used type
-          ELSE stage 
-        END
-      FROM patients p
-      WHERE leads.dni = p.dni AND leads.converted_patient_id IS NULL;
-    `);
-    console.log(`   Linked ${linkRes.rowCount} leads to verified patient records.`);
+    const { data: allPatients } = await supabase.from('patients').select('id, dni');
+    for (const pat of (allPatients || [])) {
+        await supabase.from('leads').update({ converted_patient_id: pat.id }).eq('dni', pat.dni);
+    }
+    console.log('   Linked leads to verified patient records.');
 
     console.log('--- Phase 3: Backfill and Ingestion complete ---');
   } catch (err) {
     console.error('Error during backfill and ingestion:', err.message);
-  } finally {
-    client.release();
-    await pool.end();
   }
 }
 
