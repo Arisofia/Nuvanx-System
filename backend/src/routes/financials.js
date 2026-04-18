@@ -40,11 +40,7 @@ async function getClinicId(userId) {
 router.get('/summary', async (req, res, next) => {
   try {
     if (!isAvailable()) {
-      return res.json({
-        summary: { totalNet: 0, totalGross: 0, totalDiscount: 0, avgTicket: 0, settledCount: 0, cancelledCount: 0, discountRate: 0, avgLiquidationDays: 0 },
-        monthly: [],
-        templateMix: [],
-      });
+      return res.status(503).json({ success: false, message: 'Database not available' });
     }
 
     const clinicId = await getClinicId(req.user.id);
@@ -141,7 +137,7 @@ router.get('/summary', async (req, res, next) => {
 
 router.get('/settlements', async (req, res, next) => {
   try {
-    if (!isAvailable()) return res.json({ settlements: [] });
+    if (!isAvailable()) return res.status(503).json({ success: false, message: 'Database not available' });
 
     const clinicId = await getClinicId(req.user.id);
     if (!clinicId) return res.json({ settlements: [] });
@@ -183,7 +179,7 @@ router.get('/settlements', async (req, res, next) => {
 
 router.get('/patients', async (req, res, next) => {
   try {
-    if (!isAvailable()) return res.json({ patients: [] });
+    if (!isAvailable()) return res.status(503).json({ success: false, message: 'Database not available' });
 
     const clinicId = await getClinicId(req.user.id);
     if (!clinicId) return res.json({ patients: [] });
