@@ -10,7 +10,7 @@ const cors = require('cors');
 const { config, validate } = require('./config/env');
 const logger = require('./utils/logger');
 const { pool, isAvailable } = require('./db');
-const { supabaseAdmin } = require('./config/supabase');
+const { supabaseAdmin, supabaseFigmaAdmin } = require('./config/supabase');
 const { defaultLimiter } = require('./middleware/rateLimiter');
 const { errorHandler } = require('./middleware/errorHandler');
 const { startPeriodicSync, stopPeriodicSync } = require('./services/dashboardSync');
@@ -64,7 +64,7 @@ app.use(defaultLimiter);
 
 // ─── Health check ───────────────────────────────────────────────────────────
 app.get('/health', async (req, res) => {
-  const checks = { pg: 'unknown', supabase: 'unknown' };
+  const checks = { pg: 'unknown', supabase: 'unknown', supabaseFigma: 'unknown' };
 
   // PostgreSQL
   if (isAvailable()) {
@@ -78,7 +78,7 @@ app.get('/health', async (req, res) => {
     checks.pg = 'in-memory';
   }
 
-  // Supabase
+  // Supabase Main
   if (supabaseAdmin) {
     try {
       const { error } = await supabaseAdmin.from('leads').select('id').limit(1);
@@ -90,7 +90,19 @@ app.get('/health', async (req, res) => {
     checks.supabase = 'not-configured';
   }
 
-  const allOk = Object.values(checks).every((v) => v === 'ok' || v === 'not-configured');
+  // Supabase Figma
+  if (supabaseFigmaAdmin) {
+    try {
+      const { error } = await supabaseFigmaAdmin.from('dashboard_metrics').select('id').limit(1);
+      checks.supabaseFigma = error ? 'error' : 'ok';
+    } catch {
+      checks.supabaseFigma = 'error';
+    }
+  } else {
+    checks.supabaseFigma = 'not-configured';
+  }
+
+  const allOk = Object.values(checks).every((v) => v === 'ok' || v === 'not-configured' || v === 'in-memory');
   res.status(allOk ? 200 : 503).json({
     status: allOk ? 'ok' : 'degraded',
     timestamp: new Date().toISOString(),
