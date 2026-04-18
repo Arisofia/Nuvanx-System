@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS financial_settlements (
   created_at        TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS settlements_clinic_date_idx ON settlements(clinic_id, settled_at);
+CREATE INDEX IF NOT EXISTS settlements_clinic_date_idx ON financial_settlements(clinic_id, settled_at);
 
 -- 7. Update leads table (Operating Hooks)
 ALTER TABLE leads
