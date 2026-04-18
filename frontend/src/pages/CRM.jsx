@@ -8,7 +8,17 @@ const STAGES = ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'];
 const STAGE_LABELS = { lead: 'New', whatsapp: 'Contacted', appointment: 'Appointment', treatment: 'Converted', closed: 'Closed' };
 const SOURCE_OPTIONS = ['manual', 'Meta Ads', 'Google Ads', 'Referral', 'Organic', 'WhatsApp'];
 
-const EMPTY_FORM = { name: '', email: '', phone: '', source: 'manual', stage: 'lead', revenue: '', notes: '' };
+const LOST_REASONS = [
+  { value: 'price_too_high', label: 'Price too high' },
+  { value: 'location', label: 'Location' },
+  { value: 'no_response', label: 'No response' },
+  { value: 'competitor', label: 'Went to competitor' },
+  { value: 'not_ready', label: 'Not ready' },
+  { value: 'fake_lead', label: 'Fake lead' },
+  { value: 'other', label: 'Other' },
+];
+
+const EMPTY_FORM = { name: '', email: '', phone: '', dni: '', source: 'manual', stage: 'lead', revenue: '', lost_reason: '', notes: '' };
 
 // Map backend stage names to display status labels
 const STAGE_TO_STATUS = {
@@ -29,6 +39,8 @@ function normalizeLead(lead) {
     value: lead.revenue || 0,
     email: lead.email || '',
     phone: lead.phone || '',
+    dni: lead.dni || '',
+    lost_reason: lead.lost_reason || '',
   };
 }
 
@@ -72,9 +84,11 @@ function AddLeadModal({ onClose, onCreated }) {
         name: form.name.trim(),
         email: form.email.trim() || undefined,
         phone: form.phone.trim() || undefined,
+        dni: form.dni.trim() || undefined,
         source: form.source || 'manual',
         stage: form.stage,
         revenue: form.revenue !== '' && !Number.isNaN(rawRevenue) ? rawRevenue : undefined,
+        lost_reason: form.stage === 'closed' && form.lost_reason ? form.lost_reason : undefined,
         notes: form.notes.trim() || undefined,
       };
       const res = await api.post('/api/leads', payload);
@@ -143,6 +157,21 @@ function AddLeadModal({ onClose, onCreated }) {
             </div>
           </div>
 
+          {/* DNI */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1">
+              DNI <span className="text-gray-500 font-normal">(ID — links to Doctoralia revenue)</span>
+            </label>
+            <input
+              type="text"
+              value={form.dni}
+              onChange={e => set('dni', e.target.value.toUpperCase())}
+              placeholder="12345678A"
+              className="input w-full font-mono"
+              maxLength={16}
+            />
+          </div>
+
           {/* Source + Stage */}
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -159,9 +188,20 @@ function AddLeadModal({ onClose, onCreated }) {
             </div>
           </div>
 
+          {/* Lost Reason — shown only when stage is closed */}
+          {form.stage === 'closed' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-1">Lost Reason</label>
+              <select value={form.lost_reason} onChange={e => set('lost_reason', e.target.value)} className="input w-full">
+                <option value="">— select reason —</option>
+                {LOST_REASONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+              </select>
+            </div>
+          )}
+
           {/* Revenue */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Revenue ($)</label>
+            <label className="block text-sm font-medium text-gray-300 mb-1">Revenue (€)</label>
             <input
               type="number"
               min="0"
@@ -372,7 +412,7 @@ export default function CRM() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-dark-600">
-                {['Name', 'Source', 'Status', 'Last Contact', 'Value', 'Actions'].map(h => (
+                {['Name', 'DNI', 'Source', 'Status', 'Last Contact', 'Value', 'Actions'].map(h => (
                   <th key={h} className="text-left px-4 py-3.5 text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {h}
                   </th>
@@ -394,6 +434,11 @@ export default function CRM() {
                           <p className="text-xs text-gray-500">{lead.email}</p>
                         </div>
                       </div>
+                    </td>
+                    <td className="px-4 py-3.5">
+                      {lead.dni
+                        ? <span className="text-xs font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded">{lead.dni}</span>
+                        : <span className="text-xs text-gray-600">—</span>}
                     </td>
                     <td className="px-4 py-3.5">
                       <span className={`text-xs font-medium ${sourceColors[lead.source] || 'text-gray-400'}`}>

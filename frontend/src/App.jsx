@@ -14,6 +14,7 @@ const LiveDashboard = lazy(() => import('./pages/LiveDashboard'));
 const Integrations = lazy(() => import('./pages/Integrations'));
 const AILayer = lazy(() => import('./pages/AILayer'));
 const MetaIntelligence = lazy(() => import('./pages/MetaIntelligence'));
+const VerifiedFinancials = lazy(() => import('./pages/VerifiedFinancials'));
 
 const PageLoader = () => (
   <div className="min-h-screen bg-dark-900 flex items-center justify-center">
@@ -56,6 +57,7 @@ function AppRoutes() {
           <Route path="integrations" element={<Integrations />} />
           <Route path="ai" element={<AILayer />} />
           <Route path="marketing" element={<MetaIntelligence />} />
+          <Route path="financials" element={<VerifiedFinancials />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
