@@ -924,6 +924,155 @@ Deno.serve(async (req: Request) => {
       return json({ success: false, message: 'WhatsApp integration not connected. Add your credentials in Integrations.' }, 503);
     }
 
+    // ── GET /api/kpis ────────────────────────────────────────────────────────
+    // Master KPI summary: what is real now + what is blocked and why
+    if (resource === 'kpis' && !sub && req.method === 'GET') {
+      const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+      const clinicId = usr?.clinic_id;
+      if (!clinicId) return json({ success: false, message: 'No clinic' }, 400);
+
+      // Real Doctoralia KPIs (from financial_settlements)
+      const { data: settlements } = await adminClient
+        .from('financial_settlements')
+        .select('amount_gross, amount_discount, amount_net, settled_at, intake_at, cancelled_at, template_name')
+        .eq('clinic_id', clinicId);
+
+      const settled = (settlements || []).filter((r: any) => !r.cancelled_at);
+      const totalNet    = settled.reduce((s: number, r: any) => s + Number(r.amount_net), 0);
+      const totalGross  = settled.reduce((s: number, r: any) => s + Number(r.amount_gross), 0);
+      const avgTicket   = settled.length ? totalNet / settled.length : 0;
+      const discountRate = totalGross ? (settled.reduce((s: number, r: any) => s + Number(r.amount_discount), 0) / totalGross) * 100 : 0;
+      const lags = settled.filter((r: any) => r.intake_at).map((r: any) =>
+        (new Date(r.settled_at).getTime() - new Date(r.intake_at).getTime()) / 86400000);
+      const avgLag = lags.length ? lags.reduce((a: number, b: number) => a + b, 0) / lags.length : 0;
+
+      // Real patient KPIs
+      const { count: patientCount } = await adminClient
+        .from('patients').select('id', { count: 'exact', head: true }).eq('clinic_id', clinicId);
+
+      // Lead counts (will be 0 until Meta webhook fires)
+      const { count: leadCount } = await adminClient
+        .from('leads').select('id', { count: 'exact', head: true }).eq('user_id', userId);
+      const { count: contactedCount } = await adminClient
+        .from('leads').select('id', { count: 'exact', head: true })
+        .eq('user_id', userId).not('first_outbound_at', 'is', null);
+      const { count: repliedCount } = await adminClient
+        .from('leads').select('id', { count: 'exact', head: true })
+        .eq('user_id', userId).not('first_inbound_at', 'is', null);
+
+      // Blocked KPIs
+      const { data: blocked } = await adminClient
+        .from('kpi_blocked')
+        .select('kpi_name, kpi_group, blocked_reason, required_field');
+
+      return json({
+        success: true,
+        asOf: new Date().toISOString(),
+        doctoralia: {
+          settledCount: settled.length,
+          cancelledCount: (settlements || []).length - settled.length,
+          totalNet:    Math.round(totalNet * 100) / 100,
+          totalGross:  Math.round(totalGross * 100) / 100,
+          avgTicket:   Math.round(avgTicket * 100) / 100,
+          discountRate: Math.round(discountRate * 10) / 10,
+          avgLiquidationDays: Math.round(avgLag * 10) / 10,
+        },
+        acquisition: {
+          totalLeads: leadCount ?? 0,
+          contacted:  contactedCount ?? 0,
+          replied:    repliedCount ?? 0,
+          contactRate: leadCount ? Math.round(((contactedCount ?? 0) / leadCount) * 1000) / 10 : null,
+          replyRate:   (contactedCount ?? 0) > 0 ? Math.round(((repliedCount ?? 0) / (contactedCount ?? 1)) * 1000) / 10 : null,
+        },
+        patients: {
+          total: patientCount ?? 0,
+        },
+        blocked: blocked || [],
+      });
+    }
+
+    // ── GET /api/reports/doctoralia-financials ───────────────────────────────
+    if (resource === 'reports' && sub === 'doctoralia-financials' && req.method === 'GET') {
+      const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+      const clinicId = usr?.clinic_id;
+      if (!clinicId) return json({ success: false, message: 'No clinic' }, 400);
+
+      const { data: byTemplate } = await adminClient
+        .from('vw_doctoralia_financials')
+        .select('*')
+        .order('settled_month', { ascending: true });
+
+      const { data: byMonth } = await adminClient
+        .from('vw_doctoralia_by_month')
+        .select('*')
+        .order('settled_month', { ascending: true });
+
+      // Template-level summary (collapse across months)
+      const templateMap: Record<string, any> = {};
+      for (const row of (byTemplate || [])) {
+        const key = row.template_id || row.template_name;
+        if (!templateMap[key]) {
+          templateMap[key] = { template_id: row.template_id, template_name: row.template_name,
+            operations_count: 0, total_net: 0, total_gross: 0, total_discount: 0,
+            cancellation_count: 0, source_system: row.source_system };
+        }
+        templateMap[key].operations_count  += Number(row.operations_count ?? 0);
+        templateMap[key].total_net         += Number(row.total_net ?? 0);
+        templateMap[key].total_gross       += Number(row.total_gross ?? 0);
+        templateMap[key].total_discount    += Number(row.total_discount ?? 0);
+        templateMap[key].cancellation_count += Number(row.cancellation_count ?? 0);
+      }
+      const totalNetAll = Object.values(templateMap).reduce((s: any, t: any) => s + t.total_net, 0);
+      const templateSummary = Object.values(templateMap).map((t: any) => ({
+        ...t,
+        total_net:    Math.round(t.total_net * 100) / 100,
+        total_gross:  Math.round(t.total_gross * 100) / 100,
+        avg_ticket:   t.operations_count ? Math.round((t.total_net / t.operations_count) * 100) / 100 : 0,
+        revenue_share_pct: totalNetAll ? Math.round((t.total_net / totalNetAll) * 1000) / 10 : 0,
+        cancellation_rate_pct: t.operations_count
+          ? Math.round((t.cancellation_count / t.operations_count) * 1000) / 10 : 0,
+      })).sort((a: any, b: any) => b.total_net - a.total_net);
+
+      return json({ success: true, byTemplate: byTemplate || [], byMonth: byMonth || [], templateSummary });
+    }
+
+    // ── GET /api/reports/campaign-performance ────────────────────────────────
+    if (resource === 'reports' && sub === 'campaign-performance' && req.method === 'GET') {
+      const { data: rows } = await adminClient
+        .from('vw_campaign_performance_real')
+        .select('*')
+        .order('total_leads', { ascending: false });
+      return json({ success: true, campaigns: rows || [] });
+    }
+
+    // ── GET /api/reports/whatsapp-conversion ─────────────────────────────────
+    if (resource === 'reports' && sub === 'whatsapp-conversion' && req.method === 'GET') {
+      const { data: rows } = await adminClient
+        .from('vw_whatsapp_conversion_real')
+        .select('*');
+      return json({ success: true, cohorts: rows || [] });
+    }
+
+    // ── GET /api/reports/doctor-performance ──────────────────────────────────
+    if (resource === 'reports' && sub === 'doctor-performance' && req.method === 'GET') {
+      const { data: rows } = await adminClient
+        .from('vw_doctor_performance_real')
+        .select('*')
+        .order('total_appointments', { ascending: false });
+      return json({ success: true, doctors: rows || [] });
+    }
+
+    // ── POST /api/leads/:id/reconcile ─────────────────────────────────────────
+    // Runs reconcile_lead_to_patient() for the given lead.
+    // Returns { matched: true, patient_id } or { matched: false }
+    if (resource === 'leads' && sub2 === 'reconcile' && req.method === 'POST') {
+      const leadId = sub;
+      if (!leadId) return json({ success: false, message: 'lead id required' }, 400);
+      const { data, error } = await adminClient.rpc('reconcile_lead_to_patient', { p_lead_id: leadId });
+      if (error) return json({ success: false, message: error.message }, 500);
+      return json({ success: true, matched: data !== null, patient_id: data ?? null });
+    }
+
     return json({ success: false, message: `Route not found: ${resource}/${sub}` }, 404);
 
   } catch (err: any) {

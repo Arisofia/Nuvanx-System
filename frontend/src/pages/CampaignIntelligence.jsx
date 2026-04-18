@@ -1,87 +1,92 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  FunnelChart, Funnel, LabelList,
-  ResponsiveContainer, Cell,
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList,
 } from 'recharts';
-import { Target, MessageCircle, Users, TrendingUp, Phone, RefreshCw, Loader2, AlertCircle } from 'lucide-react';
+import {
+  RefreshCw, TrendingUp, Users, MessageSquare, Target,
+  CheckCircle, AlertTriangle, XCircle, Lock,
+} from 'lucide-react';
 import api from '../config/api';
 
-const fmt = (n) => new Intl.NumberFormat('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n ?? 0);
-const fmtEur = (n) => `€${fmt(n)}`;
-const fmtPct = (n) => `${(+(n ?? 0)).toFixed(1)}%`;
+// ─── helpers ─────────────────────────────────────────────────────────────────
+const fmt    = (n) => (n == null ? '—' : Number(n).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+const fmtN   = (n) => (n == null ? '—' : Number(n).toFixed(1));
+const fmtPct = (n) => (n == null ? '—' : `${fmtN(n)}%`);
+const fmtEur = (n) => (n == null ? '—' : `€${fmt(n)}`);
+const MONTH_LABEL = (iso) => {
+  if (!iso) return '?';
+  return new Date(iso).toLocaleDateString('es-ES', { month: 'short', year: '2-digit' });
+};
+const COLORS = ['#a78bfa', '#60a5fa', '#34d399', '#fbbf24', '#f87171', '#818cf8'];
 
-const CAMPAIGN_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316'];
-
-const FUNNEL_STAGES = [
-  { key: 'total_leads',   label: 'Leads',     color: '#6366f1' },
-  { key: 'contacted',     label: 'Contacted', color: '#8b5cf6' },
-  { key: 'replied',       label: 'Replied',   color: '#06b6d4' },
-  { key: 'booked',        label: 'Booked',    color: '#10b981' },
-  { key: 'attended',      label: 'Attended',  color: '#f59e0b' },
-  { key: 'closed_won',    label: 'Closed',    color: '#22c55e' },
-];
-
-function KpiCard({ label, value, sub, icon: Icon, accent = 'brand' }) {
-  const accents = {
-    brand:  'text-indigo-400 bg-indigo-500/10',
-    green:  'text-emerald-400 bg-emerald-500/10',
-    amber:  'text-amber-400 bg-amber-500/10',
-    cyan:   'text-cyan-400 bg-cyan-500/10',
+function KpiCard({ title, value, sub, icon: Icon, color = 'purple', blocked = false }) {
+  const border = {
+    purple: 'border-purple-700/30 from-purple-600/20 to-purple-800/10',
+    blue:   'border-blue-700/30   from-blue-600/20   to-blue-800/10',
+    green:  'border-emerald-700/30 from-emerald-600/20 to-emerald-800/10',
+    amber:  'border-amber-700/30  from-amber-600/20  to-amber-800/10',
+    red:    'border-red-700/30    from-red-600/20    to-red-800/10',
   };
   return (
-    <div className="card py-5">
-      <div className="flex items-start justify-between mb-3">
-        <p className="text-sm text-gray-400">{label}</p>
-        {Icon && (
-          <span className={`p-2 rounded-lg ${accents[accent]}`}>
-            <Icon size={16} className={accents[accent].split(' ')[0]} />
-          </span>
-        )}
+    <div className={`bg-gradient-to-br ${border[color]} border rounded-xl p-4 flex flex-col gap-1`}>
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-gray-400 uppercase tracking-wide">{title}</span>
+        {blocked ? <Lock size={12} className="text-gray-600" /> : <Icon size={14} className="text-gray-400" />}
       </div>
-      <p className="text-2xl font-bold text-white">{value}</p>
-      {sub && <p className="text-xs text-gray-500 mt-1">{sub}</p>}
+      <div className={`text-2xl font-bold ${blocked ? 'text-gray-600' : 'text-white'}`}>{value}</div>
+      {sub && <div className="text-xs text-gray-500">{sub}</div>}
     </div>
   );
 }
 
-const CustomTooltip = ({ active, payload, label }) => {
-  if (!active || !payload?.length) return null;
+function BlockedBadge({ reason, field }) {
   return (
-    <div className="bg-dark-800 border border-dark-600 rounded-lg p-3 shadow-xl text-xs">
-      <p className="text-gray-400 mb-1">{label}</p>
-      {payload.map((p) => (
-        <p key={p.dataKey} className="font-semibold" style={{ color: p.color }}>
-          {p.dataKey.includes('revenue') ? fmtEur(p.value) : fmt(p.value)} {p.name}
-        </p>
-      ))}
+    <div className="flex items-start gap-2 bg-gray-800/40 border border-gray-700/40 rounded-lg p-3 text-xs">
+      <Lock size={12} className="mt-0.5 text-gray-500 shrink-0" />
+      <div>
+        <span className="text-gray-400">{reason}</span>
+        {field && <div className="text-gray-600 mt-0.5">Requires: {field}</div>}
+      </div>
     </div>
   );
-};
+}
+
+const TABS = [
+  { id: 'doctoralia',   label: 'Doctoralia Financials' },
+  { id: 'campaigns',    label: 'Campaign Performance' },
+  { id: 'funnel',       label: 'WhatsApp Funnel' },
+  { id: 'traceability', label: 'Lead Traceability' },
+];
 
 export default function CampaignIntelligence() {
-  const [campaigns, setCampaigns] = useState([]);
-  const [funnel, setFunnel]       = useState([]);
-  const [convs, setConvs]         = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState(null);
-  const [tab, setTab]             = useState('campaigns'); // 'campaigns' | 'funnel' | 'conversations'
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [tab,          setTab]          = useState('doctoralia');
+  const [refreshKey,   setRefreshKey]   = useState(0);
+  const [kpis,         setKpis]         = useState(null);
+  const [docFin,       setDocFin]       = useState(null);
+  const [campaigns,    setCampaigns]    = useState([]);
+  const [funnelData,   setFunnelData]   = useState([]);
+  const [traceability, setTraceability] = useState([]);
+  const [loading,      setLoading]      = useState(true);
+  const [error,        setError]        = useState(null);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [campRes, funnelRes, convsRes] = await Promise.all([
-        api.get('/api/traceability/campaigns'),
+      const [kpiR, docR, campR, funnelR, traceR] = await Promise.allSettled([
+        api.get('/api/kpis'),
+        api.get('/api/reports/doctoralia-financials'),
+        api.get('/api/reports/campaign-performance'),
         api.get('/api/traceability/funnel'),
-        api.get('/api/conversations'),
+        api.get('/api/traceability/leads'),
       ]);
-      setCampaigns(campRes.data.campaigns || []);
-      setFunnel(funnelRes.data.funnel || []);
-      setConvs(convsRes.data.conversations || []);
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to load intelligence data');
+      if (kpiR.status    === 'fulfilled') setKpis(kpiR.value.data);
+      if (docR.status    === 'fulfilled') setDocFin(docR.value.data);
+      if (campR.status   === 'fulfilled') setCampaigns(campR.value.data?.campaigns || []);
+      if (funnelR.status === 'fulfilled') setFunnelData(funnelR.value.data?.funnel || []);
+      if (traceR.status  === 'fulfilled') setTraceability(traceR.value.data?.leads || []);
+    } catch (e) {
+      setError(e.message);
     } finally {
       setLoading(false);
     }
@@ -89,288 +94,334 @@ export default function CampaignIntelligence() {
 
   useEffect(() => { fetchAll(); }, [fetchAll, refreshKey]);
 
-  // Aggregate funnel totals across all sources
-  const totalFunnel = FUNNEL_STAGES.map(stage => ({
-    name:  stage.label,
-    value: funnel.reduce((sum, row) => sum + (Number(row[stage.key]) || 0), 0),
-    fill:  stage.color,
-  }));
-
-  // KPI rollups from campaigns view
-  const totalLeads    = campaigns.reduce((s, c) => s + Number(c.total_leads || 0), 0);
-  const totalContacted= campaigns.reduce((s, c) => s + Number(c.contacted || 0), 0);
-  const totalReplied  = campaigns.reduce((s, c) => s + Number(c.replied || 0), 0);
-  const totalRevenue  = campaigns.reduce((s, c) => s + Number(c.verified_revenue || 0), 0);
-  const replyRate     = totalContacted > 0 ? (totalReplied / totalContacted * 100).toFixed(1) : '—';
-  const convRate      = totalLeads > 0 ? (campaigns.reduce((s, c) => s + Number(c.closed_won || 0), 0) / totalLeads * 100).toFixed(1) : '—';
-
-  if (loading) {
-    return (
-      <div className="space-y-6 max-w-7xl mx-auto">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-bold text-white">Campaign Intelligence</h2>
-            <p className="text-gray-500 text-sm mt-0.5">Meta lead attribution → WhatsApp funnel → Verified revenue</p>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="card py-5 animate-pulse">
-              <div className="h-4 bg-dark-600 rounded w-2/3 mb-3" />
-              <div className="h-8 bg-dark-600 rounded w-1/2" />
-            </div>
-          ))}
-        </div>
-        <div className="card py-12 flex items-center justify-center">
-          <Loader2 size={32} className="animate-spin text-indigo-400" />
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="space-y-6 max-w-7xl mx-auto">
-        <h2 className="text-2xl font-bold text-white">Campaign Intelligence</h2>
-        <div className="card flex items-center gap-3 text-red-400">
-          <AlertCircle size={20} />
-          <p className="text-sm">{error}</p>
-        </div>
-      </div>
-    );
-  }
+  const doc     = kpis?.doctoralia ?? {};
+  const acq     = kpis?.acquisition ?? {};
+  const blocked = kpis?.blocked ?? [];
+  const byMonth         = docFin?.byMonth         ?? [];
+  const templateSummary = docFin?.templateSummary ?? [];
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="p-6 space-y-6 text-white min-h-screen bg-gray-950">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-white">Campaign Intelligence</h2>
-          <p className="text-gray-500 text-sm mt-0.5">Meta lead attribution → WhatsApp funnel → Verified revenue</p>
+          <h1 className="text-2xl font-bold">Revenue Intelligence</h1>
+          <p className="text-sm text-gray-400 mt-0.5">
+            Doctoralia-verified settlements · Meta attribution · WhatsApp funnel
+          </p>
         </div>
         <button
           onClick={() => setRefreshKey(k => k + 1)}
-          className="btn-secondary flex items-center gap-1.5 text-sm"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-sm"
+          disabled={loading}
         >
-          <RefreshCw size={14} />
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           Refresh
         </button>
       </div>
 
-      {/* KPI Row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard label="Total Leads" value={fmt(totalLeads)} sub={`${totalContacted} contacted`} icon={Users} accent="brand" />
-        <KpiCard label="Reply Rate" value={`${replyRate}%`} sub={`${totalReplied} replied`} icon={MessageCircle} accent="cyan" />
-        <KpiCard label="Conversion Rate" value={`${convRate}%`} sub="Leads → closed won" icon={TrendingUp} accent="green" />
-        <KpiCard label="Verified Revenue" value={fmtEur(totalRevenue)} sub="from closed-won leads" icon={Target} accent="amber" />
+      {error && (
+        <div className="bg-red-900/30 border border-red-700/50 rounded-lg p-3 text-sm text-red-300">{error}</div>
+      )}
+
+      {/* Doctoralia KPIs — always real */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+        <KpiCard icon={TrendingUp}    color="purple" title="Verified Net"      value={fmtEur(doc.totalNet)}        sub="Doctoralia settled" />
+        <KpiCard icon={TrendingUp}    color="blue"   title="Avg Ticket"        value={fmtEur(doc.avgTicket)}       sub="per settled op" />
+        <KpiCard icon={CheckCircle}   color="green"  title="Settled Ops"       value={doc.settledCount ?? '—'}     sub="non-cancelled" />
+        <KpiCard icon={XCircle}       color="amber"  title="Cancelled Ops"     value={doc.cancelledCount ?? '—'}   sub="excluded from net" />
+        <KpiCard icon={Target}        color="purple" title="Discount Rate"     value={fmtPct(doc.discountRate)}    sub="vs gross" />
+        <KpiCard icon={AlertTriangle} color="amber"  title="Liquidation Lag"   value={doc.avgLiquidationDays != null ? `${fmtN(doc.avgLiquidationDays)}d` : '—'} sub="intake → settled" />
       </div>
 
-      {/* Tab Bar */}
-      <div className="flex gap-1.5 border-b border-dark-600 pb-0">
-        {[['campaigns', 'Campaigns'], ['funnel', 'WhatsApp Funnel'], ['conversations', 'Conversations']].map(([id, label]) => (
-          <button
-            key={id}
-            onClick={() => setTab(id)}
-            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
-              tab === id
-                ? 'bg-dark-700 text-white border border-dark-600 border-b-dark-700 -mb-px'
-                : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            {label}
+      {/* Acquisition KPIs — blocked until leads exist */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <KpiCard icon={Users}         color="blue"   title="Total Leads"  value={acq.totalLeads || '—'} blocked={!acq.totalLeads} sub="Meta + manual" />
+        <KpiCard icon={MessageSquare} color="green"  title="Contacted"    value={acq.contacted  || '—'} blocked={!acq.totalLeads} sub="first outbound" />
+        <KpiCard icon={MessageSquare} color="green"  title="Replied"      value={acq.replied    || '—'} blocked={!acq.totalLeads} sub="first inbound" />
+        <KpiCard icon={TrendingUp}    color="purple" title="Reply Rate"
+          value={acq.replyRate != null ? fmtPct(acq.replyRate) : '—'}
+          blocked={!acq.totalLeads} sub="replied / contacted" />
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 border-b border-gray-800">
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors
+              ${tab === t.id ? 'bg-gray-800 text-white border-b-2 border-purple-500' : 'text-gray-400 hover:text-gray-200'}`}>
+            {t.label}
           </button>
         ))}
       </div>
 
-      {/* Campaigns Tab */}
-      {tab === 'campaigns' && (
-        <div className="space-y-5">
-          {/* Revenue by campaign chart */}
-          {campaigns.length > 0 && (
-            <div className="card">
-              <h3 className="text-sm font-semibold text-gray-300 mb-4">Verified Revenue by Campaign</h3>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={campaigns.slice(0, 10)} margin={{ top: 4, right: 4, left: -10, bottom: 60 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis
-                    dataKey="campaign_name"
-                    tick={{ fill: '#9ca3af', fontSize: 10 }}
-                    angle={-30}
-                    textAnchor="end"
-                    interval={0}
-                  />
-                  <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} tickFormatter={v => `€${(v/1000).toFixed(0)}k`} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Bar dataKey="verified_revenue" name="Revenue" radius={[4, 4, 0, 0]}>
-                    {campaigns.slice(0, 10).map((_, i) => (
-                      <Cell key={i} fill={CAMPAIGN_COLORS[i % CAMPAIGN_COLORS.length]} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-
-          {/* Campaigns table */}
-          <div className="card p-0 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-dark-600">
-                    {['Campaign', 'Leads', 'Contacted', 'Replied', 'Booked', 'Attended', 'Closed', 'Revenue', 'Reply %', 'Avg Reply (min)'].map(h => (
-                      <th key={h} className="text-left px-4 py-3.5 text-xs font-medium text-gray-500 uppercase whitespace-nowrap">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-dark-600">
-                  {campaigns.length === 0 ? (
-                    <tr>
-                      <td colSpan={10} className="px-4 py-12 text-center text-gray-500 text-sm">
-                        No campaign data yet. Meta leads will be attributed once they arrive through the webhook.
-                      </td>
-                    </tr>
-                  ) : campaigns.map((c, i) => (
-                    <tr key={c.campaign_id || i} className="hover:bg-dark-800/50">
-                      <td className="px-4 py-3 text-sm text-white font-medium max-w-[200px]">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: CAMPAIGN_COLORS[i % CAMPAIGN_COLORS.length] }} />
-                          <span className="truncate">{c.campaign_name}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-300">{fmt(c.total_leads)}</td>
-                      <td className="px-4 py-3 text-sm text-gray-300">{fmt(c.contacted)}</td>
-                      <td className="px-4 py-3 text-sm text-cyan-400">{fmt(c.replied)}</td>
-                      <td className="px-4 py-3 text-sm text-violet-400">{fmt(c.booked)}</td>
-                      <td className="px-4 py-3 text-sm text-amber-400">{fmt(c.attended)}</td>
-                      <td className="px-4 py-3 text-sm text-emerald-400 font-semibold">{fmt(c.closed_won)}</td>
-                      <td className="px-4 py-3 text-sm font-bold text-white">{fmtEur(c.verified_revenue)}</td>
-                      <td className="px-4 py-3 text-sm text-gray-400">{c.reply_rate_pct != null ? fmtPct(c.reply_rate_pct) : '—'}</td>
-                      <td className="px-4 py-3 text-sm text-gray-400">{c.avg_reply_delay_min != null ? `${c.avg_reply_delay_min}m` : '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* WhatsApp Funnel Tab */}
-      {tab === 'funnel' && (
-        <div className="space-y-5">
-          {/* Funnel chart */}
-          <div className="card">
-            <h3 className="text-sm font-semibold text-gray-300 mb-4">Lead-to-Revenue Funnel (all sources)</h3>
-            {totalFunnel[0]?.value === 0 ? (
-              <p className="text-gray-500 text-sm text-center py-8">No funnel data yet. Stages will populate as leads progress through the pipeline.</p>
+      {/* ── Doctoralia Financials ──────────────────────────────────────────── */}
+      {tab === 'doctoralia' && (
+        <div className="space-y-6">
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+            <h3 className="text-sm font-semibold text-gray-300 mb-4">Net Settled Revenue by Month</h3>
+            {byMonth.length === 0 ? (
+              <div className="text-gray-500 text-sm text-center py-8">No settlement data.</div>
             ) : (
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={totalFunnel} margin={{ top: 4, right: 4, left: -10, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="name" tick={{ fill: '#9ca3af', fontSize: 12 }} />
-                  <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} />
-                  <Tooltip formatter={(v) => fmt(v)} />
-                  <Bar dataKey="value" name="Count" radius={[4, 4, 0, 0]}>
-                    {totalFunnel.map((entry, i) => (
-                      <Cell key={i} fill={entry.fill} />
-                    ))}
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={byMonth.map(r => ({ month: MONTH_LABEL(r.settled_month), net: Number(r.total_net) }))}>
+                  <XAxis dataKey="month" tick={{ fill: '#9ca3af', fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={false} tickLine={false}
+                    tickFormatter={v => `€${(v / 1000).toFixed(1)}k`} />
+                  <Tooltip formatter={(v) => [`€${fmt(v)}`, 'Net']}
+                    contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8 }}
+                    labelStyle={{ color: '#d1d5db' }} />
+                  <Bar dataKey="net" fill="#a78bfa" radius={[4, 4, 0, 0]}>
+                    <LabelList dataKey="net" position="top" formatter={v => `€${fmt(v)}`}
+                      style={{ fill: '#c4b5fd', fontSize: 10 }} />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
             )}
           </div>
 
-          {/* Funnel by source table */}
-          <div className="card p-0 overflow-hidden">
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+            <h3 className="text-sm font-semibold text-gray-300 mb-4">Template Mix</h3>
+            {templateSummary.length === 0 ? (
+              <div className="text-gray-500 text-sm">No templates.</div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                {templateSummary.map((t, i) => (
+                  <div key={t.template_id} className="bg-gray-800/60 border border-gray-700/40 rounded-lg p-3 space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
+                      <span className="text-xs font-medium text-white truncate" title={t.template_name}>{t.template_name}</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-gray-400">
+                      <span>Ops: <strong className="text-white">{t.operations_count}</strong></span>
+                      <span>Net: <strong className="text-purple-300">{fmtEur(t.total_net)}</strong></span>
+                    </div>
+                    <div className="flex justify-between text-xs text-gray-400">
+                      <span>Avg ticket: <strong className="text-white">{fmtEur(t.avg_ticket)}</strong></span>
+                      <span>Share: <strong className="text-white">{fmtPct(t.revenue_share_pct)}</strong></span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-800">
+              <h3 className="text-sm font-semibold text-gray-300">Template × Month Detail</h3>
+            </div>
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="w-full text-xs">
                 <thead>
-                  <tr className="border-b border-dark-600">
-                    {['Source', 'Leads', 'Contacted', 'Replied', 'Attended', 'No-shows', 'Closed', 'Revenue', 'Avg Reply (min)'].map(h => (
-                      <th key={h} className="text-left px-4 py-3.5 text-xs font-medium text-gray-500 uppercase whitespace-nowrap">{h}</th>
+                  <tr className="bg-gray-800/60 text-gray-400 text-left">
+                    {['Month','Template','Ops','Gross','Discount','Net','Avg Ticket','Discount %','Cancel %','Lag (d)'].map(h => (
+                      <th key={h} className="px-3 py-2 font-medium whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-dark-600">
-                  {funnel.length === 0 ? (
-                    <tr>
-                      <td colSpan={9} className="px-4 py-12 text-center text-gray-500 text-sm">
-                        No funnel data yet.
-                      </td>
-                    </tr>
-                  ) : funnel.map((row) => (
-                    <tr key={row.source} className="hover:bg-dark-800/50">
-                      <td className="px-4 py-3 text-sm text-white font-medium">{row.source || 'Unknown'}</td>
-                      <td className="px-4 py-3 text-sm text-gray-300">{fmt(row.total_leads)}</td>
-                      <td className="px-4 py-3 text-sm text-gray-300">{fmt(row.contacted)}</td>
-                      <td className="px-4 py-3 text-sm text-cyan-400">{fmt(row.replied)}</td>
-                      <td className="px-4 py-3 text-sm text-amber-400">{fmt(row.attended)}</td>
-                      <td className="px-4 py-3 text-sm text-red-400">{fmt(row.no_shows)}</td>
-                      <td className="px-4 py-3 text-sm text-emerald-400 font-semibold">{fmt(row.closed_won)}</td>
-                      <td className="px-4 py-3 text-sm font-bold text-white">{fmtEur(row.verified_revenue)}</td>
-                      <td className="px-4 py-3 text-sm text-gray-400">{row.avg_reply_min != null ? `${row.avg_reply_min}m` : '—'}</td>
+                <tbody className="divide-y divide-gray-800/50">
+                  {(docFin?.byTemplate ?? []).map((row, i) => (
+                    <tr key={i} className="hover:bg-gray-800/30 text-gray-300">
+                      <td className="px-3 py-2 whitespace-nowrap">{MONTH_LABEL(row.settled_month)}</td>
+                      <td className="px-3 py-2 max-w-[180px] truncate" title={row.template_name}>{row.template_name}</td>
+                      <td className="px-3 py-2">{row.operations_count}</td>
+                      <td className="px-3 py-2">{fmtEur(row.total_gross)}</td>
+                      <td className="px-3 py-2">{fmtEur(row.total_discount)}</td>
+                      <td className="px-3 py-2 font-semibold text-purple-300">{fmtEur(row.total_net)}</td>
+                      <td className="px-3 py-2">{fmtEur(row.avg_ticket_net)}</td>
+                      <td className="px-3 py-2">{fmtPct(row.discount_rate_pct)}</td>
+                      <td className="px-3 py-2">{fmtPct(row.cancellation_rate_pct)}</td>
+                      <td className="px-3 py-2">{row.avg_liquidation_lag_days != null ? `${row.avg_liquidation_lag_days}d` : '—'}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           </div>
+          <p className="text-xs text-gray-600">
+            Source: Doctoralia financing export. Net = Gross − Discount. Cancelled ops excluded.
+            Liquidation lag = days from intake to settlement. Data as at last CSV upload.
+          </p>
         </div>
       )}
 
-      {/* Conversations Tab */}
-      {tab === 'conversations' && (
-        <div className="card p-0 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-dark-600">
-                  {['Phone', 'Direction', 'Type', 'Preview', 'Sent', 'Replied'].map(h => (
-                    <th key={h} className="text-left px-4 py-3.5 text-xs font-medium text-gray-500 uppercase whitespace-nowrap">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-dark-600">
-                {convs.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-12 text-center text-gray-500 text-sm">
-                      No WhatsApp conversations recorded yet. Conversations will appear here once messages are sent via the CRM.
-                    </td>
-                  </tr>
-                ) : convs.map((c) => (
-                  <tr key={c.id} className="hover:bg-dark-800/50">
-                    <td className="px-4 py-3 text-xs font-mono text-gray-300">{c.phone}</td>
-                    <td className="px-4 py-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                        c.direction === 'outbound'
-                          ? 'bg-indigo-500/10 text-indigo-400'
-                          : 'bg-emerald-500/10 text-emerald-400'
-                      }`}>
-                        {c.direction}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-gray-400">{c.message_type}</td>
-                    <td className="px-4 py-3 text-xs text-gray-300 max-w-[280px] truncate">{c.message_preview || '—'}</td>
-                    <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">
-                      {c.sent_at ? new Date(c.sent_at).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-gray-400">
-                      {c.replied_at ? new Date(c.replied_at).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {/* ── Campaign Performance ───────────────────────────────────────────── */}
+      {tab === 'campaigns' && (
+        <div className="space-y-4">
+          {campaigns.length === 0 ? (
+            <div className="space-y-3">
+              <div className="bg-amber-900/20 border border-amber-700/40 rounded-xl p-4 text-sm text-amber-300">
+                No campaign data yet. This view populates automatically when Meta Ads leads arrive via webhook.
+              </div>
+              {blocked.filter(b => ['acquisition','conversion'].includes(b.kpi_group)).map(b => (
+                <BlockedBadge key={b.kpi_name} reason={b.blocked_reason} field={b.required_field} />
+              ))}
+            </div>
+          ) : (
+            <>
+              <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+                <h3 className="text-sm font-semibold text-gray-300 mb-4">Leads by Campaign</h3>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={campaigns.slice(0, 10).map(c => ({ name: (c.campaign_name || 'Unknown').slice(0, 22), leads: c.total_leads }))}>
+                    <XAxis dataKey="name" tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={false} tickLine={false} />
+                    <Tooltip contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8 }} />
+                    <Bar dataKey="leads" radius={[4, 4, 0, 0]}>
+                      {campaigns.slice(0, 10).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-gray-800/60 text-gray-400 text-left">
+                        {['Campaign','Leads','Contacted','Replied','Booked','Attended','No Shows','Closed','Reply %','Close %','Avg Reply (min)'].map(h => (
+                          <th key={h} className="px-3 py-2 font-medium whitespace-nowrap">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-800/50">
+                      {campaigns.map((c, i) => (
+                        <tr key={i} className="hover:bg-gray-800/30 text-gray-300">
+                          <td className="px-3 py-2 max-w-[200px] truncate" title={c.campaign_name}>{c.campaign_name}</td>
+                          <td className="px-3 py-2 font-semibold">{c.total_leads}</td>
+                          <td className="px-3 py-2">{c.contacted}</td>
+                          <td className="px-3 py-2">{c.replied}</td>
+                          <td className="px-3 py-2">{c.booked}</td>
+                          <td className="px-3 py-2">{c.attended}</td>
+                          <td className="px-3 py-2 text-red-400">{c.no_shows}</td>
+                          <td className="px-3 py-2">{c.closed}</td>
+                          <td className="px-3 py-2">{fmtPct(c.reply_rate_pct)}</td>
+                          <td className="px-3 py-2">{fmtPct(c.lead_to_close_rate_pct)}</td>
+                          <td className="px-3 py-2">{c.avg_reply_delay_min ?? '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── WhatsApp Funnel ────────────────────────────────────────────────── */}
+      {tab === 'funnel' && (
+        <div className="space-y-4">
+          {funnelData.length === 0 ? (
+            <div className="space-y-3">
+              <div className="bg-amber-900/20 border border-amber-700/40 rounded-xl p-4 text-sm text-amber-300">
+                No funnel data yet. Populates when leads are contacted via WhatsApp.
+              </div>
+              {blocked.filter(b => b.kpi_group === 'whatsapp').map(b => (
+                <BlockedBadge key={b.kpi_name} reason={b.blocked_reason} field={b.required_field} />
+              ))}
+            </div>
+          ) : (
+            <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-gray-800/60 text-gray-400 text-left">
+                      {['Source','Leads','Contacted','Replied','Attended','No Shows','Closed','Avg Reply (min)'].map(h => (
+                        <th key={h} className="px-3 py-2 font-medium whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-800/50">
+                    {funnelData.map((row, i) => (
+                      <tr key={i} className="hover:bg-gray-800/30 text-gray-300">
+                        <td className="px-3 py-2 font-medium capitalize">{row.source}</td>
+                        <td className="px-3 py-2 font-semibold">{row.total_leads}</td>
+                        <td className="px-3 py-2">{row.contacted}</td>
+                        <td className="px-3 py-2">{row.replied}</td>
+                        <td className="px-3 py-2">{row.attended}</td>
+                        <td className="px-3 py-2 text-red-400">{row.no_shows}</td>
+                        <td className="px-3 py-2">{row.closed_won}</td>
+                        <td className="px-3 py-2">{row.avg_reply_min ?? '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Lead Traceability ─────────────────────────────────────────────── */}
+      {tab === 'traceability' && (
+        <div className="space-y-4">
+          {traceability.length === 0 ? (
+            <div className="space-y-3">
+              <div className="bg-amber-900/20 border border-amber-700/40 rounded-xl p-4 text-sm text-amber-300">
+                No lead traceability data yet. Full source-to-cash rows appear once Meta leads are ingested.
+              </div>
+              {blocked.filter(b => b.kpi_group === 'acquisition').slice(0, 2).map(b => (
+                <BlockedBadge key={b.kpi_name} reason={b.blocked_reason} field={b.required_field} />
+              ))}
+            </div>
+          ) : (
+            <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-gray-800/60 text-gray-400 text-left">
+                      {['Lead','Source','Campaign','Stage','Outreach','Reply','Appt','Est. Revenue','Doc. Net','Settlement'].map(h => (
+                        <th key={h} className="px-3 py-2 font-medium whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-800/50">
+                    {traceability.slice(0, 200).map((row, i) => (
+                      <tr key={i} className="hover:bg-gray-800/30 text-gray-300">
+                        <td className="px-3 py-2 max-w-[130px] truncate">{row.lead_name || row.phone_normalized || '—'}</td>
+                        <td className="px-3 py-2 capitalize">{row.source}</td>
+                        <td className="px-3 py-2 max-w-[140px] truncate" title={row.campaign_name}>{row.campaign_name || '—'}</td>
+                        <td className="px-3 py-2">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                            row.stage === 'closed' ? 'bg-green-900/50 text-green-300' :
+                            row.stage === 'lost'   ? 'bg-red-900/50 text-red-300' :
+                            'bg-gray-700/50 text-gray-300'
+                          }`}>{row.stage}</span>
+                        </td>
+                        <td className="px-3 py-2">{row.first_outbound_at ? '✓' : '—'}</td>
+                        <td className="px-3 py-2">{row.first_inbound_at  ? '✓' : '—'}</td>
+                        <td className="px-3 py-2">{row.appointment_status || '—'}</td>
+                        <td className="px-3 py-2">{row.estimated_revenue ? fmtEur(row.estimated_revenue) : '—'}</td>
+                        <td className="px-3 py-2 text-purple-300">{row.doctoralia_net ? fmtEur(row.doctoralia_net) : '—'}</td>
+                        <td className="px-3 py-2">{row.settlement_date ? new Date(row.settlement_date).toLocaleDateString('es-ES') : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Blocked KPI catalogue — shown on non-Doctoralia tabs */}
+      {blocked.length > 0 && tab !== 'doctoralia' && (
+        <div className="border border-gray-800 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">
+            <Lock size={12} />
+            Blocked KPIs — {blocked.length} pending data ingestion
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {blocked
+              .filter(b =>
+                tab === 'campaigns'    ? ['acquisition','conversion','revenue'].includes(b.kpi_group) :
+                tab === 'funnel'       ? b.kpi_group === 'whatsapp' :
+                tab === 'traceability' ? true : false
+              )
+              .map(b => <BlockedBadge key={b.kpi_name} reason={b.blocked_reason} field={b.required_field} />)
+            }
           </div>
         </div>
       )}
-
-      {/* Attribution note */}
-      <div className="text-center text-xs text-gray-600 pb-2">
-        Campaign attribution captured at Meta webhook ingestion ·
-        WhatsApp funnel populated from send events ·
-        Revenue verified against Doctoralia settlements only
-      </div>
     </div>
   );
 }
