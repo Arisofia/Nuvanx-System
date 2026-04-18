@@ -137,6 +137,8 @@ export default function Dashboard() {
   }, []);
 
   const totalRevenue = metrics?.totalRevenue ?? 0;
+  const verifiedRevenue = metrics?.verifiedRevenue ?? 0;
+  const settledCount = metrics?.settledCount ?? 0;
   const totalLeads = metrics?.totalLeads ?? 0;
   const conversionRate = metrics?.conversionRate ?? 0;
   const connectedIntegrations = metrics?.connectedIntegrations ?? 0;
@@ -244,11 +246,12 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <MetricCard
-          title="CRM Revenue (estimated)"
-          value={totalRevenue}
+          title="Verified Revenue"
+          value={verifiedRevenue}
           prefix="€"
           icon={TrendingUp}
           color="brand"
+          subtitle={settledCount > 0 ? `${settledCount} settled operations` : 'From Doctoralia settlements'}
         />
         <MetricCard
           title="Total Leads"
