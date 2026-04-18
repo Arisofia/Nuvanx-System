@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, BookOpen, Users, Activity, Plug, Bot,
-  Zap, LogOut, ChevronRight, BarChart2, Banknote
+  Zap, LogOut, ChevronRight, BarChart2, Banknote, GitMerge
 } from 'lucide-react';
 import { useAuth } from '../context/useAuth';
 
@@ -14,6 +14,7 @@ const navItems = [
   { to: '/ai', icon: Bot, label: 'AI Layer' },
   { to: '/marketing', icon: BarChart2, label: 'Marketing' },
   { to: '/financials', icon: Banknote, label: 'Financials' },
+  { to: '/intelligence', icon: GitMerge, label: 'Intelligence' },
 ];
 
 function NavItem({ to, icon, label }) {

@@ -244,7 +244,7 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <MetricCard
-          title="Current Revenue"
+          title="CRM Revenue (estimated)"
           value={totalRevenue}
           prefix="€"
           icon={TrendingUp}

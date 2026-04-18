@@ -27,13 +27,21 @@ Key tables (nuvanx-prod):
 - `clinics` — Multi-tenant isolation
 - `credentials` — Encrypted API keys (AES-256-GCM vault)
 - `integrations` — Integration connection status per user
-- `leads` — CRM lead records with deduplication
+- `leads` — CRM lead records with full attribution (campaign_id, ad_id, phone_normalized, dni_hash, etc.)
 - `playbooks` / `playbook_executions` — Automation playbooks
-- `dashboard_metrics` — Aggregated dashboard data
+- `patients` — Identified patients (from Doctoralia DNI + manual entry)
+- `financial_settlements` — Doctoralia financing settlements (verified revenue source of truth)
+- `meta_attribution` — Full Meta lineage per lead (campaign/adset/ad IDs)
+- `whatsapp_conversations` — Outbound/inbound WhatsApp message log
+- `lead_timeline_events` — Append-only event log per lead
+- `doctoralia_raw` — Immutable audit trail for CSV uploads
+- `appointments` / `doctors` / `treatment_types` — Clinical data layer
+- `dashboard_metrics` — Aggregated dashboard data (also present in Figma project)
 - `design_tokens` — Design system tokens synced from Figma
 
-> **Important:** Do NOT reference legacy shadow tables (`user_integrations`,
-> `user_credentials`, `kpi_definitions`, `kpi_values`). They were removed.
+> **Note:** `leads.revenue` is **estimated** (CRM entry). Verified revenue is in `financial_settlements.amount_net` (Doctoralia settled operations). Never blend these silently.
+
+> **Legacy removed:** `user_integrations`, `user_credentials`, `kpi_definitions`, `kpi_values`, `hubspot_status` column.
 
 ## Environment Variables
 
