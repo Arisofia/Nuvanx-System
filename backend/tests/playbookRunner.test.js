@@ -265,7 +265,7 @@ describe('playbookRunner', () => {
     expect(passStep.fn).toHaveBeenCalledTimes(1);
 
     const finalizeCall = mockQuery.mock.calls.find(
-      (c) => typeof c[0] === 'string' && c[0].includes('finished_at'),
+      (c) => typeof c[0] === 'string' && c[0].includes('error_message'),
     );
     expect(finalizeCall[1][0]).toBe('success');
   });
