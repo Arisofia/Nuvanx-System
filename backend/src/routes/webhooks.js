@@ -20,6 +20,23 @@ const { onLeadCreated } = require('../services/playbookAutomation');
 const router = express.Router();
 router.use(webhookLimiter);
 
+function isMetaNumericId(value) {
+  return /^\d{5,30}$/.test(String(value || '').trim());
+}
+
+/**
+ * Extract and validate webhook challenge value.
+ * Returns the sanitized challenge or null if invalid.
+ * Allows alphanumeric and common punctuation chars per Meta's opaque verification strings.
+ * Derives the result from regex capture group to avoid taint flow issues.
+ */
+function extractValidChallenge(value) {
+  const challenge = String(value || '').trim();
+  // Meta challenge can be any opaque string; allow alphanumeric + common punctuation
+  if (!/^[A-Za-z0-9._:\-]{1,200}$/.test(challenge)) return null;
+  return challenge;
+}
+
 // ─── Meta Lead Ads Webhook ──────────────────────────────────────────────────
 // Docs: https://developers.facebook.com/docs/marketing-api/guides/lead-ads/retrieving/
 
@@ -30,16 +47,21 @@ router.use(webhookLimiter);
 router.get('/meta', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
-  const challenge = req.query['hub.challenge'];
+  const challengeInput = req.query['hub.challenge'];
+  const challenge = extractValidChallenge(challengeInput);
 
   if (!config.metaVerifyToken) {
-    logger.error('CRITICAL: META_VERIFY_TOKEN missing in environment variables');
+    logger.error('META_VERIFY_TOKEN missing in environment variables');
     return res.status(500).json({ error: 'Server misconfiguration: Missing Verification Token' });
   }
 
-  if (mode === 'subscribe' && token === config.metaVerifyToken) {
+  if (
+    mode === 'subscribe' &&
+    token === config.metaVerifyToken &&
+    challenge !== null
+  ) {
     logger.info('Meta webhook verified successfully');
-    return res.status(200).send(challenge);
+    return res.type('text/plain').status(200).send(challenge);
   }
 
   logger.warn('Meta webhook verification failed', {
@@ -118,6 +140,10 @@ router.post('/meta', async (req, res) => {
 
       const { leadgen_id, page_id, form_id } = change.value || {};
       if (!leadgen_id) continue;
+      if (!isMetaNumericId(leadgen_id)) {
+        logger.warn('Meta webhook: invalid leadgen_id', { leadgen_id });
+        continue;
+      }
 
       try {
         // Try to fetch full lead data from Meta Graph API
@@ -138,7 +164,7 @@ router.post('/meta', async (req, res) => {
           try {
             const axios = require('axios');
             const { data } = await axios.get(
-              `https://graph.facebook.com/v21.0/${leadgen_id}`,
+              `https://graph.facebook.com/v21.0/${encodeURIComponent(String(leadgen_id).trim())}`,
               {
                 params: {
                   access_token: config.metaAccessToken,
@@ -159,11 +185,15 @@ router.post('/meta', async (req, res) => {
             attribution.campaign_id = data.campaign_id || null;
             attribution.form_id     = data.form_id || form_id || null;
 
+            if (attribution.campaign_id && !isMetaNumericId(attribution.campaign_id)) attribution.campaign_id = null;
+            if (attribution.adset_id && !isMetaNumericId(attribution.adset_id)) attribution.adset_id = null;
+            if (attribution.ad_id && !isMetaNumericId(attribution.ad_id)) attribution.ad_id = null;
+
             // Resolve human-readable names (best-effort, non-blocking)
             if (attribution.campaign_id) {
               try {
                 const campRes = await axios.get(
-                  `https://graph.facebook.com/v21.0/${attribution.campaign_id}`,
+                  `https://graph.facebook.com/v21.0/${encodeURIComponent(String(attribution.campaign_id).trim())}`,
                   { params: { access_token: config.metaAccessToken, fields: 'name' }, timeout: 6000 },
                 );
                 attribution.campaign_name = campRes.data?.name || null;
@@ -172,7 +202,7 @@ router.post('/meta', async (req, res) => {
             if (attribution.adset_id) {
               try {
                 const adsetRes = await axios.get(
-                  `https://graph.facebook.com/v21.0/${attribution.adset_id}`,
+                  `https://graph.facebook.com/v21.0/${encodeURIComponent(String(attribution.adset_id).trim())}`,
                   { params: { access_token: config.metaAccessToken, fields: 'name' }, timeout: 6000 },
                 );
                 attribution.adset_name = adsetRes.data?.name || null;
@@ -181,7 +211,7 @@ router.post('/meta', async (req, res) => {
             if (attribution.ad_id) {
               try {
                 const adRes = await axios.get(
-                  `https://graph.facebook.com/v21.0/${attribution.ad_id}`,
+                  `https://graph.facebook.com/v21.0/${encodeURIComponent(String(attribution.ad_id).trim())}`,
                   { params: { access_token: config.metaAccessToken, fields: 'name' }, timeout: 6000 },
                 );
                 attribution.ad_name = adRes.data?.name || null;
