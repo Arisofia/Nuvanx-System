@@ -5,9 +5,12 @@ Revenue Intelligence Platform — Meta/Instagram lead acquisition → WhatsApp f
 ## Architecture
 
 - **Frontend**: React 19 + Vite → deployed to **Vercel**
-- **Backend**: Supabase Edge Functions (primary API) + Express server (webhooks, credential vault)
-- **Database**: Supabase (`ssvvuuysgxyqvmovrlvk` — nuvanx-prod)
+- **Backend**: Express server (canonical API — all writes, webhooks, side effects, background jobs)
+- **Database**: Supabase PostgreSQL (`ssvvuuysgxyqvmovrlvk` — nuvanx-prod)
 - **Figma sync**: Secondary Supabase project (`zpowfbeftxexzidlxndy`)
+- **Supabase Edge**: thin read facade only (Realtime subscriptions, RLS-secured direct reads)
+
+See [docs/adr-001-plane-ownership.md](docs/adr-001-plane-ownership.md) for the plane ownership rule and complete route registry.
 
 ## Frontend Routes
 
@@ -68,5 +71,6 @@ cd backend && npx jest tests/auth.test.js --runInBand --forceExit
 
 - [SECURITY.md](SECURITY.md) — Security posture and production readiness
 - [SUPABASE_SETUP.md](SUPABASE_SETUP.md) — Database setup and schema overview
-- [docs/agents-and-integrations-architecture.md](docs/agents-and-integrations-architecture.md) — Architecture and agent roadmap
+- [docs/adr-001-plane-ownership.md](docs/adr-001-plane-ownership.md) — Plane ownership ADR + canonical route registry
+- [docs/agents-and-integrations-architecture.md](docs/agents-and-integrations-architecture.md) — Agent roadmap and execution architecture
 
