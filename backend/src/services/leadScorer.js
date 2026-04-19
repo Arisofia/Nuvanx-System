@@ -25,6 +25,18 @@ const logger = require('../utils/logger');
 
 const SCORE_VERSION = 1;
 
+/**
+ * Remove characters that are commonly used for prompt injection (angle
+ * brackets, backticks, curly braces) from a user-supplied string before
+ * embedding it into an AI prompt.
+ */
+function _sanitizeForPrompt(value, maxLength = 200) {
+  if (!value) return '';
+  return String(value)
+    .substring(0, maxLength)
+    .replace(/[<>`{}[\]]/g, ' ');
+}
+
 function _getService(provider) {
   if (provider === 'gemini') return geminiService;
   return openaiService;
@@ -73,12 +85,12 @@ async function scoreLead(userId, lead) {
   const prompt = `You are a clinic revenue analyst. Score the following lead on a scale of 0 to 100 based on conversion likelihood. Higher scores indicate stronger intent and completeness.
 
 Lead data:
-- Name: ${lead.name || 'unknown'}
-- Source: ${lead.source || 'unknown'}
-- Stage: ${lead.stage || 'lead'}
+- Name: ${_sanitizeForPrompt(lead.name) || 'unknown'}
+- Source: ${_sanitizeForPrompt(lead.source) || 'unknown'}
+- Stage: ${_sanitizeForPrompt(lead.stage) || 'lead'}
 - Phone: ${lead.phone ? 'provided' : 'missing'}
 - Email: ${lead.email ? 'provided' : 'missing'}
-- Notes: ${lead.notes ? String(lead.notes).substring(0, 200) : 'none'}
+- Notes: ${_sanitizeForPrompt(lead.notes, 200) || 'none'}
 
 Respond ONLY with valid JSON:
 { "score": <number 0-100>, "rationale": { "key_factor": "<string>", "risk": "<string>" } }`;

@@ -70,11 +70,13 @@ async function _acquireLock(idempotencyKey, runId) {
     );
     return rows.length > 0;
   } catch (err) {
-    logger.warn('[runner] _acquireLock error — allowing run to proceed', {
+    // On DB error during lock acquisition, deny the run rather than risk a
+    // duplicate side effect.  The caller can retry or handle as appropriate.
+    logger.warn('[runner] _acquireLock error — denying run to preserve idempotency', {
       idempotencyKey,
       error: err.message,
     });
-    return true;
+    return false;
   }
 }
 
@@ -202,7 +204,7 @@ async function _emitDeadLetter(runId, playbookSlug, userId, errorMessage) {
  */
 async function run({ playbookSlug, userId, context = {}, steps, attempt = 1 }) {
   if (!isAvailable()) {
-    logger.warn('[runner] DB unavailable — skipping durable run', { playbookSlug, userId });
+    logger.warn('[runner] DB unavailable — skipping durable run', { playbookSlug });
     return;
   }
 

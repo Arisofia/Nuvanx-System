@@ -24,8 +24,15 @@ const logger = require('../utils/logger');
 async function onLeadCreated({ userId, lead, source }) {
   if (!lead || !lead.phone) return;
 
+  if (!lead.id) {
+    // Without an id we cannot set an idempotency key, so duplicate welcome
+    // messages are possible.  Log and skip rather than proceeding unprotected.
+    logger.warn('[playbook-auto] lead has no id — skipping to avoid duplicate welcome', { source });
+    return;
+  }
+
   // Idempotency key prevents duplicate welcome messages for the same lead
-  const idempotencyKey = lead.id ? `lead_capture_nurture:${lead.id}` : null;
+  const idempotencyKey = `lead_capture_nurture:${lead.id}`;
 
   await playbookRunner.run({
     playbookSlug: 'lead-capture-nurture',
