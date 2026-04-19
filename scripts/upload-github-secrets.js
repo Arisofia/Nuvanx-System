@@ -1,9 +1,13 @@
 'use strict';
 /**
- * Uploads secrets from backend/.env to GitHub Actions Secrets.
+ * Uploads deployment + integration secrets from backend/.env to GitHub Actions Secrets.
  * Uses GitHub REST API + libsodium sealed-box encryption.
- * Run: node scripts/upload-github-secrets.js
- * Requires: GITHUB_PAT in .env with repo secrets write permission.
+ *
+ * Run:
+ *   node scripts/upload-github-secrets.js
+ *
+ * Requires:
+ *   - GITHUB_PAT in backend/.env with repo secrets write permission
  */
 
 const path = require('path');
@@ -36,10 +40,25 @@ const SECRETS_MAP = {
   META_VERIFY_TOKEN:        'META_VERIFY_TOKEN',
   GH_PAT:                   'GITHUB_PAT',
   WEBHOOK_ADMIN_USER_ID:    'WEBHOOK_ADMIN_USER_ID',
+  ADMIN_USER_ID:            'ADMIN_USER_ID',
   CLINIC_ID:                'CLINIC_ID',
   DOCTORALIA_SHEET_ID:      'DOCTORALIA_SHEET_ID',
+  GOOGLE_SERVICE_ACCOUNT_JSON: 'GOOGLE_SERVICE_ACCOUNT_JSON',
+  RENDER_DEPLOY_HOOK_URL:   'RENDER_DEPLOY_HOOK_URL',
+  VERCEL_TOKEN:             'VERCEL_TOKEN',
   VERCEL_ORG_ID:            'VERCEL_ORG_ID',
   VERCEL_PROJECT_ID:        'VERCEL_PROJECT_ID',
+  OPENAI_API_KEY:           'OPENAI_API_KEY',
+  GEMINI_API_KEY:           'GEMINI_API_KEY',
+  ANTHROPIC_API_KEY:        'ANTHROPIC_API_KEY',
+  GOOGLE_API_KEY:           'GOOGLE_API_KEY',
+  FIGMA_TOKEN:              'FIGMA_TOKEN',
+  WHATSAPP_ACCESS_TOKEN:    'WHATSAPP_ACCESS_TOKEN',
+  WHATSAPP_PHONE_NUMBER_ID: 'WHATSAPP_PHONE_NUMBER_ID',
+  META_ACCESS_TOKEN:        'META_ACCESS_TOKEN',
+  META_AD_ACCOUNT_ID:       'META_AD_ACCOUNT_ID',
+  META_BUSINESS_ID:         'META_BUSINESS_ID',
+  META_PAGE_ID:             'META_PAGE_ID',
 };
 
 // Static values not from .env
@@ -99,6 +118,7 @@ async function main() {
 
   let ok = 0;
   let skipped = 0;
+  let failed = 0;
 
   for (const [secretName, envKey] of Object.entries(SECRETS_MAP)) {
     const value = STATIC_SECRETS[secretName] || process.env[envKey];
@@ -120,10 +140,15 @@ async function main() {
       ok++;
     } else {
       console.error(`  ✗  ${secretName} — HTTP ${res.status}:`, JSON.stringify(res.body));
+      failed++;
     }
   }
 
-  console.log(`\nDone: ${ok} uploaded, ${skipped} skipped (no value).\n`);
+  console.log(`\nDone: ${ok} uploaded, ${skipped} skipped (no value), ${failed} failed.\n`);
+
+  if (failed > 0) {
+    process.exit(1);
+  }
 }
 
 main().catch((err) => { console.error(err); process.exit(1); });
