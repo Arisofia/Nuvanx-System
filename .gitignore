@@ -30,4 +30,5 @@ Thumbs.db
 # Local agent/workflow artifacts
 .zencoder/
 .zenflow/
+.playwright-mcp/
 
