@@ -107,101 +107,107 @@ router.post(
       const rowErrors = [];
       const patientIdsToReconcile = [];
 
-      // Wrap the entire batch in a transaction.  Per-row errors use SAVEPOINTs
-      // so a single bad row does not abort the whole import.
-      await pool.query('BEGIN');
+      // Acquire a dedicated client so all transaction commands run on the same
+      // connection — pool.query() may return different connections per call,
+      // which breaks SAVEPOINT/BEGIN/COMMIT semantics.
+      const client = await pool.connect();
       try {
-        for (const row of inputRows) {
-          await pool.query('SAVEPOINT sp');
-          try {
-            const opId = String(row.idoperacion || '').trim();
-            if (!opId) {
-              rowErrors.push({ row, reason: 'missing idoperacion' });
-              await pool.query('RELEASE SAVEPOINT sp');
-              continue;
-            }
+        await client.query('BEGIN');
+        try {
+          for (const row of inputRows) {
+            await client.query('SAVEPOINT sp');
+            try {
+              const opId = String(row.idoperacion || '').trim();
+              if (!opId) {
+                rowErrors.push({ row, reason: 'missing idoperacion' });
+                await client.query('RELEASE SAVEPOINT sp');
+                continue;
+              }
 
-            const patientName = parseName(row.paciente || row.nombre || '');
-            const dni = row.dni ? String(row.dni).trim().toUpperCase() : null;
-            const templateId = row.plantillaid ? String(row.plantillaid).trim() : null;
-            const templateName = row.plantilladescr ? String(row.plantilladescr).trim() : null;
-            const amountGross = parseAmount(row.importebruto);
-            const amountDiscount = parseAmount(row.importedescuento);
-            const amountNet = parseAmount(row.importeneto);
-            const settledAt = parseDate(row.fechaoperacion);
-            const intakeAt = parseDate(row.fechaentrada);
-            const paymentMethod = row.metodopago ? String(row.metodopago).trim() : null;
-            const isCancelled = CANCELLED_ESTADOS.has((row.estado || '').toLowerCase().trim());
-            const cancelledAt = isCancelled ? (settledAt || new Date().toISOString().slice(0, 10)) : null;
+              const patientName = parseName(row.paciente || row.nombre || '');
+              const dni = row.dni ? String(row.dni).trim().toUpperCase() : null;
+              const templateId = row.plantillaid ? String(row.plantillaid).trim() : null;
+              const templateName = row.plantilladescr ? String(row.plantilladescr).trim() : null;
+              const amountGross = parseAmount(row.importebruto);
+              const amountDiscount = parseAmount(row.importedescuento);
+              const amountNet = parseAmount(row.importeneto);
+              const settledAt = parseDate(row.fechaoperacion);
+              const intakeAt = parseDate(row.fechaentrada);
+              const paymentMethod = row.metodopago ? String(row.metodopago).trim() : null;
+              const isCancelled = CANCELLED_ESTADOS.has((row.estado || '').toLowerCase().trim());
+              const cancelledAt = isCancelled ? (settledAt || new Date().toISOString().slice(0, 10)) : null;
 
-            if (!settledAt) {
-              rowErrors.push({ row: opId, reason: 'missing or invalid fechaoperacion' });
-              await pool.query('RELEASE SAVEPOINT sp');
-              continue;
-            }
+              if (!settledAt) {
+                rowErrors.push({ row: opId, reason: 'missing or invalid fechaoperacion' });
+                await client.query('RELEASE SAVEPOINT sp');
+                continue;
+              }
 
-            // Upsert patient — uses the clinic-scoped unique index on (clinic_id, dni)
-            let patientId = null;
-            if (patientName) {
-              const patRes = await pool.query(
-                `INSERT INTO patients (clinic_id, name, dni)
-                 VALUES ($1, $2, $3)
-                 ON CONFLICT (clinic_id, dni) WHERE dni IS NOT NULL DO UPDATE
-                   SET name = EXCLUDED.name, updated_at = NOW()
-                 RETURNING id`,
-                [clinicId, patientName, dni],
+              // Upsert patient — uses the clinic-scoped unique index on (clinic_id, dni)
+              let patientId = null;
+              if (patientName) {
+                const patRes = await client.query(
+                  `INSERT INTO patients (clinic_id, name, dni)
+                   VALUES ($1, $2, $3)
+                   ON CONFLICT (clinic_id, dni) WHERE dni IS NOT NULL DO UPDATE
+                     SET name = EXCLUDED.name, updated_at = NOW()
+                   RETURNING id`,
+                  [clinicId, patientName, dni],
+                );
+                patientId = patRes.rows[0]?.id || null;
+                patientsUpserted += 1;
+              }
+
+              // Upsert settlement
+              const upsertRes = await client.query(
+                `INSERT INTO financial_settlements
+                   (id, clinic_id, patient_id, template_id, template_name,
+                    amount_gross, amount_discount, amount_net,
+                    payment_method, settled_at, intake_at, cancelled_at,
+                    source_system)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'doctoralia')
+                 ON CONFLICT (id) DO UPDATE SET
+                   patient_id      = COALESCE(EXCLUDED.patient_id, financial_settlements.patient_id),
+                   template_id     = COALESCE(EXCLUDED.template_id, financial_settlements.template_id),
+                   template_name   = COALESCE(EXCLUDED.template_name, financial_settlements.template_name),
+                   amount_gross    = EXCLUDED.amount_gross,
+                   amount_discount = EXCLUDED.amount_discount,
+                   amount_net      = EXCLUDED.amount_net,
+                   payment_method  = COALESCE(EXCLUDED.payment_method, financial_settlements.payment_method),
+                   intake_at       = COALESCE(EXCLUDED.intake_at, financial_settlements.intake_at),
+                   cancelled_at    = EXCLUDED.cancelled_at
+                 RETURNING (xmax = 0) AS is_insert`,
+                [opId, clinicId, patientId, templateId, templateName,
+                  amountGross, amountDiscount, amountNet,
+                  paymentMethod, settledAt, intakeAt, cancelledAt],
               );
-              patientId = patRes.rows[0]?.id || null;
-              patientsUpserted += 1;
+
+              if (upsertRes.rows[0]?.is_insert) {
+                inserted += 1;
+              } else {
+                updated += 1;
+              }
+
+              await client.query('RELEASE SAVEPOINT sp');
+
+              // Collect patients to reconcile after the transaction commits
+              if (patientId) {
+                patientIdsToReconcile.push(patientId);
+              }
+            } catch (rowErr) {
+              await client.query('ROLLBACK TO SAVEPOINT sp');
+              const opId = row.idoperacion || '?';
+              logger.warn('doctoralia ingest: row error', { opId, error: rowErr.message });
+              rowErrors.push({ row: opId, reason: rowErr.message });
             }
-
-            // Upsert settlement
-            const upsertRes = await pool.query(
-              `INSERT INTO financial_settlements
-                 (id, clinic_id, patient_id, template_id, template_name,
-                  amount_gross, amount_discount, amount_net,
-                  payment_method, settled_at, intake_at, cancelled_at,
-                  source_system)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'doctoralia')
-               ON CONFLICT (id) DO UPDATE SET
-                 patient_id      = COALESCE(EXCLUDED.patient_id, financial_settlements.patient_id),
-                 template_id     = COALESCE(EXCLUDED.template_id, financial_settlements.template_id),
-                 template_name   = COALESCE(EXCLUDED.template_name, financial_settlements.template_name),
-                 amount_gross    = EXCLUDED.amount_gross,
-                 amount_discount = EXCLUDED.amount_discount,
-                 amount_net      = EXCLUDED.amount_net,
-                 payment_method  = COALESCE(EXCLUDED.payment_method, financial_settlements.payment_method),
-                 intake_at       = COALESCE(EXCLUDED.intake_at, financial_settlements.intake_at),
-                 cancelled_at    = EXCLUDED.cancelled_at
-               RETURNING (xmax = 0) AS is_insert`,
-              [opId, clinicId, patientId, templateId, templateName,
-                amountGross, amountDiscount, amountNet,
-                paymentMethod, settledAt, intakeAt, cancelledAt],
-            );
-
-            if (upsertRes.rows[0]?.is_insert) {
-              inserted += 1;
-            } else {
-              updated += 1;
-            }
-
-            await pool.query('RELEASE SAVEPOINT sp');
-
-            // Collect patients to reconcile after the transaction commits
-            if (patientId) {
-              patientIdsToReconcile.push(patientId);
-            }
-          } catch (rowErr) {
-            await pool.query('ROLLBACK TO SAVEPOINT sp');
-            const opId = row.idoperacion || '?';
-            logger.warn('doctoralia ingest: row error', { opId, error: rowErr.message });
-            rowErrors.push({ row: opId, reason: rowErr.message });
           }
+          await client.query('COMMIT');
+        } catch (txErr) {
+          await client.query('ROLLBACK');
+          throw txErr;
         }
-        await pool.query('COMMIT');
-      } catch (txErr) {
-        await pool.query('ROLLBACK');
-        throw txErr;
+      } finally {
+        client.release();
       }
 
       // Fire-and-forget lead reconciliation after transaction completes.
