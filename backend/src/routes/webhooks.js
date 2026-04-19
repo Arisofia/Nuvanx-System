@@ -20,6 +20,14 @@ const { onLeadCreated } = require('../services/playbookAutomation');
 const router = express.Router();
 router.use(webhookLimiter);
 
+function isMetaNumericId(value) {
+  return /^\d{5,30}$/.test(String(value || '').trim());
+}
+
+function isSafeWebhookChallenge(value) {
+  return /^\d{1,200}$/.test(String(value || '').trim());
+}
+
 // ─── Meta Lead Ads Webhook ──────────────────────────────────────────────────
 // Docs: https://developers.facebook.com/docs/marketing-api/guides/lead-ads/retrieving/
 
@@ -32,9 +40,14 @@ router.get('/meta', (req, res) => {
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
-  if (mode === 'subscribe' && config.metaVerifyToken && token === config.metaVerifyToken) {
+  if (
+    mode === 'subscribe' &&
+    config.metaVerifyToken &&
+    token === config.metaVerifyToken &&
+    isSafeWebhookChallenge(challenge)
+  ) {
     logger.info('Meta webhook verified');
-    return res.status(200).send(challenge);
+    return res.type('text/plain').status(200).send(String(challenge));
   }
   return res.status(403).json({ error: 'Verification failed' });
 });
@@ -108,6 +121,10 @@ router.post('/meta', async (req, res) => {
 
       const { leadgen_id, page_id, form_id } = change.value || {};
       if (!leadgen_id) continue;
+      if (!isMetaNumericId(leadgen_id)) {
+        logger.warn('Meta webhook: invalid leadgen_id', { leadgen_id });
+        continue;
+      }
 
       try {
         // Try to fetch full lead data from Meta Graph API
@@ -128,7 +145,7 @@ router.post('/meta', async (req, res) => {
           try {
             const axios = require('axios');
             const { data } = await axios.get(
-              `https://graph.facebook.com/v21.0/${leadgen_id}`,
+              `https://graph.facebook.com/v21.0/${encodeURIComponent(String(leadgen_id).trim())}`,
               {
                 params: {
                   access_token: config.metaAccessToken,
@@ -149,11 +166,15 @@ router.post('/meta', async (req, res) => {
             attribution.campaign_id = data.campaign_id || null;
             attribution.form_id     = data.form_id || form_id || null;
 
+            if (attribution.campaign_id && !isMetaNumericId(attribution.campaign_id)) attribution.campaign_id = null;
+            if (attribution.adset_id && !isMetaNumericId(attribution.adset_id)) attribution.adset_id = null;
+            if (attribution.ad_id && !isMetaNumericId(attribution.ad_id)) attribution.ad_id = null;
+
             // Resolve human-readable names (best-effort, non-blocking)
             if (attribution.campaign_id) {
               try {
                 const campRes = await axios.get(
-                  `https://graph.facebook.com/v21.0/${attribution.campaign_id}`,
+                  `https://graph.facebook.com/v21.0/${encodeURIComponent(String(attribution.campaign_id).trim())}`,
                   { params: { access_token: config.metaAccessToken, fields: 'name' }, timeout: 6000 },
                 );
                 attribution.campaign_name = campRes.data?.name || null;
@@ -162,7 +183,7 @@ router.post('/meta', async (req, res) => {
             if (attribution.adset_id) {
               try {
                 const adsetRes = await axios.get(
-                  `https://graph.facebook.com/v21.0/${attribution.adset_id}`,
+                  `https://graph.facebook.com/v21.0/${encodeURIComponent(String(attribution.adset_id).trim())}`,
                   { params: { access_token: config.metaAccessToken, fields: 'name' }, timeout: 6000 },
                 );
                 attribution.adset_name = adsetRes.data?.name || null;
@@ -171,7 +192,7 @@ router.post('/meta', async (req, res) => {
             if (attribution.ad_id) {
               try {
                 const adRes = await axios.get(
-                  `https://graph.facebook.com/v21.0/${attribution.ad_id}`,
+                  `https://graph.facebook.com/v21.0/${encodeURIComponent(String(attribution.ad_id).trim())}`,
                   { params: { access_token: config.metaAccessToken, fields: 'name' }, timeout: 6000 },
                 );
                 attribution.ad_name = adRes.data?.name || null;
