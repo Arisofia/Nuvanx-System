@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS meta_attribution (
 CREATE INDEX IF NOT EXISTS meta_attribution_lead_id_idx ON meta_attribution (lead_id);
 
 ALTER TABLE meta_attribution ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS meta_attribution_service_role ON meta_attribution;
 CREATE POLICY meta_attribution_service_role ON meta_attribution
   FOR ALL TO service_role USING (TRUE) WITH CHECK (TRUE);
 

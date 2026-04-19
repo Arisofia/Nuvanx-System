@@ -41,11 +41,37 @@ BEGIN
 END $$;
 
 -- 3) Functions: lock down search_path
-ALTER FUNCTION IF EXISTS public.set_updated_at() SET search_path = pg_catalog, public;
-ALTER FUNCTION IF EXISTS public.normalize_phone(TEXT) SET search_path = pg_catalog, public;
-ALTER FUNCTION IF EXISTS public.leads_normalize_fields() SET search_path = pg_catalog, public;
-ALTER FUNCTION IF EXISTS public.settlements_normalize_fields() SET search_path = pg_catalog, public;
-ALTER FUNCTION IF EXISTS public.normalize_email(TEXT) SET search_path = pg_catalog, public;
-ALTER FUNCTION IF EXISTS public.patients_normalize_fields() SET search_path = pg_catalog, public;
-ALTER FUNCTION IF EXISTS public.reconcile_lead_to_patient(UUID) SET search_path = pg_catalog, public;
-ALTER FUNCTION IF EXISTS public.reconcile_patient_leads(UUID) SET search_path = pg_catalog, public;
+DO $$
+BEGIN
+  IF to_regprocedure('public.set_updated_at()') IS NOT NULL THEN
+    EXECUTE 'ALTER FUNCTION public.set_updated_at() SET search_path TO pg_catalog, public';
+  END IF;
+
+  IF to_regprocedure('public.normalize_phone(text)') IS NOT NULL THEN
+    EXECUTE 'ALTER FUNCTION public.normalize_phone(text) SET search_path TO pg_catalog, public';
+  END IF;
+
+  IF to_regprocedure('public.leads_normalize_fields()') IS NOT NULL THEN
+    EXECUTE 'ALTER FUNCTION public.leads_normalize_fields() SET search_path TO pg_catalog, public';
+  END IF;
+
+  IF to_regprocedure('public.settlements_normalize_fields()') IS NOT NULL THEN
+    EXECUTE 'ALTER FUNCTION public.settlements_normalize_fields() SET search_path TO pg_catalog, public';
+  END IF;
+
+  IF to_regprocedure('public.normalize_email(text)') IS NOT NULL THEN
+    EXECUTE 'ALTER FUNCTION public.normalize_email(text) SET search_path TO pg_catalog, public';
+  END IF;
+
+  IF to_regprocedure('public.patients_normalize_fields()') IS NOT NULL THEN
+    EXECUTE 'ALTER FUNCTION public.patients_normalize_fields() SET search_path TO pg_catalog, public';
+  END IF;
+
+  IF to_regprocedure('public.reconcile_lead_to_patient(uuid)') IS NOT NULL THEN
+    EXECUTE 'ALTER FUNCTION public.reconcile_lead_to_patient(uuid) SET search_path TO pg_catalog, public';
+  END IF;
+
+  IF to_regprocedure('public.reconcile_patient_leads(uuid)') IS NOT NULL THEN
+    EXECUTE 'ALTER FUNCTION public.reconcile_patient_leads(uuid) SET search_path TO pg_catalog, public';
+  END IF;
+END $$;
