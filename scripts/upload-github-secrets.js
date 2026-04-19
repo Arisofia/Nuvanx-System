@@ -41,6 +41,9 @@ const SECRETS_MAP = {
   SUPABASE_FIGMA_SERVICE_ROLE: 'SUPABASE_FIGMA_SERVICE_ROLE',
   META_VERIFY_TOKEN:        'META_VERIFY_TOKEN',
   GH_PAT:                   'GITHUB_PAT',
+  // ADMIN_USER_ID is consumed by the seed-credentials workflow; maps to the
+  // same physical UUID as WEBHOOK_ADMIN_USER_ID used by the backend runtime.
+  ADMIN_USER_ID:            'WEBHOOK_ADMIN_USER_ID',
   WEBHOOK_ADMIN_USER_ID:    'WEBHOOK_ADMIN_USER_ID',
   CLINIC_ID:                'CLINIC_ID',
   DOCTORALIA_SHEET_ID:      'DOCTORALIA_SHEET_ID',
