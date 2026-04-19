@@ -34,8 +34,14 @@ function parseName(raw) {
 
 function parseAmount(raw) {
   if (raw == null || raw === '') return 0;
-  // Remove currency symbols, spaces; convert comma decimal to dot
-  const cleaned = String(raw).replace(/[€$\s]/g, '').replace(',', '.');
+  // Remove currency symbols and spaces, then normalize decimal/thousands separators.
+  const str = String(raw).trim();
+  let cleaned = str.replace(/[€$\s]/g, '');
+
+  if (cleaned.includes(',')) {
+    // Spanish format: dots are thousands separators, comma is decimal separator.
+    cleaned = cleaned.replace(/\./g, '').replace(/,/g, '.');
+  }
   const n = parseFloat(cleaned);
   return Number.isFinite(n) ? n : 0;
 }
