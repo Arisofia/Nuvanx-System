@@ -29,12 +29,20 @@ async function generateContent(apiKey, prompt, model = 'gpt-4') {
     );
     return data.choices[0]?.message?.content ?? '';
   } catch (err) {
-    const errorMessage = err.response?.data?.error?.message || err.message;
+    const errorMessage =
+      err?.response?.data?.error?.message || err?.message || 'Unknown error';
+    const status = err?.response?.status;
+
     logger.error('OpenAI API Error in generateContent', {
-      status: err.response?.status,
+      status,
       error: errorMessage,
     });
-    throw new Error(`OpenAI Error: ${errorMessage}`);
+
+    const enhancedError = new Error(`OpenAI Error: ${errorMessage}`);
+    enhancedError.status = status;
+    enhancedError.cause = err;
+
+    throw enhancedError;
   }
 }
 
