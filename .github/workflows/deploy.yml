@@ -56,7 +56,7 @@ jobs:
           VERCEL_TOKEN: "${{ secrets.VERCEL_TOKEN }}"
           VERCEL_ORG_ID: "${{ secrets.VERCEL_ORG_ID }}"
           VERCEL_PROJECT_ID: "${{ secrets.VERCEL_PROJECT_ID }}"
-            VITE_API_URL: https://nuvanx-backend.onrender.com/api
+          VITE_API_URL: https://nuvanx-backend.onrender.com/api
           VITE_SUPABASE_URL: https://ssvvuuysgxyqvmovrlvk.supabase.co
           VITE_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzdnZ1dXlzZ3h5cXZtb3ZybHZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxOTIxOTYsImV4cCI6MjA5MTc2ODE5Nn0.5VslHXbyEidKqZassAZCBLeUYd2_MWSmOHl3fFrvTRo
         run: |
