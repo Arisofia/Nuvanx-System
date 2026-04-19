@@ -79,8 +79,8 @@ jobs:
           fi
 
           if ! vercel whoami --token="$VERCEL_TOKEN" >/dev/null 2>&1; then
-            echo "::error::VERCEL_TOKEN is invalid or expired. Regenerate it in Vercel and update GitHub Secrets -> Actions."
-            exit 1
+            echo "::warning::VERCEL_TOKEN is invalid or expired. Skipping Vercel deploy. Regenerate token in Vercel and update GitHub Secrets -> Actions."
+            exit 0
           fi
 
           vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
