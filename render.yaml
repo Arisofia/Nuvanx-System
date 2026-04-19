@@ -27,6 +27,12 @@ services:
         value: "10000"
       - key: FRONTEND_URL
         value: https://frontend-arisofias-projects-c2217452.vercel.app
+      - key: WEBHOOK_ADMIN_USER_ID
+        value: a2f2b8a1-fedb-4a74-891d-b8a2089fd49a
+      - key: CLINIC_ID
+        value: 4207023b-eac1-4249-bf0f-d9b1e36a5d7a
+      - key: DOCTORALIA_SHEET_ID
+        value: 1GAJoASGdjsKB7bTtC5hXPFkWbB7S4fVXhKD_cZoDwPw
       # Secrets — set via scripts/deploy-render.ps1 or Render dashboard:
       # JWT_SECRET              — minimum 32 characters
       # ENCRYPTION_KEY          — minimum 32 characters
