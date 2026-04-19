@@ -13,6 +13,7 @@
     "@sentry/react": "^10.48.0",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.103.0",
+    "@vercel/speed-insights": "^2.0.0",
     "axios": "^1.15.0",
     "lucide-react": "^1.8.0",
     "react": "^19.2.4",
