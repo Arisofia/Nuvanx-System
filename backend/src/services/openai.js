@@ -62,13 +62,22 @@ ${JSON.stringify(campaignData, null, 2)}
 
 Respond as valid JSON: { "suggestions": [...], "score": <number> }`;
 
+  let raw;
   try {
-    const raw = await generateContent(apiKey, prompt, 'gpt-4');
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    return jsonMatch ? JSON.parse(jsonMatch[0]) : { suggestions: [raw], score: null };
+    raw = await generateContent(apiKey, prompt, 'gpt-4');
   } catch (err) {
-    logger.warn('OpenAI analyzeCampaign error', { error: err.message });
+    logger.warn('OpenAI analyzeCampaign provider error', { error: err.message });
     return { suggestions: [`Error analizando datos: ${err.message}`], score: 0 };
+  }
+
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return { suggestions: [raw], score: null };
+
+  try {
+    return JSON.parse(jsonMatch[0]);
+  } catch (parseErr) {
+    logger.warn('OpenAI analyzeCampaign JSON parse error', { error: parseErr.message });
+    return { suggestions: [raw], score: null };
   }
 }
 

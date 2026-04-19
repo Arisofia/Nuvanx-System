@@ -48,4 +48,18 @@ describe('openai service', () => {
     expect(result.suggestions[0]).toMatch(/Error analizando datos:/i);
     expect(logger.warn).toHaveBeenCalled();
   });
+
+  test('analyzeCampaign returns raw suggestion with null score on JSON parse failure', async () => {
+    axios.post.mockResolvedValue({
+      data: {
+        choices: [{ message: { content: '{ invalid: json, here }' } }],
+      },
+    });
+
+    const result = await analyzeCampaign('test-key', { spend: 100, clicks: 10 });
+
+    expect(result.score).toBeNull();
+    expect(result.suggestions).toEqual(['{ invalid: json, here }']);
+    expect(logger.warn).toHaveBeenCalled();
+  });
 });
