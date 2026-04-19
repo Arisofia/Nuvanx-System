@@ -21,6 +21,8 @@ export function normalizeDashboardMetrics(payload) {
   return {
     totalLeads: pickNumber(source.totalLeads ?? source.total_leads, 0),
     totalRevenue: pickNumber(source.totalRevenue ?? source.total_revenue, 0),
+    verifiedRevenue: pickNumber(source.verifiedRevenue ?? source.verified_revenue, 0),
+    settledCount: pickNumber(source.settledCount ?? source.settled_count, 0),
     conversions: pickNumber(source.conversions, 0),
     conversionRate: pickNumber(source.conversionRate ?? source.conversion_rate, 0),
     connectedIntegrations: pickNumber(source.connectedIntegrations ?? source.connected_integrations, 0),
