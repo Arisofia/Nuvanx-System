@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
+import { Analytics } from '@vercel/analytics/react';
 import { AuthProvider } from './context/AuthContext.jsx';
 import { useAuth } from './context/useAuth';
 import Layout from './components/Layout';
@@ -86,6 +87,7 @@ export default function App() {
             error: { iconTheme: { primary: '#ef4444', secondary: '#1f2937' } },
           }}
         />
+        <Analytics />
       </AuthProvider>
     </BrowserRouter>
   );
