@@ -57,7 +57,7 @@ async function _createRun(playbookId, userId, context, attempt, idempotencyKey) 
 /**
  * Attempt to acquire a side-effect lock for the given idempotency key.
  * Returns true if the lock was acquired, false if already held (duplicate run).
- * On DB error, returns true so the run proceeds (best-effort idempotency).
+ * On DB error, returns false so the run is denied and duplicate side effects are avoided.
  */
 async function _acquireLock(idempotencyKey, runId) {
   try {
