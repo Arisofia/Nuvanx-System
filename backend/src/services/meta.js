@@ -5,6 +5,16 @@ const logger = require('../utils/logger');
 
 const META_GRAPH_BASE = 'https://graph.facebook.com/v21.0';
 
+function normalizeAdAccountId(adAccountId) {
+  const raw = String(adAccountId || '').trim();
+  const normalized = raw.startsWith('act_') ? raw : `act_${raw}`;
+  // Meta ad account ids are numeric, optionally prefixed with act_.
+  if (!/^act_\d{5,30}$/.test(normalized)) {
+    throw new Error('Invalid Meta ad account id');
+  }
+  return normalized;
+}
+
 /**
  * Test a Meta Marketing API access token.
  * @param {string} accessToken
@@ -30,7 +40,8 @@ async function testConnection(accessToken) {
  * @param {string} adAccountId  e.g. "act_123456789"
  */
 async function getCampaigns(accessToken, adAccountId) {
-  const { data } = await axios.get(`${META_GRAPH_BASE}/${adAccountId}/campaigns`, {
+  const safeAdAccountId = normalizeAdAccountId(adAccountId);
+  const { data } = await axios.get(`${META_GRAPH_BASE}/${encodeURIComponent(safeAdAccountId)}/campaigns`, {
     params: {
       access_token: accessToken,
       fields: 'id,name,status,objective,daily_budget,lifetime_budget',
@@ -48,6 +59,7 @@ async function getCampaigns(accessToken, adAccountId) {
  * @param {{ since: string, until: string }} dateRange  ISO date strings
  */
 async function getMetrics(accessToken, adAccountId, dateRange = {}) {
+  const safeAdAccountId = normalizeAdAccountId(adAccountId);
   const params = {
     access_token: accessToken,
     fields: 'impressions,reach,clicks,spend,cpc,cpm,ctr,conversions',
@@ -56,7 +68,7 @@ async function getMetrics(accessToken, adAccountId, dateRange = {}) {
       until: dateRange.until || new Date().toISOString().slice(0, 10),
     }),
   };
-  const { data } = await axios.get(`${META_GRAPH_BASE}/${adAccountId}/insights`, {
+  const { data } = await axios.get(`${META_GRAPH_BASE}/${encodeURIComponent(safeAdAccountId)}/insights`, {
     params,
     timeout: 15000,
   });
@@ -71,6 +83,7 @@ async function getMetrics(accessToken, adAccountId, dateRange = {}) {
  * @returns {Promise<object[]>} Array of insight objects with full metrics
  */
 async function getComprehensiveMetrics(accessToken, adAccountId, dateRange = {}) {
+  const safeAdAccountId = normalizeAdAccountId(adAccountId);
   const params = {
     access_token: accessToken,
     fields: [
@@ -109,7 +122,7 @@ async function getComprehensiveMetrics(accessToken, adAccountId, dateRange = {})
     time_increment: 1, // Daily breakdown
     limit: 1000,
   };
-  const { data } = await axios.get(`${META_GRAPH_BASE}/${adAccountId}/insights`, {
+  const { data } = await axios.get(`${META_GRAPH_BASE}/${encodeURIComponent(safeAdAccountId)}/insights`, {
     params,
     timeout: 30000,
   });
@@ -124,6 +137,7 @@ async function getComprehensiveMetrics(accessToken, adAccountId, dateRange = {})
  * @returns {Promise<object[]>} Daily metrics array
  */
 async function getTrendsData(accessToken, adAccountId, dateRange = {}) {
+  const safeAdAccountId = normalizeAdAccountId(adAccountId);
   const defaultSince = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const params = {
     access_token: accessToken,
@@ -135,7 +149,7 @@ async function getTrendsData(accessToken, adAccountId, dateRange = {}) {
     time_increment: 1,
     limit: 1000,
   };
-  const { data } = await axios.get(`${META_GRAPH_BASE}/${adAccountId}/insights`, {
+  const { data } = await axios.get(`${META_GRAPH_BASE}/${encodeURIComponent(safeAdAccountId)}/insights`, {
     params,
     timeout: 30000,
   });
@@ -154,10 +168,11 @@ async function getTrendsData(accessToken, adAccountId, dateRange = {}) {
  * @returns {Promise<object[]>}
  */
 async function getCampaignsWithInsights(accessToken, adAccountId, dateRange = {}) {
+  const safeAdAccountId = normalizeAdAccountId(adAccountId);
   const since = dateRange.since || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const until = dateRange.until || new Date().toISOString().slice(0, 10);
 
-  const { data } = await axios.get(`${META_GRAPH_BASE}/${adAccountId}/campaigns`, {
+  const { data } = await axios.get(`${META_GRAPH_BASE}/${encodeURIComponent(safeAdAccountId)}/campaigns`, {
     params: {
       access_token: accessToken,
       fields: 'id,name,status,objective,daily_budget,lifetime_budget,' +
