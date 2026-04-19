@@ -94,7 +94,7 @@ ALTER TABLE public.lead_scores ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS lead_scores_user ON public.lead_scores;
 CREATE POLICY lead_scores_user ON public.lead_scores
-  FOR ALL USING (
+  FOR SELECT USING (
     lead_id IN (SELECT id FROM public.leads WHERE user_id = auth.uid())
   );
 
