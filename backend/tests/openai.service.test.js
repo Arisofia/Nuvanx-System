@@ -39,6 +39,15 @@ describe('openai service', () => {
     expect(logger.error).toHaveBeenCalled();
   });
 
+  test('generateContent defaults status to 502 for network errors', async () => {
+    axios.post.mockRejectedValue(new Error('ECONNRESET'));
+
+    const err = await generateContent('test-key', 'prompt', 'gpt-4').catch((e) => e);
+
+    expect(err.status).toBe(502);
+    expect(err.message).toMatch(/OpenAI Error:/i);
+  });
+
   test('analyzeCampaign returns visible fallback payload on provider error', async () => {
     axios.post.mockRejectedValue(new Error('socket hang up'));
 

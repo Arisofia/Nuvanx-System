@@ -31,7 +31,7 @@ async function generateContent(apiKey, prompt, model = 'gpt-4') {
   } catch (err) {
     const errorMessage =
       err?.response?.data?.error?.message || err?.message || 'Unknown error';
-    const status = err?.response?.status;
+    const status = err?.response?.status ?? 502;
 
     logger.error('OpenAI API Error in generateContent', {
       status,
