@@ -77,6 +77,12 @@ jobs:
             echo "::error::Missing required Vercel secrets:${missing_vars}. Set them in GitHub -> Settings -> Secrets -> Actions."
             exit 1
           fi
+
+          if ! vercel whoami --token="$VERCEL_TOKEN" >/dev/null 2>&1; then
+            echo "::error::VERCEL_TOKEN is invalid or expired. Regenerate it in Vercel and update GitHub Secrets -> Actions."
+            exit 1
+          fi
+
           vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
           vercel build --prod --token="$VERCEL_TOKEN"
 
