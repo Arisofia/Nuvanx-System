@@ -23,7 +23,7 @@ This pass is a **zero-trust local repository and CI/CD hardening remediation**. 
 - Dual API implementations exist (`backend/src/server.js` and `supabase/functions/api/index.ts`).
 
 ### D. BROKEN / MISCONFIGURED (remediated in this pass)
-- `.github/workflows/ci.yml` had hardcoded concrete Supabase URL + anon key value in frontend build env.
+- `.github/workflows/ci.yml` had hardcoded concrete Supabase URL and anon key values in frontend build env.
 - `.github/workflows/deploy.yml` used `continue-on-error: true` for production deployment step, allowing silent deploy failure.
 
 ### E. SECURITY RISK (remediated in this pass)
