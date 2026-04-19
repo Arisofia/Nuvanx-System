@@ -62,8 +62,7 @@ BEGIN
       WHERE i.indrelid = fk.conrelid
         AND i.indisvalid
         AND i.indpred IS NULL
-        AND i.indnatts = 1
-        AND i.indkey[1] = fk.fk_attnum
+        AND i.indkey[0] = fk.fk_attnum
         AND am.amname = 'btree'
     ) THEN
       idx_name := format('%s_%s_fk_idx', fk.table_name, fk.column_name);
