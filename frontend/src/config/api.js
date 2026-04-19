@@ -3,7 +3,7 @@ import { supabase, isSupabaseAvailable } from '../lib/supabase/client';
 
 // Production backend API fallback when VITE_API_URL is not explicitly set.
 // This keeps deployed builds pointing at the REST backend even if env injection is missing.
-const DEFAULT_API_URL = 'https://nuvanx-backend.onrender.com/api';
+const DEFAULT_API_URL = 'https://ssvvuuysgxyqvmovrlvk.supabase.co/functions/v1/api';
 const SUPABASE_ANON_KEY =
   import.meta.env.VITE_SUPABASE_ANON_KEY ||
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzdnZ1dXlzZ3h5cXZtb3ZybHZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxOTIxOTYsImV4cCI6MjA5MTc2ODE5Nn0.5VslHXbyEidKqZassAZCBLeUYd2_MWSmOHl3fFrvTRo';
