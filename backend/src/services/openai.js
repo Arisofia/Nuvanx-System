@@ -67,7 +67,7 @@ Respond as valid JSON: { "suggestions": [...], "score": <number> }`;
     raw = await generateContent(apiKey, prompt, 'gpt-4');
   } catch (err) {
     logger.warn('OpenAI analyzeCampaign provider error', { error: err.message });
-    return { suggestions: [`Error analizando datos: ${err.message}`], score: 0 };
+    return { suggestions: [`Error analyzing data: ${err.message}`], score: 0 };
   }
 
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
