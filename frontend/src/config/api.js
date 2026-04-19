@@ -1,8 +1,8 @@
 import axios from 'axios';
 import { supabase, isSupabaseAvailable } from '../lib/supabase/client';
 
-// If no explicit API URL is provided, use same-origin /api.
-const DEFAULT_API_URL = '/api';
+// If no explicit API URL is provided, use Supabase edge function (free deployment).
+const DEFAULT_API_URL = 'https://ssvvuuysgxyqvmovrlvk.supabase.co/functions/v1/api';
 const SUPABASE_ANON_KEY =
   import.meta.env.VITE_SUPABASE_ANON_KEY ||
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzdnZ1dXlzZ3h5cXZtb3ZybHZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxOTIxOTYsImV4cCI6MjA5MTc2ODE5Nn0.5VslHXbyEidKqZassAZCBLeUYd2_MWSmOHl3fFrvTRo';
