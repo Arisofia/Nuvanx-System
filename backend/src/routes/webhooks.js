@@ -73,7 +73,6 @@ router.get('/meta', (req, res) => {
           : 'token_mismatch',
     mode,
     challengePresent: Boolean(challenge),
-    expectedConfigured: Boolean(config.metaVerifyToken),
     receivedTokenPresent: Boolean(token),
   });
   return res.status(403).json({ error: 'Verification failed - Token mismatch' });
