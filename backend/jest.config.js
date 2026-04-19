@@ -8,4 +8,6 @@ module.exports = {
     '!src/**/index.js',
   ],
   setupFilesAfterEnv: ['<rootDir>/tests/setup.js'],
+  forceExit: true,
+  detectOpenHandles: false,
 };
