@@ -39,6 +39,9 @@ const SECRETS_MAP = {
   SUPABASE_FIGMA_URL:          'SUPABASE_FIGMA_URL',
   SUPABASE_FIGMA_ANON_KEY:     'SUPABASE_FIGMA_ANON_KEY',
   SUPABASE_FIGMA_SERVICE_ROLE: 'SUPABASE_FIGMA_SERVICE_ROLE',
+  // Frontend Vite env vars (same as Supabase anon, but prefixed for client)
+  VITE_SUPABASE_URL:           'SUPABASE_URL',
+  VITE_SUPABASE_ANON_KEY:      'SUPABASE_ANON_KEY',
   // Deployment hooks
   RENDER_DEPLOY_HOOK_URL:      'RENDER_DEPLOY_HOOK_URL',
   VERCEL_TOKEN:                'VERCEL_TOKEN',
