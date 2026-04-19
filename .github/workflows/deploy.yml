@@ -48,11 +48,11 @@ jobs:
         run: npm ci
 
       - name: Install backend dependencies
-        working-directory: .
-        run: npm ci --prefix backend
+        working-directory: ${{ github.workspace }}
+        run: npm --prefix backend ci
 
       - name: Run backend tests
-        working-directory: .
+        working-directory: ${{ github.workspace }}
         run: npm run test:backend
         env:
           CI: true

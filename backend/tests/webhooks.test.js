@@ -9,6 +9,7 @@ process.env.META_VERIFY_TOKEN = 'test-meta-verify-token';
 const request = require('supertest');
 
 const app = require('../src/server');
+const { config } = require('../src/config/env');
 
 describe('Webhooks API', () => {
   test('GET /api/webhooks/meta - verifies with correct token', async () => {
@@ -34,6 +35,23 @@ describe('Webhooks API', () => {
       });
 
     expect(res.status).toBe(403);
+  });
+
+  test('GET /api/webhooks/meta - returns 500 when META_VERIFY_TOKEN is not configured', async () => {
+    const original = config.metaVerifyToken;
+    config.metaVerifyToken = null;
+    try {
+      const res = await request(app)
+        .get('/api/webhooks/meta')
+        .query({
+          'hub.mode': 'subscribe',
+          'hub.verify_token': 'any-token',
+          'hub.challenge': 'test-challenge',
+        });
+      expect(res.status).toBe(500);
+    } finally {
+      config.metaVerifyToken = original;
+    }
   });
 
   test('POST /api/webhooks/meta - skips non-page/whatsapp objects', async () => {

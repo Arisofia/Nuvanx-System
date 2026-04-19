@@ -27,11 +27,14 @@ function isMetaNumericId(value) {
 /**
  * Extract and validate webhook challenge value.
  * Returns the sanitized challenge or null if invalid.
+ * Allows alphanumeric and common punctuation chars per Meta's opaque verification strings.
  * Derives the result from regex capture group to avoid taint flow issues.
  */
 function extractValidChallenge(value) {
-  const match = String(value || '').match(/^(\d{1,200})$/);
-  return match ? match[1] : null;
+  const challenge = String(value || '').trim();
+  // Meta challenge can be any opaque string; allow alphanumeric + common punctuation
+  if (!/^[A-Za-z0-9._:\-]{1,200}$/.test(challenge)) return null;
+  return challenge;
 }
 
 // ─── Meta Lead Ads Webhook ──────────────────────────────────────────────────
@@ -54,7 +57,6 @@ router.get('/meta', (req, res) => {
 
   if (
     mode === 'subscribe' &&
-    config.metaVerifyToken &&
     token === config.metaVerifyToken &&
     challenge !== null
   ) {
@@ -66,6 +68,7 @@ router.get('/meta', (req, res) => {
     reason: mode !== 'subscribe' ? 'invalid_mode' : 'token_mismatch',
     mode,
     challengePresent: Boolean(challenge),
+    expectedConfigured: Boolean(config.metaVerifyToken),
     receivedTokenPresent: Boolean(token),
   });
   return res.status(403).json({ error: 'Verification failed - Token mismatch' });
