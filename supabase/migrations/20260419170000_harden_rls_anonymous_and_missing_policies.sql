@@ -5,9 +5,10 @@
 DO $$
 DECLARE
   tbl RECORD;
+  anon_guard CONSTANT TEXT := 'COALESCE(((SELECT auth.jwt()) ->> ''is_anonymous'')::boolean, false) = false';
 BEGIN
   FOR tbl IN
-    SELECT *
+    SELECT t.*
     FROM (
       VALUES
         ('auth', 'users'),
@@ -31,6 +32,12 @@ BEGIN
         ('public', 'users'),
         ('public', 'whatsapp_conversations')
     ) AS t(schema_name, table_name)
+    JOIN pg_namespace ns
+      ON ns.nspname = t.schema_name
+    JOIN pg_class cls
+      ON cls.relnamespace = ns.oid
+     AND cls.relname = t.table_name
+     AND cls.relkind = 'r'
   LOOP
     IF NOT EXISTS (
       SELECT 1
@@ -40,10 +47,12 @@ BEGIN
         AND policyname = 'deny_anonymous_authenticated'
     ) THEN
       EXECUTE format(
-        'CREATE POLICY %I ON %I.%I AS RESTRICTIVE FOR ALL TO authenticated USING (COALESCE((auth.jwt()->>''is_anonymous'')::boolean, false) = false) WITH CHECK (COALESCE((auth.jwt()->>''is_anonymous'')::boolean, false) = false);',
+        'CREATE POLICY %I ON %I.%I AS RESTRICTIVE FOR ALL TO authenticated USING (%s) WITH CHECK (%s);',
         'deny_anonymous_authenticated',
         tbl.schema_name,
-        tbl.table_name
+        tbl.table_name,
+        anon_guard,
+        anon_guard
       );
     END IF;
   END LOOP;
