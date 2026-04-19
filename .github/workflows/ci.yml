@@ -33,9 +33,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install lightningcss linux binding (CI runner workaround)
-        run: npm install --no-save lightningcss-linux-x64-gnu
-
       - name: Run tests
         run: npm test
         env:
@@ -72,12 +69,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install rolldown linux binding (CI runner workaround)
-        run: npm install --no-save @rolldown/binding-linux-x64-gnu
-
-      - name: Install lightningcss linux binding (CI runner workaround)
-        run: npm install --no-save lightningcss-linux-x64-gnu
-
       - name: Run ESLint
         run: npm run lint
 
@@ -104,9 +95,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Install rolldown linux binding (CI runner workaround)
-        run: npm install --no-save @rolldown/binding-linux-x64-gnu
 
       - name: Build
         run: npm run build
