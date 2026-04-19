@@ -16,5 +16,9 @@
     "supabase:types": "supabase gen types typescript --schema public > frontend/src/lib/supabase/types.ts",
     "supabase:figma:migration:push": "node scripts/apply-figma-migrations.js",
     "ingest:doctoralia": "NODE_PATH=backend/node_modules node scripts/ingest-doctoralia.js"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.10.2",
+    "@supabase/supabase-js": "^2.103.3"
   }
 }
