@@ -6,7 +6,9 @@ const leadModel = require('../models/lead');
 const integrationModel = require('../models/integration');
 const credentialModel = require('../models/credential');
 const metaService = require('../services/meta');
+const { resolveMetaCredential, resolveMetaAdAccountId } = require('../services/metaCredential');
 const { syncMetrics } = require('../services/dashboardSync');
+const { supabaseAdmin } = require('../config/supabase');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -179,7 +181,8 @@ router.get('/meta-trends', async (req, res, next) => {
     const { since, until, adAccountId } = req.query;
 
     // Get Meta credentials
-    const metaToken = await credentialModel.getDecryptedKey(userId, 'meta');
+    const resolved = await resolveMetaCredential(userId);
+    const metaToken = resolved.token;
     if (!metaToken) {
       return res.status(404).json({
         success: false,
@@ -187,7 +190,9 @@ router.get('/meta-trends', async (req, res, next) => {
       });
     }
 
-    if (!adAccountId) {
+    const effectiveAdAccountId = adAccountId || (await resolveMetaAdAccountId(userId));
+
+    if (!effectiveAdAccountId) {
       return res.status(400).json({
         success: false,
         message: 'adAccountId query parameter is required (e.g., act_123456789)',
@@ -195,7 +200,7 @@ router.get('/meta-trends', async (req, res, next) => {
     }
 
     // Fetch comprehensive metrics with daily breakdown
-    const trends = await metaService.getTrendsData(metaToken, adAccountId, { since, until });
+    const trends = await metaService.getTrendsData(metaToken, effectiveAdAccountId, { since, until });
 
     // Calculate WoW and MoM trends
     const now = new Date();
@@ -249,7 +254,7 @@ router.get('/meta-trends', async (req, res, next) => {
       conversions: calculateChange(thisMonth.conversions, lastMonth.conversions),
     };
 
-    res.json({
+    const response = {
       success: true,
       trends: trends.map(t => ({
         date: t.date_start,
@@ -270,7 +275,27 @@ router.get('/meta-trends', async (req, res, next) => {
         thisMonth,
         lastMonth,
       },
-    });
+    };
+
+    if (supabaseAdmin) {
+      supabaseAdmin
+        .schema('monitoring')
+        .from('operational_events')
+        .insert({
+          user_id: userId,
+          event_type: 'meta_trends_loaded',
+          message: 'Live Meta trends loaded',
+          metadata: {
+            ad_account_id: effectiveAdAccountId,
+            source: resolved.source,
+            points: trends.length,
+          },
+        })
+        .then(() => {})
+        .catch(() => {});
+    }
+
+    res.json(response);
   } catch (err) {
     logger.error('Meta trends error', { error: err.message });
     next(err);

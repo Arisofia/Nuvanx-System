@@ -5,6 +5,7 @@ const { body, param } = require('express-validator');
 const { authenticate } = require('../middleware/auth');
 const { leadsWriteLimiter } = require('../middleware/rateLimiter');
 const leadModel = require('../models/lead');
+const { scoreLead } = require('../services/leadScorer');
 const { handleValidationErrors } = require('../utils/validators');
 const logger = require('../utils/logger');
 
@@ -47,8 +48,13 @@ router.get('/:id', async (req, res, next) => {
 router.post('/', leadsWriteLimiter, leadRules, handleValidationErrors, async (req, res, next) => {
   try {
     const { lead, merged } = await leadModel.findOrMerge(req.user.id, req.body);
+    if (!lead) {
+      return res.status(200).json({ success: true, merged: true, skipped: true, reason: 'duplicate_external_id' });
+    }
+    let scoring = null;
+    scoring = await scoreLead(req.user.id, lead);
     logger.info(merged ? 'Lead merged' : 'Lead created', { userId: req.user.id, leadId: lead.id });
-    res.status(merged ? 200 : 201).json({ success: true, lead, merged });
+    res.status(merged ? 200 : 201).json({ success: true, lead, merged, scoring });
   } catch (err) {
     next(err);
   }
