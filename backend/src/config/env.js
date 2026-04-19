@@ -87,6 +87,13 @@ const config = {
   // UUID of the admin/owner user that receives webhook-originated leads (Meta, WhatsApp)
   // Set this to the UUID of the main platform user in Supabase Auth.
   webhookAdminUserId: process.env.WEBHOOK_ADMIN_USER_ID || null,
+
+  // Clinic configuration
+  clinicId: process.env.CLINIC_ID || null,
+
+  // Doctoralia integration
+  doctoraliaSheetId: process.env.DOCTORALIA_SHEET_ID || null,
+  googleServiceAccountFile: process.env.GOOGLE_SERVICE_ACCOUNT_FILE || 'google-service-account.json',
 };
 
 module.exports = { config, validate };
