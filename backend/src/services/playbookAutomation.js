@@ -7,7 +7,7 @@
  * Uses the durable playbookRunner for idempotent, retried, and audited execution.
  *
  * Currently supported triggers:
- *   - lead_capture_nurture: sends a WhatsApp welcome message to new leads
+ *   - lead-capture-nurture: sends a WhatsApp welcome message to new leads
  *     that arrive with a phone number from Meta Lead Ads or WhatsApp.
  */
 
