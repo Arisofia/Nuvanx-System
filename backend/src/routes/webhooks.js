@@ -65,7 +65,12 @@ router.get('/meta', (req, res) => {
   }
 
   logger.warn('Meta webhook verification failed', {
-    reason: mode !== 'subscribe' ? 'invalid_mode' : 'token_mismatch',
+    reason:
+      mode !== 'subscribe'
+        ? 'invalid_mode'
+        : challenge === null
+          ? 'invalid_challenge'
+          : 'token_mismatch',
     mode,
     challengePresent: Boolean(challenge),
     expectedConfigured: Boolean(config.metaVerifyToken),
