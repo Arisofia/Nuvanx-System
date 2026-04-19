@@ -24,8 +24,14 @@ function isMetaNumericId(value) {
   return /^\d{5,30}$/.test(String(value || '').trim());
 }
 
-function isSafeWebhookChallenge(value) {
-  return /^\d{1,200}$/.test(String(value || '').trim());
+/**
+ * Extract and validate webhook challenge value.
+ * Returns the sanitized challenge or null if invalid.
+ * Derives the result from regex capture group to avoid taint flow issues.
+ */
+function extractValidChallenge(value) {
+  const match = String(value || '').match(/^(\d{1,200})$/);
+  return match ? match[1] : null;
 }
 
 // ─── Meta Lead Ads Webhook ──────────────────────────────────────────────────
@@ -38,16 +44,17 @@ function isSafeWebhookChallenge(value) {
 router.get('/meta', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
-  const challenge = req.query['hub.challenge'];
+  const challengeInput = req.query['hub.challenge'];
+  const challenge = extractValidChallenge(challengeInput);
 
   if (
     mode === 'subscribe' &&
     config.metaVerifyToken &&
     token === config.metaVerifyToken &&
-    isSafeWebhookChallenge(challenge)
+    challenge !== null
   ) {
     logger.info('Meta webhook verified');
-    return res.type('text/plain').status(200).send(String(challenge));
+    return res.type('text/plain').status(200).send(challenge);
   }
   return res.status(403).json({ error: 'Verification failed' });
 });
