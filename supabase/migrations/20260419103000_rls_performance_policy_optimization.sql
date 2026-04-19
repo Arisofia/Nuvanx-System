@@ -121,25 +121,20 @@ CREATE POLICY dashboard_metrics_service_rw
 -- ---------------------------------------------------------------------------
 -- design_tokens
 -- ---------------------------------------------------------------------------
-DO $$
-BEGIN
-  IF to_regclass('public.design_tokens') IS NOT NULL THEN
-    DROP POLICY IF EXISTS design_tokens_auth_read ON public.design_tokens;
-    CREATE POLICY design_tokens_auth_read
-      ON public.design_tokens
-      FOR SELECT
-      TO authenticated
-      USING (true);
+DROP POLICY IF EXISTS design_tokens_auth_read ON public.design_tokens;
+CREATE POLICY design_tokens_auth_read
+  ON public.design_tokens
+  FOR SELECT
+  TO authenticated
+  USING (true);
 
-    DROP POLICY IF EXISTS design_tokens_service_role ON public.design_tokens;
-    CREATE POLICY design_tokens_service_role
-      ON public.design_tokens
-      FOR ALL
-      TO service_role
-      USING (true)
-      WITH CHECK (true);
-  END IF;
-END $$;
+DROP POLICY IF EXISTS design_tokens_service_role ON public.design_tokens;
+CREATE POLICY design_tokens_service_role
+  ON public.design_tokens
+  FOR ALL
+  TO service_role
+  USING (true)
+  WITH CHECK (true);
 
 -- ---------------------------------------------------------------------------
 -- playbook_executions
