@@ -14,19 +14,28 @@ const OPENAI_BASE = 'https://api.openai.com/v1';
  * @returns {string} Generated text
  */
 async function generateContent(apiKey, prompt, model = 'gpt-4') {
-  const { data } = await axios.post(
-    `${OPENAI_BASE}/chat/completions`,
-    {
-      model,
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.7,
-    },
-    {
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      timeout: 60000,
-    },
-  );
-  return data.choices[0]?.message?.content ?? '';
+  try {
+    const { data } = await axios.post(
+      `${OPENAI_BASE}/chat/completions`,
+      {
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.7,
+      },
+      {
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        timeout: 60000,
+      },
+    );
+    return data.choices[0]?.message?.content ?? '';
+  } catch (err) {
+    const errorMessage = err.response?.data?.error?.message || err.message;
+    logger.error('OpenAI API Error in generateContent', {
+      status: err.response?.status,
+      error: errorMessage,
+    });
+    throw new Error(`OpenAI Error: ${errorMessage}`);
+  }
 }
 
 /**
@@ -45,13 +54,17 @@ ${JSON.stringify(campaignData, null, 2)}
 
 Respond as valid JSON: { "suggestions": [...], "score": <number> }`;
 
-  const raw = await generateContent(apiKey, prompt, 'gpt-4');
   try {
+    const raw = await generateContent(apiKey, prompt, 'gpt-4');
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    return jsonMatch ? JSON.parse(jsonMatch[0]) : { suggestions: [raw], score: null };
+    if (!jsonMatch) {
+      logger.warn('OpenAI analyzeCampaign: response did not contain JSON', { preview: raw.substring(0, 120) });
+      return { suggestions: [raw], score: 0 };
+    }
+    return JSON.parse(jsonMatch[0]);
   } catch (err) {
-    logger.warn('OpenAI analyzeCampaign: could not parse JSON response', { error: err.message });
-    return { suggestions: [raw], score: null };
+    logger.warn('OpenAI analyzeCampaign error', { error: err.message });
+    return { suggestions: [`Error analizando datos: ${err.message}`], score: 0 };
   }
 }
 

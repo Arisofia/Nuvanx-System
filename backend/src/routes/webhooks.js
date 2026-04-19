@@ -50,16 +50,25 @@ router.get('/meta', (req, res) => {
   const challengeInput = req.query['hub.challenge'];
   const challenge = extractValidChallenge(challengeInput);
 
+  if (!config.metaVerifyToken) {
+    logger.error('META_VERIFY_TOKEN missing in environment variables');
+    return res.status(500).json({ error: 'Server misconfiguration: Missing Verification Token' });
+  }
+
   if (
     mode === 'subscribe' &&
-    config.metaVerifyToken &&
     token === config.metaVerifyToken &&
     challenge !== null
   ) {
-    logger.info('Meta webhook verified');
+    logger.info('Meta webhook verified successfully');
     return res.type('text/plain').status(200).send(challenge);
   }
-  return res.status(403).json({ error: 'Verification failed' });
+
+  logger.warn('Meta webhook verification failed', {
+    expectedConfigured: Boolean(config.metaVerifyToken),
+    receivedTokenPresent: Boolean(token),
+  });
+  return res.status(403).json({ error: 'Verification failed - Token mismatch' });
 });
 
 /**
