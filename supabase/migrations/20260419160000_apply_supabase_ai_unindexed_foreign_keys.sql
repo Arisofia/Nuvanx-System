@@ -1,0 +1,7 @@
+-- Apply Supabase AI advisor finding: unindexed_foreign_keys
+-- No-op migration.
+-- The generic foreign-key index hardening in
+-- `20260419133000_fk_index_hardening.sql` already scans single-column
+-- foreign keys in the relevant schemas and creates any missing leading-column
+-- btree indexes. Keeping a second hardcoded pass here would duplicate that
+-- behavior and unnecessarily expand migration surface area.
