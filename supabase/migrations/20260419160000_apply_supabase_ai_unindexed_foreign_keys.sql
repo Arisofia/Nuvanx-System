@@ -58,6 +58,7 @@ BEGIN
       WHERE i.indrelid = fk.conrelid
         AND i.indisvalid
         AND i.indpred IS NULL
+        AND i.indexprs IS NULL
         AND am.amname = 'btree'
         AND i.indkey[0] = fk.fk_attnum
     ) THEN
