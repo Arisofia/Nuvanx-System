@@ -19,10 +19,17 @@ const jwt = require('jsonwebtoken');
 jest.mock('../src/db', () => {
   const mockQuery = jest.fn();
   const mockIsAvailable = jest.fn().mockReturnValue(true);
+  // Dedicated client returned by pool.connect() — shares the same mockQuery so
+  // ordered mockResolvedValueOnce() chains and call-inspection assertions work
+  // identically whether the route uses pool.query() or client.query().
+  const mockClient = { query: mockQuery, release: jest.fn() };
   return {
     // Expose pool as a plain property (not a getter) so destructuring
     // in route files captures the mock object correctly.
-    pool: { query: mockQuery },
+    pool: {
+      query: mockQuery,
+      connect: jest.fn().mockResolvedValue(mockClient),
+    },
     isAvailable: mockIsAvailable,
     isProduction: false,
   };
@@ -107,6 +114,7 @@ function setupSuccessfulIngest({ isInsert = true } = {}) {
 describe('Doctoralia Ingest API', () => {
   beforeEach(() => {
     mockQuery.mockReset();
+    db.pool.connect.mockClear();
     mockIsAvailable.mockReturnValue(true);
   });
 
