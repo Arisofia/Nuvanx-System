@@ -10,7 +10,8 @@ DO $$
 BEGIN
   -- audit_log: deny all access to the anon role
   DROP POLICY IF EXISTS audit_log_deny_all_public ON public.audit_log;
-  CREATE POLICY audit_log_deny_all_public
+  DROP POLICY IF EXISTS audit_log_deny_all_anon   ON public.audit_log;
+  CREATE POLICY audit_log_deny_all_anon
     ON public.audit_log
     AS RESTRICTIVE
     FOR ALL
@@ -20,7 +21,8 @@ BEGIN
 
   -- leads: deny all access to the anon role
   DROP POLICY IF EXISTS leads_deny_all_public ON public.leads;
-  CREATE POLICY leads_deny_all_public
+  DROP POLICY IF EXISTS leads_deny_all_anon   ON public.leads;
+  CREATE POLICY leads_deny_all_anon
     ON public.leads
     AS RESTRICTIVE
     FOR ALL
