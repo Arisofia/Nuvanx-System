@@ -31,15 +31,10 @@ function isMetaNumericId(value) {
  * Derives the result from regex capture group to avoid taint flow issues.
  */
 function extractValidChallenge(value) {
-<<<<<<< HEAD
   const challenge = String(value || '').trim();
   // Meta challenge can be any opaque string; allow alphanumeric + common punctuation
   if (!/^[A-Za-z0-9._:\-]{1,200}$/.test(challenge)) return null;
   return challenge;
-=======
-  const match = String(value || '').match(/^([\w\-]{1,200})$/);
-  return match ? match[1] : null;
->>>>>>> origin/codex/conduct-comprehensive-forensic-audit
 }
 
 // ─── Meta Lead Ads Webhook ──────────────────────────────────────────────────
