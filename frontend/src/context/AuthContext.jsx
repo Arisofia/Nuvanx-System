@@ -19,6 +19,17 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const onUnauthorized = async () => {
+      if (isSupabaseAvailable()) {
+        await supabase.auth.signOut();
+      }
+      localStorage.removeItem('nuvanx_token');
+      setToken(null);
+      setUser(null);
+    };
+
+    window.addEventListener('nuvanx:unauthorized', onUnauthorized);
+
     if (isSupabaseAvailable()) {
       // Bootstrap from current Supabase session (persists across refreshes)
       supabase.auth.getSession().then(({ data: { session } }) => {
@@ -35,7 +46,10 @@ export function AuthProvider({ children }) {
         setUser(session?.user ? toUserShape(session.user) : null);
       });
 
-      return () => subscription.unsubscribe();
+      return () => {
+        window.removeEventListener('nuvanx:unauthorized', onUnauthorized);
+        subscription.unsubscribe();
+      };
     } else {
       // Fall back to custom backend JWT stored in localStorage.
       // Both token and user are set together once the API confirms the token is valid.
@@ -52,6 +66,10 @@ export function AuthProvider({ children }) {
             })
         : Promise.resolve();
       loadPromise.finally(() => setLoading(false));
+
+      return () => {
+        window.removeEventListener('nuvanx:unauthorized', onUnauthorized);
+      };
     }
   }, []);
 
