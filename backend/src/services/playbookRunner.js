@@ -36,20 +36,48 @@ const BACKOFF_BASE_MS = 1000;
 
 /**
  * Insert a playbook_executions row with status='running'.
- * Returns the new UUID, or null on error.
+ * When an idempotency key is present, reuse the existing execution row on
+ * retries so the UNIQUE constraint on playbook_executions(idempotency_key)
+ * does not cause later attempts to fail.
+ * Returns the execution UUID, or null on error.
  */
 async function _createRun(playbookId, userId, context, attempt, idempotencyKey) {
   try {
+    const metadata = JSON.stringify(context);
+
+    if (idempotencyKey) {
+      const { rows } = await pool.query(
+        `INSERT INTO public.playbook_executions
+           (playbook_id, user_id, status, metadata, started_at, attempt, idempotency_key)
+         VALUES ($1, $2, 'running', $3, NOW(), $4, $5)
+         ON CONFLICT (idempotency_key) DO UPDATE
+           SET playbook_id = EXCLUDED.playbook_id,
+               user_id = EXCLUDED.user_id,
+               status = 'running',
+               metadata = EXCLUDED.metadata,
+               started_at = NOW(),
+               finished_at = NULL,
+               attempt = EXCLUDED.attempt
+         RETURNING id`,
+        [playbookId, userId, metadata, attempt, idempotencyKey],
+      );
+      return rows[0]?.id || null;
+    }
+
     const { rows } = await pool.query(
       `INSERT INTO public.playbook_executions
          (playbook_id, user_id, status, metadata, started_at, attempt, idempotency_key)
        VALUES ($1, $2, 'running', $3, NOW(), $4, $5)
        RETURNING id`,
-      [playbookId, userId, JSON.stringify(context), attempt, idempotencyKey || null],
+      [playbookId, userId, metadata, attempt, null],
     );
     return rows[0]?.id || null;
   } catch (err) {
-    logger.warn('[runner] _createRun error', { error: err.message });
+    logger.warn('[runner] _createRun error', {
+      idempotencyKey: idempotencyKey || null,
+      attempt,
+      error: err.message,
+    });
     return null;
   }
 }
