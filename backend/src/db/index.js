@@ -20,7 +20,7 @@ const logger = require('../utils/logger');
 let pool = null;
 const isProduction = config.nodeEnv === 'production';
 
-if (config.databaseUrl) {
+if (config.databaseUrl && config.nodeEnv !== 'test') {
   pool = new Pool({
     connectionString: config.databaseUrl,
     ssl: config.nodeEnv === 'production' ? { rejectUnauthorized: false } : false,
