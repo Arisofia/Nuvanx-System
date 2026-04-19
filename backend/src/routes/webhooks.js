@@ -33,7 +33,7 @@ router.get('/meta', (req, res) => {
   const challenge = req.query['hub.challenge'];
 
   if (!config.metaVerifyToken) {
-    logger.error('CRITICAL: META_VERIFY_TOKEN missing in environment variables');
+    logger.error('META_VERIFY_TOKEN missing in environment variables');
     return res.status(500).json({ error: 'Server misconfiguration: Missing Verification Token' });
   }
 
