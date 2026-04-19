@@ -59,7 +59,7 @@ Browser (React/Vite on Vercel)
 - Prevent repository from embedding environment-specific credential material.
 - Preserve deterministic CI builds without coupling to production values.
 
-## Phase 11 — CI/CD Cleanup Executed
+## Phase 4 — CI/CD Cleanup Executed
 
 - Removed `continue-on-error: true` from the Vercel production deploy step so deployment failures now fail the job, preventing false-green production pipeline states.
 
