@@ -9,6 +9,8 @@ const geminiService = require('../services/gemini');
 const { config } = require('../config/env');
 const { aiGenerateRules, aiAnalyzeRules, handleValidationErrors } = require('../utils/validators');
 const { body } = require('express-validator');
+const { supabaseAdmin } = require('../config/supabase');
+const { resolveMetaCredential, resolveMetaAdAccountId } = require('../services/metaCredential');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -157,14 +159,9 @@ router.post('/suggestions', async (req, res, next) => {
     const metaIntegration = integrations.find(i => i.service === 'meta' && i.status === 'connected');
     if (metaIntegration) {
       try {
-        const rawMetaCred = await credentialModel.getDecryptedKey(userId, 'meta');
-        let metaToken = rawMetaCred;
-        try {
-          const parsed = JSON.parse(rawMetaCred);
-          if (parsed && parsed.access_token) metaToken = parsed.access_token;
-        } catch {}
-        const adAccountId = metaIntegration.metadata?.adAccountId
-          || ((() => { try { const p = JSON.parse(rawMetaCred); return p?.ad_account_id || null; } catch { return null; } })());
+        const resolved = await resolveMetaCredential(userId);
+        const metaToken = resolved.token;
+        const adAccountId = metaIntegration.metadata?.adAccountId || (await resolveMetaAdAccountId(userId));
         if (metaToken && adAccountId) {
           const insights = await metaService.getMetrics(metaToken, adAccountId);
           if (insights.length > 0) {
@@ -229,6 +226,24 @@ Respond ONLY with valid JSON: ["suggestion 1", "suggestion 2", "suggestion 3", .
     }
 
     logger.info('AI suggestions generated', { userId, provider: credential.provider, count: suggestions.length });
+
+    if (supabaseAdmin) {
+      supabaseAdmin
+        .schema('monitoring')
+        .from('operational_events')
+        .insert({
+          user_id: userId,
+          event_type: 'agent_output_generated',
+          message: 'AI suggestions generated',
+          metadata: {
+            provider: credential.provider,
+            suggestion_count: suggestions.length,
+            meta_connected: !!metaMetrics,
+          },
+        })
+        .then(() => {})
+        .catch(() => {});
+    }
 
     res.json({
       success: true,

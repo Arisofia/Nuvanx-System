@@ -4,6 +4,7 @@ const express = require('express');
 const { authenticate } = require('../middleware/auth');
 const { pool, isAvailable } = require('../db');
 const { supabaseAdmin } = require('../config/supabase');
+const { runPlaybook } = require('../services/playbookRunner');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -101,15 +102,43 @@ router.post('/:slug/run', async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Playbook is archived and cannot be run' });
     }
 
-    // Insert execution record
-    const { rows: execRows } = await pool.query(
-      `INSERT INTO public.playbook_executions (playbook_id, user_id, status, metadata)
-       VALUES ($1, $2, 'success', $3)
-       RETURNING id, status, created_at`,
-      [playbook.id, userId, JSON.stringify(metadata)],
-    );
+    let runtime;
+    try {
+      runtime = await runPlaybook({
+        userId,
+        playbook,
+        metadata,
+        lockKey: `${userId}:${slug}:${JSON.stringify(metadata)}`,
+      });
+    } catch (err) {
+      // Backward-compatible fallback for environments where durable tables
+      // are not yet migrated.
+      if (String(err.message || '').toLowerCase().includes('relation') || String(err.code || '') === '42P01') {
+        const { rows: execRows } = await pool.query(
+          `INSERT INTO public.playbook_executions (playbook_id, user_id, status, metadata)
+           VALUES ($1, $2, 'success', $3)
+           RETURNING id, status, created_at`,
+          [playbook.id, userId, JSON.stringify(metadata)],
+        );
+        runtime = {
+          success: true,
+          execution: { id: execRows[0].id, status: execRows[0].status, ranAt: execRows[0].created_at },
+          runId: null,
+        };
+      } else {
+        throw err;
+      }
+    }
 
-    const execution = execRows[0];
+    if (runtime.skipped) {
+      return res.status(200).json({
+        success: true,
+        skipped: true,
+        reason: runtime.reason,
+      });
+    }
+
+    const { execution } = runtime;
 
     // Emit operational event (best-effort)
     if (supabaseAdmin) {
@@ -135,7 +164,8 @@ router.post('/:slug/run', async (req, res, next) => {
         playbookSlug: slug,
         playbookTitle: playbook.title,
         status: execution.status,
-        ranAt: execution.created_at,
+        ranAt: execution.ranAt,
+        runId: runtime.runId || null,
       },
     });
   } catch (err) {

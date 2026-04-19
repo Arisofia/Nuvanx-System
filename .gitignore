@@ -36,3 +36,4 @@ Thumbs.db
 frontend/.vercel/
 supabase/.temp/
 
+.vercel

@@ -17,10 +17,11 @@
 
 const express = require('express');
 const { authenticate } = require('../middleware/auth');
-const credentialModel = require('../models/credential');
-const integrationModel = require('../models/integration');
 const metaService = require('../services/meta');
-const { config } = require('../config/env');
+const {
+  resolveMetaCredential: resolveMetaCredentialPayload,
+  resolveMetaAdAccountId,
+} = require('../services/metaCredential');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -28,48 +29,13 @@ router.use(authenticate);
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
-/**
- * Parse a possibly-JSON credential blob from the vault.
- * The seed-credentials.yml stores Meta as a JSON object:
- *   { access_token, ad_account_id, business_id, page_id }
- * Older plain-string tokens are returned as-is.
- */
-function parseMetaCredential(raw) {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object') return parsed;
-  } catch {}
-  return { access_token: raw };
-}
-
 async function resolveMetaCredential(userId) {
-  const stored = await credentialModel.getDecryptedKey(userId, 'meta');
-  if (stored) {
-    const parsed = parseMetaCredential(stored);
-    if (parsed?.access_token) return parsed.access_token;
-  }
-  if (config.allowSharedCredentials && config.metaAccessToken) return config.metaAccessToken;
-  return null;
+  const resolved = await resolveMetaCredentialPayload(userId);
+  return resolved.token;
 }
 
 async function resolveAdAccountId(userId) {
-  // 1. Integration metadata (set via PATCH /api/integrations/meta from the UI)
-  const integrations = await integrationModel.getAll(userId);
-  const meta = integrations.find((i) => i.service === 'meta');
-  const fromVault = meta?.metadata?.adAccountId || null;
-  if (fromVault) return fromVault;
-
-  // 2. Credential JSON (stored by seed-credentials.yml: { ad_account_id: "act_..." })
-  const stored = await credentialModel.getDecryptedKey(userId, 'meta');
-  if (stored) {
-    const parsed = parseMetaCredential(stored);
-    if (parsed?.ad_account_id) return parsed.ad_account_id;
-  }
-
-  // 3. Server-level env var fallback
-  if (config.allowSharedCredentials && config.metaAdAccountId) return config.metaAdAccountId;
-  return null;
+  return resolveMetaAdAccountId(userId);
 }
 
 function parseDays(raw) {

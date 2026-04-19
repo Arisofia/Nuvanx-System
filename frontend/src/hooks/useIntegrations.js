@@ -60,6 +60,7 @@ export function useIntegrations() {
             lastSync: match.status === 'connected' ? new Date().toISOString() : item.lastSync,
             error: match.error || null,
             metadata: {
+              ...(item.metadata || {}),
               accountName: match.accountName,
               login: match.login,
               email: match.email,

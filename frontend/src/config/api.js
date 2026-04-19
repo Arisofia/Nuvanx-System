@@ -1,19 +1,14 @@
 import axios from 'axios';
 import { supabase, isSupabaseAvailable } from '../lib/supabase/client';
 
-// If no explicit API URL is provided, use Supabase edge function (free deployment).
-const DEFAULT_API_URL = 'https://ssvvuuysgxyqvmovrlvk.supabase.co/functions/v1/api';
-const SUPABASE_ANON_KEY =
-  import.meta.env.VITE_SUPABASE_ANON_KEY ||
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzdnZ1dXlzZ3h5cXZtb3ZybHZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxOTIxOTYsImV4cCI6MjA5MTc2ODE5Nn0.5VslHXbyEidKqZassAZCBLeUYd2_MWSmOHl3fFrvTRo';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const defaultApiUrl = supabaseUrl ? `${supabaseUrl}/functions/v1/api` : '/api';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || DEFAULT_API_URL,
+  baseURL: import.meta.env.VITE_API_URL || defaultApiUrl,
   timeout: 15000,
-  headers: {
-    // Public anon key is safe to include and harmless for backend requests.
-    apikey: SUPABASE_ANON_KEY,
-  },
+  headers: supabaseAnonKey ? { apikey: supabaseAnonKey } : {},
 });
 
 let lastUnauthorizedEventAt = 0;
