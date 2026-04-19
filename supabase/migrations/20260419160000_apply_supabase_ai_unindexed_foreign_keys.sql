@@ -57,11 +57,14 @@ BEGIN
     IF NOT EXISTS (
       SELECT 1
       FROM pg_index i
+      JOIN pg_class ic ON ic.oid = i.indexrelid
+      JOIN pg_am am ON am.oid = ic.relam
       WHERE i.indrelid = fk.conrelid
         AND i.indisvalid
         AND i.indpred IS NULL
         AND i.indnatts = 1
         AND i.indkey[1] = fk.fk_attnum
+        AND am.amname = 'btree'
     ) THEN
       idx_name := format('%s_%s_fk_idx', fk.table_name, fk.column_name);
 
