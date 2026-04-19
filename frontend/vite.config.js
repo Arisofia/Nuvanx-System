@@ -5,6 +5,8 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   build: {
+    // Avoid CI failures from optional native lightningcss binaries on Linux runners.
+    cssMinify: 'esbuild',
     rollupOptions: {
       output: {
         // Rolldown (Vite 8) requires manualChunks as a function
