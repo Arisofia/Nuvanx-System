@@ -48,10 +48,10 @@ jobs:
         run: npm ci
 
       - name: Install rolldown linux binding (CI runner workaround)
-        run: npm install --no-save @rolldown/binding-linux-x64-gnu
+        run: npm install --no-save --no-package-lock "@rolldown/binding-linux-x64-gnu@$(node -p "require('./package-lock.json').packages['node_modules/@rolldown/binding-linux-x64-gnu'].version")"
 
       - name: Install lightningcss linux binding (CI runner workaround)
-        run: npm install --no-save lightningcss-linux-x64-gnu
+        run: npm install --no-save --no-package-lock "lightningcss-linux-x64-gnu@$(node -p "require('./package-lock.json').packages['node_modules/lightningcss-linux-x64-gnu'].version")"
 
       - name: Install Vercel CLI
         run: npm install -g vercel
