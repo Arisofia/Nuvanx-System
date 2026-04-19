@@ -19,4 +19,7 @@ CREATE TABLE IF NOT EXISTS whatsapp_conversations (
   created_at            TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 
+CREATE INDEX IF NOT EXISTS whatsapp_conversations_clinic_id_idx ON whatsapp_conversations(clinic_id);
+CREATE INDEX IF NOT EXISTS whatsapp_conversations_lead_id_idx  ON whatsapp_conversations(lead_id);
+
 ALTER TABLE whatsapp_conversations ENABLE ROW LEVEL SECURITY;
