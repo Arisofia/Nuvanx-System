@@ -81,7 +81,6 @@ ANALYZE public.kpi_values;
 ANALYZE public.lead_scores;
 ANALYZE public.lead_timeline_events;
 ANALYZE public.leads;
-ANALYZE public.playbook_executions;
 ANALYZE public.playbooks;
 ANALYZE public.side_effect_locks;
 ANALYZE public.treatment_types;

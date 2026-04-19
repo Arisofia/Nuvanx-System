@@ -60,6 +60,7 @@ BEGIN
   ) THEN
     CREATE POLICY audit_log_deny_all_authenticated
       ON public.audit_log
+      AS RESTRICTIVE
       FOR ALL
       TO authenticated
       USING (false)
@@ -75,6 +76,7 @@ BEGIN
   ) THEN
     CREATE POLICY leads_deny_all_authenticated
       ON public.leads
+      AS RESTRICTIVE
       FOR ALL
       TO authenticated
       USING (false)
