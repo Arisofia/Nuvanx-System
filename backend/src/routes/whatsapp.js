@@ -12,6 +12,38 @@ const router = express.Router();
 router.use(authenticate);
 
 /**
+ * Resolve WhatsApp credentials from the per-user vault.
+ * seed-credentials.yml stores WhatsApp as JSON:
+ *   { access_token: "...", phone_number_id: "..." }
+ * Returns { accessToken, phoneNumberId } — either field may be null.
+ */
+async function resolveWhatsAppCredentials(userId) {
+  const stored = await credentialModel.getDecryptedKey(userId, 'whatsapp');
+  let accessToken = null;
+  let phoneNumberId = null;
+
+  if (stored) {
+    try {
+      const parsed = JSON.parse(stored);
+      if (parsed && typeof parsed === 'object') {
+        accessToken = parsed.access_token || null;
+        phoneNumberId = parsed.phone_number_id || null;
+      } else {
+        accessToken = stored;
+      }
+    } catch {
+      accessToken = stored; // bare token string
+    }
+  }
+
+  // Fall back to server-level env vars when shared credentials are allowed
+  if (!accessToken && config.allowSharedCredentials) accessToken = config.whatsappAccessToken || null;
+  if (!phoneNumberId) phoneNumberId = config.whatsappPhoneNumberId || null;
+
+  return { accessToken, phoneNumberId };
+}
+
+/**
  * Persist outbound WhatsApp conversation record.
  * Resolves lead_id and clinic_id from phone (phone_normalized match) — best-effort.
  */
@@ -80,9 +112,8 @@ router.post('/send', async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Missing or empty "message".' });
     }
 
-    // Resolve WhatsApp credentials: per-user vault first, then server-level env fallback
-    const accessToken = await credentialModel.getDecryptedKey(req.user.id, 'whatsapp') || config.whatsappAccessToken;
-    const phoneNumberId = config.whatsappPhoneNumberId;
+    // Resolve WhatsApp credentials: vault JSON first, then env var fallback
+    const { accessToken, phoneNumberId } = await resolveWhatsAppCredentials(req.user.id);
 
     if (!accessToken) {
       return res.status(404).json({
@@ -133,8 +164,7 @@ router.post('/send-template', async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Missing "templateName".' });
     }
 
-    const accessToken = await credentialModel.getDecryptedKey(req.user.id, 'whatsapp') || config.whatsappAccessToken;
-    const phoneNumberId = config.whatsappPhoneNumberId;
+    const { accessToken, phoneNumberId } = await resolveWhatsAppCredentials(req.user.id);
 
     if (!accessToken) {
       return res.status(404).json({ success: false, message: 'WhatsApp integration not connected.' });
@@ -158,88 +188,6 @@ router.post('/send-template', async (req, res, next) => {
     }).catch(() => {});
 
     res.json({ success: true, messageId: waMessageId });
-  } catch (err) {
-    logger.error('WhatsApp send-template error', { error: err.message });
-    next(err);
-  }
-});
-
-module.exports = router;
-
-/**
- * POST /api/whatsapp/send
- * Send a WhatsApp text message to a recipient.
- * Body: { to: string (E.164), message: string }
- */
-router.post('/send', async (req, res, next) => {
-  try {
-    const { to, message } = req.body;
-
-    if (!to || typeof to !== 'string') {
-      return res.status(400).json({ success: false, message: 'Missing or invalid "to" (E.164 phone number).' });
-    }
-    if (!message || typeof message !== 'string' || message.trim().length === 0) {
-      return res.status(400).json({ success: false, message: 'Missing or empty "message".' });
-    }
-
-    // Resolve WhatsApp credentials: per-user vault first, then server-level env fallback
-    const accessToken = await credentialModel.getDecryptedKey(req.user.id, 'whatsapp') || config.whatsappAccessToken;
-    const phoneNumberId = config.whatsappPhoneNumberId;
-
-    if (!accessToken) {
-      return res.status(404).json({
-        success: false,
-        message: 'WhatsApp integration not connected. Please connect WhatsApp in Settings.',
-      });
-    }
-    if (!phoneNumberId) {
-      return res.status(400).json({
-        success: false,
-        message: 'WHATSAPP_PHONE_NUMBER_ID not configured on the server.',
-      });
-    }
-
-    const result = await whatsappService.sendMessage(accessToken, phoneNumberId, to, message.trim());
-    logger.info('WhatsApp message sent', { to, messageId: result.messages?.[0]?.id });
-
-    res.json({ success: true, messageId: result.messages?.[0]?.id });
-  } catch (err) {
-    logger.error('WhatsApp send error', { error: err.message });
-    next(err);
-  }
-});
-
-/**
- * POST /api/whatsapp/send-template
- * Send a WhatsApp template message.
- * Body: { to: string, templateName: string, languageCode?: string, components?: array }
- */
-router.post('/send-template', async (req, res, next) => {
-  try {
-    const { to, templateName, languageCode, components } = req.body;
-
-    if (!to || typeof to !== 'string') {
-      return res.status(400).json({ success: false, message: 'Missing or invalid "to".' });
-    }
-    if (!templateName || typeof templateName !== 'string') {
-      return res.status(400).json({ success: false, message: 'Missing "templateName".' });
-    }
-
-    const accessToken = await credentialModel.getDecryptedKey(req.user.id, 'whatsapp') || config.whatsappAccessToken;
-    const phoneNumberId = config.whatsappPhoneNumberId;
-
-    if (!accessToken) {
-      return res.status(404).json({ success: false, message: 'WhatsApp integration not connected.' });
-    }
-    if (!phoneNumberId) {
-      return res.status(400).json({ success: false, message: 'WHATSAPP_PHONE_NUMBER_ID not configured.' });
-    }
-
-    const result = await whatsappService.sendTemplateMessage(
-      accessToken, phoneNumberId, to, templateName, languageCode || 'es', components || [],
-    );
-
-    res.json({ success: true, messageId: result.messages?.[0]?.id });
   } catch (err) {
     logger.error('WhatsApp send-template error', { error: err.message });
     next(err);

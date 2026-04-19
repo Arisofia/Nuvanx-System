@@ -38,7 +38,7 @@ services:
       # SUPABASE_FIGMA_URL
       # SUPABASE_FIGMA_ANON_KEY
       # SUPABASE_FIGMA_SERVICE_ROLE
-      # WEBHOOK_ADMIN_USER_ID   — UUID of admin user (cadf0cd6-cc44-4d66-864a-5bb687bfd4f5)
+      # WEBHOOK_ADMIN_USER_ID   — UUID of admin user (a2f2b8a1-fedb-4a74-891d-b8a2089fd49a)
       # META_ACCESS_TOKEN       — long-lived Meta System User token
       # META_AD_ACCOUNT_ID      — act_XXXXXXXXX format
       # META_APP_SECRET         — for webhook signature verification
@@ -54,3 +54,5 @@ services:
       # ALLOW_SHARED_CREDENTIALS
       # SENTRY_DSN              — (optional)
       # RESEND_API_KEY          — (optional)
+      # CLINIC_ID               — UUID of the default clinic (e.g. 4207023b-eac1-4249-bf0f-d9b1e36a5d7a)
+      # DOCTORALIA_SHEET_ID     — Google Sheet ID for Doctoralia export (optional, used by ingest script)

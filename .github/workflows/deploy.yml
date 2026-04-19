@@ -82,3 +82,31 @@ jobs:
           done
           echo "::warning::All 3 deploy attempts failed — token may be expired. Renew VERCEL_TOKEN in GitHub Secrets."
           exit 1
+
+  # ─── Backend → Render ──────────────────────────────────────────────────────
+  deploy-backend:
+    name: Trigger Render backend deploy
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success'
+    needs: deploy-frontend
+    permissions:
+      contents: read
+    steps:
+      - name: Trigger Render deploy hook
+        env:
+          RENDER_DEPLOY_HOOK_URL: "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "::warning::RENDER_DEPLOY_HOOK_URL secret is not set — skipping backend deploy."
+            echo "After creating the Render service via Blueprint (https://dashboard.render.com/new/blueprint):"
+            echo "  1. Get the Deploy Hook URL from: Dashboard → nuvanx-backend → Settings → Deploy Hook"
+            echo "  2. Add it as RENDER_DEPLOY_HOOK_URL in GitHub → Settings → Secrets → Actions"
+            exit 0
+          fi
+          echo "Triggering Render deploy..."
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$RENDER_DEPLOY_HOOK_URL")
+          if [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "201" ]; then
+            echo "Render deploy triggered (HTTP $HTTP_STATUS)"
+          else
+            echo "::warning::Render deploy hook returned HTTP $HTTP_STATUS — check the hook URL is still valid."
+          fi

@@ -157,8 +157,14 @@ router.post('/suggestions', async (req, res, next) => {
     const metaIntegration = integrations.find(i => i.service === 'meta' && i.status === 'connected');
     if (metaIntegration) {
       try {
-        const metaToken = await credentialModel.getDecryptedKey(userId, 'meta');
-        const adAccountId = metaIntegration.metadata?.adAccountId;
+        const rawMetaCred = await credentialModel.getDecryptedKey(userId, 'meta');
+        let metaToken = rawMetaCred;
+        try {
+          const parsed = JSON.parse(rawMetaCred);
+          if (parsed && parsed.access_token) metaToken = parsed.access_token;
+        } catch {}
+        const adAccountId = metaIntegration.metadata?.adAccountId
+          || ((() => { try { const p = JSON.parse(rawMetaCred); return p?.ad_account_id || null; } catch { return null; } })());
         if (metaToken && adAccountId) {
           const insights = await metaService.getMetrics(metaToken, adAccountId);
           if (insights.length > 0) {
