@@ -123,8 +123,7 @@ After ingestion is set up:
 ## Next Steps
 
 Once ingestion is complete:
-- [ ] Render backend deployed (`nuvanx-backend` service exists)
-- [ ] GitHub secret `RENDER_DEPLOY_HOOK_URL` configured
+- [ ] Backend API deployment target configured and reachable
 - [ ] Push to main triggers auto-deploy
 - [ ] Frontend accesses `/api/financials/*` and `/api/kpis`
 - [ ] Live Doctoralia revenue appears in Dashboard & VerifiedFinancials

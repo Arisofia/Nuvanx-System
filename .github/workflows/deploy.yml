@@ -1,6 +1,6 @@
 ###############################################################################
 # Deploy — runs after CI passes on main
-# Deploys frontend to Vercel. Backend runs on Render (nuvanx-backend).
+# Deploys frontend to Vercel.
 #
 # Required secrets (set in GitHub → Settings → Secrets):
 #   VERCEL_TOKEN            — Vercel personal access token
@@ -56,7 +56,6 @@ jobs:
           VERCEL_TOKEN: "${{ secrets.VERCEL_TOKEN }}"
           VERCEL_ORG_ID: "${{ secrets.VERCEL_ORG_ID }}"
           VERCEL_PROJECT_ID: "${{ secrets.VERCEL_PROJECT_ID }}"
-          VITE_API_URL: https://nuvanx-backend.onrender.com/api
           VITE_SUPABASE_URL: https://ssvvuuysgxyqvmovrlvk.supabase.co
           VITE_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzdnZ1dXlzZ3h5cXZtb3ZybHZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxOTIxOTYsImV4cCI6MjA5MTc2ODE5Nn0.5VslHXbyEidKqZassAZCBLeUYd2_MWSmOHl3fFrvTRo
         run: |
@@ -82,31 +81,3 @@ jobs:
           done
           echo "::warning::All 3 deploy attempts failed — token may be expired. Renew VERCEL_TOKEN in GitHub Secrets."
           exit 1
-
-  # ─── Backend → Render ──────────────────────────────────────────────────────
-  deploy-backend:
-    name: Trigger Render backend deploy
-    runs-on: ubuntu-latest
-    if: github.event.workflow_run.conclusion == 'success'
-    needs: deploy-frontend
-    permissions:
-      contents: read
-    steps:
-      - name: Trigger Render deploy hook
-        env:
-          RENDER_DEPLOY_HOOK_URL: "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
-        run: |
-          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
-            echo "::warning::RENDER_DEPLOY_HOOK_URL secret is not set — skipping backend deploy."
-            echo "After creating the Render service via Blueprint (https://dashboard.render.com/new/blueprint):"
-            echo "  1. Get the Deploy Hook URL from: Dashboard → nuvanx-backend → Settings → Deploy Hook"
-            echo "  2. Add it as RENDER_DEPLOY_HOOK_URL in GitHub → Settings → Secrets → Actions"
-            exit 0
-          fi
-          echo "Triggering Render deploy..."
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$RENDER_DEPLOY_HOOK_URL")
-          if [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "201" ]; then
-            echo "Render deploy triggered (HTTP $HTTP_STATUS)"
-          else
-            echo "::warning::Render deploy hook returned HTTP $HTTP_STATUS — check the hook URL is still valid."
-          fi
