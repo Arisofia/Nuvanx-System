@@ -50,6 +50,9 @@ jobs:
       - name: Install rolldown linux binding (CI runner workaround)
         run: npm install --no-save @rolldown/binding-linux-x64-gnu
 
+      - name: Install lightningcss linux binding (CI runner workaround)
+        run: npm install --no-save lightningcss-linux-x64-gnu
+
       - name: Install Vercel CLI
         run: npm install -g vercel
 
