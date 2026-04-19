@@ -69,11 +69,10 @@ jobs:
           VITE_SUPABASE_ANON_KEY: "${{ secrets.VITE_SUPABASE_ANON_KEY }}"
         run: |
           if [ -z "$VERCEL_TOKEN" ]; then
-            echo "::warning::VERCEL_TOKEN secret is not set — skipping frontend deploy."
-            echo "Set VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_PROJECT_ID in GitHub → Settings → Secrets → Actions."
-            exit 0
+            echo "::error::VERCEL_TOKEN secret is not set — cannot deploy to Vercel. Set VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_PROJECT_ID in GitHub → Settings → Secrets → Actions."
+            exit 1
           fi
-          vercel pull --yes --environment=production --token="$VERCEL_TOKEN" || true
+          vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
           vercel build --prod --token="$VERCEL_TOKEN"
 
           # Retry deploy up to 3 times (Vercel occasionally returns transient errors)
