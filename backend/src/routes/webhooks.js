@@ -30,7 +30,7 @@ function isMetaNumericId(value) {
  * Derives the result from regex capture group to avoid taint flow issues.
  */
 function extractValidChallenge(value) {
-  const match = String(value || '').match(/^(\d{1,200})$/);
+  const match = String(value || '').match(/^([\w\-]{1,200})$/);
   return match ? match[1] : null;
 }
 
