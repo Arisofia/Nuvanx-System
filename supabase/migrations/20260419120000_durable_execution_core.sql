@@ -16,8 +16,11 @@ ALTER TABLE public.playbook_executions
   ADD COLUMN IF NOT EXISTS attempt          INT         NOT NULL DEFAULT 1,
   ADD COLUMN IF NOT EXISTS idempotency_key  TEXT;
 
--- Unique partial index so duplicate idempotency keys are rejected at DB level
-CREATE UNIQUE INDEX IF NOT EXISTS playbook_executions_idempotency_key_uq
+-- Non-unique partial index for idempotency-key lookups.
+-- Retries may create additional playbook_executions rows with the same
+-- idempotency_key, so uniqueness must be enforced by side_effect_locks
+-- (or by runner logic), not by the execution row itself.
+CREATE INDEX IF NOT EXISTS playbook_executions_idempotency_key_idx
   ON public.playbook_executions(idempotency_key)
   WHERE idempotency_key IS NOT NULL;
 
