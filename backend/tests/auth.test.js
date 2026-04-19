@@ -1,24 +1,28 @@
 'use strict';
 
-process.env.JWT_SECRET = 'test-jwt-secret-32-chars-minimum!!';
-process.env.ENCRYPTION_KEY = 'test-encryption-key-32-chars-min!';
-process.env.NODE_ENV = 'test';
-
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
 
 const SUPABASE_TEST_SECRET = 'supabase-test-secret-32-chars-min!';
 const TEST_USER = { id: 'user-001', email: 'test@nuvanx.com', name: 'Test User' };
 
-describe('Auth middleware — custom JWT', () => {
-  let app;
+// Load server once (environment is configured in tests/setup.js)
+const app = require('../src/server');
 
-  beforeAll(() => {
-    // Ensure no Supabase secret leaks from a prior test run
+describe('Auth middleware — custom JWT', () => {
+  test('valid custom JWT is accepted (200)', async () => {
+    // Ensure no Supabase secret is set for this test group
+    const originalSecret = process.env.SUPABASE_JWT_SECRET;
     delete process.env.SUPABASE_JWT_SECRET;
-    // Re-require to pick up clean env
-    jest.resetModules();
-    app = require('../src/server');
+    
+    const token = jwt.sign(TEST_USER, process.env.JWT_SECRET, { expiresIn: '1h' });
+    const res = await request(app)
+      .get('/api/integrations')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    
+    // Restore
+    if (originalSecret) process.env.SUPABASE_JWT_SECRET = originalSecret;
   });
 
   test('valid custom JWT is accepted (200)', async () => {
@@ -28,6 +32,7 @@ describe('Auth middleware — custom JWT', () => {
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
   });
+
 
   test('missing Authorization header returns 401', async () => {
     const res = await request(app).get('/api/integrations');
@@ -55,12 +60,8 @@ describe('Auth middleware — custom JWT', () => {
 });
 
 describe('Auth middleware — Supabase JWT', () => {
-  let app;
-
   beforeAll(() => {
     process.env.SUPABASE_JWT_SECRET = SUPABASE_TEST_SECRET;
-    jest.resetModules();
-    app = require('../src/server');
   });
 
   afterAll(() => {

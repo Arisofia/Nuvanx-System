@@ -17,6 +17,8 @@ const api = axios.create({
   },
 });
 
+let lastUnauthorizedEventAt = 0;
+
 api.interceptors.request.use(async (config) => {
   let token;
   if (isSupabaseAvailable()) {
@@ -41,10 +43,18 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       const isAuthEndpoint = error.config?.url?.includes('/api/auth/');
       if (!isAuthEndpoint && window.location.pathname !== '/login') {
-        if (!isSupabaseAvailable()) {
-          localStorage.removeItem('nuvanx_token');
+        localStorage.removeItem('nuvanx_token');
+
+        // Avoid hard browser reload loops. Let React auth state drive navigation.
+        const now = Date.now();
+        if (now - lastUnauthorizedEventAt > 1000) {
+          lastUnauthorizedEventAt = now;
+          window.dispatchEvent(
+            new CustomEvent('nuvanx:unauthorized', {
+              detail: { url: error.config?.url || null },
+            })
+          );
         }
-        window.location.href = '/login';
       }
     }
     return Promise.reject(error);
