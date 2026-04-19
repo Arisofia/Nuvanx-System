@@ -68,8 +68,13 @@ jobs:
           VITE_SUPABASE_URL: "${{ secrets.VITE_SUPABASE_URL }}"
           VITE_SUPABASE_ANON_KEY: "${{ secrets.VITE_SUPABASE_ANON_KEY }}"
         run: |
-          if [ -z "$VERCEL_TOKEN" ]; then
-            echo "::error::VERCEL_TOKEN secret is not set — cannot deploy to Vercel. Set VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_PROJECT_ID in GitHub → Settings → Secrets → Actions."
+          missing_vars=""
+          [ -z "$VERCEL_TOKEN" ] && missing_vars="${missing_vars} VERCEL_TOKEN"
+          [ -z "$VERCEL_ORG_ID" ] && missing_vars="${missing_vars} VERCEL_ORG_ID"
+          [ -z "$VERCEL_PROJECT_ID" ] && missing_vars="${missing_vars} VERCEL_PROJECT_ID"
+
+          if [ -n "$missing_vars" ]; then
+            echo "::error::Missing required Vercel secrets:${missing_vars}. Set them in GitHub -> Settings -> Secrets -> Actions."
             exit 1
           fi
           vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
