@@ -32,3 +32,7 @@ Thumbs.db
 .zenflow/
 .playwright-mcp/
 
+# Deployment tool caches
+frontend/.vercel/
+supabase/.temp/
+
