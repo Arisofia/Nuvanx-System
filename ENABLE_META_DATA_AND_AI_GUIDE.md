@@ -2,6 +2,13 @@
 
 ## Current Status
 
+### Critical Runtime Delta (April 19, 2026)
+- Frontend fix already pushed in commit `b39cc4b`:
+   - file: `frontend/src/config/api.js`
+   - change: fallback base URL now points to `https://nuvanx-backend.onrender.com/api` instead of Supabase Functions.
+- Live Vercel URL is still serving old asset hash `index-C2GjtpVU.js`, so production has not picked up this fix yet.
+- Live backend endpoint `https://nuvanx-backend.onrender.com/health` currently returns `404`.
+
 ### ✅ What's Working
 - **Meta Routes**: `/api/meta/insights` and `/api/meta/campaigns` are correctly implemented
 - **Credential Parsing**: Fixed to handle JSON vault format with access_token and ad_account_id
@@ -144,8 +151,11 @@ After backend is deployed and credentials seeded, all these become visible:
 ## Next Actions (In Order)
 
 1. **Deploy backend to Render** (15 min) - Phase 1
-2. **Add Meta credentials** (5 min) - Phase 2
-3. **Add AI credentials** (5 min) - Phase 3
-4. **Verify live dashboard** (5 min) - See Meta data and agent outputs
+2. **Promote/Redeploy Vercel from commit `b39cc4b`** (2 min)
+   - Open Vercel project dashboard and trigger a production redeploy for latest commit.
+   - Confirm homepage asset hash changes from `index-C2GjtpVU.js` to a new hash.
+3. **Add Meta credentials** (5 min) - Phase 2
+4. **Add AI credentials** (5 min) - Phase 3
+5. **Verify live dashboard** (5 min) - See Meta data and agent outputs
 
 **Total time to live**: ~30 minutes
