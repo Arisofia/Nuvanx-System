@@ -42,9 +42,24 @@ const allowedOrigins = config.frontendUrl
   ? config.frontendUrl.split(',').map((o) => o.trim()).filter(Boolean)
   : [];
 
+// Also permit any Vercel preview deployment (*.vercel.app) so PR previews work
+// without needing to update FRONTEND_URL for every new deployment URL.
+function isAllowedOrigin(origin) {
+  if (!origin) return false;
+  if (allowedOrigins.includes(origin)) return true;
+  if (/^https:\/\/[a-z0-9-]+\.vercel\.app$/.test(origin)) return true;
+  if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) return true;
+  return false;
+}
+
 app.use(
   cors({
-    origin: allowedOrigins.length === 1 ? allowedOrigins[0] : allowedOrigins,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (server-to-server, curl, Postman, etc.)
+      if (!origin) return callback(null, true);
+      if (isAllowedOrigin(origin)) return callback(null, true);
+      return callback(new Error(`CORS: origin '${origin}' not allowed`));
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
