@@ -4,7 +4,7 @@
 DO $$
 DECLARE
   pol RECORD;
-  anon_guard CONSTANT TEXT := 'COALESCE((auth.jwt()->>''is_anonymous'')::boolean, false) = false';
+  anon_guard CONSTANT TEXT := 'COALESCE(((SELECT auth.jwt()) ->> ''is_anonymous'')::boolean, false) = false';
   using_expr TEXT;
   check_expr TEXT;
 BEGIN

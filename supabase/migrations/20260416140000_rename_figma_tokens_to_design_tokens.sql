@@ -2,9 +2,14 @@
 -- This table stores KPI data synced by figmaSync; the name "figma_tokens" is misleading
 -- because it holds general design system / KPI tokens, not Figma-specific authentication tokens.
 
-ALTER TABLE IF EXISTS figma_tokens RENAME TO design_tokens;
+ALTER TABLE IF EXISTS public.figma_tokens RENAME TO design_tokens;
 
 -- Update any RLS policies that reference the old table name (policy names stay the same)
 -- Policies are automatically carried over with ALTER TABLE RENAME.
 
-COMMENT ON TABLE design_tokens IS 'Design-system KPI tokens synced from the backend figmaSync service.';
+DO $$
+BEGIN
+  IF to_regclass('public.design_tokens') IS NOT NULL THEN
+    COMMENT ON TABLE public.design_tokens IS 'Design-system KPI tokens synced from the backend figmaSync service.';
+  END IF;
+END $$;

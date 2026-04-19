@@ -3,10 +3,10 @@
 -- Stores outbound/inbound WhatsApp messages scoped to clinic + lead.
 -- =============================================================================
 
-CREATE TABLE IF NOT EXISTS whatsapp_conversations (
+CREATE TABLE IF NOT EXISTS public.whatsapp_conversations (
   id                    UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
-  clinic_id             UUID          NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
-  lead_id               UUID          REFERENCES leads(id) ON DELETE SET NULL,
+  clinic_id             UUID          NOT NULL REFERENCES public.clinics(id) ON DELETE CASCADE,
+  lead_id               UUID          REFERENCES public.leads(id) ON DELETE SET NULL,
   phone                 VARCHAR(32)   NOT NULL,
   direction             VARCHAR(16)   NOT NULL DEFAULT 'outbound',
   message_type          VARCHAR(32)   NOT NULL DEFAULT 'text',
@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS whatsapp_conversations (
   created_at            TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS whatsapp_conversations_clinic_id_idx ON whatsapp_conversations(clinic_id);
-CREATE INDEX IF NOT EXISTS whatsapp_conversations_lead_id_idx  ON whatsapp_conversations(lead_id);
+CREATE INDEX IF NOT EXISTS whatsapp_conversations_clinic_id_idx ON public.whatsapp_conversations(clinic_id);
+CREATE INDEX IF NOT EXISTS whatsapp_conversations_lead_id_idx  ON public.whatsapp_conversations(lead_id);
 
-ALTER TABLE whatsapp_conversations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.whatsapp_conversations ENABLE ROW LEVEL SECURITY;
