@@ -22,8 +22,6 @@ DECLARE
     'public.leads.leads_converted_patient_id_fkey',
     'public.leads.leads_doctor_id_fkey',
     'public.leads.leads_treatment_type_id_fkey',
-    'public.playbook_executions.playbook_executions_agent_output_id_fkey',
-    'public.playbooks.playbooks_owner_user_id_fkey',
     'public.side_effect_locks.side_effect_locks_playbook_id_fkey',
     'public.treatment_types.treatment_types_clinic_id_fkey',
     'public.users.users_clinic_id_fkey',
