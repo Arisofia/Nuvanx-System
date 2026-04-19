@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import { AuthProvider } from './context/AuthContext.jsx';
 import { useAuth } from './context/useAuth';
 import Layout from './components/Layout';
@@ -88,6 +89,7 @@ export default function App() {
           }}
         />
         <Analytics />
+        <SpeedInsights />
       </AuthProvider>
     </BrowserRouter>
   );
