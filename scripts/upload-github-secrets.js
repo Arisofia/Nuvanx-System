@@ -1,9 +1,11 @@
 'use strict';
 /**
- * Uploads secrets from backend/.env to GitHub Actions Secrets.
+ * Expands and hardens the GitHub secrets uploader for production deploy chain.
+ * Uploads deployment, AI, Meta, WhatsApp, and integration secrets from backend/.env to GitHub Actions Secrets.
  * Uses GitHub REST API + libsodium sealed-box encryption.
  * Run: node scripts/upload-github-secrets.js
- * Requires: GITHUB_PAT in .env with repo secrets write permission.
+ * Requires: GITHUB_PAT in backend/.env with repo secrets write permission.
+ * Exits non-zero if any secret upload fails (fail-fast for CI safety).
  */
 
 const path = require('path');
@@ -25,21 +27,46 @@ if (!PAT) {
 
 // Map of GitHub Secret name → env var name (only set ones with real values)
 const SECRETS_MAP = {
-  JWT_SECRET:               'JWT_SECRET',
-  ENCRYPTION_KEY:           'ENCRYPTION_KEY',
-  DATABASE_URL:             'DATABASE_URL',
-  SUPABASE_URL:             'SUPABASE_URL',
-  SUPABASE_ANON_KEY:        'SUPABASE_ANON_KEY',
-  SUPABASE_SERVICE_ROLE_KEY:'SUPABASE_SERVICE_ROLE_KEY',
-  SUPABASE_JWT_SECRET:      'SUPABASE_JWT_SECRET',
-  SUPABASE_FIGMA_URL:       'SUPABASE_FIGMA_URL',
-  META_VERIFY_TOKEN:        'META_VERIFY_TOKEN',
-  GH_PAT:                   'GITHUB_PAT',
-  WEBHOOK_ADMIN_USER_ID:    'WEBHOOK_ADMIN_USER_ID',
-  CLINIC_ID:                'CLINIC_ID',
-  DOCTORALIA_SHEET_ID:      'DOCTORALIA_SHEET_ID',
-  VERCEL_ORG_ID:            'VERCEL_ORG_ID',
-  VERCEL_PROJECT_ID:        'VERCEL_PROJECT_ID',
+  // Core runtime secrets
+  JWT_SECRET:                  'JWT_SECRET',
+  ENCRYPTION_KEY:              'ENCRYPTION_KEY',
+  DATABASE_URL:                'DATABASE_URL',
+  // Supabase (main database + Figma microservice)
+  SUPABASE_URL:                'SUPABASE_URL',
+  SUPABASE_ANON_KEY:           'SUPABASE_ANON_KEY',
+  SUPABASE_SERVICE_ROLE_KEY:   'SUPABASE_SERVICE_ROLE_KEY',
+  SUPABASE_JWT_SECRET:         'SUPABASE_JWT_SECRET',
+  SUPABASE_FIGMA_URL:          'SUPABASE_FIGMA_URL',
+  SUPABASE_FIGMA_ANON_KEY:     'SUPABASE_FIGMA_ANON_KEY',
+  SUPABASE_FIGMA_SERVICE_ROLE: 'SUPABASE_FIGMA_SERVICE_ROLE',
+  // Deployment hooks
+  RENDER_DEPLOY_HOOK_URL:      'RENDER_DEPLOY_HOOK_URL',
+  VERCEL_TOKEN:                'VERCEL_TOKEN',
+  // GitHub & tooling
+  GH_PAT:                      'GITHUB_PAT',
+  FIGMA_PAT:                   'FIGMA_PAT',
+  // Admin & operational
+  WEBHOOK_ADMIN_USER_ID:       'WEBHOOK_ADMIN_USER_ID',
+  CLINIC_ID:                   'CLINIC_ID',
+  DOCTORALIA_SHEET_ID:         'DOCTORALIA_SHEET_ID',
+  // AI provider keys
+  OPENAI_API_KEY:              'OPENAI_API_KEY',
+  GEMINI_API_KEY:              'GEMINI_API_KEY',
+  ANTHROPIC_API_KEY:           'ANTHROPIC_API_KEY',
+  GOOGLE_API_KEY:              'GOOGLE_API_KEY',
+  // Meta (marketing & messaging)
+  META_ACCESS_TOKEN:           'META_ACCESS_TOKEN',
+  META_AD_ACCOUNT_ID:          'META_AD_ACCOUNT_ID',
+  META_BUSINESS_ID:            'META_BUSINESS_ID',
+  META_PAGE_ID:                'META_PAGE_ID',
+  META_APP_SECRET:             'META_APP_SECRET',
+  META_VERIFY_TOKEN:           'META_VERIFY_TOKEN',
+  // WhatsApp messaging
+  WHATSAPP_ACCESS_TOKEN:       'WHATSAPP_ACCESS_TOKEN',
+  WHATSAPP_PHONE_NUMBER_ID:    'WHATSAPP_PHONE_NUMBER_ID',
+  // Vercel hosting (Org/Project IDs also via static mapping)
+  VERCEL_ORG_ID:               'VERCEL_ORG_ID',
+  VERCEL_PROJECT_ID:           'VERCEL_PROJECT_ID',
 };
 
 // Static values not from .env
@@ -90,7 +117,7 @@ async function main() {
   // Get repo public key
   const keyRes = await apiRequest('GET', `/repos/${OWNER}/${REPO}/actions/secrets/public-key`);
   if (keyRes.status !== 200) {
-    console.error('Failed to get repo public key:', keyRes.status, JSON.stringify(keyRes.body));
+    console.error('Failed to get repo public key:', keyRes.status);
     console.error('Check that GITHUB_PAT has "repo" scope with secrets write permission.');
     process.exit(1);
   }
@@ -99,6 +126,7 @@ async function main() {
 
   let ok = 0;
   let skipped = 0;
+  let failed = 0;
 
   for (const [secretName, envKey] of Object.entries(SECRETS_MAP)) {
     const value = STATIC_SECRETS[secretName] || process.env[envKey];
@@ -119,11 +147,19 @@ async function main() {
       console.log(`  ✓  ${secretName}`);
       ok++;
     } else {
-      console.error(`  ✗  ${secretName} — HTTP ${res.status}:`, JSON.stringify(res.body));
+      // Sanitized error: only status code, not full body (avoid leaking sensitive data)
+      const errorMsg = (res.body && res.body.message) ? res.body.message : 'Unknown error';
+      console.error(`  ✗  ${secretName} — HTTP ${res.status}: ${errorMsg}`);
+      failed++;
     }
   }
 
-  console.log(`\nDone: ${ok} uploaded, ${skipped} skipped (no value).\n`);
+  console.log(`\nDone: ${ok} uploaded, ${skipped} skipped (no value), ${failed} failed.\n`);
+  
+  // Exit non-zero if any uploads failed (fail-fast for CI safety)
+  if (failed > 0) {
+    process.exit(1);
+  }
 }
 
 main().catch((err) => { console.error(err); process.exit(1); });
