@@ -45,7 +45,7 @@ describe('openai service', () => {
     const result = await analyzeCampaign('test-key', { spend: 100, clicks: 10 });
 
     expect(result.score).toBe(0);
-    expect(result.suggestions[0]).toMatch(/Error analizando datos:/i);
+    expect(result.suggestions[0]).toMatch(/Error analyzing data:/i);
     expect(logger.warn).toHaveBeenCalled();
   });
 
