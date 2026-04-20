@@ -245,15 +245,11 @@ Deno.serve(async (req: Request) => {
   if (token && token !== anonKey) {
     const { data: { user }, error } = await adminClient.auth.getUser(token);
     if (error || !user) {
-      return new Response(JSON.stringify({ success: false, message: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return json({ success: false, message: 'Unauthorized' }, 401);
     }
     userId = user.id;
   } else {
-    return new Response(JSON.stringify({ success: false, message: 'Unauthorized' }), {
-      status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return json({ success: false, message: 'Unauthorized' }, 401);
   }
 
   try {
@@ -536,7 +532,12 @@ Deno.serve(async (req: Request) => {
       if (geminiCred) {
         try {
           const apiKey = await decryptCred(geminiCred.encrypted_key);
-          analysis = await callGemini(prompt, apiKey);
+          const result = await callGemini(prompt, apiKey);
+          if (result && result.trim()) {
+            analysis = result;
+          } else {
+            providerErrors.push('gemini: empty response');
+          }
         } catch (err: any) {
           providerErrors.push(`gemini: ${err?.message ?? 'unknown error'}`);
         }
@@ -545,7 +546,12 @@ Deno.serve(async (req: Request) => {
       if (!analysis && openaiCred) {
         try {
           const apiKey = await decryptCred(openaiCred.encrypted_key);
-          analysis = await callOpenAI(prompt, apiKey);
+          const result = await callOpenAI(prompt, apiKey);
+          if (result && result.trim()) {
+            analysis = result;
+          } else {
+            providerErrors.push('openai: empty response');
+          }
         } catch (err: any) {
           providerErrors.push(`openai: ${err?.message ?? 'unknown error'}`);
         }
