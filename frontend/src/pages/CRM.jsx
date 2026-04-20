@@ -284,7 +284,7 @@ export default function CRM() {
     return matchStatus && matchSearch;
   });
 
-  async function handleWhatsApp(lead) {
+  const handleWhatsApp = async (lead) => {
     if (!lead.phone) {
       toast.error('Este lead no tiene número de teléfono registrado.');
       return;

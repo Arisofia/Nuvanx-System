@@ -413,11 +413,11 @@ export default function CampaignIntelligence() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {blocked
-              .filter(b =>
-                tab === 'campaigns'    ? ['acquisition','conversion','revenue'].includes(b.kpi_group) :
-                tab === 'funnel'       ? b.kpi_group === 'whatsapp' :
-                tab === 'traceability' ? true : false
-              )
+              .filter(b => {
+                if (tab === 'campaigns') return ['acquisition', 'conversion', 'revenue'].includes(b.kpi_group);
+                if (tab === 'funnel') return b.kpi_group === 'whatsapp';
+                return tab === 'traceability';
+              })
               .map(b => <BlockedBadge key={b.kpi_name} reason={b.blocked_reason} field={b.required_field} />)
             }
           </div>
