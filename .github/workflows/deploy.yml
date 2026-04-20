@@ -20,6 +20,9 @@ concurrency:
   group: deploy-production
   cancel-in-progress: false
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   # ─── Frontend → Vercel ─────────────────────────────────────────────────────
   deploy-frontend:
@@ -86,4 +89,14 @@ jobs:
 
           vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
           vercel build --prod --token="$VERCEL_TOKEN"
-          vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN" --debug 2>&1 | tail -100
+
+          deploy_output=$(vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN" 2>&1) || {
+            echo "$deploy_output"
+            if echo "$deploy_output" | grep -q "api-deployments-free-per-day"; then
+              echo "::error::Vercel free-tier deployment quota exceeded (100/day). Wait 24 hours for the quota to reset, or upgrade the Vercel plan at https://vercel.com/pricing"
+            else
+              echo "::error::Vercel deployment failed. See output above for details."
+            fi
+            exit 1
+          }
+          echo "$deploy_output"
