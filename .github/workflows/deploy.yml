@@ -82,9 +82,8 @@ jobs:
             exit 1
           fi
 
-          echo "Preflight checks passed. Deploying to Vercel..."
+          echo "Preflight checks passed. Starting production build and deploy..."
 
-          # Pull project settings, then deploy — Vercel runs the build on its side.
-          # Avoids the local-build + prebuilt-handoff path that caused generic errors.
           vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
-          vercel deploy --prod --token="$VERCEL_TOKEN"
+          vercel build --prod --token="$VERCEL_TOKEN"
+          vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
