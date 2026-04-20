@@ -82,11 +82,9 @@ jobs:
             exit 1
           fi
 
-          echo "Preflight checks passed. Starting production build and deploy..."
+          echo "Preflight checks passed. Deploying to Vercel..."
 
+          # Pull project settings, then deploy — Vercel runs the build on its side.
+          # Avoids the local-build + prebuilt-handoff path that caused generic errors.
           vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
-          vercel build --prod --token="$VERCEL_TOKEN"
-
-          # Deploy without --prebuilt to avoid the prebuilt artifact handoff failure
-          # that was causing "Unexpected error. Please try again later." from Vercel.
           vercel deploy --prod --token="$VERCEL_TOKEN"
