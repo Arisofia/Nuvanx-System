@@ -87,17 +87,6 @@ jobs:
           vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
           vercel build --prod --token="$VERCEL_TOKEN"
 
-          # Retry deploy up to 3 times (Vercel occasionally returns transient errors)
-          for attempt in 1 2 3; do
-            echo "Deploy attempt $attempt/3..."
-            if vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"; then
-              echo "Deploy succeeded on attempt $attempt"
-              exit 0
-            fi
-            if [ "$attempt" -lt 3 ]; then
-              echo "::warning::Deploy attempt $attempt failed due to a transient deploy error, retrying in 10s..."
-              sleep 10
-            fi
-          done
-          echo "::error::All 3 deploy attempts failed after successful preflight validation. Check Vercel CLI output above for the root cause."
-          exit 1
+          # Deploy without --prebuilt to avoid the prebuilt artifact handoff failure
+          # that was causing "Unexpected error. Please try again later." from Vercel.
+          vercel deploy --prod --token="$VERCEL_TOKEN"
