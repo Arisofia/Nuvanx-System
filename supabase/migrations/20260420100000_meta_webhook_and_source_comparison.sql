@@ -48,6 +48,8 @@ ALTER TABLE public.whatsapp_conversations
 --    (used by GET /api/traceability/funnel)
 -- ─────────────────────────────────────────────────────────────────────────────
 
+DROP VIEW IF EXISTS public.v_whatsapp_funnel;
+
 CREATE OR REPLACE VIEW public.v_whatsapp_funnel AS
 SELECT
   source,
@@ -79,6 +81,8 @@ GROUP BY source;
 --    (used by GET /api/traceability/campaigns)
 -- ─────────────────────────────────────────────────────────────────────────────
 
+DROP VIEW IF EXISTS public.v_campaign_roi;
+
 CREATE OR REPLACE VIEW public.v_campaign_roi AS
 SELECT
   COALESCE(campaign_name, 'Organic / Unknown')                                    AS campaign_name,
@@ -109,6 +113,8 @@ GROUP BY campaign_name, campaign_id, source;
 -- 4. vw_source_comparison — WhatsApp click-to-chat vs Meta Lead Gen forms
 --    (used by GET /api/reports/source-comparison)
 -- ─────────────────────────────────────────────────────────────────────────────
+
+DROP VIEW IF EXISTS public.vw_source_comparison;
 
 CREATE OR REPLACE VIEW public.vw_source_comparison AS
 SELECT
