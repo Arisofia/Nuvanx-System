@@ -12,10 +12,6 @@ name: Deploy
 
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
 
 concurrency:
   group: deploy-production
@@ -26,12 +22,7 @@ jobs:
   deploy-frontend:
     name: Deploy frontend to Vercel
     runs-on: ubuntu-latest
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (
-        github.event.workflow_run.conclusion == 'success' &&
-        contains(github.event.workflow_run.head_commit.message, '[deploy]')
-      )
+    if: github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
     defaults:
