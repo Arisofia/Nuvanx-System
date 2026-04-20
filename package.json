@@ -7,9 +7,9 @@
     "build": "npm --prefix frontend install && npm --prefix frontend run build",
     "dev": "npm --prefix frontend run dev",
     "lint": "npm --prefix frontend run lint",
-    "supabase:migration:list": "supabase migration list",
-    "supabase:migration:push": "supabase db push",
-    "supabase:types": "supabase gen types typescript --schema public > frontend/src/lib/supabase/types.ts"
+    "supabase:migration:list": "npx --yes supabase migration list",
+    "supabase:migration:push": "npx --yes supabase db push --yes",
+    "supabase:types": "npx --yes supabase gen types typescript --schema public > frontend/src/lib/supabase/types.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.3",
