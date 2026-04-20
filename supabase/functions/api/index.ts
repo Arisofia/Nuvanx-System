@@ -250,7 +250,7 @@ Deno.serve(async (req: Request) => {
     const mode        = url.searchParams.get('hub.mode');
     const challenge   = url.searchParams.get('hub.challenge');
     const verifyToken = url.searchParams.get('hub.verify_token');
-    const expected    = Deno.env.get('META_WEBHOOK_VERIFY_TOKEN');
+    const expected    = Deno.env.get('META_WEBHOOK_VERIFY_TOKEN') ?? Deno.env.get('META_VERIFY_TOKEN');
     if (!expected) return new Response('Verify token not configured', { status: 503 });
     if (mode === 'subscribe' && verifyToken === expected) {
       return new Response(challenge ?? '', { status: 200, headers: { 'Content-Type': 'text/plain' } });
