@@ -4,11 +4,11 @@ name: Sync Doctoralia Financials
 # upserts them into the financial_settlements table.
 #
 # Required GitHub secrets:
-#   GOOGLE_ADS_SERVICE_ACCOUNT  — Service account JSON (must have Sheets read scope;
+#   GOOGLE_ADS_SERVICE_ACCOUNT  - Service account JSON (must have Sheets read scope;
 #                                  spreadsheet must be shared to its client_email)
-#   DOCTORALIA_SHEET_ID         — Spreadsheet ID from the Google Sheets URL
-#   DATABASE_URL                — Direct Postgres connection string (Supabase)
-#   CLINIC_ID                   — UUID of the clinic owning these settlements
+#   DOCTORALIA_SHEET_ID         - Spreadsheet ID from the Google Sheets URL
+#   DATABASE_URL                - Direct Postgres connection string (Supabase)
+#   CLINIC_ID                   - UUID of the clinic owning these settlements
 
 on:
   schedule:
@@ -17,7 +17,7 @@ on:
 
 jobs:
   sync:
-    name: Google Sheets → financial_settlements
+    name: Google Sheets to financial_settlements
     runs-on: ubuntu-latest
 
     steps:
@@ -29,7 +29,7 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Preflight — validate required secrets
+      - name: Preflight - validate required secrets
         run: |
           MISSING=()
           [ -z "$GOOGLE_SA_JSON"      ] && MISSING+=("GOOGLE_ADS_SERVICE_ACCOUNT")
@@ -38,12 +38,12 @@ jobs:
           [ -z "$CLINIC_ID"           ] && MISSING+=("CLINIC_ID")
           if [ ${#MISSING[@]} -gt 0 ]; then
             echo "::error::Missing secrets: ${MISSING[*]}"
-            echo "::error::Add them at Settings → Secrets and variables → Actions"
+            echo "::error::Add them at Settings -> Secrets and variables -> Actions"
             exit 1
           fi
           echo "All required secrets present."
         env:
-          GOOGLE_SA_JSON:      ${{ secrets['GOOGLE_ADS_SERVICE_ACCOUNT'] }}
+          GOOGLE_SA_JSON:      ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
           DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID }}
           DATABASE_URL:        ${{ secrets.DATABASE_URL }}
           CLINIC_ID:           ${{ secrets.CLINIC_ID }}
@@ -52,10 +52,10 @@ jobs:
         run: npm install --no-save googleapis pg
         working-directory: ${{ github.workspace }}
 
-      - name: Run Doctoralia → DB sync
+      - name: Run Doctoralia to DB sync
         run: node scripts/sync-doctoralia.js
         env:
-          GOOGLE_SA_JSON:      ${{ secrets['GOOGLE_ADS_SERVICE_ACCOUNT'] }}
+          GOOGLE_SA_JSON:      ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
           DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID }}
           DATABASE_URL:        ${{ secrets.DATABASE_URL }}
           CLINIC_ID:           ${{ secrets.CLINIC_ID }}
