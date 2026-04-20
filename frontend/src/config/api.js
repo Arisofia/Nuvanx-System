@@ -8,8 +8,17 @@ const isLocalHost = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].
 
 function normalizeApiBaseUrl(url) {
   if (!url) return url;
-  // Keep calls like /api/... stable by ensuring base URL ends at /functions/v1.
-  return url.replace(/\/+$/, '').replace(/\/api$/, '');
+  const trimmed = url.replace(/\/+$/, '');
+
+  // Local dev proxy mode: keep /api as base.
+  if (/^\/api(?:\/|$)/.test(trimmed)) return '/api';
+
+  // Canonical Supabase functions base should always end at /functions/v1.
+  const fnIdx = trimmed.indexOf('/functions/v1');
+  if (fnIdx >= 0) return trimmed.slice(0, fnIdx + '/functions/v1'.length);
+
+  // Fallback: strip accidental deep /api paths from env values.
+  return trimmed.replace(/\/api(?:\/.*)?$/, '');
 }
 
 const defaultApiUrl = explicitApiUrl
