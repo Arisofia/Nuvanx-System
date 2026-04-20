@@ -24,12 +24,16 @@ function normalizeApiBaseUrl(url) {
 
 const defaultApiUrl = explicitApiUrl
   || (supabaseUrl ? `${supabaseUrl}/functions/v1` : (isLocalHost ? '/api' : fallbackSupabaseApiUrl));
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+// Prefer new publishable key; fall back to legacy anon key for existing setups.
+const supabaseKey =
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  '';
 
 const api = axios.create({
   baseURL: normalizeApiBaseUrl(defaultApiUrl),
   timeout: 15000,
-  headers: supabaseAnonKey ? { apikey: supabaseAnonKey } : {},
+  headers: supabaseKey ? { apikey: supabaseKey } : {},
 });
 
 let lastUnauthorizedEventAt = 0;
