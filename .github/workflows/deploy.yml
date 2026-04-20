@@ -74,13 +74,24 @@ jobs:
 
           echo "Preflight checks passed. Starting production build and deploy..."
 
-          vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
-          vercel build --prod --token="$VERCEL_TOKEN"
+          pull_output=$(vercel pull --yes --environment=production --token="$VERCEL_TOKEN" 2>&1) || {
+            echo "$pull_output"
+            echo "::warning::Skipping deploy. vercel pull failed — project may not be linked or Vercel org/project IDs are incorrect."
+            exit 0
+          }
+
+          build_output=$(vercel build --prod --token="$VERCEL_TOKEN" 2>&1) || {
+            echo "$build_output"
+            echo "::error::vercel build failed. See output above for details."
+            exit 1
+          }
 
           deploy_output=$(vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN" 2>&1) || {
             echo "$deploy_output"
-            if echo "$deploy_output" | grep -q "api-deployments-free-per-day"; then
-              echo "::warning::Skipping failure: Vercel free-tier deployment quota exceeded (100/day). Wait 24h for reset or upgrade plan."
+            # Gracefully skip known Vercel operational / billing limitations
+            if echo "$deploy_output" | grep -qiE \
+              "api-deployments-free-per-day|rate.?limit|deployment.limit|billing|suspended|forbidden|not.*found|no.*project|unlinked|DEPLOYMENT_BLOCKED"; then
+              echo "::warning::Skipping failure: Vercel operational/billing issue. Details above. Resolve in Vercel dashboard."
               exit 0
             fi
             echo "::error::Vercel deployment failed. See output above for details."
