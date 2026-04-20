@@ -68,6 +68,8 @@ jobs:
           VITE_SUPABASE_URL: "${{ secrets.VITE_SUPABASE_URL }}"
           VITE_SUPABASE_ANON_KEY: "${{ secrets.VITE_SUPABASE_ANON_KEY }}"
         run: |
+          echo "Running Vercel preflight checks..."
+
           missing_vars=""
           [ -z "$VERCEL_TOKEN" ] && missing_vars="${missing_vars} VERCEL_TOKEN"
           [ -z "$VERCEL_ORG_ID" ] && missing_vars="${missing_vars} VERCEL_ORG_ID"
@@ -79,9 +81,11 @@ jobs:
           fi
 
           if ! vercel whoami --token="$VERCEL_TOKEN" >/dev/null 2>&1; then
-            echo "::warning::VERCEL_TOKEN is invalid or expired. Skipping Vercel deploy. Regenerate token in Vercel and update GitHub Secrets -> Actions."
-            exit 0
+            echo "::error::Invalid or expired Vercel token. Update GitHub secret VERCEL_TOKEN before deploying."
+            exit 1
           fi
+
+          echo "Preflight checks passed. Starting production build and deploy..."
 
           vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
           vercel build --prod --token="$VERCEL_TOKEN"
@@ -94,9 +98,9 @@ jobs:
               exit 0
             fi
             if [ "$attempt" -lt 3 ]; then
-              echo "::warning::Deploy attempt $attempt failed, retrying in 10s..."
+              echo "::warning::Deploy attempt $attempt failed due to a transient deploy error, retrying in 10s..."
               sleep 10
             fi
           done
-          echo "::warning::All 3 deploy attempts failed — token may be expired. Renew VERCEL_TOKEN in GitHub Secrets."
+          echo "::error::All 3 deploy attempts failed after successful preflight validation. Check Vercel CLI output above for the root cause."
           exit 1
