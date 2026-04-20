@@ -2,15 +2,22 @@ import axios from 'axios';
 import { supabase, isSupabaseAvailable } from '../lib/supabase/client';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const explicitApiUrl = import.meta.env.VITE_API_BASE_URL;
-const fallbackSupabaseApiUrl = 'https://ssvvuuysgxyqvmovrlvk.supabase.co/functions/v1/api';
+const explicitApiUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
+const fallbackSupabaseApiUrl = 'https://ssvvuuysgxyqvmovrlvk.supabase.co/functions/v1';
 const isLocalHost = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+
+function normalizeApiBaseUrl(url) {
+  if (!url) return url;
+  // Keep calls like /api/... stable by ensuring base URL ends at /functions/v1.
+  return url.replace(/\/+$/, '').replace(/\/api$/, '');
+}
+
 const defaultApiUrl = explicitApiUrl
-  || (supabaseUrl ? `${supabaseUrl}/functions/v1/api` : (isLocalHost ? '/api' : fallbackSupabaseApiUrl));
+  || (supabaseUrl ? `${supabaseUrl}/functions/v1` : (isLocalHost ? '/api' : fallbackSupabaseApiUrl));
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
 const api = axios.create({
-  baseURL: defaultApiUrl,
+  baseURL: normalizeApiBaseUrl(defaultApiUrl),
   timeout: 15000,
   headers: supabaseAnonKey ? { apikey: supabaseAnonKey } : {},
 });
