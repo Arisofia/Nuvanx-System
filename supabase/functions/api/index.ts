@@ -533,7 +533,7 @@ Deno.serve(async (req: Request) => {
         try {
           const apiKey = await decryptCred(geminiCred.encrypted_key);
           const result = await callGemini(prompt, apiKey);
-          if (result && result.trim()) {
+          if (result && typeof result === 'string' && result.trim()) {
             analysis = result;
           } else {
             providerErrors.push('gemini: empty response');
@@ -547,7 +547,7 @@ Deno.serve(async (req: Request) => {
         try {
           const apiKey = await decryptCred(openaiCred.encrypted_key);
           const result = await callOpenAI(prompt, apiKey);
-          if (result && result.trim()) {
+          if (result && typeof result === 'string' && result.trim()) {
             analysis = result;
           } else {
             providerErrors.push('openai: empty response');
