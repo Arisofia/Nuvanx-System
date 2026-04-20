@@ -38,11 +38,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
 
       - name: Install Vercel CLI
         run: npm install -g vercel
@@ -72,29 +67,19 @@ jobs:
             exit 0
           fi
 
-          echo "Preflight checks passed. Starting production build and deploy..."
+          echo "Preflight checks passed. Deploying to Vercel (remote build)..."
 
-          pull_output=$(vercel pull --yes --environment=production --token="$VERCEL_TOKEN" 2>&1) || {
-            echo "$pull_output"
-            echo "::warning::Skipping deploy. vercel pull failed — project may not be linked or Vercel org/project IDs are incorrect."
+          # Pull project settings / env linkage
+          vercel pull --yes --environment=production --token="$VERCEL_TOKEN" || {
+            echo "::warning::Skipping deploy. vercel pull failed — check VERCEL_ORG_ID / VERCEL_PROJECT_ID secrets."
             exit 0
           }
 
-          build_output=$(vercel build --prod --token="$VERCEL_TOKEN" 2>&1) || {
-            echo "$build_output"
-            echo "::warning::vercel build failed — skipping deploy. Check Vercel project config or run locally to reproduce."
+          # Deploy: Vercel builds on their servers using vercel.json (buildCommand + outputDirectory).
+          # VITE_ vars are forwarded as build-env so the remote build has them.
+          vercel deploy --prod --token="$VERCEL_TOKEN" \
+            --build-env VITE_SUPABASE_URL="$VITE_SUPABASE_URL" \
+            --build-env VITE_SUPABASE_ANON_KEY="$VITE_SUPABASE_ANON_KEY" || {
+            echo "::warning::Vercel deployment failed. See output above. Resolve in the Vercel dashboard if this is a billing/quota issue."
             exit 0
           }
-
-          deploy_output=$(vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN" 2>&1) || {
-            echo "$deploy_output"
-            # Gracefully skip known Vercel operational / billing limitations
-            if echo "$deploy_output" | grep -qiE \
-              "api-deployments-free-per-day|rate.?limit|deployment.limit|billing|suspended|forbidden|not.*found|no.*project|unlinked|DEPLOYMENT_BLOCKED"; then
-              echo "::warning::Skipping failure: Vercel operational/billing issue. Details above. Resolve in Vercel dashboard."
-              exit 0
-            fi
-            echo "::warning::Vercel deployment failed. See output above for details."
-            exit 0
-          }
-          echo "$deploy_output"
