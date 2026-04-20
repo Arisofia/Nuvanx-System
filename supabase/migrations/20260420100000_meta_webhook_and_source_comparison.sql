@@ -7,7 +7,32 @@
 --   3. Create v_campaign_roi view (referenced by GET /api/traceability/campaigns)
 -- New:
 --   4. Create vw_source_comparison view — WhatsApp vs Meta Lead Gen form KPIs
+-- Guard:
+--   5. Re-declare normalize_phone() idempotently so that patients_normalize_before_upsert
+--      (created in 20260418170000) never fails on databases where 20260418180000 did
+--      not precede a patient INSERT/UPDATE (e.g. restored snapshots, re-runs).
 -- =============================================================================
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 0. Idempotent re-declaration of normalize_phone (ordering guard)
+--    Original definition lives in 20260418180000; this CREATE OR REPLACE is a
+--    no-op when that migration has already run, and a safety net when it hasn't.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE OR REPLACE FUNCTION public.normalize_phone(raw_phone TEXT)
+RETURNS TEXT LANGUAGE plpgsql IMMUTABLE AS $$
+DECLARE
+  cleaned TEXT;
+BEGIN
+  IF raw_phone IS NULL OR raw_phone = '' THEN RETURN NULL; END IF;
+  cleaned := regexp_replace(raw_phone, '[^0-9]', '', 'g');
+  IF    length(cleaned) = 11 AND left(cleaned, 2)  = '34'   THEN cleaned := right(cleaned, 9);
+  ELSIF length(cleaned) = 13 AND left(cleaned, 4)  = '0034' THEN cleaned := right(cleaned, 9);
+  END IF;
+  IF length(cleaned) < 7 THEN RETURN NULL; END IF;
+  RETURN cleaned;
+END;
+$$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 1. Fix whatsapp_conversations: add engagement timestamp columns
