@@ -10,8 +10,9 @@ function normalizeApiBaseUrl(url) {
   if (!url) return url;
   const trimmed = url.replace(/\/+$/, '');
 
-  // Local dev proxy mode: keep /api as base.
-  if (/^\/api(?:\/|$)/.test(trimmed)) return '/api';
+  // Local dev proxy mode: frontend already calls /api/* paths.
+  // Keep empty base to avoid /api/api/* duplication.
+  if (/^\/api(?:\/|$)/.test(trimmed)) return '';
 
   // Canonical Supabase functions base should always end at /functions/v1.
   const fnIdx = trimmed.indexOf('/functions/v1');
@@ -34,6 +35,12 @@ const api = axios.create({
 let lastUnauthorizedEventAt = 0;
 
 api.interceptors.request.use(async (config) => {
+  const baseUrl = config.baseURL || '';
+  if (typeof config.url === 'string' && config.url.startsWith('/api/') && /\/api\/?$/.test(baseUrl)) {
+    // If baseURL already ends in /api, drop the extra /api prefix from request path.
+    config.url = config.url.slice(4);
+  }
+
   let token;
   if (isSupabaseAvailable()) {
     // Prefer the Supabase session token (auto-refreshed by Supabase JS)
