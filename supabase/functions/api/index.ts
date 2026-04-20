@@ -1149,10 +1149,13 @@ function json(data: unknown, status = 200) {
   const success = payload.success ?? (status < 400);
   const hasError = payload.error !== undefined && payload.error !== null;
   const message = typeof payload.message === 'string' ? payload.message : null;
+  const derivedData = Object.fromEntries(
+    Object.entries(payload).filter(([key]) => !['success', 'data', 'error', 'message'].includes(key)),
+  );
 
   if (!Object.prototype.hasOwnProperty.call(payload, 'success')) payload.success = Boolean(success);
   if (!Object.prototype.hasOwnProperty.call(payload, 'data')) {
-    payload.data = success ? null : null;
+    payload.data = Object.keys(derivedData).length > 0 ? derivedData : null;
   }
   if (!Object.prototype.hasOwnProperty.call(payload, 'error')) {
     payload.error = hasError ? payload.error : (success ? null : message ?? 'Request failed');
