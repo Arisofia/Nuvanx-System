@@ -43,7 +43,7 @@ jobs:
           fi
           echo "All required secrets present."
         env:
-          GOOGLE_SA_JSON:      ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
+          GOOGLE_SA_JSON:      ${{ secrets['GOOGLE_ADS_SERVICE_ACCOUNT'] }}
           DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID }}
           DATABASE_URL:        ${{ secrets.DATABASE_URL }}
           CLINIC_ID:           ${{ secrets.CLINIC_ID }}
@@ -55,7 +55,7 @@ jobs:
       - name: Run Doctoralia → DB sync
         run: node scripts/sync-doctoralia.js
         env:
-          GOOGLE_SA_JSON:      ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
+          GOOGLE_SA_JSON:      ${{ secrets['GOOGLE_ADS_SERVICE_ACCOUNT'] }}
           DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID }}
           DATABASE_URL:        ${{ secrets.DATABASE_URL }}
           CLINIC_ID:           ${{ secrets.CLINIC_ID }}

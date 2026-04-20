@@ -33,12 +33,14 @@
 const { google }  = require('googleapis');
 const { Client }  = require('pg');
 
-const SA_JSON       = process.env.GOOGLE_SA_JSON;
-const SHEET_ID      = process.env.DOCTORALIA_SHEET_ID;
-const DATABASE_URL  = process.env.DATABASE_URL;
-const CLINIC_ID     = process.env.CLINIC_ID;
-const SHEET_RANGE   = process.env.SHEET_RANGE  || 'A1:Z5000';
-const SHEET_NAME    = process.env.SHEET_NAME;
+const {
+  GOOGLE_SA_JSON: SA_JSON,
+  DOCTORALIA_SHEET_ID: SHEET_ID,
+  DATABASE_URL,
+  CLINIC_ID,
+  SHEET_RANGE = 'A1:Z5000',
+  SHEET_NAME,
+} = process.env;
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 if (!SA_JSON || !SHEET_ID || !DATABASE_URL || !CLINIC_ID) {
