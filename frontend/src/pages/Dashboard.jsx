@@ -55,6 +55,34 @@ function normalizeMetaAccountId(raw) {
   return digits ? `act_${digits}` : '';
 }
 
+function formatAgentType(agentType) {
+  const map = {
+    campaign_analyzer: 'AI campaign analysis generated',
+    content_generator: 'AI content generated',
+  };
+  return map[agentType] || 'AI output generated';
+}
+
+function buildUnifiedActivity(figmaEvents, aiOutputs) {
+  const normalizedFigma = (figmaEvents || []).map((event) => ({
+    id: `figma-${event.id || `${event.type || 'event'}-${event.createdAt || ''}`}`,
+    type: event.type || 'figma_sync',
+    message: event.message || 'Figma event',
+    createdAt: event.createdAt || event.created_at || null,
+  }));
+
+  const normalizedAi = (aiOutputs || []).map((output) => ({
+    id: `ai-${output.id}`,
+    type: 'ai_output',
+    message: formatAgentType(output.agent_type),
+    createdAt: output.created_at || null,
+  }));
+
+  return [...normalizedAi, ...normalizedFigma]
+    .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+    .slice(0, 16);
+}
+
 export default function Dashboard() {
   const [metrics, setMetrics] = useState(null);
   const [integrations, setIntegrations] = useState([]);
@@ -85,11 +113,15 @@ export default function Dashboard() {
     setLoading(true);
     setError(null);
     try {
-      const [metricsRes, integrationsRes, aiStatusRes, eventsRes] = await Promise.all([
+      const [metricsRes, integrationsRes, aiStatusRes] = await Promise.all([
         api.get('/api/dashboard/metrics'),
         api.get('/api/integrations'),
         api.get('/api/ai/status'),
+      ]);
+
+      const [eventsRes, aiOutputsRes] = await Promise.allSettled([
         api.get('/api/figma/events', { params: { limit: 12 } }),
+        api.get('/api/ai/outputs', { params: { limit: 10 } }),
       ]);
 
       const parsedMetrics = normalizeDashboardMetrics(metricsRes.data);
@@ -98,7 +130,10 @@ export default function Dashboard() {
       const integrationList = integrationsRes.data?.integrations || [];
       setIntegrations(integrationList);
       setAiStatus(aiStatusRes.data || { available: false, provider: null });
-      setActivityEvents(eventsRes.data?.events || []);
+
+      const figmaEvents = eventsRes.status === 'fulfilled' ? (eventsRes.value.data?.events || []) : [];
+      const aiOutputs = aiOutputsRes.status === 'fulfilled' ? (aiOutputsRes.value.data?.outputs || []) : [];
+      setActivityEvents(buildUnifiedActivity(figmaEvents, aiOutputs));
 
       const metaIntegration = integrationList.find((i) => i.service === 'meta');
       const adAccountId = normalizeMetaAccountId(
@@ -405,7 +440,10 @@ export default function Dashboard() {
                 <Circle size={8} className="text-brand-300 shrink-0 mt-1.5" fill="currentColor" />
                 <div className="min-w-0">
                   <p className="text-sm text-gray-200 break-words">{event.message}</p>
-                  <p className="text-xs text-gray-500 mt-1">{event.type}</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {event.type}
+                    {event.createdAt ? ` · ${new Date(event.createdAt).toLocaleString()}` : ''}
+                  </p>
                 </div>
               </div>
             ))}

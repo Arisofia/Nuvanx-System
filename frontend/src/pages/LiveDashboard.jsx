@@ -34,6 +34,7 @@ function buildHourlyFromLeads(leads) {
 const EVENT_COLORS = {
   github_sync: 'text-violet-400',
   figma_sync: 'text-brand-400',
+  ai_output: 'text-cyan-400',
   lead_created: 'text-emerald-400',
   integration_connected: 'text-amber-400',
   default: 'text-gray-400',
@@ -53,6 +54,34 @@ function timeAgo(isoString) {
   return new Date(isoString).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+function formatAgentType(agentType) {
+  const map = {
+    campaign_analyzer: 'AI campaign analysis generated',
+    content_generator: 'AI content generated',
+  };
+  return map[agentType] || 'AI output generated';
+}
+
+function mergeFeedEvents(figmaEvents, aiOutputs) {
+  const normalizedFigma = (figmaEvents || []).map((event) => ({
+    id: `figma-${event.id || `${event.type || 'event'}-${event.createdAt || ''}`}`,
+    type: event.type || 'figma_sync',
+    message: event.message || 'Figma event',
+    createdAt: event.createdAt || event.created_at || null,
+  }));
+
+  const normalizedAi = (aiOutputs || []).map((output) => ({
+    id: `ai-${output.id}`,
+    type: 'ai_output',
+    message: formatAgentType(output.agent_type),
+    createdAt: output.created_at || null,
+  }));
+
+  return [...normalizedAi, ...normalizedFigma]
+    .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+    .slice(0, 30);
+}
+
 export default function LiveDashboard() {
   const [countdown, setCountdown] = useState(REFRESH_INTERVAL);
   const [metrics, setMetrics] = useState(null);
@@ -67,10 +96,15 @@ export default function LiveDashboard() {
   const fetchEvents = useCallback(async () => {
     setFeedLoading(true);
     try {
-      const res = await api.get('/api/figma/events', { params: { limit: 30 } });
-      setFeed(res.data?.events || []);
+      const [eventsRes, aiOutputsRes] = await Promise.allSettled([
+        api.get('/api/figma/events', { params: { limit: 30 } }),
+        api.get('/api/ai/outputs', { params: { limit: 15 } }),
+      ]);
+      const figmaEvents = eventsRes.status === 'fulfilled' ? (eventsRes.value.data?.events || []) : [];
+      const aiOutputs = aiOutputsRes.status === 'fulfilled' ? (aiOutputsRes.value.data?.outputs || []) : [];
+      setFeed(mergeFeedEvents(figmaEvents, aiOutputs));
     } catch {
-      // Figma Supabase may not be configured — silent degradation
+      // Silent degradation if activity sources are unavailable
     } finally {
       setFeedLoading(false);
     }
@@ -268,7 +302,7 @@ export default function LiveDashboard() {
                 <Circle size={8} className="text-gray-500 shrink-0 mt-1.5" fill="currentColor" />
                 <div className="flex-1 min-w-0">
                   <p className="text-xs text-gray-400 leading-relaxed">
-                    No events yet. Run a Figma sync or GitHub sync to populate the feed.
+                    No events yet. Run an AI action, Figma sync, or GitHub sync to populate the feed.
                   </p>
                 </div>
               </div>
