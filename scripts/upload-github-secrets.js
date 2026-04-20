@@ -48,6 +48,7 @@ const SECRETS_MAP = {
   // GitHub & tooling
   GH_PAT:                      'GITHUB_PAT',
   FIGMA_PAT:                   'FIGMA_PAT',
+  FIGMA_TOKEN:                 'FIGMA_PAT',
   // Admin & operational
   WEBHOOK_ADMIN_USER_ID:       'WEBHOOK_ADMIN_USER_ID',
   CLINIC_ID:                   'CLINIC_ID',
@@ -67,15 +68,9 @@ const SECRETS_MAP = {
   // WhatsApp messaging
   WHATSAPP_ACCESS_TOKEN:       'WHATSAPP_ACCESS_TOKEN',
   WHATSAPP_PHONE_NUMBER_ID:    'WHATSAPP_PHONE_NUMBER_ID',
-  // Vercel hosting (Org/Project IDs also via static mapping)
+  // Vercel hosting (must come from env to avoid stale project linkage)
   VERCEL_ORG_ID:               'VERCEL_ORG_ID',
   VERCEL_PROJECT_ID:           'VERCEL_PROJECT_ID',
-};
-
-// Static values not from .env
-const STATIC_SECRETS = {
-  VERCEL_ORG_ID:     'team_R0GOR4jvw1c1gnyBRWYu32O7',
-  VERCEL_PROJECT_ID: 'prj_IAOBlV17HeS22KuEfsdkDrGMV9Ze',
 };
 
 function apiRequest(method, path, body) {
@@ -132,7 +127,7 @@ async function main() {
   let failed = 0;
 
   for (const [secretName, envKey] of Object.entries(SECRETS_MAP)) {
-    const value = STATIC_SECRETS[secretName] || process.env[envKey];
+    const value = process.env[envKey];
     if (!value) {
       console.log(`  SKIP  ${secretName} — no value`);
       skipped++;
