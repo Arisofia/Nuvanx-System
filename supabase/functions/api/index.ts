@@ -115,11 +115,13 @@ function normalizeMetaAccountId(raw: unknown): string {
     }
   }
 
-  // Reject UUID-like values that were incorrectly saved in metadata.
+  // Reject UUID-like values that were incorrectly saved in metadata,
+  // including legacy values that were prefixed with `act_`.
   const uuidLike = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-  if (uuidLike.test(value)) return '';
+  const unprefixedValue = value.replace(/^act_/, '');
+  if (uuidLike.test(value) || uuidLike.test(unprefixedValue)) return '';
 
-  const digitsOnly = value.replace(/^act_/, '').replace(/[^\d]/g, '');
+  const digitsOnly = unprefixedValue.replace(/[^\d]/g, '');
   if (!digitsOnly) return '';
   return `act_${digitsOnly}`;
 }
