@@ -1,0 +1,66 @@
+name: Weekly Meta Ads Unified Tracking
+
+# Weekly automatic performance analysis for Meta Ads.
+# Compares WhatsApp vs Lead Form outcomes and generates a markdown report artifact.
+#
+# Required secrets:
+#   META_ACCESS_TOKEN
+#   META_AD_ACCOUNT_ID
+#
+# Optional secrets (enable CRM funnel enrichment + output persistence):
+#   DATABASE_URL
+#   CLINIC_ID
+#   REPORT_USER_ID
+
+on:
+  schedule:
+    - cron: '0 7 * * 1'  # Mondays 07:00 UTC (~09:00 Spain)
+  workflow_dispatch:
+
+jobs:
+  weekly-meta-report:
+    name: Generate weekly Meta report
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Preflight - validate required secrets
+        run: |
+          MISSING=()
+          [ -z "$META_ACCESS_TOKEN" ] && MISSING+=("META_ACCESS_TOKEN")
+          [ -z "$META_AD_ACCOUNT_ID" ] && MISSING+=("META_AD_ACCOUNT_ID")
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::error::Missing secrets: ${MISSING[*]}"
+            echo "::error::Add them at Settings -> Secrets and variables -> Actions"
+            exit 1
+          fi
+          echo "Required secrets are configured."
+        env:
+          META_ACCESS_TOKEN: ${{ secrets['META_ACCESS_TOKEN'] || '' }}
+          META_AD_ACCOUNT_ID: ${{ secrets['META_AD_ACCOUNT_ID'] || '' }}
+
+      - name: Install optional DB dependency
+        run: npm install --no-save pg
+
+      - name: Run weekly Meta unified report
+        run: node scripts/meta-weekly-report.js
+        env:
+          META_ACCESS_TOKEN: ${{ secrets['META_ACCESS_TOKEN'] || '' }}
+          META_AD_ACCOUNT_ID: ${{ secrets['META_AD_ACCOUNT_ID'] || '' }}
+          DATABASE_URL: ${{ secrets['DATABASE_URL'] || '' }}
+          CLINIC_ID: ${{ secrets['CLINIC_ID'] || '' }}
+          REPORT_USER_ID: ${{ secrets['REPORT_USER_ID'] || '' }}
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-meta-unified-report
+          path: reports/meta-weekly-report-*.md
+          if-no-files-found: error
