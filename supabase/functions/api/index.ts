@@ -49,6 +49,47 @@ async function metaFetch(path: string, params: Record<string, string>, token: st
   return d;
 }
 
+function parseMetaMetric(raw: unknown): number {
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : 0;
+  if (typeof raw === 'string') {
+    const n = parseFloat(raw);
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (Array.isArray(raw)) {
+    return raw.reduce((sum: number, item: any) => {
+      const n = parseMetaMetric(item?.value ?? item);
+      return sum + n;
+    }, 0);
+  }
+  if (raw && typeof raw === 'object') {
+    const n = parseFloat((raw as any).value ?? 0);
+    return Number.isFinite(n) ? n : 0;
+  }
+  return 0;
+}
+
+async function resolveClinicId(adminClient: any, userId: string): Promise<string | null> {
+  const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+  return usr?.clinic_id ?? null;
+}
+
+async function persistAgentOutput(adminClient: any, userId: string, agentType: string, output: any, metadata: any = {}) {
+  const clinicId = await resolveClinicId(adminClient, userId);
+  const { data, error } = await adminClient
+    .from('agent_outputs')
+    .insert({
+      user_id: userId,
+      clinic_id: clinicId,
+      agent_type: agentType,
+      output,
+      metadata,
+    })
+    .select('id')
+    .single();
+  if (error) throw error;
+  return data?.id ?? null;
+}
+
 // ── AI helpers ────────────────────────────────────────────────────────────────
 async function callGemini(prompt: string, apiKey: string): Promise<string> {
   const r = await fetch(
@@ -636,37 +677,42 @@ Deno.serve(async (req: Request) => {
       const creds = await resolveMetaCreds(adminClient, userId!, url.searchParams.get('adAccountId') ?? '');
       if (creds.notConnected) return json({ success: false, notConnected: true, message: 'Meta not connected.' });
       if (!creds.adAccountId) return json({ success: false, noAccountId: true, message: 'Meta Ad Account ID not configured.' });
+      try {
+        const data = await metaFetch(`/${creds.adAccountId}/campaigns`, {
+          fields: 'id,name,status,objective,daily_budget,lifetime_budget,insights.date_preset(last_30d){impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,cost_per_conversion}',
+          limit: '100',
+        }, creds.accessToken);
 
-      const data = await metaFetch(`/${creds.adAccountId}/campaigns`, {
-        fields: 'id,name,status,objective,daily_budget,lifetime_budget,insights.date_preset(last_30d){impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,cost_per_conversion}',
-        limit: '100',
-      }, creds.accessToken);
-
-      return json({
-        success: true,
-        campaigns: (data.data ?? []).map((c: any) => {
-          const ins = c.insights?.data?.[0];
-          return {
-            id: c.id,
-            name: c.name,
-            status: c.status,
-            objective: c.objective?.replace(/_/g, ' ') ?? '',
-            dailyBudget: c.daily_budget ? parseFloat(c.daily_budget) / 100 : null,
-            lifetimeBudget: c.lifetime_budget ? parseFloat(c.lifetime_budget) / 100 : null,
-            insights: ins ? {
-              impressions: parseFloat(ins.impressions || 0),
-              reach: parseFloat(ins.reach || 0),
-              clicks: parseFloat(ins.clicks || 0),
-              spend: parseFloat(ins.spend || 0),
-              ctr: parseFloat(ins.ctr || 0),
-              cpc: parseFloat(ins.cpc || 0),
-              cpm: parseFloat(ins.cpm || 0),
-              conversions: parseFloat(ins.conversions || 0),
-              cpp: ins.cost_per_conversion ? parseFloat(ins.cost_per_conversion) : null,
-            } : null,
-          };
-        }),
-      });
+        return json({
+          success: true,
+          campaigns: (data.data ?? []).map((c: any) => {
+            const ins = c.insights?.data?.[0];
+            const conversions = parseMetaMetric(ins?.conversions);
+            const cppRaw = parseMetaMetric(ins?.cost_per_conversion);
+            return {
+              id: c.id,
+              name: c.name,
+              status: c.status,
+              objective: c.objective?.replace(/_/g, ' ') ?? '',
+              dailyBudget: c.daily_budget ? parseFloat(c.daily_budget) / 100 : null,
+              lifetimeBudget: c.lifetime_budget ? parseFloat(c.lifetime_budget) / 100 : null,
+              insights: ins ? {
+                impressions: parseFloat(ins.impressions || 0),
+                reach: parseFloat(ins.reach || 0),
+                clicks: parseFloat(ins.clicks || 0),
+                spend: parseFloat(ins.spend || 0),
+                ctr: parseFloat(ins.ctr || 0),
+                cpc: parseFloat(ins.cpc || 0),
+                cpm: parseFloat(ins.cpm || 0),
+                conversions,
+                cpp: cppRaw > 0 ? cppRaw : (conversions > 0 ? parseFloat((parseFloat(ins.spend || 0) / conversions).toFixed(2)) : null),
+              } : null,
+            };
+          }),
+        });
+      } catch (e: any) {
+        return json({ success: false, metaApiError: true, message: e?.message ?? 'Meta API error' }, 502);
+      }
     }
 
     // ── POST /api/ai/analyze ─────────────────────────────────────────────────
@@ -752,7 +798,18 @@ Deno.serve(async (req: Request) => {
           details: providerErrors,
         }, 502);
       }
-      return json({ success: true, analysis });
+
+      let outputId: string | null = null;
+      try {
+        outputId = await persistAgentOutput(adminClient, userId!, 'ai.analyze', { analysis }, {
+          contextLength: String(context ?? '').length,
+          providerErrors,
+        });
+      } catch (persistErr: any) {
+        console.error('Agent output persistence failed (ai.analyze):', persistErr?.message ?? persistErr);
+      }
+
+      return json({ success: true, analysis, outputId });
     }
 
     // ── PATCH /api/integrations/:service (update metadata) ───────────────────
@@ -858,15 +915,45 @@ Deno.serve(async (req: Request) => {
         .from('playbooks').select('id, title, status, run_count').eq('slug', sub).single();
       if (pbErr || !pb) return json({ success: false, message: `Playbook '${sub}' not found` }, 404);
       if (pb.status === 'archived') return json({ success: false, message: 'Playbook is archived' }, 400);
+
+      let agentOutputId: string | null = null;
+      try {
+        agentOutputId = await persistAgentOutput(
+          adminClient,
+          userId!,
+          'playbook.run',
+          { playbookSlug: sub, playbookTitle: pb.title, status: 'success' },
+          { playbookId: pb.id, source: 'api.playbooks.run' },
+        );
+      } catch (persistErr: any) {
+        console.error('Agent output persistence failed (playbook.run):', persistErr?.message ?? persistErr);
+      }
+
       const { data: exec, error: execErr } = await adminClient
         .from('playbook_executions')
-        .insert({ playbook_id: pb.id, user_id: userId, status: 'success', metadata: {} })
+        .insert({
+          playbook_id: pb.id,
+          user_id: userId,
+          status: 'success',
+          metadata: agentOutputId ? { agent_output_id: agentOutputId } : {},
+          agent_output_id: agentOutputId,
+        })
         .select().single();
       if (execErr) throw execErr;
       await adminClient.from('playbooks')
         .update({ run_count: (pb as any).run_count + 1, last_run_at: new Date().toISOString() })
         .eq('id', pb.id);
-      return json({ success: true, execution: { id: exec.id, playbookSlug: sub, playbookTitle: pb.title, status: exec.status, ranAt: exec.created_at } });
+      return json({
+        success: true,
+        execution: {
+          id: exec.id,
+          playbookSlug: sub,
+          playbookTitle: pb.title,
+          status: exec.status,
+          ranAt: exec.created_at,
+          agentOutputId,
+        },
+      });
     }
 
     // ── GET /api/ai/status ───────────────────────────────────────────────────
@@ -892,7 +979,33 @@ Deno.serve(async (req: Request) => {
             `${(leads ?? []).filter((l: any) => l.stage === 'appointment').length} appointments pending — send follow-up reminders`,
             `Total pipeline value: €${(leads ?? []).reduce((s: number, l: any) => s + Number(l.revenue || 0), 0).toLocaleString()}`,
           ];
-      return json({ success: true, suggestions });
+
+      let outputId: string | null = null;
+      try {
+        outputId = await persistAgentOutput(adminClient, userId!, 'ai.suggestions', {
+          suggestions,
+          totalLeads: total,
+        }, {
+          source: 'api.ai.suggestions',
+        });
+      } catch (persistErr: any) {
+        console.error('Agent output persistence failed (ai.suggestions):', persistErr?.message ?? persistErr);
+      }
+
+      return json({ success: true, suggestions, outputId });
+    }
+
+    // ── GET /api/ai/outputs ────────────────────────────────────────────────
+    if (resource === 'ai' && sub === 'outputs' && req.method === 'GET') {
+      const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') ?? '20'), 1), 100);
+      const { data, error } = await adminClient
+        .from('agent_outputs')
+        .select('id, agent_type, output, metadata, created_at')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      if (error) throw error;
+      return json({ success: true, outputs: data ?? [] });
     }
 
     // ── GET /api/google-ads/insights ─────────────────────────────────────────
