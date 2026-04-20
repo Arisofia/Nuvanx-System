@@ -77,7 +77,23 @@ where service = 'meta'
     or metadata->>'ad_account_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
   );
 
--- 2) adAccountId repair template
+-- 2a) NULL out UUID-like adAccountId values — these cannot be safely converted
+--     to a real act_ ID and require manual correction with the actual Meta account ID.
+update integrations
+set metadata = jsonb_set(metadata, '{adAccountId}', 'null', true)
+where service = 'meta'
+  and (
+    metadata->>'adAccountId' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+    or metadata->>'ad_account_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+  );
+
+-- After step 2a, manually supply the correct act_<digits> Meta ad account IDs for
+-- any rows updated above, e.g.:
+--   update integrations set metadata = jsonb_set(metadata, '{adAccountId}', '"act_123456789"') where id = '<uuid>';
+
+-- 2b) Repair non-UUID, non-act_ values that contain digits by stripping non-digit
+--     characters and prepending act_. UUID-like values are explicitly excluded to
+--     avoid producing fake act_ IDs from UUID digit sequences.
 update integrations
 set metadata = jsonb_set(
   metadata,
@@ -86,8 +102,9 @@ set metadata = jsonb_set(
   true
 )
 where service = 'meta'
-  and regexp_replace(coalesce(metadata->>'adAccountId', metadata->>'ad_account_id', ''), '[^0-9]', '', 'g') <> ''
-  and coalesce(metadata->>'adAccountId', metadata->>'ad_account_id', '') !~ '^act_[0-9]+$';
+  and coalesce(metadata->>'adAccountId', metadata->>'ad_account_id', '') !~ '^act_[0-9]+$'
+  and coalesce(metadata->>'adAccountId', metadata->>'ad_account_id', '') !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+  and regexp_replace(coalesce(metadata->>'adAccountId', metadata->>'ad_account_id', ''), '[^0-9]', '', 'g') <> '';
 
 -- 3) agent_outputs health
 select count(*) as agent_outputs_rows from agent_outputs;
