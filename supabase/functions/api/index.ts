@@ -542,7 +542,13 @@ Deno.serve(async (req: Request) => {
         }, creds.accessToken),
       ]);
 
-      const daily = currRes.status === 'fulfilled' ? (currRes.value.data ?? []) : [];
+      // Surface Meta API errors so the frontend can show a meaningful message
+      // instead of silently returning all-zero metrics.
+      if (currRes.status === 'rejected') {
+        const errMsg = (currRes.reason as Error)?.message ?? 'Meta API error';
+        return json({ success: false, metaApiError: true, message: errMsg }, 502);
+      }
+      const daily = currRes.value.data ?? [];
       const prevD = prevRes.status === 'fulfilled' ? (prevRes.value.data?.[0] ?? {}) : {};
       const sumN = (arr: any[], k: string) => arr.reduce((s: number, d: any) => s + parseFloat(d[k] || 0), 0);
 
