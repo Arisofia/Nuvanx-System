@@ -92,6 +92,10 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
       .from('integrations').select('metadata').eq('user_id', userId).eq('service', 'meta').single();
     adAccountId = intg?.metadata?.adAccountId ?? intg?.metadata?.ad_account_id ?? '';
   }
+  // Sanitize: ensure adAccountId is not a UUID (contains hyphens) and is not empty
+  if (adAccountId && (adAccountId.includes('-') || adAccountId.length < 5)) {
+    adAccountId = '';
+  }
   if (adAccountId && !adAccountId.startsWith('act_')) adAccountId = `act_${adAccountId}`;
   return { notConnected: false, accessToken, adAccountId } as const;
 }
