@@ -7,6 +7,8 @@
     "build": "npm --prefix frontend install && npm --prefix frontend run build",
     "dev": "npm --prefix frontend run dev",
     "lint": "npm --prefix frontend run lint",
+    "supabase:functions:list": "npx --yes supabase functions list",
+    "supabase:functions:deploy:api": "npx --yes supabase functions deploy api --no-verify-jwt",
     "supabase:migration:list": "npx --yes supabase migration list",
     "supabase:migration:push": "npx --yes supabase db push --yes",
     "supabase:types": "npx --yes supabase gen types typescript --schema public > frontend/src/lib/supabase/types.ts"
