@@ -90,6 +90,48 @@ async function persistAgentOutput(adminClient: any, userId: string, agentType: s
   return data?.id ?? null;
 }
 
+async function runAiPrompt(
+  adminClient: any,
+  userId: string,
+  prompt: string,
+  preferredProvider = '',
+): Promise<{ text: string; provider: 'gemini' | 'openai'; providerErrors: string[] }> {
+  const { data: creds } = await adminClient
+    .from('credentials').select('service, encrypted_key').eq('user_id', userId).in('service', ['gemini', 'openai']);
+  const geminiCred = (creds ?? []).find((c: any) => c.service === 'gemini');
+  const openaiCred = (creds ?? []).find((c: any) => c.service === 'openai');
+  if (!geminiCred && !openaiCred) {
+    throw new Error('No AI integration connected. Add Gemini or OpenAI in Integrations.');
+  }
+
+  const providerErrors: string[] = [];
+  const providerOrder: Array<'gemini' | 'openai'> =
+    preferredProvider === 'openai' ? ['openai', 'gemini']
+      : preferredProvider === 'gemini' ? ['gemini', 'openai']
+      : ['gemini', 'openai'];
+
+  for (const provider of providerOrder) {
+    const cred = provider === 'gemini' ? geminiCred : openaiCred;
+    if (!cred) continue;
+
+    try {
+      const apiKey = await decryptCred(cred.encrypted_key);
+      const text = provider === 'gemini'
+        ? await callGemini(prompt, apiKey)
+        : await callOpenAI(prompt, apiKey);
+
+      if (text && typeof text === 'string' && text.trim()) {
+        return { text, provider, providerErrors };
+      }
+      providerErrors.push(`${provider}: empty response`);
+    } catch (err: any) {
+      providerErrors.push(`${provider}: ${err?.message ?? 'unknown error'}`);
+    }
+  }
+
+  throw new Error(`AI request failed for all connected providers. ${providerErrors.join(' | ')}`);
+}
+
 // ── AI helpers ────────────────────────────────────────────────────────────────
 async function callGemini(prompt: string, apiKey: string): Promise<string> {
   const r = await fetch(
@@ -815,9 +857,18 @@ Deno.serve(async (req: Request) => {
     // ── PATCH /api/integrations/:service (update metadata) ───────────────────
     if (resource === 'integrations' && sub && !sub2 && req.method === 'PATCH') {
       const body = await req.json();
+      let metadata = body.metadata ?? {};
+      if (sub === 'meta') {
+        const normalized = normalizeMetaAccountId(metadata?.adAccountId ?? metadata?.ad_account_id ?? '');
+        metadata = {
+          ...metadata,
+          adAccountId: normalized,
+          ad_account_id: normalized,
+        };
+      }
       const { error } = await adminClient
         .from('integrations')
-        .update({ metadata: body.metadata, updated_at: new Date().toISOString() })
+        .update({ metadata, updated_at: new Date().toISOString() })
         .eq('user_id', userId).eq('service', sub);
       if (error) throw error;
       return json({ success: true });
@@ -863,9 +914,20 @@ Deno.serve(async (req: Request) => {
       const body = await req.json();
       const reqToken = body.token;
       if (!reqToken) return json({ success: false, message: 'token is required' }, 400);
+
+      let metadata = body.metadata ?? {};
+      if (service === 'meta') {
+        const normalized = normalizeMetaAccountId(metadata?.adAccountId ?? metadata?.ad_account_id ?? '');
+        metadata = {
+          ...metadata,
+          adAccountId: normalized,
+          ad_account_id: normalized,
+        };
+      }
+
       const { error: intErr } = await adminClient
         .from('integrations')
-        .update({ status: 'connected', metadata: body.metadata ?? {}, updated_at: new Date().toISOString() })
+        .update({ status: 'connected', metadata, updated_at: new Date().toISOString() })
         .eq('user_id', userId)
         .eq('service', service);
       if (intErr) throw intErr;
@@ -962,6 +1024,66 @@ Deno.serve(async (req: Request) => {
         .from('credentials').select('service').eq('user_id', userId).in('service', ['openai', 'gemini']);
       const hasAi = (cred ?? []).length > 0;
       return json({ success: true, available: hasAi, provider: hasAi ? (cred![0] as any).service : null });
+    }
+
+    // ── POST /api/ai/generate ───────────────────────────────────────────────
+    if (resource === 'ai' && sub === 'generate' && req.method === 'POST') {
+      const body = await req.json();
+      const prompt = String(body?.prompt ?? '').trim();
+      const provider = String(body?.provider ?? '').trim();
+      const contentType = String(body?.contentType ?? '').trim();
+      if (!prompt) return json({ success: false, message: 'prompt is required' }, 400);
+
+      try {
+        const { text, provider: usedProvider, providerErrors } = await runAiPrompt(adminClient, userId!, prompt, provider);
+        let outputId: string | null = null;
+        try {
+          outputId = await persistAgentOutput(adminClient, userId!, 'ai.generate', { content: text }, {
+            prompt,
+            contentType: contentType || null,
+            providerRequested: provider || null,
+            providerUsed: usedProvider,
+            providerErrors,
+          });
+        } catch (persistErr: any) {
+          console.error('Agent output persistence failed (ai.generate):', persistErr?.message ?? persistErr);
+        }
+        return json({ success: true, content: text, result: text, provider: usedProvider, outputId });
+      } catch (err: any) {
+        return json({ success: false, message: err?.message ?? 'AI request failed' }, 502);
+      }
+    }
+
+    // ── POST /api/ai/analyze-campaign ───────────────────────────────────────
+    if (resource === 'ai' && sub === 'analyze-campaign' && req.method === 'POST') {
+      const body = await req.json();
+      const campaignData = String(body?.campaignData ?? '').trim();
+      const provider = String(body?.provider ?? '').trim();
+      if (!campaignData) return json({ success: false, message: 'campaignData is required' }, 400);
+
+      const prompt = [
+        'You are a performance marketer for a premium aesthetics clinic in Madrid.',
+        'Analyze the campaign data and provide actionable recommendations to improve conversion and reduce CPL.',
+        '',
+        campaignData,
+      ].join('\n');
+
+      try {
+        const { text, provider: usedProvider, providerErrors } = await runAiPrompt(adminClient, userId!, prompt, provider);
+        let outputId: string | null = null;
+        try {
+          outputId = await persistAgentOutput(adminClient, userId!, 'ai.analyze-campaign', { analysis: text }, {
+            providerRequested: provider || null,
+            providerUsed: usedProvider,
+            providerErrors,
+          });
+        } catch (persistErr: any) {
+          console.error('Agent output persistence failed (ai.analyze-campaign):', persistErr?.message ?? persistErr);
+        }
+        return json({ success: true, analysis: text, provider: usedProvider, outputId });
+      } catch (err: any) {
+        return json({ success: false, message: err?.message ?? 'AI request failed' }, 502);
+      }
     }
 
     // ── POST /api/ai/suggestions ─────────────────────────────────────────────

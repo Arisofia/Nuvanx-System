@@ -47,6 +47,14 @@ function normalizeMetaSummary(summary) {
   };
 }
 
+function normalizeMetaAccountId(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return '';
+  const unprefixed = value.replace(/^act_/i, '');
+  const digits = unprefixed.replace(/\D/g, '');
+  return digits ? `act_${digits}` : '';
+}
+
 export default function Dashboard() {
   const [metrics, setMetrics] = useState(null);
   const [integrations, setIntegrations] = useState([]);
@@ -93,7 +101,9 @@ export default function Dashboard() {
       setActivityEvents(eventsRes.data?.events || []);
 
       const metaIntegration = integrationList.find((i) => i.service === 'meta');
-      const adAccountId = metaIntegration?.metadata?.adAccountId;
+      const adAccountId = normalizeMetaAccountId(
+        metaIntegration?.metadata?.adAccountId ?? metaIntegration?.metadata?.ad_account_id,
+      );
       if (metaIntegration?.status === 'connected' && adAccountId) {
         try {
           const metaRes = await api.get('/api/dashboard/meta-trends', { params: { adAccountId } });

@@ -21,10 +21,14 @@ export default function AILayer() {
   const [result, setResult] = useState('');
   const [copied, setCopied] = useState(false);
   const [generateError, setGenerateError] = useState(null);
+  const [generateOutputId, setGenerateOutputId] = useState(null);
 
   const [campaignData, setCampaignData] = useState('');
   const [analysisResult, setAnalysisResult] = useState('');
   const [analyzeError, setAnalyzeError] = useState(null);
+  const [analyzeOutputId, setAnalyzeOutputId] = useState(null);
+  const [recentOutputs, setRecentOutputs] = useState([]);
+  const [loadingOutputs, setLoadingOutputs] = useState(false);
 
   const [aiAvailable, setAiAvailable] = useState(null); // null = checking, true/false = result
   const [aiProvider, setAiProvider] = useState(null);
@@ -40,7 +44,29 @@ export default function AILayer() {
         setAiProvider(res.data?.provider || null);
       })
       .catch(() => setAiAvailable(false));
+
+    fetchRecentOutputs();
   }, []);
+
+  const fetchRecentOutputs = async () => {
+    setLoadingOutputs(true);
+    try {
+      const res = await api.get('/api/ai/outputs', { params: { limit: 8 } });
+      setRecentOutputs(res.data?.outputs || []);
+    } catch {
+      setRecentOutputs([]);
+    } finally {
+      setLoadingOutputs(false);
+    }
+  };
+
+  const formatOutputPreview = (row) => {
+    const out = row?.output || {};
+    if (typeof out.content === 'string' && out.content.trim()) return out.content;
+    if (typeof out.analysis === 'string' && out.analysis.trim()) return out.analysis;
+    if (Array.isArray(out.suggestions)) return out.suggestions.join(' | ');
+    return 'Stored output';
+  };
 
   const handleGenerate = async () => {
     if (!prompt.trim()) {
@@ -48,9 +74,12 @@ export default function AILayer() {
       return;
     }
     setGenerateError(null);
+    setGenerateOutputId(null);
     try {
-      const res = await postGenerate('/api/ai/generate', { prompt, provider: engine });
+      const res = await postGenerate('/api/ai/generate', { prompt, provider: engine, contentType });
       setResult(res.result || res.content || '');
+      setGenerateOutputId(res.outputId || null);
+      fetchRecentOutputs();
       toast.success('Content generated successfully!');
     } catch (err) {
       const msg = err.response?.data?.message || 'Failed to generate content. Please ensure AI integration is connected.';
@@ -66,9 +95,12 @@ export default function AILayer() {
       return;
     }
     setAnalyzeError(null);
+    setAnalyzeOutputId(null);
     try {
       const res = await postAnalyze('/api/ai/analyze-campaign', { campaignData, provider: engine });
       setAnalysisResult(res.analysis || res.result || '');
+      setAnalyzeOutputId(res.outputId || null);
+      fetchRecentOutputs();
       toast.success('Campaign analyzed successfully!');
     } catch (err) {
       const msg = err.response?.data?.message || 'Failed to analyze campaign. Please ensure AI integration is connected.';
@@ -186,13 +218,20 @@ export default function AILayer() {
             <div className="relative">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs text-gray-500 font-medium uppercase tracking-wider">Result</span>
-                <button
-                  onClick={handleCopy}
-                  className="flex items-center gap-1.5 text-xs text-brand-400 hover:text-brand-300 transition-colors"
-                >
-                  {copied ? <CheckCheck size={13} /> : <Copy size={13} />}
-                  {copied ? 'Copied!' : 'Copy'}
-                </button>
+                <div className="flex items-center gap-3">
+                  {generateOutputId && (
+                    <span className="text-[11px] px-2 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">
+                      Saved #{generateOutputId.slice(0, 8)}
+                    </span>
+                  )}
+                  <button
+                    onClick={handleCopy}
+                    className="flex items-center gap-1.5 text-xs text-brand-400 hover:text-brand-300 transition-colors"
+                  >
+                    {copied ? <CheckCheck size={13} /> : <Copy size={13} />}
+                    {copied ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
               </div>
               <div className="bg-dark-800 border border-dark-600 rounded-lg p-4">
                 <pre className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed font-sans">{result}</pre>
@@ -238,6 +277,11 @@ export default function AILayer() {
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs text-gray-500 font-medium uppercase tracking-wider">Optimization Report</span>
+                {analyzeOutputId && (
+                  <span className="text-[11px] px-2 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">
+                    Saved #{analyzeOutputId.slice(0, 8)}
+                  </span>
+                )}
               </div>
               <div className="bg-dark-800 border border-dark-600 rounded-lg p-4 max-h-80 overflow-y-auto">
                 <pre className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed font-sans">{analysisResult}</pre>
@@ -245,6 +289,30 @@ export default function AILayer() {
             </div>
           )}
         </div>
+      </div>
+
+      <div className="card">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-white">Recent AI Outputs</h3>
+          <button onClick={fetchRecentOutputs} className="btn-secondary text-xs" disabled={loadingOutputs}>
+            {loadingOutputs ? 'Loading…' : 'Refresh'}
+          </button>
+        </div>
+        {recentOutputs.length === 0 ? (
+          <p className="text-sm text-gray-400">No persisted outputs yet. Generate content to create history.</p>
+        ) : (
+          <div className="space-y-2">
+            {recentOutputs.map((row) => (
+              <div key={row.id} className="p-3 rounded-lg border border-dark-600 bg-dark-800/70">
+                <div className="flex items-center justify-between gap-3 mb-1">
+                  <p className="text-xs text-gray-400 uppercase tracking-wide">{row.agent_type}</p>
+                  <p className="text-[11px] text-gray-500">{new Date(row.created_at).toLocaleString()}</p>
+                </div>
+                <p className="text-sm text-gray-200 line-clamp-2">{formatOutputPreview(row)}</p>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Tips */}
