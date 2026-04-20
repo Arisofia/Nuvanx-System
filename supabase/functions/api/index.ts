@@ -1155,7 +1155,6 @@ Deno.serve(async (req: Request) => {
 function json(data: unknown, status = 200) {
   const payload = (data && typeof data === 'object') ? { ...(data as Record<string, unknown>) } : { data };
   const success = payload.success ?? (status < 400);
-  const hasError = payload.error !== undefined && payload.error !== null;
   const message = typeof payload.message === 'string' ? payload.message : null;
   const derivedData = Object.fromEntries(
     Object.entries(payload).filter(([key]) => !['success', 'data', 'error', 'message'].includes(key)),
@@ -1165,8 +1164,8 @@ function json(data: unknown, status = 200) {
   if (!Object.prototype.hasOwnProperty.call(payload, 'data')) {
     payload.data = Object.keys(derivedData).length > 0 ? derivedData : null;
   }
-  if (!Object.prototype.hasOwnProperty.call(payload, 'error')) {
-    payload.error = hasError ? payload.error : (success ? null : message ?? 'Request failed');
+  if (payload.error === undefined) {
+    payload.error = success ? null : (message ?? 'Request failed');
   }
 
   return new Response(JSON.stringify(payload), {
