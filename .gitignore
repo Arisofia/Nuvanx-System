@@ -1,3 +1,14 @@
+# Logs
+logs
+*.log
+error.log
+npm-debug.log*
+npm-error.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
 # Dependencies
 **/node_modules/
 
@@ -8,8 +19,11 @@
 
 # Environment files (NEVER commit — contain secrets)
 **/.env
+**/.env.*
 **/.env.local
 **/.env.*.local
+!**/.env.example
+!**/.env.*.example
 .secrets.local
 backend/google-service-account.json
 *service-account*.json
