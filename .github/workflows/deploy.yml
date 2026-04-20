@@ -1,14 +1,11 @@
 ###############################################################################
 # Deploy — sequential pipeline triggered after CI passes on main
 #
-# Order: lint → build → supabase-migrate → supabase-functions → vercel
+# Order: lint → build → supabase-migrate → supabase-functions
 #
 # Required secrets (GitHub → Settings → Secrets → Actions):
 #   SUPABASE_ACCESS_TOKEN   — Supabase personal access token
 #   SUPABASE_DB_PASSWORD    — DB password for supabase db push
-#   VERCEL_TOKEN            — Vercel personal access token
-#   VERCEL_ORG_ID           — Vercel team/org ID
-#   VERCEL_PROJECT_ID       — Vercel project ID
 #   VITE_SUPABASE_URL       — https://ssvvuuysgxyqvmovrlvk.supabase.co
 #   VITE_SUPABASE_ANON_KEY  — public anon key
 ###############################################################################
@@ -113,54 +110,3 @@ jobs:
           fi
           supabase functions deploy api --no-verify-jwt --project-ref ssvvuuysgxyqvmovrlvk --use-api
 
-  # ─── 5. Vercel deploy ──────────────────────────────────────────────────────
-  deploy-frontend:
-    name: Deploy frontend to Vercel
-    needs: supabase-functions
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    defaults:
-      run:
-        working-directory: frontend
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - run: npm install -g vercel
-
-      - name: Deploy to Vercel
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-        run: |
-          missing_vars=""
-          [ -z "$VERCEL_TOKEN" ]      && missing_vars="${missing_vars} VERCEL_TOKEN"
-          [ -z "$VERCEL_ORG_ID" ]     && missing_vars="${missing_vars} VERCEL_ORG_ID"
-          [ -z "$VERCEL_PROJECT_ID" ] && missing_vars="${missing_vars} VERCEL_PROJECT_ID"
-
-          if [ -n "$missing_vars" ]; then
-            echo "::warning::Skipping deploy. Missing required Vercel secrets:${missing_vars}."
-            exit 0
-          fi
-
-          if ! vercel whoami --token="$VERCEL_TOKEN" >/dev/null 2>&1; then
-            echo "::warning::Skipping deploy. VERCEL_TOKEN is invalid or expired."
-            exit 0
-          fi
-
-          vercel pull --yes --environment=production --token="$VERCEL_TOKEN" || {
-            echo "::warning::vercel pull failed — check VERCEL_ORG_ID / VERCEL_PROJECT_ID secrets."
-            exit 0
-          }
-
-          vercel deploy --prod --token="$VERCEL_TOKEN" \
-            --build-env VITE_SUPABASE_URL="$VITE_SUPABASE_URL" \
-            --build-env VITE_SUPABASE_ANON_KEY="$VITE_SUPABASE_ANON_KEY" || {
-            echo "::warning::Vercel deployment failed. Check the Vercel dashboard."
-            exit 0
-          }
