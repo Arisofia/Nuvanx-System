@@ -357,7 +357,7 @@ Deno.serve(async (req: Request) => {
 
     // ── GET /api/dashboard/meta-trends ──────────────────────────────────────
     if (resource === 'dashboard' && sub === 'meta-trends') {
-      const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
+      const creds = await resolveMetaCreds(adminClient, userId!, url.searchParams.get('adAccountId') ?? '');
       if (creds.notConnected || !creds.adAccountId) {
         return json({ success: true, trends: [], message: creds.notConnected ? 'Meta Ads not connected' : 'Ad Account ID not configured' });
       }
@@ -377,7 +377,7 @@ Deno.serve(async (req: Request) => {
 
     // ── GET /api/meta/insights ───────────────────────────────────────────────
     if (resource === 'meta' && sub === 'insights' && req.method === 'GET') {
-      const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
+      const creds = await resolveMetaCreds(adminClient, userId!, url.searchParams.get('adAccountId') ?? '');
       if (creds.notConnected) return json({ success: false, notConnected: true, message: 'Meta not connected. Add your credentials in Integrations.' });
       if (!creds.adAccountId) return json({ success: false, noAccountId: true, message: 'Meta Ad Account ID not configured.' });
 
@@ -447,7 +447,7 @@ Deno.serve(async (req: Request) => {
 
     // ── GET /api/meta/campaigns ──────────────────────────────────────────────
     if (resource === 'meta' && sub === 'campaigns' && req.method === 'GET') {
-      const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
+      const creds = await resolveMetaCreds(adminClient, userId!, url.searchParams.get('adAccountId') ?? '');
       if (creds.notConnected) return json({ success: false, notConnected: true, message: 'Meta not connected.' });
       if (!creds.adAccountId) return json({ success: false, noAccountId: true, message: 'Meta Ad Account ID not configured.' });
 
@@ -711,7 +711,7 @@ Deno.serve(async (req: Request) => {
 
     // ── GET /api/google-ads/insights ─────────────────────────────────────────
     if (resource === 'google-ads' && sub === 'insights' && req.method === 'GET') {
-      const g = await resolveGoogleAdsCreds(adminClient, userId, url.searchParams.get('customerId') ?? '');
+      const g = await resolveGoogleAdsCreds(adminClient, userId!, url.searchParams.get('customerId') ?? '');
       if ('noServiceAccount' in g && g.noServiceAccount) return json({ success: false, noServiceAccount: true, message: 'Google Ads service account not configured.' });
       if ('notConnected' in g && g.notConnected) return json({ success: false, notConnected: true, message: 'Google Ads not connected. Add your developer token in Integrations.' });
       if (!(g as any).customerId) return json({ success: false, noAccountId: true, message: 'Google Ads Customer ID not configured.' });
@@ -784,7 +784,7 @@ Deno.serve(async (req: Request) => {
 
     // ── GET /api/google-ads/campaigns ────────────────────────────────────────
     if (resource === 'google-ads' && sub === 'campaigns' && req.method === 'GET') {
-      const g = await resolveGoogleAdsCreds(adminClient, userId, url.searchParams.get('customerId') ?? '');
+      const g = await resolveGoogleAdsCreds(adminClient, userId!, url.searchParams.get('customerId') ?? '');
       if ('noServiceAccount' in g && g.noServiceAccount) return json({ success: false, noServiceAccount: true, message: 'Google Ads service account not configured.' });
       if ('notConnected' in g && g.notConnected) return json({ success: false, notConnected: true, message: 'Google Ads not connected.' });
       if (!(g as any).customerId) return json({ success: false, noAccountId: true, message: 'Google Ads Customer ID not configured.' });
@@ -1155,7 +1155,7 @@ Deno.serve(async (req: Request) => {
 });
 
 function json(data: unknown, status = 200) {
-  const payload = (data && typeof data === 'object') ? { ...(data as Record<string, unknown>) } : { data };
+  const payload: Record<string, unknown> = (data && typeof data === 'object') ? { ...(data as Record<string, unknown>) } : { data };
   const success = payload.success ?? (status < 400);
   const message = typeof payload.message === 'string' ? payload.message : null;
   const derivedData = Object.fromEntries(
