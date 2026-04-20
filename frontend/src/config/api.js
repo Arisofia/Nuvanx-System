@@ -2,7 +2,11 @@ import axios from 'axios';
 import { supabase, isSupabaseAvailable } from '../lib/supabase/client';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const defaultApiUrl = supabaseUrl ? `${supabaseUrl}/functions/v1/api` : '/api';
+const explicitApiUrl = import.meta.env.VITE_API_BASE_URL;
+const fallbackSupabaseApiUrl = 'https://ssvvuuysgxyqvmovrlvk.supabase.co/functions/v1/api';
+const isLocalHost = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const defaultApiUrl = explicitApiUrl
+  || (supabaseUrl ? `${supabaseUrl}/functions/v1/api` : (isLocalHost ? '/api' : fallbackSupabaseApiUrl));
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
 const api = axios.create({
