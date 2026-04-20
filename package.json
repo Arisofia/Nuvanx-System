@@ -7,6 +7,7 @@
     "build": "npm --prefix frontend install && npm --prefix frontend run build",
     "dev": "npm --prefix frontend run dev",
     "lint": "npm --prefix frontend run lint",
+    "secrets:sync:all": "node scripts/sync-platform-secrets.js",
     "meta:weekly:report": "node scripts/meta-weekly-report.js",
     "supabase:functions:list": "npx --yes supabase functions list",
     "supabase:functions:deploy:api": "npx --yes supabase functions deploy api --no-verify-jwt",
