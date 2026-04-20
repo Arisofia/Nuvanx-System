@@ -293,10 +293,19 @@ Deno.serve(async (req: Request) => {
           .eq('service', 'meta')
           .eq('status', 'connected');
 
-        const matchingIntg = (intgs ?? []).find((i: any) => {
+        // First try exact pageId match; if no integration has pageId configured,
+        // fall back to the sole connected Meta integration (single-clinic setup).
+        const connected = intgs ?? [];
+        let matchingIntg = connected.find((i: any) => {
           const m = i.metadata ?? {};
           return m.pageId === page_id || m.page_id === page_id;
         });
+        if (!matchingIntg) {
+          const noPageIdSet = connected.every((i: any) => !i.metadata?.pageId && !i.metadata?.page_id);
+          if (noPageIdSet && connected.length === 1) {
+            matchingIntg = connected[0];
+          }
+        }
         if (!matchingIntg) continue;
 
         const webhookUserId = matchingIntg.user_id;

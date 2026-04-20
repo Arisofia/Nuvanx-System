@@ -33,6 +33,7 @@ function ConnectModal({ integration, onClose, onConnect }) {
   const [apiKey, setApiKey] = useState('');
   const [phoneNumberId, setPhoneNumberId] = useState('');
   const [adAccountId, setAdAccountId] = useState('');
+  const [pageId, setPageId] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const isWhatsApp = integration.service === 'whatsapp';
@@ -64,7 +65,10 @@ function ConnectModal({ integration, onClose, onConnect }) {
     try {
       const credentials = { apiKey };
       if (isWhatsApp) credentials.phoneNumberId = phoneNumberId.trim();
-      if (isMeta) credentials.adAccountId = adAccountId.trim();
+      if (isMeta) {
+        credentials.adAccountId = adAccountId.trim();
+        if (pageId.trim()) credentials.pageId = pageId.trim();
+      }
 
       await onConnect(integration.service, credentials);
       toast.success(`${integration.name} connected successfully`);
@@ -116,20 +120,38 @@ function ConnectModal({ integration, onClose, onConnect }) {
           </div>
 
           {isMeta && (
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1.5 uppercase">
-                Ad Account ID
-              </label>
-              <input
-                type="text"
-                value={adAccountId}
-                onChange={(e) => setAdAccountId(e.target.value)}
-                placeholder="e.g. act_123456789"
-                className="input"
-                autoComplete="off"
-                required
-              />
-            </div>
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1.5 uppercase">
+                  Ad Account ID
+                </label>
+                <input
+                  type="text"
+                  value={adAccountId}
+                  onChange={(e) => setAdAccountId(e.target.value)}
+                  placeholder="e.g. act_123456789"
+                  className="input"
+                  autoComplete="off"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1.5 uppercase">
+                  Facebook Page ID <span className="normal-case text-gray-500 font-normal">(required for Lead Ads webhook)</span>
+                </label>
+                <input
+                  type="text"
+                  value={pageId}
+                  onChange={(e) => setPageId(e.target.value)}
+                  placeholder="e.g. 123456789012345"
+                  className="input"
+                  autoComplete="off"
+                />
+                <p className="mt-1.5 text-xs text-gray-500">
+                  Found in Meta Business Manager → Pages → select your page → About → Page ID
+                </p>
+              </div>
+            </>
           )}
 
           {isWhatsApp && (
