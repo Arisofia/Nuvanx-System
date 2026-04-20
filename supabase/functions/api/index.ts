@@ -243,6 +243,141 @@ Deno.serve(async (req: Request) => {
     auth: { persistSession: false },
   });
 
+  // ── PUBLIC routes — no JWT required ──────────────────────────────────────
+
+  // GET /api/webhooks/meta — Meta webhook subscription verification (challenge)
+  if (resource === 'webhooks' && sub === 'meta' && req.method === 'GET') {
+    const mode        = url.searchParams.get('hub.mode');
+    const challenge   = url.searchParams.get('hub.challenge');
+    const verifyToken = url.searchParams.get('hub.verify_token');
+    const expected    = Deno.env.get('META_WEBHOOK_VERIFY_TOKEN');
+    if (!expected) return new Response('Verify token not configured', { status: 503 });
+    if (mode === 'subscribe' && verifyToken === expected) {
+      return new Response(challenge ?? '', { status: 200, headers: { 'Content-Type': 'text/plain' } });
+    }
+    return new Response('Forbidden', { status: 403 });
+  }
+
+  // POST /api/webhooks/meta — Meta Lead Gen real-time notifications
+  if (resource === 'webhooks' && sub === 'meta' && req.method === 'POST') {
+    const appSecret = Deno.env.get('META_APP_SECRET');
+    const rawBody   = await req.text();
+
+    // Verify HMAC-SHA256 signature when app secret is configured
+    if (appSecret) {
+      const signature = req.headers.get('X-Hub-Signature-256') ?? '';
+      const enc       = new TextEncoder();
+      const key       = await crypto.subtle.importKey(
+        'raw', enc.encode(appSecret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
+      );
+      const sig         = await crypto.subtle.sign('HMAC', key, enc.encode(rawBody));
+      const expectedSig = 'sha256=' + Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+      if (signature !== expectedSig) return new Response('Unauthorized', { status: 403 });
+    }
+
+    let payload: any;
+    try { payload = JSON.parse(rawBody); } catch { return new Response('ok', { status: 200 }); }
+    if (payload.object !== 'page') return new Response('ok', { status: 200 });
+
+    for (const entry of (payload.entry ?? [])) {
+      for (const change of (entry.changes ?? [])) {
+        if (change.field !== 'leadgen') continue;
+        const val = change.value ?? {};
+        const { leadgen_id, page_id, form_id, ad_id, adset_id, campaign_id, created_time } = val;
+        if (!leadgen_id) continue;
+
+        // Resolve the user who owns this page via their Meta integration record
+        const { data: intgs } = await adminClient
+          .from('integrations')
+          .select('user_id, metadata')
+          .eq('service', 'meta')
+          .eq('status', 'connected');
+
+        const matchingIntg = (intgs ?? []).find((i: any) => {
+          const m = i.metadata ?? {};
+          return m.pageId === page_id || m.page_id === page_id;
+        });
+        if (!matchingIntg) continue;
+
+        const webhookUserId = matchingIntg.user_id;
+
+        // Get the stored access token for this user
+        const { data: credRow } = await adminClient
+          .from('credentials')
+          .select('encrypted_key')
+          .eq('user_id', webhookUserId)
+          .eq('service', 'meta')
+          .single();
+        if (!credRow) continue;
+
+        let accessToken: string;
+        try { accessToken = await decryptCred(credRow.encrypted_key); } catch { continue; }
+
+        // Fetch full lead data from Meta Graph API
+        let leadData: any;
+        try {
+          leadData = await metaFetch(`/${leadgen_id}`, {
+            fields: 'field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,adset_id,page_id',
+          }, accessToken);
+        } catch { continue; }
+
+        // Parse field_data array into a flat map
+        const fields: Record<string, string> = {};
+        for (const f of (leadData.field_data ?? [])) {
+          fields[(f.name ?? '').toLowerCase()] = f.values?.[0] ?? '';
+        }
+
+        const leadName = fields['full_name'] ?? fields['nombre'] ?? fields['name'] ?? `Lead ${leadgen_id.slice(-6)}`;
+        const email    = fields['email']        ?? null;
+        const phone    = fields['phone_number'] ?? fields['telefono'] ?? fields['phone'] ?? null;
+        const dni      = fields['dni']          ?? fields['nif']      ?? fields['national_id'] ?? null;
+
+        // Upsert lead — idempotent via external_id UNIQUE constraint
+        const { data: lead } = await adminClient
+          .from('leads')
+          .upsert({
+            user_id:     webhookUserId,
+            external_id: leadgen_id,
+            source:      'meta_leadgen',
+            name:        leadName,
+            email,
+            phone,
+            dni:         dni || null,
+            stage:       'lead',
+            campaign_id: campaign_id ?? null,
+            adset_id:    adset_id    ?? null,
+            ad_id:       ad_id       ?? null,
+            form_id:     form_id     ?? null,
+            form_name:   leadData.form_name ?? null,
+            created_at:  created_time
+              ? new Date(Number(created_time) * 1000).toISOString()
+              : new Date().toISOString(),
+          }, { onConflict: 'external_id', ignoreDuplicates: true })
+          .select('id')
+          .single();
+
+        // Record attribution details
+        if (lead?.id) {
+          await adminClient
+            .from('meta_attribution')
+            .upsert({
+              lead_id:     lead.id,
+              leadgen_id,
+              page_id:     page_id     ?? null,
+              form_id:     form_id     ?? null,
+              campaign_id: campaign_id ?? null,
+              adset_id:    adset_id    ?? null,
+              ad_id:       ad_id       ?? null,
+            }, { onConflict: 'leadgen_id', ignoreDuplicates: true });
+        }
+      }
+    }
+
+    return new Response('ok', { status: 200 });
+  }
+
+  // ── All other routes require a valid JWT ──────────────────────────────────
+
   let userId: string | null = null;
 
   if (token && token !== anonKey) {
@@ -1117,6 +1252,16 @@ Deno.serve(async (req: Request) => {
         .select('*')
         .order('total_leads', { ascending: false });
       return json({ success: true, campaigns: rows || [] });
+    }
+
+    // ── GET /api/reports/source-comparison ───────────────────────────────────
+    // WhatsApp click-to-chat vs Meta Lead Gen form — side-by-side KPIs
+    if (resource === 'reports' && sub === 'source-comparison' && req.method === 'GET') {
+      const { data: rows } = await adminClient
+        .from('vw_source_comparison')
+        .select('*')
+        .order('total_leads', { ascending: false });
+      return json({ success: true, sources: rows || [] });
     }
 
     // ── GET /api/reports/whatsapp-conversion ─────────────────────────────────
