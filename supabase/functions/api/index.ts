@@ -332,7 +332,7 @@ Deno.serve(async (req: Request) => {
         const phone    = fields['phone_number'] ?? fields['telefono'] ?? fields['phone'] ?? null;
         const dni      = fields['dni']          ?? fields['nif']      ?? fields['national_id'] ?? null;
 
-        // Upsert lead — idempotent via external_id UNIQUE constraint
+        // Upsert lead — idempotent via partial unique index (user_id, source, external_id)
         const { data: lead } = await adminClient
           .from('leads')
           .upsert({
@@ -352,7 +352,7 @@ Deno.serve(async (req: Request) => {
             created_at:  created_time
               ? new Date(Number(created_time) * 1000).toISOString()
               : new Date().toISOString(),
-          }, { onConflict: 'external_id', ignoreDuplicates: true })
+          }, { onConflict: 'user_id,source,external_id', ignoreDuplicates: true })
           .select('id')
           .single();
 
