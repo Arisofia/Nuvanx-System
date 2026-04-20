@@ -1,16 +1,23 @@
 ###############################################################################
-# Deploy — runs after CI passes on main
-# Deploys frontend to Vercel.
+# Deploy — sequential pipeline triggered after CI passes on main
 #
-# Required secrets (set in GitHub → Settings → Secrets):
+# Order: lint → build → supabase-migrate → supabase-functions → vercel
+#
+# Required secrets (GitHub → Settings → Secrets → Actions):
+#   SUPABASE_ACCESS_TOKEN   — Supabase personal access token
+#   SUPABASE_DB_PASSWORD    — DB password for supabase db push
 #   VERCEL_TOKEN            — Vercel personal access token
 #   VERCEL_ORG_ID           — Vercel team/org ID
-#   VERCEL_PROJECT_ID       — Vercel project ID (from .vercel/project.json)
+#   VERCEL_PROJECT_ID       — Vercel project ID
+#   VITE_SUPABASE_URL       — https://ssvvuuysgxyqvmovrlvk.supabase.co
+#   VITE_SUPABASE_ANON_KEY  — public anon key
 ###############################################################################
 
 name: Deploy
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -18,11 +25,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ─── Frontend → Vercel ─────────────────────────────────────────────────────
-  deploy-frontend:
-    name: Deploy frontend to Vercel
+  # ─── 1. Lint ───────────────────────────────────────────────────────────────
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
     defaults:
@@ -30,32 +36,115 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@v4
-
-      - name: Use Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
 
-      - name: Install Vercel CLI
-        run: npm install -g vercel
+  # ─── 2. Build ──────────────────────────────────────────────────────────────
+  build:
+    name: Build
+    needs: lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+        env:
+          NODE_ENV: production
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://example.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || 'ci-anon-key-placeholder' }}
+
+  # ─── 3. Supabase DB migrations ─────────────────────────────────────────────
+  supabase-migrate:
+    name: Supabase — DB migrations
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Push migrations
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ] || [ -z "$SUPABASE_DB_PASSWORD" ]; then
+            echo "::warning::Skipping migrations. Set SUPABASE_ACCESS_TOKEN and SUPABASE_DB_PASSWORD in GitHub secrets."
+            exit 0
+          fi
+          supabase db push --project-ref ssvvuuysgxyqvmovrlvk --password "$SUPABASE_DB_PASSWORD"
+
+  # ─── 4. Supabase Edge Functions ────────────────────────────────────────────
+  supabase-functions:
+    name: Supabase — Edge Functions
+    needs: supabase-migrate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Deploy Edge Functions
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "::warning::Skipping functions deploy. Set SUPABASE_ACCESS_TOKEN in GitHub secrets."
+            exit 0
+          fi
+          supabase functions deploy api --no-verify-jwt --project-ref ssvvuuysgxyqvmovrlvk --use-api
+
+  # ─── 5. Vercel deploy ──────────────────────────────────────────────────────
+  deploy-frontend:
+    name: Deploy frontend to Vercel
+    needs: supabase-functions
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install -g vercel
 
       - name: Deploy to Vercel
         env:
-          VERCEL_TOKEN: "${{ secrets.VERCEL_TOKEN }}"
-          VERCEL_ORG_ID: "${{ secrets.VERCEL_ORG_ID }}"
-          VERCEL_PROJECT_ID: "${{ secrets.VERCEL_PROJECT_ID }}"
-          VITE_SUPABASE_URL: "${{ secrets.VITE_SUPABASE_URL }}"
-          VITE_SUPABASE_ANON_KEY: "${{ secrets.VITE_SUPABASE_ANON_KEY }}"
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: |
-          echo "Running Vercel preflight checks..."
-
           missing_vars=""
-          [ -z "$VERCEL_TOKEN" ] && missing_vars="${missing_vars} VERCEL_TOKEN"
-          [ -z "$VERCEL_ORG_ID" ] && missing_vars="${missing_vars} VERCEL_ORG_ID"
+          [ -z "$VERCEL_TOKEN" ]      && missing_vars="${missing_vars} VERCEL_TOKEN"
+          [ -z "$VERCEL_ORG_ID" ]     && missing_vars="${missing_vars} VERCEL_ORG_ID"
           [ -z "$VERCEL_PROJECT_ID" ] && missing_vars="${missing_vars} VERCEL_PROJECT_ID"
 
           if [ -n "$missing_vars" ]; then
-            echo "::warning::Skipping deploy. Missing required Vercel secrets:${missing_vars}. Configure them in GitHub -> Settings -> Secrets -> Actions."
+            echo "::warning::Skipping deploy. Missing required Vercel secrets:${missing_vars}."
             exit 0
           fi
 
@@ -64,19 +153,14 @@ jobs:
             exit 0
           fi
 
-          echo "Preflight checks passed. Deploying to Vercel (remote build)..."
-
-          # Pull project settings / env linkage
           vercel pull --yes --environment=production --token="$VERCEL_TOKEN" || {
-            echo "::warning::Skipping deploy. vercel pull failed — check VERCEL_ORG_ID / VERCEL_PROJECT_ID secrets."
+            echo "::warning::vercel pull failed — check VERCEL_ORG_ID / VERCEL_PROJECT_ID secrets."
             exit 0
           }
 
-          # Deploy: Vercel builds on their servers using vercel.json (buildCommand + outputDirectory).
-          # VITE_ vars are forwarded as build-env so the remote build has them.
           vercel deploy --prod --token="$VERCEL_TOKEN" \
             --build-env VITE_SUPABASE_URL="$VITE_SUPABASE_URL" \
             --build-env VITE_SUPABASE_ANON_KEY="$VITE_SUPABASE_ANON_KEY" || {
-            echo "::warning::Vercel deployment failed. See output above. Resolve in the Vercel dashboard if this is a billing/quota issue."
+            echo "::warning::Vercel deployment failed. Check the Vercel dashboard."
             exit 0
           }
