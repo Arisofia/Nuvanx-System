@@ -6,7 +6,7 @@ const defaultApiUrl = supabaseUrl ? `${supabaseUrl}/functions/v1/api` : '/api';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: defaultApiUrl,
   timeout: 15000,
   headers: supabaseAnonKey ? { apikey: supabaseAnonKey } : {},
 });

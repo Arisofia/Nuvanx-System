@@ -1,7 +1,9 @@
 // Nuvanx API Edge Function — v7
 // Routes all frontend API calls. Supabase strips /functions/v1 so the path
 // starts at /api/...
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+declare const Deno: any;
+// @ts-ignore — resolved at runtime via supabase/functions/import_map.json
+import { createClient } from 'supabase';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -29,10 +31,10 @@ async function decryptCred(encoded: string): Promise<string> {
   combined.set(ct); combined.set(tag, ct.length);
   const km = await crypto.subtle.importKey('raw', new TextEncoder().encode(masterKey), 'PBKDF2', false, ['deriveKey']);
   const aesKey = await crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt, iterations: 100_000, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt: salt as any, iterations: 100_000, hash: 'SHA-256' },
     km, { name: 'AES-GCM', length: 256 }, false, ['decrypt'],
   );
-  return new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, aesKey, combined));
+  return new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv as any }, aesKey, combined as any));
 }
 
 // ── Meta Graph API ────────────────────────────────────────────────────────────
@@ -82,7 +84,8 @@ async function callOpenAI(prompt: string, apiKey: string): Promise<string> {
 }
 
 // ── Meta credential resolver ──────────────────────────────────────────────────
-async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: string) {  const { data: credRow } = await adminClient
+async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: string) {
+  const { data: credRow } = await adminClient
     .from('credentials').select('encrypted_key').eq('user_id', userId).eq('service', 'meta').single();
   if (!credRow) return { notConnected: true } as const;
   const accessToken = await decryptCred(credRow.encrypted_key);
@@ -92,12 +95,38 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
       .from('integrations').select('metadata').eq('user_id', userId).eq('service', 'meta').single();
     adAccountId = intg?.metadata?.adAccountId ?? intg?.metadata?.ad_account_id ?? '';
   }
-  // Sanitize: ensure adAccountId is not a UUID (contains hyphens) and is not empty
-  if (adAccountId && (adAccountId.includes('-') || adAccountId.length < 5)) {
-    adAccountId = '';
-  }
-  if (adAccountId && !adAccountId.startsWith('act_')) adAccountId = `act_${adAccountId}`;
+  adAccountId = normalizeMetaAccountId(adAccountId);
   return { notConnected: false, accessToken, adAccountId } as const;
+}
+
+function normalizeMetaAccountId(raw: unknown): string {
+  if (!raw) return '';
+  let value = String(raw).trim();
+  if (!value) return '';
+
+  // Some rows have JSON-encoded metadata values.
+  if ((value.startsWith('{') && value.endsWith('}')) || (value.startsWith('"') && value.endsWith('"'))) {
+    try {
+      const parsed = JSON.parse(value);
+      if (typeof parsed === 'string') value = parsed.trim();
+      if (parsed && typeof parsed === 'object') {
+        const nested = (parsed as any).adAccountId ?? (parsed as any).ad_account_id ?? '';
+        value = String(nested).trim();
+      }
+    } catch {
+      // keep original value
+    }
+  }
+
+  // Reject UUID-like values that were incorrectly saved in metadata,
+  // including legacy values that were prefixed with `act_`.
+  const uuidLike = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const unprefixedValue = value.replace(/^act_/, '');
+  if (uuidLike.test(value) || uuidLike.test(unprefixedValue)) return '';
+
+  const digitsOnly = unprefixedValue.replace(/[^\d]/g, '');
+  if (!digitsOnly) return '';
+  return `act_${digitsOnly}`;
 }
 
 // ── Google Ads helpers ────────────────────────────────────────────────────────
@@ -119,7 +148,7 @@ async function importRSAPrivateKey(pem: string): Promise<CryptoKey> {
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return crypto.subtle.importKey(
-    'pkcs8', bytes.buffer,
+    'pkcs8', bytes.buffer as any,
     { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
     false, ['sign'],
   );
@@ -138,7 +167,7 @@ async function getGoogleAccessToken(serviceAccount: any): Promise<string> {
   const signingInput = `${headerB64}.${payloadB64}`;
   const key = await importRSAPrivateKey(serviceAccount.private_key);
   const sigBytes = await crypto.subtle.sign(
-    'RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(signingInput),
+    'RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(signingInput) as any,
   );
   const jwt = `${signingInput}.${b64url(sigBytes)}`;
   const tokenRes = await fetch(serviceAccount.token_uri ?? 'https://oauth2.googleapis.com/token', {
@@ -219,15 +248,11 @@ Deno.serve(async (req: Request) => {
   if (token && token !== anonKey) {
     const { data: { user }, error } = await adminClient.auth.getUser(token);
     if (error || !user) {
-      return new Response(JSON.stringify({ success: false, message: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return json({ success: false, message: 'Unauthorized' }, 401);
     }
     userId = user.id;
   } else {
-    return new Response(JSON.stringify({ success: false, message: 'Unauthorized' }), {
-      status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return json({ success: false, message: 'Unauthorized' }, 401);
   }
 
   try {
@@ -238,7 +263,7 @@ Deno.serve(async (req: Request) => {
 
     // ── GET /api/auth/me ─────────────────────────────────────────────────────
     if (resource === 'auth' && sub === 'me' && req.method === 'GET') {
-      const { data: { user: sbUser } } = await adminClient.auth.admin.getUserById(userId);
+      const { data: { user: sbUser } } = await adminClient.auth.admin.getUserById(userId!);
       if (!sbUser) return json({ success: false, message: 'User not found' }, 404);
       return json({
         success: true,
@@ -255,7 +280,7 @@ Deno.serve(async (req: Request) => {
       const { data, error } = await adminClient
         .from('leads')
         .select('*')
-        .eq('user_id', userId)
+        .eq('user_id', userId!)
         .order('created_at', { ascending: false });
       if (error) throw error;
       return json({ success: true, leads: data, total: data.length });
@@ -266,7 +291,7 @@ Deno.serve(async (req: Request) => {
       const body = await req.json();
       const { data, error } = await adminClient
         .from('leads')
-        .insert({ ...body, user_id: userId })
+        .insert({ ...body, user_id: userId! })
         .select()
         .single();
       if (error) throw error;
@@ -275,12 +300,12 @@ Deno.serve(async (req: Request) => {
 
     // ── GET /api/dashboard/metrics ───────────────────────────────────────────
     if (resource === 'dashboard' && sub === 'metrics') {
-      const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+      const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId!).single();
       const clinicId = usr?.clinic_id;
 
       const [leadsRes, intRes, settlementsRes] = await Promise.all([
-        adminClient.from('leads').select('stage, revenue').eq('user_id', userId),
-        adminClient.from('integrations').select('service, status').eq('user_id', userId),
+        adminClient.from('leads').select('stage, revenue').eq('user_id', userId!),
+        adminClient.from('integrations').select('service, status').eq('user_id', userId!),
         clinicId
           ? adminClient.from('financial_settlements')
               .select('amount_net, cancelled_at, settled_at, template_name')
@@ -333,7 +358,7 @@ Deno.serve(async (req: Request) => {
 
     // ── GET /api/dashboard/meta-trends ──────────────────────────────────────
     if (resource === 'dashboard' && sub === 'meta-trends') {
-      const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
+      const creds = await resolveMetaCreds(adminClient, userId!, url.searchParams.get('adAccountId') ?? '');
       if (creds.notConnected || !creds.adAccountId) {
         return json({ success: true, trends: [], message: creds.notConnected ? 'Meta Ads not connected' : 'Ad Account ID not configured' });
       }
@@ -353,7 +378,7 @@ Deno.serve(async (req: Request) => {
 
     // ── GET /api/meta/insights ───────────────────────────────────────────────
     if (resource === 'meta' && sub === 'insights' && req.method === 'GET') {
-      const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
+      const creds = await resolveMetaCreds(adminClient, userId!, url.searchParams.get('adAccountId') ?? '');
       if (creds.notConnected) return json({ success: false, notConnected: true, message: 'Meta not connected. Add your credentials in Integrations.' });
       if (!creds.adAccountId) return json({ success: false, noAccountId: true, message: 'Meta Ad Account ID not configured.' });
 
@@ -423,7 +448,7 @@ Deno.serve(async (req: Request) => {
 
     // ── GET /api/meta/campaigns ──────────────────────────────────────────────
     if (resource === 'meta' && sub === 'campaigns' && req.method === 'GET') {
-      const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
+      const creds = await resolveMetaCreds(adminClient, userId!, url.searchParams.get('adAccountId') ?? '');
       if (creds.notConnected) return json({ success: false, notConnected: true, message: 'Meta not connected.' });
       if (!creds.adAccountId) return json({ success: false, noAccountId: true, message: 'Meta Ad Account ID not configured.' });
 
@@ -505,12 +530,42 @@ Deno.serve(async (req: Request) => {
       ].filter(l => l !== undefined).join('\n');
 
       let analysis = '';
+      const providerErrors: string[] = [];
+
       if (geminiCred) {
-        const apiKey = await decryptCred(geminiCred.encrypted_key);
-        analysis = await callGemini(prompt, apiKey);
-      } else {
-        const apiKey = await decryptCred(openaiCred!.encrypted_key);
-        analysis = await callOpenAI(prompt, apiKey);
+        try {
+          const apiKey = await decryptCred(geminiCred.encrypted_key);
+          const result = await callGemini(prompt, apiKey);
+          if (result && typeof result === 'string' && result.trim()) {
+            analysis = result;
+          } else {
+            providerErrors.push('gemini: empty response');
+          }
+        } catch (err: any) {
+          providerErrors.push(`gemini: ${err?.message ?? 'unknown error'}`);
+        }
+      }
+
+      if (!analysis && openaiCred) {
+        try {
+          const apiKey = await decryptCred(openaiCred.encrypted_key);
+          const result = await callOpenAI(prompt, apiKey);
+          if (result && typeof result === 'string' && result.trim()) {
+            analysis = result;
+          } else {
+            providerErrors.push('openai: empty response');
+          }
+        } catch (err: any) {
+          providerErrors.push(`openai: ${err?.message ?? 'unknown error'}`);
+        }
+      }
+
+      if (!analysis) {
+        return json({
+          success: false,
+          message: 'AI request failed for all connected providers.',
+          details: providerErrors,
+        }, 502);
       }
       return json({ success: true, analysis });
     }
@@ -657,7 +712,7 @@ Deno.serve(async (req: Request) => {
 
     // ── GET /api/google-ads/insights ─────────────────────────────────────────
     if (resource === 'google-ads' && sub === 'insights' && req.method === 'GET') {
-      const g = await resolveGoogleAdsCreds(adminClient, userId, url.searchParams.get('customerId') ?? '');
+      const g = await resolveGoogleAdsCreds(adminClient, userId!, url.searchParams.get('customerId') ?? '');
       if ('noServiceAccount' in g && g.noServiceAccount) return json({ success: false, noServiceAccount: true, message: 'Google Ads service account not configured.' });
       if ('notConnected' in g && g.notConnected) return json({ success: false, notConnected: true, message: 'Google Ads not connected. Add your developer token in Integrations.' });
       if (!(g as any).customerId) return json({ success: false, noAccountId: true, message: 'Google Ads Customer ID not configured.' });
@@ -730,7 +785,7 @@ Deno.serve(async (req: Request) => {
 
     // ── GET /api/google-ads/campaigns ────────────────────────────────────────
     if (resource === 'google-ads' && sub === 'campaigns' && req.method === 'GET') {
-      const g = await resolveGoogleAdsCreds(adminClient, userId, url.searchParams.get('customerId') ?? '');
+      const g = await resolveGoogleAdsCreds(adminClient, userId!, url.searchParams.get('customerId') ?? '');
       if ('noServiceAccount' in g && g.noServiceAccount) return json({ success: false, noServiceAccount: true, message: 'Google Ads service account not configured.' });
       if ('notConnected' in g && g.notConnected) return json({ success: false, notConnected: true, message: 'Google Ads not connected.' });
       if (!(g as any).customerId) return json({ success: false, noAccountId: true, message: 'Google Ads Customer ID not configured.' });
@@ -1101,7 +1156,22 @@ Deno.serve(async (req: Request) => {
 });
 
 function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
+  const payload: Record<string, unknown> = (data && typeof data === 'object') ? { ...(data as Record<string, unknown>) } : { data };
+  const success = payload.success ?? (status < 400);
+  const message = typeof payload.message === 'string' ? payload.message : null;
+  const derivedData = Object.fromEntries(
+    Object.entries(payload).filter(([key]) => !['success', 'data', 'error', 'message'].includes(key)),
+  );
+
+  if (!Object.prototype.hasOwnProperty.call(payload, 'success')) payload.success = Boolean(success);
+  if (!Object.prototype.hasOwnProperty.call(payload, 'data')) {
+    payload.data = Object.keys(derivedData).length > 0 ? derivedData : null;
+  }
+  if (payload.error === undefined) {
+    payload.error = success ? null : (message ?? 'Request failed');
+  }
+
+  return new Response(JSON.stringify(payload), {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
