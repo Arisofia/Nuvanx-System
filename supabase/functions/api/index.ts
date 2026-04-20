@@ -92,8 +92,36 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
       .from('integrations').select('metadata').eq('user_id', userId).eq('service', 'meta').single();
     adAccountId = intg?.metadata?.adAccountId ?? intg?.metadata?.ad_account_id ?? '';
   }
-  if (adAccountId && !adAccountId.startsWith('act_')) adAccountId = `act_${adAccountId}`;
+  adAccountId = normalizeMetaAccountId(adAccountId);
   return { notConnected: false, accessToken, adAccountId } as const;
+}
+
+function normalizeMetaAccountId(raw: unknown): string {
+  if (!raw) return '';
+  let value = String(raw).trim();
+  if (!value) return '';
+
+  // Some rows have JSON-encoded metadata values.
+  if ((value.startsWith('{') && value.endsWith('}')) || (value.startsWith('"') && value.endsWith('"'))) {
+    try {
+      const parsed = JSON.parse(value);
+      if (typeof parsed === 'string') value = parsed.trim();
+      if (parsed && typeof parsed === 'object') {
+        const nested = (parsed as any).adAccountId ?? (parsed as any).ad_account_id ?? '';
+        value = String(nested).trim();
+      }
+    } catch {
+      // keep original value
+    }
+  }
+
+  // Reject UUID-like values that were incorrectly saved in metadata.
+  const uuidLike = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (uuidLike.test(value)) return '';
+
+  const digitsOnly = value.replace(/^act_/, '').replace(/[^\d]/g, '');
+  if (!digitsOnly) return '';
+  return `act_${digitsOnly}`;
 }
 
 // ── Google Ads helpers ────────────────────────────────────────────────────────
@@ -501,12 +529,32 @@ Deno.serve(async (req: Request) => {
       ].filter(l => l !== undefined).join('\n');
 
       let analysis = '';
+      const providerErrors: string[] = [];
+
       if (geminiCred) {
-        const apiKey = await decryptCred(geminiCred.encrypted_key);
-        analysis = await callGemini(prompt, apiKey);
-      } else {
-        const apiKey = await decryptCred(openaiCred!.encrypted_key);
-        analysis = await callOpenAI(prompt, apiKey);
+        try {
+          const apiKey = await decryptCred(geminiCred.encrypted_key);
+          analysis = await callGemini(prompt, apiKey);
+        } catch (err: any) {
+          providerErrors.push(`gemini: ${err?.message ?? 'unknown error'}`);
+        }
+      }
+
+      if (!analysis && openaiCred) {
+        try {
+          const apiKey = await decryptCred(openaiCred.encrypted_key);
+          analysis = await callOpenAI(prompt, apiKey);
+        } catch (err: any) {
+          providerErrors.push(`openai: ${err?.message ?? 'unknown error'}`);
+        }
+      }
+
+      if (!analysis) {
+        return json({
+          success: false,
+          message: 'AI request failed for all connected providers.',
+          details: providerErrors,
+        }, 502);
       }
       return json({ success: true, analysis });
     }
@@ -1097,7 +1145,20 @@ Deno.serve(async (req: Request) => {
 });
 
 function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
+  const payload = (data && typeof data === 'object') ? { ...(data as Record<string, unknown>) } : { data };
+  const success = payload.success ?? (status < 400);
+  const hasError = payload.error !== undefined && payload.error !== null;
+  const message = typeof payload.message === 'string' ? payload.message : null;
+
+  if (!Object.prototype.hasOwnProperty.call(payload, 'success')) payload.success = Boolean(success);
+  if (!Object.prototype.hasOwnProperty.call(payload, 'data')) {
+    payload.data = success ? null : null;
+  }
+  if (!Object.prototype.hasOwnProperty.call(payload, 'error')) {
+    payload.error = hasError ? payload.error : (success ? null : message ?? 'Request failed');
+  }
+
+  return new Response(JSON.stringify(payload), {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
