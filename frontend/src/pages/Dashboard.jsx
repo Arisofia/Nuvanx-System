@@ -53,6 +53,7 @@ export default function Dashboard() {
   const [aiStatus, setAiStatus] = useState({ available: false, provider: null });
   const [metaTrends, setMetaTrends] = useState(null);
   const [metaState, setMetaState] = useState('pending');
+  const [metaError, setMetaError] = useState(null);
   const [aiSuggestions, setAiSuggestions] = useState([]);
   const [activityEvents, setActivityEvents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -97,9 +98,11 @@ export default function Dashboard() {
         try {
           const metaRes = await api.get('/api/dashboard/meta-trends', { params: { adAccountId } });
           setMetaTrends(metaRes.data);
+          setMetaError(null);
           setMetaState('real');
-        } catch {
+        } catch (metaErr) {
           setMetaTrends(null);
+          setMetaError(metaErr.response?.data?.message || 'Unable to fetch Meta data');
           setMetaState('error');
         }
       } else if (metaIntegration?.status === 'connected') {
@@ -375,7 +378,7 @@ export default function Dashboard() {
           <div className="p-4 rounded-lg border border-dark-600/70 bg-dark-800/60 text-sm text-gray-300">
             {metaState === 'missing-config' && 'Meta connected, but adAccountId is missing in the integration metadata.'}
             {metaState === 'not-connected' && 'Meta is not connected. Enable it in Integrations to see live data.'}
-            {metaState === 'error' && 'Unable to fetch Meta data at this time.'}
+            {metaState === 'error' && (metaError || 'Unable to fetch Meta data at this time.')}
             {metaState === 'pending' && 'Loading Meta status…'}
           </div>
         )}

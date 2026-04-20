@@ -504,7 +504,7 @@ Deno.serve(async (req: Request) => {
     if (resource === 'dashboard' && sub === 'meta-trends') {
       const creds = await resolveMetaCreds(adminClient, userId!, url.searchParams.get('adAccountId') ?? '');
       if (creds.notConnected || !creds.adAccountId) {
-        return json({ success: true, trends: [], message: creds.notConnected ? 'Meta Ads not connected' : 'Ad Account ID not configured' });
+        return json({ success: false, message: creds.notConnected ? 'Meta Ads not connected' : 'Ad Account ID not configured' }, 400);
       }
       try {
         const since = new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10);
@@ -514,9 +514,44 @@ Deno.serve(async (req: Request) => {
           time_range: JSON.stringify({ since, until }),
           time_increment: '1', limit: '1000',
         }, creds.accessToken);
-        return json({ success: true, trends: data.data ?? [] });
+
+        const trends: any[] = data.data ?? [];
+        const sumN = (arr: any[], k: string) => arr.reduce((s: number, d: any) => s + parseFloat(d[k] || 0), 0);
+        const avgN = (arr: any[], k: string) => arr.length ? sumN(arr, k) / arr.length : 0;
+        const pct = (a: number, b: number) => b > 0 ? Math.round(((a - b) / b) * 100) : 0;
+
+        const last7 = trends.slice(-7);
+        const prev7 = trends.slice(-14, -7);
+
+        const agg = (arr: any[]) => ({
+          impressions: Math.round(sumN(arr, 'impressions')),
+          reach: Math.round(sumN(arr, 'reach')),
+          clicks: Math.round(sumN(arr, 'clicks')),
+          spend: parseFloat(sumN(arr, 'spend').toFixed(2)),
+          conversions: Math.round(sumN(arr, 'conversions')),
+          ctr: parseFloat(avgN(arr, 'ctr').toFixed(2)),
+          cpc: parseFloat(avgN(arr, 'cpc').toFixed(2)),
+          cpm: parseFloat(avgN(arr, 'cpm').toFixed(2)),
+        });
+
+        const thisWeek = agg(last7);
+        const prevWeek = agg(prev7);
+
+        return json({
+          success: true,
+          trends,
+          summary: { thisWeek },
+          wow: {
+            impressions: pct(thisWeek.impressions, prevWeek.impressions),
+            clicks: pct(thisWeek.clicks, prevWeek.clicks),
+            spend: pct(thisWeek.spend, prevWeek.spend),
+          },
+          mom: {
+            spend: pct(thisWeek.spend, prevWeek.spend),
+          },
+        });
       } catch (e: any) {
-        return json({ success: true, trends: [], message: e.message });
+        return json({ success: false, message: e.message }, 502);
       }
     }
 
