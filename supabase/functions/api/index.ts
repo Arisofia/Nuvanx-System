@@ -2,7 +2,8 @@
 // Routes all frontend API calls. Supabase strips /functions/v1 so the path
 // starts at /api/...
 declare const Deno: any;
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+// @ts-ignore — resolved at runtime via supabase/functions/import_map.json
+import { createClient } from 'supabase';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
