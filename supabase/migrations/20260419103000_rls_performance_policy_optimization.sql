@@ -8,27 +8,32 @@
 -- ---------------------------------------------------------------------------
 -- agent_outputs
 -- ---------------------------------------------------------------------------
-DROP POLICY IF EXISTS agent_outputs_insert_own ON public.agent_outputs;
-CREATE POLICY agent_outputs_insert_own
-  ON public.agent_outputs
-  FOR INSERT
-  TO authenticated
-  WITH CHECK ((SELECT auth.uid()) = user_id);
+DO $$
+BEGIN
+  IF to_regclass('public.agent_outputs') IS NOT NULL THEN
+    DROP POLICY IF EXISTS agent_outputs_insert_own ON public.agent_outputs;
+    CREATE POLICY agent_outputs_insert_own
+      ON public.agent_outputs
+      FOR INSERT
+      TO authenticated
+      WITH CHECK ((SELECT auth.uid()) = user_id);
 
-DROP POLICY IF EXISTS agent_outputs_select_own ON public.agent_outputs;
-CREATE POLICY agent_outputs_select_own
-  ON public.agent_outputs
-  FOR SELECT
-  TO authenticated
-  USING ((SELECT auth.uid()) = user_id);
+    DROP POLICY IF EXISTS agent_outputs_select_own ON public.agent_outputs;
+    CREATE POLICY agent_outputs_select_own
+      ON public.agent_outputs
+      FOR SELECT
+      TO authenticated
+      USING ((SELECT auth.uid()) = user_id);
 
-DROP POLICY IF EXISTS agent_outputs_service_all ON public.agent_outputs;
-CREATE POLICY agent_outputs_service_all
-  ON public.agent_outputs
-  FOR ALL
-  TO service_role
-  USING (true)
-  WITH CHECK (true);
+    DROP POLICY IF EXISTS agent_outputs_service_all ON public.agent_outputs;
+    CREATE POLICY agent_outputs_service_all
+      ON public.agent_outputs
+      FOR ALL
+      TO service_role
+      USING (true)
+      WITH CHECK (true);
+  END IF;
+END $$;
 
 -- ---------------------------------------------------------------------------
 -- integrations
