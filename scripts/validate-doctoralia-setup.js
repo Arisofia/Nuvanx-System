@@ -11,7 +11,8 @@
 
 const path = require('path');
 const fs = require('fs');
-require('dotenv').config({ path: path.join(__dirname, '..', 'backend', '.env') });
+const backendDir = path.join(__dirname, '..', 'backend');
+require(path.join(backendDir, 'node_modules', 'dotenv')).config({ path: path.join(backendDir, '.env') });
 
 const colors = {
   reset: '\x1b[0m',
@@ -87,7 +88,7 @@ async function validate() {
     passed++;
     
     try {
-      const { createClient } = require('@supabase/supabase-js');
+      const { createClient } = require(path.join(backendDir, 'node_modules', '@supabase', 'supabase-js'));
       const supabase = createClient(
         process.env.SUPABASE_URL,
         process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -107,7 +108,7 @@ async function validate() {
   console.log(`\n${colors.cyan}[4/4] Database Schema${colors.reset}`);
   
   try {
-    const { Pool } = require('pg');
+    const { Pool } = require(path.join(backendDir, 'node_modules', 'pg'));
     const pool = new Pool({ connectionString: dbUrl, max: 1 });
     
     const tablesRes = await pool.query(`
