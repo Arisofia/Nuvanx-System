@@ -63,13 +63,13 @@ jobs:
           [ -z "$VERCEL_PROJECT_ID" ] && missing_vars="${missing_vars} VERCEL_PROJECT_ID"
 
           if [ -n "$missing_vars" ]; then
-            echo "::error::Missing required Vercel secrets:${missing_vars}. Set them in GitHub -> Settings -> Secrets -> Actions."
-            exit 1
+            echo "::warning::Skipping deploy. Missing required Vercel secrets:${missing_vars}. Configure them in GitHub -> Settings -> Secrets -> Actions."
+            exit 0
           fi
 
           if ! vercel whoami --token="$VERCEL_TOKEN" >/dev/null 2>&1; then
-            echo "::error::Invalid or expired Vercel token. Update GitHub secret VERCEL_TOKEN before deploying."
-            exit 1
+            echo "::warning::Skipping deploy. VERCEL_TOKEN is invalid or expired."
+            exit 0
           fi
 
           echo "Preflight checks passed. Starting production build and deploy..."
@@ -80,10 +80,10 @@ jobs:
           deploy_output=$(vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN" 2>&1) || {
             echo "$deploy_output"
             if echo "$deploy_output" | grep -q "api-deployments-free-per-day"; then
-              echo "::error::Vercel free-tier deployment quota exceeded (100/day). Wait 24 hours for the quota to reset, or upgrade the Vercel plan at https://vercel.com/pricing"
-            else
-              echo "::error::Vercel deployment failed. See output above for details."
+              echo "::warning::Skipping failure: Vercel free-tier deployment quota exceeded (100/day). Wait 24h for reset or upgrade plan."
+              exit 0
             fi
+            echo "::error::Vercel deployment failed. See output above for details."
             exit 1
           }
           echo "$deploy_output"
