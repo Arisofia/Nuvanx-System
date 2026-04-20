@@ -22,8 +22,12 @@ function normalizeApiBaseUrl(url) {
   return trimmed.replace(/\/api(?:\/.*)?$/, '');
 }
 
-const defaultApiUrl = explicitApiUrl
-  || (supabaseUrl ? `${supabaseUrl}/functions/v1` : (isLocalHost ? '/api' : fallbackSupabaseApiUrl));
+// On Vercel (production) we rely on the /api/* rewrite in vercel.json to proxy
+// requests to the Supabase Edge Function. Using the full Supabase URL as baseURL
+// causes axios to send root-relative /api/* paths directly to the Supabase host,
+// bypassing /functions/v1 entirely. Empty baseURL keeps requests on the same origin
+// so the Vercel proxy rewrite fires correctly.
+const defaultApiUrl = explicitApiUrl || (isLocalHost ? '/api' : '');
 // Prefer new publishable key; fall back to legacy anon key for existing setups.
 const supabaseKey =
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
