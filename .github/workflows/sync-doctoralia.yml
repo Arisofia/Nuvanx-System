@@ -1,0 +1,63 @@
+name: Sync Doctoralia Financials
+
+# Reads individual settlement rows from Google Sheets (Doctoralia export) and
+# upserts them into the financial_settlements table.
+#
+# Required GitHub secrets:
+#   GOOGLE_ADS_SERVICE_ACCOUNT  — Service account JSON (must have Sheets read scope;
+#                                  spreadsheet must be shared to its client_email)
+#   DOCTORALIA_SHEET_ID         — Spreadsheet ID from the Google Sheets URL
+#   DATABASE_URL                — Direct Postgres connection string (Supabase)
+#   CLINIC_ID                   — UUID of the clinic owning these settlements
+
+on:
+  schedule:
+    - cron: '0 7 * * *'   # Daily at 07:00 UTC (09:00 Spain, before business hours)
+  workflow_dispatch:       # Allow manual trigger from GitHub Actions UI
+
+jobs:
+  sync:
+    name: Google Sheets → financial_settlements
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Preflight — validate required secrets
+        run: |
+          MISSING=()
+          [ -z "$GOOGLE_SA_JSON"      ] && MISSING+=("GOOGLE_ADS_SERVICE_ACCOUNT")
+          [ -z "$DOCTORALIA_SHEET_ID" ] && MISSING+=("DOCTORALIA_SHEET_ID")
+          [ -z "$DATABASE_URL"        ] && MISSING+=("DATABASE_URL")
+          [ -z "$CLINIC_ID"           ] && MISSING+=("CLINIC_ID")
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::error::Missing secrets: ${MISSING[*]}"
+            echo "::error::Add them at Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+          echo "All required secrets present."
+        env:
+          GOOGLE_SA_JSON:      ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
+          DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID }}
+          DATABASE_URL:        ${{ secrets.DATABASE_URL }}
+          CLINIC_ID:           ${{ secrets.CLINIC_ID }}
+
+      - name: Install sync dependencies
+        run: npm install --no-save googleapis pg
+        working-directory: ${{ github.workspace }}
+
+      - name: Run Doctoralia → DB sync
+        run: node scripts/sync-doctoralia.js
+        env:
+          GOOGLE_SA_JSON:      ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
+          DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID }}
+          DATABASE_URL:        ${{ secrets.DATABASE_URL }}
+          CLINIC_ID:           ${{ secrets.CLINIC_ID }}
+          SHEET_RANGE:         A1:Z5000
+          # SHEET_NAME: Sheet1   # Uncomment and set if data is on a specific tab
