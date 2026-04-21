@@ -64,9 +64,16 @@ cd backend && npx jest tests/auth.test.js --runInBand --forceExit
 - Deploy: frontend → Vercel (auto), Edge Function → Supabase (manual: `npx supabase functions deploy api`)
 - No Railway, no Render.
 
+## Production URL
+
+- Canonical dashboard URL: `https://frontend-arisofias-projects-c2217452.vercel.app/dashboard`
+- Use the canonical alias for QA/UAT and incident verification.
+- Treat hash-prefixed deployment URLs (`frontend-<hash>-...vercel.app`) as immutable snapshots for debugging only.
+
 ## Key Documentation
 
 - [SECURITY.md](SECURITY.md) — Security posture and production readiness
 - [SUPABASE_SETUP.md](SUPABASE_SETUP.md) — Database setup and schema overview
 - [docs/agents-and-integrations-architecture.md](docs/agents-and-integrations-architecture.md) — Architecture and agent roadmap
+- [docs/production-verification-recovery-2026-04-21.md](docs/production-verification-recovery-2026-04-21.md) — Canonical production URL, live deployment truth, and recovery actions
 

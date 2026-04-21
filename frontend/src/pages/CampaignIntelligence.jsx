@@ -13,11 +13,40 @@ const fmt    = (n) => (n == null ? '—' : Number(n).toLocaleString('es-ES', { m
 const fmtN   = (n) => (n == null ? '—' : Number(n).toFixed(1));
 const fmtPct = (n) => (n == null ? '—' : `${fmtN(n)}%`);
 const fmtEur = (n) => (n == null ? '—' : `€${fmt(n)}`);
+const DIGITS_ONLY = (v) => String(v ?? '').replace(/\D/g, '');
 const MONTH_LABEL = (iso) => {
   if (!iso) return '?';
   return new Date(iso).toLocaleDateString('es-ES', { month: 'short', year: '2-digit' });
 };
 const COLORS = ['#a78bfa', '#60a5fa', '#34d399', '#fbbf24', '#f87171', '#818cf8'];
+
+function buildTraceabilityLinks(row, defaultActId = '') {
+  const actId = DIGITS_ONLY(
+    row?.act_id
+    || row?.ad_account_id
+    || row?.ad_account
+    || row?.adAccountId
+    || row?.ad_accountid
+    || defaultActId
+    || '',
+  );
+
+  const adId = DIGITS_ONLY(row?.ad_id || '');
+  const formId = String(row?.form_id || '').trim();
+  const phone = DIGITS_ONLY(row?.phone_normalized || row?.phone || '');
+
+  return {
+    metaAd: actId && adId
+      ? `https://www.facebook.com/adsmanager/manage/ads?act=${actId}&selected_ad_ids=${adId}`
+      : null,
+    metaForm: formId
+      ? `https://business.facebook.com/latest/instant_forms/form/?form_id=${encodeURIComponent(formId)}`
+      : null,
+    whatsapp: phone
+      ? `https://wa.me/${phone}`
+      : null,
+  };
+}
 
 function KpiCard({ title, value, sub, icon, color = 'purple', blocked = false }) {
   const Icon = icon;
@@ -67,6 +96,7 @@ export default function CampaignIntelligence() {
   const [campaigns,    setCampaigns]    = useState([]);
   const [funnelData,   setFunnelData]   = useState([]);
   const [traceability, setTraceability] = useState([]);
+  const [metaActId,    setMetaActId]    = useState('');
   const [loading,      setLoading]      = useState(true);
   const [error,        setError]        = useState(null);
 
@@ -74,18 +104,25 @@ export default function CampaignIntelligence() {
     setLoading(true);
     setError(null);
     try {
-      const [kpiR, docR, campR, funnelR, traceR] = await Promise.allSettled([
+      const [kpiR, docR, campR, funnelR, traceR, integrationsR] = await Promise.allSettled([
         api.get('/api/kpis'),
         api.get('/api/reports/doctoralia-financials'),
         api.get('/api/reports/campaign-performance'),
         api.get('/api/traceability/funnel'),
         api.get('/api/traceability/leads'),
+        api.get('/api/integrations'),
       ]);
       if (kpiR.status    === 'fulfilled') setKpis(kpiR.value.data);
       if (docR.status    === 'fulfilled') setDocFin(docR.value.data);
       if (campR.status   === 'fulfilled') setCampaigns(campR.value.data?.campaigns || []);
       if (funnelR.status === 'fulfilled') setFunnelData(funnelR.value.data?.funnel || []);
       if (traceR.status  === 'fulfilled') setTraceability(traceR.value.data?.leads || []);
+      if (integrationsR.status === 'fulfilled') {
+        const rows = integrationsR.value.data?.integrations || [];
+        const meta = rows.find((it) => it?.service === 'meta');
+        const raw = meta?.metadata?.adAccountId || meta?.metadata?.ad_account_id || '';
+        setMetaActId(DIGITS_ONLY(raw));
+      }
     } catch (e) {
       setError(e.message);
     } finally {
@@ -370,13 +407,15 @@ export default function CampaignIntelligence() {
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="bg-gray-800/60 text-gray-400 text-left">
-                      {['Lead','Source','Campaign','Stage','Outreach','Reply','Appt','Est. Revenue','Doc. Net','Settlement'].map(h => (
+                      {['Lead','Source','Campaign','Stage','Outreach','Reply','Appt','Est. Revenue','Doc. Net','Settlement','Trace'].map(h => (
                         <th key={h} className="px-3 py-2 font-medium whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-800/50">
-                    {traceability.slice(0, 200).map((row, i) => (
+                    {traceability.slice(0, 200).map((row, i) => {
+                      const links = buildTraceabilityLinks(row, metaActId);
+                      return (
                       <tr key={i} className="hover:bg-gray-800/30 text-gray-300">
                         <td className="px-3 py-2 max-w-[130px] truncate">{row.lead_name || row.phone_normalized || '—'}</td>
                         <td className="px-3 py-2 capitalize">{row.source}</td>
@@ -394,8 +433,51 @@ export default function CampaignIntelligence() {
                         <td className="px-3 py-2">{row.estimated_revenue ? fmtEur(row.estimated_revenue) : '—'}</td>
                         <td className="px-3 py-2 text-purple-300">{row.doctoralia_net ? fmtEur(row.doctoralia_net) : '—'}</td>
                         <td className="px-3 py-2">{row.settlement_date ? new Date(row.settlement_date).toLocaleDateString('es-ES') : '—'}</td>
+                        <td className="px-3 py-2">
+                          <div className="flex flex-wrap gap-1.5">
+                            {links.metaAd ? (
+                              <a
+                                href={links.metaAd}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-1.5 py-0.5 rounded bg-blue-900/40 text-blue-300 hover:bg-blue-800/50"
+                              >
+                                Meta Ad
+                              </a>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded bg-gray-800 text-gray-500" title="Meta Ad link requires ad_id + act_id">Meta Ad</span>
+                            )}
+
+                            {links.metaForm ? (
+                              <a
+                                href={links.metaForm}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-1.5 py-0.5 rounded bg-indigo-900/40 text-indigo-300 hover:bg-indigo-800/50"
+                              >
+                                Meta Form
+                              </a>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded bg-gray-800 text-gray-500">Meta Form</span>
+                            )}
+
+                            {links.whatsapp ? (
+                              <a
+                                href={links.whatsapp}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-1.5 py-0.5 rounded bg-emerald-900/40 text-emerald-300 hover:bg-emerald-800/50"
+                              >
+                                WhatsApp
+                              </a>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded bg-gray-800 text-gray-500">WhatsApp</span>
+                            )}
+                          </div>
+                        </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

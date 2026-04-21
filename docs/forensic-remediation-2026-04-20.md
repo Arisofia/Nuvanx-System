@@ -115,8 +115,10 @@ select count(*) as financial_settlements_rows from financial_settlements;
 
 ## Phase 7 — Real Runtime Verification
 Attempted but blocked from this execution environment:
-- `curl https://nuvanx.vercel.app/api/health` → `CONNECT tunnel failed, response 403`.
+- `curl https://frontend-arisofias-projects-c2217452.vercel.app/api/health` → `CONNECT tunnel failed, response 403`.
 - `curl https://ssvvuuysgxyqvmovrlvk.supabase.co/functions/v1/api/health` → `CONNECT tunnel failed, response 403`.
+
+Note: direct deployment permalinks (`frontend-<hash>-...vercel.app`) are deployment snapshots and can become stale for production verification.
 
 ## Phase 8 — Deployment
 Not executable from this environment (Vercel CLI unavailable; npm 403 for CLI installation).

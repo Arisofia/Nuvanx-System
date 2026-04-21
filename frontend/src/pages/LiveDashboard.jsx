@@ -58,6 +58,10 @@ function formatAgentType(agentType) {
   const map = {
     campaign_analyzer: 'AI campaign analysis generated',
     content_generator: 'AI content generated',
+    'playbook.run': 'Playbook strategy message generated',
+    'ai.generate': 'AI content generated',
+    'ai.analyze-campaign': 'AI campaign analysis generated',
+    'ai.suggestions': 'AI suggestions refreshed',
   };
   return map[agentType] || 'AI output generated';
 }
@@ -178,6 +182,22 @@ export default function LiveDashboard() {
 
     return () => { supabase.removeChannel(channel); };
   }, [fetchMetrics]);
+
+  // Supabase Realtime — subscribe to AI output INSERTs for live feed updates
+  useEffect(() => {
+    if (!isSupabaseAvailable()) return;
+
+    const channel = supabase
+      .channel('live-dashboard-ai-outputs')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'agent_outputs' },
+        () => { fetchEvents(); },
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchEvents]);
 
   const progress = ((REFRESH_INTERVAL - countdown) / REFRESH_INTERVAL) * 100;
 

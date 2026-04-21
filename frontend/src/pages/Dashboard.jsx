@@ -88,6 +88,7 @@ export default function Dashboard() {
   const [integrations, setIntegrations] = useState([]);
   const [aiStatus, setAiStatus] = useState({ available: false, provider: null });
   const [metaTrends, setMetaTrends] = useState(null);
+  const [metaInsights, setMetaInsights] = useState(null);
   const [metaState, setMetaState] = useState('pending');
   const [metaError, setMetaError] = useState(null);
   const [aiSuggestions, setAiSuggestions] = useState([]);
@@ -141,20 +142,27 @@ export default function Dashboard() {
       );
       if (metaIntegration?.status === 'connected' && adAccountId) {
         try {
-          const metaRes = await api.get('/api/dashboard/meta-trends', { params: { adAccountId } });
-          setMetaTrends(metaRes.data);
+          const [trendsRes, insightsRes] = await Promise.all([
+            api.get('/api/dashboard/meta-trends', { params: { adAccountId } }),
+            api.get('/api/meta/insights', { params: { adAccountId, days: 30 } }),
+          ]);
+          setMetaTrends(trendsRes.data);
+          setMetaInsights(insightsRes.data);
           setMetaError(null);
           setMetaState('real');
         } catch (metaErr) {
           setMetaTrends(null);
+          setMetaInsights(null);
           setMetaError(metaErr.response?.data?.message || 'Unable to fetch Meta data');
           setMetaState('error');
         }
       } else if (metaIntegration?.status === 'connected') {
         setMetaTrends(null);
+        setMetaInsights(null);
         setMetaState('missing-config');
       } else {
         setMetaTrends(null);
+        setMetaInsights(null);
         setMetaState('not-connected');
       }
     } catch (err) {
@@ -191,7 +199,9 @@ export default function Dashboard() {
   const connectedIntegrations = metrics?.connectedIntegrations ?? 0;
   const totalIntegrations = metrics?.totalIntegrations ?? 0;
 
-  const metaSummary = normalizeMetaSummary(metaTrends?.summary);
+  const metaSummary = normalizeMetaSummary({
+    thisWeek: metaInsights?.summary || metaTrends?.summary?.thisWeek || {},
+  });
 
   const agents = useMemo(() => {
     const github = integrations.find((i) => i.service === 'github');

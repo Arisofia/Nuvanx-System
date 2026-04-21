@@ -62,6 +62,7 @@ export default function AILayer() {
 
   const formatOutputPreview = (row) => {
     const out = row?.output || {};
+    if (typeof out.generatedMessage === 'string' && out.generatedMessage.trim()) return out.generatedMessage;
     if (typeof out.content === 'string' && out.content.trim()) return out.content;
     if (typeof out.analysis === 'string' && out.analysis.trim()) return out.analysis;
     if (Array.isArray(out.suggestions)) return out.suggestions.join(' | ');
@@ -193,7 +194,7 @@ export default function AILayer() {
             <textarea
               value={prompt}
               onChange={e => setPrompt(e.target.value)}
-              placeholder={`Describe what you need...\n\nExample: "Write a ${contentType.toLowerCase()} for a spring promotion targeting women 30-45 interested in anti-aging treatments. Tone: warm, professional."`}
+              placeholder={`Describe what you need...\n\nInclude objective, audience, offer details, tone, and desired CTA for this ${contentType.toLowerCase()}.`}
               className="input min-h-[140px] resize-none leading-relaxed"
             />
           </div>
@@ -309,6 +310,11 @@ export default function AILayer() {
                   <p className="text-[11px] text-gray-500">{new Date(row.created_at).toLocaleString()}</p>
                 </div>
                 <p className="text-sm text-gray-200 line-clamp-2">{formatOutputPreview(row)}</p>
+                {(row.metadata?.playbookId || row.output?.playbookSlug) && (
+                  <p className="text-[11px] text-brand-300 mt-1">
+                    Linked playbook: {row.output?.playbookTitle || row.output?.playbookSlug || row.metadata?.playbookId}
+                  </p>
+                )}
               </div>
             ))}
           </div>

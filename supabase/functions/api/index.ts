@@ -212,6 +212,14 @@ function normalizeMetaAccountId(raw: unknown): string {
   return `act_${digitsOnly}`;
 }
 
+function requireMetaAccountId(raw: unknown): string {
+  const normalized = normalizeMetaAccountId(raw);
+  if (!normalized) {
+    throw new Error('Invalid Meta Ad Account ID. Use a numeric ID or act_<digits>.');
+  }
+  return normalized;
+}
+
 // ── Google Ads helpers ────────────────────────────────────────────────────────
 function b64url(data: ArrayBuffer | string): string {
   let str: string;
@@ -841,15 +849,10 @@ Deno.serve(async (req: Request) => {
         }, 502);
       }
 
-      let outputId: string | null = null;
-      try {
-        outputId = await persistAgentOutput(adminClient, userId!, 'ai.analyze', { analysis }, {
-          contextLength: String(context ?? '').length,
-          providerErrors,
-        });
-      } catch (persistErr: any) {
-        console.error('Agent output persistence failed (ai.analyze):', persistErr?.message ?? persistErr);
-      }
+      const outputId = await persistAgentOutput(adminClient, userId!, 'ai.analyze', { analysis }, {
+        contextLength: String(context ?? '').length,
+        providerErrors,
+      });
 
       return json({ success: true, analysis, outputId });
     }
@@ -859,7 +862,17 @@ Deno.serve(async (req: Request) => {
       const body = await req.json();
       let metadata = body.metadata ?? {};
       if (sub === 'meta') {
-        const normalized = normalizeMetaAccountId(metadata?.adAccountId ?? metadata?.ad_account_id ?? '');
+        const incoming = metadata?.adAccountId ?? metadata?.ad_account_id ?? '';
+        let normalized = normalizeMetaAccountId(incoming);
+        if (!normalized) {
+          const { data: currentMeta } = await adminClient
+            .from('integrations')
+            .select('metadata')
+            .eq('user_id', userId)
+            .eq('service', 'meta')
+            .single();
+          normalized = requireMetaAccountId(currentMeta?.metadata?.adAccountId ?? currentMeta?.metadata?.ad_account_id ?? '');
+        }
         metadata = {
           ...metadata,
           adAccountId: normalized,
@@ -917,7 +930,7 @@ Deno.serve(async (req: Request) => {
 
       let metadata = body.metadata ?? {};
       if (service === 'meta') {
-        const normalized = normalizeMetaAccountId(metadata?.adAccountId ?? metadata?.ad_account_id ?? '');
+        const normalized = requireMetaAccountId(metadata?.adAccountId ?? metadata?.ad_account_id ?? '');
         metadata = {
           ...metadata,
           adAccountId: normalized,
@@ -973,23 +986,46 @@ Deno.serve(async (req: Request) => {
 
     // ── POST /api/playbooks/:slug/run ────────────────────────────────────────
     if (resource === 'playbooks' && sub2 === 'run' && req.method === 'POST') {
+      const body = await req.json().catch(() => ({}));
+      const preferredProvider = String(body?.provider ?? '').trim();
       const { data: pb, error: pbErr } = await adminClient
         .from('playbooks').select('id, title, status, run_count').eq('slug', sub).single();
       if (pbErr || !pb) return json({ success: false, message: `Playbook '${sub}' not found` }, 404);
       if (pb.status === 'archived') return json({ success: false, message: 'Playbook is archived' }, 400);
 
-      let agentOutputId: string | null = null;
+      let generatedMessage = '';
+      let providerUsed: 'gemini' | 'openai' | null = null;
+      let providerErrors: string[] = [];
+      const strategyPrompt = [
+        `Generate a concise WhatsApp message for playbook strategy: ${pb.title}.`,
+        'Audience: aesthetic clinic leads in Madrid.',
+        'Style: professional, warm, and action-oriented.',
+        'Length: max 3 short paragraphs and one CTA.',
+      ].join('\n');
+
       try {
-        agentOutputId = await persistAgentOutput(
-          adminClient,
-          userId!,
-          'playbook.run',
-          { playbookSlug: sub, playbookTitle: pb.title, status: 'success' },
-          { playbookId: pb.id, source: 'api.playbooks.run' },
-        );
-      } catch (persistErr: any) {
-        console.error('Agent output persistence failed (playbook.run):', persistErr?.message ?? persistErr);
+        const aiResult = await runAiPrompt(adminClient, userId!, strategyPrompt, preferredProvider);
+        generatedMessage = aiResult.text;
+        providerUsed = aiResult.provider;
+        providerErrors = aiResult.providerErrors;
+      } catch (err: any) {
+        generatedMessage = `Playbook "${pb.title}" executed. Draft CTA: Responde a este mensaje y te ayudo a reservar una cita esta semana.`;
+        providerErrors = [err?.message ?? 'AI generation skipped'];
       }
+
+      const agentOutputId = await persistAgentOutput(
+        adminClient,
+        userId!,
+        'playbook.run',
+        { playbookSlug: sub, playbookTitle: pb.title, status: 'success', generatedMessage },
+        {
+          playbookId: pb.id,
+          source: 'api.playbooks.run',
+          providerRequested: preferredProvider || null,
+          providerUsed,
+          providerErrors,
+        },
+      );
 
       const { data: exec, error: execErr } = await adminClient
         .from('playbook_executions')
@@ -1014,6 +1050,7 @@ Deno.serve(async (req: Request) => {
           status: exec.status,
           ranAt: exec.created_at,
           agentOutputId,
+          generatedMessage,
         },
       });
     }
@@ -1036,18 +1073,13 @@ Deno.serve(async (req: Request) => {
 
       try {
         const { text, provider: usedProvider, providerErrors } = await runAiPrompt(adminClient, userId!, prompt, provider);
-        let outputId: string | null = null;
-        try {
-          outputId = await persistAgentOutput(adminClient, userId!, 'ai.generate', { content: text }, {
-            prompt,
-            contentType: contentType || null,
-            providerRequested: provider || null,
-            providerUsed: usedProvider,
-            providerErrors,
-          });
-        } catch (persistErr: any) {
-          console.error('Agent output persistence failed (ai.generate):', persistErr?.message ?? persistErr);
-        }
+        const outputId = await persistAgentOutput(adminClient, userId!, 'ai.generate', { content: text }, {
+          prompt,
+          contentType: contentType || null,
+          providerRequested: provider || null,
+          providerUsed: usedProvider,
+          providerErrors,
+        });
         return json({ success: true, content: text, result: text, provider: usedProvider, outputId });
       } catch (err: any) {
         return json({ success: false, message: err?.message ?? 'AI request failed' }, 502);
@@ -1070,16 +1102,11 @@ Deno.serve(async (req: Request) => {
 
       try {
         const { text, provider: usedProvider, providerErrors } = await runAiPrompt(adminClient, userId!, prompt, provider);
-        let outputId: string | null = null;
-        try {
-          outputId = await persistAgentOutput(adminClient, userId!, 'ai.analyze-campaign', { analysis: text }, {
-            providerRequested: provider || null,
-            providerUsed: usedProvider,
-            providerErrors,
-          });
-        } catch (persistErr: any) {
-          console.error('Agent output persistence failed (ai.analyze-campaign):', persistErr?.message ?? persistErr);
-        }
+        const outputId = await persistAgentOutput(adminClient, userId!, 'ai.analyze-campaign', { analysis: text }, {
+          providerRequested: provider || null,
+          providerUsed: usedProvider,
+          providerErrors,
+        });
         return json({ success: true, analysis: text, provider: usedProvider, outputId });
       } catch (err: any) {
         return json({ success: false, message: err?.message ?? 'AI request failed' }, 502);
@@ -1102,17 +1129,12 @@ Deno.serve(async (req: Request) => {
             `Total pipeline value: €${(leads ?? []).reduce((s: number, l: any) => s + Number(l.revenue || 0), 0).toLocaleString()}`,
           ];
 
-      let outputId: string | null = null;
-      try {
-        outputId = await persistAgentOutput(adminClient, userId!, 'ai.suggestions', {
-          suggestions,
-          totalLeads: total,
-        }, {
-          source: 'api.ai.suggestions',
-        });
-      } catch (persistErr: any) {
-        console.error('Agent output persistence failed (ai.suggestions):', persistErr?.message ?? persistErr);
-      }
+      const outputId = await persistAgentOutput(adminClient, userId!, 'ai.suggestions', {
+        suggestions,
+        totalLeads: total,
+      }, {
+        source: 'api.ai.suggestions',
+      });
 
       return json({ success: true, suggestions, outputId });
     }

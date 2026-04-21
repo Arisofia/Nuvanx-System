@@ -10,6 +10,14 @@ const EMPTY_INTEGRATIONS = [
   { service: 'github', name: 'GitHub', description: 'Repository access for deployment triggers', icon: '🐙' },
 ].map(item => ({ ...item, status: 'disconnected', lastSync: null, error: null }));
 
+function normalizeMetaAccountId(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return '';
+  const unprefixed = value.replace(/^act_/i, '');
+  const digits = unprefixed.replace(/\D/g, '');
+  return digits ? `act_${digits}` : '';
+}
+
 export function useIntegrations() {
   const [integrations, setIntegrations] = useState(EMPTY_INTEGRATIONS);
   const [loading, setLoading] = useState(false);
@@ -94,16 +102,22 @@ export function useIntegrations() {
     // Extra fields (e.g. phoneNumberId for WhatsApp) are forwarded as metadata so the
     // backend can persist them alongside the integration record.
     const { apiKey, ...extraFields } = credentials;
+    const metadata = { ...extraFields };
+    if (service === 'meta') {
+      metadata.adAccountId = normalizeMetaAccountId(metadata.adAccountId || metadata.ad_account_id || '');
+      metadata.ad_account_id = metadata.adAccountId;
+    }
+
     const body = {
       token: apiKey,
-      ...(Object.keys(extraFields).length > 0 && { metadata: extraFields }),
+      ...(Object.keys(metadata).length > 0 && { metadata }),
     };
     await api.post(`/api/integrations/${service}/connect`, body);
     const statusUpdate = {
       status: 'connected',
       lastSync: new Date().toISOString(),
       error: null,
-      metadata: extraFields,
+      metadata,
     };
     updateIntegration(service, statusUpdate);
   }, [updateIntegration]);

@@ -13,6 +13,14 @@ function formatSync(ts) {
   return `${Math.floor(hrs / 24)} day(s) ago`;
 }
 
+function normalizeMetaAccountId(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return '';
+  const unprefixed = value.replace(/^act_/i, '');
+  const digits = unprefixed.replace(/\D/g, '');
+  return digits ? `act_${digits}` : '';
+}
+
 function StatusBadge({ status }) {
   const map = {
     connected: { dot: 'bg-emerald-400', text: 'text-emerald-400', label: 'Connected' },
@@ -38,6 +46,7 @@ function ConnectModal({ integration, onClose, onConnect }) {
 
   const isWhatsApp = integration.service === 'whatsapp';
   const isMeta = integration.service === 'meta';
+  const normalizedMetaPreview = isMeta ? normalizeMetaAccountId(adAccountId) : '';
 
   const fieldLabels = {
     meta: 'ACCESS TOKEN',
@@ -59,14 +68,15 @@ function ConnectModal({ integration, onClose, onConnect }) {
     e.preventDefault();
     if (!apiKey.trim()) return;
     if (isWhatsApp && !phoneNumberId.trim()) return;
-    if (isMeta && !adAccountId.trim()) return;
+    const normalizedMetaAccountId = normalizedMetaPreview;
+    if (isMeta && !normalizedMetaAccountId) return;
 
     setSubmitting(true);
     try {
       const credentials = { apiKey };
       if (isWhatsApp) credentials.phoneNumberId = phoneNumberId.trim();
       if (isMeta) {
-        credentials.adAccountId = adAccountId.trim();
+        credentials.adAccountId = normalizedMetaAccountId;
         if (pageId.trim()) credentials.pageId = pageId.trim();
       }
 
@@ -129,11 +139,15 @@ function ConnectModal({ integration, onClose, onConnect }) {
                   type="text"
                   value={adAccountId}
                   onChange={(e) => setAdAccountId(e.target.value)}
-                  placeholder="e.g. act_123456789"
+                  placeholder="e.g. act_123456789 or 123456789"
                   className="input"
                   autoComplete="off"
                   required
                 />
+                <p className="mt-1.5 text-xs text-gray-500">
+                  Accepted formats: <strong>act_123456789</strong> or <strong>123456789</strong>. We automatically normalize and save as{' '}
+                  <strong>{normalizedMetaPreview || 'act_<digits>'}</strong>.
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-1.5 uppercase">
@@ -180,7 +194,7 @@ function ConnectModal({ integration, onClose, onConnect }) {
             </button>
             <button
               type="submit"
-              disabled={submitting || !apiKey.trim() || (isWhatsApp && !phoneNumberId.trim())}
+              disabled={submitting || !apiKey.trim() || (isWhatsApp && !phoneNumberId.trim()) || (isMeta && !normalizedMetaPreview)}
               className="btn-primary flex-1 flex items-center justify-center gap-2"
             >
               {submitting && <Loader2 size={16} className="animate-spin" />}
