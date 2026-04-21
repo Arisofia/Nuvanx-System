@@ -157,7 +157,23 @@ async function metaFetch(endpoint, params, token) {
   const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(data?.error?.message || `Meta API ${response.status}`);
+    const msg = data?.error?.message || `Meta API ${response.status}`;
+    // Detect expired/invalidated user-session tokens and give an actionable message.
+    if (
+      msg.includes('user logged out') ||
+      msg.includes('session is invalid') ||
+      msg.includes('Invalid OAuth access token') ||
+      msg.includes('token has expired')
+    ) {
+      throw new Error(
+        `META_ACCESS_TOKEN is a user-session token that has been invalidated. ` +
+        `Use a Meta System User access token instead: ` +
+        `Business Settings → Users → System Users → generate a token with ads_read / ads_management scopes. ` +
+        `Update the META_ACCESS_TOKEN secret in GitHub → Settings → Secrets → Actions. ` +
+        `Original error: ${msg}`,
+      );
+    }
+    throw new Error(msg);
   }
 
   return data;
