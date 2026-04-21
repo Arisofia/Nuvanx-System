@@ -166,8 +166,12 @@ function setGithubSecrets(vars) {
     const value = vars[key];
     if (!value) continue;
     const env = { ...process.env, GH_TOKEN: token };
-    const escaped = value.replace(/\"/g, '\\\"');
-    run(`gh secret set ${key} --repo ${owner}/${repo} --body \"${escaped}\"`, env);
+    // Use execFileSync directly (no shell) to avoid any shell-injection risk.
+    // gh secret set reads the value from --body without shell interpolation.
+    cp.execFileSync('gh', ['secret', 'set', key, '--repo', `${owner}/${repo}`, '--body', value], {
+      stdio: 'pipe',
+      env,
+    });
     uploaded += 1;
   }
 
