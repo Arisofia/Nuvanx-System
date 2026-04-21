@@ -66,6 +66,7 @@ router.post('/meta', async (req, res) => {
   }
 
   // ── WhatsApp incoming messages ──────────────────────────────────────────
+  const HIGH_PRIORITY_RE = /botox|bótox|neuromodulador|toxina\s*botulínica|botulínica|relleno|hialu|hialurón|rinomodelación|bichectomía|lifting/i;
   if (object === 'whatsapp_business_account') {
     const webhookUserId = config.webhookAdminUserId;
     for (const e of (entry || [])) {
@@ -79,12 +80,15 @@ router.post('/meta', async (req, res) => {
 
           logger.info('WhatsApp message received', { phone, preview: text.substring(0, 60) });
 
+          const waPriority = HIGH_PRIORITY_RE.test(text) ? 'high' : 'normal';
+          if (waPriority === 'high') logger.info('WhatsApp high-priority keyword detected', { phone, preview: text.substring(0, 80) });
+
           if (webhookUserId && isAvailable()) {
             await getPool.query(
-              `INSERT INTO leads (user_id, name, phone, source, stage, revenue, notes, external_id)
-               VALUES ($1, $2, $3, 'whatsapp', 'lead', 0, $4, $5)
+              `INSERT INTO leads (user_id, name, phone, source, stage, revenue, notes, external_id, priority)
+               VALUES ($1, $2, $3, 'whatsapp', 'lead', 0, $4, $5, $6)
                ON CONFLICT (user_id, source, external_id) WHERE external_id IS NOT NULL DO NOTHING`,
-              [webhookUserId, contactName, phone, `WA msg: ${text.substring(0, 500)}`, phone],
+              [webhookUserId, contactName, phone, `WA msg: ${text.substring(0, 500)}`, phone, waPriority],
             ).catch(dbErr => logger.warn('WA webhook: DB insert failed', { error: dbErr.message }));
 
             // Trigger playbook automations for WhatsApp leads (best-effort)
@@ -111,15 +115,16 @@ router.post('/meta', async (req, res) => {
           const name  = formData.full_name || formData.name || formData.nombre || contactName;
           const email = formData.email || formData.correo || formData.correo_electronico || null;
           const notes = `WA Flow: ${nfm.name || ''} | ${JSON.stringify(formData).substring(0, 400)}`;
+          const flowPriority = HIGH_PRIORITY_RE.test(notes + ' ' + JSON.stringify(formData)) ? 'high' : 'normal';
 
-          logger.info('WhatsApp Flow form submitted', { phone, flowName: nfm.name });
+          logger.info('WhatsApp Flow form submitted', { phone, flowName: nfm.name, priority: flowPriority });
 
           if (webhookUserId && isAvailable()) {
             await getPool.query(
-              `INSERT INTO leads (user_id, name, phone, email, source, stage, revenue, notes, external_id)
-               VALUES ($1, $2, $3, $4, 'whatsapp_flow', 'lead', 0, $5, $6)
+              `INSERT INTO leads (user_id, name, phone, email, source, stage, revenue, notes, external_id, priority)
+               VALUES ($1, $2, $3, $4, 'whatsapp_flow', 'lead', 0, $5, $6, $7)
                ON CONFLICT (user_id, source, external_id) WHERE external_id IS NOT NULL DO NOTHING`,
-              [webhookUserId, name, phone, email, notes, `${phone}_${msg.id}`],
+              [webhookUserId, name, phone, email, notes, `${phone}_${msg.id}`, flowPriority],
             ).catch(dbErr => logger.warn('WA Flow webhook: DB insert failed', { error: dbErr.message }));
 
             onLeadCreated({

@@ -208,6 +208,11 @@ async function processLeadData(adminClient: any, userId: string, leadData: any) 
   );
   const notes = Object.keys(customFields).length > 0 ? JSON.stringify(customFields) : null;
 
+  // Priority detection — scan all form values for high-demand treatment keywords
+  const HIGH_PRIORITY_KEYWORDS = /botox|bótox|neuromodulador|toxina\s*botulínica|botulínica|relleno|hialu|hialurón|rinomodelación|bichectomía|lifting/i;
+  const allValues = Object.values(fields).join(' ') + ' ' + (notes ?? '');
+  const priority = HIGH_PRIORITY_KEYWORDS.test(allValues) ? 'high' : 'normal';
+
   // Upsert lead — idempotent via partial unique index (user_id, source, external_id)
   const { data: lead } = await adminClient
     .from('leads')
@@ -220,6 +225,7 @@ async function processLeadData(adminClient: any, userId: string, leadData: any) 
       phone,
       dni:         dni || null,
       notes:       notes || null,
+      priority,
       stage:       'lead',
       campaign_id: leadData.campaign_id ?? null,
       adset_id:    leadData.adset_id    ?? null,
