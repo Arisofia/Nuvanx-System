@@ -32,7 +32,7 @@ jobs:
       - name: Preflight - validate required secrets
         run: |
           MISSING=()
-          [ -z "$GOOGLE_SA_JSON"      ] && MISSING+=("GOOGLE_ADS_SERVICE_ACCOUNT")
+          [ -z "$GOOGLE_SA_B64"       ] && MISSING+=("GOOGLE_ADS_SERVICE_ACCOUNT")
           [ -z "$DOCTORALIA_SHEET_ID" ] && MISSING+=("DOCTORALIA_SHEET_ID")
           [ -z "$DATABASE_URL"        ] && MISSING+=("DATABASE_URL")
           [ -z "$CLINIC_ID"           ] && MISSING+=("CLINIC_ID")
@@ -41,9 +41,15 @@ jobs:
             echo "::error::Add them at Settings -> Secrets and variables -> Actions"
             exit 1
           fi
-          echo "All required secrets present."
+          # Validate the service account secret decodes to valid JSON
+          DECODED="$(echo "$GOOGLE_SA_B64" | base64 -d 2>/dev/null)" || true
+          echo "$DECODED" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null || {
+            echo "::error::GOOGLE_ADS_SERVICE_ACCOUNT does not decode to valid JSON. Re-set it as: base64 -i service-account.json | tr -d '\\n'"
+            exit 1
+          }
+          echo "All required secrets present and valid."
         env:
-          GOOGLE_SA_JSON:      ${{ secrets['GOOGLE_ADS_SERVICE_ACCOUNT'] || '' }}
+          GOOGLE_SA_B64:       ${{ secrets['GOOGLE_ADS_SERVICE_ACCOUNT'] || '' }}
           DOCTORALIA_SHEET_ID: ${{ secrets['DOCTORALIA_SHEET_ID'] || '' }}
           DATABASE_URL:        ${{ secrets['DATABASE_URL'] || '' }}
           CLINIC_ID:           ${{ secrets['CLINIC_ID'] || '' }}
@@ -53,9 +59,11 @@ jobs:
         working-directory: ${{ github.workspace }}
 
       - name: Run Doctoralia to DB sync
-        run: node scripts/sync-doctoralia.js
+        run: |
+          export GOOGLE_SA_JSON="$(echo "$GOOGLE_SA_B64" | base64 -d)"
+          node scripts/sync-doctoralia.js
         env:
-          GOOGLE_SA_JSON:      ${{ secrets['GOOGLE_ADS_SERVICE_ACCOUNT'] || '' }}
+          GOOGLE_SA_B64:       ${{ secrets['GOOGLE_ADS_SERVICE_ACCOUNT'] || '' }}
           DOCTORALIA_SHEET_ID: ${{ secrets['DOCTORALIA_SHEET_ID'] || '' }}
           DATABASE_URL:        ${{ secrets['DATABASE_URL'] || '' }}
           CLINIC_ID:           ${{ secrets['CLINIC_ID'] || '' }}
