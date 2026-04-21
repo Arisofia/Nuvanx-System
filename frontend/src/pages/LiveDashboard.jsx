@@ -35,6 +35,7 @@ const EVENT_COLORS = {
   github_sync: 'text-violet-400',
   figma_sync: 'text-brand-400',
   ai_output: 'text-cyan-400',
+  ai_generation: 'text-cyan-400',
   lead_created: 'text-emerald-400',
   integration_connected: 'text-amber-400',
   default: 'text-gray-400',
@@ -56,6 +57,7 @@ function timeAgo(isoString) {
 
 function formatAgentType(agentType) {
   const map = {
+    ai_generation: 'AI content generated',
     campaign_analyzer: 'AI campaign analysis generated',
     content_generator: 'AI content generated',
     'playbook.run': 'Playbook strategy message generated',
@@ -74,12 +76,24 @@ function mergeFeedEvents(figmaEvents, aiOutputs) {
     createdAt: event.createdAt || event.created_at || null,
   }));
 
-  const normalizedAi = (aiOutputs || []).map((output) => ({
+  const normalizedAi = (aiOutputs || []).map((output) => {
+    const outputPayload = output.output || {};
+    const detail = typeof outputPayload.generatedMessage === 'string' && outputPayload.generatedMessage.trim()
+      ? outputPayload.generatedMessage
+      : typeof outputPayload.content === 'string' && outputPayload.content.trim()
+        ? outputPayload.content
+        : typeof outputPayload.analysis === 'string' && outputPayload.analysis.trim()
+          ? outputPayload.analysis
+          : null;
+
+    return {
     id: `ai-${output.id}`,
-    type: 'ai_output',
+    type: output.agent_type === 'ai_generation' ? 'ai_generation' : 'ai_output',
     message: formatAgentType(output.agent_type),
+    detail,
     createdAt: output.created_at || null,
-  }));
+    };
+  });
 
   return [...normalizedAi, ...normalizedFigma]
     .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
@@ -336,6 +350,9 @@ export default function LiveDashboard() {
                   )}
                   <div className="flex-1 min-w-0">
                     <p className="text-xs text-gray-300 leading-relaxed truncate">{event.message}</p>
+                    {event.detail && (
+                      <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{event.detail}</p>
+                    )}
                     {event.createdAt && (
                       <p className="text-xs text-gray-600 mt-0.5">{timeAgo(event.createdAt)}</p>
                     )}

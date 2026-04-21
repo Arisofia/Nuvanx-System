@@ -90,6 +90,28 @@ async function persistAgentOutput(adminClient: any, userId: string, agentType: s
   return data?.id ?? null;
 }
 
+async function linkAgentOutputToPlaybookExecution(adminClient: any, userId: string, playbookExecutionId: string, agentOutputId: string) {
+  if (!playbookExecutionId || !agentOutputId) return;
+  const { data: current, error: getErr } = await adminClient
+    .from('playbook_executions')
+    .select('id, metadata')
+    .eq('id', playbookExecutionId)
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (getErr || !current) return;
+
+  const nextMetadata = {
+    ...(current.metadata ?? {}),
+    agent_output_id: agentOutputId,
+  };
+
+  await adminClient
+    .from('playbook_executions')
+    .update({ agent_output_id: agentOutputId, metadata: nextMetadata })
+    .eq('id', playbookExecutionId)
+    .eq('user_id', userId);
+}
+
 async function runAiPrompt(
   adminClient: any,
   userId: string,
@@ -524,13 +546,45 @@ Deno.serve(async (req: Request) => {
     // ── POST /api/leads ──────────────────────────────────────────────────────
     if (resource === 'leads' && req.method === 'POST') {
       const body = await req.json();
+      const payload = { ...body, user_id: userId! };
+      const source = String(payload?.source ?? '').trim();
+      const externalId = String(payload?.external_id ?? '').trim();
+
+      // Idempotent ingestion path: avoid 500 on repeated webhook/manual retries
+      // when (user_id, source, external_id) already exists.
+      if (source && externalId) {
+        const { data, error } = await adminClient
+          .from('leads')
+          .upsert(payload, { onConflict: 'user_id,source,external_id', ignoreDuplicates: true })
+          .select()
+          .maybeSingle();
+        if (error) throw error;
+
+        if (data) {
+          return json({ success: true, lead: data, deduplicated: false }, 201);
+        }
+
+        const { data: existing, error: existingErr } = await adminClient
+          .from('leads')
+          .select('*')
+          .eq('user_id', userId!)
+          .eq('source', source)
+          .eq('external_id', externalId)
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        if (existingErr) throw existingErr;
+
+        return json({ success: true, lead: existing, deduplicated: true }, 200);
+      }
+
       const { data, error } = await adminClient
         .from('leads')
-        .insert({ ...body, user_id: userId! })
+        .insert(payload)
         .select()
         .single();
       if (error) throw error;
-      return json({ success: true, lead: data }, 201);
+      return json({ success: true, lead: data, deduplicated: false }, 201);
     }
 
     // ── GET /api/dashboard/metrics ───────────────────────────────────────────
@@ -1069,17 +1123,24 @@ Deno.serve(async (req: Request) => {
       const prompt = String(body?.prompt ?? '').trim();
       const provider = String(body?.provider ?? '').trim();
       const contentType = String(body?.contentType ?? '').trim();
+      const playbookExecutionId = String(body?.playbookExecutionId ?? '').trim();
       if (!prompt) return json({ success: false, message: 'prompt is required' }, 400);
 
       try {
         const { text, provider: usedProvider, providerErrors } = await runAiPrompt(adminClient, userId!, prompt, provider);
-        const outputId = await persistAgentOutput(adminClient, userId!, 'ai.generate', { content: text }, {
+        const outputId = await persistAgentOutput(adminClient, userId!, 'ai_generation', { content: text }, {
           prompt,
           contentType: contentType || null,
           providerRequested: provider || null,
           providerUsed: usedProvider,
           providerErrors,
+          source: 'api.ai.generate',
+          playbookExecutionId: playbookExecutionId || null,
         });
+
+        if (playbookExecutionId && outputId) {
+          await linkAgentOutputToPlaybookExecution(adminClient, userId!, playbookExecutionId, outputId);
+        }
         return json({ success: true, content: text, result: text, provider: usedProvider, outputId });
       } catch (err: any) {
         return json({ success: false, message: err?.message ?? 'AI request failed' }, 502);
@@ -1091,6 +1152,7 @@ Deno.serve(async (req: Request) => {
       const body = await req.json();
       const campaignData = String(body?.campaignData ?? '').trim();
       const provider = String(body?.provider ?? '').trim();
+      const playbookExecutionId = String(body?.playbookExecutionId ?? '').trim();
       if (!campaignData) return json({ success: false, message: 'campaignData is required' }, 400);
 
       const prompt = [
@@ -1106,7 +1168,13 @@ Deno.serve(async (req: Request) => {
           providerRequested: provider || null,
           providerUsed: usedProvider,
           providerErrors,
+          source: 'api.ai.analyze-campaign',
+          playbookExecutionId: playbookExecutionId || null,
         });
+
+        if (playbookExecutionId && outputId) {
+          await linkAgentOutputToPlaybookExecution(adminClient, userId!, playbookExecutionId, outputId);
+        }
         return json({ success: true, analysis: text, provider: usedProvider, outputId });
       } catch (err: any) {
         return json({ success: false, message: err?.message ?? 'AI request failed' }, 502);
@@ -1149,7 +1217,27 @@ Deno.serve(async (req: Request) => {
         .order('created_at', { ascending: false })
         .limit(limit);
       if (error) throw error;
-      return json({ success: true, outputs: data ?? [] });
+
+      const outputIds = (data ?? []).map((r: any) => r.id).filter(Boolean);
+      let executionByOutputId: Record<string, string> = {};
+      if (outputIds.length > 0) {
+        const { data: execRows } = await adminClient
+          .from('playbook_executions')
+          .select('id, agent_output_id')
+          .eq('user_id', userId)
+          .in('agent_output_id', outputIds);
+        executionByOutputId = (execRows ?? []).reduce((acc: Record<string, string>, row: any) => {
+          if (row?.agent_output_id) acc[row.agent_output_id] = row.id;
+          return acc;
+        }, {});
+      }
+
+      const outputs = (data ?? []).map((row: any) => ({
+        ...row,
+        playbook_execution_id: executionByOutputId[row.id] ?? null,
+      }));
+
+      return json({ success: true, outputs });
     }
 
     // ── GET /api/google-ads/insights ─────────────────────────────────────────

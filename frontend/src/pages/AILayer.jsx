@@ -69,6 +69,18 @@ export default function AILayer() {
     return 'Stored output';
   };
 
+  const formatAgentType = (agentType) => {
+    const map = {
+      ai_generation: 'AI content generated',
+      'ai.generate': 'AI content generated',
+      'ai.analyze-campaign': 'AI campaign analysis',
+      'ai.suggestions': 'AI suggestions',
+      'playbook.run': 'Playbook strategy output',
+      'ai.analyze': 'AI analysis',
+    };
+    return map[agentType] || agentType;
+  };
+
   const handleGenerate = async () => {
     if (!prompt.trim()) {
       toast.error('Please enter a prompt first');
@@ -306,13 +318,18 @@ export default function AILayer() {
             {recentOutputs.map((row) => (
               <div key={row.id} className="p-3 rounded-lg border border-dark-600 bg-dark-800/70">
                 <div className="flex items-center justify-between gap-3 mb-1">
-                  <p className="text-xs text-gray-400 uppercase tracking-wide">{row.agent_type}</p>
+                  <p className="text-xs text-gray-400 uppercase tracking-wide">{formatAgentType(row.agent_type)}</p>
                   <p className="text-[11px] text-gray-500">{new Date(row.created_at).toLocaleString()}</p>
                 </div>
                 <p className="text-sm text-gray-200 line-clamp-2">{formatOutputPreview(row)}</p>
                 {(row.metadata?.playbookId || row.output?.playbookSlug) && (
                   <p className="text-[11px] text-brand-300 mt-1">
                     Linked playbook: {row.output?.playbookTitle || row.output?.playbookSlug || row.metadata?.playbookId}
+                  </p>
+                )}
+                {row.playbook_execution_id && (
+                  <p className="text-[11px] text-emerald-300 mt-1">
+                    Linked execution: #{row.playbook_execution_id.slice(0, 8)}
                   </p>
                 )}
               </div>
