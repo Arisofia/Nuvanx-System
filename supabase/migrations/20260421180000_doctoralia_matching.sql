@@ -64,11 +64,16 @@ CREATE TABLE IF NOT EXISTS doctoralia_lead_matches (
   created_at          TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
-CREATE EXTENSION IF NOT EXISTS unaccent;
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA extensions;
+CREATE EXTENSION IF NOT EXISTS unaccent WITH SCHEMA extensions;
 
 -- Fuzzy name-based matching: links doctoralia_patients to leads
-CREATE OR REPLACE FUNCTION run_doctoralia_name_match() RETURNS void AS $$
+-- SET search_path = '' prevents mutable search_path injection (Supabase lint 0011)
+CREATE OR REPLACE FUNCTION public.run_doctoralia_name_match() RETURNS void
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
 DECLARE
   r           RECORD;
   l           RECORD;
@@ -77,11 +82,11 @@ DECLARE
   best_lid    UUID;
   best_score  NUMERIC := 0;
 BEGIN
-  FOR r IN SELECT * FROM doctoralia_patients LOOP
+  FOR r IN SELECT * FROM public.doctoralia_patients LOOP
     best_lid   := NULL;
     best_score := 0;
-    FOR l IN SELECT id, name, phone FROM leads WHERE clinic_id = r.clinic_id LOOP
-      sim      := similarity(r.name_norm, lower(unaccent(COALESCE(l.name, ''))));
+    FOR l IN SELECT id, name, phone FROM public.leads WHERE clinic_id = r.clinic_id LOOP
+      sim      := extensions.similarity(r.name_norm, lower(extensions.unaccent(COALESCE(l.name, ''))));
       ph_match := r.phone_primary IS NOT NULL
                   AND l.phone IS NOT NULL
                   AND r.phone_primary = regexp_replace(l.phone, '\D', '', 'g');
@@ -91,7 +96,7 @@ BEGIN
       END IF;
     END LOOP;
     IF best_lid IS NOT NULL AND best_score >= 0.85 THEN
-      UPDATE doctoralia_patients
+      UPDATE public.doctoralia_patients
         SET lead_id          = best_lid,
             match_confidence = best_score,
             match_class      = CASE
@@ -103,4 +108,4 @@ BEGIN
     END IF;
   END LOOP;
 END;
-$$ LANGUAGE plpgsql;
+$$;
