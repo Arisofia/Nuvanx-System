@@ -1,25 +1,28 @@
-name: Weekly Meta Ads Unified Tracking
+name: Daily Meta + Google Ads Report
 
-# Weekly automatic performance analysis for Meta Ads.
-# Compares WhatsApp vs Lead Form outcomes and generates a markdown report artifact.
+# Daily performance analysis for Meta Ads and Google Ads.
+# Compares channels, lead funnels and generates a markdown report artifact.
 #
 # Required secrets:
 #   META_ACCESS_TOKEN
 #   META_AD_ACCOUNT_ID
 #
-# Optional secrets (enable CRM funnel enrichment + output persistence):
+# Optional secrets (enable Google Ads + CRM enrichment + output persistence):
+#   GOOGLE_ADS_SERVICE_ACCOUNT   — service account JSON (base64 or raw)
+#   GOOGLE_ADS_DEVELOPER_TOKEN   — Google Ads developer token
+#   GOOGLE_ADS_CUSTOMER_ID       — e.g. 123-456-7890
 #   DATABASE_URL
 #   CLINIC_ID
 #   REPORT_USER_ID
 
 on:
   schedule:
-    - cron: '0 7 * * 1'  # Mondays 07:00 UTC (~09:00 Spain)
+    - cron: '0 7 * * *'  # Every day 07:00 UTC (~09:00 Spain)
   workflow_dispatch:
 
 jobs:
-  weekly-meta-report:
-    name: Generate weekly Meta report
+  daily-ads-report:
+    name: Generate daily Meta + Google Ads report
     runs-on: ubuntu-latest
 
     steps:
@@ -49,11 +52,14 @@ jobs:
       - name: Install optional DB dependency
         run: npm install --no-save pg
 
-      - name: Run weekly Meta unified report
+      - name: Run daily Meta + Google Ads report
         run: node scripts/meta-weekly-report.js
         env:
           META_ACCESS_TOKEN: ${{ secrets['META_ACCESS_TOKEN'] || '' }}
           META_AD_ACCOUNT_ID: ${{ secrets['META_AD_ACCOUNT_ID'] || '' }}
+          GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets['GOOGLE_ADS_SERVICE_ACCOUNT'] || '' }}
+          GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets['GOOGLE_ADS_DEVELOPER_TOKEN'] || '' }}
+          GOOGLE_ADS_CUSTOMER_ID: ${{ secrets['GOOGLE_ADS_CUSTOMER_ID'] || '' }}
           DATABASE_URL: ${{ secrets['DATABASE_URL'] || '' }}
           CLINIC_ID: ${{ secrets['CLINIC_ID'] || '' }}
           REPORT_USER_ID: ${{ secrets['REPORT_USER_ID'] || '' }}
@@ -61,6 +67,6 @@ jobs:
       - name: Upload report artifact
         uses: actions/upload-artifact@v4
         with:
-          name: weekly-meta-unified-report
+          name: daily-ads-unified-report
           path: reports/meta-weekly-report-*.md
           if-no-files-found: error

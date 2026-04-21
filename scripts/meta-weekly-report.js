@@ -3,8 +3,10 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const META_GRAPH = 'https://graph.facebook.com/v21.0';
+const GOOGLE_ADS_API = 'https://googleads.googleapis.com/v17';
 
 function formatDateUTC(date) {
   return date.toISOString().slice(0, 10);
@@ -65,6 +67,84 @@ function eur(value) {
 function numberFmt(value) {
   return Number(value || 0).toLocaleString();
 }
+
+// ── Google Ads helpers ───────────────────────────────────────────────────────
+
+function b64url(data) {
+  const buf = typeof data === 'string' ? Buffer.from(data) : Buffer.from(data);
+  return buf.toString('base64url');
+}
+
+async function getGoogleAccessToken(serviceAccount) {
+  const now = Math.floor(Date.now() / 1000);
+  const header  = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+  const payload = b64url(JSON.stringify({
+    iss:   serviceAccount.client_email,
+    scope: 'https://www.googleapis.com/auth/adwords',
+    aud:   serviceAccount.token_uri || 'https://oauth2.googleapis.com/token',
+    iat:   now,
+    exp:   now + 3600,
+  }));
+  const sign = crypto.createSign('RSA-SHA256');
+  sign.update(`${header}.${payload}`);
+  const sig = sign.sign(serviceAccount.private_key, 'base64url');
+  const jwtToken = `${header}.${payload}.${sig}`;
+
+  const tokenUrl = serviceAccount.token_uri || 'https://oauth2.googleapis.com/token';
+  const resp = await fetch(tokenUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwtToken}`,
+  });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.error_description || `Google OAuth: ${data.error}`);
+  return data.access_token;
+}
+
+async function fetchGoogleAdsInsights({ devToken, customerId, serviceAccount, since, until }) {
+  const accessToken = await getGoogleAccessToken(serviceAccount);
+  const cleanId = customerId.replace(/-/g, '');
+  const query = `
+    SELECT campaign.id, campaign.name, metrics.impressions, metrics.clicks,
+           metrics.cost_micros, metrics.conversions, metrics.ctr, metrics.average_cpc
+    FROM campaign
+    WHERE segments.date BETWEEN '${since}' AND '${until}'
+      AND campaign.status != 'REMOVED'
+    ORDER BY metrics.cost_micros DESC
+    LIMIT 50
+  `;
+  const resp = await fetch(`${GOOGLE_ADS_API}/customers/${cleanId}/googleAds:search`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${accessToken}`,
+      'developer-token': devToken,
+    },
+    body: JSON.stringify({ query }),
+    signal: AbortSignal.timeout(30000),
+  });
+  const data = await resp.json();
+  if (!resp.ok) {
+    const msg = data.error?.details?.[0]?.errors?.[0]?.message ?? data.error?.message ?? `Google Ads ${resp.status}`;
+    throw new Error(msg);
+  }
+  return data.results || [];
+}
+
+function summariseGoogleAds(results) {
+  return results.map((r) => ({
+    id:          r.campaign?.id        || 'unknown',
+    name:        r.campaign?.name      || 'Unnamed campaign',
+    impressions: Number(r.metrics?.impressions   || 0),
+    clicks:      Number(r.metrics?.clicks        || 0),
+    spend:       Number(r.metrics?.cost_micros   || 0) / 1_000_000,
+    conversions: Number(r.metrics?.conversions   || 0),
+    ctr:         Number(r.metrics?.ctr           || 0) * 100,
+    avgCpc:      Number(r.metrics?.average_cpc   || 0) / 1_000_000,
+  }));
+}
+
+// ─── Meta fetch ──────────────────────────────────────────────────────────────
 
 async function metaFetch(endpoint, params, token) {
   const url = new URL(`${META_GRAPH}${endpoint}`);
@@ -138,6 +218,30 @@ async function maybePersistOutput({ databaseUrl, reportUserId, clinicId, markdow
   }
 }
 
+function buildGoogleAdsMarkdown(campaigns) {
+  if (!campaigns || campaigns.length === 0) return '';
+  const gTotals = campaigns.reduce((a, r) => {
+    a.spend += r.spend; a.clicks += r.clicks; a.impressions += r.impressions; a.conversions += r.conversions;
+    return a;
+  }, { spend: 0, clicks: 0, impressions: 0, conversions: 0 });
+
+  const lines = [];
+  lines.push('## Google Ads — Campaign Summary');
+  lines.push('');
+  lines.push(`- Total Spend: ${eur(gTotals.spend)}`);
+  lines.push(`- Total Clicks: ${numberFmt(gTotals.clicks)}`);
+  lines.push(`- Total Impressions: ${numberFmt(gTotals.impressions)}`);
+  lines.push(`- Conversions: ${numberFmt(gTotals.conversions)}`);
+  lines.push('');
+  lines.push('| Campaign | Spend | Clicks | Conversions | CTR |');
+  lines.push('|---|---:|---:|---:|---:|');
+  for (const c of campaigns.slice(0, 10)) {
+    lines.push(`| ${c.name} | ${eur(c.spend)} | ${numberFmt(c.clicks)} | ${numberFmt(c.conversions)} | ${c.ctr.toFixed(2)}% |`);
+  }
+  lines.push('');
+  return lines.join('\n');
+}
+
 function buildMarkdown({
   generatedAt,
   period,
@@ -147,6 +251,7 @@ function buildMarkdown({
   campaigns,
   landing,
   dbSignals,
+  googleAdsCampaigns,
   recommendations,
 }) {
   const lines = [];
@@ -227,7 +332,12 @@ function buildMarkdown({
     lines.push('');
   }
 
-  lines.push('## Recommended Actions for Next Week');
+  const googleSection = buildGoogleAdsMarkdown(googleAdsCampaigns);
+  if (googleSection) {
+    lines.push(googleSection);
+  }
+
+  lines.push('## Recommended Actions for Next Day');
   lines.push('');
   recommendations.forEach((item, idx) => {
     lines.push(`${idx + 1}. ${item}`);
@@ -244,6 +354,22 @@ async function main() {
   const clinicId = process.env.CLINIC_ID || '';
   const reportUserId = process.env.REPORT_USER_ID || '';
 
+  // Google Ads (optional)
+  const gServiceAccountRaw = process.env.GOOGLE_ADS_SERVICE_ACCOUNT || '';
+  const gDevToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN || '';
+  const gCustomerId = process.env.GOOGLE_ADS_CUSTOMER_ID || '';
+  let googleServiceAccount = null;
+  if (gServiceAccountRaw && gDevToken && gCustomerId) {
+    try {
+      // Support both raw JSON and base64-encoded JSON
+      const raw = gServiceAccountRaw.startsWith('{') ? gServiceAccountRaw
+        : Buffer.from(gServiceAccountRaw, 'base64').toString('utf8');
+      googleServiceAccount = JSON.parse(raw);
+    } catch {
+      console.warn('[meta-daily-report] Invalid GOOGLE_ADS_SERVICE_ACCOUNT — skipping Google Ads section');
+    }
+  }
+
   if (!token || !rawAccount) {
     throw new Error('META_ACCESS_TOKEN and META_AD_ACCOUNT_ID are required');
   }
@@ -254,10 +380,10 @@ async function main() {
   }
 
   const today = new Date();
+  // Daily window = yesterday
   const untilDate = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
   untilDate.setUTCDate(untilDate.getUTCDate() - 1);
-  const sinceDate = new Date(untilDate);
-  sinceDate.setUTCDate(sinceDate.getUTCDate() - 6);
+  const sinceDate = new Date(untilDate); // since == until for 1-day window
 
   const since = formatDateUTC(sinceDate);
   const until = formatDateUTC(untilDate);
@@ -400,6 +526,24 @@ async function main() {
     }
   }
 
+  // Fetch Google Ads data (optional)
+  let googleAdsCampaigns = null;
+  if (googleServiceAccount) {
+    try {
+      const gResults = await fetchGoogleAdsInsights({
+        devToken: gDevToken,
+        customerId: gCustomerId,
+        serviceAccount: googleServiceAccount,
+        since,
+        until,
+      });
+      googleAdsCampaigns = summariseGoogleAds(gResults);
+      console.log(`[meta-daily-report] Google Ads: ${googleAdsCampaigns.length} campaigns fetched`);
+    } catch (e) {
+      console.warn(`[meta-daily-report] Google Ads fetch failed: ${e.message}`);
+    }
+  }
+
   const markdown = buildMarkdown({
     generatedAt: new Date().toISOString(),
     period: { since, until },
@@ -409,6 +553,7 @@ async function main() {
     campaigns: { best: bestCampaigns, waste: wasteCampaigns },
     landing,
     dbSignals,
+    googleAdsCampaigns,
     recommendations,
   });
 
@@ -425,28 +570,29 @@ async function main() {
       clinicId,
       markdown,
       metadata: {
-        source: 'weekly_meta_workflow',
+        source: 'daily_ads_workflow',
         ad_account_id: adAccountId,
+        google_customer_id: gCustomerId || null,
         since,
         until,
       },
     });
   } catch (err) {
-    console.warn(`[meta-weekly-report] Could not persist to agent_outputs: ${err.message}`);
+    console.warn(`[meta-daily-report] Could not persist to agent_outputs: ${err.message}`);
   }
 
   if (process.env.GITHUB_STEP_SUMMARY) {
     fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, markdown);
   }
 
-  console.log('[meta-weekly-report] Report generated successfully');
-  console.log(`[meta-weekly-report] File: ${reportPath}`);
+  console.log('[meta-daily-report] Report generated successfully');
+  console.log(`[meta-daily-report] File: ${reportPath}`);
   if (agentOutputId) {
-    console.log(`[meta-weekly-report] Persisted agent_outputs.id: ${agentOutputId}`);
+    console.log(`[meta-daily-report] Persisted agent_outputs.id: ${agentOutputId}`);
   }
 }
 
 main().catch((err) => {
-  console.error('[meta-weekly-report] Fatal:', err.message);
+  console.error('[meta-daily-report] Fatal:', err.message);
   process.exit(1);
 });
