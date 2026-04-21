@@ -201,6 +201,13 @@ async function processLeadData(adminClient: any, userId: string, leadData: any) 
   const phone    = fields['phone_number'] ?? fields['telefono'] ?? fields['phone'] ?? null;
   const dni      = fields['dni']          ?? fields['nif']      ?? fields['national_id'] ?? null;
 
+  // Any non-standard custom fields (e.g. 'Tratamiento de interés') → notes JSON
+  const KNOWN_STANDARD = new Set(['full_name','nombre','name','email','phone_number','telefono','phone','dni','nif','national_id']);
+  const customFields = Object.fromEntries(
+    Object.entries(fields).filter(([k]) => !KNOWN_STANDARD.has(k))
+  );
+  const notes = Object.keys(customFields).length > 0 ? JSON.stringify(customFields) : null;
+
   // Upsert lead — idempotent via partial unique index (user_id, source, external_id)
   const { data: lead } = await adminClient
     .from('leads')
@@ -212,6 +219,7 @@ async function processLeadData(adminClient: any, userId: string, leadData: any) 
       email,
       phone,
       dni:         dni || null,
+      notes:       notes || null,
       stage:       'lead',
       campaign_id: leadData.campaign_id ?? null,
       adset_id:    leadData.adset_id    ?? null,
