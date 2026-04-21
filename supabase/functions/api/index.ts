@@ -1520,7 +1520,23 @@ Deno.serve(async (req: Request) => {
 
     // ── GET /api/figma/events ────────────────────────────────────────────────
     if (resource === 'figma' && sub === 'events') {
-      return json({ success: true, events: [] });
+      const limit = Math.min(parseInt(url.searchParams.get('limit') || '20', 10), 50);
+      const { data: rows } = await adminClient
+        .from('figma_sync_log')
+        .select('id, file_key, status, message, components_synced, tokens_synced, created_at')
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      const events = (rows || []).map((r: any) => ({
+        id: r.id,
+        type: r.status === 'error' ? 'figma_error' : 'figma_sync',
+        message: r.message || `Synced ${r.components_synced ?? 0} components`,
+        fileKey: r.file_key,
+        componentsSynced: r.components_synced,
+        tokensSynced: r.tokens_synced,
+        status: r.status,
+        createdAt: r.created_at,
+      }));
+      return json({ success: true, events });
     }
 
     // ── POST /api/whatsapp/send ──────────────────────────────────────────────
