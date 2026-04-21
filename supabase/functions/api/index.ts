@@ -188,6 +188,63 @@ async function callOpenAI(prompt: string, apiKey: string): Promise<string> {
   return d.choices?.[0]?.message?.content ?? '';
 }
 
+async function processLeadData(adminClient: any, userId: string, leadData: any) {
+  // Parse field_data array into a flat map
+  const fields: Record<string, string> = {};
+  for (const f of (leadData.field_data ?? [])) {
+    fields[(f.name ?? '').toLowerCase()] = f.values?.[0] ?? '';
+  }
+
+  const leadgen_id = leadData.id;
+  const leadName = fields['full_name'] ?? fields['nombre'] ?? fields['name'] ?? `Lead ${leadgen_id.slice(-6)}`;
+  const email    = fields['email']        ?? null;
+  const phone    = fields['phone_number'] ?? fields['telefono'] ?? fields['phone'] ?? null;
+  const dni      = fields['dni']          ?? fields['nif']      ?? fields['national_id'] ?? null;
+
+  // Upsert lead — idempotent via partial unique index (user_id, source, external_id)
+  const { data: lead } = await adminClient
+    .from('leads')
+    .upsert({
+      user_id:     userId,
+      external_id: leadgen_id,
+      source:      'meta_leadgen',
+      name:        leadName,
+      email,
+      phone,
+      dni:         dni || null,
+      stage:       'lead',
+      campaign_id: leadData.campaign_id ?? null,
+      adset_id:    leadData.adset_id    ?? null,
+      ad_id:       leadData.ad_id       ?? null,
+      form_id:     leadData.form_id     ?? null,
+      form_name:   leadData.form_name   ?? null,
+      created_at:  leadData.created_time
+        ? new Date(Number(leadData.created_time) * 1000).toISOString()
+        : new Date().toISOString(),
+    }, { onConflict: 'user_id,source,external_id', ignoreDuplicates: true })
+    .select('id')
+    .maybeSingle();
+
+  // Record attribution details
+  if (lead?.id) {
+    await adminClient
+      .from('meta_attribution')
+      .upsert({
+        lead_id:     lead.id,
+        leadgen_id,
+        page_id:     leadData.page_id     ?? null,
+        form_id:     leadData.form_id     ?? null,
+        campaign_id: leadData.campaign_id ?? null,
+        adset_id:    leadData.adset_id    ?? null,
+        ad_id:       leadData.ad_id       ?? null,
+        ad_name:     leadData.ad_name     ?? null,
+        form_name:   leadData.form_name   ?? null,
+      }, { onConflict: 'leadgen_id' });
+    return true;
+  }
+  return false;
+}
+
 // ── Meta credential resolver ──────────────────────────────────────────────────
 async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: string) {
   const { data: credRow } = await adminClient
@@ -443,55 +500,7 @@ Deno.serve(async (req: Request) => {
           }, accessToken);
         } catch { continue; }
 
-        // Parse field_data array into a flat map
-        const fields: Record<string, string> = {};
-        for (const f of (leadData.field_data ?? [])) {
-          fields[(f.name ?? '').toLowerCase()] = f.values?.[0] ?? '';
-        }
-
-        const leadName = fields['full_name'] ?? fields['nombre'] ?? fields['name'] ?? `Lead ${leadgen_id.slice(-6)}`;
-        const email    = fields['email']        ?? null;
-        const phone    = fields['phone_number'] ?? fields['telefono'] ?? fields['phone'] ?? null;
-        const dni      = fields['dni']          ?? fields['nif']      ?? fields['national_id'] ?? null;
-
-        // Upsert lead — idempotent via partial unique index (user_id, source, external_id)
-        const { data: lead } = await adminClient
-          .from('leads')
-          .upsert({
-            user_id:     webhookUserId,
-            external_id: leadgen_id,
-            source:      'meta_leadgen',
-            name:        leadName,
-            email,
-            phone,
-            dni:         dni || null,
-            stage:       'lead',
-            campaign_id: campaign_id ?? null,
-            adset_id:    adset_id    ?? null,
-            ad_id:       ad_id       ?? null,
-            form_id:     form_id     ?? null,
-            form_name:   leadData.form_name ?? null,
-            created_at:  created_time
-              ? new Date(Number(created_time) * 1000).toISOString()
-              : new Date().toISOString(),
-          }, { onConflict: 'user_id,source,external_id', ignoreDuplicates: true })
-          .select('id')
-          .single();
-
-        // Record attribution details
-        if (lead?.id) {
-          await adminClient
-            .from('meta_attribution')
-            .upsert({
-              lead_id:     lead.id,
-              leadgen_id,
-              page_id:     page_id     ?? null,
-              form_id:     form_id     ?? null,
-              campaign_id: campaign_id ?? null,
-              adset_id:    adset_id    ?? null,
-              ad_id:       ad_id       ?? null,
-            }, { onConflict: 'leadgen_id', ignoreDuplicates: true });
-        }
+        await processLeadData(adminClient, webhookUserId, leadData);
       }
     }
 
@@ -829,18 +838,44 @@ async function setMetaCache(adminClient: any, userId: string, cacheId: string, d
       if (!creds.adAccountId) return json({ success: false, message: 'Ad Account ID not configured' }, 400);
 
       const days = Math.min(Math.max(parseInt(url.searchParams.get('days') ?? '7'), 1), 90);
-      const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
-      const until = new Date().toISOString().slice(0, 10);
+      const sinceDate = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
+      const untilDate = new Date().toISOString().slice(0, 10);
+      const sinceTs = Math.floor((Date.now() - days * 86400_000) / 1000);
 
-      // Trigger a basic insights fetch to warm the cache
+      // 1. Warm insights cache
       const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,conversions';
       await metaFetch(`/${creds.adAccountId}/insights`, {
-        fields, time_range: JSON.stringify({ since, until }), time_increment: '1', limit: '1000',
+        fields, time_range: JSON.stringify({ since: sinceDate, until: untilDate }), time_increment: '1', limit: '1000',
       }, creds.accessToken);
+
+      // 2. Fetch and ingest leads
+      let totalFetched = 0;
+      try {
+        // Find all forms for this ad account
+        const formsRes = await metaFetch(`/${creds.adAccountId}/leadgen_forms`, {
+          fields: 'id,name', limit: '50'
+        }, creds.accessToken);
+        
+        for (const form of (formsRes.data ?? [])) {
+          const leadsRes = await metaFetch(`/${form.id}/leads`, {
+            fields: 'id,field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,adset_id,page_id',
+            filtering: JSON.stringify([{ field: 'time_created', operator: 'GREATER_THAN', value: sinceTs }]),
+            limit: '500'
+          }, creds.accessToken);
+          
+          for (const leadData of (leadsRes.data ?? [])) {
+            const success = await processLeadData(adminClient, userId!, leadData);
+            if (success) totalFetched++;
+          }
+        }
+      } catch (e: any) {
+        console.error('Backfill lead ingestion failed:', e);
+      }
 
       return json({
         success: true,
-        message: `Backfill started for last ${days} days (${since} to ${until}). Cache warmed.`,
+        totalLeadsBackfilled: totalFetched,
+        message: `Backfill completed for last ${days} days. ${totalFetched} leads ingested. Insights cache warmed.`,
       });
     }
 
@@ -1297,12 +1332,19 @@ async function setMetaCache(adminClient: any, userId: string, cacheId: string, d
     // ── GET /api/ai/outputs ────────────────────────────────────────────────
     if (resource === 'ai' && sub === 'outputs' && req.method === 'GET') {
       const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') ?? '20'), 1), 100);
-      const { data, error } = await adminClient
+      // Include both personal outputs and clinic-wide outputs (e.g. weekly reports)
+      const clinicId = await resolveClinicId(adminClient, userId!);
+      let query = adminClient
         .from('agent_outputs')
         .select('id, agent_type, output, metadata, created_at')
-        .eq('user_id', userId)
         .order('created_at', { ascending: false })
         .limit(limit);
+      if (clinicId) {
+        query = query.or(`user_id.eq.${userId},clinic_id.eq.${clinicId}`);
+      } else {
+        query = query.eq('user_id', userId);
+      }
+      const { data, error } = await query;
       if (error) throw error;
 
       const outputIds = (data ?? []).map((r: any) => r.id).filter(Boolean);

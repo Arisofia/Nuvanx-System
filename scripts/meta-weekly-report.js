@@ -128,10 +128,10 @@ async function maybePersistOutput({ databaseUrl, reportUserId, clinicId, markdow
   try {
     const insert = `
       insert into public.agent_outputs (user_id, clinic_id, agent_type, output, metadata)
-      values ($1, $2, 'campaign_analyzer', $3, $4::jsonb)
+      values ($1, $2, 'campaign_analyzer', $3::jsonb, $4::jsonb)
       returning id
     `;
-    const { rows } = await db.query(insert, [reportUserId, clinicId || null, markdown, JSON.stringify(metadata)]);
+    const { rows } = await db.query(insert, [reportUserId, clinicId || null, JSON.stringify({ content: markdown }), JSON.stringify(metadata)]);
     return rows?.[0]?.id || null;
   } finally {
     await db.end();
