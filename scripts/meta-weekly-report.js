@@ -118,7 +118,7 @@ async function maybeLoadDbSignals({ databaseUrl, clinicId, sinceIso, untilExclus
   }
 }
 
-async function maybePersistOutput({ databaseUrl, reportUserId, markdown, metadata }) {
+async function maybePersistOutput({ databaseUrl, reportUserId, clinicId, markdown, metadata }) {
   if (!databaseUrl || !reportUserId) return null;
 
   const { Client } = require('pg');
@@ -127,11 +127,11 @@ async function maybePersistOutput({ databaseUrl, reportUserId, markdown, metadat
 
   try {
     const insert = `
-      insert into public.agent_outputs (user_id, agent_type, output, metadata)
-      values ($1, 'campaign_analyzer', $2, $3::jsonb)
+      insert into public.agent_outputs (user_id, clinic_id, agent_type, output, metadata)
+      values ($1, $2, 'campaign_analyzer', $3, $4::jsonb)
       returning id
     `;
-    const { rows } = await db.query(insert, [reportUserId, markdown, JSON.stringify(metadata)]);
+    const { rows } = await db.query(insert, [reportUserId, clinicId || null, markdown, JSON.stringify(metadata)]);
     return rows?.[0]?.id || null;
   } finally {
     await db.end();
@@ -422,6 +422,7 @@ async function main() {
     agentOutputId = await maybePersistOutput({
       databaseUrl,
       reportUserId,
+      clinicId,
       markdown,
       metadata: {
         source: 'weekly_meta_workflow',

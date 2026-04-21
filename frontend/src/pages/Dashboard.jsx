@@ -148,8 +148,19 @@ export default function Dashboard() {
           ]);
           setMetaTrends(trendsRes.data);
           setMetaInsights(insightsRes.data);
-          setMetaError(null);
-          setMetaState('real');
+
+          if (trendsRes.data?.degraded || insightsRes.data?.degraded) {
+            setMetaState('degraded');
+            const lastSuccess = trendsRes.data?.last_success || insightsRes.data?.last_success;
+            setMetaError(
+              `Meta connection unstable. Showing data from ${
+                lastSuccess ? new Date(lastSuccess).toLocaleString() : 'cache'
+              }.`
+            );
+          } else {
+            setMetaError(null);
+            setMetaState('real');
+          }
         } catch (metaErr) {
           setMetaTrends(null);
           setMetaInsights(null);
@@ -193,6 +204,7 @@ export default function Dashboard() {
   }, []);
 
   const verifiedRevenue = metrics?.verifiedRevenue ?? 0;
+  const totalRevenue = metrics?.totalRevenue ?? 0;
   const settledCount = metrics?.settledCount ?? 0;
   const totalLeads = metrics?.totalLeads ?? 0;
   const conversionRate = metrics?.conversionRate ?? 0;
@@ -220,13 +232,22 @@ export default function Dashboard() {
       },
       {
         name: 'Meta Observer Agent',
-        status: metaState === 'real' ? 'connected' : metaState === 'error' ? 'error' : 'pending',
+        status:
+          metaState === 'real'
+            ? 'connected'
+            : metaState === 'degraded'
+              ? 'degraded'
+              : metaState === 'error'
+                ? 'error'
+                : 'pending',
         detail:
           metaState === 'real'
             ? 'Live Meta view active'
-            : metaState === 'missing-config'
-              ? 'Missing adAccountId in metadata'
-              : 'Connect Meta to enable live view',
+            : metaState === 'degraded'
+              ? 'Running in degraded mode (cached)'
+              : metaState === 'missing-config'
+                ? 'Missing adAccountId in metadata'
+                : 'Connect Meta to enable live view',
         icon: Zap,
       },
     ];
@@ -303,11 +324,13 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <MetricCard
-          title="Verified Revenue"
+          title="Revenue"
           value={verifiedRevenue}
           prefix="€"
           icon={TrendingUp}
           color="brand"
+          badge="Verificado"
+          estimatedValue={totalRevenue}
           subtitle={settledCount > 0 ? `${settledCount} settled operations` : 'From Doctoralia settlements'}
         />
         <MetricCard
@@ -362,9 +385,11 @@ export default function Dashboard() {
               const statusTone =
                 agent.status === 'connected'
                   ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10'
-                  : agent.status === 'error'
-                    ? 'text-red-400 border-red-500/30 bg-red-500/10'
-                    : 'text-gray-400 border-dark-500 bg-dark-800/80';
+                  : agent.status === 'degraded'
+                    ? 'text-amber-400 border-amber-500/30 bg-amber-500/10'
+                    : agent.status === 'error'
+                      ? 'text-red-400 border-red-500/30 bg-red-500/10'
+                      : 'text-gray-400 border-dark-500 bg-dark-800/80';
               return (
                 <div key={agent.name} className="p-3 rounded-lg border border-dark-600/70 bg-dark-800/60">
                   <div className="flex items-start justify-between gap-3">
@@ -394,6 +419,10 @@ export default function Dashboard() {
             <span className="text-xs px-2 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
               Connected
             </span>
+          ) : metaState === 'degraded' ? (
+            <span className="text-xs px-2 py-1 rounded-full border border-amber-500/30 bg-amber-500/10 text-amber-400">
+              Degraded Mode
+            </span>
           ) : (
             <span className="text-xs px-2 py-1 rounded-full border border-dark-500 bg-dark-800 text-gray-400">
               {metaState}
@@ -401,8 +430,14 @@ export default function Dashboard() {
           )}
         </div>
 
-        {metaState === 'real' ? (
+        {metaState === 'real' || metaState === 'degraded' ? (
           <>
+            {metaState === 'degraded' && (
+              <div className="mb-4 p-3 rounded-lg border border-amber-500/20 bg-amber-500/5 flex items-start gap-3">
+                <AlertCircle className="text-amber-400 shrink-0 mt-0.5" size={16} />
+                <p className="text-xs text-amber-200/80">{metaError}</p>
+              </div>
+            )}
             <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
               {[
                 { label: 'Impressions', value: formatNumber(metaSummary.impressions) },

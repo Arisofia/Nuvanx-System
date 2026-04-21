@@ -513,7 +513,23 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // ── GET /api/health ──────────────────────────────────────────────────────
+    async function getMetaCache(adminClient: any, userId: string, cacheId: string) {
+  const { data } = await adminClient
+    .from('meta_cache')
+    .select('data, updated_at')
+    .eq('user_id', userId)
+    .eq('id', cacheId)
+    .maybeSingle();
+  return data;
+}
+
+async function setMetaCache(adminClient: any, userId: string, cacheId: string, data: any) {
+  await adminClient
+    .from('meta_cache')
+    .upsert({ id: cacheId, user_id: userId, data, updated_at: new Date().toISOString() });
+}
+
+// ── GET /api/health ──────────────────────────────────────────────────────
     if (resource === 'health') {
       return json({ success: true, status: 'ok', timestamp: new Date().toISOString() });
     }
@@ -682,7 +698,7 @@ Deno.serve(async (req: Request) => {
         const thisWeek = agg(last7);
         const prevWeek = agg(prev7);
 
-        return json({
+        const result = {
           success: true,
           trends,
           summary: { thisWeek },
@@ -694,8 +710,21 @@ Deno.serve(async (req: Request) => {
           mom: {
             spend: pct(thisWeek.spend, prevWeek.spend),
           },
-        });
+        };
+
+        // Cache successful response
+        await setMetaCache(adminClient, userId!, 'dashboard:meta-trends', result);
+        return json(result);
       } catch (e: any) {
+        const cached = await getMetaCache(adminClient, userId!, 'dashboard:meta-trends');
+        if (cached) {
+          return json({
+            ...cached.data,
+            degraded: true,
+            last_success: cached.updated_at,
+            message: `Meta API error: ${e.message}. Showing cached data.`
+          });
+        }
         return json({ success: false, message: e.message }, 502);
       }
     }
@@ -712,68 +741,123 @@ Deno.serve(async (req: Request) => {
       const prevSince = new Date(Date.now() - days * 2 * 86400_000).toISOString().slice(0, 10);
       const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,conversions,cost_per_conversion,unique_clicks';
 
-      const [currRes, prevRes] = await Promise.allSettled([
-        metaFetch(`/${creds.adAccountId}/insights`, {
-          fields, time_range: JSON.stringify({ since, until }), time_increment: '1', limit: '1000',
-        }, creds.accessToken),
-        metaFetch(`/${creds.adAccountId}/insights`, {
-          fields: 'impressions,reach,clicks,spend,conversions,cost_per_conversion',
-          time_range: JSON.stringify({ since: prevSince, until: since }),
-        }, creds.accessToken),
-      ]);
+      try {
+        const [currRes, prevRes] = await Promise.allSettled([
+          metaFetch(`/${creds.adAccountId}/insights`, {
+            fields, time_range: JSON.stringify({ since, until }), time_increment: '1', limit: '1000',
+          }, creds.accessToken),
+          metaFetch(`/${creds.adAccountId}/insights`, {
+            fields: 'impressions,reach,clicks,spend,conversions,cost_per_conversion',
+            time_range: JSON.stringify({ since: prevSince, until: since }),
+          }, creds.accessToken),
+        ]);
 
-      // Surface Meta API errors so the frontend can show a meaningful message
-      // instead of silently returning all-zero metrics.
-      if (currRes.status === 'rejected') {
-        const errMsg = (currRes.reason as Error)?.message ?? 'Meta API error';
-        return json({ success: false, metaApiError: true, message: errMsg }, 502);
+        if (currRes.status === 'rejected') {
+          throw currRes.reason;
+        }
+
+        const daily = currRes.value.data ?? [];
+        const prevD = prevRes.status === 'fulfilled' ? (prevRes.value.data?.[0] ?? {}) : {};
+        const sumN = (arr: any[], k: string) => arr.reduce((s: number, d: any) => s + parseFloat(d[k] || 0), 0);
+
+        const curr = {
+          impressions: Math.round(sumN(daily, 'impressions')),
+          reach: Math.round(sumN(daily, 'reach')),
+          clicks: Math.round(sumN(daily, 'clicks')),
+          spend: parseFloat(sumN(daily, 'spend').toFixed(2)),
+          conversions: Math.round(sumN(daily, 'conversions')),
+        };
+        const ctr = curr.impressions > 0 ? parseFloat(((curr.clicks / curr.impressions) * 100).toFixed(2)) : 0;
+        const cpc = curr.clicks > 0 ? parseFloat((curr.spend / curr.clicks).toFixed(2)) : 0;
+        const cpm = curr.impressions > 0 ? parseFloat((curr.spend / curr.impressions * 1000).toFixed(2)) : 0;
+        const cpp = curr.conversions > 0 ? parseFloat((curr.spend / curr.conversions).toFixed(2)) : 0;
+        const prev = {
+          impressions: parseFloat(prevD.impressions ?? 0),
+          reach: parseFloat(prevD.reach ?? 0),
+          clicks: parseFloat(prevD.clicks ?? 0),
+          spend: parseFloat(prevD.spend ?? 0),
+          conversions: parseFloat(prevD.conversions ?? 0),
+        };
+        const pct = (c: number, p: number) => p === 0 ? (c > 0 ? 100 : 0) : parseFloat(((c - p) / p * 100).toFixed(1));
+
+        const result = {
+          success: true,
+          period: { since, until, days },
+          summary: { ...curr, ctr, cpc, cpm, cpp },
+          changes: {
+            impressions: pct(curr.impressions, prev.impressions),
+            reach: pct(curr.reach, prev.reach),
+            clicks: pct(curr.clicks, prev.clicks),
+            spend: pct(curr.spend, prev.spend),
+            conversions: pct(curr.conversions, prev.conversions),
+          },
+          daily: daily.map((d: any) => ({
+            date: d.date_start,
+            impressions: parseFloat(d.impressions || 0),
+            reach: parseFloat(d.reach || 0),
+            clicks: parseFloat(d.clicks || 0),
+            spend: parseFloat(d.spend || 0),
+            ctr: parseFloat(d.ctr || 0),
+            cpc: parseFloat(d.cpc || 0),
+            cpm: parseFloat(d.cpm || 0),
+          })),
+        };
+
+        await setMetaCache(adminClient, userId!, `meta:insights:${days}`, result);
+        return json(result);
+      } catch (e: any) {
+        const cached = await getMetaCache(adminClient, userId!, `meta:insights:${days}`);
+        if (cached) {
+          return json({
+            ...cached.data,
+            degraded: true,
+            last_success: cached.updated_at,
+            message: `Meta API error: ${e.message}. Showing cached data.`
+          });
+        }
+        return json({ success: false, metaApiError: true, message: e.message }, 502);
       }
-      const daily = currRes.value.data ?? [];
-      const prevD = prevRes.status === 'fulfilled' ? (prevRes.value.data?.[0] ?? {}) : {};
-      const sumN = (arr: any[], k: string) => arr.reduce((s: number, d: any) => s + parseFloat(d[k] || 0), 0);
+    }
 
-      const curr = {
-        impressions: Math.round(sumN(daily, 'impressions')),
-        reach: Math.round(sumN(daily, 'reach')),
-        clicks: Math.round(sumN(daily, 'clicks')),
-        spend: parseFloat(sumN(daily, 'spend').toFixed(2)),
-        conversions: Math.round(sumN(daily, 'conversions')),
-      };
-      const ctr = curr.impressions > 0 ? parseFloat(((curr.clicks / curr.impressions) * 100).toFixed(2)) : 0;
-      const cpc = curr.clicks > 0 ? parseFloat((curr.spend / curr.clicks).toFixed(2)) : 0;
-      const cpm = curr.impressions > 0 ? parseFloat((curr.spend / curr.impressions * 1000).toFixed(2)) : 0;
-      const cpp = curr.conversions > 0 ? parseFloat((curr.spend / curr.conversions).toFixed(2)) : 0;
-      const prev = {
-        impressions: parseFloat(prevD.impressions ?? 0),
-        reach: parseFloat(prevD.reach ?? 0),
-        clicks: parseFloat(prevD.clicks ?? 0),
-        spend: parseFloat(prevD.spend ?? 0),
-        conversions: parseFloat(prevD.conversions ?? 0),
-      };
-      const pct = (c: number, p: number) => p === 0 ? (c > 0 ? 100 : 0) : parseFloat(((c - p) / p * 100).toFixed(1));
+    // ── POST /api/meta/backfill ──────────────────────────────────────────────
+    if (resource === 'meta' && sub === 'backfill' && req.method === 'POST') {
+      const creds = await resolveMetaCreds(adminClient, userId!, url.searchParams.get('adAccountId') ?? '');
+      if (creds.notConnected) return json({ success: false, message: 'Meta not connected' }, 400);
+      if (!creds.adAccountId) return json({ success: false, message: 'Ad Account ID not configured' }, 400);
+
+      const days = Math.min(Math.max(parseInt(url.searchParams.get('days') ?? '7'), 1), 90);
+      const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
+      const until = new Date().toISOString().slice(0, 10);
+
+      // Trigger a basic insights fetch to warm the cache
+      const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,conversions';
+      await metaFetch(`/${creds.adAccountId}/insights`, {
+        fields, time_range: JSON.stringify({ since, until }), time_increment: '1', limit: '1000',
+      }, creds.accessToken);
 
       return json({
         success: true,
-        period: { since, until, days },
-        summary: { ...curr, ctr, cpc, cpm, cpp },
-        changes: {
-          impressions: pct(curr.impressions, prev.impressions),
-          reach: pct(curr.reach, prev.reach),
-          clicks: pct(curr.clicks, prev.clicks),
-          spend: pct(curr.spend, prev.spend),
-          conversions: pct(curr.conversions, prev.conversions),
-        },
-        daily: daily.map((d: any) => ({
-          date: d.date_start,
-          impressions: parseFloat(d.impressions || 0),
-          reach: parseFloat(d.reach || 0),
-          clicks: parseFloat(d.clicks || 0),
-          spend: parseFloat(d.spend || 0),
-          ctr: parseFloat(d.ctr || 0),
-          cpc: parseFloat(d.cpc || 0),
-          cpm: parseFloat(d.cpm || 0),
-        })),
+        message: `Backfill started for last ${days} days (${since} to ${until}). Cache warmed.`,
       });
+    }
+
+    // ── GET /api/health/meta ─────────────────────────────────────────────────
+    if (resource === 'health' && sub === 'meta') {
+      try {
+        const creds = await resolveMetaCreds(adminClient, userId!, '');
+        if (creds.notConnected) return json({ status: 'disconnected', message: 'No Meta credentials' });
+
+        // Simple ping to Meta API
+        const me = await metaFetch('/me', { fields: 'id,name' }, creds.accessToken);
+        return json({
+          status: 'healthy',
+          meta_user: me.name,
+          ad_account: creds.adAccountId,
+          timestamp: new Date().toISOString()
+        });
+      } catch (e: any) {
+        return json({ status: 'unhealthy', error: e.message, timestamp: new Date().toISOString() }, 503);
+      }
     }
 
     // ── GET /api/meta/campaigns ──────────────────────────────────────────────

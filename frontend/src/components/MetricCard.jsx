@@ -1,6 +1,6 @@
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
-export default function MetricCard({ title, value, change, changeLabel, icon: Icon, color = 'brand', prefix = '', suffix = '', subtitle }) {
+export default function MetricCard({ title, value, change, changeLabel, icon: Icon, color = 'brand', prefix = '', suffix = '', subtitle, badge, estimatedValue, estimatedPrefix = '€' }) {
   const isPositive = change > 0;
   const isNeutral = change === 0;
 
@@ -24,10 +24,22 @@ export default function MetricCard({ title, value, change, changeLabel, icon: Ic
     <div className={`relative overflow-hidden rounded-xl border bg-gradient-to-br p-6 ${colorMap[color]}`}>
       <div className="flex items-start justify-between">
         <div className="flex-1">
-          <p className="text-sm font-medium text-gray-400 mb-1">{title}</p>
+          <div className="flex items-center gap-2 mb-1">
+            <p className="text-sm font-medium text-gray-400">{title}</p>
+            {badge && (
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                {badge}
+              </span>
+            )}
+          </div>
           <p className="text-3xl font-bold text-white tracking-tight">
             {prefix}{typeof value === 'number' ? value.toLocaleString() : value}{suffix}
           </p>
+          {estimatedValue !== undefined && (
+            <p className="text-xs text-amber-400/80 mt-1">
+              Estimado <span className="font-semibold">{estimatedPrefix}{typeof estimatedValue === 'number' ? estimatedValue.toLocaleString() : estimatedValue}</span>
+            </p>
+          )}
           {subtitle && <p className="text-xs text-gray-500 mt-1">{subtitle}</p>}
         </div>
         {Icon && (
