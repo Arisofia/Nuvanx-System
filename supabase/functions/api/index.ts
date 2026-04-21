@@ -526,7 +526,10 @@ Deno.serve(async (req: Request) => {
 async function setMetaCache(adminClient: any, userId: string, cacheId: string, data: any) {
   await adminClient
     .from('meta_cache')
-    .upsert({ id: cacheId, user_id: userId, data, updated_at: new Date().toISOString() });
+    .upsert(
+      { id: cacheId, user_id: userId, data, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id,id' },
+    );
 }
 
 // ── GET /api/health ──────────────────────────────────────────────────────

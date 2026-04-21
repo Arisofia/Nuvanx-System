@@ -1,10 +1,12 @@
-import { Shield, RefreshCw, Loader2 } from 'lucide-react';
+import { useState } from 'react';
+import { Shield, RefreshCw, Loader2, DatabaseZap } from 'lucide-react';
 import toast from 'react-hot-toast';
 import IntegrationCard from '../components/IntegrationCard';
 import { useIntegrations } from '../hooks/useIntegrations';
 
 export default function Integrations() {
-  const { integrations, loading, connectIntegration, testIntegration, validateAll } = useIntegrations();
+  const { integrations, loading, connectIntegration, testIntegration, validateAll, triggerMetaBackfill } = useIntegrations();
+  const [backfilling, setBackfilling] = useState(false);
 
   const handleConnect = async (service, credentials) => {
     await connectIntegration(service, credentials);
@@ -21,6 +23,18 @@ export default function Integrations() {
       toast.success(`Vault synced — ${connected} service${connected !== 1 ? 's' : ''} connected`);
     } catch {
       toast.error('Error syncing vault');
+    }
+  };
+
+  const handleMetaBackfill = async () => {
+    setBackfilling(true);
+    try {
+      const res = await triggerMetaBackfill(2);
+      toast.success(res?.message ?? 'Meta sync completed');
+    } catch (err) {
+      toast.error(err?.response?.data?.message ?? 'Meta sync failed');
+    } finally {
+      setBackfilling(false);
     }
   };
 
@@ -98,6 +112,29 @@ export default function Integrations() {
           />
         ))}
       </div>
+
+      {/* Meta Recovery Panel — visible only when Meta is connected */}
+      {integrations.find(i => i.service === 'meta')?.status === 'connected' && (
+        <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/20 flex items-start gap-4">
+          <div className="p-2.5 rounded-lg bg-amber-500/10 shrink-0">
+            <DatabaseZap size={20} className="text-amber-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-amber-300 text-sm mb-0.5">Meta Data Recovery</p>
+            <p className="text-xs text-gray-400 leading-relaxed">
+              If the webhook was down or you see missing leads in the dashboard, use this to backfill the last 48 hours of Meta ad data and warm the cache.
+            </p>
+          </div>
+          <button
+            onClick={handleMetaBackfill}
+            disabled={backfilling}
+            className="btn-secondary text-xs flex items-center gap-1.5 shrink-0"
+          >
+            {backfilling ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+            {backfilling ? 'Syncing…' : 'Force Sync Meta (48h)'}
+          </button>
+        </div>
+      )}
 
       {/* Footer note */}
       <div className="text-center py-8">

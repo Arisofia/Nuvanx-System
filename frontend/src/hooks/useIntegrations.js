@@ -151,5 +151,11 @@ export function useIntegrations() {
     }
   }, [integrations, updateIntegration]);
 
-  return { integrations, loading, fetchIntegrations, validateAll, connectIntegration, testIntegration, updateIntegration };
+  const triggerMetaBackfill = useCallback(async (days = 2) => {
+    const adAccountId = integrations.find(i => i.service === 'meta')?.metadata?.adAccountId ?? '';
+    const res = await api.post(`/api/meta/backfill?days=${days}${adAccountId ? `&adAccountId=${encodeURIComponent(adAccountId)}` : ''}`);
+    return res.data;
+  }, [integrations]);
+
+  return { integrations, loading, fetchIntegrations, validateAll, connectIntegration, testIntegration, updateIntegration, triggerMetaBackfill };
 }

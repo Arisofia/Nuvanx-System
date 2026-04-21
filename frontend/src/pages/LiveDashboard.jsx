@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { RefreshCw, Megaphone, MessageSquare, Calendar, TrendingUp, Circle, Loader2, GitBranch, Radio } from 'lucide-react';
+import { RefreshCw, Megaphone, MessageSquare, Calendar, TrendingUp, Circle, Loader2, GitBranch, Radio, AlertTriangle } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
@@ -109,6 +109,8 @@ export default function LiveDashboard() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [usingApiData, setUsingApiData] = useState(false);
   const [isRealtime, setIsRealtime] = useState(false);
+  const [metaHealth, setMetaHealth] = useState(null); // null | 'healthy' | 'degraded' | 'unhealthy' | 'disconnected'
+  const [metaHealthMsg, setMetaHealthMsg] = useState('');
   const countdownRef = useRef(REFRESH_INTERVAL);
 
   const fetchEvents = useCallback(async () => {
@@ -125,6 +127,23 @@ export default function LiveDashboard() {
       // Silent degradation if activity sources are unavailable
     } finally {
       setFeedLoading(false);
+    }
+  }, []);
+
+  const checkMetaHealth = useCallback(async () => {
+    try {
+      const res = await api.get('/api/health/meta');
+      const { status, error: errMsg, last_success } = res.data;
+      setMetaHealth(status);
+      if (status === 'unhealthy') {
+        setMetaHealthMsg(errMsg ?? 'Meta API unreachable');
+      } else if (status === 'disconnected') {
+        setMetaHealthMsg('No Meta credentials configured');
+      } else {
+        setMetaHealthMsg(last_success ? `Last ok: ${new Date(last_success).toLocaleTimeString()}` : '');
+      }
+    } catch {
+      // Health check failure is non-fatal
     }
   }, []);
 
@@ -163,7 +182,8 @@ export default function LiveDashboard() {
   useEffect(() => {
     fetchMetrics();
     fetchEvents();
-  }, [fetchMetrics, fetchEvents]);
+    checkMetaHealth();
+  }, [fetchMetrics, fetchEvents, checkMetaHealth]);
 
   // Countdown ticker — triggers real API refresh
   useEffect(() => {
@@ -248,6 +268,18 @@ export default function LiveDashboard() {
           <p className="text-gray-400 mt-0.5">Metrics and activity feed refresh every 30s from backend APIs.</p>
         </div>
         <div className="flex items-center gap-3">
+          {metaHealth === 'unhealthy' && (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-red-500/10 text-red-400 border border-red-500/20" title={metaHealthMsg}>
+              <AlertTriangle size={10} />
+              Meta down
+            </span>
+          )}
+          {metaHealth === 'degraded' && (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20" title={metaHealthMsg}>
+              <AlertTriangle size={10} />
+              Meta degraded
+            </span>
+          )}
           <div className="flex items-center gap-2 text-sm text-gray-400">
             <div className="w-20 h-1.5 bg-dark-600 rounded-full overflow-hidden">
               <div
@@ -267,6 +299,18 @@ export default function LiveDashboard() {
           </button>
         </div>
       </div>
+
+      {/* Meta degraded notice */}
+      {(metaHealth === 'unhealthy' || metaHealth === 'degraded') && (
+        <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-amber-500/5 border border-amber-500/20">
+          <AlertTriangle size={16} className="text-amber-400 shrink-0 mt-0.5" />
+          <p className="text-sm text-amber-200/80">
+            {metaHealth === 'degraded'
+              ? 'Meta is showing cached data — live feed may be delayed. Go to Integrations → Force Sync Meta to recover.'
+              : `Meta API unreachable: ${metaHealthMsg}. Lead data from Meta ads may be missing. Check your token in Integration Center.`}
+          </p>
+        </div>
+      )}
 
       {/* API metrics */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
