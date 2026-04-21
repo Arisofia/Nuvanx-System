@@ -1471,7 +1471,7 @@ Deno.serve(async (req: Request) => {
       if (!clinicId) return json({ success: false, message: 'No clinic' }, 400);
 
       const { data: rows } = await adminClient
-        .from('v_lead_traceability')
+        .from('vw_lead_traceability')
         .select('*')
         .limit(250);
 
@@ -1483,7 +1483,7 @@ Deno.serve(async (req: Request) => {
       const { data: { user } } = await adminClient.auth.getUser(token!);
       if (!user) return json({ success: false, message: 'Unauthorized' }, 401);
 
-      const { data: rows } = await adminClient.from('v_whatsapp_funnel').select('*');
+      const { data: rows } = await adminClient.from('vw_whatsapp_conversion_real').select('*');
       return json({ success: true, funnel: rows || [] });
     }
 
@@ -1492,7 +1492,7 @@ Deno.serve(async (req: Request) => {
       const { data: { user } } = await adminClient.auth.getUser(token!);
       if (!user) return json({ success: false, message: 'Unauthorized' }, 401);
 
-      const { data: rows } = await adminClient.from('v_campaign_roi').select('*').order('total_leads', { ascending: false });
+      const { data: rows } = await adminClient.from('vw_campaign_performance_real').select('*').order('total_leads', { ascending: false });
       return json({ success: true, campaigns: rows || [] });
     }
 
