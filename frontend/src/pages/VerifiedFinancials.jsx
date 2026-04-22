@@ -14,6 +14,23 @@ const fmtEur = (n) => `€${fmt(n)}`;
 const fmtPct = (n) => `${(n ?? 0).toFixed(1)}%`;
 
 const TEMPLATE_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
+const DIAGNOSTIC_PRIORITY = {
+  database_unavailable: 100,
+  missing_clinic_mapping: 90,
+  no_settlements: 80,
+  no_patients: 70,
+  ok: 0,
+};
+
+function pickMostActionableDiagnostics(candidates) {
+  const valid = (candidates || []).filter(Boolean);
+  if (valid.length === 0) return null;
+  return valid.reduce((best, curr) => {
+    const bestScore = DIAGNOSTIC_PRIORITY[best?.reason] ?? 10;
+    const currScore = DIAGNOSTIC_PRIORITY[curr?.reason] ?? 10;
+    return currScore > bestScore ? curr : best;
+  }, valid[0]);
+}
 
 function KpiCard({ label, value, sub, icon: Icon, accent = 'brand' }) {
   const accents = {
@@ -75,12 +92,11 @@ export default function VerifiedFinancials() {
       setData(summaryRes.data);
       setSettlements(settleRes.data.settlements || []);
       setPatients(patientsRes.data.patients || []);
-      setDiagnostics(
-        summaryRes.data?.diagnostics ||
-        settleRes.data?.diagnostics ||
-        patientsRes.data?.diagnostics ||
-        null,
-      );
+      setDiagnostics(pickMostActionableDiagnostics([
+        summaryRes.data?.diagnostics,
+        settleRes.data?.diagnostics,
+        patientsRes.data?.diagnostics,
+      ]));
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to load financial data');
     } finally {
