@@ -11,13 +11,6 @@ const EMPTY_INTEGRATIONS = [
   { service: 'github', name: 'GitHub', description: 'Repository access for deployment triggers', icon: '🐙' },
 ].map(item => ({ ...item, status: 'disconnected', lastSync: null, error: null }));
 
-function normalizeMetaAccountId(raw) {
-  const value = String(raw || '').trim();
-  if (!value) return '';
-  const unprefixed = value.replace(/^act_/i, '');
-  const digits = unprefixed.replace(/\D/g, '');
-  return digits ? `act_${digits}` : '';
-}
 
 
 export function useIntegrations() {
