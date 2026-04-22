@@ -14,7 +14,8 @@
     "supabase:functions:deploy:api": "npx --yes supabase functions deploy api --no-verify-jwt",
     "supabase:migration:list": "npx --yes supabase migration list",
     "supabase:migration:push": "npx --yes supabase db push --yes",
-    "supabase:types": "npx --yes supabase gen types typescript --schema public > frontend/src/lib/supabase/types.ts"
+    "supabase:types": "npx --yes supabase gen types typescript --schema public > frontend/src/lib/supabase/types.ts",
+    "setup:production": "bash scripts/setup-production.sh"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.3",

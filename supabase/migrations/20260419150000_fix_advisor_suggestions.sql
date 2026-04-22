@@ -38,10 +38,31 @@ CREATE INDEX IF NOT EXISTS idx_leads_assigned_to
   ON public.leads(assigned_to);
 CREATE INDEX IF NOT EXISTS idx_leads_converted_patient_id 
   ON public.leads(converted_patient_id);
-CREATE INDEX IF NOT EXISTS idx_leads_doctor_id 
-  ON public.leads(doctor_id);
-CREATE INDEX IF NOT EXISTS idx_leads_treatment_type_id 
-  ON public.leads(treatment_type_id);
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'leads'
+      AND column_name = 'doctor_id'
+  ) THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_leads_doctor_id ON public.leads(doctor_id)';
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'leads'
+      AND column_name = 'treatment_type_id'
+  ) THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_leads_treatment_type_id ON public.leads(treatment_type_id)';
+  END IF;
+END $$;
 
 -- playbook_executions foreign keys
 CREATE INDEX IF NOT EXISTS idx_playbook_executions_agent_output_id 
