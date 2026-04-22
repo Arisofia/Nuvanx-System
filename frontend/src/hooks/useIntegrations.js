@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '../config/api';
+import { normalizeMetaAccountId, normalizePhoneNumberId } from '../utils/normalize';
 
 // Initial empty integrations structure - will be populated from backend
 const EMPTY_INTEGRATIONS = [
@@ -9,22 +10,6 @@ const EMPTY_INTEGRATIONS = [
   { service: 'gemini', name: 'Google Gemini', description: 'Gemini AI content generation and campaign insights', icon: '✨' },
   { service: 'github', name: 'GitHub', description: 'Repository access for deployment triggers', icon: '🐙' },
 ].map(item => ({ ...item, status: 'disconnected', lastSync: null, error: null }));
-
-function normalizeMetaAccountId(raw) {
-  const value = String(raw || '').trim();
-  if (!value) return '';
-  const unprefixed = value.replace(/^act_/i, '');
-  const digits = unprefixed.replace(/\D/g, '');
-  return digits ? `act_${digits}` : '';
-}
-
-function normalizePhoneNumberId(raw) {
-  const value = String(raw || '').trim();
-  if (!value || /^act_/i.test(value) || /[a-z]/i.test(value)) return '';
-  const digits = value.replace(/\D/g, '');
-  if (digits.length < 8 || digits.length > 20) return '';
-  return digits;
-}
 
 export function useIntegrations() {
   const [integrations, setIntegrations] = useState(EMPTY_INTEGRATIONS);
