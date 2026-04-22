@@ -241,7 +241,7 @@ async function main() {
   }
 }
 
-main().catch(() => {
-  console.error('❌ Token generation failed. Run with secure debugging locally if needed.');
+main().catch((err) => {
+  console.error(`❌ ${err.message || err}`);
   process.exit(1);
 });
