@@ -536,24 +536,24 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    async function getMetaCache(adminClient: any, userId: string, cacheId: string) {
-  const { data } = await adminClient
-    .from('meta_cache')
-    .select('data, updated_at')
-    .eq('user_id', userId)
-    .eq('id', cacheId)
-    .maybeSingle();
-  return data;
-}
+    const getMetaCache = async (adminClient: any, userId: string, cacheId: string) => {
+      const { data } = await adminClient
+        .from('meta_cache')
+        .select('data, updated_at')
+        .eq('user_id', userId)
+        .eq('id', cacheId)
+        .maybeSingle();
+      return data;
+    };
 
-async function setMetaCache(adminClient: any, userId: string, cacheId: string, data: any) {
-  await adminClient
-    .from('meta_cache')
-    .upsert(
-      { id: cacheId, user_id: userId, data, updated_at: new Date().toISOString() },
-      { onConflict: 'user_id,id' },
-    );
-}
+    const setMetaCache = async (adminClient: any, userId: string, cacheId: string, data: any) => {
+      await adminClient
+        .from('meta_cache')
+        .upsert(
+          { id: cacheId, user_id: userId, data, updated_at: new Date().toISOString() },
+          { onConflict: 'user_id,id' },
+        );
+    };
 
 // ── GET /api/health ──────────────────────────────────────────────────────
     if (resource === 'health') {
