@@ -15,6 +15,7 @@ import {
 import MetricCard from '../components/MetricCard';
 import api from '../config/api';
 import { normalizeDashboardMetrics } from '../lib/normalizeDashboardMetrics';
+import { normalizeMetaAccountId } from '../utils/normalize';
 
 const REFRESH_SECONDS = 60;
 
@@ -45,14 +46,6 @@ function normalizeMetaSummary(summary) {
     cpc: Number(raw.cpc || 0),
     cpm: Number(raw.cpm || 0),
   };
-}
-
-function normalizeMetaAccountId(raw) {
-  const value = String(raw || '').trim();
-  if (!value) return '';
-  const unprefixed = value.replace(/^act_/i, '');
-  const digits = unprefixed.replace(/\D/g, '');
-  return digits ? `act_${digits}` : '';
 }
 
 function formatAgentType(agentType) {
