@@ -51,12 +51,6 @@ npm run dev:backend   # Express server on :3001 (webhooks + credential vault)
 npm run dev:frontend  # Vite on http://localhost:5173
 ```
 
-## Codex Cloud Environment
-
-- Setup script: `.codex/setup.sh`
-- Environment blueprint: `.codex/ENVIRONMENT.md`
-- Use these when creating the ChatGPT Codex environment for this repository so connector tasks have deterministic dependency installs and correct variable names.
-
 ## Testing
 
 ```bash
