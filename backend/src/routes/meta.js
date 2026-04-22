@@ -38,7 +38,7 @@ async function resolveMetaCredential(userId) {
 async function resolveAdAccountId(userId) {
   const integrations = await integrationModel.getAll(userId);
   const meta = integrations.find((i) => i.service === 'meta');
-  const fromVault = meta?.metadata?.adAccountId || null;
+  const fromVault = meta?.metadata?.adAccountId || meta?.metadata?.ad_account_id || null;
   if (fromVault) return fromVault;
   if (config.allowSharedCredentials && config.metaAdAccountId) return config.metaAdAccountId;
   return null;
