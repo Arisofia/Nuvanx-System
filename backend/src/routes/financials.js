@@ -19,6 +19,27 @@ const logger = require('../utils/logger');
 const router = express.Router();
 router.use(authenticate);
 
+function emptySummaryPayload(reason, clinicId = null) {
+  return {
+    summary: {
+      totalNet: 0,
+      totalGross: 0,
+      totalDiscount: 0,
+      avgTicket: 0,
+      settledCount: 0,
+      cancelledCount: 0,
+      discountRate: 0,
+      avgLiquidationDays: 0,
+    },
+    monthly: [],
+    templateMix: [],
+    diagnostics: {
+      reason,
+      clinicId,
+    },
+  };
+}
+
 // ─── helper: resolve user's clinic_id ────────────────────────────────────────
 
 async function getClinicId(userId) {
@@ -40,20 +61,12 @@ async function getClinicId(userId) {
 router.get('/summary', async (req, res, next) => {
   try {
     if (!isAvailable()) {
-      return res.json({
-        summary: { totalNet: 0, totalGross: 0, totalDiscount: 0, avgTicket: 0, settledCount: 0, cancelledCount: 0, discountRate: 0, avgLiquidationDays: 0 },
-        monthly: [],
-        templateMix: [],
-      });
+      return res.json(emptySummaryPayload('database_unavailable'));
     }
 
     const clinicId = await getClinicId(req.user.id);
     if (!clinicId) {
-      return res.json({
-        summary: { totalNet: 0, totalGross: 0, totalDiscount: 0, avgTicket: 0, settledCount: 0, cancelledCount: 0, discountRate: 0, avgLiquidationDays: 0 },
-        monthly: [],
-        templateMix: [],
-      });
+      return res.json(emptySummaryPayload('missing_clinic_mapping'));
     }
 
     const [summaryRes, monthlyRes, templateRes] = await Promise.all([
@@ -114,7 +127,7 @@ router.get('/summary', async (req, res, next) => {
       pct: totalNet > 0 ? parseFloat(((parseFloat(t.net) / totalNet) * 100).toFixed(1)) : 0,
     }));
 
-    res.json({
+    const responsePayload = {
       summary: {
         totalNet,
         totalGross,
@@ -130,7 +143,13 @@ router.get('/summary', async (req, res, next) => {
         net: parseFloat(r.net),
       })),
       templateMix,
-    });
+      diagnostics: {
+        reason: settledCount > 0 ? 'ok' : 'no_settlements',
+        clinicId,
+      },
+    };
+
+    res.json(responsePayload);
   } catch (err) {
     logger.error('financials summary error', { userId: req.user.id, error: err.message });
     next(err);
@@ -141,10 +160,10 @@ router.get('/summary', async (req, res, next) => {
 
 router.get('/settlements', async (req, res, next) => {
   try {
-    if (!isAvailable()) return res.json({ settlements: [] });
+    if (!isAvailable()) return res.json({ settlements: [], diagnostics: { reason: 'database_unavailable' } });
 
     const clinicId = await getClinicId(req.user.id);
-    if (!clinicId) return res.json({ settlements: [] });
+    if (!clinicId) return res.json({ settlements: [], diagnostics: { reason: 'missing_clinic_mapping' } });
 
     const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
     const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
@@ -172,7 +191,13 @@ router.get('/settlements', async (req, res, next) => {
       [clinicId, limit, offset],
     );
 
-    res.json({ settlements: rows });
+    res.json({
+      settlements: rows,
+      diagnostics: {
+        reason: rows.length > 0 ? 'ok' : 'no_settlements',
+        clinicId,
+      },
+    });
   } catch (err) {
     logger.error('financials settlements error', { userId: req.user.id, error: err.message });
     next(err);
@@ -183,10 +208,10 @@ router.get('/settlements', async (req, res, next) => {
 
 router.get('/patients', async (req, res, next) => {
   try {
-    if (!isAvailable()) return res.json({ patients: [] });
+    if (!isAvailable()) return res.json({ patients: [], diagnostics: { reason: 'database_unavailable' } });
 
     const clinicId = await getClinicId(req.user.id);
-    if (!clinicId) return res.json({ patients: [] });
+    if (!clinicId) return res.json({ patients: [], diagnostics: { reason: 'missing_clinic_mapping' } });
 
     const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
     const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
@@ -200,7 +225,13 @@ router.get('/patients', async (req, res, next) => {
       [clinicId, limit, offset],
     );
 
-    res.json({ patients: rows });
+    res.json({
+      patients: rows,
+      diagnostics: {
+        reason: rows.length > 0 ? 'ok' : 'no_patients',
+        clinicId,
+      },
+    });
   } catch (err) {
     logger.error('financials patients error', { userId: req.user.id, error: err.message });
     next(err);
