@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CheckCircle, XCircle, Loader2, RefreshCw, Link, Unlink } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -47,6 +47,16 @@ function ConnectModal({ integration, onClose, onConnect }) {
   const isWhatsApp = integration.service === 'whatsapp';
   const isMeta = integration.service === 'meta';
   const normalizedMetaPreview = isMeta ? normalizeMetaAccountId(adAccountId) : '';
+
+  useEffect(() => {
+    if (isMeta) {
+      setAdAccountId(integration.metadata?.adAccountId || integration.metadata?.ad_account_id || '');
+      setPageId(integration.metadata?.pageId || integration.metadata?.page_id || '');
+    }
+    if (isWhatsApp) {
+      setPhoneNumberId(integration.metadata?.phoneNumberId || integration.metadata?.phone_number_id || '');
+    }
+  }, [integration.metadata, isMeta, isWhatsApp]);
 
   const fieldLabels = {
     meta: 'ACCESS TOKEN',
@@ -160,6 +170,7 @@ function ConnectModal({ integration, onClose, onConnect }) {
                   placeholder="e.g. 123456789012345"
                   className="input"
                   autoComplete="off"
+                  required
                 />
                 <p className="mt-1.5 text-xs text-gray-500">
                   Found in Meta Business Manager → Pages → select your page → About → Page ID
@@ -214,6 +225,8 @@ export default function IntegrationCard({ service, name, description, icon, stat
   const accountLabel = metadata?.accountName || metadata?.login || metadata?.email
     ? (metadata.accountName || metadata.login || metadata.email)
     : null;
+  const metaAdAccountId = metadata?.adAccountId || metadata?.ad_account_id || null;
+  const metaPageId = metadata?.pageId || metadata?.page_id || null;
 
   const handleTest = async () => {
     setTestResult(null);
@@ -262,7 +275,14 @@ export default function IntegrationCard({ service, name, description, icon, stat
         )}
 
         <div className="flex items-center justify-between text-xs text-gray-500 border-t border-dark-600 pt-3">
-          <span>Last sync: <span className="text-gray-400">{formatSync(lastSync)}</span></span>
+          <span>
+            Last sync: <span className="text-gray-400">{formatSync(lastSync)}</span>
+            {service === 'meta' && (metaAdAccountId || metaPageId) && (
+              <span className="block text-[11px] text-gray-500 mt-1">
+                {metaAdAccountId ? `Ad Account: ${metaAdAccountId}` : ''}{metaAdAccountId && metaPageId ? ' · ' : ''}{metaPageId ? `Page: ${metaPageId}` : ''}
+              </span>
+            )}
+          </span>
           {accountLabel && (
             <span className="text-gray-500 truncate max-w-[130px]" title={accountLabel}>
               {accountLabel}
@@ -305,7 +325,7 @@ export default function IntegrationCard({ service, name, description, icon, stat
 
       {showModal && (
         <ConnectModal
-          integration={{ service, name, description, icon }}
+          integration={{ service, name, description, icon, metadata }}
           onClose={() => setShowModal(false)}
           onConnect={onConnect}
         />

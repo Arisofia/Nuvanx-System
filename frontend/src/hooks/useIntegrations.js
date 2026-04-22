@@ -106,6 +106,11 @@ export function useIntegrations() {
     if (service === 'meta') {
       metadata.adAccountId = normalizeMetaAccountId(metadata.adAccountId || metadata.ad_account_id || '');
       metadata.ad_account_id = metadata.adAccountId;
+      if (metadata.pageId || metadata.page_id) {
+        const normalizedPageId = String(metadata.pageId || metadata.page_id).replace(/\D/g, '');
+        metadata.pageId = normalizedPageId;
+        metadata.page_id = normalizedPageId;
+      }
     }
 
     const body = {
@@ -140,7 +145,10 @@ export function useIntegrations() {
         status: 'connected',
         lastSync: new Date().toISOString(),
         error: null,
-        metadata: res.data?.metadata,
+        metadata: {
+          ...(current?.metadata || {}),
+          ...(res.data?.metadata || {}),
+        },
       };
       updateIntegration(service, statusUpdate);
       return res.data;
