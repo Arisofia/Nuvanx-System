@@ -47,13 +47,6 @@ function normalizeMetaSummary(summary) {
   };
 }
 
-function normalizeMetaAccountId(raw) {
-  const value = String(raw || '').trim();
-  if (!value) return '';
-  const unprefixed = value.replace(/^act_/i, '');
-  const digits = unprefixed.replace(/\D/g, '');
-  return digits ? `act_${digits}` : '';
-}
 
 function formatAgentType(agentType) {
   const map = {

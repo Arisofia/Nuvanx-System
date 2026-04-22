@@ -14,13 +14,6 @@ function formatSync(ts) {
   return `${Math.floor(hrs / 24)} day(s) ago`;
 }
 
-function normalizeMetaAccountId(raw) {
-  const value = String(raw || '').trim();
-  if (!value) return '';
-  const unprefixed = value.replace(/^act_/i, '');
-  const digits = unprefixed.replace(/\D/g, '');
-  return digits ? `act_${digits}` : '';
-}
 
 
 function StatusBadge({ status }) {
