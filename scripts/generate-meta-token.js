@@ -241,7 +241,7 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(`❌ ${err.message || err}`);
+main().catch(() => {
+  console.error('❌ Token generation failed.');
   process.exit(1);
 });
