@@ -348,6 +348,7 @@ router.post(
           });
         }
         metadata.phoneNumberId = phoneNumberId;
+        metadata.phone_number_id = phoneNumberId;
       }
 
       await credentialModel.save(req.user.id, service, credential);
