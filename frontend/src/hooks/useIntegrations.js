@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '../config/api';
+import { normalizePhoneNumberId } from '../utils/phoneNumber';
 
 // Initial empty integrations structure - will be populated from backend
 const EMPTY_INTEGRATIONS = [
