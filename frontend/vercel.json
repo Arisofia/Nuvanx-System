@@ -2,7 +2,6 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
-  "ignoreCommand": "exit 1",
   "rewrites": [
     {
       "source": "/api/:path*",
