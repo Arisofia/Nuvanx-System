@@ -242,6 +242,7 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error(`❌ ${err.message || err}`);
+  const errorType = err && err.name ? ` (${err.name})` : '';
+  console.error(`❌ Token generation failed${errorType}. Run with secure debugging locally if needed.`);
   process.exit(1);
 });
