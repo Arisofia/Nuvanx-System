@@ -8,6 +8,8 @@
     "dev": "npm --prefix frontend run dev",
     "lint": "npm --prefix frontend run lint",
     "secrets:sync:all": "node scripts/sync-platform-secrets.js",
+    "meta:token:generate": "node scripts/generate-meta-token.js",
+    "meta:token:audit": "node scripts/generate-meta-token.js --audit-file artifacts/meta-token-audit.json",
     "meta:weekly:report": "node scripts/meta-weekly-report.js",
     "ingest:doctoralia": "node scripts/ingest-doctoralia.js",
     "supabase:functions:list": "npx --yes supabase functions list",
