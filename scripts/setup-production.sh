@@ -55,15 +55,15 @@ fi
 
 echo
 echo "[5/7] Printing exact secret/env setup commands"
-cat <<'CMDS'
+cat <<CMDS
 # Supabase (required)
-npx --yes supabase secrets set ENCRYPTION_KEY='<same-key-used-by-node-backend>' --project-ref ssvvuuysgxyqvmovrlvk
+npx --yes supabase secrets set ENCRYPTION_KEY='<same-key-used-by-node-backend>' --project-ref "$SUPABASE_PROJECT_REF"
 
 # Optional but recommended validation
-npx --yes supabase secrets list --project-ref ssvvuuysgxyqvmovrlvk
+npx --yes supabase secrets list --project-ref "$SUPABASE_PROJECT_REF"
 
 # Edge Function deploy
-npx --yes supabase functions deploy api --no-verify-jwt --project-ref ssvvuuysgxyqvmovrlvk
+npx --yes supabase functions deploy api --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
 
 # Vercel (required frontend env for auth)
 vercel env add VITE_SUPABASE_URL production
