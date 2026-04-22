@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '../config/api';
+import { normalizePhoneNumberId } from '../utils/phoneNumber';
 
 // Initial empty integrations structure - will be populated from backend
 const EMPTY_INTEGRATIONS = [
@@ -69,6 +70,7 @@ export function useIntegrations() {
             error: match.error || null,
             metadata: {
               ...(item.metadata || {}),
+              ...(match.metadata || {}),
               accountName: match.accountName,
               login: match.login,
               email: match.email,
@@ -88,8 +90,11 @@ export function useIntegrations() {
   }, [fetchIntegrations]);
 
   useEffect(() => {
-    validateAll();
-  }, [validateAll]);
+    (async () => {
+      await fetchIntegrations();
+      await validateAll();
+    })();
+  }, [fetchIntegrations, validateAll]);
 
   const updateIntegration = useCallback((service, updates) => {
     setIntegrations(prev =>
@@ -111,6 +116,11 @@ export function useIntegrations() {
         metadata.pageId = normalizedPageId;
         metadata.page_id = normalizedPageId;
       }
+    }
+    if (service === 'whatsapp') {
+      const normalizedPhoneId = normalizePhoneNumberId(metadata.phoneNumberId || metadata.phone_number_id || '');
+      metadata.phoneNumberId = normalizedPhoneId;
+      metadata.phone_number_id = normalizedPhoneId;
     }
 
     const body = {

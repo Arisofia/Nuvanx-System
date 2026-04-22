@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle, XCircle, Loader2, RefreshCw, Link, Unlink } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { normalizePhoneNumberId } from '../utils/phoneNumber';
 
 function formatSync(ts) {
   if (!ts) return 'Never';
@@ -47,6 +48,7 @@ function ConnectModal({ integration, onClose, onConnect }) {
   const isWhatsApp = integration.service === 'whatsapp';
   const isMeta = integration.service === 'meta';
   const normalizedMetaPreview = isMeta ? normalizeMetaAccountId(adAccountId) : '';
+  const normalizedPhonePreview = isWhatsApp ? normalizePhoneNumberId(phoneNumberId) : '';
 
   useEffect(() => {
     if (isMeta) {
@@ -77,14 +79,17 @@ function ConnectModal({ integration, onClose, onConnect }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!apiKey.trim()) return;
-    if (isWhatsApp && !phoneNumberId.trim()) return;
+    if (isWhatsApp && !normalizedPhonePreview) {
+      toast.error('Use a valid numeric WhatsApp Phone Number ID (not an ad account id like act_...)');
+      return;
+    }
     const normalizedMetaAccountId = normalizedMetaPreview;
     if (isMeta && !normalizedMetaAccountId) return;
 
     setSubmitting(true);
     try {
       const credentials = { apiKey };
-      if (isWhatsApp) credentials.phoneNumberId = phoneNumberId.trim();
+      if (isWhatsApp) credentials.phoneNumberId = normalizedPhonePreview;
       if (isMeta) {
         credentials.adAccountId = normalizedMetaAccountId;
         if (pageId.trim()) credentials.pageId = pageId.trim();
@@ -194,7 +199,8 @@ function ConnectModal({ integration, onClose, onConnect }) {
                 required
               />
               <p className="mt-1.5 text-xs text-gray-500">
-                Found in Meta Business Manager → WhatsApp → API Setup → Phone Number ID
+                Use the numeric Phone Number ID from Meta. We normalize and save as{' '}
+                <strong>{normalizedPhonePreview || '<digits>'}</strong>.
               </p>
             </div>
           )}
@@ -205,7 +211,7 @@ function ConnectModal({ integration, onClose, onConnect }) {
             </button>
             <button
               type="submit"
-              disabled={submitting || !apiKey.trim() || (isWhatsApp && !phoneNumberId.trim()) || (isMeta && !normalizedMetaPreview)}
+              disabled={submitting || !apiKey.trim() || (isWhatsApp && !normalizedPhonePreview) || (isMeta && !normalizedMetaPreview)}
               className="btn-primary flex-1 flex items-center justify-center gap-2"
             >
               {submitting && <Loader2 size={16} className="animate-spin" />}
