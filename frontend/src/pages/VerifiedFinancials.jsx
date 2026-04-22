@@ -14,6 +14,23 @@ const fmtEur = (n) => `€${fmt(n)}`;
 const fmtPct = (n) => `${(n ?? 0).toFixed(1)}%`;
 
 const TEMPLATE_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
+const DIAGNOSTIC_PRIORITY = {
+  database_unavailable: 100,
+  missing_clinic_mapping: 90,
+  no_settlements: 80,
+  no_patients: 70,
+  ok: 0,
+};
+
+function pickMostActionableDiagnostics(candidates) {
+  const valid = (candidates || []).filter(Boolean);
+  if (valid.length === 0) return null;
+  return valid.reduce((best, curr) => {
+    const bestScore = DIAGNOSTIC_PRIORITY[best?.reason] ?? 10;
+    const currScore = DIAGNOSTIC_PRIORITY[curr?.reason] ?? 10;
+    return currScore > bestScore ? curr : best;
+  }, valid[0]);
+}
 
 function KpiCard({ label, value, sub, icon: Icon, accent = 'brand' }) {
   const accents = {
@@ -57,6 +74,7 @@ export default function VerifiedFinancials() {
   const [data, setData] = useState(null);
   const [settlements, setSettlements] = useState([]);
   const [patients, setPatients] = useState([]);
+  const [diagnostics, setDiagnostics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState('overview'); // 'overview' | 'settlements' | 'patients'
@@ -74,6 +92,11 @@ export default function VerifiedFinancials() {
       setData(summaryRes.data);
       setSettlements(settleRes.data.settlements || []);
       setPatients(patientsRes.data.patients || []);
+      setDiagnostics(pickMostActionableDiagnostics([
+        summaryRes.data?.diagnostics,
+        settleRes.data?.diagnostics,
+        patientsRes.data?.diagnostics,
+      ]));
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to load financial data');
     } finally {
@@ -125,6 +148,14 @@ export default function VerifiedFinancials() {
   const s = data?.summary || {};
   const monthly = data?.monthly || [];
   const templateMix = data?.templateMix || [];
+  const diagnosticsReason = diagnostics?.reason || null;
+
+  const diagnosticsMessage = {
+    database_unavailable: 'Database is unavailable. Configure DATABASE_URL/Supabase DB credentials in production.',
+    missing_clinic_mapping: 'Your user is not linked to a clinic. Assign users.clinic_id to unlock financial data.',
+    no_settlements: 'No settlement rows found for your clinic yet. Run the Doctoralia sync workflow/script and verify CLINIC_ID.',
+    no_patients: 'No patient rows found for your clinic yet.',
+  }[diagnosticsReason] || null;
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -144,6 +175,24 @@ export default function VerifiedFinancials() {
           Refresh
         </button>
       </div>
+
+      {diagnosticsMessage && diagnosticsReason !== 'ok' && (
+        <div className="card border-amber-500/20 bg-amber-500/5 flex items-start gap-3">
+          <AlertTriangle className="text-amber-400 shrink-0 mt-0.5" size={20} />
+          <div>
+            <h3 className="font-semibold text-white mb-1">Data Diagnostics</h3>
+            <p className="text-sm text-gray-300 mb-1">{diagnosticsMessage}</p>
+            <p className="text-xs text-gray-500">
+              reason: <span className="text-gray-400">{diagnosticsReason}</span>
+              {diagnostics?.clinicId ? (
+                <>
+                  {' '}· clinic_id: <span className="text-gray-400">{diagnostics.clinicId}</span>
+                </>
+              ) : null}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* KPI Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

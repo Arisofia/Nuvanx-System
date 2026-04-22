@@ -4,8 +4,9 @@ name: Sync Doctoralia Financials
 # upserts them into the financial_settlements table.
 #
 # Required GitHub secrets:
-#   GOOGLE_ADS_SERVICE_ACCOUNT  - Service account JSON (must have Sheets read scope;
-#                                  spreadsheet must be shared to its client_email)
+#   GOOGLE_ADS_SERVICE_ACCOUNT  - Service account credentials (base64-encoded JSON OR raw JSON;
+#                                  must have Sheets read scope, and the spreadsheet must be shared
+#                                  with the client_email in that service account)
 #   DOCTORALIA_SHEET_ID         - Spreadsheet ID from the Google Sheets URL
 #   DATABASE_URL                - Direct Postgres connection string (Supabase)
 #   CLINIC_ID                   - UUID of the clinic owning these settlements
@@ -32,10 +33,10 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Preflight - validate required secrets
+      - name: Preflight - validate required secrets and decode service account
         run: |
           MISSING=()
-          [ -z "$GOOGLE_SA_B64"       ] && MISSING+=("GOOGLE_ADS_SERVICE_ACCOUNT")
+          [ -z "$GOOGLE_SA_RAW"       ] && MISSING+=("GOOGLE_ADS_SERVICE_ACCOUNT")
           [ -z "$DOCTORALIA_SHEET_ID" ] && MISSING+=("DOCTORALIA_SHEET_ID")
           [ -z "$DATABASE_URL"        ] && MISSING+=("DATABASE_URL")
           [ -z "$CLINIC_ID"           ] && MISSING+=("CLINIC_ID")
@@ -44,15 +45,29 @@ jobs:
             echo "::error::Add them at Settings -> Secrets and variables -> Actions"
             exit 1
           fi
-          # Validate the service account secret decodes to valid JSON
-          DECODED="$(echo "$GOOGLE_SA_B64" | base64 -d 2>/dev/null)" || true
-          echo "$DECODED" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null || {
-            echo "::error::GOOGLE_ADS_SERVICE_ACCOUNT does not decode to valid JSON. Re-set it as: base64 -i service-account.json | tr -d '\\n'"
-            exit 1
-          }
+          # Accept both formats for GOOGLE_ADS_SERVICE_ACCOUNT:
+          #  1) base64(service-account.json)
+          #  2) raw JSON object string
+          if echo "$GOOGLE_SA_RAW" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
+            echo "GOOGLE_ADS_SERVICE_ACCOUNT format: raw JSON"
+            echo "GOOGLE_SA_JSON<<EOF" >> "$GITHUB_ENV"
+            echo "$GOOGLE_SA_RAW" >> "$GITHUB_ENV"
+            echo "EOF" >> "$GITHUB_ENV"
+          else
+            DECODED="$(echo "$GOOGLE_SA_RAW" | base64 -d 2>/dev/null)" || true
+            echo "$DECODED" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null || {
+              echo "::error::GOOGLE_ADS_SERVICE_ACCOUNT is invalid. Provide either raw JSON or base64-encoded JSON."
+              exit 1
+            }
+            echo "GOOGLE_ADS_SERVICE_ACCOUNT format: base64 JSON"
+            echo "GOOGLE_SA_JSON<<EOF" >> "$GITHUB_ENV"
+            echo "$DECODED" >> "$GITHUB_ENV"
+            echo "EOF" >> "$GITHUB_ENV"
+          fi
+
           echo "All required secrets present and valid."
         env:
-          GOOGLE_SA_B64:       ${{ secrets['GOOGLE_ADS_SERVICE_ACCOUNT'] || '' }}
+          GOOGLE_SA_RAW:       ${{ secrets['GOOGLE_ADS_SERVICE_ACCOUNT'] || '' }}
           DOCTORALIA_SHEET_ID: ${{ secrets['DOCTORALIA_SHEET_ID'] || '' }}
           DATABASE_URL:        ${{ secrets['DATABASE_URL'] || '' }}
           CLINIC_ID:           ${{ secrets['CLINIC_ID'] || '' }}
@@ -62,11 +77,8 @@ jobs:
         working-directory: ${{ github.workspace }}
 
       - name: Run Doctoralia to DB sync
-        run: |
-          export GOOGLE_SA_JSON="$(echo "$GOOGLE_SA_B64" | base64 -d)"
-          node scripts/sync-doctoralia.js
+        run: node scripts/sync-doctoralia.js
         env:
-          GOOGLE_SA_B64:       ${{ secrets['GOOGLE_ADS_SERVICE_ACCOUNT'] || '' }}
           DOCTORALIA_SHEET_ID: ${{ secrets['DOCTORALIA_SHEET_ID'] || '' }}
           DATABASE_URL:        ${{ secrets['DATABASE_URL'] || '' }}
           CLINIC_ID:           ${{ secrets['CLINIC_ID'] || '' }}

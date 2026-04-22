@@ -17,6 +17,19 @@ const logger = require('../utils/logger');
 const router = express.Router();
 router.use(authenticate);
 
+function normalizeMetaAdAccountId(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return '';
+  const unprefixed = value.replace(/^act_/i, '');
+  const digits = unprefixed.replace(/\D/g, '');
+  return digits ? `act_${digits}` : '';
+}
+
+function normalizeMetaPageId(raw) {
+  const digits = String(raw || '').replace(/\D/g, '');
+  return digits || '';
+}
+
 /**
  * Resolve a credential for the given service (async).
  * Priority: per-user vault → server-level env var defaults.
@@ -212,21 +225,28 @@ router.post(
       }
 
       const status = result.connected ? 'connected' : 'error';
+      const testMetadata = {
+        accountName: result.accountName,
+        login: result.login,
+        email: result.email,
+        portalId: result.portalId,
+      };
+      if (service === 'meta') {
+        const adAccountId = normalizeMetaAdAccountId(req.body.adAccountId || req.body.ad_account_id);
+        if (adAccountId) {
+          testMetadata.adAccountId = adAccountId;
+          testMetadata.ad_account_id = adAccountId;
+        }
+      }
       await integrationModel.upsert(req.user.id, service, {
         status,
         lastSync: result.connected ? new Date().toISOString() : undefined,
         lastError: result.error || null,
-        metadata: {
-          accountName: result.accountName,
-          login: result.login,
-          email: result.email,
-          portalId: result.portalId,
-          ...(service === 'meta' && { adAccountId: req.body.adAccountId || null }),
-        },
+        metadata: testMetadata,
       });
 
       logger.info('Integration test', { userId: req.user.id, service, connected: result.connected });
-      res.json({ success: true, service, ...result });
+      res.json({ success: true, service, metadata: testMetadata, ...result });
     } catch (err) {
       await integrationModel.upsert(req.user.id, service, { status: 'error', lastError: err.message });
       next(err);
@@ -270,7 +290,7 @@ router.post(
   handleValidationErrors,
   async (req, res, next) => {
     const { service } = req.params;
-    const { token, apiKey, metadata = {} } = req.body;
+    const { token, apiKey, metadata: rawMetadata = {} } = req.body;
     const credential = token || apiKey;
 
     if (!credential) {
@@ -278,6 +298,59 @@ router.post(
     }
 
     try {
+      const metadata = { ...rawMetadata };
+
+      if (service === 'meta') {
+        const adAccountId = normalizeMetaAdAccountId(metadata.adAccountId || metadata.ad_account_id);
+        const pageId = normalizeMetaPageId(metadata.pageId || metadata.page_id);
+        if (!adAccountId) {
+          return res.status(400).json({
+            success: false,
+            message: 'Meta requires adAccountId (e.g. act_9523446201036125)',
+          });
+        }
+        if (!pageId) {
+          return res.status(400).json({
+            success: false,
+            message: 'Meta requires pageId (Facebook Page ID) for Lead Ads webhook ingestion',
+          });
+        }
+
+        // Validate the token before persisting a "connected" state.
+        const metaTest = await metaService.testConnection(credential);
+        if (!metaTest.connected) {
+          return res.status(400).json({
+            success: false,
+            message: metaTest.error || 'Invalid Meta token',
+          });
+        }
+
+        metadata.adAccountId = adAccountId;
+        metadata.ad_account_id = adAccountId;
+        metadata.pageId = pageId;
+        metadata.page_id = pageId;
+        if (metaTest.accountName) metadata.accountName = metaTest.accountName;
+      }
+
+      if (service === 'whatsapp') {
+        const phoneNumberId = String(metadata.phoneNumberId || metadata.phone_number_id || '').trim();
+        if (!phoneNumberId) {
+          return res.status(400).json({
+            success: false,
+            message: 'WhatsApp requires phoneNumberId',
+          });
+        }
+        const waTest = await whatsappService.testConnection(credential, phoneNumberId);
+        if (!waTest.connected) {
+          return res.status(400).json({
+            success: false,
+            message: waTest.error || 'Invalid WhatsApp token or phoneNumberId',
+          });
+        }
+        metadata.phoneNumberId = phoneNumberId;
+        metadata.phone_number_id = phoneNumberId;
+      }
+
       await credentialModel.save(req.user.id, service, credential);
       await integrationModel.upsert(req.user.id, service, {
         status: 'connected',
@@ -286,7 +359,7 @@ router.post(
         metadata,
       });
       logger.info('Integration connected', { userId: req.user.id, service });
-      res.json({ success: true, message: `${service} connected successfully` });
+      res.json({ success: true, message: `${service} connected successfully`, metadata });
     } catch (err) {
       next(err);
     }
