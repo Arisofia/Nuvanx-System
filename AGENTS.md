@@ -4,11 +4,14 @@
 
 Monorepo with three independent sub-projects sharing a single git history:
 
-- **`backend/`** — Node.js/Express REST API (`src/server.js` entry). Routes in `routes/`, business logic in `services/`, Supabase clients in `config/supabase.js`.
-- **`frontend/`** — React 19 + Vite SPA. Pages in `src/pages/`, reusable hooks in `src/hooks/`, Supabase client + Figma client in `src/lib/supabase/`.
+- **`backend/`** — Supabase Edge Function (`supabase/functions/api/index.ts`). Local dev/test version in Node.js/Express (`src/server.js`).
+- **`frontend/`** — React 19 + Vite SPA hosted on Vercel. Pages in `src/pages/`, reusable hooks in `src/hooks/`.
 **Key architectural constraints:**
-- The backend uses two separate Supabase clients: `supabaseAdmin` (nuvanx-prod, `ssvvuuysgxyqvmovrlvk`) and `supabaseFigmaAdmin` (Figma project, `zpowfbeftxexzidlxndy`). Never mix them — routes/services must use the correct client for the target schema.
-- All env config is centralised in `backend/src/config/env.js`. Add new env vars there; never read `process.env` directly in routes or services.
+- Production Canonical URL: `https://frontend-arisofias-projects-c2217452.vercel.app`
+- The production API is served via Supabase Edge Functions. Frontend calls `/api/*` which Vercel rewrites to the Edge Function.
+- The backend uses two separate Supabase clients: `supabaseAdmin` (nuvanx-prod, `ssvvuuysgxyqvmovrlvk`) and `supabaseFigmaAdmin` (Figma project, `zpowfbeftxexzidlxndy`). Never mix them.
+- All env config is centralised in `backend/src/config/env.js` (for local Node backend) and managed via Supabase Secrets (for Edge Functions).
+- Meta Tokens: System User tokens never expire. User access tokens expire every 60-90 days.
 - Migrations live in `supabase/migrations/` (timestamp-prefixed). Do not reuse a prefix — duplicates break `supabase db push` ordering.
 - Frontend calls the backend API only via `src/config/api.js` (base URL config). Do not hardcode `localhost` URLs in components.
 
