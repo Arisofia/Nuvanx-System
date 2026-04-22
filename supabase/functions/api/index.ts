@@ -18,6 +18,34 @@ function hexToBytes(hex: string): Uint8Array {
   return arr;
 }
 
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function encryptCred(raw: string): Promise<string> {
+  const masterKey = Deno.env.get('ENCRYPTION_KEY');
+  if (!masterKey) throw new Error('ENCRYPTION_KEY not set in Edge Function secrets');
+  const salt = crypto.getRandomValues(new Uint8Array(32));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const km = await crypto.subtle.importKey('raw', new TextEncoder().encode(masterKey), 'PBKDF2', false, ['deriveKey']);
+  const aesKey = await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: salt as any, iterations: 100_000, hash: 'SHA-256' },
+    km, { name: 'AES-GCM', length: 256 }, false, ['encrypt'],
+  );
+  const ciphertextWithTag = new Uint8Array(
+    await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv: iv as any },
+      aesKey,
+      new TextEncoder().encode(raw),
+    ),
+  );
+  const tagLen = 16;
+  if (ciphertextWithTag.length < tagLen) throw new Error('failed to encrypt credential');
+  const ct = ciphertextWithTag.slice(0, ciphertextWithTag.length - tagLen);
+  const tag = ciphertextWithTag.slice(ciphertextWithTag.length - tagLen);
+  return [bytesToHex(salt), bytesToHex(iv), bytesToHex(tag), bytesToHex(ct)].join(':');
+}
+
 async function decryptCred(encoded: string): Promise<string> {
   const masterKey = Deno.env.get('ENCRYPTION_KEY');
   if (!masterKey) throw new Error('ENCRYPTION_KEY not set in Edge Function secrets');
@@ -75,12 +103,16 @@ async function resolveClinicId(adminClient: any, userId: string): Promise<string
 
 async function persistAgentOutput(adminClient: any, userId: string, agentType: string, output: any, metadata: any = {}) {
   const clinicId = await resolveClinicId(adminClient, userId);
+  const outputText = typeof output === 'string'
+    ? output
+    : JSON.stringify(output ?? {});
   const { data, error } = await adminClient
     .from('agent_outputs')
     .insert({
       user_id: userId,
       clinic_id: clinicId,
       agent_type: agentType,
+      output_text: outputText,
       output,
       metadata,
     })
@@ -311,6 +343,15 @@ function requireMetaAccountId(raw: unknown): string {
     throw new Error('Invalid Meta Ad Account ID. Use a numeric ID or act_<digits>.');
   }
   return normalized;
+}
+
+function normalizePhoneNumberId(raw: unknown): string {
+  const value = String(raw ?? '').trim();
+  if (!value || /^act_/i.test(value)) return '';
+  if (/[a-z]/i.test(value)) return '';
+  const digits = value.replace(/\D/g, '');
+  if (digits.length < 8 || digits.length > 20) return '';
+  return digits;
 }
 
 // ── Google Ads helpers ────────────────────────────────────────────────────────
@@ -1092,6 +1133,7 @@ Deno.serve(async (req: Request) => {
           status: hasCredential ? 'connected' : i.status,
           lastSync: i.last_sync,
           skipped: false,
+          metadata: i.metadata ?? {},
           accountName: i.metadata?.accountName ?? null,
           login: i.metadata?.login ?? null,
           email: i.metadata?.email ?? null,
@@ -1121,12 +1163,43 @@ Deno.serve(async (req: Request) => {
       let metadata = body.metadata ?? {};
       if (service === 'meta') {
         const normalized = requireMetaAccountId(metadata?.adAccountId ?? metadata?.ad_account_id ?? '');
+        const normalizedPageId = String(metadata?.pageId ?? metadata?.page_id ?? '').replace(/\D/g, '');
+        if (!normalizedPageId) {
+          return json({ success: false, message: 'pageId is required for Meta integration' }, 400);
+        }
         metadata = {
           ...metadata,
           adAccountId: normalized,
           ad_account_id: normalized,
+          pageId: normalizedPageId,
+          page_id: normalizedPageId,
         };
       }
+      if (service === 'whatsapp') {
+        const normalized = normalizePhoneNumberId(metadata?.phoneNumberId ?? metadata?.phone_number_id ?? '');
+        if (!normalized) {
+          return json({ success: false, message: 'phoneNumberId is required for WhatsApp' }, 400);
+        }
+        metadata = {
+          ...metadata,
+          phoneNumberId: normalized,
+          phone_number_id: normalized,
+        };
+      }
+
+      const encryptedKey = await encryptCred(String(reqToken).trim());
+
+      const { error: credErr } = await adminClient
+        .from('credentials')
+        .upsert(
+          {
+            user_id: userId,
+            service,
+            encrypted_key: encryptedKey,
+          },
+          { onConflict: 'user_id,service' },
+        );
+      if (credErr) throw credErr;
 
       const { error: intErr } = await adminClient
         .from('integrations')
