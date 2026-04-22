@@ -74,6 +74,7 @@ jobs:
     name: Supabase - DB migrations
     needs: build
     runs-on: ubuntu-latest
+    environment: production
     permissions:
       contents: read
     steps:
@@ -97,6 +98,7 @@ jobs:
     name: Supabase - Edge Functions
     needs: supabase-migrate
     runs-on: ubuntu-latest
+    environment: production
     permissions:
       contents: read
     steps:
