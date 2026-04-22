@@ -7,7 +7,7 @@ cd "$ROOT_DIR"
 SUPABASE_PROJECT_REF="${SUPABASE_PROJECT_REF:-ssvvuuysgxyqvmovrlvk}"
 CANONICAL_FRONTEND_URL="${CANONICAL_FRONTEND_URL:-https://frontend-arisofias-projects-c2217452.vercel.app}"
 
-required_bins=(node npm npx)
+required_bins=(node npm npx rg)
 for bin in "${required_bins[@]}"; do
   if ! command -v "$bin" >/dev/null 2>&1; then
     echo "[error] Missing required command: $bin" >&2
