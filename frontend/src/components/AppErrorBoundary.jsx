@@ -47,7 +47,12 @@ export default class AppErrorBoundary extends Component {
                   : 'An unexpected error interrupted rendering. Reload and retry.'}
               </p>
               <p className="text-xs text-gray-500 mt-3 break-words">{message}</p>
-              <button onClick={this.handleReload} className="btn-secondary mt-4 inline-flex items-center gap-2">
+              {/* @copilot: explicit non-submit button avoids accidental form submission semantics. */}
+              <button
+                type="button"
+                onClick={this.handleReload}
+                className="btn-secondary mt-4 inline-flex items-center gap-2"
+              >
                 <RefreshCw size={14} /> Reload app
               </button>
             </div>
