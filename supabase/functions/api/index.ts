@@ -688,7 +688,7 @@ Deno.serve(async (req: Request) => {
           : Promise.resolve({ data: [], error: null }),
       ]);
       if (leadsRes.error) throw leadsRes.error;
-      const leads = leadsRes.data ?? [];
+      const leads: any[] = leadsRes.data ?? [];
       const integrations = intRes.data ?? [];
       const settlements = (settlementsRes.data ?? []).filter((r: any) => !r.cancelled_at);
 
