@@ -45,8 +45,23 @@ function actionValue(actions, matcher) {
   }, 0);
 }
 
+function getAction(actions = [], type) {
+  return Number((actions || []).find((a) => a?.action_type === type)?.value || 0);
+}
+
+function getWhatsApp(actions = []) {
+  return getAction(actions, 'onsite_conversion.messaging_conversation_started_7d');
+}
+
+function getLeadForm(actions = []) {
+  return getAction(actions, 'lead');
+}
+
 function isWhatsAppAction(type) {
-  return type.includes('whatsapp') || type.includes('messaging');
+  return type.includes('whatsapp')
+      || type.includes('messaging')
+      || type.includes('conversation_started')
+      || type === 'onsite_conversion.messaging_conversation_started_7d';
 }
 
 function isLeadFormAction(type) {
@@ -395,11 +410,37 @@ async function main() {
     throw new Error('META_AD_ACCOUNT_ID has invalid format');
   }
 
+  const argv = process.argv.slice(2);
+  const maybeSince = argv.find((arg) => arg.startsWith('--since='))?.split('=')[1];
+  const maybeUntil = argv.find((arg) => arg.startsWith('--until='))?.split('=')[1];
+  const days = parseInt(process.env.REPORT_DAYS || '30', 10);
+
   const today = new Date();
-  // Daily window = yesterday
-  const untilDate = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
-  untilDate.setUTCDate(untilDate.getUTCDate() - 1);
-  const sinceDate = new Date(untilDate); // since == until for 1-day window
+  const utcToday = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+
+  function parseRelativeDate(value, referenceDate = utcToday) {
+    if (!value) return null;
+    const normalized = String(value).trim().toLowerCase();
+    if (normalized === 'today') return new Date(referenceDate);
+    if (normalized === 'yesterday') {
+      const d = new Date(referenceDate);
+      d.setUTCDate(d.getUTCDate() - 1);
+      return d;
+    }
+    const rel = normalized.match(/^(\d+)d$/);
+    if (rel) {
+      const days = Number(rel[1]);
+      const d = new Date(referenceDate);
+      d.setUTCDate(d.getUTCDate() - days);
+      return d;
+    }
+    const parsed = new Date(normalized);
+    if (!Number.isNaN(parsed.getTime())) return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
+    return null;
+  }
+
+  const untilDate = parseRelativeDate(maybeUntil || 'today') || utcToday;
+  const sinceDate = parseRelativeDate(maybeSince || `${days}d`, untilDate) || new Date(untilDate);
 
   const since = formatDateUTC(sinceDate);
   const until = formatDateUTC(untilDate);
@@ -425,6 +466,9 @@ async function main() {
     fields: baseFields,
     time_range: JSON.stringify({ since, until }),
     limit: '300',
+    filtering: JSON.stringify([
+      { field: 'effective_status', operator: 'IN', values: ['ACTIVE', 'PAUSED', 'ARCHIVED'] },
+    ]),
   }, token);
 
   const rows = Array.isArray(insights?.data) ? insights.data : [];
@@ -434,8 +478,8 @@ async function main() {
     const impressions = parseMetric(row.impressions);
     const clicks = parseMetric(row.clicks || row.inline_link_clicks || row.outbound_clicks);
     const landingPageViews = parseMetric(row.landing_page_view);
-    const waLeads = actionValue(row.actions, isWhatsAppAction);
-    const formLeads = actionValue(row.actions, isLeadFormAction);
+    const waLeads = getWhatsApp(row.actions);
+    const formLeads = getLeadForm(row.actions);
     const totalLeads = waLeads + formLeads;
     const primaryChannel = waLeads > formLeads ? 'WhatsApp' : (formLeads > waLeads ? 'Lead Form' : 'Mixed/Unknown');
 

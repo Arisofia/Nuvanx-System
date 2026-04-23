@@ -565,6 +565,11 @@ Deno.serve(async (req: Request) => {
     return new Response('ok', { status: 200 });
   }
 
+  // GET /api/health — public health endpoint for uptime checks
+  if (resource === 'health' && req.method === 'GET') {
+    return json({ success: true, status: 'ok', timestamp: new Date().toISOString() });
+  }
+
   // ── All other routes require a valid JWT ──────────────────────────────────
 
   let userId: string | null = null;

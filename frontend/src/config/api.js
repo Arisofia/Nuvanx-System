@@ -20,12 +20,23 @@ function normalizeApiBaseUrl(url) {
   return trimmed.replace(/\/api(?:\/.*)?$/, '');
 }
 
-// On Vercel (production) we rely on the /api/* rewrite in vercel.json to proxy
-// requests to the Supabase Edge Function. Using the full Supabase URL as baseURL
-// causes axios to send root-relative /api/* paths directly to the Supabase host,
-// bypassing /functions/v1 entirely. Empty baseURL keeps requests on the same origin
-// so the Vercel proxy rewrite fires correctly.
-const defaultApiUrl = explicitApiUrl || (isLocalHost ? '/api' : '');
+function shouldUseProxyApi(explicitUrl) {
+  if (typeof window === 'undefined' || !explicitUrl) return false;
+  try {
+    const parsed = new URL(explicitUrl);
+    const isSupabaseFunctionsUrl = parsed.pathname.endsWith('/functions/v1/api');
+    const isDifferentOrigin = parsed.hostname !== window.location.hostname;
+    return isSupabaseFunctionsUrl && isDifferentOrigin;
+  } catch {
+    return false;
+  }
+}
+
+// Prefer the Vercel rewrite path in production when the configured API URL points
+// to the Supabase functions host from a different origin.
+const defaultApiUrl = shouldUseProxyApi(explicitApiUrl)
+  ? ''
+  : explicitApiUrl || (isLocalHost ? '/api' : '');
 // Prefer new publishable key; fall back to legacy anon key for existing setups.
 const supabaseKey =
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
@@ -42,8 +53,10 @@ let lastUnauthorizedEventAt = 0;
 
 api.interceptors.request.use(async (config) => {
   const baseUrl = config.baseURL || '';
-  if (typeof config.url === 'string' && config.url.startsWith('/api/') && /\/api\/?$/.test(baseUrl)) {
-    // If baseURL already ends in /api, drop the extra /api prefix from request path.
+  const isDirectSupabaseFunctionsApi = /\/functions\/v1\/api$/.test(baseUrl);
+  if (typeof config.url === 'string' && config.url.startsWith('/api/') && (/\/api\/?$/.test(baseUrl) || isDirectSupabaseFunctionsApi)) {
+    // If baseURL already ends in /api or points to the Supabase functions API path,
+    // drop the extra /api prefix from the request path.
     config.url = config.url.slice(4);
   }
 
