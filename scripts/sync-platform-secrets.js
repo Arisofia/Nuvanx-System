@@ -26,6 +26,7 @@ const requiredSecretKeys = [
 
 const frontendKeys = [
   'VITE_API_BASE_URL',
+  'VITE_API_URL',
   'VITE_SUPABASE_URL',
   'VITE_SUPABASE_PUBLISHABLE_KEY',
   'VITE_SUPABASE_FIGMA_URL',
