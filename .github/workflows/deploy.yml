@@ -46,6 +46,8 @@ jobs:
         run: npm ci --include=dev
       - name: Run frontend lint
         run: npm run lint
+      - run: npm ci --include=dev
+      - run: npm run lint
 
   # 2. Build
   build:
@@ -66,6 +68,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install frontend dependencies
         run: npm ci --include=dev
+      - run: npm ci --include=dev
       - name: Build frontend
         run: npm run build
         env:
