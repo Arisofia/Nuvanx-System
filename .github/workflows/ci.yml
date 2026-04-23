@@ -61,3 +61,14 @@ jobs:
           NODE_ENV: production
           VITE_SUPABASE_URL: https://example.supabase.co
           VITE_SUPABASE_ANON_KEY: ci-anon-key-placeholder
+
+  # ─── Edge Function: cache Deno deps ─────────────────────────────────────────
+  edge-cache-deno:
+    name: Edge Function — cache Deno deps
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+      - name: Cache Edge Function dependencies
+        run: deno cache supabase/functions/api/index.ts
