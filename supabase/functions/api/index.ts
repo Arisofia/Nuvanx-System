@@ -77,6 +77,157 @@ async function metaFetch(path: string, params: Record<string, string>, token: st
   return d;
 }
 
+async function sha256(input: string): Promise<string> {
+  const normalized = String(input ?? '').trim().toLowerCase();
+  if (!normalized) return '';
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalized));
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function normalizePhoneToE164(phone: string): string {
+  const raw = String(phone ?? '').trim();
+  if (!raw) return '';
+  const cleaned = raw.replace(/[\u00A0\s().-]/g, '').replace(/ext\.?\s*\d+$/i, '');
+  if (!cleaned) return '';
+  let candidate = cleaned.startsWith('00') ? `+${cleaned.slice(2)}` : cleaned;
+  if (!candidate.startsWith('+') && /^\d{9}$/.test(candidate)) {
+    candidate = `+34${candidate}`; // default local clinic market
+  }
+  if (!candidate.startsWith('+')) candidate = `+${candidate}`;
+  const digits = candidate.replace(/\D/g, '');
+  if (digits.length < 8 || digits.length > 15) return '';
+  return `+${digits}`;
+}
+
+function phoneForMeta(phone: string): string {
+  const e164 = normalizePhoneToE164(phone);
+  return e164 ? e164.slice(1) : '';
+}
+
+async function resolveMetaPixelId(adminClient: any, userId: string): Promise<string> {
+  const { data: intg } = await adminClient
+    .from('integrations')
+    .select('metadata')
+    .eq('user_id', userId)
+    .eq('service', 'meta')
+    .maybeSingle();
+  const pixelRaw = intg?.metadata?.pixel_id ?? intg?.metadata?.pixelId ?? '';
+  const digits = String(pixelRaw).replace(/\D/g, '');
+  return digits;
+}
+
+async function sendMetaCapiEvent(
+  adminClient: any,
+  userId: string,
+  {
+    eventName,
+    phone,
+    email = '',
+    value = 0,
+    currency = 'EUR',
+    extra = {},
+    eventId = '',
+    eventTime = Math.floor(Date.now() / 1000),
+  }: {
+    eventName: string;
+    phone?: string;
+    email?: string;
+    value?: number;
+    currency?: string;
+    extra?: Record<string, unknown>;
+    eventId?: string;
+    eventTime?: number;
+  },
+): Promise<{ success: boolean; skipped?: string }> {
+  try {
+    const normalizedPhone = phoneForMeta(String(phone ?? ''));
+    const normalizedEmail = String(email ?? '').trim().toLowerCase();
+    if (!normalizedPhone && !normalizedEmail) return { success: false, skipped: 'missing_identity' };
+
+    const { data: cred } = await adminClient
+      .from('credentials')
+      .select('encrypted_key')
+      .eq('user_id', userId)
+      .eq('service', 'meta')
+      .maybeSingle();
+    if (!cred?.encrypted_key) return { success: false, skipped: 'missing_meta_credential' };
+
+    const accessToken = await decryptCred(cred.encrypted_key);
+    const pixelId = await resolveMetaPixelId(adminClient, userId);
+    if (!pixelId) return { success: false, skipped: 'missing_pixel_id' };
+
+    const user_data: Record<string, string[]> = {};
+    if (normalizedPhone) {
+      const phHash = await sha256(normalizedPhone);
+      if (phHash) {
+        user_data.ph = [phHash];
+        user_data.external_id = [phHash];
+      }
+    }
+    if (normalizedEmail) {
+      const emHash = await sha256(normalizedEmail);
+      if (emHash) user_data.em = [emHash];
+    }
+    if (Object.keys(user_data).length === 0) return { success: false, skipped: 'missing_hashes' };
+
+    const payload = {
+      data: [{
+        event_name: eventName,
+        event_time: eventTime,
+        action_source: 'system_generated',
+        event_id: eventId || undefined,
+        user_data,
+        custom_data: { value, currency, ...(extra ?? {}) },
+      }],
+    };
+
+    const response = await fetch(`https://graph.facebook.com/v21.0/${pixelId}/events?access_token=${encodeURIComponent(accessToken)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.warn('Meta CAPI failed', { status: response.status, eventName, errorBody });
+      return { success: false };
+    }
+    return { success: true };
+  } catch (error: any) {
+    console.warn('Meta CAPI error', { eventName, message: error?.message ?? 'unknown' });
+    return { success: false, skipped: 'exception' };
+  }
+}
+
+function mapLeadPayloadToCapiEvent(payload: any): null | {
+  eventName: string;
+  value?: number;
+  extra?: Record<string, unknown>;
+} {
+  const stage = String(payload?.stage ?? '').toLowerCase();
+  const source = String(payload?.source ?? '').toLowerCase();
+  const revenue = Number(payload?.revenue ?? 0);
+  const isQualified = payload?.lead_quality === 'qualified' || payload?.is_qualified === true;
+  const attended = payload?.status === 'attended' || payload?.appointment_status === 'attended';
+
+  if (stage === 'whatsapp' || source.includes('whatsapp')) {
+    return { eventName: 'Contact' };
+  }
+  if (isQualified) {
+    return { eventName: 'Lead', extra: { lead_quality: 'qualified' } };
+  }
+  if (stage === 'appointment') {
+    return { eventName: 'Schedule', extra: attended ? { status: 'attended' } : {} };
+  }
+  if (stage === 'treatment' || stage === 'closed') {
+    if (revenue > 1500) {
+      return { eventName: 'Purchase', value: revenue, extra: { content_category: 'premium' } };
+    }
+    return { eventName: 'Purchase', value: revenue };
+  }
+  return { eventName: 'Lead' };
+}
+
 function parseMetaMetric(raw: unknown): number {
   if (typeof raw === 'number') return Number.isFinite(raw) ? raw : 0;
   if (typeof raw === 'string') {
@@ -230,7 +381,8 @@ async function processLeadData(adminClient: any, userId: string, leadData: any) 
   const leadgen_id = leadData.id;
   const leadName = fields['full_name'] ?? fields['nombre'] ?? fields['name'] ?? `Lead ${leadgen_id.slice(-6)}`;
   const email    = fields['email']        ?? null;
-  const phone    = fields['phone_number'] ?? fields['telefono'] ?? fields['phone'] ?? null;
+  const phoneRaw = fields['phone_number'] ?? fields['telefono'] ?? fields['phone'] ?? null;
+  const phone    = phoneRaw ? normalizePhoneToE164(phoneRaw) : null;
   const dni      = fields['dni']          ?? fields['nif']      ?? fields['national_id'] ?? null;
 
   // Any non-standard custom fields (e.g. 'Tratamiento de interés') → notes JSON
@@ -286,6 +438,14 @@ async function processLeadData(adminClient: any, userId: string, leadData: any) 
         ad_name:     leadData.ad_name     ?? null,
         form_name:   leadData.form_name   ?? null,
       }, { onConflict: 'leadgen_id' });
+
+    await sendMetaCapiEvent(adminClient, userId, {
+      eventName: 'Lead',
+      phone: phone ?? '',
+      email: email ?? '',
+      eventId: leadgen_id,
+      extra: { source: 'meta_leadgen', form_id: leadData.form_id ?? null },
+    });
     return true;
   }
   return false;
@@ -629,7 +789,8 @@ Deno.serve(async (req: Request) => {
     // ── POST /api/leads ──────────────────────────────────────────────────────
     if (resource === 'leads' && req.method === 'POST') {
       const body = await req.json();
-      const payload = { ...body, user_id: userId! };
+      const normalizedPhone = body?.phone ? normalizePhoneToE164(body.phone) : null;
+      const payload = { ...body, user_id: userId!, phone: normalizedPhone || body?.phone || null };
       const source = String(payload?.source ?? '').trim();
       const externalId = String(payload?.external_id ?? '').trim();
 
@@ -644,6 +805,17 @@ Deno.serve(async (req: Request) => {
         if (error) throw error;
 
         if (data) {
+          const mapped = mapLeadPayloadToCapiEvent(data);
+          if (mapped) {
+            await sendMetaCapiEvent(adminClient, userId!, {
+              eventName: mapped.eventName,
+              phone: data.phone ?? payload.phone ?? '',
+              email: data.email ?? payload.email ?? '',
+              value: mapped.value ?? 0,
+              extra: mapped.extra ?? {},
+              eventId: data.external_id ?? data.id ?? '',
+            });
+          }
           return json({ success: true, lead: data, deduplicated: false }, 201);
         }
 
@@ -667,7 +839,80 @@ Deno.serve(async (req: Request) => {
         .select()
         .single();
       if (error) throw error;
+
+      const mapped = mapLeadPayloadToCapiEvent(data);
+      if (mapped) {
+        await sendMetaCapiEvent(adminClient, userId!, {
+          eventName: mapped.eventName,
+          phone: data.phone ?? payload.phone ?? '',
+          email: data.email ?? payload.email ?? '',
+          value: mapped.value ?? 0,
+          extra: mapped.extra ?? {},
+          eventId: data.external_id ?? data.id ?? '',
+        });
+      }
       return json({ success: true, lead: data, deduplicated: false }, 201);
+    }
+
+    // ── POST /api/capi/track ────────────────────────────────────────────────
+    // Track explicit CRM milestones:
+    // lead_submitted, whatsapp_started, qualified, consultation_booked,
+    // consultation_attended, treatment_purchased, high_ticket_purchased
+    if (resource === 'capi' && sub === 'track' && req.method === 'POST') {
+      const body = await req.json();
+      const eventType = String(body?.event_type ?? '').toLowerCase().trim();
+      const phone = normalizePhoneToE164(String(body?.phone ?? ''));
+      const email = String(body?.email ?? '');
+      const amount = Number(body?.value ?? body?.amount ?? 0);
+
+      const eventMap: Record<string, { eventName: string; value?: number; extra?: Record<string, unknown> }> = {
+        lead_submitted: { eventName: 'Lead' },
+        whatsapp_started: { eventName: 'Contact' },
+        qualified: { eventName: 'Lead', extra: { lead_quality: 'qualified' } },
+        consultation_booked: { eventName: 'Schedule' },
+        consultation_attended: { eventName: 'Schedule', extra: { status: 'attended' } },
+        treatment_purchased: { eventName: 'Purchase', value: amount },
+        high_ticket_purchased: { eventName: 'Purchase', value: amount, extra: { content_category: 'premium' } },
+      };
+
+      const mapped = eventMap[eventType];
+      if (!mapped) {
+        return json({ success: false, message: 'Unsupported event_type' }, 400);
+      }
+
+      if (!phone && !email) {
+        return json({ success: false, message: 'phone or email is required' }, 400);
+      }
+
+      const capiResult = await sendMetaCapiEvent(adminClient, userId!, {
+        eventName: mapped.eventName,
+        phone,
+        email,
+        value: mapped.value ?? 0,
+        extra: { ...(mapped.extra ?? {}), ...(body?.extra ?? {}) },
+        eventId: String(body?.event_id ?? ''),
+      });
+
+      return json({ success: true, tracked: capiResult.success, details: capiResult });
+    }
+
+    // ── GET /api/capi/status ────────────────────────────────────────────────
+    if (resource === 'capi' && sub === 'status' && req.method === 'GET') {
+      const { data: cred } = await adminClient
+        .from('credentials')
+        .select('id')
+        .eq('user_id', userId!)
+        .eq('service', 'meta')
+        .maybeSingle();
+      const pixelId = await resolveMetaPixelId(adminClient, userId!);
+      return json({
+        success: true,
+        capi: {
+          metaCredentialConnected: Boolean(cred?.id),
+          pixelIdConfigured: Boolean(pixelId),
+          pixelId: pixelId || null,
+        },
+      });
     }
 
     // ── GET /api/dashboard/metrics ───────────────────────────────────────────

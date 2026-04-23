@@ -16,6 +16,8 @@ const logger = require('../utils/logger');
 
 const { webhookLimiter } = require('../middleware/rateLimiter');
 const { onLeadCreated } = require('../services/playbookAutomation');
+const { normalizePhoneToE164 } = require('../utils/phone');
+const { sendMetaCapiEvent, buildExternalIdFromPhone } = require('../services/metaCapi');
 
 const router = express.Router();
 router.use(webhookLimiter);
@@ -74,9 +76,9 @@ router.post('/meta', async (req, res) => {
         if (change.field !== 'messages') continue;
         for (const msg of (change.value?.messages || [])) {
           if (msg.type !== 'text') continue;
-          const phone = msg.from; // international format e.g. 34612345678
+          const phone = normalizePhoneToE164(msg.from) || msg.from; // normalized E.164 when possible
           const text = msg.text?.body || '';
-          const contactName = change.value?.contacts?.find(c => c.wa_id === phone)?.profile?.name || `WA ${phone}`;
+          const contactName = change.value?.contacts?.find(c => (normalizePhoneToE164(c.wa_id) || c.wa_id) === phone)?.profile?.name || `WA ${phone}`;
 
           logger.info('WhatsApp message received', { phone, preview: text.substring(0, 60) });
 
@@ -90,6 +92,13 @@ router.post('/meta', async (req, res) => {
                ON CONFLICT (user_id, source, external_id) WHERE external_id IS NOT NULL DO NOTHING`,
               [webhookUserId, contactName, phone, `WA msg: ${text.substring(0, 500)}`, phone, waPriority],
             ).catch(dbErr => logger.warn('WA webhook: DB insert failed', { error: dbErr.message }));
+
+            sendMetaCapiEvent({
+              eventName: 'Contact',
+              phone,
+              externalId: buildExternalIdFromPhone(phone),
+              customData: { source: 'whatsapp_webhook' },
+            }).catch(() => {});
 
             // Trigger playbook automations for WhatsApp leads (best-effort)
             onLeadCreated({
@@ -106,8 +115,8 @@ router.post('/meta', async (req, res) => {
           const nfm = msg.interactive?.nfm_reply;
           if (!nfm) continue;
 
-          const phone = msg.from;
-          const contactName = change.value?.contacts?.find(c => c.wa_id === phone)?.profile?.name || `WA ${phone}`;
+          const phone = normalizePhoneToE164(msg.from) || msg.from;
+          const contactName = change.value?.contacts?.find(c => (normalizePhoneToE164(c.wa_id) || c.wa_id) === phone)?.profile?.name || `WA ${phone}`;
           const formData = nfm.response_json ? JSON.parse(nfm.response_json) : {};
 
           // Extract standard fields from the flow form — use the field names
@@ -126,6 +135,14 @@ router.post('/meta', async (req, res) => {
                ON CONFLICT (user_id, source, external_id) WHERE external_id IS NOT NULL DO NOTHING`,
               [webhookUserId, name, phone, email, notes, `${phone}_${msg.id}`, flowPriority],
             ).catch(dbErr => logger.warn('WA Flow webhook: DB insert failed', { error: dbErr.message }));
+
+            sendMetaCapiEvent({
+              eventName: 'Contact',
+              phone,
+              email,
+              externalId: buildExternalIdFromPhone(phone),
+              customData: { source: 'whatsapp_flow' },
+            }).catch(() => {});
 
             onLeadCreated({
               userId: webhookUserId,
@@ -182,7 +199,7 @@ router.post('/meta', async (req, res) => {
             }
             leadData.name  = fields.full_name || fields.first_name || leadData.name;
             leadData.email = fields.email || '';
-            leadData.phone = fields.phone_number || '';
+            leadData.phone = normalizePhoneToE164(fields.phone_number || '') || fields.phone_number || '';
             attribution.ad_id       = data.ad_id || null;
             attribution.adset_id    = data.adset_id || null;
             attribution.campaign_id = data.campaign_id || null;
@@ -267,6 +284,15 @@ router.post('/meta', async (req, res) => {
             }).then(() => {}).catch((e) => logger.warn('meta_attribution insert failed', { error: e.message }));
           }
         }
+
+        sendMetaCapiEvent({
+          eventName: 'Lead',
+          phone: leadData.phone,
+          email: leadData.email,
+          externalId: buildExternalIdFromPhone(leadData.phone),
+          eventId: leadgen_id,
+          customData: { source: 'meta_leadgen', form_id: attribution.form_id },
+        }).catch(() => {});
 
         logger.info('Meta lead webhook processed', { leadgen_id, page_id });
         processed.push({ leadgen_id });
