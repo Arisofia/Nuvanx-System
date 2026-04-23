@@ -7,6 +7,7 @@ import { SpeedInsights } from '@vercel/speed-insights/react';
 import { AuthProvider } from './context/AuthContext.jsx';
 import { useAuth } from './context/useAuth';
 import Layout from './components/Layout';
+import AppErrorBoundary from './components/AppErrorBoundary';
 import Login from './pages/Login';
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -91,28 +92,28 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <ErrorBoundary>
-      <BrowserRouter>
-        <AuthProvider>
+    <BrowserRouter>
+      <AuthProvider>
+        <AppErrorBoundary>
           <AppRoutes />
-          <Toaster
-            position="top-right"
-            toastOptions={{
-              style: {
-                background: '#1f2937',
-                color: '#f9fafb',
-                border: '1px solid #374151',
-                borderRadius: '10px',
-                fontSize: '14px',
-              },
-              success: { iconTheme: { primary: '#10b981', secondary: '#1f2937' } },
-              error: { iconTheme: { primary: '#ef4444', secondary: '#1f2937' } },
-            }}
-          />
-          <Analytics />
-          <SpeedInsights />
-        </AuthProvider>
-      </BrowserRouter>
-    </ErrorBoundary>
+        </AppErrorBoundary>
+        <Toaster
+          position="top-right"
+          toastOptions={{
+            style: {
+              background: '#1f2937',
+              color: '#f9fafb',
+              border: '1px solid #374151',
+              borderRadius: '10px',
+              fontSize: '14px',
+            },
+            success: { iconTheme: { primary: '#10b981', secondary: '#1f2937' } },
+            error: { iconTheme: { primary: '#ef4444', secondary: '#1f2937' } },
+          }}
+        />
+        <Analytics />
+        <SpeedInsights />
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
