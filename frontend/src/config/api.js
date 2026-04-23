@@ -88,10 +88,8 @@ api.interceptors.request.use(async (config) => {
     if (import.meta.env.DEV) {
       console.debug(`[API] ${config.method?.toUpperCase()} ${config.url} — Auth token injected`);
     }
-  } else {
-    if (import.meta.env.DEV) {
-      console.debug(`[API] ${config.method?.toUpperCase()} ${config.url} — No auth token available`);
-    }
+  } else if (import.meta.env.DEV) {
+    console.debug(`[API] ${config.method?.toUpperCase()} ${config.url} — No auth token available`);
   }
 
   return config;

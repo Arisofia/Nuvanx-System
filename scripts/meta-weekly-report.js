@@ -418,7 +418,7 @@ async function main() {
   const today = new Date();
   const utcToday = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
 
-  function parseRelativeDate(value, referenceDate = utcToday) {
+  const parseRelativeDate = (value, referenceDate = utcToday) => {
     if (!value) return null;
     const normalized = String(value).trim().toLowerCase();
     if (normalized === 'today') return new Date(referenceDate);
@@ -437,7 +437,7 @@ async function main() {
     const parsed = new Date(normalized);
     if (!Number.isNaN(parsed.getTime())) return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
     return null;
-  }
+  };
 
   const untilDate = parseRelativeDate(maybeUntil || 'today') || utcToday;
   const sinceDate = parseRelativeDate(maybeSince || `${days}d`, untilDate) || new Date(untilDate);
