@@ -4,7 +4,7 @@ export function normalizePhoneToE164(phone: string | null | undefined, countryCo
   const raw = String(phone ?? '').trim();
   if (!raw) return '';
 
-  const cleaned = raw.replace(/[\u00A0\s().-]/g, '').replace(/ext\.?\s*\d+$/i, '');
+  const cleaned = raw.replaceAll(/\u00A0|\s|\(|\)|\.|-/g, '').replaceAll(/ext\.?\s*\d+$/i, '');
   if (!cleaned) return '';
 
   let candidate = cleaned.startsWith('00') ? `+${cleaned.slice(2)}` : cleaned;
