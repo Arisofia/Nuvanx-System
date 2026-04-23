@@ -116,6 +116,9 @@ jobs:
         with:
           deno-version: v2.x
 
+      - name: Deno cache npm modules
+        run: deno cache supabase/functions/api/index.ts
+
       - name: Type-check Edge Function
         run: deno check --config supabase/functions/deno.json supabase/functions/api/index.ts
 
