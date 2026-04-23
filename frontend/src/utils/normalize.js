@@ -1,3 +1,4 @@
+// frontend/src/utils/normalize.js
 export function normalizeMetaAccountId(raw) {
   const value = String(raw || '').trim();
   if (!value) return '';
