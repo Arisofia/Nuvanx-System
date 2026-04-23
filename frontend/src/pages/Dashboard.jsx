@@ -12,6 +12,7 @@ import {
   TrendingUp,
   Zap,
 } from 'lucide-react';
+import { useAuth } from '../context/useAuth';
 import MetricCard from '../components/MetricCard';
 import api from '../config/api';
 import { normalizeDashboardMetrics } from '../lib/normalizeDashboardMetrics';
@@ -84,6 +85,7 @@ function buildUnifiedActivity(figmaEvents, aiOutputs) {
 }
 
 export default function Dashboard() {
+  const { token, isAuthenticated } = useAuth();
   const [metrics, setMetrics] = useState(null);
   const [integrations, setIntegrations] = useState([]);
   const [aiStatus, setAiStatus] = useState({ available: false, provider: null });
@@ -185,9 +187,11 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    fetchData();
-    fetchAiSuggestions();
-  }, []);
+    if (isAuthenticated) {
+      fetchData();
+      fetchAiSuggestions();
+    }
+  }, [isAuthenticated, token]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -279,6 +283,15 @@ export default function Dashboard() {
     }
     return merged.slice(0, 6);
   }, [aiSuggestions, conversionRate, metaSummary, metrics]);
+
+  if (loading && !metrics) {
+    return (
+      <div className="min-h-[400px] flex flex-col items-center justify-center gap-4">
+        <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
+        <p className="text-gray-400 animate-pulse">Cargando inteligencia en tiempo real...</p>
+      </div>
+    );
+  }
 
   if (error) {
     return (
