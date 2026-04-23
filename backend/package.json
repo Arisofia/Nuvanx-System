@@ -24,6 +24,7 @@
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "libsodium-wrappers": "^0.8.4",
+    "nuvanx-system": "file:..",
     "pg": "^8.11.3",
     "resend": "^6.12.0",
     "uuid": "^9.0.1",

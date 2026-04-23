@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle, XCircle, Loader2, RefreshCw, Link, Unlink } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { normalizePhoneNumberId } from '../utils/phoneNumber';
+import { normalizeMetaAccountId, normalizePhoneNumberId } from '../utils/normalize';
 
 function formatSync(ts) {
   if (!ts) return 'Never';
@@ -12,14 +12,6 @@ function formatSync(ts) {
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs} hour${hrs > 1 ? 's' : ''} ago`;
   return `${Math.floor(hrs / 24)} day(s) ago`;
-}
-
-function normalizeMetaAccountId(raw) {
-  const value = String(raw || '').trim();
-  if (!value) return '';
-  const unprefixed = value.replace(/^act_/i, '');
-  const digits = unprefixed.replace(/\D/g, '');
-  return digits ? `act_${digits}` : '';
 }
 
 function StatusBadge({ status }) {
