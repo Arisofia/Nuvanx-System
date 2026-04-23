@@ -11,6 +11,9 @@ const TOKENS_FILE = path.join(ROOT, '.env.tokens.local');
 const requiredSecretKeys = [
   'META_ACCESS_TOKEN',
   'META_AD_ACCOUNT_ID',
+  'META_CAPI_VERSION',
+  'ACTION_SOURCE',
+  'DEFAULT_PHONE_COUNTRY_CODE',
   'DATABASE_URL',
   'CLINIC_ID',
   'REPORT_USER_ID',

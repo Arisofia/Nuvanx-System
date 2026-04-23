@@ -16,60 +16,33 @@ name: Daily Meta + Google Ads Report
 #   REPORT_USER_ID
 
 on:
-  schedule:
-    - cron: '0 7 * * *'  # Every day 07:00 UTC (~09:00 Spain)
   workflow_dispatch:
-
-permissions:
-  contents: read
+  schedule:
+    - cron: '0 6 * * *'  # 8am Madrid
 
 jobs:
-  daily-ads-report:
-    name: Generate daily Meta + Google Ads report
+  report:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      REPORT_DAYS: 30
+      META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+      META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
+      GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
+      GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
+      GOOGLE_ADS_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_CUSTOMER_ID }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      CLINIC_ID: ${{ secrets.CLINIC_ID }}
+      REPORT_USER_ID: ${{ secrets.REPORT_USER_ID }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-node@v4.4.0
         with:
-          node-version: '22'
-
-      - name: Preflight - validate required secrets
-        run: |
-          MISSING=()
-          [ -z "$META_ACCESS_TOKEN" ] && MISSING+=("META_ACCESS_TOKEN")
-          [ -z "$META_AD_ACCOUNT_ID" ] && MISSING+=("META_AD_ACCOUNT_ID")
-          if [ ${#MISSING[@]} -gt 0 ]; then
-            echo "::error::Missing secrets: ${MISSING[*]}"
-            echo "::error::Add them at Settings -> Secrets and variables -> Actions"
-            exit 1
-          fi
-          echo "Required secrets are configured."
-        env:
-          META_ACCESS_TOKEN: ${{ secrets['META_ACCESS_TOKEN'] || '' }}
-          META_AD_ACCOUNT_ID: ${{ secrets['META_AD_ACCOUNT_ID'] || '' }}
-
-      - name: Install optional DB dependency
-        run: npm install --no-save pg
-
-      - name: Run daily Meta + Google Ads report
-        run: node scripts/meta-weekly-report.js
-        env:
-          META_ACCESS_TOKEN: ${{ secrets['META_ACCESS_TOKEN'] || '' }}
-          META_AD_ACCOUNT_ID: ${{ secrets['META_AD_ACCOUNT_ID'] || '' }}
-          GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets['GOOGLE_ADS_SERVICE_ACCOUNT'] || '' }}
-          GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets['GOOGLE_ADS_DEVELOPER_TOKEN'] || '' }}
-          GOOGLE_ADS_CUSTOMER_ID: ${{ secrets['GOOGLE_ADS_CUSTOMER_ID'] || '' }}
-          DATABASE_URL: ${{ secrets['DATABASE_URL'] || '' }}
-          CLINIC_ID: ${{ secrets['CLINIC_ID'] || '' }}
-          REPORT_USER_ID: ${{ secrets['REPORT_USER_ID'] || '' }}
-
-      - name: Upload report artifact
-        uses: actions/upload-artifact@v4
+          node-version: '20'
+      - run: npm install --no-save pg node-fetch
+      - run: node scripts/meta-weekly-report.js
+      - uses: actions/upload-artifact@v4.6.0
         with:
           name: daily-ads-unified-report
-          path: reports/meta-weekly-report-*.md
-          if-no-files-found: error
+          path: reports/

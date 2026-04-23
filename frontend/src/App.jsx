@@ -1,17 +1,20 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
+import { AlertCircle } from 'lucide-react';
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 import { AuthProvider } from './context/AuthContext.jsx';
 import { useAuth } from './context/useAuth';
 import Layout from './components/Layout';
+import AppErrorBoundary from './components/AppErrorBoundary';
 import Login from './pages/Login';
+import ErrorBoundary from './components/ErrorBoundary';
 
 // Lazy-load heavy pages so each route is its own JS chunk
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Playbooks = lazy(() => import('./pages/Playbooks'));
-const CRM = lazy(() => import('./pages/CRM'));
+const Crm = lazy(() => import('./pages/CRM'));
 const LiveDashboard = lazy(() => import('./pages/LiveDashboard'));
 const Integrations = lazy(() => import('./pages/Integrations'));
 const AILayer = lazy(() => import('./pages/AILayer'));
@@ -19,12 +22,24 @@ const MetaIntelligence = lazy(() => import('./pages/MetaIntelligence'));
 const VerifiedFinancials = lazy(() => import('./pages/VerifiedFinancials'));
 const CampaignIntelligence = lazy(() => import('./pages/CampaignIntelligence'));
 
+const DashboardError = () => (
+  <div className="p-6 text-center card border-red-500/20 bg-red-500/5">
+    <AlertCircle className="mx-auto text-red-400 mb-2" size={24} />
+    <h3 className="font-semibold text-white">Dashboard Runtime Error</h3>
+    <p className="text-sm text-gray-400 mt-1">Failed to render the dashboard view.</p>
+    <button onClick={() => globalThis.location.reload()} className="mt-4 btn-secondary text-xs">
+      Retry Load
+    </button>
+  </div>
+);
+
 const PageLoader = () => (
   <div className="min-h-screen bg-dark-900 flex items-center justify-center">
     <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
   </div>
 );
 
+// eslint-disable-next-line react/prop-types
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
   if (loading) {
@@ -52,10 +67,17 @@ function AppRoutes() {
           }
         >
           <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="dashboard" element={<Dashboard />} />
+          <Route
+            path="dashboard"
+            element={
+              <ErrorBoundary fallback={<DashboardError />}>
+                <Dashboard />
+              </ErrorBoundary>
+            }
+          />
           <Route path="playbooks" element={<Playbooks />} />
           <Route path="operativo" element={<Navigate to="/playbooks" replace />} />
-          <Route path="crm" element={<CRM />} />
+          <Route path="crm" element={<Crm />} />
           <Route path="live" element={<LiveDashboard />} />
           <Route path="integrations" element={<Integrations />} />
           <Route path="ai" element={<AILayer />} />
@@ -73,7 +95,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppRoutes />
+        <AppErrorBoundary>
+          <AppRoutes />
+        </AppErrorBoundary>
         <Toaster
           position="top-right"
           toastOptions={{

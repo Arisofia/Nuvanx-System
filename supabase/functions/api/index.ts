@@ -1,9 +1,12 @@
 // Nuvanx API Edge Function — v7
 // Routes all frontend API calls. Supabase strips /functions/v1 so the path
 // starts at /api/...
+
 declare const Deno: any;
 // @ts-ignore — resolved at runtime via supabase/functions/import_map.json
 import { createClient } from 'supabase';
+import { normalizePhoneToE164 } from '../_shared/phone.ts';
+import { mapLeadPayloadToCapiEvent } from '../_shared/capi.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -562,6 +565,11 @@ Deno.serve(async (req: Request) => {
     return new Response('ok', { status: 200 });
   }
 
+  // GET /api/health — public health endpoint for uptime checks
+  if (resource === 'health' && req.method === 'GET') {
+    return json({ success: true, status: 'ok', timestamp: new Date().toISOString() });
+  }
+
   // ── All other routes require a valid JWT ──────────────────────────────────
 
   let userId: string | null = null;
@@ -685,7 +693,7 @@ Deno.serve(async (req: Request) => {
           : Promise.resolve({ data: [], error: null }),
       ]);
       if (leadsRes.error) throw leadsRes.error;
-      const leads = leadsRes.data ?? [];
+      const leads: any[] = leadsRes.data ?? [];
       const integrations = intRes.data ?? [];
       const settlements = (settlementsRes.data ?? []).filter((r: any) => !r.cancelled_at);
 
@@ -1640,6 +1648,10 @@ Deno.serve(async (req: Request) => {
         },
         templateMix,
         monthly,
+        diagnostics: {
+          reason: settled.length > 0 ? 'ok' : 'no_settlements',
+          clinicId,
+        },
       });
     }
 
@@ -1658,7 +1670,14 @@ Deno.serve(async (req: Request) => {
         .order('settled_at', { ascending: false })
         .limit(100);
 
-      return json({ success: true, settlements: rows || [] });
+      return json({
+        success: true,
+        settlements: rows || [],
+        diagnostics: {
+          reason: rows?.length ? 'ok' : 'no_settlements',
+          clinicId,
+        },
+      });
     }
 
     // ── GET /api/financials/patients ─────────────────────────────────────────
@@ -1675,7 +1694,14 @@ Deno.serve(async (req: Request) => {
         .eq('clinic_id', clinicId)
         .order('total_ltv', { ascending: false });
 
-      return json({ success: true, patients: rows || [] });
+      return json({
+        success: true,
+        patients: rows || [],
+        diagnostics: {
+          reason: rows?.length ? 'ok' : 'no_patients',
+          clinicId,
+        },
+      });
     }
 
     // ── GET /api/traceability/leads ──────────────────────────────────────────
@@ -1948,3 +1974,4 @@ function json(data: unknown, status = 200) {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
 }
+
