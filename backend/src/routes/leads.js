@@ -8,7 +8,7 @@ const leadModel = require('../models/lead');
 const { handleValidationErrors } = require('../utils/validators');
 const logger = require('../utils/logger');
 const { normalizePhoneToE164 } = require('../utils/phone');
-const { sendMetaCapiEvent, buildExternalIdFromPhone } = require('../services/metaCapi');
+const { sendMetaCapiEvent, deriveCapiExternalId, mapLeadPayloadToCapiEvent } = require('../services/metaCapi');
 
 const router = express.Router();
 router.use(authenticate);
@@ -57,13 +57,15 @@ router.post('/', leadsWriteLimiter, leadRules, handleValidationErrors, async (re
 
     logger.info(merged ? 'Lead merged' : 'Lead created', { userId: req.user.id, leadId: lead.id });
 
+    const mapped = mapLeadPayloadToCapiEvent(lead);
     sendMetaCapiEvent({
-      eventName: merged ? 'Contact' : 'Lead',
+      eventName: mapped.eventName,
       phone: lead.phone,
       email: lead.email,
-      externalId: buildExternalIdFromPhone(lead.phone),
+      externalId: deriveCapiExternalId({ phone: lead.phone, email: lead.email }),
       eventId: lead.externalId || lead.id,
-      customData: { source: lead.source || 'manual', stage: lead.stage || 'lead' },
+      value: mapped.value || 0,
+      customData: { source: lead.source || 'manual', stage: lead.stage || 'lead', ...(mapped.customData || {}) },
     }).catch(() => {});
 
     res.status(merged ? 200 : 201).json({ success: true, lead, merged });
