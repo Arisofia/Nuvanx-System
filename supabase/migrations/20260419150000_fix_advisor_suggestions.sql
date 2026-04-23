@@ -127,22 +127,38 @@ DROP INDEX IF EXISTS monitoring.commands_user_id_idx;
 DROP INDEX IF EXISTS monitoring.commands_status_idx;
 
 -- ─── Part 3: Analyze Tables ────────────────────────────────────────────────
--- Update optimizer statistics for all affected tables
-ANALYZE public.agent_outputs;
-ANALYZE public.agent_runs;
-ANALYZE public.appointments;
-ANALYZE public.doctors;
-ANALYZE public.financial_settlements;
-ANALYZE public.kpi_values;
-ANALYZE public.leads;
-ANALYZE public.playbook_executions;
-ANALYZE public.side_effect_locks;
-ANALYZE public.treatment_types;
-ANALYZE public.users;
-ANALYZE public.patients;
-ANALYZE public.whatsapp_conversations;
-ANALYZE public.meta_attribution;
-ANALYZE public.lead_timeline_events;
-ANALYZE public.doctoralia_raw;
-ANALYZE public.agent_run_steps;
-ANALYZE public.lead_scores;
+-- Update optimizer statistics for all affected tables if they exist
+DO $$
+DECLARE
+  t text;
+  tables text[] := ARRAY[
+    'public.agent_outputs',
+    'public.agent_runs',
+    'public.appointments',
+    'public.doctors',
+    'public.financial_settlements',
+    'public.kpi_values',
+    'public.leads',
+    'public.playbook_executions',
+    'public.side_effect_locks',
+    'public.treatment_types',
+    'public.users',
+    'public.patients',
+    'public.whatsapp_conversations',
+    'public.meta_attribution',
+    'public.lead_timeline_events',
+    'public.doctoralia_raw',
+    'public.agent_run_steps',
+    'public.lead_scores'
+  ];
+BEGIN
+  FOREACH t IN ARRAY tables LOOP
+    IF EXISTS (
+      SELECT 1 
+      FROM information_schema.tables 
+      WHERE (table_schema || '.' || table_name) = t
+    ) THEN
+      EXECUTE 'ANALYZE ' || t;
+    END IF;
+  END LOOP;
+END $$;
