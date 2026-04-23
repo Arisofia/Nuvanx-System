@@ -3,6 +3,8 @@
 // starts at /api/...
 declare const Deno: any;
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { normalizePhoneToE164, normalizePhoneForMeta } from '../_shared/phone.ts';
+import { deriveCapiExternalId, mapLeadPayloadToCapiEvent, sha256Hex } from '../_shared/capi.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -76,45 +78,6 @@ async function metaFetch(path: string, params: Record<string, string>, token: st
   return d;
 }
 
-async function sha256(input: string): Promise<string> {
-  const normalized = String(input ?? '').trim().toLowerCase();
-  if (!normalized) return '';
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalized));
-  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-function normalizePhoneToE164(phone: string): string {
-  const fallbackCountryCode = String(Deno.env.get('DEFAULT_PHONE_COUNTRY_CODE') ?? '34');
-  const raw = String(phone ?? '').trim();
-  if (!raw) return '';
-  const cleaned = raw.replace(/[\u00A0\s().-]/g, '').replace(/ext\.?\s*\d+$/i, '');
-  if (!cleaned) return '';
-  let candidate = cleaned.startsWith('00') ? `+${cleaned.slice(2)}` : cleaned;
-  if (!candidate.startsWith('+')) {
-    const digits = candidate.replace(/\D/g, '');
-    if (fallbackCountryCode && digits.length <= 12 && !digits.startsWith(fallbackCountryCode)) {
-      candidate = `+${fallbackCountryCode}${digits}`;
-    } else {
-      candidate = `+${digits}`;
-    }
-  }
-  const digits = candidate.replace(/\D/g, '');
-  if (digits.length < 8 || digits.length > 15) return '';
-  return `+${digits}`;
-}
-
-function phoneForMeta(phone: string): string {
-  const e164 = normalizePhoneToE164(phone);
-  return e164 ? e164.slice(1) : '';
-}
-
-async function deriveCapiExternalId({ phone = '', email = '' }: { phone?: string; email?: string }): Promise<string> {
-  const normalizedPhone = phoneForMeta(phone);
-  if (normalizedPhone) return sha256(normalizedPhone);
-  const normalizedEmail = String(email ?? '').trim().toLowerCase();
-  return normalizedEmail ? sha256(normalizedEmail) : '';
-}
-
 async function resolveMetaPixelId(adminClient: any, userId: string): Promise<string> {
   const { data: intg } = await adminClient
     .from('integrations')
@@ -151,7 +114,7 @@ async function sendMetaCapiEvent(
   },
 ): Promise<{ success: boolean; skipped?: string }> {
   try {
-    const normalizedPhone = phoneForMeta(String(phone ?? ''));
+    const normalizedPhone = normalizePhoneForMeta(String(phone ?? ''));
     const normalizedEmail = String(email ?? '').trim().toLowerCase();
     if (!normalizedPhone && !normalizedEmail) return { success: false, skipped: 'missing_identity' };
 
@@ -169,13 +132,13 @@ async function sendMetaCapiEvent(
 
     const user_data: Record<string, string[]> = {};
     if (normalizedPhone) {
-      const phHash = await sha256(normalizedPhone);
+      const phHash = await sha256Hex(normalizedPhone);
       if (phHash) {
         user_data.ph = [phHash];
       }
     }
     if (normalizedEmail) {
-      const emHash = await sha256(normalizedEmail);
+      const emHash = await sha256Hex(normalizedEmail);
       if (emHash) user_data.em = [emHash];
     }
     const derivedExternalId = await deriveCapiExternalId({ phone: phone ?? '', email: email ?? '' });
@@ -209,35 +172,6 @@ async function sendMetaCapiEvent(
     console.warn('Meta CAPI error', { eventName, message: error?.message ?? 'unknown' });
     return { success: false, skipped: 'exception' };
   }
-}
-
-function mapLeadPayloadToCapiEvent(payload: any): null | {
-  eventName: string;
-  value?: number;
-  customData?: Record<string, unknown>;
-} {
-  const stage = String(payload?.stage ?? '').toLowerCase();
-  const source = String(payload?.source ?? '').toLowerCase();
-  const revenue = Number(payload?.revenue ?? 0);
-  const isQualified = payload?.lead_quality === 'qualified' || payload?.is_qualified === true;
-  const attended = payload?.status === 'attended' || payload?.appointment_status === 'attended';
-
-  if (stage === 'whatsapp' || source.includes('whatsapp')) {
-    return { eventName: 'Contact' };
-  }
-  if (isQualified) {
-    return { eventName: 'Lead', customData: { lead_quality: 'qualified' } };
-  }
-  if (stage === 'appointment') {
-    return { eventName: 'Schedule', customData: attended ? { status: 'attended' } : {} };
-  }
-  if (stage === 'treatment' || stage === 'closed') {
-    if (revenue > 1500) {
-      return { eventName: 'Purchase', value: revenue, customData: { content_category: 'premium' } };
-    }
-    return { eventName: 'Purchase', value: revenue };
-  }
-  return { eventName: 'Lead' };
 }
 
 function parseMetaMetric(raw: unknown): number {
