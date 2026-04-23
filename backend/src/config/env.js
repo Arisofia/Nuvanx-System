@@ -62,6 +62,8 @@ const config = {
   metaAdAccountId: process.env.META_AD_ACCOUNT_ID,
   metaAppSecret: process.env.META_APP_SECRET || null,
   metaVerifyToken: process.env.META_VERIFY_TOKEN || null,
+  metaPixelId: process.env.META_PIXEL_ID || null,
+  metaCapiAccessToken: process.env.META_CAPI_ACCESS_TOKEN || null,
 
   // WhatsApp Business Cloud API
   whatsappAccessToken: process.env.WHATSAPP_ACCESS_TOKEN,

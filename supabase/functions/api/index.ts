@@ -5,8 +5,8 @@
 declare const Deno: any;
 // @ts-ignore — resolved at runtime via supabase/functions/import_map.json
 import { createClient } from 'supabase';
-import { normalizePhoneToE164 } from '../../shared/phone.ts';
-import { mapLeadPayloadToCapiEvent } from '../../shared/capi.ts';
+import { normalizePhoneToE164 } from '../_shared/phone.ts';
+import { mapLeadPayloadToCapiEvent } from '../_shared/capi.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -688,7 +688,7 @@ Deno.serve(async (req: Request) => {
           : Promise.resolve({ data: [], error: null }),
       ]);
       if (leadsRes.error) throw leadsRes.error;
-      const leads = leadsRes.data ?? [];
+      const leads: any[] = leadsRes.data ?? [];
       const integrations = intRes.data ?? [];
       const settlements = (settlementsRes.data ?? []).filter((r: any) => !r.cancelled_at);
 
@@ -1951,3 +1951,4 @@ function json(data: unknown, status = 200) {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
 }
+
