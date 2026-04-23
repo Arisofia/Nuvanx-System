@@ -3,6 +3,7 @@
 // starts at /api/...
 declare const Deno: any;
 import { createClient } from 'npm:@supabase/supabase-js@2';
+// Canonical shared CAPI/phone logic for Edge runtime (kept in _shared to avoid drift).
 import { normalizePhoneToE164, normalizePhoneForMeta } from '../_shared/phone.ts';
 import { deriveCapiExternalId, mapLeadPayloadToCapiEvent, sha256Hex } from '../_shared/capi.ts';
 

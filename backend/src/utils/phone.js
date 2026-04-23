@@ -22,9 +22,10 @@ function normalizePhoneToE164(rawPhone, fallbackCountryCode = DEFAULT_COUNTRY_CO
   }
 
   const digitsOnly = candidate.replace(/\D/g, '');
+  const normalizedCountryCode = String(fallbackCountryCode || '').replace(/\D/g, '');
   if (digitsOnly.length < 8 || digitsOnly.length > 15) return null;
-  if (fallbackCountryCode && digitsOnly.length <= 12 && !digitsOnly.startsWith(fallbackCountryCode)) {
-    return `+${fallbackCountryCode}${digitsOnly}`;
+  if (normalizedCountryCode && digitsOnly.length <= 12 && !digitsOnly.startsWith(normalizedCountryCode)) {
+    return `+${normalizedCountryCode}${digitsOnly}`;
   }
   return `+${digitsOnly}`;
 }
