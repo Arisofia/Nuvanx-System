@@ -98,7 +98,11 @@ export default function VerifiedFinancials() {
         patientsRes.data?.diagnostics,
       ]));
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to load financial data');
+      const message = err.response?.data?.message
+        || err.response?.data?.error
+        || err.message
+        || 'Failed to load financial data';
+      setError(message);
     } finally {
       setLoading(false);
     }

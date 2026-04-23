@@ -1648,6 +1648,10 @@ Deno.serve(async (req: Request) => {
         },
         templateMix,
         monthly,
+        diagnostics: {
+          reason: settled.length > 0 ? 'ok' : 'no_settlements',
+          clinicId,
+        },
       });
     }
 
@@ -1666,7 +1670,14 @@ Deno.serve(async (req: Request) => {
         .order('settled_at', { ascending: false })
         .limit(100);
 
-      return json({ success: true, settlements: rows || [] });
+      return json({
+        success: true,
+        settlements: rows || [],
+        diagnostics: {
+          reason: rows?.length ? 'ok' : 'no_settlements',
+          clinicId,
+        },
+      });
     }
 
     // ── GET /api/financials/patients ─────────────────────────────────────────
@@ -1683,7 +1694,14 @@ Deno.serve(async (req: Request) => {
         .eq('clinic_id', clinicId)
         .order('total_ltv', { ascending: false });
 
-      return json({ success: true, patients: rows || [] });
+      return json({
+        success: true,
+        patients: rows || [],
+        diagnostics: {
+          reason: rows?.length ? 'ok' : 'no_patients',
+          clinicId,
+        },
+      });
     }
 
     // ── GET /api/traceability/leads ──────────────────────────────────────────
