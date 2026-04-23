@@ -47,20 +47,35 @@ api.interceptors.request.use(async (config) => {
     config.url = config.url.slice(4);
   }
 
-  let token;
+  let token = null;
+
   if (isSupabaseAvailable()) {
-    // Prefer the Supabase session token (auto-refreshed by Supabase JS)
-    const { data: { session } } = await supabase.auth.getSession();
-    token = session?.access_token;
+    try {
+      // 1. Try to get the session from the current Supabase client state (synchronous-ish)
+      const { data } = await supabase.auth.getSession();
+      token = data?.session?.access_token;
+    } catch (e) {
+      console.warn('[API] Failed to get Supabase session token:', e);
+    }
   }
-  // Fall back to backend JWT stored in localStorage (used when login went via
-  // the backend-JWT path, e.g. user exists in public.users but not in Supabase Auth)
+
+  // 2. Fall back to backend JWT stored in localStorage
   if (!token) {
     token = localStorage.getItem('nuvanx_token');
   }
+
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+    // debug logs enabled only in development or when explicitly requested
+    if (import.meta.env.DEV) {
+      console.debug(`[API] ${config.method?.toUpperCase()} ${config.url} — Auth token injected`);
+    }
+  } else {
+    if (import.meta.env.DEV) {
+      console.debug(`[API] ${config.method?.toUpperCase()} ${config.url} — No auth token available`);
+    }
   }
+
   return config;
 });
 

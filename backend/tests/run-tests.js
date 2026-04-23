@@ -11,6 +11,7 @@ const result = spawnSync(
     cwd: backendRoot,
     stdio: 'inherit',
     env: process.env,
+    shell: true,
   }
 );
 

@@ -1,4 +1,3 @@
-import { normalizeMetaAccountId } from '../utils/normalize';
 import { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
@@ -19,6 +18,14 @@ import { normalizeDashboardMetrics } from '../lib/normalizeDashboardMetrics';
 
 
 const REFRESH_SECONDS = 60;
+
+function normalizeMetaAccountId(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return '';
+  const unprefixed = value.replace(/^act_/i, '');
+  const digits = unprefixed.replace(/\D/g, '');
+  return digits ? `act_${digits}` : '';
+}
 
 function formatNumber(value) {
   const n = Number(value);
