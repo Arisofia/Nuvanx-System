@@ -7,6 +7,8 @@ const { leadsWriteLimiter } = require('../middleware/rateLimiter');
 const leadModel = require('../models/lead');
 const { handleValidationErrors } = require('../utils/validators');
 const logger = require('../utils/logger');
+const { normalizePhoneToE164 } = require('../utils/phone');
+const { sendMetaCapiEvent, deriveCapiExternalId, mapLeadPayloadToCapiEvent } = require('../services/metaCapi');
 
 const router = express.Router();
 router.use(authenticate);
@@ -46,8 +48,26 @@ router.get('/:id', async (req, res, next) => {
 /** POST /api/leads */
 router.post('/', leadsWriteLimiter, leadRules, handleValidationErrors, async (req, res, next) => {
   try {
-    const { lead, merged } = await leadModel.findOrMerge(req.user.id, req.body);
+    const normalizedPhone = normalizePhoneToE164(req.body.phone) || req.body.phone;
+    const payload = { ...req.body, phone: normalizedPhone };
+    const { lead, merged } = await leadModel.findOrMerge(req.user.id, payload);
+    if (!lead) {
+      return res.status(409).json({ success: false, message: 'Lead not created (duplicate external_id).' });
+    }
+
     logger.info(merged ? 'Lead merged' : 'Lead created', { userId: req.user.id, leadId: lead.id });
+
+    const mapped = mapLeadPayloadToCapiEvent(lead);
+    sendMetaCapiEvent({
+      eventName: mapped.eventName,
+      phone: lead.phone,
+      email: lead.email,
+      externalId: deriveCapiExternalId({ phone: lead.phone, email: lead.email }),
+      eventId: lead.externalId || lead.id,
+      value: mapped.value || 0,
+      customData: { source: lead.source || 'manual', stage: lead.stage || 'lead', ...(mapped.customData || {}) },
+    }).catch(() => {});
+
     res.status(merged ? 200 : 201).json({ success: true, lead, merged });
   } catch (err) {
     next(err);
