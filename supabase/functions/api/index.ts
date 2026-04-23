@@ -5,5 +5,5 @@
 declare const Deno: any;
 // @ts-ignore — resolved at runtime via supabase/functions/import_map.json
 import { createClient } from 'supabase';
-import { normalizePhoneToE164 } from '../../shared/phone.ts';
-import { mapLeadPayloadToCapiEvent } from '../../shared/capi.ts';
+import { normalizePhoneToE164 } from '../_shared/phone.ts';
+import { mapLeadPayloadToCapiEvent } from '../_shared/capi.ts';
