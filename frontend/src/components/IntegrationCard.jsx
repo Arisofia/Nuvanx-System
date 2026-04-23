@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle, XCircle, Loader2, RefreshCw, Link, Unlink } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { normalizePhoneNumberId } from '../utils/phoneNumber';
+import { normalizeMetaAccountId, normalizePhoneNumberId } from '../utils/normalize';
 
 function formatSync(ts) {
   if (!ts) return 'Never';
