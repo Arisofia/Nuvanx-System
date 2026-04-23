@@ -14,8 +14,6 @@ function formatSync(ts) {
   return `${Math.floor(hrs / 24)} day(s) ago`;
 }
 
-
-
 function StatusBadge({ status }) {
   const map = {
     connected: { dot: 'bg-emerald-400', text: 'text-emerald-400', label: 'Connected' },

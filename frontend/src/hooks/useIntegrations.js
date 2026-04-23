@@ -11,8 +11,6 @@ const EMPTY_INTEGRATIONS = [
   { service: 'github', name: 'GitHub', description: 'Repository access for deployment triggers', icon: '🐙' },
 ].map(item => ({ ...item, status: 'disconnected', lastSync: null, error: null }));
 
-
-
 export function useIntegrations() {
   const [integrations, setIntegrations] = useState(EMPTY_INTEGRATIONS);
   const [loading, setLoading] = useState(false);
