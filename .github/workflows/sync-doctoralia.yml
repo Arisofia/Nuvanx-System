@@ -31,7 +31,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '22'
 
       - name: Preflight - validate required secrets and decode service account
         run: |
@@ -50,9 +50,9 @@ jobs:
           #  2) raw JSON object string
           if echo "$GOOGLE_SA_RAW" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
             echo "GOOGLE_ADS_SERVICE_ACCOUNT format: raw JSON"
-            echo "GOOGLE_SA_JSON<<EOF" >> "$GITHUB_ENV"
+            echo "GOOGLE_SA_JSON<<EOF_GITHUB_ACTION" >> "$GITHUB_ENV"
             echo "$GOOGLE_SA_RAW" >> "$GITHUB_ENV"
-            echo "EOF" >> "$GITHUB_ENV"
+            echo "EOF_GITHUB_ACTION" >> "$GITHUB_ENV"
           else
             DECODED="$(echo "$GOOGLE_SA_RAW" | base64 -d 2>/dev/null)" || true
             echo "$DECODED" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null || {
@@ -60,9 +60,9 @@ jobs:
               exit 1
             }
             echo "GOOGLE_ADS_SERVICE_ACCOUNT format: base64 JSON"
-            echo "GOOGLE_SA_JSON<<EOF" >> "$GITHUB_ENV"
+            echo "GOOGLE_SA_JSON<<EOF_GITHUB_ACTION" >> "$GITHUB_ENV"
             echo "$DECODED" >> "$GITHUB_ENV"
-            echo "EOF" >> "$GITHUB_ENV"
+            echo "EOF_GITHUB_ACTION" >> "$GITHUB_ENV"
           fi
 
           echo "All required secrets present and valid."
@@ -79,6 +79,7 @@ jobs:
       - name: Run Doctoralia to DB sync
         run: node scripts/sync-doctoralia.js
         env:
+          GOOGLE_SA_JSON:      ${{ env.GOOGLE_SA_JSON }}
           DOCTORALIA_SHEET_ID: ${{ secrets['DOCTORALIA_SHEET_ID'] || '' }}
           DATABASE_URL:        ${{ secrets['DATABASE_URL'] || '' }}
           CLINIC_ID:           ${{ secrets['CLINIC_ID'] || '' }}
