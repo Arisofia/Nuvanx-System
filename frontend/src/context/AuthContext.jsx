@@ -30,13 +30,27 @@ export function AuthProvider({ children }) {
     window.addEventListener('nuvanx:unauthorized', onUnauthorized);
 
     if (isSupabaseAvailable()) {
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session) {
-          setToken(session.access_token);
-          setUser(toUserShape(session.user));
-        }
-        setLoading(false);
-      });
+      supabase.auth.getSession()
+        .then(({ data: { session } }) => {
+          if (session) {
+            setToken(session.access_token);
+            setUser(toUserShape(session.user));
+          }
+        })
+        .catch(() => {
+          // Keep backend JWT fallback as a contingency path only when session bootstrap fails.
+          const savedToken = localStorage.getItem('nuvanx_token');
+          if (!savedToken) return;
+          return api.get('/api/auth/me')
+            .then((res) => {
+              setToken(savedToken);
+              setUser(res.data.user);
+            })
+            .catch(() => {
+              localStorage.removeItem('nuvanx_token');
+            });
+        })
+        .finally(() => setLoading(false));
 
       const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
         setToken(session?.access_token ?? null);
