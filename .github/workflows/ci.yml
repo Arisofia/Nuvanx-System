@@ -118,3 +118,16 @@ jobs:
 
       - name: Type-check Edge Function
         run: deno check --config supabase/functions/deno.json supabase/functions/api/index.ts
+
+  # ─── Edge Function: cache Deno deps — new job from fix(ci)
+  edge-cache-deno:
+    name: Edge Function — cache Deno deps
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+      - name: Cache Edge Function dependencies
+        run: deno cache supabase/functions/api/index.ts
+df98536 (fix(ci): cache deno deps for npm imports\n\n- Crea carpeta shared y sube phone.ts y capi.ts\n- Refactoriza imports en Edge Function y backend para usar shared\n- Añade DEFAULT_PHONE_COUNTRY_CODE=34 a .env\n- Actualiza CI para cachear dependencias Deno\n- Elimina drift en generación de external_id)
