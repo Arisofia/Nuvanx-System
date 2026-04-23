@@ -14,7 +14,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 // Lazy-load heavy pages so each route is its own JS chunk
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Playbooks = lazy(() => import('./pages/Playbooks'));
-const CRM = lazy(() => import('./pages/CRM'));
+const Crm = lazy(() => import('./pages/CRM'));
 const LiveDashboard = lazy(() => import('./pages/LiveDashboard'));
 const Integrations = lazy(() => import('./pages/Integrations'));
 const AILayer = lazy(() => import('./pages/AILayer'));
@@ -27,7 +27,7 @@ const DashboardError = () => (
     <AlertCircle className="mx-auto text-red-400 mb-2" size={24} />
     <h3 className="font-semibold text-white">Dashboard Runtime Error</h3>
     <p className="text-sm text-gray-400 mt-1">Failed to render the dashboard view.</p>
-    <button onClick={() => window.location.reload()} className="mt-4 btn-secondary text-xs">
+    <button onClick={() => globalThis.location.reload()} className="mt-4 btn-secondary text-xs">
       Retry Load
     </button>
   </div>
@@ -39,6 +39,7 @@ const PageLoader = () => (
   </div>
 );
 
+// eslint-disable-next-line react/prop-types
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
   if (loading) {
@@ -76,7 +77,7 @@ function AppRoutes() {
           />
           <Route path="playbooks" element={<Playbooks />} />
           <Route path="operativo" element={<Navigate to="/playbooks" replace />} />
-          <Route path="crm" element={<CRM />} />
+          <Route path="crm" element={<Crm />} />
           <Route path="live" element={<LiveDashboard />} />
           <Route path="integrations" element={<Integrations />} />
           <Route path="ai" element={<AILayer />} />

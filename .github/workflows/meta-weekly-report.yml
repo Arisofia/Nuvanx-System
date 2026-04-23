@@ -26,6 +26,14 @@ jobs:
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       REPORT_DAYS: 30
+      META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+      META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
+      GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
+      GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
+      GOOGLE_ADS_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_CUSTOMER_ID }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      CLINIC_ID: ${{ secrets.CLINIC_ID }}
+      REPORT_USER_ID: ${{ secrets.REPORT_USER_ID }}
 
     steps:
       - uses: actions/checkout@v4.2.2
@@ -34,16 +42,6 @@ jobs:
           node-version: '20'
       - run: npm install --no-save pg node-fetch
       - run: node scripts/meta-weekly-report.js
-        env:
-          REPORT_DAYS: 30
-          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
-          META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
-          GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
-          GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
-          GOOGLE_ADS_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_CUSTOMER_ID }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          CLINIC_ID: ${{ secrets.CLINIC_ID }}
-          REPORT_USER_ID: ${{ secrets.REPORT_USER_ID }}
       - uses: actions/upload-artifact@v4.6.0
         with:
           name: daily-ads-unified-report

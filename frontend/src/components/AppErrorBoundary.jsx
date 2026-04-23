@@ -23,7 +23,7 @@ export default class AppErrorBoundary extends Component {
   }
 
   handleReload = () => {
-    window.location.reload();
+    globalThis.location.reload();
   };
 
   render() {

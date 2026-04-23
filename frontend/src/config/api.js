@@ -2,7 +2,8 @@ import axios from 'axios';
 import { supabase, isSupabaseAvailable } from '../lib/supabase/client';
 
 const explicitApiUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
-const isLocalHost = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const currentHostname = typeof globalThis.window !== 'undefined' ? globalThis.window.location.hostname : '';
+const isLocalHost = ['localhost', '127.0.0.1'].includes(currentHostname);
 
 function normalizeApiBaseUrl(url) {
   if (!url) return url;
@@ -21,22 +22,26 @@ function normalizeApiBaseUrl(url) {
 }
 
 function shouldUseProxyApi(explicitUrl) {
-  if (typeof window === 'undefined' || !explicitUrl) return false;
+  if (!explicitUrl) return false;
   try {
     const parsed = new URL(explicitUrl);
     const isSupabaseFunctionsUrl = parsed.pathname.endsWith('/functions/v1/api');
-    const isDifferentOrigin = parsed.hostname !== window.location.hostname;
+    const isDifferentOrigin = currentHostname && parsed.hostname !== currentHostname;
     return isSupabaseFunctionsUrl && isDifferentOrigin;
   } catch {
     return false;
   }
 }
 
+function getDefaultApiUrl(explicitUrl) {
+  if (shouldUseProxyApi(explicitUrl)) return '';
+  if (explicitUrl) return explicitUrl;
+  return isLocalHost ? '/api' : '';
+}
+
 // Prefer the Vercel rewrite path in production when the configured API URL points
 // to the Supabase functions host from a different origin.
-const defaultApiUrl = shouldUseProxyApi(explicitApiUrl)
-  ? ''
-  : explicitApiUrl || (isLocalHost ? '/api' : '');
+const defaultApiUrl = getDefaultApiUrl(explicitApiUrl);
 // Prefer new publishable key; fall back to legacy anon key for existing setups.
 const supabaseKey =
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
@@ -82,14 +87,15 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       const isAuthEndpoint = error.config?.url?.includes('/api/auth/');
-      if (!isAuthEndpoint && window.location.pathname !== '/login') {
+      const currentPath = typeof globalThis.window !== 'undefined' ? globalThis.window.location.pathname : '';
+      if (!isAuthEndpoint && currentPath !== '/login') {
         localStorage.removeItem('nuvanx_token');
 
         // Avoid hard browser reload loops. Let React auth state drive navigation.
         const now = Date.now();
         if (now - lastUnauthorizedEventAt > 1000) {
           lastUnauthorizedEventAt = now;
-          window.dispatchEvent(
+          globalThis.window?.dispatchEvent(
             new CustomEvent('nuvanx:unauthorized', {
               detail: { url: error.config?.url || null },
             })
