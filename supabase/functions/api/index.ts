@@ -85,15 +85,20 @@ async function sha256(input: string): Promise<string> {
 }
 
 function normalizePhoneToE164(phone: string): string {
+  const fallbackCountryCode = String(Deno.env.get('DEFAULT_PHONE_COUNTRY_CODE') ?? '34');
   const raw = String(phone ?? '').trim();
   if (!raw) return '';
   const cleaned = raw.replace(/[\u00A0\s().-]/g, '').replace(/ext\.?\s*\d+$/i, '');
   if (!cleaned) return '';
   let candidate = cleaned.startsWith('00') ? `+${cleaned.slice(2)}` : cleaned;
-  if (!candidate.startsWith('+') && /^\d{9}$/.test(candidate)) {
-    candidate = `+34${candidate}`; // default local clinic market
+  if (!candidate.startsWith('+')) {
+    const digits = candidate.replace(/\D/g, '');
+    if (fallbackCountryCode && digits.length <= 12 && !digits.startsWith(fallbackCountryCode)) {
+      candidate = `+${fallbackCountryCode}${digits}`;
+    } else {
+      candidate = `+${digits}`;
+    }
   }
-  if (!candidate.startsWith('+')) candidate = `+${candidate}`;
   const digits = candidate.replace(/\D/g, '');
   if (digits.length < 8 || digits.length > 15) return '';
   return `+${digits}`;
@@ -102,6 +107,13 @@ function normalizePhoneToE164(phone: string): string {
 function phoneForMeta(phone: string): string {
   const e164 = normalizePhoneToE164(phone);
   return e164 ? e164.slice(1) : '';
+}
+
+async function deriveCapiExternalId({ phone = '', email = '' }: { phone?: string; email?: string }): Promise<string> {
+  const normalizedPhone = phoneForMeta(phone);
+  if (normalizedPhone) return sha256(normalizedPhone);
+  const normalizedEmail = String(email ?? '').trim().toLowerCase();
+  return normalizedEmail ? sha256(normalizedEmail) : '';
 }
 
 async function resolveMetaPixelId(adminClient: any, userId: string): Promise<string> {
@@ -161,13 +173,14 @@ async function sendMetaCapiEvent(
       const phHash = await sha256(normalizedPhone);
       if (phHash) {
         user_data.ph = [phHash];
-        user_data.external_id = [phHash];
       }
     }
     if (normalizedEmail) {
       const emHash = await sha256(normalizedEmail);
       if (emHash) user_data.em = [emHash];
     }
+    const derivedExternalId = await deriveCapiExternalId({ phone: phone ?? '', email: email ?? '' });
+    if (derivedExternalId) user_data.external_id = [derivedExternalId];
     if (Object.keys(user_data).length === 0) return { success: false, skipped: 'missing_hashes' };
 
     const payload = {
@@ -202,7 +215,7 @@ async function sendMetaCapiEvent(
 function mapLeadPayloadToCapiEvent(payload: any): null | {
   eventName: string;
   value?: number;
-  extra?: Record<string, unknown>;
+  customData?: Record<string, unknown>;
 } {
   const stage = String(payload?.stage ?? '').toLowerCase();
   const source = String(payload?.source ?? '').toLowerCase();
@@ -214,14 +227,14 @@ function mapLeadPayloadToCapiEvent(payload: any): null | {
     return { eventName: 'Contact' };
   }
   if (isQualified) {
-    return { eventName: 'Lead', extra: { lead_quality: 'qualified' } };
+    return { eventName: 'Lead', customData: { lead_quality: 'qualified' } };
   }
   if (stage === 'appointment') {
-    return { eventName: 'Schedule', extra: attended ? { status: 'attended' } : {} };
+    return { eventName: 'Schedule', customData: attended ? { status: 'attended' } : {} };
   }
   if (stage === 'treatment' || stage === 'closed') {
     if (revenue > 1500) {
-      return { eventName: 'Purchase', value: revenue, extra: { content_category: 'premium' } };
+      return { eventName: 'Purchase', value: revenue, customData: { content_category: 'premium' } };
     }
     return { eventName: 'Purchase', value: revenue };
   }
@@ -812,7 +825,7 @@ Deno.serve(async (req: Request) => {
               phone: data.phone ?? payload.phone ?? '',
               email: data.email ?? payload.email ?? '',
               value: mapped.value ?? 0,
-              extra: mapped.extra ?? {},
+              extra: mapped.customData ?? {},
               eventId: data.external_id ?? data.id ?? '',
             });
           }
@@ -847,7 +860,7 @@ Deno.serve(async (req: Request) => {
           phone: data.phone ?? payload.phone ?? '',
           email: data.email ?? payload.email ?? '',
           value: mapped.value ?? 0,
-          extra: mapped.extra ?? {},
+          extra: mapped.customData ?? {},
           eventId: data.external_id ?? data.id ?? '',
         });
       }

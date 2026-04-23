@@ -18,6 +18,39 @@ function buildExternalIdFromPhone(phone) {
   return sha256(normalizedPhone);
 }
 
+function deriveCapiExternalId({ phone = '', email = '' }) {
+  const phoneExternalId = buildExternalIdFromPhone(phone);
+  if (phoneExternalId) return phoneExternalId;
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  if (!normalizedEmail) return null;
+  return sha256(normalizedEmail);
+}
+
+function mapLeadPayloadToCapiEvent(payload = {}) {
+  const stage = String(payload.stage || '').toLowerCase();
+  const source = String(payload.source || '').toLowerCase();
+  const revenue = Number(payload.revenue || 0);
+  const isQualified = payload.lead_quality === 'qualified' || payload.is_qualified === true;
+  const attended = payload.status === 'attended' || payload.appointment_status === 'attended';
+
+  if (stage === 'whatsapp' || source.includes('whatsapp')) {
+    return { eventName: 'Contact' };
+  }
+  if (isQualified) {
+    return { eventName: 'Lead', customData: { lead_quality: 'qualified' } };
+  }
+  if (stage === 'appointment') {
+    return { eventName: 'Schedule', customData: attended ? { status: 'attended' } : {} };
+  }
+  if (stage === 'treatment' || stage === 'closed') {
+    if (revenue > 1500) {
+      return { eventName: 'Purchase', value: revenue, customData: { content_category: 'premium' } };
+    }
+    return { eventName: 'Purchase', value: revenue };
+  }
+  return { eventName: 'Lead' };
+}
+
 async function sendMetaCapiEvent({
   eventName,
   eventTime,
@@ -39,7 +72,7 @@ async function sendMetaCapiEvent({
     userData.em = [sha256(String(email).trim())];
   }
 
-  const stableExternalId = externalId || (normalizedPhone ? sha256(normalizedPhone) : null);
+  const stableExternalId = externalId || deriveCapiExternalId({ phone, email });
   if (stableExternalId) userData.external_id = [stableExternalId];
 
   if (Object.keys(userData).length === 0) {
@@ -82,4 +115,6 @@ async function sendMetaCapiEvent({
 module.exports = {
   sendMetaCapiEvent,
   buildExternalIdFromPhone,
+  deriveCapiExternalId,
+  mapLeadPayloadToCapiEvent,
 };
