@@ -123,6 +123,8 @@ jobs:
   edge-cache-deno:
     name: Edge Function — cache Deno deps
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
