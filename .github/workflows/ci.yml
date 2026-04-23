@@ -134,5 +134,5 @@ jobs:
       - name: Setup Deno
         uses: denoland/setup-deno@v1
       - name: Cache Edge Function dependencies
-        run: deno cache supabase/functions/api/index.ts
+        run: deno cache --config supabase/functions/deno.json supabase/functions/api/index.ts
 
