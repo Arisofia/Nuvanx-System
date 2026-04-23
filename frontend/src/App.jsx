@@ -6,6 +6,7 @@ import { SpeedInsights } from '@vercel/speed-insights/react';
 import { AuthProvider } from './context/AuthContext.jsx';
 import { useAuth } from './context/useAuth';
 import Layout from './components/Layout';
+import AppErrorBoundary from './components/AppErrorBoundary';
 import Login from './pages/Login';
 
 // Lazy-load heavy pages so each route is its own JS chunk
@@ -73,7 +74,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppRoutes />
+        <AppErrorBoundary>
+          <AppRoutes />
+        </AppErrorBoundary>
         <Toaster
           position="top-right"
           toastOptions={{
