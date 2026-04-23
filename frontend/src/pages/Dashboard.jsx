@@ -1,4 +1,4 @@
-import { normalizeMetaAccountId, normalizePhoneNumberId } from '../utils/normalize';
+import { normalizeMetaAccountId } from '../utils/normalize';
 import { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
@@ -16,7 +16,7 @@ import {
 import MetricCard from '../components/MetricCard';
 import api from '../config/api';
 import { normalizeDashboardMetrics } from '../lib/normalizeDashboardMetrics';
-import { normalizeMetaAccountId } from '../utils/normalize';
+
 
 const REFRESH_SECONDS = 60;
 
