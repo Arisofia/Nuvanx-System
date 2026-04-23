@@ -13,7 +13,11 @@ export function normalizePhoneToE164(input: string | null | undefined): string {
     return `+${digits}`;
   }
 
-  const fallbackCountryCode = String(Deno.env.get('DEFAULT_PHONE_COUNTRY_CODE') ?? '34').replace(/\D/g, '');
+  const fallbackCountryCode = String(
+    (globalThis as any).Deno?.env?.get?.('DEFAULT_PHONE_COUNTRY_CODE')
+      ?? process?.env?.DEFAULT_PHONE_COUNTRY_CODE
+      ?? '34'
+  ).replace(/\D/g, '');
   const digits = candidate.replace(/\D/g, '');
   if (digits.length < 8 || digits.length > 15) return '';
 
