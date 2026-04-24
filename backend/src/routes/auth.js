@@ -22,7 +22,7 @@ const memStore = new Map();
 
 function issueTokenAndResponse(res, user, statusCode = 200) {
   const token = jwt.sign(
-    { id: user.id, email: user.email, name: user.name },
+    { id: user.id, email: user.email, name: user.name, clinicId: user.clinicId },
     config.jwtSecret,
     { expiresIn: config.jwtExpiresIn },
   );
@@ -30,7 +30,7 @@ function issueTokenAndResponse(res, user, statusCode = 200) {
   return res.status(statusCode).json({
     success: true,
     token,
-    user: { id: user.id, email: user.email, name: user.name },
+    user: { id: user.id, email: user.email, name: user.name, clinicId: user.clinicId },
   });
 }
 
@@ -40,11 +40,12 @@ function normalizeUserRow(row) {
     email: row.email,
     name: row.name,
     passwordHash: row.password_hash,
+    clinicId: row.clinic_id || null,
   };
 }
 
 async function dbFindByEmail(email) {
-  const { rows } = await pool.query('SELECT id, email, name, password_hash FROM users WHERE email = $1', [email]);
+  const { rows } = await pool.query('SELECT id, email, name, password_hash, clinic_id FROM users WHERE email = $1', [email]);
   return rows[0] ? normalizeUserRow(rows[0]) : null;
 }
 
@@ -54,7 +55,7 @@ async function dbCreateUser({ email, name, passwordHash }) {
     const { rows } = await pool.query(
       `INSERT INTO users (id, email, name, password_hash)
        VALUES ($1, $2, $3, $4)
-       RETURNING id, email, name, password_hash`,
+       RETURNING id, email, name, password_hash, clinic_id`,
       [id, email, name, passwordHash],
     );
     return normalizeUserRow(rows[0]);

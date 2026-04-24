@@ -109,6 +109,7 @@ app.get('/health', async (req, res) => {
 
   const allOk = Object.values(checks).every((v) => v === 'ok' || v === 'not-configured' || v === 'in-memory');
   res.status(allOk ? 200 : 503).json({
+    success: true,
     status: allOk ? 'ok' : 'degraded',
     timestamp: new Date().toISOString(),
     env: config.nodeEnv,
