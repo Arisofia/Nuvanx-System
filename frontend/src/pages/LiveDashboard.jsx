@@ -19,11 +19,18 @@ function buildHourlyFromLeads(leads) {
     return { time: label, hour: h.getHours(), leads: 0 };
   });
 
-  const today = now.toISOString().split('T')[0];
+  const today = now.toLocaleDateString('en-CA', { timeZone: 'Europe/Madrid' });
   for (const lead of leads) {
     const created = lead.createdAt || lead.created_at || '';
-    if (!created || !created.startsWith(today)) continue;
-    const h = new Date(created).getHours();
+    if (!created) continue;
+    const createdDate = new Date(created);
+    if (Number.isNaN(createdDate.getTime())) continue;
+    if (createdDate.toLocaleDateString('en-CA', { timeZone: 'Europe/Madrid' }) !== today) continue;
+    const h = Number(createdDate.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      hour12: false,
+      timeZone: 'Europe/Madrid',
+    }));
     const slot = slots.find((s) => s.hour === h);
     if (slot) slot.leads += 1;
   }

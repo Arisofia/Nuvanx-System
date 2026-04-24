@@ -12,6 +12,18 @@ const logger = require('../utils/logger');
 const router = express.Router();
 router.use(authenticate);
 
+function getMadridDateString(isoInput = new Date().toISOString()) {
+  return new Date(isoInput).toLocaleDateString('en-CA', { timeZone: 'Europe/Madrid' });
+}
+
+function getMadridHour(isoInput) {
+  return Number(new Date(isoInput).toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    hour12: false,
+    timeZone: 'Europe/Madrid',
+  }));
+}
+
 /** GET /api/dashboard/metrics */
 router.get('/metrics', async (req, res, next) => {
   try {
@@ -113,8 +125,13 @@ router.get('/lead-flow', async (req, res, next) => {
       const h = new Date(now);
       h.setHours(now.getHours() - (23 - i), 0, 0, 0);
       return {
-        time: h.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }),
-        hour: h.getHours(),
+        time: h.toLocaleTimeString('en-US', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+          timeZone: 'Europe/Madrid',
+        }),
+        hour: getMadridHour(h.toISOString()),
         leads: 0,
       };
     });
@@ -145,7 +162,10 @@ router.get('/revenue-trend', async (req, res, next) => {
     const revenueByDate = {};
     leads.forEach(lead => {
       if (!lead.revenue || lead.revenue <= 0) return;
-      const date = lead.updatedAt?.split('T')[0] || lead.createdAt?.split('T')[0];
+      const timestamp = lead.updatedAt || lead.createdAt || lead.created_at || '';
+      const dateObject = new Date(timestamp);
+      if (Number.isNaN(dateObject.getTime())) return;
+      const date = getMadridDateString(dateObject.toISOString());
       if (!date) return;
       if (!revenueByDate[date]) {
         revenueByDate[date] = { date, revenue: 0, leads: 0 };
