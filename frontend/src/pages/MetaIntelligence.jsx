@@ -380,7 +380,7 @@ function AIAnalysisPanel({ insights, campaigns, platform }) {
       )}
       {!analysis && !err && !analyzing && (
         <div className="text-center py-8 text-gray-500 text-sm">
-          Haz clic en "Analizar Ahora" para obtener un análisis completo con recomendaciones.
+          Haz clic en &quot;Analizar Ahora&quot; para obtener un análisis completo con recomendaciones.
         </div>
       )}
     </div>

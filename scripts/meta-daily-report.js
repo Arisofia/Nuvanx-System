@@ -465,7 +465,7 @@ async function main() {
     time_range: JSON.stringify({ since, until }),
     limit: '300',
     filtering: JSON.stringify([
-      { field: 'effective_status', operator: 'IN', values: ['ACTIVE', 'PAUSED', 'ARCHIVED'] },
+      { field: 'effective_status', operator: 'IN', value: ['ACTIVE', 'PAUSED', 'ARCHIVED'] },
     ]),
   }, token);
 
