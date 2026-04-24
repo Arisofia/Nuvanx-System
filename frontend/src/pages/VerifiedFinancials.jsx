@@ -98,10 +98,18 @@ export default function VerifiedFinancials() {
         patientsRes.data?.diagnostics,
       ]));
     } catch (err) {
-      const message = err.response?.data?.message
-        || err.response?.data?.error
-        || err.message
-        || 'Failed to load financial data';
+      const status = err.response?.status;
+      const serverMessage = err.response?.data?.message || err.response?.data?.error;
+      let message = serverMessage || err.message || 'Failed to load financial data';
+
+      if (status === 401) {
+        message = 'Authentication failed. Please sign out and sign in again.';
+      } else if (status === 400 && serverMessage === 'No clinic') {
+        message = 'No clinic is linked to your user account. Assign users.clinic_id to unlock financial reports.';
+      } else if (!serverMessage && status) {
+        message = `Financial API returned status ${status}. ${message}`;
+      }
+
       setError(message);
     } finally {
       setLoading(false);
