@@ -157,8 +157,12 @@ async function runAiPrompt(
     .from('credentials').select('service, encrypted_key').eq('user_id', userId).in('service', ['gemini', 'openai']);
   const geminiCred = (creds ?? []).find((c: any) => c.service === 'gemini');
   const openaiCred = (creds ?? []).find((c: any) => c.service === 'openai');
-  if (!geminiCred && !openaiCred) {
-    throw new Error('No AI integration connected. Add Gemini or OpenAI in Integrations.');
+
+  const envOpenAiKey = Deno.env.get('OPENAI_API_KEY') ?? Deno.env.get('OPENAI_KEY') ?? '';
+  const envGeminiKey = Deno.env.get('GEMINI_API_KEY') ?? Deno.env.get('GEMINI_KEY') ?? '';
+
+  if (!geminiCred && !openaiCred && !envOpenAiKey && !envGeminiKey) {
+    throw new Error('No AI integration connected. Add Gemini or OpenAI in Integrations, or configure OPENAI_API_KEY/GEMINI_API_KEY in function secrets.');
   }
 
   const providerErrors: string[] = [];
@@ -169,10 +173,25 @@ async function runAiPrompt(
 
   for (const provider of providerOrder) {
     const cred = provider === 'gemini' ? geminiCred : openaiCred;
-    if (!cred) continue;
+    const envKey = provider === 'gemini' ? envGeminiKey : envOpenAiKey;
+    if (!cred && !envKey) continue;
 
     try {
-      const apiKey = await decryptCred(cred.encrypted_key);
+      let apiKey: string;
+      if (cred) {
+        try {
+          apiKey = await decryptCred(cred.encrypted_key);
+        } catch (decryptErr) {
+          if (envKey) {
+            apiKey = envKey;
+          } else {
+            throw decryptErr;
+          }
+        }
+      } else {
+        apiKey = envKey;
+      }
+
       const text = provider === 'gemini'
         ? await callGemini(prompt, apiKey)
         : await callOpenAI(prompt, apiKey);
@@ -1172,9 +1191,6 @@ Deno.serve(async (req: Request) => {
       if (service === 'meta') {
         const normalized = requireMetaAccountId(metadata?.adAccountId ?? metadata?.ad_account_id ?? '');
         const normalizedPageId = String(metadata?.pageId ?? metadata?.page_id ?? '').replace(/\D/g, '');
-        if (!normalizedPageId) {
-          return json({ success: false, message: 'pageId is required for Meta integration' }, 400);
-        }
         metadata = {
           ...metadata,
           adAccountId: normalized,
