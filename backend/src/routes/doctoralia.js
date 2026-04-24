@@ -87,12 +87,8 @@ router.post(
     }
 
     try {
-      // Resolve clinic_id
-      const { rows: userRows } = await pool.query(
-        'SELECT clinic_id FROM users WHERE id = $1',
-        [req.user.id],
-      );
-      const clinicId = userRows[0]?.clinic_id || null;
+      // Resolve clinic_id from middleware
+      const clinicId = req.user.clinicId;
       if (!clinicId) {
         return res.status(400).json({
           success: false,

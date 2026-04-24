@@ -2,6 +2,7 @@
 
 const jwt = require('jsonwebtoken');
 const { config } = require('../config/env');
+const { pool, isAvailable } = require('../db');
 const logger = require('../utils/logger');
 
 /**
@@ -13,7 +14,7 @@ const logger = require('../utils/logger');
  *
  * Attaches the decoded payload to req.user on success.
  */
-function authenticate(req, res, next) {
+async function authenticate(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ success: false, message: 'Authorization token required' });
@@ -43,12 +44,29 @@ function authenticate(req, res, next) {
   // Try Supabase JWT
   try {
     const decoded = jwt.verify(token, config.supabaseJwtSecret);
-    // Normalize Supabase payload fields to the shape the rest of the app expects
+    
+    // Normalize Supabase payload fields
+    const userId = decoded.sub || decoded.id;
     req.user = {
-      id: decoded.sub || decoded.id,
+      id: userId,
       email: decoded.email || null,
       name: (decoded.user_metadata && decoded.user_metadata.name) || decoded.email || decoded.sub,
     };
+
+    // If clinicId is not in the token (Supabase tokens don't have it by default),
+    // fetch it from our users table.
+    if (isAvailable()) {
+      try {
+        const { rows } = await pool.query('SELECT clinic_id FROM users WHERE id = $1', [userId]);
+        req.user.clinicId = rows[0]?.clinic_id || null;
+      } catch (dbErr) {
+        logger.warn('Failed to fetch clinicId for Supabase user', { userId, error: dbErr.message });
+        req.user.clinicId = null;
+      }
+    } else {
+      req.user.clinicId = null;
+    }
+
     return next();
   } catch (supabaseErr) {
     logger.debug('Supabase JWT verification failed', { error: supabaseErr.message });

@@ -131,7 +131,8 @@ router.post('/login', authLimiter, authLoginRules, handleValidationErrors, async
     const user = await findUser(email);
 
     // Always compare against a hash to reduce timing side-channels.
-    const passwordHashToCompare = user ? user.passwordHash : DUMMY_PASSWORD_HASH;
+    // If the user was created via Supabase, passwordHash might be null.
+    const passwordHashToCompare = (user && user.passwordHash) ? user.passwordHash : DUMMY_PASSWORD_HASH;
     const valid = await bcrypt.compare(password, passwordHashToCompare);
     if (!user || !valid) {
       return res.status(401).json({ success: false, message: 'Invalid email or password' });
