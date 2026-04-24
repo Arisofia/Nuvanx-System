@@ -9,8 +9,10 @@ export function normalizeMetaAccountId(raw) {
 
 export function normalizePhoneNumberId(raw) {
   const value = String(raw || '').trim();
-  if (!value || /^act_/i.test(value) || /[a-z]/i.test(value)) return '';
-  const digits = value.replace(/\D/g, '');
+  if (!value) return '';
+  const unprefixed = value.replace(/^act_/i, '');
+  if (/[a-z]/i.test(unprefixed)) return '';
+  const digits = unprefixed.replace(/\D/g, '');
   if (digits.length < 8 || digits.length > 20) return '';
   return digits;
 }

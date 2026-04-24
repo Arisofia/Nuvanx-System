@@ -40,6 +40,7 @@ function ConnectModal({ integration, onClose, onConnect }) {
   const isWhatsApp = integration.service === 'whatsapp';
   const isMeta = integration.service === 'meta';
   const normalizedMetaPreview = isMeta ? normalizeMetaAccountId(adAccountId) : '';
+  const normalizedPagePreview = isMeta ? String(pageId).replace(/\D/g, '') : '';
   const normalizedPhonePreview = isWhatsApp ? normalizePhoneNumberId(phoneNumberId) : '';
 
   useEffect(() => {
@@ -80,11 +81,16 @@ function ConnectModal({ integration, onClose, onConnect }) {
 
     setSubmitting(true);
     try {
+      if (isMeta && !normalizedPagePreview) {
+        toast.error('Facebook Page ID is required and must contain only digits.');
+        return;
+      }
+
       const credentials = { apiKey };
       if (isWhatsApp) credentials.phoneNumberId = normalizedPhonePreview;
       if (isMeta) {
         credentials.adAccountId = normalizedMetaAccountId;
-        if (pageId.trim()) credentials.pageId = pageId.trim();
+        credentials.pageId = normalizedPagePreview;
       }
 
       await onConnect(integration.service, credentials);
@@ -170,7 +176,8 @@ function ConnectModal({ integration, onClose, onConnect }) {
                   required
                 />
                 <p className="mt-1.5 text-xs text-gray-500">
-                  Found in Meta Business Manager → Pages → select your page → About → Page ID
+                  Found in Meta Business Manager → Pages → select your page → About → Page ID.
+                  Only digits are accepted; we normalize the value before saving.
                 </p>
               </div>
             </>
@@ -191,7 +198,7 @@ function ConnectModal({ integration, onClose, onConnect }) {
                 required
               />
               <p className="mt-1.5 text-xs text-gray-500">
-                Use the numeric Phone Number ID from Meta. We normalize and save as{' '}
+                Use the numeric Phone Number ID from Meta (not an Ad Account ID starting with <strong>act_</strong>). We normalize and save as{' '}
                 <strong>{normalizedPhonePreview || '<digits>'}</strong>.
               </p>
             </div>
@@ -203,7 +210,7 @@ function ConnectModal({ integration, onClose, onConnect }) {
             </button>
             <button
               type="submit"
-              disabled={submitting || !apiKey.trim() || (isWhatsApp && !normalizedPhonePreview) || (isMeta && !normalizedMetaPreview)}
+              disabled={submitting || !apiKey.trim() || (isWhatsApp && !normalizedPhonePreview) || (isMeta && (!normalizedMetaPreview || !normalizedPagePreview))}
               className="btn-primary flex-1 flex items-center justify-center gap-2"
             >
               {submitting && <Loader2 size={16} className="animate-spin" />}

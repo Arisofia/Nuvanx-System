@@ -64,6 +64,16 @@ cd backend && npx jest tests/auth.test.js --runInBand --forceExit
 - Deploy: frontend → Vercel (auto), Edge Function → Supabase (manual: `npx supabase functions deploy api`)
 - No Railway, no Render.
 
+## Vercel environment variables
+
+For Vercel production deploys, configure these environment variables in the frontend project settings:
+
+- `VITE_SUPABASE_URL` — your Supabase project URL, e.g. `https://ssvvuuysgxyqvmovrlvk.supabase.co`
+- `VITE_SUPABASE_PUBLISHABLE_KEY` — preferred Supabase publishable key from Supabase Connect
+- `VITE_SUPABASE_ANON_KEY` — legacy anonymous key; used only as a fallback when `VITE_SUPABASE_PUBLISHABLE_KEY` is not set
+
+If neither key is set, the frontend will warn and disable Supabase features.
+
 ## Production URL
 
 - Canonical dashboard URL: `https://frontend-arisofias-projects-c2217452.vercel.app/dashboard`
