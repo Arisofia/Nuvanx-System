@@ -16,7 +16,12 @@ const { errorHandler } = require('./middleware/errorHandler');
 const { startPeriodicSync, stopPeriodicSync } = require('./services/dashboardSync');
 
 // Validate required environment variables before anything else
-validate();
+try {
+  validate();
+} catch (err) {
+  console.error('Environment validation failed:', err.message);
+  process.exit(1);
+}
 
 // ─── Sentry error tracking ─────────────────────────────────────────────────
 if (config.sentryDsn) {
