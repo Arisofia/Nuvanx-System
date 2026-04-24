@@ -53,7 +53,8 @@ async function getMetrics(accessToken, adAccountId, dateRange = {}) {
 
   const params = {
     access_token: accessToken,
-    fields: `insights.time_range({"since":"${since}","until":"${until}"}){impressions,reach,clicks,spend,cpc,cpm,ctr,conversions}`,
+    fields: 'impressions,reach,clicks,spend,cpc,cpm,ctr,conversions',
+    time_range: JSON.stringify({ since, until }),
   };
   const { data } = await axios.get(`${META_GRAPH_BASE}/${adAccountId}/insights`, {
     params,
@@ -160,7 +161,7 @@ async function getCampaignsWithInsights(accessToken, adAccountId, dateRange = {}
     params: {
       access_token: accessToken,
       fields: 'id,name,status,objective,daily_budget,lifetime_budget,' +
-              `insights.time_range({"since":"${since}","until":"${until}"}){spend,impressions,reach,clicks,ctr,cpc,cpm,cpp,conversions}`,
+              `insights.time_range({'since':'${since}','until':'${until}'}){spend,impressions,reach,clicks,ctr,cpc,cpm,cpp,conversions}`,
       limit: 50,
     },
     timeout: 30000,
