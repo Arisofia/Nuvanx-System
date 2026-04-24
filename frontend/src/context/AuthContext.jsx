@@ -82,6 +82,21 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = useCallback(async (email, password) => {
+    if (isSupabaseAvailable()) {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      const session = data.session;
+      if (!session || !session.user) {
+        throw new Error('No session returned from Supabase');
+      }
+      const userData = toUserShape(session.user);
+      const jwt = session.access_token;
+      localStorage.setItem('nuvanx_token', jwt);
+      setToken(jwt);
+      setUser(userData);
+      return userData;
+    }
+
     const res = await api.post('/api/auth/login', { email, password });
     const { token: jwt, user: userData } = res.data;
     localStorage.setItem('nuvanx_token', jwt);
