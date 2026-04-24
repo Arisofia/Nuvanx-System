@@ -193,6 +193,24 @@ async function metaFetch(endpoint, params, token) {
   return data;
 }
 
+async function metaFetchWithFallback(endpoint, params, token) {
+  try {
+    return await metaFetch(endpoint, params, token);
+  } catch (err) {
+    const msg = String(err?.message || '').toLowerCase();
+    if (
+      msg.includes('invalid keys "values" were found in param "filtering[0]"') &&
+      params?.filtering
+    ) {
+      console.warn('[meta-daily-report] Meta filtering failed; retrying without filtering');
+      const fallbackParams = { ...params };
+      delete fallbackParams.filtering;
+      return await metaFetch(endpoint, fallbackParams, token);
+    }
+    throw err;
+  }
+}
+
 async function maybeLoadDbSignals({ databaseUrl, clinicId, sinceIso, untilExclusiveIso }) {
   if (!databaseUrl || !clinicId) {
     return { available: false, rows: [] };
@@ -459,7 +477,7 @@ async function main() {
     'landing_page_view',
   ].join(',');
 
-  const insights = await metaFetch(`/${adAccountId}/insights`, {
+  const insights = await metaFetchWithFallback(`/${adAccountId}/insights`, {
     level: 'campaign',
     fields: baseFields,
     time_range: JSON.stringify({ since, until }),
