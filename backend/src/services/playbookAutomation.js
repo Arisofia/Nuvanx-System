@@ -12,6 +12,7 @@
 const { config } = require('../config/env');
 const { pool, isAvailable } = require('../db');
 const whatsappService = require('./whatsapp');
+const { normalizePhoneForMeta } = require('../utils/phone');
 const credentialModel = require('../models/credential');
 const logger = require('../utils/logger');
 
@@ -47,8 +48,14 @@ async function runLeadCaptureNurture(userId, lead) {
     return;
   }
 
-  const to = lead.phone.replace(/[^0-9]/g, ''); // strip non-digits
-  if (to.length < 10) return; // too short to be valid
+  const to = normalizePhoneForMeta(lead.phone);
+  if (!to) {
+    logger.warn('[playbook-auto] lead_capture_nurture skipped — invalid lead phone', {
+      leadId: lead.id,
+      phone: lead.phone,
+    });
+    return;
+  }
 
   const name = lead.name || 'there';
   const message = `👋 Hola ${name}! Gracias por tu interés. Un miembro de nuestro equipo se comunicará contigo pronto. ¿Hay algo en lo que podamos ayudarte?`;

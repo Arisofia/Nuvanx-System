@@ -2,6 +2,7 @@
 
 const axios = require('axios');
 const logger = require('../utils/logger');
+const { normalizePhoneToE164 } = require('../utils/phone');
 
 const WA_BASE = 'https://graph.facebook.com/v21.0';
 
@@ -40,12 +41,18 @@ async function sendMessage(accessToken, phoneNumberId, to, message) {
   if (!/^\d{10,20}$/.test(phoneNumberId)) {
     throw new Error('Invalid phoneNumberId format');
   }
+  const normalizedTo = normalizePhoneToE164(to);
+  if (!normalizedTo) {
+    throw new Error('Invalid recipient phone number format');
+  }
+  const recipient = normalizedTo.slice(1); // WhatsApp Cloud API expects international number without leading +
+
   const { data } = await axios.post(
     `${WA_BASE}/${phoneNumberId}/messages`,
     {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
-      to,
+      to: recipient,
       type: 'text',
       text: { preview_url: false, body: message },
     },

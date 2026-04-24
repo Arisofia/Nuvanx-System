@@ -13,20 +13,32 @@ const OPENAI_BASE = 'https://api.openai.com/v1';
  * @param {string} [model='gpt-4']
  * @returns {string} Generated text
  */
-async function generateContent(apiKey, prompt, model = 'gpt-4') {
-  const { data } = await axios.post(
-    `${OPENAI_BASE}/chat/completions`,
-    {
-      model,
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.7,
-    },
-    {
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      timeout: 60000,
-    },
-  );
-  return data.choices[0]?.message?.content ?? '';
+async function generateContent(apiKey, prompt, model = 'gpt-4o-mini') {
+  try {
+    const { data } = await axios.post(
+      `${OPENAI_BASE}/chat/completions`,
+      {
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.7,
+      },
+      {
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        timeout: 60000,
+      },
+    );
+    return data.choices[0]?.message?.content ?? '';
+  } catch (err) {
+    const message = err.response?.data?.error?.message || err.message;
+    if (
+      message.includes('model') &&
+      message.includes('does not exist') &&
+      model !== 'gpt-4o-mini'
+    ) {
+      return generateContent(apiKey, prompt, 'gpt-4o-mini');
+    }
+    throw err;
+  }
 }
 
 /**
@@ -45,7 +57,7 @@ ${JSON.stringify(campaignData, null, 2)}
 
 Respond as valid JSON: { "suggestions": [...], "score": <number> }`;
 
-  const raw = await generateContent(apiKey, prompt, 'gpt-4');
+  const raw = await generateContent(apiKey, prompt, 'gpt-4o-mini');
   try {
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     return jsonMatch ? JSON.parse(jsonMatch[0]) : { suggestions: [raw], score: null };

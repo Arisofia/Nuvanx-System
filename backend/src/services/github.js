@@ -3,6 +3,13 @@
 const axios = require('axios');
 const logger = require('../utils/logger');
 
+function buildGithubAuthHeader(token) {
+  if (!token) return '';
+  return /^(ghp_|gho_|ghu_|ghr_|ghs_|github_pat_)/.test(token)
+    ? `token ${token}`
+    : `Bearer ${token}`;
+}
+
 /**
  * Test a GitHub personal access token.
  * @param {string} token
@@ -11,7 +18,7 @@ const logger = require('../utils/logger');
 async function testConnection(token) {
   try {
     const { data } = await axios.get('https://api.github.com/user', {
-      headers: { Authorization: `Bearer ${token}`, 'X-GitHub-Api-Version': '2022-11-28' },
+      headers: { Authorization: buildGithubAuthHeader(token), 'X-GitHub-Api-Version': '2022-11-28' },
       timeout: 10000,
     });
     return { connected: true, login: data.login, name: data.name };
@@ -29,7 +36,7 @@ async function testConnection(token) {
  */
 async function listRepositories(token, { page = 1, perPage = 30 } = {}) {
   const { data } = await axios.get('https://api.github.com/user/repos', {
-    headers: { Authorization: `Bearer ${token}`, 'X-GitHub-Api-Version': '2022-11-28' },
+    headers: { Authorization: buildGithubAuthHeader(token), 'X-GitHub-Api-Version': '2022-11-28' },
     params: { page, per_page: perPage, sort: 'updated' },
     timeout: 15000,
   });
@@ -48,7 +55,7 @@ async function getIssues(token, owner, repo) {
     throw new Error('Invalid owner or repository name');
   }
   const { data } = await axios.get(`https://api.github.com/repos/${owner}/${repo}/issues`, {
-    headers: { Authorization: `Bearer ${token}`, 'X-GitHub-Api-Version': '2022-11-28' },
+    headers: { Authorization: buildGithubAuthHeader(token), 'X-GitHub-Api-Version': '2022-11-28' },
     params: { state: 'open', per_page: 50 },
     timeout: 15000,
   });
