@@ -48,13 +48,12 @@ async function getCampaigns(accessToken, adAccountId) {
  * @param {{ since: string, until: string }} dateRange  ISO date strings
  */
 async function getMetrics(accessToken, adAccountId, dateRange = {}) {
+  const since = dateRange.since || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const until = dateRange.until || new Date().toISOString().slice(0, 10);
+
   const params = {
     access_token: accessToken,
-    fields: 'impressions,reach,clicks,spend,cpc,cpm,ctr,conversions',
-    time_range: JSON.stringify({
-      since: dateRange.since || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-      until: dateRange.until || new Date().toISOString().slice(0, 10),
-    }),
+    fields: `insights.time_range({"since":"${since}","until":"${until}"}){impressions,reach,clicks,spend,cpc,cpm,ctr,conversions}`,
   };
   const { data } = await axios.get(`${META_GRAPH_BASE}/${adAccountId}/insights`, {
     params,
@@ -161,7 +160,7 @@ async function getCampaignsWithInsights(accessToken, adAccountId, dateRange = {}
     params: {
       access_token: accessToken,
       fields: 'id,name,status,objective,daily_budget,lifetime_budget,' +
-              `insights.time_range({'since':'${since}','until':'${until}'}){spend,impressions,reach,clicks,ctr,cpc,cpm,cpp,conversions}`,
+              `insights.time_range({"since":"${since}","until":"${until}"}){spend,impressions,reach,clicks,ctr,cpc,cpm,cpp,conversions}`,
       limit: 50,
     },
     timeout: 30000,

@@ -82,16 +82,6 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = useCallback(async (email, password) => {
-    if (isSupabaseAvailable()) {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (!error && data.session) {
-        const shaped = toUserShape(data.user);
-        setToken(data.session.access_token);
-        setUser(shaped);
-        return shaped;
-      }
-    }
-
     const res = await api.post('/api/auth/login', { email, password });
     const { token: jwt, user: userData } = res.data;
     localStorage.setItem('nuvanx_token', jwt);

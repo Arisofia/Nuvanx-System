@@ -10,7 +10,7 @@ const OPENAI_BASE = 'https://api.openai.com/v1';
  * The API key is passed from the credential vault and NEVER exposed to the frontend.
  * @param {string} apiKey
  * @param {string} prompt
- * @param {string} [model='gpt-4']
+ * @param {string} [model='gpt-4o-mini']
  * @returns {string} Generated text
  */
 async function generateContent(apiKey, prompt, model = 'gpt-4o-mini') {

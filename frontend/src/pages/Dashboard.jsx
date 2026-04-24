@@ -86,7 +86,7 @@ function buildUnifiedActivity(figmaEvents, aiOutputs) {
 }
 
 export default function Dashboard() {
-  const { token, isAuthenticated } = useAuth();
+  const { token, isAuthenticated, loading: authLoading } = useAuth();
   const [metrics, setMetrics] = useState(null);
   const [integrations, setIntegrations] = useState([]);
   const [aiStatus, setAiStatus] = useState({ available: false, provider: null });
@@ -157,7 +157,7 @@ export default function Dashboard() {
             const lastSuccess = trendsRes.data?.last_success || insightsRes.data?.last_success;
             setMetaError(
               `Meta connection unstable. Showing data from ${
-                lastSuccess ? new Date(lastSuccess).toLocaleString() : 'cache'
+                lastSuccess ? new Date(lastSuccess).toLocaleString('es-ES', { timeZone: 'Europe/Madrid' }) : 'cache'
               }.`
             );
           } else {
@@ -188,11 +188,11 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (!authLoading && isAuthenticated) {
       fetchData();
       fetchAiSuggestions();
     }
-  }, [isAuthenticated, token]);
+  }, [authLoading, isAuthenticated, token]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -226,7 +226,7 @@ export default function Dashboard() {
       {
         name: 'GitHub Sync Agent',
         status: github?.status || 'disconnected',
-        detail: github?.lastSync ? `Last sync: ${new Date(github.lastSync).toLocaleString()}` : 'No recent sync',
+        detail: github?.lastSync ? `Last sync: ${new Date(github.lastSync).toLocaleString('es-ES', { timeZone: 'Europe/Madrid' })}` : 'No recent sync',
         icon: GitBranch,
       },
       {

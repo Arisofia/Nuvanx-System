@@ -5,9 +5,7 @@ const logger = require('../utils/logger');
 
 function buildGithubAuthHeader(token) {
   if (!token) return '';
-  return /^(ghp_|gho_|ghu_|ghr_|ghs_|github_pat_)/.test(token)
-    ? `token ${token}`
-    : `Bearer ${token}`;
+  return `token ${token}`;
 }
 
 /**

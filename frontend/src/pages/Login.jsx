@@ -20,8 +20,8 @@ export default function Login() {
     e.preventDefault();
     setLoading(true);
     try {
-      await login(email, password);
-      navigate('/dashboard');
+      const user = await login(email, password);
+      if (user) navigate('/dashboard');
     } catch (err) {
       toast.error(err.response?.data?.message || 'Invalid credentials. Please try again.');
     } finally {
