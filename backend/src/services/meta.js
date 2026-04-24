@@ -161,8 +161,7 @@ async function getCampaignsWithInsights(accessToken, adAccountId, dateRange = {}
     params: {
       access_token: accessToken,
       fields: 'id,name,status,objective,daily_budget,lifetime_budget,' +
-              'insights{spend,impressions,reach,clicks,ctr,cpc,cpm,cpp,conversions}',
-      time_range: JSON.stringify({ since, until }),
+              `insights.time_range({\"since\":\"${since}\",\"until\":\"${until}\"}){spend,impressions,reach,clicks,ctr,cpc,cpm,cpp,conversions}`,
       limit: 50,
     },
     timeout: 30000,
