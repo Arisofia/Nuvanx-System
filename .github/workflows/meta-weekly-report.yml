@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-      REPORT_DAYS: 1
+      REPORT_DAYS: 30
       META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
       META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
       GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
@@ -40,7 +40,20 @@ jobs:
       - uses: actions/setup-node@v4.4.0
         with:
           node-version: '20'
-      - run: npm install --no-save pg node-fetch
+      - name: Validate required secrets
+        run: |
+          MISSING=()
+          [ -z "$META_ACCESS_TOKEN" ] && MISSING+=("META_ACCESS_TOKEN")
+          [ -z "$META_AD_ACCOUNT_ID" ] && MISSING+=("META_AD_ACCOUNT_ID")
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::error::Missing required secrets: ${MISSING[*]}"
+            echo "::error::Configure them in GitHub Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+        env:
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
+      - run: npm install --no-save pg
       - run: node scripts/meta-daily-report.js
       - uses: actions/upload-artifact@v4.6.0
         with:
