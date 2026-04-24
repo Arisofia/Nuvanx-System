@@ -71,8 +71,10 @@ For Vercel production deploys, configure these environment variables in the fron
 - `VITE_SUPABASE_URL` — your Supabase project URL, e.g. `https://ssvvuuysgxyqvmovrlvk.supabase.co`
 - `VITE_SUPABASE_PUBLISHABLE_KEY` — preferred Supabase publishable key from Supabase Connect
 - `VITE_SUPABASE_ANON_KEY` — legacy anonymous key; used only as a fallback when `VITE_SUPABASE_PUBLISHABLE_KEY` is not set
+- `VITE_API_BASE_URL` / `VITE_API_URL` — optional overrides for the API host; leave empty to use Vercel rewrite paths (`/api/*`)
+- `VITE_SENTRY_DSN` — optional Sentry DSN for client error reporting
 
-If neither key is set, the frontend will warn and disable Supabase features.
+If neither Supabase key is set, the frontend will warn and disable Supabase features.
 
 ## Production URL
 
@@ -85,5 +87,6 @@ If neither key is set, the frontend will warn and disable Supabase features.
 - [SECURITY.md](SECURITY.md) — Security posture and production readiness
 - [SUPABASE_SETUP.md](SUPABASE_SETUP.md) — Database setup and schema overview
 - [docs/agents-and-integrations-architecture.md](docs/agents-and-integrations-architecture.md) — Architecture and agent roadmap
+- [docs/production-validation-checklist.md](docs/production-validation-checklist.md) — Production secret and runtime verification checklist
 - [docs/production-verification-recovery-2026-04-21.md](docs/production-verification-recovery-2026-04-21.md) — Canonical production URL, live deployment truth, and recovery actions
 

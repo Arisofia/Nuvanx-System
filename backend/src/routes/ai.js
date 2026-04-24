@@ -6,6 +6,7 @@ const { aiLimiter } = require('../middleware/rateLimiter');
 const credentialModel = require('../models/credential');
 const openaiService = require('../services/openai');
 const geminiService = require('../services/gemini');
+const { supabaseAdmin } = require('../config/supabase');
 const { config } = require('../config/env');
 const { aiGenerateRules, aiAnalyzeRules, handleValidationErrors } = require('../utils/validators');
 const { body } = require('express-validator');
@@ -38,6 +39,36 @@ async function resolveAiCredential(userId, provider) {
   return null;
 }
 
+async function persistAgentOutput(userId, agentType, output, metadata = {}) {
+  if (!supabaseAdmin) {
+    logger.warn('Supabase admin client unavailable for agent output persistence', { userId, agentType });
+    return;
+  }
+
+  const { data: user, error: userError } = await supabaseAdmin
+    .from('users')
+    .select('clinic_id')
+    .eq('id', userId)
+    .single();
+
+  if (userError) {
+    logger.warn('Unable to resolve user clinic for agent output persistence', { userId, error: userError.message });
+  }
+
+  const record = {
+    user_id: userId,
+    clinic_id: user?.clinic_id || null,
+    agent_type: agentType,
+    output,
+    metadata,
+  };
+
+  const { error: insertError } = await supabaseAdmin.from('agent_outputs').insert(record);
+  if (insertError) {
+    logger.warn('Failed to persist agent output', { userId, agentType, error: insertError.message });
+  }
+}
+
 /** GET /api/ai/status — check whether an AI credential is available for the current user */
 router.get('/status', async (req, res, next) => {
   try {
@@ -68,6 +99,12 @@ router.post('/generate', aiGenerateRules, handleValidationErrors, async (req, re
     const service = getAiService(credential.provider);
     const content = await service.generateContent(credential.key, prompt, model);
     logger.info('AI content generated', { userId: req.user.id, provider: credential.provider });
+    await persistAgentOutput(req.user.id, 'generate', content, {
+      model,
+      requestedProvider: provider,
+      executedProvider: credential.provider,
+      promptLength: prompt.length,
+    });
 
     res.json({ success: true, content, provider: credential.provider });
   } catch (err) {
@@ -96,6 +133,13 @@ router.post(
       const service = getAiService(credential.provider);
       const analysis = await service.analyzeCampaign(credential.key, campaignData);
       logger.info('Campaign analyzed', { userId: req.user.id, provider: credential.provider });
+      await persistAgentOutput(req.user.id, 'analyze_campaign', analysis, {
+        requestedProvider: provider,
+        executedProvider: credential.provider,
+        campaignDataSummary: {
+          fields: Object.keys(campaignData || {}).length,
+        },
+      });
 
       res.json({ success: true, analysis, provider: credential.provider });
     } catch (err) {
@@ -223,6 +267,13 @@ Respond ONLY with valid JSON: ["suggestion 1", "suggestion 2", "suggestion 3", .
     }
 
     logger.info('AI suggestions generated', { userId, provider: credential.provider, count: suggestions.length });
+    await persistAgentOutput(userId, 'suggestions', suggestions, {
+      provider: credential.provider,
+      leads: totalLeads,
+      revenue: totalRevenue,
+      metaConnected: !!metaMetrics,
+      integrationsConnected: connectedServices.length,
+    });
 
     res.json({
       success: true,
