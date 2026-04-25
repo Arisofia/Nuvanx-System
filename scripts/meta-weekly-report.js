@@ -50,11 +50,11 @@ function getAction(actions = [], type) {
 }
 
 function getWhatsApp(actions = []) {
-  return getAction(actions, 'onsite_conversion.messaging_conversation_started_7d');
+  return actionValue(actions, isWhatsAppAction);
 }
 
 function getLeadForm(actions = []) {
-  return getAction(actions, 'lead');
+  return actionValue(actions, isLeadFormAction);
 }
 
 function isWhatsAppAction(type) {
