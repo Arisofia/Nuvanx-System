@@ -9,6 +9,7 @@ const ROOT = process.cwd();
 const TOKENS_FILE = path.join(ROOT, '.env.tokens.local');
 
 const requiredSecretKeys = [
+  'SUPABASE_ACCESS_TOKEN',
   'META_ACCESS_TOKEN',
   'META_AD_ACCOUNT_ID',
   'META_CAPI_VERSION',
@@ -166,7 +167,7 @@ function setGithubSecrets(vars) {
   if (!hasGhCli()) return { skipped: true, reason: 'gh CLI not installed' };
 
   let uploaded = 0;
-  const githubKeys = [...requiredSecretKeys, 'VITE_SUPABASE_URL', 'VITE_SUPABASE_PUBLISHABLE_KEY', 'VITE_SUPABASE_ANON_KEY'];
+  const githubKeys = [...requiredSecretKeys, 'SUPABASE_ACCESS_TOKEN', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_PUBLISHABLE_KEY', 'VITE_SUPABASE_ANON_KEY'];
   for (const key of githubKeys) {
     const value = vars[key];
     if (!value) continue;
