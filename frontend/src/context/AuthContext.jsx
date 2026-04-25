@@ -15,7 +15,11 @@ function toUserShape(sbUser) {
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => isSupabaseAvailable());
+
+  const finishLoading = useCallback(() => {
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
     const onUnauthorized = async () => {
@@ -26,6 +30,8 @@ export function AuthProvider({ children }) {
       setToken(null);
       setUser(null);
     };
+
+    let timeout;
 
     window.addEventListener('nuvanx:unauthorized', onUnauthorized);
 
@@ -41,7 +47,9 @@ export function AuthProvider({ children }) {
           // Keep backend JWT fallback as a contingency path only when session bootstrap fails.
           // No long-lived token is stored locally for security reasons.
         })
-        .finally(() => setLoading(false));
+        .finally(() => {
+          timeout = setTimeout(finishLoading, 0);
+        });
 
       const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
         setToken(session?.access_token ?? null);
@@ -51,15 +59,15 @@ export function AuthProvider({ children }) {
       return () => {
         window.removeEventListener('nuvanx:unauthorized', onUnauthorized);
         subscription.unsubscribe();
+        clearTimeout(timeout);
       };
     }
 
-    setLoading(false);
-
     return () => {
       window.removeEventListener('nuvanx:unauthorized', onUnauthorized);
+      clearTimeout(timeout);
     };
-  }, []);
+  }, [finishLoading]);
 
   const login = useCallback(async (email, password) => {
     if (isSupabaseAvailable()) {
