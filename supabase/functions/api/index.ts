@@ -711,7 +711,8 @@ Deno.serve(async (req: Request) => {
           : Promise.resolve({ data: [], error: null }),
       ]);
       if (leadsRes.error) throw leadsRes.error;
-      const leads: any[] = leadsRes.data ?? [];
+      type LeadMetric = { stage: any; revenue: any; source?: string };
+      const leads: LeadMetric[] = leadsRes.data ?? [];
       const integrations = intRes.data ?? [];
       const settlements = (settlementsRes.data ?? []).filter((r: any) => !r.cancelled_at);
 
@@ -726,7 +727,10 @@ Deno.serve(async (req: Request) => {
       const byStage: Record<string, number> = {};
       for (const s of stages) byStage[s] = leads.filter((l: any) => l.stage === s).length;
       const bySource: Record<string, number> = {};
-      for (const l of leads) bySource[l.source] = (bySource[l.source] || 0) + 1;
+      for (const l of leads) {
+        const sourceKey = String(l.source ?? 'unknown');
+        bySource[sourceKey] = (bySource[sourceKey] || 0) + 1;
+      }
       const connectedIntegrations = integrations.filter((i: any) => i.status === 'connected').length;
       return json({
         success: true,
