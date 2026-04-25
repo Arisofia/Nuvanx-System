@@ -474,7 +474,7 @@ async function main() {
     time_range: JSON.stringify({ since, until }),
     limit: '300',
     filtering: JSON.stringify([
-      { field: 'campaign.effective_status', operator: 'IN', value: ['ACTIVE', 'PAUSED', 'ARCHIVED'] },
+      { field: 'campaign.status', operator: 'IN', value: ['ACTIVE', 'PAUSED', 'ARCHIVED'] },
     ]),
   }, token);
 
