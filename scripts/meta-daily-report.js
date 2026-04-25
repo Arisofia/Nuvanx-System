@@ -172,7 +172,14 @@ async function metaFetch(endpoint, params, token) {
   const data = await response.json();
 
   if (!response.ok) {
-    const msg = data?.error?.message || `Meta API ${response.status}`;
+    const error = data?.error || {};
+    const msg = error.message || `Meta API ${response.status}`;
+    const code = error.code || 'unknown';
+    const subcode = error.error_subcode || 'unknown';
+    const traceId = error.fbtrace_id || 'unknown';
+
+    const fullErrorMsg = `[Meta Error] Code: ${code}, Subcode: ${subcode}, Message: ${msg} (trace_id: ${traceId})`;
+
     if (
       msg.includes('user logged out') ||
       msg.includes('session is invalid') ||
@@ -184,10 +191,10 @@ async function metaFetch(endpoint, params, token) {
         `Use a Meta System User access token instead: ` +
         `Business Settings → Users → System Users → generate a token with ads_read / ads_management scopes. ` +
         `Update the META_ACCESS_TOKEN secret in GitHub → Settings → Secrets → Actions. ` +
-        `Original error: ${msg}`,
+        `Original error: ${fullErrorMsg}`,
       );
     }
-    throw new Error(msg);
+    throw new Error(fullErrorMsg);
   }
 
   return data;
@@ -199,8 +206,12 @@ async function metaFetchWithFallback(endpoint, params, token) {
   } catch (err) {
     const msg = String(err?.message || '').toLowerCase();
     if (
-      msg.includes('invalid keys "values" were found in param "filtering[0]"') &&
-      params?.filtering
+      params?.filtering && (
+        msg.includes('invalid keys "values" were found in param "filtering[0]"') ||
+        msg.includes('filtering field effective_status is invalid') ||
+        msg.includes('invalid field effective_status') ||
+        msg.includes('filtering field')
+      )
     ) {
       console.warn('[meta-daily-report] Meta filtering failed; retrying without filtering');
       const fallbackParams = { ...params };
@@ -474,7 +485,7 @@ async function main() {
     'actions',
     'outbound_clicks',
     'inline_link_clicks',
-    'landing_page_view',
+    'landing_page_views',
   ].join(',');
 
   const insights = await metaFetchWithFallback(`/${adAccountId}/insights`, {
@@ -483,7 +494,7 @@ async function main() {
     time_range: JSON.stringify({ since, until }),
     limit: '300',
     filtering: JSON.stringify([
-      { field: 'effective_status', operator: 'IN', value: ['ACTIVE', 'PAUSED', 'ARCHIVED'] },
+      { field: 'campaign.effective_status', operator: 'IN', value: ['ACTIVE', 'PAUSED', 'ARCHIVED'] },
     ]),
   }, token);
 
@@ -493,7 +504,7 @@ async function main() {
     const spend = parseMetric(row.spend);
     const impressions = parseMetric(row.impressions);
     const clicks = parseMetric(row.clicks || row.inline_link_clicks || row.outbound_clicks);
-    const landingPageViews = parseMetric(row.landing_page_view);
+    const landingPageViews = parseMetric(row.landing_page_views || row.landing_page_view);
     const waLeads = getWhatsApp(row.actions);
     const formLeads = getLeadForm(row.actions);
     const totalLeads = waLeads + formLeads;
