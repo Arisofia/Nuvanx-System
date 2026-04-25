@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase, isSupabaseAvailable } from '../lib/supabase/client';
-import api from '../config/api';
+import api, { setAuthToken, clearAuthToken } from '../config/api';
 
 import { AuthContext } from './AuthContextObject';
 
@@ -22,7 +22,7 @@ export function AuthProvider({ children }) {
       if (isSupabaseAvailable()) {
         await supabase.auth.signOut();
       }
-      localStorage.removeItem('nuvanx_token');
+      clearAuthToken();
       setToken(null);
       setUser(null);
     };
@@ -39,16 +39,7 @@ export function AuthProvider({ children }) {
         })
         .catch(() => {
           // Keep backend JWT fallback as a contingency path only when session bootstrap fails.
-          const savedToken = localStorage.getItem('nuvanx_token');
-          if (!savedToken) return;
-          return api.get('/api/auth/me')
-            .then((res) => {
-              setToken(savedToken);
-              setUser(res.data.user);
-            })
-            .catch(() => {
-              localStorage.removeItem('nuvanx_token');
-            });
+          // No long-lived token is stored locally for security reasons.
         })
         .finally(() => setLoading(false));
 
@@ -63,18 +54,7 @@ export function AuthProvider({ children }) {
       };
     }
 
-    const savedToken = localStorage.getItem('nuvanx_token');
-    const loadPromise = savedToken
-      ? api.get('/api/auth/me')
-          .then((res) => {
-            setToken(savedToken);
-            setUser(res.data.user);
-          })
-          .catch(() => {
-            localStorage.removeItem('nuvanx_token');
-          })
-      : Promise.resolve();
-    loadPromise.finally(() => setLoading(false));
+    setLoading(false);
 
     return () => {
       window.removeEventListener('nuvanx:unauthorized', onUnauthorized);
@@ -91,7 +71,7 @@ export function AuthProvider({ children }) {
       }
       const userData = toUserShape(session.user);
       const jwt = session.access_token;
-      localStorage.setItem('nuvanx_token', jwt);
+      setAuthToken(jwt);
       setToken(jwt);
       setUser(userData);
       return userData;
@@ -99,7 +79,7 @@ export function AuthProvider({ children }) {
 
     const res = await api.post('/api/auth/login', { email, password });
     const { token: jwt, user: userData } = res.data;
-    localStorage.setItem('nuvanx_token', jwt);
+    setAuthToken(jwt);
     setToken(jwt);
     setUser(userData);
     return userData;
@@ -109,7 +89,7 @@ export function AuthProvider({ children }) {
     if (isSupabaseAvailable()) {
       await supabase.auth.signOut();
     }
-    localStorage.removeItem('nuvanx_token');
+    clearAuthToken();
     setToken(null);
     setUser(null);
   }, []);

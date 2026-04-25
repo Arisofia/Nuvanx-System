@@ -54,6 +54,16 @@ const api = axios.create({
   headers: supabaseKey ? { apikey: supabaseKey } : {},
 });
 
+let inMemoryAuthToken = null;
+
+export function setAuthToken(jwt) {
+  inMemoryAuthToken = jwt;
+}
+
+export function clearAuthToken() {
+  inMemoryAuthToken = null;
+}
+
 let lastUnauthorizedEventAt = 0;
 
 api.interceptors.request.use(async (config) => {
@@ -77,9 +87,9 @@ api.interceptors.request.use(async (config) => {
     }
   }
 
-  // 2. Fall back to backend JWT stored in localStorage
+  // 2. Fall back to backend JWT stored in memory only
   if (!token) {
-    token = localStorage.getItem('nuvanx_token');
+    token = inMemoryAuthToken;
   }
 
   if (token) {
@@ -102,7 +112,7 @@ api.interceptors.response.use(
       const isAuthEndpoint = error.config?.url?.includes('/api/auth/');
       const currentPath = typeof globalThis.window !== 'undefined' ? globalThis.window.location.pathname : '';
       if (!isAuthEndpoint && currentPath !== '/login') {
-        localStorage.removeItem('nuvanx_token');
+        clearAuthToken();
 
         // Avoid hard browser reload loops. Let React auth state drive navigation.
         const now = Date.now();
