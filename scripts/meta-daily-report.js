@@ -488,15 +488,21 @@ async function main() {
     'landing_page_views',
   ].join(',');
 
-  const insights = await metaFetchWithFallback(`/${adAccountId}/insights`, {
-    level: 'campaign',
-    fields: baseFields,
-    time_range: JSON.stringify({ since, until }),
-    limit: '300',
-    filtering: JSON.stringify([
-      { field: 'campaign.status', operator: 'IN', value: ['ACTIVE', 'PAUSED', 'ARCHIVED'] },
-    ]),
-  }, token);
+  let insights = { data: [] };
+  try {
+    insights = await metaFetchWithFallback(`/${adAccountId}/insights`, {
+      level: 'campaign',
+      fields: baseFields,
+      time_range: JSON.stringify({ since, until }),
+      limit: '300',
+      filtering: JSON.stringify([
+        { field: 'campaign.status', operator: 'IN', value: ['ACTIVE', 'PAUSED', 'ARCHIVED'] },
+      ]),
+    }, token);
+  } catch (err) {
+    console.warn(`[meta-daily-report] Meta insights fetch failed: ${err.message}`);
+    console.warn('[meta-daily-report] Generating report with empty Meta dataset.');
+  }
 
   const rows = Array.isArray(insights?.data) ? insights.data : [];
 
