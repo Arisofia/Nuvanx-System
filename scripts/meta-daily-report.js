@@ -485,7 +485,6 @@ async function main() {
     'actions',
     'outbound_clicks',
     'inline_link_clicks',
-    'landing_page_views',
   ].join(',');
 
   let insights = { data: [] };
