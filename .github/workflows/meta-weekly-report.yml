@@ -17,6 +17,8 @@ name: Daily Meta + Google Ads Report
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
   schedule:
     - cron: '0 6 * * *'  # 8am Madrid
 
