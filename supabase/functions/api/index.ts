@@ -3,8 +3,7 @@
 // starts at /api/...
 
 declare const Deno: any;
-// @ts-ignore — resolved at runtime via supabase/functions/import_map.json
-import { createClient } from 'supabase';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.42.0';
 import { normalizePhoneToE164 } from '../_shared/phone.ts';
 import { mapLeadPayloadToCapiEvent } from '../_shared/capi.ts';
 
