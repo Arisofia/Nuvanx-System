@@ -703,7 +703,7 @@ Deno.serve(async (req: Request) => {
       const clinicId = usr?.clinic_id;
 
       const [leadsRes, intRes, settlementsRes] = await Promise.all([
-        adminClient.from('leads').select('stage, revenue').eq('user_id', userId!),
+        adminClient.from('leads').select('stage, revenue, source').eq('user_id', userId!),
         adminClient.from('integrations').select('service, status').eq('user_id', userId!),
         clinicId
           ? adminClient.from('financial_settlements')
