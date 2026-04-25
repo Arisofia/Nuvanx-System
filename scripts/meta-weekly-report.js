@@ -465,7 +465,6 @@ async function main() {
     'actions',
     'outbound_clicks',
     'inline_link_clicks',
-    'landing_page_views',
   ].join(',');
 
   const insights = await metaFetchWithFallback(`/${adAccountId}/insights`, {
