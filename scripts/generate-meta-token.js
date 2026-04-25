@@ -243,6 +243,6 @@ async function main() {
 
 main().catch((err) => {
   console.error('❌ Token generation failed.');
-  console.error(err.message || err);
+  console.error(err && err.message ? err.message : 'Unknown error');
   process.exit(1);
 });

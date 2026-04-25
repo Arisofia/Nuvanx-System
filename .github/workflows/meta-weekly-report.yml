@@ -1,5 +1,8 @@
 name: Daily Meta + Google Ads Report
 
+permissions:
+  contents: read
+
 # Daily performance analysis for Meta Ads and Google Ads.
 # Compares channels, lead funnels and generates a markdown report artifact.
 #
