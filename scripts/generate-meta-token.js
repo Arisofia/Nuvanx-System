@@ -241,8 +241,8 @@ async function main() {
   }
 }
 
-main().catch((err) => {
+main().catch(() => {
   console.error('❌ Token generation failed.');
-  console.error(err && err.message ? err.message : 'Unknown error');
+  console.error('An unexpected error occurred while generating the token.');
   process.exit(1);
 });
