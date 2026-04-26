@@ -55,14 +55,20 @@ const config = {
   // Third-party API keys (server-level defaults; per-user vault credentials take priority)
   openaiApiKey: process.env.OPENAI_API_KEY,
   geminiApiKey: process.env.GEMINI_API_KEY,
+  googleApiKey: process.env.GOOGLE_API_KEY,
+  huggingfaceToken: process.env.HUGGINGFACE_TOKEN,
 
   // Meta (Facebook) Marketing API
   metaAccessToken: process.env.META_ACCESS_TOKEN,
   metaAdAccountId: process.env.META_AD_ACCOUNT_ID,
+  metaPageId: process.env.META_PAGE_ID,
   metaAppSecret: process.env.META_APP_SECRET || null,
   metaVerifyToken: process.env.META_VERIFY_TOKEN || null,
   metaPixelId: process.env.META_PIXEL_ID || null,
   metaCapiAccessToken: process.env.META_CAPI_ACCESS_TOKEN || null,
+
+  // Google Ads
+  googleAdsServiceAccount: process.env.GOOGLE_ADS_SERVICE_ACCOUNT,
 
   // WhatsApp Business Cloud API
   whatsappAccessToken: process.env.WHATSAPP_ACCESS_TOKEN,
@@ -72,6 +78,8 @@ const config = {
   // Checks GITHUB_PAT first (recommended naming to avoid collision with the built-in
   // GitHub Actions token), then GITHUB_TOKEN_CLASSIC, then GITHUB_TOKEN.
   githubToken: process.env.GITHUB_PAT || process.env.GITHUB_TOKEN_CLASSIC || process.env.GITHUB_TOKEN || null,
+  githubClientId: process.env.GITHUB_CLIENT_ID,
+  githubClientSecret: process.env.GITHUB_CLIENT_SECRET,
 
   // Sentry error tracking
   sentryDsn: process.env.SENTRY_DSN || null,
