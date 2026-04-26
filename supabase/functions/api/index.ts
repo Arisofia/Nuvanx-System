@@ -3,6 +3,7 @@
 // starts at /api/...
 
 declare const Deno: any;
+// @deno-types="https://esm.sh/@supabase/supabase-js@2.42.0?dts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.42.0';
 import { normalizePhoneToE164 } from '../_shared/phone.ts';
 import { mapLeadPayloadToCapiEvent } from '../_shared/capi.ts';
@@ -739,6 +740,9 @@ Deno.serve(async (req: Request) => {
       'OPENAI_API_KEY',
       'GEMINI_API_KEY',
       'SUPABASE_SERVICE_ROLE_KEY',
+      'META_APP_SECRET',
+      'META_VERIFY_TOKEN',
+      'WHATSAPP_PHONE_NUMBER_ID'
     ];
     const secrets = Object.fromEntries(
       secretNames.map((name) => [name, Boolean(String(Deno.env.get(name) ?? '').trim())]),
