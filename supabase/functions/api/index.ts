@@ -98,6 +98,22 @@ function parseMetaMetric(raw: unknown): number {
   return 0;
 }
 
+function actionValue(actions: any, matcher: (type: string) => boolean): number {
+  if (!Array.isArray(actions)) return 0;
+  return actions.reduce((sum: number, action: any) => {
+    const type = String(action?.action_type ?? '').toLowerCase();
+    if (!matcher(type)) return sum;
+    return sum + parseMetaMetric(action?.value ?? 0);
+  }, 0);
+}
+
+function isMessagingConversationAction(type: string): boolean {
+  return type.includes('conversation_started')
+    || type.includes('messaging')
+    || type.includes('whatsapp')
+    || type === 'onsite_conversion.messaging_conversation_started_7d';
+}
+
 async function resolveClinicId(adminClient: any, userId: string): Promise<string | null> {
   const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
   return usr?.clinic_id ?? null;
@@ -841,7 +857,7 @@ Deno.serve(async (req: Request) => {
       const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
       const until = new Date().toISOString().slice(0, 10);
       const prevSince = new Date(Date.now() - days * 2 * 86400_000).toISOString().slice(0, 10);
-      const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,conversions,cost_per_conversion,unique_clicks';
+const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,conversions,cost_per_conversion,unique_clicks,actions';
 
       try {
         const [currRes, prevRes] = await Promise.allSettled([
@@ -868,6 +884,7 @@ Deno.serve(async (req: Request) => {
           clicks: Math.round(sumN(daily, 'clicks')),
           spend: parseFloat(sumN(daily, 'spend').toFixed(2)),
           conversions: Math.round(sumN(daily, 'conversions')),
+          messagingConversationStarted: daily.reduce((sum: number, day: any) => sum + actionValue(day.actions, isMessagingConversationAction), 0),
         };
         const ctr = curr.impressions > 0 ? parseFloat(((curr.clicks / curr.impressions) * 100).toFixed(2)) : 0;
         const cpc = curr.clicks > 0 ? parseFloat((curr.spend / curr.clicks).toFixed(2)) : 0;
@@ -902,6 +919,7 @@ Deno.serve(async (req: Request) => {
             ctr: parseFloat(d.ctr || 0),
             cpc: parseFloat(d.cpc || 0),
             cpm: parseFloat(d.cpm || 0),
+            messagingConversationStarted: actionValue(d.actions, isMessagingConversationAction),
           })),
         };
 
