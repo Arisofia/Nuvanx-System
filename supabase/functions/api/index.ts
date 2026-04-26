@@ -7,8 +7,22 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.42.0';
 import { normalizePhoneToE164 } from '../_shared/phone.ts';
 import { mapLeadPayloadToCapiEvent } from '../_shared/capi.ts';
 
-const FRONTEND_URL = Deno.env.get('FRONTEND_URL')?.trim() || 'https://frontend-arisofias-projects-c2217452.vercel.app';
+const rawFrontendUrl = Deno.env.get('FRONTEND_URL')?.trim() || '';
 const IS_DEVELOPMENT = (Deno.env.get('DENO_ENV') ?? Deno.env.get('NODE_ENV') ?? '').toLowerCase() !== 'production';
+
+function normalizeFrontendUrl(url: string): string | null {
+  if (!url) return null;
+  if (url === '*' || url.toLowerCase() === 'null') return null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:') return null;
+    return parsed.toString().replace(/\/$/, '');
+  } catch {
+    return null;
+  }
+}
+
+const FRONTEND_URL = normalizeFrontendUrl(rawFrontendUrl) ?? 'https://nuvanx.com';
 const DEFAULT_CORS_ORIGIN = IS_DEVELOPMENT
   ? 'http://localhost:5173'
   : FRONTEND_URL;
@@ -508,6 +522,10 @@ Deno.serve(async (req: Request) => {
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
 
+  // This function is deployed with --no-verify-jwt so Supabase will not reject
+  // requests before this handler runs. Every non-public route must therefore
+  // enforce JWT validation here. Only health checks and Meta webhook handshake
+  // routes are intentionally public.
   // Auth — verify Supabase JWT
   const authHeader = req.headers.get('Authorization') ?? '';
   const token = authHeader.replace('Bearer ', '');
@@ -705,6 +723,7 @@ Deno.serve(async (req: Request) => {
       const metadata = activeMetaIntegration.data?.metadata ?? {};
       const pageId = metadata.pageId ?? metadata.page_id ?? null;
       const adAccountId = metadata.adAccountId ?? metadata.ad_account_id ?? null;
+      const publicUserDelta = Number(publicUsers.count ?? 0) - Number(authUsers.count ?? 0);
 
       return json({
         success: true,
@@ -716,6 +735,12 @@ Deno.serve(async (req: Request) => {
             public_users: Number(publicUsers.count ?? 0),
             auth_users: Number(authUsers.count ?? 0),
           },
+          user_mismatch: publicUserDelta,
+          warnings: publicUserDelta !== 0 ? [
+            publicUserDelta > 0
+              ? `Detected ${publicUserDelta} public.users row(s) without matching auth.users. This can cause incorrect clinic_id resolution or empty results for affected users.`
+              : `Detected ${Math.abs(publicUserDelta)} auth.users row(s) without matching public.users. This may indicate incomplete user cleanup.`
+          ] : [],
           meta: {
             pageId,
             adAccountId,

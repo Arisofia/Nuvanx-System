@@ -12,6 +12,7 @@ Ensure these variables are set in the Vercel frontend project settings:
 - `VITE_API_BASE_URL` / `VITE_API_URL` (optional; leave empty to use `/api/*` rewrite)
 - `VITE_SENTRY_DSN` (optional)
 - `VITE_SUPABASE_FIGMA_URL` / `VITE_SUPABASE_FIGMA_ANON_KEY` (only if Figma syncing is required)
+- `FRONTEND_URL` should be set to your production front-end domain, not `*`.
 
 ## 2. Supabase Edge Function secrets
 
@@ -60,6 +61,7 @@ Run these checks against the deployed frontend/backend:
 1. `GET /api/health` returns `{"success":true,"status":"ok"}`
 2. `GET /api/health/secrets` returns a truthy presence map for required secrets
 3. `GET /api/production/audit` returns counts for `agent_outputs`, `meta_cache`, `leads`, `public.users`, `auth.users`, and Meta integration identifiers
+4. `GET /api/production/audit` reports any `public.users` / `auth.users` mismatch so orphaned profiles can be fixed
 4. `GET /api/webhooks/meta` responds correctly to Meta subscription challenge
 5. AI routes succeed when either user vault credentials exist or env vars are present
 6. `/api/doctoralia/ingest` accepts Doctoralia rows and returns inserted/updated counts
@@ -79,4 +81,5 @@ The following are the most common runtime causes of failure in production:
 
 - The frontend uses Vercel rewrites to proxy `/api/*` to Supabase functions by default.
 - AI fallback behavior in functions allows server-level env keys when no user vault credential is present.
+- The Supabase function is deployed with `--no-verify-jwt`; all non-public API routes are protected by manual JWT validation inside `supabase/functions/api/index.ts`.
 - Doctoralia ingestion is supported via backend authenticated API and expects clinic-linked users.
