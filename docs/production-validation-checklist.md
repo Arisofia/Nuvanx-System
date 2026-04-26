@@ -58,10 +58,12 @@ Confirm these repository secrets exist for GitHub Actions:
 Run these checks against the deployed frontend/backend:
 
 1. `GET /api/health` returns `{"success":true,"status":"ok"}`
-2. `GET /api/webhooks/meta` responds correctly to Meta subscription challenge
-3. AI routes succeed when either user vault credentials exist or env vars are present
-4. `/api/doctoralia/ingest` accepts Doctoralia rows and returns inserted/updated counts
-5. Authenticated user has `clinic_id` for Doctoralia ingestion
+2. `GET /api/health/secrets` returns a truthy presence map for required secrets
+3. `GET /api/production/audit` returns counts for `agent_outputs`, `meta_cache`, `leads`, `public.users`, `auth.users`, and Meta integration identifiers
+4. `GET /api/webhooks/meta` responds correctly to Meta subscription challenge
+5. AI routes succeed when either user vault credentials exist or env vars are present
+6. `/api/doctoralia/ingest` accepts Doctoralia rows and returns inserted/updated counts
+7. Authenticated user has `clinic_id` for Doctoralia ingestion
 
 ## 5. Likely production failure points
 

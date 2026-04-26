@@ -306,7 +306,7 @@ router.post(
         if (!adAccountId) {
           return res.status(400).json({
             success: false,
-            message: 'Meta requires adAccountId (e.g. act_9523446201036125)',
+            message: 'Meta requires adAccountId (e.g. act_4172099716404860)',
           });
         }
         if (!pageId) {

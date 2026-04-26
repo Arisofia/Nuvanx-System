@@ -1,4 +1,4 @@
-// Nuvanx API Edge Function — v7
+// Nuvanx API Edge Function — v42
 // Routes all frontend API calls. Supabase strips /functions/v1 so the path
 // starts at /api/...
 
@@ -7,8 +7,14 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.42.0';
 import { normalizePhoneToE164 } from '../_shared/phone.ts';
 import { mapLeadPayloadToCapiEvent } from '../_shared/capi.ts';
 
+const FRONTEND_URL = Deno.env.get('FRONTEND_URL')?.trim() || 'https://frontend-arisofias-projects-c2217452.vercel.app';
+const IS_DEVELOPMENT = (Deno.env.get('DENO_ENV') ?? Deno.env.get('NODE_ENV') ?? '').toLowerCase() !== 'production';
+const DEFAULT_CORS_ORIGIN = IS_DEVELOPMENT
+  ? 'http://localhost:5173'
+  : FRONTEND_URL;
+
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': DEFAULT_CORS_ORIGIN,
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
 };
@@ -677,6 +683,48 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // ── GET /api/production/audit ─────────────────────────────────────────────
+    if (resource === 'production' && sub === 'audit' && req.method === 'GET') {
+      const [agentOutputs, metaCacheCount, leadsCount, publicUsers, authUsers, activeMetaIntegration, latestMetaCache] = await Promise.all([
+        adminClient.from('agent_outputs').select('id', { count: 'exact', head: true }),
+        adminClient.from('meta_cache').select('id', { count: 'exact', head: true }),
+        adminClient.from('leads').select('id', { count: 'exact', head: true }).eq('user_id', userId!),
+        adminClient.from('public.users').select('id', { count: 'exact', head: true }),
+        adminClient.from('auth.users').select('id', { count: 'exact', head: true }),
+        adminClient.from('integrations').select('metadata').eq('user_id', userId!).eq('service', 'meta').single(),
+        adminClient.from('meta_cache').select('updated_at').order('updated_at', { ascending: false }).limit(1).maybeSingle(),
+      ]);
+      if (agentOutputs.error) throw agentOutputs.error;
+      if (metaCacheCount.error) throw metaCacheCount.error;
+      if (leadsCount.error) throw leadsCount.error;
+      if (publicUsers.error) throw publicUsers.error;
+      if (authUsers.error) throw authUsers.error;
+      if (activeMetaIntegration.error) throw activeMetaIntegration.error;
+      if (latestMetaCache.error) throw latestMetaCache.error;
+
+      const metadata = activeMetaIntegration.data?.metadata ?? {};
+      const pageId = metadata.pageId ?? metadata.page_id ?? null;
+      const adAccountId = metadata.adAccountId ?? metadata.ad_account_id ?? null;
+
+      return json({
+        success: true,
+        audit: {
+          counts: {
+            agent_outputs: Number(agentOutputs.count ?? 0),
+            meta_cache: Number(metaCacheCount.count ?? 0),
+            leads: Number(leadsCount.count ?? 0),
+            public_users: Number(publicUsers.count ?? 0),
+            auth_users: Number(authUsers.count ?? 0),
+          },
+          meta: {
+            pageId,
+            adAccountId,
+            lastMetaCacheUpdate: latestMetaCache.data?.updated_at ?? null,
+          },
+        },
+      });
+    }
+
     // ── GET /api/leads ───────────────────────────────────────────────────────
     if (resource === 'leads' && req.method === 'GET' && !sub) {
       const { data, error } = await adminClient
@@ -833,6 +881,9 @@ Deno.serve(async (req: Request) => {
 
         const result = {
           success: true,
+          source: 'live',
+          cached: false,
+          accountId: creds.adAccountId,
           trends,
           summary: { thisWeek },
           wow: {
@@ -853,7 +904,10 @@ Deno.serve(async (req: Request) => {
         if (cached) {
           return json({
             ...cached.data,
+            source: cached.data?.source || 'cache',
+            cached: true,
             degraded: true,
+            accountId: creds.adAccountId,
             last_success: cached.updated_at,
             message: `Meta API error: ${e.message}. Showing cached data.`
           });
@@ -916,6 +970,9 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
 
         const result = {
           success: true,
+          source: 'live',
+          cached: false,
+          accountId: creds.adAccountId,
           period: { since, until, days },
           summary: { ...curr, ctr, cpc, cpm, cpp },
           changes: {
@@ -945,7 +1002,10 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
         if (cached) {
           return json({
             ...cached.data,
+            source: cached.data?.source || 'cache',
+            cached: true,
             degraded: true,
+            accountId: creds.adAccountId,
             last_success: cached.updated_at,
             message: `Meta API error: ${e.message}. Showing cached data.`
           });
@@ -1034,6 +1094,9 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
 
         return json({
           success: true,
+          source: 'live',
+          cached: false,
+          accountId: creds.adAccountId,
           campaigns: (data.data ?? []).map((c: any) => {
             const ins = c.insights?.data?.[0];
             const conversions = parseMetaMetric(ins?.conversions);

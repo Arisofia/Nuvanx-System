@@ -434,6 +434,13 @@ function PlatformPanel({ platform, days }) {
   const s = insights?.summary;
   const ch = insights?.changes;
   const accent = isGoogle ? '#34a853' : '#1877f2';
+  const dataSourceLabel = insights?.degraded
+    ? 'Cache degradada'
+    : insights?.source === 'cache'
+      ? 'Cache'
+      : insights?.source === 'live'
+        ? 'Meta API en vivo'
+        : null;
 
   return (
     <div className="space-y-6">
@@ -441,6 +448,27 @@ function PlatformPanel({ platform, days }) {
         <div className="card border-red-500/20 bg-red-500/5 flex items-start gap-3">
           <AlertCircle size={18} className="text-red-400 shrink-0 mt-0.5" />
           <p className="text-sm text-gray-300">{error}</p>
+        </div>
+      )}
+      {insights && dataSourceLabel && (
+        <div className="card border-blue-500/20 bg-blue-500/5 p-4 text-sm text-gray-300">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="font-semibold text-white">Fuente de datos:</span>
+            <span className="rounded-full border border-blue-400/30 bg-blue-500/10 px-2 py-1 text-xs text-blue-200">
+              {dataSourceLabel}
+            </span>
+            {insights.accountId ? (
+              <span className="text-gray-400">Cuenta: {insights.accountId}</span>
+            ) : null}
+            {insights.degraded && insights.last_success ? (
+              <span className="text-gray-400">Último ok: {new Date(insights.last_success).toLocaleString()}</span>
+            ) : null}
+          </div>
+          {insights.degraded ? (
+            <p className="mt-2 text-xs text-amber-200">
+              Los datos se están sirviendo desde la caché porque la Meta API devolvió un error. Verifica las credenciales, el ad account y vuelve a actualizar.
+            </p>
+          ) : null}
         </div>
       )}
       {loading ? <SkeletonGrid /> : s && (
@@ -465,10 +493,22 @@ function PlatformPanel({ platform, days }) {
               icon={Megaphone} color="text-orange-400" bg="bg-orange-500/10" />
             <KpiCard label="Conversiones" value={fmt(s.conversions)} change={ch?.conversions}
               icon={Zap} color="text-teal-400" bg="bg-teal-500/10" />
+            {platform === 'meta' && s?.messagingConversationStarted != null ? (
+              <KpiCard label="Conversaciones" value={fmt(s.messagingConversationStarted)}
+                icon={MessageSquare} color="text-cyan-400" bg="bg-cyan-500/10" />
+            ) : null}
           </div>
         </>
       )}
       {!loading && <DailyCharts daily={insights?.daily} accentColor={accent} />}
+      {!loading && platform === 'meta' && !error && insights && !campaigns.length && (
+        <div className="card border-yellow-500/20 bg-yellow-500/5 p-4 text-sm text-yellow-100">
+          <p className="font-semibold text-white">No se encontraron campañas verificadas en la cuenta Meta.</p>
+          <p className="mt-2 text-gray-300">
+            Confirma que la cuenta publicitaria es correcta y que la credencial de Meta tiene permisos de lectura. Si la cuenta está conectada pero el listado sigue vacío, revisa el Ad Account ID en Integraciones.
+          </p>
+        </div>
+      )}
       {!loading && <CampaignTable campaigns={campaigns} days={days} />}
       {!loading && <AIAnalysisPanel insights={insights} campaigns={campaigns} platform={platform} />}
     </div>

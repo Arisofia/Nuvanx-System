@@ -42,14 +42,17 @@ function getDefaultApiUrl(explicitUrl) {
 // Prefer the Vercel rewrite path in production when the configured API URL points
 // to the Supabase functions host from a different origin.
 const defaultApiUrl = getDefaultApiUrl(explicitApiUrl);
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+
 // Prefer new publishable key; fall back to legacy anon key for existing setups.
 const supabaseKey =
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
   import.meta.env.VITE_SUPABASE_ANON_KEY ||
   '';
 
+const apiBaseUrl = normalizeApiBaseUrl(defaultApiUrl);
 const api = axios.create({
-  baseURL: normalizeApiBaseUrl(defaultApiUrl),
+  baseURL: apiBaseUrl,
   timeout: 15000,
   headers: supabaseKey ? { apikey: supabaseKey } : {},
 });
@@ -63,6 +66,14 @@ export function setAuthToken(jwt) {
 export function clearAuthToken() {
   inMemoryAuthToken = null;
 }
+
+export const apiConfig = {
+  explicitApiUrl,
+  defaultApiUrl,
+  apiBaseUrl,
+  supabaseKey,
+  supabaseUrl,
+};
 
 let lastUnauthorizedEventAt = 0;
 

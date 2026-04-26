@@ -21,6 +21,7 @@ const AILayer = lazy(() => import('./pages/AILayer'));
 const MetaIntelligence = lazy(() => import('./pages/MetaIntelligence'));
 const VerifiedFinancials = lazy(() => import('./pages/VerifiedFinancials'));
 const CampaignIntelligence = lazy(() => import('./pages/CampaignIntelligence'));
+const HealthCheck = lazy(() => import('./pages/HealthCheck'));
 
 const DashboardError = () => (
   <div className="p-6 text-center card border-red-500/20 bg-red-500/5">
@@ -57,6 +58,7 @@ function AppRoutes() {
     <Suspense fallback={<PageLoader />}>
       <Routes>
         <Route path="/login" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />} />
+        <Route path="/health-check" element={<HealthCheck />} />
         <Route
           path="/"
           element={

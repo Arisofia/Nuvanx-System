@@ -40,7 +40,7 @@ else
 fi
 
 echo
-"[3/7] Checking local migration coverage for E2E user cleanup"
+echo "[3/7] Checking local migration coverage for E2E user cleanup"
 if rg -n "e2e-.*@nuvanx\.test|DELETE FROM .*users" supabase/migrations >/dev/null; then
   echo "[ok] Found migration entries for E2E cleanup."
 else
@@ -48,11 +48,11 @@ else
 fi
 
 echo
-echo "[3/7] Building frontend"
+echo "[4/7] Building frontend"
 npm run build
 
 echo
-echo "[4/7] Validating Vercel API rewrite"
+echo "[5/7] Validating Vercel API rewrite"
 if rg -n "supabase\.co/functions/v1/api|/api/(.*)" frontend/vercel.json >/dev/null; then
   echo "[ok] frontend/vercel.json contains Supabase Edge Function API rewrite."
 else
@@ -89,6 +89,10 @@ npx --yes supabase functions list --project-ref ssvvuuysgxyqvmovrlvk
 # Confirm secret presence for Edge Function diagnostics
 # GET the following from the deployed function URL:
 # curl https://<your-vercel-domain>/api/health/secrets
+# or visit the deployed frontend route:
+# https://<your-vercel-domain>/health-check
+# and, when logged in, use:
+# curl -H "Authorization: Bearer <jwt>" https://<your-vercel-domain>/api/production/audit
 
 # Confirm table state from SQL editor or psql tunnel:
 # select count(*) as settlements, sum(net_revenue)::numeric(12,2) as total_revenue from financial_settlements;
