@@ -276,51 +276,64 @@ async function parseJsonOrText(response: Response): Promise<{ data: any; text: s
   }
 }
 
+const GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-2.0', 'gemini-1.0'];
+const OPENAI_MODELS = ['gpt-4o-mini', 'gpt-4o', 'gpt-3.5-turbo'];
+
 async function callGemini(prompt: string, apiKey: string): Promise<string> {
-  const r = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.6, maxOutputTokens: 1500 },
-      }),
-    },
-  );
-  const { data, text } = await parseJsonOrText(r);
-  if (!r.ok) {
-    const msg = data?.error?.message ?? data?.message ?? text ?? `Gemini ${r.status}`;
-    throw new Error(`Gemini error: ${msg}`);
+  const errors: string[] = [];
+  for (const model of GEMINI_MODELS) {
+    const r = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.6, maxOutputTokens: 1500 },
+        }),
+      },
+    );
+    const { data, text } = await parseJsonOrText(r);
+    if (!r.ok) {
+      const msg = data?.error?.message ?? data?.message ?? text ?? `Gemini ${r.status}`;
+      errors.push(`${model}: ${msg}`);
+      continue;
+    }
+    const output = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (output && typeof output === 'string' && output.trim()) {
+      return output;
+    }
+    errors.push(`${model}: response missing generated text`);
   }
-  const output = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!output || typeof output !== 'string') {
-    throw new Error(`Gemini response missing generated text. Raw response: ${text}`);
-  }
-  return output;
+  throw new Error(`Gemini error: ${errors.join(' | ')}`);
 }
 
 async function callOpenAI(prompt: string, apiKey: string): Promise<string> {
-  const r = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.6,
-      max_tokens: 1500,
-    }),
-  });
-  const { data, text } = await parseJsonOrText(r);
-  if (!r.ok) {
-    const msg = data?.error?.message ?? data?.message ?? text ?? `OpenAI ${r.status}`;
-    throw new Error(`OpenAI error: ${msg}`);
+  const errors: string[] = [];
+  for (const model of OPENAI_MODELS) {
+    const r = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.6,
+        max_tokens: 1500,
+      }),
+    });
+    const { data, text } = await parseJsonOrText(r);
+    if (!r.ok) {
+      const msg = data?.error?.message ?? data?.message ?? text ?? `OpenAI ${r.status}`;
+      errors.push(`${model}: ${msg}`);
+      continue;
+    }
+    const output = data?.choices?.[0]?.message?.content;
+    if (output && typeof output === 'string' && output.trim()) {
+      return output;
+    }
+    errors.push(`${model}: response missing generated text`);
   }
-  const output = data?.choices?.[0]?.message?.content;
-  if (!output || typeof output !== 'string') {
-    throw new Error(`OpenAI response missing generated text. Raw response: ${text}`);
-  }
-  return output;
+  throw new Error(`OpenAI error: ${errors.join(' | ')}`);
 }
 
 async function processLeadData(adminClient: any, userId: string, leadData: any) {
