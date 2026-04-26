@@ -86,6 +86,10 @@ cat <<'CHECKS'
 # Confirm deployed edge function list/version metadata
 npx --yes supabase functions list --project-ref ssvvuuysgxyqvmovrlvk
 
+# Confirm secret presence for Edge Function diagnostics
+# GET the following from the deployed function URL:
+# curl https://<your-vercel-domain>/api/health/secrets
+
 # Confirm table state from SQL editor or psql tunnel:
 # select count(*) as settlements, sum(net_revenue)::numeric(12,2) as total_revenue from financial_settlements;
 # select count(*) from agent_runs;

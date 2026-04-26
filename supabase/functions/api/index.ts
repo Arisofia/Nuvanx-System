@@ -604,6 +604,21 @@ Deno.serve(async (req: Request) => {
     return new Response('ok', { status: 200 });
   }
 
+  // GET /api/health/secrets — public diagnostic endpoint for Edge Function secrets
+  if (resource === 'health' && sub === 'secrets' && req.method === 'GET') {
+    const secretNames = [
+      'ENCRYPTION_KEY',
+      'META_ACCESS_TOKEN',
+      'OPENAI_API_KEY',
+      'GEMINI_API_KEY',
+      'SUPABASE_SERVICE_ROLE_KEY',
+    ];
+    const secrets = Object.fromEntries(
+      secretNames.map((name) => [name, Boolean(String(Deno.env.get(name) ?? '').trim())]),
+    );
+    return json({ success: true, secrets });
+  }
+
   // GET /api/health — public health endpoint for uptime checks
   if (resource === 'health' && req.method === 'GET') {
     return json({ success: true, status: 'ok', timestamp: new Date().toISOString() });
