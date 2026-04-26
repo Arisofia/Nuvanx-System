@@ -11,6 +11,7 @@
 
 const { config } = require('../config/env');
 const { pool, isAvailable } = require('../db');
+const { supabaseAdmin } = require('../config/supabase');
 const whatsappService = require('./whatsapp');
 const { normalizePhoneForMeta } = require('../utils/phone');
 const credentialModel = require('../models/credential');
@@ -74,10 +75,59 @@ async function runLeadCaptureNurture(userId, lead) {
         "SELECT id FROM public.playbooks WHERE slug = 'lead_capture_nurture' LIMIT 1",
       );
       if (rows[0]) {
+        let agentOutputId = null;
+        if (supabaseAdmin) {
+          const { data: user, error: userError } = await supabaseAdmin
+            .from('users')
+            .select('clinic_id')
+            .eq('id', userId)
+            .single();
+
+          if (userError) {
+            logger.warn('[playbook-auto] Unable to resolve clinic_id for agent output persistence', {
+              userId,
+              error: userError.message,
+            });
+          }
+
+          const { data, error } = await supabaseAdmin
+            .from('agent_outputs')
+            .insert({
+              user_id: userId,
+              clinic_id: user?.clinic_id || null,
+              agent_type: 'playbook.auto',
+              output: {
+                playbookSlug: 'lead_capture_nurture',
+                leadId: lead.id,
+                phone: to,
+                message,
+              },
+              metadata: {
+                source: 'backend.playbookAutomation',
+                leadId: lead.id,
+                phone: to,
+              },
+            })
+            .select('id')
+            .single();
+
+          if (error) {
+            logger.warn('[playbook-auto] Failed to persist agent output', { userId, error: error.message });
+          } else {
+            agentOutputId = data?.id || null;
+          }
+        }
+
+        const executionMetadata = {
+          leadId: lead.id,
+          phone: to,
+          ...(agentOutputId ? { agent_output_id: agentOutputId } : {}),
+        };
+
         await pool.query(
-          `INSERT INTO public.playbook_executions (playbook_id, user_id, status, metadata)
-           VALUES ($1, $2, 'success', $3)`,
-          [rows[0].id, userId, JSON.stringify({ leadId: lead.id, phone: to })],
+          `INSERT INTO public.playbook_executions (playbook_id, user_id, status, metadata, agent_output_id)
+           VALUES ($1, $2, 'success', $3, $4)`,
+          [rows[0].id, userId, JSON.stringify(executionMetadata), agentOutputId],
         );
       }
     } catch (dbErr) {

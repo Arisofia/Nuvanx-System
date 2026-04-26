@@ -9,6 +9,44 @@ const logger = require('../utils/logger');
 const router = express.Router();
 router.use(authenticate);
 
+async function persistAgentOutput(userId, agentType, output, metadata = {}) {
+  if (!supabaseAdmin) {
+    logger.warn('Supabase admin client unavailable for playbook agent output persistence', { userId, agentType });
+    return null;
+  }
+
+  const { data: user, error: userError } = await supabaseAdmin
+    .from('users')
+    .select('clinic_id')
+    .eq('id', userId)
+    .single();
+
+  if (userError) {
+    logger.warn('Unable to resolve clinic_id for playbook agent output persistence', { userId, error: userError.message });
+  }
+
+  const record = {
+    user_id: userId,
+    clinic_id: user?.clinic_id || null,
+    agent_type: agentType,
+    output,
+    metadata,
+  };
+
+  const { data, error } = await supabaseAdmin
+    .from('agent_outputs')
+    .insert(record)
+    .select('id')
+    .single();
+
+  if (error) {
+    logger.warn('Failed to persist playbook agent output', { userId, agentType, error: error.message });
+    return null;
+  }
+
+  return data?.id ?? null;
+}
+
 /**
  * GET /api/playbooks
  * Returns all playbooks merged with real execution stats for the requesting user.
@@ -102,11 +140,25 @@ router.post('/:slug/run', async (req, res, next) => {
     }
 
     // Insert execution record
+    const agentOutputId = await persistAgentOutput(req.user.id, 'playbook.run', {
+      playbookSlug: slug,
+      playbookTitle: playbook.title,
+      status: 'success',
+      metadata,
+    }, {
+      source: 'backend.playbooks.run',
+    });
+
+    const executionMetadata = {
+      ...metadata,
+      ...(agentOutputId ? { agent_output_id: agentOutputId } : {}),
+    };
+
     const { rows: execRows } = await pool.query(
-      `INSERT INTO public.playbook_executions (playbook_id, user_id, status, metadata)
-       VALUES ($1, $2, 'success', $3)
+      `INSERT INTO public.playbook_executions (playbook_id, user_id, status, metadata, agent_output_id)
+       VALUES ($1, $2, 'success', $3, $4)
        RETURNING id, status, created_at`,
-      [playbook.id, userId, JSON.stringify(metadata)],
+      [playbook.id, userId, JSON.stringify(executionMetadata), agentOutputId],
     );
 
     const execution = execRows[0];
