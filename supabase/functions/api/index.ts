@@ -563,12 +563,21 @@ Deno.serve(async (req: Request) => {
   };
 
   const url = new URL(req.url);
-  // Supabase strips /functions/v1 — path is /api/<resource>/...
-  const parts = url.pathname.split('/').filter(Boolean);
-  // parts[0] = 'api', parts[1] = resource, parts[2+] = sub-paths
-  const resource = parts[1] ?? '';
-  const sub = parts[2] ?? '';
-  const sub2 = parts[3] ?? '';
+  // Support both direct Supabase Function URLs and rewrite paths.
+  // Direct path: /functions/v1/api/<resource>/...
+  // Rewrite path: /api/<resource>/...
+  const rawParts = url.pathname.split('/').filter(Boolean);
+  const parts = [...rawParts];
+  if (parts[0] === 'functions' && parts[1] === 'v1') {
+    parts.splice(0, 2);
+  }
+  if (parts[0] === 'api') {
+    parts.splice(0, 1);
+  }
+  // parts[0] = resource, parts[1] = sub, parts[2] = sub2
+  const resource = parts[0] ?? '';
+  const sub = parts[1] ?? '';
+  const sub2 = parts[2] ?? '';
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
