@@ -1196,11 +1196,15 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
       const untilDate = new Date().toISOString().slice(0, 10);
       const sinceTs = Math.floor((Date.now() - days * 86400_000) / 1000);
 
-      // 1. Warm insights cache
+      // 1. Warm insights cache (best-effort)
       const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,conversions';
-      await metaFetch(`/${creds.adAccountId}/insights`, {
-        fields, time_range: JSON.stringify({ since: sinceDate, until: untilDate }), time_increment: '1', limit: '1000',
-      }, creds.accessToken);
+      try {
+        await metaFetch(`/${creds.adAccountId}/insights`, {
+          fields, time_range: JSON.stringify({ since: sinceDate, until: untilDate }), time_increment: '1', limit: '1000',
+        }, creds.accessToken);
+      } catch (e: any) {
+        console.warn('Meta backfill cache warm failed:', e?.message ?? e);
+      }
 
       // 2. Fetch and ingest leads
       let totalFetched = 0;
@@ -1211,26 +1215,32 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
         }, creds.accessToken);
         
         for (const form of (formsRes.data ?? [])) {
-          const leadsRes = await metaFetch(`/${form.id}/leads`, {
-            fields: 'id,field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,adset_id,page_id',
-            filtering: JSON.stringify([{ field: 'time_created', operator: 'GREATER_THAN', value: sinceTs }]),
-            limit: '500'
-          }, creds.accessToken);
-          
-          for (const leadData of (leadsRes.data ?? [])) {
-            const success = await processLeadData(adminClient, userId!, leadData);
-            if (success) totalFetched++;
+          try {
+            const leadsRes = await metaFetch(`/${form.id}/leads`, {
+              fields: 'id,field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,adset_id,page_id',
+              filtering: JSON.stringify([{ field: 'time_created', operator: 'GREATER_THAN', value: sinceTs }]),
+              limit: '500'
+            }, creds.accessToken);
+            
+            for (const leadData of (leadsRes.data ?? [])) {
+              const success = await processLeadData(adminClient, userId!, leadData);
+              if (success) totalFetched++;
+            }
+          } catch (formError: any) {
+            console.warn(`Meta backfill failed for form ${form.id}:`, formError?.message ?? formError);
           }
         }
       } catch (e: any) {
-        console.error('Backfill lead ingestion failed:', e);
+        console.error('Backfill lead ingestion failed:', e?.message ?? e);
       }
 
-      return sendJson({
+      const backfillResult = {
         success: true,
         totalLeadsBackfilled: totalFetched,
         message: `Backfill completed for last ${days} days. ${totalFetched} leads ingested. Insights cache warmed.`,
-      });
+      };
+      await setMetaCache(adminClient, userId!, `meta:backfill:${creds.adAccountId}`, backfillResult);
+      return sendJson(backfillResult);
     }
 
     // ── GET /api/health/meta ─────────────────────────────────────────────────
@@ -1270,7 +1280,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
           limit: '100',
         }, creds.accessToken);
 
-        return sendJson({
+        const result = {
           success: true,
           source: 'live',
           cached: false,
@@ -1299,9 +1309,37 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
               } : null,
             };
           }),
-        });
+        };
+        await setMetaCache(adminClient, userId!, `meta:campaigns`, result);
+        return sendJson(result);
       } catch (e: any) {
-        return sendJson({ success: false, metaApiError: true, message: e?.message ?? 'Meta API error' }, 502);
+        try {
+          const fallback = await metaFetch(`/${creds.adAccountId}/campaigns`, {
+            fields: 'id,name,status,objective,daily_budget,lifetime_budget',
+            limit: '100',
+          }, creds.accessToken);
+
+          const fallbackResult = {
+            success: true,
+            source: 'live',
+            cached: false,
+            accountId: creds.adAccountId,
+            campaigns: (fallback.data ?? []).map((c: any) => ({
+              id: c.id,
+              name: c.name,
+              status: c.status,
+              objective: c.objective?.replace(/_/g, ' ') ?? '',
+              dailyBudget: c.daily_budget ? parseFloat(c.daily_budget) / 100 : null,
+              lifetimeBudget: c.lifetime_budget ? parseFloat(c.lifetime_budget) / 100 : null,
+              insights: null,
+            })),
+            warning: 'Campaign insights are unavailable; returned campaign metadata only.',
+          };
+          await setMetaCache(adminClient, userId!, `meta:campaigns`, fallbackResult);
+          return sendJson(fallbackResult);
+        } catch (fallbackError: any) {
+          return sendJson({ success: false, metaApiError: true, message: fallbackError?.message ?? e?.message ?? 'Meta API error' }, 502);
+        }
       }
     }
 
