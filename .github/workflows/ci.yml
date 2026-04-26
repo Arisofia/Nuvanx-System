@@ -125,7 +125,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup Deno
-        uses: denoland/setup-deno@v1
+        uses: denoland/setup-deno@v1.5.2
         with:
           deno-version: v2.x
 
@@ -145,6 +145,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Setup Deno
-        uses: denoland/setup-deno@v1
+        uses: denoland/setup-deno@v1.5.2
       - name: Cache Edge Function dependencies
         run: deno cache --config supabase/functions/deno.json supabase/functions/api/index.ts
