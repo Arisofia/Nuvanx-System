@@ -12,11 +12,19 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+function cleanEnvValue(value) {
+  if (!value) return '';
+  const raw = String(value);
+  const unquoted = raw.replace(/(^['"]|['"]$)/g, '');
+  return unquoted.replace(/\s+/g, '').trim();
+}
+
+const supabaseUrl = cleanEnvValue(import.meta.env.VITE_SUPABASE_URL);
 // Prefer the new publishable key; fall back to legacy anon key for existing setups.
-const supabaseKey =
+const supabaseKey = cleanEnvValue(
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-  import.meta.env.VITE_SUPABASE_ANON_KEY;
+  import.meta.env.VITE_SUPABASE_ANON_KEY,
+);
 
 if (!supabaseUrl || !supabaseKey) {
   console.warn(
