@@ -32,8 +32,15 @@ else
   exit 1
 fi
 
+echo "[2/7] Checking local migration coverage for auth/user sync and orphan cleanup"
+if rg -n "handle_auth_user_change|on_auth_user_changed|cleanup_orphaned_public_users" supabase/migrations >/dev/null; then
+  echo "[ok] auth/user sync cleanup migration is present."
+else
+  echo "[warn] Missing auth/user sync cleanup migration coverage." >&2
+fi
+
 echo
-echo "[2/7] Checking local migration coverage for E2E user cleanup"
+"[3/7] Checking local migration coverage for E2E user cleanup"
 if rg -n "e2e-.*@nuvanx\.test|DELETE FROM .*users" supabase/migrations >/dev/null; then
   echo "[ok] Found migration entries for E2E cleanup."
 else
