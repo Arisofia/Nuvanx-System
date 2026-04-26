@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Zap, Eye, EyeOff, Loader2, ArrowLeft } from 'lucide-react';
+import { Zap, Eye, EyeOff, Loader2, ArrowLeft, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/useAuth';
 import { supabase, isSupabaseAvailable } from '../lib/supabase/client';
+import { apiConfig } from '../config/api.js';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -15,6 +16,7 @@ export default function Login() {
   const [resetLoading, setResetLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
+  const missingSupabaseEnv = !apiConfig.supabaseUrl || !apiConfig.supabaseKey;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -69,6 +71,22 @@ export default function Login() {
             <h1 className="text-2xl font-bold text-white">Welcome to Nuvanx</h1>
             <p className="text-gray-400 mt-1.5 text-sm">Revenue Intelligence Platform</p>
           </div>
+          {missingSupabaseEnv ? (
+            <div className="p-4 mb-6 rounded-2xl bg-red-500/10 border border-red-500/20 text-sm text-red-200">
+              <div className="flex items-start gap-2">
+                <AlertTriangle size={18} className="mt-0.5 text-red-400" />
+                <div>
+                  <p className="font-semibold text-white">Missing Vercel environment variables</p>
+                  <p className="mt-1 text-gray-300">
+                    `VITE_SUPABASE_URL` and/or `VITE_SUPABASE_PUBLISHABLE_KEY` are not set. The frontend cannot initialize Supabase auth or proxy `/api/*` requests without them.
+                  </p>
+                  <p className="mt-2">
+                    Visit <a href="/health-check" className="text-brand-300 underline">/health-check</a> to verify your Vercel configuration.
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           {forgotMode ? (
             <form onSubmit={handleForgotPassword} className="space-y-5">

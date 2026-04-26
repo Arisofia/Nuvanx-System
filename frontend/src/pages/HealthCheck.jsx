@@ -16,6 +16,7 @@ export default function HealthCheck() {
   const [secrets, setSecrets] = useState(null);
   const [error, setError] = useState('');
   const [secretsError, setSecretsError] = useState('');
+  const missingSupabaseEnv = !apiConfig.supabaseUrl || !apiConfig.supabaseKey;
 
   useEffect(() => {
     let mounted = true;
@@ -58,6 +59,14 @@ export default function HealthCheck() {
         <div>
           <h1 className="text-3xl font-semibold">Frontend & API runtime diagnostics</h1>
           <p className="mt-2 text-gray-400">Verify Vercel build-time env vars, frontend config, and the `/api/health` proxy endpoint.</p>
+          {missingSupabaseEnv ? (
+            <div className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-100">
+              <p className="font-semibold text-white">Vercel environment variables are missing.</p>
+              <p className="mt-1 text-gray-300">
+                Without `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`, the frontend cannot connect to Supabase and auth will fail. Set these values in Vercel and redeploy.
+              </p>
+            </div>
+          ) : null}
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
