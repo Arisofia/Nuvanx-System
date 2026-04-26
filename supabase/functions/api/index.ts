@@ -261,10 +261,21 @@ async function runAiPrompt(
     }
   }
 
-  throw new Error(`AI request failed for all connected providers. ${providerErrors.join(' | ')}`);
+  const error = new Error(`AI request failed for all connected providers. ${providerErrors.join(' | ')}`);
+  (error as any).providerErrors = providerErrors;
+  throw error;
 }
 
 // ── AI helpers ────────────────────────────────────────────────────────────────
+async function parseJsonOrText(response: Response): Promise<{ data: any; text: string }> {
+  const text = await response.text();
+  try {
+    return { data: JSON.parse(text), text };
+  } catch {
+    return { data: null, text };
+  }
+}
+
 async function callGemini(prompt: string, apiKey: string): Promise<string> {
   const r = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
@@ -277,9 +288,16 @@ async function callGemini(prompt: string, apiKey: string): Promise<string> {
       }),
     },
   );
-  const d = await r.json();
-  if (!r.ok) throw new Error(d.error?.message ?? `Gemini ${r.status}`);
-  return d.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  const { data, text } = await parseJsonOrText(r);
+  if (!r.ok) {
+    const msg = data?.error?.message ?? data?.message ?? text ?? `Gemini ${r.status}`;
+    throw new Error(`Gemini error: ${msg}`);
+  }
+  const output = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!output || typeof output !== 'string') {
+    throw new Error(`Gemini response missing generated text. Raw response: ${text}`);
+  }
+  return output;
 }
 
 async function callOpenAI(prompt: string, apiKey: string): Promise<string> {
@@ -293,9 +311,16 @@ async function callOpenAI(prompt: string, apiKey: string): Promise<string> {
       max_tokens: 1500,
     }),
   });
-  const d = await r.json();
-  if (!r.ok) throw new Error(d.error?.message ?? `OpenAI ${r.status}`);
-  return d.choices?.[0]?.message?.content ?? '';
+  const { data, text } = await parseJsonOrText(r);
+  if (!r.ok) {
+    const msg = data?.error?.message ?? data?.message ?? text ?? `OpenAI ${r.status}`;
+    throw new Error(`OpenAI error: ${msg}`);
+  }
+  const output = data?.choices?.[0]?.message?.content;
+  if (!output || typeof output !== 'string') {
+    throw new Error(`OpenAI response missing generated text. Raw response: ${text}`);
+  }
+  return output;
 }
 
 async function processLeadData(adminClient: any, userId: string, leadData: any) {
@@ -1729,7 +1754,9 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
         }
         return sendJson({ success: true, content: text, result: text, provider: usedProvider, outputId });
       } catch (err: any) {
-        return sendJson({ success: false, message: err?.message ?? 'AI request failed' }, 502);
+        const message = err?.message ?? 'AI request failed';
+        const details = Array.isArray((err as any).providerErrors) ? (err as any).providerErrors : undefined;
+        return sendJson({ success: false, message, details }, 502);
       }
     }
 
