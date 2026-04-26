@@ -108,6 +108,9 @@ async function persistAgentOutput(adminClient: any, userId: string, agentType: s
   const outputText = typeof output === 'string'
     ? output
     : JSON.stringify(output ?? {});
+  const inputContext = metadata && typeof metadata.context === 'string'
+    ? metadata.context
+    : '';
   const { data, error } = await adminClient
     .from('agent_outputs')
     .insert({
@@ -117,6 +120,8 @@ async function persistAgentOutput(adminClient: any, userId: string, agentType: s
       output_text: outputText,
       output,
       metadata,
+      input_context: inputContext,
+      output_data: output ?? {},
     })
     .select('id')
     .single();

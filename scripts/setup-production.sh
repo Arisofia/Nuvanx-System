@@ -24,11 +24,11 @@ echo "project_ref=$SUPABASE_PROJECT_REF"
 echo "frontend_url=$CANONICAL_FRONTEND_URL"
 
 echo
-echo "[1/7] Checking local migration coverage for agent_outputs JSON fields"
-if rg -n "ADD COLUMN .*output|output\s+JSONB|metadata\s+JSONB" supabase/migrations >/dev/null; then
-  echo "[ok] agent_outputs output/metadata columns are represented in migrations."
+echo "[1/7] Checking local migration coverage for agent_outputs fields"
+if rg -n "ADD COLUMN .*output|ADD COLUMN .*metadata|ADD COLUMN .*input_context|ADD COLUMN .*output_data|output\s+JSONB|metadata\s+JSONB|input_context\s+TEXT|output_data\s+JSONB" supabase/migrations >/dev/null; then
+  echo "[ok] agent_outputs columns are represented in migrations."
 else
-  echo "[error] Missing migration coverage for agent_outputs output/metadata columns." >&2
+  echo "[error] Missing migration coverage for agent_outputs columns." >&2
   exit 1
 fi
 
