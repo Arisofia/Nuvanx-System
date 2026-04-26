@@ -1,5 +1,8 @@
 name: Supabase Security Check
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 # Fails the CI if any table is missing RLS or has a dangerous policy.
 # Runs on every push and pull_request to main.
 #

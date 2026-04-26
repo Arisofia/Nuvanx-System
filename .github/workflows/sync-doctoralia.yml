@@ -1,5 +1,8 @@
 name: Sync Doctoralia Financials
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 # Reads individual settlement rows from Google Sheets (Doctoralia export) and
 # upserts them into the financial_settlements table.
 #
