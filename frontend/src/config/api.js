@@ -45,10 +45,17 @@ const defaultApiUrl = getDefaultApiUrl(explicitApiUrl);
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 
 // Prefer new publishable key; fall back to legacy anon key for existing setups.
-const supabaseKey =
+function cleanEnvValue(value) {
+  if (!value) return '';
+  const raw = String(value);
+  const stripped = raw.replace(/(^['\"]|['\"]$)/g, '');
+  return stripped.replace(/[\r\n\t]+/g, '').trim();
+}
+
+const supabaseKey = cleanEnvValue(
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-  import.meta.env.VITE_SUPABASE_ANON_KEY ||
-  '';
+  import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+);
 
 const apiBaseUrl = normalizeApiBaseUrl(defaultApiUrl);
 const api = axios.create({
