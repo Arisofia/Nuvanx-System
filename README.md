@@ -61,7 +61,7 @@ cd backend && npx jest tests/auth.test.js --runInBand --forceExit
 ## CI/CD
 
 - GitHub Actions CI: backend tests + frontend lint/build on every push to `main`
-- Deploy: frontend → Vercel (auto), Edge Function → Supabase (manual: `npx supabase functions deploy api`)
+- Deploy: frontend → Vercel (auto), Edge Function → Supabase (manual: `npx supabase functions deploy api --no-verify-jwt`)
 - No Railway, no Render.
 
 ## Vercel environment variables

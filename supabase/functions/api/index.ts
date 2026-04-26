@@ -27,11 +27,27 @@ const DEFAULT_CORS_ORIGIN = IS_DEVELOPMENT
   ? 'http://localhost:5173'
   : FRONTEND_URL;
 
-const corsHeaders = {
+const ALLOWED_CORS_ORIGINS = new Set([
+  DEFAULT_CORS_ORIGIN,
+  'https://nuvanx.com',
+  'https://www.nuvanx.com',
+]);
+
+const DEFAULT_CORS_HEADERS = {
   'Access-Control-Allow-Origin': DEFAULT_CORS_ORIGIN,
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
 };
+
+function buildCorsHeaders(origin: string | null) {
+  const allowedOrigin = origin && ALLOWED_CORS_ORIGINS.has(origin)
+    ? origin
+    : DEFAULT_CORS_ORIGIN;
+  return {
+    ...DEFAULT_CORS_HEADERS,
+    'Access-Control-Allow-Origin': allowedOrigin,
+  };
+}
 
 // ── Web Crypto helpers (PBKDF2 + AES-256-GCM — mirrors backend encryption) ───
 function hexToBytes(hex: string): Uint8Array {
@@ -407,6 +423,10 @@ function requireMetaAccountId(raw: unknown): string {
   return normalized;
 }
 
+function isValidEncryptionKey(value: string | null | undefined): boolean {
+  return typeof value === 'string' && value.trim().length >= 32;
+}
+
 function normalizePhoneNumberId(raw: unknown): string {
   const value = String(raw ?? '').trim();
   if (!value || /^act_/i.test(value)) return '';
@@ -508,7 +528,18 @@ async function resolveGoogleAdsCreds(adminClient: any, userId: string, qCustomer
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  const requestOrigin = req.headers.get('Origin');
+  const corsHeaders = buildCorsHeaders(requestOrigin);
+  const originIsRejectable = requestOrigin && !ALLOWED_CORS_ORIGINS.has(requestOrigin);
+  if (req.method === 'OPTIONS') {
+    if (originIsRejectable) return new Response('Forbidden', { status: 403 });
+    return new Response('ok', { headers: corsHeaders });
+  }
+  if (originIsRejectable) return new Response('Forbidden', { status: 403, headers: corsHeaders });
+
+  const sendJson = (data: unknown, status = 200, extraHeaders: Record<string, string> = {}) => {
+    return json(data, status, { ...corsHeaders, ...extraHeaders });
+  };
 
   const url = new URL(req.url);
   // Supabase strips /functions/v1 — path is /api/<resource>/...
@@ -644,26 +675,36 @@ Deno.serve(async (req: Request) => {
     const secrets = Object.fromEntries(
       secretNames.map((name) => [name, Boolean(String(Deno.env.get(name) ?? '').trim())]),
     );
-    return json({ success: true, secrets });
+    const rawEncryptionKey = String(Deno.env.get('ENCRYPTION_KEY') ?? '');
+    const encryptionKey = {
+      present: Boolean(rawEncryptionKey.trim()),
+      valid: isValidEncryptionKey(rawEncryptionKey),
+      length: rawEncryptionKey.length,
+    };
+    return sendJson({ success: true, secrets, encryptionKey });
   }
 
   // GET /api/health — public health endpoint for uptime checks
   if (resource === 'health' && req.method === 'GET') {
-    return json({ success: true, status: 'ok', timestamp: new Date().toISOString() });
+    return sendJson({ success: true, status: 'ok', timestamp: new Date().toISOString() });
   }
 
   // ── All other routes require a valid JWT ──────────────────────────────────
+  // Centralized auth guard: this checks the incoming Supabase user JWT once for all
+  // non-public API routes in api/index.ts. Dashboard, leads, kpis, reports, financials,
+  // and other operational routes are protected by this shared validation.
+  // No separate per-route JWT wrapper is required below.
 
   let userId: string | null = null;
 
   if (token && token !== anonKey) {
     const { data: { user }, error } = await adminClient.auth.getUser(token);
     if (error || !user) {
-      return json({ success: false, message: 'Unauthorized' }, 401);
+      return sendJson({ success: false, message: 'Unauthorized' }, 401);
     }
     userId = user.id;
   } else {
-    return json({ success: false, message: 'Unauthorized' }, 401);
+    return sendJson({ success: false, message: 'Unauthorized' }, 401);
   }
 
   try {
@@ -688,14 +729,14 @@ Deno.serve(async (req: Request) => {
 
 // ── GET /api/health ──────────────────────────────────────────────────────
     if (resource === 'health') {
-      return json({ success: true, status: 'ok', timestamp: new Date().toISOString() });
+      return sendJson({ success: true, status: 'ok', timestamp: new Date().toISOString() });
     }
 
     // ── GET /api/auth/me ─────────────────────────────────────────────────────
     if (resource === 'auth' && sub === 'me' && req.method === 'GET') {
       const { data: { user: sbUser } } = await adminClient.auth.admin.getUserById(userId!);
-      if (!sbUser) return json({ success: false, message: 'User not found' }, 404);
-      return json({
+      if (!sbUser) return sendJson({ success: false, message: 'User not found' }, 404);
+      return sendJson({
         success: true,
         user: {
           id: sbUser.id,
@@ -768,7 +809,7 @@ Deno.serve(async (req: Request) => {
         doctoraliaWarnings.push('Detected 0 treatment_types rows. Reference treatment catalog ingestion is empty and may block performance analysis.');
       }
 
-      return json({
+      return sendJson({
         success: true,
         audit: {
           counts: {
@@ -818,7 +859,7 @@ Deno.serve(async (req: Request) => {
         .eq('user_id', userId!)
         .order('created_at', { ascending: false });
       if (error) throw error;
-      return json({ success: true, leads: data, total: data.length });
+      return sendJson({ success: true, leads: data, total: data.length });
     }
 
     // ── POST /api/leads ──────────────────────────────────────────────────────
@@ -839,7 +880,7 @@ Deno.serve(async (req: Request) => {
         if (error) throw error;
 
         if (data) {
-          return json({ success: true, lead: data, deduplicated: false }, 201);
+          return sendJson({ success: true, lead: data, deduplicated: false }, 201);
         }
 
         const { data: existing, error: existingErr } = await adminClient
@@ -853,7 +894,7 @@ Deno.serve(async (req: Request) => {
           .maybeSingle();
         if (existingErr) throw existingErr;
 
-        return json({ success: true, lead: existing, deduplicated: true }, 200);
+        return sendJson({ success: true, lead: existing, deduplicated: true }, 200);
       }
 
       const { data, error } = await adminClient
@@ -862,7 +903,7 @@ Deno.serve(async (req: Request) => {
         .select()
         .single();
       if (error) throw error;
-      return json({ success: true, lead: data, deduplicated: false }, 201);
+      return sendJson({ success: true, lead: data, deduplicated: false }, 201);
     }
 
     // ── GET /api/dashboard/metrics ───────────────────────────────────────────
@@ -901,7 +942,7 @@ Deno.serve(async (req: Request) => {
         bySource[sourceKey] = (bySource[sourceKey] || 0) + 1;
       }
       const connectedIntegrations = integrations.filter((i: any) => i.status === 'connected').length;
-      return json({
+      return sendJson({
         success: true,
         metrics: {
           totalLeads, totalRevenue: parseFloat(totalRevenue.toFixed(2)),
@@ -924,14 +965,14 @@ Deno.serve(async (req: Request) => {
         count: (leads ?? []).filter((l: any) => l.stage === stage).length,
         percentage: parseFloat((((leads ?? []).filter((l: any) => l.stage === stage).length / total) * 100).toFixed(1)),
       }));
-      return json({ success: true, funnel });
+      return sendJson({ success: true, funnel });
     }
 
     // ── GET /api/dashboard/meta-trends ──────────────────────────────────────
     if (resource === 'dashboard' && sub === 'meta-trends') {
       const creds = await resolveMetaCreds(adminClient, userId!, url.searchParams.get('adAccountId') ?? '');
       if (creds.notConnected || !creds.adAccountId) {
-        return json({ success: false, message: creds.notConnected ? 'Meta Ads not connected' : 'Ad Account ID not configured' }, 400);
+        return sendJson({ success: false, message: creds.notConnected ? 'Meta Ads not connected' : 'Ad Account ID not configured' }, 400);
       }
       try {
         const since = new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10);
@@ -983,11 +1024,11 @@ Deno.serve(async (req: Request) => {
 
         // Cache successful response
         await setMetaCache(adminClient, userId!, 'dashboard:meta-trends', result);
-        return json(result);
+        return sendJson(result);
       } catch (e: any) {
         const cached = await getMetaCache(adminClient, userId!, 'dashboard:meta-trends');
         if (cached) {
-          return json({
+          return sendJson({
             ...cached.data,
             source: cached.data?.source || 'cache',
             cached: true,
@@ -997,15 +1038,15 @@ Deno.serve(async (req: Request) => {
             message: `Meta API error: ${e.message}. Showing cached data.`
           });
         }
-        return json({ success: false, message: e.message }, 502);
+        return sendJson({ success: false, message: e.message }, 502);
       }
     }
 
     // ── GET /api/meta/insights ───────────────────────────────────────────────
     if (resource === 'meta' && sub === 'insights' && req.method === 'GET') {
       const creds = await resolveMetaCreds(adminClient, userId!, url.searchParams.get('adAccountId') ?? '');
-      if (creds.notConnected) return json({ success: false, notConnected: true, message: 'Meta not connected. Add your credentials in Integrations.' });
-      if (!creds.adAccountId) return json({ success: false, noAccountId: true, message: 'Meta Ad Account ID not configured.' });
+      if (creds.notConnected) return sendJson({ success: false, notConnected: true, message: 'Meta not connected. Add your credentials in Integrations.' });
+      if (!creds.adAccountId) return sendJson({ success: false, noAccountId: true, message: 'Meta Ad Account ID not configured.' });
 
       const days = parseInt(url.searchParams.get('days') ?? '30');
       const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
@@ -1081,11 +1122,11 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
         };
 
         await setMetaCache(adminClient, userId!, `meta:insights:${days}`, result);
-        return json(result);
+        return sendJson(result);
       } catch (e: any) {
         const cached = await getMetaCache(adminClient, userId!, `meta:insights:${days}`);
         if (cached) {
-          return json({
+          return sendJson({
             ...cached.data,
             source: cached.data?.source || 'cache',
             cached: true,
@@ -1095,15 +1136,15 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
             message: `Meta API error: ${e.message}. Showing cached data.`
           });
         }
-        return json({ success: false, metaApiError: true, message: e.message }, 502);
+        return sendJson({ success: false, metaApiError: true, message: e.message }, 502);
       }
     }
 
     // ── POST /api/meta/backfill ──────────────────────────────────────────────
     if (resource === 'meta' && sub === 'backfill' && req.method === 'POST') {
       const creds = await resolveMetaCreds(adminClient, userId!, url.searchParams.get('adAccountId') ?? '');
-      if (creds.notConnected) return json({ success: false, message: 'Meta not connected' }, 400);
-      if (!creds.adAccountId) return json({ success: false, message: 'Ad Account ID not configured' }, 400);
+      if (creds.notConnected) return sendJson({ success: false, message: 'Meta not connected' }, 400);
+      if (!creds.adAccountId) return sendJson({ success: false, message: 'Ad Account ID not configured' }, 400);
 
       const days = Math.min(Math.max(parseInt(url.searchParams.get('days') ?? '7'), 1), 90);
       const sinceDate = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
@@ -1140,7 +1181,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
         console.error('Backfill lead ingestion failed:', e);
       }
 
-      return json({
+      return sendJson({
         success: true,
         totalLeadsBackfilled: totalFetched,
         message: `Backfill completed for last ${days} days. ${totalFetched} leads ingested. Insights cache warmed.`,
@@ -1151,33 +1192,33 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
     if (resource === 'health' && sub === 'meta') {
       try {
         const creds = await resolveMetaCreds(adminClient, userId!, '');
-        if (creds.notConnected) return json({ status: 'disconnected', message: 'No Meta credentials' });
+        if (creds.notConnected) return sendJson({ status: 'disconnected', message: 'No Meta credentials' });
 
         // Simple ping to Meta API
         const me = await metaFetch('/me', { fields: 'id,name' }, creds.accessToken);
-        return json({
+        return sendJson({
           status: 'healthy',
           meta_user: me.name,
           ad_account: creds.adAccountId,
           timestamp: new Date().toISOString()
         });
       } catch (e: any) {
-        return json({ status: 'unhealthy', error: e.message, timestamp: new Date().toISOString() }, 503);
+        return sendJson({ status: 'unhealthy', error: e.message, timestamp: new Date().toISOString() }, 503);
       }
     }
 
     // ── GET /api/meta/campaigns ──────────────────────────────────────────────
     if (resource === 'meta' && sub === 'campaigns' && req.method === 'GET') {
       const creds = await resolveMetaCreds(adminClient, userId!, url.searchParams.get('adAccountId') ?? '');
-      if (creds.notConnected) return json({ success: false, notConnected: true, message: 'Meta not connected.' });
-      if (!creds.adAccountId) return json({ success: false, noAccountId: true, message: 'Meta Ad Account ID not configured.' });
+      if (creds.notConnected) return sendJson({ success: false, notConnected: true, message: 'Meta not connected.' });
+      if (!creds.adAccountId) return sendJson({ success: false, noAccountId: true, message: 'Meta Ad Account ID not configured.' });
       try {
         const data = await metaFetch(`/${creds.adAccountId}/campaigns`, {
           fields: 'id,name,status,objective,daily_budget,lifetime_budget,insights.date_preset(last_30d){impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,cost_per_conversion}',
           limit: '100',
         }, creds.accessToken);
 
-        return json({
+        return sendJson({
           success: true,
           source: 'live',
           cached: false,
@@ -1208,7 +1249,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
           }),
         });
       } catch (e: any) {
-        return json({ success: false, metaApiError: true, message: e?.message ?? 'Meta API error' }, 502);
+        return sendJson({ success: false, metaApiError: true, message: e?.message ?? 'Meta API error' }, 502);
       }
     }
 
@@ -1222,7 +1263,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
       const geminiCred = (creds ?? []).find((c: any) => c.service === 'gemini');
       const openaiCred = (creds ?? []).find((c: any) => c.service === 'openai');
       if (!geminiCred && !openaiCred) {
-        return json({ success: false, message: 'No AI integration connected. Add Gemini or OpenAI in Integrations.' });
+        return sendJson({ success: false, message: 'No AI integration connected. Add Gemini or OpenAI in Integrations.' });
       }
 
       const prompt = [
@@ -1289,7 +1330,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
       }
 
       if (!analysis) {
-        return json({
+        return sendJson({
           success: false,
           message: 'AI request failed for all connected providers.',
           details: providerErrors,
@@ -1301,7 +1342,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
         providerErrors,
       });
 
-      return json({ success: true, analysis, outputId });
+      return sendJson({ success: true, analysis, outputId });
     }
 
     // ── PATCH /api/integrations/:service (update metadata) ───────────────────
@@ -1331,7 +1372,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
         .update({ metadata, updated_at: new Date().toISOString() })
         .eq('user_id', userId).eq('service', sub);
       if (error) throw error;
-      return json({ success: true });
+      return sendJson({ success: true });
     }
 
     // ── GET /api/integrations/validate-all ──────────────────────────────────
@@ -1355,7 +1396,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
           email: i.metadata?.email ?? null,
         };
       });
-      return json({ success: true, validated });
+      return sendJson({ success: true, validated });
     }
 
     // ── GET /api/integrations ────────────────────────────────────────────────
@@ -1366,7 +1407,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
         .eq('user_id', userId)
         .order('service');
       if (error) throw error;
-      return json({ success: true, integrations: data });
+      return sendJson({ success: true, integrations: data });
     }
 
     // ── POST /api/integrations/:service/connect ───────────────────────────────
@@ -1374,7 +1415,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
       const service = sub;
       const body = await req.json();
       const reqToken = body.token;
-      if (!reqToken) return json({ success: false, message: 'token is required' }, 400);
+      if (!reqToken) return sendJson({ success: false, message: 'token is required' }, 400);
 
       let metadata = body.metadata ?? {};
       if (service === 'meta') {
@@ -1391,7 +1432,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
       if (service === 'whatsapp') {
         const normalized = normalizePhoneNumberId(metadata?.phoneNumberId ?? metadata?.phone_number_id ?? '');
         if (!normalized) {
-          return json({ success: false, message: 'phoneNumberId is required for WhatsApp' }, 400);
+          return sendJson({ success: false, message: 'phoneNumberId is required for WhatsApp' }, 400);
         }
         metadata = {
           ...metadata,
@@ -1420,7 +1461,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
         .eq('user_id', userId)
         .eq('service', service);
       if (intErr) throw intErr;
-      return json({ success: true, service, status: 'connected' });
+      return sendJson({ success: true, service, status: 'connected' });
     }
 
     // ── POST /api/integrations/:service/test ─────────────────────────────────
@@ -1429,7 +1470,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
       const { data: cred } = await adminClient
         .from('credentials').select('service').eq('user_id', userId).eq('service', service).single();
       const status = cred ? 'connected' : 'error';
-      return json({ success: !!cred, service, status, metadata: {} });
+      return sendJson({ success: !!cred, service, status, metadata: {} });
     }
 
     // ── GET /api/playbooks ───────────────────────────────────────────────────
@@ -1457,7 +1498,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
         successRate: null,
         lastRunAt: p.last_run_at ?? null,
       }));
-      return json({ success: true, playbooks });
+      return sendJson({ success: true, playbooks });
     }
 
     // ── POST /api/playbooks/:slug/run ────────────────────────────────────────
@@ -1466,8 +1507,8 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
       const preferredProvider = String(body?.provider ?? '').trim();
       const { data: pb, error: pbErr } = await adminClient
         .from('playbooks').select('id, title, status, run_count').eq('slug', sub).single();
-      if (pbErr || !pb) return json({ success: false, message: `Playbook '${sub}' not found` }, 404);
-      if (pb.status === 'archived') return json({ success: false, message: 'Playbook is archived' }, 400);
+      if (pbErr || !pb) return sendJson({ success: false, message: `Playbook '${sub}' not found` }, 404);
+      if (pb.status === 'archived') return sendJson({ success: false, message: 'Playbook is archived' }, 400);
 
       let generatedMessage = '';
       let providerUsed: 'gemini' | 'openai' | null = null;
@@ -1517,7 +1558,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
       await adminClient.from('playbooks')
         .update({ run_count: (pb as any).run_count + 1, last_run_at: new Date().toISOString() })
         .eq('id', pb.id);
-      return json({
+      return sendJson({
         success: true,
         execution: {
           id: exec.id,
@@ -1536,7 +1577,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
       const { data: cred } = await adminClient
         .from('credentials').select('service').eq('user_id', userId).in('service', ['openai', 'gemini']);
       const hasAi = (cred ?? []).length > 0;
-      return json({ success: true, available: hasAi, provider: hasAi ? (cred![0] as any).service : null });
+      return sendJson({ success: true, available: hasAi, provider: hasAi ? (cred![0] as any).service : null });
     }
 
     // ── POST /api/ai/generate ───────────────────────────────────────────────
@@ -1546,7 +1587,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
       const provider = String(body?.provider ?? '').trim();
       const contentType = String(body?.contentType ?? '').trim();
       const playbookExecutionId = String(body?.playbookExecutionId ?? '').trim();
-      if (!prompt) return json({ success: false, message: 'prompt is required' }, 400);
+      if (!prompt) return sendJson({ success: false, message: 'prompt is required' }, 400);
 
       try {
         const { text, provider: usedProvider, providerErrors } = await runAiPrompt(adminClient, userId!, prompt, provider);
@@ -1563,9 +1604,9 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
         if (playbookExecutionId && outputId) {
           await linkAgentOutputToPlaybookExecution(adminClient, userId!, playbookExecutionId, outputId);
         }
-        return json({ success: true, content: text, result: text, provider: usedProvider, outputId });
+        return sendJson({ success: true, content: text, result: text, provider: usedProvider, outputId });
       } catch (err: any) {
-        return json({ success: false, message: err?.message ?? 'AI request failed' }, 502);
+        return sendJson({ success: false, message: err?.message ?? 'AI request failed' }, 502);
       }
     }
 
@@ -1575,7 +1616,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
       const campaignData = String(body?.campaignData ?? '').trim();
       const provider = String(body?.provider ?? '').trim();
       const playbookExecutionId = String(body?.playbookExecutionId ?? '').trim();
-      if (!campaignData) return json({ success: false, message: 'campaignData is required' }, 400);
+      if (!campaignData) return sendJson({ success: false, message: 'campaignData is required' }, 400);
 
       const prompt = [
         'You are a performance marketer for a premium aesthetics clinic in Madrid.',
@@ -1597,9 +1638,9 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
         if (playbookExecutionId && outputId) {
           await linkAgentOutputToPlaybookExecution(adminClient, userId!, playbookExecutionId, outputId);
         }
-        return json({ success: true, analysis: text, provider: usedProvider, outputId });
+        return sendJson({ success: true, analysis: text, provider: usedProvider, outputId });
       } catch (err: any) {
-        return json({ success: false, message: err?.message ?? 'AI request failed' }, 502);
+        return sendJson({ success: false, message: err?.message ?? 'AI request failed' }, 502);
       }
     }
 
@@ -1626,7 +1667,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
         source: 'api.ai.suggestions',
       });
 
-      return json({ success: true, suggestions, outputId });
+      return sendJson({ success: true, suggestions, outputId });
     }
 
     // ── GET /api/ai/outputs ────────────────────────────────────────────────
@@ -1666,15 +1707,15 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
         playbook_execution_id: executionByOutputId[row.id] ?? null,
       }));
 
-      return json({ success: true, outputs });
+      return sendJson({ success: true, outputs });
     }
 
     // ── GET /api/google-ads/insights ─────────────────────────────────────────
     if (resource === 'google-ads' && sub === 'insights' && req.method === 'GET') {
       const g = await resolveGoogleAdsCreds(adminClient, userId!, url.searchParams.get('customerId') ?? '');
-      if ('noServiceAccount' in g && g.noServiceAccount) return json({ success: false, noServiceAccount: true, message: 'Google Ads service account not configured.' });
-      if ('notConnected' in g && g.notConnected) return json({ success: false, notConnected: true, message: 'Google Ads not connected. Add your developer token in Integrations.' });
-      if (!(g as any).customerId) return json({ success: false, noAccountId: true, message: 'Google Ads Customer ID not configured.' });
+      if ('noServiceAccount' in g && g.noServiceAccount) return sendJson({ success: false, noServiceAccount: true, message: 'Google Ads service account not configured.' });
+      if ('notConnected' in g && g.notConnected) return sendJson({ success: false, notConnected: true, message: 'Google Ads not connected. Add your developer token in Integrations.' });
+      if (!(g as any).customerId) return sendJson({ success: false, noAccountId: true, message: 'Google Ads Customer ID not configured.' });
       const { devToken, customerId, serviceAccount } = g as any;
 
       const days = parseInt(url.searchParams.get('days') ?? '30');
@@ -1720,7 +1761,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
       const cpp = currConv > 0 ? parseFloat((currSpend / currConv).toFixed(2)) : 0;
       const pct = (c: number, p: number) => p === 0 ? (c > 0 ? 100 : 0) : parseFloat(((c - p) / p * 100).toFixed(1));
 
-      return json({
+      return sendJson({
         success: true,
         period: { since, until, days },
         summary: { impressions: currImp, clicks: currClicks, spend: currSpend, conversions: currConv, ctr, cpc, cpm, cpp },
@@ -1745,9 +1786,9 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
     // ── GET /api/google-ads/campaigns ────────────────────────────────────────
     if (resource === 'google-ads' && sub === 'campaigns' && req.method === 'GET') {
       const g = await resolveGoogleAdsCreds(adminClient, userId!, url.searchParams.get('customerId') ?? '');
-      if ('noServiceAccount' in g && g.noServiceAccount) return json({ success: false, noServiceAccount: true, message: 'Google Ads service account not configured.' });
-      if ('notConnected' in g && g.notConnected) return json({ success: false, notConnected: true, message: 'Google Ads not connected.' });
-      if (!(g as any).customerId) return json({ success: false, noAccountId: true, message: 'Google Ads Customer ID not configured.' });
+      if ('noServiceAccount' in g && g.noServiceAccount) return sendJson({ success: false, noServiceAccount: true, message: 'Google Ads service account not configured.' });
+      if ('notConnected' in g && g.notConnected) return sendJson({ success: false, notConnected: true, message: 'Google Ads not connected.' });
+      if (!(g as any).customerId) return sendJson({ success: false, noAccountId: true, message: 'Google Ads Customer ID not configured.' });
       const { devToken, customerId, serviceAccount } = g as any;
 
       const accessToken = await getGoogleAccessToken(serviceAccount);
@@ -1764,7 +1805,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
       `);
 
       const micros2eur = (m: number) => m > 0 ? parseFloat((m / 1_000_000).toFixed(2)) : null;
-      return json({
+      return sendJson({
         success: true,
         campaigns: rows.map((r: any) => ({
           id: r.campaign?.id ?? '',
@@ -1788,10 +1829,10 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
     // ── GET /api/financials/summary ─────────────────────────────────────────
     if (resource === 'financials' && sub === 'summary') {
       const { data: { user } } = await adminClient.auth.getUser(token!);
-      if (!user) return json({ success: false, message: 'Unauthorized' }, 401);
+      if (!user) return sendJson({ success: false, message: 'Unauthorized' }, 401);
       const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', user.id).single();
       const clinicId = usr?.clinic_id;
-      if (!clinicId) return json({ success: false, message: 'No clinic' }, 400);
+      if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
 
       const { data: rows } = await adminClient
         .from('financial_settlements')
@@ -1839,7 +1880,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
         .slice(-6)
         .map(([month, net]) => ({ month, net: Math.round(net * 100) / 100 }));
 
-      return json({
+      return sendJson({
         success: true,
         summary: {
           totalNet: Math.round(totalNet * 100) / 100,
@@ -1863,10 +1904,10 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
     // ── GET /api/financials/settlements ──────────────────────────────────────
     if (resource === 'financials' && sub === 'settlements') {
       const { data: { user } } = await adminClient.auth.getUser(token!);
-      if (!user) return json({ success: false, message: 'Unauthorized' }, 401);
+      if (!user) return sendJson({ success: false, message: 'Unauthorized' }, 401);
       const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', user.id).single();
       const clinicId = usr?.clinic_id;
-      if (!clinicId) return json({ success: false, message: 'No clinic' }, 400);
+      if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
 
       const { data: rows } = await adminClient
         .from('financial_settlements')
@@ -1875,7 +1916,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
         .order('settled_at', { ascending: false })
         .limit(100);
 
-      return json({
+      return sendJson({
         success: true,
         settlements: rows || [],
         diagnostics: {
@@ -1888,10 +1929,10 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
     // ── GET /api/financials/patients ─────────────────────────────────────────
     if (resource === 'financials' && sub === 'patients') {
       const { data: { user } } = await adminClient.auth.getUser(token!);
-      if (!user) return json({ success: false, message: 'Unauthorized' }, 401);
+      if (!user) return sendJson({ success: false, message: 'Unauthorized' }, 401);
       const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', user.id).single();
       const clinicId = usr?.clinic_id;
-      if (!clinicId) return json({ success: false, message: 'No clinic' }, 400);
+      if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
 
       const { data: rows } = await adminClient
         .from('patients')
@@ -1899,7 +1940,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
         .eq('clinic_id', clinicId)
         .order('total_ltv', { ascending: false });
 
-      return json({
+      return sendJson({
         success: true,
         patients: rows || [],
         diagnostics: {
@@ -1912,44 +1953,44 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
     // ── GET /api/traceability/leads ──────────────────────────────────────────
     if (resource === 'traceability' && sub === 'leads') {
       const { data: { user } } = await adminClient.auth.getUser(token!);
-      if (!user) return json({ success: false, message: 'Unauthorized' }, 401);
+      if (!user) return sendJson({ success: false, message: 'Unauthorized' }, 401);
       const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', user.id).single();
       const clinicId = usr?.clinic_id;
-      if (!clinicId) return json({ success: false, message: 'No clinic' }, 400);
+      if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
 
       const { data: rows } = await adminClient
         .from('vw_lead_traceability')
         .select('*')
         .limit(250);
 
-      return json({ success: true, leads: rows || [] });
+      return sendJson({ success: true, leads: rows || [] });
     }
 
     // ── GET /api/traceability/funnel ─────────────────────────────────────────
     if (resource === 'traceability' && sub === 'funnel') {
       const { data: { user } } = await adminClient.auth.getUser(token!);
-      if (!user) return json({ success: false, message: 'Unauthorized' }, 401);
+      if (!user) return sendJson({ success: false, message: 'Unauthorized' }, 401);
 
       const { data: rows } = await adminClient.from('vw_whatsapp_conversion_real').select('*');
-      return json({ success: true, funnel: rows || [] });
+      return sendJson({ success: true, funnel: rows || [] });
     }
 
     // ── GET /api/traceability/campaigns ─────────────────────────────────────
     if (resource === 'traceability' && sub === 'campaigns') {
       const { data: { user } } = await adminClient.auth.getUser(token!);
-      if (!user) return json({ success: false, message: 'Unauthorized' }, 401);
+      if (!user) return sendJson({ success: false, message: 'Unauthorized' }, 401);
 
       const { data: rows } = await adminClient.from('vw_campaign_performance_real').select('*').order('total_leads', { ascending: false });
-      return json({ success: true, campaigns: rows || [] });
+      return sendJson({ success: true, campaigns: rows || [] });
     }
 
     // ── GET /api/conversations ───────────────────────────────────────────────
     if (resource === 'conversations' && !sub) {
       const { data: { user } } = await adminClient.auth.getUser(token!);
-      if (!user) return json({ success: false, message: 'Unauthorized' }, 401);
+      if (!user) return sendJson({ success: false, message: 'Unauthorized' }, 401);
       const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', user.id).single();
       const clinicId = usr?.clinic_id;
-      if (!clinicId) return json({ success: false, message: 'No clinic' }, 400);
+      if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
 
       const leadId = url.searchParams.get('lead_id');
       let query = adminClient
@@ -1962,7 +2003,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
       if (leadId) query = query.eq('lead_id', leadId);
 
       const { data: rows } = await query;
-      return json({ success: true, conversations: rows || [] });
+      return sendJson({ success: true, conversations: rows || [] });
     }
 
     // ── GET /api/figma/events ────────────────────────────────────────────────
@@ -1983,12 +2024,12 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
         status: r.status,
         createdAt: r.created_at,
       }));
-      return json({ success: true, events });
+      return sendJson({ success: true, events });
     }
 
     // ── POST /api/whatsapp/send ──────────────────────────────────────────────
     if (resource === 'whatsapp' && sub === 'send') {
-      return json({ success: false, message: 'WhatsApp integration not connected. Add your credentials in Integrations.' }, 503);
+      return sendJson({ success: false, message: 'WhatsApp integration not connected. Add your credentials in Integrations.' }, 503);
     }
 
     // ── GET /api/kpis ────────────────────────────────────────────────────────
@@ -1996,7 +2037,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
     if (resource === 'kpis' && !sub && req.method === 'GET') {
       const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
       const clinicId = usr?.clinic_id;
-      if (!clinicId) return json({ success: false, message: 'No clinic' }, 400);
+      if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
 
       // Real Doctoralia KPIs (from financial_settlements)
       const { data: settlements } = await adminClient
@@ -2032,7 +2073,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
         .from('kpi_blocked')
         .select('kpi_name, kpi_group, blocked_reason, required_field');
 
-      return json({
+      return sendJson({
         success: true,
         asOf: new Date().toISOString(),
         doctoralia: {
@@ -2062,7 +2103,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
     if (resource === 'reports' && sub === 'doctoralia-financials' && req.method === 'GET') {
       const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
       const clinicId = usr?.clinic_id;
-      if (!clinicId) return json({ success: false, message: 'No clinic' }, 400);
+      if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
 
       const { data: byTemplate } = await adminClient
         .from('vw_doctoralia_financials')
@@ -2100,7 +2141,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
           ? Math.round((t.cancellation_count / t.operations_count) * 1000) / 10 : 0,
       })).sort((a: any, b: any) => b.total_net - a.total_net);
 
-      return json({ success: true, byTemplate: byTemplate || [], byMonth: byMonth || [], templateSummary });
+      return sendJson({ success: true, byTemplate: byTemplate || [], byMonth: byMonth || [], templateSummary });
     }
 
     // ── GET /api/reports/campaign-performance ────────────────────────────────
@@ -2109,7 +2150,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
         .from('vw_campaign_performance_real')
         .select('*')
         .order('total_leads', { ascending: false });
-      return json({ success: true, campaigns: rows || [] });
+      return sendJson({ success: true, campaigns: rows || [] });
     }
 
     // ── GET /api/reports/source-comparison ───────────────────────────────────
@@ -2119,7 +2160,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
         .from('vw_source_comparison')
         .select('*')
         .order('total_leads', { ascending: false });
-      return json({ success: true, sources: rows || [] });
+      return sendJson({ success: true, sources: rows || [] });
     }
 
     // ── GET /api/reports/whatsapp-conversion ─────────────────────────────────
@@ -2127,7 +2168,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
       const { data: rows } = await adminClient
         .from('vw_whatsapp_conversion_real')
         .select('*');
-      return json({ success: true, cohorts: rows || [] });
+      return sendJson({ success: true, cohorts: rows || [] });
     }
 
     // ── GET /api/reports/doctor-performance ──────────────────────────────────
@@ -2136,7 +2177,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
         .from('vw_doctor_performance_real')
         .select('*')
         .order('total_appointments', { ascending: false });
-      return json({ success: true, doctors: rows || [] });
+      return sendJson({ success: true, doctors: rows || [] });
     }
 
     // ── POST /api/leads/:id/reconcile ─────────────────────────────────────────
@@ -2144,21 +2185,21 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
     // Returns { matched: true, patient_id } or { matched: false }
     if (resource === 'leads' && sub2 === 'reconcile' && req.method === 'POST') {
       const leadId = sub;
-      if (!leadId) return json({ success: false, message: 'lead id required' }, 400);
+      if (!leadId) return sendJson({ success: false, message: 'lead id required' }, 400);
       const { data, error } = await adminClient.rpc('reconcile_lead_to_patient', { p_lead_id: leadId });
-      if (error) return json({ success: false, message: error.message }, 500);
-      return json({ success: true, matched: data !== null, patient_id: data ?? null });
+      if (error) return sendJson({ success: false, message: error.message }, 500);
+      return sendJson({ success: true, matched: data !== null, patient_id: data ?? null });
     }
 
-    return json({ success: false, message: `Route not found: ${resource}/${sub}` }, 404);
+    return sendJson({ success: false, message: `Route not found: ${resource}/${sub}` }, 404);
 
   } catch (err: any) {
     console.error('Edge Function error:', err);
-    return json({ success: false, message: err.message || 'Internal server error' }, 500);
+    return sendJson({ success: false, message: err.message || 'Internal server error' }, 500);
   }
 });
 
-function json(data: unknown, status = 200) {
+function json(data: unknown, status = 200, extraHeaders: Record<string, string> = {}) {
   const payload: Record<string, unknown> = (data && typeof data === 'object') ? { ...(data as Record<string, unknown>) } : { data };
   const success = payload.success ?? (status < 400);
   const message = typeof payload.message === 'string' ? payload.message : null;
@@ -2176,7 +2217,7 @@ function json(data: unknown, status = 200) {
 
   return new Response(JSON.stringify(payload), {
     status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    headers: { ...DEFAULT_CORS_HEADERS, ...extraHeaders, 'Content-Type': 'application/json' },
   });
 }
 
