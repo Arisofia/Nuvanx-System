@@ -707,12 +707,15 @@ Deno.serve(async (req: Request) => {
 
     // ── GET /api/production/audit ─────────────────────────────────────────────
     if (resource === 'production' && sub === 'audit' && req.method === 'GET') {
-      const [agentOutputs, metaCacheCount, leadsCount, publicUsers, authUsers, activeMetaIntegration, latestMetaCache] = await Promise.all([
+      const [agentOutputs, metaCacheCount, leadsCount, publicUsers, authUsers, doctoraliaPatients, doctorsCount, treatmentTypesCount, activeMetaIntegration, latestMetaCache] = await Promise.all([
         adminClient.from('agent_outputs').select('id', { count: 'exact', head: true }),
         adminClient.from('meta_cache').select('id', { count: 'exact', head: true }),
         adminClient.from('leads').select('id', { count: 'exact', head: true }).eq('user_id', userId!),
         adminClient.from('public.users').select('id', { count: 'exact', head: true }),
         adminClient.from('auth.users').select('id', { count: 'exact', head: true }),
+        adminClient.from('doctoralia_patients').select('id', { count: 'exact', head: true }),
+        adminClient.from('doctors').select('id', { count: 'exact', head: true }),
+        adminClient.from('treatment_types').select('id', { count: 'exact', head: true }),
         adminClient.from('integrations').select('metadata').eq('user_id', userId!).eq('service', 'meta').single(),
         adminClient.from('meta_cache').select('updated_at').order('updated_at', { ascending: false }).limit(1).maybeSingle(),
       ]);
@@ -721,6 +724,9 @@ Deno.serve(async (req: Request) => {
       if (leadsCount.error) throw leadsCount.error;
       if (publicUsers.error) throw publicUsers.error;
       if (authUsers.error) throw authUsers.error;
+      if (doctoraliaPatients.error) throw doctoraliaPatients.error;
+      if (doctorsCount.error) throw doctorsCount.error;
+      if (treatmentTypesCount.error) throw treatmentTypesCount.error;
       if (activeMetaIntegration.error) throw activeMetaIntegration.error;
       if (latestMetaCache.error) throw latestMetaCache.error;
 
@@ -751,6 +757,17 @@ Deno.serve(async (req: Request) => {
         settlementWarnings.push(`Detected ${missingPatientNameCount} settlement rows with missing patient_name. Confirm source data quality and ingestion mapping.`);
       }
 
+      const doctoraliaWarnings = [];
+      if (Number(doctoraliaPatients.count ?? 0) === 0) {
+        doctoraliaWarnings.push('Detected 0 doctoralia_patients rows. Doctoralia patient normalization has not run or ingestion is missing.');
+      }
+      if (Number(doctorsCount.count ?? 0) === 0) {
+        doctoraliaWarnings.push('Detected 0 doctors rows. Reference doctor catalog ingestion is empty and may block performance analysis.');
+      }
+      if (Number(treatmentTypesCount.count ?? 0) === 0) {
+        doctoraliaWarnings.push('Detected 0 treatment_types rows. Reference treatment catalog ingestion is empty and may block performance analysis.');
+      }
+
       return json({
         success: true,
         audit: {
@@ -760,6 +777,9 @@ Deno.serve(async (req: Request) => {
             leads: Number(leadsCount.count ?? 0),
             public_users: Number(publicUsers.count ?? 0),
             auth_users: Number(authUsers.count ?? 0),
+            doctoralia_patients: Number(doctoraliaPatients.count ?? 0),
+            doctors: Number(doctorsCount.count ?? 0),
+            treatment_types: Number(treatmentTypesCount.count ?? 0),
           },
           user_mismatch: publicUserDelta,
           warnings: [
@@ -769,11 +789,17 @@ Deno.serve(async (req: Request) => {
                 : `Detected ${Math.abs(publicUserDelta)} auth.users row(s) without matching public.users. This may indicate incomplete user cleanup.`
             ] : []),
             ...settlementWarnings,
+            ...doctoraliaWarnings,
           ],
           financial_settlements: {
             future_settled_at: Number(futureSettled.count ?? 0),
             future_intake_at: Number(futureIntakes.count ?? 0),
             missing_patient_name: missingPatientNameCount,
+          },
+          doctoralia: {
+            doctoralia_patients: Number(doctoraliaPatients.count ?? 0),
+            doctors: Number(doctorsCount.count ?? 0),
+            treatment_types: Number(treatmentTypesCount.count ?? 0),
           },
           meta: {
             pageId,

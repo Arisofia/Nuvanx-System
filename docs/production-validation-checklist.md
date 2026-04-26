@@ -64,7 +64,8 @@ Run these checks against the deployed frontend/backend:
 2. `GET /api/health/secrets` returns a truthy presence map for required secrets
 3. `GET /api/production/audit` returns counts for `agent_outputs`, `meta_cache`, `leads`, `public.users`, `auth.users`, and Meta integration identifiers
 4. `GET /api/production/audit` reports any `public.users` / `auth.users` mismatch so orphaned profiles can be fixed
-4. `GET /api/webhooks/meta` responds correctly to Meta subscription challenge
+5. `GET /api/production/audit` reports Doctoralia normalization health: `doctoralia_patients`, `doctors`, `treatment_types` counts and settlement quality warnings.
+6. `GET /api/webhooks/meta` responds correctly to Meta subscription challenge
 5. AI routes succeed when either user vault credentials exist or env vars are present
 6. `/api/doctoralia/ingest` accepts Doctoralia rows and returns inserted/updated counts
 7. `GET /api/production/audit` reports settlement anomalies: future `settled_at` or `intake_at` dates and missing `patient_name` values.
@@ -85,4 +86,5 @@ The following are the most common runtime causes of failure in production:
 - The frontend uses Vercel rewrites to proxy `/api/*` to Supabase functions by default.
 - AI fallback behavior in functions allows server-level env keys when no user vault credential is present.
 - The Supabase function is deployed with `--no-verify-jwt`; all non-public API routes are protected by manual JWT validation inside `supabase/functions/api/index.ts`.
+- The current Edge Function version is `v42`; this repo's audit_log changes are tracked under Supabase lint migration 0012 and are not tied to a legacy `v32` audit schema.
 - Doctoralia ingestion is supported via backend authenticated API and expects clinic-linked users.
