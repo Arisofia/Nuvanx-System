@@ -5,7 +5,7 @@ function normalizePhoneToE164(phone, countryCode = '34') {
   const raw = String(phone ?? '').trim();
   if (!raw) return '';
 
-  const cleaned = raw.replaceAll(/\u00A0|\s|\(|\)|\.|-/g, '').replaceAll(/ext\.?\s*\d+$/i, '');
+  const cleaned = raw.replaceAll(/\u00A0|\s|\(|\)|\.|-/g, '').replaceAll(/ext\.?\s*\d+$/gi, '');
   if (!cleaned) return '';
 
   let candidate = cleaned.startsWith('00') ? `+${cleaned.slice(2)}` : cleaned;
