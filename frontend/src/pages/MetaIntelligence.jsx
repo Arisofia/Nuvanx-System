@@ -6,7 +6,7 @@ import {
 import {
   TrendingUp, TrendingDown, Minus, RefreshCw, Loader2, AlertCircle,
   Megaphone, Eye, MousePointer, DollarSign, BarChart2, Zap,
-  Users, Target, Brain, CheckCircle, Settings,
+  Users, Target, Brain, CheckCircle, Settings, MessageSquare,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../config/api';

@@ -48,7 +48,7 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 function cleanEnvValue(value) {
   if (!value) return '';
   const raw = String(value);
-  const stripped = raw.replace(/(^['\"]|['\"]$)/g, '');
+  const stripped = raw.replace(/(^['"]|['"]$)/g, '');
   return stripped.replace(/[\r\n\t]+/g, '').trim();
 }
 
