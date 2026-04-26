@@ -526,6 +526,10 @@ Deno.serve(async (req: Request) => {
   // requests before this handler runs. Every non-public route must therefore
   // enforce JWT validation here. Only health checks and Meta webhook handshake
   // routes are intentionally public.
+  // Note: the Edge Function uses SUPABASE_SERVICE_ROLE_KEY for server-side
+  // credential vault access and RLS bypass where needed. The `credentials` table
+  // is not expected to be accessible via an authenticated client-side SELECT
+  // policy in this architecture.
   // Auth — verify Supabase JWT
   const authHeader = req.headers.get('Authorization') ?? '';
   const token = authHeader.replace('Bearer ', '');
@@ -724,6 +728,28 @@ Deno.serve(async (req: Request) => {
       const pageId = metadata.pageId ?? metadata.page_id ?? null;
       const adAccountId = metadata.adAccountId ?? metadata.ad_account_id ?? null;
       const publicUserDelta = Number(publicUsers.count ?? 0) - Number(authUsers.count ?? 0);
+      const nowIso = new Date().toISOString();
+
+      const [futureSettled, futureIntakes, missingPatientNameNull, missingPatientNameEmpty] = await Promise.all([
+        adminClient.from('financial_settlements').select('id', { count: 'exact', head: true }).gt('settled_at', nowIso),
+        adminClient.from('financial_settlements').select('id', { count: 'exact', head: true }).gt('intake_at', nowIso),
+        adminClient.from('financial_settlements').select('id', { count: 'exact', head: true }).is('patient_name', null),
+        adminClient.from('financial_settlements').select('id', { count: 'exact', head: true }).eq('patient_name', ''),
+      ]);
+      if (futureSettled.error) throw futureSettled.error;
+      if (futureIntakes.error) throw futureIntakes.error;
+      if (missingPatientNameNull.error) throw missingPatientNameNull.error;
+      if (missingPatientNameEmpty.error) throw missingPatientNameEmpty.error;
+
+      const futureSettlementCount = Number(futureSettled.count ?? 0) + Number(futureIntakes.count ?? 0);
+      const missingPatientNameCount = Number(missingPatientNameNull.count ?? 0) + Number(missingPatientNameEmpty.count ?? 0);
+      const settlementWarnings = [];
+      if (futureSettlementCount > 0) {
+        settlementWarnings.push(`Detected ${futureSettlementCount} settlement rows with future dates. Verify whether these are pre-paid scheduled appointments or test data.`);
+      }
+      if (missingPatientNameCount > 0) {
+        settlementWarnings.push(`Detected ${missingPatientNameCount} settlement rows with missing patient_name. Confirm source data quality and ingestion mapping.`);
+      }
 
       return json({
         success: true,
@@ -736,11 +762,19 @@ Deno.serve(async (req: Request) => {
             auth_users: Number(authUsers.count ?? 0),
           },
           user_mismatch: publicUserDelta,
-          warnings: publicUserDelta !== 0 ? [
-            publicUserDelta > 0
-              ? `Detected ${publicUserDelta} public.users row(s) without matching auth.users. This can cause incorrect clinic_id resolution or empty results for affected users.`
-              : `Detected ${Math.abs(publicUserDelta)} auth.users row(s) without matching public.users. This may indicate incomplete user cleanup.`
-          ] : [],
+          warnings: [
+            ...(publicUserDelta !== 0 ? [
+              publicUserDelta > 0
+                ? `Detected ${publicUserDelta} public.users row(s) without matching auth.users. This can cause incorrect clinic_id resolution or empty results for affected users.`
+                : `Detected ${Math.abs(publicUserDelta)} auth.users row(s) without matching public.users. This may indicate incomplete user cleanup.`
+            ] : []),
+            ...settlementWarnings,
+          ],
+          financial_settlements: {
+            future_settled_at: Number(futureSettled.count ?? 0),
+            future_intake_at: Number(futureIntakes.count ?? 0),
+            missing_patient_name: missingPatientNameCount,
+          },
           meta: {
             pageId,
             adAccountId,

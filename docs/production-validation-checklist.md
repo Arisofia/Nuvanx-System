@@ -23,6 +23,8 @@ Confirm these secrets are configured for the Supabase functions project:
 - `OPENAI_API_KEY`
 - `GEMINI_API_KEY`
 - `META_APP_SECRET`
+- `FRONTEND_URL` should be set to your production front-end domain, not `*`
+- `credentials` table access is server-side only in the Edge Function, so no authenticated client-side SELECT policy is expected for that table in this architecture.
 - `META_WEBHOOK_VERIFY_TOKEN` or `META_VERIFY_TOKEN`
 - `META_ACCESS_TOKEN`
 - `META_AD_ACCOUNT_ID`
@@ -65,7 +67,8 @@ Run these checks against the deployed frontend/backend:
 4. `GET /api/webhooks/meta` responds correctly to Meta subscription challenge
 5. AI routes succeed when either user vault credentials exist or env vars are present
 6. `/api/doctoralia/ingest` accepts Doctoralia rows and returns inserted/updated counts
-7. Authenticated user has `clinic_id` for Doctoralia ingestion
+7. `GET /api/production/audit` reports settlement anomalies: future `settled_at` or `intake_at` dates and missing `patient_name` values.
+8. Authenticated user has `clinic_id` for Doctoralia ingestion
 
 ## 5. Likely production failure points
 
