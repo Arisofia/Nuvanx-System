@@ -373,8 +373,16 @@ async function processLeadData(adminClient: any, userId: string, leadData: any) 
 async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: string) {
   const { data: credRow } = await adminClient
     .from('credentials').select('encrypted_key').eq('user_id', userId).eq('service', 'meta').single();
-  if (!credRow) return { notConnected: true } as const;
-  const accessToken = await decryptCred(credRow.encrypted_key);
+  if (!credRow) return { notConnected: true, accessToken: '', adAccountId: '', decryptionError: '' } as const;
+
+  let accessToken = '';
+  let decryptionError = '';
+  try {
+    accessToken = await decryptCred(credRow.encrypted_key);
+  } catch (err: any) {
+    decryptionError = err?.message ?? 'Failed to decrypt Meta credential';
+  }
+
   let adAccountId = qAccountId;
   if (!adAccountId) {
     const { data: intg } = await adminClient
@@ -382,7 +390,20 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
     adAccountId = intg?.metadata?.adAccountId ?? intg?.metadata?.ad_account_id ?? '';
   }
   adAccountId = normalizeMetaAccountId(adAccountId);
-  return { notConnected: false, accessToken, adAccountId } as const;
+  return { notConnected: false, accessToken, adAccountId, decryptionError } as const;
+}
+
+function validateMetaCredentialResult(creds: any) {
+  if (creds.notConnected) {
+    return { ok: false, message: 'Meta Ads not connected', statusCode: 400 };
+  }
+  if (creds.decryptionError) {
+    return { ok: false, message: creds.decryptionError, statusCode: 502 };
+  }
+  if (!creds.adAccountId) {
+    return { ok: false, message: 'Meta Ad Account ID not configured', statusCode: 400 };
+  }
+  return { ok: true, message: '' };
 }
 
 function normalizeMetaAccountId(raw: unknown): string {
@@ -971,8 +992,9 @@ Deno.serve(async (req: Request) => {
     // ── GET /api/dashboard/meta-trends ──────────────────────────────────────
     if (resource === 'dashboard' && sub === 'meta-trends') {
       const creds = await resolveMetaCreds(adminClient, userId!, url.searchParams.get('adAccountId') ?? '');
-      if (creds.notConnected || !creds.adAccountId) {
-        return sendJson({ success: false, message: creds.notConnected ? 'Meta Ads not connected' : 'Ad Account ID not configured' }, 400);
+      const validation = validateMetaCredentialResult(creds);
+      if (!validation.ok) {
+        return sendJson({ success: false, message: validation.message }, validation.statusCode);
       }
       try {
         const since = new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10);
@@ -1045,8 +1067,12 @@ Deno.serve(async (req: Request) => {
     // ── GET /api/meta/insights ───────────────────────────────────────────────
     if (resource === 'meta' && sub === 'insights' && req.method === 'GET') {
       const creds = await resolveMetaCreds(adminClient, userId!, url.searchParams.get('adAccountId') ?? '');
-      if (creds.notConnected) return sendJson({ success: false, notConnected: true, message: 'Meta not connected. Add your credentials in Integrations.' });
-      if (!creds.adAccountId) return sendJson({ success: false, noAccountId: true, message: 'Meta Ad Account ID not configured.' });
+      const validation = validateMetaCredentialResult(creds);
+      if (!validation.ok) {
+        const payload: any = { success: false, message: validation.message };
+        if (validation.statusCode === 400) payload.notConnected = creds.notConnected || !creds.adAccountId;
+        return sendJson(payload, validation.statusCode);
+      }
 
       const days = parseInt(url.searchParams.get('days') ?? '30');
       const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
@@ -1143,8 +1169,10 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
     // ── POST /api/meta/backfill ──────────────────────────────────────────────
     if (resource === 'meta' && sub === 'backfill' && req.method === 'POST') {
       const creds = await resolveMetaCreds(adminClient, userId!, url.searchParams.get('adAccountId') ?? '');
-      if (creds.notConnected) return sendJson({ success: false, message: 'Meta not connected' }, 400);
-      if (!creds.adAccountId) return sendJson({ success: false, message: 'Ad Account ID not configured' }, 400);
+      const validation = validateMetaCredentialResult(creds);
+      if (!validation.ok) {
+        return sendJson({ success: false, message: validation.message }, validation.statusCode);
+      }
 
       const days = Math.min(Math.max(parseInt(url.searchParams.get('days') ?? '7'), 1), 90);
       const sinceDate = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
@@ -1192,7 +1220,10 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
     if (resource === 'health' && sub === 'meta') {
       try {
         const creds = await resolveMetaCreds(adminClient, userId!, '');
-        if (creds.notConnected) return sendJson({ status: 'disconnected', message: 'No Meta credentials' });
+        const validation = validateMetaCredentialResult(creds);
+        if (!validation.ok) {
+          return sendJson({ status: 'unhealthy', error: validation.message, timestamp: new Date().toISOString() }, 503);
+        }
 
         // Simple ping to Meta API
         const me = await metaFetch('/me', { fields: 'id,name' }, creds.accessToken);
@@ -1210,8 +1241,12 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
     // ── GET /api/meta/campaigns ──────────────────────────────────────────────
     if (resource === 'meta' && sub === 'campaigns' && req.method === 'GET') {
       const creds = await resolveMetaCreds(adminClient, userId!, url.searchParams.get('adAccountId') ?? '');
-      if (creds.notConnected) return sendJson({ success: false, notConnected: true, message: 'Meta not connected.' });
-      if (!creds.adAccountId) return sendJson({ success: false, noAccountId: true, message: 'Meta Ad Account ID not configured.' });
+      const validation = validateMetaCredentialResult(creds);
+      if (!validation.ok) {
+        const payload: any = { success: false, message: validation.message };
+        if (validation.statusCode === 400) payload.notConnected = creds.notConnected || !creds.adAccountId;
+        return sendJson(payload, validation.statusCode);
+      }
       try {
         const data = await metaFetch(`/${creds.adAccountId}/campaigns`, {
           fields: 'id,name,status,objective,daily_budget,lifetime_budget,insights.date_preset(last_30d){impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,cost_per_conversion}',
@@ -1383,19 +1418,33 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
       ]);
       const integrations = intRes.data ?? [];
       const storedServices = new Set((credRes.data ?? []).map((c: any) => c.service));
-      const validated = integrations.map((i: any) => {
+      const validated = await Promise.all(integrations.map(async (i: any) => {
         const hasCredential = storedServices.has(i.service);
+        let status = hasCredential ? 'connected' : i.status;
+        let error = null;
+        let metadata = i.metadata ?? {};
+
+        if (i.service === 'meta' && hasCredential) {
+          const creds = await resolveMetaCreds(adminClient, userId!, metadata?.adAccountId ?? metadata?.ad_account_id ?? '');
+          const validation = validateMetaCredentialResult(creds);
+          if (!validation.ok) {
+            status = 'error';
+            error = validation.message;
+          }
+        }
+
         return {
           service: i.service,
-          status: hasCredential ? 'connected' : i.status,
+          status,
           lastSync: i.last_sync,
           skipped: false,
-          metadata: i.metadata ?? {},
+          metadata,
           accountName: i.metadata?.accountName ?? null,
           login: i.metadata?.login ?? null,
           email: i.metadata?.email ?? null,
+          error,
         };
-      });
+      }));
       return sendJson({ success: true, validated });
     }
 
@@ -1467,6 +1516,22 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
     // ── POST /api/integrations/:service/test ─────────────────────────────────
     if (resource === 'integrations' && sub2 === 'test' && req.method === 'POST') {
       const service = sub;
+      const body = await req.json().catch(() => ({}));
+
+      if (service === 'meta') {
+        const creds = await resolveMetaCreds(adminClient, userId!, body?.adAccountId ?? '');
+        const validation = validateMetaCredentialResult(creds);
+        if (!validation.ok) {
+          return sendJson({ success: false, service, status: 'error', message: validation.message }, validation.statusCode);
+        }
+        try {
+          const me = await metaFetch('/me', { fields: 'id,name' }, creds.accessToken);
+          return sendJson({ success: true, service, status: 'connected', metadata: { accountName: me.name } });
+        } catch (e: any) {
+          return sendJson({ success: false, service, status: 'error', message: e.message }, 502);
+        }
+      }
+
       const { data: cred } = await adminClient
         .from('credentials').select('service').eq('user_id', userId).eq('service', service).single();
       const status = cred ? 'connected' : 'error';
