@@ -55,9 +55,19 @@ if (fs.existsSync(dotenvPath)) require('dotenv').config({ path: dotenvPath });
 
 const { google }       = require('googleapis');
 const { createClient } = require('@supabase/supabase-js');
-let XLSX;
-try { XLSX = require('xlsx'); }
-catch { console.error('Run: npm install  (xlsx is in root package.json)'); process.exit(1); }
+const XlsxPopulate = require('xlsx-populate');
+
+function normalizeCellValue(value) {
+  if (value === null || value === undefined) return null;
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  if (typeof value === 'object') {
+    if (value.text) return value.text;
+    if (Array.isArray(value.richText)) return value.richText.map(part => part.text).join('');
+    if (value.result !== undefined) return String(value.result);
+    return String(value);
+  }
+  return value;
+}
 
 // ── Config ───────────────────────────────────────────────────────────────────
 const FILE_ID    = process.env.DOCTORALIA_DRIVE_FILE_ID || process.argv[2];
@@ -156,11 +166,13 @@ async function main() {
     });
   });
 
-  const wb = XLSX.readFile(tmp);
-  const sn = wb.SheetNames.find(n => n === SHEET_NAME) || wb.SheetNames[0];
+  const workbook = await XlsxPopulate.fromFileAsync(tmp);
+  const sheet = workbook.sheet(SHEET_NAME) || workbook.sheets()[0];
+  if (!sheet) { console.log('No sheet found.'); return; }
+  const sn = sheet.name();
   console.log(`Sheet: "${sn}"`);
-  const ws  = wb.Sheets[sn];
-  const rawRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false, dateNF: 'yyyy-mm-dd' });
+  const range = sheet.usedRange();
+  const rawRows = (range ? range.value() : []).map(row => (row || []).map(cell => normalizeCellValue(cell ?? null)));
   if (rawRows.length < 2) { console.log('Empty sheet.'); return; }
 
   const headerRow = rawRows[0] || [];
