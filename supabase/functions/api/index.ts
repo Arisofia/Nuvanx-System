@@ -705,6 +705,14 @@ Deno.serve(async (req: Request) => {
     return sendJson({ success: true, secrets, encryptionKey });
   }
 
+  async function updateIntegrationStatus(userId: string, service: string, status: string, message: string | null = null) {
+    await adminClient
+      .from('integrations')
+      .update({ status, last_error: message, updated_at: new Date().toISOString() })
+      .eq('user_id', userId)
+      .eq('service', service);
+  }
+
   // GET /api/health — public health endpoint for uptime checks
   if (resource === 'health' && req.method === 'GET') {
     return sendJson({ success: true, status: 'ok', timestamp: new Date().toISOString() });
@@ -1522,12 +1530,15 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
         const creds = await resolveMetaCreds(adminClient, userId!, body?.adAccountId ?? '');
         const validation = validateMetaCredentialResult(creds);
         if (!validation.ok) {
+          await updateIntegrationStatus(userId!, 'meta', 'error', validation.message);
           return sendJson({ success: false, service, status: 'error', message: validation.message }, validation.statusCode);
         }
         try {
           const me = await metaFetch('/me', { fields: 'id,name' }, creds.accessToken);
+          await updateIntegrationStatus(userId!, 'meta', 'connected', null);
           return sendJson({ success: true, service, status: 'connected', metadata: { accountName: me.name } });
         } catch (e: any) {
+          await updateIntegrationStatus(userId!, 'meta', 'error', e.message);
           return sendJson({ success: false, service, status: 'error', message: e.message }, 502);
         }
       }
