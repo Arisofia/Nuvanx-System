@@ -116,7 +116,7 @@ jobs:
             echo "::error::Supabase migration secret SUPABASE_DB_PASSWORD is missing. Set it in GitHub secrets or provide DATABASE_URL."
             exit 1
           fi
-          supabase db push --project-ref ssvvuuysgxyqvmovrlvk --password "$SUPABASE_DB_PASSWORD"
+          supabase db push --password "$SUPABASE_DB_PASSWORD"
 
   # 4. Supabase Edge Functions
   supabase-functions:

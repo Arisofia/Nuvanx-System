@@ -10,13 +10,18 @@ const META_GRAPH_BASE = 'https://graph.facebook.com/v21.0';
 function buildMetaParams(accessToken) {
   const params = { access_token: accessToken };
   if (config.metaAppSecret) {
-    const proof = crypto
-      .createHmac('sha256', config.metaAppSecret)
-      .update(accessToken)
-      .digest('hex');
-    params.appsecret_proof = proof;
+    params.appsecret_proof = buildMetaAppSecretProof(accessToken);
   }
   return params;
+}
+
+function buildMetaAppSecretProof(accessToken) {
+  // Meta requires an HMAC-SHA256 appsecret_proof for API request signing.
+  // This is a keyed message authentication code, not a password hash.
+  return crypto
+    .createHmac('sha256', config.metaAppSecret)
+    .update(accessToken, 'utf8')
+    .digest('hex');
 }
 
 /**

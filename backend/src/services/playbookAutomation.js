@@ -85,7 +85,6 @@ async function runLeadCaptureNurture(userId, lead) {
 
           if (userError) {
             logger.warn('[playbook-auto] Unable to resolve clinic_id for agent output persistence', {
-              userId,
               error: userError.message,
             });
           }
@@ -112,7 +111,10 @@ async function runLeadCaptureNurture(userId, lead) {
             .single();
 
           if (error) {
-            logger.warn('[playbook-auto] Failed to persist agent output', { userId, error: error.message });
+            logger.warn('[playbook-auto] Failed to persist agent output', {
+              hasUserId: Boolean(userId),
+              error: error.message,
+            });
           } else {
             agentOutputId = data?.id || null;
           }
