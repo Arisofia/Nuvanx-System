@@ -31,7 +31,7 @@ export function mapLeadPayloadToCapiEvent(payload: any): {
   const isQualified = payload?.lead_quality === 'qualified' || payload?.is_qualified === true;
   const attended = payload?.status === 'attended' || payload?.appointment_status === 'attended';
 
-  if (stage === 'whatsapp' || source.includes('whatsapp')) {
+  if (stage === 'whatsapp' || source.includes('whatsapp') || source.includes('messaging_conversation_started')) {
     return { eventName: 'Contact' };
   }
   if (isQualified) {
