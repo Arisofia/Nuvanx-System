@@ -5,18 +5,18 @@ const logger = require('../utils/logger');
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
-const ALLOWED_GEMINI_MODELS = new Set(['gemini-pro', 'gemini-pro-vision', 'gemini-1.5-pro', 'gemini-1.5-flash']);
+const ALLOWED_GEMINI_MODELS = new Set(['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-2.0-flash-exp']);
 
 /**
  * Generate content via the Google Gemini API.
  * The API key is passed from the credential vault and NEVER exposed to the frontend.
  * @param {string} apiKey
  * @param {string} prompt
- * @param {string} [model='gemini-pro']
+ * @param {string} [model='gemini-1.5-flash']
  * @returns {string} Generated text
  */
-async function generateContent(apiKey, prompt, model = 'gemini-pro') {
-  const safeModel = ALLOWED_GEMINI_MODELS.has(model) ? model : 'gemini-pro';
+async function generateContent(apiKey, prompt, model = 'gemini-1.5-flash') {
+  const safeModel = ALLOWED_GEMINI_MODELS.has(model) ? model : 'gemini-1.5-flash';
   const { data } = await axios.post(
     `${GEMINI_BASE}/models/${safeModel}:generateContent`,
     {

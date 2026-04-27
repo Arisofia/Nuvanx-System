@@ -279,7 +279,7 @@ async function parseJsonOrText(response: Response): Promise<{ data: any; text: s
   }
 }
 
-const GEMINI_MODELS = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro'];
+const GEMINI_MODELS = ['gemini-1.5-flash', 'gemini-1.5-pro'];
 const OPENAI_MODELS = ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo'];
 
 async function callGemini(prompt: string, apiKey: string): Promise<string> {
