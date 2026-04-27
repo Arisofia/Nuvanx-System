@@ -6,25 +6,35 @@
 -- =============================================================================
 
 DO $$
+DECLARE
+  fn_record RECORD;
 BEGIN
-  IF EXISTS (
-    SELECT 1
+  -- revoke execute on all overloads of public.check_stale_meta_tokens
+  FOR fn_record IN
+    SELECT p.oid
     FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'public'
       AND p.proname = 'check_stale_meta_tokens'
-  ) THEN
-    EXECUTE 'REVOKE EXECUTE ON FUNCTION public.check_stale_meta_tokens() FROM anon, authenticated;';
-  END IF;
+  LOOP
+    EXECUTE format(
+      'REVOKE EXECUTE ON FUNCTION %s FROM anon, authenticated;',
+      fn_record.oid::regprocedure
+    );
+  END LOOP;
 
-  IF EXISTS (
-    SELECT 1
+  -- revoke execute on all overloads of public.rls_auto_enable
+  FOR fn_record IN
+    SELECT p.oid
     FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'public'
       AND p.proname = 'rls_auto_enable'
-  ) THEN
-    EXECUTE 'REVOKE EXECUTE ON FUNCTION public.rls_auto_enable() FROM anon, authenticated;';
-  END IF;
+  LOOP
+    EXECUTE format(
+      'REVOKE EXECUTE ON FUNCTION %s FROM anon, authenticated;',
+      fn_record.oid::regprocedure
+    );
+  END LOOP;
 END
 $$;
