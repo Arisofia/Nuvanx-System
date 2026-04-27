@@ -28,14 +28,26 @@ $$;
 DO $$
 DECLARE
   pol RECORD;
+  new_roles TEXT;
 BEGIN
   FOR pol IN
-    SELECT schemaname, tablename, policyname
+    SELECT schemaname, tablename, policyname, roles
     FROM pg_policies
-    WHERE (schemaname = 'cron' AND tablename = 'job')
-       OR (schemaname = 'cron' AND tablename = 'job_run_details')
+    WHERE schemaname = 'cron'
+      AND tablename IN ('job', 'job_run_details')
+      AND 'anon' = ANY(roles)
   LOOP
-    EXECUTE format('ALTER POLICY %I ON %I.%I TO authenticated;', pol.policyname, pol.schemaname, pol.tablename);
+    new_roles := array_to_string(array_remove(pol.roles, 'anon'), ', ');
+    IF new_roles IS NULL OR new_roles = '' THEN
+      new_roles := 'authenticated';
+    END IF;
+    EXECUTE format(
+      'ALTER POLICY %I ON %I.%I TO %s;', 
+      pol.policyname,
+      pol.schemaname,
+      pol.tablename,
+      new_roles
+    );
   END LOOP;
 END
 $$;
