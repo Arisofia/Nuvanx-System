@@ -85,8 +85,6 @@ If neither Supabase key is set, the frontend will warn and disable Supabase feat
 ## Key Documentation
 
 - [SECURITY.md](SECURITY.md) — Security posture and production readiness
-- [SUPABASE_SETUP.md](SUPABASE_SETUP.md) — Database setup and schema overview
 - [docs/agents-and-integrations-architecture.md](docs/agents-and-integrations-architecture.md) — Architecture and agent roadmap
 - [docs/production-validation-checklist.md](docs/production-validation-checklist.md) — Production secret and runtime verification checklist
-- [docs/production-verification-recovery-2026-04-21.md](docs/production-verification-recovery-2026-04-21.md) — Canonical production URL, live deployment truth, and recovery actions
 
