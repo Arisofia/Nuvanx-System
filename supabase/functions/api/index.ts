@@ -3,8 +3,7 @@
 // starts at /api/...
 
 declare const Deno: any;
-// @deno-types="https://esm.sh/@supabase/supabase-js@2.42.0?dts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.42.0';
+import { createClient } from '@supabase/supabase-js';
 import { normalizePhoneToE164 } from '../_shared/phone.ts';
 import { mapLeadPayloadToCapiEvent } from '../_shared/capi.ts';
 
@@ -111,8 +110,11 @@ async function metaFetch(path: string, params: Record<string, string>, token: st
   url.searchParams.set('access_token', token);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   const r = await fetch(url.toString(), { signal: AbortSignal.timeout(20_000) });
-  const d = await r.json();
-  if (!r.ok) throw new Error(d.error?.message ?? `Meta API ${r.status}`);
+  const { data: d, text } = await parseJsonOrText(r);
+  if (!r.ok) {
+    const msg = d?.error?.message ?? d?.message ?? text ?? `Meta API ${r.status}`;
+    throw new Error(msg);
+  }
   return d;
 }
 
@@ -277,34 +279,38 @@ async function parseJsonOrText(response: Response): Promise<{ data: any; text: s
   }
 }
 
-const GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-2.0', 'gemini-1.0'];
-const OPENAI_MODELS = ['gpt-4o-mini', 'gpt-4o', 'gpt-3.5-turbo'];
+const GEMINI_MODELS = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro'];
+const OPENAI_MODELS = ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo'];
 
 async function callGemini(prompt: string, apiKey: string): Promise<string> {
   const errors: string[] = [];
   for (const model of GEMINI_MODELS) {
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.6, maxOutputTokens: 1500 },
-        }),
-      },
-    );
-    const { data, text } = await parseJsonOrText(r);
-    if (!r.ok) {
-      const msg = data?.error?.message ?? data?.message ?? text ?? `Gemini ${r.status}`;
-      errors.push(`${model}: ${msg}`);
-      continue;
+    try {
+      const r = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.6, maxOutputTokens: 1500 },
+          }),
+        },
+      );
+      const { data, text } = await parseJsonOrText(r);
+      if (!r.ok) {
+        const msg = data?.error?.message ?? data?.message ?? text ?? `Gemini ${r.status}`;
+        errors.push(`${model}: ${msg}`);
+        continue;
+      }
+      const output = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (output && typeof output === 'string' && output.trim()) {
+        return output;
+      }
+      errors.push(`${model}: response missing generated text`);
+    } catch (fetchErr: any) {
+      errors.push(`${model}: fetch failed - ${fetchErr.message}`);
     }
-    const output = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (output && typeof output === 'string' && output.trim()) {
-      return output;
-    }
-    errors.push(`${model}: response missing generated text`);
   }
   throw new Error(`Gemini error: ${errors.join(' | ')}`);
 }
@@ -312,27 +318,31 @@ async function callGemini(prompt: string, apiKey: string): Promise<string> {
 async function callOpenAI(prompt: string, apiKey: string): Promise<string> {
   const errors: string[] = [];
   for (const model of OPENAI_MODELS) {
-    const r = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.6,
-        max_tokens: 1500,
-      }),
-    });
-    const { data, text } = await parseJsonOrText(r);
-    if (!r.ok) {
-      const msg = data?.error?.message ?? data?.message ?? text ?? `OpenAI ${r.status}`;
-      errors.push(`${model}: ${msg}`);
-      continue;
+    try {
+      const r = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.6,
+          max_tokens: 1500,
+        }),
+      });
+      const { data, text } = await parseJsonOrText(r);
+      if (!r.ok) {
+        const msg = data?.error?.message ?? data?.message ?? text ?? `OpenAI ${r.status}`;
+        errors.push(`${model}: ${msg}`);
+        continue;
+      }
+      const output = data?.choices?.[0]?.message?.content;
+      if (output && typeof output === 'string' && output.trim()) {
+        return output;
+      }
+      errors.push(`${model}: response missing generated text`);
+    } catch (fetchErr: any) {
+      errors.push(`${model}: fetch failed - ${fetchErr.message}`);
     }
-    const output = data?.choices?.[0]?.message?.content;
-    if (output && typeof output === 'string' && output.trim()) {
-      return output;
-    }
-    errors.push(`${model}: response missing generated text`);
   }
   throw new Error(`OpenAI error: ${errors.join(' | ')}`);
 }
@@ -363,6 +373,23 @@ async function processLeadData(adminClient: any, userId: string, leadData: any) 
   const priority = HIGH_PRIORITY_KEYWORDS.test(allValues) ? 'high' : 'normal';
 
   // Upsert lead — idempotent via partial unique index (user_id, source, external_id)
+  let createdAt: string;
+  try {
+    const rawTime = leadData.created_time;
+    if (!rawTime) {
+      createdAt = new Date().toISOString();
+    } else if (typeof rawTime === 'number') {
+      createdAt = new Date(rawTime * 1000).toISOString();
+    } else if (typeof rawTime === 'string' && /^\d+$/.test(rawTime)) {
+      createdAt = new Date(Number(rawTime) * 1000).toISOString();
+    } else {
+      const d = new Date(rawTime);
+      createdAt = isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+    }
+  } catch {
+    createdAt = new Date().toISOString();
+  }
+
   const { data: lead } = await adminClient
     .from('leads')
     .upsert({
@@ -381,9 +408,7 @@ async function processLeadData(adminClient: any, userId: string, leadData: any) 
       ad_id:       leadData.ad_id       ?? null,
       form_id:     leadData.form_id     ?? null,
       form_name:   leadData.form_name   ?? null,
-      created_at:  leadData.created_time
-        ? new Date(Number(leadData.created_time) * 1000).toISOString()
-        : new Date().toISOString(),
+      created_at:  createdAt,
     }, { onConflict: 'user_id,source,external_id', ignoreDuplicates: true })
     .select('id')
     .maybeSingle();
@@ -1256,7 +1281,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
           fields: 'id,name', limit: '50'
         }, creds.accessToken);
         
-        for (const form of (formsRes.data ?? [])) {
+        for (const form of (formsRes?.data ?? [])) {
           try {
             const leadsRes = await metaFetch(`/${form.id}/leads`, {
               fields: 'id,field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,adset_id,page_id',
@@ -1264,7 +1289,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
               limit: '500'
             }, creds.accessToken);
             
-            for (const leadData of (leadsRes.data ?? [])) {
+            for (const leadData of (leadsRes?.data ?? [])) {
               const success = await processLeadData(adminClient, userId!, leadData);
               if (success) totalFetched++;
             }
@@ -1298,7 +1323,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
         const me = await metaFetch('/me', { fields: 'id,name' }, creds.accessToken);
         return sendJson({
           status: 'healthy',
-          meta_user: me.name,
+          meta_user: me?.name ?? 'Unknown',
           ad_account: creds.adAccountId,
           timestamp: new Date().toISOString()
         });
@@ -1327,7 +1352,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
           source: 'live',
           cached: false,
           accountId: creds.adAccountId,
-          campaigns: (data.data ?? []).map((c: any) => {
+          campaigns: (data?.data ?? []).map((c: any) => {
             const ins = c.insights?.data?.[0];
             const conversions = parseMetaMetric(ins?.conversions);
             const cppRaw = parseMetaMetric(ins?.cost_per_conversion);
@@ -1366,7 +1391,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
             source: 'live',
             cached: false,
             accountId: creds.adAccountId,
-            campaigns: (fallback.data ?? []).map((c: any) => ({
+            campaigns: (fallback?.data ?? []).map((c: any) => ({
               id: c.id,
               name: c.name,
               status: c.status,
