@@ -125,26 +125,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup Deno
-        uses: denoland/setup-deno@v1.5.2
+        uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
 
-      - name: Deno cache npm modules
+      - name: Cache dependencies
         run: deno cache --config supabase/functions/deno.json supabase/functions/api/index.ts
 
       - name: Type-check Edge Function
         run: deno check --config supabase/functions/deno.json supabase/functions/api/index.ts
-
-  # ─── Edge Function: cache Deno deps — new job from fix(ci)
-  edge-cache-deno:
-    name: Edge Function — cache Deno deps
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Deno
-        uses: denoland/setup-deno@v1.5.2
-      - name: Cache Edge Function dependencies
-        run: deno cache --config supabase/functions/deno.json supabase/functions/api/index.ts

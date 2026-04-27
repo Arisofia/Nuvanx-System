@@ -20,6 +20,7 @@ jobs:
   advisor:
     name: RLS & security lint
     runs-on: ubuntu-latest
+    environment: production
     permissions:
       contents: read
 

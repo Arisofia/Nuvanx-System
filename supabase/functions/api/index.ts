@@ -799,6 +799,7 @@ Deno.serve(async (req: Request) => {
   // No separate per-route JWT wrapper is required below.
 
   let userId: string | null = null;
+  let authUser: any = null;
 
   if (token && token !== anonKey) {
     const { data: { user }, error } = await adminClient.auth.getUser(token);
@@ -806,8 +807,32 @@ Deno.serve(async (req: Request) => {
       return sendJson({ success: false, message: 'Unauthorized' }, 401);
     }
     userId = user.id;
+    authUser = user;
   } else {
     return sendJson({ success: false, message: 'Unauthorized' }, 401);
+  }
+
+  async function ensurePublicUserRow(user: any) {
+    if (!user?.id) return;
+
+    const { data: existingUser, error: existingError } = await adminClient
+      .from('users')
+      .select('id')
+      .eq('id', user.id)
+      .maybeSingle();
+    if (existingError) throw existingError;
+    if (existingUser) return;
+
+    const userName = user.user_metadata?.name ?? user.raw_user_meta_data?.name ?? user.email ?? '';
+    const { error: insertError } = await adminClient
+      .from('users')
+      .insert({
+        id: user.id,
+        email: user.email ?? '',
+        name: userName,
+        password_hash: '',
+      });
+    if (insertError) throw insertError;
   }
 
   try {
@@ -1610,6 +1635,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
         };
       }
 
+      await ensurePublicUserRow(authUser);
       const encryptedKey = await encryptCred(String(reqToken).trim());
 
       const { error: credErr } = await adminClient
@@ -1626,9 +1652,16 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
 
       const { error: intErr } = await adminClient
         .from('integrations')
-        .update({ status: 'connected', metadata, updated_at: new Date().toISOString() })
-        .eq('user_id', userId)
-        .eq('service', service);
+        .upsert(
+          {
+            user_id: userId,
+            service,
+            status: 'connected',
+            metadata,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id,service' },
+        );
       if (intErr) throw intErr;
       return sendJson({ success: true, service, status: 'connected' });
     }

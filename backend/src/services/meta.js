@@ -1,9 +1,23 @@
 'use strict';
 
 const axios = require('axios');
+const crypto = require('crypto');
+const { config } = require('../config/env');
 const logger = require('../utils/logger');
 
 const META_GRAPH_BASE = 'https://graph.facebook.com/v21.0';
+
+function buildMetaParams(accessToken) {
+  const params = { access_token: accessToken };
+  if (config.metaAppSecret) {
+    const proof = crypto
+      .createHmac('sha256', config.metaAppSecret)
+      .update(accessToken)
+      .digest('hex');
+    params.appsecret_proof = proof;
+  }
+  return params;
+}
 
 /**
  * Test a Meta Marketing API access token.
@@ -13,7 +27,7 @@ const META_GRAPH_BASE = 'https://graph.facebook.com/v21.0';
 async function testConnection(accessToken) {
   try {
     const { data } = await axios.get(`${META_GRAPH_BASE}/me`, {
-      params: { access_token: accessToken, fields: 'id,name' },
+      params: { ...buildMetaParams(accessToken), fields: 'id,name' },
       timeout: 10000,
     });
     return { connected: true, accountName: data.name };
@@ -32,7 +46,7 @@ async function testConnection(accessToken) {
 async function getCampaigns(accessToken, adAccountId) {
   const { data } = await axios.get(`${META_GRAPH_BASE}/${adAccountId}/campaigns`, {
     params: {
-      access_token: accessToken,
+      ...buildMetaParams(accessToken),
       fields: 'id,name,status,objective,daily_budget,lifetime_budget',
       limit: 50,
     },
@@ -52,7 +66,7 @@ async function getMetrics(accessToken, adAccountId, dateRange = {}) {
   const until = dateRange.until || new Date().toISOString().slice(0, 10);
 
   const params = {
-    access_token: accessToken,
+    ...buildMetaParams(accessToken),
     fields: 'impressions,reach,clicks,spend,cpc,cpm,ctr,conversions',
     time_range: JSON.stringify({ since, until }),
   };
@@ -72,7 +86,7 @@ async function getMetrics(accessToken, adAccountId, dateRange = {}) {
  */
 async function getComprehensiveMetrics(accessToken, adAccountId, dateRange = {}) {
   const params = {
-    access_token: accessToken,
+    ...buildMetaParams(accessToken),
     fields: [
       'impressions',
       'reach',
@@ -126,7 +140,7 @@ async function getComprehensiveMetrics(accessToken, adAccountId, dateRange = {})
 async function getTrendsData(accessToken, adAccountId, dateRange = {}) {
   const defaultSince = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const params = {
-    access_token: accessToken,
+    ...buildMetaParams(accessToken),
     fields: 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,actions',
     time_range: JSON.stringify({
       since: dateRange.since || defaultSince,
@@ -159,7 +173,7 @@ async function getCampaignsWithInsights(accessToken, adAccountId, dateRange = {}
 
   const { data } = await axios.get(`${META_GRAPH_BASE}/${adAccountId}/campaigns`, {
     params: {
-      access_token: accessToken,
+      ...buildMetaParams(accessToken),
       fields: 'id,name,status,objective,daily_budget,lifetime_budget,' +
               `insights.time_range({'since':'${since}','until':'${until}'}){spend,impressions,reach,clicks,ctr,cpc,cpm,cpp,conversions}`,
       limit: 50,
