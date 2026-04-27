@@ -27,5 +27,8 @@
     "dotenv": "^16.4.5",
     "googleapis": "^171.4.0",
     "xlsx-populate": "^1.21.0"
+  },
+  "devDependencies": {
+    "supabase": "^2.95.5"
   }
 }
