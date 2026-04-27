@@ -7,26 +7,21 @@
 -- =============================================================================
 
 DO $$
+DECLARE
+  fn_record RECORD;
 BEGIN
-  IF EXISTS (
-    SELECT 1
+  FOR fn_record IN
+    SELECT p.oid
     FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'public'
-      AND p.proname = 'check_stale_meta_tokens'
-  ) THEN
-    EXECUTE 'REVOKE EXECUTE ON FUNCTION public.check_stale_meta_tokens() FROM anon, authenticated;';
-  END IF;
-
-  IF EXISTS (
-    SELECT 1
-    FROM pg_proc p
-    JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public'
-      AND p.proname = 'rls_auto_enable'
-  ) THEN
-    EXECUTE 'REVOKE EXECUTE ON FUNCTION public.rls_auto_enable() FROM anon, authenticated;';
-  END IF;
+      AND p.proname IN ('check_stale_meta_tokens', 'rls_auto_enable')
+  LOOP
+    EXECUTE format(
+      'REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC, anon, authenticated;',
+      fn_record.oid::regprocedure
+    );
+  END LOOP;
 END
 $$;
 
