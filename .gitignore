@@ -52,3 +52,4 @@ frontend/.vercel/
 supabase/.temp/
 
 .vercel
+.env*.local
