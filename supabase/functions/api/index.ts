@@ -1,9 +1,7 @@
 // Nuvanx API Edge Function — v42
-// Routes all frontend API calls. Supabase strips /functions/v1 so the path
-// starts at /api/...
-
-declare const Deno: any;
+// @deno-types="https://esm.sh/@supabase/supabase-js@2.42.0/dist/module/index.d.ts"
 import { createClient } from '@supabase/supabase-js';
+declare const Deno: any;
 import { normalizePhoneToE164 } from '../_shared/phone.ts';
 import { mapLeadPayloadToCapiEvent } from '../_shared/capi.ts';
 
@@ -279,7 +277,7 @@ async function parseJsonOrText(response: Response): Promise<{ data: any; text: s
   }
 }
 
-const GEMINI_MODELS = ['gemini-1.5-flash', 'gemini-1.5-pro'];
+const GEMINI_MODELS = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash-exp'];
 const OPENAI_MODELS = ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo'];
 
 async function callGemini(prompt: string, apiKey: string): Promise<string> {
