@@ -110,7 +110,14 @@ jobs:
             exit 1
           fi
           if [ -z "$SUPABASE_DB_PASSWORD" ] && [ -n "$DATABASE_URL" ]; then
-            SUPABASE_DB_PASSWORD=$(python3 -c "from urllib.parse import urlparse; import os, sys; url = os.environ.get('DATABASE_URL', ''); parts = urlparse(url); print(parts.password) if parts.password else sys.exit(1)")
+            SUPABASE_DB_PASSWORD=$(python3 - <<'PY'
+from urllib.parse import urlparse
+import os
+url = os.environ.get('DATABASE_URL', '')
+parts = urlparse(url)
+print(parts.password or '')
+PY
+)
           fi
           if [ -z "$SUPABASE_DB_PASSWORD" ]; then
             echo "::error::Supabase migration secret SUPABASE_DB_PASSWORD is missing. Set it in GitHub secrets or provide DATABASE_URL."
