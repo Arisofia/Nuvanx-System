@@ -33,7 +33,8 @@ function mapLeadPayloadToCapiEvent(payload = {}) {
   const isQualified = payload.lead_quality === 'qualified' || payload.is_qualified === true;
   const attended = payload.status === 'attended' || payload.appointment_status === 'attended';
 
-  if (stage === 'whatsapp' || source.includes('whatsapp') || source.includes('messaging_conversation_started')) {
+  // Incluye el nuevo evento messaging_conversation_started mapeado como 'Contact'
+  if (stage === 'whatsapp' || source.includes('whatsapp') || stage === 'messaging_conversation_started' || source.includes('messaging_conversation_started')) {
     return { eventName: 'Contact' };
   }
   if (isQualified) {
