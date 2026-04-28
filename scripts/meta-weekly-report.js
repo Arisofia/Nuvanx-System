@@ -28,9 +28,9 @@ function parseMetric(raw) {
     return Number.isFinite(n) ? n : 0;
   }
   if (Array.isArray(raw)) {
-    return raw.reduce((sum, item) => sum + parseMetric(item && Object.prototype.hasOwnProperty.call(item, 'value') ? item.value : item), 0);
+    return raw.reduce((sum, item) => sum + parseMetric(item && Object.hasOwn(item, 'value') ? item.value : item), 0);
   }
-  if (typeof raw === 'object' && Object.prototype.hasOwnProperty.call(raw, 'value')) {
+  if (typeof raw === 'object' && Object.hasOwn(raw, 'value')) {
     return parseMetric(raw.value);
   }
   return 0;
