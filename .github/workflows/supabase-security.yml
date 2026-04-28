@@ -31,7 +31,7 @@ jobs:
       - name: Supabase RLS & security lint
         uses: ./.github/actions/supabase-link-run
         with:
-          project_ref: ${{ secrets.SUPABASE_PROJECT_REF || vars.SUPABASE_PROJECT_REF || 'ssvvuuysgxyqvmovrlvk' }}
+          project_ref: ${{ secrets.SUPABASE_PROJECT_REF || 'ssvvuuysgxyqvmovrlvk' }}
           supabase_access_token: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           database_url: ${{ secrets.DATABASE_URL }}
           supabase_db_password: ${{ secrets.SUPABASE_DB_PASSWORD }}

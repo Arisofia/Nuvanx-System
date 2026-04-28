@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
-const cp = require('child_process');
+const fs = require('node:fs');
+const path = require('node:path');
+const cp = require('node:child_process');
 
 const ROOT = process.cwd();
 const TOKENS_FILE = path.join(ROOT, '.env.tokens.local');
@@ -124,7 +124,8 @@ async function setVercelSecrets(vars) {
     const value = vars[key];
     if (!value) continue;
 
-    const url = `https://api.vercel.com/v10/projects/${projectId}/env${teamId ? `?teamId=${teamId}` : ''}`;
+    const queryString = teamId ? `?teamId=${teamId}` : '';
+    const url = `https://api.vercel.com/v10/projects/${projectId}/env${queryString}`;
     const res = await fetch(url, {
       method: 'POST',
       headers: {
