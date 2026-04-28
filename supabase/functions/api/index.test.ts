@@ -29,6 +29,8 @@ const {
   DEFAULT_CORS_ORIGIN,
   DEFAULT_CORS_HEADERS,
   hexToBytes,
+  bytesToHex,
+  decryptCred,
 } = api;
 
 describe('normalizeFrontendUrl', () => {
@@ -174,5 +176,116 @@ describe('hexToBytes', () => {
     const bytes = hexToBytes('zz');
     expect(bytes.length).toBe(1);
     expect(bytes[0]).toBe(0);
+  });
+});
+
+describe('bytesToHex', () => {
+  it('converts a typical Uint8Array to a lowercase hex string', () => {
+    const result = bytesToHex(new Uint8Array([0x00, 0x1a, 0x2b, 0xff]));
+    expect(result).toBe('001a2bff');
+  });
+
+  it('returns an empty string for an empty Uint8Array', () => {
+    const result = bytesToHex(new Uint8Array([]));
+    expect(result).toBe('');
+  });
+
+  it('pads single-nibble values with leading zero', () => {
+    const result = bytesToHex(new Uint8Array([0x0, 0x1, 0x9]));
+    expect(result).toBe('000109');
+  });
+
+  it('handles full byte range and concatenates correctly', () => {
+    const result = bytesToHex(new Uint8Array([0x00, 0x7f, 0x80, 0xff]));
+    expect(result).toBe('007f80ff');
+  });
+
+  it('accepts Uint8Array subclasses and serializes them correctly', () => {
+    class CustomUint8Array extends Uint8Array {}
+    const result = bytesToHex(new CustomUint8Array([0x0f, 0x10]));
+    expect(result).toBe('0f10');
+  });
+});
+
+describe('decryptCred', () => {
+  let denoDescriptor: PropertyDescriptor | undefined;
+  let cryptoDescriptor: PropertyDescriptor | undefined;
+
+  beforeEach(() => {
+    denoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno');
+    cryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+    vi.spyOn(globalThis, 'Deno', 'get').mockReturnValue({ env: { get: vi.fn() } } as any);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (denoDescriptor) Object.defineProperty(globalThis, 'Deno', denoDescriptor);
+    if (cryptoDescriptor) Object.defineProperty(globalThis, 'crypto', cryptoDescriptor);
+  });
+
+  it('throws when ENCRYPTION_KEY is not set', async () => {
+    const deno = (globalThis as any).Deno;
+    deno.env.get.mockReturnValue(undefined);
+    await expect(() => decryptCred('aa:bb:cc:dd')).rejects.toThrowError('ENCRYPTION_KEY not set in Edge Function secrets');
+    expect(deno.env.get).toHaveBeenCalledWith('ENCRYPTION_KEY');
+  });
+
+  it('throws for malformed ciphertext strings that do not have 4 parts', async () => {
+    const deno = (globalThis as any).Deno;
+    deno.env.get.mockReturnValue('dummy-key');
+    for (const encoded of ['one-part', 'a:b:c', 'a:b:c:d:e']) {
+      await expect(() => decryptCred(encoded as any)).rejects.toThrowError('malformed ciphertext');
+    }
+  });
+
+  it('concatenates ciphertext and tag and calls Web Crypto APIs correctly', async () => {
+    const deno = (globalThis as any).Deno;
+    deno.env.get.mockReturnValue('test-master-key');
+
+    const saltH = 'aa';
+    const ivH = 'bb';
+    const tagH = 'ccdd';
+    const ctH = '0102';
+    const encoded = `${saltH}:${ivH}:${tagH}:${ctH}`;
+
+    const importKeyMock = vi.fn().mockResolvedValue('km-object');
+    const deriveKeyMock = vi.fn().mockResolvedValue('aes-key-object');
+    const decryptMock = vi.fn().mockResolvedValue(new TextEncoder().encode('decrypted-value'));
+    vi.spyOn(globalThis.crypto.subtle, 'importKey').mockResolvedValue('km-object' as any);
+    vi.spyOn(globalThis.crypto.subtle, 'deriveKey').mockResolvedValue('aes-key-object' as any);
+    vi.spyOn(globalThis.crypto.subtle, 'decrypt').mockResolvedValue(new TextEncoder().encode('decrypted-value') as any);
+
+    const result = await decryptCred(encoded);
+
+    expect(deno.env.get).toHaveBeenCalledWith('ENCRYPTION_KEY');
+    expect(globalThis.crypto.subtle.importKey).toHaveBeenCalledWith(
+      'raw',
+      new TextEncoder().encode('test-master-key'),
+      'PBKDF2',
+      false,
+      ['deriveKey']
+    );
+
+    const deriveCall = (globalThis.crypto.subtle.deriveKey as any).mock.calls[0];
+    expect(deriveCall[0]).toMatchObject({ name: 'PBKDF2', iterations: 100_000, hash: 'SHA-256' });
+    expect(deriveCall[2]).toMatchObject({ name: 'AES-GCM', length: 256 });
+
+    expect(globalThis.crypto.subtle.decrypt).toHaveBeenCalledTimes(1);
+    expect(result).toBe('decrypted-value');
+  });
+
+  it('propagates errors thrown by crypto.subtle.decrypt', async () => {
+    const deno = (globalThis as any).Deno;
+    deno.env.get.mockReturnValue('test-master-key');
+    vi.spyOn(api, 'hexToBytes').mockImplementation((hex: string) => {
+      const arr = new Uint8Array(hex.length >>> 1);
+      for (let i = 0; i < arr.length; i++) arr[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+      return arr;
+    });
+    vi.spyOn(globalThis.crypto.subtle, 'importKey').mockResolvedValue('km-object' as any);
+    vi.spyOn(globalThis.crypto.subtle, 'deriveKey').mockResolvedValue('aes-key-object' as any);
+    vi.spyOn(globalThis.crypto.subtle, 'decrypt').mockRejectedValue(new Error('Decrypt failed'));
+
+    await expect(() => decryptCred('aa:bb:ccdd:0102')).rejects.toThrowError('Decrypt failed');
   });
 });

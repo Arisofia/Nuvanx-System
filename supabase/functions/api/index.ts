@@ -52,7 +52,7 @@ export function hexToBytes(hex: string): Uint8Array {
   return arr;
 }
 
-function bytesToHex(bytes: Uint8Array): string {
+export function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
@@ -82,7 +82,7 @@ async function encryptCred(raw: string): Promise<string> {
   return [bytesToHex(salt), bytesToHex(iv), bytesToHex(tag), bytesToHex(ct)].join(':');
 }
 
-async function decryptCred(encoded: string): Promise<string> {
+export async function decryptCred(encoded: string): Promise<string> {
   const masterKey = Deno.env.get('ENCRYPTION_KEY');
   if (!masterKey) throw new Error('ENCRYPTION_KEY not set in Edge Function secrets');
   const parts = encoded.split(':');
