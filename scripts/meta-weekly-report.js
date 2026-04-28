@@ -201,6 +201,28 @@ async function metaFetch(endpoint, params, token) {
   return data;
 }
 
+async function metaFetchWithFallback(endpoint, params, token) {
+  try {
+    return await metaFetch(endpoint, params, token);
+  } catch (err) {
+    const msg = String(err?.message || '').toLowerCase();
+    if (
+      params?.filtering && (
+        msg.includes('invalid keys "values" were found in param "filtering[0]"') ||
+        msg.includes('filtering field effective_status is invalid') ||
+        msg.includes('invalid field effective_status') ||
+        msg.includes('filtering field')
+      )
+    ) {
+      console.warn('[meta-weekly-report] Meta filtering failed; retrying without filtering');
+      const fallbackParams = { ...params };
+      delete fallbackParams.filtering;
+      return await metaFetch(endpoint, fallbackParams, token);
+    }
+    throw err;
+  }
+}
+
 async function maybeLoadDbSignals({ databaseUrl, clinicId, sinceIso, untilExclusiveIso }) {
   if (!databaseUrl || !clinicId) {
     return { available: false, rows: [] };
