@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
 
 const GRAPH_API_BASE = 'https://graph.facebook.com/v21.0';
 const ROOT = process.cwd();
@@ -63,7 +63,7 @@ function parseArgs(argv) {
 function normalizeAdAccountId(raw) {
   const cleaned = String(raw || '').trim();
   if (!cleaned) return '';
-  const digits = cleaned.replace(/^act_/i, '').replace(/\D/g, '');
+  const digits = cleaned.replace(/^act_/i, '').replaceAll(/\D/g, '');
   return digits ? `act_${digits}` : '';
 }
 
@@ -90,7 +90,8 @@ function writeEnvFile(filePath, patch) {
   const existing = readEnvFile(filePath);
   const merged = { ...existing, ...patch };
   const keys = Object.keys(merged).sort((a, b) => a.localeCompare(b));
-  const content = `${keys.map((key) => `${key}=${merged[key] || ''}`).join('\n')}\n`;
+  const lines = keys.map((key) => `${key}=${merged[key] || ''}`);
+  const content = lines.join('\n') + '\n';
   fs.writeFileSync(filePath, content, 'utf8');
 }
 
@@ -155,14 +156,7 @@ function printUsage() {
   ].join('\n'));
 }
 
-async function main() {
-  const args = parseArgs(process.argv);
-  if (args.help) {
-    printUsage();
-    return;
-  }
-
-  const envVars = readEnvFile(TOKENS_FILE);
+function resolveInputs(args, envVars) {
   const appId = args.appId || process.env.META_APP_ID || envVars.META_APP_ID || '';
   const appSecret = args.appSecret || process.env.META_APP_SECRET || envVars.META_APP_SECRET || '';
   const shortLivedToken = args.shortLivedToken || process.env.META_SHORT_LIVED_TOKEN || envVars.META_SHORT_LIVED_TOKEN || '';
@@ -171,6 +165,67 @@ async function main() {
   if (!appId || !appSecret || !shortLivedToken) {
     throw new Error('Missing required inputs. Provide --app-id, --app-secret, --short-token (or META_APP_ID, META_APP_SECRET, META_SHORT_LIVED_TOKEN).');
   }
+
+  return { appId, appSecret, shortLivedToken, targetAdAccountId };
+}
+
+function printTokenSummary(tokenData, normalizedAccounts, longLivedToken, targetAdAccountId, args) {
+  console.log('');
+  console.log('✅ Token generated successfully.');
+  console.log(`Token type: ${tokenData.type || 'unknown'}`);
+  console.log(`Expires at: ${tokenData.expires_at ? new Date(tokenData.expires_at * 1000).toISOString() : 'not provided (likely long-lived/system)'}`);
+  console.log(`Scopes: ${(tokenData.scopes || []).join(', ') || 'not provided'}`);
+  console.log(`Accessible ad accounts: ${normalizedAccounts.length}`);
+  for (const account of normalizedAccounts.slice(0, 20)) {
+    console.log(`  - ${account.id} | ${account.name} | status=${account.status} | currency=${account.currency}`);
+  }
+  if (normalizedAccounts.length > 20) {
+    console.log(`  ... and ${normalizedAccounts.length - 20} more`);
+  }
+
+  if (args.write) {
+    const patch = { META_ACCESS_TOKEN: longLivedToken };
+    if (targetAdAccountId) patch.META_AD_ACCOUNT_ID = targetAdAccountId;
+    writeEnvFile(TOKENS_FILE, patch);
+    console.log(`\n✅ Saved token to ${TOKENS_FILE}`);
+    console.log('Next step: run `npm run secrets:sync:all` to propagate this token to Supabase/Vercel/GitHub.');
+  } else {
+    console.log('\nLong-lived token (store securely):');
+    console.log(longLivedToken);
+    console.log('\nTip: rerun with --write to persist into .env.tokens.local.');
+  }
+}
+
+function writeAuditFile(args, longLivedToken, tokenData, normalizedAccounts, targetAdAccountId) {
+  if (!args.auditFile) return;
+
+  const audit = {
+    generatedAt: new Date().toISOString(),
+    graphApiBase: GRAPH_API_BASE,
+    tokenType: tokenData.type || null,
+    expiresAt: tokenData.expires_at ? new Date(tokenData.expires_at * 1000).toISOString() : null,
+    tokenFingerprintSha256: tokenFingerprint(longLivedToken),
+    scopes: tokenData.scopes || [],
+    requestedAdAccountId: targetAdAccountId || null,
+    accessibleAdAccounts: normalizedAccounts,
+    accessibleAdAccountsCount: normalizedAccounts.length,
+  };
+
+  const auditPath = path.isAbsolute(args.auditFile) ? args.auditFile : path.join(ROOT, args.auditFile);
+  fs.mkdirSync(path.dirname(auditPath), { recursive: true });
+  fs.writeFileSync(auditPath, `${JSON.stringify(audit, null, 2)}\n`, 'utf8');
+  console.log(`✅ Wrote execution audit to ${auditPath}`);
+}
+
+async function main() {
+  const args = parseArgs(process.argv);
+  if (args.help) {
+    printUsage();
+    return;
+  }
+
+  const envVars = readEnvFile(TOKENS_FILE);
+  const { appId, appSecret, shortLivedToken, targetAdAccountId } = resolveInputs(args, envVars);
 
   console.log('Exchanging short-lived token for long-lived token...');
   const tokenPayload = await exchangeForLongLivedToken({ appId, appSecret, shortLivedToken });
@@ -197,48 +252,8 @@ async function main() {
     }
   }
 
-  console.log('');
-  console.log('✅ Token generated successfully.');
-  console.log(`Token type: ${tokenData.type || 'unknown'}`);
-  console.log(`Expires at: ${tokenData.expires_at ? new Date(tokenData.expires_at * 1000).toISOString() : 'not provided (likely long-lived/system)'}`);
-  console.log(`Scopes: ${(tokenData.scopes || []).join(', ') || 'not provided'}`);
-  console.log(`Accessible ad accounts: ${normalizedAccounts.length}`);
-  for (const account of normalizedAccounts.slice(0, 20)) {
-    console.log(`  - ${account.id} | ${account.name} | status=${account.status} | currency=${account.currency}`);
-  }
-  if (normalizedAccounts.length > 20) {
-    console.log(`  ... and ${normalizedAccounts.length - 20} more`);
-  }
-
-  if (args.write) {
-    const patch = { META_ACCESS_TOKEN: longLivedToken };
-    if (targetAdAccountId) patch.META_AD_ACCOUNT_ID = targetAdAccountId;
-    writeEnvFile(TOKENS_FILE, patch);
-    console.log(`\n✅ Saved token to ${TOKENS_FILE}`);
-    console.log('Next step: run `npm run secrets:sync:all` to propagate this token to Supabase/Vercel/GitHub.');
-  } else {
-    console.log('\nLong-lived token (store securely):');
-    console.log(longLivedToken);
-    console.log('\nTip: rerun with --write to persist into .env.tokens.local.');
-  }
-
-  if (args.auditFile) {
-    const audit = {
-      generatedAt: new Date().toISOString(),
-      graphApiBase: GRAPH_API_BASE,
-      tokenType: tokenData.type || null,
-      expiresAt: tokenData.expires_at ? new Date(tokenData.expires_at * 1000).toISOString() : null,
-      tokenFingerprintSha256: tokenFingerprint(longLivedToken),
-      scopes: tokenData.scopes || [],
-      requestedAdAccountId: targetAdAccountId || null,
-      accessibleAdAccounts: normalizedAccounts,
-      accessibleAdAccountsCount: normalizedAccounts.length,
-    };
-    const auditPath = path.isAbsolute(args.auditFile) ? args.auditFile : path.join(ROOT, args.auditFile);
-    fs.mkdirSync(path.dirname(auditPath), { recursive: true });
-    fs.writeFileSync(auditPath, `${JSON.stringify(audit, null, 2)}\n`, 'utf8');
-    console.log(`✅ Wrote execution audit to ${auditPath}`);
-  }
+  printTokenSummary(tokenData, normalizedAccounts, longLivedToken, targetAdAccountId, args);
+  writeAuditFile(args, longLivedToken, tokenData, normalizedAccounts, targetAdAccountId);
 }
 
 main().catch(() => {
