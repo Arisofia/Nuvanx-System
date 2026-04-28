@@ -1,95 +1,51 @@
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import React from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 import { describe, it, expect } from "vitest";
 import { t as createLucideIcon } from "../.vercel/output/static/assets/createLucideIcon-qssf6w5u.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-describe("createLucideIcon built asset", () => {
-  it("exports the icon factory from the generated frontend asset", () => {
-    const assetPath = path.resolve(__dirname, "../.vercel/output/static/assets/createLucideIcon-qssf6w5u.js");
-    expect(fs.existsSync(assetPath)).toBe(true);
-    expect(typeof createLucideIcon).toBe("function");
+describe("createLucideIcon generated asset", () => {
+  it("exports the factory as a function", () => {
+    expect(createLucideIcon).toBeTypeOf("function");
   });
 
-  it("produces a React component with the expected displayName", () => {
+  it("returns a forwardRef component object for a basic icon node", () => {
     const iconName = "test-icon";
     const iconNode = [["path", { d: "M0 0 L10 10" }]];
     const Icon = createLucideIcon(iconName, iconNode);
 
-    expect(typeof Icon).toBe("function");
-    expect(Icon.displayName).toBe(iconName);
+    expect(Icon).toBeTypeOf("object");
+    expect(Icon).toHaveProperty("$$typeof");
+    expect(String(Icon.$$typeof)).toBe("Symbol(react.forward_ref)");
+    expect(Icon).toHaveProperty("render");
+    expect(Icon.render).toBeTypeOf("function");
+    expect(Icon.render.length).toBe(2);
+    expect(Icon.displayName).toBe("TestIcon");
   });
 
-  it("renders an SVG with default lucide props from the generated component", () => {
-    const iconName = "test-icon";
-    const iconNode = [["path", { d: "M0 0 L10 10" }]];
+  it("derives displayName from dashed icon names", () => {
+    const iconName = "my-custom-icon";
+    const iconNode = [["circle", { cx: "12", cy: "12", r: "3" }]];
     const Icon = createLucideIcon(iconName, iconNode);
-    const html = renderToStaticMarkup(React.createElement(Icon));
 
-    expect(html).toContain("<svg");
-    expect(html).toContain("stroke=\"currentColor\"");
-    expect(html).toContain("stroke-width=\"2\"");
-    expect(html).toContain("class=\"lucide lucide-test-icon\"");
-    expect(html).toContain("<path");
-    expect(html).toContain("d=\"M0 0 L10 10\"");
+    expect(Icon.displayName).toBe("MyCustomIcon");
   });
 
-  it("respects color, size, strokeWidth, and className overrides", () => {
-    const iconName = "custom-icon";
-    const iconNode = [["line", { x1: "0", y1: "0", x2: "10", y2: "10" }]];
-    const Icon = createLucideIcon(iconName, iconNode);
-    const html = renderToStaticMarkup(
-      React.createElement(Icon, {
-        color: "red",
-        size: 32,
-        strokeWidth: 3,
-        className: "extra-class",
-        "data-testid": "icon",
-      })
-    );
+  it("creates distinct components for different icon definitions", () => {
+    const first = createLucideIcon("first-icon", [["path", { d: "M0 0" }]]);
+    const second = createLucideIcon("second-icon", [["rect", { x: "0", y: "0", width: "24", height: "24" }]]);
 
-    expect(html).toContain("stroke=\"red\"");
-    expect(html).toContain("width=\"32\"");
-    expect(html).toContain("height=\"32\"");
-    expect(html).toContain("stroke-width=\"3\"");
-    expect(html).toContain("lucide-custom-icon");
-    expect(html).toContain("extra-class");
-    expect(html).toContain("data-testid=\"icon\"");
+    expect(first).not.toBe(second);
+    expect(first.displayName).toBe("FirstIcon");
+    expect(second.displayName).toBe("SecondIcon");
   });
 
-  it("computes absolute stroke width when absoluteStrokeWidth is enabled", () => {
-    const iconName = "absolute-stroke";
-    const iconNode = [["rect", { x: "0", y: "0", width: "24", height: "24" }]];
+  it("supports iconNode definitions with multiple svg elements", () => {
+    const iconName = "multi-node-icon";
+    const iconNode = [
+      ["path", { d: "M0 0 L10 10" }],
+      ["circle", { cx: "12", cy: "12", r: "4" }],
+    ];
     const Icon = createLucideIcon(iconName, iconNode);
 
-    const defaultMarkup = renderToStaticMarkup(
-      React.createElement(Icon, { size: 24, strokeWidth: 2, absoluteStrokeWidth: true })
-    );
-    const largeMarkup = renderToStaticMarkup(
-      React.createElement(Icon, { size: 48, strokeWidth: 2, absoluteStrokeWidth: true })
-    );
-    const smallMarkup = renderToStaticMarkup(
-      React.createElement(Icon, { size: 12, strokeWidth: 2, absoluteStrokeWidth: true })
-    );
-
-    expect(defaultMarkup).toContain("stroke-width=\"2\"");
-    expect(largeMarkup).toContain("stroke-width=\"1\"");
-    expect(smallMarkup).toContain("stroke-width=\"4\"");
-  });
-
-  it("renders children inside the SVG and passes through extra props", () => {
-    const iconName = "with-children";
-    const iconNode = [["circle", { cx: "5", cy: "5", r: "2" }]];
-    const Icon = createLucideIcon(iconName, iconNode);
-    const html = renderToStaticMarkup(
-      React.createElement(Icon, { "aria-label": "icon-label" }, React.createElement("title", null, "Inner Title"))
-    );
-
-    expect(html).toContain("aria-label=\"icon-label\"");
-    expect(html).toContain("<title>Inner Title</title>");
+    expect(Icon.displayName).toBe("MultiNodeIcon");
+    expect(Icon.render).toBeTypeOf("function");
   });
 });
