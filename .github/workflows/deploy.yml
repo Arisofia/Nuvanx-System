@@ -9,10 +9,11 @@
 #
 # Required secrets (GitHub -> Settings -> Secrets -> Actions):
 #   SUPABASE_ACCESS_TOKEN        - Supabase personal access token
+#   SUPABASE_PROJECT_REF         - Supabase project ref used by supabase link
 #   SUPABASE_DB_PASSWORD         - DB password for supabase db push
 #                                 (optional if DATABASE_URL is available)
 #   DATABASE_URL                 - Optional fallback DB URL to derive SUPABASE_DB_PASSWORD
-#   VITE_SUPABASE_URL            - https://ssvvuuysgxyqvmovrlvk.supabase.co
+#   VITE_SUPABASE_URL            - Frontend Supabase URL (e.g. https://<project-ref>.supabase.co)
 #   VITE_SUPABASE_PUBLISHABLE_KEY - Supabase publishable key from Supabase Connect
 #   VITE_SUPABASE_ANON_KEY       - legacy public anon key
 ###############################################################################
@@ -107,6 +108,7 @@ jobs:
             if [ -n "$DATABASE_URL" ]; then
               supabase db push --db-url "$DATABASE_URL"
             else
+              # Fallback: Use password if DATABASE_URL is not available
               if [ -z "$SUPABASE_DB_PASSWORD" ]; then
                 echo "::error::Supabase migration secret SUPABASE_DB_PASSWORD is missing. Set it in GitHub secrets or provide DATABASE_URL."
                 exit 1
@@ -129,5 +131,4 @@ jobs:
         with:
           project_ref: ${{ secrets.SUPABASE_PROJECT_REF || vars.SUPABASE_PROJECT_REF || 'ssvvuuysgxyqvmovrlvk' }}
           supabase_access_token: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          command: |
-            supabase functions deploy api --no-verify-jwt --use-api
+          command: supabase functions deploy api --no-verify-jwt --use-api --linked

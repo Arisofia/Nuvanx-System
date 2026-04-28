@@ -8,6 +8,7 @@ env:
 #
 # Required secrets:
 #   SUPABASE_ACCESS_TOKEN   — Supabase personal access token
+#   SUPABASE_PROJECT_REF    — Supabase project ref used by supabase link
 #   SUPABASE_DB_PASSWORD    — optional, recommended for db lint on linked remote
 #   DATABASE_URL            — optional fallback to derive SUPABASE_DB_PASSWORD
 
@@ -25,7 +26,6 @@ jobs:
     environment: production
     permissions:
       contents: read
-
     steps:
       - uses: actions/checkout@v4
 
