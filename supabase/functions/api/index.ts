@@ -901,7 +901,7 @@ async function handlePublicRoutes(ctx: PublicRouteContext): Promise<Response | n
     }
     if (payload.object !== 'page') return new Response('ok', { status: 200 });
 
-    const adminClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
+    const adminClient = createClient(Deno.env.get('SUPABASE_URL'), Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'), {
       auth: { persistSession: false },
     });
 
@@ -923,11 +923,16 @@ async function handlePublicRoutes(ctx: PublicRouteContext): Promise<Response | n
           const m = i.metadata ?? {};
           return m.pageId === page_id || m.page_id === page_id;
         });
-        if (!matchingIntg) {
+        if (matchingIntg == null) {
           const noPageIdSet = connected.every((i: any) => !i.metadata?.pageId && !i.metadata?.page_id);
-          if (noPageIdSet && connected.length === 1) matchingIntg = connected[0];
+          if (noPageIdSet && connected.length === 1) {
+            matchingIntg = connected[0];
+          }
         }
-        if (!matchingIntg) continue;
+
+        if (matchingIntg == null) {
+          continue;
+        }
 
         const webhookUserId = matchingIntg.user_id;
         const { data: credRow } = await adminClient
@@ -962,26 +967,19 @@ async function handlePublicRoutes(ctx: PublicRouteContext): Promise<Response | n
   }
 
   if (resource === 'health' && sub === 'secrets' && req.method === 'GET') {
-    const secretNames = [
-      'ENCRYPTION_KEY',
-      'META_ACCESS_TOKEN',
-      'OPENAI_API_KEY',
-      'GEMINI_API_KEY',
-      'SUPABASE_SERVICE_ROLE_KEY',
-      'META_APP_SECRET',
-      'META_VERIFY_TOKEN',
-      'WHATSAPP_PHONE_NUMBER_ID',
-    ];
-    const secrets = Object.fromEntries(
-      secretNames.map((name) => [name, Boolean(String(Deno.env.get(name) ?? '').trim())]),
-    );
-    const rawEncryptionKey = String(Deno.env.get('ENCRYPTION_KEY') ?? '');
-    const encryptionKey = {
-      present: Boolean(rawEncryptionKey.trim()),
-      valid: isValidEncryptionKey(rawEncryptionKey),
-      length: rawEncryptionKey.length,
-    };
-    return sendJson({ success: true, secrets, encryptionKey });
+    const encryptionKeyRaw = String(Deno.env.get('ENCRYPTION_KEY') ?? '');
+    const hasEncryptionKey = Boolean(encryptionKeyRaw.trim());
+    const hasServiceKey = Boolean(String(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '').trim());
+    const ok = hasEncryptionKey && hasServiceKey;
+
+    return sendJson({
+      success: ok,
+      status: ok ? 'ok' : 'missing',
+      required: {
+        ENCRYPTION_KEY: hasEncryptionKey,
+        SUPABASE_SERVICE_ROLE_KEY: hasServiceKey,
+      },
+    });
   }
 
   if (resource === 'health' && req.method === 'GET') {
@@ -1005,7 +1003,6 @@ interface AuthenticatedRouteContext {
 }
 
 async function handleAuthenticatedRoutes(ctx: AuthenticatedRouteContext): Promise<Response> {
-  const { resource, sub, req, sendJson } = ctx;
   try {
     const candidateKeys = [
       `${ctx.resource}|${ctx.sub}|${ctx.req.method}`,
@@ -1829,7 +1826,7 @@ async function handleIntegrationsGet(ctx: AuthenticatedRouteContext): Promise<Re
 }
 
 async function handleIntegrationsConnectPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, userId, authUser, resource, sub, sub2, req, sendJson, token } = ctx;
+  const { adminClient, userId, authUser, resource, sub, sub2, req, sendJson } = ctx;
   if (resource === 'integrations' && sub2 === 'connect' && req.method === 'POST') {
     const service = sub;
     const body = await req.json();
@@ -2185,7 +2182,7 @@ async function handleAiOutputsGet(ctx: AuthenticatedRouteContext): Promise<Respo
 }
 
 async function handleGoogleAdsInsightsGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, userId, resource, sub, req, url, sendJson, token } = ctx;
+  const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'google-ads' && sub === 'insights' && req.method === 'GET') {
     const g = await resolveGoogleAdsCreds(adminClient, userId, url.searchParams.get('customerId') ?? '');
     if ('noServiceAccount' in g && g.noServiceAccount) return sendJson({ success: false, noServiceAccount: true, message: 'Google Ads service account not configured.' });
@@ -2309,12 +2306,9 @@ async function handleGoogleAdsCampaignsGet(ctx: AuthenticatedRouteContext): Prom
 }
 
 async function handleFinancialsSummary(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, resource, sub, sendJson, token } = ctx;
+  const { adminClient, userId, resource, sub, sendJson } = ctx;
   if (resource === 'financials' && sub === 'summary') {
-    const authResult = await adminClient.auth.getUser(token);
-    const user = authResult.data?.user;
-    if (!user) return sendJson({ success: false, message: 'Unauthorized' }, 401);
-    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', user.id).single();
+    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
     const clinicId = usr?.clinic_id;
     if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
   
@@ -2388,12 +2382,9 @@ async function handleFinancialsSummary(ctx: AuthenticatedRouteContext): Promise<
 }
 
 async function handleFinancialsSettlements(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, resource, sub, sendJson, token } = ctx;
+  const { adminClient, userId, resource, sub, sendJson } = ctx;
   if (resource === 'financials' && sub === 'settlements') {
-    const authResult = await adminClient.auth.getUser(token);
-    const user = authResult.data?.user;
-    if (!user) return sendJson({ success: false, message: 'Unauthorized' }, 401);
-    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', user.id).single();
+    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
     const clinicId = usr?.clinic_id;
     if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
   
@@ -2417,12 +2408,9 @@ async function handleFinancialsSettlements(ctx: AuthenticatedRouteContext): Prom
 }
 
 async function handleFinancialsPatients(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, resource, sub, sendJson, token } = ctx;
+  const { adminClient, userId, resource, sub, sendJson } = ctx;
   if (resource === 'financials' && sub === 'patients') {
-    const authResult = await adminClient.auth.getUser(token);
-    const user = authResult.data?.user;
-    if (!user) return sendJson({ success: false, message: 'Unauthorized' }, 401);
-    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', user.id).single();
+    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
     const clinicId = usr?.clinic_id;
     if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
   
@@ -2445,12 +2433,9 @@ async function handleFinancialsPatients(ctx: AuthenticatedRouteContext): Promise
 }
 
 async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, resource, sub, sendJson, token } = ctx;
+  const { adminClient, userId, resource, sub, sendJson } = ctx;
   if (resource === 'traceability' && sub === 'leads') {
-    const authResult = await adminClient.auth.getUser(token);
-    const user = authResult.data?.user;
-    if (!user) return sendJson({ success: false, message: 'Unauthorized' }, 401);
-    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', user.id).single();
+    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
     const clinicId = usr?.clinic_id;
     if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
   
@@ -2465,12 +2450,8 @@ async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<
 }
 
 async function handleTraceabilityFunnel(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, resource, sub, sendJson, token } = ctx;
+  const { adminClient, resource, sub, sendJson } = ctx;
   if (resource === 'traceability' && sub === 'funnel') {
-    const authResult = await adminClient.auth.getUser(token);
-    const user = authResult.data?.user;
-    if (!user) return sendJson({ success: false, message: 'Unauthorized' }, 401);
-
     const { data: rows } = await adminClient.from('vw_whatsapp_conversion_real').select('*');
     return sendJson({ success: true, funnel: rows || [] });
   }
@@ -2478,12 +2459,8 @@ async function handleTraceabilityFunnel(ctx: AuthenticatedRouteContext): Promise
 }
 
 async function handleTraceabilityCampaigns(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, resource, sub, sendJson, token } = ctx;
+  const { adminClient, resource, sub, sendJson } = ctx;
   if (resource === 'traceability' && sub === 'campaigns') {
-    const authResult = await adminClient.auth.getUser(token);
-    const user = authResult.data?.user;
-    if (!user) return sendJson({ success: false, message: 'Unauthorized' }, 401);
-
     const { data: rows } = await adminClient.from('vw_campaign_performance_real').select('*').order('total_leads', { ascending: false });
     return sendJson({ success: true, campaigns: rows || [] });
   }
@@ -2491,12 +2468,9 @@ async function handleTraceabilityCampaigns(ctx: AuthenticatedRouteContext): Prom
 }
 
 async function handleConversations(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, resource, sub, url, sendJson, token } = ctx;
+  const { adminClient, userId, resource, sub, url, sendJson } = ctx;
   if (resource === 'conversations' && sub === '') {
-    const authResult = await adminClient.auth.getUser(token);
-    const user = authResult.data?.user;
-    if (!user) return sendJson({ success: false, message: 'Unauthorized' }, 401);
-    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', user.id).single();
+    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
     const clinicId = usr?.clinic_id;
     if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
   
