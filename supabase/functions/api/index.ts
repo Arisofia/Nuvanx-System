@@ -6,7 +6,7 @@ declare const Deno: any;
 const rawFrontendUrl = Deno.env.get('FRONTEND_URL')?.trim() || '';
 const IS_DEVELOPMENT = (Deno.env.get('DENO_ENV') ?? Deno.env.get('NODE_ENV') ?? '').toLowerCase() !== 'production';
 
-function normalizeFrontendUrl(url: string): string | null {
+export function normalizeFrontendUrl(url: string): string | null {
   if (!url) return null;
   if (url === '*' || url.toLowerCase() === 'null') return null;
   try {
@@ -19,23 +19,23 @@ function normalizeFrontendUrl(url: string): string | null {
 }
 
 const FRONTEND_URL = normalizeFrontendUrl(rawFrontendUrl) ?? 'https://nuvanx.com';
-const DEFAULT_CORS_ORIGIN = IS_DEVELOPMENT
+export const DEFAULT_CORS_ORIGIN = IS_DEVELOPMENT
   ? 'http://localhost:5173'
   : FRONTEND_URL;
 
-const ALLOWED_CORS_ORIGINS = new Set([
+export const ALLOWED_CORS_ORIGINS = new Set([
   DEFAULT_CORS_ORIGIN,
   'https://nuvanx.com',
   'https://www.nuvanx.com',
 ]);
 
-const DEFAULT_CORS_HEADERS = {
+export const DEFAULT_CORS_HEADERS = {
   'Access-Control-Allow-Origin': DEFAULT_CORS_ORIGIN,
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
 };
 
-function buildCorsHeaders(origin: string | null) {
+export function buildCorsHeaders(origin: string | null) {
   const allowedOrigin = origin && ALLOWED_CORS_ORIGINS.has(origin)
     ? origin
     : DEFAULT_CORS_ORIGIN;
@@ -46,7 +46,7 @@ function buildCorsHeaders(origin: string | null) {
 }
 
 // ── Web Crypto helpers (PBKDF2 + AES-256-GCM — mirrors backend encryption) ───
-function hexToBytes(hex: string): Uint8Array {
+export function hexToBytes(hex: string): Uint8Array {
   const arr = new Uint8Array(hex.length >>> 1);
   for (let i = 0; i < hex.length; i += 2) arr[i >>> 1] = Number.parseInt(hex.slice(i, i + 2), 16);
   return arr;
