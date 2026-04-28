@@ -108,7 +108,12 @@ jobs:
             if [ -n "$DATABASE_URL" ]; then
               supabase db push --db-url "$DATABASE_URL"
             else
-              supabase db push --password "$SUPABASE_DB_PASSWORD"
+              # Fallback: Use password if DATABASE_URL is not available
+              if [ -z "$SUPABASE_DB_PASSWORD" ]; then
+                echo "::error::Supabase migration secret SUPABASE_DB_PASSWORD is missing. Set it in GitHub secrets or provide DATABASE_URL."
+                exit 1
+              fi
+              supabase db push --linked --password "$SUPABASE_DB_PASSWORD"
             fi
 
   # 4. Supabase Edge Functions
