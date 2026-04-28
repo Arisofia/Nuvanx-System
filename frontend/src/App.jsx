@@ -34,17 +34,6 @@ const DashboardError = () => (
   </div>
 );
 
-const DashboardError = () => (
-  <div className="p-6 text-center card border-red-500/20 bg-red-500/5">
-    <AlertCircle className="mx-auto text-red-400 mb-2" size={24} />
-    <h3 className="font-semibold text-white">Dashboard Runtime Error</h3>
-    <p className="text-sm text-gray-400 mt-1">Failed to render the dashboard view.</p>
-    <button onClick={() => globalThis.location.reload()} className="mt-4 btn-secondary text-xs">
-      Retry Load
-    </button>
-  </div>
-);
-
 const PageLoader = () => (
   <div className="min-h-screen bg-dark-900 flex items-center justify-center">
     <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
