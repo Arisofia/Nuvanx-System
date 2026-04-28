@@ -76,10 +76,6 @@ function hasGhCli() {
   }
 }
 
-function run(cmd, env = process.env) {
-  cp.execSync(cmd, { stdio: 'pipe', env });
-}
-
 function writeFrontendEnv(vars) {
   const target = path.join(ROOT, 'frontend', '.env.local');
   const existing = readEnvFile(target);
