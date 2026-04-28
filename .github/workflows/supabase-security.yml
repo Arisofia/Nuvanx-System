@@ -39,5 +39,5 @@ jobs:
             if [ -n "$DATABASE_URL" ]; then
               supabase db lint --db-url "$DATABASE_URL" --level error
             else
-              supabase db lint --level error --linked
+              supabase db lint --level error
             fi

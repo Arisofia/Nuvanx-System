@@ -112,7 +112,7 @@ jobs:
                 echo "::error::Supabase migration secret SUPABASE_DB_PASSWORD is missing."
                 exit 1
               fi
-              supabase db push --linked --password "$SUPABASE_DB_PASSWORD"
+              supabase db push --password "$SUPABASE_DB_PASSWORD"
             fi
 
   # 4. Supabase Edge Functions
@@ -130,4 +130,4 @@ jobs:
         with:
           project_ref: ${{ secrets.SUPABASE_PROJECT_REF || vars.SUPABASE_PROJECT_REF || 'ssvvuuysgxyqvmovrlvk' }}
           supabase_access_token: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          command: supabase functions deploy api --no-verify-jwt --use-api --linked
+          command: supabase functions deploy api --no-verify-jwt

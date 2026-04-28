@@ -4,6 +4,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { Client } = require('pg');
 
 const META_GRAPH = 'https://graph.facebook.com/v21.0';
 const GOOGLE_ADS_API = 'https://googleads.googleapis.com/v17';
@@ -228,7 +229,6 @@ async function maybeLoadDbSignals({ databaseUrl, clinicId, sinceIso, untilExclus
     return { available: false, rows: [] };
   }
 
-  const { Client } = require('pg');
   const db = new Client({ connectionString: databaseUrl });
   await db.connect();
 
@@ -261,7 +261,6 @@ async function maybeLoadDbSignals({ databaseUrl, clinicId, sinceIso, untilExclus
 async function maybePersistOutput({ databaseUrl, reportUserId, clinicId, markdown, metadata }) {
   if (!databaseUrl || !reportUserId) return null;
 
-  const { Client } = require('pg');
   const db = new Client({ connectionString: databaseUrl });
   await db.connect();
 
