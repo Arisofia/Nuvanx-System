@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 
-const fs = require('node:fs');
-const path = require('node:path');
-const crypto = require('node:crypto');
-const { Client } = require('pg');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
 
 const META_GRAPH = 'https://graph.facebook.com/v21.0';
 const GOOGLE_ADS_API = 'https://googleads.googleapis.com/v17';
@@ -17,7 +16,7 @@ function normalizeAdAccountId(raw) {
   const value = String(raw || '').trim();
   if (!value) return '';
   const unprefixed = value.replace(/^act_/i, '');
-  const digits = unprefixed.replaceAll(/\D/g, '');
+  const digits = unprefixed.replace(/\D/g, '');
   return digits ? `act_${digits}` : '';
 }
 
@@ -29,9 +28,9 @@ function parseMetric(raw) {
     return Number.isFinite(n) ? n : 0;
   }
   if (Array.isArray(raw)) {
-    return raw.reduce((sum, item) => sum + parseMetric(item && Object.hasOwn(item, 'value') ? item.value : item), 0);
+    return raw.reduce((sum, item) => sum + parseMetric(item && Object.prototype.hasOwnProperty.call(item, 'value') ? item.value : item), 0);
   }
-  if (typeof raw === 'object' && Object.hasOwn(raw, 'value')) {
+  if (typeof raw === 'object' && Object.prototype.hasOwnProperty.call(raw, 'value')) {
     return parseMetric(raw.value);
   }
   return 0;
@@ -46,9 +45,8 @@ function actionValue(actions, matcher) {
   }, 0);
 }
 
-function getAction(actions, type) {
-  const safeActions = Array.isArray(actions) ? actions : [];
-  return Number(safeActions.find((a) => a?.action_type === type)?.value || 0);
+function getAction(actions = [], type) {
+  return Number((actions || []).find((a) => a?.action_type === type)?.value || 0);
 }
 
 function getWhatsApp(actions = []) {
@@ -88,7 +86,7 @@ function numberFmt(value) {
 // ── Google Ads helpers ───────────────────────────────────────────────────────
 
 function b64url(data) {
-  const buf = Buffer.from(data);
+  const buf = typeof data === 'string' ? Buffer.from(data) : Buffer.from(data);
   return buf.toString('base64url');
 }
 
@@ -120,7 +118,7 @@ async function getGoogleAccessToken(serviceAccount) {
 
 async function fetchGoogleAdsInsights({ devToken, customerId, serviceAccount, since, until }) {
   const accessToken = await getGoogleAccessToken(serviceAccount);
-  const cleanId = customerId.replaceAll('-', '');
+  const cleanId = customerId.replace(/-/g, '');
   const query = `
     SELECT campaign.id, campaign.name, metrics.impressions, metrics.clicks,
            metrics.cost_micros, metrics.conversions, metrics.ctr, metrics.average_cpc
@@ -161,7 +159,7 @@ function summariseGoogleAds(results) {
   }));
 }
 
-// ─── Meta fetch ──────────────────────────────────────────────────────────────
+// ─── Meta fetch ───────────────────────────────────────────────────────────────
 
 async function metaFetch(endpoint, params, token) {
   const url = new URL(`${META_GRAPH}${endpoint}`);
@@ -182,7 +180,6 @@ async function metaFetch(endpoint, params, token) {
 
     const fullErrorMsg = `[Meta Error] Code: ${code}, Subcode: ${subcode}, Message: ${msg} (trace_id: ${traceId})`;
 
-    // Detect expired/invalidated user-session tokens and give an actionable message.
     if (
       msg.includes('user logged out') ||
       msg.includes('session is invalid') ||
@@ -216,7 +213,7 @@ async function metaFetchWithFallback(endpoint, params, token) {
         msg.includes('filtering field')
       )
     ) {
-      console.warn('[meta-weekly-report] Meta filtering failed; retrying without filtering');
+      console.warn('[meta-daily-report] Meta filtering failed; retrying without filtering');
       const fallbackParams = { ...params };
       delete fallbackParams.filtering;
       return await metaFetch(endpoint, fallbackParams, token);
@@ -230,6 +227,7 @@ async function maybeLoadDbSignals({ databaseUrl, clinicId, sinceIso, untilExclus
     return { available: false, rows: [] };
   }
 
+  const { Client } = require('pg');
   const db = new Client({ connectionString: databaseUrl });
   await db.connect();
 
@@ -262,6 +260,7 @@ async function maybeLoadDbSignals({ databaseUrl, clinicId, sinceIso, untilExclus
 async function maybePersistOutput({ databaseUrl, reportUserId, clinicId, markdown, metadata }) {
   if (!databaseUrl || !reportUserId) return null;
 
+  const { Client } = require('pg');
   const db = new Client({ connectionString: databaseUrl });
   await db.connect();
 
@@ -280,180 +279,249 @@ async function maybePersistOutput({ databaseUrl, reportUserId, clinicId, markdow
 
 function buildGoogleAdsMarkdown(campaigns) {
   if (!campaigns || campaigns.length === 0) return '';
-
-  const gTotals = campaigns.reduce((totals, campaign) => {
-    totals.spend += campaign.spend;
-    totals.clicks += campaign.clicks;
-    totals.impressions += campaign.impressions;
-    totals.conversions += campaign.conversions;
-    return totals;
+  const gTotals = campaigns.reduce((a, r) => {
+    a.spend += r.spend; a.clicks += r.clicks; a.impressions += r.impressions; a.conversions += r.conversions;
+    return a;
   }, { spend: 0, clicks: 0, impressions: 0, conversions: 0 });
 
-  const lines = [
-    '## Google Ads — Campaign Summary',
-    '',
-    `- Total Spend: ${eur(gTotals.spend)}`,
-    `- Total Clicks: ${numberFmt(gTotals.clicks)}`,
-    `- Total Impressions: ${numberFmt(gTotals.impressions)}`,
-    `- Conversions: ${numberFmt(gTotals.conversions)}`,
-    '',
-    '| Campaign | Spend | Clicks | Conversions | CTR |',
-    '|---|---:|---:|---:|---:|',
-  ];
-
-  for (const campaign of campaigns.slice(0, 10)) {
-    lines.push(`| ${campaign.name} | ${eur(campaign.spend)} | ${numberFmt(campaign.clicks)} | ${numberFmt(campaign.conversions)} | ${campaign.ctr.toFixed(2)}% |`);
+  const lines = [];
+  lines.push('## Google Ads — Campaign Summary');
+  lines.push('');
+  lines.push(`- Total Spend: ${eur(gTotals.spend)}`);
+  lines.push(`- Total Clicks: ${numberFmt(gTotals.clicks)}`);
+  lines.push(`- Total Impressions: ${numberFmt(gTotals.impressions)}`);
+  lines.push(`- Conversions: ${numberFmt(gTotals.conversions)}`);
+  lines.push('');
+  lines.push('| Campaign | Spend | Clicks | Conversions | CTR |');
+  lines.push('|---|---:|---:|---:|---:|');
+  for (const c of campaigns.slice(0, 10)) {
+    lines.push(`| ${c.name} | ${eur(c.spend)} | ${numberFmt(c.clicks)} | ${numberFmt(c.conversions)} | ${c.ctr.toFixed(2)}% |`);
   }
-
   lines.push('');
   return lines.join('\n');
 }
 
-function buildSectionLines(title, rows) {
-  return [title, '', ...rows, ''];
-}
+function buildMarkdown({
+  generatedAt,
+  period,
+  account,
+  totals,
+  channels,
+  campaigns,
+  landing,
+  dbSignals,
+  googleAdsCampaigns,
+  recommendations,
+}) {
+  const lines = [];
 
-function buildCampaignTable(title, campaigns) {
-  const rows = [
-    '| Campaign | Channel Focus | Spend | Leads | Estimated CPL |',
-    '|---|---|---:|---:|---:|',
-  ];
+  lines.push('# Daily Unified Meta Ads Report');
+  lines.push('');
+  lines.push(`- Generated at (UTC): ${generatedAt}`);
+  lines.push(`- Ad account: ${account}`);
+  lines.push(`- Window: ${period.since} to ${period.until}`);
+  lines.push('');
 
-  if (campaigns.length === 0) {
-    rows.push(title.includes('Best')
-      ? '| No campaign data | - | - | - | - |'
-      : '| No clear budget waste detected for this window | - | - | - |');
+  lines.push('## Executive Summary');
+  lines.push('');
+  lines.push(`- Spend: ${eur(totals.spend)}`);
+  lines.push(`- Impressions: ${numberFmt(totals.impressions)}`);
+  lines.push(`- Clicks: ${numberFmt(totals.clicks)}`);
+  lines.push(`- CTR: ${totals.ctr.toFixed(2)}%`);
+  lines.push(`- CPC: ${eur(totals.cpc)}`);
+  lines.push(`- Estimated WhatsApp conversions: ${numberFmt(totals.whatsAppLeads)}`);
+  lines.push(`- Estimated Lead Form conversions: ${numberFmt(totals.formLeads)}`);
+  lines.push('');
+
+  lines.push('## Channel Comparison (WhatsApp vs Lead Forms)');
+  lines.push('');
+  lines.push('| Channel | Estimated Leads | Campaign Spend | Estimated CPL | Share of Leads |');
+  lines.push('|---|---:|---:|---:|---:|');
+  lines.push(`| WhatsApp | ${numberFmt(channels.whatsapp.leads)} | ${eur(channels.whatsapp.spend)} | ${channels.whatsapp.cpl > 0 ? eur(channels.whatsapp.cpl) : 'n/a'} | ${channels.whatsapp.share.toFixed(1)}% |`);
+  lines.push(`| Lead Forms | ${numberFmt(channels.forms.leads)} | ${eur(channels.forms.spend)} | ${channels.forms.cpl > 0 ? eur(channels.forms.cpl) : 'n/a'} | ${channels.forms.share.toFixed(1)}% |`);
+  lines.push('');
+
+  lines.push('## Campaigns Performing Best (by estimated leads)');
+  lines.push('');
+  lines.push('| Campaign | Channel Focus | Spend | Leads | Estimated CPL |');
+  lines.push('|---|---|---:|---:|---:|');
+  if (campaigns.best.length === 0) {
+    lines.push('| No campaign data | - | - | - | - |');
   } else {
-    rows.push(...campaigns.map((row) =>
-      `| ${row.name} | ${row.primaryChannel} | ${eur(row.spend)} | ${numberFmt(row.totalLeads)} | ${row.cpl > 0 ? eur(row.cpl) : 'n/a'} |`
-    ));
+    for (const row of campaigns.best) {
+      lines.push(`| ${row.name} | ${row.primaryChannel} | ${eur(row.spend)} | ${numberFmt(row.totalLeads)} | ${row.cpl > 0 ? eur(row.cpl) : 'n/a'} |`);
+    }
   }
+  lines.push('');
 
-  return buildSectionLines(title, rows);
-}
-
-function buildDbSignalsLines(dbSignals) {
-  if (!dbSignals.available) return [];
-
-  const rows = [
-    '| Source | Leads | Contacted | Replied | Booked | Closed Won | Reply Rate | Booking Rate |',
-    '|---|---:|---:|---:|---:|---:|---:|---:|',
-  ];
-
-  if (dbSignals.rows.length === 0) {
-    rows.push('| No CRM leads found in this window | - | - | - | - | - | - | - |');
+  lines.push('## Campaigns Wasting Budget (spend high, low/zero leads)');
+  lines.push('');
+  lines.push('| Campaign | Spend | Leads | Estimated CPL |');
+  lines.push('|---|---:|---:|---:|');
+  if (campaigns.waste.length === 0) {
+    lines.push('| No clear budget waste detected for this window | - | - | - |');
   } else {
-    rows.push(...dbSignals.rows.map((row) => {
-      const replyRate = pct(row.replied, row.contacted || row.total);
-      const bookingRate = pct(row.booked, row.replied || row.total);
-      return `| ${row.source} | ${row.total} | ${row.contacted} | ${row.replied} | ${row.booked} | ${row.closed_won} | ${replyRate.toFixed(1)}% | ${bookingRate.toFixed(1)}% |`;
-    }));
+    for (const row of campaigns.waste) {
+      lines.push(`| ${row.name} | ${eur(row.spend)} | ${numberFmt(row.totalLeads)} | ${row.cpl > 0 ? eur(row.cpl) : 'n/a'} |`);
+    }
+  }
+  lines.push('');
+
+  lines.push('## Landing Funnel (click to landing view)');
+  lines.push('');
+  lines.push(`- Outbound/Link clicks: ${numberFmt(landing.clicks)}`);
+  lines.push(`- Landing page views: ${numberFmt(landing.views)}`);
+  lines.push(`- Landing conversion rate: ${landing.rate.toFixed(1)}%`);
+  lines.push('');
+
+  if (dbSignals.available) {
+    lines.push('## CRM Response Funnel by Source (last 7 days)');
+    lines.push('');
+    lines.push('| Source | Leads | Contacted | Replied | Booked | Closed Won | Reply Rate | Booking Rate |');
+    lines.push('|---|---:|---:|---:|---:|---:|---:|---:|');
+    if (dbSignals.rows.length === 0) {
+      lines.push('| No CRM leads found in this window | - | - | - | - | - | - | - |');
+    } else {
+      for (const row of dbSignals.rows) {
+        const replyRate = pct(row.replied, row.contacted || row.total);
+        const bookingRate = pct(row.booked, row.replied || row.total);
+        lines.push(`| ${row.source} | ${row.total} | ${row.contacted} | ${row.replied} | ${row.booked} | ${row.closed_won} | ${replyRate.toFixed(1)}% | ${bookingRate.toFixed(1)}% |`);
+      }
+    }
+    lines.push('');
   }
 
-  return buildSectionLines('## CRM Response Funnel by Source (last 7 days)', rows);
-}
-
-function buildRecommendationsLines(recommendations) {
-  if (!Array.isArray(recommendations) || recommendations.length === 0) {
-    return ['## Recommended Actions for Next Day', '', ''];
+  const googleSection = buildGoogleAdsMarkdown(googleAdsCampaigns);
+  if (googleSection) {
+    lines.push(googleSection);
   }
 
-  return ['## Recommended Actions for Next Day', '', ...recommendations.map((item, idx) => `${idx + 1}. ${item}`), ''];
+  lines.push('## Recommended Actions for Next Day');
+  lines.push('');
+  recommendations.forEach((item, idx) => {
+    lines.push(`${idx + 1}. ${item}`);
+  });
+  lines.push('');
+
+  return `${lines.join('\n')}\n`;
 }
 
-function parseRelativeDate(value, referenceDate) {
-  if (!value) return null;
-  const normalized = String(value).trim().toLowerCase();
-  if (normalized === 'today') return new Date(referenceDate);
-  if (normalized === 'yesterday') {
-    const d = new Date(referenceDate);
-    d.setUTCDate(d.getUTCDate() - 1);
-    return d;
-  }
+async function main() {
+  const token = process.env.META_ACCESS_TOKEN;
+  const rawAccount = process.env.META_AD_ACCOUNT_ID;
+  const databaseUrl = process.env.DATABASE_URL || '';
+  const clinicId = process.env.CLINIC_ID || '';
+  const reportUserId = process.env.REPORT_USER_ID || '';
 
-  const match = /^(\d+)d$/.exec(normalized);
-  if (match) {
-    const days = Number(match[1]);
-    const d = new Date(referenceDate);
-    d.setUTCDate(d.getUTCDate() - days);
-    return d;
-  }
-
-  const parsed = new Date(normalized);
-  return Number.isNaN(parsed.getTime()) ? null : new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
-}
-
-function resolveReportWindow(maybeSince, maybeUntil, days, utcToday) {
-  const untilDate = parseRelativeDate(maybeUntil || 'today', utcToday) || utcToday;
-  const sinceDate = parseRelativeDate(maybeSince || `${days}d`, untilDate) || new Date(untilDate);
-  return { sinceDate, untilDate };
-}
-
-function parseGoogleServiceAccount(raw, devToken, customerId) {
-  if (!raw || !devToken || !customerId) return null;
-  try {
-    return JSON.parse(raw.startsWith('{') ? raw : Buffer.from(raw, 'base64').toString('utf8'));
-  } catch {
-    console.warn('[meta-weekly-report] Invalid GOOGLE_ADS_SERVICE_ACCOUNT — skipping Google Ads section');
-    return null;
-  }
-}
-
-function getGoogleAdsConfig() {
+  // Google Ads (optional)
   const gServiceAccountRaw = process.env.GOOGLE_ADS_SERVICE_ACCOUNT || '';
   const gDevToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN || '';
   const gCustomerId = process.env.GOOGLE_ADS_CUSTOMER_ID || '';
-  const googleServiceAccount = parseGoogleServiceAccount(gServiceAccountRaw, gDevToken, gCustomerId);
-  return { googleServiceAccount, gDevToken, gCustomerId };
-}
+  let googleServiceAccount = null;
+  if (gServiceAccountRaw && gDevToken && gCustomerId) {
+    try {
+      const raw = gServiceAccountRaw.startsWith('{') ? gServiceAccountRaw
+        : Buffer.from(gServiceAccountRaw, 'base64').toString('utf8');
+      googleServiceAccount = JSON.parse(raw);
+    } catch {
+      console.warn('[meta-daily-report] Invalid GOOGLE_ADS_SERVICE_ACCOUNT — skipping Google Ads section');
+    }
+  }
 
-function getReportWindow(argv, utcToday) {
+  if (!token || !rawAccount) {
+    throw new Error('META_ACCESS_TOKEN and META_AD_ACCOUNT_ID are required');
+  }
+
+  const adAccountId = normalizeAdAccountId(rawAccount);
+  if (!adAccountId) {
+    throw new Error('META_AD_ACCOUNT_ID has invalid format');
+  }
+
+  const argv = process.argv.slice(2);
   const maybeSince = argv.find((arg) => arg.startsWith('--since='))?.split('=')[1];
   const maybeUntil = argv.find((arg) => arg.startsWith('--until='))?.split('=')[1];
-  const days = Number.parseInt(process.env.REPORT_DAYS || '30', 10);
-  const { sinceDate, untilDate } = resolveReportWindow(maybeSince, maybeUntil, days, utcToday);
+  const days = parseInt(process.env.REPORT_DAYS || '30', 10);
+
+  const today = new Date();
+  const utcToday = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+
+  const parseRelativeDate = (value, referenceDate = utcToday) => {
+    if (!value) return null;
+    const normalized = String(value).trim().toLowerCase();
+    if (normalized === 'today') return new Date(referenceDate);
+    if (normalized === 'yesterday') {
+      const d = new Date(referenceDate);
+      d.setUTCDate(d.getUTCDate() - 1);
+      return d;
+    }
+    const rel = normalized.match(/^(\d+)d$/);
+    if (rel) {
+      const days = Number(rel[1]);
+      const d = new Date(referenceDate);
+      d.setUTCDate(d.getUTCDate() - days);
+      return d;
+    }
+    const parsed = new Date(normalized);
+    if (!Number.isNaN(parsed.getTime())) return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
+    return null;
+  };
+
+  const untilDate = parseRelativeDate(maybeUntil || 'today') || utcToday;
+  const sinceDate = parseRelativeDate(maybeSince || `${days}d`, untilDate) || new Date(untilDate);
 
   const since = formatDateUTC(sinceDate);
   const until = formatDateUTC(untilDate);
   const untilExclusive = formatDateUTC(new Date(untilDate.getTime() + 86400000));
 
-  return { since, until, untilExclusive };
-}
-
-async function fetchAndProcessMetaInsights(adAccountId, since, until, token) {
   const baseFields = [
-    'campaign_id', 'campaign_name', 'impressions', 'clicks', 'spend', 'ctr', 'cpc', 'cpm',
-    'actions', 'outbound_clicks', 'inline_link_clicks',
+    'campaign_id',
+    'campaign_name',
+    'impressions',
+    'clicks',
+    'spend',
+    'ctr',
+    'cpc',
+    'cpm',
+    'actions',
+    'outbound_clicks',
+    'inline_link_clicks',
   ].join(',');
 
-  const insights = await metaFetchWithFallback(`/${adAccountId}/insights`, {
-    level: 'campaign',
-    fields: baseFields,
-    time_range: JSON.stringify({ since, until }),
-    limit: '300',
-    filtering: JSON.stringify([
-      { field: 'campaign.status', operator: 'IN', value: ['ACTIVE', 'PAUSED', 'ARCHIVED'] },
-    ]),
-  }, token);
+  let insights = { data: [] };
+  try {
+    insights = await metaFetchWithFallback(`/${adAccountId}/insights`, {
+      level: 'campaign',
+      fields: baseFields,
+      time_range: JSON.stringify({ since, until }),
+      limit: '300',
+      filtering: JSON.stringify([
+        { field: 'campaign.status', operator: 'IN', value: ['ACTIVE', 'PAUSED', 'ARCHIVED'] },
+      ]),
+    }, token);
+  } catch (err) {
+    console.warn(`[meta-daily-report] Meta insights fetch failed: ${err.message}`);
+    console.warn('[meta-daily-report] Generating report with empty Meta dataset.');
+  }
 
   const rows = Array.isArray(insights?.data) ? insights.data : [];
-  return rows.map((row) => {
+
+  const campaignRows = rows.map((row) => {
     const spend = parseMetric(row.spend);
+    const impressions = parseMetric(row.impressions);
+    const clicks = parseMetric(row.clicks || row.inline_link_clicks || row.outbound_clicks);
+    const landingPageViews = parseMetric(row.landing_page_views || row.landing_page_view);
     const waLeads = getWhatsApp(row.actions);
     const formLeads = getLeadForm(row.actions);
     const totalLeads = waLeads + formLeads;
-
-    let primaryChannel = 'Mixed/Unknown';
-    if (waLeads > formLeads) primaryChannel = 'WhatsApp';
-    else if (formLeads > waLeads) primaryChannel = 'Lead Form';
+    const primaryChannel = waLeads > formLeads ? 'WhatsApp' : (formLeads > waLeads ? 'Lead Form' : 'Mixed/Unknown');
 
     return {
       id: row.campaign_id || 'unknown',
       name: row.campaign_name || 'Unnamed campaign',
       spend,
-      impressions: parseMetric(row.impressions),
-      clicks: parseMetric(row.clicks || row.inline_link_clicks || row.outbound_clicks),
-      landingPageViews: parseMetric(row.landing_page_views || row.landing_page_view),
+      impressions,
+      clicks,
+      landingPageViews,
       waLeads,
       formLeads,
       totalLeads,
@@ -462,9 +530,7 @@ async function fetchAndProcessMetaInsights(adAccountId, since, until, token) {
       isWaste: spend > 0 && totalLeads === 0,
     };
   });
-}
 
-function calculateCampaignAnalysis(campaignRows) {
   const totals = campaignRows.reduce((acc, row) => {
     acc.spend += row.spend;
     acc.impressions += row.impressions;
@@ -472,14 +538,24 @@ function calculateCampaignAnalysis(campaignRows) {
     acc.whatsAppLeads += row.waLeads;
     acc.formLeads += row.formLeads;
     return acc;
-  }, { spend: 0, impressions: 0, clicks: 0, whatsAppLeads: 0, formLeads: 0 });
+  }, {
+    spend: 0,
+    impressions: 0,
+    clicks: 0,
+    whatsAppLeads: 0,
+    formLeads: 0,
+  });
 
   totals.ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
   totals.cpc = totals.clicks > 0 ? totals.spend / totals.clicks : 0;
 
   const channelLeadTotal = totals.whatsAppLeads + totals.formLeads;
-  const whatsappSpend = campaignRows.filter((r) => r.primaryChannel === 'WhatsApp').reduce((s, r) => s + r.spend, 0);
-  const formsSpend = campaignRows.filter((r) => r.primaryChannel === 'Lead Form').reduce((s, r) => s + r.spend, 0);
+  const whatsappSpend = campaignRows
+    .filter((r) => r.primaryChannel === 'WhatsApp')
+    .reduce((sum, r) => sum + r.spend, 0);
+  const formsSpend = campaignRows
+    .filter((r) => r.primaryChannel === 'Lead Form')
+    .reduce((sum, r) => sum + r.spend, 0);
 
   const channels = {
     whatsapp: {
@@ -496,70 +572,85 @@ function calculateCampaignAnalysis(campaignRows) {
     },
   };
 
-  const best = [...campaignRows].sort((a, b) => (b.totalLeads - a.totalLeads) || (b.spend - a.spend)).slice(0, 6);
-  const waste = [...campaignRows].filter((r) => r.isWaste || (r.spend > 0 && r.cpl > 3 * (totals.cpc || 1))).sort((a, b) => b.spend - a.spend).slice(0, 6);
+  const bestCampaigns = [...campaignRows]
+    .sort((a, b) => (b.totalLeads - a.totalLeads) || (b.spend - a.spend))
+    .slice(0, 6);
 
-  const landingViews = campaignRows.reduce((sum, row) => sum + row.landingPageViews, 0);
+  const wasteCampaigns = [...campaignRows]
+    .filter((row) => row.isWaste || (row.spend > 0 && row.cpl > 3 * (totals.cpc || 1)))
+    .sort((a, b) => b.spend - a.spend)
+    .slice(0, 6);
+
+  const landingViews = campaignRows.reduce((sum, row) => sum + parseMetric(row.landingPageViews), 0);
   const landing = {
     clicks: totals.clicks,
     views: landingViews,
     rate: totals.clicks > 0 ? (landingViews / totals.clicks) * 100 : 0,
   };
 
-  return { totals, channels, best, waste, landing };
-}
+  const dbSignals = await maybeLoadDbSignals({
+    databaseUrl,
+    clinicId,
+    sinceIso: since,
+    untilExclusiveIso: untilExclusive,
+  });
 
-function generateRecommendations(channels, landing, wasteCampaigns, dbSignals) {
-  const recs = [];
+  const recommendations = [];
   const winner = channels.whatsapp.leads > channels.forms.leads ? 'WhatsApp' : 'Lead Forms';
-  recs.push(`Scale budget toward ${winner} next week, but keep at least 20% exploration budget on the other channel.`);
+  recommendations.push(`Scale budget toward ${winner} next week, but keep at least 20% exploration budget on the other channel.`);
 
   if (landing.rate < 50) {
-    recs.push('Landing conversion is low: optimize load speed and message match between ad copy and landing page content.');
+    recommendations.push('Landing conversion is low: optimize load speed and message match between ad copy and landing page content.');
   } else {
-    recs.push('Landing conversion is healthy: prioritize creative and audience testing to improve conversion quality.');
+    recommendations.push('Landing conversion is healthy: prioritize creative and audience testing to improve conversion quality.');
   }
 
   if (wasteCampaigns.length > 0) {
-    recs.push('Pause or cap the campaigns flagged as budget waste and reallocate spend to top converters.');
+    recommendations.push('Pause or cap the campaigns flagged as budget waste and reallocate spend to top converters.');
   } else {
-    recs.push('No major budget waste detected; keep current budget distribution and test new creatives incrementally.');
+    recommendations.push('No major budget waste detected; keep current budget distribution and test new creatives incrementally.');
   }
 
   if (dbSignals.available && dbSignals.rows.length > 0) {
     const weakReply = dbSignals.rows.find((r) => pct(r.replied, r.contacted || r.total) < 30);
     if (weakReply) {
-      recs.push(`Improve response handling for source ${weakReply.source}: reply rate is below 30%, review first message and SLA.`);
+      recommendations.push(`Improve response handling for source ${weakReply.source}: reply rate is below 30%, review first message and SLA.`);
     }
   }
-  return recs;
-}
 
-async function fetchGoogleAdsData(config, since, until) {
-  if (!config.googleServiceAccount) return null;
-  try {
-    const results = await fetchGoogleAdsInsights({
-      devToken: config.gDevToken,
-      customerId: config.gCustomerId,
-      serviceAccount: config.googleServiceAccount,
-      since,
-      until,
-    });
-    const campaigns = summariseGoogleAds(results);
-    console.log(`[meta-daily-report] Google Ads: ${campaigns.length} campaigns fetched`);
-    return campaigns;
-  } catch (e) {
-    console.warn(`[meta-daily-report] Google Ads fetch failed: ${e.message}`);
-    return null;
+  let googleAdsCampaigns = null;
+  if (googleServiceAccount) {
+    try {
+      const gResults = await fetchGoogleAdsInsights({
+        devToken: gDevToken,
+        customerId: gCustomerId,
+        serviceAccount: googleServiceAccount,
+        since,
+        until,
+      });
+      googleAdsCampaigns = summariseGoogleAds(gResults);
+      console.log(`[meta-daily-report] Google Ads: ${googleAdsCampaigns.length} campaigns fetched`);
+    } catch (e) {
+      console.warn(`[meta-daily-report] Google Ads fetch failed: ${e.message}`);
+    }
   }
-}
 
-async function saveAndPersistReport({
-  markdown, until, databaseUrl, reportUserId, clinicId, adAccountId, gCustomerId, since,
-}) {
+  const markdown = buildMarkdown({
+    generatedAt: new Date().toISOString(),
+    period: { since, until },
+    account: adAccountId,
+    totals,
+    channels,
+    campaigns: { best: bestCampaigns, waste: wasteCampaigns },
+    landing,
+    dbSignals,
+    googleAdsCampaigns,
+    recommendations,
+  });
+
   const reportsDir = path.resolve(process.cwd(), 'reports');
   fs.mkdirSync(reportsDir, { recursive: true });
-  const reportPath = path.join(reportsDir, `meta-weekly-report-${until}.md`);
+  const reportPath = path.join(reportsDir, `meta-daily-report-${until}.md`);
   fs.writeFileSync(reportPath, markdown, 'utf8');
 
   let agentOutputId = null;
@@ -590,117 +681,6 @@ async function saveAndPersistReport({
   if (agentOutputId) {
     console.log(`[meta-daily-report] Persisted agent_outputs.id: ${agentOutputId}`);
   }
-}
-
-function buildMarkdown({
-  generatedAt,
-  period,
-  account,
-  totals,
-  channels,
-  campaigns,
-  landing,
-  dbSignals,
-  googleAdsCampaigns,
-  recommendations,
-}) {
-  const lines = [
-    ...buildSectionLines('# Weekly Unified Meta Ads Report', [
-      `- Generated at (UTC): ${generatedAt}`,
-      `- Ad account: ${account}`,
-      `- Window: ${period.since} to ${period.until}`,
-    ]),
-    ...buildSectionLines('## Executive Summary', [
-      `- Spend: ${eur(totals.spend)}`,
-      `- Impressions: ${numberFmt(totals.impressions)}`,
-      `- Clicks: ${numberFmt(totals.clicks)}`,
-      `- CTR: ${totals.ctr.toFixed(2)}%`,
-      `- CPC: ${eur(totals.cpc)}`,
-      `- Estimated WhatsApp conversions: ${numberFmt(totals.whatsAppLeads)}`,
-      `- Estimated Lead Form conversions: ${numberFmt(totals.formLeads)}`,
-    ]),
-    ...buildSectionLines('## Channel Comparison (WhatsApp vs Lead Forms)', [
-      '| Channel | Estimated Leads | Campaign Spend | Estimated CPL | Share of Leads |',
-      '|---|---:|---:|---:|---:|',
-      `| WhatsApp | ${numberFmt(channels.whatsapp.leads)} | ${eur(channels.whatsapp.spend)} | ${channels.whatsapp.cpl > 0 ? eur(channels.whatsapp.cpl) : 'n/a'} | ${channels.whatsapp.share.toFixed(1)}% |`,
-      `| Lead Forms | ${numberFmt(channels.forms.leads)} | ${eur(channels.forms.spend)} | ${channels.forms.cpl > 0 ? eur(channels.forms.cpl) : 'n/a'} | ${channels.forms.share.toFixed(1)}% |`,
-    ]),
-    ...buildCampaignTable('## Campaigns Performing Best (by estimated leads)', campaigns.best),
-    ...buildCampaignTable('## Campaigns Wasting Budget (spend high, low/zero leads)', campaigns.waste),
-    ...buildSectionLines('## Landing Funnel (click to landing view)', [
-      `- Outbound/Link clicks: ${numberFmt(landing.clicks)}`,
-      `- Landing page views: ${numberFmt(landing.views)}`,
-      `- Landing conversion rate: ${landing.rate.toFixed(1)}%`,
-    ]),
-    ...buildDbSignalsLines(dbSignals),
-  ];
-
-  const googleSection = buildGoogleAdsMarkdown(googleAdsCampaigns);
-  if (googleSection) {
-    lines.push(googleSection, '');
-  }
-
-  lines.push(...buildRecommendationsLines(recommendations));
-  return `${lines.join('\n')}\n`;
-}
-
-async function main() {
-  const token = process.env.META_ACCESS_TOKEN;
-  const rawAccount = process.env.META_AD_ACCOUNT_ID;
-  const databaseUrl = process.env.DATABASE_URL || '';
-  const clinicId = process.env.CLINIC_ID || '';
-  const reportUserId = process.env.REPORT_USER_ID || '';
-
-  if (!token || !rawAccount) {
-    throw new Error('META_ACCESS_TOKEN and META_AD_ACCOUNT_ID are required');
-  }
-
-  const adAccountId = normalizeAdAccountId(rawAccount);
-  if (!adAccountId) {
-    throw new Error('META_AD_ACCOUNT_ID has invalid format');
-  }
-
-  const gConfig = getGoogleAdsConfig();
-  const today = new Date();
-  const utcToday = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
-  const { since, until, untilExclusive } = getReportWindow(process.argv.slice(2), utcToday);
-
-  const campaignRows = await fetchAndProcessMetaInsights(adAccountId, since, until, token);
-  const analysis = calculateCampaignAnalysis(campaignRows);
-
-  const dbSignals = await maybeLoadDbSignals({
-    databaseUrl,
-    clinicId,
-    sinceIso: since,
-    untilExclusiveIso: untilExclusive,
-  });
-
-  const recommendations = generateRecommendations(analysis.channels, analysis.landing, analysis.waste, dbSignals);
-  const googleAdsCampaigns = await fetchGoogleAdsData(gConfig, since, until);
-
-  const markdown = buildMarkdown({
-    generatedAt: new Date().toISOString(),
-    period: { since, until },
-    account: adAccountId,
-    totals: analysis.totals,
-    channels: analysis.channels,
-    campaigns: { best: analysis.best, waste: analysis.waste },
-    landing: analysis.landing,
-    dbSignals,
-    googleAdsCampaigns,
-    recommendations,
-  });
-
-  await saveAndPersistReport({
-    markdown,
-    until,
-    databaseUrl,
-    reportUserId,
-    clinicId,
-    adAccountId,
-    gCustomerId: gConfig.gCustomerId,
-    since,
-  });
 }
 
 main().catch((err) => {

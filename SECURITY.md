@@ -10,6 +10,7 @@
 |------|--------|
 | Persistence | ✅ PostgreSQL via Supabase. Backend exits on startup if `DATABASE_URL` is missing in production. In-memory fallback retained for dev/test only. |
 | Credential storage | ✅ AES-256-GCM encrypted, persisted to `credentials` table in PostgreSQL. |
+| Credential access | ✅ Server-side credential vault access uses Supabase `service_role` key in backend/Edge Function. No authenticated client-side SELECT policy is expected for `credentials` under the current architecture. |
 | Row-Level Security | ✅ RLS policies deployed on all tables. Anon read removed from `dashboard_metrics`. |
 | Backend auth | ✅ JWT bearer auth with PostgreSQL-backed user registration/login. |
 | CI/CD | ✅ Backend tests + frontend lint/build in CI; frontend auto-deploy to Vercel; Edge Function deployed manually via Supabase CLI. |

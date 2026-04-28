@@ -1,15 +1,46 @@
 name: CI
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   pull_request:
     branches: [main]
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
+  yaml-safety:
+    name: YAML — conflict & parse guard
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Fail on merge conflict markers in .github
+        run: |
+          if grep -R -nE "^(<<<<<<<|=======|>>>>>>>)" .github; then
+            echo "::error::Merge conflict markers detected in .github YAML files."
+            exit 1
+          fi
+
+      - name: Parse workflow and action YAML files
+        run: |
+          ruby - <<'RUBY'
+          require 'yaml'
+          files = Dir.glob('.github/workflows/*.{yml,yaml}') + Dir.glob('.github/actions/**/action.yml')
+          if files.empty?
+            warn 'No workflow/action YAML files found.'
+            exit 1
+          end
+          files.each do |f|
+            YAML.load_file(f)
+            puts "OK #{f}"
+          end
+          RUBY
+
   # ─── Frontend: lint ──────────────────────────────────────────────────────
   frontend-lint:
+    needs: yaml-safety
     name: Frontend — ESLint
     runs-on: ubuntu-latest
     permissions:
@@ -19,10 +50,10 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Use Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: 'npm'
@@ -46,10 +77,10 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Use Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: 'npm'
@@ -58,23 +89,34 @@ jobs:
       - name: Install dependencies
         run: npm ci --include=dev
 
-      - name: Validate production frontend env
+      - name: Prepare frontend env for PR validation
         run: |
-          test -n "$VITE_SUPABASE_URL" || (echo "Missing secret: VITE_SUPABASE_URL" && exit 1)
-          test -n "$VITE_SUPABASE_ANON_KEY" || (echo "Missing secret: VITE_SUPABASE_ANON_KEY" && exit 1)
+          if [ -z "$VITE_SUPABASE_URL" ]; then
+            echo "::warning::VITE_SUPABASE_URL is not set; frontend build will continue for PR validation."
+          fi
+          if [ -z "$VITE_SUPABASE_PUBLISHABLE_KEY" ] && [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
+            echo "::warning::VITE_SUPABASE_PUBLISHABLE_KEY and VITE_SUPABASE_ANON_KEY are not set; frontend build will continue with fallback values."
+          fi
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
       - name: Build
-        run: npm run build
+        run: |
+          export NODE_ENV=production
+          export VITE_SUPABASE_URL="${VITE_SUPABASE_URL:-}"
+          export VITE_SUPABASE_PUBLISHABLE_KEY="${VITE_SUPABASE_PUBLISHABLE_KEY:-${VITE_SUPABASE_ANON_KEY:-}}"
+          export VITE_SUPABASE_ANON_KEY="${VITE_SUPABASE_ANON_KEY:-}"
+          npm run build
         env:
-          NODE_ENV: production
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
   # ─── Backend: tests (includes CAPI parity contract) ───────────────────────
   backend-tests:
+    needs: yaml-safety
     name: Backend — Jest
     runs-on: ubuntu-latest
     permissions:
@@ -84,10 +126,10 @@ jobs:
         working-directory: backend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Use Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: 'npm'
@@ -106,36 +148,22 @@ jobs:
 
   # ─── Edge Function: type-check ─────────────────────────────────────────────
   edge-deno-check:
+    needs: yaml-safety
     name: Edge Function — deno check
     runs-on: ubuntu-latest
     permissions:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup Deno
-        uses: denoland/setup-deno@v1
+        uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
 
-      - name: Deno cache npm modules
-        run: deno cache supabase/functions/api/index.ts
+      - name: Cache dependencies
+        run: deno cache --config supabase/functions/deno.json supabase/functions/api/index.ts
 
       - name: Type-check Edge Function
         run: deno check --config supabase/functions/deno.json supabase/functions/api/index.ts
-
-  # ─── Edge Function: cache Deno deps — new job from fix(ci)
-  edge-cache-deno:
-    name: Edge Function — cache Deno deps
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Deno
-        uses: denoland/setup-deno@v1
-      - name: Cache Edge Function dependencies
-        run: deno cache --config supabase/functions/deno.json supabase/functions/api/index.ts
-

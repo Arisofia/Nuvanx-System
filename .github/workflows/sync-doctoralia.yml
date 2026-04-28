@@ -1,5 +1,8 @@
 name: Sync Doctoralia Financials
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 # Reads individual settlement rows from Google Sheets (Doctoralia export) and
 # upserts them into the financial_settlements table.
 #
@@ -26,10 +29,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
 
@@ -67,10 +70,10 @@ jobs:
 
           echo "All required secrets present and valid."
         env:
-          GOOGLE_SA_RAW:       ${{ secrets['GOOGLE_ADS_SERVICE_ACCOUNT'] || '' }}
-          DOCTORALIA_SHEET_ID: ${{ secrets['DOCTORALIA_SHEET_ID'] || '' }}
-          DATABASE_URL:        ${{ secrets['DATABASE_URL'] || '' }}
-          CLINIC_ID:           ${{ secrets['CLINIC_ID'] || '' }}
+          GOOGLE_SA_RAW:       ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
+          DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID }}
+          DATABASE_URL:        ${{ secrets.DATABASE_URL }}
+          CLINIC_ID:           ${{ secrets.CLINIC_ID }}
 
       - name: Install sync dependencies
         run: npm install --no-save googleapis pg
@@ -80,8 +83,8 @@ jobs:
         run: node scripts/sync-doctoralia.js
         env:
           GOOGLE_SA_JSON:      ${{ env.GOOGLE_SA_JSON }}
-          DOCTORALIA_SHEET_ID: ${{ secrets['DOCTORALIA_SHEET_ID'] || '' }}
-          DATABASE_URL:        ${{ secrets['DATABASE_URL'] || '' }}
-          CLINIC_ID:           ${{ secrets['CLINIC_ID'] || '' }}
+          DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID }}
+          DATABASE_URL:        ${{ secrets.DATABASE_URL }}
+          CLINIC_ID:           ${{ secrets.CLINIC_ID }}
           SHEET_RANGE:         A1:Z5000
           # SHEET_NAME: Sheet1   # Uncomment and set if data is on a specific tab

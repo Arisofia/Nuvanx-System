@@ -1,5 +1,8 @@
 {
-  "css.lint.unknownAtRules": "ignore",
-  "scss.lint.unknownAtRules": "ignore",
-  "less.lint.unknownAtRules": "ignore"
+  "yaml.schemas": {
+    "https://json.schemastore.org/github-action": [
+      ".github/actions/**/action.yml",
+      ".github/actions/**/action.yaml"
+    ]
+  }
 }

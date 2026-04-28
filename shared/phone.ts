@@ -4,17 +4,17 @@ export function normalizePhoneToE164(phone: string | null | undefined, countryCo
   const raw = String(phone ?? '').trim();
   if (!raw) return '';
 
-  const cleaned = raw.replaceAll(/\u00A0|\s|\(|\)|\.|-/g, '').replaceAll(/ext\.?\s*\d+$/i, '');
+  const cleaned = raw.replaceAll(/\u00A0|\s|\(|\)|\.|-/g, '').replaceAll(/ext\.?\s*\d+$/gi, '');
   if (!cleaned) return '';
 
   let candidate = cleaned.startsWith('00') ? `+${cleaned.slice(2)}` : cleaned;
   if (candidate.startsWith('+')) {
-    const digits = candidate.slice(1).replace(/\D/g, '');
+    const digits = candidate.slice(1).replaceAll(/\D/g, '');
     if (digits.length < 8 || digits.length > 15) return '';
     return `+${digits}`;
   }
 
-  const digits = candidate.replace(/\D/g, '');
+  const digits = candidate.replaceAll(/\D/g, '');
   if (digits.length < 8 || digits.length > 15) return '';
   if (countryCode && digits.length <= 12 && !digits.startsWith(countryCode)) {
     return `+${countryCode}${digits}`;
