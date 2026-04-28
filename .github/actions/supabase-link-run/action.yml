@@ -1,4 +1,5 @@
 name: Supabase Link and Run
+description: 'Composite action that links a Supabase project and runs a command using the Supabase CLI.'
 
 inputs:
   project_ref:
