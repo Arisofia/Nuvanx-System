@@ -1,19 +1,23 @@
 name: Supabase Link and Run
-description: Setup Supabase CLI, optionally link a project, then execute a command.
+description: 'Composite action that links a Supabase project and runs a command using the Supabase CLI.'
 
 inputs:
   project_ref:
-    description: Supabase project reference.
+    description: 'Supabase project reference'
     required: true
   supabase_access_token:
-    description: Supabase access token.
+    description: 'Supabase access token'
     required: true
+  database_url:
+    description: 'Optional database URL'
+    required: false
+    default: ''
   supabase_db_password:
-    description: Optional database password.
+    description: 'Optional database password'
     required: false
     default: ''
   command:
-    description: Shell command to execute.
+    description: 'Shell command to execute'
     required: true
 
 runs:
@@ -40,20 +44,25 @@ runs:
           exit 1
         fi
 
-    - name: Link Supabase project when password is provided
-      if: ${{ inputs.supabase_db_password != '' }}
+    - name: Link Supabase project
       shell: bash
       env:
         INPUT_PROJECT_REF: ${{ inputs.project_ref }}
         SUPABASE_DB_PASSWORD: ${{ inputs.supabase_db_password }}
+        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
       run: |
         set -euo pipefail
-        echo "::add-mask::$SUPABASE_DB_PASSWORD"
-        supabase link --project-ref "$INPUT_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD" --yes
+        if [ -n "$SUPABASE_DB_PASSWORD" ]; then
+          echo "::add-mask::$SUPABASE_DB_PASSWORD"
+          supabase link --project-ref "$INPUT_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD" --yes
+        else
+          supabase link --project-ref "$INPUT_PROJECT_REF" --yes
+        fi
 
     - name: Execute command
       shell: bash
       env:
+        DATABASE_URL: ${{ inputs.database_url }}
         SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
         SUPABASE_PROJECT_REF: ${{ inputs.project_ref }}
         SUPABASE_DB_PASSWORD: ${{ inputs.supabase_db_password }}
