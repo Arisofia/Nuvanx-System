@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+const originalFetch = globalThis.fetch;
 const originalDenoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno');
 
 if (!originalDenoDescriptor) {
@@ -31,6 +32,11 @@ const {
   hexToBytes,
   bytesToHex,
   decryptCred,
+  META_GRAPH,
+  metaFetch,
+  parseJsonOrText,
+  parseMetaMetric,
+  actionValue,
 } = api;
 
 describe('normalizeFrontendUrl', () => {
@@ -207,6 +213,155 @@ describe('bytesToHex', () => {
   });
 });
 
+describe('custom Deno getter stub', () => {
+  let originalDescriptor: PropertyDescriptor | undefined;
+
+  beforeEach(() => {
+    originalDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno');
+  });
+
+  afterEach(() => {
+    if (originalDescriptor) {
+      Object.defineProperty(globalThis, 'Deno', originalDescriptor);
+    } else {
+      delete (globalThis as any).Deno;
+    }
+    vi.restoreAllMocks();
+  });
+
+  it('merges result of original get() with a new serve mock (happy path with getter)', () => {
+    const originalGet = vi.fn().mockReturnValue({ foo: 'bar', serve: 'should-be-overwritten' });
+    Object.defineProperty(globalThis, 'Deno', {
+      configurable: true,
+      get: originalGet,
+    });
+
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno')!;
+    const getterUnderTest = () => {
+      return {
+        ...(
+          (descriptor.get
+            ? descriptor.get.call(globalThis)
+            : (descriptor.value as any)) ?? {}
+        ),
+        serve: vi.fn(),
+      };
+    };
+
+    const result = getterUnderTest();
+
+    expect(originalGet).toHaveBeenCalledTimes(1);
+    expect(result.foo).toBe('bar');
+    expect(typeof result.serve).toBe('function');
+    expect(result.serve).not.toBe('should-be-overwritten');
+
+    const result2 = getterUnderTest();
+    expect(result.serve).not.toBe(result2.serve);
+  });
+
+  it('merges original value with a new serve mock when descriptor has value but no get (happy path with value)', () => {
+    Object.defineProperty(globalThis, 'Deno', {
+      configurable: true,
+      value: { hello: 'world' },
+    });
+
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno')!;
+    const getterUnderTest = () => {
+      return {
+        ...(
+          (descriptor.get
+            ? descriptor.get.call(globalThis)
+            : (descriptor.value as any)) ?? {}
+        ),
+        serve: vi.fn(),
+      };
+    };
+
+    const result = getterUnderTest();
+
+    expect(result.hello).toBe('world');
+    expect(typeof result.serve).toBe('function');
+  });
+
+  it('handles descriptor with neither get nor value, returning an object with only serve (edge case)', () => {
+    Object.defineProperty(globalThis, 'Deno', {
+      configurable: true,
+      value: undefined,
+    });
+
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno')!;
+    const getterUnderTest = () => {
+      return {
+        ...(
+          (descriptor.get
+            ? descriptor.get.call(globalThis)
+            : (descriptor.value as any)) ?? {}
+        ),
+        serve: vi.fn(),
+      };
+    };
+
+    const result = getterUnderTest();
+
+    expect(Object.keys(result)).toEqual(['serve']);
+    expect(typeof result.serve).toBe('function');
+  });
+
+  it('treats null or undefined from original getter/value as empty object (edge value cases)', () => {
+    const originalGet = vi.fn().mockReturnValue(null);
+    Object.defineProperty(globalThis, 'Deno', {
+      configurable: true,
+      get: originalGet,
+    });
+
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno')!;
+    const getterUnderTest = () => {
+      return {
+        ...(
+          (descriptor.get
+            ? descriptor.get.call(globalThis)
+            : (descriptor.value as any)) ?? {}
+        ),
+        serve: vi.fn(),
+      };
+    };
+
+    const result = getterUnderTest();
+
+    expect(originalGet).toHaveBeenCalledTimes(1);
+    expect(Object.keys(result)).toEqual(['serve']);
+    expect(typeof result.serve).toBe('function');
+  });
+
+  it('ensures serve is a fresh vi.fn for each getter call (branch)', () => {
+    Object.defineProperty(globalThis, 'Deno', {
+      configurable: true,
+      value: { foo: 'bar' },
+    });
+
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno')!;
+    const getterUnderTest = () => {
+      return {
+        ...(
+          (descriptor.get
+            ? descriptor.get.call(globalThis)
+            : (descriptor.value as any)) ?? {}
+        ),
+        serve: vi.fn(),
+      };
+    };
+
+    const first = getterUnderTest();
+    const second = getterUnderTest();
+
+    expect(first.foo).toBe('bar');
+    expect(second.foo).toBe('bar');
+    expect(first.serve).not.toBe(second.serve);
+    expect(typeof first.serve).toBe('function');
+    expect(typeof second.serve).toBe('function');
+  });
+});
+
 describe('decryptCred', () => {
   let denoDescriptor: PropertyDescriptor | undefined;
   let cryptoDescriptor: PropertyDescriptor | undefined;
@@ -287,5 +442,186 @@ describe('decryptCred', () => {
     vi.spyOn(globalThis.crypto.subtle, 'decrypt').mockRejectedValue(new Error('Decrypt failed'));
 
     await expect(() => decryptCred('aa:bb:ccdd:0102')).rejects.toThrowError('Decrypt failed');
+  });
+});
+
+describe('metaFetch', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  const originalAbortSignal = (globalThis as any).AbortSignal;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as any;
+    if (!AbortSignal.timeout) {
+      (AbortSignal as any).timeout = (ms: number) => {
+        const controller = new AbortController();
+        setTimeout(() => controller.abort(), ms);
+        return controller.signal;
+      };
+    }
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    if (originalAbortSignal) {
+      (globalThis as any).AbortSignal = originalAbortSignal;
+    } else {
+      delete (globalThis as any).AbortSignal;
+    }
+    vi.restoreAllMocks();
+  });
+
+  it('builds the URL correctly and returns data on success', async () => {
+    const path = 'v20.0/me';
+    const params = { fields: 'id,name', limit: '10' };
+    const token = 'test-token';
+    const responseJson = { id: '123', name: 'Test User' };
+
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: vi.fn().mockResolvedValue(JSON.stringify(responseJson)),
+    } as any);
+
+    const result = await metaFetch(path, params, token);
+
+    expect(result).toEqual(responseJson);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [calledUrl, options] = fetchMock.mock.calls[0];
+    const urlObj = new URL(calledUrl as string);
+    expect(urlObj.origin + urlObj.pathname).toBe(`${META_GRAPH}${path}`);
+    expect(urlObj.searchParams.get('access_token')).toBe(token);
+    expect(urlObj.searchParams.get('fields')).toBe('id,name');
+    expect(urlObj.searchParams.get('limit')).toBe('10');
+    expect((options as any).signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('throws error from d.error.message when response is not ok', async () => {
+    const path = 'v20.0/me';
+    const token = 't';
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 400,
+      text: vi.fn().mockResolvedValue(JSON.stringify({ error: { message: 'OAuthException: Invalid token' } })),
+    } as any);
+
+    await expect(() => metaFetch(path, {}, token)).rejects.toThrowError('OAuthException: Invalid token');
+  });
+
+  it('falls back to d.message when error.message is absent', async () => {
+    const path = 'v20.0/me';
+    const token = 't';
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 429,
+      text: vi.fn().mockResolvedValue(JSON.stringify({ message: 'Rate limit exceeded' })),
+    } as any);
+
+    await expect(() => metaFetch(path, {}, token)).rejects.toThrowError('Rate limit exceeded');
+  });
+
+  it('falls back to text when no error object is present', async () => {
+    const path = 'v20.0/me';
+    const token = 't';
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: vi.fn().mockResolvedValue('Some raw error text'),
+    } as any);
+
+    await expect(() => metaFetch(path, {}, token)).rejects.toThrowError('Some raw error text');
+  });
+
+  it('falls back to default Meta API status text when no text is present', async () => {
+    const path = 'v20.0/me';
+    const token = 't';
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 403,
+      text: vi.fn().mockResolvedValue(''),
+    } as any);
+
+    await expect(() => metaFetch(path, {}, token)).rejects.toThrowError('Meta API 403');
+  });
+});
+
+describe('parseMetaMetric', () => {
+  it('returns the same finite number for numeric input', () => {
+    expect(parseMetaMetric(42)).toBe(42);
+    expect(parseMetaMetric(-1.5)).toBe(-1.5);
+  });
+
+  it('returns 0 for non-finite numbers', () => {
+    expect(parseMetaMetric(NaN)).toBe(0);
+    expect(parseMetaMetric(Infinity)).toBe(0);
+    expect(parseMetaMetric(-Infinity)).toBe(0);
+  });
+
+  it('parses numeric strings and ignores invalid strings', () => {
+    expect(parseMetaMetric('123')).toBe(123);
+    expect(parseMetaMetric(' 45.67 ')).toBe(45.67);
+    expect(parseMetaMetric('abc')).toBe(0);
+  });
+
+  it('sums arrays recursively', () => {
+    expect(parseMetaMetric([10, '20', { value: 5 }, { value: '15.5' }, { value: 'abc' }])).toBe(50.5);
+  });
+
+  it('parses objects with a value property', () => {
+    expect(parseMetaMetric({ value: 100 })).toBe(100);
+    expect(parseMetaMetric({ value: '200.5' })).toBe(200.5);
+    expect(parseMetaMetric({ value: 'abc' })).toBe(0);
+  });
+
+  it('returns 0 for unsupported values', () => {
+    expect(parseMetaMetric(null)).toBe(0);
+    expect(parseMetaMetric(undefined)).toBe(0);
+    expect(parseMetaMetric(true)).toBe(0);
+  });
+});
+
+describe('actionValue', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('returns 0 for non-array actions', () => {
+    const matcher = vi.fn().mockReturnValue(true);
+    expect(actionValue(null, matcher)).toBe(0);
+    expect(actionValue('string', matcher)).toBe(0);
+    expect(matcher).not.toHaveBeenCalled();
+  });
+
+  it('sums matched action values via parseMetaMetric', () => {
+    const actions = [
+      { action_type: 'CLICK', value: 10 },
+      { action_type: 'click', value: '5' },
+      { action_type: 'view', value: 100 },
+      { action_type: 'click', value: 3.5 },
+    ];
+    const matcher = vi.fn((type: string) => type === 'click');
+    expect(actionValue(actions, matcher)).toBeCloseTo(18.5);
+    expect(matcher).toHaveBeenCalledTimes(4);
+  });
+
+  it('normalizes action_type to lowercase before matching', () => {
+    const actions = [{ action_type: 'CLiCk', value: 1 }, { action_type: 'CLICK', value: 2 }];
+    const matcher = vi.fn((type: string) => type === 'click');
+    expect(actionValue(actions, matcher)).toBe(3);
+    expect(matcher.mock.calls.map((call) => call[0])).toEqual(['click', 'click']);
+  });
+
+  it('skips unmatched actions and only parses matched values', () => {
+    const actions = [{ action_type: 'click', value: 10 }, { action_type: 'view', value: 20 }];
+    const matcher = vi.fn((type: string) => type === 'view');
+    expect(actionValue(actions, matcher)).toBe(20);
+    expect(matcher).toHaveBeenCalledTimes(2);
+  });
+
+  it('coerces missing action_type to empty string and still matches', () => {
+    const actions = [{ value: 5 }, { action_type: null, value: 10 } as any];
+    const matcher = vi.fn(() => true);
+    expect(actionValue(actions, matcher)).toBe(15);
+    expect(matcher).toHaveBeenCalledTimes(2);
   });
 });

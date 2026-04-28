@@ -102,21 +102,21 @@ export async function decryptCred(encoded: string): Promise<string> {
 }
 
 // ── Meta Graph API ────────────────────────────────────────────────────────────
-const META_GRAPH = 'https://graph.facebook.com/v21.0';
-async function metaFetch(path: string, params: Record<string, string>, token: string) {
+export const META_GRAPH = 'https://graph.facebook.com/v21.0';
+export async function metaFetch(path: string, params: Record<string, string>, token: string) {
   const url = new URL(`${META_GRAPH}${path}`);
   url.searchParams.set('access_token', token);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   const r = await fetch(url.toString(), { signal: AbortSignal.timeout(20_000) });
   const { data: d, text } = await parseJsonOrText(r);
   if (!r.ok) {
-    const msg = d?.error?.message ?? d?.message ?? text ?? `Meta API ${r.status}`;
+    const msg = d?.error?.message ?? d?.message ?? (text || `Meta API ${r.status}`);
     throw new Error(msg);
   }
   return d;
 }
 
-function parseMetaMetric(raw: unknown): number {
+export function parseMetaMetric(raw: unknown): number {
   if (typeof raw === 'number') return Number.isFinite(raw) ? raw : 0;
   if (typeof raw === 'string') {
     const n = Number.parseFloat(raw);
@@ -136,7 +136,7 @@ function parseMetaMetric(raw: unknown): number {
   return 0;
 }
 
-function actionValue(actions: any, matcher: (type: string) => boolean): number {
+export function actionValue(actions: any, matcher: (type: string) => boolean): number {
   if (!Array.isArray(actions)) return 0;
   return actions.reduce((sum: number, action: any) => {
     const type = String(action?.action_type ?? '').toLowerCase();
@@ -292,7 +292,7 @@ async function runAiPrompt(
 }
 
 // ── AI helpers ────────────────────────────────────────────────────────────────
-async function parseJsonOrText(response: Response): Promise<{ data: any; text: string }> {
+export async function parseJsonOrText(response: Response): Promise<{ data: any; text: string }> {
   const text = await response.text();
   try {
     return { data: JSON.parse(text), text };
