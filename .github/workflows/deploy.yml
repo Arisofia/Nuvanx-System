@@ -127,7 +127,8 @@ jobs:
           fi
 
           if [ -n "$PROJECT_REF" ]; then
-            supabase db push --project-ref "$PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+            supabase link --project-ref "$PROJECT_REF"
+            supabase db push --password "$SUPABASE_DB_PASSWORD"
           else
             supabase db push --db-url "$DATABASE_URL"
           fi
