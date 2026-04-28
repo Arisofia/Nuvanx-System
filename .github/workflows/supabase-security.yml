@@ -9,6 +9,8 @@ env:
 # Required secrets:
 #   SUPABASE_ACCESS_TOKEN   — Supabase personal access token
 #   SUPABASE_PROJECT_REF    — Supabase project ref used by supabase link
+#   SUPABASE_DB_PASSWORD    — optional, recommended for db lint on linked remote
+#   DATABASE_URL            — optional fallback to derive SUPABASE_DB_PASSWORD
 
 on:
   push:
@@ -29,6 +31,13 @@ jobs:
       - name: Supabase RLS & security lint
         uses: ./.github/actions/supabase-link-run
         with:
-          project_ref: ${{ secrets.SUPABASE_PROJECT_REF }}
+          project_ref: ${{ secrets.SUPABASE_PROJECT_REF || vars.SUPABASE_PROJECT_REF || 'ssvvuuysgxyqvmovrlvk' }}
           supabase_access_token: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          command: supabase db lint --level error --linked
+          database_url: ${{ secrets.DATABASE_URL }}
+          supabase_db_password: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          command: |
+            if [ -n "$DATABASE_URL" ]; then
+              supabase db lint --db-url "$DATABASE_URL" --level error
+            else
+              supabase db lint --level error --linked
+            fi
