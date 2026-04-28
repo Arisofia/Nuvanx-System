@@ -8,6 +8,15 @@ const cp = require('child_process');
 const ROOT = process.cwd();
 const TOKENS_FILE = path.join(ROOT, '.env.tokens.local');
 
+function normalizeSafePath(filePath, baseDir = ROOT) {
+  const resolved = path.resolve(baseDir, filePath);
+  const normalizedBase = path.resolve(baseDir);
+  if (resolved !== normalizedBase && !resolved.startsWith(`${normalizedBase}${path.sep}`)) {
+    throw new Error(`Unsafe path access blocked: ${filePath}`);
+  }
+  return resolved;
+}
+
 const requiredSecretKeys = [
   'SUPABASE_ACCESS_TOKEN',
   'META_ACCESS_TOKEN',
@@ -39,9 +48,10 @@ const frontendKeys = [
 ];
 
 function readEnvFile(filePath) {
-  if (!fs.existsSync(filePath)) return {};
+  const safePath = normalizeSafePath(filePath);
+  if (!fs.existsSync(safePath)) return {};
   const out = {};
-  const lines = fs.readFileSync(filePath, 'utf8').split(/\r?\n/);
+  const lines = fs.readFileSync(safePath, 'utf8').split(/\r?\n/);
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
