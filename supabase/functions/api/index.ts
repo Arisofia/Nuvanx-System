@@ -502,7 +502,7 @@ function validateMetaCredentialResult(creds: any) {
   return { ok: true, message: '' };
 }
 
-function extractMetaAccountRawValue(raw: unknown): string {
+export function extractMetaAccountRawValue(raw: unknown): string {
   if (raw === undefined || raw === null) return '';
   if (typeof raw === 'object' && raw !== null) {
     const rawObj = raw as Record<string, unknown>;

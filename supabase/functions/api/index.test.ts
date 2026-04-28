@@ -36,6 +36,7 @@ const {
   metaFetch,
   parseJsonOrText,
   parseMetaMetric,
+  extractMetaAccountRawValue,
   actionValue,
 } = api;
 
@@ -577,6 +578,38 @@ describe('parseMetaMetric', () => {
     expect(parseMetaMetric(null)).toBe(0);
     expect(parseMetaMetric(undefined)).toBe(0);
     expect(parseMetaMetric(true)).toBe(0);
+  });
+});
+
+describe('extractMetaAccountRawValue', () => {
+  it('returns empty string for null and undefined', () => {
+    expect(extractMetaAccountRawValue(null)).toBe('');
+    expect(extractMetaAccountRawValue(undefined)).toBe('');
+  });
+
+  it('extracts adAccountId from object and trims whitespace', () => {
+    expect(extractMetaAccountRawValue({ adAccountId: '  act_12345  ' })).toBe('act_12345');
+  });
+
+  it('falls back to ad_account_id when adAccountId is missing', () => {
+    expect(extractMetaAccountRawValue({ ad_account_id: '  act_67890  ' })).toBe('act_67890');
+  });
+
+  it('prefers adAccountId over ad_account_id when both are present', () => {
+    expect(extractMetaAccountRawValue({ adAccountId: '  primary-id  ', ad_account_id: 'secondary-id' })).toBe('primary-id');
+  });
+
+  it('returns empty string when object has no recognized account keys', () => {
+    expect(extractMetaAccountRawValue({ other: 'value' })).toBe('');
+  });
+
+  it('converts numeric values to string and trims them', () => {
+    expect(extractMetaAccountRawValue(123456)).toBe('123456');
+  });
+
+  it('returns empty string for unsupported types such as booleans and symbols', () => {
+    expect(extractMetaAccountRawValue(true)).toBe('');
+    expect(extractMetaAccountRawValue(Symbol('x'))).toBe('');
   });
 });
 
