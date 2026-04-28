@@ -1,0 +1,53 @@
+name: Supabase Link and Run
+
+inputs:
+  project_ref:
+    description: 'Supabase project ref used by supabase link'
+    required: true
+  supabase_access_token:
+    description: 'Supabase access token for supabase CLI'
+    required: true
+  database_url:
+    description: 'Optional database URL for supabase db push'
+    required: false
+    default: ''
+  supabase_db_password:
+    description: 'Optional DB password for supabase db push'
+    required: false
+    default: ''
+  command:
+    description: 'Shell command to execute after linking the Supabase project'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Supabase CLI
+      uses: supabase/setup-cli@v2.0.0
+      with:
+        version: latest
+
+    - name: Link Supabase project
+      shell: bash
+      env:
+        SUPABASE_ACCESS_TOKEN: "${{ inputs.supabase_access_token }}"
+      run: |
+        if [ -z "${{ inputs.project_ref }}" ]; then
+          echo "::error::SUPABASE_PROJECT_REF is required."
+          exit 1
+        fi
+        if [ -z "${{ inputs.supabase_access_token }}" ]; then
+          echo "::error::SUPABASE_ACCESS_TOKEN is required."
+          exit 1
+        fi
+
+        supabase link --project-ref "${{ inputs.project_ref }}"
+
+    - name: Execute Supabase command
+      shell: bash
+      env:
+        DATABASE_URL: "${{ inputs.database_url }}"
+        SUPABASE_DB_PASSWORD: "${{ inputs.supabase_db_password }}"
+        SUPABASE_ACCESS_TOKEN: "${{ inputs.supabase_access_token }}"
+      run: |
+        sh -lc "${{ inputs.command }}"

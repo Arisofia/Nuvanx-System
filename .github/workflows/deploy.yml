@@ -9,10 +9,11 @@
 #
 # Required secrets (GitHub -> Settings -> Secrets -> Actions):
 #   SUPABASE_ACCESS_TOKEN        - Supabase personal access token
+#   SUPABASE_PROJECT_REF         - Supabase project ref used by supabase link
 #   SUPABASE_DB_PASSWORD         - DB password for supabase db push
 #                                 (optional if DATABASE_URL is available)
 #   DATABASE_URL                 - Optional fallback DB URL to derive SUPABASE_DB_PASSWORD
-#   VITE_SUPABASE_URL            - https://ssvvuuysgxyqvmovrlvk.supabase.co
+#   VITE_SUPABASE_URL            - Frontend Supabase URL (e.g. https://<project-ref>.supabase.co)
 #   VITE_SUPABASE_PUBLISHABLE_KEY - Supabase publishable key from Supabase Connect
 #   VITE_SUPABASE_ANON_KEY       - legacy public anon key
 ###############################################################################
@@ -96,43 +97,19 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: supabase/setup-cli@v2.0.0
+      - name: Supabase DB migrations
+        uses: ./.github/actions/supabase-link-run
         with:
-          version: latest
-      - name: Push migrations
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-        run: |
-          PROJECT_REF="${SUPABASE_PROJECT_REF:-ssvvuuysgxyqvmovrlvk}"
-          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
-            echo "::error::Supabase migration secrets are missing. Set SUPABASE_ACCESS_TOKEN in GitHub secrets."
-            exit 1
-          fi
-
-          PROJECT_REF="${SUPABASE_PROJECT_REF:-ssvvuuysgxyqvmovrlvk}"
-          if [ -z "$PROJECT_REF" ] && [ -z "$DATABASE_URL" ]; then
-            echo "::error::Supabase migration secret SUPABASE_PROJECT_REF is missing, and DATABASE_URL is not provided. Set one of these in GitHub secrets."
-            exit 1
-          fi
-
-          if [ -z "$SUPABASE_DB_PASSWORD" ] && [ -n "$DATABASE_URL" ]; then
-            SUPABASE_DB_PASSWORD=$(python3 -c 'from urllib.parse import urlparse; import os; print(urlparse(os.environ.get("DATABASE_URL", "")).password or "")')
-          fi
-
-          if [ -z "$SUPABASE_DB_PASSWORD" ] && [ -z "$DATABASE_URL" ]; then
-            echo "::error::Supabase migration secret SUPABASE_DB_PASSWORD is missing. Set it in GitHub secrets or provide DATABASE_URL."
-            exit 1
-          fi
-
-          if [ -n "$PROJECT_REF" ]; then
-            supabase link --project-ref "$PROJECT_REF"
-            supabase db push --password "$SUPABASE_DB_PASSWORD"
-          else
-            supabase db push --db-url "$DATABASE_URL"
-          fi
+          project_ref: ${{ secrets.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ secrets.DATABASE_URL }}
+          supabase_db_password: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          command: |
+            if [ -n "$DATABASE_URL" ]; then
+              supabase db push --db-url "$DATABASE_URL"
+            else
+              supabase db push --password "$SUPABASE_DB_PASSWORD"
+            fi
 
   # 4. Supabase Edge Functions
   supabase-functions:
@@ -144,15 +121,9 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: supabase/setup-cli@v2.0.0
-        with:
-          version: latest
       - name: Deploy Edge Functions
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: |
-          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
-            echo "::error::Supabase function deploy secret is missing. Set SUPABASE_ACCESS_TOKEN in GitHub secrets."
-            exit 1
-          fi
-          supabase functions deploy api --no-verify-jwt --project-ref ssvvuuysgxyqvmovrlvk --use-api
+        uses: ./.github/actions/supabase-link-run
+        with:
+          project_ref: ${{ secrets.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          command: supabase functions deploy api --no-verify-jwt --use-api --linked
