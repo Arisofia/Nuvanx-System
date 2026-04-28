@@ -59,16 +59,18 @@ function bytesToHex(bytes: Uint8Array): string {
 async function encryptCred(raw: string): Promise<string> {
   const masterKey = Deno.env.get('ENCRYPTION_KEY');
   if (!masterKey) throw new Error('ENCRYPTION_KEY not set in Edge Function secrets');
-  const salt = crypto.getRandomValues(new Uint8Array(32));
-  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const salt = new Uint8Array(32);
+  crypto.getRandomValues(salt);
+  const iv = new Uint8Array(12);
+  crypto.getRandomValues(iv);
   const km = await crypto.subtle.importKey('raw', new TextEncoder().encode(masterKey), 'PBKDF2', false, ['deriveKey']);
   const aesKey = await crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: salt as any, iterations: 100_000, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt, iterations: 100_000, hash: 'SHA-256' },
     km, { name: 'AES-GCM', length: 256 }, false, ['encrypt'],
   );
   const ciphertextWithTag = new Uint8Array(
     await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv: iv as any },
+      { name: 'AES-GCM', iv },
       aesKey,
       new TextEncoder().encode(raw),
     ),
@@ -93,10 +95,10 @@ async function decryptCred(encoded: string): Promise<string> {
   combined.set(ct); combined.set(tag, ct.length);
   const km = await crypto.subtle.importKey('raw', new TextEncoder().encode(masterKey), 'PBKDF2', false, ['deriveKey']);
   const aesKey = await crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: salt as any, iterations: 100_000, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt: salt.buffer as ArrayBuffer, iterations: 100_000, hash: 'SHA-256' },
     km, { name: 'AES-GCM', length: 256 }, false, ['decrypt'],
   );
-  return new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv as any }, aesKey, combined as any));
+  return new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv.buffer as ArrayBuffer }, aesKey, combined.buffer as ArrayBuffer));
 }
 
 // ── Meta Graph API ────────────────────────────────────────────────────────────
@@ -127,7 +129,8 @@ function parseMetaMetric(raw: unknown): number {
     }, 0);
   }
   if (raw && typeof raw === 'object') {
-    const n = Number.parseFloat((raw as any).value ?? 0);
+    const rawObj = raw as Record<string, unknown>;
+    const n = Number.parseFloat(String(rawObj.value ?? 0));
     return Number.isFinite(n) ? n : 0;
   }
   return 0;
@@ -284,7 +287,7 @@ async function runAiPrompt(
   }
 
   const error = new Error(`AI request failed for all connected providers. ${providerErrors.join(' | ')}`);
-  (error as any).providerErrors = providerErrors;
+  Object.assign(error, { providerErrors });
   throw error;
 }
 
@@ -501,8 +504,9 @@ function validateMetaCredentialResult(creds: any) {
 
 function extractMetaAccountRawValue(raw: unknown): string {
   if (raw === undefined || raw === null) return '';
-  if (typeof raw === 'object') {
-    return String((raw as any).adAccountId ?? (raw as any).ad_account_id ?? '').trim();
+  if (typeof raw === 'object' && raw !== null) {
+    const rawObj = raw as Record<string, unknown>;
+    return String(rawObj.adAccountId ?? rawObj.ad_account_id ?? '').trim();
   }
   if (typeof raw === 'string' || typeof raw === 'number') {
     return String(raw).trim();
@@ -694,10 +698,16 @@ async function googleAdsSearch(customerId: string, devToken: string, accessToken
     const msg = d.error?.details?.[0]?.errors?.[0]?.message ?? d.error?.message ?? `Google Ads ${r.status}`;
     throw new Error(msg);
   }
-  return (d.results ?? []) as any[];
+  const results = d.results;
+  return Array.isArray(results) ? results : [];
 }
 
-async function resolveGoogleAdsCreds(adminClient: any, userId: string, qCustomerId: string) {
+type GoogleAdsCreds =
+  | { noServiceAccount: true }
+  | { notConnected: true }
+  | { notConnected: false; noServiceAccount: false; devToken: string; customerId: string; serviceAccount: any };
+
+async function resolveGoogleAdsCreds(adminClient: any, userId: string, qCustomerId: string): Promise<GoogleAdsCreds> {
   const saRaw = Deno.env.get('GOOGLE_ADS_SERVICE_ACCOUNT');
   if (!saRaw) return { noServiceAccount: true } as const;
   let serviceAccount: any;
@@ -2187,11 +2197,9 @@ async function handleGoogleAdsInsightsGet(ctx: AuthenticatedRouteContext): Promi
     const g = await resolveGoogleAdsCreds(adminClient, userId, url.searchParams.get('customerId') ?? '');
     if ('noServiceAccount' in g && g.noServiceAccount) return sendJson({ success: false, noServiceAccount: true, message: 'Google Ads service account not configured.' });
     if ('notConnected' in g && g.notConnected) return sendJson({ success: false, notConnected: true, message: 'Google Ads not connected. Add your developer token in Integrations.' });
-    const { customerId } = g as any;
+    const { customerId, devToken, serviceAccount } = g;
     if (!customerId) return sendJson({ success: false, noAccountId: true, message: 'Google Ads Customer ID not configured.' });
-    const { devToken, serviceAccount } = g as any;
-  
-    const days = Number.parseInt(url.searchParams.get('days') ?? '30');
+    const days = Math.min(Math.max(Number.parseInt(url.searchParams.get('days') ?? '30', 10), 1), 90);
     const since = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
     const until = new Date().toISOString().slice(0, 10);
     const prevSince = new Date(Date.now() - days * 2 * 86_400_000).toISOString().slice(0, 10);
@@ -2264,10 +2272,8 @@ async function handleGoogleAdsCampaignsGet(ctx: AuthenticatedRouteContext): Prom
     const g = await resolveGoogleAdsCreds(adminClient, userId, url.searchParams.get('customerId') ?? '');
     if ('noServiceAccount' in g && g.noServiceAccount) return sendJson({ success: false, noServiceAccount: true, message: 'Google Ads service account not configured.' });
     if ('notConnected' in g && g.notConnected) return sendJson({ success: false, notConnected: true, message: 'Google Ads not connected.' });
-    const { customerId } = g as any;
+    const { customerId, devToken, serviceAccount } = g;
     if (!customerId) return sendJson({ success: false, noAccountId: true, message: 'Google Ads Customer ID not configured.' });
-    const { devToken, serviceAccount } = g as any;
-  
     const accessToken = await getGoogleAccessToken(serviceAccount);
     const rows = await googleAdsSearch(customerId, devToken, accessToken, `
       SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type,
