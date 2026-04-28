@@ -30,7 +30,7 @@ concurrency:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  SUPABASE_PROJECT_REF: ssvvuuysgxyqvmovrlvk
+  SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF || 'ssvvuuysgxyqvmovrlvk' }}
 
 jobs:
   # 1. Lint
@@ -105,6 +105,10 @@ jobs:
           database_url: ${{ secrets.DATABASE_URL }}
           supabase_db_password: ${{ secrets.SUPABASE_DB_PASSWORD }}
           command: |
+            if [ -z "$SUPABASE_PROJECT_REF" ]; then
+              echo "::error::SUPABASE_PROJECT_REF is required. Configure GitHub variable SUPABASE_PROJECT_REF or use the default fallback."
+              exit 1
+            fi
             if [ -z "$SUPABASE_DB_PASSWORD" ]; then
               echo "::error::Supabase migration secret SUPABASE_DB_PASSWORD is missing. Set it in GitHub secrets or provide DATABASE_URL."
               exit 1
