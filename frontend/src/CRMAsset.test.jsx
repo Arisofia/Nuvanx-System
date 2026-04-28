@@ -1,13 +1,16 @@
-import fs from "fs";
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, it, expect } from "vitest";
 import CRM from "../.vercel/output/static/assets/CRM-D4KmuuO_.js";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 describe("CRM built asset", () => {
   it("is available in the frontend build output and exports a component", () => {
-    const assetPath = path.resolve(process.cwd(), "../.vercel/output/static/assets/CRM-D4KmuuO_.js");
+    const assetPath = path.resolve(__dirname, "../.vercel/output/static/assets/CRM-D4KmuuO_.js");
     expect(fs.existsSync(assetPath)).toBe(true);
     expect(typeof CRM).toBe("function");
   });

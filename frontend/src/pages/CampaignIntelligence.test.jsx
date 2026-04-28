@@ -1,9 +1,12 @@
-import fs from "fs";
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import CampaignIntelligence from "../../.vercel/output/static/assets/CampaignIntelligence-DO-O-lDi.js";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 describe("Campaign Intelligence built asset", () => {
-  const assetPath = path.resolve(process.cwd(), ".vercel/output/static/assets/CampaignIntelligence-DO-O-lDi.js");
+  const assetPath = path.resolve(__dirname, "../../.vercel/output/static/assets/CampaignIntelligence-DO-O-lDi.js");
 
   it("is present in frontend build output", () => {
     expect(fs.existsSync(assetPath)).toBe(true);

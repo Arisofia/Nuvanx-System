@@ -1,13 +1,16 @@
-import fs from "fs";
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, it, expect } from "vitest";
 import { t as createLucideIcon } from "../.vercel/output/static/assets/createLucideIcon-qssf6w5u.js";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 describe("createLucideIcon built asset", () => {
   it("exports the icon factory from the generated frontend asset", () => {
-    const assetPath = path.resolve(process.cwd(), "../.vercel/output/static/assets/createLucideIcon-qssf6w5u.js");
+    const assetPath = path.resolve(__dirname, "../.vercel/output/static/assets/createLucideIcon-qssf6w5u.js");
     expect(fs.existsSync(assetPath)).toBe(true);
     expect(typeof createLucideIcon).toBe("function");
   });
