@@ -83,6 +83,72 @@ function numberFmt(value) {
   return Number(value || 0).toLocaleString();
 }
 
+function parseRelativeDate(value, referenceDate = new Date()) {
+  if (!value) return null;
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === 'today') return new Date(referenceDate);
+  if (normalized === 'yesterday') {
+    const d = new Date(referenceDate);
+    d.setUTCDate(d.getUTCDate() - 1);
+    return d;
+  }
+  const rel = /^([0-9]+)d$/.exec(normalized);
+  if (rel) {
+    const days = Number(rel[1]);
+    const d = new Date(referenceDate);
+    d.setUTCDate(d.getUTCDate() - days);
+    return d;
+  }
+  const parsed = new Date(normalized);
+  if (!Number.isNaN(parsed.getTime())) return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
+  return null;
+}
+
+function getGoogleServiceAccount(gServiceAccountRaw, gDevToken, gCustomerId) {
+  if (!gServiceAccountRaw || !gDevToken || !gCustomerId) return null;
+
+  try {
+    const raw = gServiceAccountRaw.startsWith('{') ? gServiceAccountRaw : Buffer.from(gServiceAccountRaw, 'base64').toString('utf8');
+    return JSON.parse(raw);
+  } catch {
+    console.warn('[meta-daily-report] Invalid GOOGLE_ADS_SERVICE_ACCOUNT — skipping Google Ads section');
+    return null;
+  }
+}
+
+function getPrimaryChannel(waLeads, formLeads) {
+  if (waLeads > formLeads) return 'WhatsApp';
+  if (formLeads > waLeads) return 'Lead Form';
+  return 'Mixed/Unknown';
+}
+
+function buildCampaignRows(rows) {
+  return (rows || []).map((row) => {
+    const spend = parseMetric(row.spend);
+    const impressions = parseMetric(row.impressions);
+    const clicks = parseMetric(row.clicks || row.inline_link_clicks || row.outbound_clicks);
+    const landingPageViews = parseMetric(row.landing_page_views || row.landing_page_view);
+    const waLeads = getWhatsApp(row.actions);
+    const formLeads = getLeadForm(row.actions);
+    const totalLeads = waLeads + formLeads;
+
+    return {
+      id: row.campaign_id || 'unknown',
+      name: row.campaign_name || 'Unnamed campaign',
+      spend,
+      impressions,
+      clicks,
+      landingPageViews,
+      waLeads,
+      formLeads,
+      totalLeads,
+      primaryChannel: getPrimaryChannel(waLeads, formLeads),
+      cpl: totalLeads > 0 ? spend / totalLeads : 0,
+      isWaste: spend > 0 && totalLeads === 0,
+    };
+  });
+}
+
 // ── Google Ads helpers ───────────────────────────────────────────────────────
 
 function b64url(data) {
@@ -118,7 +184,7 @@ async function getGoogleAccessToken(serviceAccount) {
 
 async function fetchGoogleAdsInsights({ devToken, customerId, serviceAccount, since, until }) {
   const accessToken = await getGoogleAccessToken(serviceAccount);
-  const cleanId = customerId.replaceAll(/-/g, '');
+  const cleanId = customerId.replaceAll('-', '');
   const query = `
     SELECT campaign.id, campaign.name, metrics.impressions, metrics.clicks,
            metrics.cost_micros, metrics.conversions, metrics.ctr, metrics.average_cpc
@@ -430,16 +496,7 @@ async function main() {
   const gServiceAccountRaw = process.env.GOOGLE_ADS_SERVICE_ACCOUNT || '';
   const gDevToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN || '';
   const gCustomerId = process.env.GOOGLE_ADS_CUSTOMER_ID || '';
-  let googleServiceAccount = null;
-  if (gServiceAccountRaw && gDevToken && gCustomerId) {
-    try {
-      const raw = gServiceAccountRaw.startsWith('{') ? gServiceAccountRaw
-        : Buffer.from(gServiceAccountRaw, 'base64').toString('utf8');
-      googleServiceAccount = JSON.parse(raw);
-    } catch {
-      console.warn('[meta-daily-report] Invalid GOOGLE_ADS_SERVICE_ACCOUNT — skipping Google Ads section');
-    }
-  }
+  const googleServiceAccount = getGoogleServiceAccount(gServiceAccountRaw, gDevToken, gCustomerId);
 
   if (!token || !rawAccount) {
     throw new Error('META_ACCESS_TOKEN and META_AD_ACCOUNT_ID are required');
@@ -453,35 +510,13 @@ async function main() {
   const argv = process.argv.slice(2);
   const maybeSince = argv.find((arg) => arg.startsWith('--since='))?.split('=')[1];
   const maybeUntil = argv.find((arg) => arg.startsWith('--until='))?.split('=')[1];
-  const days = parseInt(process.env.REPORT_DAYS || '30', 10);
+  const days = Number.parseInt(process.env.REPORT_DAYS || '30', 10);
 
   const today = new Date();
   const utcToday = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
 
-  const parseRelativeDate = (value, referenceDate = utcToday) => {
-    if (!value) return null;
-    const normalized = String(value).trim().toLowerCase();
-    if (normalized === 'today') return new Date(referenceDate);
-    if (normalized === 'yesterday') {
-      const d = new Date(referenceDate);
-      d.setUTCDate(d.getUTCDate() - 1);
-      return d;
-    }
-    const rel = normalized.match(/^(\d+)d$/);
-    if (rel) {
-      const days = Number(rel[1]);
-      const d = new Date(referenceDate);
-      d.setUTCDate(d.getUTCDate() - days);
-      return d;
-    }
-    const parsed = new Date(normalized);
-    if (!Number.isNaN(parsed.getTime())) return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
-    return null;
-  };
-
-  const untilDate = parseRelativeDate(maybeUntil || 'today') || utcToday;
+  const untilDate = parseRelativeDate(maybeUntil || 'today', utcToday) || utcToday;
   const sinceDate = parseRelativeDate(maybeSince || `${days}d`, untilDate) || new Date(untilDate);
-
   const since = formatDateUTC(sinceDate);
   const until = formatDateUTC(untilDate);
   const untilExclusive = formatDateUTC(new Date(untilDate.getTime() + 86400000));
@@ -518,31 +553,7 @@ async function main() {
 
   const rows = Array.isArray(insights?.data) ? insights.data : [];
 
-  const campaignRows = rows.map((row) => {
-    const spend = parseMetric(row.spend);
-    const impressions = parseMetric(row.impressions);
-    const clicks = parseMetric(row.clicks || row.inline_link_clicks || row.outbound_clicks);
-    const landingPageViews = parseMetric(row.landing_page_views || row.landing_page_view);
-    const waLeads = getWhatsApp(row.actions);
-    const formLeads = getLeadForm(row.actions);
-    const totalLeads = waLeads + formLeads;
-    const primaryChannel = waLeads > formLeads ? 'WhatsApp' : (formLeads > waLeads ? 'Lead Form' : 'Mixed/Unknown');
-
-    return {
-      id: row.campaign_id || 'unknown',
-      name: row.campaign_name || 'Unnamed campaign',
-      spend,
-      impressions,
-      clicks,
-      landingPageViews,
-      waLeads,
-      formLeads,
-      totalLeads,
-      primaryChannel,
-      cpl: totalLeads > 0 ? spend / totalLeads : 0,
-      isWaste: spend > 0 && totalLeads === 0,
-    };
-  });
+  const campaignRows = buildCampaignRows(rows);
 
   const totals = campaignRows.reduce((acc, row) => {
     acc.spend += row.spend;
