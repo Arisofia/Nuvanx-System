@@ -75,10 +75,6 @@ function hasGhCli() {
   }
 }
 
-function run(cmd, env = process.env) {
-  cp.execSync(cmd, { stdio: 'pipe', env });
-}
-
 function writeFrontendEnv(vars) {
   const target = path.join(ROOT, 'frontend', '.env.local');
   const existing = readEnvFile(target);
@@ -166,7 +162,8 @@ function setGithubSecrets(vars) {
   if (!hasGhCli()) return { skipped: true, reason: 'gh CLI not installed' };
 
   let uploaded = 0;
-  for (const key of requiredSecretKeys) {
+  const githubKeys = [...requiredSecretKeys, 'SUPABASE_ACCESS_TOKEN', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_PUBLISHABLE_KEY', 'VITE_SUPABASE_ANON_KEY'];
+  for (const key of githubKeys) {
     const value = vars[key];
     if (!value) continue;
     const env = { ...process.env, GH_TOKEN: token };
