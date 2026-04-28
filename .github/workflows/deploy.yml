@@ -30,6 +30,7 @@ concurrency:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  SUPABASE_PROJECT_REF: ssvvuuysgxyqvmovrlvk
 
 jobs:
   # 1. Lint
@@ -116,7 +117,7 @@ jobs:
             echo "::error::Supabase migration secret SUPABASE_DB_PASSWORD is missing. Set it in GitHub secrets or provide DATABASE_URL."
             exit 1
           fi
-          supabase link --project-ref ssvvuuysgxyqvmovrlvk --password "$SUPABASE_DB_PASSWORD"
+          supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD" --yes
           supabase db push --linked --password "$SUPABASE_DB_PASSWORD"
 
   # 4. Supabase Edge Functions
@@ -140,4 +141,4 @@ jobs:
             echo "::error::Supabase function deploy secret is missing. Set SUPABASE_ACCESS_TOKEN in GitHub secrets."
             exit 1
           fi
-          supabase functions deploy api --no-verify-jwt --project-ref ssvvuuysgxyqvmovrlvk --use-api
+          supabase functions deploy api --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF" --use-api
