@@ -39,4 +39,4 @@ jobs:
             echo "::warning::SUPABASE_ACCESS_TOKEN not set — skipping security lint."
             exit 0
           fi
-          supabase db lint --level error --project-ref ssvvuuysgxyqvmovrlvk
+          supabase db lint --level error
