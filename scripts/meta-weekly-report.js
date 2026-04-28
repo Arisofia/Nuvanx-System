@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
 
 const META_GRAPH = 'https://graph.facebook.com/v21.0';
 const GOOGLE_ADS_API = 'https://googleads.googleapis.com/v17';
