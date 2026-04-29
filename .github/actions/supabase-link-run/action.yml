@@ -10,22 +10,22 @@ inputs:
     description: 'Supabase access token'
     required: true
   database_url:
-    description: 'Optional database URL for deriving SUPABASE_DB_PASSWORD'
+    description: 'Optional database URL for deriving SUPABASE_DB_PASSWORD if not provided'
     required: false
     default: ''
   supabase_db_password:
-    description: 'Optional database password for Supabase CLI link/db operations'
+    description: 'Optional database password for Supabase CLI operations'
     required: false
     default: ''
   command:
-    description: 'Shell command to execute after linking the Supabase project'
+    description: 'Shell command to execute after linking (e.g. "supabase db push")'
     required: true
 
 runs:
   using: composite
   steps:
     - name: Setup Supabase CLI
-      uses: supabase/setup-cli@b579fc8c7122aa485f1d947120eaeb11ee04d312
+      uses: supabase/setup-cli@v2.0.0
       with:
         version: latest
 
@@ -46,6 +46,7 @@ runs:
         fi
 
     - name: Link Supabase project
+      id: link
       shell: bash
       env:
         INPUT_PROJECT_REF: ${{ inputs.project_ref }}
@@ -57,6 +58,7 @@ runs:
 
         RESOLVED_DB_PASSWORD="$INPUT_SUPABASE_DB_PASSWORD"
         if [ -z "$RESOLVED_DB_PASSWORD" ] && [ -n "$INPUT_DATABASE_URL" ]; then
+          # Extract password from DATABASE_URL
           RESOLVED_DB_PASSWORD=$(python3 -c 'from urllib.parse import urlparse; import os; print(urlparse(os.environ.get("INPUT_DATABASE_URL", "")).password or "")')
         fi
 
@@ -67,11 +69,8 @@ runs:
           supabase link --project-ref "$INPUT_PROJECT_REF" --yes
         fi
 
-
-        {
-          echo "SUPABASE_PROJECT_REF=$INPUT_PROJECT_REF"
-          echo "SUPABASE_DB_PASSWORD=$RESOLVED_DB_PASSWORD"
-        } >> "$GITHUB_ENV"
+        # Pass to outputs for downstream steps in this action
+        echo "resolved_db_password=$RESOLVED_DB_PASSWORD" >> "$GITHUB_OUTPUT"
 
     - name: Execute command
       shell: bash
@@ -79,8 +78,7 @@ runs:
         DATABASE_URL: ${{ inputs.database_url }}
         SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
         SUPABASE_PROJECT_REF: ${{ inputs.project_ref }}
-        SUPABASE_DB_PASSWORD: ${{ inputs.supabase_db_password }}
+        SUPABASE_DB_PASSWORD: ${{ steps.link.outputs.resolved_db_password }}
       run: |
         set -euo pipefail
         bash -lc "${{ inputs.command }}"
-
