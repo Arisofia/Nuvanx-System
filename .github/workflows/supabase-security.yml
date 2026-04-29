@@ -23,7 +23,6 @@ jobs:
   advisor:
     name: RLS & security lint
     runs-on: ubuntu-latest
-    environment: production
     permissions:
       contents: read
     steps:
@@ -39,9 +38,9 @@ jobs:
           supabase_db_password: ${{ secrets.SUPABASE_DB_PASSWORD }}
           command: |
             if [ -n "$DATABASE_URL" ]; then
-              supabase db lint --db-url "$DATABASE_URL" --level error
+              supabase db lint --db-url "$DATABASE_URL" --level error --fail-on error
             elif [ -n "$SUPABASE_DB_PASSWORD" ]; then
-              supabase db lint --linked --level error
+              supabase db lint --linked --level error --fail-on error
             else
               echo "::warning::SUPABASE_DB_PASSWORD and DATABASE_URL are both missing — skipping security lint."
               exit 0
