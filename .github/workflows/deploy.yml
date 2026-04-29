@@ -43,8 +43,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: 'npm'
@@ -71,8 +71,8 @@ jobs:
       VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
       VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: 'npm'
@@ -96,7 +96,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Supabase DB migrations
         uses: ./.github/actions/supabase-link-run
         with:
@@ -108,7 +108,6 @@ jobs:
             if [ -n "$DATABASE_URL" ]; then
               supabase db push --db-url "$DATABASE_URL"
             else
-              # Fallback: Use password if DATABASE_URL is not available
               if [ -z "$SUPABASE_DB_PASSWORD" ]; then
                 echo "::error::Supabase migration secret SUPABASE_DB_PASSWORD is missing. Set it in GitHub secrets or provide DATABASE_URL."
                 exit 1
@@ -125,10 +124,11 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Deploy Edge Functions
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ secrets.SUPABASE_PROJECT_REF || vars.SUPABASE_PROJECT_REF || 'ssvvuuysgxyqvmovrlvk' }}
           supabase_access_token: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           command: supabase functions deploy api --no-verify-jwt --use-api --linked
+

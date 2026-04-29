@@ -2,8 +2,6 @@
 // @deno-types="https://esm.sh/@supabase/supabase-js@2.42.0/dist/module/index.d.ts"
 import { createClient } from '@supabase/supabase-js';
 declare const Deno: any;
-import { normalizePhoneToE164 } from '../_shared/phone.ts';
-import { mapLeadPayloadToCapiEvent } from '../_shared/capi.ts';
 
 const rawFrontendUrl = Deno.env.get('FRONTEND_URL')?.trim() || '';
 const IS_DEVELOPMENT = (Deno.env.get('DENO_ENV') ?? Deno.env.get('NODE_ENV') ?? '').toLowerCase() !== 'production';
@@ -50,7 +48,7 @@ function buildCorsHeaders(origin: string | null) {
 // ── Web Crypto helpers (PBKDF2 + AES-256-GCM — mirrors backend encryption) ───
 function hexToBytes(hex: string): Uint8Array {
   const arr = new Uint8Array(hex.length >>> 1);
-  for (let i = 0; i < hex.length; i += 2) arr[i >>> 1] = parseInt(hex.slice(i, i + 2), 16);
+  for (let i = 0; i < hex.length; i += 2) arr[i >>> 1] = Number.parseInt(hex.slice(i, i + 2), 16);
   return arr;
 }
 
@@ -119,7 +117,7 @@ async function metaFetch(path: string, params: Record<string, string>, token: st
 function parseMetaMetric(raw: unknown): number {
   if (typeof raw === 'number') return Number.isFinite(raw) ? raw : 0;
   if (typeof raw === 'string') {
-    const n = parseFloat(raw);
+    const n = Number.parseFloat(raw);
     return Number.isFinite(n) ? n : 0;
   }
   if (Array.isArray(raw)) {
@@ -129,7 +127,7 @@ function parseMetaMetric(raw: unknown): number {
     }, 0);
   }
   if (raw && typeof raw === 'object') {
-    const n = parseFloat((raw as any).value ?? 0);
+    const n = Number.parseFloat((raw as any).value ?? 0);
     return Number.isFinite(n) ? n : 0;
   }
   return 0;
@@ -156,7 +154,7 @@ async function resolveClinicId(adminClient: any, userId: string): Promise<string
   return usr?.clinic_id ?? null;
 }
 
-async function persistAgentOutput(adminClient: any, userId: string, agentType: string, output: any, metadata: any = {}) {
+async function persistAgentOutput(adminClient: any, userId: string, agentType: string, output: any, metadata?: any) {
   const clinicId = await resolveClinicId(adminClient, userId);
   const outputText = typeof output === 'string'
     ? output
@@ -223,10 +221,8 @@ async function runAiPrompt(
   }
 
   const providerErrors: string[] = [];
-  const providerOrder: Array<'gemini' | 'openai'> =
-    preferredProvider === 'openai' ? ['openai', 'gemini']
-      : preferredProvider === 'gemini' ? ['gemini', 'openai']
-      : ['gemini', 'openai'];
+  const providerOrder: Array<'gemini' | 'openai'> = ['gemini', 'openai'];
+  if (preferredProvider === 'openai') providerOrder.reverse();
 
   for (const provider of providerOrder) {
     const cred = provider === 'gemini' ? geminiCred : openaiCred;
@@ -382,7 +378,7 @@ async function processLeadData(adminClient: any, userId: string, leadData: any) 
       createdAt = new Date(Number(rawTime) * 1000).toISOString();
     } else {
       const d = new Date(rawTime);
-      createdAt = isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+      createdAt = Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
     }
   } catch {
     createdAt = new Date().toISOString();
@@ -493,7 +489,7 @@ function normalizeMetaAccountId(raw: unknown): string {
   const unprefixedValue = value.replace(/^act_/, '');
   if (uuidLike.test(value) || uuidLike.test(unprefixedValue)) return '';
 
-  const digitsOnly = unprefixedValue.replace(/[^\d]/g, '');
+  const digitsOnly = unprefixedValue.replaceAll(/[^\d]/g, '');
   if (!digitsOnly) return '';
   return `act_${digitsOnly}`;
 }
@@ -514,7 +510,7 @@ function normalizePhoneNumberId(raw: unknown): string {
   const value = String(raw ?? '').trim();
   if (!value || /^act_/i.test(value)) return '';
   if (/[a-z]/i.test(value)) return '';
-  const digits = value.replace(/\D/g, '');
+  const digits = value.replaceAll(/\D/g, '');
   if (digits.length < 8 || digits.length > 20) return '';
   return digits;
 }
@@ -525,18 +521,18 @@ function b64url(data: ArrayBuffer | string): string {
   if (typeof data === 'string') {
     str = btoa(data);
   } else {
-    str = btoa(String.fromCharCode(...new Uint8Array(data)));
+    str = btoa(String.fromCodePoint(...new Uint8Array(data)));
   }
-  return str.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+  return str.replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
 }
 
 async function importRSAPrivateKey(pem: string): Promise<CryptoKey> {
-  const pemBody = pem.replace(/-----BEGIN PRIVATE KEY-----/, '')
-    .replace(/-----END PRIVATE KEY-----/, '')
-    .replace(/\s+/g, '');
+  const pemBody = pem.replaceAll('-----BEGIN PRIVATE KEY-----', '')
+    .replaceAll('-----END PRIVATE KEY-----', '')
+    .replaceAll(/\s+/g, '');
   const binary = atob(pemBody);
   const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.codePointAt(i) ?? 0;
   return crypto.subtle.importKey(
     'pkcs8', bytes.buffer as any,
     { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
@@ -571,7 +567,7 @@ async function getGoogleAccessToken(serviceAccount: any): Promise<string> {
 }
 
 async function googleAdsSearch(customerId: string, devToken: string, accessToken: string, query: string) {
-  const cleanId = customerId.replace(/-/g, '');
+  const cleanId = customerId.replaceAll('-', '');
   const r = await fetch(`https://googleads.googleapis.com/v17/customers/${cleanId}/googleAds:search`, {
     method: 'POST',
     headers: {
@@ -701,7 +697,7 @@ Deno.serve(async (req: Request) => {
       for (const change of (entry.changes ?? [])) {
         if (change.field !== 'leadgen') continue;
         const val = change.value ?? {};
-        const { leadgen_id, page_id, form_id, ad_id, adset_id, campaign_id, created_time } = val;
+        const { leadgen_id, page_id } = val;
         if (!leadgen_id) continue;
 
         // Resolve the user who owns this page via their Meta integration record
@@ -1060,7 +1056,7 @@ Deno.serve(async (req: Request) => {
       const settledCount = settlements.length;
 
       const conversions = leads.filter((l: any) => l.stage === 'treatment' || l.stage === 'closed').length;
-      const conversionRate = totalLeads > 0 ? parseFloat(((conversions / totalLeads) * 100).toFixed(1)) : 0;
+      const conversionRate = totalLeads > 0 ? Number.parseFloat(((conversions / totalLeads) * 100).toFixed(1)) : 0;
       const stages = ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'];
       const byStage: Record<string, number> = {};
       for (const s of stages) byStage[s] = leads.filter((l: any) => l.stage === s).length;
@@ -1073,8 +1069,8 @@ Deno.serve(async (req: Request) => {
       return sendJson({
         success: true,
         metrics: {
-          totalLeads, totalRevenue: parseFloat(totalRevenue.toFixed(2)),
-          verifiedRevenue: parseFloat(verifiedRevenue.toFixed(2)),
+          totalLeads, totalRevenue: Number.parseFloat(totalRevenue.toFixed(2)),
+          verifiedRevenue: Number.parseFloat(verifiedRevenue.toFixed(2)),
           settledCount,
           conversions, conversionRate, byStage, bySource,
           connectedIntegrations, totalIntegrations: integrations.length,
@@ -1091,7 +1087,7 @@ Deno.serve(async (req: Request) => {
       const funnel = stages.map(stage => ({
         stage, label: stage,
         count: (leads ?? []).filter((l: any) => l.stage === stage).length,
-        percentage: parseFloat((((leads ?? []).filter((l: any) => l.stage === stage).length / total) * 100).toFixed(1)),
+        percentage: Number.parseFloat((((leads ?? []).filter((l: any) => l.stage === stage).length / total) * 100).toFixed(1)),
       }));
       return sendJson({ success: true, funnel });
     }
@@ -1113,7 +1109,7 @@ Deno.serve(async (req: Request) => {
         }, creds.accessToken);
 
         const trends: any[] = data.data ?? [];
-        const sumN = (arr: any[], k: string) => arr.reduce((s: number, d: any) => s + parseFloat(d[k] || 0), 0);
+        const sumN = (arr: any[], k: string) => arr.reduce((s: number, d: any) => s + Number.parseFloat(d[k] || 0), 0);
         const avgN = (arr: any[], k: string) => arr.length ? sumN(arr, k) / arr.length : 0;
         const pct = (a: number, b: number) => b > 0 ? Math.round(((a - b) / b) * 100) : 0;
 
@@ -1124,11 +1120,11 @@ Deno.serve(async (req: Request) => {
           impressions: Math.round(sumN(arr, 'impressions')),
           reach: Math.round(sumN(arr, 'reach')),
           clicks: Math.round(sumN(arr, 'clicks')),
-          spend: parseFloat(sumN(arr, 'spend').toFixed(2)),
+          spend: Number.parseFloat(sumN(arr, 'spend').toFixed(2)),
           conversions: Math.round(sumN(arr, 'conversions')),
-          ctr: parseFloat(avgN(arr, 'ctr').toFixed(2)),
-          cpc: parseFloat(avgN(arr, 'cpc').toFixed(2)),
-          cpm: parseFloat(avgN(arr, 'cpm').toFixed(2)),
+          ctr: Number.parseFloat(avgN(arr, 'ctr').toFixed(2)),
+          cpc: Number.parseFloat(avgN(arr, 'cpc').toFixed(2)),
+          cpm: Number.parseFloat(avgN(arr, 'cpm').toFixed(2)),
         });
 
         const thisWeek = agg(last7);
@@ -1181,7 +1177,7 @@ Deno.serve(async (req: Request) => {
         return sendJson(payload, validation.statusCode);
       }
 
-      const days = parseInt(url.searchParams.get('days') ?? '30');
+      const days = Number.parseInt(url.searchParams.get('days') ?? '30');
       const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
       const until = new Date().toISOString().slice(0, 10);
       const prevSince = new Date(Date.now() - days * 2 * 86400_000).toISOString().slice(0, 10);
@@ -1204,28 +1200,28 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
 
         const daily = currRes.value.data ?? [];
         const prevD = prevRes.status === 'fulfilled' ? (prevRes.value.data?.[0] ?? {}) : {};
-        const sumN = (arr: any[], k: string) => arr.reduce((s: number, d: any) => s + parseFloat(d[k] || 0), 0);
+        const sumN = (arr: any[], k: string) => arr.reduce((s: number, d: any) => s + Number.parseFloat(d[k] || 0), 0);
 
         const curr = {
           impressions: Math.round(sumN(daily, 'impressions')),
           reach: Math.round(sumN(daily, 'reach')),
           clicks: Math.round(sumN(daily, 'clicks')),
-          spend: parseFloat(sumN(daily, 'spend').toFixed(2)),
+          spend: Number.parseFloat(sumN(daily, 'spend').toFixed(2)),
           conversions: Math.round(sumN(daily, 'conversions')),
           messagingConversationStarted: daily.reduce((sum: number, day: any) => sum + actionValue(day.actions, isMessagingConversationAction), 0),
         };
-        const ctr = curr.impressions > 0 ? parseFloat(((curr.clicks / curr.impressions) * 100).toFixed(2)) : 0;
-        const cpc = curr.clicks > 0 ? parseFloat((curr.spend / curr.clicks).toFixed(2)) : 0;
-        const cpm = curr.impressions > 0 ? parseFloat((curr.spend / curr.impressions * 1000).toFixed(2)) : 0;
-        const cpp = curr.conversions > 0 ? parseFloat((curr.spend / curr.conversions).toFixed(2)) : 0;
+        const ctr = curr.impressions > 0 ? Number.parseFloat(((curr.clicks / curr.impressions) * 100).toFixed(2)) : 0;
+        const cpc = curr.clicks > 0 ? Number.parseFloat((curr.spend / curr.clicks).toFixed(2)) : 0;
+        const cpm = curr.impressions > 0 ? Number.parseFloat((curr.spend / curr.impressions * 1000).toFixed(2)) : 0;
+        const cpp = curr.conversions > 0 ? Number.parseFloat((curr.spend / curr.conversions).toFixed(2)) : 0;
         const prev = {
-          impressions: parseFloat(prevD.impressions ?? 0),
-          reach: parseFloat(prevD.reach ?? 0),
-          clicks: parseFloat(prevD.clicks ?? 0),
-          spend: parseFloat(prevD.spend ?? 0),
-          conversions: parseFloat(prevD.conversions ?? 0),
+          impressions: Number.parseFloat(prevD.impressions ?? 0),
+          reach: Number.parseFloat(prevD.reach ?? 0),
+          clicks: Number.parseFloat(prevD.clicks ?? 0),
+          spend: Number.parseFloat(prevD.spend ?? 0),
+          conversions: Number.parseFloat(prevD.conversions ?? 0),
         };
-        const pct = (c: number, p: number) => p === 0 ? (c > 0 ? 100 : 0) : parseFloat(((c - p) / p * 100).toFixed(1));
+        const pct = (c: number, p: number) => p === 0 ? (c > 0 ? 100 : 0) : Number.parseFloat(((c - p) / p * 100).toFixed(1));
 
         const result = {
           success: true,
@@ -1243,13 +1239,13 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
           },
           daily: daily.map((d: any) => ({
             date: d.date_start,
-            impressions: parseFloat(d.impressions || 0),
-            reach: parseFloat(d.reach || 0),
-            clicks: parseFloat(d.clicks || 0),
-            spend: parseFloat(d.spend || 0),
-            ctr: parseFloat(d.ctr || 0),
-            cpc: parseFloat(d.cpc || 0),
-            cpm: parseFloat(d.cpm || 0),
+            impressions: Number.parseFloat(d.impressions || 0),
+            reach: Number.parseFloat(d.reach || 0),
+            clicks: Number.parseFloat(d.clicks || 0),
+            spend: Number.parseFloat(d.spend || 0),
+            ctr: Number.parseFloat(d.ctr || 0),
+            cpc: Number.parseFloat(d.cpc || 0),
+            cpm: Number.parseFloat(d.cpm || 0),
             messagingConversationStarted: actionValue(d.actions, isMessagingConversationAction),
           })),
         };
@@ -1281,7 +1277,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
         return sendJson({ success: false, message: validation.message }, validation.statusCode);
       }
 
-      const days = Math.min(Math.max(parseInt(url.searchParams.get('days') ?? '7'), 1), 90);
+      const days = Math.min(Math.max(Number.parseInt(url.searchParams.get('days') ?? '7'), 1), 90);
       const sinceDate = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
       const untilDate = new Date().toISOString().slice(0, 10);
       const sinceTs = Math.floor((Date.now() - days * 86400_000) / 1000);
@@ -1379,23 +1375,27 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
             const ins = c.insights?.data?.[0];
             const conversions = parseMetaMetric(ins?.conversions);
             const cppRaw = parseMetaMetric(ins?.cost_per_conversion);
+            let cpp: number | null = cppRaw;
+            if (cpp <= 0) {
+              cpp = conversions > 0 ? Number.parseFloat((Number.parseFloat(ins.spend || 0) / conversions).toFixed(2)) : null;
+            }
             return {
               id: c.id,
               name: c.name,
               status: c.status,
-              objective: c.objective?.replace(/_/g, ' ') ?? '',
-              dailyBudget: c.daily_budget ? parseFloat(c.daily_budget) / 100 : null,
-              lifetimeBudget: c.lifetime_budget ? parseFloat(c.lifetime_budget) / 100 : null,
+              objective: c.objective?.replaceAll('_', ' ') ?? '',
+              dailyBudget: c.daily_budget ? Number.parseFloat(c.daily_budget) / 100 : null,
+              lifetimeBudget: c.lifetime_budget ? Number.parseFloat(c.lifetime_budget) / 100 : null,
               insights: ins ? {
-                impressions: parseFloat(ins.impressions || 0),
-                reach: parseFloat(ins.reach || 0),
-                clicks: parseFloat(ins.clicks || 0),
-                spend: parseFloat(ins.spend || 0),
-                ctr: parseFloat(ins.ctr || 0),
-                cpc: parseFloat(ins.cpc || 0),
-                cpm: parseFloat(ins.cpm || 0),
+                impressions: Number.parseFloat(ins.impressions || 0),
+                reach: Number.parseFloat(ins.reach || 0),
+                clicks: Number.parseFloat(ins.clicks || 0),
+                spend: Number.parseFloat(ins.spend || 0),
+                ctr: Number.parseFloat(ins.ctr || 0),
+                cpc: Number.parseFloat(ins.cpc || 0),
+                cpm: Number.parseFloat(ins.cpm || 0),
                 conversions,
-                cpp: cppRaw > 0 ? cppRaw : (conversions > 0 ? parseFloat((parseFloat(ins.spend || 0) / conversions).toFixed(2)) : null),
+                cpp,
               } : null,
             };
           }),
@@ -1418,9 +1418,9 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
               id: c.id,
               name: c.name,
               status: c.status,
-              objective: c.objective?.replace(/_/g, ' ') ?? '',
-              dailyBudget: c.daily_budget ? parseFloat(c.daily_budget) / 100 : null,
-              lifetimeBudget: c.lifetime_budget ? parseFloat(c.lifetime_budget) / 100 : null,
+              objective: c.objective?.replaceAll('_', ' ') ?? '',
+              dailyBudget: c.daily_budget ? Number.parseFloat(c.daily_budget) / 100 : null,
+              lifetimeBudget: c.lifetime_budget ? Number.parseFloat(c.lifetime_budget) / 100 : null,
               insights: null,
             })),
             warning: 'Campaign insights are unavailable; returned campaign metadata only.',
@@ -1614,7 +1614,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
       let metadata = body.metadata ?? {};
       if (service === 'meta') {
         const normalized = requireMetaAccountId(metadata?.adAccountId ?? metadata?.ad_account_id ?? '');
-        const normalizedPageId = String(metadata?.pageId ?? metadata?.page_id ?? '').replace(/\D/g, '');
+        const normalizedPageId = String(metadata?.pageId ?? metadata?.page_id ?? '').replaceAll(/\D/g, '');
         metadata = {
           ...metadata,
           adAccountId: normalized,
@@ -1895,7 +1895,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
 
     // ── GET /api/ai/outputs ────────────────────────────────────────────────
     if (resource === 'ai' && sub === 'outputs' && req.method === 'GET') {
-      const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') ?? '20'), 1), 100);
+      const limit = Math.min(Math.max(Number.parseInt(url.searchParams.get('limit') ?? '20'), 1), 100);
       // Include both personal outputs and clinic-wide outputs (e.g. weekly reports)
       const clinicId = await resolveClinicId(adminClient, userId!);
       let query = adminClient
@@ -1941,7 +1941,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
       if (!(g as any).customerId) return sendJson({ success: false, noAccountId: true, message: 'Google Ads Customer ID not configured.' });
       const { devToken, customerId, serviceAccount } = g as any;
 
-      const days = parseInt(url.searchParams.get('days') ?? '30');
+      const days = Number.parseInt(url.searchParams.get('days') ?? '30');
       const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
       const until = new Date().toISOString().slice(0, 10);
       const prevSince = new Date(Date.now() - days * 2 * 86400_000).toISOString().slice(0, 10);
@@ -1966,7 +1966,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
       const daily = currRows.status === 'fulfilled' ? currRows.value : [];
       const prevData = prevRows.status === 'fulfilled' ? prevRows.value : [];
 
-      const micros2eur = (m: number) => parseFloat((m / 1_000_000).toFixed(2));
+      const micros2eur = (m: number) => Number.parseFloat((m / 1_000_000).toFixed(2));
       const sumF = (rows: any[], field: string) => rows.reduce((s, r) => s + (Number(r.metrics?.[field] ?? 0)), 0);
 
       const currImp = Math.round(sumF(daily, 'impressions'));
@@ -1978,11 +1978,11 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
       const prevSpend = micros2eur(sumF(prevData, 'costMicros'));
       const prevConv = Math.round(sumF(prevData, 'conversions'));
 
-      const ctr = currImp > 0 ? parseFloat(((currClicks / currImp) * 100).toFixed(2)) : 0;
-      const cpc = currClicks > 0 ? parseFloat((currSpend / currClicks).toFixed(2)) : 0;
-      const cpm = currImp > 0 ? parseFloat((currSpend / currImp * 1000).toFixed(2)) : 0;
-      const cpp = currConv > 0 ? parseFloat((currSpend / currConv).toFixed(2)) : 0;
-      const pct = (c: number, p: number) => p === 0 ? (c > 0 ? 100 : 0) : parseFloat(((c - p) / p * 100).toFixed(1));
+      const ctr = currImp > 0 ? Number.parseFloat(((currClicks / currImp) * 100).toFixed(2)) : 0;
+      const cpc = currClicks > 0 ? Number.parseFloat((currSpend / currClicks).toFixed(2)) : 0;
+      const cpm = currImp > 0 ? Number.parseFloat((currSpend / currImp * 1000).toFixed(2)) : 0;
+      const cpp = currConv > 0 ? Number.parseFloat((currSpend / currConv).toFixed(2)) : 0;
+      const pct = (c: number, p: number) => p === 0 ? (c > 0 ? 100 : 0) : Number.parseFloat(((c - p) / p * 100).toFixed(1));
 
       return sendJson({
         success: true,
@@ -1999,7 +1999,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
           impressions: Number(r.metrics?.impressions ?? 0),
           clicks: Number(r.metrics?.clicks ?? 0),
           spend: micros2eur(Number(r.metrics?.costMicros ?? 0)),
-          ctr: parseFloat(Number(r.metrics?.ctr ?? 0).toFixed(4)) * 100,
+          ctr: Number.parseFloat(Number(r.metrics?.ctr ?? 0).toFixed(4)) * 100,
           cpc: micros2eur(Number(r.metrics?.averageCpc ?? 0)),
           cpm: micros2eur(Number(r.metrics?.averageCpm ?? 0)),
         })),
@@ -2027,21 +2027,21 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
         LIMIT 50
       `);
 
-      const micros2eur = (m: number) => m > 0 ? parseFloat((m / 1_000_000).toFixed(2)) : null;
+      const micros2eur = (m: number) => m > 0 ? Number.parseFloat((m / 1_000_000).toFixed(2)) : null;
       return sendJson({
         success: true,
         campaigns: rows.map((r: any) => ({
           id: r.campaign?.id ?? '',
           name: r.campaign?.name ?? '',
           status: r.campaign?.status ?? '',
-          type: (r.campaign?.advertisingChannelType ?? '').replace(/_/g, ' '),
+          type: (r.campaign?.advertisingChannelType ?? '').replaceAll('_', ' '),
           budget: micros2eur(Number(r.campaignBudget?.amountMicros ?? 0)),
           insights: {
             impressions: Number(r.metrics?.impressions ?? 0),
             clicks: Number(r.metrics?.clicks ?? 0),
             spend: micros2eur(Number(r.metrics?.costMicros ?? 0)) ?? 0,
             conversions: Number(r.metrics?.conversions ?? 0),
-            ctr: parseFloat((Number(r.metrics?.ctr ?? 0) * 100).toFixed(2)),
+            ctr: Number.parseFloat((Number(r.metrics?.ctr ?? 0) * 100).toFixed(2)),
             cpc: micros2eur(Number(r.metrics?.averageCpc ?? 0)),
             cpp: micros2eur(Number(r.metrics?.costPerConversion ?? 0)),
           },
@@ -2231,7 +2231,7 @@ const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,
 
     // ── GET /api/figma/events ────────────────────────────────────────────────
     if (resource === 'figma' && sub === 'events') {
-      const limit = Math.min(parseInt(url.searchParams.get('limit') || '20', 10), 50);
+      const limit = Math.min(Number.parseInt(url.searchParams.get('limit') || '20', 10), 50);
       const { data: rows } = await adminClient
         .from('figma_sync_log')
         .select('id, file_key, status, message, components_synced, tokens_synced, created_at')
@@ -2430,8 +2430,8 @@ function json(data: unknown, status = 200, extraHeaders: Record<string, string> 
     Object.entries(payload).filter(([key]) => !['success', 'data', 'error', 'message'].includes(key)),
   );
 
-  if (!Object.prototype.hasOwnProperty.call(payload, 'success')) payload.success = Boolean(success);
-  if (!Object.prototype.hasOwnProperty.call(payload, 'data')) {
+  if (!Object.hasOwn(payload, 'success')) payload.success = Boolean(success);
+  if (!Object.hasOwn(payload, 'data')) {
     payload.data = Object.keys(derivedData).length > 0 ? derivedData : null;
   }
   if (payload.error === undefined) {

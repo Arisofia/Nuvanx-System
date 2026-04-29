@@ -1,0 +1,8 @@
+{
+  "yaml.schemas": {
+    "https://json.schemastore.org/github-action": [
+      ".github/actions/**/action.yml",
+      ".github/actions/**/action.yaml"
+    ]
+  }
+}

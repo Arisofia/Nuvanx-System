@@ -8,8 +8,39 @@ on:
     branches: [main]
 
 jobs:
+  yaml-safety:
+    name: YAML — conflict & parse guard
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Fail on merge conflict markers in .github
+        run: |
+          if grep -R -nE "^(<<<<<<<|=======|>>>>>>>)" .github; then
+            echo "::error::Merge conflict markers detected in .github YAML files."
+            exit 1
+          fi
+
+      - name: Parse workflow and action YAML files
+        run: |
+          ruby - <<'RUBY'
+          require 'yaml'
+          files = Dir.glob('.github/workflows/*.{yml,yaml}') + Dir.glob('.github/actions/**/action.yml')
+          if files.empty?
+            warn 'No workflow/action YAML files found.'
+            exit 1
+          end
+          files.each do |f|
+            YAML.load_file(f)
+            puts "OK #{f}"
+          end
+          RUBY
+
   # ─── Frontend: lint ──────────────────────────────────────────────────────
   frontend-lint:
+    needs: yaml-safety
     name: Frontend — ESLint
     runs-on: ubuntu-latest
     permissions:
@@ -19,10 +50,10 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Use Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: 'npm'
@@ -46,10 +77,10 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Use Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: 'npm'
@@ -85,6 +116,7 @@ jobs:
 
   # ─── Backend: tests (includes CAPI parity contract) ───────────────────────
   backend-tests:
+    needs: yaml-safety
     name: Backend — Jest
     runs-on: ubuntu-latest
     permissions:
@@ -94,10 +126,10 @@ jobs:
         working-directory: backend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Use Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: 'npm'
@@ -116,13 +148,14 @@ jobs:
 
   # ─── Edge Function: type-check ─────────────────────────────────────────────
   edge-deno-check:
+    needs: yaml-safety
     name: Edge Function — deno check
     runs-on: ubuntu-latest
     permissions:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup Deno
         uses: denoland/setup-deno@v2

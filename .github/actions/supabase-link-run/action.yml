@@ -1,23 +1,24 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-action
 name: Supabase Link and Run
-description: Link Supabase CLI to a project and execute a command in CI.
+description: 'Composite action that links a Supabase project and runs a command using the Supabase CLI.'
 
 inputs:
   project_ref:
-    description: Supabase project ref used by supabase link.
+    description: 'Supabase project reference'
     required: true
   supabase_access_token:
-    description: Supabase access token for Supabase CLI.
+    description: 'Supabase access token'
     required: true
   database_url:
-    description: Optional database URL for deriving SUPABASE_DB_PASSWORD.
+    description: 'Optional database URL for deriving SUPABASE_DB_PASSWORD'
     required: false
     default: ''
   supabase_db_password:
-    description: Optional DB password for Supabase CLI link/db operations.
+    description: 'Optional database password for Supabase CLI link/db operations'
     required: false
     default: ''
   command:
-    description: Shell command to execute after linking the Supabase project.
+    description: 'Shell command to execute after linking the Supabase project'
     required: true
 
 runs:
@@ -28,16 +29,13 @@ runs:
       with:
         version: latest
 
-    - name: Link Supabase project
+    - name: Validate required inputs
       shell: bash
       env:
-        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
         INPUT_PROJECT_REF: ${{ inputs.project_ref }}
-        INPUT_DATABASE_URL: ${{ inputs.database_url }}
-        INPUT_SUPABASE_DB_PASSWORD: ${{ inputs.supabase_db_password }}
+        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
       run: |
         set -euo pipefail
-
         if [ -z "$INPUT_PROJECT_REF" ]; then
           echo "::error::project_ref is required."
           exit 1
@@ -46,6 +44,15 @@ runs:
           echo "::error::supabase_access_token is required."
           exit 1
         fi
+
+    - name: Link Supabase project
+      shell: bash
+      env:
+        INPUT_PROJECT_REF: ${{ inputs.project_ref }}
+        SUPABASE_DB_PASSWORD: ${{ inputs.supabase_db_password }}
+        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
+      run: |
+        set -euo pipefail
 
         RESOLVED_DB_PASSWORD="$INPUT_SUPABASE_DB_PASSWORD"
         if [ -z "$RESOLVED_DB_PASSWORD" ] && [ -n "$INPUT_DATABASE_URL" ]; then
@@ -65,10 +72,14 @@ runs:
           echo "DATABASE_URL=$INPUT_DATABASE_URL"
         } >> "$GITHUB_ENV"
 
-    - name: Execute Supabase command
+    - name: Execute command
       shell: bash
       env:
+        DATABASE_URL: ${{ inputs.database_url }}
         SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
+        SUPABASE_PROJECT_REF: ${{ inputs.project_ref }}
+        SUPABASE_DB_PASSWORD: ${{ inputs.supabase_db_password }}
       run: |
         set -euo pipefail
-        sh -lc "${{ inputs.command }}"
+        bash -lc "${{ inputs.command }}"
+
