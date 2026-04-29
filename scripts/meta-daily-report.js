@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
 
 const META_GRAPH = 'https://graph.facebook.com/v21.0';
 const GOOGLE_ADS_API = 'https://googleads.googleapis.com/v17';
@@ -15,8 +15,8 @@ function formatDateUTC(date) {
 function normalizeAdAccountId(raw) {
   const value = String(raw || '').trim();
   if (!value) return '';
-  const unprefixed = value.replace(/^act_/i, '');
-  const digits = unprefixed.replace(/\D/g, '');
+  const unprefixed = value.replaceAll(/^act_/i, '');
+  const digits = unprefixed.replaceAll(/\D/g, '');
   return digits ? `act_${digits}` : '';
 }
 
@@ -28,9 +28,9 @@ function parseMetric(raw) {
     return Number.isFinite(n) ? n : 0;
   }
   if (Array.isArray(raw)) {
-    return raw.reduce((sum, item) => sum + parseMetric(item && Object.prototype.hasOwnProperty.call(item, 'value') ? item.value : item), 0);
+    return raw.reduce((sum, item) => sum + parseMetric(item && Object.hasOwn(item, 'value') ? item.value : item), 0);
   }
-  if (typeof raw === 'object' && Object.prototype.hasOwnProperty.call(raw, 'value')) {
+  if (typeof raw === 'object' && Object.hasOwn(raw, 'value')) {
     return parseMetric(raw.value);
   }
   return 0;
@@ -45,7 +45,7 @@ function actionValue(actions, matcher) {
   }, 0);
 }
 
-function getAction(actions = [], type) {
+function getAction(type, actions = []) {
   return Number((actions || []).find((a) => a?.action_type === type)?.value || 0);
 }
 
@@ -83,10 +83,76 @@ function numberFmt(value) {
   return Number(value || 0).toLocaleString();
 }
 
+function parseRelativeDate(value, referenceDate = new Date()) {
+  if (!value) return null;
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === 'today') return new Date(referenceDate);
+  if (normalized === 'yesterday') {
+    const d = new Date(referenceDate);
+    d.setUTCDate(d.getUTCDate() - 1);
+    return d;
+  }
+  const rel = /^([0-9]+)d$/.exec(normalized);
+  if (rel) {
+    const days = Number(rel[1]);
+    const d = new Date(referenceDate);
+    d.setUTCDate(d.getUTCDate() - days);
+    return d;
+  }
+  const parsed = new Date(normalized);
+  if (!Number.isNaN(parsed.getTime())) return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
+  return null;
+}
+
+function getGoogleServiceAccount(gServiceAccountRaw, gDevToken, gCustomerId) {
+  if (!gServiceAccountRaw || !gDevToken || !gCustomerId) return null;
+
+  try {
+    const raw = gServiceAccountRaw.startsWith('{') ? gServiceAccountRaw : Buffer.from(gServiceAccountRaw, 'base64').toString('utf8');
+    return JSON.parse(raw);
+  } catch {
+    console.warn('[meta-daily-report] Invalid GOOGLE_ADS_SERVICE_ACCOUNT — skipping Google Ads section');
+    return null;
+  }
+}
+
+function getPrimaryChannel(waLeads, formLeads) {
+  if (waLeads > formLeads) return 'WhatsApp';
+  if (formLeads > waLeads) return 'Lead Form';
+  return 'Mixed/Unknown';
+}
+
+function buildCampaignRows(rows) {
+  return (rows || []).map((row) => {
+    const spend = parseMetric(row.spend);
+    const impressions = parseMetric(row.impressions);
+    const clicks = parseMetric(row.clicks || row.inline_link_clicks || row.outbound_clicks);
+    const landingPageViews = parseMetric(row.landing_page_views || row.landing_page_view);
+    const waLeads = getWhatsApp(row.actions);
+    const formLeads = getLeadForm(row.actions);
+    const totalLeads = waLeads + formLeads;
+
+    return {
+      id: row.campaign_id || 'unknown',
+      name: row.campaign_name || 'Unnamed campaign',
+      spend,
+      impressions,
+      clicks,
+      landingPageViews,
+      waLeads,
+      formLeads,
+      totalLeads,
+      primaryChannel: getPrimaryChannel(waLeads, formLeads),
+      cpl: totalLeads > 0 ? spend / totalLeads : 0,
+      isWaste: spend > 0 && totalLeads === 0,
+    };
+  });
+}
+
 // ── Google Ads helpers ───────────────────────────────────────────────────────
 
 function b64url(data) {
-  const buf = typeof data === 'string' ? Buffer.from(data) : Buffer.from(data);
+  const buf = Buffer.from(data);
   return buf.toString('base64url');
 }
 
@@ -118,7 +184,7 @@ async function getGoogleAccessToken(serviceAccount) {
 
 async function fetchGoogleAdsInsights({ devToken, customerId, serviceAccount, since, until }) {
   const accessToken = await getGoogleAccessToken(serviceAccount);
-  const cleanId = customerId.replace(/-/g, '');
+  const cleanId = customerId.replaceAll('-', '');
   const query = `
     SELECT campaign.id, campaign.name, metrics.impressions, metrics.clicks,
            metrics.cost_micros, metrics.conversions, metrics.ctr, metrics.average_cpc
@@ -284,21 +350,23 @@ function buildGoogleAdsMarkdown(campaigns) {
     return a;
   }, { spend: 0, clicks: 0, impressions: 0, conversions: 0 });
 
-  const lines = [];
-  lines.push('## Google Ads — Campaign Summary');
-  lines.push('');
-  lines.push(`- Total Spend: ${eur(gTotals.spend)}`);
-  lines.push(`- Total Clicks: ${numberFmt(gTotals.clicks)}`);
-  lines.push(`- Total Impressions: ${numberFmt(gTotals.impressions)}`);
-  lines.push(`- Conversions: ${numberFmt(gTotals.conversions)}`);
-  lines.push('');
-  lines.push('| Campaign | Spend | Clicks | Conversions | CTR |');
-  lines.push('|---|---:|---:|---:|---:|');
-  for (const c of campaigns.slice(0, 10)) {
-    lines.push(`| ${c.name} | ${eur(c.spend)} | ${numberFmt(c.clicks)} | ${numberFmt(c.conversions)} | ${c.ctr.toFixed(2)}% |`);
-  }
-  lines.push('');
-  return lines.join('\n');
+  const headerLines = [
+    '## Google Ads — Campaign Summary',
+    '',
+    `- Total Spend: ${eur(gTotals.spend)}`,
+    `- Total Clicks: ${numberFmt(gTotals.clicks)}`,
+    `- Total Impressions: ${numberFmt(gTotals.impressions)}`,
+    `- Conversions: ${numberFmt(gTotals.conversions)}`,
+    '',
+    '| Campaign | Spend | Clicks | Conversions | CTR |',
+    '|---|---:|---:|---:|---:|',
+  ];
+
+  const campaignLines = campaigns.slice(0, 10).map((c) =>
+    `| ${c.name} | ${eur(c.spend)} | ${numberFmt(c.clicks)} | ${numberFmt(c.conversions)} | ${c.ctr.toFixed(2)}% |`
+  );
+
+  return [...headerLines, ...campaignLines, ''].join('\n');
 }
 
 function buildMarkdown({
@@ -314,94 +382,105 @@ function buildMarkdown({
   recommendations,
 }) {
   const lines = [];
+  const add = (...items) => lines.push(...items);
 
-  lines.push('# Daily Unified Meta Ads Report');
-  lines.push('');
-  lines.push(`- Generated at (UTC): ${generatedAt}`);
-  lines.push(`- Ad account: ${account}`);
-  lines.push(`- Window: ${period.since} to ${period.until}`);
-  lines.push('');
+  add(
+    '# Daily Unified Meta Ads Report',
+    '',
+    `- Generated at (UTC): ${generatedAt}`,
+    `- Ad account: ${account}`,
+    `- Window: ${period.since} to ${period.until}`,
+    '',
+    '## Executive Summary',
+    '',
+    `- Spend: ${eur(totals.spend)}`,
+    `- Impressions: ${numberFmt(totals.impressions)}`,
+    `- Clicks: ${numberFmt(totals.clicks)}`,
+    `- CTR: ${totals.ctr.toFixed(2)}%`,
+    `- CPC: ${eur(totals.cpc)}`,
+    `- Estimated WhatsApp conversions: ${numberFmt(totals.whatsAppLeads)}`,
+    `- Estimated Lead Form conversions: ${numberFmt(totals.formLeads)}`,
+    '',
+    '## Channel Comparison (WhatsApp vs Lead Forms)',
+    '',
+    '| Channel | Estimated Leads | Campaign Spend | Estimated CPL | Share of Leads |',
+    '|---|---:|---:|---:|---:|',
+    `| WhatsApp | ${numberFmt(channels.whatsapp.leads)} | ${eur(channels.whatsapp.spend)} | ${channels.whatsapp.cpl > 0 ? eur(channels.whatsapp.cpl) : 'n/a'} | ${channels.whatsapp.share.toFixed(1)}% |`,
+    `| Lead Forms | ${numberFmt(channels.forms.leads)} | ${eur(channels.forms.spend)} | ${channels.forms.cpl > 0 ? eur(channels.forms.cpl) : 'n/a'} | ${channels.forms.share.toFixed(1)}% |`,
+    '',
+    '## Campaigns Performing Best (by estimated leads)',
+    '',
+    '| Campaign | Channel Focus | Spend | Leads | Estimated CPL |',
+    '|---|---|---:|---:|---:|',
+  );
 
-  lines.push('## Executive Summary');
-  lines.push('');
-  lines.push(`- Spend: ${eur(totals.spend)}`);
-  lines.push(`- Impressions: ${numberFmt(totals.impressions)}`);
-  lines.push(`- Clicks: ${numberFmt(totals.clicks)}`);
-  lines.push(`- CTR: ${totals.ctr.toFixed(2)}%`);
-  lines.push(`- CPC: ${eur(totals.cpc)}`);
-  lines.push(`- Estimated WhatsApp conversions: ${numberFmt(totals.whatsAppLeads)}`);
-  lines.push(`- Estimated Lead Form conversions: ${numberFmt(totals.formLeads)}`);
-  lines.push('');
-
-  lines.push('## Channel Comparison (WhatsApp vs Lead Forms)');
-  lines.push('');
-  lines.push('| Channel | Estimated Leads | Campaign Spend | Estimated CPL | Share of Leads |');
-  lines.push('|---|---:|---:|---:|---:|');
-  lines.push(`| WhatsApp | ${numberFmt(channels.whatsapp.leads)} | ${eur(channels.whatsapp.spend)} | ${channels.whatsapp.cpl > 0 ? eur(channels.whatsapp.cpl) : 'n/a'} | ${channels.whatsapp.share.toFixed(1)}% |`);
-  lines.push(`| Lead Forms | ${numberFmt(channels.forms.leads)} | ${eur(channels.forms.spend)} | ${channels.forms.cpl > 0 ? eur(channels.forms.cpl) : 'n/a'} | ${channels.forms.share.toFixed(1)}% |`);
-  lines.push('');
-
-  lines.push('## Campaigns Performing Best (by estimated leads)');
-  lines.push('');
-  lines.push('| Campaign | Channel Focus | Spend | Leads | Estimated CPL |');
-  lines.push('|---|---|---:|---:|---:|');
   if (campaigns.best.length === 0) {
-    lines.push('| No campaign data | - | - | - | - |');
+    add('| No campaign data | - | - | - | - |');
   } else {
-    for (const row of campaigns.best) {
-      lines.push(`| ${row.name} | ${row.primaryChannel} | ${eur(row.spend)} | ${numberFmt(row.totalLeads)} | ${row.cpl > 0 ? eur(row.cpl) : 'n/a'} |`);
-    }
+    add(
+      ...campaigns.best.map((row) =>
+        `| ${row.name} | ${row.primaryChannel} | ${eur(row.spend)} | ${numberFmt(row.totalLeads)} | ${row.cpl > 0 ? eur(row.cpl) : 'n/a'} |`
+      )
+    );
   }
-  lines.push('');
 
-  lines.push('## Campaigns Wasting Budget (spend high, low/zero leads)');
-  lines.push('');
-  lines.push('| Campaign | Spend | Leads | Estimated CPL |');
-  lines.push('|---|---:|---:|---:|');
+  add(
+    '',
+    '## Campaigns Wasting Budget (spend high, low/zero leads)',
+    '',
+    '| Campaign | Spend | Leads | Estimated CPL |',
+    '|---|---:|---:|---:|',
+  );
+
   if (campaigns.waste.length === 0) {
-    lines.push('| No clear budget waste detected for this window | - | - | - |');
+    add('| No clear budget waste detected for this window | - | - | - |');
   } else {
-    for (const row of campaigns.waste) {
-      lines.push(`| ${row.name} | ${eur(row.spend)} | ${numberFmt(row.totalLeads)} | ${row.cpl > 0 ? eur(row.cpl) : 'n/a'} |`);
-    }
+    add(
+      ...campaigns.waste.map((row) =>
+        `| ${row.name} | ${eur(row.spend)} | ${numberFmt(row.totalLeads)} | ${row.cpl > 0 ? eur(row.cpl) : 'n/a'} |`
+      )
+    );
   }
-  lines.push('');
 
-  lines.push('## Landing Funnel (click to landing view)');
-  lines.push('');
-  lines.push(`- Outbound/Link clicks: ${numberFmt(landing.clicks)}`);
-  lines.push(`- Landing page views: ${numberFmt(landing.views)}`);
-  lines.push(`- Landing conversion rate: ${landing.rate.toFixed(1)}%`);
-  lines.push('');
+  add(
+    '',
+    '## Landing Funnel (click to landing view)',
+    '',
+    `- Outbound/Link clicks: ${numberFmt(landing.clicks)}`,
+    `- Landing page views: ${numberFmt(landing.views)}`,
+    `- Landing conversion rate: ${landing.rate.toFixed(1)}%`,
+    '',
+  );
 
   if (dbSignals.available) {
-    lines.push('## CRM Response Funnel by Source (last 7 days)');
-    lines.push('');
-    lines.push('| Source | Leads | Contacted | Replied | Booked | Closed Won | Reply Rate | Booking Rate |');
-    lines.push('|---|---:|---:|---:|---:|---:|---:|---:|');
+    add(
+      '## CRM Response Funnel by Source (last 7 days)',
+      '',
+      '| Source | Leads | Contacted | Replied | Booked | Closed Won | Reply Rate | Booking Rate |',
+      '|---|---:|---:|---:|---:|---:|---:|---:|',
+    );
+
     if (dbSignals.rows.length === 0) {
-      lines.push('| No CRM leads found in this window | - | - | - | - | - | - | - |');
+      add('| No CRM leads found in this window | - | - | - | - | - | - | - |');
     } else {
-      for (const row of dbSignals.rows) {
-        const replyRate = pct(row.replied, row.contacted || row.total);
-        const bookingRate = pct(row.booked, row.replied || row.total);
-        lines.push(`| ${row.source} | ${row.total} | ${row.contacted} | ${row.replied} | ${row.booked} | ${row.closed_won} | ${replyRate.toFixed(1)}% | ${bookingRate.toFixed(1)}% |`);
-      }
+      add(
+        ...dbSignals.rows.map((row) => {
+          const replyRate = pct(row.replied, row.contacted || row.total);
+          const bookingRate = pct(row.booked, row.replied || row.total);
+          return `| ${row.source} | ${row.total} | ${row.contacted} | ${row.replied} | ${row.booked} | ${row.closed_won} | ${replyRate.toFixed(1)}% | ${bookingRate.toFixed(1)}% |`;
+        })
+      );
     }
-    lines.push('');
+
+    add('');
   }
 
   const googleSection = buildGoogleAdsMarkdown(googleAdsCampaigns);
   if (googleSection) {
-    lines.push(googleSection);
+    add(googleSection);
   }
 
-  lines.push('## Recommended Actions for Next Day');
-  lines.push('');
-  recommendations.forEach((item, idx) => {
-    lines.push(`${idx + 1}. ${item}`);
-  });
-  lines.push('');
+  add('## Recommended Actions for Next Day', '', ...recommendations.map((item, idx) => `${idx + 1}. ${item}`), '');
 
   return `${lines.join('\n')}\n`;
 }
@@ -417,16 +496,7 @@ async function main() {
   const gServiceAccountRaw = process.env.GOOGLE_ADS_SERVICE_ACCOUNT || '';
   const gDevToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN || '';
   const gCustomerId = process.env.GOOGLE_ADS_CUSTOMER_ID || '';
-  let googleServiceAccount = null;
-  if (gServiceAccountRaw && gDevToken && gCustomerId) {
-    try {
-      const raw = gServiceAccountRaw.startsWith('{') ? gServiceAccountRaw
-        : Buffer.from(gServiceAccountRaw, 'base64').toString('utf8');
-      googleServiceAccount = JSON.parse(raw);
-    } catch {
-      console.warn('[meta-daily-report] Invalid GOOGLE_ADS_SERVICE_ACCOUNT — skipping Google Ads section');
-    }
-  }
+  const googleServiceAccount = getGoogleServiceAccount(gServiceAccountRaw, gDevToken, gCustomerId);
 
   if (!token || !rawAccount) {
     throw new Error('META_ACCESS_TOKEN and META_AD_ACCOUNT_ID are required');
@@ -440,35 +510,13 @@ async function main() {
   const argv = process.argv.slice(2);
   const maybeSince = argv.find((arg) => arg.startsWith('--since='))?.split('=')[1];
   const maybeUntil = argv.find((arg) => arg.startsWith('--until='))?.split('=')[1];
-  const days = parseInt(process.env.REPORT_DAYS || '30', 10);
+  const days = Number.parseInt(process.env.REPORT_DAYS || '30', 10);
 
   const today = new Date();
   const utcToday = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
 
-  const parseRelativeDate = (value, referenceDate = utcToday) => {
-    if (!value) return null;
-    const normalized = String(value).trim().toLowerCase();
-    if (normalized === 'today') return new Date(referenceDate);
-    if (normalized === 'yesterday') {
-      const d = new Date(referenceDate);
-      d.setUTCDate(d.getUTCDate() - 1);
-      return d;
-    }
-    const rel = normalized.match(/^(\d+)d$/);
-    if (rel) {
-      const days = Number(rel[1]);
-      const d = new Date(referenceDate);
-      d.setUTCDate(d.getUTCDate() - days);
-      return d;
-    }
-    const parsed = new Date(normalized);
-    if (!Number.isNaN(parsed.getTime())) return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
-    return null;
-  };
-
-  const untilDate = parseRelativeDate(maybeUntil || 'today') || utcToday;
+  const untilDate = parseRelativeDate(maybeUntil || 'today', utcToday) || utcToday;
   const sinceDate = parseRelativeDate(maybeSince || `${days}d`, untilDate) || new Date(untilDate);
-
   const since = formatDateUTC(sinceDate);
   const until = formatDateUTC(untilDate);
   const untilExclusive = formatDateUTC(new Date(untilDate.getTime() + 86400000));
@@ -505,31 +553,7 @@ async function main() {
 
   const rows = Array.isArray(insights?.data) ? insights.data : [];
 
-  const campaignRows = rows.map((row) => {
-    const spend = parseMetric(row.spend);
-    const impressions = parseMetric(row.impressions);
-    const clicks = parseMetric(row.clicks || row.inline_link_clicks || row.outbound_clicks);
-    const landingPageViews = parseMetric(row.landing_page_views || row.landing_page_view);
-    const waLeads = getWhatsApp(row.actions);
-    const formLeads = getLeadForm(row.actions);
-    const totalLeads = waLeads + formLeads;
-    const primaryChannel = waLeads > formLeads ? 'WhatsApp' : (formLeads > waLeads ? 'Lead Form' : 'Mixed/Unknown');
-
-    return {
-      id: row.campaign_id || 'unknown',
-      name: row.campaign_name || 'Unnamed campaign',
-      spend,
-      impressions,
-      clicks,
-      landingPageViews,
-      waLeads,
-      formLeads,
-      totalLeads,
-      primaryChannel,
-      cpl: totalLeads > 0 ? spend / totalLeads : 0,
-      isWaste: spend > 0 && totalLeads === 0,
-    };
-  });
+  const campaignRows = buildCampaignRows(rows);
 
   const totals = campaignRows.reduce((acc, row) => {
     acc.spend += row.spend;

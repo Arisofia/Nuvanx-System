@@ -9,6 +9,15 @@ const GRAPH_API_BASE = 'https://graph.facebook.com/v21.0';
 const ROOT = process.cwd();
 const TOKENS_FILE = path.join(ROOT, '.env.tokens.local');
 
+function normalizeSafePath(filePath, baseDir = ROOT) {
+  const resolved = path.resolve(baseDir, filePath);
+  const normalizedBase = path.resolve(baseDir);
+  if (resolved !== normalizedBase && !resolved.startsWith(`${normalizedBase}${path.sep}`)) {
+    throw new Error(`Unsafe path access blocked: ${filePath}`);
+  }
+  return resolved;
+}
+
 function parseArgs(argv) {
   const args = {
     write: false,
@@ -68,9 +77,10 @@ function normalizeAdAccountId(raw) {
 }
 
 function readEnvFile(filePath) {
-  if (!fs.existsSync(filePath)) return {};
+  const safePath = normalizeSafePath(filePath);
+  if (!fs.existsSync(safePath)) return {};
   const out = {};
-  const lines = fs.readFileSync(filePath, 'utf8').split(/\r?\n/);
+  const lines = fs.readFileSync(safePath, 'utf8').split(/\r?\n/);
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
@@ -87,12 +97,12 @@ function readEnvFile(filePath) {
 }
 
 function writeEnvFile(filePath, patch) {
-  const existing = readEnvFile(filePath);
+  const safePath = normalizeSafePath(filePath);
+  const existing = readEnvFile(safePath);
   const merged = { ...existing, ...patch };
   const keys = Object.keys(merged).sort((a, b) => a.localeCompare(b));
-  const lines = keys.map((key) => `${key}=${merged[key] || ''}`);
-  const content = lines.join('\n') + '\n';
-  fs.writeFileSync(filePath, content, 'utf8');
+  const content = `${keys.map((key) => `${key}=${merged[key] || ''}`).join('\n')}\n`;
+  fs.writeFileSync(safePath, content, 'utf8');
 }
 
 function tokenFingerprint(token) {
@@ -211,7 +221,10 @@ function writeAuditFile(args, longLivedToken, tokenData, normalizedAccounts, tar
     accessibleAdAccountsCount: normalizedAccounts.length,
   };
 
-  const auditPath = path.isAbsolute(args.auditFile) ? args.auditFile : path.join(ROOT, args.auditFile);
+  const auditPath = path.isAbsolute(args.auditFile)
+    ? normalizeSafePath(args.auditFile)
+    : normalizeSafePath(path.join(ROOT, args.auditFile));
+
   fs.mkdirSync(path.dirname(auditPath), { recursive: true });
   fs.writeFileSync(auditPath, `${JSON.stringify(audit, null, 2)}\n`, 'utf8');
   console.log(`✅ Wrote execution audit to ${auditPath}`);
