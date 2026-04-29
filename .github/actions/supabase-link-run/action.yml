@@ -81,4 +81,8 @@ runs:
         SUPABASE_DB_PASSWORD: ${{ steps.link.outputs.resolved_db_password }}
       run: |
         set -euo pipefail
+        cat > /tmp/supabase_command.sh <<'CMD'
         ${{ inputs.command }}
+        CMD
+        chmod +x /tmp/supabase_command.sh
+        /tmp/supabase_command.sh
