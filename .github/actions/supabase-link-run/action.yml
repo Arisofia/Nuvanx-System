@@ -67,10 +67,10 @@ runs:
           supabase link --project-ref "$INPUT_PROJECT_REF" --yes
         fi
 
+
         {
           echo "SUPABASE_PROJECT_REF=$INPUT_PROJECT_REF"
           echo "SUPABASE_DB_PASSWORD=$RESOLVED_DB_PASSWORD"
-          echo "DATABASE_URL=$INPUT_DATABASE_URL"
         } >> "$GITHUB_ENV"
 
     - name: Execute command
