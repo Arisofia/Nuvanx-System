@@ -49,7 +49,8 @@ runs:
       shell: bash
       env:
         INPUT_PROJECT_REF: ${{ inputs.project_ref }}
-        SUPABASE_DB_PASSWORD: ${{ inputs.supabase_db_password }}
+        INPUT_DATABASE_URL: ${{ inputs.database_url }}
+        INPUT_SUPABASE_DB_PASSWORD: ${{ inputs.supabase_db_password }}
         SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
       run: |
         set -euo pipefail
