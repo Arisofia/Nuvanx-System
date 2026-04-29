@@ -1,10 +1,5 @@
-/* eslint-disable react-refresh/only-export-components */
-import { createContext, useMemo, useState } from 'react';
-
-export const AuthContext = createContext({
-  isAuthenticated: false,
-  loading: false,
-});
+import { useMemo, useState } from 'react';
+import { AuthContext } from './auth-context.js';
 
 export function AuthProvider({ children }) {
   const [isAuthenticated] = useState(false);

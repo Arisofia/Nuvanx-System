@@ -60,7 +60,7 @@ describe('normalizeFrontendUrl', () => {
   });
 
   it('returns null for unsupported protocols', () => {
-    ['http://example.com', 'HTTP://example.com', 'ftp://example.com', 'ws://example.com'].forEach((input) => {
+    ['http://example.com', 'HTTP://example.com', 'ftp://example.com', 'wss://example.com'].forEach((input) => {
       expect(normalizeFrontendUrl(input)).toBeNull();
     });
   });

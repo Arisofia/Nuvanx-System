@@ -109,10 +109,10 @@ jobs:
               supabase db push --db-url "$DATABASE_URL"
             else
               if [ -z "$SUPABASE_DB_PASSWORD" ]; then
-                echo "::error::Supabase migration secret SUPABASE_DB_PASSWORD is missing."
+                echo "::error::Supabase migration secret SUPABASE_DB_PASSWORD is missing. Set it in GitHub secrets or provide DATABASE_URL."
                 exit 1
               fi
-              supabase db push --password "$SUPABASE_DB_PASSWORD"
+              supabase db push --linked --password "$SUPABASE_DB_PASSWORD"
             fi
 
   # 4. Supabase Edge Functions
@@ -130,4 +130,5 @@ jobs:
         with:
           project_ref: ${{ secrets.SUPABASE_PROJECT_REF || 'ssvvuuysgxyqvmovrlvk' }}
           supabase_access_token: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          command: supabase functions deploy api --no-verify-jwt
+          command: supabase functions deploy api --no-verify-jwt --use-api
+

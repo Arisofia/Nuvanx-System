@@ -28,7 +28,9 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v5
-      - name: Supabase RLS & security lint
+
+      - name: Run Supabase DB lint
+        if: ${{ secrets.SUPABASE_ACCESS_TOKEN != '' }}
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ secrets.SUPABASE_PROJECT_REF || 'ssvvuuysgxyqvmovrlvk' }}
@@ -38,6 +40,14 @@ jobs:
           command: |
             if [ -n "$DATABASE_URL" ]; then
               supabase db lint --db-url "$DATABASE_URL" --level error
+            elif [ -n "$SUPABASE_DB_PASSWORD" ]; then
+              supabase db lint --linked --level error
             else
-              supabase db lint --level error
+              echo "::warning::SUPABASE_DB_PASSWORD and DATABASE_URL are both missing — skipping security lint."
+              exit 0
             fi
+
+      - name: Skip security lint (missing token)
+        if: ${{ secrets.SUPABASE_ACCESS_TOKEN == '' }}
+        run: echo "::warning::SUPABASE_ACCESS_TOKEN not set — skipping security lint."
+

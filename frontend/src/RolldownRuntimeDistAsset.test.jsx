@@ -20,7 +20,7 @@ describe("rolldown runtime dist bundle", () => {
   });
 
   it("creates a cached CommonJS wrapper using the runtime helper", () => {
-    const factory = vi.fn((require, module, exports) => {
+    const factory = vi.fn((require, module) => {
       module.exports = { value: Math.random() };
     });
     const wrapper = RuntimeModule.t(factory);
