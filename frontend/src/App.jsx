@@ -40,7 +40,6 @@ const PageLoader = () => (
   </div>
 );
 
-// eslint-disable-next-line react/prop-types
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
   if (loading) {
