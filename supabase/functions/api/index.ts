@@ -1,6 +1,15 @@
 // Nuvanx API Edge Function — v42
 // @deno-types="https://esm.sh/@supabase/supabase-js@2.42.0/dist/module/index.d.ts"
 import { createClient } from '@supabase/supabase-js';
+export { createClient };
+export const supabaseClientFactory = {
+  create(url: string | null, key: string | null, options: any) {
+    return createClient(url ?? '', key ?? '', options);
+  },
+};
+export function createSupabaseClient(url: string | null, key: string | null, options: any) {
+  return supabaseClientFactory.create(url, key, options);
+}
 declare const Deno: any;
 
 const rawFrontendUrl = Deno.env.get('FRONTEND_URL')?.trim() || '';
@@ -379,7 +388,7 @@ function getOpenAIErrorMessage(model: string, data: any, text: string, status: n
   return `${model}: ${innerMessage}`;
 }
 
-async function processLeadData(adminClient: any, userId: string, leadData: any) {
+export async function processLeadData(adminClient: any, userId: string, leadData: any) {
   // Parse field_data array into a flat map
   const fields: Record<string, string> = {};
   for (const f of (leadData.field_data ?? [])) {
@@ -464,6 +473,12 @@ async function processLeadData(adminClient: any, userId: string, leadData: any) 
   }
   return false;
 }
+
+export const publicRouteHelpers = {
+  decryptCred,
+  metaFetch,
+  processLeadData,
+};
 
 // ── Meta credential resolver ──────────────────────────────────────────────────
 async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: string) {
@@ -873,7 +888,7 @@ interface PublicRouteContext {
   sendJson: (data: unknown, status?: number, extraHeaders?: Record<string, string>) => Response;
 }
 
-async function handlePublicRoutes(ctx: PublicRouteContext): Promise<Response | null> {
+export async function handlePublicRoutes(ctx: PublicRouteContext): Promise<Response | null> {
   const { req, url, resource, sub, sendJson } = ctx;
 
   if (resource === 'webhooks' && sub === 'meta' && req.method === 'GET') {
@@ -911,7 +926,7 @@ async function handlePublicRoutes(ctx: PublicRouteContext): Promise<Response | n
     }
     if (payload.object !== 'page') return new Response('ok', { status: 200 });
 
-    const adminClient = createClient(Deno.env.get('SUPABASE_URL'), Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'), {
+    const adminClient = supabaseClientFactory.create(Deno.env.get('SUPABASE_URL'), Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'), {
       auth: { persistSession: false },
     });
 
@@ -955,21 +970,21 @@ async function handlePublicRoutes(ctx: PublicRouteContext): Promise<Response | n
 
         let accessToken: string;
         try {
-          accessToken = await decryptCred(credRow.encrypted_key);
+          accessToken = await publicRouteHelpers.decryptCred(credRow.encrypted_key);
         } catch {
           continue;
         }
 
         let leadData: any;
         try {
-          leadData = await metaFetch(`/${leadgen_id}`, {
+          leadData = await publicRouteHelpers.metaFetch(`/${leadgen_id}`, {
             fields: 'field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,adset_id,page_id',
           }, accessToken);
         } catch {
           continue;
         }
 
-        await processLeadData(adminClient, webhookUserId, leadData);
+        await publicRouteHelpers.processLeadData(adminClient, webhookUserId, leadData);
       }
     }
 
