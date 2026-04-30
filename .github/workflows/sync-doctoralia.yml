@@ -95,5 +95,5 @@ jobs:
           DOCTORALIA_DRIVE_FILE_ID: ${{ env.DOCTORALIA_DRIVE_FILE_ID || env.DOCTORALIA_SHEET_ID }}
           DATABASE_URL:           ${{ env.DATABASE_URL }}
           CLINIC_ID:              ${{ env.CLINIC_ID }}
-          SHEET_RANGE:            A1:Z5000
+          SHEET_RANGE:            'A1:Z5000'
           # SHEET_NAME: Sheet1   # Uncomment and set if data is on a specific tab
