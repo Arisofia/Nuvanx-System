@@ -3,8 +3,19 @@ const cors = require('cors');
 const helmet = require('helmet');
 
 const app = express();
+const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 app.use(helmet());
-app.use(cors({ origin: true }));
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('CORS origin not allowed'), false);
+  },
+}));
 app.use(express.json());
 
 app.get('/', (req, res) => {
