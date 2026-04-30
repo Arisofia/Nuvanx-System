@@ -146,14 +146,13 @@ jobs:
           database_url: ${{ secrets.DATABASE_URL }}
           supabase_db_password: ${{ secrets.SUPABASE_DB_PASSWORD }}
           command: |
-            if [ -n "$DATABASE_URL" ]; then
+            if [ -n "$SUPABASE_DB_PASSWORD" ]; then
+              supabase db push --linked --password "$SUPABASE_DB_PASSWORD"
+            elif [ -n "$DATABASE_URL" ]; then
               supabase db push --db-url "$DATABASE_URL"
             else
-              if [ -z "$SUPABASE_DB_PASSWORD" ]; then
-                echo "::error::Supabase migration secret SUPABASE_DB_PASSWORD is missing. Set it in GitHub secrets or provide DATABASE_URL."
-                exit 1
-              fi
-              supabase db push --linked --password "$SUPABASE_DB_PASSWORD"
+              echo "::error::Supabase migration secret SUPABASE_DB_PASSWORD is missing. Set it in GitHub secrets or provide DATABASE_URL."
+              exit 1
             fi
 
   # 4. Supabase Edge Functions
@@ -164,7 +163,7 @@ jobs:
     permissions:
       contents: read
     env:
-      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF || 'ssvvuuysgxyvmovrlvk' }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF || 'ssvvuuysgxyqvmovrlvk' }}
     steps:
       - uses: actions/checkout@v5
       - name: Deploy Edge Functions
