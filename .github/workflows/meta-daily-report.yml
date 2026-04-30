@@ -131,6 +131,17 @@ jobs:
             echo "::error::Missing required secrets: ${MISSING[*]}"
             exit 1
           fi
+      - name: Debug Supabase connection (safe)
+        run: |
+          echo "SUPABASE_PROJECT_REF=$SUPABASE_PROJECT_REF"
+          echo "SUPABASE_URL=$SUPABASE_URL"
+          echo "SUPABASE_DB_PASSWORD is set? $([[ -z \"$SUPABASE_DB_PASSWORD\" ]] && echo no || echo yes)"
+          if [ -n "$DATABASE_URL" ]; then
+            echo "DATABASE_URL is set"
+            echo "$DATABASE_URL" | sed -E 's#^postgres(ql)?://([^:@/]+):[^@]+@#postgresql://\2:***@#'
+          else
+            echo "DATABASE_URL is empty"
+          fi
       - name: Run Supabase Security Lint
         uses: ./.github/actions/supabase-link-run
         with:

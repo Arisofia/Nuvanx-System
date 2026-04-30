@@ -117,25 +117,36 @@ async function setSupabaseSecrets(vars, projectRef) {
 
   const payload = requiredSecretKeys
     .filter((k) => vars[k])
+    .filter((k) => !k.startsWith('SUPABASE_'))
     .map((k) => ({ name: k, value: vars[k] }));
 
   if (payload.length === 0) return { skipped: true, reason: 'no secret values to upload' };
 
-  const res = await fetch(`https://api.supabase.com/v1/projects/${projectRef}/secrets`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  });
+  try {
+    const res = await fetch(`https://api.supabase.com/v1/projects/${projectRef}/secrets`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
 
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Supabase (${projectRef}) ${res.status}: ${body}`);
+    if (!res.ok) {
+      const body = await res.text();
+      if (res.status === 403) {
+        return { skipped: true, reason: 'unauthorized or insufficient privileges' };
+      }
+      throw new Error(`Supabase (${projectRef}) ${res.status}: ${body}`);
+    }
+
+    return { uploaded: payload.length };
+  } catch (error) {
+    if (error.message?.includes('403')) {
+      return { skipped: true, reason: 'unauthorized or insufficient privileges' };
+    }
+    throw error;
   }
-
-  return { uploaded: payload.length };
 }
 
 async function vercelFetch(url, method, token, body = null) {
