@@ -93,6 +93,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF || 'ssvvuuysgxyvmovrlvk' }}
     steps:
       - uses: actions/checkout@v5
       - name: Supabase DB migrations
@@ -120,12 +122,14 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF || 'ssvvuuysgxyvmovrlvk' }}
     steps:
       - uses: actions/checkout@v5
       - name: Deploy Edge Functions
         uses: ./.github/actions/supabase-link-run
         with:
-          project_ref: ${{ secrets.SUPABASE_PROJECT_REF || 'ssvvuuysgxyqvmovrlvk' }}
+          project_ref: ${{ env.SUPABASE_PROJECT_REF }}
           supabase_access_token: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           command: supabase functions deploy api --no-verify-jwt --use-api
 
