@@ -184,6 +184,118 @@ function parseStatus(value, settledAt) {
   return { statusOriginal, statusType: 'unknown', cancelledAt: null };
 }
 
+function buildHeaderConfig(headers) {
+  const colId           = findCol(headers, '=id', '=num', 'id op', 'id_op', 'num op', 'operacion', 'operation');
+  const colTemplate     = findCol(headers, 'plantilladescr', 'plantilla descr', 'plantilla', 'template descr', 'template', 'asunto');
+  const colTemplateId   = findCol(headers, 'id plantilla', 'template_id', 'id_plantilla', 'cod plantilla');
+  const colFecha        = findCol(headers, 'fecha');
+  const colHora         = findCol(headers, 'hora');
+  const colIntake       = findCol(headers, 'fecha ingreso', 'fecha inicio', 'ingreso', 'inicio', 'intake', 'alta', 'desde', 'fecha creacion', 'fecha creaci');
+  const colSettled      = findCol(headers, 'fecha liquidaci', 'liquidaci', 'fecha liq', 'settled', 'f. liq');
+  const colGross        = findCol(headers, 'importe bruto', 'bruto', 'gross', 'financiad', 'capital');
+  const colDiscount     = findCol(headers, 'descuento', 'discount', 'bonific');
+  const colNet          = findCol(headers, 'importe neto', 'importe liq', 'neto', 'net', 'liquidado', 'importe');
+  const colPayment      = findCol(headers, 'metodo pago', 'metodo de pago', 'pago', 'payment', 'forma pago', 'procedencia');
+  const colIntermediary = findCol(headers, 'intermediario', 'mediador', 'financiera', 'entidad', 'agenda');
+  const colStatus       = findCol(headers, 'estado', 'status', 'situacion');
+
+  const hasColId           = colId !== -1;
+  const hasColTemplate     = colTemplate !== -1;
+  const hasColTemplateId   = colTemplateId !== -1;
+  const hasColIntake       = colIntake !== -1;
+  const hasColSettled      = colSettled !== -1;
+  const hasColGross        = colGross !== -1;
+  const hasColDiscount     = colDiscount !== -1;
+  const hasColNet          = colNet !== -1;
+  const hasColPayment      = colPayment !== -1;
+  const hasColIntermediary = colIntermediary !== -1;
+  const hasColStatus       = colStatus !== -1;
+
+  return {
+    colId,
+    colTemplate,
+    colTemplateId,
+    colFecha,
+    colHora,
+    colIntake,
+    colSettled,
+    colGross,
+    colDiscount,
+    colNet,
+    colPayment,
+    colIntermediary,
+    colStatus,
+    hasColId,
+    hasColTemplate,
+    hasColTemplateId,
+    hasColIntake,
+    hasColSettled,
+    hasColGross,
+    hasColDiscount,
+    hasColNet,
+    hasColPayment,
+    hasColIntermediary,
+    hasColStatus,
+    useHashId: !hasColId,
+    colSettledEff: hasColSettled ? colSettled : colFecha,
+  };
+}
+
+function getRowId(row, config) {
+  if (!config.useHashId) {
+    return row[config.colId]?.toString().trim() ?? '';
+  }
+
+  const fecha  = row[config.colFecha]?.toString().trim() ?? '';
+  const hora   = row[config.colHora]?.toString().trim() ?? '';
+  const asunto = config.hasColTemplate ? (row[config.colTemplate]?.toString().trim() ?? '') : '';
+  const agenda = config.hasColIntermediary ? (row[config.colIntermediary]?.toString().trim() ?? '') : '';
+  const key    = `${fecha}|${hora}|${asunto}|${agenda}`;
+  return createHash('sha256').update(key).digest('hex').slice(0, 32);
+}
+
+function getCancelledAt(row, config, settledAt) {
+  if (!config.hasColStatus) return null;
+
+  const statusVal = norm(row[config.colStatus]);
+  if (statusVal.includes('cancel') || statusVal.includes('baja') || statusVal.includes('anulad')) {
+    return settledAt;
+  }
+
+  return null;
+}
+
+function parseRow(row, config) {
+  const rawId = getRowId(row, config);
+  if (rawId === '') return null;
+
+  const settledAt = parseDate(row[config.colSettledEff]);
+  if (settledAt === null) return null;
+
+  const intakeAt    = config.hasColIntake       ? parseDate(row[config.colIntake])       : null;
+  const amountGross = config.hasColGross        ? parseAmount(row[config.colGross])      : 0;
+  const amountDisc  = config.hasColDiscount     ? parseAmount(row[config.colDiscount])   : 0;
+  const amountNet   = config.hasColNet          ? parseAmount(row[config.colNet])        : amountGross - amountDisc;
+
+  if (amountNet === 0 && amountGross === 0) {
+    return null;
+  }
+
+  return {
+    rawId,
+    settledAt,
+    intakeAt,
+    cancelledAt: getCancelledAt(row, config, settledAt),
+    amountGross,
+    amountDisc,
+    amountNet,
+    payment: config.hasColPayment      ? (row[config.colPayment]?.trim() || null)     : null,
+    tmplName: config.hasColTemplate     ? (row[config.colTemplate]?.trim() || null)    : null,
+    tmplId: config.hasColTemplateId   ? (row[config.colTemplateId]?.trim() || null)  : null,
+    intermed: config.hasColIntermediary ? (row[config.colIntermediary]?.trim() || null) : null,
+  };
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -219,52 +331,16 @@ async function main() {
 
   // ── 2. Map headers ────────────────────────────────────────────────────────
   const headers = rows[0];
-  console.log(`[sync-doctoralia] Headers (${headers.length}): ${headers.join(' | ')}`);
+  const config = buildHeaderConfig(headers);
 
-  const colId           = findCol(headers, '=id', '=num', 'id op', 'id_op', 'num op', 'operacion', 'operation');
-  const colTemplate     = findCol(headers, 'plantilladescr', 'plantilla descr', 'plantilla', 'template descr', 'template', 'asunto');
-  const colTemplateId   = findCol(headers, 'id plantilla', 'template_id', 'id_plantilla', 'cod plantilla');
-  const colFecha        = findCol(headers, 'fecha');
-  const colHora         = findCol(headers, 'hora');
-  const colIntake       = findCol(headers, 'fecha ingreso', 'fecha inicio', 'ingreso', 'inicio', 'intake', 'alta', 'desde', 'fecha creacion', 'fecha creaci');
-  const colSettled      = findCol(headers, 'fecha liquidaci', 'liquidaci', 'fecha liq', 'settled', 'f. liq');
-  const colGross        = findCol(headers, 'importe bruto', 'bruto', 'gross', 'financiad', 'capital');
-  const colDiscount     = findCol(headers, 'descuento', 'discount', 'bonific');
-  const colNet          = findCol(headers, 'importe neto', 'importe liq', 'neto', 'net', 'liquidado', 'importe');
-  const colPayment      = findCol(headers, 'metodo pago', 'metodo de pago', 'pago', 'payment', 'forma pago');
-  const colOrigin       = findCol(headers, 'procedencia', 'origen', 'lead source', 'lead_source');
-  const colAgenda       = findCol(headers, 'agenda', 'departamento', 'department', 'profesional', 'professional', 'medico', 'enfermeria');
-  const colRoom         = findCol(headers, 'sala', 'box', 'habitacion', 'room', 'consultorio');
-  const colIntermediary = findCol(headers, 'intermediario', 'mediador', 'financiera', 'entidad');
-  const colStatus       = findCol(headers, 'estado', 'status', 'situacion', 'situación');
-
-  const hasColId           = colId !== -1;
-  const hasColTemplate     = colTemplate !== -1;
-  const hasColTemplateId   = colTemplateId !== -1;
-  const hasColIntake       = colIntake !== -1;
-  const hasColSettled      = colSettled !== -1;
-  const hasColGross        = colGross !== -1;
-  const hasColDiscount     = colDiscount !== -1;
-  const hasColNet          = colNet !== -1;
-  const hasColPayment      = colPayment !== -1;
-  const hasColOrigin       = colOrigin !== -1;
-  const hasColAgenda       = colAgenda !== -1;
-  const hasColRoom         = colRoom !== -1;
-  const hasColIntermediary = colIntermediary !== -1;
-  const hasColStatus       = colStatus !== -1;
-
-  // Appointment-export format: no explicit ID column — derive settled_at from Fecha+Hora.
-  // If we also have no settlement column, use Fecha as the settlement date.
-  const useHashId     = !hasColId;
-  const colSettledEff = hasColSettled ? colSettled : colFecha;
-
-  if (colSettledEff === -1) {
+  if (config.colSettledEff === -1) {
     console.error('[sync-doctoralia] Could not find a date column (liquidaci / fecha). Aborting.');
     process.exit(1);
   }
 
-  console.log(`[sync-doctoralia] Column mapping: id=${useHashId ? 'hash(fecha+hora+asunto+agenda)' : colId} template=${colTemplate} intake=${colIntake} settled=${colSettledEff} gross=${colGross} discount=${colDiscount} net=${colNet} payment=${colPayment} origin=${colOrigin} agenda=${colAgenda} room=${colRoom} status=${colStatus}`);
-  if (useHashId) console.log('[sync-doctoralia] Using hash-based ID (appointment-export format).');
+  console.log(`[sync-doctoralia] Headers (${headers.length}): ${headers.join(' | ')}`);
+  console.log(`[sync-doctoralia] Column mapping: id=${config.useHashId ? 'hash(fecha+hora+asunto+agenda)' : config.colId} template=${config.colTemplate} intake=${config.colIntake} settled=${config.colSettledEff} gross=${config.colGross} discount=${config.colDiscount} net=${config.colNet} status=${config.colStatus}`);
+  if (config.useHashId) console.log('[sync-doctoralia] Using hash-based ID (appointment-export format).');
 
   // ── 3. Connect to Postgres ────────────────────────────────────────────────
   const db = new Client({ connectionString: DATABASE_URL });
@@ -276,44 +352,45 @@ async function main() {
   let skipped  = 0;
 
   for (let i = 1; i < rows.length; i++) {
-    const row = rows[i];
-    const success = await upsertDoctoraliaRow(row, i, {
-      db,
-      cols: {
-        colId,
-        colFecha,
-        colHora,
-        colTemplate,
-        colTemplateId,
-        colIntermediary,
-        colAgenda,
-        colOrigin,
-        colIntake,
-        colSettledEff,
-        colSettled,
-        colGross,
-        colDiscount,
-        colNet,
-        colPayment,
-        colRoom,
-        colStatus,
-      },
-      useHashId,
-      hasColTemplate,
-      hasColTemplateId,
-      hasColIntake,
-      hasColSettled,
-      hasColGross,
-      hasColDiscount,
-      hasColNet,
-      hasColPayment,
-      hasColOrigin,
-      hasColAgenda,
-      hasColRoom,
-      hasColIntermediary,
-      hasColStatus,
-    });
-    if (success) upserted++; else skipped++;
+    const parsed = parseRow(rows[i], config);
+    if (!parsed) {
+      skipped++;
+      continue;
+    }
+
+    try {
+      await db.query(
+        `INSERT INTO financial_settlements
+           (id, clinic_id, amount_gross, amount_discount, amount_net,
+            payment_method, template_name, template_id,
+            settled_at, intake_at, cancelled_at, intermediary_name, source_system)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'doctoralia')
+         ON CONFLICT (id) DO UPDATE SET
+           amount_gross      = EXCLUDED.amount_gross,
+           amount_discount   = EXCLUDED.amount_discount,
+           amount_net        = EXCLUDED.amount_net,
+           payment_method    = EXCLUDED.payment_method,
+           template_name     = EXCLUDED.template_name,
+           template_id       = EXCLUDED.template_id,
+           settled_at        = EXCLUDED.settled_at,
+           intake_at         = EXCLUDED.intake_at,
+           cancelled_at      = EXCLUDED.cancelled_at,
+           intermediary_name = EXCLUDED.intermediary_name,
+           source_system     = 'doctoralia'`,
+        [
+          parsed.rawId, CLINIC_ID, parsed.amountGross, parsed.amountDisc, parsed.amountNet,
+          parsed.payment, parsed.tmplName, parsed.tmplId,
+          parsed.settledAt.toISOString(),
+          parsed.intakeAt?.toISOString() ?? null,
+          parsed.cancelledAt?.toISOString() ?? null,
+          parsed.intermed,
+        ]
+      );
+      upserted++;
+    } catch (rowError) {
+      skipped++;
+      console.warn(`[sync-doctoralia] Skipping row ${i + 1} due to DB error: ${rowError.message}`);
+    }
   }
 
   await db.end();

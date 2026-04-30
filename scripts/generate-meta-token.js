@@ -101,7 +101,9 @@ function writeEnvFile(filePath, patch) {
   const existing = readEnvFile(safePath);
   const merged = { ...existing, ...patch };
   const keys = Object.keys(merged).sort((a, b) => a.localeCompare(b));
-  const content = `${keys.map((key) => `${key}=${merged[key] || ''}`).join('\n')}\n`;
+  const lines = keys.map((key) => `${key}=${merged[key] || ''}`);
+  const content = `${lines.join('\n')}
+`;
   fs.writeFileSync(safePath, content, 'utf8');
 }
 
