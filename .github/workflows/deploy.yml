@@ -110,11 +110,11 @@ jobs:
     permissions:
       contents: read
     env:
-      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF || '' }}
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN || '' }}
-      DATABASE_URL: ${{ secrets.DATABASE_URL || '' }}
-      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD || '' }}
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL || '' }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
     steps:
       - uses: actions/checkout@v5
       - name: Validate Supabase deployment secrets
@@ -165,8 +165,8 @@ jobs:
     permissions:
       contents: read
     env:
-      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF || '' }}
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN || '' }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
     steps:
       - uses: actions/checkout@v5
       - name: Deploy Edge Functions
@@ -183,8 +183,8 @@ jobs:
     permissions:
       contents: read
     env:
-      PRODUCTION_E2E_URL: ${{ secrets.PRODUCTION_E2E_URL || '' }}
-      PRODUCTION_E2E_TOKEN: ${{ secrets.PRODUCTION_E2E_TOKEN || '' }}
+      PRODUCTION_E2E_URL: ${{ secrets.PRODUCTION_E2E_URL }}
+      PRODUCTION_E2E_TOKEN: ${{ secrets.PRODUCTION_E2E_TOKEN }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
