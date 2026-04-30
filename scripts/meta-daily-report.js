@@ -15,8 +15,8 @@ function formatDateUTC(date) {
 function normalizeAdAccountId(raw) {
   const value = String(raw || '').trim();
   if (!value) return '';
-  const unprefixed = value.replaceAll(/^act_/i, '');
-  const digits = unprefixed.replaceAll(/\D/g, '');
+  const unprefixed = value.replace(/^act_/i, '');
+  const digits = unprefixed.replace(/\D/g, '');
   return digits ? `act_${digits}` : '';
 }
 
