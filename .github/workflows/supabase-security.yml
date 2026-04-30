@@ -40,7 +40,7 @@ jobs:
             if [ -n "$DATABASE_URL" ]; then
               supabase db lint --db-url "$DATABASE_URL" --level error --fail-on error
             elif [ -n "$SUPABASE_DB_PASSWORD" ]; then
-              supabase db lint --linked --level error --fail-on error
+              supabase db lint --linked --password "$SUPABASE_DB_PASSWORD" --level error --fail-on error
             else
               echo "::warning::SUPABASE_DB_PASSWORD and DATABASE_URL are both missing — skipping security lint."
               exit 0
