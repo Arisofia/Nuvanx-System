@@ -96,7 +96,7 @@ function mergeSources() {
 
 function hasGhCli() {
   try {
-    cp.execSync('gh --version', { stdio: 'ignore' });
+    cp.execFileSync('gh', ['--version'], { stdio: 'ignore' });
     return true;
   } catch {
     return false;
@@ -258,6 +258,11 @@ function setGithubSecrets(vars) {
   if (!token) return { skipped: true, reason: 'missing github token' };
   if (!hasGhCli()) return { skipped: true, reason: 'gh CLI not installed' };
 
+  const safeName = (value) => /^[A-Za-z0-9._-]+$/.test(value);
+  if (!safeName(owner) || !safeName(repo)) {
+    return { skipped: true, reason: 'invalid github owner or repo' };
+  }
+
   let uploaded = 0;
   const githubKeys = [...requiredSecretKeys,
     'SUPABASE_ACCESS_TOKEN',
@@ -269,7 +274,7 @@ function setGithubSecrets(vars) {
   ];
   for (const key of githubKeys) {
     const value = vars[key];
-    if (!value) continue;
+    if (!value || !safeName(key)) continue;
     const env = { ...process.env, GH_TOKEN: token };
     // Use execFileSync directly (no shell) to avoid any shell-injection risk.
     // gh secret set reads the value from --body without shell interpolation.
