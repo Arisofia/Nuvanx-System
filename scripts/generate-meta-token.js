@@ -10,9 +10,10 @@ const ROOT = process.cwd();
 const TOKENS_FILE = path.join(ROOT, '.env.tokens.local');
 
 function normalizeSafePath(filePath, baseDir = ROOT) {
-  const resolved = path.resolve(baseDir, filePath);
   const normalizedBase = path.resolve(baseDir);
-  if (resolved !== normalizedBase && !resolved.startsWith(`${normalizedBase}${path.sep}`)) {
+  const resolved = path.resolve(baseDir, filePath);
+  const relative = path.relative(normalizedBase, resolved);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
     throw new Error(`Unsafe path access blocked: ${filePath}`);
   }
   return resolved;
