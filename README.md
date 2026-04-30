@@ -2,6 +2,10 @@
 
 Revenue Intelligence Platform — Meta/Instagram lead acquisition → WhatsApp follow-up → appointment flow → Doctoralia settlement reconciliation.
 
+## Project purpose
+
+Nuvanx-System es una plataforma de inteligencia empresarial (BI) y automatización de marketing que integra múltiples capas de análisis de datos, gestión de campañas, inteligencia de CRM y automatización de flujos de trabajo mediante agentes de IA.
+
 ## Architecture
 
 - **Frontend**: React 19 + Vite → deployed to **Vercel**
@@ -64,6 +68,13 @@ npm --prefix frontend run test:ci
 - GitHub Actions CI: backend tests + frontend lint/build on every push to `main`
 - Deploy: frontend → Vercel (auto), Edge Function → Supabase (manual: `npx supabase functions deploy api --no-verify-jwt`)
 - No Railway, no Render.
+
+## Project maturity
+
+- Puntuación técnica: **6.5 / 10**
+- Estado: **Emergente a Creciente**
+- El proyecto tiene una base sólida, pero requiere inversión en arquitectura, testing y automatización para ser production-ready a escala.
+- Documentación adicional: [Project Purpose](docs/project-purpose.md)
 
 ## GitHub Actions secrets
 
