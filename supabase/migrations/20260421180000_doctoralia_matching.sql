@@ -85,7 +85,12 @@ BEGIN
   FOR r IN SELECT * FROM public.doctoralia_patients LOOP
     best_lid   := NULL;
     best_score := 0;
-    FOR l IN SELECT id, name, phone FROM public.leads WHERE clinic_id = r.clinic_id LOOP
+    FOR l IN
+    SELECT l.id, l.name, l.phone
+    FROM public.leads l
+    JOIN public.users u ON u.id = l.user_id
+    WHERE u.clinic_id = r.clinic_id
+  LOOP
       sim      := extensions.similarity(r.name_norm, lower(extensions.unaccent(COALESCE(l.name, ''))));
       ph_match := r.phone_primary IS NOT NULL
                   AND l.phone IS NOT NULL
