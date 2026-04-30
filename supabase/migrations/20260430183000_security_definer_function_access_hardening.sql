@@ -9,19 +9,14 @@
 
 DO $$
 BEGIN
-  PERFORM 1
-  FROM pg_proc p
-  JOIN pg_namespace n ON n.oid = p.pronamespace
-  WHERE n.nspname = 'public'
-    AND p.proname IN ('check_stale_meta_tokens', 'rls_auto_enable');
-
   -- If the functions exist, remove public and anonymous execute permissions.
-  EXECUTE $$
+  -- check_stale_meta_tokens
+  IF EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'check_stale_meta_tokens') THEN
     REVOKE EXECUTE ON FUNCTION public.check_stale_meta_tokens() FROM PUBLIC, anon, authenticated;
+  END IF;
+
+  -- rls_auto_enable
+  IF EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'rls_auto_enable') THEN
     REVOKE EXECUTE ON FUNCTION public.rls_auto_enable() FROM PUBLIC, anon, authenticated;
-  $$;
-EXCEPTION WHEN undefined_function THEN
-  -- If the function does not exist yet, skip without failing.
-  NULL;
-END
-$$;
+  END IF;
+END $$;
