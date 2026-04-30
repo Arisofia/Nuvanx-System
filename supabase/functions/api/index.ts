@@ -713,7 +713,7 @@ async function googleAdsSearch(customerId: string, devToken: string, accessToken
     const msg = d.error?.details?.[0]?.errors?.[0]?.message ?? d.error?.message ?? `Google Ads ${r.status}`;
     throw new Error(msg);
   }
-  const results = d.results;
+  const { results } = d;
   return Array.isArray(results) ? results : [];
 }
 
