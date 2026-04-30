@@ -7,6 +7,7 @@ const cp = require('node:child_process');
 
 const ROOT = process.cwd();
 const TOKENS_FILE = path.join(ROOT, '.env.tokens.local');
+const LEGACY_TOKENS_FILE = path.join(ROOT, '.secrets.local');
 
 function normalizeSafePath(filePath, baseDir = ROOT) {
   const resolved = path.resolve(baseDir, filePath);
@@ -70,7 +71,10 @@ function readEnvFile(filePath) {
 }
 
 function mergeSources() {
-  const fileVars = readEnvFile(TOKENS_FILE);
+  const fileVars = {
+    ...readEnvFile(LEGACY_TOKENS_FILE),
+    ...readEnvFile(TOKENS_FILE),
+  };
   const merged = { ...fileVars };
   for (const [k, v] of Object.entries(process.env)) {
     if (v && !merged[k]) merged[k] = v;
@@ -131,15 +135,153 @@ async function setVercelSecrets(vars) {
 
   let uploaded = 0;
 
-  // Only frontend-safe environment variables should be synced to Vercel.
-  // Do not upload server-only secrets like SUPABASE_DB_PASSWORD or access tokens here.
+  const queryString = teamId ? `?teamId=${teamId}` : '';
+  const listUrl = `https://api.vercel.com/v10/projects/${projectId}/env${queryString}`;
+  const existingResp = await fetch(listUrl, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!existingResp.ok) {
+    const body = await existingResp.text();
+    throw new Error(`Vercel ${existingResp.status} listing env vars: ${body}`);
+  }
+
+  const existingJson = await existingResp.json();
+  const existingMap = new Map();
+  for (const env of existingJson.envs || []) {
+    existingMap.set(env.key, [...(existingMap.get(env.key) || []), env]);
+  }
+
+  const requiredTargets = ['production', 'preview', 'development'];
+
   for (const key of frontendKeys) {
     const value = vars[key];
     if (!value) continue;
 
-    const queryString = teamId ? `?teamId=${teamId}` : '';
-    const url = `https://api.vercel.com/v10/projects/${projectId}/env${queryString}`;
-    const res = await fetch(url, {
+    if (existingMap.has(key)) {
+      const existingEnvs = existingMap.get(key);
+      const existingTargets = new Set(existingEnvs.flatMap((env) => env.target || []));
+
+      if (existingEnvs.length > 1) {
+        for (const env of existingEnvs) {
+          const deleteUrl = `https://api.vercel.com/v10/projects/${projectId}/env/${env.id}${queryString}`;
+          const deleteRes = await fetch(deleteUrl, {
+            method: 'DELETE',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          if (!deleteRes.ok) {
+            const resBody = await deleteRes.text();
+            throw new Error(`Vercel ${deleteRes.status} deleting ${key}: ${resBody}`);
+          }
+        }
+
+        const createUrl = listUrl;
+        const createRes = await fetch(createUrl, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            key,
+            value,
+            type: 'encrypted',
+            target: requiredTargets,
+          }),
+        });
+        if (!createRes.ok) {
+          const resBody = await createRes.text();
+          throw new Error(`Vercel ${createRes.status} recreating ${key}: ${resBody}`);
+        }
+        uploaded += 1;
+        continue;
+      }
+
+      const env = existingEnvs[0];
+      try {
+        const updateUrl = `https://api.vercel.com/v10/projects/${projectId}/env/${env.id}${queryString}`;
+        const res = await fetch(updateUrl, {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ value }),
+        });
+        if (!res.ok) {
+          throw new Error(`Vercel ${res.status} updating ${key}`);
+        }
+        uploaded += 1;
+      } catch (patchError) {
+        for (const e of existingEnvs) {
+          const deleteUrl = `https://api.vercel.com/v10/projects/${projectId}/env/${e.id}${queryString}`;
+          const deleteRes = await fetch(deleteUrl, {
+            method: 'DELETE',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          if (!deleteRes.ok) {
+            const resBody = await deleteRes.text();
+            throw new Error(`Vercel ${deleteRes.status} deleting ${key} after patch fail: ${resBody}`);
+          }
+        }
+        const createUrl = listUrl;
+        const createRes = await fetch(createUrl, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            key,
+            value,
+            type: 'encrypted',
+            target: requiredTargets,
+          }),
+        });
+        if (!createRes.ok) {
+          const resBody = await createRes.text();
+          throw new Error(`Vercel ${createRes.status} recreating ${key} after patch fail: ${resBody}`);
+        }
+        uploaded += 1;
+      }
+
+      const missingTargets = requiredTargets.filter((t) => !existingTargets.has(t));
+      if (missingTargets.length > 0) {
+        const createUrl = listUrl;
+        const res = await fetch(createUrl, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            key,
+            value,
+            type: 'encrypted',
+            target: missingTargets,
+          }),
+        });
+        if (!res.ok) {
+          const resBody = await res.text();
+          throw new Error(`Vercel ${res.status} creating missing targets for ${key}: ${resBody}`);
+        }
+        uploaded += 1;
+      }
+      continue;
+    }
+
+    const createUrl = listUrl;
+    const res = await fetch(createUrl, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -149,17 +291,13 @@ async function setVercelSecrets(vars) {
         key,
         value,
         type: 'encrypted',
-        target: ['production', 'preview', 'development'],
+        target: requiredTargets,
       }),
     });
 
     if (!res.ok) {
-      const body = await res.text();
-      if (res.status === 409) {
-        // Already exists; skip to avoid destructive updates in this script.
-        continue;
-      }
-      throw new Error(`Vercel ${res.status} for ${key}: ${body}`);
+      const resBody = await res.text();
+      throw new Error(`Vercel ${res.status} creating ${key}: ${resBody}`);
     }
 
     uploaded += 1;
