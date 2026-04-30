@@ -248,7 +248,14 @@ function setGithubSecrets(vars) {
   if (!hasGhCli()) return { skipped: true, reason: 'gh CLI not installed' };
 
   let uploaded = 0;
-  const githubKeys = [...requiredSecretKeys, 'SUPABASE_ACCESS_TOKEN', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_PUBLISHABLE_KEY', 'VITE_SUPABASE_ANON_KEY'];
+  const githubKeys = [...requiredSecretKeys,
+    'SUPABASE_ACCESS_TOKEN',
+    'VITE_SUPABASE_URL',
+    'VITE_SUPABASE_PUBLISHABLE_KEY',
+    'VITE_SUPABASE_ANON_KEY',
+    'PRODUCTION_E2E_URL',
+    'PRODUCTION_E2E_TOKEN',
+  ];
   for (const key of githubKeys) {
     const value = vars[key];
     if (!value) continue;
