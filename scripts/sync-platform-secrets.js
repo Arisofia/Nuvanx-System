@@ -42,6 +42,7 @@ const frontendKeys = [
   'VITE_API_URL',
   'VITE_SUPABASE_URL',
   'VITE_SUPABASE_PUBLISHABLE_KEY',
+  'VITE_SUPABASE_ANON_KEY',
   'VITE_SUPABASE_FIGMA_URL',
   'VITE_SUPABASE_FIGMA_ANON_KEY',
   'VITE_SENTRY_DSN',
@@ -130,7 +131,9 @@ async function setVercelSecrets(vars) {
 
   let uploaded = 0;
 
-  for (const key of [...requiredSecretKeys, ...frontendKeys]) {
+  // Only frontend-safe environment variables should be synced to Vercel.
+  // Do not upload server-only secrets like SUPABASE_DB_PASSWORD or access tokens here.
+  for (const key of frontendKeys) {
     const value = vars[key];
     if (!value) continue;
 
