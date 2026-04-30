@@ -1,11 +1,17 @@
--- 20260421180000_doctoralia_matching.sql
+-- 20260421110100_doctoralia_matching.sql
 -- Adds parsed columns to doctoralia_raw, creates doctoralia_patients,
 -- doctoralia_lead_matches, and the run_doctoralia_name_match() function.
 -- NOTE: doctoralia_raw was already created by remote migrations with
 --   id BIGINT PK, clinic_id UUID, upload_id UUID, raw_row JSONB, processed BOOLEAN.
 --   This migration adds the parsed/normalised field columns for the ingest script.
 
-ALTER TABLE doctoralia_raw
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'doctoralia_raw'
+  ) THEN
+    ALTER TABLE doctoralia_raw
   ADD COLUMN IF NOT EXISTS raw_hash          VARCHAR(64),
   ADD COLUMN IF NOT EXISTS ingested_at       TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS source_file_id    TEXT,
@@ -33,6 +39,8 @@ ALTER TABLE doctoralia_raw
 -- Unique index on raw_hash for upsert dedup
 CREATE UNIQUE INDEX IF NOT EXISTS doctoralia_raw_hash_idx
   ON doctoralia_raw(raw_hash) WHERE raw_hash IS NOT NULL;
+  END IF;
+END $$;
 
 -- One row per Doctoralia patient_id — links to leads after name matching
 CREATE TABLE IF NOT EXISTS doctoralia_patients (
