@@ -65,6 +65,32 @@ jobs:
       - name: Run ESLint
         run: npm run lint
 
+  frontend-test:
+    needs: frontend-lint
+    name: Frontend — unit tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Use Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --include=dev
+
+      - name: Run frontend unit tests
+        run: npm run test:ci
+
   # ─── Frontend: install, build ───────────────────────────────────────────────
   frontend:
     name: Frontend — build

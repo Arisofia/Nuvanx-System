@@ -56,6 +56,7 @@ npm run dev:frontend  # Vite on http://localhost:5173
 ```bash
 npm run test:backend
 cd backend && npx jest tests/auth.test.js --runInBand --forceExit
+npm --prefix frontend run test:ci
 ```
 
 ## CI/CD
