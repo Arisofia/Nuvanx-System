@@ -467,7 +467,7 @@ describe('handlePublicRoutes', () => {
         url,
       });
 
-      const res = (await handlePublicRoutes(ctx)) as Response;
+      const res = await handlePublicRoutes(ctx);
 
       expect(res.status).toBe(503);
       const text = await res.text();
@@ -490,7 +490,7 @@ describe('handlePublicRoutes', () => {
         url,
       });
 
-      const res = (await handlePublicRoutes(ctx)) as Response;
+      const res = await handlePublicRoutes(ctx);
 
       expect(res.status).toBe(200);
       expect(res.headers.get('Content-Type')).toBe('text/plain');
@@ -513,7 +513,7 @@ describe('handlePublicRoutes', () => {
         url,
       });
 
-      const res = (await handlePublicRoutes(ctx)) as Response;
+      const res = await handlePublicRoutes(ctx);
       expect(res.status).toBe(403);
       expect(await res.text()).toBe('Forbidden');
     });
@@ -546,7 +546,7 @@ describe('handlePublicRoutes', () => {
       });
       const ctx = makeCtx({ resource: 'webhooks', sub: 'meta', req });
 
-      const res = (await handlePublicRoutes(ctx)) as Response;
+      const res = await handlePublicRoutes(ctx);
 
       expect(res.status).toBe(403);
       expect(await res.text()).toBe('Unauthorized');
@@ -567,7 +567,7 @@ describe('handlePublicRoutes', () => {
       });
       const ctx = makeCtx({ resource: 'webhooks', sub: 'meta', req });
 
-      const res = (await handlePublicRoutes(ctx)) as Response;
+      const res = await handlePublicRoutes(ctx);
       expect(res.status).toBe(200);
       expect(await res.text()).toBe('ok');
     });
@@ -582,7 +582,7 @@ describe('handlePublicRoutes', () => {
       });
       const ctx = makeCtx({ resource: 'webhooks', sub: 'meta', req });
 
-      const res = (await handlePublicRoutes(ctx)) as Response;
+      const res = await handlePublicRoutes(ctx);
       expect(res.status).toBe(200);
       expect(await res.text()).toBe('ok');
     });
@@ -598,7 +598,7 @@ describe('handlePublicRoutes', () => {
       });
       const ctx = makeCtx({ resource: 'webhooks', sub: 'meta', req });
 
-      const res = (await handlePublicRoutes(ctx)) as Response;
+      const res = await handlePublicRoutes(ctx);
       expect(res.status).toBe(200);
       expect(await res.text()).toBe('ok');
     });
@@ -655,7 +655,7 @@ describe('handlePublicRoutes', () => {
       });
       const ctx = makeCtx({ resource: 'webhooks', sub: 'meta', req });
 
-      const res = (await handlePublicRoutes(ctx)) as Response;
+      const res = await handlePublicRoutes(ctx);
 
       expect(createClientMock).toHaveBeenCalled();
       expect(adminClient.from).toHaveBeenCalledWith('integrations');
@@ -703,7 +703,7 @@ describe('handlePublicRoutes', () => {
       const req = new Request('https://example.com/webhooks/meta', { method: 'POST', body });
       const ctx = makeCtx({ resource: 'webhooks', sub: 'meta', req });
 
-      const res = (await handlePublicRoutes(ctx)) as Response;
+      const res = await handlePublicRoutes(ctx);
 
       expect(res.status).toBe(200);
       expect(await res.text()).toBe('ok');
@@ -726,7 +726,7 @@ describe('handlePublicRoutes', () => {
       const url = new URL(req.url);
       const ctx = makeCtx({ resource: 'health', sub: 'secrets', req, url, sendJson });
 
-      const res = (await handlePublicRoutes(ctx)) as Response;
+      const res = await handlePublicRoutes(ctx);
       const payload = JSON.parse(await res.text());
 
       expect(sendJson).toHaveBeenCalledTimes(1);
@@ -750,7 +750,7 @@ describe('handlePublicRoutes', () => {
       const url = new URL(req.url);
       const ctx = makeCtx({ resource: 'health', sub: 'secrets', req, url, sendJson });
 
-      const res = (await handlePublicRoutes(ctx)) as Response;
+      const res = await handlePublicRoutes(ctx);
       const payload = JSON.parse(await res.text());
 
       expect(payload.success).toBe(true);
@@ -769,7 +769,7 @@ describe('handlePublicRoutes', () => {
       const url = new URL(req.url);
       const ctx = makeCtx({ resource: 'health', sub: null, req, url, sendJson });
 
-      const res = (await handlePublicRoutes(ctx)) as Response;
+      const res = await handlePublicRoutes(ctx);
       const payload = JSON.parse(await res.text());
 
       expect(payload.success).toBe(true);

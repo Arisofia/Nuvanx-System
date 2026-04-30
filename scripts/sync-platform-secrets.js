@@ -186,7 +186,7 @@ async function handleVercelKey(key, value, existingMap, projectId, token, queryS
         await deleteVercelEnv(projectId, env.id, token, queryString);
       }
       await createVercelEnv(projectId, key, value, requiredTargets, token, queryString);
-      return 1;
+      return;
     }
 
     const env = existingEnvs[0];
@@ -204,11 +204,10 @@ async function handleVercelKey(key, value, existingMap, projectId, token, queryS
     if (missingTargets.length > 0) {
       await createVercelEnv(projectId, key, value, missingTargets, token, queryString);
     }
-    return 1;
+    return;
   }
 
   await createVercelEnv(projectId, key, value, requiredTargets, token, queryString);
-  return 1;
 }
 
 async function setVercelSecrets(vars) {
@@ -233,7 +232,8 @@ async function setVercelSecrets(vars) {
   for (const key of frontendKeys) {
     const value = vars[key];
     if (!value) continue;
-    uploaded += await handleVercelKey(key, value, existingMap, projectId, token, queryString, requiredTargets);
+    await handleVercelKey(key, value, existingMap, projectId, token, queryString, requiredTargets);
+    uploaded += 1;
   }
 
   return { uploaded };

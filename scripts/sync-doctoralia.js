@@ -33,7 +33,7 @@
 
 const { google }  = require('googleapis');
 const { Client }  = require('pg');
-const { createHash } = require('crypto');
+const { createHash } = require('node:crypto');
 
 const {
   GOOGLE_SA_JSON: SA_JSON,
@@ -75,6 +75,8 @@ function findCol(headers, ...hints) {
   return -1;
 }
 
+const dmyRegex = /^([0-9]{1,2})[/-]([0-9]{1,2})[/-]([0-9]{4})/;
+
 /**
  * Parse a date string in DD/MM/YYYY, DD-MM-YYYY or ISO 8601 formats.
  * Returns a Date or null.
@@ -82,13 +84,13 @@ function findCol(headers, ...hints) {
 function parseDate(val) {
   if (!val) return null;
   const s = String(val).trim();
-  const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  const dmy = dmyRegex.exec(s);
   if (dmy) {
     const [, d, m, y] = dmy;
     return new Date(`${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}T00:00:00Z`);
   }
   const parsed = new Date(s);
-  return isNaN(parsed.getTime()) ? null : parsed;
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 /**
@@ -100,9 +102,9 @@ function parseAmount(val) {
   const clean = String(val)
     .replace(/[€$\s]/g, '')
     .replace(/\./g, '')
-    .replace(',', '.');
-  const n = parseFloat(clean);
-  return isNaN(n) ? 0 : Math.round(n * 100) / 100;
+    .replaceAll(',', '.');
+  const n = Number.parseFloat(clean);
+  return Number.isNaN(n) ? 0 : Math.round(n * 100) / 100;
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -156,10 +158,22 @@ async function main() {
   const colIntermediary = findCol(headers, 'intermediario', 'mediador', 'financiera', 'entidad', 'agenda');
   const colStatus       = findCol(headers, 'estado', 'status', 'situacion');
 
+  const hasColId           = colId !== -1;
+  const hasColTemplate     = colTemplate !== -1;
+  const hasColTemplateId   = colTemplateId !== -1;
+  const hasColIntake       = colIntake !== -1;
+  const hasColSettled      = colSettled !== -1;
+  const hasColGross        = colGross !== -1;
+  const hasColDiscount     = colDiscount !== -1;
+  const hasColNet          = colNet !== -1;
+  const hasColPayment      = colPayment !== -1;
+  const hasColIntermediary = colIntermediary !== -1;
+  const hasColStatus       = colStatus !== -1;
+
   // Appointment-export format: no explicit ID column — derive settled_at from Fecha+Hora.
   // If we also have no settlement column, use Fecha as the settlement date.
-  const useHashId     = colId === -1;
-  const colSettledEff = colSettled !== -1 ? colSettled : colFecha;
+  const useHashId     = !hasColId;
+  const colSettledEff = hasColSettled ? colSettled : colFecha;
 
   if (colSettledEff === -1) {
     console.error('[sync-doctoralia] Could not find a date column (liquidaci / fecha). Aborting.');
@@ -186,47 +200,56 @@ async function main() {
     if (useHashId) {
       const fecha  = row[colFecha]?.toString().trim()  ?? '';
       const hora   = row[colHora]?.toString().trim()   ?? '';
-      const asunto = colTemplate !== -1 ? (row[colTemplate]?.toString().trim() ?? '') : '';
-      const agenda = colIntermediary !== -1 ? (row[colIntermediary]?.toString().trim() ?? '') : '';
-      const key    = `${fecha}|${hora}|${asunto}|${agenda}`;
-      rawId = createHash('sha256').update(key).digest('hex').slice(0, 32);
-    } else {
-      rawId = row[colId]?.toString().trim();
-    }
-
-    if (!rawId) { skipped++; continue; }
-
-    const settledAt = parseDate(row[colSettledEff]);
-    if (!settledAt) { skipped++; continue; }
-
-    // Detect cancellation via status column
-    let cancelledAt = null;
-    if (colStatus !== -1) {
-      const statusVal = norm(row[colStatus]);
-      if (statusVal.includes('cancel') || statusVal.includes('baja') || statusVal.includes('anulad')) {
-        cancelledAt = settledAt;
+        const asunto = hasColTemplate ? (row[colTemplate]?.toString().trim() ?? '') : '';
+        const agenda = hasColIntermediary ? (row[colIntermediary]?.toString().trim() ?? '') : '';
+        const key    = `${fecha}|${hora}|${asunto}|${agenda}`;
+        rawId = createHash('sha256').update(key).digest('hex').slice(0, 32);
+      } else {
+        rawId = row[colId]?.toString().trim();
       }
-    }
 
-    const intakeAt    = colIntake      !== -1 ? parseDate(row[colIntake])       : null;
-    const amountGross = colGross       !== -1 ? parseAmount(row[colGross])      : 0;
-    const amountDisc  = colDiscount    !== -1 ? parseAmount(row[colDiscount])   : 0;
-    const amountNet   = colNet         !== -1 ? parseAmount(row[colNet])        : amountGross - amountDisc;
+      if (rawId === '') {
+        skipped++;
+        continue;
+      }
 
-    // Skip non-financial rows (zero amount)
-    if (amountNet === 0 && amountGross === 0) { skipped++; continue; }
-    const payment     = colPayment     !== -1 ? (row[colPayment]?.trim() || null)     : null;
-    const tmplName    = colTemplate    !== -1 ? (row[colTemplate]?.trim() || null)    : null;
-    const tmplId      = colTemplateId  !== -1 ? (row[colTemplateId]?.trim() || null)  : null;
-    const intermed    = colIntermediary !== -1 ? (row[colIntermediary]?.trim() || null) : null;
+      const settledAt = parseDate(row[colSettledEff]);
+      if (settledAt === null) {
+        skipped++;
+        continue;
+      }
 
-    await db.query(
-      `INSERT INTO financial_settlements
-         (id, clinic_id, amount_gross, amount_discount, amount_net,
-          payment_method, template_name, template_id,
-          settled_at, intake_at, cancelled_at, intermediary_name, source_system)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'doctoralia')
-       ON CONFLICT (id) DO UPDATE SET
+      // Detect cancellation via status column
+      let cancelledAt = null;
+      if (hasColStatus) {
+        const statusVal = norm(row[colStatus]);
+        if (statusVal.includes('cancel') || statusVal.includes('baja') || statusVal.includes('anulad')) {
+          cancelledAt = settledAt;
+        }
+      }
+
+      const intakeAt    = hasColIntake       ? parseDate(row[colIntake])       : null;
+      const amountGross = hasColGross        ? parseAmount(row[colGross])      : 0;
+      const amountDisc  = hasColDiscount     ? parseAmount(row[colDiscount])   : 0;
+      const amountNet   = hasColNet          ? parseAmount(row[colNet])        : amountGross - amountDisc;
+
+      // Skip non-financial rows (zero amount)
+      if (amountNet === 0 && amountGross === 0) {
+        skipped++;
+        continue;
+      }
+      const payment     = hasColPayment      ? (row[colPayment]?.trim() || null)     : null;
+      const tmplName    = hasColTemplate     ? (row[colTemplate]?.trim() || null)    : null;
+      const tmplId      = hasColTemplateId   ? (row[colTemplateId]?.trim() || null)  : null;
+      const intermed    = hasColIntermediary ? (row[colIntermediary]?.trim() || null) : null;
+
+      await db.query(
+        `INSERT INTO financial_settlements
+           (id, clinic_id, amount_gross, amount_discount, amount_net,
+            payment_method, template_name, template_id,
+            settled_at, intake_at, cancelled_at, intermediary_name, source_system)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'doctoralia')
+         ON CONFLICT (id) DO UPDATE SET
          amount_gross      = EXCLUDED.amount_gross,
          amount_discount   = EXCLUDED.amount_discount,
          amount_net        = EXCLUDED.amount_net,
