@@ -173,3 +173,43 @@ jobs:
           supabase_access_token: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           command: supabase functions deploy api --no-verify-jwt --use-api
 
+  production-smoke:
+    name: Production smoke test
+    needs: supabase-functions
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PRODUCTION_E2E_URL: ${{ secrets.PRODUCTION_E2E_URL }}
+      PRODUCTION_E2E_TOKEN: ${{ secrets.PRODUCTION_E2E_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Install smoke test dependencies
+        run: npm install --no-save dotenv
+      - name: Run production smoke test
+        run: |
+          set +e
+          node scripts/production-e2e.js 2>&1 | tee production-e2e.log
+          EXIT_CODE=${PIPESTATUS[0]}
+          echo "SMOKE_EXIT_CODE=$EXIT_CODE" >> $GITHUB_ENV
+          exit 0
+        env:
+          PRODUCTION_E2E_URL: ${{ env.PRODUCTION_E2E_URL }}
+          PRODUCTION_E2E_TOKEN: ${{ env.PRODUCTION_E2E_TOKEN }}
+      - name: Upload production smoke log
+        if: always()
+        uses: actions/upload-artifact@v4.6.0
+        with:
+          name: production-smoke-log
+          path: production-e2e.log
+      - name: Fail if smoke test failed
+        if: always()
+        run: |
+          if [ "${SMOKE_EXIT_CODE:-0}" != "0" ]; then
+            echo "Smoke test failed with exit code ${SMOKE_EXIT_CODE}"
+            exit 1
+          fi
+

@@ -76,8 +76,8 @@ function deriveRawId(row, useHashId, cols) {
 
   const fecha  = normalizeField(row[cols.colFecha]);
   const hora   = normalizeField(row[cols.colHora]);
-  const asunto = cols.hasColTemplate ? normalizeField(row[cols.colTemplate]) : '';
-  const agenda = cols.hasColIntermediary ? normalizeField(row[cols.colIntermediary]) : '';
+  const asunto = normalizeField(row[cols.colTemplate]);
+  const agenda = normalizeField(row[cols.colAgenda] ?? row[cols.colIntermediary]);
   const key    = `${fecha}|${hora}|${asunto}|${agenda}`;
   return createHash('sha256').update(key).digest('hex').slice(0, 32);
 }
@@ -128,15 +128,60 @@ function parseDate(val) {
  * comma decimal separator to period.
  */
 function parseAmount(val) {
-  if (!val && val !== 0) return 0;
-  const clean = String(val)
-    .replaceAll('€', '')
-    .replaceAll('$', '')
-    .replaceAll(' ', '')
-    .replaceAll('.', '')
-    .replaceAll(',', '.');
-  const n = Number.parseFloat(clean);
-  return Number.isNaN(n) ? 0 : Math.round(n * 100) / 100;
+  if (val === undefined || val === null || String(val).trim() === '') return null;
+  const raw = String(val).trim();
+  let normalized = raw.replace(/[ €$]/g, '');
+  if (normalized.includes(',') && normalized.includes('.')) {
+    normalized = normalized.replaceAll('.', '').replaceAll(',', '.');
+  } else {
+    normalized = normalized.replaceAll(',', '.');
+  }
+  if (!/^-?\d+(?:\.\d+)?$/.test(normalized)) return null;
+  const n = Number.parseFloat(normalized);
+  return Number.isNaN(n) ? null : Math.round(n * 100) / 100;
+}
+
+function parseStatus(value, settledAt) {
+  const normalized = norm(value).replaceAll(/\s+/g, ' ').trim();
+  const statusOriginal = normalizeField(value);
+  const statusMap = {
+    'anulada':      { cancelled: true,  type: 'cancellation' },
+    'anulado':      { cancelled: true,  type: 'cancellation' },
+    'anulad':       { cancelled: true,  type: 'cancellation' },
+    'no acude':     { cancelled: true,  type: 'noshow' },
+    'no show':      { cancelled: true,  type: 'noshow' },
+    'pagada':       { cancelled: false, type: 'paid' },
+    'pendiente':    { cancelled: false, type: 'scheduled' },
+    'realizada':    { cancelled: false, type: 'completed' },
+    'realizado':    { cancelled: false, type: 'completed' },
+    'confirmada':   { cancelled: false, type: 'confirmed' },
+  };
+
+  if (Object.prototype.hasOwnProperty.call(statusMap, normalized)) {
+    return {
+      statusOriginal,
+      statusType: statusMap[normalized].type,
+      cancelledAt: statusMap[normalized].cancelled ? settledAt : null,
+    };
+  }
+
+  if (normalized.includes('no acude') || normalized.includes('no show')) {
+    return { statusOriginal, statusType: 'noshow', cancelledAt: settledAt };
+  }
+  if (normalized.includes('anulad') || normalized.includes('baja') || normalized.includes('cancel')) {
+    return { statusOriginal, statusType: 'cancellation', cancelledAt: settledAt };
+  }
+  if (normalized.includes('pagad')) {
+    return { statusOriginal, statusType: 'paid', cancelledAt: null };
+  }
+  if (normalized.includes('pendient')) {
+    return { statusOriginal, statusType: 'scheduled', cancelledAt: null };
+  }
+  if (normalized.includes('realiz')) {
+    return { statusOriginal, statusType: 'completed', cancelledAt: null };
+  }
+
+  return { statusOriginal, statusType: 'unknown', cancelledAt: null };
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -186,9 +231,12 @@ async function main() {
   const colGross        = findCol(headers, 'importe bruto', 'bruto', 'gross', 'financiad', 'capital');
   const colDiscount     = findCol(headers, 'descuento', 'discount', 'bonific');
   const colNet          = findCol(headers, 'importe neto', 'importe liq', 'neto', 'net', 'liquidado', 'importe');
-  const colPayment      = findCol(headers, 'metodo pago', 'metodo de pago', 'pago', 'payment', 'forma pago', 'procedencia');
-  const colIntermediary = findCol(headers, 'intermediario', 'mediador', 'financiera', 'entidad', 'agenda');
-  const colStatus       = findCol(headers, 'estado', 'status', 'situacion');
+  const colPayment      = findCol(headers, 'metodo pago', 'metodo de pago', 'pago', 'payment', 'forma pago');
+  const colOrigin       = findCol(headers, 'procedencia', 'origen', 'lead source', 'lead_source');
+  const colAgenda       = findCol(headers, 'agenda', 'departamento', 'department', 'profesional', 'professional', 'medico', 'enfermeria');
+  const colRoom         = findCol(headers, 'sala', 'box', 'habitacion', 'room', 'consultorio');
+  const colIntermediary = findCol(headers, 'intermediario', 'mediador', 'financiera', 'entidad');
+  const colStatus       = findCol(headers, 'estado', 'status', 'situacion', 'situación');
 
   const hasColId           = colId !== -1;
   const hasColTemplate     = colTemplate !== -1;
@@ -199,6 +247,9 @@ async function main() {
   const hasColDiscount     = colDiscount !== -1;
   const hasColNet          = colNet !== -1;
   const hasColPayment      = colPayment !== -1;
+  const hasColOrigin       = colOrigin !== -1;
+  const hasColAgenda       = colAgenda !== -1;
+  const hasColRoom         = colRoom !== -1;
   const hasColIntermediary = colIntermediary !== -1;
   const hasColStatus       = colStatus !== -1;
 
@@ -212,7 +263,7 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`[sync-doctoralia] Column mapping: id=${useHashId ? 'hash(fecha+hora+asunto+agenda)' : colId} template=${colTemplate} intake=${colIntake} settled=${colSettledEff} gross=${colGross} discount=${colDiscount} net=${colNet} status=${colStatus}`);
+  console.log(`[sync-doctoralia] Column mapping: id=${useHashId ? 'hash(fecha+hora+asunto+agenda)' : colId} template=${colTemplate} intake=${colIntake} settled=${colSettledEff} gross=${colGross} discount=${colDiscount} net=${colNet} payment=${colPayment} origin=${colOrigin} agenda=${colAgenda} room=${colRoom} status=${colStatus}`);
   if (useHashId) console.log('[sync-doctoralia] Using hash-based ID (appointment-export format).');
 
   // ── 3. Connect to Postgres ────────────────────────────────────────────────
@@ -235,6 +286,8 @@ async function main() {
         colTemplate,
         colTemplateId,
         colIntermediary,
+        colAgenda,
+        colOrigin,
         colIntake,
         colSettledEff,
         colSettled,
@@ -242,6 +295,7 @@ async function main() {
         colDiscount,
         colNet,
         colPayment,
+        colRoom,
         colStatus,
       },
       useHashId,
@@ -253,6 +307,9 @@ async function main() {
       hasColDiscount,
       hasColNet,
       hasColPayment,
+      hasColOrigin,
+      hasColAgenda,
+      hasColRoom,
       hasColIntermediary,
       hasColStatus,
     });
@@ -275,6 +332,9 @@ async function upsertDoctoraliaRow(row, i, params) {
     hasColDiscount,
     hasColNet,
     hasColPayment,
+    hasColOrigin,
+    hasColAgenda,
+    hasColRoom,
     hasColIntermediary,
     hasColStatus,
   } = params;
@@ -285,20 +345,41 @@ async function upsertDoctoraliaRow(row, i, params) {
   const settledAt = parseDate(row[cols.colSettledEff]);
   if (settledAt === null) return false;
 
-  const cancelledAt = hasColStatus && isCancelledStatus(row[cols.colStatus])
-    ? settledAt
-    : null;
+  const statusOriginal = hasColStatus ? normalizeField(row[cols.colStatus]) : null;
+  const statusInfo = statusOriginal ? parseStatus(statusOriginal, settledAt) : { statusOriginal: null, statusType: null, cancelledAt: null };
+  const cancelledAt = statusInfo.cancelledAt;
+  const statusType = statusInfo.statusType;
 
   const intakeAt    = hasColIntake       ? parseDate(row[cols.colIntake])       : null;
-  const amountGross = hasColGross        ? parseAmount(row[cols.colGross])      : 0;
-  const amountDisc  = hasColDiscount     ? parseAmount(row[cols.colDiscount])   : 0;
-  const amountNet   = hasColNet          ? parseAmount(row[cols.colNet])        : amountGross - amountDisc;
+  const amountGross = hasColGross        ? parseAmount(row[cols.colGross])      : null;
+  const amountDisc  = hasColDiscount     ? parseAmount(row[cols.colDiscount])   : null;
+  const amountNet   = hasColNet          ? parseAmount(row[cols.colNet])        : null;
 
-  if (amountNet === 0 && amountGross === 0) return false;
+  if (hasColGross && amountGross === null) {
+    console.warn(`[sync-doctoralia] Skipping row ${i + 1} because bruto importe is invalid: ${row[cols.colGross]}`);
+    return false;
+  }
+  if (hasColDiscount && amountDisc === null) {
+    console.warn(`[sync-doctoralia] Skipping row ${i + 1} because descuento importe is invalid: ${row[cols.colDiscount]}`);
+    return false;
+  }
+  if (hasColNet && amountNet === null) {
+    console.warn(`[sync-doctoralia] Skipping row ${i + 1} because neto importe is invalid: ${row[cols.colNet]}`);
+    return false;
+  }
 
-  const payment  = hasColPayment      ? (normalizeField(row[cols.colPayment]) || null)     : null;
-  const tmplName = hasColTemplate     ? (normalizeField(row[cols.colTemplate]) || null)    : null;
-  const tmplId   = hasColTemplateId   ? (normalizeField(row[cols.colTemplateId]) || null)  : null;
+  const finalAmountGross = amountGross ?? 0;
+  const finalAmountDisc  = amountDisc  ?? 0;
+  const finalAmountNet   = amountNet   ?? (finalAmountGross - finalAmountDisc);
+
+  if (finalAmountGross === 0 && finalAmountNet === 0 && !statusType) return false;
+
+  const payment   = hasColPayment ? (normalizeField(row[cols.colPayment]) || null)    : null;
+  const leadSource = hasColOrigin ? (normalizeField(row[cols.colOrigin]) || null)  : null;
+  const roomId    = hasColRoom ? (normalizeField(row[cols.colRoom]) || null)       : null;
+  const agenda    = hasColAgenda ? (normalizeField(row[cols.colAgenda]) || null)   : null;
+  const tmplName  = hasColTemplate ? (normalizeField(row[cols.colTemplate]) || null)    : null;
+  const tmplId    = hasColTemplateId ? (normalizeField(row[cols.colTemplateId]) || null)  : null;
   const intermed  = hasColIntermediary ? (normalizeField(row[cols.colIntermediary]) || null) : null;
 
   try {
@@ -306,8 +387,10 @@ async function upsertDoctoraliaRow(row, i, params) {
       `INSERT INTO financial_settlements
          (id, clinic_id, amount_gross, amount_discount, amount_net,
           payment_method, template_name, template_id,
-          settled_at, intake_at, cancelled_at, intermediary_name, source_system)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'doctoralia')
+          settled_at, intake_at, cancelled_at, intermediary_name,
+          status_original, status_type, room_id, lead_source, agenda_name,
+          source_system)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,'doctoralia')
        ON CONFLICT (id) DO UPDATE SET
          amount_gross      = EXCLUDED.amount_gross,
          amount_discount   = EXCLUDED.amount_discount,
@@ -319,14 +402,24 @@ async function upsertDoctoraliaRow(row, i, params) {
          intake_at         = EXCLUDED.intake_at,
          cancelled_at      = EXCLUDED.cancelled_at,
          intermediary_name = EXCLUDED.intermediary_name,
+         status_original   = EXCLUDED.status_original,
+         status_type       = EXCLUDED.status_type,
+         room_id           = EXCLUDED.room_id,
+         lead_source       = EXCLUDED.lead_source,
+         agenda_name       = EXCLUDED.agenda_name,
          source_system     = 'doctoralia'`,
       [
-        rawId, CLINIC_ID, amountGross, amountDisc, amountNet,
+        rawId, CLINIC_ID, finalAmountGross, finalAmountDisc, finalAmountNet,
         payment, tmplName, tmplId,
         settledAt.toISOString(),
         intakeAt?.toISOString() ?? null,
         cancelledAt?.toISOString() ?? null,
         intermed,
+        statusOriginal,
+        statusType,
+        roomId,
+        leadSource,
+        agenda,
       ]
     );
     return true;

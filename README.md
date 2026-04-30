@@ -64,6 +64,19 @@ cd backend && npx jest tests/auth.test.js --runInBand --forceExit
 - Deploy: frontend → Vercel (auto), Edge Function → Supabase (manual: `npx supabase functions deploy api --no-verify-jwt`)
 - No Railway, no Render.
 
+## GitHub Actions secrets
+
+The repository uses GitHub Actions secrets for Supabase and production validation workflows:
+
+- `SUPABASE_ACCESS_TOKEN` — Supabase personal access token for CLI operations.
+- `SUPABASE_PROJECT_REF` — Target Supabase project ref for `supabase link`.
+- `SUPABASE_DB_PASSWORD` — Optional DB password used when `DATABASE_URL` is unavailable.
+- `DATABASE_URL` — Optional Postgres connection string used for migrations and linting.
+- `PRODUCTION_E2E_URL` — Production API base URL used by automated smoke tests.
+- `PRODUCTION_E2E_TOKEN` — Auth token used by `scripts/production-e2e.js`.
+- `GOOGLE_ADS_SERVICE_ACCOUNT` — Google Sheets service account JSON for Doctoralia sync.
+- `DOCTORALIA_SHEET_ID` / `DOCTORALIA_DRIVE_FILE_ID` — Spreadsheet ID used for Doctoralia ingestion.
+
 ## Vercel environment variables
 
 For Vercel production deploys, configure these environment variables in the frontend project settings:

@@ -2,9 +2,31 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 
+const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || '')
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean);
+
+const defaultLocalOrigins = [
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+];
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin) ||
+        (allowedOrigins.length === 0 && defaultLocalOrigins.includes(origin))) {
+      return callback(null, true);
+    }
+    callback(new Error('Not allowed by CORS'));
+  },
+};
+
 const app = express();
 app.use(helmet());
-app.use(cors({ origin: true }));
+app.use(cors(corsOptions));
 app.use(express.json());
 
 app.get('/', (req, res) => {
