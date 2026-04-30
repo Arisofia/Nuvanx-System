@@ -49,6 +49,17 @@ jobs:
           node-version: '22'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
+      - name: Validate frontend secrets
+        run: |
+          MISSING=()
+          [ -z "$VITE_SUPABASE_URL" ] && MISSING+=("VITE_SUPABASE_URL")
+          if [ -z "$VITE_SUPABASE_PUBLISHABLE_KEY" ] && [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
+            MISSING+=("VITE_SUPABASE_PUBLISHABLE_KEY or VITE_SUPABASE_ANON_KEY")
+          fi
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::error::Missing required secrets: ${MISSING[*]}"
+            exit 1
+          fi
       - name: Install frontend dependencies
         run: npm ci --include=dev
       - name: Run frontend lint
@@ -97,6 +108,17 @@ jobs:
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF || 'ssvvuuysgxyqvmovrlvk' }}
     steps:
       - uses: actions/checkout@v5
+      - name: Validate Supabase deployment secrets
+        run: |
+          MISSING=()
+          [ -z "$SUPABASE_ACCESS_TOKEN" ] && MISSING+=("SUPABASE_ACCESS_TOKEN")
+          if [ -z "$DATABASE_URL" ] && [ -z "$SUPABASE_DB_PASSWORD" ]; then
+            MISSING+=("DATABASE_URL or SUPABASE_DB_PASSWORD")
+          fi
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::error::Missing required secrets: ${MISSING[*]}"
+            exit 1
+          fi
       - name: Supabase DB migrations
         uses: ./.github/actions/supabase-link-run
         with:
