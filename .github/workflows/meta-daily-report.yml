@@ -35,12 +35,12 @@ jobs:
       REPORT_DAYS: 30
       META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
       META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
-      GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT || '' }}
-      GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN || '' }}
-      GOOGLE_ADS_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_CUSTOMER_ID || '' }}
-      DATABASE_URL: ${{ secrets.DATABASE_URL || '' }}
-      CLINIC_ID: ${{ secrets.CLINIC_ID || '' }}
-      REPORT_USER_ID: ${{ secrets.REPORT_USER_ID || '' }}
+      GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
+      GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
+      GOOGLE_ADS_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_CUSTOMER_ID }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      CLINIC_ID: ${{ secrets.CLINIC_ID }}
+      REPORT_USER_ID: ${{ secrets.REPORT_USER_ID }}
 
     steps:
       - uses: actions/checkout@v5
@@ -71,11 +71,11 @@ jobs:
     permissions:
       contents: read
     env:
-      GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT || '' }}
-      DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID || '' }}
-      DOCTORALIA_DRIVE_FILE_ID: ${{ secrets.DOCTORALIA_DRIVE_FILE_ID || '' }}
-      DATABASE_URL: ${{ secrets.DATABASE_URL || '' }}
-      CLINIC_ID: ${{ secrets.CLINIC_ID || '' }}
+      GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
+      DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID }}
+      DOCTORALIA_DRIVE_FILE_ID: ${{ secrets.DOCTORALIA_DRIVE_FILE_ID }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      CLINIC_ID: ${{ secrets.CLINIC_ID }}
 
     steps:
       - uses: actions/checkout@v5
@@ -103,10 +103,10 @@ jobs:
           node scripts/sync-doctoralia.js
         env:
           GOOGLE_SA_JSON: ${{ env.GOOGLE_SA_JSON }}
-          DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID || secrets.DOCTORALIA_DRIVE_FILE_ID }}
-          DOCTORALIA_DRIVE_FILE_ID: ${{ secrets.DOCTORALIA_DRIVE_FILE_ID || secrets.DOCTORALIA_SHEET_ID }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          CLINIC_ID: ${{ secrets.CLINIC_ID }}
+          DOCTORALIA_SHEET_ID: ${{ env.DOCTORALIA_SHEET_ID || env.DOCTORALIA_DRIVE_FILE_ID }}
+          DOCTORALIA_DRIVE_FILE_ID: ${{ env.DOCTORALIA_DRIVE_FILE_ID || env.DOCTORALIA_SHEET_ID }}
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+          CLINIC_ID: ${{ env.CLINIC_ID }}
 
   supabase-security:
     name: Supabase Security
@@ -116,10 +116,10 @@ jobs:
     permissions:
       contents: read
     env:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN || '' }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF || 'ssvvuuysgxyqvmovrlvk' }}
-      DATABASE_URL: ${{ secrets.DATABASE_URL || '' }}
-      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD || '' }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
 
     steps:
       - uses: actions/checkout@v5
@@ -145,10 +145,10 @@ jobs:
       - name: Run Supabase Security Lint
         uses: ./.github/actions/supabase-link-run
         with:
-          project_ref: ${{ env.SUPABASE_PROJECT_REF }}
-          supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
-          database_url: ${{ env.DATABASE_URL }}
-          supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
+          project_ref: ${{ secrets.SUPABASE_PROJECT_REF || 'ssvvuuysgxyqvmovrlvk' }}
+          supabase_access_token: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ secrets.DATABASE_URL }}
+          supabase_db_password: ${{ secrets.SUPABASE_DB_PASSWORD }}
           command: |
             if [ -n "$DATABASE_URL" ]; then
               supabase db lint --db-url "$DATABASE_URL" --level error --fail-on error
@@ -169,8 +169,8 @@ jobs:
     permissions:
       contents: read
     env:
-      PRODUCTION_E2E_URL: ${{ secrets.PRODUCTION_E2E_URL || '' }}
-      PRODUCTION_E2E_TOKEN: ${{ secrets.PRODUCTION_E2E_TOKEN || '' }}
+      PRODUCTION_E2E_URL: ${{ secrets.PRODUCTION_E2E_URL }}
+      PRODUCTION_E2E_TOKEN: ${{ secrets.PRODUCTION_E2E_TOKEN }}
 
     steps:
       - uses: actions/checkout@v5
@@ -190,6 +190,3 @@ jobs:
           fi
       - name: Run production E2E
         run: npm run production:e2e
-        env:
-          PRODUCTION_E2E_URL: ${{ secrets.PRODUCTION_E2E_URL }}
-          PRODUCTION_E2E_TOKEN: ${{ secrets.PRODUCTION_E2E_TOKEN }}

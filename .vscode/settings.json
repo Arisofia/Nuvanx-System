@@ -4,5 +4,8 @@
       ".github/actions/**/action.yml",
       ".github/actions/**/action.yaml"
     ]
+  },
+  "files.associations": {
+    "*.sql": "pgsql"
   }
 }

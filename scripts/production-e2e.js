@@ -36,8 +36,10 @@ async function request(path, method = 'GET', body = null, auth = false) {
   });
   const text = await res.text();
   let data;
-  try { data = text ? JSON.parse(text) : null; } catch (err) {
-    throw new Error(`Invalid JSON response from ${url}: ${text}`);
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch (err) {
+    throw new Error(`Invalid JSON response from ${url}: ${text}`, { cause: err });
   }
   if (!res.ok) {
     throw new Error(`Request failed ${res.status} ${res.statusText} ${url}: ${text}`);
