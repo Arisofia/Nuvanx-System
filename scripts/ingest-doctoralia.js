@@ -23,6 +23,7 @@
  *
  * REQUIRED ENV:
  *   DOCTORALIA_DRIVE_FILE_ID    — Google Drive file ID
+ *   DOCTORALIA_SHEET_ID         — Alias for DOCTORALIA_DRIVE_FILE_ID
  *   CLINIC_ID                   — Supabase clinic UUID
  *   SUPABASE_URL
  *   SUPABASE_SERVICE_ROLE_KEY
@@ -70,13 +71,13 @@ function normalizeCellValue(value) {
 }
 
 // ── Config ───────────────────────────────────────────────────────────────────
-const FILE_ID    = process.env.DOCTORALIA_DRIVE_FILE_ID || process.argv[2];
+const FILE_ID    = process.env.DOCTORALIA_DRIVE_FILE_ID || process.env.DOCTORALIA_SHEET_ID || process.argv[2];
 const SHEET_NAME = process.env.SHEET_NAME || 'Produccion Intermediarios';
 const DRY_RUN    = process.env.DRY_RUN === '1';
 const { CLINIC_ID, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY: SUPABASE_KEY } = process.env;
 
 const miss = [
-  !FILE_ID    && 'DOCTORALIA_DRIVE_FILE_ID',
+  !FILE_ID    && 'DOCTORALIA_DRIVE_FILE_ID or DOCTORALIA_SHEET_ID',
   !CLINIC_ID  && 'CLINIC_ID',
   !SUPABASE_URL && 'SUPABASE_URL',
   !SUPABASE_KEY && 'SUPABASE_SERVICE_ROLE_KEY',
@@ -173,28 +174,35 @@ function buildHeaderMap(headerRow) {
   return COL;
 }
 
+function formatISO(date, time) {
+  if (!date) return null;
+  return time ? `${date}T${time}:00` : `${date}T00:00:00`;
+}
+
 function processRow(row, COL, uploadId, ingestedAt, sn) {
-  const estado      = (row[COL.estado]         || '').toString().trim();
-  const fecha       = (row[COL.fecha]           || '').toString().trim();
-  const hora        = (row[COL.hora]            || '').toString().trim();
-  const fechaCrea   = (row[COL.fecha_creacion]  || '').toString().trim();
-  const horaCrea    = (row[COL.hora_creacion]   || '').toString().trim();
-  const asuntoRaw   = (row[COL.asunto]          || '').toString().trim();
-  const agenda      = (row[COL.agenda]          || '').toString().trim();
-  const salaBox     = (row[COL['sala/box']]        || '').toString().trim();
-  const confirmada  = (row[COL.confirmada]      || '').toString().trim();
-  const procedencia = (row[COL.procedencia]     || '').toString().trim();
-  const importeRaw  = row[COL.importe];
+  const get = (key) => (row[COL[key]] || '').toString().trim();
+
+  const estado      = get('estado');
+  const fecha       = get('fecha');
+  const hora        = get('hora');
+  const fechaCrea   = get('fecha_creacion');
+  const horaCrea    = get('hora_creacion');
+  const asuntoRaw   = get('asunto');
+  const agenda      = get('agenda');
+  const salaBox     = get('sala/box');
+  const confirmada  = get('confirmada');
+  const procedencia = get('procedencia');
+  const importeRaw  = get('importe');
 
   if (!asuntoRaw && !fecha) return null;
 
   const parsed   = parseAsunto(asuntoRaw);
-  const rawImporte = importeRaw !== null ? Number.parseFloat(String(importeRaw).replaceAll(',', '.')) : 0;
+  const rawImporte = Number.parseFloat(importeRaw.replaceAll(',', '.')) || 0;
   const importe = Number.isNaN(rawImporte) ? 0 : rawImporte;
   const status   = mapStatus(estado);
   const horaStart = hora ? hora.split('-')[0].trim() : null;
-  const startISO  = fecha && horaStart ? `${fecha}T${horaStart}:00` : (fecha ? `${fecha}T00:00:00` : null);
-  const creaISO   = fechaCrea && horaCrea ? `${fechaCrea}T${horaCrea}:00` : (fechaCrea ? `${fechaCrea}T00:00:00` : null);
+  const startISO  = formatISO(fecha, horaStart);
+  const creaISO   = formatISO(fechaCrea, horaCrea);
   const idKey     = [fecha, hora, (asuntoRaw || '').slice(0, 80)].join('|');
   const rawHash   = hex32(idKey);
 
@@ -260,24 +268,25 @@ function processRow(row, COL, uploadId, ingestedAt, sn) {
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
-async function main() {
+// ── Main ─────────────────────────────────────────────────────────────────────
+function getDriveClient() {
   const sa   = loadSA();
   const auth = new google.auth.GoogleAuth({ credentials: sa, scopes: ['https://www.googleapis.com/auth/drive.readonly'] });
-  const drive = google.drive({ version: 'v3', auth });
+  return google.drive({ version: 'v3', auth });
+}
 
-  const tmp = path.join(os.tmpdir(), `doctoralia_${Date.now()}.xlsx`);
-  await downloadDriveFile(drive, FILE_ID, tmp);
-
-  const workbook = await XlsxPopulate.fromFileAsync(tmp);
+async function loadWorkbookData(drive, tmpPath) {
+  await downloadDriveFile(drive, FILE_ID, tmpPath);
+  const workbook = await XlsxPopulate.fromFileAsync(tmpPath);
   const sheet = workbook.sheet(SHEET_NAME) || workbook.sheets()[0];
-  if (!sheet) { console.log('No sheet found.'); return; }
-  const sn = sheet.name();
-  console.log(`Sheet: "${sn}"`);
+  if (!sheet) return null;
 
   const range = sheet.usedRange();
   const rawRows = (range ? range.value() : []).map(row => (row || []).map(cell => normalizeCellValue(cell ?? null)));
-  if (rawRows.length < 2) { console.log('Empty sheet.'); return; }
+  return { sn: sheet.name(), rawRows };
+}
 
+function processAllRows(rawRows, sn) {
   const COL = buildHeaderMap(rawRows[0] || []);
   const uploadId    = crypto.randomUUID();
   const ingestedAt  = new Date().toISOString();
@@ -295,20 +304,10 @@ async function main() {
       patientMap[result.patientRow.doc_patient_id] = result.patientRow;
     }
   }
+  return { rawIngests, apptRows, patientRows: Object.values(patientMap), skipped };
+}
 
-  const patientRows = Object.values(patientMap);
-  const finRows     = rawIngests.filter(r => r.importe > 0);
-  console.log(`\nParsed: ${rawIngests.length} raw | ${apptRows.length} appointments | ${patientRows.length} patients | ${skipped} skipped`);
-  console.log(`Revenue: confirmed €${finRows.filter(r => r.estado === 'Realizada').reduce((s,r) => s+r.importe, 0).toFixed(2)} | pipeline €${finRows.filter(r => r.estado === 'Pendiente').reduce((s,r) => s+r.importe, 0).toFixed(2)} | cancelled €${finRows.filter(r => r.estado === 'Anulada').reduce((s,r) => s+r.importe, 0).toFixed(2)}`);
-
-  if (DRY_RUN) {
-    console.log('\n── DRY RUN: 2 raw rows ──');
-    console.log(JSON.stringify(rawIngests.slice(0, 2), null, 2));
-    console.log('\n── DRY RUN: 2 patients ──');
-    console.log(JSON.stringify(patientRows.slice(0, 2), null, 2));
-    return;
-  }
-
+async function uploadToSupabase(rawIngests, apptRows, patientRows) {
   const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
   const BATCH = 200;
 
@@ -329,12 +328,35 @@ async function main() {
     if (error) console.error('doctoralia_patients:', error.message);
     else console.log(`✓ ${patientRows.length} → doctoralia_patients`);
   }
+}
 
-  try {
-    fs.unlinkSync(tmp);
-  } catch (err) {
-    console.warn(`Could not remove temp file ${tmp}:`, err.message);
+async function main() {
+  const drive = getDriveClient();
+  const tmp = path.join(os.tmpdir(), `doctoralia_${Date.now()}.xlsx`);
+
+  const data = await loadWorkbookData(drive, tmp);
+  if (!data) { console.log('No sheet found.'); return; }
+  const { sn, rawRows } = data;
+  if (rawRows.length < 2) { console.log('Empty sheet.'); return; }
+
+  const { rawIngests, apptRows, patientRows, skipped } = processAllRows(rawRows, sn);
+  const finRows = rawIngests.filter(r => r.importe > 0);
+
+  console.log(`Sheet: "${sn}"`);
+  console.log(`\nParsed: ${rawIngests.length} raw | ${apptRows.length} appointments | ${patientRows.length} patients | ${skipped} skipped`);
+  console.log(`Revenue: confirmed €${finRows.filter(r => r.estado === 'Realizada').reduce((s,r) => s+r.importe, 0).toFixed(2)} | pipeline €${finRows.filter(r => r.estado === 'Pendiente').reduce((s,r) => s+r.importe, 0).toFixed(2)} | cancelled €${finRows.filter(r => r.estado === 'Anulada').reduce((s,r) => s+r.importe, 0).toFixed(2)}`);
+
+  if (DRY_RUN) {
+    console.log('\n── DRY RUN: 2 raw rows ──');
+    console.log(JSON.stringify(rawIngests.slice(0, 2), null, 2));
+    console.log('\n── DRY RUN: 2 patients ──');
+    console.log(JSON.stringify(patientRows.slice(0, 2), null, 2));
+    return;
   }
+
+  await uploadToSupabase(rawIngests, apptRows, patientRows);
+
+  try { fs.unlinkSync(tmp); } catch (err) { console.warn(`Could not remove temp file ${tmp}:`, err.message); }
   console.log('\nDone. Run: SELECT run_doctoralia_name_match() to link patients → leads.');
 }
 

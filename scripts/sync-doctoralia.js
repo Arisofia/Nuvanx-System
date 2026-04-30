@@ -7,6 +7,7 @@
  * Required env vars:
  *   GOOGLE_SA_JSON        — Service account JSON (GOOGLE_ADS_SERVICE_ACCOUNT secret)
  *   DOCTORALIA_SHEET_ID   — Spreadsheet ID (e.g. 1GAJoASGdjsKB7bTtC5hXPFkWbB7S4fVXhKD_cZoDwPw)
+ *   DOCTORALIA_DRIVE_FILE_ID — Alias for DOCTORALIA_SHEET_ID
  *   DATABASE_URL          — Postgres connection string
  *   CLINIC_ID             — UUID of the clinic owning these settlements
  *
@@ -36,17 +37,20 @@ const { createHash } = require('crypto');
 
 const {
   GOOGLE_SA_JSON: SA_JSON,
-  DOCTORALIA_SHEET_ID: SHEET_ID,
+  DOCTORALIA_SHEET_ID,
+  DOCTORALIA_DRIVE_FILE_ID,
   DATABASE_URL,
   CLINIC_ID,
   SHEET_RANGE = 'A1:Z5000',
   SHEET_NAME,
 } = process.env;
 
+const SHEET_ID = DOCTORALIA_SHEET_ID || DOCTORALIA_DRIVE_FILE_ID;
+
 // ─── Validation ───────────────────────────────────────────────────────────────
 if (!SA_JSON || !SHEET_ID || !DATABASE_URL || !CLINIC_ID) {
   console.error('[sync-doctoralia] Missing required env vars.');
-  console.error('  Required: GOOGLE_SA_JSON, DOCTORALIA_SHEET_ID, DATABASE_URL, CLINIC_ID');
+  console.error('  Required: GOOGLE_SA_JSON, DOCTORALIA_SHEET_ID or DOCTORALIA_DRIVE_FILE_ID, DATABASE_URL, CLINIC_ID');
   process.exit(1);
 }
 

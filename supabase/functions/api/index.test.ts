@@ -19,7 +19,7 @@ if (!originalDenoDescriptor) {
     get() {
       const base = originalDenoDescriptor.get ? originalDenoDescriptor.get.call(globalThis) : originalDenoDescriptor.value;
       const denoStub = base ? { ...base } : {};
-      (denoStub as any).serve = vi.fn();
+      denoStub.serve = vi.fn();
       return denoStub;
     },
   });
@@ -224,16 +224,16 @@ describe('bytesToHex', () => {
 describe('custom Deno getter stub', () => {
   let originalDescriptor: PropertyDescriptor | undefined;
 
-  function buildDenoGetter(descriptor: PropertyDescriptor) {
+  const buildDenoGetter = (descriptor: PropertyDescriptor) => {
     return () => {
       const originalValue = descriptor.get
         ? descriptor.get.call(globalThis)
         : descriptor.value;
       const res = originalValue ? { ...originalValue } : {};
-      (res as any).serve = vi.fn();
+      res.serve = vi.fn();
       return res;
     };
-  }
+  };
 
   beforeEach(() => {
     originalDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno');
@@ -410,7 +410,7 @@ describe('decryptCred', () => {
     deno.env.get.mockReturnValue('test-master-key');
     vi.spyOn(api, 'hexToBytes').mockImplementation((hex: string) => {
       const arr = new Uint8Array(hex.length >>> 1);
-      for (let i = 0; i < arr.length; i++) arr[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+      for (let i = 0; i < arr.length; i++) arr[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
       return arr;
     });
     vi.spyOn(globalThis.crypto.subtle, 'importKey').mockResolvedValue('km-object' as any);
@@ -420,6 +420,17 @@ describe('decryptCred', () => {
     await expect(() => decryptCred('aa:bb:ccdd:0102')).rejects.toThrowError('Decrypt failed');
   });
 });
+
+const makeCtx = (partial: Partial<{ req: Request; url: URL; resource: string; sub: string | null; sendJson: (body: any) => Response; }>): any => {
+  const url = partial.url ?? new URL('https://example.com/');
+  return {
+    req: partial.req ?? new Request(url.toString()),
+    url,
+    resource: partial.resource ?? '',
+    sub: partial.sub ?? null,
+    sendJson: partial.sendJson ?? ((body: any) => new Response(JSON.stringify(body), { status: 200 })),
+  };
+};
 
 describe('handlePublicRoutes', () => {
   let originalDenoDescriptorLocal: PropertyDescriptor | undefined;
@@ -440,17 +451,6 @@ describe('handlePublicRoutes', () => {
     }
     vi.restoreAllMocks();
   });
-
-  function makeCtx(partial: Partial<{ req: Request; url: URL; resource: string; sub: string | null; sendJson: (body: any) => Response; }>): any {
-    const url = partial.url ?? new URL('https://example.com/');
-    return {
-      req: partial.req ?? new Request(url.toString()),
-      url,
-      resource: partial.resource ?? '',
-      sub: partial.sub ?? null,
-      sendJson: partial.sendJson ?? ((body: any) => new Response(JSON.stringify(body), { status: 200 })),
-    };
-  }
 
   describe('META webhooks GET verification', () => {
     it('returns 503 when verify token env is not configured', async () => {
@@ -895,7 +895,7 @@ describe('parseMetaMetric', () => {
   });
 
   it('returns 0 for non-finite numbers', () => {
-    expect(parseMetaMetric(NaN)).toBe(0);
+    expect(parseMetaMetric(Number.NaN)).toBe(0);
     expect(parseMetaMetric(Infinity)).toBe(0);
     expect(parseMetaMetric(-Infinity)).toBe(0);
   });
