@@ -1,0 +1,7 @@
+# Code owners for Nuvanx System
+# Update these values if the repository or team structure changes.
+
+* @Arisofia
+/frontend/ @Arisofia
+/backend/ @Arisofia
+/supabase/ @Arisofia

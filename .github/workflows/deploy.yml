@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow
 ###############################################################################
 # Deploy Supabase - sequential pipeline on main
 #
@@ -39,6 +40,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
     defaults:
       run:
         working-directory: frontend
@@ -49,6 +54,17 @@ jobs:
           node-version: '22'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
+      - name: Validate frontend secrets
+        run: |
+          MISSING=()
+          [ -z "$VITE_SUPABASE_URL" ] && MISSING+=("VITE_SUPABASE_URL")
+          if [ -z "$VITE_SUPABASE_PUBLISHABLE_KEY" ] && [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
+            MISSING+=("VITE_SUPABASE_PUBLISHABLE_KEY or VITE_SUPABASE_ANON_KEY")
+          fi
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::error::Missing required secrets: ${MISSING[*]}"
+            exit 1
+          fi
       - name: Install frontend dependencies
         run: npm ci --include=dev
       - name: Run frontend lint
@@ -93,24 +109,52 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF || '' }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN || '' }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL || '' }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD || '' }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL || '' }}
     steps:
       - uses: actions/checkout@v5
+      - name: Validate Supabase deployment secrets
+        run: |
+          MISSING=()
+          [ -z "$SUPABASE_ACCESS_TOKEN" ] && MISSING+=("SUPABASE_ACCESS_TOKEN")
+          [ -z "$SUPABASE_PROJECT_REF" ] && MISSING+=("SUPABASE_PROJECT_REF")
+          if [ -z "$DATABASE_URL" ] && [ -z "$SUPABASE_DB_PASSWORD" ]; then
+            MISSING+=("DATABASE_URL or SUPABASE_DB_PASSWORD")
+          fi
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::error::Missing required secrets: ${MISSING[*]}"
+            exit 1
+          fi
+      - name: Debug Supabase connection (safe)
+        run: |
+          echo "SUPABASE_PROJECT_REF=$SUPABASE_PROJECT_REF"
+          echo "SUPABASE_URL=$SUPABASE_URL"
+          echo "SUPABASE_DB_PASSWORD is set? $([[ -z \"$SUPABASE_DB_PASSWORD\" ]] && echo no || echo yes)"
+          if [ -n "$DATABASE_URL" ]; then
+            echo "DATABASE_URL is set"
+            echo "$DATABASE_URL" | sed -E 's#^postgres(ql)?://([^:@/]+):[^@]+@#postgresql://\2:***@#'
+          else
+            echo "DATABASE_URL is empty"
+          fi
       - name: Supabase DB migrations
         uses: ./.github/actions/supabase-link-run
         with:
-          project_ref: ${{ secrets.SUPABASE_PROJECT_REF || 'ssvvuuysgxyqvmovrlvk' }}
-          supabase_access_token: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          database_url: ${{ secrets.DATABASE_URL }}
-          supabase_db_password: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          project_ref: ${{ env.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ env.DATABASE_URL }}
+          supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           command: |
-            if [ -n "$DATABASE_URL" ]; then
+            if [ -n "$SUPABASE_DB_PASSWORD" ]; then
+              supabase db push --linked --password "$SUPABASE_DB_PASSWORD"
+            elif [ -n "$DATABASE_URL" ]; then
               supabase db push --db-url "$DATABASE_URL"
             else
-              if [ -z "$SUPABASE_DB_PASSWORD" ]; then
-                echo "::error::Supabase migration secret SUPABASE_DB_PASSWORD is missing. Set it in GitHub secrets or provide DATABASE_URL."
-                exit 1
-              fi
-              supabase db push --linked --password "$SUPABASE_DB_PASSWORD"
+              echo "::error::Supabase migration secret SUPABASE_DB_PASSWORD is missing. Set it in GitHub secrets or provide DATABASE_URL."
+              exit 1
             fi
 
   # 4. Supabase Edge Functions
@@ -120,12 +164,55 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF || '' }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN || '' }}
     steps:
       - uses: actions/checkout@v5
       - name: Deploy Edge Functions
         uses: ./.github/actions/supabase-link-run
         with:
-          project_ref: ${{ secrets.SUPABASE_PROJECT_REF || 'ssvvuuysgxyqvmovrlvk' }}
-          supabase_access_token: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          project_ref: ${{ env.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
           command: supabase functions deploy api --no-verify-jwt --use-api
+
+  production-smoke:
+    name: Production smoke test
+    needs: supabase-functions
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PRODUCTION_E2E_URL: ${{ secrets.PRODUCTION_E2E_URL || '' }}
+      PRODUCTION_E2E_TOKEN: ${{ secrets.PRODUCTION_E2E_TOKEN || '' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Install smoke test dependencies
+        run: npm install --no-save dotenv
+      - name: Run production smoke test
+        run: |
+          set +e
+          node scripts/production-e2e.js 2>&1 | tee production-e2e.log
+          EXIT_CODE=${PIPESTATUS[0]}
+          echo "SMOKE_EXIT_CODE=$EXIT_CODE" >> $GITHUB_ENV
+          exit 0
+        env:
+          PRODUCTION_E2E_URL: ${{ env.PRODUCTION_E2E_URL }}
+          PRODUCTION_E2E_TOKEN: ${{ env.PRODUCTION_E2E_TOKEN }}
+      - name: Upload production smoke log
+        if: always()
+        uses: actions/upload-artifact@v4.6.0
+        with:
+          name: production-smoke-log
+          path: production-e2e.log
+      - name: Fail if smoke test failed
+        if: always()
+        run: |
+          if [ "${SMOKE_EXIT_CODE:-0}" != "0" ]; then
+            echo "Smoke test failed with exit code ${SMOKE_EXIT_CODE}"
+            exit 1
+          fi
 

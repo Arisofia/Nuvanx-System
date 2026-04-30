@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow
 name: Supabase Security Check
 
 env:
@@ -25,17 +26,32 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
     steps:
       - uses: actions/checkout@v5
 
+      - name: Validate Supabase security secrets
+        run: |
+          MISSING=()
+          [ -z "$SUPABASE_ACCESS_TOKEN" ] && MISSING+=("SUPABASE_ACCESS_TOKEN")
+          [ -z "$SUPABASE_PROJECT_REF" ] && MISSING+=("SUPABASE_PROJECT_REF")
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::error::Missing required secrets: ${MISSING[*]}"
+            exit 1
+          fi
+
       - name: Run Supabase DB lint
-        if: ${{ secrets.SUPABASE_ACCESS_TOKEN != '' }}
+        if: ${{ env.SUPABASE_ACCESS_TOKEN != '' }}
         uses: ./.github/actions/supabase-link-run
         with:
-          project_ref: ${{ secrets.SUPABASE_PROJECT_REF || 'ssvvuuysgxyqvmovrlvk' }}
-          supabase_access_token: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          database_url: ${{ secrets.DATABASE_URL }}
-          supabase_db_password: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          project_ref: ${{ env.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ env.DATABASE_URL }}
+          supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           command: |
             if [ -n "$DATABASE_URL" ]; then
               supabase db lint --db-url "$DATABASE_URL" --level error --fail-on error
@@ -47,6 +63,6 @@ jobs:
             fi
 
       - name: Skip security lint (missing token)
-        if: ${{ secrets.SUPABASE_ACCESS_TOKEN == '' }}
+        if: ${{ env.SUPABASE_ACCESS_TOKEN == '' }}
         run: echo "::warning::SUPABASE_ACCESS_TOKEN not set — skipping security lint."
 

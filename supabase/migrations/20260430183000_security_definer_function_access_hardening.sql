@@ -1,5 +1,4 @@
 -- =============================================================================
--- =============================================================================
 -- Ensure SECURITY DEFINER functions are not executable by anon/authenticated.
 -- =============================================================================
 -- This migration hardens Supabase advisor findings for functions exposed via

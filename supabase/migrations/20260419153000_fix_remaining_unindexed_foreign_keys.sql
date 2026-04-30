@@ -53,8 +53,8 @@ END $$;
 DO $$
 BEGIN
   IF EXISTS (
-    SELECT 1 FROM information_schema.tables
-    WHERE table_schema = 'public' AND table_name = 'playbooks'
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'playbooks' AND column_name = 'owner_user_id'
   ) THEN
     CREATE INDEX IF NOT EXISTS idx_playbooks_owner_user_id_fk_cover
       ON public.playbooks(owner_user_id);

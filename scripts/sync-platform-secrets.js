@@ -7,6 +7,7 @@ const cp = require('node:child_process');
 
 const ROOT = process.cwd();
 const TOKENS_FILE = path.join(ROOT, '.env.tokens.local');
+const LEGACY_TOKENS_FILE = path.join(ROOT, '.secrets.local');
 
 function normalizeSafePath(filePath, baseDir = ROOT) {
   const resolved = path.resolve(baseDir, filePath);
@@ -28,7 +29,10 @@ const requiredSecretKeys = [
   'CLINIC_ID',
   'REPORT_USER_ID',
   'GOOGLE_ADS_SERVICE_ACCOUNT',
+  'GOOGLE_ADS_DEVELOPER_TOKEN',
+  'GOOGLE_ADS_CUSTOMER_ID',
   'DOCTORALIA_SHEET_ID',
+  'DOCTORALIA_DRIVE_FILE_ID',
   'SUPABASE_DB_PASSWORD',
   'ENCRYPTION_KEY',
   'OPENAI_API_KEY',
@@ -42,6 +46,7 @@ const frontendKeys = [
   'VITE_API_URL',
   'VITE_SUPABASE_URL',
   'VITE_SUPABASE_PUBLISHABLE_KEY',
+  'VITE_SUPABASE_ANON_KEY',
   'VITE_SUPABASE_FIGMA_URL',
   'VITE_SUPABASE_FIGMA_ANON_KEY',
   'VITE_SENTRY_DSN',
@@ -69,11 +74,23 @@ function readEnvFile(filePath) {
 }
 
 function mergeSources() {
-  const fileVars = readEnvFile(TOKENS_FILE);
+  const fileVars = {
+    ...readEnvFile(LEGACY_TOKENS_FILE),
+    ...readEnvFile(TOKENS_FILE),
+  };
   const merged = { ...fileVars };
   for (const [k, v] of Object.entries(process.env)) {
     if (v && !merged[k]) merged[k] = v;
   }
+
+  // Alias Doctoralia drive file ID between older and newer variable names.
+  if (merged.DOCTORALIA_DRIVE_FILE_ID && !merged.DOCTORALIA_SHEET_ID) {
+    merged.DOCTORALIA_SHEET_ID = merged.DOCTORALIA_DRIVE_FILE_ID;
+  }
+  if (merged.DOCTORALIA_SHEET_ID && !merged.DOCTORALIA_DRIVE_FILE_ID) {
+    merged.DOCTORALIA_DRIVE_FILE_ID = merged.DOCTORALIA_SHEET_ID;
+  }
+
   return merged;
 }
 
@@ -100,25 +117,108 @@ async function setSupabaseSecrets(vars, projectRef) {
 
   const payload = requiredSecretKeys
     .filter((k) => vars[k])
+    .filter((k) => !k.startsWith('SUPABASE_'))
     .map((k) => ({ name: k, value: vars[k] }));
 
   if (payload.length === 0) return { skipped: true, reason: 'no secret values to upload' };
 
-  const res = await fetch(`https://api.supabase.com/v1/projects/${projectRef}/secrets`, {
-    method: 'POST',
+  try {
+    const res = await fetch(`https://api.supabase.com/v1/projects/${projectRef}/secrets`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      if (res.status === 403) {
+        return { skipped: true, reason: 'unauthorized or insufficient privileges' };
+      }
+      throw new Error(`Supabase (${projectRef}) ${res.status}: ${body}`);
+    }
+
+    return { uploaded: payload.length };
+  } catch (error) {
+    if (error.message?.includes('403')) {
+      return { skipped: true, reason: 'unauthorized or insufficient privileges' };
+    }
+    throw error;
+  }
+}
+
+async function vercelFetch(url, method, token, body = null) {
+  const options = {
+    method,
     headers: {
-      Authorization: `Bearer ${accessToken}`,
+      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(payload),
-  });
+  };
+  if (body) options.body = JSON.stringify(body);
 
+  const res = await fetch(url, options);
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Supabase (${projectRef}) ${res.status}: ${body}`);
+    const resBody = await res.text();
+    throw new Error(`Vercel ${res.status} ${method} ${url}: ${resBody}`);
+  }
+  return res;
+}
+
+async function deleteVercelEnv(projectId, envId, token, queryString) {
+  const url = `https://api.vercel.com/v10/projects/${projectId}/env/${envId}${queryString}`;
+  await vercelFetch(url, 'DELETE', token);
+}
+
+async function createVercelEnv(projectId, key, value, targets, token, queryString) {
+  const url = `https://api.vercel.com/v10/projects/${projectId}/env${queryString}`;
+  await vercelFetch(url, 'POST', token, {
+    key,
+    value,
+    type: 'encrypted',
+    target: targets,
+  });
+}
+
+async function updateVercelEnv(projectId, envId, value, token, queryString) {
+  const url = `https://api.vercel.com/v10/projects/${projectId}/env/${envId}${queryString}`;
+  await vercelFetch(url, 'PATCH', token, { value });
+}
+
+async function handleVercelKey(key, value, existingMap, projectId, token, queryString, requiredTargets) {
+  if (existingMap.has(key)) {
+    const existingEnvs = existingMap.get(key);
+    const existingTargets = new Set(existingEnvs.flatMap((env) => Array.isArray(env.target) ? env.target : [env.target]));
+
+    if (existingEnvs.length > 1) {
+      for (const env of existingEnvs) {
+        await deleteVercelEnv(projectId, env.id, token, queryString);
+      }
+      await createVercelEnv(projectId, key, value, requiredTargets, token, queryString);
+      return;
+    }
+
+    const env = existingEnvs[0];
+    try {
+      await updateVercelEnv(projectId, env.id, value, token, queryString);
+    } catch (error) {
+      console.warn(`Patch failed for ${key}, falling back to delete/create: ${error.message}`);
+      for (const e of existingEnvs) {
+        await deleteVercelEnv(projectId, e.id, token, queryString);
+      }
+      await createVercelEnv(projectId, key, value, requiredTargets, token, queryString);
+    }
+
+    const missingTargets = requiredTargets.filter((t) => !existingTargets.has(t));
+    if (missingTargets.length > 0) {
+      await createVercelEnv(projectId, key, value, missingTargets, token, queryString);
+    }
+    return;
   }
 
-  return { uploaded: payload.length };
+  await createVercelEnv(projectId, key, value, requiredTargets, token, queryString);
 }
 
 async function setVercelSecrets(vars) {
@@ -129,36 +229,21 @@ async function setVercelSecrets(vars) {
   if (!token || !projectId) return { skipped: true, reason: 'missing token or project id' };
 
   let uploaded = 0;
+  const queryString = teamId ? `?teamId=${teamId}` : '';
+  const listUrl = `https://api.vercel.com/v10/projects/${projectId}/env${queryString}`;
 
-  for (const key of [...requiredSecretKeys, ...frontendKeys]) {
+  const existingResp = await vercelFetch(listUrl, 'GET', token);
+  const existingJson = await existingResp.json();
+  const existingMap = new Map();
+  for (const env of existingJson.envs || []) {
+    existingMap.set(env.key, [...(existingMap.get(env.key) || []), env]);
+  }
+
+  const requiredTargets = ['production', 'preview', 'development'];
+  for (const key of frontendKeys) {
     const value = vars[key];
     if (!value) continue;
-
-    const queryString = teamId ? `?teamId=${teamId}` : '';
-    const url = `https://api.vercel.com/v10/projects/${projectId}/env${queryString}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        key,
-        value,
-        type: 'encrypted',
-        target: ['production', 'preview', 'development'],
-      }),
-    });
-
-    if (!res.ok) {
-      const body = await res.text();
-      if (res.status === 409) {
-        // Already exists; skip to avoid destructive updates in this script.
-        continue;
-      }
-      throw new Error(`Vercel ${res.status} for ${key}: ${body}`);
-    }
-
+    await handleVercelKey(key, value, existingMap, projectId, token, queryString, requiredTargets);
     uploaded += 1;
   }
 
@@ -174,7 +259,14 @@ function setGithubSecrets(vars) {
   if (!hasGhCli()) return { skipped: true, reason: 'gh CLI not installed' };
 
   let uploaded = 0;
-  const githubKeys = [...requiredSecretKeys, 'SUPABASE_ACCESS_TOKEN', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_PUBLISHABLE_KEY', 'VITE_SUPABASE_ANON_KEY'];
+  const githubKeys = [...requiredSecretKeys,
+    'SUPABASE_ACCESS_TOKEN',
+    'VITE_SUPABASE_URL',
+    'VITE_SUPABASE_PUBLISHABLE_KEY',
+    'VITE_SUPABASE_ANON_KEY',
+    'PRODUCTION_E2E_URL',
+    'PRODUCTION_E2E_TOKEN',
+  ];
   for (const key of githubKeys) {
     const value = vars[key];
     if (!value) continue;

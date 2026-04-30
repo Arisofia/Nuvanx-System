@@ -139,13 +139,10 @@ BEGIN
     RETURN v_lead.converted_patient_id;
   END IF;
 
-  v_clinic_id := v_lead.clinic_id;
-  IF v_clinic_id IS NULL THEN
-    SELECT u.clinic_id INTO v_clinic_id
-    FROM public.users u
-    WHERE u.id = v_lead.user_id
-    LIMIT 1;
-  END IF;
+  SELECT u.clinic_id INTO v_clinic_id
+  FROM public.users u
+  WHERE u.id = v_lead.user_id
+  LIMIT 1;
 
   IF v_clinic_id IS NULL THEN
     RETURN NULL;

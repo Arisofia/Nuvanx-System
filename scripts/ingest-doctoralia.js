@@ -23,6 +23,7 @@
  *
  * REQUIRED ENV:
  *   DOCTORALIA_DRIVE_FILE_ID    — Google Drive file ID
+ *   DOCTORALIA_SHEET_ID         — Alias for DOCTORALIA_DRIVE_FILE_ID
  *   CLINIC_ID                   — Supabase clinic UUID
  *   SUPABASE_URL
  *   SUPABASE_SERVICE_ROLE_KEY
@@ -44,10 +45,10 @@
 
 'use strict';
 
-const path   = require('path');
-const fs     = require('fs');
-const crypto = require('crypto');
-const os     = require('os');
+const path   = require('node:path');
+const fs     = require('node:fs');
+const crypto = require('node:crypto');
+const os     = require('node:os');
 
 // Load .env from repo root
 const dotenvPath = path.join(__dirname, '..', '.env');
@@ -70,15 +71,13 @@ function normalizeCellValue(value) {
 }
 
 // ── Config ───────────────────────────────────────────────────────────────────
-const FILE_ID    = process.env.DOCTORALIA_DRIVE_FILE_ID || process.argv[2];
+const FILE_ID    = process.env.DOCTORALIA_DRIVE_FILE_ID || process.env.DOCTORALIA_SHEET_ID || process.argv[2];
 const SHEET_NAME = process.env.SHEET_NAME || 'Produccion Intermediarios';
 const DRY_RUN    = process.env.DRY_RUN === '1';
-const CLINIC_ID  = process.env.CLINIC_ID;
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const { CLINIC_ID, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY: SUPABASE_KEY } = process.env;
 
 const miss = [
-  !FILE_ID    && 'DOCTORALIA_DRIVE_FILE_ID',
+  !FILE_ID    && 'DOCTORALIA_DRIVE_FILE_ID or DOCTORALIA_SHEET_ID',
   !CLINIC_ID  && 'CLINIC_ID',
   !SUPABASE_URL && 'SUPABASE_URL',
   !SUPABASE_KEY && 'SUPABASE_SERVICE_ROLE_KEY',
@@ -105,13 +104,13 @@ function loadSA() {
 // ── Name normalization ───────────────────────────────────────────────────────
 function normName(s) {
   if (!s) return '';
-  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  return s.normalize('NFD').replaceAll(/[\u0300-\u036f]/g, '').toLowerCase().replaceAll(/\s+/g, ' ').trim();
 }
 
 // ── Phone normalization (ES format) ─────────────────────────────────────────
 function normPhone(s) {
   if (!s) return null;
-  const d = s.replace(/\D/g, '');
+  const d = s.replaceAll(/\D/g, '');
   if (d.length === 9 && /^[6789]/.test(d)) return d;
   if (d.length === 11 && d.startsWith('34')) return d.slice(2);
   if (d.length === 12 && d.startsWith('034')) return d.slice(3);
@@ -145,148 +144,170 @@ function mapStatus(e) {
 // ── Deterministic IDs ────────────────────────────────────────────────────────
 function deterministicUUID(str) {
   const h = crypto.createHash('sha256').update(str).digest('hex');
-  return `${h.slice(0,8)}-${h.slice(8,12)}-4${h.slice(13,16)}-${((parseInt(h[16],16)&3)|8).toString(16)}${h.slice(17,20)}-${h.slice(20,32)}`;
+  return `${h.slice(0,8)}-${h.slice(8,12)}-4${h.slice(13,16)}-${((Number.parseInt(h[16],16)&3)|8).toString(16)}${h.slice(17,20)}-${h.slice(20,32)}`;
 }
 function hex32(str) { return crypto.createHash('sha256').update(str).digest('hex').slice(0, 32); }
 
-// ── Main ─────────────────────────────────────────────────────────────────────
-async function main() {
-  const sa   = loadSA();
-  const auth = new google.auth.GoogleAuth({ credentials: sa, scopes: ['https://www.googleapis.com/auth/drive.readonly'] });
-  const drive = google.drive({ version: 'v3', auth });
+// ── Main Helpers ─────────────────────────────────────────────────────────────
 
-  const tmp = path.join(os.tmpdir(), `doctoralia_${Date.now()}.xlsx`);
-  console.log(`Downloading Drive file ${FILE_ID} → ${tmp}`);
-  await new Promise((res, rej) => {
-    drive.files.get({ fileId: FILE_ID, alt: 'media' }, { responseType: 'stream' }, (err, r) => {
+async function downloadDriveFile(drive, fileId, destPath) {
+  console.log(`Downloading Drive file ${fileId} → ${destPath}`);
+  return new Promise((res, rej) => {
+    drive.files.get({ fileId, alt: 'media' }, { responseType: 'stream' }, (err, r) => {
       if (err) return rej(err);
-      const ws = fs.createWriteStream(tmp);
+      const ws = fs.createWriteStream(destPath);
       r.data.pipe(ws);
-      ws.on('finish', res); ws.on('error', rej);
+      ws.on('finish', res);
+      ws.on('error', rej);
     });
   });
+}
 
-  const workbook = await XlsxPopulate.fromFileAsync(tmp);
-  const sheet = workbook.sheet(SHEET_NAME) || workbook.sheets()[0];
-  if (!sheet) { console.log('No sheet found.'); return; }
-  const sn = sheet.name();
-  console.log(`Sheet: "${sn}"`);
-  const range = sheet.usedRange();
-  const rawRows = (range ? range.value() : []).map(row => (row || []).map(cell => normalizeCellValue(cell ?? null)));
-  if (rawRows.length < 2) { console.log('Empty sheet.'); return; }
-
-  const headerRow = rawRows[0] || [];
+function buildHeaderMap(headerRow) {
   const COL = {};
   headerRow.forEach((h, i) => {
     const k = (h || '').toString().trim()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-      .toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_\/]/g, '');
+      .normalize('NFD').replaceAll(/[\u0300-\u036f]/g, '')
+      .toLowerCase().replaceAll(/\s+/g, '_').replaceAll(/[^a-z0-9_/]/g, '');
     COL[k] = i;
   });
+  return COL;
+}
 
-  const dataRows    = rawRows.slice(1);
+function formatISO(date, time) {
+  if (!date) return null;
+  return time ? `${date}T${time}:00` : `${date}T00:00:00`;
+}
+
+function processRow(row, COL, uploadId, ingestedAt, sn) {
+  const get = (key) => (row[COL[key]] || '').toString().trim();
+
+  const estado      = get('estado');
+  const fecha       = get('fecha');
+  const hora        = get('hora');
+  const fechaCrea   = get('fecha_creacion');
+  const horaCrea    = get('hora_creacion');
+  const asuntoRaw   = get('asunto');
+  const agenda      = get('agenda');
+  const salaBox     = get('sala/box');
+  const confirmada  = get('confirmada');
+  const procedencia = get('procedencia');
+  const importeRaw  = get('importe');
+
+  if (!asuntoRaw && !fecha) return null;
+
+  const parsed   = parseAsunto(asuntoRaw);
+  const rawImporte = Number.parseFloat(importeRaw.replaceAll(',', '.')) || 0;
+  const importe = Number.isNaN(rawImporte) ? 0 : rawImporte;
+  const status   = mapStatus(estado);
+  const horaStart = hora ? hora.split('-')[0].trim() : null;
+  const startISO  = formatISO(fecha, horaStart);
+  const creaISO   = formatISO(fechaCrea, horaCrea);
+  const idKey     = [fecha, hora, (asuntoRaw || '').slice(0, 80)].join('|');
+  const rawHash   = hex32(idKey);
+
+  const rawIngest = {
+    raw_hash:          rawHash,
+    clinic_id:         CLINIC_ID,
+    upload_id:         uploadId,
+    raw_row:           {},
+    ingested_at:       ingestedAt,
+    source_file_id:    FILE_ID,
+    sheet_name:        sn,
+    estado,
+    fecha:             fecha || null,
+    hora:              hora || null,
+    fecha_creacion:    fechaCrea || null,
+    hora_creacion:     horaCrea || null,
+    asunto:            asuntoRaw || null,
+    agenda:            agenda || null,
+    sala_box:          salaBox || null,
+    confirmada:        confirmada === 'Sí' || confirmada === 'Si',
+    procedencia:       procedencia === '-' ? null : procedencia || null,
+    importe,
+    doc_patient_id:    parsed?.doc_patient_id || null,
+    patient_name:      parsed?.full_name || null,
+    patient_name_norm: parsed?.name_norm || null,
+    phone_primary:     parsed?.phones?.[0] || null,
+    phone_secondary:   parsed?.phones?.[1] || null,
+    treatment:         parsed?.treatment || null,
+    appointment_start: startISO,
+    created_record_at: creaISO,
+  };
+
+  const cancelled = status === 'cancelled', noShow = status === 'no_show';
+  const confirmed = status === 'confirmed' || status === 'showed';
+  const apptRow = {
+    id:           deterministicUUID(idKey),
+    clinic_id:    CLINIC_ID,
+    start_time:   startISO,
+    status,
+    notes:        [parsed?.treatment, agenda, salaBox, procedencia === '-' ? null : procedencia].filter(Boolean).join(' | ') || null,
+    cancelled_at: cancelled ? startISO : null,
+    no_show_at:   noShow ? startISO : null,
+    confirmed_at: confirmed ? startISO : null,
+  };
+
+  let patientRow = null;
+  if (parsed?.doc_patient_id) {
+    patientRow = {
+      doc_patient_id:  parsed.doc_patient_id,
+      clinic_id:       CLINIC_ID,
+      full_name:       parsed.full_name,
+      name_norm:       parsed.name_norm,
+      phone_primary:   parsed.phones?.[0] || null,
+      phone_secondary: parsed.phones?.[1] || null,
+      first_seen_at:   startISO,
+      lead_id:         null,
+      match_confidence: null,
+      match_class:     null,
+    };
+  }
+
+  return { rawIngest, apptRow, patientRow };
+}
+
+// ── Main ─────────────────────────────────────────────────────────────────────
+// ── Main ─────────────────────────────────────────────────────────────────────
+function getDriveClient() {
+  const sa   = loadSA();
+  const auth = new google.auth.GoogleAuth({ credentials: sa, scopes: ['https://www.googleapis.com/auth/drive.readonly'] });
+  return google.drive({ version: 'v3', auth });
+}
+
+async function loadWorkbookData(drive, tmpPath) {
+  await downloadDriveFile(drive, FILE_ID, tmpPath);
+  const workbook = await XlsxPopulate.fromFileAsync(tmpPath);
+  const sheet = workbook.sheet(SHEET_NAME) || workbook.sheets()[0];
+  if (!sheet) return null;
+
+  const range = sheet.usedRange();
+  const rawRows = (range ? range.value() : []).map(row => (row || []).map(cell => normalizeCellValue(cell ?? null)));
+  return { sn: sheet.name(), rawRows };
+}
+
+function processAllRows(rawRows, sn) {
+  const COL = buildHeaderMap(rawRows[0] || []);
   const uploadId    = crypto.randomUUID();
   const ingestedAt  = new Date().toISOString();
   const rawIngests  = [], apptRows = [], patientMap = {};
   let skipped = 0;
 
-  for (const row of dataRows) {
+  for (const row of rawRows.slice(1)) {
     if (!row || row.every(c => c === null)) { skipped++; continue; }
+    const result = processRow(row, COL, uploadId, ingestedAt, sn);
+    if (!result) { skipped++; continue; }
 
-    const estado      = (row[COL['estado']]         || '').toString().trim();
-    const fecha       = (row[COL['fecha']]           || '').toString().trim();
-    const hora        = (row[COL['hora']]            || '').toString().trim();
-    const fechaCrea   = (row[COL['fecha_creacion']]  || '').toString().trim();
-    const horaCrea    = (row[COL['hora_creacion']]   || '').toString().trim();
-    const asuntoRaw   = (row[COL['asunto']]          || '').toString().trim();
-    const agenda      = (row[COL['agenda']]          || '').toString().trim();
-    const salaBox     = (row[COL['sala/box']]        || '').toString().trim();
-    const confirmada  = (row[COL['confirmada']]      || '').toString().trim();
-    const procedencia = (row[COL['procedencia']]     || '').toString().trim();
-    const importeRaw  = row[COL['importe']];
-
-    if (!asuntoRaw && !fecha) { skipped++; continue; }
-
-    const parsed   = parseAsunto(asuntoRaw);
-    const importe  = importeRaw !== null ? parseFloat(String(importeRaw).replace(',', '.')) : 0;
-    const status   = mapStatus(estado);
-    const horaStart = hora ? hora.split('-')[0].trim() : null;
-    const startISO  = fecha && horaStart ? `${fecha}T${horaStart}:00` : (fecha ? `${fecha}T00:00:00` : null);
-    const creaISO   = fechaCrea && horaCrea ? `${fechaCrea}T${horaCrea}:00` : (fechaCrea ? `${fechaCrea}T00:00:00` : null);
-    const idKey     = [fecha, hora, (asuntoRaw || '').slice(0, 80)].join('|');
-    const rawHash   = hex32(idKey);
-
-    rawIngests.push({
-      raw_hash:          rawHash,
-      clinic_id:         CLINIC_ID,
-      upload_id:         uploadId,
-      raw_row:           {},
-      ingested_at:       ingestedAt,
-      source_file_id:    FILE_ID,
-      sheet_name:        sn,
-      estado,
-      fecha:             fecha || null,
-      hora:              hora || null,
-      fecha_creacion:    fechaCrea || null,
-      hora_creacion:     horaCrea || null,
-      asunto:            asuntoRaw || null,
-      agenda:            agenda || null,
-      sala_box:          salaBox || null,
-      confirmada:        confirmada === 'Sí' || confirmada === 'Si',
-      procedencia:       procedencia === '-' ? null : procedencia || null,
-      importe:           isNaN(importe) ? 0 : importe,
-      doc_patient_id:    parsed?.doc_patient_id || null,
-      patient_name:      parsed?.full_name || null,
-      patient_name_norm: parsed?.name_norm || null,
-      phone_primary:     parsed?.phones?.[0] || null,
-      phone_secondary:   parsed?.phones?.[1] || null,
-      treatment:         parsed?.treatment || null,
-      appointment_start: startISO,
-      created_record_at: creaISO,
-    });
-
-    const cancelled = status === 'cancelled', noShow = status === 'no_show';
-    const confirmed = status === 'confirmed' || status === 'showed';
-    apptRows.push({
-      id:           deterministicUUID(idKey),
-      clinic_id:    CLINIC_ID,
-      start_time:   startISO,
-      status,
-      notes:        [parsed?.treatment, agenda, salaBox, procedencia === '-' ? null : procedencia].filter(Boolean).join(' | ') || null,
-      cancelled_at: cancelled ? startISO : null,
-      no_show_at:   noShow ? startISO : null,
-      confirmed_at: confirmed ? startISO : null,
-    });
-
-    if (parsed?.doc_patient_id && !patientMap[parsed.doc_patient_id]) {
-      patientMap[parsed.doc_patient_id] = {
-        doc_patient_id:  parsed.doc_patient_id,
-        clinic_id:       CLINIC_ID,
-        full_name:       parsed.full_name,
-        name_norm:       parsed.name_norm,
-        phone_primary:   parsed.phones?.[0] || null,
-        phone_secondary: parsed.phones?.[1] || null,
-        first_seen_at:   startISO,
-        lead_id:         null,
-        match_confidence: null,
-        match_class:     null,
-      };
+    rawIngests.push(result.rawIngest);
+    apptRows.push(result.apptRow);
+    if (result.patientRow && !patientMap[result.patientRow.doc_patient_id]) {
+      patientMap[result.patientRow.doc_patient_id] = result.patientRow;
     }
   }
+  return { rawIngests, apptRows, patientRows: Object.values(patientMap), skipped };
+}
 
-  const patientRows = Object.values(patientMap);
-  const finRows     = rawIngests.filter(r => r.importe > 0);
-  console.log(`\nParsed: ${rawIngests.length} raw | ${apptRows.length} appointments | ${patientRows.length} patients | ${skipped} skipped`);
-  console.log(`Revenue: confirmed €${finRows.filter(r => r.estado === 'Realizada').reduce((s,r) => s+r.importe, 0).toFixed(2)} | pipeline €${finRows.filter(r => r.estado === 'Pendiente').reduce((s,r) => s+r.importe, 0).toFixed(2)} | cancelled €${finRows.filter(r => r.estado === 'Anulada').reduce((s,r) => s+r.importe, 0).toFixed(2)}`);
-
-  if (DRY_RUN) {
-    console.log('\n── DRY RUN: 2 raw rows ──');
-    console.log(JSON.stringify(rawIngests.slice(0, 2), null, 2));
-    console.log('\n── DRY RUN: 2 patients ──');
-    console.log(JSON.stringify(patientRows.slice(0, 2), null, 2));
-    return;
-  }
-
+async function uploadToSupabase(rawIngests, apptRows, patientRows) {
   const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
   const BATCH = 200;
 
@@ -307,8 +328,35 @@ async function main() {
     if (error) console.error('doctoralia_patients:', error.message);
     else console.log(`✓ ${patientRows.length} → doctoralia_patients`);
   }
+}
 
-  try { fs.unlinkSync(tmp); } catch (_) {}
+async function main() {
+  const drive = getDriveClient();
+  const tmp = path.join(os.tmpdir(), `doctoralia_${Date.now()}.xlsx`);
+
+  const data = await loadWorkbookData(drive, tmp);
+  if (!data) { console.log('No sheet found.'); return; }
+  const { sn, rawRows } = data;
+  if (rawRows.length < 2) { console.log('Empty sheet.'); return; }
+
+  const { rawIngests, apptRows, patientRows, skipped } = processAllRows(rawRows, sn);
+  const finRows = rawIngests.filter(r => r.importe > 0);
+
+  console.log(`Sheet: "${sn}"`);
+  console.log(`\nParsed: ${rawIngests.length} raw | ${apptRows.length} appointments | ${patientRows.length} patients | ${skipped} skipped`);
+  console.log(`Revenue: confirmed €${finRows.filter(r => r.estado === 'Realizada').reduce((s,r) => s+r.importe, 0).toFixed(2)} | pipeline €${finRows.filter(r => r.estado === 'Pendiente').reduce((s,r) => s+r.importe, 0).toFixed(2)} | cancelled €${finRows.filter(r => r.estado === 'Anulada').reduce((s,r) => s+r.importe, 0).toFixed(2)}`);
+
+  if (DRY_RUN) {
+    console.log('\n── DRY RUN: 2 raw rows ──');
+    console.log(JSON.stringify(rawIngests.slice(0, 2), null, 2));
+    console.log('\n── DRY RUN: 2 patients ──');
+    console.log(JSON.stringify(patientRows.slice(0, 2), null, 2));
+    return;
+  }
+
+  await uploadToSupabase(rawIngests, apptRows, patientRows);
+
+  try { fs.unlinkSync(tmp); } catch (err) { console.warn(`Could not remove temp file ${tmp}:`, err.message); }
   console.log('\nDone. Run: SELECT run_doctoralia_name_match() to link patients → leads.');
 }
 

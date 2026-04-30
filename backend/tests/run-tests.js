@@ -1,5 +1,5 @@
 const { runCLI } = require('jest');
-const path = require('path');
+const path = require('node:path');
 
 const rootDir = path.resolve(__dirname, '..');
 const packageJson = require(path.join(rootDir, 'package.json'));

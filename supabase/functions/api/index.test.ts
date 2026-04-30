@@ -17,7 +17,10 @@ if (!originalDenoDescriptor) {
     configurable: true,
     enumerable: true,
     get() {
-      return { ...((originalDenoDescriptor.get ? originalDenoDescriptor.get.call(globalThis) : (originalDenoDescriptor.value as any)) ?? {}), serve: vi.fn() };
+      const base = originalDenoDescriptor.get ? originalDenoDescriptor.get.call(globalThis) : originalDenoDescriptor.value;
+      const denoStub = base ? { ...base } : {};
+      denoStub.serve = vi.fn();
+      return denoStub;
     },
   });
 }
@@ -32,6 +35,10 @@ const {
   hexToBytes,
   bytesToHex,
   decryptCred,
+  handlePublicRoutes,
+  processLeadData,
+  createClient,
+  createSupabaseClient,
   META_GRAPH,
   metaFetch,
   parseJsonOrText,
@@ -217,6 +224,17 @@ describe('bytesToHex', () => {
 describe('custom Deno getter stub', () => {
   let originalDescriptor: PropertyDescriptor | undefined;
 
+  const buildDenoGetter = (descriptor: PropertyDescriptor) => {
+    return () => {
+      const originalValue = descriptor.get
+        ? descriptor.get.call(globalThis)
+        : descriptor.value;
+      const res = originalValue ? { ...originalValue } : {};
+      res.serve = vi.fn();
+      return res;
+    };
+  };
+
   beforeEach(() => {
     originalDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno');
   });
@@ -237,17 +255,9 @@ describe('custom Deno getter stub', () => {
       get: originalGet,
     });
 
-    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno')!;
-    const getterUnderTest = () => {
-      return {
-        ...(
-          (descriptor.get
-            ? descriptor.get.call(globalThis)
-            : (descriptor.value as any)) ?? {}
-        ),
-        serve: vi.fn(),
-      };
-    };
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno');
+    if (!descriptor) throw new Error('Deno descriptor missing');
+    const getterUnderTest = buildDenoGetter(descriptor);
 
     const result = getterUnderTest();
 
@@ -266,17 +276,9 @@ describe('custom Deno getter stub', () => {
       value: { hello: 'world' },
     });
 
-    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno')!;
-    const getterUnderTest = () => {
-      return {
-        ...(
-          (descriptor.get
-            ? descriptor.get.call(globalThis)
-            : (descriptor.value as any)) ?? {}
-        ),
-        serve: vi.fn(),
-      };
-    };
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno');
+    if (!descriptor) throw new Error('Deno descriptor missing');
+    const getterUnderTest = buildDenoGetter(descriptor);
 
     const result = getterUnderTest();
 
@@ -290,17 +292,9 @@ describe('custom Deno getter stub', () => {
       value: undefined,
     });
 
-    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno')!;
-    const getterUnderTest = () => {
-      return {
-        ...(
-          (descriptor.get
-            ? descriptor.get.call(globalThis)
-            : (descriptor.value as any)) ?? {}
-        ),
-        serve: vi.fn(),
-      };
-    };
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno');
+    if (!descriptor) throw new Error('Deno descriptor missing');
+    const getterUnderTest = buildDenoGetter(descriptor);
 
     const result = getterUnderTest();
 
@@ -315,17 +309,9 @@ describe('custom Deno getter stub', () => {
       get: originalGet,
     });
 
-    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno')!;
-    const getterUnderTest = () => {
-      return {
-        ...(
-          (descriptor.get
-            ? descriptor.get.call(globalThis)
-            : (descriptor.value as any)) ?? {}
-        ),
-        serve: vi.fn(),
-      };
-    };
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno');
+    if (!descriptor) throw new Error('Deno descriptor missing');
+    const getterUnderTest = buildDenoGetter(descriptor);
 
     const result = getterUnderTest();
 
@@ -340,17 +326,9 @@ describe('custom Deno getter stub', () => {
       value: { foo: 'bar' },
     });
 
-    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno')!;
-    const getterUnderTest = () => {
-      return {
-        ...(
-          (descriptor.get
-            ? descriptor.get.call(globalThis)
-            : (descriptor.value as any)) ?? {}
-        ),
-        serve: vi.fn(),
-      };
-    };
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno');
+    if (!descriptor) throw new Error('Deno descriptor missing');
+    const getterUnderTest = buildDenoGetter(descriptor);
 
     const first = getterUnderTest();
     const second = getterUnderTest();
@@ -404,9 +382,6 @@ describe('decryptCred', () => {
     const ctH = '0102';
     const encoded = `${saltH}:${ivH}:${tagH}:${ctH}`;
 
-    const importKeyMock = vi.fn().mockResolvedValue('km-object');
-    const deriveKeyMock = vi.fn().mockResolvedValue('aes-key-object');
-    const decryptMock = vi.fn().mockResolvedValue(new TextEncoder().encode('decrypted-value'));
     vi.spyOn(globalThis.crypto.subtle, 'importKey').mockResolvedValue('km-object' as any);
     vi.spyOn(globalThis.crypto.subtle, 'deriveKey').mockResolvedValue('aes-key-object' as any);
     vi.spyOn(globalThis.crypto.subtle, 'decrypt').mockResolvedValue(new TextEncoder().encode('decrypted-value') as any);
@@ -435,7 +410,7 @@ describe('decryptCred', () => {
     deno.env.get.mockReturnValue('test-master-key');
     vi.spyOn(api, 'hexToBytes').mockImplementation((hex: string) => {
       const arr = new Uint8Array(hex.length >>> 1);
-      for (let i = 0; i < arr.length; i++) arr[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+      for (let i = 0; i < arr.length; i++) arr[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
       return arr;
     });
     vi.spyOn(globalThis.crypto.subtle, 'importKey').mockResolvedValue('km-object' as any);
@@ -443,6 +418,373 @@ describe('decryptCred', () => {
     vi.spyOn(globalThis.crypto.subtle, 'decrypt').mockRejectedValue(new Error('Decrypt failed'));
 
     await expect(() => decryptCred('aa:bb:ccdd:0102')).rejects.toThrowError('Decrypt failed');
+  });
+});
+
+const makeCtx = (partial: Partial<{ req: Request; url: URL; resource: string; sub: string | null; sendJson: (body: any) => Response; }>): any => {
+  const url = partial.url ?? new URL('https://example.com/');
+  return {
+    req: partial.req ?? new Request(url.toString()),
+    url,
+    resource: partial.resource ?? '',
+    sub: partial.sub ?? null,
+    sendJson: partial.sendJson ?? ((body: any) => new Response(JSON.stringify(body), { status: 200 })),
+  };
+};
+
+describe('handlePublicRoutes', () => {
+  let originalDenoDescriptorLocal: PropertyDescriptor | undefined;
+  let originalCryptoDescriptor: PropertyDescriptor | undefined;
+
+  beforeEach(() => {
+    originalDenoDescriptorLocal = Object.getOwnPropertyDescriptor(globalThis, 'Deno');
+    originalCryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+    vi.spyOn(globalThis, 'Deno', 'get').mockReturnValue({ env: { get: vi.fn() } } as any);
+  });
+
+  afterEach(() => {
+    if (originalDenoDescriptorLocal) {
+      Object.defineProperty(globalThis, 'Deno', originalDenoDescriptorLocal);
+    }
+    if (originalCryptoDescriptor) {
+      Object.defineProperty(globalThis, 'crypto', originalCryptoDescriptor);
+    }
+    vi.restoreAllMocks();
+  });
+
+  describe('META webhooks GET verification', () => {
+    it('returns 503 when verify token env is not configured', async () => {
+      const envGet = (globalThis as any).Deno.env.get as ReturnType<typeof vi.fn>;
+      envGet.mockReturnValue(undefined);
+
+      const url = new URL(
+        'https://example.com/webhooks/meta?hub.mode=subscribe&hub.challenge=123&hub.verify_token=token',
+      );
+      const ctx = makeCtx({
+        resource: 'webhooks',
+        sub: 'meta',
+        req: new Request(url.toString(), { method: 'GET' }),
+        url,
+      });
+
+      const res = await handlePublicRoutes(ctx);
+
+      expect(res.status).toBe(503);
+      const text = await res.text();
+      expect(text).toBe('Verify token not configured');
+    });
+
+    it('returns 200 with challenge when mode=subscribe and verify token matches expected', async () => {
+      const envGet = (globalThis as any).Deno.env.get as ReturnType<typeof vi.fn>;
+      envGet
+        .mockImplementationOnce((key: string) => (key === 'META_WEBHOOK_VERIFY_TOKEN' ? 'expected-token' : null))
+        .mockImplementation((key: string) => (key === 'META_VERIFY_TOKEN' ? 'expected-token-2' : null));
+
+      const url = new URL(
+        'https://example.com/webhooks/meta?hub.mode=subscribe&hub.challenge=abc123&hub.verify_token=expected-token',
+      );
+      const ctx = makeCtx({
+        resource: 'webhooks',
+        sub: 'meta',
+        req: new Request(url.toString(), { method: 'GET' }),
+        url,
+      });
+
+      const res = await handlePublicRoutes(ctx);
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Content-Type')).toBe('text/plain');
+      expect(await res.text()).toBe('abc123');
+    });
+
+    it('returns 403 when mode/verify token combination is incorrect', async () => {
+      const envGet = (globalThis as any).Deno.env.get as ReturnType<typeof vi.fn>;
+      envGet.mockImplementation((key: string) =>
+        key === 'META_WEBHOOK_VERIFY_TOKEN' ? 'expected-token' : null,
+      );
+
+      const url = new URL(
+        'https://example.com/webhooks/meta?hub.mode=invalid&hub.challenge=abc123&hub.verify_token=wrong',
+      );
+      const ctx = makeCtx({
+        resource: 'webhooks',
+        sub: 'meta',
+        req: new Request(url.toString(), { method: 'GET' }),
+        url,
+      });
+
+      const res = await handlePublicRoutes(ctx);
+      expect(res.status).toBe(403);
+      expect(await res.text()).toBe('Forbidden');
+    });
+  });
+
+  describe('META webhooks POST', () => {
+    it('returns Unauthorized when appSecret is set and signature does not match (HMAC check error)', async () => {
+      const envGet = (globalThis as any).Deno.env.get as ReturnType<typeof vi.fn>;
+      envGet.mockImplementation((key: string) => {
+        if (key === 'META_APP_SECRET') return 'test-secret';
+        return null;
+      });
+
+      const importKeyMock = vi.fn().mockResolvedValue('key');
+      const signMock = vi.fn().mockResolvedValue(new Uint8Array([0x01, 0x02]).buffer);
+      vi.spyOn(globalThis, 'crypto', 'get').mockReturnValue({
+        subtle: {
+          importKey: importKeyMock,
+          sign: signMock,
+        },
+      } as any);
+
+      const body = JSON.stringify({ foo: 'bar' });
+      const req = new Request('https://example.com/webhooks/meta', {
+        method: 'POST',
+        body,
+        headers: {
+          'X-Hub-Signature-256': 'sha256=deadbeef',
+        },
+      });
+      const ctx = makeCtx({ resource: 'webhooks', sub: 'meta', req });
+
+      const res = await handlePublicRoutes(ctx);
+
+      expect(res.status).toBe(403);
+      expect(await res.text()).toBe('Unauthorized');
+    });
+
+    it('skips signature validation when META_APP_SECRET is not set (edge)', async () => {
+      const envGet = (globalThis as any).Deno.env.get as ReturnType<typeof vi.fn>;
+      envGet.mockImplementation((key: string) => {
+        if (key === 'SUPABASE_URL') return 'https://supabase.example.com';
+        if (key === 'SUPABASE_SERVICE_ROLE_KEY') return 'service-key';
+        return null;
+      });
+
+      const body = '{"object": "page", "entry": []}';
+      const req = new Request('https://example.com/webhooks/meta', {
+        method: 'POST',
+        body,
+      });
+      const ctx = makeCtx({ resource: 'webhooks', sub: 'meta', req });
+
+      const res = await handlePublicRoutes(ctx);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe('ok');
+    });
+
+    it('returns ok when JSON parse fails (invalid JSON)', async () => {
+      const envGet = (globalThis as any).Deno.env.get as ReturnType<typeof vi.fn>;
+      envGet.mockImplementation((key: string) => null);
+
+      const req = new Request('https://example.com/webhooks/meta', {
+        method: 'POST',
+        body: 'not-json',
+      });
+      const ctx = makeCtx({ resource: 'webhooks', sub: 'meta', req });
+
+      const res = await handlePublicRoutes(ctx);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe('ok');
+    });
+
+    it('returns ok when payload.object is not "page"', async () => {
+      const envGet = (globalThis as any).Deno.env.get as ReturnType<typeof vi.fn>;
+      envGet.mockImplementation((key: string) => null);
+
+      const body = JSON.stringify({ object: 'other' });
+      const req = new Request('https://example.com/webhooks/meta', {
+        method: 'POST',
+        body,
+      });
+      const ctx = makeCtx({ resource: 'webhooks', sub: 'meta', req });
+
+      const res = await handlePublicRoutes(ctx);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe('ok');
+    });
+
+    it('processes leadgen change with matching integration and calls processLeadData (happy path)', async () => {
+      const envGet = (globalThis as any).Deno.env.get as ReturnType<typeof vi.fn>;
+      envGet.mockImplementation((key: string) => {
+        if (key === 'META_APP_SECRET') return null;
+        if (key === 'SUPABASE_URL') return 'https://supabase.example.com';
+        if (key === 'SUPABASE_SERVICE_ROLE_KEY') return 'service-key';
+        return null;
+      });
+
+      const integrationsQuery = {
+        data: [{ user_id: 'user1', metadata: { pageId: 'PAGE_ID' } }],
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+      };
+
+      const credentialsQuery = {
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: { encrypted_key: 'enc-key' } }),
+      };
+
+      const adminClient = {
+        from: vi.fn((table: string) => (table === 'integrations' ? integrationsQuery : credentialsQuery)),
+      };
+
+      const createClientMock = vi.spyOn(api.supabaseClientFactory, 'create').mockReturnValue(adminClient as any);
+      const decryptCredMock = vi.spyOn(api.publicRouteHelpers, 'decryptCred').mockResolvedValue('access-token');
+      const metaFetchMock = vi.spyOn(api.publicRouteHelpers, 'metaFetch').mockResolvedValue({ some: 'lead' } as any);
+      const processLeadDataMock = vi.spyOn(api.publicRouteHelpers, 'processLeadData').mockResolvedValue(undefined);
+
+      const body = JSON.stringify({
+        object: 'page',
+        entry: [
+          {
+            changes: [
+              {
+                field: 'leadgen',
+                value: {
+                  leadgen_id: 'LEAD_ID',
+                  page_id: 'PAGE_ID',
+                },
+              },
+            ],
+          },
+        ],
+      });
+      const req = new Request('https://example.com/webhooks/meta', {
+        method: 'POST',
+        body,
+      });
+      const ctx = makeCtx({ resource: 'webhooks', sub: 'meta', req });
+
+      const res = await handlePublicRoutes(ctx);
+
+      expect(createClientMock).toHaveBeenCalled();
+      expect(adminClient.from).toHaveBeenCalledWith('integrations');
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe('ok');
+      expect(decryptCredMock).toHaveBeenCalledWith('enc-key');
+      expect(metaFetchMock).toHaveBeenCalledWith(
+        '/LEAD_ID',
+        {
+          fields: 'field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,adset_id,page_id',
+        },
+        'access-token',
+      );
+      expect(processLeadDataMock).toHaveBeenCalledWith(adminClient, 'user1', { some: 'lead' });
+    });
+
+    it('skips processing when no matching integration is found (edge: no integration)', async () => {
+      const envGet = (globalThis as any).Deno.env.get as ReturnType<typeof vi.fn>;
+      envGet.mockImplementation((key: string) => {
+        if (key === 'META_APP_SECRET') return null;
+        if (key === 'SUPABASE_URL') return 'https://supabase.example.com';
+        if (key === 'SUPABASE_SERVICE_ROLE_KEY') return 'service-key';
+        return null;
+      });
+
+      const integrationsQuery = {
+        data: [],
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+      };
+      const adminClient = {
+        from: vi.fn(() => integrationsQuery),
+      };
+      vi.spyOn(api.supabaseClientFactory, 'create').mockReturnValue(adminClient as any);
+      const decryptCredMock = vi.spyOn(api, 'decryptCred').mockResolvedValue('token');
+      const metaFetchMock = vi.spyOn(api, 'metaFetch').mockResolvedValue({} as any);
+      const processLeadDataMock = vi.spyOn(api, 'processLeadData').mockResolvedValue(undefined);
+
+      const body = JSON.stringify({
+        object: 'page',
+        entry: [
+          { changes: [{ field: 'leadgen', value: { leadgen_id: 'LEAD', page_id: 'PAGE' } }] },
+        ],
+      });
+      const req = new Request('https://example.com/webhooks/meta', { method: 'POST', body });
+      const ctx = makeCtx({ resource: 'webhooks', sub: 'meta', req });
+
+      const res = await handlePublicRoutes(ctx);
+
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe('ok');
+      expect(decryptCredMock).not.toHaveBeenCalled();
+      expect(metaFetchMock).not.toHaveBeenCalled();
+      expect(processLeadDataMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('health/secrets endpoint', () => {
+    it('returns success=false and status=missing when required secrets are missing (edge)', async () => {
+      const envGet = (globalThis as any).Deno.env.get as ReturnType<typeof vi.fn>;
+      envGet.mockImplementation((key: string) => {
+        if (key === 'ENCRYPTION_KEY') return '';
+        if (key === 'SUPABASE_SERVICE_ROLE_KEY') return '   ';
+        return null;
+      });
+      const sendJson = vi.fn((body: any) => new Response(JSON.stringify(body), { status: 200 }));
+      const req = new Request('https://example.com/health/secrets', { method: 'GET' });
+      const url = new URL(req.url);
+      const ctx = makeCtx({ resource: 'health', sub: 'secrets', req, url, sendJson });
+
+      const res = await handlePublicRoutes(ctx);
+      const payload = JSON.parse(await res.text());
+
+      expect(sendJson).toHaveBeenCalledTimes(1);
+      expect(payload.success).toBe(false);
+      expect(payload.status).toBe('missing');
+      expect(payload.required).toEqual({
+        ENCRYPTION_KEY: false,
+        SUPABASE_SERVICE_ROLE_KEY: false,
+      });
+    });
+
+    it('returns success=true and status=ok when both secrets are present (happy path)', async () => {
+      const envGet = (globalThis as any).Deno.env.get as ReturnType<typeof vi.fn>;
+      envGet.mockImplementation((key: string) => {
+        if (key === 'ENCRYPTION_KEY') return 'some-key';
+        if (key === 'SUPABASE_SERVICE_ROLE_KEY') return 'service-key';
+        return null;
+      });
+      const sendJson = vi.fn((body: any) => new Response(JSON.stringify(body), { status: 200 }));
+      const req = new Request('https://example.com/health/secrets', { method: 'GET' });
+      const url = new URL(req.url);
+      const ctx = makeCtx({ resource: 'health', sub: 'secrets', req, url, sendJson });
+
+      const res = await handlePublicRoutes(ctx);
+      const payload = JSON.parse(await res.text());
+
+      expect(payload.success).toBe(true);
+      expect(payload.status).toBe('ok');
+      expect(payload.required).toEqual({
+        ENCRYPTION_KEY: true,
+        SUPABASE_SERVICE_ROLE_KEY: true,
+      });
+    });
+  });
+
+  describe('health endpoint', () => {
+    it('returns basic health status with timestamp (happy path)', async () => {
+      const sendJson = vi.fn((body: any) => new Response(JSON.stringify(body), { status: 200 }));
+      const req = new Request('https://example.com/health', { method: 'GET' });
+      const url = new URL(req.url);
+      const ctx = makeCtx({ resource: 'health', sub: null, req, url, sendJson });
+
+      const res = await handlePublicRoutes(ctx);
+      const payload = JSON.parse(await res.text());
+
+      expect(payload.success).toBe(true);
+      expect(payload.status).toBe('ok');
+      expect(typeof payload.timestamp).toBe('string');
+    });
+  });
+
+  it('returns null for non-public routes (fall-through)', async () => {
+    const req = new Request('https://example.com/other', { method: 'GET' });
+    const url = new URL(req.url);
+    const ctx = makeCtx({ resource: 'other', sub: null, req, url });
+
+    const res = await handlePublicRoutes(ctx);
+    expect(res).toBeNull();
   });
 });
 
@@ -553,7 +895,7 @@ describe('parseMetaMetric', () => {
   });
 
   it('returns 0 for non-finite numbers', () => {
-    expect(parseMetaMetric(NaN)).toBe(0);
+    expect(parseMetaMetric(Number.NaN)).toBe(0);
     expect(parseMetaMetric(Infinity)).toBe(0);
     expect(parseMetaMetric(-Infinity)).toBe(0);
   });
@@ -641,7 +983,7 @@ describe('actionValue', () => {
     const actions = [{ action_type: 'CLiCk', value: 1 }, { action_type: 'CLICK', value: 2 }];
     const matcher = vi.fn((type: string) => type === 'click');
     expect(actionValue(actions, matcher)).toBe(3);
-    expect(matcher.mock.calls.map((call) => call[0])).toEqual(['click', 'click']);
+    expect(matcher.mock.calls.map((call: unknown[]) => call[0])).toEqual(['click', 'click']);
   });
 
   it('skips unmatched actions and only parses matched values', () => {

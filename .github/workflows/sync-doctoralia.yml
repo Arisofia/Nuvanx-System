@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow
 name: Sync Doctoralia Financials
 
 env:
@@ -11,6 +12,7 @@ env:
 #                                  must have Sheets read scope, and the spreadsheet must be shared
 #                                  with the client_email in that service account)
 #   DOCTORALIA_SHEET_ID         - Spreadsheet ID from the Google Sheets URL
+#   DOCTORALIA_DRIVE_FILE_ID    - Alias for DOCTORALIA_SHEET_ID
 #   DATABASE_URL                - Direct Postgres connection string (Supabase)
 #   CLINIC_ID                   - UUID of the clinic owning these settlements
 
@@ -26,6 +28,12 @@ jobs:
   sync:
     name: Google Sheets to financial_settlements
     runs-on: ubuntu-latest
+    env:
+      GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT || '' }}
+      DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID || '' }}
+      DOCTORALIA_DRIVE_FILE_ID: ${{ secrets.DOCTORALIA_DRIVE_FILE_ID || '' }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL || '' }}
+      CLINIC_ID: ${{ secrets.CLINIC_ID || '' }}
 
     steps:
       - name: Checkout repository
@@ -39,10 +47,10 @@ jobs:
       - name: Preflight - validate required secrets and decode service account
         run: |
           MISSING=()
-          [ -z "$GOOGLE_SA_RAW"       ] && MISSING+=("GOOGLE_ADS_SERVICE_ACCOUNT")
-          [ -z "$DOCTORALIA_SHEET_ID" ] && MISSING+=("DOCTORALIA_SHEET_ID")
-          [ -z "$DATABASE_URL"        ] && MISSING+=("DATABASE_URL")
-          [ -z "$CLINIC_ID"           ] && MISSING+=("CLINIC_ID")
+          [ -z "$GOOGLE_ADS_SERVICE_ACCOUNT" ] && MISSING+=("GOOGLE_ADS_SERVICE_ACCOUNT")
+          [ -z "$DOCTORALIA_SHEET_ID" ] && [ -z "$DOCTORALIA_DRIVE_FILE_ID" ] && MISSING+=("DOCTORALIA_SHEET_ID or DOCTORALIA_DRIVE_FILE_ID")
+          [ -z "$DATABASE_URL"         ] && MISSING+=("DATABASE_URL")
+          [ -z "$CLINIC_ID"            ] && MISSING+=("CLINIC_ID")
           if [ ${#MISSING[@]} -gt 0 ]; then
             echo "::error::Missing secrets: ${MISSING[*]}"
             echo "::error::Add them at Settings -> Secrets and variables -> Actions"
@@ -51,13 +59,13 @@ jobs:
           # Accept both formats for GOOGLE_ADS_SERVICE_ACCOUNT:
           #  1) base64(service-account.json)
           #  2) raw JSON object string
-          if echo "$GOOGLE_SA_RAW" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
+          if echo "$GOOGLE_ADS_SERVICE_ACCOUNT" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
             echo "GOOGLE_ADS_SERVICE_ACCOUNT format: raw JSON"
             echo "GOOGLE_SA_JSON<<EOF_GITHUB_ACTION" >> "$GITHUB_ENV"
-            echo "$GOOGLE_SA_RAW" >> "$GITHUB_ENV"
+            echo "$GOOGLE_ADS_SERVICE_ACCOUNT" >> "$GITHUB_ENV"
             echo "EOF_GITHUB_ACTION" >> "$GITHUB_ENV"
           else
-            DECODED="$(echo "$GOOGLE_SA_RAW" | base64 -d 2>/dev/null)" || true
+            DECODED="$(echo "$GOOGLE_ADS_SERVICE_ACCOUNT" | base64 -d 2>/dev/null)" || true
             echo "$DECODED" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null || {
               echo "::error::GOOGLE_ADS_SERVICE_ACCOUNT is invalid. Provide either raw JSON or base64-encoded JSON."
               exit 1
@@ -70,10 +78,11 @@ jobs:
 
           echo "All required secrets present and valid."
         env:
-          GOOGLE_SA_RAW:       ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
-          DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID }}
-          DATABASE_URL:        ${{ secrets.DATABASE_URL }}
-          CLINIC_ID:           ${{ secrets.CLINIC_ID }}
+          GOOGLE_ADS_SERVICE_ACCOUNT: ${{ env.GOOGLE_ADS_SERVICE_ACCOUNT }}
+          DOCTORALIA_SHEET_ID: ${{ env.DOCTORALIA_SHEET_ID }}
+          DOCTORALIA_DRIVE_FILE_ID: ${{ env.DOCTORALIA_DRIVE_FILE_ID }}
+          DATABASE_URL:        ${{ env.DATABASE_URL }}
+          CLINIC_ID:           ${{ env.CLINIC_ID }}
 
       - name: Install sync dependencies
         run: npm install --no-save googleapis pg
@@ -82,9 +91,10 @@ jobs:
       - name: Run Doctoralia to DB sync
         run: node scripts/sync-doctoralia.js
         env:
-          GOOGLE_SA_JSON:      ${{ env.GOOGLE_SA_JSON }}
-          DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID }}
-          DATABASE_URL:        ${{ secrets.DATABASE_URL }}
-          CLINIC_ID:           ${{ secrets.CLINIC_ID }}
-          SHEET_RANGE:         A1:Z5000
+          GOOGLE_SA_JSON:         ${{ env.GOOGLE_SA_JSON }}
+          DOCTORALIA_SHEET_ID:    ${{ env.DOCTORALIA_SHEET_ID || env.DOCTORALIA_DRIVE_FILE_ID }}
+          DOCTORALIA_DRIVE_FILE_ID: ${{ env.DOCTORALIA_DRIVE_FILE_ID || env.DOCTORALIA_SHEET_ID }}
+          DATABASE_URL:           ${{ env.DATABASE_URL }}
+          CLINIC_ID:              ${{ env.CLINIC_ID }}
+          SHEET_RANGE:            'A1:Z5000'
           # SHEET_NAME: Sheet1   # Uncomment and set if data is on a specific tab

@@ -2,6 +2,10 @@
 
 Revenue Intelligence Platform — Meta/Instagram lead acquisition → WhatsApp follow-up → appointment flow → Doctoralia settlement reconciliation.
 
+## Project purpose
+
+Nuvanx-System es una plataforma de inteligencia empresarial (BI) y automatización de marketing que integra múltiples capas de análisis de datos, gestión de campañas, inteligencia de CRM y automatización de flujos de trabajo mediante agentes de IA.
+
 ## Architecture
 
 - **Frontend**: React 19 + Vite → deployed to **Vercel**
@@ -30,7 +34,7 @@ Revenue Intelligence Platform — Meta/Instagram lead acquisition → WhatsApp f
 | Meta Lead Ads | Active | Webhook ingestion + Graph API attribution |
 | WhatsApp Business | Active | Outbound send + conversation recording |
 | Meta Ads Insights | Active | Campaign / adset / ad KPIs |
-| Google Ads | Active | Service account JWT; requires GOOGLE_ADS_SERVICE_ACCOUNT secret |
+| Google Ads | Active | Service account JWT; requires GOOGLE_ADS_SERVICE_ACCOUNT secrets |
 | OpenAI / Gemini | Active | Vault credential; used for AI content generation |
 | GitHub | Active | Repo sync + stats |
 | Doctoralia | Ingestion active | CSV upload → settlements table; no live API |
@@ -51,11 +55,24 @@ npm run dev:backend   # Express server on :3001 (webhooks + credential vault)
 npm run dev:frontend  # Vite on http://localhost:5173
 ```
 
+### Local Meta script credentials
+Para ejecutar los scripts locales de Meta y generar reportes, copia `.env.example` a `.env.local` o exporta estas variables en tu shell:
+
+```bash
+export META_ACCESS_TOKEN=...
+export META_AD_ACCOUNT_ID=act_...
+export DATABASE_URL=postgresql://user:password@host:port/dbname
+export CLINIC_ID=...
+```
+
+`META_ACCESS_TOKEN`, `META_AD_ACCOUNT_ID`, `DATABASE_URL` y `CLINIC_ID` son requeridos por `scripts/meta-daily-report.js` y `scripts/meta-weekly-report.js`.
+
 ## Testing
 
 ```bash
 npm run test:backend
 cd backend && npx jest tests/auth.test.js --runInBand --forceExit
+npm --prefix frontend run test:ci
 ```
 
 ## CI/CD
@@ -64,15 +81,37 @@ cd backend && npx jest tests/auth.test.js --runInBand --forceExit
 - Deploy: frontend → Vercel (auto), Edge Function → Supabase (manual: `npx supabase functions deploy api --no-verify-jwt`)
 - No Railway, no Render.
 
+## Project maturity
+
+- Puntuación técnica: **6.5 / 10**
+- Estado: **Emergente a Creciente**
+- El proyecto tiene una base sólida, pero requiere inversión en arquitectura, testing y automatización para ser production-ready a escala.
+- Documentación adicional: [Project Purpose](docs/project-purpose.md)
+
+## GitHub Actions secrets
+
+The repository uses GitHub Actions secrets for Supabase and production validation workflows:
+
+- `SUPABASE_ACCESS_TOKEN` — Supabase personal access token for CLI operations.
+- `SUPABASE_PROJECT_REF` — Target Supabase project ref for `supabase link`.
+- `SUPABASE_DB_PASSWORD` — Optional DB password used when `DATABASE_URL` is unavailable.
+- `DATABASE_URL` — Optional Postgres connection string used for migrations and linting.
+- `PRODUCTION_E2E_URL` — Production API base URL used by automated smoke tests.
+- `PRODUCTION_E2E_TOKEN` — Auth token used by `scripts/production-e2e.js`.
+- `GOOGLE_ADS_SERVICE_ACCOUNT` — Google Sheets service account JSON for Doctoralia sync.
+- `DOCTORALIA_SHEET_ID` / `DOCTORALIA_DRIVE_FILE_ID` — Spreadsheet ID used for Doctoralia ingestion.
+
 ## Vercel environment variables
 
 For Vercel production deploys, configure these environment variables in the frontend project settings:
 
-- `VITE_SUPABASE_URL` — your Supabase project URL, e.g. `https://ssvvuuysgxyqvmovrlvk.supabase.co`
+- `VITE_SUPABASE_URL` — your Supabase project URL, e.g. `https://YOUR_SUPABASE_PROJECT_REF.supabase.co`
 - `VITE_SUPABASE_PUBLISHABLE_KEY` — preferred Supabase publishable key from Supabase Connect
 - `VITE_SUPABASE_ANON_KEY` — legacy anonymous key; used only as a fallback when `VITE_SUPABASE_PUBLISHABLE_KEY` is not set
 - `VITE_API_BASE_URL` / `VITE_API_URL` — optional overrides for the API host; leave empty to use Vercel rewrite paths (`/api/*`)
 - `VITE_SENTRY_DSN` — optional Sentry DSN for client error reporting
+
+Use `.env.example` and `frontend/.env.example` as templates only; no valores reales deben guardarse en el repositorio.
 
 If neither Supabase key is set, the frontend will warn and disable Supabase features.
 
@@ -86,5 +125,5 @@ If neither Supabase key is set, the frontend will warn and disable Supabase feat
 
 - [SECURITY.md](SECURITY.md) — Security posture and production readiness
 - [docs/agents-and-integrations-architecture.md](docs/agents-and-integrations-architecture.md) — Architecture and agent roadmap
-- [docs/production-validation-checklist.md](docs/production-validation-checklist.md) — Production secret and runtime verification checklist
+- [docs/production-validation-checklist.md](docs/production-validation-checklist.md) — Production secrets and runtime verification checklist
 
