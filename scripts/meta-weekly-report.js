@@ -17,7 +17,7 @@ function normalizeAdAccountId(raw) {
   const value = String(raw || '').trim();
   if (!value) return '';
   const unprefixed = value.replace(/^act_/i, '');
-  const digits = unprefixed.replace(/\D/g, '');
+  const digits = unprefixed.replaceAll(/\D/g, '');
   return digits ? `act_${digits}` : '';
 }
 
