@@ -33,6 +33,16 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Validate Supabase security secrets
+        run: |
+          MISSING=()
+          [ -z "$SUPABASE_ACCESS_TOKEN" ] && MISSING+=("SUPABASE_ACCESS_TOKEN")
+          [ -z "$SUPABASE_PROJECT_REF" ] && MISSING+=("SUPABASE_PROJECT_REF")
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::error::Missing required secrets: ${MISSING[*]}"
+            exit 1
+          fi
+
       - name: Run Supabase DB lint
         if: ${{ env.SUPABASE_ACCESS_TOKEN != '' }}
         uses: ./.github/actions/supabase-link-run
