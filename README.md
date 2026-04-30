@@ -55,6 +55,18 @@ npm run dev:backend   # Express server on :3001 (webhooks + credential vault)
 npm run dev:frontend  # Vite on http://localhost:5173
 ```
 
+### Local Meta script credentials
+Para ejecutar los scripts locales de Meta y generar reportes, copia `.env.example` a `.env.local` o exporta estas variables en tu shell:
+
+```bash
+export META_ACCESS_TOKEN=...
+export META_AD_ACCOUNT_ID=act_...
+export DATABASE_URL=postgresql://user:password@host:port/dbname
+export CLINIC_ID=...
+```
+
+`META_ACCESS_TOKEN`, `META_AD_ACCOUNT_ID`, `DATABASE_URL` y `CLINIC_ID` son requeridos por `scripts/meta-daily-report.js` y `scripts/meta-weekly-report.js`.
+
 ## Testing
 
 ```bash

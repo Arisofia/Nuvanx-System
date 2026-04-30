@@ -1,7 +1,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
-const supabaseKey =
+export const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
+export const supabaseKey =
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
   import.meta.env.VITE_SUPABASE_ANON_KEY || ''
 
@@ -21,10 +21,10 @@ function createMockClient() {
   }
 }
 
-const supabase: SupabaseClient | ReturnType<typeof createMockClient> =
+export const supabase =
   supabaseUrl && supabaseKey
     ? createClient(supabaseUrl, supabaseKey)
-    : createMockClient()
+    : (createMockClient() as unknown as SupabaseClient)
 
 if (!supabaseUrl || !supabaseKey) {
   console.warn(
@@ -32,4 +32,31 @@ if (!supabaseUrl || !supabaseKey) {
   )
 }
 
-export { supabase }
+export async function invokeApi(path: string) {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  if (supabase.functions && typeof supabase.functions.invoke === 'function') {
+    const response = await supabase.functions.invoke('api', { urlPath: normalizedPath })
+    if ((response as any).error) {
+      throw (response as any).error
+    }
+    return (response as any).data
+  }
+
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error('Supabase not configured')
+  }
+
+  const url = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/api${normalizedPath}`
+  const res = await fetch(url, {
+    headers: {
+      apikey: supabaseKey,
+      Authorization: `Bearer ${supabaseKey}`,
+      'Content-Type': 'application/json',
+    },
+  })
+  const data = await res.json()
+  if (!res.ok) {
+    throw new Error(data?.message || 'Function invocation failed')
+  }
+  return data
+}

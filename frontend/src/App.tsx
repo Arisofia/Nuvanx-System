@@ -1,24 +1,22 @@
-import { lazy, Suspense, ReactNode } from 'react'
+import { lazy, Suspense } from 'react'
 import { Toaster } from './components/ui/sonner'
 import { TooltipProvider } from './components/ui/tooltip'
-import { Route, Switch, useLocation } from 'wouter'
+import { useLocation } from 'wouter'
 import ErrorBoundary from './components/ErrorBoundary'
 import { ThemeProvider } from './contexts/ThemeContext'
-import { AuthProvider } from './contexts/AuthContext'
-import { useAuth } from './contexts/useAuth'
-import Layout from './components/Layout'
-import NotFound from './pages/NotFound'
-import Login from './pages/Login'
+import Layout from './components/Layout.tsx'
+import NotFound from './pages/NotFound.tsx'
+import Login from './pages/Login.tsx'
 
-const Dashboard = lazy(() => import('./pages/Dashboard'))
-const Live = lazy(() => import('./pages/Live'))
-const CRM = lazy(() => import('./pages/CRM'))
-const Marketing = lazy(() => import('./pages/Marketing'))
-const Financials = lazy(() => import('./pages/Financials'))
-const Intelligence = lazy(() => import('./pages/Intelligence'))
-const Playbooks = lazy(() => import('./pages/Playbooks'))
-const Integrations = lazy(() => import('./pages/Integrations'))
-const AI = lazy(() => import('./pages/AI'))
+const Dashboard = lazy(() => import('./pages/Dashboard.tsx'))
+const Live = lazy(() => import('./pages/Live.tsx'))
+const CRM = lazy(() => import('./pages/CRM.tsx'))
+const Marketing = lazy(() => import('./pages/Marketing.tsx'))
+const Financials = lazy(() => import('./pages/Financials.tsx'))
+const Intelligence = lazy(() => import('./pages/Intelligence.tsx'))
+const Playbooks = lazy(() => import('./pages/Playbooks.tsx'))
+const Integrations = lazy(() => import('./pages/Integrations.tsx'))
+const AI = lazy(() => import('./pages/AI.tsx'))
 
 const PageLoader = () => (
   <div className="min-h-screen bg-background flex items-center justify-center">
@@ -26,47 +24,58 @@ const PageLoader = () => (
   </div>
 )
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, loading } = useAuth()
-  if (loading) {
-    return <PageLoader />
-  }
-  return isAuthenticated ? children : <Login />
-}
-
 function Router() {
   const [location] = useLocation()
   const isAuthPage = location === '/login'
 
+  const pageContent = (() => {
+    if (location === '/login') {
+      return <Login />
+    }
+    if (location === '/404') {
+      return <NotFound />
+    }
+    if (location === '/dashboard' || location === '/') {
+      return <Dashboard />
+    }
+    if (location === '/live') {
+      return <Live />
+    }
+    if (location === '/crm') {
+      return <CRM />
+    }
+    if (location === '/marketing') {
+      return <Marketing />
+    }
+    if (location === '/financials') {
+      return <Financials />
+    }
+    if (location === '/intelligence') {
+      return <Intelligence />
+    }
+    if (location === '/playbooks') {
+      return <Playbooks />
+    }
+    if (location === '/integrations') {
+      return <Integrations />
+    }
+    if (location === '/ai') {
+      return <AI />
+    }
+    return <NotFound />
+  })()
+
+  if (isAuthPage) {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        {pageContent}
+      </Suspense>
+    )
+  }
+
   return (
     <Suspense fallback={<PageLoader />}>
-      <Switch>
-        <Route path="/login" component={Login} />
-        <Route path="/404" component={NotFound} />
-
-        <Route path="/">
-          {isAuthPage ? null : (
-            <ProtectedRoute>
-              <Layout>
-                <Switch>
-                  <Route path="/dashboard" component={Dashboard} />
-                  <Route path="/live" component={Live} />
-                  <Route path="/crm" component={CRM} />
-                  <Route path="/marketing" component={Marketing} />
-                  <Route path="/financials" component={Financials} />
-                  <Route path="/intelligence" component={Intelligence} />
-                  <Route path="/playbooks" component={Playbooks} />
-                  <Route path="/integrations" component={Integrations} />
-                  <Route path="/ai" component={AI} />
-                  <Route path="/" nest>{() => <Dashboard />}</Route>
-                </Switch>
-              </Layout>
-            </ProtectedRoute>
-          )}
-        </Route>
-
-        <Route component={NotFound} />
-      </Switch>
+      <Layout>{pageContent}</Layout>
     </Suspense>
   )
 }
@@ -75,12 +84,10 @@ export default function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
-        <AuthProvider>
-          <TooltipProvider>
-            <Toaster />
-            <Router />
-          </TooltipProvider>
-        </AuthProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Router />
+        </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>
   )
