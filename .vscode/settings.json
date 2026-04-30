@@ -3,6 +3,9 @@
     "https://json.schemastore.org/github-action": [
       ".github/actions/**/action.yml",
       ".github/actions/**/action.yaml"
+    ],
+    "https://json.schemastore.org/github-workflow": [
+      ".github/workflows/*.{yml,yaml}"
     ]
   }
 }
