@@ -23,8 +23,8 @@ jobs:
     permissions:
       contents: read
     env:
-      PRODUCTION_E2E_URL: ${{ secrets.PRODUCTION_E2E_URL }}
-      PRODUCTION_E2E_TOKEN: ${{ secrets.PRODUCTION_E2E_TOKEN }}
+      PRODUCTION_E2E_URL: ${{ secrets.PRODUCTION_E2E_URL || '' }}
+      PRODUCTION_E2E_TOKEN: ${{ secrets.PRODUCTION_E2E_TOKEN || '' }}
 
     steps:
       - uses: actions/checkout@v5

@@ -109,7 +109,7 @@ jobs:
     permissions:
       contents: read
     env:
-      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF || 'ssvvuuysgxyqvmovrlvk' }}
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
@@ -141,7 +141,7 @@ jobs:
       - name: Supabase DB migrations
         uses: ./.github/actions/supabase-link-run
         with:
-          project_ref: ${{ secrets.SUPABASE_PROJECT_REF }}
+          project_ref: ${{ secrets.SUPABASE_PROJECT_REF || 'ssvvuuysgxyqvmovrlvk' }}
           supabase_access_token: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           database_url: ${{ secrets.DATABASE_URL }}
           supabase_db_password: ${{ secrets.SUPABASE_DB_PASSWORD }}
@@ -163,14 +163,15 @@ jobs:
     permissions:
       contents: read
     env:
-      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF || 'ssvvuuysgxyqvmovrlvk' }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
     steps:
       - uses: actions/checkout@v5
       - name: Deploy Edge Functions
         uses: ./.github/actions/supabase-link-run
         with:
-          project_ref: ${{ secrets.SUPABASE_PROJECT_REF }}
-          supabase_access_token: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          project_ref: ${{ env.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
           command: supabase functions deploy api --no-verify-jwt --use-api
 
   production-smoke:
@@ -180,8 +181,8 @@ jobs:
     permissions:
       contents: read
     env:
-      PRODUCTION_E2E_URL: ${{ secrets.PRODUCTION_E2E_URL }}
-      PRODUCTION_E2E_TOKEN: ${{ secrets.PRODUCTION_E2E_TOKEN }}
+      PRODUCTION_E2E_URL: ${{ secrets.PRODUCTION_E2E_URL || '' }}
+      PRODUCTION_E2E_TOKEN: ${{ secrets.PRODUCTION_E2E_TOKEN || '' }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5

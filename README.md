@@ -30,7 +30,7 @@ Revenue Intelligence Platform — Meta/Instagram lead acquisition → WhatsApp f
 | Meta Lead Ads | Active | Webhook ingestion + Graph API attribution |
 | WhatsApp Business | Active | Outbound send + conversation recording |
 | Meta Ads Insights | Active | Campaign / adset / ad KPIs |
-| Google Ads | Active | Service account JWT; requires GOOGLE_ADS_SERVICE_ACCOUNT secret |
+| Google Ads | Active | Service account JWT; requires GOOGLE_ADS_SERVICE_ACCOUNT secrets |
 | OpenAI / Gemini | Active | Vault credential; used for AI content generation |
 | GitHub | Active | Repo sync + stats |
 | Doctoralia | Ingestion active | CSV upload → settlements table; no live API |

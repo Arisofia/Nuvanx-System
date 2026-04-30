@@ -28,11 +28,11 @@ jobs:
     name: Google Sheets to financial_settlements
     runs-on: ubuntu-latest
     env:
-      GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
-      DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID }}
-      DOCTORALIA_DRIVE_FILE_ID: ${{ secrets.DOCTORALIA_DRIVE_FILE_ID }}
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      CLINIC_ID: ${{ secrets.CLINIC_ID }}
+      GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT || '' }}
+      DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID || '' }}
+      DOCTORALIA_DRIVE_FILE_ID: ${{ secrets.DOCTORALIA_DRIVE_FILE_ID || '' }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL || '' }}
+      CLINIC_ID: ${{ secrets.CLINIC_ID || '' }}
 
     steps:
       - name: Checkout repository

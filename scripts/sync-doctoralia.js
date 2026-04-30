@@ -114,7 +114,8 @@ const dmyRegex = /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/;
 function parseDate(val) {
   if (!val) return null;
   const s = String(val).trim();
-  const dmy = dmyRegex.exec(s);
+  const regex = globalThis.dmyRegex || dmyRegex;
+  const dmy = regex.exec(s);
   if (dmy) {
     const [, d, m, y] = dmy;
     return new Date(`${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}T00:00:00Z`);
@@ -130,7 +131,7 @@ function parseDate(val) {
 function parseAmount(val) {
   if (val === undefined || val === null || String(val).trim() === '') return null;
   const raw = String(val).trim();
-  let normalized = raw.replace(/[ €$]/g, '');
+  let normalized = raw.replaceAll(/[ €$]/g, '');
   if (normalized.includes(',') && normalized.includes('.')) {
     normalized = normalized.replaceAll('.', '').replaceAll(',', '.');
   } else {
@@ -157,7 +158,7 @@ function parseStatus(value, settledAt) {
     'confirmada':   { cancelled: false, type: 'confirmed' },
   };
 
-  if (Object.prototype.hasOwnProperty.call(statusMap, normalized)) {
+  if (Object.hasOwn(statusMap, normalized)) {
     return {
       statusOriginal,
       statusType: statusMap[normalized].type,
@@ -182,6 +183,42 @@ function parseStatus(value, settledAt) {
   }
 
   return { statusOriginal, statusType: 'unknown', cancelledAt: null };
+}
+
+function getStatusInfo(row, cols, hasColStatus, settledAt) {
+  if (!hasColStatus) return { statusOriginal: null, statusType: null, cancelledAt: null };
+  const statusOriginal = normalizeField(row[cols.colStatus]);
+  return statusOriginal ? parseStatus(statusOriginal, settledAt) : { statusOriginal: null, statusType: null, cancelledAt: null };
+}
+
+function getAmountValues(row, cols, options, rowIndex) {
+  const { hasColGross, hasColDiscount, hasColNet } = options;
+  const amountGross = hasColGross ? parseAmount(row[cols.colGross]) : null;
+  const amountDisc = hasColDiscount ? parseAmount(row[cols.colDiscount]) : null;
+  const amountNet = hasColNet ? parseAmount(row[cols.colNet]) : null;
+
+  if (hasColGross && amountGross === null) {
+    console.warn(`[sync-doctoralia] Skipping row ${rowIndex + 1} because bruto importe is invalid: ${row[cols.colGross]}`);
+    return null;
+  }
+  if (hasColDiscount && amountDisc === null) {
+    console.warn(`[sync-doctoralia] Skipping row ${rowIndex + 1} because descuento importe is invalid: ${row[cols.colDiscount]}`);
+    return null;
+  }
+  if (hasColNet && amountNet === null) {
+    console.warn(`[sync-doctoralia] Skipping row ${rowIndex + 1} because neto importe es invalid: ${row[cols.colNet]}`);
+    return null;
+  }
+
+  const finalAmountGross = amountGross ?? 0;
+  const finalAmountDisc = amountDisc ?? 0;
+  const finalAmountNet = amountNet ?? (finalAmountGross - finalAmountDisc);
+
+  return { finalAmountGross, finalAmountDisc, finalAmountNet };
+}
+
+function getOptionalTextValue(row, col, enabled) {
+  return enabled ? normalizeField(row[col]) || null : null;
 }
 
 function buildHeaderConfig(headers) {
@@ -422,42 +459,23 @@ async function upsertDoctoraliaRow(row, i, params) {
   const settledAt = parseDate(row[cols.colSettledEff]);
   if (settledAt === null) return false;
 
-  const statusOriginal = hasColStatus ? normalizeField(row[cols.colStatus]) : null;
-  const statusInfo = statusOriginal ? parseStatus(statusOriginal, settledAt) : { statusOriginal: null, statusType: null, cancelledAt: null };
-  const cancelledAt = statusInfo.cancelledAt;
-  const statusType = statusInfo.statusType;
+  const { cancelledAt, statusType } = getStatusInfo(row, cols, hasColStatus, settledAt);
 
-  const intakeAt    = hasColIntake       ? parseDate(row[cols.colIntake])       : null;
-  const amountGross = hasColGross        ? parseAmount(row[cols.colGross])      : null;
-  const amountDisc  = hasColDiscount     ? parseAmount(row[cols.colDiscount])   : null;
-  const amountNet   = hasColNet          ? parseAmount(row[cols.colNet])        : null;
+  const amountFields = getAmountValues(row, cols, { hasColGross, hasColDiscount, hasColNet }, i);
+  if (!amountFields) return false;
+  const { finalAmountGross, finalAmountDisc, finalAmountNet } = amountFields;
 
-  if (hasColGross && amountGross === null) {
-    console.warn(`[sync-doctoralia] Skipping row ${i + 1} because bruto importe is invalid: ${row[cols.colGross]}`);
-    return false;
-  }
-  if (hasColDiscount && amountDisc === null) {
-    console.warn(`[sync-doctoralia] Skipping row ${i + 1} because descuento importe is invalid: ${row[cols.colDiscount]}`);
-    return false;
-  }
-  if (hasColNet && amountNet === null) {
-    console.warn(`[sync-doctoralia] Skipping row ${i + 1} because neto importe is invalid: ${row[cols.colNet]}`);
-    return false;
-  }
-
-  const finalAmountGross = amountGross ?? 0;
-  const finalAmountDisc  = amountDisc  ?? 0;
-  const finalAmountNet   = amountNet   ?? (finalAmountGross - finalAmountDisc);
+  const intakeAt = hasColIntake ? parseDate(row[cols.colIntake]) : null;
 
   if (finalAmountGross === 0 && finalAmountNet === 0 && !statusType) return false;
 
-  const payment   = hasColPayment ? (normalizeField(row[cols.colPayment]) || null)    : null;
-  const leadSource = hasColOrigin ? (normalizeField(row[cols.colOrigin]) || null)  : null;
-  const roomId    = hasColRoom ? (normalizeField(row[cols.colRoom]) || null)       : null;
-  const agenda    = hasColAgenda ? (normalizeField(row[cols.colAgenda]) || null)   : null;
-  const tmplName  = hasColTemplate ? (normalizeField(row[cols.colTemplate]) || null)    : null;
-  const tmplId    = hasColTemplateId ? (normalizeField(row[cols.colTemplateId]) || null)  : null;
-  const intermed  = hasColIntermediary ? (normalizeField(row[cols.colIntermediary]) || null) : null;
+  const payment   = getOptionalTextValue(row, cols.colPayment, hasColPayment);
+  const leadSource = getOptionalTextValue(row, cols.colOrigin, hasColOrigin);
+  const roomId    = getOptionalTextValue(row, cols.colRoom, hasColRoom);
+  const agenda    = getOptionalTextValue(row, cols.colAgenda, hasColAgenda);
+  const tmplName  = getOptionalTextValue(row, cols.colTemplate, hasColTemplate);
+  const tmplId    = getOptionalTextValue(row, cols.colTemplateId, hasColTemplateId);
+  const intermed  = getOptionalTextValue(row, cols.colIntermediary, hasColIntermediary);
 
   try {
     await db.query(
@@ -506,7 +524,28 @@ async function upsertDoctoraliaRow(row, i, params) {
   }
 }
 
-main().catch(err => {
-  console.error('[sync-doctoralia] Fatal error:', err.message);
-  process.exit(1);
-});
+module.exports = {
+  norm,
+  normalizeField,
+  deriveRawId,
+  isCancelledStatus,
+  findCol,
+  parseDate,
+  parseAmount,
+  parseStatus,
+  buildHeaderConfig,
+  getRowId,
+  getCancelledAt,
+  parseRow,
+  upsertDoctoraliaRow,
+  getStatusInfo,
+  getAmountValues,
+  getOptionalTextValue,
+};
+
+if (require.main === module) {
+  main().catch(err => {
+    console.error('[sync-doctoralia] Fatal error:', err.message);
+    process.exit(1);
+  });
+}
