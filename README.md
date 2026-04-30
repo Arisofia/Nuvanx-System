@@ -93,11 +93,13 @@ The repository uses GitHub Actions secrets for Supabase and production validatio
 
 For Vercel production deploys, configure these environment variables in the frontend project settings:
 
-- `VITE_SUPABASE_URL` — your Supabase project URL, e.g. `https://ssvvuuysgxyqvmovrlvk.supabase.co`
+- `VITE_SUPABASE_URL` — your Supabase project URL, e.g. `https://YOUR_SUPABASE_PROJECT_REF.supabase.co`
 - `VITE_SUPABASE_PUBLISHABLE_KEY` — preferred Supabase publishable key from Supabase Connect
 - `VITE_SUPABASE_ANON_KEY` — legacy anonymous key; used only as a fallback when `VITE_SUPABASE_PUBLISHABLE_KEY` is not set
 - `VITE_API_BASE_URL` / `VITE_API_URL` — optional overrides for the API host; leave empty to use Vercel rewrite paths (`/api/*`)
 - `VITE_SENTRY_DSN` — optional Sentry DSN for client error reporting
+
+Use `.env.example` and `frontend/.env.example` as templates only; no valores reales deben guardarse en el repositorio.
 
 If neither Supabase key is set, the frontend will warn and disable Supabase features.
 
