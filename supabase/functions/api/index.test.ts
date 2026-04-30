@@ -17,7 +17,10 @@ if (!originalDenoDescriptor) {
     configurable: true,
     enumerable: true,
     get() {
-      return { ...((originalDenoDescriptor.get ? originalDenoDescriptor.get.call(globalThis) : (originalDenoDescriptor.value as any)) ?? {}), serve: vi.fn() };
+      const base = originalDenoDescriptor.get ? originalDenoDescriptor.get.call(globalThis) : originalDenoDescriptor.value;
+      const denoStub = base ? { ...base } : {};
+      (denoStub as any).serve = vi.fn();
+      return denoStub;
     },
   });
 }
@@ -226,10 +229,9 @@ describe('custom Deno getter stub', () => {
       const originalValue = descriptor.get
         ? descriptor.get.call(globalThis)
         : descriptor.value;
-      return {
-        ...(originalValue ?? {}),
-        serve: vi.fn(),
-      };
+      const res = originalValue ? { ...originalValue } : {};
+      (res as any).serve = vi.fn();
+      return res;
     };
   }
 
@@ -253,7 +255,8 @@ describe('custom Deno getter stub', () => {
       get: originalGet,
     });
 
-    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno')!;
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno');
+    if (!descriptor) throw new Error('Deno descriptor missing');
     const getterUnderTest = buildDenoGetter(descriptor);
 
     const result = getterUnderTest();
@@ -273,7 +276,8 @@ describe('custom Deno getter stub', () => {
       value: { hello: 'world' },
     });
 
-    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno')!;
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno');
+    if (!descriptor) throw new Error('Deno descriptor missing');
     const getterUnderTest = buildDenoGetter(descriptor);
 
     const result = getterUnderTest();
@@ -288,7 +292,8 @@ describe('custom Deno getter stub', () => {
       value: undefined,
     });
 
-    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno')!;
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno');
+    if (!descriptor) throw new Error('Deno descriptor missing');
     const getterUnderTest = buildDenoGetter(descriptor);
 
     const result = getterUnderTest();
@@ -304,7 +309,8 @@ describe('custom Deno getter stub', () => {
       get: originalGet,
     });
 
-    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno')!;
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno');
+    if (!descriptor) throw new Error('Deno descriptor missing');
     const getterUnderTest = buildDenoGetter(descriptor);
 
     const result = getterUnderTest();
@@ -320,7 +326,8 @@ describe('custom Deno getter stub', () => {
       value: { foo: 'bar' },
     });
 
-    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno')!;
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno');
+    if (!descriptor) throw new Error('Deno descriptor missing');
     const getterUnderTest = buildDenoGetter(descriptor);
 
     const first = getterUnderTest();
@@ -375,9 +382,6 @@ describe('decryptCred', () => {
     const ctH = '0102';
     const encoded = `${saltH}:${ivH}:${tagH}:${ctH}`;
 
-    const importKeyMock = vi.fn().mockResolvedValue('km-object');
-    const deriveKeyMock = vi.fn().mockResolvedValue('aes-key-object');
-    const decryptMock = vi.fn().mockResolvedValue(new TextEncoder().encode('decrypted-value'));
     vi.spyOn(globalThis.crypto.subtle, 'importKey').mockResolvedValue('km-object' as any);
     vi.spyOn(globalThis.crypto.subtle, 'deriveKey').mockResolvedValue('aes-key-object' as any);
     vi.spyOn(globalThis.crypto.subtle, 'decrypt').mockResolvedValue(new TextEncoder().encode('decrypted-value') as any);
