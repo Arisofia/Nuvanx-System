@@ -69,7 +69,15 @@ function norm(str) {
 function findCol(headers, ...hints) {
   const normed = headers.map(norm);
   for (const hint of hints) {
-    const idx = normed.findIndex(h => h.includes(hint));
+    if (hint.startsWith('=')) {
+      const exact = norm(hint.slice(1));
+      const idx = normed.findIndex(h => h === exact);
+      if (idx !== -1) return idx;
+      continue;
+    }
+
+    const normHint = norm(hint);
+    const idx = normed.findIndex(h => h.includes(normHint));
     if (idx !== -1) return idx;
   }
   return -1;
@@ -144,7 +152,7 @@ async function main() {
   const headers = rows[0];
   console.log(`[sync-doctoralia] Headers (${headers.length}): ${headers.join(' | ')}`);
 
-  const colId           = findCol(headers, 'id op', 'id_op', 'num op', 'operacion', 'operation');
+  const colId           = findCol(headers, '=id', '=num', 'id op', 'id_op', 'num op', 'operacion', 'operation');
   const colTemplate     = findCol(headers, 'plantilladescr', 'plantilla descr', 'plantilla', 'template descr', 'template', 'asunto');
   const colTemplateId   = findCol(headers, 'id plantilla', 'template_id', 'id_plantilla', 'cod plantilla');
   const colFecha        = findCol(headers, 'fecha');
@@ -198,20 +206,20 @@ async function main() {
     // Derive row ID: explicit column or SHA-256 hash of key fields
     let rawId;
     if (useHashId) {
-      const fecha  = row[colFecha]?.toString().trim()  ?? '';
-      const hora   = row[colHora]?.toString().trim()   ?? '';
-        const asunto = hasColTemplate ? (row[colTemplate]?.toString().trim() ?? '') : '';
-        const agenda = hasColIntermediary ? (row[colIntermediary]?.toString().trim() ?? '') : '';
-        const key    = `${fecha}|${hora}|${asunto}|${agenda}`;
-        rawId = createHash('sha256').update(key).digest('hex').slice(0, 32);
-      } else {
-        rawId = row[colId]?.toString().trim();
-      }
+      const fecha  = row[colFecha]?.toString().trim() ?? '';
+      const hora   = row[colHora]?.toString().trim() ?? '';
+      const asunto = hasColTemplate ? (row[colTemplate]?.toString().trim() ?? '') : '';
+      const agenda = hasColIntermediary ? (row[colIntermediary]?.toString().trim() ?? '') : '';
+      const key    = `${fecha}|${hora}|${asunto}|${agenda}`;
+      rawId = createHash('sha256').update(key).digest('hex').slice(0, 32);
+    } else {
+      rawId = row[colId]?.toString().trim();
+    }
 
-      if (rawId === '') {
-        skipped++;
-        continue;
-      }
+    if (rawId === '') {
+      skipped++;
+      continue;
+    }
 
       const settledAt = parseDate(row[colSettledEff]);
       if (settledAt === null) {
@@ -243,35 +251,39 @@ async function main() {
       const tmplId      = hasColTemplateId   ? (row[colTemplateId]?.trim() || null)  : null;
       const intermed    = hasColIntermediary ? (row[colIntermediary]?.trim() || null) : null;
 
-      await db.query(
-        `INSERT INTO financial_settlements
-           (id, clinic_id, amount_gross, amount_discount, amount_net,
-            payment_method, template_name, template_id,
-            settled_at, intake_at, cancelled_at, intermediary_name, source_system)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'doctoralia')
-         ON CONFLICT (id) DO UPDATE SET
-         amount_gross      = EXCLUDED.amount_gross,
-         amount_discount   = EXCLUDED.amount_discount,
-         amount_net        = EXCLUDED.amount_net,
-         payment_method    = EXCLUDED.payment_method,
-         template_name     = EXCLUDED.template_name,
-         template_id       = EXCLUDED.template_id,
-         settled_at        = EXCLUDED.settled_at,
-         intake_at         = EXCLUDED.intake_at,
-         cancelled_at      = EXCLUDED.cancelled_at,
-         intermediary_name = EXCLUDED.intermediary_name,
-         source_system     = 'doctoralia'`,
-      [
-        rawId, CLINIC_ID, amountGross, amountDisc, amountNet,
-        payment, tmplName, tmplId,
-        settledAt.toISOString(),
-        intakeAt?.toISOString() ?? null,
-        cancelledAt?.toISOString() ?? null,
-        intermed,
-      ]
-    );
-
-    upserted++;
+      try {
+        await db.query(
+          `INSERT INTO financial_settlements
+             (id, clinic_id, amount_gross, amount_discount, amount_net,
+              payment_method, template_name, template_id,
+              settled_at, intake_at, cancelled_at, intermediary_name, source_system)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'doctoralia')
+           ON CONFLICT (id) DO UPDATE SET
+             amount_gross      = EXCLUDED.amount_gross,
+             amount_discount   = EXCLUDED.amount_discount,
+             amount_net        = EXCLUDED.amount_net,
+             payment_method    = EXCLUDED.payment_method,
+             template_name     = EXCLUDED.template_name,
+             template_id       = EXCLUDED.template_id,
+             settled_at        = EXCLUDED.settled_at,
+             intake_at         = EXCLUDED.intake_at,
+             cancelled_at      = EXCLUDED.cancelled_at,
+             intermediary_name = EXCLUDED.intermediary_name,
+             source_system     = 'doctoralia'`,
+          [
+            rawId, CLINIC_ID, amountGross, amountDisc, amountNet,
+            payment, tmplName, tmplId,
+            settledAt.toISOString(),
+            intakeAt?.toISOString() ?? null,
+            cancelledAt?.toISOString() ?? null,
+            intermed,
+          ]
+        );
+        upserted++;
+      } catch (rowError) {
+        skipped++;
+        console.warn(`[sync-doctoralia] Skipping row ${i + 1} due to DB error: ${rowError.message}`);
+      }
   }
 
   await db.end();

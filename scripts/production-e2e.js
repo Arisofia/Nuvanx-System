@@ -1,5 +1,11 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
+const path = require('node:path');
+const dotenv = require('dotenv');
+
+dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+
 const args = process.argv.slice(2);
 const opts = args.reduce((acc, arg) => {
   const [key, value] = arg.split('=');
@@ -7,13 +13,16 @@ const opts = args.reduce((acc, arg) => {
   return acc;
 }, {});
 
-if (!opts.url || !opts.token) {
+const url = (opts.url || process.env.PRODUCTION_E2E_URL || process.env.VITE_API_URL || process.env.URL || '').toString().trim();
+const token = (opts.token || process.env.PRODUCTION_E2E_TOKEN || process.env.E2E_TOKEN || process.env.TOKEN || '').toString().trim();
+
+if (!url || !token) {
   console.error('Usage: node scripts/production-e2e.js --url=https://your-app.vercel.app --token=<jwt> [--prompt="Test prompt"]');
+  console.error('Or set environment variables: PRODUCTION_E2E_URL and PRODUCTION_E2E_TOKEN, or VITE_API_URL and E2E_TOKEN.');
   process.exit(1);
 }
 
-const baseUrl = opts.url.replace(/\/$/, '');
-const token = opts.token;
+const baseUrl = url.replace(/\/$/, '');
 const prompt = opts.prompt || `Production E2E check ${new Date().toISOString()}`;
 
 async function request(path, method = 'GET', body = null, auth = false) {

@@ -1,4 +1,4 @@
-name: Daily Meta + Google Ads Report
+name: Daily Unified Automation
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -6,20 +6,16 @@ env:
 permissions:
   contents: read
 
-# Daily performance analysis for Meta Ads and Google Ads.
-# Compares channels, lead funnels and generates a markdown report artifact.
-#
+# Daily automated pipeline for report generation, Doctoralia sync, and production E2E validation.
 # Required secrets:
 #   META_ACCESS_TOKEN
 #   META_AD_ACCOUNT_ID
-#
-# Optional secrets (enable Google Ads + CRM enrichment + output persistence):
-#   GOOGLE_ADS_SERVICE_ACCOUNT   — service account JSON (base64 or raw)
-#   GOOGLE_ADS_DEVELOPER_TOKEN   — Google Ads developer token
-#   GOOGLE_ADS_CUSTOMER_ID       — e.g. 123-456-7890
+#   DOCTORALIA_SHEET_ID or DOCTORALIA_DRIVE_FILE_ID
+#   GOOGLE_ADS_SERVICE_ACCOUNT
 #   DATABASE_URL
 #   CLINIC_ID
-#   REPORT_USER_ID
+#   PRODUCTION_E2E_URL
+#   PRODUCTION_E2E_TOKEN
 
 on:
   workflow_dispatch:
@@ -30,6 +26,7 @@ on:
 
 jobs:
   report:
+    name: Report — Meta Ads + Google Ads
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -66,3 +63,122 @@ jobs:
         with:
           name: daily-ads-unified-report
           path: reports/
+
+  doctoralia-sync:
+    name: Doctoralia — Google Sheets financial sync
+    needs: report
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT || '' }}
+      DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID || '' }}
+      DOCTORALIA_DRIVE_FILE_ID: ${{ secrets.DOCTORALIA_DRIVE_FILE_ID || '' }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL || '' }}
+      CLINIC_ID: ${{ secrets.CLINIC_ID || '' }}
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Install Doctoralia sync dependencies
+        run: npm install --no-save googleapis pg
+      - name: Run Doctoralia sync
+        run: |
+          if echo "$GOOGLE_ADS_SERVICE_ACCOUNT" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
+            echo "GOOGLE_SA_JSON<<EOF_GITHUB_ACTION" >> "$GITHUB_ENV"
+            echo "$GOOGLE_ADS_SERVICE_ACCOUNT" >> "$GITHUB_ENV"
+            echo "EOF_GITHUB_ACTION" >> "$GITHUB_ENV"
+          else
+            DECODED="$(echo "$GOOGLE_ADS_SERVICE_ACCOUNT" | base64 -d 2>/dev/null)" || true
+            echo "$DECODED" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null || {
+              echo "::error::GOOGLE_ADS_SERVICE_ACCOUNT is invalid. Provide raw JSON or base64 JSON."
+              exit 1
+            }
+            echo "GOOGLE_SA_JSON<<EOF_GITHUB_ACTION" >> "$GITHUB_ENV"
+            echo "$DECODED" >> "$GITHUB_ENV"
+            echo "EOF_GITHUB_ACTION" >> "$GITHUB_ENV"
+          fi
+          node scripts/sync-doctoralia.js
+        env:
+          GOOGLE_SA_JSON: ${{ env.GOOGLE_SA_JSON }}
+          DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID || secrets.DOCTORALIA_DRIVE_FILE_ID }}
+          DOCTORALIA_DRIVE_FILE_ID: ${{ secrets.DOCTORALIA_DRIVE_FILE_ID || secrets.DOCTORALIA_SHEET_ID }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CLINIC_ID: ${{ secrets.CLINIC_ID }}
+
+  supabase-security:
+    name: Supabase Security
+    needs:
+      - doctoralia-sync
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN || '' }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF || 'ssvvuuysgxyqvmovrlvk' }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL || '' }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD || '' }}
+
+    steps:
+      - uses: actions/checkout@v5
+      - name: Validate Supabase security secrets
+        run: |
+          MISSING=()
+          [ -z "$SUPABASE_ACCESS_TOKEN" ] && MISSING+=("SUPABASE_ACCESS_TOKEN")
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::error::Missing required secrets: ${MISSING[*]}"
+            exit 1
+          fi
+      - name: Run Supabase Security Lint
+        uses: ./.github/actions/supabase-link-run
+        with:
+          project_ref: ${{ env.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ env.DATABASE_URL }}
+          supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
+          command: |
+            if [ -n "$DATABASE_URL" ]; then
+              supabase db lint --db-url "$DATABASE_URL" --level error --fail-on error
+            elif [ -n "$SUPABASE_DB_PASSWORD" ]; then
+              supabase db lint --linked --password "$SUPABASE_DB_PASSWORD" --level error --fail-on error
+            else
+              echo "::warning::SUPABASE_DB_PASSWORD and DATABASE_URL are both missing — skipping security lint."
+              exit 0
+            fi
+
+  production-e2e:
+    name: Production E2E
+    needs:
+      - report
+      - doctoralia-sync
+      - supabase-security
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PRODUCTION_E2E_URL: ${{ secrets.PRODUCTION_E2E_URL || '' }}
+      PRODUCTION_E2E_TOKEN: ${{ secrets.PRODUCTION_E2E_TOKEN || '' }}
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm ci --include=dev
+      - name: Validate E2E secrets
+        run: |
+          MISSING=()
+          [ -z "$PRODUCTION_E2E_URL" ] && MISSING+=("PRODUCTION_E2E_URL")
+          [ -z "$PRODUCTION_E2E_TOKEN" ] && MISSING+=("PRODUCTION_E2E_TOKEN")
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::error::Missing required secrets: ${MISSING[*]}"
+            exit 1
+          fi
+      - name: Run production E2E
+        run: npm run production:e2e
+        env:
+          PRODUCTION_E2E_URL: ${{ secrets.PRODUCTION_E2E_URL }}
+          PRODUCTION_E2E_TOKEN: ${{ secrets.PRODUCTION_E2E_TOKEN }}
