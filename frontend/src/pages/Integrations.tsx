@@ -13,6 +13,7 @@ type IntegrationRow = {
   metadata: Record<string, unknown> | null
   created_at: string | null
   updated_at: string | null
+  [key: string]: unknown
 }
 
 const serviceIcons: Record<string, string> = {
@@ -49,7 +50,7 @@ export default function Integrations() {
 
       const { data, error: queryError } = await supabase
         .from('integrations')
-        .select('id, service, status, last_error, metadata, created_at, updated_at')
+        .select('*')
         .order('service', { ascending: true })
 
       if (queryError) {
@@ -140,6 +141,7 @@ export default function Integrations() {
                   <div><strong>Status:</strong> {integration.status ?? 'not set'}</div>
                   <div><strong>Updated:</strong> {integration.updated_at ?? 'not set'}</div>
                   <div><strong>Metadata:</strong> {JSON.stringify(integration.metadata ?? {})}</div>
+                  <div><strong>Raw row:</strong> {JSON.stringify(integration)}</div>
                 </div>
 
                 <Button variant="outline" size="sm" className="w-full">

@@ -2,9 +2,22 @@
 // @deno-types="https://esm.sh/@supabase/supabase-js@2.42.0/dist/module/index.d.ts"
 import { createClient } from '@supabase/supabase-js';
 export { createClient };
+
+function requireSupabaseEnv(value: string | null | undefined, name: string): string {
+  const normalized = value?.trim() ?? '';
+  if (!normalized) {
+    throw new Error(`${name} is required. Refusing to create a Supabase client with empty credentials.`);
+  }
+  return normalized;
+}
+
 export const supabaseClientFactory = {
   create(url: string | null, key: string | null, options: any) {
-    return createClient(url ?? '', key ?? '', options);
+    return createClient(
+      requireSupabaseEnv(url, 'SUPABASE_URL'),
+      requireSupabaseEnv(key, 'SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY'),
+      options,
+    );
   },
 };
 export function createSupabaseClient(url: string | null, key: string | null, options: any) {
@@ -27,7 +40,13 @@ export function normalizeFrontendUrl(url: string): string | null {
   }
 }
 
-const FRONTEND_URL = normalizeFrontendUrl(rawFrontendUrl) ?? 'https://nuvanx.com';
+const normalizedFrontendUrl = normalizeFrontendUrl(rawFrontendUrl);
+
+if (!IS_DEVELOPMENT && !normalizedFrontendUrl) {
+  throw new Error('FRONTEND_URL is required in production and must be a valid HTTPS URL.');
+}
+
+const FRONTEND_URL = normalizedFrontendUrl ?? 'http://localhost:5173';
 export const DEFAULT_CORS_ORIGIN = IS_DEVELOPMENT
   ? 'http://localhost:5173'
   : FRONTEND_URL;
@@ -629,6 +648,29 @@ async function ensurePublicUserRow(adminClient: any, user: any) {
 function isValidEncryptionKey(value: string | null | undefined): boolean {
   return typeof value === 'string' && value.trim().length >= 32;
 }
+
+function requireRuntimeSecret(name: string): string {
+  const value = Deno.env.get(name)?.trim() ?? '';
+  if (!value) {
+    throw new Error(`${name} is required. Refusing to run with missing Supabase runtime configuration.`);
+  }
+  return value;
+}
+
+function validateSupabaseRuntimeConfig() {
+  requireRuntimeSecret('SUPABASE_URL');
+  requireRuntimeSecret('SUPABASE_SERVICE_ROLE_KEY');
+
+  if (!isValidEncryptionKey(Deno.env.get('ENCRYPTION_KEY'))) {
+    throw new Error('ENCRYPTION_KEY is required and must be at least 32 characters.');
+  }
+
+  if (!IS_DEVELOPMENT) {
+    requireRuntimeSecret('FRONTEND_URL');
+  }
+}
+
+validateSupabaseRuntimeConfig();
 
 function normalizePhoneNumberId(raw: unknown): string {
   let value = '';
