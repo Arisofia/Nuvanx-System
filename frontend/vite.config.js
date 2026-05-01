@@ -40,4 +40,5 @@ export default ({ mode }) => {
     chunkSizeWarningLimit: 600,
   },
 })
+}
 
