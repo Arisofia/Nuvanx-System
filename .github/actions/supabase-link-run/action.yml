@@ -76,6 +76,15 @@ runs:
         # Pass to outputs for downstream steps in this action
         echo "resolved_db_password=$RESOLVED_DB_PASSWORD" >> "$GITHUB_OUTPUT"
 
+    - name: Write command script
+      shell: bash
+      env:
+        ACTION_COMMAND: ${{ inputs.command }}
+      run: |
+        set -euo pipefail
+        printf '%s\n' "$ACTION_COMMAND" > /tmp/supabase_command.sh
+        chmod +x /tmp/supabase_command.sh
+
     - name: Execute command
       shell: bash
       env:
@@ -85,8 +94,4 @@ runs:
         SUPABASE_DB_PASSWORD: ${{ steps.link.outputs.resolved_db_password }}
       run: |
         set -euo pipefail
-        cat > /tmp/supabase_command.sh <<'CMD'
-        ${{ inputs.command }}
-        CMD
-        chmod +x /tmp/supabase_command.sh
         /tmp/supabase_command.sh

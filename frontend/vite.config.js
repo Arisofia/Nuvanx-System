@@ -18,6 +18,11 @@ export default ({ mode }) => {
 
   return defineConfig({
     plugins: [react()],
+    test: {
+      globals: true,
+      environment: 'node',
+      include: ['tests/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    },
     build: {
     // Avoid CI failures from optional native lightningcss binaries on Linux runners.
     cssMinify: 'esbuild',

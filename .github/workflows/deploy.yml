@@ -132,7 +132,6 @@ jobs:
       - name: Debug Supabase connection (safe)
         run: |
           echo "SUPABASE_PROJECT_REF=$SUPABASE_PROJECT_REF"
-          echo "SUPABASE_URL=$SUPABASE_URL"
           echo "SUPABASE_DB_PASSWORD is set? $([[ -z \"$SUPABASE_DB_PASSWORD\" ]] && echo no || echo yes)"
           if [ -n "$DATABASE_URL" ]; then
             # Avoid printing full DATABASE_URL to logs. Print only presence and host (masked).
