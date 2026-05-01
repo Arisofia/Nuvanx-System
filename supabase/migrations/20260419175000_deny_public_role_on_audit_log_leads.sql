@@ -9,8 +9,12 @@
 DO $$
 BEGIN
   -- audit_log: deny all access to the anon role
-  DROP POLICY IF EXISTS audit_log_deny_all_public ON public.audit_log;
-  DROP POLICY IF EXISTS audit_log_deny_all_anon   ON public.audit_log;
+  ALTER TABLE public.audit_log ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS audit_log_deny_all_public ON public.audit_log;
+  ALTER TABLE public.audit_log ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS audit_log_deny_all_anon   ON public.audit_log;
   CREATE POLICY audit_log_deny_all_anon
     ON public.audit_log
     AS RESTRICTIVE
@@ -20,8 +24,12 @@ BEGIN
     WITH CHECK (false);
 
   -- leads: deny all access to the anon role
-  DROP POLICY IF EXISTS leads_deny_all_public ON public.leads;
-  DROP POLICY IF EXISTS leads_deny_all_anon   ON public.leads;
+  ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS leads_deny_all_public ON public.leads;
+  ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS leads_deny_all_anon   ON public.leads;
   CREATE POLICY leads_deny_all_anon
     ON public.leads
     AS RESTRICTIVE
@@ -30,3 +38,4 @@ BEGIN
     USING (false)
     WITH CHECK (false);
 END $$;
+

@@ -27,12 +27,25 @@
 DO $$
 BEGIN
   -- audit_log: drop all deny-all variants (authenticated, anon, public)
-  DROP POLICY IF EXISTS audit_log_deny_all_authenticated ON public.audit_log;
-  DROP POLICY IF EXISTS audit_log_deny_all_anon          ON public.audit_log;
-  DROP POLICY IF EXISTS audit_log_deny_all_public        ON public.audit_log;
+  ALTER TABLE public.audit_log ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS audit_log_deny_all_authenticated ON public.audit_log;
+  ALTER TABLE public.audit_log ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS audit_log_deny_all_anon          ON public.audit_log;
+  ALTER TABLE public.audit_log ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS audit_log_deny_all_public        ON public.audit_log;
 
   -- leads: drop all deny-all variants (authenticated, anon, public)
-  DROP POLICY IF EXISTS leads_deny_all_authenticated ON public.leads;
-  DROP POLICY IF EXISTS leads_deny_all_anon          ON public.leads;
-  DROP POLICY IF EXISTS leads_deny_all_public        ON public.leads;
+  ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS leads_deny_all_authenticated ON public.leads;
+  ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS leads_deny_all_anon          ON public.leads;
+  ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS leads_deny_all_public        ON public.leads;
 END $$;
+

@@ -2,7 +2,11 @@
 -- Also add a trigger to keep public.users synchronized with auth.users on INSERT, UPDATE, DELETE.
 
 CREATE OR REPLACE FUNCTION public.handle_auth_user_change()
-RETURNS trigger AS $$
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 BEGIN
   IF (TG_OP = 'DELETE') THEN
     DELETE FROM public.users WHERE id = OLD.id;

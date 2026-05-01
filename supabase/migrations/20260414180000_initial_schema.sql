@@ -40,14 +40,15 @@ ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 
 -- Authenticated users can read/update their own row.
 -- INSERT is handled by the backend service role only (/register route).
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "users_select_own" ON users
   FOR SELECT TO authenticated
-  USING ((SELECT auth.uid()) = id);
+  USING (auth.uid() = );
 
 CREATE POLICY "users_update_own" ON users
   FOR UPDATE TO authenticated
-  USING ((SELECT auth.uid()) = id)
-  WITH CHECK ((SELECT auth.uid()) = id);
+  USING (auth.uid() = )
+  WITH CHECK (auth.uid() = );
 
 -- ---------------------------------------------------------------------------
 -- Table: credentials
@@ -97,9 +98,10 @@ ALTER TABLE integrations ENABLE ROW LEVEL SECURITY;
 
 -- Authenticated users can read their own integration status (used for status
 -- display in the browser). INSERT/UPDATE/DELETE are backend service-role only.
+ALTER TABLE public.integrations ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "integrations_select_own" ON integrations
   FOR SELECT TO authenticated
-  USING ((SELECT auth.uid()) = user_id);
+  USING (auth.uid() = );
 
 -- ---------------------------------------------------------------------------
 -- Table: leads
@@ -149,6 +151,7 @@ CREATE INDEX IF NOT EXISTS audit_log_created_idx  ON audit_log(created_at DESC);
 
 -- Audit log is append-only: no UPDATE or DELETE allowed
 ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.audit_log ENABLE ROW LEVEL SECURITY;
 CREATE POLICY audit_log_insert_only ON audit_log FOR INSERT WITH CHECK (TRUE);
 CREATE POLICY audit_log_no_update   ON audit_log FOR UPDATE USING (FALSE);
 CREATE POLICY audit_log_no_delete   ON audit_log FOR DELETE USING (FALSE);
@@ -175,3 +178,4 @@ CREATE TRIGGER integrations_updated_at
 CREATE TRIGGER leads_updated_at
   BEFORE UPDATE ON leads
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+

@@ -101,18 +101,23 @@ ALTER TABLE financial_settlements ENABLE ROW LEVEL SECURITY;
 
 -- 9. Generic Clinic-Scoped Select Policy for all new tables
 -- (Service role continues to bypass)
+ALTER TABLE public.patients ENABLE ROW LEVEL SECURITY;
 CREATE POLICY patients_select_clinic ON patients FOR SELECT TO authenticated
   USING (clinic_id = (auth.jwt()->>'clinic_id')::uuid);
 
+ALTER TABLE public.doctors ENABLE ROW LEVEL SECURITY;
 CREATE POLICY doctors_select_clinic ON doctors FOR SELECT TO authenticated
   USING (clinic_id = (auth.jwt()->>'clinic_id')::uuid);
 
+ALTER TABLE public.treatment_types ENABLE ROW LEVEL SECURITY;
 CREATE POLICY treatment_types_select_clinic ON treatment_types FOR SELECT TO authenticated
   USING (clinic_id = (auth.jwt()->>'clinic_id')::uuid);
 
+ALTER TABLE public.appointments ENABLE ROW LEVEL SECURITY;
 CREATE POLICY appointments_select_clinic ON appointments FOR SELECT TO authenticated
   USING (clinic_id = (auth.jwt()->>'clinic_id')::uuid);
 
+ALTER TABLE public.financial_settlements ENABLE ROW LEVEL SECURITY;
 CREATE POLICY settlements_select_clinic ON financial_settlements FOR SELECT TO authenticated
   USING (clinic_id = (auth.jwt()->>'clinic_id')::uuid);
 

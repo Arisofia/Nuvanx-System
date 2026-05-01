@@ -18,6 +18,7 @@ ALTER TABLE clinics ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS clinics_select_own ON clinics;
 DROP POLICY IF EXISTS clinics_service_role ON clinics;
 
+ALTER TABLE public.clinics ENABLE ROW LEVEL SECURITY;
 CREATE POLICY clinics_select_own ON clinics
   FOR SELECT TO authenticated
   USING (

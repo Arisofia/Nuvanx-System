@@ -11,7 +11,11 @@ ALTER TABLE public.users ALTER COLUMN password_hash DROP NOT NULL;
 
 -- 2. Create the sync function
 CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 BEGIN
   INSERT INTO public.users (id, email, name, password_hash)
   VALUES (

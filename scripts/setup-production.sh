@@ -63,7 +63,7 @@ npx --yes supabase secrets set ENCRYPTION_KEY='<same-key-used-by-node-backend>' 
 npx --yes supabase secrets list --project-ref "$SUPABASE_PROJECT_REF"
 
 # Edge Function deploy
-npx --yes supabase functions deploy api --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
+npx --yes supabase functions deploy api  --project-ref "$SUPABASE_PROJECT_REF"
 
 # Vercel (required frontend env for auth)
 vercel env add VITE_SUPABASE_URL production
@@ -88,3 +88,4 @@ CHECKS
 
 echo
 echo "[7/7] Done. Execute the commands above after logging into Supabase/Vercel CLIs."
+

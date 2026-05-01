@@ -3,7 +3,11 @@
 -- =============================================================================
 
 CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
-RETURNS trigger AS $$
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 BEGIN
   INSERT INTO public.users (id, email, name, password_hash, clinic_id, created_at, updated_at)
   VALUES (

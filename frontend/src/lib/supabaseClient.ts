@@ -53,10 +53,13 @@ export async function invokeApi(path: string) {
   }
 
   const url = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/api${normalizedPath}`
+  const { data: { session } } = await supabase.auth.getSession()
+  const token = session?.access_token || supabaseKey
+
   const res = await fetch(url, {
     headers: {
       apikey: supabaseKey,
-      Authorization: `Bearer ${supabaseKey}`,
+      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
   })

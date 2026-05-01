@@ -30,6 +30,7 @@ DROP POLICY IF EXISTS meta_cache_select_own    ON public.meta_cache;
 DROP POLICY IF EXISTS meta_cache_upsert_service ON public.meta_cache;
 DROP POLICY IF EXISTS meta_cache_service_role  ON public.meta_cache;
 
+ALTER TABLE public.meta_cache ENABLE ROW LEVEL SECURITY;
 CREATE POLICY meta_cache_select_own ON public.meta_cache
   FOR SELECT
   TO authenticated

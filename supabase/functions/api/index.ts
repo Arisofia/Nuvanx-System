@@ -787,7 +787,7 @@ async function handleRequest(req: Request): Promise<Response> {
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
 
-  // This function is deployed with --no-verify-jwt so Supabase will not reject
+  // This function is deployed with  so Supabase will not reject
   // requests before this handler runs. Every non-public route must therefore
   // enforce JWT validation here. Only health checks and Meta webhook handshake
   // routes are intentionally public.
@@ -906,6 +906,10 @@ export async function handlePublicRoutes(ctx: PublicRouteContext): Promise<Respo
   if (resource === 'webhooks' && sub === 'meta' && req.method === 'POST') {
     const appSecret = Deno.env.get('META_APP_SECRET');
     const rawBody = await req.text();
+
+    if (!appSecret && !IS_DEVELOPMENT) {
+      return new Response('Meta App Secret not configured', { status: 500 });
+    }
 
     if (appSecret) {
       const signature = req.headers.get('X-Hub-Signature-256') ?? '';
@@ -1672,15 +1676,11 @@ async function handleAiAnalyzePost(ctx: AuthenticatedRouteContext): Promise<Resp
   if (resource === 'ai' && sub === 'analyze' && req.method === 'POST') {
     const body = await req.json();
     const { data, context = '' } = body;
-  
-    const { data: creds } = await adminClient
-      .from('credentials').select('service, encrypted_key').eq('user_id', userId).in('service', ['gemini', 'openai']);
-    const geminiCred = (creds ?? []).find((c: any) => c.service === 'gemini');
-    const openaiCred = (creds ?? []).find((c: any) => c.service === 'openai');
-    if (!geminiCred && !openaiCred) {
-      return sendJson({ success: false, message: 'No AI integration connected. Add Gemini or OpenAI in Integrations.' });
+
+    if (context.length > 10000 || JSON.stringify(data).length > 50000) {
+      return sendJson({ success: false, message: 'Payload too large for analysis' }, 400);
     }
-  
+
     const prompt = [
       'Eres un experto en marketing digital para una clínica de medicina estética premium en Madrid.',
       'Analiza los siguientes datos de Meta Ads y proporciona insights accionables para maximizar conversiones y reducir el CPL.',
@@ -1711,39 +1711,19 @@ async function handleAiAnalyzePost(ctx: AuthenticatedRouteContext): Promise<Resp
       '[KPIs preocupantes o tendencias negativas a vigilar]',
       '',
       'Usa los números del dataset. Sé específico y orientado a resultados de clínica estética.',
-    ].filter(l => l !== undefined).join('\n');
-  
+    ].filter((l) => l !== undefined).join('\n');
+
     let analysis = '';
-    const providerErrors: string[] = [];
-  
-    if (geminiCred) {
-      try {
-        const apiKey = await decryptCred(geminiCred.encrypted_key);
-        const result = await callGemini(prompt, apiKey);
-        if (result && typeof result === 'string' && result.trim()) {
-          analysis = result;
-        } else {
-          providerErrors.push('gemini: empty response');
-        }
-      } catch (err: any) {
-        providerErrors.push(`gemini: ${err?.message ?? 'unknown error'}`);
-      }
+    let providerErrors: string[] = [];
+
+    try {
+      const aiResult = await runAiPrompt(adminClient, userId, prompt);
+      analysis = aiResult.text;
+      providerErrors = aiResult.providerErrors;
+    } catch (err: any) {
+      providerErrors = err.providerErrors || [err.message];
     }
-  
-    if (!analysis && openaiCred) {
-      try {
-        const apiKey = await decryptCred(openaiCred.encrypted_key);
-        const result = await callOpenAI(prompt, apiKey);
-        if (result && typeof result === 'string' && result.trim()) {
-          analysis = result;
-        } else {
-          providerErrors.push('openai: empty response');
-        }
-      } catch (err: any) {
-        providerErrors.push(`openai: ${err?.message ?? 'unknown error'}`);
-      }
-    }
-  
+
     if (!analysis) {
       return sendJson({
         success: false,
@@ -1751,87 +1731,13 @@ async function handleAiAnalyzePost(ctx: AuthenticatedRouteContext): Promise<Resp
         details: providerErrors,
       }, 502);
     }
-  
+
     const outputId = await persistAgentOutput(adminClient, userId, 'ai.analyze', { analysis }, {
       contextLength: String(context ?? '').length,
       providerErrors,
     });
-  
+
     return sendJson({ success: true, analysis, outputId });
-  }
-  return null;
-}
-
-async function handleIntegrationsPatch(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, userId, resource, sub, sub2, req, sendJson } = ctx;
-  if (resource === 'integrations' && sub !== '' && sub2 === '' && req.method === 'PATCH') {
-    const body = await req.json();
-    let metadata = body.metadata ?? {};
-    if (sub === 'meta') {
-      const incoming = metadata?.adAccountId ?? metadata?.ad_account_id ?? '';
-      let normalized = normalizeMetaAccountId(incoming);
-      if (!normalized) {
-        const { data: currentMeta } = await adminClient
-          .from('integrations')
-          .select('metadata')
-          .eq('user_id', userId)
-          .eq('service', 'meta')
-          .single();
-        normalized = requireMetaAccountId(currentMeta?.metadata?.adAccountId ?? currentMeta?.metadata?.ad_account_id ?? '');
-      }
-      metadata = {
-        ...metadata,
-        adAccountId: normalized,
-        ad_account_id: normalized,
-      };
-    }
-    const { error } = await adminClient
-      .from('integrations')
-      .update({ metadata, updated_at: new Date().toISOString() })
-      .eq('user_id', userId).eq('service', sub);
-    if (error) throw error;
-    return sendJson({ success: true });
-  }
-  return null;
-}
-
-async function handleIntegrationsValidateAllGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, userId, resource, sub, req, sendJson } = ctx;
-  if (resource === 'integrations' && sub === 'validate-all' && req.method === 'GET') {
-    const [intRes, credRes] = await Promise.all([
-      adminClient.from('integrations').select('service, status, last_sync, metadata').eq('user_id', userId),
-      adminClient.from('credentials').select('service').eq('user_id', userId),
-    ]);
-    const integrations = intRes.data ?? [];
-    const storedServices = new Set((credRes.data ?? []).map((c: any) => c.service));
-    const validated = await Promise.all(integrations.map(async (i: any) => {
-      const hasCredential = storedServices.has(i.service);
-      let status = hasCredential ? 'connected' : i.status;
-      let error = null;
-      let metadata = i.metadata ?? {};
-  
-      if (i.service === 'meta' && hasCredential) {
-        const creds = await resolveMetaCreds(adminClient, userId, metadata?.adAccountId ?? metadata?.ad_account_id ?? '');
-        const validation = validateMetaCredentialResult(creds);
-        if (!validation.ok) {
-          status = 'error';
-          error = validation.message;
-        }
-      }
-  
-      return {
-        service: i.service,
-        status,
-        lastSync: i.last_sync,
-        skipped: false,
-        metadata,
-        accountName: i.metadata?.accountName ?? null,
-        login: i.metadata?.login ?? null,
-        email: i.metadata?.email ?? null,
-        error,
-      };
-    }));
-    return sendJson({ success: true, validated });
   }
   return null;
 }
@@ -2743,4 +2649,5 @@ function json(data: unknown, status = 200, extraHeaders: Record<string, string> 
     headers: { ...DEFAULT_CORS_HEADERS, ...extraHeaders, 'Content-Type': 'application/json' },
   });
 }
+
 

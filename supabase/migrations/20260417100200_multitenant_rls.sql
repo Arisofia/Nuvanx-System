@@ -32,6 +32,7 @@ UPDATE credentials  SET clinic_id = u.clinic_id FROM users u WHERE credentials.u
 -- 3. Clinic-scoped RLS policies (authenticated role)
 -- ---------------------------------------------------------------------------
 DROP POLICY IF EXISTS leads_select_clinic ON leads;
+ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
 CREATE POLICY leads_select_clinic ON leads
   FOR SELECT TO authenticated
   USING (
@@ -42,6 +43,7 @@ CREATE POLICY leads_select_clinic ON leads
 
 DROP POLICY IF EXISTS integrations_select_own ON integrations;
 DROP POLICY IF EXISTS integrations_select_clinic ON integrations;
+ALTER TABLE public.integrations ENABLE ROW LEVEL SECURITY;
 CREATE POLICY integrations_select_clinic ON integrations
   FOR SELECT TO authenticated
   USING (
@@ -51,6 +53,7 @@ CREATE POLICY integrations_select_clinic ON integrations
   );
 
 DROP POLICY IF EXISTS credentials_select_clinic ON credentials;
+ALTER TABLE public.credentials ENABLE ROW LEVEL SECURITY;
 CREATE POLICY credentials_select_clinic ON credentials
   FOR SELECT TO authenticated
   USING (

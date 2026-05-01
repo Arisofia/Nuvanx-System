@@ -18,6 +18,8 @@
 
 -- ── 1. audit_log: restrict insert policy to service_role only ───────────────
 
+ALTER TABLE public.audit_log ENABLE ROW LEVEL SECURITY;
+
 DROP POLICY IF EXISTS audit_log_insert_only ON public.audit_log;
 CREATE POLICY audit_log_insert_only
   ON public.audit_log
@@ -26,6 +28,8 @@ CREATE POLICY audit_log_insert_only
   WITH CHECK (TRUE);
 
 -- ── 2. leads: add is_anonymous guard to owner policy ────────────────────────
+
+ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS leads_owner_only ON public.leads;
 CREATE POLICY leads_owner_only
@@ -40,3 +44,4 @@ CREATE POLICY leads_owner_only
     (SELECT auth.uid()) = user_id
     AND COALESCE(((SELECT auth.jwt()) ->> 'is_anonymous')::boolean, false) = false
   );
+

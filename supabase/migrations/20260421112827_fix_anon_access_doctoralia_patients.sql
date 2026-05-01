@@ -15,6 +15,7 @@ BEGIN
     WHERE table_schema = 'public' AND table_name = 'doctoralia_patients'
   ) THEN
     DROP POLICY IF EXISTS doctoralia_patients_select_clinic ON public.doctoralia_patients;
+ALTER TABLE public.doctoralia_patients ENABLE ROW LEVEL SECURITY;
     CREATE POLICY doctoralia_patients_select_clinic ON public.doctoralia_patients
       FOR SELECT TO authenticated
       USING (

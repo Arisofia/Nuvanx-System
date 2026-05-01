@@ -26,16 +26,19 @@ DROP POLICY IF EXISTS leads_no_authenticated_delete ON leads;
 
 -- Add DELETE policies so users can remove their own records
 DROP POLICY IF EXISTS integrations_delete_own ON integrations;
+ALTER TABLE public.integrations ENABLE ROW LEVEL SECURITY;
 CREATE POLICY integrations_delete_own ON integrations
   FOR DELETE TO authenticated
   USING (user_id = auth.uid());
 
 DROP POLICY IF EXISTS credentials_delete_own ON credentials;
+ALTER TABLE public.credentials ENABLE ROW LEVEL SECURITY;
 CREATE POLICY credentials_delete_own ON credentials
   FOR DELETE TO authenticated
   USING (user_id = auth.uid());
 
 DROP POLICY IF EXISTS leads_delete_own ON leads;
+ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
 CREATE POLICY leads_delete_own ON leads
   FOR DELETE TO authenticated
   USING (user_id = auth.uid());

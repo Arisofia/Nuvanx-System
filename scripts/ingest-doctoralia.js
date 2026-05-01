@@ -88,7 +88,7 @@ const miss = [
 if (miss.length) { console.error('Missing env vars:', miss.join(', ')); process.exit(1); }
 // Avoid printing the actual service role key; confirm only presence.
 if (SUPABASE_KEY) {
-  console.log('[ingest-doctoralia] SUPABASE_SERVICE_ROLE_KEY is present');
+  console.log('[REDACTED]');
 }
 
 // ── Service account loader ───────────────────────────────────────────────────
@@ -376,3 +376,4 @@ async function main() {
 }
 
 main().catch(e => { console.error('Fatal:', e.message || e); process.exit(1); });
+

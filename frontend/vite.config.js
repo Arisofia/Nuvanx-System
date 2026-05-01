@@ -23,7 +23,7 @@ export default ({ mode }) => {
     cssMinify: 'esbuild',
     rollupOptions: {
       output: {
-        // Rolldown (Vite 8) requires manualChunks as a function
+        // Manual chunking to optimize bundle size
         manualChunks(id) {
           if (id.includes('recharts') || id.includes('d3-') || id.includes('victory')) {
             return 'vendor-charts';

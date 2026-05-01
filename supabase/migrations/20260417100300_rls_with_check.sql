@@ -4,6 +4,7 @@
 
 -- integrations: INSERT
 DROP POLICY IF EXISTS integrations_insert_own ON integrations;
+ALTER TABLE public.integrations ENABLE ROW LEVEL SECURITY;
 CREATE POLICY integrations_insert_own ON integrations
   FOR INSERT TO authenticated
   WITH CHECK (
@@ -26,6 +27,7 @@ CREATE POLICY integrations_update_own ON integrations
 
 -- credentials: INSERT
 DROP POLICY IF EXISTS credentials_insert_own ON credentials;
+ALTER TABLE public.credentials ENABLE ROW LEVEL SECURITY;
 CREATE POLICY credentials_insert_own ON credentials
   FOR INSERT TO authenticated
   WITH CHECK (

@@ -114,7 +114,7 @@ const dmyRegex = /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/;
 function parseDate(val) {
   if (!val) return null;
   const s = String(val).trim();
-  const regex = globalThis.dmyRegex || dmyRegex;
+  const regex = new RegExp(dmyRegex.source, dmyRegex.flags);
   const dmy = regex.exec(s);
   if (dmy) {
     const [, d, m, y] = dmy;

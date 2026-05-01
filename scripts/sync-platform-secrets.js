@@ -295,7 +295,10 @@ async function main() {
   const frontendEnvPath = writeFrontendEnv(vars);
 
   const githubResult = setGithubSecrets(vars);
-  const supabaseMainResult = await setSupabaseSecrets(vars, vars.SUPABASE_PROJECT_REF || 'ssvvuuysgxyqvmovrlvk');
+  if (!vars.SUPABASE_PROJECT_REF) {
+    throw new Error('SUPABASE_PROJECT_REF is required and must not fall back to a hardcoded value.');
+  }
+  const supabaseMainResult = await setSupabaseSecrets(vars, vars.SUPABASE_PROJECT_REF);
   const supabaseFigmaResult = await setSupabaseSecrets(vars, vars.SUPABASE_FIGMA_PROJECT_REF || 'zpowfbeftxexzidlxndy');
   const vercelResult = await setVercelSecrets(vars);
 

@@ -11,5 +11,6 @@ DROP POLICY IF EXISTS dashboard_metrics_anon_read ON public.dashboard_metrics;
 
 -- Ensure authenticated users can still read (e.g. future direct Supabase calls)
 DROP POLICY IF EXISTS dashboard_metrics_authenticated_read ON public.dashboard_metrics;
+ALTER TABLE public.dashboard_metrics ENABLE ROW LEVEL SECURITY;
 CREATE POLICY dashboard_metrics_authenticated_read ON public.dashboard_metrics
   FOR SELECT TO authenticated USING (TRUE);

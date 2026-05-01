@@ -8,6 +8,7 @@ BEGIN
     WHERE table_schema = 'public' AND table_name = 'doctoralia_patients'
   ) THEN
     DROP POLICY IF EXISTS doctoralia_patients_select_clinic ON public.doctoralia_patients;
+ALTER TABLE public.doctoralia_patients ENABLE ROW LEVEL SECURITY;
     CREATE POLICY doctoralia_patients_select_clinic ON public.doctoralia_patients
       FOR SELECT TO authenticated
       USING (clinic_id = (auth.jwt() ->> 'clinic_id')::uuid);
@@ -22,6 +23,7 @@ BEGIN
     WHERE table_schema = 'public' AND table_name = 'doctoralia_lead_matches'
   ) THEN
     DROP POLICY IF EXISTS doctoralia_lead_matches_service_role ON public.doctoralia_lead_matches;
+ALTER TABLE public.doctoralia_lead_matches ENABLE ROW LEVEL SECURITY;
     CREATE POLICY doctoralia_lead_matches_service_role ON public.doctoralia_lead_matches
       FOR ALL TO service_role USING (TRUE) WITH CHECK (TRUE);
   END IF;

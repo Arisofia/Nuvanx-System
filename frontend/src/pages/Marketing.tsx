@@ -89,10 +89,10 @@ export default function Marketing() {
         const leadCount = campaigns.reduce((sum, campaign) => sum + campaign.conversions, 0)
 
         setMetrics({
-          leadCount: leadCount || 86,
-          totalSpend: totalSpend || 38_700,
-          avgCpc: avgCpc || 1.07,
-          campaigns: campaigns.length ? campaigns.slice(0, 6) : fallbackData,
+          leadCount: leadCount || 0,
+          totalSpend: totalSpend || 0,
+          avgCpc: avgCpc || 0,
+          campaigns: campaigns.length ? campaigns.slice(0, 6) : [],
           loading: false,
           error:
             metaResult.status === 'rejected' && googleResult.status === 'rejected'
@@ -102,10 +102,10 @@ export default function Marketing() {
       } catch (err: any) {
         console.warn('Marketing data fetch failed, using fallback:', err)
         setMetrics({
-          leadCount: 86,
-          totalSpend: 38_700,
-          avgCpc: 1.07,
-          campaigns: fallbackData,
+          leadCount: 0,
+          totalSpend: 0,
+          avgCpc: 0,
+          campaigns: [],
           loading: false,
           error: 'Unable to load campaign metrics from Edge Functions; showing fallback data.',
         })

@@ -78,7 +78,7 @@ npm --prefix frontend run test:ci
 ## CI/CD
 
 - GitHub Actions CI: backend tests + frontend lint/build on every push to `main`
-- Deploy: frontend → Vercel (auto), Edge Function → Supabase (manual: `npx supabase functions deploy api --no-verify-jwt`)
+- Deploy: frontend → Vercel (auto), Edge Function → Supabase (manual: `npx supabase functions deploy api `)
 - No Railway, no Render.
 
 ## Project maturity
@@ -126,4 +126,5 @@ If neither Supabase key is set, the frontend will warn and disable Supabase feat
 - [SECURITY.md](SECURITY.md) — Security posture and production readiness
 - [docs/agents-and-integrations-architecture.md](docs/agents-and-integrations-architecture.md) — Architecture and agent roadmap
 - [docs/production-validation-checklist.md](docs/production-validation-checklist.md) — Production secrets and runtime verification checklist
+
 

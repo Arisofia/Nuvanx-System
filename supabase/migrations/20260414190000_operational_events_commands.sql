@@ -89,9 +89,11 @@ ALTER TABLE kpi_definitions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE kpi_values ENABLE ROW LEVEL SECURITY;
 
 -- Basic policies for KPI tables
+ALTER TABLE public.kpi_definitions ENABLE ROW LEVEL SECURITY;
 CREATE POLICY kpi_definitions_read_all ON kpi_definitions
   FOR SELECT TO authenticated USING (TRUE);
 
+ALTER TABLE public.kpi_values ENABLE ROW LEVEL SECURITY;
 CREATE POLICY kpi_values_owner_only ON kpi_values
   FOR SELECT TO authenticated USING (auth.uid() = user_id);
 
