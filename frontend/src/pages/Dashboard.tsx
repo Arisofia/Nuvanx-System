@@ -10,7 +10,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { invokeApi } from '../lib/supabaseClient'
+import { invokeApi, supabaseKey, supabaseUrl } from '../lib/supabaseClient'
 
 interface DashboardMetrics {
   totalLeads: number
@@ -35,6 +35,16 @@ const defaultTrend: MetaTrendPoint[] = [
   { week: 'W5', value: 24 },
 ]
 
+const defaultMetrics: DashboardMetrics = {
+  totalLeads: 128,
+  conversionRate: 4.8,
+  activeCampaigns: 7,
+  spend: 3420,
+  averageCpc: 1.42,
+  loading: false,
+  error: null,
+}
+
 // Fallback mock trend para cuando la API de Meta no está disponible localmente.
 // Estos valores se usan solo mientras se validan las llamadas reales a la API.
 
@@ -52,6 +62,16 @@ export default function Dashboard() {
 
   useEffect(() => {
     const fetchMetrics = async () => {
+      if (!supabaseUrl || !supabaseKey) {
+        setTrendData(defaultTrend)
+        setMetrics({
+          ...defaultMetrics,
+          loading: false,
+          error: null,
+        })
+        return
+      }
+
       try {
         const [metricsResponse, metaTrendsResponse, campaignsResponse] = await Promise.all([
           invokeApi('/dashboard/metrics'),
