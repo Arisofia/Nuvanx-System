@@ -1713,6 +1713,21 @@ async function handleAiAnalyzePost(ctx: AuthenticatedRouteContext): Promise<Resp
       'Usa los números del dataset. Sé específico y orientado a resultados de clínica estética.',
     ].filter((l) => l !== undefined).join('\n');
 
+    // Rate limit simple: máx 20 llamadas por hora por usuario
+    const { data: recentCalls, error: rlError } = await adminClient
+      .from('api_call_log')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('endpoint', 'ai/analyze')
+      .gte('created_at', new Date(Date.now() - 60 * 60 * 1000).toISOString());
+
+    if (!rlError && recentCalls && recentCalls.length >= 20) {
+      return sendJson(
+        { success: false, message: 'Rate limit exceeded for AI analysis' },
+        429,
+      );
+    }
+
     let analysis = '';
     let providerErrors: string[] = [];
 
@@ -1720,16 +1735,24 @@ async function handleAiAnalyzePost(ctx: AuthenticatedRouteContext): Promise<Resp
       const aiResult = await runAiPrompt(adminClient, userId, prompt);
       analysis = aiResult.text;
       providerErrors = aiResult.providerErrors;
-    } catch (err: any) {
-      providerErrors = err.providerErrors || [err.message];
-    }
 
-    if (!analysis) {
-      return sendJson({
-        success: false,
-        message: 'AI request failed for all connected providers.',
-        details: providerErrors,
-      }, 502);
+      await adminClient.from('api_call_log').insert({
+        user_id: userId,
+        endpoint: 'ai/analyze',
+      });
+    } catch (err: any) {
+      const errorId = crypto.randomUUID?.() ?? `ai-${Date.now()}`;
+      console.error('handleAiAnalyzePost error', { errorId, err });
+      providerErrors = err?.providerErrors || [err?.message || 'unknown error'];
+      return sendJson(
+        {
+          success: false,
+          message: 'AI analysis failed',
+          error_id: errorId,
+          providerErrors,
+        },
+        500,
+      );
     }
 
     const outputId = await persistAgentOutput(adminClient, userId, 'ai.analyze', { analysis }, {
@@ -1909,8 +1932,18 @@ async function handlePlaybooksRunPost(ctx: AuthenticatedRouteContext): Promise<R
       providerUsed = aiResult.provider;
       providerErrors = aiResult.providerErrors;
     } catch (err: any) {
-      generatedMessage = `Playbook "${pb.title}" executed. Draft CTA: Responde a este mensaje y te ayudo a reservar una cita esta semana.`;
-      providerErrors = [err?.message ?? 'AI generation skipped'];
+      const errorId = crypto.randomUUID?.() ?? `pb-${Date.now()}`;
+      console.error('handlePlaybooksRunPost error', { errorId, err, userId });
+      const code = err?.code === 'PERMISSION_DENIED' ? 403 : 500;
+
+      return sendJson(
+        {
+          success: false,
+          message: code === 403 ? 'Not allowed to run this playbook' : 'Playbook execution failed',
+          error_id: errorId,
+        },
+        code,
+      );
     }
   
     const agentOutputId = await persistAgentOutput(

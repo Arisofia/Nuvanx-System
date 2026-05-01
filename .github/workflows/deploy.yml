@@ -219,6 +219,7 @@ PY
         with:
           name: production-smoke-log
           path: production-e2e.log
+          if-no-files-found: warn
       - name: Fail if smoke test failed
         if: always()
         run: |

@@ -67,6 +67,7 @@ jobs:
         with:
           name: daily-ads-unified-report
           path: reports/
+          if-no-files-found: warn
 
   doctoralia-sync:
     name: Doctoralia — Google Sheets financial sync
@@ -145,6 +146,7 @@ jobs:
         run: |
           MISSING=()
           [ -z "$SUPABASE_ACCESS_TOKEN" ] && MISSING+=("SUPABASE_ACCESS_TOKEN")
+          [ -z "$SUPABASE_PROJECT_REF" ] && MISSING+=("SUPABASE_PROJECT_REF")
           if [ ${#MISSING[@]} -gt 0 ]; then
             echo "::error::Missing required secrets: ${MISSING[*]}"
             exit 1
