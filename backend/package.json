@@ -39,13 +39,14 @@
     "nuvanx-system": "file:..",
     "pg": "^8.11.3",
     "resend": "^6.12.0",
-    "uuid": "^9.0.1",
+    "uuid": "^14.0.0",
     "winston": "^3.12.0"
   },
   "overrides": {
     "@fastify/otel": {
       "minimatch": "10.0.3"
-    }
+    },
+    "svix": "1.92.2"
   },
   "devDependencies": {
     "@babel/core": "^7.28.0",
