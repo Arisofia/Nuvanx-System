@@ -44,8 +44,8 @@ jobs:
       REPORT_USER_ID: ${{ secrets.REPORT_USER_ID || '' }}
 
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - name: Validate required secrets
@@ -82,8 +82,8 @@ jobs:
       CLINIC_ID: ${{ secrets.CLINIC_ID || '' }}
 
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - name: Validate Doctoralia sync secrets
@@ -140,7 +140,7 @@ jobs:
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD || '' }}
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
       - name: Validate Supabase security secrets
         run: |
           MISSING=()
@@ -191,8 +191,8 @@ jobs:
       PRODUCTION_E2E_TOKEN: ${{ secrets.PRODUCTION_E2E_TOKEN || '' }}
 
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - name: Install dependencies
