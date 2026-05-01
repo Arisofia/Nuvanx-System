@@ -12,11 +12,15 @@
 --      write when ready
 -- =============================================================================
 
--- ─── 1. credentials ────────────────────────────────────────────────────────
+BEGIN;
+-- ─── 1. credentials ───────────────────────────────────────────────────────-
 -- RLS is enabled (initial migration) but 0 policies exist.
 -- With RLS enabled the default is deny-all for non-owner roles, which is
 -- correct — but we add explicit policies so Supabase Advisor stops flagging
 -- it and the intent is visible.
+
+-- Ensure Row Level Security is enabled so policies take effect
+ALTER TABLE public.credentials ENABLE ROW LEVEL SECURITY;
 
 -- Service role: full access (backend needs to read/write encrypted keys)
 DROP POLICY IF EXISTS credentials_service_role ON public.credentials;
@@ -28,7 +32,7 @@ CREATE POLICY credentials_service_role ON public.credentials
 DROP POLICY IF EXISTS credentials_owner_only ON public.credentials;
 CREATE POLICY credentials_owner_only ON public.credentials
   FOR SELECT TO authenticated
-  USING ((SELECT auth.uid()) = user_id);
+  USING (auth.uid() = user_id);
 
 -- Authenticated: no INSERT/UPDATE/DELETE from browser
 DROP POLICY IF EXISTS credentials_no_authenticated_write ON public.credentials;
@@ -55,6 +59,9 @@ CREATE POLICY credentials_anon_deny ON public.credentials
 -- ─── 2. leads ──────────────────────────────────────────────────────────────
 -- Same pattern: PII table, backend-only access.
 
+-- Ensure Row Level Security is enabled so policies take effect
+ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
+
 DROP POLICY IF EXISTS leads_service_role ON public.leads;
 CREATE POLICY leads_service_role ON public.leads
   FOR ALL TO service_role USING (TRUE) WITH CHECK (TRUE);
@@ -63,7 +70,7 @@ CREATE POLICY leads_service_role ON public.leads
 DROP POLICY IF EXISTS leads_owner_only ON public.leads;
 CREATE POLICY leads_owner_only ON public.leads
   FOR SELECT TO authenticated
-  USING ((SELECT auth.uid()) = user_id);
+  USING (auth.uid() = user_id);
 
 -- Authenticated: no direct writes from browser
 DROP POLICY IF EXISTS leads_no_authenticated_write ON public.leads;
@@ -90,6 +97,9 @@ CREATE POLICY leads_anon_deny ON public.leads
 -- ─── 3. integrations ──────────────────────────────────────────────────────
 -- Has integrations_select_own for authenticated SELECT — keep it.
 -- Add service_role bypass + block authenticated writes + block anon.
+
+-- Ensure Row Level Security is enabled so policies take effect
+ALTER TABLE public.integrations ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS integrations_service_role ON public.integrations;
 CREATE POLICY integrations_service_role ON public.integrations
@@ -150,9 +160,15 @@ WHERE id = 'nuvanx-main';
 -- ─── 6. kpi_definitions / kpi_values: service_role policies ───────────────
 -- Tables exist (migration 002) with authenticated read policies but no
 -- service_role bypass.  Backend will need to write when KPI infra is used.
+-- Ensure Row Level Security is enabled so policies take effect
+ALTER TABLE public.kpi_definitions ENABLE ROW LEVEL SECURITY;
+
 DROP POLICY IF EXISTS kpi_definitions_service_role ON public.kpi_definitions;
 CREATE POLICY kpi_definitions_service_role ON public.kpi_definitions
   FOR ALL TO service_role USING (TRUE) WITH CHECK (TRUE);
+
+-- Ensure Row Level Security is enabled so policies take effect
+ALTER TABLE public.kpi_values ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS kpi_values_service_role ON public.kpi_values;
 CREATE POLICY kpi_values_service_role ON public.kpi_values
@@ -161,6 +177,11 @@ CREATE POLICY kpi_values_service_role ON public.kpi_values
 
 -- ─── 7. audit_log: add service_role write policy ─────────────────────────
 -- Backend needs to INSERT audit records via service role.
+-- Ensure Row Level Security is enabled so policies take effect
+ALTER TABLE public.audit_log ENABLE ROW LEVEL SECURITY;
+
 DROP POLICY IF EXISTS audit_log_service_role ON public.audit_log;
 CREATE POLICY audit_log_service_role ON public.audit_log
   FOR INSERT TO service_role WITH CHECK (TRUE);
+
+COMMIT;
