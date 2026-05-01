@@ -163,7 +163,8 @@ jobs:
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           command: |
             if [ -n "$DATABASE_URL" ]; then
-              supabase db push --db-url "$DATABASE_URL"
+              DB_PASS=$(python3 -c 'from urllib.parse import urlparse; import os; print(urlparse(os.environ["DATABASE_URL"]).password or "")')
+              supabase db push --linked --password "$DB_PASS"
             elif [ -n "$SUPABASE_DB_PASSWORD" ]; then
               supabase db push --linked --password "$SUPABASE_DB_PASSWORD"
             else
