@@ -42,7 +42,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
 
       - name: Preflight - validate required secrets and decode service account
         run: |
@@ -61,6 +61,8 @@ jobs:
           #  2) raw JSON object string
           if echo "$GOOGLE_ADS_SERVICE_ACCOUNT" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
             echo "GOOGLE_ADS_SERVICE_ACCOUNT format: raw JSON"
+            # Mask the raw JSON to avoid accidental leakage in logs
+            echo "::add-mask::$GOOGLE_ADS_SERVICE_ACCOUNT"
             echo "GOOGLE_SA_JSON<<EOF_GITHUB_ACTION" >> "$GITHUB_ENV"
             echo "$GOOGLE_ADS_SERVICE_ACCOUNT" >> "$GITHUB_ENV"
             echo "EOF_GITHUB_ACTION" >> "$GITHUB_ENV"
@@ -71,6 +73,8 @@ jobs:
               exit 1
             }
             echo "GOOGLE_ADS_SERVICE_ACCOUNT format: base64 JSON"
+            # Mask the decoded JSON to avoid accidental leakage in logs
+            echo "::add-mask::$DECODED"
             echo "GOOGLE_SA_JSON<<EOF_GITHUB_ACTION" >> "$GITHUB_ENV"
             echo "$DECODED" >> "$GITHUB_ENV"
             echo "EOF_GITHUB_ACTION" >> "$GITHUB_ENV"
@@ -86,7 +90,6 @@ jobs:
 
       - name: Install sync dependencies
         run: npm install --no-save googleapis pg
-        working-directory: ${{ github.workspace }}
 
       - name: Run Doctoralia to DB sync
         run: node scripts/sync-doctoralia.js
