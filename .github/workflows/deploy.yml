@@ -137,16 +137,7 @@ jobs:
             # Avoid printing full DATABASE_URL to logs. Print only presence and host (masked).
             echo "DATABASE_URL is set"
             # Extract host without user/password using python to avoid leaking credentials
-            python3 - <<'PY'
-import os
-from urllib.parse import urlparse
-u = os.environ.get("DATABASE_URL", "")
-if u:
-    p = urlparse(u)
-    host = p.hostname or ""
-    port = p.port or ""
-    print(f"DATABASE_HOST={host}:{port}" if port else f"DATABASE_HOST={host}")
-PY
+            python3 -c 'import os,sys; from urllib.parse import urlparse; u=os.environ.get("DATABASE_URL",""); p=urlparse(u); print(("DATABASE_HOST="+str(p.hostname)+":"+str(p.port)) if p.port else ("DATABASE_HOST="+str(p.hostname))) if u else None'
           else
             echo "DATABASE_URL is empty"
           fi

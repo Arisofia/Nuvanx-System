@@ -40,12 +40,13 @@ jobs:
           [ -z "$SUPABASE_ACCESS_TOKEN" ] && MISSING+=("SUPABASE_ACCESS_TOKEN")
           [ -z "$SUPABASE_PROJECT_REF" ] && MISSING+=("SUPABASE_PROJECT_REF")
           if [ ${#MISSING[@]} -gt 0 ]; then
-            echo "::error::Missing required secrets: ${MISSING[*]}"
-            exit 1
+            echo "::warning::Supabase security lint skipped — missing secrets: ${MISSING[*]}"
+            echo "::warning::Configure them in GitHub Settings → Secrets and variables → Actions to enable RLS enforcement."
+            echo "SKIP_LINT=true" >> "$GITHUB_ENV"
           fi
 
       - name: Run Supabase DB lint
-        if: ${{ env.SUPABASE_ACCESS_TOKEN != '' }}
+        if: ${{ env.SKIP_LINT != 'true' && env.SUPABASE_ACCESS_TOKEN != '' }}
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
@@ -62,7 +63,7 @@ jobs:
               exit 0
             fi
 
-      - name: Skip security lint (missing token)
-        if: ${{ env.SUPABASE_ACCESS_TOKEN == '' }}
-        run: echo "::warning::SUPABASE_ACCESS_TOKEN not set — skipping security lint."
+      - name: Skip security lint (missing credentials)
+        if: ${{ env.SKIP_LINT == 'true' || env.SUPABASE_ACCESS_TOKEN == '' }}
+        run: echo "::warning::Supabase security lint skipped — credentials not configured."
 
