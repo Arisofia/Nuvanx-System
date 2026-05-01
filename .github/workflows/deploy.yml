@@ -135,8 +135,19 @@ jobs:
           echo "SUPABASE_URL=$SUPABASE_URL"
           echo "SUPABASE_DB_PASSWORD is set? $([[ -z \"$SUPABASE_DB_PASSWORD\" ]] && echo no || echo yes)"
           if [ -n "$DATABASE_URL" ]; then
+            # Avoid printing full DATABASE_URL to logs. Print only presence and host (masked).
             echo "DATABASE_URL is set"
-            echo "$DATABASE_URL" | sed -E 's#^postgres(ql)?://([^:@/]+):[^@]+@#postgresql://\2:***@#'
+            # Extract host without user/password using python to avoid leaking credentials
+            python3 - <<'PY'
+import os
+from urllib.parse import urlparse
+u = os.environ.get("DATABASE_URL", "")
+if u:
+    p = urlparse(u)
+    host = p.hostname or ""
+    port = p.port or ""
+    print(f"DATABASE_HOST={host}:{port}" if port else f"DATABASE_HOST={host}")
+PY
           else
             echo "DATABASE_URL is empty"
           fi

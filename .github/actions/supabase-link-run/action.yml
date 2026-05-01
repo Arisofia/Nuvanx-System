@@ -20,6 +20,10 @@ inputs:
   command:
     description: 'Shell command to execute after linking (e.g. "supabase db push")'
     required: true
+outputs:
+  resolved_db_password:
+    description: 'Resolved DB password extracted from inputs or DATABASE_URL'
+    # value is set from the step with id "link" via GITHUB_OUTPUT
 
 runs:
   using: composite
