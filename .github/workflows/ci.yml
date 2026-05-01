@@ -33,7 +33,8 @@ jobs:
             exit 1
           end
           files.each do |f|
-            YAML.load_file(f)
+            # Use safe_load to avoid instantiating arbitrary objects from YAML files
+            YAML.safe_load(File.read(f), permitted_classes: [], permitted_symbols: [], aliases: true)
             puts "OK #{f}"
           end
           RUBY
@@ -168,8 +169,9 @@ jobs:
         run: npm test
         env:
           NODE_ENV: test
-          JWT_SECRET: ci-jwt-secret-32-characters-minimum!!
-          ENCRYPTION_KEY: ci-encryption-key-32-characters-minimum!!
+          # Use repository secrets for CI test credentials to avoid hardcoding sensitive values.
+          JWT_SECRET: ${{ secrets.CI_JWT_SECRET }}
+          ENCRYPTION_KEY: ${{ secrets.CI_ENCRYPTION_KEY }}
           DEFAULT_PHONE_COUNTRY_CODE: '34'
 
   # ─── Edge Function: type-check ─────────────────────────────────────────────
@@ -189,7 +191,12 @@ jobs:
           deno-version: v2.x
 
       - name: Cache dependencies
-        run: deno cache --config supabase/functions/deno.json supabase/functions/api/index.ts
+        run: |
+          if [ ! -f supabase/functions/deno.json ]; then
+            echo "::error::supabase/functions/deno.json not found; skipping deno cache step."
+            exit 1
+          fi
+          deno cache --config supabase/functions/deno.json supabase/functions/api/index.ts
 
       - name: Type-check Edge Function
         run: deno check --config supabase/functions/deno.json supabase/functions/api/index.ts
