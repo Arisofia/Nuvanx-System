@@ -14,7 +14,12 @@
     "transform": {
       "^.+\\.(js|ts)$": "babel-jest"
     },
-    "moduleFileExtensions": ["js", "ts", "json", "node"]
+    "moduleFileExtensions": [
+      "js",
+      "ts",
+      "json",
+      "node"
+    ]
   },
   "babel": {
     "presets": [

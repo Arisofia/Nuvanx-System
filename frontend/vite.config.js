@@ -1,4 +1,3 @@
-// eslint-disable-next-line no-undef
 /* global process */
 
 import { defineConfig, loadEnv } from 'vite'
