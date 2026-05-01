@@ -162,10 +162,10 @@ jobs:
           database_url: ${{ env.DATABASE_URL }}
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           command: |
-            if [ -n "$SUPABASE_DB_PASSWORD" ]; then
-              supabase db push --linked --password "$SUPABASE_DB_PASSWORD"
-            elif [ -n "$DATABASE_URL" ]; then
+            if [ -n "$DATABASE_URL" ]; then
               supabase db push --db-url "$DATABASE_URL"
+            elif [ -n "$SUPABASE_DB_PASSWORD" ]; then
+              supabase db push --linked --password "$SUPABASE_DB_PASSWORD"
             else
               echo "::error::Supabase migration secret SUPABASE_DB_PASSWORD is missing. Set it in GitHub secrets or provide DATABASE_URL."
               exit 1
