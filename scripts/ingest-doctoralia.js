@@ -50,9 +50,12 @@ const fs     = require('node:fs');
 const crypto = require('node:crypto');
 const os     = require('node:os');
 
-// Load .env from repo root
+// Load .env from repo root only when explicitly allowed (local dev).
+// In CI/production, prefer repository secrets and avoid loading .env files.
 const dotenvPath = path.join(__dirname, '..', '.env');
-if (fs.existsSync(dotenvPath)) require('dotenv').config({ path: dotenvPath });
+if (process.env.LOAD_LOCAL_DOTENV === '1' && fs.existsSync(dotenvPath)) {
+  require('dotenv').config({ path: dotenvPath });
+}
 
 const { google }       = require('googleapis');
 const { createClient } = require('@supabase/supabase-js');
@@ -83,6 +86,10 @@ const miss = [
   !SUPABASE_KEY && 'SUPABASE_SERVICE_ROLE_KEY',
 ].filter(Boolean);
 if (miss.length) { console.error('Missing env vars:', miss.join(', ')); process.exit(1); }
+// Avoid printing the actual service role key; confirm only presence.
+if (SUPABASE_KEY) {
+  console.log('[ingest-doctoralia] SUPABASE_SERVICE_ROLE_KEY is present');
+}
 
 // ── Service account loader ───────────────────────────────────────────────────
 function loadSA() {
@@ -277,13 +284,21 @@ function getDriveClient() {
 
 async function loadWorkbookData(drive, tmpPath) {
   await downloadDriveFile(drive, FILE_ID, tmpPath);
-  const workbook = await XlsxPopulate.fromFileAsync(tmpPath);
-  const sheet = workbook.sheet(SHEET_NAME) || workbook.sheets()[0];
-  if (!sheet) return null;
+  try {
+    const workbook = await XlsxPopulate.fromFileAsync(tmpPath);
+    const sheet = workbook.sheet(SHEET_NAME) || workbook.sheets()[0];
+    if (!sheet) return null;
 
-  const range = sheet.usedRange();
-  const rawRows = (range ? range.value() : []).map(row => (row || []).map(cell => normalizeCellValue(cell ?? null)));
-  return { sn: sheet.name(), rawRows };
+    const range = sheet.usedRange();
+    const rawRows = (range ? range.value() : []).map(row => (row || []).map(cell => normalizeCellValue(cell ?? null)));
+    return { sn: sheet.name(), rawRows };
+  } finally {
+    try {
+      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+    } catch (cleanupError) {
+      console.warn('[ingest-doctoralia] Could not remove temp file:', cleanupError?.message || cleanupError);
+    }
+  }
 }
 
 function processAllRows(rawRows, sn) {

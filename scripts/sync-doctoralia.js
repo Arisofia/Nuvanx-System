@@ -353,7 +353,8 @@ async function main() {
   const sheets = google.sheets({ version: 'v4', auth });
 
   const range = SHEET_NAME ? `${SHEET_NAME}!${SHEET_RANGE}` : SHEET_RANGE;
-  console.log(`[sync-doctoralia] Fetching spreadsheet ${SHEET_ID}, range ${range} …`);
+  // Avoid logging sensitive values in plain text.
+  console.log('[sync-doctoralia] Fetching spreadsheet (id hidden), range masked.');
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
@@ -381,56 +382,45 @@ async function main() {
 
   // ── 3. Connect to Postgres ────────────────────────────────────────────────
   const db = new Client({ connectionString: DATABASE_URL });
-  await db.connect();
-  console.log('[sync-doctoralia] Connected to database.');
-
-  // ── 4. Upsert rows ────────────────────────────────────────────────────────
   let upserted = 0;
-  let skipped  = 0;
+  let skipped = 0;
+  try {
+    await db.connect();
+    console.log('[sync-doctoralia] Connected to database.');
 
-  for (let i = 1; i < rows.length; i++) {
-    const parsed = parseRow(rows[i], config);
-    if (!parsed) {
-      skipped++;
-      continue;
+    // ── 4. Upsert rows ────────────────────────────────────────────────────────
+
+    for (let i = 1; i < rows.length; i++) {
+      const success = await upsertDoctoraliaRow(rows[i], i, {
+        db,
+        cols: config,
+        useHashId: config.useHashId,
+        hasColTemplate: config.hasColTemplate,
+        hasColTemplateId: config.hasColTemplateId,
+        hasColIntake: config.hasColIntake,
+        hasColSettled: config.hasColSettled,
+        hasColGross: config.hasColGross,
+        hasColDiscount: config.hasColDiscount,
+        hasColNet: config.hasColNet,
+        hasColPayment: config.hasColPayment,
+        hasColOrigin: config.hasColOrigin,
+        hasColAgenda: config.hasColAgenda,
+        hasColRoom: config.hasColRoom,
+        hasColIntermediary: config.hasColIntermediary,
+        hasColStatus: config.hasColStatus,
+      });
+      if (success) upserted++;
+      else skipped++;
     }
 
+  } finally {
     try {
-      await db.query(
-        `INSERT INTO financial_settlements
-           (id, clinic_id, amount_gross, amount_discount, amount_net,
-            payment_method, template_name, template_id,
-            settled_at, intake_at, cancelled_at, intermediary_name, source_system)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'doctoralia')
-         ON CONFLICT (id) DO UPDATE SET
-           amount_gross      = EXCLUDED.amount_gross,
-           amount_discount   = EXCLUDED.amount_discount,
-           amount_net        = EXCLUDED.amount_net,
-           payment_method    = EXCLUDED.payment_method,
-           template_name     = EXCLUDED.template_name,
-           template_id       = EXCLUDED.template_id,
-           settled_at        = EXCLUDED.settled_at,
-           intake_at         = EXCLUDED.intake_at,
-           cancelled_at      = EXCLUDED.cancelled_at,
-           intermediary_name = EXCLUDED.intermediary_name,
-           source_system     = 'doctoralia'`,
-        [
-          parsed.rawId, CLINIC_ID, parsed.amountGross, parsed.amountDisc, parsed.amountNet,
-          parsed.payment, parsed.tmplName, parsed.tmplId,
-          parsed.settledAt.toISOString(),
-          parsed.intakeAt?.toISOString() ?? null,
-          parsed.cancelledAt?.toISOString() ?? null,
-          parsed.intermed,
-        ]
-      );
-      upserted++;
-    } catch (rowError) {
-      skipped++;
-      console.warn(`[sync-doctoralia] Skipping row ${i + 1} due to DB error: ${rowError.message}`);
+      await db.end();
+      console.log('[sync-doctoralia] Database connection closed.');
+    } catch (e) {
+      console.warn('[sync-doctoralia] Error closing DB connection:', e?.message || e);
     }
   }
-
-  await db.end();
   console.log(`[sync-doctoralia] Done — ${upserted} rows upserted, ${skipped} skipped (blank/undated).`);
 }
 
@@ -459,7 +449,7 @@ async function upsertDoctoraliaRow(row, i, params) {
   const settledAt = parseDate(row[cols.colSettledEff]);
   if (settledAt === null) return false;
 
-  const { cancelledAt, statusType } = getStatusInfo(row, cols, hasColStatus, settledAt);
+  const { cancelledAt, statusType, statusOriginal } = getStatusInfo(row, cols, hasColStatus, settledAt);
 
   const amountFields = getAmountValues(row, cols, { hasColGross, hasColDiscount, hasColNet }, i);
   if (!amountFields) return false;
