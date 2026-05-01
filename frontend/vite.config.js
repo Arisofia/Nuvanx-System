@@ -1,4 +1,5 @@
-/* eslint-env node */
+// eslint-disable-next-line no-undef
+/* global process */
 
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
