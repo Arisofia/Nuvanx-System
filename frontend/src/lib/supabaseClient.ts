@@ -41,7 +41,7 @@ if (!supabaseUrl || !supabaseKey) {
 export async function invokeApi(path: string) {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`
   if (supabase.functions && typeof supabase.functions.invoke === 'function') {
-    const response = await supabase.functions.invoke('api', { urlPath: normalizedPath })
+    const response = await supabase.functions.invoke(`api${normalizedPath}`)
     if ((response as any).error) {
       throw (response as any).error
     }
