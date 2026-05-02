@@ -162,15 +162,13 @@ jobs:
           database_url: ${{ env.DATABASE_URL }}
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           command: |
-            if [ -n "$SUPABASE_DB_PASSWORD" ]; then
-              supabase db push --linked --password "$SUPABASE_DB_PASSWORD"
-            elif [ -n "$DATABASE_URL" ]; then
-              DB_PASS=$(python3 -c 'from urllib.parse import urlparse, unquote; import os; print(unquote(urlparse(os.environ["DATABASE_URL"]).password or ""))')
-              supabase db push --linked --password "$DB_PASS"
-            else
-              echo "::error::Supabase migration secret SUPABASE_DB_PASSWORD is missing. Set it in GitHub secrets or provide DATABASE_URL."
+            if [ -z "$DATABASE_URL" ]; then
+              echo "::error::DATABASE_URL is not set. Cannot run db push."
               exit 1
             fi
+            # Switch port 6543 (transaction pooler) → 5432 (session pooler) so prepared statements work
+            SESSION_URL=$(echo "$DATABASE_URL" | sed 's/:6543\//:5432\//')
+            supabase db push --db-url "$SESSION_URL"
 
   # 4. Supabase Edge Functions
   supabase-functions:
