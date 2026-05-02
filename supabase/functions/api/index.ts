@@ -1173,25 +1173,17 @@ async function handleProductionAuditGet(ctx: AuthenticatedRouteContext): Promise
     const publicUserDelta = Number(publicUsers.count ?? 0) - Number(authUsers.count ?? 0);
     const nowIso = new Date().toISOString();
   
-    const [futureSettled, futureIntakes, missingPatientNameNull, missingPatientNameEmpty] = await Promise.all([
+    const [futureSettled, futureIntakes] = await Promise.all([
       adminClient.from('financial_settlements').select('id', { count: 'exact', head: true }).gt('settled_at', nowIso),
       adminClient.from('financial_settlements').select('id', { count: 'exact', head: true }).gt('intake_at', nowIso),
-      adminClient.from('financial_settlements').select('id', { count: 'exact', head: true }).is('patient_name', null),
-      adminClient.from('financial_settlements').select('id', { count: 'exact', head: true }).eq('patient_name', ''),
     ]);
     if (futureSettled.error) throw futureSettled.error;
     if (futureIntakes.error) throw futureIntakes.error;
-    if (missingPatientNameNull.error) throw missingPatientNameNull.error;
-    if (missingPatientNameEmpty.error) throw missingPatientNameEmpty.error;
-  
+
     const futureSettlementCount = Number(futureSettled.count ?? 0) + Number(futureIntakes.count ?? 0);
-    const missingPatientNameCount = Number(missingPatientNameNull.count ?? 0) + Number(missingPatientNameEmpty.count ?? 0);
     const settlementWarnings = [];
     if (futureSettlementCount > 0) {
       settlementWarnings.push(`Detected ${futureSettlementCount} settlement rows with future dates. Verify whether these are pre-paid scheduled appointments or test data.`);
-    }
-    if (missingPatientNameCount > 0) {
-      settlementWarnings.push(`Detected ${missingPatientNameCount} settlement rows with missing patient_name. Confirm source data quality and ingestion mapping.`);
     }
   
     const doctoraliaWarnings = [];
@@ -1231,7 +1223,6 @@ async function handleProductionAuditGet(ctx: AuthenticatedRouteContext): Promise
         financial_settlements: {
           future_settled_at: Number(futureSettled.count ?? 0),
           future_intake_at: Number(futureIntakes.count ?? 0),
-          missing_patient_name: missingPatientNameCount,
         },
         doctoralia: {
           doctoralia_patients: Number(doctoraliaPatients.count ?? 0),
@@ -2388,7 +2379,10 @@ async function handleFinancialsSummary(ctx: AuthenticatedRouteContext): Promise<
     const totalGross = settled.reduce((s: number, r: any) => s + Number(r.amount_gross), 0);
     const totalDiscount = settled.reduce((s: number, r: any) => s + Number(r.amount_discount), 0);
     const avgTicket = settled.length ? totalNet / settled.length : 0;
-    const discountRate = totalGross ? (totalDiscount / totalGross) * 100 : 0;
+    // Use stored discount when available; fall back to (gross - net) for sources that
+    // don't export a separate discount column (e.g. Doctoralia net-only exports).
+    const effectiveDiscount = totalDiscount > 0 ? totalDiscount : Math.max(0, totalGross - totalNet);
+    const discountRate = totalGross > 0 ? (effectiveDiscount / totalGross) * 100 : 0;
   
     const liquidationDays = settled
       .filter((r: any) => r.intake_at)
@@ -2455,7 +2449,7 @@ async function handleFinancialsSettlements(ctx: AuthenticatedRouteContext): Prom
   
     const { data: rows } = await adminClient
       .from('financial_settlements')
-      .select('id, patient_dni, patient_name, template_name, amount_gross, amount_discount, amount_net, settled_at, intake_at, cancelled_at')
+      .select('id, template_name, amount_gross, amount_discount, amount_net, settled_at, intake_at, cancelled_at')
       .eq('clinic_id', clinicId)
       .order('settled_at', { ascending: false })
       .limit(100);
