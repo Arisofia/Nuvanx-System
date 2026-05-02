@@ -169,7 +169,7 @@ jobs:
             # Switch port 6543 (transaction pooler) → 5432 (session pooler) for prepared statement support
             SESSION_URL=$(echo "$DATABASE_URL" | sed 's/:6543\//:5432\//')
             # First attempt — may fail if remote has ghost migrations not in local repo
-            output=$(supabase db push --db-url "$SESSION_URL" 2>&1)
+            output=$(supabase db push --include-all --db-url "$SESSION_URL" 2>&1)
             exit_code=$?
             echo "$output"
             if [ $exit_code -ne 0 ]; then
@@ -181,7 +181,7 @@ jobs:
                   supabase migration repair --status reverted "$version" --db-url "$SESSION_URL"
                 done
                 echo "Retrying db push after ghost migration repair..."
-                supabase db push --db-url "$SESSION_URL"
+                supabase db push --include-all --db-url "$SESSION_URL"
               else
                 exit $exit_code
               fi
