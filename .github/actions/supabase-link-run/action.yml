@@ -1,5 +1,4 @@
-# yaml-language-server: $schema=https://json.schemastore.org/github-action
-name: Supabase Link and Run
+name: 'Supabase Link and Run'
 description: 'Composite action that links a Supabase project and runs a command using the Supabase CLI.'
 
 inputs:
@@ -20,13 +19,14 @@ inputs:
   command:
     description: 'Shell command to execute after linking (e.g. "supabase db push")'
     required: true
+
 outputs:
   resolved_db_password:
     description: 'Resolved DB password extracted from inputs or DATABASE_URL'
     value: ${{ steps.link.outputs.resolved_db_password }}
 
 runs:
-  using: composite
+  using: 'composite'
   steps:
     - name: Setup Supabase CLI
       uses: supabase/setup-cli@b60b5899c73b63a2d2d651b1e90db8d4c9392f51
