@@ -14,15 +14,8 @@ interface CampaignPerformance {
   source: string
 }
 
-const fallbackData = [
-  { name: 'Meta Search', cpc: 1.24, cpp: 18.5, spend: 14.6, conversions: 48, status: 'ACTIVE', objective: 'traffic', source: 'Meta' },
-  { name: 'Meta Feed', cpc: 1.08, cpp: 16.7, spend: 12.3, conversions: 38, status: 'ACTIVE', objective: 'lead generation', source: 'Meta' },
-  { name: 'Google Search', cpc: 0.95, cpp: 14.3, spend: 9.8, conversions: 42, status: 'ACTIVE', objective: 'search', source: 'Google' },
-  { name: 'Google Display', cpc: 0.72, cpp: 22.4, spend: 6.1, conversions: 27, status: 'ACTIVE', objective: 'display', source: 'Google' },
-]
-
-// NOTE: estos son datos mock de fallback para Marketing.
-// Cuando las llamadas a /meta/campaigns o /google-ads/campaigns fallen, se muestran valores de ejemplo.
+// NOTE: chartData uses real campaign data from the API.
+// If no campaigns are returned, the chart is empty.
 interface MarketingMetrics {
   leadCount: number
   totalSpend: number
@@ -96,18 +89,18 @@ export default function Marketing() {
           loading: false,
           error:
             metaResult.status === 'rejected' && googleResult.status === 'rejected'
-              ? 'Unable to load Meta or Google Ads campaigns; showing demo values.'
+              ? 'Unable to load Meta or Google Ads campaigns.'
               : null,
         })
       } catch (err: any) {
-        console.warn('Marketing data fetch failed, using fallback:', err)
+        console.warn('Marketing data fetch failed:', err)
         setMetrics({
           leadCount: 0,
           totalSpend: 0,
           avgCpc: 0,
           campaigns: [],
           loading: false,
-          error: 'Unable to load campaign metrics from Edge Functions; showing fallback data.',
+          error: err?.message || 'Unable to load campaign metrics from Edge Functions.',
         })
       }
     }
@@ -115,18 +108,12 @@ export default function Marketing() {
     loadMarketingData()
   }, [])
 
-  // chartData usa datos reales cuando están disponibles y mocks de fallback cuando no.
-  const chartData = metrics.campaigns.length
-    ? metrics.campaigns.map((campaign) => ({
-        name: campaign.name,
-        cpc: campaign.cpc,
-        cpa: campaign.cpp ?? 0,
-      }))
-    : fallbackData.map((campaign) => ({
-        name: campaign.name,
-        cpc: campaign.cpc,
-        cpa: campaign.cpp ?? 0,
-      }))
+  // chartData uses real campaign data; empty array when no campaigns are available.
+  const chartData = metrics.campaigns.map((campaign) => ({
+    name: campaign.name,
+    cpc: campaign.cpc,
+    cpa: campaign.cpp ?? 0,
+  }))
 
   return (
     <div className="space-y-6">
@@ -137,7 +124,7 @@ export default function Marketing() {
 
       {metrics.error && (
         <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          {metrics.error} — mostrando la vista con datos de fallback.
+          {metrics.error}
         </div>
       )}
 
@@ -154,11 +141,11 @@ export default function Marketing() {
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">ROAS Meta</CardTitle>
+            <CardTitle className="text-sm font-medium">Active Campaigns</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">4.5x</div>
-            <p className="text-xs text-slate-500 mt-1">Average across channels</p>
+            <div className="text-2xl font-bold">{metrics.loading ? '...' : metrics.campaigns.length}</div>
+            <p className="text-xs text-slate-500 mt-1">Meta + Google campaigns synced</p>
           </CardContent>
         </Card>
 
@@ -179,7 +166,7 @@ export default function Marketing() {
           <CardContent>
             <div className="text-2xl font-bold">{metrics.loading ? '...' : metrics.leadCount}</div>
             <p className="text-xs text-slate-500 mt-1">
-              {metrics.loading ? 'Loading live lead volume...' : metrics.error ? metrics.error : 'Fetched from Edge Function'}
+              {metrics.loading ? 'Loading live lead volume...' : (metrics.error ?? 'Fetched from Edge Function')}
             </p>
           </CardContent>
         </Card>

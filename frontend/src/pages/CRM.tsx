@@ -10,12 +10,6 @@ interface Lead {
   source: string
 }
 
-const mockLeads: Lead[] = [
-  { id: '1', name: 'Ana Martínez', status: 'Contacted', source: 'Doctoralia' },
-  { id: '2', name: 'Carlos Pérez', status: 'Qualified', source: 'Web' },
-  { id: '3', name: 'Lucía Gómez', status: 'New', source: 'Doctoralia' },
-]
-
 export default function CRM() {
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
@@ -43,9 +37,9 @@ export default function CRM() {
           throw new Error('No leads returned from API')
         }
       } catch (err: any) {
-        console.warn('CRM API call failed, falling back to mock leads:', err)
-        setError('Unable to load leads from API; using fallbacks.')
-        setLeads(mockLeads)
+        console.warn('CRM API call failed:', err)
+        setError(err?.message || 'Unable to load leads from API.')
+        setLeads([])
       } finally {
         setLoading(false)
       }

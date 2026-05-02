@@ -27,27 +27,6 @@ interface MetaTrendPoint {
   value: number
 }
 
-const defaultTrend: MetaTrendPoint[] = [
-  { week: 'W1', value: 12 },
-  { week: 'W2', value: 16 },
-  { week: 'W3', value: 22 },
-  { week: 'W4', value: 18 },
-  { week: 'W5', value: 24 },
-]
-
-const defaultMetrics: DashboardMetrics = {
-  totalLeads: 128,
-  conversionRate: 4.8,
-  activeCampaigns: 7,
-  spend: 3420,
-  averageCpc: 1.42,
-  loading: false,
-  error: null,
-}
-
-// Fallback mock trend para cuando la API de Meta no está disponible localmente.
-// Estos valores se usan solo mientras se validan las llamadas reales a la API.
-
 export default function Dashboard() {
   const [metrics, setMetrics] = useState<DashboardMetrics>({
     totalLeads: 0,
@@ -58,17 +37,16 @@ export default function Dashboard() {
     loading: true,
     error: null,
   })
-  const [trendData, setTrendData] = useState<MetaTrendPoint[]>(defaultTrend)
+  const [trendData, setTrendData] = useState<MetaTrendPoint[]>([])
 
   useEffect(() => {
     const fetchMetrics = async () => {
       if (!supabaseUrl || !supabaseKey) {
-        setTrendData(defaultTrend)
-        setMetrics({
-          ...defaultMetrics,
+        setMetrics((prev) => ({
+          ...prev,
           loading: false,
-          error: null,
-        })
+          error: 'Supabase environment variables are not configured.',
+        }))
         return
       }
 
@@ -90,12 +68,12 @@ export default function Dashboard() {
         )
 
         setTrendData(
-          Array.isArray(metaTrendsResponse?.trends) && metaTrendsResponse.trends.length
+          Array.isArray(metaTrendsResponse?.trends)
             ? metaTrendsResponse.trends.map((item: any) => ({
                 week: item.date_start ?? item.date ?? '–',
                 value: Number(item.spend ?? 0),
               }))
-            : defaultTrend,
+            : [],
         )
 
         setMetrics({
