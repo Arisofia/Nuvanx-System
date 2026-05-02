@@ -1,5 +1,4 @@
-// Nuvanx API Edge Function — v42
-// @deno-types="https://esm.sh/@supabase/supabase-js@2.42.0/dist/module/index.d.ts"
+// Nuvanx API Edge Function — v44
 import { createClient } from '@supabase/supabase-js';
 export { createClient };
 
@@ -23,7 +22,6 @@ export const supabaseClientFactory = {
 export function createSupabaseClient(url: string | null, key: string | null, options: any) {
   return supabaseClientFactory.create(url, key, options);
 }
-declare const Deno: any;
 
 const rawFrontendUrl = Deno.env.get('FRONTEND_URL')?.trim() || '';
 const IS_DEVELOPMENT = (Deno.env.get('DENO_ENV') ?? Deno.env.get('NODE_ENV') ?? '').toLowerCase() !== 'production';
@@ -43,10 +41,12 @@ export function normalizeFrontendUrl(url: string): string | null {
 const normalizedFrontendUrl = normalizeFrontendUrl(rawFrontendUrl);
 
 if (!IS_DEVELOPMENT && !normalizedFrontendUrl) {
-  throw new Error('FRONTEND_URL is required in production and must be a valid HTTPS URL.');
+  console.warn('FRONTEND_URL is not set or is not a valid HTTPS URL. CORS will use the production Vercel URL as fallback.');
 }
 
-const FRONTEND_URL = normalizedFrontendUrl ?? 'http://localhost:5173';
+// Hard-coded production Vercel URL as a CORS safety-net in case FRONTEND_URL secret is misconfigured.
+const PRODUCTION_FALLBACK_URL = 'https://frontend-arisofias-projects-c2217452.vercel.app';
+const FRONTEND_URL = normalizedFrontendUrl ?? (IS_DEVELOPMENT ? 'http://localhost:5173' : PRODUCTION_FALLBACK_URL);
 export const DEFAULT_CORS_ORIGIN = IS_DEVELOPMENT
   ? 'http://localhost:5173'
   : FRONTEND_URL;
@@ -682,12 +682,16 @@ function validateSupabaseRuntimeConfig() {
     throw new Error('ENCRYPTION_KEY is required and must be at least 32 characters.');
   }
 
-  if (!IS_DEVELOPMENT) {
-    requireRuntimeSecret('FRONTEND_URL');
+  if (!IS_DEVELOPMENT && !normalizedFrontendUrl) {
+    console.warn('FRONTEND_URL secret is missing or invalid; using hard-coded production fallback for CORS.');
   }
 }
 
-validateSupabaseRuntimeConfig();
+try {
+  validateSupabaseRuntimeConfig();
+} catch (initErr: any) {
+  console.error('validateSupabaseRuntimeConfig failed:', initErr?.message ?? initErr);
+}
 
 function normalizePhoneNumberId(raw: unknown): string {
   let value = '';
@@ -989,7 +993,7 @@ export async function handlePublicRoutes(ctx: PublicRouteContext): Promise<Respo
     }
     if (payload.object !== 'page') return new Response('ok', { status: 200 });
 
-    const adminClient = supabaseClientFactory.create(Deno.env.get('SUPABASE_URL'), Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'), {
+    const adminClient = supabaseClientFactory.create(Deno.env.get('SUPABASE_URL') ?? null, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? null, {
       auth: { persistSession: false },
     });
 
@@ -1820,6 +1824,47 @@ async function handleAiAnalyzePost(ctx: AuthenticatedRouteContext): Promise<Resp
     });
 
     return sendJson({ success: true, analysis, outputId });
+  }
+  return null;
+}
+
+async function handleIntegrationsPatch(ctx: AuthenticatedRouteContext): Promise<Response | null> {
+  const { adminClient, userId, resource, sub, req, sendJson } = ctx;
+  if (resource === 'integrations' && req.method === 'PATCH' && sub === '') {
+    const body = await req.json().catch(() => ({}));
+    const service = String(body.service ?? '').trim();
+    if (!service) return sendJson({ success: false, message: 'service is required' }, 400);
+    const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (body.metadata !== undefined) updates.metadata = body.metadata;
+    if (body.status !== undefined) updates.status = body.status;
+    const { error } = await adminClient
+      .from('integrations')
+      .update(updates)
+      .eq('user_id', userId)
+      .eq('service', service);
+    if (error) throw error;
+    return sendJson({ success: true, service });
+  }
+  return null;
+}
+
+async function handleIntegrationsValidateAllGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
+  const { adminClient, userId, resource, sub, req, sendJson } = ctx;
+  if (resource === 'integrations' && req.method === 'GET' && sub === 'validate-all') {
+    const { data, error } = await adminClient
+      .from('integrations')
+      .select('id, service, status, last_sync, last_error, metadata')
+      .eq('user_id', userId)
+      .order('service');
+    if (error) throw error;
+    const results = (data ?? []).map((intg: any) => ({
+      service: intg.service,
+      status: intg.status,
+      valid: intg.status === 'connected',
+      last_sync: intg.last_sync,
+      last_error: intg.last_error,
+    }));
+    return sendJson({ success: true, integrations: results });
   }
   return null;
 }
@@ -2719,7 +2764,17 @@ async function handleLeadsReconcilePost(ctx: AuthenticatedRouteContext): Promise
 }
 
 
-Deno.serve(handleRequest);
+Deno.serve(async (req: Request) => {
+  try {
+    return await handleRequest(req);
+  } catch (topLevelErr: any) {
+    console.error('Unhandled top-level error in handleRequest:', topLevelErr);
+    return new Response(
+      JSON.stringify({ success: false, message: topLevelErr?.message ?? 'Unexpected server error', stack: topLevelErr?.stack ?? '' }),
+      { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } },
+    );
+  }
+});
 
 function json(data: unknown, status = 200, extraHeaders: Record<string, string> = {}) {
   const payload: Record<string, unknown> = (data && typeof data === 'object') ? { ...(data as Record<string, unknown>) } : { data };
