@@ -162,11 +162,11 @@ jobs:
           database_url: ${{ env.DATABASE_URL }}
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           command: |
-            if [ -n "$DATABASE_URL" ]; then
-              DB_PASS=$(python3 -c 'from urllib.parse import urlparse; import os; print(urlparse(os.environ["DATABASE_URL"]).password or "")')
-              supabase db push --linked --password "$DB_PASS"
-            elif [ -n "$SUPABASE_DB_PASSWORD" ]; then
+            if [ -n "$SUPABASE_DB_PASSWORD" ]; then
               supabase db push --linked --password "$SUPABASE_DB_PASSWORD"
+            elif [ -n "$DATABASE_URL" ]; then
+              DB_PASS=$(python3 -c 'from urllib.parse import urlparse, unquote; import os; print(unquote(urlparse(os.environ["DATABASE_URL"]).password or ""))')
+              supabase db push --linked --password "$DB_PASS"
             else
               echo "::error::Supabase migration secret SUPABASE_DB_PASSWORD is missing. Set it in GitHub secrets or provide DATABASE_URL."
               exit 1
