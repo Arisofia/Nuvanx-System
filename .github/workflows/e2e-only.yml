@@ -14,6 +14,7 @@ permissions:
 
 on:
   workflow_dispatch:
+  workflow_call:
   schedule:
     - cron: '0 8 * * *'  # 10am Madrid
 
@@ -35,13 +36,15 @@ jobs:
       - name: Install dependencies
         run: npm ci --include=dev
       - name: Validate E2E secrets
+        id: check-secrets
         run: |
           MISSING=()
           [ -z "$PRODUCTION_E2E_URL" ] && MISSING+=("PRODUCTION_E2E_URL")
           [ -z "$PRODUCTION_E2E_TOKEN" ] && MISSING+=("PRODUCTION_E2E_TOKEN")
           if [ ${#MISSING[@]} -gt 0 ]; then
-            echo "::error::Missing required secrets: ${MISSING[*]}"
-            exit 1
+            echo "::warning::E2E skipped — missing secrets: ${MISSING[*]}. Configure them at Settings → Secrets and variables → Actions."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
       - name: Run production E2E
+        if: steps.check-secrets.outputs.skip != 'true'
         run: npm run production:e2e
