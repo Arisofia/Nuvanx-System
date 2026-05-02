@@ -3,7 +3,7 @@ import { useLocation } from 'wouter'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
-import { supabase, supabaseUrl, supabaseKey } from '../lib/supabaseClient'
+import { supabase } from '../lib/supabaseClient'
 
 export default function Login() {
   const [, setLocation] = useLocation()
@@ -11,8 +11,6 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
-
-  const isSupabaseConfigured = Boolean(supabaseUrl && supabaseKey)
 
   const handleLogin = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -23,15 +21,6 @@ export default function Login() {
     }
 
     setLoading(true)
-    if (!isSupabaseConfigured) {
-      setMessage('Supabase not configured. Redirecting to demo mode...')
-      setTimeout(() => {
-        setLoading(false)
-        setLocation('/dashboard')
-      }, 1000)
-      return
-    }
-
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     setLoading(false)
 
@@ -40,10 +29,6 @@ export default function Login() {
       return
     }
 
-    setLocation('/dashboard')
-  }
-
-  const handleDemoLogin = () => {
     setLocation('/dashboard')
   }
 
@@ -82,23 +67,8 @@ export default function Login() {
             </Button>
           </form>
 
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-slate-200" />
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-white text-slate-500">or</span>
-            </div>
-          </div>
-
-          <Button variant="outline" className="w-full" onClick={handleDemoLogin}>
-            Enter Demo Mode
-          </Button>
-
           <p className="text-xs text-slate-500 text-center">
-            {isSupabaseConfigured
-              ? 'Use your Supabase account to sign in.'
-              : 'Demo mode provides access to sample data and features.'}
+            Use your Supabase account to sign in.
           </p>
         </CardContent>
       </Card>
