@@ -169,7 +169,9 @@ jobs:
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           command: |
             if [ -n "$DATABASE_URL" ]; then
-              supabase db lint --db-url "$DATABASE_URL" --level error --fail-on error
+              # Switch port 6543 (transaction pooler) → 5432 (session pooler) to avoid prepared statement conflicts
+              SESSION_URL=$(echo "$DATABASE_URL" | sed 's/:6543\//:5432\//g')
+              supabase db lint --db-url "$SESSION_URL" --level error --fail-on error
             elif [ -n "$SUPABASE_DB_PASSWORD" ]; then
               supabase db lint --linked --password "$SUPABASE_DB_PASSWORD" --level error --fail-on error
             else

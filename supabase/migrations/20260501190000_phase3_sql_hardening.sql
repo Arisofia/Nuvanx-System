@@ -50,6 +50,12 @@ END;
 $$;
 
 -- 2. Update RLS policies
+-- Guard: ensure clinic_id columns exist on core tables (idempotent, safe to re-run)
+-- These were added in 20260417100200 but the guard here protects against migration history divergence.
+ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS clinic_id UUID REFERENCES public.clinics(id) ON DELETE SET NULL;
+ALTER TABLE public.integrations ADD COLUMN IF NOT EXISTS clinic_id UUID REFERENCES public.clinics(id) ON DELETE SET NULL;
+ALTER TABLE public.credentials ADD COLUMN IF NOT EXISTS clinic_id UUID REFERENCES public.clinics(id) ON DELETE SET NULL;
+
 -- We drop and recreate policies that relied on direct JWT claim reading.
 
 -- leads
