@@ -20,6 +20,7 @@ interface DashboardMetrics {
   averageCpc: number
   loading: boolean
   error: string | null
+  metaError: string | null
 }
 
 interface MetaTrendPoint {
@@ -43,6 +44,7 @@ export default function Dashboard() {
     averageCpc: 0,
     loading: true,
     error: null,
+    metaError: null,
   })
   const [trendData, setTrendData] = useState<MetaTrendPoint[]>([])
   const [activity, setActivity] = useState<ActivityEvent[]>([])
@@ -94,13 +96,26 @@ export default function Dashboard() {
       }
 
       try {
-        const [metricsResponse, metaTrendsResponse, campaignsResponse] = await Promise.all([
+        const [metricsResult, metaTrendsResult, campaignsResult] = await Promise.allSettled([
           invokeApi('/dashboard/metrics'),
           invokeApi('/dashboard/meta-trends'),
           invokeApi('/meta/campaigns'),
         ])
 
-        const metrics = metricsResponse?.metrics ?? {}
+        // Lead/DB metrics — fatal if this fails
+        if (metricsResult.status === 'rejected') {
+          throw metricsResult.reason
+        }
+        const metricsData = metricsResult.value?.metrics ?? {}
+
+        // Meta API calls — non-fatal, show specific warning
+        const campaignsResponse = campaignsResult.status === 'fulfilled' ? campaignsResult.value : null
+        const metaTrendsResponse = metaTrendsResult.status === 'fulfilled' ? metaTrendsResult.value : null
+
+        const metaFailureMessage = campaignsResult.status === 'rejected'
+          ? (campaignsResult.reason?.message || 'Meta API unavailable')
+          : null
+
         const campaigns = Array.isArray(campaignsResponse?.campaigns) ? campaignsResponse.campaigns : []
         const avgCpc = Number(
           campaigns.reduce((sum: number, campaign: any) => sum + Number(campaign.insights?.cpc ?? 0), 0) /
@@ -120,20 +135,22 @@ export default function Dashboard() {
         )
 
         setMetrics({
-          totalLeads: Number(metrics.totalLeads ?? 0),
-          conversionRate: Number(metrics.conversionRate ?? 0),
+          totalLeads: Number(metricsData.totalLeads ?? 0),
+          conversionRate: Number(metricsData.conversionRate ?? 0),
           activeCampaigns: campaigns.length,
           spend,
           averageCpc: Number.isFinite(avgCpc) ? Number.parseFloat(avgCpc.toFixed(2)) : 0,
           loading: false,
           error: null,
+          metaError: metaFailureMessage,
         })
       } catch (err: any) {
-        console.error('Meta dashboard fetch failed:', err)
+        console.error('Dashboard fetch failed:', err)
         setMetrics((prev) => ({
           ...prev,
           loading: false,
-          error: err?.message || 'Unable to load Meta metrics',
+          error: err?.message || 'Unable to load dashboard metrics',
+          metaError: null,
         }))
       }
     }
@@ -169,6 +186,26 @@ export default function Dashboard() {
           <div>
             <p className="font-medium text-red-900">Connection Error</p>
             <p className="text-sm text-red-800 mt-1">{metrics.error}</p>
+          </div>
+        </div>
+      )}
+
+      {metrics.metaError && !metrics.error && (
+        <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg flex gap-3">
+          <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-medium text-amber-900">Meta Ads not connected</p>
+            <p className="text-sm text-amber-800 mt-1">
+              {metrics.metaError.includes('#200') || metrics.metaError.includes('permission')
+                ? 'Your Meta token is missing ads_management or ads_read permissions. Reconnect your Meta account in Integrations to fix this.'
+                : metrics.metaError}
+            </p>
+            <a
+              href="/integrations"
+              className="inline-block mt-2 text-sm font-medium text-amber-700 underline hover:text-amber-900"
+            >
+              Go to Integrations →
+            </a>
           </div>
         </div>
       )}
