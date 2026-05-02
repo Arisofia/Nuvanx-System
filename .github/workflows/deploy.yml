@@ -166,9 +166,26 @@ jobs:
               echo "::error::DATABASE_URL is not set. Cannot run db push."
               exit 1
             fi
-            # Switch port 6543 (transaction pooler) → 5432 (session pooler) so prepared statements work
+            # Switch port 6543 (transaction pooler) → 5432 (session pooler) for prepared statement support
             SESSION_URL=$(echo "$DATABASE_URL" | sed 's/:6543\//:5432\//')
-            supabase db push --db-url "$SESSION_URL"
+            # First attempt — may fail if remote has ghost migrations not in local repo
+            output=$(supabase db push --db-url "$SESSION_URL" 2>&1)
+            exit_code=$?
+            echo "$output"
+            if [ $exit_code -ne 0 ]; then
+              # Repair any ghost migrations the remote DB has but we don't have locally
+              ghosts=$(echo "$output" | grep -oE 'supabase migration repair --status reverted [0-9]+' | grep -oE '[0-9]+$')
+              if [ -n "$ghosts" ]; then
+                for version in $ghosts; do
+                  echo "::warning::Repairing ghost migration $version (exists in remote DB but not in local repo)"
+                  supabase migration repair --status reverted "$version" --db-url "$SESSION_URL"
+                done
+                echo "Retrying db push after ghost migration repair..."
+                supabase db push --db-url "$SESSION_URL"
+              else
+                exit $exit_code
+              fi
+            fi
 
   # 4. Supabase Edge Functions
   supabase-functions:
