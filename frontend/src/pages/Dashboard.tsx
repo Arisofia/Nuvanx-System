@@ -18,6 +18,7 @@ interface DashboardMetrics {
   activeCampaigns: number
   spend: number
   averageCpc: number
+  metaConversions: number
   loading: boolean
   error: string | null
   metaError: string | null
@@ -42,6 +43,7 @@ export default function Dashboard() {
     activeCampaigns: 0,
     spend: 0,
     averageCpc: 0,
+    metaConversions: 0,
     loading: true,
     error: null,
     metaError: null,
@@ -96,10 +98,11 @@ export default function Dashboard() {
       }
 
       try {
-        const [metricsResult, metaTrendsResult, campaignsResult] = await Promise.allSettled([
+        const [metricsResult, metaTrendsResult, campaignsResult, insightsResult] = await Promise.allSettled([
           invokeApi('/dashboard/metrics'),
           invokeApi('/dashboard/meta-trends'),
           invokeApi('/meta/campaigns'),
+          invokeApi('/meta/insights'),
         ])
 
         // Lead/DB metrics — fatal if this fails
@@ -111,19 +114,29 @@ export default function Dashboard() {
         // Meta API calls — non-fatal, show specific warning
         const campaignsResponse = campaignsResult.status === 'fulfilled' ? campaignsResult.value : null
         const metaTrendsResponse = metaTrendsResult.status === 'fulfilled' ? metaTrendsResult.value : null
+        const insightsResponse = insightsResult.status === 'fulfilled' ? insightsResult.value : null
 
         const metaFailureMessage = campaignsResult.status === 'rejected'
           ? (campaignsResult.reason?.message || 'Meta API unavailable')
           : null
 
         const campaigns = Array.isArray(campaignsResponse?.campaigns) ? campaignsResponse.campaigns : []
-        const avgCpc = Number(
-          campaigns.reduce((sum: number, campaign: any) => sum + Number(campaign.insights?.cpc ?? 0), 0) /
-            Math.max(campaigns.filter((campaign: any) => Number(campaign.insights?.cpc ?? 0) > 0).length, 1),
-        )
-        const spend = Number(
-          campaigns.reduce((sum: number, campaign: any) => sum + Number(campaign.insights?.spend ?? 0), 0),
-        )
+
+        // Use account-level summary from /meta/insights for accurate totals;
+        // fall back to summing per-campaign if insights endpoint failed.
+        const insightsSummary = insightsResponse?.summary
+        const spend = insightsSummary?.spend != null
+          ? Number(insightsSummary.spend)
+          : Number(campaigns.reduce((sum: number, c: any) => sum + Number(c.insights?.spend ?? 0), 0))
+        const avgCpcRaw = insightsSummary?.cpc != null
+          ? Number(insightsSummary.cpc)
+          : Number(
+              campaigns.reduce((sum: number, c: any) => sum + Number(c.insights?.cpc ?? 0), 0) /
+                Math.max(campaigns.filter((c: any) => Number(c.insights?.cpc ?? 0) > 0).length, 1),
+            )
+        const metaConversions = insightsSummary?.conversions != null
+          ? Number(insightsSummary.conversions)
+          : campaigns.reduce((sum: number, c: any) => sum + Number(c.insights?.conversions ?? 0), 0)
 
         setTrendData(
           Array.isArray(metaTrendsResponse?.trends)
@@ -137,9 +150,10 @@ export default function Dashboard() {
         setMetrics({
           totalLeads: Number(metricsData.totalLeads ?? 0),
           conversionRate: Number(metricsData.conversionRate ?? 0),
-          activeCampaigns: campaigns.length,
+          activeCampaigns: campaigns.filter((c: any) => c.status === 'ACTIVE').length,
           spend,
-          averageCpc: Number.isFinite(avgCpc) ? Number.parseFloat(avgCpc.toFixed(2)) : 0,
+          averageCpc: Number.isFinite(avgCpcRaw) ? Number.parseFloat(avgCpcRaw.toFixed(2)) : 0,
+          metaConversions,
           loading: false,
           error: null,
           metaError: metaFailureMessage,
@@ -217,8 +231,8 @@ export default function Dashboard() {
             <Users className="h-4 w-4 text-slate-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{metrics.totalLeads.toLocaleString()}</div>
-            <p className="text-xs text-slate-500 mt-1">Meta conversions in the last 30 days</p>
+            <div className="text-2xl font-bold">{metrics.metaConversions.toLocaleString()}</div>
+            <p className="text-xs text-slate-500 mt-1">Conversiones Meta · últimos 30 días</p>
           </CardContent>
         </Card>
 
@@ -229,7 +243,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{metrics.conversionRate}%</div>
-            <p className="text-xs text-slate-500 mt-1">Calculated from Meta clicks and conversions</p>
+            <p className="text-xs text-slate-500 mt-1">Calculado desde leads en BD</p>
           </CardContent>
         </Card>
 
@@ -240,7 +254,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{metrics.activeCampaigns}</div>
-            <p className="text-xs text-slate-500 mt-1">Meta campaigns currently synced</p>
+            <p className="text-xs text-slate-500 mt-1">Campañas Meta activas</p>
           </CardContent>
         </Card>
       </div>
@@ -248,7 +262,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 xl:grid-cols-[1.25fr_0.75fr] gap-4">
         <Card>
           <CardHeader>
-            <CardTitle>Meta Spend (últimos 7 días)</CardTitle>
+            <CardTitle>Meta Spend (últimos 30 días)</CardTitle>
           </CardHeader>
           <CardContent className="h-72">
             <ResponsiveContainer width="100%" height="100%">
@@ -280,7 +294,7 @@ export default function Dashboard() {
                   <span className="text-sm text-slate-400">Spend</span>
                   <DollarSign className="h-4 w-4 text-emerald-400" />
                 </div>
-                <p className="mt-3 text-2xl font-semibold">${metrics.spend.toLocaleString()}</p>
+                <p className="mt-3 text-2xl font-semibold">${metrics.spend.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               </div>
               <div className="rounded-xl border border-border p-4 bg-slate-950">
                 <div className="flex items-center justify-between gap-2">
@@ -294,7 +308,7 @@ export default function Dashboard() {
                   <span className="text-sm text-slate-400">Conversions</span>
                   <Percent className="h-4 w-4 text-amber-400" />
                 </div>
-                <p className="mt-3 text-2xl font-semibold">{metrics.totalLeads.toLocaleString()}</p>
+                <p className="mt-3 text-2xl font-semibold">{metrics.metaConversions.toLocaleString()}</p>
               </div>
             </div>
           </CardContent>
