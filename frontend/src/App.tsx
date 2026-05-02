@@ -46,6 +46,14 @@ function Router() {
     )
   }
 
+  // Guard: if auth has resolved and user is not authenticated, render nothing.
+  // The useEffect above will redirect to /login on the next tick. Returning null
+  // here prevents protected pages (and their data-fetching side-effects) from
+  // mounting at all before the redirect fires.
+  if (!isAuthPage && !auth?.loading && !auth?.isAuthenticated) {
+    return null
+  }
+
   const pageContent = (() => {
     if (location === '/login') {
       return <Login />

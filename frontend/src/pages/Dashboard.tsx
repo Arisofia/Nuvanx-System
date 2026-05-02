@@ -85,6 +85,14 @@ export default function Dashboard() {
         return
       }
 
+      // Guard: bail out if there is no active user session. The route guard in
+      // App.tsx will redirect to /login — no need to show an error here.
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        setMetrics((prev) => ({ ...prev, loading: false }))
+        return
+      }
+
       try {
         const [metricsResponse, metaTrendsResponse, campaignsResponse] = await Promise.all([
           invokeApi('/dashboard/metrics'),
