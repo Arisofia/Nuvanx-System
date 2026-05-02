@@ -17,14 +17,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const loadSession = async () => {
-      const { data, error } = await supabase.auth.getSession()
+    // Load initial session
+    supabase.auth.getSession().then(({ data, error }) => {
       if (!error && data?.session?.user) {
         setUser(data.session.user)
       }
       setLoading(false)
-    }
-    loadSession()
+    })
+
+    // Keep user in sync with any auth change (login, logout, token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
+      setLoading(false)
+    })
+
+    return () => subscription.unsubscribe()
   }, [])
 
   const signIn = async (email: string, password: string) => {
