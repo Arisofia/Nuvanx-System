@@ -18,6 +18,7 @@
     "supabase:migration:push": "npx --yes supabase db push",
     "supabase:types": "npx --yes supabase gen types typescript --local --schema public > frontend/src/lib/supabase/types.ts",
     "production:e2e": "node scripts/production-e2e.js",
+    "integration:connect": "node scripts/connect-integration.js",
     "setup:production": "bash scripts/setup-production.sh",
     "cleanup": "bash scripts/cleanup.sh",
     "install:all": "npm install && npm --prefix backend install && npm --prefix frontend install"
