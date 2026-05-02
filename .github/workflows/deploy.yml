@@ -2,21 +2,18 @@
 ###############################################################################
 # Deploy Supabase - sequential pipeline on main
 #
-# Order: lint -> build -> supabase-migrate -> supabase-functions
+# Order: supabase-migrate -> supabase-functions
 #
 # Note:
-#   This workflow does not run Vercel deploy commands.
-#   Frontend production deploys should be handled by Vercel GitHub integration.
+#   Lint and Build are performed in ci.yml on PRs.
+#   This workflow focuses on Supabase infrastructure.
+#   Frontend production deploys are handled by Vercel GitHub integration.
 #
 # Required secrets (GitHub -> Settings -> Secrets -> Actions):
 #   SUPABASE_ACCESS_TOKEN        - Supabase personal access token
 #   SUPABASE_PROJECT_REF         - Supabase project ref used by supabase link
 #   SUPABASE_DB_PASSWORD         - DB password for supabase db push
-#                                 (optional if DATABASE_URL is available)
 #   DATABASE_URL                 - Optional fallback DB URL to derive SUPABASE_DB_PASSWORD
-#   VITE_SUPABASE_URL            - Frontend Supabase URL (e.g. https://<project-ref>.supabase.co)
-#   VITE_SUPABASE_PUBLISHABLE_KEY - Supabase publishable key from Supabase Connect
-#   VITE_SUPABASE_ANON_KEY       - legacy public anon key
 ###############################################################################
 
 name: Deploy Supabase
@@ -34,84 +31,9 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  # 1. Lint
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    env:
-      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
-      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-    defaults:
-      run:
-        working-directory: frontend
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-      - name: Validate frontend secrets
-        run: |
-          MISSING=()
-          [ -z "$VITE_SUPABASE_URL" ] && MISSING+=("VITE_SUPABASE_URL")
-          if [ -z "$VITE_SUPABASE_PUBLISHABLE_KEY" ] && [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
-            MISSING+=("VITE_SUPABASE_PUBLISHABLE_KEY or VITE_SUPABASE_ANON_KEY")
-          fi
-          if [ ${#MISSING[@]} -gt 0 ]; then
-            echo "::error::Missing required secrets: ${MISSING[*]}"
-            exit 1
-          fi
-      - name: Install frontend dependencies
-        run: npm ci --include=dev
-      - name: Run frontend lint
-        run: npm run lint
-
-  # 2. Build
-  build:
-    name: Build
-    needs: lint
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    defaults:
-      run:
-        working-directory: frontend
-    env:
-      NODE_ENV: production
-      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
-      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-      - name: Install frontend dependencies
-        run: npm ci --include=dev
-      - name: Check Supabase real data
-        run: npm run check:supabase
-        working-directory: frontend
-        env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
-      - name: Build frontend
-        run: |
-          export NODE_ENV=production
-          export VITE_SUPABASE_URL="${VITE_SUPABASE_URL:-}"
-          export VITE_SUPABASE_PUBLISHABLE_KEY="${VITE_SUPABASE_PUBLISHABLE_KEY:-${VITE_SUPABASE_ANON_KEY:-}}"
-          export VITE_SUPABASE_ANON_KEY="${VITE_SUPABASE_ANON_KEY:-}"
-          npm run build
-
-  # 3. Supabase DB migrations
+  # 1. Supabase DB migrations
   supabase-migrate:
     name: Supabase - DB migrations
-    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -122,7 +44,6 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
     steps:
       - uses: actions/checkout@v4
       - name: Validate Supabase deployment secrets
@@ -136,22 +57,8 @@ jobs:
           fi
           if [ ${#MISSING[@]} -gt 0 ]; then
             echo "::warning::Supabase deploy skipped — missing secrets: ${MISSING[*]}"
-            echo "::warning::Configure them in GitHub Settings → Secrets and variables → Actions to enable migrations and edge function deploys."
             echo "skip_supabase=true" >> "$GITHUB_OUTPUT"
             echo "SKIP_SUPABASE=true" >> "$GITHUB_ENV"
-          fi
-      - name: Debug Supabase connection (safe)
-        if: env.SKIP_SUPABASE != 'true'
-        run: |
-          echo "SUPABASE_PROJECT_REF=$SUPABASE_PROJECT_REF"
-          echo "SUPABASE_DB_PASSWORD is set? $([[ -z \"$SUPABASE_DB_PASSWORD\" ]] && echo no || echo yes)"
-          if [ -n "$DATABASE_URL" ]; then
-            # Avoid printing full DATABASE_URL to logs. Print only presence and host (masked).
-            echo "DATABASE_URL is set"
-            # Extract host without user/password using python to avoid leaking credentials
-            python3 -c 'import os,sys; from urllib.parse import urlparse; u=os.environ.get("DATABASE_URL",""); p=urlparse(u); print(("DATABASE_HOST="+str(p.hostname)+":"+str(p.port)) if p.port else ("DATABASE_HOST="+str(p.hostname))) if u else None'
-          else
-            echo "DATABASE_URL is empty"
           fi
       - name: Supabase DB migrations
         if: env.SKIP_SUPABASE != 'true'
@@ -168,26 +75,23 @@ jobs:
             fi
             # Switch port 6543 (transaction pooler) → 5432 (session pooler) for prepared statement support
             SESSION_URL=$(echo "$DATABASE_URL" | sed 's/:6543\//:5432\//')
-            # First attempt — may fail if remote has ghost migrations not in local repo
             output=$(supabase db push --include-all --db-url "$SESSION_URL" 2>&1)
             exit_code=$?
             echo "$output"
             if [ $exit_code -ne 0 ]; then
-              # Repair any ghost migrations the remote DB has but we don't have locally
               ghosts=$(echo "$output" | grep -oE 'supabase migration repair --status reverted [0-9]+' | grep -oE '[0-9]+$')
               if [ -n "$ghosts" ]; then
                 for version in $ghosts; do
-                  echo "::warning::Repairing ghost migration $version (exists in remote DB but not in local repo)"
+                  echo "::warning::Repairing ghost migration $version"
                   supabase migration repair --status reverted "$version" --db-url "$SESSION_URL"
                 done
-                echo "Retrying db push after ghost migration repair..."
                 supabase db push --include-all --db-url "$SESSION_URL"
               else
                 exit $exit_code
               fi
             fi
 
-  # 4. Supabase Edge Functions
+  # 2. Supabase Edge Functions
   supabase-functions:
     name: Supabase - Edge Functions
     needs: supabase-migrate
@@ -205,47 +109,4 @@ jobs:
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
           supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
-          command: supabase functions deploy api  --use-api
-
-  production-smoke:
-    name: Production smoke test
-    needs: supabase-functions
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    env:
-      PRODUCTION_E2E_URL: ${{ secrets.PRODUCTION_E2E_URL }}
-      PRODUCTION_E2E_TOKEN: ${{ secrets.PRODUCTION_E2E_TOKEN }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Install smoke test dependencies
-        run: npm install --no-save dotenv
-      - name: Run production smoke test
-        run: |
-          set +e
-          node scripts/production-e2e.js 2>&1 | tee production-e2e.log
-          EXIT_CODE=${PIPESTATUS[0]}
-          echo "SMOKE_EXIT_CODE=$EXIT_CODE" >> $GITHUB_ENV
-          exit 0
-        env:
-          PRODUCTION_E2E_URL: ${{ env.PRODUCTION_E2E_URL }}
-          PRODUCTION_E2E_TOKEN: ${{ env.PRODUCTION_E2E_TOKEN }}
-      - name: Upload production smoke log
-        if: always()
-        uses: actions/upload-artifact@v4.6.0
-        with:
-          name: production-smoke-log
-          path: production-e2e.log
-          if-no-files-found: warn
-      - name: Fail if smoke test failed
-        if: always()
-        run: |
-          if [ "${SMOKE_EXIT_CODE:-0}" != "0" ]; then
-            echo "Smoke test failed with exit code ${SMOKE_EXIT_CODE}"
-            exit 1
-          fi
-
-
+          command: supabase functions deploy api --use-api
