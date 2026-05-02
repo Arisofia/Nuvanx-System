@@ -41,7 +41,15 @@ export async function invokeApi(path: string, options?: { method?: string; body?
     },
     body: body ? JSON.stringify(body) : undefined,
   })
-  const data = await res.json()
+  let data: any
+  const contentType = res.headers.get('content-type') ?? ''
+  if (contentType.includes('application/json')) {
+    data = await res.json()
+  } else {
+    const text = await res.text()
+    if (!res.ok) throw new Error(text || `HTTP ${res.status}`)
+    data = {}
+  }
   if (!res.ok) {
     throw new Error(data?.message || 'Function invocation failed')
   }

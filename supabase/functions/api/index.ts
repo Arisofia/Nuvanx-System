@@ -53,6 +53,9 @@ export const DEFAULT_CORS_ORIGIN = IS_DEVELOPMENT
 
 export const ALLOWED_CORS_ORIGINS = new Set([
   DEFAULT_CORS_ORIGIN,
+  // Always include the production Vercel URL regardless of NODE_ENV so that
+  // POST requests from the browser (which send Origin) are never rejected in production.
+  PRODUCTION_FALLBACK_URL,
   'https://nuvanx.com',
   'https://www.nuvanx.com',
 ]);
