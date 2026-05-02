@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { TrendingUp, Users, Zap, AlertCircle, DollarSign, ArrowUpRight, Percent } from 'lucide-react'
 import {
@@ -10,7 +10,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { invokeApi, supabaseKey, supabaseUrl } from '../lib/supabaseClient'
+import { invokeApi, supabase, supabaseKey, supabaseUrl } from '../lib/supabaseClient'
 
 interface DashboardMetrics {
   totalLeads: number
@@ -27,6 +27,13 @@ interface MetaTrendPoint {
   value: number
 }
 
+interface ActivityEvent {
+  id: string
+  label: string
+  detail: string
+  ts: string
+}
+
 export default function Dashboard() {
   const [metrics, setMetrics] = useState<DashboardMetrics>({
     totalLeads: 0,
@@ -38,6 +45,34 @@ export default function Dashboard() {
     error: null,
   })
   const [trendData, setTrendData] = useState<MetaTrendPoint[]>([])
+  const [activity, setActivity] = useState<ActivityEvent[]>([])
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('dashboard-lead-feed')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads' }, (payload) => {
+        const r = payload.new as any
+        setActivity((prev) => [{
+          id: String(r.id ?? Math.random()),
+          label: 'New lead received',
+          detail: r.source ? `From ${r.source}` : 'New entry in pipeline',
+          ts: r.created_at ?? new Date().toISOString(),
+        }, ...prev].slice(0, 20))
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads' }, (payload) => {
+        const r = payload.new as any
+        setActivity((prev) => [{
+          id: String(r.id ?? Math.random()) + '-upd',
+          label: 'Lead updated',
+          detail: r.stage ? `Stage: ${r.stage}` : 'Record updated',
+          ts: r.updated_at ?? new Date().toISOString(),
+        }, ...prev].slice(0, 20))
+      })
+      .subscribe()
+    channelRef.current = channel
+    return () => { supabase.removeChannel(channel) }
+  }, [])
 
   useEffect(() => {
     const fetchMetrics = async () => {
@@ -121,13 +156,11 @@ export default function Dashboard() {
       </div>
 
       {metrics.error && (
-        <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg flex gap-3">
-          <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+        <div className="p-4 bg-red-50 border border-red-200 rounded-lg flex gap-3">
+          <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="font-medium text-yellow-900">Connection Issue</p>
-            <p className="text-sm text-yellow-800 mt-1">
-              {metrics.error}. Using demo data. Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in your environment.
-            </p>
+            <p className="font-medium text-red-900">Connection Error</p>
+            <p className="text-sm text-red-800 mt-1">{metrics.error}</p>
           </div>
         </div>
       )}
@@ -228,7 +261,18 @@ export default function Dashboard() {
           <CardTitle>Recent Activity</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-slate-600 text-sm">Connecting to Supabase Realtime...</p>
+          {activity.length === 0 ? (
+            <p className="text-slate-500 text-sm">Waiting for new lead events via Supabase Realtime…</p>
+          ) : (
+            <div className="space-y-3 max-h-64 overflow-y-auto">
+              {activity.map((ev) => (
+                <div key={ev.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                  <p className="text-sm font-medium">{ev.label}</p>
+                  <p className="text-xs text-slate-500 mt-1">{ev.detail} • {new Date(ev.ts).toLocaleTimeString()}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

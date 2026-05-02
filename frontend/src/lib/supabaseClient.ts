@@ -19,10 +19,16 @@ if (!supabaseUrl || !supabaseKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseKey)
 
-export async function invokeApi(path: string) {
+export async function invokeApi(path: string, options?: { method?: string; body?: Record<string, unknown> }) {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  const method = options?.method?.toUpperCase() ?? 'GET'
+  const body = options?.body
+
   if (supabase.functions && typeof supabase.functions.invoke === 'function') {
-    const response = await supabase.functions.invoke(`api${normalizedPath}`)
+    const response = await supabase.functions.invoke(`api${normalizedPath}`, {
+      method,
+      body: body ? JSON.stringify(body) : undefined,
+    })
     if ((response as any).error) {
       throw (response as any).error
     }
@@ -34,11 +40,13 @@ export async function invokeApi(path: string) {
   const token = session?.access_token || supabaseKey
 
   const res = await fetch(url, {
+    method,
     headers: {
       apikey: supabaseKey,
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
+    body: body ? JSON.stringify(body) : undefined,
   })
   const data = await res.json()
   if (!res.ok) {
