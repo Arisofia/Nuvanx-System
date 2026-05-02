@@ -24,22 +24,15 @@ export async function invokeApi(path: string, options?: { method?: string; body?
   const method = options?.method?.toUpperCase() ?? 'GET'
   const body = options?.body
 
-  if (supabase.functions && typeof supabase.functions.invoke === 'function') {
-    const response = await supabase.functions.invoke(`api${normalizedPath}`, {
-      method,
-      body: body ? JSON.stringify(body) : undefined,
-    })
-    if ((response as any).error) {
-      throw (response as any).error
-    }
-    return (response as any).data
-  }
-
-  const url = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/api${normalizedPath}`
+  // Use relative /api/... so the request goes through the Vercel server-side
+  // proxy (vercel.json rewrite: /api/* → Edge Function). This avoids CORS
+  // entirely — the browser sees it as a same-origin request.
+  // In local dev, the Vite server proxy in vite.config.js forwards /api/* to
+  // VITE_SUPABASE_URL/functions/v1.
   const { data: { session } } = await supabase.auth.getSession()
   const token = session?.access_token || supabaseKey
 
-  const res = await fetch(url, {
+  const res = await fetch(`/api${normalizedPath}`, {
     method,
     headers: {
       apikey: supabaseKey,

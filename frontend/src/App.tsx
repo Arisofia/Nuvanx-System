@@ -1,9 +1,10 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useContext, useEffect } from 'react'
 import { Toaster } from './components/ui/sonner'
 import { TooltipProvider } from './components/ui/tooltip'
 import { useLocation } from 'wouter'
 import ErrorBoundary from './components/ErrorBoundary'
 import { ThemeProvider } from './contexts/ThemeContext'
+import { AuthProvider, AuthContext } from './contexts/AuthContext'
 import Layout from './components/Layout.tsx'
 import NotFound from './pages/NotFound.tsx'
 import Login from './pages/Login.tsx'
@@ -25,8 +26,25 @@ const PageLoader = () => (
 )
 
 function Router() {
-  const [location] = useLocation()
+  const [location, setLocation] = useLocation()
+  const auth = useContext(AuthContext)
   const isAuthPage = location === '/login'
+
+  // Redirect to login once auth state is resolved and user is not logged in.
+  useEffect(() => {
+    if (!isAuthPage && auth && !auth.loading && !auth.isAuthenticated) {
+      setLocation('/login')
+    }
+  }, [auth?.loading, auth?.isAuthenticated, isAuthPage])
+
+  // Show spinner while auth state is loading to avoid flashing protected content.
+  if (!isAuthPage && auth?.loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    )
+  }
 
   const pageContent = (() => {
     if (location === '/login') {
@@ -86,7 +104,9 @@ export default function App() {
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <Toaster />
-          <Router />
+          <AuthProvider>
+            <Router />
+          </AuthProvider>
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>

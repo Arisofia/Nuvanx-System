@@ -23,6 +23,17 @@ export default ({ mode }) => {
       environment: 'node',
       include: ['tests/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
     },
+    server: {
+      proxy: {
+        '/api': {
+          // Forward /api/* to the Supabase Edge Function in local dev.
+          // In production, Vercel handles this via vercel.json rewrites.
+          target: `${process.env.VITE_SUPABASE_URL ?? 'https://ssvvuuysgxyqvmovrlvk.supabase.co'}/functions/v1`,
+          changeOrigin: true,
+          secure: true,
+        },
+      },
+    },
     build: {
     // Avoid CI failures from optional native lightningcss binaries on Linux runners.
     cssMinify: 'esbuild',
