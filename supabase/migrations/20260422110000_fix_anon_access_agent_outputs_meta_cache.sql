@@ -16,10 +16,10 @@ CREATE POLICY agent_outputs_select_clinic
   FOR SELECT
   TO authenticated
   USING (
-    COALESCE(((SELECT auth.jwt()) ->> 'is_anonymous')::boolean, false) = false
+    COALESCE((auth.jwt() ->> 'is_anonymous')::boolean, false) = false
     AND (
-      (SELECT auth.uid()) = user_id
-      OR clinic_id = (((SELECT auth.jwt()) ->> 'clinic_id'::text))::uuid
+      auth.uid() = user_id
+      OR clinic_id = ((auth.jwt() ->> 'clinic_id'::text))::uuid
     )
   );
 
@@ -35,7 +35,7 @@ CREATE POLICY meta_cache_select_own ON public.meta_cache
   FOR SELECT
   TO authenticated
   USING (
-    COALESCE(((SELECT auth.jwt()) ->> 'is_anonymous')::boolean, false) = false
+    COALESCE((auth.jwt() ->> 'is_anonymous')::boolean, false) = false
     AND auth.uid() = user_id
   );
 

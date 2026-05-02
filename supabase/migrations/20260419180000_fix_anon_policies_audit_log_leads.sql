@@ -37,11 +37,11 @@ CREATE POLICY leads_owner_only
   FOR ALL
   TO authenticated
   USING (
-    (SELECT auth.uid()) = user_id
-    AND COALESCE(((SELECT auth.jwt()) ->> 'is_anonymous')::boolean, false) = false
+    auth.uid() = user_id
+    AND COALESCE((auth.jwt() ->> 'is_anonymous')::boolean, false) = false
   )
   WITH CHECK (
-    (SELECT auth.uid()) = user_id
-    AND COALESCE(((SELECT auth.jwt()) ->> 'is_anonymous')::boolean, false) = false
+    auth.uid() = user_id
+    AND COALESCE((auth.jwt() ->> 'is_anonymous')::boolean, false) = false
   );
 

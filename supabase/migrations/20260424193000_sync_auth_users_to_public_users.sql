@@ -5,6 +5,7 @@
 CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
 RETURNS trigger
 LANGUAGE plpgsql
+-- SECURITY DEFINER found here; review manually before changing to SECURITY INVOKER
 SECURITY DEFINER
 SET search_path = public
 AS $$

@@ -204,7 +204,7 @@ function printTokenSummary(tokenData, normalizedAccounts, longLivedToken, target
     console.log('Next step: run `npm run secrets:sync:all` to propagate this token to Supabase/Vercel/GitHub.');
   } else {
     console.log('\nLong-lived token (store securely):');
-    console.log(longLivedToken);
+    console.log('[REDACTED]');
     console.log('\nTip: rerun with --write to persist into .env.tokens.local.');
   }
 }

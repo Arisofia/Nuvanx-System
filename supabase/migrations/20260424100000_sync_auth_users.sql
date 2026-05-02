@@ -13,6 +13,7 @@ ALTER TABLE public.users ALTER COLUMN password_hash DROP NOT NULL;
 CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
 RETURNS TRIGGER
 LANGUAGE plpgsql
+-- SECURITY DEFINER found here; review manually before changing to SECURITY INVOKER
 SECURITY DEFINER
 SET search_path = public
 AS $$

@@ -23,7 +23,7 @@ inputs:
 outputs:
   resolved_db_password:
     description: 'Resolved DB password extracted from inputs or DATABASE_URL'
-    # value is set from the step with id "link" via GITHUB_OUTPUT
+    value: ${{ steps.link.outputs.resolved_db_password }}
 
 runs:
   using: composite

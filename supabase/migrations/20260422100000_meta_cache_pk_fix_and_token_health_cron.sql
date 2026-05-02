@@ -38,6 +38,7 @@ CREATE POLICY meta_cache_service_role ON public.meta_cache
 CREATE OR REPLACE FUNCTION public.check_stale_meta_tokens()
 RETURNS void
 LANGUAGE plpgsql
+-- SECURITY DEFINER found here; review manually before changing to SECURITY INVOKER
 SECURITY DEFINER
 SET search_path = public
 AS $$

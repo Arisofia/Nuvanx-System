@@ -18,6 +18,6 @@ CREATE POLICY agent_outputs_select_clinic
   FOR SELECT
   TO authenticated
   USING (
-    (SELECT auth.uid()) = user_id OR
-    clinic_id = (((SELECT auth.jwt()) ->> 'clinic_id'::text))::uuid
+    auth.uid() = user_id OR
+    clinic_id = ((auth.jwt() ->> 'clinic_id'::text))::uuid
   );
