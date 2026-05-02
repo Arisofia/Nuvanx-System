@@ -1822,10 +1822,11 @@ async function handleIntegrationsGet(ctx: AuthenticatedRouteContext): Promise<Re
 }
 
 async function handleIntegrationsConnectPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, userId, authUser, resource, sub, sub2, req, sendJson } = ctx;
-  if (resource === 'integrations' && sub2 === 'connect' && req.method === 'POST') {
-    const service = sub;
+  const { adminClient, userId, authUser, resource, sub, req, sendJson } = ctx;
+  if (resource === 'integrations' && sub === 'connect' && req.method === 'POST') {
     const body = await req.json();
+    const service = String(body.service ?? '').trim();
+    if (!service) return sendJson({ success: false, message: 'service is required' }, 400);
     const reqToken = body.token;
     if (!reqToken) return sendJson({ success: false, message: 'token is required' }, 400);
   
@@ -1887,10 +1888,10 @@ async function handleIntegrationsConnectPost(ctx: AuthenticatedRouteContext): Pr
 }
 
 async function handleIntegrationsTestPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, userId, resource, sub, sub2, req, sendJson } = ctx;
-  if (resource === 'integrations' && sub2 === 'test' && req.method === 'POST') {
-    const service = sub;
+  const { adminClient, userId, resource, sub, req, sendJson } = ctx;
+  if (resource === 'integrations' && sub === 'test' && req.method === 'POST') {
     const body = await req.json().catch(() => ({}));
+    const service = String(body.service ?? '').trim();
   
     if (service === 'meta') {
       const creds = await resolveMetaCreds(adminClient, userId, body?.adAccountId ?? '');
