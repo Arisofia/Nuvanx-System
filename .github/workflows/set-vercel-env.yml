@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow
+name: Set Vercel Env Vars
+
+on:
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  set-env:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Set VITE_ env vars on Vercel project via API
+        run: |
+          set_var() {
+            local KEY=$1 VAL=$2
+            # Delete existing first (ignore 404)
+            curl -s -o /dev/null -X DELETE \
+              "https://api.vercel.com/v10/projects/${PROJECT_ID}/env?key=${KEY}&teamId=${ORG_ID}" \
+              -H "Authorization: Bearer ${VERCEL_TOKEN}"
+            # Create new encrypted env var for all targets
+            HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+              "https://api.vercel.com/v10/projects/${PROJECT_ID}/env?teamId=${ORG_ID}" \
+              -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+              -H "Content-Type: application/json" \
+              --data-raw "{\"key\":\"${KEY}\",\"value\":\"${VAL}\",\"type\":\"encrypted\",\"target\":[\"production\",\"preview\",\"development\"]}")
+            echo "${KEY} -> HTTP ${HTTP}"
+          }
+          set_var "VITE_SUPABASE_URL"             "${VITE_SUPABASE_URL}"
+          set_var "VITE_SUPABASE_ANON_KEY"        "${VITE_SUPABASE_ANON_KEY}"
+          set_var "VITE_SUPABASE_PUBLISHABLE_KEY" "${VITE_SUPABASE_PUBLISHABLE_KEY}"
+        env:
+          VERCEL_TOKEN:                 ${{ secrets.VERCEL_TOKEN }}
+          PROJECT_ID:                   prj_IAOBlV17HeS22KuEfsdkDrGMV9Ze
+          ORG_ID:                       team_R0GOR4jvw1c1gnyBRWYu32O7
+          VITE_SUPABASE_URL:            ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY:       ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
