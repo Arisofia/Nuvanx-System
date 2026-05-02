@@ -131,10 +131,27 @@ export async function decryptCred(encoded: string): Promise<string> {
 
 // ── Meta Graph API ────────────────────────────────────────────────────────────
 export const META_GRAPH = 'https://graph.facebook.com/v21.0';
+
+async function computeAppsecretProof(accessToken: string, appSecret: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(appSecret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(accessToken)));
+  return bytesToHex(sig);
+}
+
 export async function metaFetch(path: string, params: Record<string, string>, token: string) {
   const url = new URL(`${META_GRAPH}${path}`);
   url.searchParams.set('access_token', token);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+  const appSecret = Deno.env.get('META_APP_SECRET');
+  if (appSecret) {
+    url.searchParams.set('appsecret_proof', await computeAppsecretProof(token, appSecret));
+  }
   const r = await fetch(url.toString(), { signal: AbortSignal.timeout(20_000) });
   const { data: d, text } = await parseJsonOrText(r);
   if (!r.ok) {
