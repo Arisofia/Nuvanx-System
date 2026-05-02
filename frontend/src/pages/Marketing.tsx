@@ -53,8 +53,17 @@ interface DailyPoint {
   messagingConversationStarted: number
 }
 
+interface Changes {
+  impressions: number
+  reach: number
+  clicks: number
+  spend: number
+  conversions: number
+}
+
 interface MarketingState {
   summary: AccountSummary | null
+  changes: Changes | null
   daily: DailyPoint[]
   campaigns: CampaignRow[]
   period: { since: string; until: string; days: number } | null
@@ -68,16 +77,31 @@ const fmt = (n: number, decimals = 2) =>
 const fmtMXN = (n: number) =>
   n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2 })
 
+function DeltaBadge({ value }: { value: number | undefined }) {
+  if (value == null || value === 0) return null
+  const up = value > 0
+  return (
+    <span className={`inline-flex items-center gap-0.5 text-xs font-medium px-1.5 py-0.5 rounded ml-2 ${
+      up ? 'bg-emerald-950 text-emerald-400' : 'bg-rose-950 text-rose-400'
+    }`}>
+      {up ? '▲' : '▼'} {Math.abs(value).toFixed(1)}%
+    </span>
+  )
+}
+
 function StatCard({
-  label, value, sub, icon, color = 'text-white',
-}: { label: string; value: string; sub?: string; icon: React.ReactNode; color?: string }) {
+  label, value, sub, icon, color = 'text-white', delta,
+}: { label: string; value: string; sub?: string; icon: React.ReactNode; color?: string; delta?: number }) {
   return (
     <Card>
       <CardContent className="pt-4">
         <div className="flex items-start justify-between">
           <div>
             <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">{label}</p>
-            <p className={`text-2xl font-bold mt-1 ${color}`}>{value}</p>
+            <div className="flex items-center mt-1">
+              <p className={`text-2xl font-bold ${color}`}>{value}</p>
+              <DeltaBadge value={delta} />
+            </div>
             {sub && <p className="text-xs text-slate-500 mt-1">{sub}</p>}
           </div>
           <div className="p-2 rounded-lg bg-slate-800">{icon}</div>
@@ -90,6 +114,7 @@ function StatCard({
 export default function Marketing() {
   const [state, setState] = useState<MarketingState>({
     summary: null,
+    changes: null,
     daily: [],
     campaigns: [],
     period: null,
@@ -129,6 +154,7 @@ export default function Marketing() {
 
         setState({
           summary: insightsData?.summary ?? null,
+          changes: insightsData?.changes ?? null,
           daily: Array.isArray(insightsData?.daily) ? insightsData.daily : [],
           campaigns: rawCampaigns,
           period: insightsData?.period ?? null,
@@ -142,16 +168,24 @@ export default function Marketing() {
     load()
   }, [])
 
-  const { summary, daily, campaigns, period, loading, error } = state
+  const { summary, changes, daily, campaigns, period, loading, error } = state
 
   const activeCampaigns = campaigns.filter((c) => c.status === 'ACTIVE').length
 
-  // Daily chart — last 14 days
+  // Daily spend + clicks chart — last 14 days
   const dailyChart = daily.slice(-14).map((d) => ({
     date: d.date.slice(5), // MM-DD
     Gasto: d.spend,
     Clics: d.clicks,
-    Impresiones: Math.round(d.impressions / 100), // scale down for shared axis
+  }))
+
+  // Daily CTR / CPC / CPM chart
+  const dailyRatesChart = daily.slice(-14).map((d) => ({
+    date: d.date.slice(5),
+    'CTR (%)': Number(d.ctr.toFixed(2)),
+    'CPC ($)': Number(d.cpc.toFixed(2)),
+    'CPM ($)': Number(d.cpm.toFixed(2)),
+    Conversaciones: d.messagingConversationStarted,
   }))
 
   // Per-campaign bar chart
@@ -194,6 +228,7 @@ export default function Marketing() {
           sub={periodLabel}
           icon={<DollarSign className="w-4 h-4 text-emerald-400" />}
           color="text-emerald-400"
+          delta={changes?.spend}
         />
         <StatCard
           label="Impresiones"
@@ -201,6 +236,7 @@ export default function Marketing() {
           sub={`Alcance: ${(summary?.reach ?? 0).toLocaleString('es-MX')}`}
           icon={<Eye className="w-4 h-4 text-sky-400" />}
           color="text-sky-400"
+          delta={changes?.impressions}
         />
         <StatCard
           label="Clics"
@@ -208,6 +244,7 @@ export default function Marketing() {
           sub={`CTR: ${fmt(summary?.ctr ?? 0)}%`}
           icon={<MousePointerClick className="w-4 h-4 text-violet-400" />}
           color="text-violet-400"
+          delta={changes?.clicks}
         />
         <StatCard
           label="CPC promedio"
@@ -233,12 +270,14 @@ export default function Marketing() {
           value={loading ? '…' : String(summary?.conversions ?? 0)}
           sub="Eventos de conversión Meta"
           icon={<TrendingUp className="w-4 h-4 text-lime-400" />}
+          delta={changes?.conversions}
         />
         <StatCard
-          label="CPP (costo/resultado)"
-          value={loading ? '…' : summary?.cpp ? `$${fmt(summary.cpp)}` : '—'}
-          sub="Costo por resultado"
+          label="Alcance"
+          value={loading ? '…' : (summary?.reach ?? 0).toLocaleString('es-MX')}
+          sub={`CPP: ${summary?.cpp ? '$' + fmt(summary.cpp) : '—'}`}
           icon={<TrendingDown className="w-4 h-4 text-orange-400" />}
+          delta={changes?.reach}
         />
       </div>
 
@@ -282,6 +321,49 @@ export default function Marketing() {
           )}
         </CardContent>
       </Card>
+
+      {/* ── Daily CTR / CPC / CPM chart ──────────────────────────── */}
+      {dailyRatesChart.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>CTR · CPC · CPM diario · últimos 14 días</CardTitle>
+          </CardHeader>
+          <CardContent className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={dailyRatesChart} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="ctrGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.6} />
+                    <stop offset="95%" stopColor="#f59e0b" stopOpacity={0.02} />
+                  </linearGradient>
+                  <linearGradient id="cpcGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#f472b6" stopOpacity={0.6} />
+                    <stop offset="95%" stopColor="#f472b6" stopOpacity={0.02} />
+                  </linearGradient>
+                  <linearGradient id="cpmGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.6} />
+                    <stop offset="95%" stopColor="#22d3ee" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', fontSize: 12 }}
+                  formatter={(value: any, name: string) => [
+                    name.includes('%') ? `${Number(value).toFixed(2)}%` : `$${Number(value).toFixed(2)}`,
+                    name,
+                  ]}
+                />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Area type="monotone" dataKey="CTR (%)" stroke="#f59e0b" fill="url(#ctrGrad)" strokeWidth={2} />
+                <Area type="monotone" dataKey="CPC ($)" stroke="#f472b6" fill="url(#cpcGrad)" strokeWidth={2} />
+                <Area type="monotone" dataKey="CPM ($)" stroke="#22d3ee" fill="url(#cpmGrad)" strokeWidth={2} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── Per-campaign bar chart ────────────────────────────────── */}
       {campaignChart.length > 0 && (
@@ -336,7 +418,7 @@ export default function Marketing() {
                     <th className="text-left px-4 py-3">Campaña</th>
                     <th className="text-center px-3 py-3">Estado</th>
                     <th className="text-center px-3 py-3">Objetivo</th>
-                    <th className="text-right px-3 py-3">Presupuesto/día</th>
+                    <th className="text-right px-3 py-3">Presupuesto</th>
                     <th className="text-right px-3 py-3">Gasto</th>
                     <th className="text-right px-3 py-3">Impresiones</th>
                     <th className="text-right px-3 py-3">Alcance</th>
@@ -345,6 +427,7 @@ export default function Marketing() {
                     <th className="text-right px-3 py-3">CPC</th>
                     <th className="text-right px-3 py-3">CPM</th>
                     <th className="text-right px-3 py-3">Conversiones</th>
+                    <th className="text-right px-3 py-3">CPP</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
@@ -363,8 +446,12 @@ export default function Marketing() {
                         </span>
                       </td>
                       <td className="px-3 py-3 text-center text-slate-400 text-xs">{c.objective || '—'}</td>
-                      <td className="px-3 py-3 text-right text-slate-300">
-                        {c.dailyBudget != null ? fmtMXN(c.dailyBudget) : '—'}
+                      <td className="px-3 py-3 text-right text-slate-300 text-xs">
+                        {c.dailyBudget != null
+                          ? <><span className="text-slate-500">día</span> {fmtMXN(c.dailyBudget)}</>
+                          : c.lifetimeBudget != null
+                            ? <><span className="text-slate-500">vit</span> {fmtMXN(c.lifetimeBudget)}</>
+                            : '—'}
                       </td>
                       <td className="px-3 py-3 text-right font-semibold text-emerald-400">
                         {c.insights ? fmtMXN(c.insights.spend) : '—'}
@@ -389,6 +476,9 @@ export default function Marketing() {
                       </td>
                       <td className="px-3 py-3 text-right text-lime-400">
                         {c.insights ? c.insights.conversions.toLocaleString('es-MX') : '—'}
+                      </td>
+                      <td className="px-3 py-3 text-right text-orange-400">
+                        {c.insights?.cpp != null ? `$${fmt(c.insights.cpp)}` : '—'}
                       </td>
                     </tr>
                   ))}
@@ -416,6 +506,9 @@ export default function Marketing() {
                       <td className="px-3 py-3 text-right">${fmt(summary?.cpm ?? 0)}</td>
                       <td className="px-3 py-3 text-right text-lime-400">
                         {(summary?.conversions ?? 0).toLocaleString('es-MX')}
+                      </td>
+                      <td className="px-3 py-3 text-right text-orange-400">
+                        {summary?.cpp ? `$${fmt(summary.cpp)}` : '—'}
                       </td>
                     </tr>
                   </tfoot>
