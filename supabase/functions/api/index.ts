@@ -926,7 +926,7 @@ const AUTHENTICATED_ROUTE_HANDLERS = new Map<string, RouteHandler>([
   ['dashboard|meta-trends|*', handleDashboardMetaTrends],
   ['meta|insights|GET', handleMetaInsightsGet],
   ['meta|backfill|POST', handleMetaBackfillPost],
-  ['health|*|*', handleHealthMeta],
+  ['health|meta|*', handleHealthMeta],
   ['meta|campaigns|GET', handleMetaCampaignsGet],
   ['ai|analyze|POST', handleAiAnalyzePost],
   ['integrations||PATCH', handleIntegrationsPatch],
