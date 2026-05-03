@@ -13,5 +13,10 @@
   },
   "css.validate": false,
   "less.validate": false,
-  "scss.validate": false
+  "scss.validate": false,
+  "typescript.tsdk": "frontend/node_modules/typescript/lib",
+  "typescript.preferences.includePackageJsonAutoImports": "on",
+  "deno.enable": true,
+  "deno.enablePaths": ["supabase/functions"],
+  "deno.config": "supabase/functions/deno.json"
 }
