@@ -62,7 +62,7 @@ jobs:
             echo "SKIP_SUPABASE=true" >> "$GITHUB_ENV"
           fi
       - name: Supabase DB migrations
-        if: env.SKIP_SUPABASE != 'true'
+        if: steps.validate.outputs.skip_supabase != 'true'
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
