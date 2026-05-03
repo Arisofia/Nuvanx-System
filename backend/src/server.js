@@ -30,6 +30,20 @@ app.use(helmet());
 app.use(cors(corsOptions));
 app.use(express.json());
 
+// CSRF protection via custom-header check (OWASP "Custom Request Headers" pattern).
+// Browsers cannot set arbitrary headers on cross-origin requests without a CORS preflight,
+// so requiring this header on state-changing methods blocks cross-site form/script attacks.
+// Safe methods (GET, HEAD, OPTIONS) are exempt. JSON API clients must send
+// the header "X-Requested-With: XMLHttpRequest" (or any non-empty value) on
+// POST / PUT / PATCH / DELETE requests.
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+app.use((req, res, next) => {
+  if (!SAFE_METHODS.has(req.method) && !req.headers['x-requested-with']) {
+    return res.status(403).json({ error: 'CSRF check failed: missing X-Requested-With header' });
+  }
+  next();
+});
+
 app.get('/', (req, res) => {
   res.json({
     status: 'ok',
