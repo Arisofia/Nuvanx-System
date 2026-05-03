@@ -1,4 +1,4 @@
-export function normalizePhoneToE164(input: string | null | undefined): string {
+export function normalizePhoneToE164(input: string | null | undefined, countryCode?: string): string {
   const raw = String(input ?? '').trim();
   if (!raw) return '';
 
@@ -14,16 +14,22 @@ export function normalizePhoneToE164(input: string | null | undefined): string {
   }
 
   const nodeProcess = (globalThis as any).process;
-  // Prefer explicit env sources; avoid throwing if Deno is not present.
-  const fallbackCountryCode = String(
-    (globalThis as any).Deno?.env?.get?.('DEFAULT_PHONE_COUNTRY_CODE')
+  const fallbackCountryCode = (
+    countryCode
+      ?? (globalThis as any).Deno?.env?.get?.('DEFAULT_PHONE_COUNTRY_CODE')
       ?? nodeProcess?.env?.DEFAULT_PHONE_COUNTRY_CODE
-      ?? '34'
-  ).replaceAll(/\D/g, '');
+      ?? ''
+  ).toString().replaceAll(/\D/g, '');
+
+  if (!fallbackCountryCode) {
+    console.warn('DEFAULT_PHONE_COUNTRY_CODE is not set; cannot normalise local phone number:', candidate);
+    return '';
+  }
+
   const digits = candidate.replaceAll(/\D/g, '');
   if (digits.length < 8 || digits.length > 15) return '';
 
-  if (fallbackCountryCode && digits.length <= 12 && !digits.startsWith(fallbackCountryCode)) {
+  if (digits.length <= 12 && !digits.startsWith(fallbackCountryCode)) {
     return `+${fallbackCountryCode}${digits}`;
   }
 
