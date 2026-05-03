@@ -27,7 +27,21 @@ interface FinancialsState {
   error: string | null
 }
 
+const PRESETS = [
+  { label: '30d', days: 30 },
+  { label: '90d', days: 90 },
+  { label: '180d', days: 180 },
+  { label: 'Todo', days: 0 },
+] as const
+
+function toISODate(d: Date) {
+  return d.toISOString().slice(0, 10)
+}
+
 export default function Financials() {
+  const [presetDays, setPresetDays] = useState<number>(0) // 0 = all time
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
   const [state, setState] = useState<FinancialsState>({
     summary: null,
     monthly: [],
@@ -36,7 +50,21 @@ export default function Financials() {
   })
 
   useEffect(() => {
-    invokeApi('/financials/summary')
+    setState((prev) => ({ ...prev, loading: true, error: null }))
+
+    let from = fromDate
+    let to = toDate
+    if (presetDays > 0 && !fromDate && !toDate) {
+      from = toISODate(new Date(Date.now() - presetDays * 86_400_000))
+      to = toISODate(new Date())
+    }
+
+    const params = new URLSearchParams()
+    if (from) params.set('from', from)
+    if (to) params.set('to', to)
+    const qs = params.toString() ? `?${params.toString()}` : ''
+
+    invokeApi(`/financials/summary${qs}`)
       .then((data: any) => {
         setState({
           summary: data?.summary ?? null,
@@ -48,7 +76,7 @@ export default function Financials() {
       .catch((err: any) => {
         setState({ summary: null, monthly: [], loading: false, error: err?.message || 'Failed to load financials.' })
       })
-  }, [])
+  }, [presetDays, fromDate, toDate])
 
   const fmt = (n: number) =>
     n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 })
@@ -70,9 +98,43 @@ export default function Financials() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Verified Financials</h1>
-        <p className="text-slate-600 mt-1">Doctoralia settlements, LTV, verified revenue</p>
+      <div className="flex flex-col sm:flex-row sm:items-end gap-4">
+        <div className="flex-1">
+          <h1 className="text-3xl font-bold">Verified Financials</h1>
+          <p className="text-slate-600 mt-1">Doctoralia settlements, LTV, verified revenue</p>
+        </div>
+        {/* Period presets */}
+        <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-1">
+          {PRESETS.map((p) => (
+            <button
+              key={p.label}
+              onClick={() => { setPresetDays(p.days); setFromDate(''); setToDate('') }}
+              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                presetDays === p.days && !fromDate && !toDate
+                  ? 'bg-slate-600 text-white'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        {/* Custom date range */}
+        <div className="flex items-center gap-2 text-xs text-slate-400">
+          <input
+            type="date"
+            value={fromDate}
+            onChange={(e) => { setFromDate(e.target.value); setPresetDays(-1) }}
+            className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200 text-xs focus:outline-none focus:border-slate-500"
+          />
+          <span>→</span>
+          <input
+            type="date"
+            value={toDate}
+            onChange={(e) => { setToDate(e.target.value); setPresetDays(-1) }}
+            className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200 text-xs focus:outline-none focus:border-slate-500"
+          />
+        </div>
       </div>
 
       {state.error && (

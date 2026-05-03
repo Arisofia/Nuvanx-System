@@ -67,6 +67,7 @@ interface MarketingState {
   daily: DailyPoint[]
   campaigns: CampaignRow[]
   currency: string
+  accountId: string
   period: { since: string; until: string; days: number } | null
   loading: boolean
   error: string | null
@@ -119,6 +120,7 @@ export default function Marketing() {
     daily: [],
     campaigns: [],
     currency: 'EUR',
+    accountId: '',
     period: null,
     loading: true,
     error: null,
@@ -164,6 +166,7 @@ export default function Marketing() {
           daily: Array.isArray(insightsData?.daily) ? insightsData.daily : [],
           campaigns: rawCampaigns,
           currency: insightsData?.currency ?? campaignsData?.currency ?? 'EUR',
+          accountId: insightsData?.accountId ?? campaignsData?.accountId ?? '',
           period: insightsData?.period ?? null,
           loading: false,
           error,
@@ -175,7 +178,7 @@ export default function Marketing() {
     load()
   }, [days])
 
-  const { summary, changes, daily, campaigns, currency, period, loading, error } = state
+  const { summary, changes, daily, campaigns, currency, accountId, period, loading, error } = state
 
   const activeCampaigns = campaigns.filter((c) => c.status === 'ACTIVE').length
 
@@ -186,15 +189,15 @@ export default function Marketing() {
     return true
   })
 
-  // Daily spend + clicks chart — last 14 days
-  const dailyChart = daily.slice(-14).map((d) => ({
+  // Daily spend + clicks chart
+  const dailyChart = daily.map((d) => ({
     date: d.date.slice(5), // MM-DD
     Gasto: d.spend,
     Clics: d.clicks,
   }))
 
   // Daily CTR / CPC / CPM chart
-  const dailyRatesChart = daily.slice(-14).map((d) => ({
+  const dailyRatesChart = daily.map((d) => ({
     date: d.date.slice(5),
     'CTR (%)': Number(d.ctr.toFixed(2)),
     'CPC ($)': Number(d.cpc.toFixed(2)),
@@ -225,7 +228,7 @@ export default function Marketing() {
         <div className="flex-1">
           <h1 className="text-3xl font-bold">Marketing · Meta Ads</h1>
           <p className="text-slate-400 mt-1 text-sm">
-            Período: {loading ? '…' : periodLabel} · Cuenta: act_4172099716404860 · Moneda: {loading ? '…' : currency}
+            Período: {loading ? '…' : periodLabel}{accountId ? ` · Cuenta: ${accountId}` : ''} · Moneda: {loading ? '…' : currency}
           </p>
         </div>
         {/* Period filter */}

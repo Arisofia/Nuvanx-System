@@ -1,4 +1,7 @@
 // Nuvanx API Edge Function — v44
+/** @ts-ignore: Deno global is provided by Supabase Edge Runtime */
+declare const Deno: any;
+
 import { createClient } from '@supabase/supabase-js';
 export { createClient };
 
@@ -349,7 +352,7 @@ export async function parseJsonOrText(response: Response): Promise<{ data: any; 
   }
 }
 
-const GEMINI_MODELS = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash-exp'];
+const GEMINI_MODELS = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro'];
 const OPENAI_MODELS = ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo'];
 
 async function callGemini(prompt: string, apiKey: string): Promise<string> {
@@ -1151,9 +1154,9 @@ async function handleProductionAuditGet(ctx: AuthenticatedRouteContext): Promise
       adminClient.from('agent_outputs').select('id', { count: 'exact', head: true }),
       adminClient.from('meta_cache').select('id', { count: 'exact', head: true }),
       adminClient.from('leads').select('id', { count: 'exact', head: true }).eq('user_id', userId),
-      adminClient.from('public.users').select('id', { count: 'exact', head: true }),
-      adminClient.from('auth.users').select('id', { count: 'exact', head: true }),
-      adminClient.from('doctoralia_patients').select('id', { count: 'exact', head: true }),
+      adminClient.from('users').select('id', { count: 'exact', head: true }),
+      Promise.resolve({ count: 0, error: null }),
+      adminClient.from('doctoralia_patients').select('doc_patient_id', { count: 'exact', head: true }),
       adminClient.from('doctors').select('id', { count: 'exact', head: true }),
       adminClient.from('treatment_types').select('id', { count: 'exact', head: true }),
       adminClient.from('integrations').select('metadata').eq('user_id', userId).eq('service', 'meta').single(),
@@ -1305,18 +1308,37 @@ async function handleLeadsPost(ctx: AuthenticatedRouteContext): Promise<Response
 }
 
 async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, userId, resource, sub, sendJson } = ctx;
+  const { adminClient, userId, resource, sub, url, sendJson } = ctx;
   if (resource === 'dashboard' && sub === 'metrics') {
     const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
     const clinicId = usr?.clinic_id;
-  
+
+    const days = Number.parseInt(url.searchParams.get('days') ?? '0');
+    const fromParam = url.searchParams.get('from') ?? '';
+    const toParam = url.searchParams.get('to') ?? '';
+    const sourceFilter = url.searchParams.get('source') ?? '';
+
+    let since = fromParam || (days > 0
+      ? new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10)
+      : null);
+    const until = toParam || null;
+
+    let leadsQuery = adminClient.from('leads').select('stage, revenue, source, created_at').eq('user_id', userId);
+    if (since) leadsQuery = leadsQuery.gte('created_at', since);
+    if (until) leadsQuery = leadsQuery.lte('created_at', until);
+    if (sourceFilter) leadsQuery = leadsQuery.eq('source', sourceFilter);
+
+    let settlementsQuery = adminClient.from('financial_settlements')
+      .select('amount_net, cancelled_at, settled_at, template_name')
+      .eq('clinic_id', clinicId);
+    if (since) settlementsQuery = settlementsQuery.gte('settled_at', since);
+    if (until) settlementsQuery = settlementsQuery.lte('settled_at', until);
+
     const [leadsRes, intRes, settlementsRes] = await Promise.all([
-      adminClient.from('leads').select('stage, revenue, source').eq('user_id', userId),
+      leadsQuery,
       adminClient.from('integrations').select('service, status').eq('user_id', userId),
       clinicId
-        ? adminClient.from('financial_settlements')
-            .select('amount_net, cancelled_at, settled_at, template_name')
-            .eq('clinic_id', clinicId)
+        ? settlementsQuery
         : Promise.resolve({ data: [], error: null }),
     ]);
     if (leadsRes.error) throw leadsRes.error;
@@ -1381,13 +1403,26 @@ async function handleDashboardMetaTrends(ctx: AuthenticatedRouteContext): Promis
       return sendJson({ success: false, message: validation.message }, validation.statusCode);
     }
     try {
-      const since = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
-      const until = new Date().toISOString().slice(0, 10);
-      const data = await metaFetch(`/${creds.adAccountId}/insights`, {
+      const trendDays = Number.parseInt(url.searchParams.get('days') ?? '30');
+      const fromParam = url.searchParams.get('from');
+      const toParam = url.searchParams.get('to');
+      const campaignId = url.searchParams.get('campaign_id');
+
+      const since = fromParam || new Date(Date.now() - trendDays * 86_400_000).toISOString().slice(0, 10);
+      const until = toParam || new Date().toISOString().slice(0, 10);
+
+      const params: Record<string, string> = {
         fields: 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,conversions',
         time_range: JSON.stringify({ since, until }),
-        time_increment: '1', limit: '1000',
-      }, creds.accessToken);
+        time_increment: '1',
+        limit: '1000',
+      };
+
+      if (campaignId) {
+        params.filtering = JSON.stringify([{ field: 'campaign.id', operator: 'EQUAL', value: campaignId }]);
+      }
+
+      const data = await metaFetch(`/${creds.adAccountId}/insights`, params, creds.accessToken);
   
       const trends: any[] = data.data ?? [];
       const sumN = (arr: any[], k: string) => arr.reduce((s: number, d: any) => s + Number.parseFloat(d[k] || 0), 0);
@@ -1462,20 +1497,40 @@ async function handleMetaInsightsGet(ctx: AuthenticatedRouteContext): Promise<Re
         }
   
         const days = Number.parseInt(url.searchParams.get('days') ?? '30');
-        const since = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
-        const until = new Date().toISOString().slice(0, 10);
-        const prevSince = new Date(Date.now() - days * 2 * 86_400_000).toISOString().slice(0, 10);
-  const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,conversions,cost_per_conversion,unique_clicks,actions';
+        const fromParam = url.searchParams.get('from');
+        const toParam = url.searchParams.get('to');
+        const campaignId = url.searchParams.get('campaign_id');
+
+        const since = fromParam || new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+        const until = toParam || new Date().toISOString().slice(0, 10);
+        const prevSince = new Date(new Date(since).getTime() - days * 86_400_000).toISOString().slice(0, 10);
+
+        const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,conversions,cost_per_conversion,unique_clicks,actions';
   
         try {
+          const params: Record<string, string> = {
+            fields,
+            time_range: JSON.stringify({ since, until }),
+            time_increment: '1',
+            limit: '1000',
+          };
+
+          if (campaignId) {
+            params.filtering = JSON.stringify([{ field: 'campaign.id', operator: 'EQUAL', value: campaignId }]);
+          }
+
+          const prevParams: Record<string, string> = {
+            fields: 'impressions,reach,clicks,spend,conversions,cost_per_conversion',
+            time_range: JSON.stringify({ since: prevSince, until: since }),
+          };
+
+          if (campaignId) {
+            prevParams.filtering = JSON.stringify([{ field: 'campaign.id', operator: 'EQUAL', value: campaignId }]);
+          }
+
           const [currRes, prevRes, acctRes] = await Promise.allSettled([
-            metaFetch(`/${creds.adAccountId}/insights`, {
-              fields, time_range: JSON.stringify({ since, until }), time_increment: '1', limit: '1000',
-            }, creds.accessToken),
-            metaFetch(`/${creds.adAccountId}/insights`, {
-              fields: 'impressions,reach,clicks,spend,conversions,cost_per_conversion',
-              time_range: JSON.stringify({ since: prevSince, until: since }),
-            }, creds.accessToken),
+            metaFetch(`/${creds.adAccountId}/insights`, params, creds.accessToken),
+            metaFetch(`/${creds.adAccountId}/insights`, prevParams, creds.accessToken),
             metaFetch(`/${creds.adAccountId}`, { fields: 'currency' }, creds.accessToken),
           ]);
   
@@ -2376,17 +2431,24 @@ async function handleGoogleAdsCampaignsGet(ctx: AuthenticatedRouteContext): Prom
 }
 
 async function handleFinancialsSummary(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, userId, resource, sub, sendJson } = ctx;
+  const { adminClient, userId, resource, sub, url, sendJson } = ctx;
   if (resource === 'financials' && sub === 'summary') {
     const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
     const clinicId = usr?.clinic_id;
     if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
-  
-    const { data: rows } = await adminClient
+
+    const fromParam = url.searchParams.get('from') ?? '';
+    const toParam = url.searchParams.get('to') ?? '';
+
+    let query = adminClient
       .from('financial_settlements')
       .select('amount_gross, amount_discount, amount_net, template_name, settled_at, intake_at, cancelled_at')
       .eq('clinic_id', clinicId)
       .order('settled_at', { ascending: false });
+    if (fromParam) query = query.gte('settled_at', fromParam);
+    if (toParam) query = query.lte('settled_at', toParam);
+
+    const { data: rows } = await query;
   
     const settled = (rows || []).filter((r: any) => !r.cancelled_at);
     const totalNet = settled.reduce((s: number, r: any) => s + Number(r.amount_net), 0);
@@ -2428,7 +2490,6 @@ async function handleFinancialsSummary(ctx: AuthenticatedRouteContext): Promise<
     }
     const monthly = Object.entries(monthMap)
       .sort(([a], [b]) => a.localeCompare(b))
-      .slice(-6)
       .map(([month, net]) => ({ month, net: Math.round(net * 100) / 100 }));
   
     return sendJson({

@@ -37,6 +37,7 @@ interface ActivityEvent {
 }
 
 export default function Dashboard() {
+  const [days, setDays] = useState<7 | 14 | 30 | 90>(30)
   const [metrics, setMetrics] = useState<DashboardMetrics>({
     totalLeads: 0,
     conversionRate: 0,
@@ -99,10 +100,10 @@ export default function Dashboard() {
 
       try {
         const [metricsResult, metaTrendsResult, campaignsResult, insightsResult] = await Promise.allSettled([
-          invokeApi('/dashboard/metrics'),
-          invokeApi('/dashboard/meta-trends'),
-          invokeApi('/meta/campaigns'),
-          invokeApi('/meta/insights'),
+          invokeApi(`/dashboard/metrics?days=${days}`),
+          invokeApi(`/dashboard/meta-trends?days=${days}`),
+          invokeApi(`/meta/campaigns?days=${days}`),
+          invokeApi(`/meta/insights?days=${days}`),
         ])
 
         // Lead/DB metrics — fatal if this fails
@@ -170,7 +171,7 @@ export default function Dashboard() {
     }
 
     fetchMetrics()
-  }, [])
+  }, [days])
 
   if (metrics.loading) {
     return (
@@ -189,9 +190,24 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Dashboard</h1>
-        <p className="text-slate-600 mt-1">Control centre — Meta KPIs, agent status, adaptive plan</p>
+      <div className="flex flex-col sm:flex-row sm:items-end gap-4">
+        <div className="flex-1">
+          <h1 className="text-3xl font-bold">Dashboard</h1>
+          <p className="text-slate-600 mt-1">Control centre — Meta KPIs, agent status, adaptive plan</p>
+        </div>
+        <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-1">
+          {([7, 14, 30, 90] as const).map((d) => (
+            <button
+              key={d}
+              onClick={() => setDays(d)}
+              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                days === d ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {d}d
+            </button>
+          ))}
+        </div>
       </div>
 
       {metrics.error && (
@@ -232,7 +248,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{metrics.metaConversions.toLocaleString()}</div>
-            <p className="text-xs text-slate-500 mt-1">Conversiones Meta · últimos 30 días</p>
+            <p className="text-xs text-slate-500 mt-1">Conversiones Meta · últimos {days} días</p>
           </CardContent>
         </Card>
 
@@ -262,7 +278,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 xl:grid-cols-[1.25fr_0.75fr] gap-4">
         <Card>
           <CardHeader>
-            <CardTitle>Meta Spend (últimos 30 días)</CardTitle>
+            <CardTitle>Meta Spend (últimos {days} días)</CardTitle>
           </CardHeader>
           <CardContent className="h-72">
             <ResponsiveContainer width="100%" height="100%">

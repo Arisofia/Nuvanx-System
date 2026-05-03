@@ -24,18 +24,16 @@ export default function CRM() {
         const response = await invokeApi('/leads')
         const data = (response as any).leads
 
-        if (Array.isArray(data) && data.length > 0) {
-          setLeads(
-            data.map((item: any) => ({
-              id: String(item.id ?? item.lead_id ?? ''),
-              name: item.name ?? item.full_name ?? item.contact_name ?? 'Unknown',
-              status: item.stage ?? item.status ?? 'Unknown',
-              source: item.source ?? 'Edge',
-            })),
-          )
-        } else {
-          throw new Error('No leads returned from API')
-        }
+        setLeads(
+          Array.isArray(data)
+            ? data.map((item: any) => ({
+                id: String(item.id ?? item.lead_id ?? ''),
+                name: item.name ?? item.full_name ?? item.contact_name ?? 'Unknown',
+                status: item.stage ?? item.status ?? 'Unknown',
+                source: item.source ?? 'Edge',
+              }))
+            : [],
+        )
       } catch (err: any) {
         console.warn('CRM API call failed:', err)
         setError(err?.message || 'Unable to load leads from API.')
@@ -63,11 +61,11 @@ export default function CRM() {
         </TabsList>
 
         <TabsContent value="pipeline" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {['New', 'Contacted', 'Qualified', 'Closed'].map((stage) => (
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            {(['lead', 'whatsapp', 'appointment', 'treatment', 'closed'] as const).map((stage) => (
               <Card key={stage}>
                 <CardHeader>
-                  <CardTitle className="text-base">{stage} ({leads.filter(lead => lead.status === stage).length})</CardTitle>
+                  <CardTitle className="text-base capitalize">{stage} ({leads.filter(lead => lead.status === stage).length})</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <p className="text-2xl font-bold">{leads.filter(lead => lead.status === stage).length}</p>
