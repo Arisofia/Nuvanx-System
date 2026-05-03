@@ -50,32 +50,38 @@ export default function Financials() {
   })
 
   useEffect(() => {
-    setState((prev) => ({ ...prev, loading: true, error: null }))
+    let cancelled = false
 
-    let from = fromDate
-    let to = toDate
-    if (presetDays > 0 && !fromDate && !toDate) {
-      from = toISODate(new Date(Date.now() - presetDays * 86_400_000))
-      to = toISODate(new Date())
-    }
+    const load = async () => {
+      let from = fromDate
+      let to = toDate
+      if (presetDays > 0 && !fromDate && !toDate) {
+        from = toISODate(new Date(Date.now() - presetDays * 86_400_000))
+        to = toISODate(new Date())
+      }
 
-    const params = new URLSearchParams()
-    if (from) params.set('from', from)
-    if (to) params.set('to', to)
-    const qs = params.toString() ? `?${params.toString()}` : ''
+      const params = new URLSearchParams()
+      if (from) params.set('from', from)
+      if (to) params.set('to', to)
+      const qs = params.toString() ? `?${params.toString()}` : ''
 
-    invokeApi(`/financials/summary${qs}`)
-      .then((data: any) => {
+      try {
+        const data: any = await invokeApi(`/financials/summary${qs}`)
+        if (cancelled) return
         setState({
           summary: data?.summary ?? null,
           monthly: Array.isArray(data?.monthly) ? data.monthly : [],
           loading: false,
           error: data?.summary ? null : 'No financial data available yet.',
         })
-      })
-      .catch((err: any) => {
+      } catch (err: any) {
+        if (cancelled) return
         setState({ summary: null, monthly: [], loading: false, error: err?.message || 'Failed to load financials.' })
-      })
+      }
+    }
+
+    load()
+    return () => { cancelled = true }
   }, [presetDays, fromDate, toDate])
 
   const fmt = (n: number) =>
