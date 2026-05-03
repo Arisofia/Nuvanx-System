@@ -22,8 +22,7 @@ export function normalizePhoneToE164(input: string | null | undefined, countryCo
   ).toString().replaceAll(/\D/g, '');
 
   if (!fallbackCountryCode) {
-    console.warn('DEFAULT_PHONE_COUNTRY_CODE is not set; cannot normalise local phone number:', candidate);
-    return '';
+    throw new Error('DEFAULT_PHONE_COUNTRY_CODE environment variable is not set. Phone normalization cannot proceed.');
   }
 
   const digits = candidate.replaceAll(/\D/g, '');

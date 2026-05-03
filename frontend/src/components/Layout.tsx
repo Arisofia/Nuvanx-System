@@ -1,18 +1,18 @@
 import { useState } from 'react'
 import { Link, useLocation } from 'wouter'
-import { Menu, X, LogOut } from 'lucide-react'
+import { Menu, X, LogOut, Home, Activity, Users, Megaphone, DollarSign, BarChart2, BookOpen, Plug, Sparkles } from 'lucide-react'
 import { Button } from './ui/button'
 
 const navItems = [
-  { label: 'Dashboard', href: '/dashboard' },
-  { label: 'Live', href: '/live' },
-  { label: 'CRM', href: '/crm' },
-  { label: 'Marketing', href: '/marketing' },
-  { label: 'Financials', href: '/financials' },
-  { label: 'Intelligence', href: '/intelligence' },
-  { label: 'Playbooks', href: '/playbooks' },
-  { label: 'Integrations', href: '/integrations' },
-  { label: 'AI', href: '/ai' },
+  { label: 'Dashboard', href: '/dashboard', icon: Home },
+  { label: 'Live', href: '/live', icon: Activity },
+  { label: 'CRM', href: '/crm', icon: Users },
+  { label: 'Marketing', href: '/marketing', icon: Megaphone },
+  { label: 'Financials', href: '/financials', icon: DollarSign },
+  { label: 'Intelligence', href: '/intelligence', icon: BarChart2 },
+  { label: 'Playbooks', href: '/playbooks', icon: BookOpen },
+  { label: 'Integrations', href: '/integrations', icon: Plug },
+  { label: 'AI', href: '/ai', icon: Sparkles },
 ]
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -38,7 +38,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 location === item.href ? 'bg-primary text-primary-foreground' : 'text-foreground hover:bg-muted'
               }`}
             >
-              <div className="w-5 h-5 bg-slate-300 rounded" />
+              <item.icon className="w-5 h-5" />
               {sidebarOpen && <span className="text-sm">{item.label}</span>}
             </Link>
           ))}

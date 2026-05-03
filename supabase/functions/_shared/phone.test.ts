@@ -87,11 +87,9 @@ describe('normalizePhoneToE164', () => {
     expect(result).toBe('+14155552671');
   });
 
-  it('returns empty string when no country code env var is set', () => {
+  it('throws when no country code env var is set', () => {
     vi.spyOn(globalThis, 'process', 'get').mockReturnValue({ env: {} } as any);
-    const input = '612345678';
-    const result = normalizePhoneToE164(input);
-    expect(result).toBe('');
+    expect(() => normalizePhoneToE164('612345678')).toThrow('DEFAULT_PHONE_COUNTRY_CODE environment variable is not set');
   });
 
   it('sanitizes non-numeric characters from DEFAULT_PHONE_COUNTRY_CODE', () => {
@@ -115,11 +113,9 @@ describe('normalizePhoneToE164', () => {
     expect(result).toBe('+1234567890123');
   });
 
-  it('returns empty string when DEFAULT_PHONE_COUNTRY_CODE is empty', () => {
+  it('throws when DEFAULT_PHONE_COUNTRY_CODE is empty string', () => {
     vi.spyOn(globalThis, 'process', 'get').mockReturnValue({ env: { DEFAULT_PHONE_COUNTRY_CODE: '' } } as any);
-    const input = '12345678';
-    const result = normalizePhoneToE164(input);
-    expect(result).toBe('');
+    expect(() => normalizePhoneToE164('12345678')).toThrow('DEFAULT_PHONE_COUNTRY_CODE environment variable is not set');
   });
 
   it('coerces non-string input via String() and normalizes', () => {

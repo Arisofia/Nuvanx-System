@@ -67,10 +67,10 @@ export default function CRM() {
             {['New', 'Contacted', 'Qualified', 'Closed'].map((stage) => (
               <Card key={stage}>
                 <CardHeader>
-                  <CardTitle className="text-base">{stage}</CardTitle>
+                  <CardTitle className="text-base">{stage} ({leads.filter(lead => lead.status === stage).length})</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-2xl font-bold">0</p>
+                  <p className="text-2xl font-bold">{leads.filter(lead => lead.status === stage).length}</p>
                   <p className="text-xs text-slate-500 mt-1">Leads in stage</p>
                 </CardContent>
               </Card>
