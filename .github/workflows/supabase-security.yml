@@ -49,9 +49,11 @@ jobs:
         run: |
           MISSING=()
           [ -z "$SUPABASE_ACCESS_TOKEN" ] && MISSING+=("SUPABASE_ACCESS_TOKEN")
-          [ -z "$SUPABASE_PROJECT_REF" ] && MISSING+=("SUPABASE_PROJECT_REF")          if [ -z "$DATABASE_URL" ] && [ -z "$SUPABASE_DB_PASSWORD" ]; then
+          [ -z "$SUPABASE_PROJECT_REF" ] && MISSING+=("SUPABASE_PROJECT_REF")
+          if [ -z "$DATABASE_URL" ] && [ -z "$SUPABASE_DB_PASSWORD" ]; then
             MISSING+=("DATABASE_URL or SUPABASE_DB_PASSWORD")
-          fi          if [ ${#MISSING[@]} -gt 0 ]; then
+          fi
+          if [ ${#MISSING[@]} -gt 0 ]; then
             echo "::warning::Supabase security check skipped — missing secrets: ${MISSING[*]}"
             echo "::warning::Configure them in GitHub Settings → Secrets and variables → Actions."
             echo "skip=true" >> "$GITHUB_OUTPUT"
