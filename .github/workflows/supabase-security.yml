@@ -18,8 +18,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  workflow_dispatch:
-  workflow_call:
+  workflow_dispatch: {}
+  workflow_call: {}
 
 jobs:
   advisor:

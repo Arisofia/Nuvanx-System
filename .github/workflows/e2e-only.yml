@@ -13,8 +13,8 @@ permissions:
 #   PRODUCTION_E2E_TOKEN
 
 on:
-  workflow_dispatch:
-  workflow_call:
+  workflow_dispatch: {}
+  workflow_call: {}
   schedule:
     - cron: '0 8 * * *'  # 10am Madrid
 

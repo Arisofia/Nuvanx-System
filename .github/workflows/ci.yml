@@ -170,8 +170,8 @@ jobs:
         env:
           NODE_ENV: test
           # Use repository secrets for CI test credentials to avoid hardcoding sensitive values.
-          JWT_SECRET: ${{ secrets.CI_JWT_SECRET }}
-          ENCRYPTION_KEY: ${{ secrets.CI_ENCRYPTION_KEY }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
           DEFAULT_PHONE_COUNTRY_CODE: '34'
 
   # ─── Edge Function: type-check ─────────────────────────────────────────────
