@@ -10,5 +10,8 @@
   },
   "files.associations": {
     "*.sql": "pgsql"
-  }
+  },
+  "css.validate": false,
+  "less.validate": false,
+  "scss.validate": false
 }
