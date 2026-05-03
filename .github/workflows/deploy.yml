@@ -70,12 +70,16 @@ jobs:
           database_url: ${{ env.DATABASE_URL }}
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           command: |
-            if [ -z "$DATABASE_URL" ]; then
-              echo "::error::DATABASE_URL is not set. Cannot run db push."
+            # Build direct session URL (port 5432) — avoids prepared statement conflicts with the pooler.
+            # Prefer DATABASE_URL; fall back to constructing from project ref + password.
+            if [ -n "$DATABASE_URL" ]; then
+              SESSION_URL=$(echo "$DATABASE_URL" | sed 's/:6543\//:5432\//')
+            elif [ -n "$SUPABASE_DB_PASSWORD" ] && [ -n "$SUPABASE_PROJECT_REF" ]; then
+              SESSION_URL="postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.${SUPABASE_PROJECT_REF}.supabase.co:5432/postgres"
+            else
+              echo "::error::Cannot connect to database. Set DATABASE_URL or both SUPABASE_DB_PASSWORD and SUPABASE_PROJECT_REF."
               exit 1
             fi
-            # Switch port 6543 (transaction pooler) → 5432 (session pooler) for prepared statement support
-            SESSION_URL=$(echo "$DATABASE_URL" | sed 's/:6543\//:5432\//')
             output=$(supabase db push --include-all --db-url "$SESSION_URL" 2>&1)
             exit_code=$?
             echo "$output"
