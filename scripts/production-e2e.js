@@ -27,8 +27,11 @@ const prompt = opts.prompt || `Production E2E check ${new Date().toISOString()}`
 
 async function request(path, method = 'GET', body = null, auth = false) {
   const url = `${baseUrl}${path}`;
-  const headers = { 'Content-Type': 'application/json' };
-  if (auth) headers.Authorization = `Bearer ${token}`;
+  const headers = { 
+    'Content-Type': 'application/json',
+    'apikey': process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || token
+  };
+  if (auth || token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(url, {
     method,
     headers,
@@ -59,7 +62,7 @@ async function request(path, method = 'GET', body = null, auth = false) {
   const secrets = await request('/api/health/secrets');
   console.log(JSON.stringify(secrets, null, 2));
   if (!secrets.success) throw new Error('Health secrets check failed');
-  if (!secrets.encryptionKey?.valid) {
+  if (!secrets.required?.ENCRYPTION_KEY) {
     throw new Error('ENCRYPTION_KEY is not valid or not configured in production secrets');
   }
 

@@ -127,6 +127,7 @@ export default function Marketing() {
   })
 
   const [days, setDays] = useState(30)
+  const [campaignId, setCampaignId] = useState<string>('ALL')
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'PAUSED'>('ALL')
   const [search, setSearch] = useState('')
 
@@ -134,8 +135,9 @@ export default function Marketing() {
     const load = async () => {
       setState((prev) => ({ ...prev, loading: true, error: null }))
       try {
+        const queryParams = `?days=${days}${campaignId !== 'ALL' ? `&campaign_id=${campaignId}` : ''}`
         const [insightsRes, campaignsRes] = await Promise.allSettled([
-          invokeApi(`/meta/insights?days=${days}`),
+          invokeApi(`/meta/insights${queryParams}`),
           invokeApi(`/meta/campaigns?days=${days}`),
         ])
 
@@ -176,7 +178,7 @@ export default function Marketing() {
       }
     }
     load()
-  }, [days])
+  }, [days, campaignId])
 
   const { summary, changes, daily, campaigns, currency, accountId, period, loading, error } = state
 
@@ -184,6 +186,7 @@ export default function Marketing() {
 
   // Filtered campaigns for table
   const filteredCampaigns = campaigns.filter((c) => {
+    if (campaignId !== 'ALL' && c.id !== campaignId) return false
     if (statusFilter !== 'ALL' && c.status !== statusFilter) return false
     if (search && !c.name.toLowerCase().includes(search.toLowerCase())) return false
     return true
@@ -231,19 +234,33 @@ export default function Marketing() {
             Período: {loading ? '…' : periodLabel}{accountId ? ` · Cuenta: ${accountId}` : ''} · Moneda: {loading ? '…' : currency}
           </p>
         </div>
-        {/* Period filter */}
-        <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-1">
-          {([7, 14, 30, 90] as const).map((d) => (
-            <button
-              key={d}
-              onClick={() => setDays(d)}
-              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                days === d ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'
-              }`}
+        {/* Filters */}
+        <div className="flex items-center gap-2">
+          {campaigns.length > 0 && (
+            <select
+              value={campaignId}
+              onChange={(e) => setCampaignId(e.target.value)}
+              className="bg-slate-800 text-white text-xs font-medium px-3 py-1.5 rounded-lg border-none focus:ring-1 focus:ring-slate-500"
             >
-              {d}d
-            </button>
-          ))}
+              <option value="ALL">Todas las campañas</option>
+              {campaigns.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          )}
+          <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-1">
+            {([7, 14, 30, 90] as const).map((d) => (
+              <button
+                key={d}
+                onClick={() => setDays(d)}
+                className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                  days === d ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {d}d
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

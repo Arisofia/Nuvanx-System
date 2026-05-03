@@ -38,6 +38,10 @@ interface ActivityEvent {
 
 export default function Dashboard() {
   const [days, setDays] = useState<7 | 14 | 30 | 90>(30)
+  const [campaignId, setCampaignId] = useState<string>('ALL')
+  const [sourceFilter, setSourceFilter] = useState<string>('ALL')
+  const [sourcesList, setSourcesList] = useState<string[]>([])
+  const [campaignsList, setCampaignsList] = useState<{ id: string, name: string }[]>([])
   const [metrics, setMetrics] = useState<DashboardMetrics>({
     totalLeads: 0,
     conversionRate: 0,
@@ -99,11 +103,13 @@ export default function Dashboard() {
       }
 
       try {
+        const queryParams = `?days=${days}${campaignId !== 'ALL' ? `&campaign_id=${campaignId}` : ''}`
+        const dashboardParams = `${queryParams}${sourceFilter !== 'ALL' ? `&source=${sourceFilter}` : ''}`
         const [metricsResult, metaTrendsResult, campaignsResult, insightsResult] = await Promise.allSettled([
-          invokeApi(`/dashboard/metrics?days=${days}`),
-          invokeApi(`/dashboard/meta-trends?days=${days}`),
+          invokeApi(`/dashboard/metrics${dashboardParams}`),
+          invokeApi(`/dashboard/meta-trends${queryParams}`),
           invokeApi(`/meta/campaigns?days=${days}`),
-          invokeApi(`/meta/insights?days=${days}`),
+          invokeApi(`/meta/insights${queryParams}`),
         ])
 
         // Lead/DB metrics — fatal if this fails
@@ -111,17 +117,23 @@ export default function Dashboard() {
           throw metricsResult.reason
         }
         const metricsData = metricsResult.value?.metrics ?? {}
+        if (metricsData.bySource && Object.keys(metricsData.bySource).length > 0 && sourcesList.length === 0) {
+          setSourcesList(Object.keys(metricsData.bySource))
+        }
 
         // Meta API calls — non-fatal, show specific warning
         const campaignsResponse = campaignsResult.status === 'fulfilled' ? campaignsResult.value : null
         const metaTrendsResponse = metaTrendsResult.status === 'fulfilled' ? metaTrendsResult.value : null
         const insightsResponse = insightsResult.status === 'fulfilled' ? insightsResult.value : null
 
-        const metaFailureMessage = campaignsResult.status === 'rejected'
-          ? (campaignsResult.reason?.message || 'Meta API unavailable')
+        const metaFailureMessage = (campaignsResult.status === 'rejected' || insightsResult.status === 'rejected')
+          ? ((campaignsResult as any).reason?.message || (insightsResult as any).reason?.message || 'Meta API unavailable')
           : null
 
         const campaigns = Array.isArray(campaignsResponse?.campaigns) ? campaignsResponse.campaigns : []
+        if (campaigns.length > 0 && campaignsList.length === 0) {
+          setCampaignsList(campaigns.map((c: any) => ({ id: c.id, name: c.name })))
+        }
 
         // Use account-level summary from /meta/insights for accurate totals;
         // fall back to summing per-campaign if insights endpoint failed.
@@ -171,7 +183,7 @@ export default function Dashboard() {
     }
 
     fetchMetrics()
-  }, [days])
+  }, [days, campaignId, sourceFilter, campaignsList.length, sourcesList.length])
 
   if (metrics.loading) {
     return (
@@ -195,18 +207,44 @@ export default function Dashboard() {
           <h1 className="text-3xl font-bold">Dashboard</h1>
           <p className="text-slate-600 mt-1">Control centre — Meta KPIs, agent status, adaptive plan</p>
         </div>
-        <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-1">
-          {([7, 14, 30, 90] as const).map((d) => (
-            <button
-              key={d}
-              onClick={() => setDays(d)}
-              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                days === d ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'
-              }`}
+        <div className="flex flex-col sm:flex-row items-center gap-2">
+          {sourcesList.length > 0 && (
+            <select
+              value={sourceFilter}
+              onChange={(e) => setSourceFilter(e.target.value)}
+              className="bg-slate-800 text-white text-xs font-medium px-3 py-1.5 rounded-lg border-none focus:ring-1 focus:ring-slate-500"
             >
-              {d}d
-            </button>
-          ))}
+              <option value="ALL">All Sources</option>
+              {sourcesList.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          )}
+          {campaignsList.length > 0 && (
+            <select
+              value={campaignId}
+              onChange={(e) => setCampaignId(e.target.value)}
+              className="bg-slate-800 text-white text-xs font-medium px-3 py-1.5 rounded-lg border-none focus:ring-1 focus:ring-slate-500"
+            >
+              <option value="ALL">All Campaigns</option>
+              {campaignsList.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          )}
+          <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-1">
+            {([7, 14, 30, 90] as const).map((d) => (
+              <button
+                key={d}
+                onClick={() => setDays(d)}
+                className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                  days === d ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {d}d
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
