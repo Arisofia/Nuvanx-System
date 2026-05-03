@@ -2,13 +2,7 @@ import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { invokeApi } from '../lib/supabaseClient'
-
-interface Lead {
-  id: string
-  name: string
-  status: string
-  source: string
-}
+import type { Lead } from '../types'
 
 export default function CRM() {
   const [leads, setLeads] = useState<Lead[]>([])

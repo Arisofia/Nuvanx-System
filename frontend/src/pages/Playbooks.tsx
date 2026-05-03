@@ -3,26 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Play, Plus, AlertCircle } from 'lucide-react'
 import { invokeApi } from '../lib/supabaseClient'
-
-interface Playbook {
-  id: string
-  slug: string
-  title: string
-  name: string
-  description?: string
-  category?: string
-  status: string
-  steps: string[]
-  runs: number
-  lastRunAt?: string | null
-}
-
-interface RunResult {
-  playbookId: string
-  loading: boolean
-  result: string | null
-  error: string | null
-}
+import type { Playbook, RunResult } from '../types'
 
 export default function Playbooks() {
   const [playbooks, setPlaybooks] = useState<Playbook[]>([])

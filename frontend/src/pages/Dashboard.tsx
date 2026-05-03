@@ -11,30 +11,7 @@ import {
   YAxis,
 } from 'recharts'
 import { invokeApi, supabase, supabaseKey, supabaseUrl } from '../lib/supabaseClient'
-
-interface DashboardMetrics {
-  totalLeads: number
-  conversionRate: number
-  activeCampaigns: number
-  spend: number
-  averageCpc: number
-  metaConversions: number
-  loading: boolean
-  error: string | null
-  metaError: string | null
-}
-
-interface MetaTrendPoint {
-  week: string
-  value: number
-}
-
-interface ActivityEvent {
-  id: string
-  label: string
-  detail: string
-  ts: string
-}
+import type { DashboardMetrics, MetaTrendPoint, ActivityEvent } from '../types'
 
 export default function Dashboard() {
   const [days, setDays] = useState<7 | 14 | 30 | 90>(30)

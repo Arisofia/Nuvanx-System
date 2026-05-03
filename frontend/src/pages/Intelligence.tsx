@@ -2,27 +2,7 @@ import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { invokeApi } from '../lib/supabaseClient'
-
-interface FunnelRow {
-  stage: string
-  count: number
-  pct?: number
-}
-
-interface Campaign {
-  source: string
-  campaign_name?: string
-  total_leads: number
-  pct?: number
-}
-
-interface Conversation {
-  id: string
-  phone?: string
-  direction: string
-  message_preview?: string
-  sent_at?: string
-}
+import type { FunnelRow, CampaignPerformance as Campaign, Conversation } from '../types'
 
 export default function Intelligence() {
   const [funnel, setFunnel] = useState<FunnelRow[]>([])

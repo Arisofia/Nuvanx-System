@@ -2,14 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Activity } from 'lucide-react'
 import { supabase } from '../lib/supabaseClient'
-
-interface LiveEvent {
-  id: string
-  type: string
-  label: string
-  detail?: string
-  ts: string
-}
+import type { LiveEvent } from '../types'
 
 function eventFromPayload(eventType: string, record: any): LiveEvent {
   const ts = record.created_at ?? record.updated_at ?? new Date().toISOString()

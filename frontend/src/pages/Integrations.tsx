@@ -5,17 +5,7 @@ import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { CheckCircle2, AlertCircle, Plus, X, Loader2 } from 'lucide-react'
 import { invokeApi, supabase } from '../lib/supabaseClient'
-
-type IntegrationRow = {
-  id: string
-  service: string
-  status: string | null
-  last_error: string | null
-  metadata: Record<string, unknown> | null
-  created_at: string | null
-  updated_at: string | null
-  [key: string]: unknown
-}
+import type { IntegrationRow, ConnectForm } from '../types'
 
 const serviceIcons: Record<string, string> = {
   meta: '📱',
@@ -42,14 +32,6 @@ function formatServiceName(service: string) {
 }
 
 const SUPPORTED_SERVICES = ['meta', 'whatsapp', 'openai', 'gemini', 'github', 'google_ads']
-
-interface ConnectForm {
-  service: string
-  token: string
-  adAccountId: string
-  pageId: string
-  phoneNumberId: string
-}
 
 export default function Integrations() {
   const [integrations, setIntegrations] = useState<IntegrationRow[]>([])

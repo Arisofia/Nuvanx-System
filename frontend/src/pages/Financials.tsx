@@ -3,29 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { AlertCircle } from 'lucide-react'
 import { invokeApi } from '../lib/supabaseClient'
-
-interface FinancialSummary {
-  totalNet: number
-  totalGross: number
-  totalDiscount: number
-  avgTicket: number
-  discountRate: number
-  avgLiquidationDays: number
-  settledCount: number
-  cancelledCount: number
-}
-
-interface MonthlyTrend {
-  month: string
-  net: number
-}
-
-interface FinancialsState {
-  summary: FinancialSummary | null
-  monthly: MonthlyTrend[]
-  loading: boolean
-  error: string | null
-}
+import type { FinancialSummary, MonthlyTrend, FinancialsState } from '../types'
 
 const PRESETS = [
   { label: '30d', days: 30 },

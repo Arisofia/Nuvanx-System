@@ -6,72 +6,7 @@ import {
 } from 'recharts'
 import { TrendingUp, TrendingDown, Eye, MousePointerClick, DollarSign, Target, Megaphone, Activity } from 'lucide-react'
 import { invokeApi } from '../lib/supabaseClient'
-
-interface CampaignRow {
-  id: string
-  name: string
-  status: string
-  objective: string
-  dailyBudget: number | null
-  lifetimeBudget: number | null
-  source: string
-  insights: {
-    impressions: number
-    reach: number
-    clicks: number
-    spend: number
-    ctr: number
-    cpc: number
-    cpm: number
-    conversions: number
-    cpp: number | null
-  } | null
-}
-
-interface AccountSummary {
-  impressions: number
-  reach: number
-  clicks: number
-  spend: number
-  conversions: number
-  messagingConversationStarted: number
-  ctr: number
-  cpc: number
-  cpm: number
-  cpp: number
-}
-
-interface DailyPoint {
-  date: string
-  impressions: number
-  reach: number
-  clicks: number
-  spend: number
-  ctr: number
-  cpc: number
-  cpm: number
-  messagingConversationStarted: number
-}
-
-interface Changes {
-  impressions: number
-  reach: number
-  clicks: number
-  spend: number
-  conversions: number
-}
-
-interface MarketingState {
-  summary: AccountSummary | null
-  changes: Changes | null
-  daily: DailyPoint[]
-  campaigns: CampaignRow[]
-  currency: string
-  accountId: string
-  period: { since: string; until: string; days: number } | null
-  loading: boolean
-  error: string | null
-}
+import type { CampaignRow, AccountSummary, DailyPoint, MetaChanges as Changes, MarketingState } from '../types'
 
 const fmt = (n: number, decimals = 2) =>
   n.toLocaleString('es-MX', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
