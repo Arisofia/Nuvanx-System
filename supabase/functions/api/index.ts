@@ -1468,7 +1468,7 @@ async function handleMetaInsightsGet(ctx: AuthenticatedRouteContext): Promise<Re
   const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,conversions,cost_per_conversion,unique_clicks,actions';
   
         try {
-          const [currRes, prevRes] = await Promise.allSettled([
+          const [currRes, prevRes, acctRes] = await Promise.allSettled([
             metaFetch(`/${creds.adAccountId}/insights`, {
               fields, time_range: JSON.stringify({ since, until }), time_increment: '1', limit: '1000',
             }, creds.accessToken),
@@ -1476,11 +1476,13 @@ async function handleMetaInsightsGet(ctx: AuthenticatedRouteContext): Promise<Re
               fields: 'impressions,reach,clicks,spend,conversions,cost_per_conversion',
               time_range: JSON.stringify({ since: prevSince, until: since }),
             }, creds.accessToken),
+            metaFetch(`/${creds.adAccountId}`, { fields: 'currency' }, creds.accessToken),
           ]);
   
           if (currRes.status === 'rejected') {
             throw currRes.reason;
           }
+          const currency: string = acctRes.status === 'fulfilled' ? (acctRes.value?.currency ?? 'EUR') : 'EUR';
   
           const daily = currRes.value.data ?? [];
           const prevD = prevRes.status === 'fulfilled' ? (prevRes.value.data?.[0] ?? {}) : {};
@@ -1512,6 +1514,7 @@ async function handleMetaInsightsGet(ctx: AuthenticatedRouteContext): Promise<Re
             source: 'live',
             cached: false,
             accountId: creds.adAccountId,
+            currency,
             period: { since, until, days },
             summary: { ...curr, ctr, cpc, cpm, cpp },
             changes: {
@@ -1653,18 +1656,26 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
       if (validation.statusCode === 400) payload.notConnected = creds.notConnected || !creds.adAccountId;
       return sendJson(payload, validation.statusCode);
     }
+    const campDays = Number.parseInt(url.searchParams.get('days') ?? '30');
+    const campPreset = campDays <= 7 ? 'last_7d' : campDays <= 14 ? 'last_14d' : campDays <= 30 ? 'last_30d' : 'last_90d';
     try {
-      const data = await metaFetch(`/${creds.adAccountId}/campaigns`, {
-        fields: 'id,name,status,objective,daily_budget,lifetime_budget,insights.date_preset(last_30d){impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,cost_per_conversion}',
-        limit: '100',
-      }, creds.accessToken);
+      const [data, campAcctRes] = await Promise.allSettled([
+        metaFetch(`/${creds.adAccountId}/campaigns`, {
+          fields: `id,name,status,objective,daily_budget,lifetime_budget,insights.date_preset(${campPreset}){impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,cost_per_conversion}`,
+          limit: '100',
+        }, creds.accessToken),
+        metaFetch(`/${creds.adAccountId}`, { fields: 'currency' }, creds.accessToken),
+      ]);
+      if (data.status === 'rejected') throw data.reason;
+      const campCurrency: string = campAcctRes.status === 'fulfilled' ? (campAcctRes.value?.currency ?? 'EUR') : 'EUR';
   
       const result = {
         success: true,
         source: 'live',
         cached: false,
         accountId: creds.adAccountId,
-        campaigns: (data?.data ?? []).map((c: any) => {
+        currency: campCurrency,
+        campaigns: ((data.status === 'fulfilled' ? data.value?.data : null) ?? []).map((c: any) => {
           const ins = c.insights?.data?.[0];
           const conversions = parseMetaMetric(ins?.conversions);
           const cppRaw = parseMetaMetric(ins?.cost_per_conversion);

@@ -66,6 +66,7 @@ interface MarketingState {
   changes: Changes | null
   daily: DailyPoint[]
   campaigns: CampaignRow[]
+  currency: string
   period: { since: string; until: string; days: number } | null
   loading: boolean
   error: string | null
@@ -74,8 +75,8 @@ interface MarketingState {
 const fmt = (n: number, decimals = 2) =>
   n.toLocaleString('es-MX', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
 
-const fmtMXN = (n: number) =>
-  n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2 })
+const fmtCurrency = (n: number, currency = 'EUR') =>
+  n.toLocaleString('es-MX', { style: 'currency', currency, minimumFractionDigits: 2 })
 
 function DeltaBadge({ value }: { value: number | undefined }) {
   if (value == null || value === 0) return null
@@ -117,18 +118,23 @@ export default function Marketing() {
     changes: null,
     daily: [],
     campaigns: [],
+    currency: 'EUR',
     period: null,
     loading: true,
     error: null,
   })
+
+  const [days, setDays] = useState(30)
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'PAUSED'>('ALL')
+  const [search, setSearch] = useState('')
 
   useEffect(() => {
     const load = async () => {
       setState((prev) => ({ ...prev, loading: true, error: null }))
       try {
         const [insightsRes, campaignsRes] = await Promise.allSettled([
-          invokeApi('/meta/insights'),
-          invokeApi('/meta/campaigns'),
+          invokeApi(`/meta/insights?days=${days}`),
+          invokeApi(`/meta/campaigns?days=${days}`),
         ])
 
         const insightsData = insightsRes.status === 'fulfilled' ? insightsRes.value : null
@@ -157,6 +163,7 @@ export default function Marketing() {
           changes: insightsData?.changes ?? null,
           daily: Array.isArray(insightsData?.daily) ? insightsData.daily : [],
           campaigns: rawCampaigns,
+          currency: insightsData?.currency ?? campaignsData?.currency ?? 'EUR',
           period: insightsData?.period ?? null,
           loading: false,
           error,
@@ -166,11 +173,18 @@ export default function Marketing() {
       }
     }
     load()
-  }, [])
+  }, [days])
 
-  const { summary, changes, daily, campaigns, period, loading, error } = state
+  const { summary, changes, daily, campaigns, currency, period, loading, error } = state
 
   const activeCampaigns = campaigns.filter((c) => c.status === 'ACTIVE').length
+
+  // Filtered campaigns for table
+  const filteredCampaigns = campaigns.filter((c) => {
+    if (statusFilter !== 'ALL' && c.status !== statusFilter) return false
+    if (search && !c.name.toLowerCase().includes(search.toLowerCase())) return false
+    return true
+  })
 
   // Daily spend + clicks chart — last 14 days
   const dailyChart = daily.slice(-14).map((d) => ({
@@ -207,11 +221,27 @@ export default function Marketing() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold">Marketing · Meta Ads</h1>
-        <p className="text-slate-400 mt-1 text-sm">
-          Período: {loading ? '…' : periodLabel} · Cuenta: act_4172099716404860
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-end gap-4">
+        <div className="flex-1">
+          <h1 className="text-3xl font-bold">Marketing · Meta Ads</h1>
+          <p className="text-slate-400 mt-1 text-sm">
+            Período: {loading ? '…' : periodLabel} · Cuenta: act_4172099716404860 · Moneda: {loading ? '…' : currency}
+          </p>
+        </div>
+        {/* Period filter */}
+        <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-1">
+          {([7, 14, 30, 90] as const).map((d) => (
+            <button
+              key={d}
+              onClick={() => setDays(d)}
+              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                days === d ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {d}d
+            </button>
+          ))}
+        </div>
       </div>
 
       {error && (
@@ -224,7 +254,7 @@ export default function Marketing() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard
           label="Gasto total"
-          value={loading ? '…' : fmtMXN(summary?.spend ?? 0)}
+          value={loading ? '…' : fmtCurrency(summary?.spend ?? 0, currency)}
           sub={periodLabel}
           icon={<DollarSign className="w-4 h-4 text-emerald-400" />}
           color="text-emerald-400"
@@ -284,7 +314,7 @@ export default function Marketing() {
       {/* ── Daily spend + clicks chart ────────────────────────────── */}
       <Card>
         <CardHeader>
-          <CardTitle>Gasto diario · últimos 14 días</CardTitle>
+          <CardTitle>Gasto diario · {days} días · ({currency})</CardTitle>
         </CardHeader>
         <CardContent className="h-72">
           {loading ? (
@@ -310,7 +340,7 @@ export default function Marketing() {
                 <Tooltip
                   contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', fontSize: 12 }}
                   formatter={(value: any, name: string) =>
-                    name === 'Gasto' ? [`$${Number(value).toFixed(2)}`, 'Gasto (MXN)'] : [value, name]
+                    name === 'Gasto' ? [`${fmtCurrency(Number(value), currency)}`, `Gasto (${currency})`] : [value, name]
                   }
                 />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
@@ -326,7 +356,7 @@ export default function Marketing() {
       {dailyRatesChart.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>CTR · CPC · CPM diario · últimos 14 días</CardTitle>
+            <CardTitle>CTR · CPC · CPM diario · {days} días</CardTitle>
           </CardHeader>
           <CardContent className="h-64">
             <ResponsiveContainer width="100%" height="100%">
@@ -351,7 +381,7 @@ export default function Marketing() {
                 <Tooltip
                   contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', fontSize: 12 }}
                   formatter={(value: any, name: string) => [
-                    name.includes('%') ? `${Number(value).toFixed(2)}%` : `$${Number(value).toFixed(2)}`,
+                    name.includes('%') ? `${Number(value).toFixed(2)}%` : `${fmtCurrency(Number(value), currency)}`,
                     name,
                   ]}
                 />
@@ -388,7 +418,7 @@ export default function Marketing() {
                 <Tooltip
                   contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', fontSize: 12 }}
                   formatter={(value: any, name: string) =>
-                    name === 'Gasto' ? [`$${Number(value).toFixed(2)}`, 'Gasto (MXN)'] : [value, name]
+                    name === 'Gasto' ? [`${fmtCurrency(Number(value), currency)}`, `Gasto (${currency})`] : [value, name]
                   }
                 />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
@@ -403,13 +433,39 @@ export default function Marketing() {
       {/* ── Campaign detail table ─────────────────────────────────── */}
       <Card>
         <CardHeader>
-          <CardTitle>Detalle por campaña</CardTitle>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <CardTitle className="flex-1">Detalle por campaña</CardTitle>
+            {/* Status filter */}
+            <div className="flex gap-1 bg-slate-800 rounded-lg p-1">
+              {(['ALL', 'ACTIVE', 'PAUSED'] as const).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(s)}
+                  className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                    statusFilter === s ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {s === 'ALL' ? 'Todas' : s === 'ACTIVE' ? 'Activas' : 'Pausadas'}
+                </button>
+              ))}
+            </div>
+            {/* Search */}
+            <input
+              type="text"
+              placeholder="Buscar campaña…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="bg-slate-800 border border-slate-700 text-sm text-slate-200 placeholder-slate-500 rounded-lg px-3 py-1.5 w-48 focus:outline-none focus:border-slate-500"
+            />
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           {loading ? (
             <p className="p-4 text-sm text-slate-500">Cargando campañas…</p>
-          ) : campaigns.length === 0 ? (
-            <p className="p-4 text-sm text-slate-500">No hay campañas disponibles.</p>
+          ) : filteredCampaigns.length === 0 ? (
+            <p className="p-4 text-sm text-slate-500">
+              {campaigns.length === 0 ? 'No hay campañas disponibles.' : 'Ninguna campaña coincide con los filtros.'}
+            </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -431,7 +487,7 @@ export default function Marketing() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
-                  {campaigns.map((c) => (
+                  {filteredCampaigns.map((c) => (
                     <tr key={c.id} className="hover:bg-slate-800/40 transition-colors">
                       <td className="px-4 py-3 font-medium max-w-[200px]">
                         <span title={c.name} className="truncate block">{c.name}</span>
@@ -448,13 +504,13 @@ export default function Marketing() {
                       <td className="px-3 py-3 text-center text-slate-400 text-xs">{c.objective || '—'}</td>
                       <td className="px-3 py-3 text-right text-slate-300 text-xs">
                         {c.dailyBudget != null
-                          ? <><span className="text-slate-500">día</span> {fmtMXN(c.dailyBudget)}</>
+                          ? <><span className="text-slate-500">día</span> {fmtCurrency(c.dailyBudget, currency)}</>
                           : c.lifetimeBudget != null
-                            ? <><span className="text-slate-500">vit</span> {fmtMXN(c.lifetimeBudget)}</>
+                            ? <><span className="text-slate-500">vit</span> {fmtCurrency(c.lifetimeBudget, currency)}</>
                             : '—'}
                       </td>
                       <td className="px-3 py-3 text-right font-semibold text-emerald-400">
-                        {c.insights ? fmtMXN(c.insights.spend) : '—'}
+                        {c.insights ? fmtCurrency(c.insights.spend, currency) : '—'}
                       </td>
                       <td className="px-3 py-3 text-right text-slate-300">
                         {c.insights ? c.insights.impressions.toLocaleString('es-MX') : '—'}
@@ -469,16 +525,16 @@ export default function Marketing() {
                         {c.insights ? `${fmt(c.insights.ctr)}%` : '—'}
                       </td>
                       <td className="px-3 py-3 text-right text-amber-400">
-                        {c.insights ? `$${fmt(c.insights.cpc, 3)}` : '—'}
+                        {c.insights ? fmtCurrency(c.insights.cpc, currency) : '—'}
                       </td>
                       <td className="px-3 py-3 text-right text-slate-300">
-                        {c.insights ? `$${fmt(c.insights.cpm)}` : '—'}
+                        {c.insights ? fmtCurrency(c.insights.cpm, currency) : '—'}
                       </td>
                       <td className="px-3 py-3 text-right text-lime-400">
                         {c.insights ? c.insights.conversions.toLocaleString('es-MX') : '—'}
                       </td>
                       <td className="px-3 py-3 text-right text-orange-400">
-                        {c.insights?.cpp != null ? `$${fmt(c.insights.cpp)}` : '—'}
+                        {c.insights?.cpp != null ? fmtCurrency(c.insights.cpp, currency) : '—'}
                       </td>
                     </tr>
                   ))}
@@ -490,7 +546,7 @@ export default function Marketing() {
                       <td className="px-4 py-3 text-slate-400 uppercase tracking-wide">Total cuenta</td>
                       <td colSpan={3} />
                       <td className="px-3 py-3 text-right text-emerald-400">
-                        {fmtMXN(summary?.spend ?? 0)}
+                        {fmtCurrency(summary?.spend ?? 0, currency)}
                       </td>
                       <td className="px-3 py-3 text-right">
                         {(summary?.impressions ?? 0).toLocaleString('es-MX')}
@@ -502,13 +558,13 @@ export default function Marketing() {
                         {(summary?.clicks ?? 0).toLocaleString('es-MX')}
                       </td>
                       <td className="px-3 py-3 text-right">{fmt(summary?.ctr ?? 0)}%</td>
-                      <td className="px-3 py-3 text-right text-amber-400">${fmt(summary?.cpc ?? 0, 3)}</td>
-                      <td className="px-3 py-3 text-right">${fmt(summary?.cpm ?? 0)}</td>
+                      <td className="px-3 py-3 text-right text-amber-400">{fmtCurrency(summary?.cpc ?? 0, currency)}</td>
+                      <td className="px-3 py-3 text-right">{fmtCurrency(summary?.cpm ?? 0, currency)}</td>
                       <td className="px-3 py-3 text-right text-lime-400">
                         {(summary?.conversions ?? 0).toLocaleString('es-MX')}
                       </td>
                       <td className="px-3 py-3 text-right text-orange-400">
-                        {summary?.cpp ? `$${fmt(summary.cpp)}` : '—'}
+                        {summary?.cpp ? fmtCurrency(summary.cpp, currency) : '—'}
                       </td>
                     </tr>
                   </tfoot>
