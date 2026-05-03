@@ -522,6 +522,19 @@ export const publicRouteHelpers = {
   processLeadData,
 };
 
+async function resolveClinicMetadata(adminClient: any, userId: string) {
+  const clinicId = await resolveClinicId(adminClient, userId);
+  if (!clinicId) return { name: 'una clínica', city: 'Madrid', specialty: 'medicina estética' };
+  
+  const { data } = await adminClient.from('clinics').select('name, metadata').eq('id', clinicId).single();
+  const meta = data?.metadata ?? {};
+  return {
+    name: data?.name ?? 'una clínica',
+    city: meta.city ?? 'Madrid',
+    specialty: meta.specialty ?? 'medicina estética'
+  };
+}
+
 // ── Meta credential resolver ──────────────────────────────────────────────────
 async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: string) {
   const { data: credRow } = await adminClient
@@ -1804,8 +1817,9 @@ async function handleAiAnalyzePost(ctx: AuthenticatedRouteContext): Promise<Resp
       return sendJson({ success: false, message: 'Payload too large for analysis' }, 400);
     }
 
+    const clinic = await resolveClinicMetadata(adminClient, userId);
     const prompt = [
-      'Eres un experto en marketing digital para una clínica de medicina estética premium en Madrid.',
+      `Eres un experto en marketing digital para ${clinic.name}, una clínica de ${clinic.specialty} premium en ${clinic.city}.`,
       'Analiza los siguientes datos de Meta Ads y proporciona insights accionables para maximizar conversiones y reducir el CPL.',
       context ? `Contexto: ${context}` : '',
       '',
@@ -2084,9 +2098,10 @@ async function handlePlaybooksRunPost(ctx: AuthenticatedRouteContext): Promise<R
     let generatedMessage = '';
     let providerUsed: 'gemini' | 'openai' | null = null;
     let providerErrors: string[] = [];
+    const clinic = await resolveClinicMetadata(adminClient, userId);
     const strategyPrompt = [
       `Generate a concise WhatsApp message for playbook strategy: ${pb.title}.`,
-      'Audience: aesthetic clinic leads in Madrid.',
+      `Audience: ${clinic.specialty} clinic leads in ${clinic.city}.`,
       'Style: professional, warm, and action-oriented.',
       'Length: max 3 short paragraphs and one CTA.',
     ].join('\n');
@@ -2210,8 +2225,9 @@ async function handleAiAnalyzeCampaignPost(ctx: AuthenticatedRouteContext): Prom
     const playbookExecutionId = String(body?.playbookExecutionId ?? '').trim();
     if (!campaignData) return sendJson({ success: false, message: 'campaignData is required' }, 400);
   
+    const clinic = await resolveClinicMetadata(adminClient, userId);
     const prompt = [
-      'You are a performance marketer for a premium aesthetics clinic in Madrid.',
+      `You are a performance marketer for ${clinic.name}, a premium ${clinic.specialty} clinic in ${clinic.city}.`,
       'Analyze the campaign data and provide actionable recommendations to improve conversion and reduce CPL.',
       '',
       campaignData,
