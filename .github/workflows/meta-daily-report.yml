@@ -27,9 +27,9 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       CLINIC_ID: ${{ secrets.CLINIC_ID }}
       REPORT_USER_ID: ${{ secrets.REPORT_USER_ID }}
-      GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
-      GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
-      GOOGLE_ADS_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_CUSTOMER_ID }}
+      GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT || '' }}
+      GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN || '' }}
+      GOOGLE_ADS_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_CUSTOMER_ID || '' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -41,7 +41,6 @@ jobs:
           MISSING=()
           [ -z "$META_ACCESS_TOKEN" ] && MISSING+=("META_ACCESS_TOKEN")
           [ -z "$META_AD_ACCOUNT_ID" ] && MISSING+=("META_AD_ACCOUNT_ID")
-          [ -z "$GOOGLE_ADS_SERVICE_ACCOUNT" ] && MISSING+=("GOOGLE_ADS_SERVICE_ACCOUNT")
           [ -z "$DATABASE_URL" ] && MISSING+=("DATABASE_URL")
           [ -z "$CLINIC_ID" ] && MISSING+=("CLINIC_ID")
           if [ ${#MISSING[@]} -gt 0 ]; then

@@ -19,7 +19,16 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch: {}
-  workflow_call: {}
+  workflow_call:
+    secrets:
+      SUPABASE_ACCESS_TOKEN:
+        required: false
+      SUPABASE_PROJECT_REF:
+        required: false
+      DATABASE_URL:
+        required: false
+      SUPABASE_DB_PASSWORD:
+        required: false
 
 jobs:
   advisor:
