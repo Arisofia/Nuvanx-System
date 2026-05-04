@@ -2333,10 +2333,16 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
       ? `time_range(${JSON.stringify({ since: campFrom, until: campTo })})`
       : `date_preset(${datePreset})`;
 
-    // Fetch campaigns active at any point in the last 90 days (Meta API maximum) plus all
-    // currently active campaigns, so the list is never stale or artificially truncated.
-    const campaignsUntil = new Date().toISOString().slice(0, 10);
-    const campaignsSince = new Date(Date.now() - 90 * 86_400_000).toISOString().slice(0, 10);
+    // Derive the campaign-list window from the requested period, clamped to 90 days (Meta API
+    // maximum).  This keeps campaign *selection* and insight *period* consistent when the caller
+    // passes from/to/days, while preventing requests that exceed the Meta API limit.
+    const maxLookbackMs = 90 * 86_400_000;
+    const nowMs = Date.now();
+    const campaignsUntil = campTo || new Date(nowMs).toISOString().slice(0, 10);
+    const requestedSinceMs = campFrom
+      ? new Date(campFrom).getTime()
+      : nowMs - Math.min(campDays, 90) * 86_400_000;
+    const campaignsSince = new Date(Math.max(requestedSinceMs, nowMs - maxLookbackMs)).toISOString().slice(0, 10);
     const campaignsTimeRange = JSON.stringify({ since: campaignsSince, until: campaignsUntil });
 
     try {
