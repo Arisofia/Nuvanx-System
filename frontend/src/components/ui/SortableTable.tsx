@@ -38,7 +38,7 @@ const alignClass = (align?: string) =>
 export function SortableTable({
   columns,
   rows,
-  pageSize = 50,
+  pageSize = 200,
   exportFilename,
   loading,
   emptyMessage = 'No data available.',

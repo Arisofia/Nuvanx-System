@@ -4,6 +4,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { invokeApi } from '../lib/supabaseClient'
 import type { FunnelRow, CampaignPerformance as Campaign, Conversation, TraceabilityLead } from '../types'
 import { FilterBar } from '../components/ui/FilterBar'
+import { SortableTable } from '../components/ui/SortableTable'
+import type { ColDef } from '../components/ui/SortableTable'
 
 export default function Intelligence() {
   const [funnel, setFunnel] = useState<FunnelRow[]>([])
@@ -26,6 +28,35 @@ export default function Intelligence() {
     () => [...new Set(traceability.map((l: any) => l.source).filter(Boolean))] as string[],
     [traceability],
   )
+
+  const traceabilityRows = useMemo(
+    () => traceability.map((row: TraceabilityLead) => ({
+      ...row,
+      _stage: (row as any).doctoralia_net != null ? 'Revenue' : (row as any).patient_id ? 'Patient' : 'Lead only',
+    })),
+    [traceability],
+  )
+
+  const traceabilityColumns: ColDef[] = [
+    { key: 'source', label: 'Fuente', align: 'left' },
+    { key: 'campaign_name', label: 'Campaña', align: 'left' },
+    { key: 'lead_created_at', label: 'Lead creado', align: 'left',
+      format: (v) => v ? new Date(v).toLocaleDateString('es-MX') : null },
+    { key: '_stage', label: 'Etapa', align: 'left' },
+    { key: 'patient_name', label: 'Paciente', align: 'left' },
+    { key: 'patient_dni', label: 'DNI', align: 'left' },
+    { key: 'patient_phone', label: 'Teléfono', align: 'left' },
+    { key: 'patient_ltv', label: 'LTV', align: 'right',
+      format: (v) => v != null ? Number(v).toLocaleString('es-MX', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 }) : null },
+    { key: 'first_settlement_at', label: '1ª liquidación', align: 'left',
+      format: (v) => v ? new Date(v).toLocaleDateString('es-MX') : null },
+    { key: 'settlement_date', label: 'Últ. liquidación', align: 'left',
+      format: (v) => v ? new Date(v).toLocaleDateString('es-MX') : null },
+    { key: 'match_confidence', label: 'Confianza', align: 'right',
+      format: (v) => v != null ? `${(Number(v) * 100).toFixed(0)}%` : null },
+    { key: 'match_class', label: 'Match', align: 'left',
+      format: (v) => v ? String(v).replace(/_/g, ' ') : null },
+  ]
 
   useEffect(() => {
     invokeApi('/traceability/funnel')
@@ -236,75 +267,13 @@ export default function Intelligence() {
                   </p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-700">
-                        <th className="text-left text-xs font-semibold text-slate-400 px-3 py-2 whitespace-nowrap">Fuente</th>
-                        <th className="text-left text-xs font-semibold text-slate-400 px-3 py-2 whitespace-nowrap">Campaña</th>
-                        <th className="text-left text-xs font-semibold text-slate-400 px-3 py-2 whitespace-nowrap">Lead creado</th>
-                        <th className="text-left text-xs font-semibold text-slate-400 px-3 py-2 whitespace-nowrap">Etapa</th>
-                        <th className="text-left text-xs font-semibold text-slate-400 px-3 py-2 whitespace-nowrap">Paciente</th>
-                        <th className="text-left text-xs font-semibold text-slate-400 px-3 py-2 whitespace-nowrap">DNI</th>
-                        <th className="text-left text-xs font-semibold text-slate-400 px-3 py-2 whitespace-nowrap">Teléfono</th>
-                        <th className="text-right text-xs font-semibold text-slate-400 px-3 py-2 whitespace-nowrap">LTV total</th>
-                        <th className="text-left text-xs font-semibold text-slate-400 px-3 py-2 whitespace-nowrap">1ª liquidación</th>
-                        <th className="text-left text-xs font-semibold text-slate-400 px-3 py-2 whitespace-nowrap">Última liquidación</th>
-                        <th className="text-right text-xs font-semibold text-slate-400 px-3 py-2 whitespace-nowrap">Confianza</th>
-                        <th className="text-left text-xs font-semibold text-slate-400 px-3 py-2 whitespace-nowrap">Match</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {traceability.map((row, i) => {
-                        const matchColor =
-                          row.match_class === 'exact_match'      ? 'text-emerald-400' :
-                          row.match_class === 'high_confidence'  ? 'text-amber-400' :
-                          row.match_class === 'possible_match'   ? 'text-orange-400' :
-                          'text-slate-500'
-                        return (
-                          <tr key={row.lead_id ?? i} className="border-b border-slate-800 hover:bg-slate-800/50">
-                            <td className="px-3 py-2 text-slate-300">{row.source ?? '—'}</td>
-                            <td className="px-3 py-2 text-slate-300 max-w-[160px] truncate">{row.campaign_name ?? '—'}</td>
-                            <td className="px-3 py-2 text-slate-400 whitespace-nowrap">
-                              {row.lead_created_at ? new Date(row.lead_created_at).toLocaleDateString('es-MX') : '—'}
-                            </td>
-                            <td className="px-3 py-2 whitespace-nowrap">
-                              {row.doctoralia_net != null
-                                ? <span className="text-emerald-400 text-xs font-medium">Revenue</span>
-                                : row.patient_id
-                                  ? <span className="text-amber-400 text-xs font-medium">Patient</span>
-                                  : <span className="text-slate-500 text-xs">Lead only</span>}
-                            </td>
-                            <td className="px-3 py-2 text-slate-300">{row.patient_name ?? <span className="text-slate-600 italic">sin match</span>}</td>
-                            <td className="px-3 py-2 text-slate-400 font-mono text-xs">{row.patient_dni ?? '—'}</td>
-                            <td className="px-3 py-2 text-slate-400 font-mono text-xs">{row.patient_phone ?? '—'}</td>
-                            <td className="px-3 py-2 text-slate-300 text-right">
-                              {row.patient_ltv != null
-                                ? row.patient_ltv.toLocaleString('es-MX', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 })
-                                : '—'}
-                            </td>
-                            <td className="px-3 py-2 text-slate-400 whitespace-nowrap">
-                              {row.first_settlement_at ? new Date(row.first_settlement_at).toLocaleDateString('es-MX') : '—'}
-                            </td>
-                            <td className="px-3 py-2 text-slate-400 whitespace-nowrap">
-                              {row.settlement_date ? new Date(row.settlement_date).toLocaleDateString('es-MX') : '—'}
-                            </td>
-                            <td className="px-3 py-2 text-right">
-                              {row.match_confidence != null
-                                ? <span className={matchColor}>{(row.match_confidence * 100).toFixed(0)}%</span>
-                                : <span className="text-slate-600">—</span>}
-                            </td>
-                            <td className="px-3 py-2">
-                              {row.match_class
-                                ? <span className={`text-xs font-medium ${matchColor}`}>{row.match_class.replace(/_/g, ' ')}</span>
-                                : <span className="text-slate-600 text-xs italic">sin match</span>}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                <SortableTable
+                  columns={traceabilityColumns}
+                  rows={traceabilityRows}
+                  exportFilename="traceability-leads"
+                  pageSize={200}
+                  emptyMessage="No hay datos de trazabilidad todavía."
+                />
               )}
             </CardContent>
           </Card>

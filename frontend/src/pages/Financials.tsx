@@ -102,6 +102,13 @@ export default function Financials() {
     )
   }
 
+  const templateMixColumns: ColDef[] = [
+    { key: 'name', label: 'Template', align: 'left' },
+    { key: 'count', label: 'Ops', align: 'right' },
+    { key: 'net', label: 'Net Revenue', align: 'right', format: (v) => v != null ? fmt(Number(v)) : null },
+    { key: 'pct', label: 'Share %', align: 'right', format: (v) => v != null ? `${v}%` : null },
+  ]
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-end gap-4">
@@ -258,28 +265,12 @@ export default function Financials() {
             <CardTitle>Revenue by Template</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-slate-700">
-                    <th className="text-left text-xs font-semibold text-slate-400 px-3 py-2">Template</th>
-                    <th className="text-right text-xs font-semibold text-slate-400 px-3 py-2">Ops</th>
-                    <th className="text-right text-xs font-semibold text-slate-400 px-3 py-2">Net Revenue</th>
-                    <th className="text-right text-xs font-semibold text-slate-400 px-3 py-2">Share %</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {state.templateMix.map((t, i) => (
-                    <tr key={i} className="border-b border-slate-800 hover:bg-slate-800/50">
-                      <td className="px-3 py-2 text-sm text-slate-300">{t.name}</td>
-                      <td className="px-3 py-2 text-sm text-slate-300 text-right">{t.count}</td>
-                      <td className="px-3 py-2 text-sm text-slate-300 text-right">{fmt(t.net)}</td>
-                      <td className="px-3 py-2 text-sm text-slate-300 text-right">{t.pct}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <SortableTable
+              columns={templateMixColumns}
+              rows={state.templateMix}
+              exportFilename="financials-template-mix"
+              pageSize={200}
+            />
           </CardContent>
         </Card>
       )}
