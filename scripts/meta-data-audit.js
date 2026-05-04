@@ -104,10 +104,7 @@ const h2 = (t) => console.log(`\n▶ ${t}`);
   h1('META DATA AUDIT  —  ' + today);
   console.log(`Period: ${since90} → ${today}  (last 90 days)`);
   console.log(`Token configured: ${META_TOKEN ? 'YES (length=' + META_TOKEN.length + ')' : 'NO'}`);
-  const maskedMetaAccount = META_ACCOUNT
-    ? `${'*'.repeat(Math.max(0, META_ACCOUNT.length - 4))}${META_ACCOUNT.slice(-4)}`
-    : '(not configured)';
-  console.log(`Ad account: ${maskedMetaAccount}`);
+  console.log(`Ad account configured: ${META_ACCOUNT ? 'YES' : 'NO'}`);
 
   // ══════════════════════════════════════════════════════════════════════════
   // 1. META API — INSIGHTS (last 90 days, daily breakdown)
