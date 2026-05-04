@@ -170,6 +170,33 @@ export async function metaFetch(path: string, params: Record<string, string>, to
   return d;
 }
 
+function shouldRetryInsightFilterError(message: string) {
+  const normalized = message.toLowerCase();
+  return normalized.includes('filtering') || normalized.includes('invalid parameter') || normalized.includes('invalid field');
+}
+
+async function metaFetchInsightsWithFallback(path: string, params: Record<string, string>, token: string, campaignId?: string) {
+  try {
+    return await metaFetch(path, params, token);
+  } catch (err: any) {
+    if (!campaignId || !params?.filtering) throw err;
+    const message = String(err?.message ?? '');
+    if (!shouldRetryInsightFilterError(message)) throw err;
+
+    const fallbackParams = { ...params };
+    delete fallbackParams.filtering;
+    if (fallbackParams.fields && !fallbackParams.fields.includes('campaign_id')) {
+      fallbackParams.fields = `${fallbackParams.fields},campaign_id`;
+    }
+
+    const data = await metaFetch(path, fallbackParams, token);
+    if (Array.isArray(data?.data)) {
+      return { ...data, data: data.data.filter((item: any) => String(item?.campaign_id) === String(campaignId)) };
+    }
+    return data;
+  }
+}
+
 export function parseMetaMetric(raw: unknown): number {
   if (typeof raw === 'number') return Number.isFinite(raw) ? raw : 0;
   if (typeof raw === 'string') {
@@ -802,19 +829,19 @@ async function googleAdsSearch(customerId: string, devToken: string, accessToken
 }
 
 type GoogleAdsCreds =
-  | { noServiceAccount: true }
-  | { notConnected: true }
+  | { notConnected: false; noServiceAccount: true; devToken?: never; customerId?: never; serviceAccount?: never }
+  | { notConnected: true; noServiceAccount: false; devToken?: never; customerId?: never; serviceAccount?: never }
   | { notConnected: false; noServiceAccount: false; devToken: string; customerId: string; serviceAccount: any };
 
 async function resolveGoogleAdsCreds(adminClient: any, userId: string, qCustomerId: string): Promise<GoogleAdsCreds> {
   const saRaw = Deno.env.get('GOOGLE_ADS_SERVICE_ACCOUNT');
-  if (!saRaw) return { noServiceAccount: true } as const;
+  if (!saRaw) return { notConnected: false, noServiceAccount: true } as const;
   let serviceAccount: any;
-  try { serviceAccount = JSON.parse(saRaw); } catch { return { noServiceAccount: true } as const; }
+  try { serviceAccount = JSON.parse(saRaw); } catch { return { notConnected: false, noServiceAccount: true } as const; }
 
   const { data: credRow } = await adminClient
     .from('credentials').select('encrypted_key').eq('user_id', userId).eq('service', 'google_ads').single();
-  if (!credRow) return { notConnected: true } as const;
+  if (!credRow) return { notConnected: true, noServiceAccount: false } as const;
   const devToken = await decryptCred(credRow.encrypted_key);
 
   let customerId = qCustomerId;
@@ -996,6 +1023,61 @@ function handleMetaWebhookGet(ctx: PublicRouteContext): Response | null {
   return new Response('Forbidden', { status: 403 });
 }
 
+async function processMetaLeadChange(adminClient: any, change: any): Promise<void> {
+  if (change.field !== 'leadgen') return;
+  const val = change.value ?? {};
+  const { leadgen_id, page_id } = val;
+  if (!leadgen_id) return;
+
+  const { data: intgs } = await adminClient
+    .from('integrations')
+    .select('user_id, metadata')
+    .eq('service', 'meta')
+    .eq('status', 'connected');
+
+  const connected = intgs ?? [];
+  let matchingIntg = connected.find((i: any) => {
+    const m = i.metadata ?? {};
+    return m.pageId === page_id || m.page_id === page_id;
+  });
+
+  if (matchingIntg == null) {
+    const noPageIdSet = connected.every((i: any) => !i.metadata?.pageId && !i.metadata?.page_id);
+    if (noPageIdSet && connected.length === 1) {
+      matchingIntg = connected[0];
+    }
+  }
+
+  if (matchingIntg == null) return;
+
+  const webhookUserId = matchingIntg.user_id;
+  const { data: credRow } = await adminClient
+    .from('credentials')
+    .select('encrypted_key')
+    .eq('user_id', webhookUserId)
+    .eq('service', 'meta')
+    .single();
+  if (!credRow) return;
+
+  let accessToken: string;
+  try {
+    accessToken = await publicRouteHelpers.decryptCred(credRow.encrypted_key);
+  } catch {
+    return;
+  }
+
+  let leadData: any;
+  try {
+    leadData = await publicRouteHelpers.metaFetch(`/${leadgen_id}`, {
+      fields: 'field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,adset_id,page_id',
+    }, accessToken);
+  } catch {
+    return;
+  }
+
+  await publicRouteHelpers.processLeadData(adminClient, webhookUserId, leadData);
+}
+
 async function handleMetaWebhookPost(ctx: PublicRouteContext): Promise<Response | null> {
   const { req } = ctx;
   const appSecret = Deno.env.get('META_APP_SECRET');
@@ -1030,59 +1112,7 @@ async function handleMetaWebhookPost(ctx: PublicRouteContext): Promise<Response 
 
   for (const entry of (payload.entry ?? [])) {
     for (const change of (entry.changes ?? [])) {
-      if (change.field !== 'leadgen') continue;
-      const val = change.value ?? {};
-      const { leadgen_id, page_id } = val;
-      if (!leadgen_id) continue;
-
-      const { data: intgs } = await adminClient
-        .from('integrations')
-        .select('user_id, metadata')
-        .eq('service', 'meta')
-        .eq('status', 'connected');
-
-      const connected = intgs ?? [];
-      let matchingIntg = connected.find((i: any) => {
-        const m = i.metadata ?? {};
-        return m.pageId === page_id || m.page_id === page_id;
-      });
-      if (matchingIntg == null) {
-        const noPageIdSet = connected.every((i: any) => !i.metadata?.pageId && !i.metadata?.page_id);
-        if (noPageIdSet && connected.length === 1) {
-          matchingIntg = connected[0];
-        }
-      }
-
-      if (matchingIntg == null) {
-        continue;
-      }
-
-      const webhookUserId = matchingIntg.user_id;
-      const { data: credRow } = await adminClient
-        .from('credentials')
-        .select('encrypted_key')
-        .eq('user_id', webhookUserId)
-        .eq('service', 'meta')
-        .single();
-      if (!credRow) continue;
-
-      let accessToken: string;
-      try {
-        accessToken = await publicRouteHelpers.decryptCred(credRow.encrypted_key);
-      } catch {
-        continue;
-      }
-
-      let leadData: any;
-      try {
-        leadData = await publicRouteHelpers.metaFetch(`/${leadgen_id}`, {
-          fields: 'field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,adset_id,page_id',
-        }, accessToken);
-      } catch {
-        continue;
-      }
-
-      await publicRouteHelpers.processLeadData(adminClient, webhookUserId, leadData);
+      await processMetaLeadChange(adminClient, change);
     }
   }
 
@@ -1347,6 +1377,32 @@ async function handleLeadsDelete(ctx: AuthenticatedRouteContext): Promise<Respon
   return null;
 }
 
+async function upsertLeadIdempotent(adminClient: any, userId: string, payload: any, source: string, externalId: string): Promise<any> {
+  const { data, error } = await adminClient
+    .from('leads')
+    .upsert(payload, { onConflict: 'user_id,source,external_id', ignoreDuplicates: true })
+    .select()
+    .maybeSingle();
+  if (error) throw error;
+
+  if (data) {
+    return { data, deduplicated: false, status: 201 };
+  }
+
+  const { data: existing, error: existingErr } = await adminClient
+    .from('leads')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('source', source)
+    .eq('external_id', externalId)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (existingErr) throw existingErr;
+
+  return { data: existing, deduplicated: true, status: 200 };
+}
+
 async function handleLeadsPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, req, sendJson } = ctx;
   if (resource === 'leads' && req.method === 'POST') {
@@ -1354,35 +1410,12 @@ async function handleLeadsPost(ctx: AuthenticatedRouteContext): Promise<Response
     const payload = { ...body, user_id: userId };
     const source = String(payload?.source ?? '').trim();
     const externalId = String(payload?.external_id ?? '').trim();
-  
-    // Idempotent ingestion path: avoid 500 on repeated webhook/manual retries
-    // when (user_id, source, external_id) already exists.
+
     if (source && externalId) {
-      const { data, error } = await adminClient
-        .from('leads')
-        .upsert(payload, { onConflict: 'user_id,source,external_id', ignoreDuplicates: true })
-        .select()
-        .maybeSingle();
-      if (error) throw error;
-  
-      if (data) {
-        return sendJson({ success: true, lead: data, deduplicated: false }, 201);
-      }
-  
-      const { data: existing, error: existingErr } = await adminClient
-        .from('leads')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('source', source)
-        .eq('external_id', externalId)
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .maybeSingle();
-      if (existingErr) throw existingErr;
-  
-      return sendJson({ success: true, lead: existing, deduplicated: true }, 200);
+      const { data, deduplicated, status } = await upsertLeadIdempotent(adminClient, userId, payload, source, externalId);
+      return sendJson({ success: true, lead: data, deduplicated }, status);
     }
-  
+
     const { data, error } = await adminClient
       .from('leads')
       .insert(payload)
@@ -1404,7 +1437,7 @@ async function handleLeadsPatch(ctx: AuthenticatedRouteContext): Promise<Respons
     const allowedFields = ['stage', 'name', 'phone', 'dni', 'notes', 'revenue'];
     const updateData: Record<string, any> = {};
     for (const field of allowedFields) {
-      if (Object.hasOwn(body, field)) {
+      if (Object.prototype.hasOwnProperty.call(body, field)) {
         updateData[field] = body[field];
       }
     }
@@ -1429,126 +1462,125 @@ async function handleLeadsPatch(ctx: AuthenticatedRouteContext): Promise<Respons
   return null;
 }
 
+function getDashboardPeriods(url: URL) {
+  const days = Number.parseInt(url.searchParams.get('days') ?? '0');
+  const fromParam = url.searchParams.get('from') ?? '';
+  const toParam = url.searchParams.get('to') ?? '';
+
+  const since = fromParam || (days > 0
+    ? new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10)
+    : null);
+  const until = toParam || null;
+
+  let prevSince: string | null = null;
+  let prevUntil: string | null = since;
+  if (days > 0) {
+    const nowTs = Date.now();
+    const currentSinceTs = since ? new Date(since).getTime() : nowTs - days * 86_400_000;
+    prevSince = new Date(currentSinceTs - days * 86_400_000).toISOString().slice(0, 10);
+    prevUntil = new Date(currentSinceTs).toISOString().slice(0, 10);
+  }
+
+  return { since, until, prevSince, prevUntil, days };
+}
+
+function aggregateDashboardResults(leads: any[], prevLeads: any[], settlements: any[], prevSettlements: any[], integrations: any[]) {
+  const totalLeads = leads.length;
+  const prevTotalLeads = prevLeads.length;
+  const totalRevenue = leads.reduce((s: number, l: any) => s + Number(l.revenue || 0), 0);
+  const verifiedRevenue = settlements.reduce((s: number, r: any) => s + Number(r.amount_net), 0);
+  const prevVerifiedRevenue = prevSettlements.reduce((s: number, r: any) => s + Number(r.amount_net), 0);
+  const settledCount = settlements.length;
+
+  const conversions = leads.filter((l: any) => l.stage === 'treatment' || l.stage === 'closed').length;
+  const prevConversions = prevLeads.filter((l: any) => l.stage === 'treatment' || l.stage === 'closed').length;
+  const patientMatches = leads.filter((l: any) => l.converted_patient_id != null).length;
+  const prevPatientMatches = prevLeads.filter((l: any) => l.converted_patient_id != null).length;
+
+  const conversionRate = totalLeads > 0 ? Number.parseFloat(((conversions / totalLeads) * 100).toFixed(1)) : 0;
+  const patientConversionRate = totalLeads > 0 ? Number.parseFloat(((patientMatches / totalLeads) * 100).toFixed(1)) : 0;
+
+  const calculateDelta = (curr: number, prev: number) => {
+    if (prev === 0) return curr > 0 ? 100 : 0;
+    return Number.parseFloat((((curr - prev) / prev) * 100).toFixed(1));
+  };
+
+  const deltas = {
+    leads: calculateDelta(totalLeads, prevTotalLeads),
+    revenue: calculateDelta(verifiedRevenue, prevVerifiedRevenue),
+    conversions: calculateDelta(conversions, prevConversions),
+    patientMatches: calculateDelta(patientMatches, prevPatientMatches),
+  };
+
+  const stages = ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'];
+  const byStage: Record<string, number> = {};
+  for (const s of stages) byStage[s] = leads.filter((l: any) => l.stage === s).length;
+  const bySource: Record<string, number> = {};
+  for (const l of leads) {
+    const sourceKey = String(l.source ?? 'unknown');
+    bySource[sourceKey] = (bySource[sourceKey] || 0) + 1;
+  }
+  const connectedIntegrations = integrations.filter((i: any) => i.status === 'connected').length;
+
+  return {
+    totalLeads, totalRevenue: Number.parseFloat(totalRevenue.toFixed(2)),
+    verifiedRevenue: Number.parseFloat(verifiedRevenue.toFixed(2)),
+    settledCount,
+    conversions, conversionRate,
+    patientMatches, patientConversionRate,
+    byStage, bySource,
+    connectedIntegrations, totalIntegrations: integrations.length,
+    deltas,
+  };
+}
+
+function buildDashboardLeadsQuery(adminClient: any, userId: string, since: string | null, until: string | null, sourceFilter: string) {
+  let q = adminClient.from('leads').select('stage, revenue, source, created_at, converted_patient_id').eq('user_id', userId);
+  if (since) q = q.gte('created_at', since);
+  if (until) q = q.lte('created_at', until);
+  if (sourceFilter) q = q.eq('source', sourceFilter);
+  return q;
+}
+
+function buildDashboardSettlementsQuery(adminClient: any, clinicId: string | null, since: string | null, until: string | null) {
+  let q = adminClient.from('financial_settlements').select('amount_net, cancelled_at, settled_at, template_name').eq('clinic_id', clinicId);
+  if (since) q = q.gte('settled_at', since);
+  if (until) q = q.lte('settled_at', until);
+  return q;
+}
+
 async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, url, sendJson } = ctx;
   if (resource === 'dashboard' && sub === 'metrics') {
     const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
     const clinicId = usr?.clinic_id;
-
-    const days = Number.parseInt(url.searchParams.get('days') ?? '0');
-    const fromParam = url.searchParams.get('from') ?? '';
-    const toParam = url.searchParams.get('to') ?? '';
     const sourceFilter = url.searchParams.get('source') ?? '';
 
-    let since = fromParam || (days > 0
-      ? new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10)
-      : null);
-    const until = toParam || null;
+    const { since, until, prevSince, prevUntil } = getDashboardPeriods(url);
 
-    // Comparison period logic
-    let prevSince: string | null = null;
-    let prevUntil: string | null = since;
-    if (days > 0) {
-      const nowTs = Date.now();
-      const currentSinceTs = since ? new Date(since).getTime() : nowTs - days * 86_400_000;
-      prevSince = new Date(currentSinceTs - days * 86_400_000).toISOString().slice(0, 10);
-      prevUntil = new Date(currentSinceTs).toISOString().slice(0, 10);
-    }
+    const leadsQuery = buildDashboardLeadsQuery(adminClient, userId, since, until, sourceFilter);
+    const prevLeadsQuery = buildDashboardLeadsQuery(adminClient, userId, prevSince, prevUntil, sourceFilter);
 
-    let leadsQuery = adminClient.from('leads').select('stage, revenue, source, created_at, converted_patient_id').eq('user_id', userId);
-    if (since) leadsQuery = leadsQuery.gte('created_at', since);
-    if (until) leadsQuery = leadsQuery.lte('created_at', until);
-    if (sourceFilter) leadsQuery = leadsQuery.eq('source', sourceFilter);
-
-    let prevLeadsQuery = adminClient.from('leads').select('stage, revenue, source, created_at, converted_patient_id').eq('user_id', userId);
-    if (prevSince) prevLeadsQuery = prevLeadsQuery.gte('created_at', prevSince);
-    if (prevUntil) prevLeadsQuery = prevLeadsQuery.lte('created_at', prevUntil);
-    if (sourceFilter) prevLeadsQuery = prevLeadsQuery.eq('source', sourceFilter);
-
-    let settlementsQuery = adminClient.from('financial_settlements')
-      .select('amount_net, cancelled_at, settled_at, template_name')
-      .eq('clinic_id', clinicId);
-    if (since) settlementsQuery = settlementsQuery.gte('settled_at', since);
-    if (until) settlementsQuery = settlementsQuery.lte('settled_at', until);
-
-    let prevSettlementsQuery = adminClient.from('financial_settlements')
-      .select('amount_net, cancelled_at, settled_at, template_name')
-      .eq('clinic_id', clinicId);
-    if (prevSince) prevSettlementsQuery = prevSettlementsQuery.gte('settled_at', prevSince);
-    if (prevUntil) prevSettlementsQuery = prevSettlementsQuery.lte('settled_at', prevUntil);
+    const settlementsQuery = buildDashboardSettlementsQuery(adminClient, clinicId, since, until);
+    const prevSettlementsQuery = buildDashboardSettlementsQuery(adminClient, clinicId, prevSince, prevUntil);
 
     const [leadsRes, prevLeadsRes, intRes, settlementsRes, prevSettlementsRes] = await Promise.all([
       leadsQuery,
       prevLeadsQuery,
       adminClient.from('integrations').select('service, status').eq('user_id', userId),
-      clinicId
-        ? settlementsQuery
-        : Promise.resolve({ data: [], error: null }),
-      clinicId
-        ? prevSettlementsQuery
-        : Promise.resolve({ data: [], error: null }),
+      clinicId ? settlementsQuery : Promise.resolve({ data: [], error: null }),
+      clinicId ? prevSettlementsQuery : Promise.resolve({ data: [], error: null }),
     ]);
     if (leadsRes.error) throw leadsRes.error;
-    type LeadMetric = { stage: any; revenue: any; source?: string; converted_patient_id?: string | null };
-    const leads: LeadMetric[] = leadsRes.data ?? [];
-    const prevLeads: LeadMetric[] = prevLeadsRes.data ?? [];
+
+    const leads = leadsRes.data ?? [];
+    const prevLeads = prevLeadsRes.data ?? [];
     const integrations = intRes.data ?? [];
     const settlements = (settlementsRes.data ?? []).filter((r: any) => !r.cancelled_at);
     const prevSettlements = (prevSettlementsRes.data ?? []).filter((r: any) => !r.cancelled_at);
-  
-    const totalLeads = leads.length;
-    const prevTotalLeads = prevLeads.length;
 
-    const totalRevenue = leads.reduce((s: number, l: any) => s + Number(l.revenue || 0), 0);
-
-    const verifiedRevenue = settlements.reduce((s: number, r: any) => s + Number(r.amount_net), 0);
-    const prevVerifiedRevenue = prevSettlements.reduce((s: number, r: any) => s + Number(r.amount_net), 0);
-
-    const settledCount = settlements.length;
-  
-    const conversions = leads.filter((l: any) => l.stage === 'treatment' || l.stage === 'closed').length;
-    const prevConversions = prevLeads.filter((l: any) => l.stage === 'treatment' || l.stage === 'closed').length;
-
-    const patientMatches = leads.filter((l: any) => l.converted_patient_id != null).length;
-    const prevPatientMatches = prevLeads.filter((l: any) => l.converted_patient_id != null).length;
-
-    const conversionRate = totalLeads > 0 ? Number.parseFloat(((conversions / totalLeads) * 100).toFixed(1)) : 0;
-    const patientConversionRate = totalLeads > 0 ? Number.parseFloat(((patientMatches / totalLeads) * 100).toFixed(1)) : 0;
-    
-    const calculateDelta = (curr: number, prev: number) => {
-      if (prev === 0) return curr > 0 ? 100 : 0;
-      return Number.parseFloat((((curr - prev) / prev) * 100).toFixed(1));
-    };
-
-    const deltas = {
-      leads: calculateDelta(totalLeads, prevTotalLeads),
-      revenue: calculateDelta(verifiedRevenue, prevVerifiedRevenue),
-      conversions: calculateDelta(conversions, prevConversions),
-      patientMatches: calculateDelta(patientMatches, prevPatientMatches),
-    };
-
-    const stages = ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'];
-    const byStage: Record<string, number> = {};
-    for (const s of stages) byStage[s] = leads.filter((l: any) => l.stage === s).length;
-    const bySource: Record<string, number> = {};
-    for (const l of leads) {
-      const sourceKey = String(l.source ?? 'unknown');
-      bySource[sourceKey] = (bySource[sourceKey] || 0) + 1;
-    }
-    const connectedIntegrations = integrations.filter((i: any) => i.status === 'connected').length;
-    return sendJson({
-      success: true,
-      metrics: {
-        totalLeads, totalRevenue: Number.parseFloat(totalRevenue.toFixed(2)),
-        verifiedRevenue: Number.parseFloat(verifiedRevenue.toFixed(2)),
-        settledCount,
-        conversions, conversionRate,
-        patientMatches, patientConversionRate,
-        byStage, bySource,
-        connectedIntegrations, totalIntegrations: integrations.length,
-        deltas,
-      },
-    });
+    const metrics = aggregateDashboardResults(leads, prevLeads, settlements, prevSettlements, integrations);
+    return sendJson({ success: true, metrics });
   }
   return null;
 }
@@ -1588,7 +1620,9 @@ async function handleDashboardMetaTrends(ctx: AuthenticatedRouteContext): Promis
       const until = toParam || new Date().toISOString().slice(0, 10);
 
       const params: Record<string, string> = {
-        fields: 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,conversions',
+        fields: campaignId
+          ? 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,campaign_id'
+          : 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,conversions',
         time_range: JSON.stringify({ since, until }),
         time_increment: '1',
         limit: '1000',
@@ -1598,7 +1632,7 @@ async function handleDashboardMetaTrends(ctx: AuthenticatedRouteContext): Promis
         params.filtering = JSON.stringify([{ field: 'campaign.id', operator: 'EQUAL', value: campaignId }]);
       }
 
-      const data = await metaFetch(`/${creds.adAccountId}/insights`, params, creds.accessToken);
+      const data = await metaFetchInsightsWithFallback(`/${creds.adAccountId}/insights`, params, creds.accessToken, campaignId);
   
       const trends: any[] = data.data ?? [];
       const sumN = (arr: any[], k: string) => arr.reduce((s: number, d: any) => s + Number.parseFloat(d[k] || 0), 0);
@@ -1661,188 +1695,248 @@ async function handleDashboardMetaTrends(ctx: AuthenticatedRouteContext): Promis
   return null;
 }
 
+function getMetaInsightsTimePeriods(url: URL) {
+  const requestedDays = Number.parseInt(url.searchParams.get('days') ?? '30');
+  const fromParam = url.searchParams.get('from');
+  const toParam = url.searchParams.get('to');
+
+  const since = fromParam || new Date(Date.now() - requestedDays * 86_400_000).toISOString().slice(0, 10);
+  const until = toParam || new Date().toISOString().slice(0, 10);
+  const days = Math.max(1, Math.round((new Date(until).getTime() - new Date(since).getTime()) / 86_400_000) + 1);
+  const prevSince = new Date(new Date(since).getTime() - days * 86_400_000).toISOString().slice(0, 10);
+  return { since, until, days, prevSince };
+}
+
+function buildMetaInsightsParams(fields: string, since: string, until: string, campaignId: string | null) {
+  const params: Record<string, string> = {
+    fields,
+    time_range: JSON.stringify({ since, until }),
+    time_increment: '1',
+    limit: '1000',
+  };
+  if (campaignId) {
+    params.filtering = JSON.stringify([{ field: 'campaign.id', operator: 'EQUAL', value: campaignId }]);
+  }
+  return params;
+}
+
+function aggregateMetaInsightsSummary(daily: any[]) {
+  const sumN = (arr: any[], k: string) => arr.reduce((s: number, d: any) => s + Number.parseFloat(d[k] || 0), 0);
+  return {
+    impressions: Math.round(sumN(daily, 'impressions')),
+    reach: Math.round(sumN(daily, 'reach')),
+    clicks: Math.round(sumN(daily, 'clicks')),
+    spend: Number.parseFloat(sumN(daily, 'spend').toFixed(2)),
+    conversions: Math.round(sumN(daily, 'conversions')),
+    messagingConversationStarted: daily.reduce((sum: number, day: any) => sum + actionValue(day.actions, isMessagingConversationAction), 0),
+  };
+}
+
 async function handleMetaInsightsGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
-      if (resource === 'meta' && sub === 'insights' && req.method === 'GET') {
-        const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
-        const validation = validateMetaCredentialResult(creds);
-        if (!validation.ok) {
-          const payload: any = { success: false, message: validation.message };
-          if (validation.statusCode === 400) payload.notConnected = creds.notConnected || !creds.adAccountId;
-          return sendJson(payload, validation.statusCode);
-        }
-  
-        const requestedDays = Number.parseInt(url.searchParams.get('days') ?? '30');
-        const fromParam = url.searchParams.get('from');
-        const toParam = url.searchParams.get('to');
-        const campaignId = url.searchParams.get('campaign_id');
+  if (resource === 'meta' && sub === 'insights' && req.method === 'GET') {
+    const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
+    const validation = validateMetaCredentialResult(creds);
+    if (!validation.ok) {
+      const payload: any = { success: false, message: validation.message };
+      if (validation.statusCode === 400) payload.notConnected = creds.notConnected || !creds.adAccountId;
+      return sendJson(payload, validation.statusCode);
+    }
 
-        const since = fromParam || new Date(Date.now() - requestedDays * 86_400_000).toISOString().slice(0, 10);
-        const until = toParam || new Date().toISOString().slice(0, 10);
-        // Compute actual span so period.days reflects the real window, not the default 30.
-        const days = Math.max(
-          1,
-          Math.round((new Date(until).getTime() - new Date(since).getTime()) / 86_400_000) + 1,
-        );
-        const prevSince = new Date(new Date(since).getTime() - days * 86_400_000).toISOString().slice(0, 10);
+    const { since, until, days, prevSince } = getMetaInsightsTimePeriods(url);
+    const campaignId = url.searchParams.get('campaign_id');
+    const fields = campaignId
+      ? 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,conversions,actions,campaign_id'
+      : 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,conversions,actions';
 
-        const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,conversions,actions';
-  
-        try {
-          const params: Record<string, string> = {
-            fields,
-            time_range: JSON.stringify({ since, until }),
-            time_increment: '1',
-            limit: '1000',
-          };
+    try {
+      const params = buildMetaInsightsParams(fields, since, until, campaignId);
+      const prevFields = campaignId ? 'impressions,reach,clicks,spend,conversions,campaign_id' : 'impressions,reach,clicks,spend,conversions';
+      const prevParams = buildMetaInsightsParams(prevFields, prevSince, since, campaignId);
+      delete prevParams.time_increment;
 
-          if (campaignId) {
-            params.filtering = JSON.stringify([{ field: 'campaign.id', operator: 'EQUAL', value: campaignId }]);
-          }
+      const [currRes, prevRes, acctRes] = await Promise.allSettled([
+        metaFetchInsightsWithFallback(`/${creds.adAccountId}/insights`, params, creds.accessToken, campaignId),
+        metaFetchInsightsWithFallback(`/${creds.adAccountId}/insights`, prevParams, creds.accessToken, campaignId),
+        metaFetch(`/${creds.adAccountId}`, { fields: 'currency' }, creds.accessToken),
+      ]);
 
-          const prevParams: Record<string, string> = {
-            fields: 'impressions,reach,clicks,spend,conversions',
-            time_range: JSON.stringify({ since: prevSince, until: since }),
-          };
+      if (currRes.status === 'rejected') throw currRes.reason;
+      const currency: string = acctRes.status === 'fulfilled' ? (acctRes.value?.currency ?? 'EUR') : 'EUR';
 
-          if (campaignId) {
-            prevParams.filtering = JSON.stringify([{ field: 'campaign.id', operator: 'EQUAL', value: campaignId }]);
-          }
+      const daily = currRes.value.data ?? [];
+      const prevD = prevRes.status === 'fulfilled' ? (prevRes.value.data?.[0] ?? {}) : {};
+      const curr = aggregateMetaInsightsSummary(daily);
 
-          const [currRes, prevRes, acctRes] = await Promise.allSettled([
-            metaFetch(`/${creds.adAccountId}/insights`, params, creds.accessToken),
-            metaFetch(`/${creds.adAccountId}/insights`, prevParams, creds.accessToken),
-            metaFetch(`/${creds.adAccountId}`, { fields: 'currency' }, creds.accessToken),
-          ]);
-  
-          if (currRes.status === 'rejected') {
-            throw currRes.reason;
-          }
-          const currency: string = acctRes.status === 'fulfilled' ? (acctRes.value?.currency ?? 'EUR') : 'EUR';
-  
-          const daily = currRes.value.data ?? [];
-          const prevD = prevRes.status === 'fulfilled' ? (prevRes.value.data?.[0] ?? {}) : {};
-          const sumN = (arr: any[], k: string) => arr.reduce((s: number, d: any) => s + Number.parseFloat(d[k] || 0), 0);
-  
-          const curr = {
-            impressions: Math.round(sumN(daily, 'impressions')),
-            reach: Math.round(sumN(daily, 'reach')),
-            clicks: Math.round(sumN(daily, 'clicks')),
-            spend: Number.parseFloat(sumN(daily, 'spend').toFixed(2)),
-            conversions: Math.round(sumN(daily, 'conversions')),
-            messagingConversationStarted: daily.reduce((sum: number, day: any) => sum + actionValue(day.actions, isMessagingConversationAction), 0),
-          };
-          const ctr = curr.impressions > 0 ? Number.parseFloat(((curr.clicks / curr.impressions) * 100).toFixed(2)) : 0;
-          const cpc = curr.clicks > 0 ? Number.parseFloat((curr.spend / curr.clicks).toFixed(2)) : 0;
-          const cpm = curr.impressions > 0 ? Number.parseFloat((curr.spend / curr.impressions * 1000).toFixed(2)) : 0;
-          const cpp = curr.conversions > 0 ? Number.parseFloat((curr.spend / curr.conversions).toFixed(2)) : 0;
-          const prev = {
-            impressions: Number.parseFloat(prevD.impressions ?? 0),
-            reach: Number.parseFloat(prevD.reach ?? 0),
-            clicks: Number.parseFloat(prevD.clicks ?? 0),
-            spend: Number.parseFloat(prevD.spend ?? 0),
-            conversions: Number.parseFloat(prevD.conversions ?? 0),
-          };
-          const pct = percentChange;
-  
-          const result = {
-            success: true,
-            source: 'live',
-            cached: false,
-            accountId: creds.adAccountId,
-            currency,
-            period: { since, until, days },
-            summary: { ...curr, ctr, cpc, cpm, cpp },
-            changes: {
-              impressions: pct(curr.impressions, prev.impressions),
-              reach: pct(curr.reach, prev.reach),
-              clicks: pct(curr.clicks, prev.clicks),
-              spend: pct(curr.spend, prev.spend),
-              conversions: pct(curr.conversions, prev.conversions),
-            },
-            daily: daily.map((d: any) => ({
-              date: d.date_start,
-              impressions: Number.parseFloat(d.impressions || 0),
-              reach: Number.parseFloat(d.reach || 0),
-              clicks: Number.parseFloat(d.clicks || 0),
-              spend: Number.parseFloat(d.spend || 0),
-              ctr: Number.parseFloat(d.ctr || 0),
-              cpc: Number.parseFloat(d.cpc || 0),
-              cpm: Number.parseFloat(d.cpm || 0),
-              messagingConversationStarted: actionValue(d.actions, isMessagingConversationAction),
-            })),
-          };
-  
-          await setMetaCache(adminClient, userId, `meta:insights:${days}`, result);
-          return sendJson(result);
-        } catch (e: any) {
-          // Fallback 1: in-memory key-value cache
-          const cached = await getMetaCache(adminClient, userId, `meta:insights:${days}`);
-          if (cached) {
-            return sendJson({
-              ...cached.data,
-              source: cached.data?.source || 'cache',
-              cached: true,
-              degraded: true,
-              accountId: creds.adAccountId,
-              last_success: cached.updated_at,
-              message: `Meta API error: ${e.message}. Showing cached data.`
-            });
-          }
+      const ctr = curr.impressions > 0 ? Number.parseFloat(((curr.clicks / curr.impressions) * 100).toFixed(2)) : 0;
+      const cpc = curr.clicks > 0 ? Number.parseFloat((curr.spend / curr.clicks).toFixed(2)) : 0;
+      const cpm = curr.impressions > 0 ? Number.parseFloat((curr.spend / curr.impressions * 1000).toFixed(2)) : 0;
+      const cpp = curr.conversions > 0 ? Number.parseFloat((curr.spend / curr.conversions).toFixed(2)) : 0;
+      const prev = {
+        impressions: Number.parseFloat(prevD.impressions ?? 0),
+        reach: Number.parseFloat(prevD.reach ?? 0),
+        clicks: Number.parseFloat(prevD.clicks ?? 0),
+        spend: Number.parseFloat(prevD.spend ?? 0),
+        conversions: Number.parseFloat(prevD.conversions ?? 0),
+      };
+      const pct = percentChange;
 
-          // Fallback 2: persistent meta_daily_insights table
-          const { data: dbRows, error: dbErr } = await adminClient
-            .from('meta_daily_insights')
-            .select('date,impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,messaging_conversations')
-            .eq('user_id', userId)
-            .eq('ad_account_id', creds.adAccountId)
-            .gte('date', since)
-            .lte('date', until)
-            .order('date', { ascending: true });
+      const result = {
+        success: true,
+        source: 'live',
+        cached: false,
+        accountId: creds.adAccountId,
+        currency,
+        period: { since, until, days },
+        summary: { ...curr, ctr, cpc, cpm, cpp },
+        changes: {
+          impressions: pct(curr.impressions, prev.impressions),
+          reach: pct(curr.reach, prev.reach),
+          clicks: pct(curr.clicks, prev.clicks),
+          spend: pct(curr.spend, prev.spend),
+          conversions: pct(curr.conversions, prev.conversions),
+        },
+        daily: daily.map((d: any) => ({
+          date: d.date_start,
+          impressions: Number.parseFloat(d.impressions || 0),
+          reach: Number.parseFloat(d.reach || 0),
+          clicks: Number.parseFloat(d.clicks || 0),
+          spend: Number.parseFloat(d.spend || 0),
+          ctr: Number.parseFloat(d.ctr || 0),
+          cpc: Number.parseFloat(d.cpc || 0),
+          cpm: Number.parseFloat(d.cpm || 0),
+          messagingConversationStarted: actionValue(d.actions, isMessagingConversationAction),
+        })),
+      };
 
-          if (!dbErr && Array.isArray(dbRows) && dbRows.length > 0) {
-            const sumN = (arr: any[], k: string) => arr.reduce((s: number, d: any) => s + Number(d[k] || 0), 0);
-            const dbSummary = {
-              impressions: Math.round(sumN(dbRows, 'impressions')),
-              reach: Math.round(sumN(dbRows, 'reach')),
-              clicks: Math.round(sumN(dbRows, 'clicks')),
-              spend: Number.parseFloat(sumN(dbRows, 'spend').toFixed(2)),
-              conversions: Math.round(sumN(dbRows, 'conversions')),
-              messagingConversationStarted: Math.round(sumN(dbRows, 'messaging_conversations')),
-              ctr: dbRows.length ? Number.parseFloat((sumN(dbRows, 'ctr') / dbRows.length).toFixed(2)) : 0,
-              cpc: dbRows.length ? Number.parseFloat((sumN(dbRows, 'cpc') / dbRows.length).toFixed(2)) : 0,
-              cpm: dbRows.length ? Number.parseFloat((sumN(dbRows, 'cpm') / dbRows.length).toFixed(2)) : 0,
-              cpp: 0,
-            };
-            return sendJson({
-              success: true,
-              source: 'db',
-              cached: false,
-              degraded: true,
-              accountId: creds.adAccountId,
-              currency: 'EUR',
-              period: { since, until, days },
-              summary: dbSummary,
-              changes: {},
-              daily: dbRows.map((r: any) => ({
-                date: r.date,
-                impressions: Number(r.impressions),
-                reach: Number(r.reach),
-                clicks: Number(r.clicks),
-                spend: Number(r.spend),
-                ctr: Number(r.ctr),
-                cpc: Number(r.cpc),
-                cpm: Number(r.cpm),
-                messagingConversationStarted: Number(r.messaging_conversations),
-              })),
-              message: `Meta API unavailable. Showing ${dbRows.length} days from local DB (last backfill). Run POST /meta/backfill to refresh.`,
-            });
-          }
-
-          return sendJson({ success: false, metaApiError: true, message: e.message }, 502);
-        }
+      await setMetaCache(adminClient, userId, `meta:insights:${days}`, result);
+      return sendJson(result);
+    } catch (e: any) {
+      const cached = await getMetaCache(adminClient, userId, `meta:insights:${days}`);
+      if (cached) {
+        return sendJson({
+          ...cached.data,
+          source: cached.data?.source || 'cache',
+          cached: true,
+          degraded: true,
+          accountId: creds.adAccountId,
+          last_success: cached.updated_at,
+          message: `Meta API error: ${e.message}. Showing cached data.`
+        });
       }
+
+      const { data: dbRows, error: dbErr } = await adminClient
+        .from('meta_daily_insights')
+        .select('date,impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,messaging_conversations')
+        .eq('user_id', userId)
+        .eq('ad_account_id', creds.adAccountId)
+        .gte('date', since)
+        .lte('date', until)
+        .order('date', { ascending: true });
+
+      if (!dbErr && Array.isArray(dbRows) && dbRows.length > 0) {
+        const sumN = (arr: any[], k: string) => arr.reduce((s: number, d: any) => s + Number(d[k] || 0), 0);
+        const dbSummary = {
+          impressions: Math.round(sumN(dbRows, 'impressions')),
+          reach: Math.round(sumN(dbRows, 'reach')),
+          clicks: Math.round(sumN(dbRows, 'clicks')),
+          spend: Number.parseFloat(sumN(dbRows, 'spend').toFixed(2)),
+          conversions: Math.round(sumN(dbRows, 'conversions')),
+          messagingConversationStarted: Math.round(sumN(dbRows, 'messaging_conversations')),
+          ctr: dbRows.length ? Number.parseFloat((sumN(dbRows, 'ctr') / dbRows.length).toFixed(2)) : 0,
+          cpc: dbRows.length ? Number.parseFloat((sumN(dbRows, 'cpc') / dbRows.length).toFixed(2)) : 0,
+          cpm: dbRows.length ? Number.parseFloat((sumN(dbRows, 'cpm') / dbRows.length).toFixed(2)) : 0,
+          cpp: 0,
+        };
+        return sendJson({
+          success: true,
+          source: 'db',
+          cached: false,
+          degraded: true,
+          accountId: creds.adAccountId,
+          currency: 'EUR',
+          period: { since, until, days },
+          summary: dbSummary,
+          changes: {},
+          daily: dbRows.map((r: any) => ({
+            date: r.date,
+            impressions: Number(r.impressions),
+            reach: Number(r.reach),
+            clicks: Number(r.clicks),
+            spend: Number(r.spend),
+            ctr: Number(r.ctr),
+            cpc: Number(r.cpc),
+            cpm: Number(r.cpm),
+            messagingConversationStarted: Number(r.messaging_conversations),
+          })),
+          message: `Meta API unavailable. Showing ${dbRows.length} days from local DB (last backfill). Run POST /meta/backfill to refresh.`,
+        });
+      }
+
+      return sendJson({ success: false, metaApiError: true, message: e.message }, 502);
+    }
+  }
   return null;
+}
+
+async function persistMetaDailyInsights(adminClient: any, userId: string, adAccountId: string, accessToken: string, sinceDate: string, untilDate: string): Promise<number> {
+  const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,conversions';
+  const insightsRes = await metaFetch(`/${adAccountId}/insights`, {
+    fields,
+    time_range: JSON.stringify({ since: sinceDate, until: untilDate }),
+    time_increment: '1',
+    limit: '1000',
+  }, accessToken);
+  const insightsDailyRows: any[] = insightsRes?.data ?? [];
+  if (insightsDailyRows.length === 0) return 0;
+
+  const dbRows = insightsDailyRows.map((r: any) => ({
+    user_id: userId,
+    ad_account_id: adAccountId,
+    date: r.date_start,
+    impressions: Math.round(Number(r.impressions || 0)),
+    reach: Math.round(Number(r.reach || 0)),
+    clicks: Math.round(Number(r.clicks || 0)),
+    spend: Number(r.spend || 0),
+    conversions: Math.round(Number(r.conversions || 0)),
+    ctr: Number(r.ctr || 0),
+    cpc: Number(r.cpc || 0),
+    cpm: Number(r.cpm || 0),
+    messaging_conversations: 0,
+    updated_at: new Date().toISOString(),
+  }));
+
+  await adminClient
+    .from('meta_daily_insights')
+    .upsert(dbRows, { onConflict: 'user_id,ad_account_id,date' });
+  return insightsDailyRows.length;
+}
+
+async function ingestMetaLeadsFromForms(adminClient: any, userId: string, adAccountId: string, accessToken: string, sinceTs: number): Promise<number> {
+  let totalFetched = 0;
+  const formsRes = await metaFetch(`/${adAccountId}/leadgen_forms`, {
+    fields: 'id,name',
+    limit: '50',
+  }, accessToken);
+
+  for (const form of (formsRes?.data ?? [])) {
+    try {
+      const leadsRes = await metaFetch(`/${form.id}/leads`, {
+        fields: 'id,field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,adset_id,page_id',
+        filtering: JSON.stringify([{ field: 'time_created', operator: 'GREATER_THAN', value: sinceTs }]),
+        limit: '500',
+      }, accessToken);
+
+      for (const leadData of (leadsRes?.data ?? [])) {
+        const success = await processLeadData(adminClient, userId, leadData);
+        if (success) totalFetched++;
+      }
+    } catch (formError: any) {
+      console.warn(`Meta backfill failed for form ${form?.id}:`, formError?.message ?? formError);
+    }
+  }
+
+  return totalFetched;
 }
 
 async function handleMetaBackfillPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
@@ -1853,81 +1947,47 @@ async function handleMetaBackfillPost(ctx: AuthenticatedRouteContext): Promise<R
     if (!validation.ok) {
       return sendJson({ success: false, message: validation.message }, validation.statusCode);
     }
-  
-    // Allow up to 500 days so a one-time backfill can cover all of 2025 onward
+
     const days = Math.min(Math.max(Number.parseInt(url.searchParams.get('days') ?? '7'), 1), 500);
     const fromParam = url.searchParams.get('from');
     const sinceDate = fromParam || new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
     const untilDate = new Date().toISOString().slice(0, 10);
     const sinceTs = Math.floor(new Date(sinceDate).getTime() / 1000);
 
-    // 1. Fetch and persist daily insights to meta_daily_insights
-    const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,conversions';
-    let insightsDailyRows: any[] = [];
+    let dailyInsightsPersisted = 0;
     try {
-      const insightsRes = await metaFetch(`/${creds.adAccountId}/insights`, {
-        fields, time_range: JSON.stringify({ since: sinceDate, until: untilDate }), time_increment: '1', limit: '1000',
-      }, creds.accessToken);
-      insightsDailyRows = insightsRes?.data ?? [];
-      if (insightsDailyRows.length > 0) {
-        const dbRows = insightsDailyRows.map((r: any) => ({
-          user_id: userId,
-          ad_account_id: creds.adAccountId,
-          date: r.date_start,
-          impressions: Math.round(Number(r.impressions || 0)),
-          reach: Math.round(Number(r.reach || 0)),
-          clicks: Math.round(Number(r.clicks || 0)),
-          spend: Number(r.spend || 0),
-          conversions: Math.round(Number(r.conversions || 0)),
-          ctr: Number(r.ctr || 0),
-          cpc: Number(r.cpc || 0),
-          cpm: Number(r.cpm || 0),
-          messaging_conversations: 0,
-          updated_at: new Date().toISOString(),
-        }));
-        await adminClient
-          .from('meta_daily_insights')
-          .upsert(dbRows, { onConflict: 'user_id,ad_account_id,date' });
-      }
+      dailyInsightsPersisted = await persistMetaDailyInsights(
+        adminClient,
+        userId,
+        creds.adAccountId,
+        creds.accessToken,
+        sinceDate,
+        untilDate,
+      );
     } catch (e: any) {
       console.warn('Meta backfill insights persist failed:', e?.message ?? e);
     }
 
-    // 2. Fetch and ingest leads
     let totalFetched = 0;
     try {
-      // Find all forms for this ad account
-      const formsRes = await metaFetch(`/${creds.adAccountId}/leadgen_forms`, {
-        fields: 'id,name', limit: '50'
-      }, creds.accessToken);
-      
-      for (const form of (formsRes?.data ?? [])) {
-        try {
-          const leadsRes = await metaFetch(`/${form.id}/leads`, {
-            fields: 'id,field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,adset_id,page_id',
-            filtering: JSON.stringify([{ field: 'time_created', operator: 'GREATER_THAN', value: sinceTs }]),
-            limit: '500'
-          }, creds.accessToken);
-          
-          for (const leadData of (leadsRes?.data ?? [])) {
-            const success = await processLeadData(adminClient, userId, leadData);
-            if (success) totalFetched++;
-          }
-        } catch (formError: any) {
-          console.warn(`Meta backfill failed for form ${form.id}:`, formError?.message ?? formError);
-        }
-      }
+      totalFetched = await ingestMetaLeadsFromForms(
+        adminClient,
+        userId,
+        creds.adAccountId,
+        creds.accessToken,
+        sinceTs,
+      );
     } catch (e: any) {
       console.error('Backfill lead ingestion failed:', e?.message ?? e);
     }
-  
+
     const backfillResult = {
       success: true,
       totalLeadsBackfilled: totalFetched,
-      dailyInsightsPersisted: insightsDailyRows.length,
+      dailyInsightsPersisted,
       since: sinceDate,
       until: untilDate,
-      message: `Backfill completed (${sinceDate} → ${untilDate}). ${insightsDailyRows.length} daily insight rows persisted. ${totalFetched} leads ingested.`,
+      message: `Backfill completed (${sinceDate} → ${untilDate}). ${dailyInsightsPersisted} daily insight rows persisted. ${totalFetched} leads ingested.`,
     };
     await setMetaCache(adminClient, userId, `meta:backfill:${creds.adAccountId}`, backfillResult);
     return sendJson(backfillResult);
@@ -2674,8 +2734,8 @@ async function handleGoogleAdsInsightsGet(ctx: AuthenticatedRouteContext): Promi
   const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'google-ads' && sub === 'insights' && req.method === 'GET') {
     const g = await resolveGoogleAdsCreds(adminClient, userId, url.searchParams.get('customerId') ?? '');
-    if ('noServiceAccount' in g && g.noServiceAccount) return sendJson({ success: false, noServiceAccount: true, message: 'Google Ads service account not configured.' });
-    if ('notConnected' in g && g.notConnected) return sendJson({ success: false, notConnected: true, message: 'Google Ads not connected. Add your developer token in Integrations.' });
+    if (g.noServiceAccount) return sendJson({ success: false, noServiceAccount: true, message: 'Google Ads service account not configured.' });
+    if (g.notConnected) return sendJson({ success: false, notConnected: true, message: 'Google Ads not connected. Add your developer token in Integrations.' });
     const { customerId, devToken, serviceAccount } = g;
     if (!customerId) return sendJson({ success: false, noAccountId: true, message: 'Google Ads Customer ID not configured.' });
     const days = Math.min(Math.max(Number.parseInt(url.searchParams.get('days') ?? '30', 10), 1), 90);
@@ -2749,8 +2809,8 @@ async function handleGoogleAdsCampaignsGet(ctx: AuthenticatedRouteContext): Prom
   const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'google-ads' && sub === 'campaigns' && req.method === 'GET') {
     const g = await resolveGoogleAdsCreds(adminClient, userId, url.searchParams.get('customerId') ?? '');
-    if ('noServiceAccount' in g && g.noServiceAccount) return sendJson({ success: false, noServiceAccount: true, message: 'Google Ads service account not configured.' });
-    if ('notConnected' in g && g.notConnected) return sendJson({ success: false, notConnected: true, message: 'Google Ads not connected.' });
+    if (g.noServiceAccount) return sendJson({ success: false, noServiceAccount: true, message: 'Google Ads service account not configured.' });
+    if (g.notConnected) return sendJson({ success: false, notConnected: true, message: 'Google Ads not connected.' });
     const { customerId, devToken, serviceAccount } = g;
     if (!customerId) return sendJson({ success: false, noAccountId: true, message: 'Google Ads Customer ID not configured.' });
     const accessToken = await getGoogleAccessToken(serviceAccount);
@@ -3504,8 +3564,8 @@ function json(data: unknown, status = 200, extraHeaders: Record<string, string> 
     Object.entries(payload).filter(([key]) => !['success', 'data', 'error', 'message'].includes(key)),
   );
 
-  if (!Object.hasOwn(payload, 'success')) payload.success = Boolean(success);
-  if (!Object.hasOwn(payload, 'data')) {
+  if (!Object.prototype.hasOwnProperty.call(payload, 'success')) payload.success = Boolean(success);
+  if (!Object.prototype.hasOwnProperty.call(payload, 'data')) {
     payload.data = Object.keys(derivedData).length > 0 ? derivedData : null;
   }
   if (payload.error === undefined) {

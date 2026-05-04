@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, useMemo, type ReactNode } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import {
   AreaChart, Area, BarChart, Bar,
@@ -50,7 +50,6 @@ function StatCard({
 }
 
 const MARKETING_TODAY = new Date().toISOString().slice(0, 10)
-const todayStr = MARKETING_TODAY
 
 const STATUS_LABELS = {
   ALL: 'Todas',
@@ -140,7 +139,7 @@ function CampaignTable({ campaigns, filteredCampaigns, currency, summary }: Read
                 {c.insights ? c.insights.conversions.toLocaleString('es-MX') : '—'}
               </td>
               <td className="px-3 py-3 text-right text-[#B08B5A]">
-                {c.insights?.cpp != null ? fmtCurrency(c.insights.cpp, currency) : '—'}
+                {c.insights?.cpp == null ? '—' : fmtCurrency(c.insights.cpp, currency)}
               </td>
               <td className="px-3 py-3 text-right">
                 {c.insights && c.insights.conversions > 0
@@ -190,7 +189,142 @@ function CampaignTable({ campaigns, filteredCampaigns, currency, summary }: Read
   )
 }
 
-export default function Marketing() {
+const mapCampaignRow = (c: any): CampaignRow => ({
+  id: c.id,
+  name: c.name,
+  status: c.status ?? 'UNKNOWN',
+  objective: c.objective ?? '',
+  dailyBudget: c.dailyBudget ?? null,
+  lifetimeBudget: c.lifetimeBudget ?? null,
+  source: 'Meta',
+  insights: c.insights ?? null,
+})
+
+const buildMarketingParams = (isCustomRange: boolean, customFrom: string, customTo: string, days: number, campaignId?: string) => {
+  const p = new URLSearchParams()
+  if (isCustomRange) {
+    p.set('from', customFrom)
+    p.set('to', customTo || MARKETING_TODAY)
+  } else {
+    p.set('days', String(days))
+  }
+  if (campaignId && campaignId !== 'ALL') {
+    p.set('campaign_id', campaignId)
+  }
+  return p.toString()
+}
+
+const filterCampaign = (c: CampaignRow, campaignId: string, statusFilter: string, search: string) => {
+  if (campaignId !== 'ALL' && c.id !== campaignId) return false
+  if (statusFilter !== 'ALL' && c.status !== statusFilter) return false
+  if (search && !c.name.toLowerCase().includes(search.toLowerCase())) return false
+  return true
+}
+
+const mapDailyToChart = (d: any) => ({
+  date: d.date.slice(5),
+  Gasto: d.spend,
+  Clics: d.clicks,
+})
+
+const mapDailyToRatesChart = (d: any) => ({
+  date: d.date.slice(5),
+  'CTR (%)': Number(d.ctr.toFixed(2)),
+  'CPC ($)': Number(d.cpc.toFixed(2)),
+  'CPM ($)': Number(d.cpm.toFixed(2)),
+  Conversaciones: d.messagingConversationStarted,
+})
+
+const mapCampaignToChart = (c: CampaignRow) => ({
+  name: c.name.length > 22 ? c.name.slice(0, 22) + '…' : c.name,
+  Gasto: c.insights?.spend ?? 0,
+  Clics: c.insights?.clicks ?? 0,
+  Impresiones: Math.round((c.insights?.impressions ?? 0) / 100),
+  CTR: Number((c.insights?.ctr ?? 0).toFixed(2)),
+  CPC: Number((c.insights?.cpc ?? 0).toFixed(3)),
+})
+
+function AdsTable({ adsState, currency }: Readonly<{ adsState: any; currency: string }>) {
+  if (adsState.loading) {
+    return <p className="p-4 text-sm text-muted animate-pulse">Cargando anuncios…</p>
+  }
+  if (adsState.error) {
+    return <p className="p-4 text-sm text-red-400">{adsState.error}</p>
+  }
+  if (adsState.ads.length === 0) {
+    return <p className="p-4 text-sm text-muted">No hay anuncios disponibles para el período seleccionado.</p>
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border text-xs text-muted uppercase tracking-wide">
+            <th className="text-left px-4 py-3">Anuncio</th>
+            <th className="text-left px-3 py-3">Campaña</th>
+            <th className="text-center px-3 py-3">Estado</th>
+            <th className="text-right px-3 py-3">Gasto</th>
+            <th className="text-right px-3 py-3">Impresiones</th>
+            <th className="text-right px-3 py-3">Clics</th>
+            <th className="text-right px-3 py-3">CTR</th>
+            <th className="text-right px-3 py-3">CPC</th>
+            <th className="text-right px-3 py-3">CPM</th>
+            <th className="text-right px-3 py-3">Conversiones</th>
+            <th className="text-right px-3 py-3">CPP</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {adsState.ads.map((ad: any) => (
+            <tr key={ad.id} className="hover:bg-card/40 transition-colors">
+              <td className="px-4 py-3 font-medium max-w-[200px]">
+                <span title={ad.name} className="truncate block">{ad.name}</span>
+                {ad.adsetName && <span className="text-muted text-xs truncate block">{ad.adsetName}</span>}
+              </td>
+              <td className="px-3 py-3 text-muted text-xs max-w-[160px]">
+                <span title={ad.campaignName ?? ''} className="truncate block">{ad.campaignName ?? '—'}</span>
+              </td>
+              <td className="px-3 py-3 text-center">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                  ad.status === 'ACTIVE'
+                    ? 'bg-[#28A745]/10 text-[#28A745] border border-[#28A745]/30'
+                    : 'bg-card text-muted border border-border'
+                }`}>
+                  {ad.status === 'ACTIVE' ? '● ' : '○ '}{ad.status}
+                </span>
+              </td>
+              <td className="px-3 py-3 text-right font-semibold text-[#28A745]">
+                {ad.insights ? fmtCurrency(ad.insights.spend, currency) : '—'}
+              </td>
+              <td className="px-3 py-3 text-right text-foreground">
+                {ad.insights ? ad.insights.impressions.toLocaleString('es-MX') : '—'}
+              </td>
+              <td className="px-3 py-3 text-right text-foreground">
+                {ad.insights ? ad.insights.clicks.toLocaleString('es-MX') : '—'}
+              </td>
+              <td className="px-3 py-3 text-right text-foreground">
+                {ad.insights ? `${fmt(ad.insights.ctr)}%` : '—'}
+              </td>
+              <td className="px-3 py-3 text-right text-[#C49A6C]">
+                {ad.insights ? fmtCurrency(ad.insights.cpc, currency) : '—'}
+              </td>
+              <td className="px-3 py-3 text-right text-foreground">
+                {ad.insights ? fmtCurrency(ad.insights.cpm, currency) : '—'}
+              </td>
+              <td className="px-3 py-3 text-right text-[#28A745]">
+                {ad.insights ? ad.insights.conversions.toLocaleString('es-MX') : '—'}
+              </td>
+              <td className="px-3 py-3 text-right text-[#B08B5A]">
+                {ad.insights?.cpp == null ? '—' : fmtCurrency(ad.insights.cpp, currency)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+const useMarketingData = (days: number, campaignId: string, customFrom: string, customTo: string) => {
   const [state, setState] = useState<MarketingState>({
     summary: null,
     changes: null,
@@ -202,70 +336,29 @@ export default function Marketing() {
     loading: true,
     error: null,
   })
-  const [days, setDays] = useState(30)
-  const [customFrom, setCustomFrom] = useState<string>('')
-  const [customTo, setCustomTo] = useState<string>('')
-  const [campaignId, setCampaignId] = useState<string>('ALL')
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'PAUSED' | 'ARCHIVED'>('ALL')
-  const [search, setSearch] = useState('')
-  const [activeTab, setActiveTab] = useState<'campaigns' | 'ads'>('campaigns')
-  const [adsState, setAdsState] = useState<{ ads: any[]; loading: boolean; loaded: boolean; error: string | null }>({
-    ads: [], loading: false, loaded: false, error: null,
-  })
-
-  const since2025 = '2025-01-01'
 
   useEffect(() => {
     const load = async () => {
       setState((prev) => ({ ...prev, loading: true, error: null }))
       try {
         const isCustomRange = Boolean(customFrom)
-        const effectiveTo = isCustomRange ? (customTo || todayStr) : todayStr
-
-        const insightsParams = new URLSearchParams()
-        if (isCustomRange) {
-          insightsParams.set('from', customFrom)
-          insightsParams.set('to', effectiveTo)
-        } else {
-          insightsParams.set('days', String(days))
-        }
-        if (campaignId !== 'ALL') {
-          insightsParams.set('campaign_id', campaignId)
-        }
-
-        const campaignsParams = new URLSearchParams()
-        if (isCustomRange) {
-          campaignsParams.set('from', customFrom)
-          campaignsParams.set('to', effectiveTo)
-        } else {
-          campaignsParams.set('days', String(days))
-        }
+        const iParams = buildMarketingParams(isCustomRange, customFrom, customTo, days, campaignId)
+        const cParams = buildMarketingParams(isCustomRange, customFrom, customTo, days)
 
         const [insightsRes, campaignsRes] = await Promise.allSettled([
-          invokeApi(`/meta/insights?${insightsParams.toString()}`),
-          invokeApi(`/meta/campaigns?${campaignsParams.toString()}`),
+          invokeApi(`/meta/insights?${iParams}`),
+          invokeApi(`/meta/campaigns?${cParams}`),
         ])
 
         const insightsData = insightsRes.status === 'fulfilled' ? insightsRes.value : null
         const campaignsData = campaignsRes.status === 'fulfilled' ? campaignsRes.value : null
 
         const rawCampaigns: CampaignRow[] = Array.isArray(campaignsData?.campaigns)
-          ? campaignsData.campaigns.map((c: any) => ({
-              id: c.id,
-              name: c.name,
-              status: c.status ?? 'UNKNOWN',
-              objective: c.objective ?? '',
-              dailyBudget: c.dailyBudget ?? null,
-              lifetimeBudget: c.lifetimeBudget ?? null,
-              source: 'Meta',
-              insights: c.insights ?? null,
-            }))
+          ? campaignsData.campaigns.map(mapCampaignRow)
           : []
 
-        const error =
-          insightsRes.status === 'rejected' && campaignsRes.status === 'rejected'
-            ? 'No se pudo cargar la información de Meta Ads.'
-            : null
+        const failedBoth = insightsRes.status === 'rejected' && campaignsRes.status === 'rejected'
+        const error = failedBoth ? 'No se pudo cargar la información de Meta Ads.' : null
 
         setState({
           summary: insightsData?.summary ?? null,
@@ -278,11 +371,6 @@ export default function Marketing() {
           loading: false,
           error,
         })
-
-        // If the selected campaign no longer exists in the new window, fall back to ALL.
-        if (campaignId !== 'ALL' && !rawCampaigns.some((c) => c.id === campaignId)) {
-          setCampaignId('ALL')
-        }
       } catch (err: any) {
         setState((prev) => ({ ...prev, loading: false, error: err?.message ?? 'Error cargando datos.' }))
       }
@@ -290,14 +378,102 @@ export default function Marketing() {
     load()
   }, [days, campaignId, customFrom, customTo])
 
+  return state
+}
+
+function MarketingHeader({
+  loading, periodLabel, accountId, currency, campaigns, campaignId, setCampaignId,
+  days, setDays, customFrom, setCustomFrom, customTo, setCustomTo, since2025,
+}: Readonly<{
+  loading: boolean; periodLabel: string; accountId: string; currency: string; campaigns: CampaignRow[];
+  campaignId: string; setCampaignId: (id: string) => void; days: number; setDays: (d: number) => void;
+  customFrom: string; setCustomFrom: (s: string) => void; customTo: string; setCustomTo: (s: string) => void;
+  since2025: string;
+}>) {
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-end gap-4">
+      <div className="flex-1">
+        <h1 className="text-3xl font-serif font-bold text-foreground">Marketing · Meta Ads</h1>
+        <p className="text-muted mt-1 text-sm">
+          Período: {loading ? '…' : periodLabel}{accountId ? ` · Cuenta: ${accountId}` : ''} · Moneda: {loading ? '…' : currency}
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        {campaigns.length > 0 && (
+          <select
+            value={campaignId}
+            onChange={(e) => setCampaignId(e.target.value)}
+            className="bg-card text-foreground text-xs font-medium px-3 py-1.5 rounded-lg border border-border focus:ring-1 focus:ring-primary"
+          >
+            <option value="ALL">Todas las campañas</option>
+            {campaigns.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        )}
+        <div className="flex items-center gap-1 bg-card rounded-lg p-1">
+          {([7, 14, 30, 90, 365] as const).map((d) => (
+            <button
+              key={d}
+              onClick={() => { setDays(d); setCustomFrom(''); setCustomTo('') }}
+              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                !customFrom && days === d ? 'bg-primary/15 text-foreground' : 'text-muted hover:text-foreground'
+              }`}
+            >
+              {d}d
+            </button>
+          ))}
+          <button
+            onClick={() => { setCustomFrom(since2025); setCustomTo('') }}
+            className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+              customFrom === since2025 && !customTo ? 'bg-primary text-white' : 'text-muted hover:text-foreground'
+            }`}
+          >
+            Desde 2025
+          </button>
+        </div>
+        <div className="flex items-center gap-1">
+          <input
+            type="date"
+            value={customFrom}
+            onChange={(e) => setCustomFrom(e.target.value)}
+            className="bg-card text-foreground text-xs px-2 py-1.5 rounded-lg border border-border focus:ring-1 focus:ring-primary"
+          />
+          <span className="text-muted text-xs">→</span>
+          <input
+            type="date"
+            value={customTo}
+            onChange={(e) => setCustomTo(e.target.value)}
+            className="bg-card text-foreground text-xs px-2 py-1.5 rounded-lg border border-border focus:ring-1 focus:ring-primary"
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function Marketing() {
+  const [days, setDays] = useState(30)
+  const [customFrom, setCustomFrom] = useState<string>('')
+  const [customTo, setCustomTo] = useState<string>('')
+  const [campaignId, setCampaignId] = useState<string>('ALL')
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'PAUSED' | 'ARCHIVED'>('ALL')
+  const [search, setSearch] = useState('')
+  const [activeTab, setActiveTab] = useState<'campaigns' | 'ads'>('campaigns')
+  const [adsState, setAdsState] = useState<{ ads: any[]; loading: boolean; loaded: boolean; error: string | null }>({
+    ads: [], loading: false, loaded: false, error: null,
+  })
+
+  const state = useMarketingData(days, campaignId, customFrom, customTo)
+
+  const since2025 = '2025-01-01'
+
   // Fetch ads on demand when ads tab is first opened
   useEffect(() => {
     if (activeTab !== 'ads') return
     if (adsState.loaded) return
     setAdsState((prev) => ({ ...prev, loading: true, error: null }))
-    const params = new URLSearchParams()
-    if (customFrom) { params.set('from', customFrom); params.set('to', customTo || todayStr) }
-    else { params.set('days', String(days)) }
+    const params = buildMarketingParams(Boolean(customFrom), customFrom, customTo, days)
     invokeApi(`/meta/ads?${params}`)
       .then((data: any) => {
         setAdsState({ ads: data?.ads ?? [], loading: false, loaded: true, error: null })
@@ -307,45 +483,30 @@ export default function Marketing() {
       })
   }, [activeTab, adsState.loaded, days, customFrom, customTo])
 
+  // If the selected campaign no longer exists in the current state window, fall back to ALL.
+  useEffect(() => {
+    if (campaignId !== 'ALL' && state.campaigns.length > 0 && !state.campaigns.some((c) => c.id === campaignId)) {
+      setCampaignId('ALL')
+    }
+  }, [state.campaigns, campaignId])
+
   const { summary, changes, daily, campaigns, currency, accountId, period, loading, error } = state
 
   const activeCampaigns = campaigns.filter((c) => c.status === 'ACTIVE').length
 
-  // Filtered campaigns for table
-  const filteredCampaigns = campaigns.filter((c) => {
-    if (campaignId !== 'ALL' && c.id !== campaignId) return false
-    if (statusFilter !== 'ALL' && c.status !== statusFilter) return false
-    if (search && !c.name.toLowerCase().includes(search.toLowerCase())) return false
-    return true
-  })
+  const filteredCampaigns = useMemo(() => {
+    return campaigns.filter((c) => filterCampaign(c, campaignId, statusFilter, search))
+  }, [campaigns, campaignId, statusFilter, search])
 
-  // Daily spend + clicks chart
-  const dailyChart = daily.map((d) => ({
-    date: d.date.slice(5), // MM-DD
-    Gasto: d.spend,
-    Clics: d.clicks,
-  }))
+  const dailyChart = useMemo(() => daily.map(mapDailyToChart), [daily])
 
-  // Daily CTR / CPC / CPM chart
-  const dailyRatesChart = daily.map((d) => ({
-    date: d.date.slice(5),
-    'CTR (%)': Number(d.ctr.toFixed(2)),
-    'CPC ($)': Number(d.cpc.toFixed(2)),
-    'CPM ($)': Number(d.cpm.toFixed(2)),
-    Conversaciones: d.messagingConversationStarted,
-  }))
+  const dailyRatesChart = useMemo(() => daily.map(mapDailyToRatesChart), [daily])
 
-  // Per-campaign bar chart
-  const campaignChart = campaigns
-    .filter((c) => c.insights)
-    .map((c) => ({
-      name: c.name.length > 22 ? c.name.slice(0, 22) + '…' : c.name,
-      Gasto: c.insights.spend,
-      Clics: c.insights.clicks,
-      Impresiones: Math.round(c.insights.impressions / 100),
-      CTR: Number(c.insights.ctr.toFixed(2)),
-      CPC: Number(c.insights.cpc.toFixed(3)),
-    }))
+  const campaignChart = useMemo(() => {
+    return campaigns
+      .filter((c) => c.insights)
+      .map(mapCampaignToChart)
+  }, [campaigns])
 
   const periodLabel = period
     ? `${period.since} → ${period.until} (${period.days} días)`
@@ -353,67 +514,22 @@ export default function Marketing() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-end gap-4">
-        <div className="flex-1">
-          <h1 className="text-3xl font-serif font-bold text-foreground">Marketing · Meta Ads</h1>
-          <p className="text-muted mt-1 text-sm">
-            Período: {loading ? '…' : periodLabel}{accountId ? ` · Cuenta: ${accountId}` : ''} · Moneda: {loading ? '…' : currency}
-          </p>
-        </div>
-        {/* Filters */}
-        <div className="flex items-center gap-2">
-          {campaigns.length > 0 && (
-            <select
-              value={campaignId}
-              onChange={(e) => setCampaignId(e.target.value)}
-              className="bg-card text-foreground text-xs font-medium px-3 py-1.5 rounded-lg border border-border focus:ring-1 focus:ring-primary"
-            >
-              <option value="ALL">Todas las campañas</option>
-              {campaigns.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-          )}
-          <div className="flex items-center gap-1 bg-card rounded-lg p-1">
-            {([7, 14, 30, 90, 365] as const).map((d) => (
-              <button
-                key={d}
-                onClick={() => { setDays(d); setCustomFrom(''); setCustomTo('') }}
-                className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                  !customFrom && days === d ? 'bg-primary/15 text-foreground' : 'text-muted hover:text-foreground'
-                }`}
-              >
-                {d}d
-              </button>
-            ))}
-            <button
-              onClick={() => { setCustomFrom(since2025); setCustomTo('') }}
-              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                customFrom === since2025 && !customTo ? 'bg-primary text-white' : 'text-muted hover:text-foreground'
-              }`}
-            >
-              Desde 2025
-            </button>
-          </div>
-          {/* Custom date range inputs */}
-          <div className="flex items-center gap-1">
-            <input
-              type="date"
-              value={customFrom}
-              onChange={(e) => setCustomFrom(e.target.value)}
-              className="bg-card text-foreground text-xs px-2 py-1.5 rounded-lg border border-border focus:ring-1 focus:ring-primary"
-            />
-            <span className="text-muted text-xs">→</span>
-            <input
-              type="date"
-              value={customTo}
-              onChange={(e) => setCustomTo(e.target.value)}
-              className="bg-card text-foreground text-xs px-2 py-1.5 rounded-lg border border-border focus:ring-1 focus:ring-primary"
-            />
-          </div>
-        </div>
-      </div>
+      <MarketingHeader
+        loading={loading}
+        periodLabel={periodLabel}
+        accountId={accountId}
+        currency={currency}
+        campaigns={campaigns}
+        campaignId={campaignId}
+        setCampaignId={setCampaignId}
+        days={days}
+        setDays={setDays}
+        customFrom={customFrom}
+        setCustomFrom={setCustomFrom}
+        customTo={customTo}
+        setCustomTo={setCustomTo}
+        since2025={since2025}
+      />
 
       {error && (
         <div className="rounded-md border border-[#E0A020]/30 bg-[#E0A020]/8 px-4 py-3 text-sm text-[#E0A020]">
@@ -713,82 +829,7 @@ export default function Marketing() {
             <CardTitle className="flex-1">Detalle por anuncio</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            {adsState.loading && (
-              <p className="p-4 text-sm text-muted animate-pulse">Cargando anuncios…</p>
-            )}
-            {!adsState.loading && adsState.error && (
-              <p className="p-4 text-sm text-red-400">{adsState.error}</p>
-            )}
-            {!adsState.loading && !adsState.error && adsState.ads.length === 0 && (
-              <p className="p-4 text-sm text-muted">No hay anuncios disponibles para el período seleccionado.</p>
-            )}
-            {!adsState.loading && !adsState.error && adsState.ads.length > 0 && (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border text-xs text-muted uppercase tracking-wide">
-                      <th className="text-left px-4 py-3">Anuncio</th>
-                      <th className="text-left px-3 py-3">Campaña</th>
-                      <th className="text-center px-3 py-3">Estado</th>
-                      <th className="text-right px-3 py-3">Gasto</th>
-                      <th className="text-right px-3 py-3">Impresiones</th>
-                      <th className="text-right px-3 py-3">Clics</th>
-                      <th className="text-right px-3 py-3">CTR</th>
-                      <th className="text-right px-3 py-3">CPC</th>
-                      <th className="text-right px-3 py-3">CPM</th>
-                      <th className="text-right px-3 py-3">Conversiones</th>
-                      <th className="text-right px-3 py-3">CPP</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {adsState.ads.map((ad: any) => (
-                      <tr key={ad.id} className="hover:bg-card/40 transition-colors">
-                        <td className="px-4 py-3 font-medium max-w-[200px]">
-                          <span title={ad.name} className="truncate block">{ad.name}</span>
-                          {ad.adsetName && <span className="text-muted text-xs truncate block">{ad.adsetName}</span>}
-                        </td>
-                        <td className="px-3 py-3 text-muted text-xs max-w-[160px]">
-                          <span title={ad.campaignName ?? ''} className="truncate block">{ad.campaignName ?? '—'}</span>
-                        </td>
-                        <td className="px-3 py-3 text-center">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                            ad.status === 'ACTIVE'
-                              ? 'bg-[#28A745]/10 text-[#28A745] border border-[#28A745]/30'
-                              : 'bg-card text-muted border border-border'
-                          }`}>
-                            {ad.status === 'ACTIVE' ? '● ' : '○ '}{ad.status}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3 text-right font-semibold text-[#28A745]">
-                          {ad.insights ? fmtCurrency(ad.insights.spend, currency) : '—'}
-                        </td>
-                        <td className="px-3 py-3 text-right text-foreground">
-                          {ad.insights ? ad.insights.impressions.toLocaleString('es-MX') : '—'}
-                        </td>
-                        <td className="px-3 py-3 text-right text-foreground">
-                          {ad.insights ? ad.insights.clicks.toLocaleString('es-MX') : '—'}
-                        </td>
-                        <td className="px-3 py-3 text-right text-foreground">
-                          {ad.insights ? `${fmt(ad.insights.ctr)}%` : '—'}
-                        </td>
-                        <td className="px-3 py-3 text-right text-[#C49A6C]">
-                          {ad.insights ? fmtCurrency(ad.insights.cpc, currency) : '—'}
-                        </td>
-                        <td className="px-3 py-3 text-right text-foreground">
-                          {ad.insights ? fmtCurrency(ad.insights.cpm, currency) : '—'}
-                        </td>
-                        <td className="px-3 py-3 text-right text-[#28A745]">
-                          {ad.insights ? ad.insights.conversions.toLocaleString('es-MX') : '—'}
-                        </td>
-                        <td className="px-3 py-3 text-right text-[#B08B5A]">
-                          {ad.insights?.cpp != null ? fmtCurrency(ad.insights.cpp, currency) : '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <AdsTable adsState={adsState} currency={currency} />
           </CardContent>
         </Card>
       )}

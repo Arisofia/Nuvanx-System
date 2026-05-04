@@ -3,15 +3,15 @@ import { Calendar } from 'lucide-react'
 
 export interface FilterBarProps {
   /** Called whenever the date range changes. Empty strings mean "no filter / all time". */
-  onDateChange: (from: string, to: string) => void
+  readonly onDateChange: (from: string, to: string) => void
   /** Optional campaign dropdown */
-  campaigns?: { id: string; name: string }[]
-  onCampaignChange?: (id: string) => void
-  campaignValue?: string
+  readonly campaigns?: { id: string; name: string }[]
+  readonly onCampaignChange?: (id: string) => void
+  readonly campaignValue?: string
   /** Optional source dropdown */
-  sources?: string[]
-  onSourceChange?: (src: string) => void
-  sourceValue?: string
+  readonly sources?: string[]
+  readonly onSourceChange?: (src: string) => void
+  readonly sourceValue?: string
 }
 
 const PRESETS = [

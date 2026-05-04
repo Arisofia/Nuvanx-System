@@ -86,6 +86,16 @@ export default function Traceability() {
   const withRevenueCount = rows.filter((r) => r.doctoralia_net && r.doctoralia_net > 0).length
   const totalRevenue = rows.reduce((s, r) => s + (r.doctoralia_net ?? 0), 0)
 
+  const renderPatientInfo = (r: any) => {
+    if (r.patient_name) {
+      return <p className="text-foreground">{r.patient_name}</p>
+    }
+    if (r.doc_patient_id) {
+      return <p className="text-muted text-[10px]">ID: {r.doc_patient_id}</p>
+    }
+    return <span className="text-muted">—</span>
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -231,13 +241,7 @@ export default function Traceability() {
                           )}
                         </td>
                         <td className="py-2 pr-3">
-                          {r.patient_name ? (
-                            <p className="text-foreground">{r.patient_name}</p>
-                          ) : r.doc_patient_id ? (
-                            <p className="text-muted text-[10px]">ID: {r.doc_patient_id}</p>
-                          ) : (
-                            <span className="text-muted">—</span>
-                          )}
+                          {renderPatientInfo(r)}
                           {r.doctoralia_template_name && (
                             <p className="text-muted text-[10px] truncate max-w-[140px]">{r.doctoralia_template_name}</p>
                           )}
@@ -245,19 +249,19 @@ export default function Traceability() {
                         <td className="py-2 text-right">
                           {hasRevenue ? (
                             <span className="text-primary font-medium">
-                              €{r.doctoralia_net!.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              €{r.doctoralia_net.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </span>
                           ) : (
                             <span className="text-muted">—</span>
                           )}
                         </td>
                         <td className="py-2 text-right">
-                          {r.days_to_settlement != null ? (
+                          {r.days_to_settlement == null ? (
+                            <span className="text-muted">—</span>
+                          ) : (
                             <span className={r.days_to_settlement <= 30 ? 'text-green-400' : 'text-muted'}>
                               {r.days_to_settlement}d
                             </span>
-                          ) : (
-                            <span className="text-muted">—</span>
                           )}
                         </td>
                       </tr>

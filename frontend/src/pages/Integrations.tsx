@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useEffect, useState, type ChangeEvent, type SyntheticEvent } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -47,6 +47,8 @@ export default function Integrations() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [testing, setTesting] = useState<string | null>(null)
   const [testResult, setTestResult] = useState<Record<string, string>>({})
+  const [healthLoading, setHealthLoading] = useState<string | null>(null)
+  const [healthResult, setHealthResult] = useState<Record<string, string>>({})
 
   async function loadIntegrations() {
     setLoading(true)
@@ -70,7 +72,7 @@ export default function Integrations() {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
   }
 
-  const handleConnect = async (e: FormEvent<HTMLFormElement>) => {
+  const handleConnect = async (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault()
     setSaveError(null)
     if (!form.token.trim()) { setSaveError('Token / API key is required.'); return }
@@ -114,6 +116,26 @@ export default function Integrations() {
       setTestResult((prev) => ({ ...prev, [service]: err?.message ?? 'Test failed' }))
     } finally {
       setTesting(null)
+    }
+  }
+
+  const handleHealthCheck = async (service: string) => {
+    if (service !== 'meta') return
+    setHealthLoading(service)
+    setHealthResult((prev) => ({ ...prev, [service]: '' }))
+    try {
+      const res: any = await invokeApi('/health/meta')
+      const account = res.ad_account ?? res.accountId ?? ''
+      const name = res.meta_user ?? res.metaUser ?? 'Meta user'
+      const accountText = account ? ` · ${account}` : ''
+      setHealthResult((prev) => ({
+        ...prev,
+        [service]: `OK: ${name}${accountText}`,
+      }))
+    } catch (err: any) {
+      setHealthResult((prev) => ({ ...prev, [service]: err?.message ?? 'Verificación de Meta falló.' }))
+    } finally {
+      setHealthLoading(null)
     }
   }
 
@@ -289,17 +311,35 @@ export default function Integrations() {
                 {testResult[integration.service] && (
                   <p className="text-xs text-foreground bg-card rounded p-2">{testResult[integration.service]}</p>
                 )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full mt-2"
-                  disabled={testing === integration.service}
-                  onClick={() => handleTest(integration.service)}
-                >
-                  {testing === integration.service
-                    ? <><Loader2 className="w-3 h-3 mr-2 animate-spin" />Probando…</>
-                    : 'Probar Conexión'}
-                </Button>
+                <div className="grid gap-2 pt-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    disabled={testing === integration.service}
+                    onClick={() => handleTest(integration.service)}
+                  >
+                    {testing === integration.service
+                      ? <><Loader2 className="w-3 h-3 mr-2 animate-spin" />Probando…</>
+                      : 'Probar Conexión'}
+                  </Button>
+                  {integration.service === 'meta' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      disabled={healthLoading === integration.service}
+                      onClick={() => handleHealthCheck(integration.service)}
+                    >
+                      {healthLoading === integration.service
+                        ? <><Loader2 className="w-3 h-3 mr-2 animate-spin" />Verificando…</>
+                        : 'Verificar accesos'}
+                    </Button>
+                  )}
+                </div>
+                {healthResult[integration.service] && (
+                  <p className="text-xs text-muted mt-2">{healthResult[integration.service]}</p>
+                )}
               </CardContent>
             </Card>
           )
