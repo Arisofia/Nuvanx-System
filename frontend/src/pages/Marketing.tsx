@@ -466,8 +466,8 @@ export default function Marketing() {
         />
         <StatCard
           label="CPC promedio"
-          value={loading ? '…' : `$${fmt(summary?.cpc ?? 0)}`}
-          sub={`CPM: $${fmt(summary?.cpm ?? 0)}`}
+          value={loading ? '…' : fmtCurrency(summary?.cpc ?? 0, currency)}
+          sub={`CPM: ${fmtCurrency(summary?.cpm ?? 0, currency)}`}
           icon={<Target className="w-4 h-4 text-amber-400" />}
           color="text-amber-400"
         />
@@ -493,7 +493,7 @@ export default function Marketing() {
         <StatCard
           label="Alcance"
           value={loading ? '…' : (summary?.reach ?? 0).toLocaleString('es-MX')}
-          sub={`CPP: ${summary?.cpp ? '$' + fmt(summary.cpp) : '—'}`}
+          sub={`CPP: ${summary?.cpp ? fmtCurrency(summary.cpp, currency) : '—'}`}
           icon={<TrendingDown className="w-4 h-4 text-orange-400" />}
           delta={changes?.reach}
         />

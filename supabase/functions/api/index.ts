@@ -2065,7 +2065,7 @@ async function handleMetaAdsGet(ctx: AuthenticatedRouteContext): Promise<Respons
     try {
       const [adsData, acctData] = await Promise.allSettled([
         metaFetch(`/${creds.adAccountId}/ads`, {
-          fields: `id,name,status,adset_id,adset{name},campaign_id,campaign{name},creative{id,name},insights.${insightsDateParam}{impressions,reach,clicks,spend,ctr,cpc,cpm,actions,cost_per_action_type}`,
+          fields: `id,name,status,adset_id,adset{name},campaign_id,campaign{name},insights.${insightsDateParam}{impressions,reach,clicks,spend,ctr,cpc,cpm,actions}`,
           effective_status: '["ACTIVE","PAUSED","DELETED","ARCHIVED","IN_PROCESS","WITH_ISSUES"]',
           limit: '500',
         }, creds.accessToken),
