@@ -9,7 +9,6 @@ import { invokeApi } from '../lib/supabaseClient'
 import type { CampaignRow, AccountSummary, DailyPoint, MetaChanges as Changes, MarketingState } from '../types'
 import { ExportButton } from '../components/reports/ExportButton'
 
-<<<<<<< Updated upstream
 const fmt = (n: number, decimals = 2) =>
   n.toLocaleString('es-MX', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
 
@@ -48,59 +47,16 @@ function StatCard({
       </CardContent>
     </Card>
   )
-=======
-interface CampaignPerformance {
-  id: string
-  name: string
-  source: string
-  status: string
-  objective: string
-  spend: number
-  conversions: number
-  cpc: number
-  cpp: number | null
-  impressions: number
-  clicks: number
-  cpm: number | null
-  roas: number | null
-}
-
-const fallbackData: CampaignPerformance[] = [
-  { id: 'meta-search', name: 'Meta Search', source: 'Meta', status: 'ACTIVE', objective: 'traffic', spend: 14.6, conversions: 48, cpc: 1.24, cpp: 18.5, impressions: 18_500, clicks: 7_456, cpm: 0.80, roas: 3.4 },
-  { id: 'meta-feed', name: 'Meta Feed', source: 'Meta', status: 'ACTIVE', objective: 'lead generation', spend: 12.3, conversions: 38, cpc: 1.08, cpp: 16.7, impressions: 15_200, clicks: 6_300, cpm: 0.81, roas: 3.1 },
-  { id: 'google-search', name: 'Google Search', source: 'Google', status: 'ACTIVE', objective: 'search', spend: 9.8, conversions: 42, cpc: 0.95, cpp: 14.3, impressions: 13_600, clicks: 10_100, cpm: 0.72, roas: 2.9 },
-  { id: 'google-display', name: 'Google Display', source: 'Google', status: 'ACTIVE', objective: 'display', spend: 6.1, conversions: 27, cpc: 0.72, cpp: 22.4, impressions: 11_900, clicks: 8_500, cpm: 0.51, roas: 2.4 },
-]
-
-// NOTE: estos son datos mock de fallback para Marketing.
-// Cuando las llamadas a /meta/campaigns o /google-ads/campaigns fallen, se muestran valores de ejemplo.
-interface MarketingMetrics {
-  leadCount: number
-  totalSpend: number
-  avgCpc: number
-  activeCampaigns: number
-  campaigns: CampaignPerformance[]
-  loading: boolean
-  error: string | null
->>>>>>> Stashed changes
 }
 
 const MARKETING_TODAY = new Date().toISOString().slice(0, 10)
 const todayStr = MARKETING_TODAY
 
 export default function Marketing() {
-<<<<<<< Updated upstream
   const [state, setState] = useState<MarketingState>({
     summary: null,
     changes: null,
     daily: [],
-=======
-  const [metrics, setMetrics] = useState<MarketingMetrics>({
-    leadCount: 0,
-    totalSpend: 0,
-    avgCpc: 0,
-    activeCampaigns: 0,
->>>>>>> Stashed changes
     campaigns: [],
     currency: 'EUR',
     accountId: '',
@@ -108,11 +64,6 @@ export default function Marketing() {
     loading: true,
     error: null,
   })
-  const [isDemo, setIsDemo] = useState(false)
-  const [range, setRange] = useState<'7d' | '30d'>('30d')
-  const [platform, setPlatform] = useState<'all' | 'meta' | 'google'>('all')
-  const [campaignId, setCampaignId] = useState<string>('')
-
   const [days, setDays] = useState(30)
   const [customFrom, setCustomFrom] = useState<string>('')
   const [customTo, setCustomTo] = useState<string>('')
@@ -126,7 +77,6 @@ export default function Marketing() {
     const load = async () => {
       setState((prev) => ({ ...prev, loading: true, error: null }))
       try {
-<<<<<<< Updated upstream
         const isCustomRange = Boolean(customFrom)
         const effectiveTo = isCustomRange ? (customTo || todayStr) : todayStr
         const insightsQ = isCustomRange
@@ -153,64 +103,12 @@ export default function Marketing() {
               insights: c.insights ?? null,
             }))
           : []
-=======
-        const params = `range=${range}${campaignId ? `&campaignId=${encodeURIComponent(campaignId)}` : ''}`
-        const metaUrl = `/meta/campaigns?${params}&source=meta`
-        const googleUrl = `/google-ads/campaigns?${params}&source=google`
-
-        const promises: Promise<any>[] = []
-        if (platform === 'all' || platform === 'meta') promises.push(invokeApi(metaUrl))
-        if (platform === 'all' || platform === 'google') promises.push(invokeApi(googleUrl))
-
-        const settled = await Promise.allSettled(promises)
-        const metaResult = platform === 'google' ? { status: 'rejected' as const } : settled[0]
-        const googleResult = platform === 'meta' ? { status: 'rejected' as const } : settled[platform === 'all' ? 1 : 0]
-
-        const metaCampaigns: CampaignPerformance[] =
-          metaResult.status === 'fulfilled' && Array.isArray(metaResult.value?.campaigns)
-            ? metaResult.value.campaigns.map((campaign: any) => ({
-                id: String(campaign.id ?? campaign.campaign_id ?? campaign.name ?? 'meta-unknown'),
-                name: campaign.name || 'Meta campaign',
-                cpc: Number(campaign.insights?.cpc ?? 0),
-                cpp: campaign.insights?.cpp ?? null,
-                spend: Number(campaign.insights?.spend ?? 0),
-                conversions: Number(campaign.insights?.conversions ?? 0),
-                impressions: Number(campaign.insights?.impressions ?? 0),
-                clicks: Number(campaign.insights?.clicks ?? 0),
-                cpm: campaign.insights?.cpm ?? null,
-                roas: campaign.insights?.roas ?? null,
-                status: campaign.status ?? 'UNKNOWN',
-                objective: campaign.objective ?? '',
-                source: 'Meta',
-              }))
-            : []
-
-        const googleCampaigns: CampaignPerformance[] =
-          googleResult.status === 'fulfilled' && Array.isArray(googleResult.value?.campaigns)
-            ? googleResult.value.campaigns.map((campaign: any) => ({
-                id: String(campaign.id ?? campaign.campaign_id ?? campaign.name ?? 'google-unknown'),
-                name: campaign.name || 'Google Ads campaign',
-                cpc: Number(campaign.insights?.cpc ?? 0),
-                cpp: campaign.insights?.cpp ?? null,
-                spend: Number(campaign.insights?.spend ?? 0),
-                conversions: Number(campaign.insights?.conversions ?? 0),
-                impressions: Number(campaign.insights?.impressions ?? 0),
-                clicks: Number(campaign.insights?.clicks ?? 0),
-                cpm: campaign.insights?.cpm ?? null,
-                roas: campaign.insights?.roas ?? null,
-                status: campaign.status ?? 'UNKNOWN',
-                objective: campaign.type ?? campaign.objective ?? '',
-                source: 'Google',
-              }))
-            : []
->>>>>>> Stashed changes
 
         const error =
           insightsRes.status === 'rejected' && campaignsRes.status === 'rejected'
             ? 'No se pudo cargar la información de Meta Ads.'
             : null
 
-<<<<<<< Updated upstream
         setState({
           summary: insightsData?.summary ?? null,
           changes: insightsData?.changes ?? null,
@@ -219,39 +117,16 @@ export default function Marketing() {
           currency: insightsData?.currency ?? campaignsData?.currency ?? 'EUR',
           accountId: insightsData?.accountId ?? campaignsData?.accountId ?? '',
           period: insightsData?.period ?? null,
-=======
-        setIsDemo(metaResult.status === 'rejected' && googleResult.status === 'rejected')
-        setMetrics({
-          leadCount: leadCount || 86,
-          totalSpend: totalSpend || 38_700,
-          activeCampaigns: campaigns.length,
-          avgCpc: avgCpc || 1.07,
-          campaigns: campaigns.length ? campaigns.slice(0, 6) : fallbackData,
->>>>>>> Stashed changes
           loading: false,
           error,
         })
       } catch (err: any) {
-<<<<<<< Updated upstream
         setState((prev) => ({ ...prev, loading: false, error: err?.message ?? 'Error cargando datos.' }))
-=======
-        console.warn('Marketing data fetch failed, using fallback:', err)
-        setIsDemo(true)
-        setMetrics({
-          leadCount: 86,
-          totalSpend: 38_700,
-          avgCpc: 1.07,
-          campaigns: fallbackData,
-          loading: false,
-          error: 'Unable to load campaign metrics from Edge Functions; showing fallback data.',
-        })
->>>>>>> Stashed changes
       }
     }
     load()
   }, [days, campaignId, customFrom, customTo])
 
-<<<<<<< Updated upstream
   const { summary, changes, daily, campaigns, currency, accountId, period, loading, error } = state
 
   const activeCampaigns = campaigns.filter((c) => c.status === 'ACTIVE').length
@@ -427,182 +302,11 @@ export default function Marketing() {
           icon={<TrendingDown className="w-4 h-4 text-orange-400" />}
           delta={changes?.reach}
         />
-=======
-    loadMarketingData()
-  }, [range, platform, campaignId])
-
-  // chartData usa datos reales cuando están disponibles y mocks de fallback cuando no.
-  const chartData = (metrics.campaigns.length ? metrics.campaigns : fallbackData).map((campaign) => ({
-    name: campaign.name,
-    cpc: campaign.cpc,
-    cpp: campaign.cpp ?? 0,
-  }))
-
-  const campaignRows = metrics.campaigns.length ? metrics.campaigns : fallbackData
-
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (!active || !payload || !payload.length) return null
-    return (
-      <div className="rounded border border-slate-700 bg-slate-950 p-3 text-xs text-slate-100">
-        <p className="font-semibold">{label}</p>
-        {payload.map((entry: any) => (
-          <p key={entry.dataKey} className="mt-1">
-            {entry.name}: ${entry.value}
-            {entry.dataKey === 'cpc' && <span className="text-slate-400"> — coste por clic.</span>}
-            {entry.dataKey === 'cpp' && <span className="text-slate-400"> — coste por paciente.</span>}
-          </p>
-        ))}
-        <p className="mt-2 text-slate-400">ROAS (Meta+Google): ingreso atribuible / inversión.</p>
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Marketing</h1>
-        <p className="text-slate-600 mt-1">Inteligencia de campañas Meta y Google — CPC, CPP y ROAS por campaña</p>
-      </div>
-
-      {isDemo && (
-        <div className="mb-4 p-3 rounded bg-yellow-50 text-xs text-yellow-800 border border-yellow-200">
-          Modo demo: algunos datos se muestran con valores simulados porque la integración de Meta/Google no está activa o no se pudo acceder al endpoint.
-        </div>
-      )}
-
-      <div className="grid gap-4 lg:grid-cols-[1fr_minmax(280px,360px)]">
-        <div className="grid gap-3 sm:grid-cols-3">
-          <label className="space-y-1 text-sm text-slate-300">
-            <span>Periodo</span>
-            <select
-              className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
-              value={range}
-              onChange={(event) => setRange(event.target.value as '7d' | '30d')}
-            >
-              <option value="7d">Últimos 7 días</option>
-              <option value="30d">Últimos 30 días</option>
-            </select>
-          </label>
-          <label className="space-y-1 text-sm text-slate-300">
-            <span>Plataforma</span>
-            <select
-              className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
-              value={platform}
-              onChange={(event) => setPlatform(event.target.value as 'all' | 'meta' | 'google')}
-            >
-              <option value="all">Meta + Google</option>
-              <option value="meta">Solo Meta</option>
-              <option value="google">Solo Google</option>
-            </select>
-          </label>
-          <label className="space-y-1 text-sm text-slate-300">
-            <span>Campaña</span>
-            <select
-              className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
-              value={campaignId}
-              onChange={(event) => setCampaignId(event.target.value)}
-            >
-              <option value="">Todas</option>
-              {campaignRows.map((campaign) => (
-                <option key={campaign.id} value={campaign.id}>{campaign.name}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">
-                {platform === 'meta'
-                  ? `Inversión Meta (${range === '30d' ? '30 días' : '7 días'})`
-                  : platform === 'google'
-                  ? `Inversión Google (${range === '30d' ? '30 días' : '7 días'})`
-                  : `Inversión Meta + Google (${range === '30d' ? '30 días' : '7 días'})`}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">${metrics.totalSpend.toLocaleString()}</div>
-              <p className="text-xs text-slate-500 mt-1">
-                Total gastado en campañas en la ventana seleccionada.
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">ROAS</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">4.5x</div>
-              <p className="text-xs text-slate-500 mt-1">Ingreso atribuible / inversión para la ventana seleccionada.</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">CPC medio (Meta)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">${metrics.avgCpc.toFixed(2)}</div>
-              <p className="text-xs text-slate-500 mt-1">Coste medio por clic en Meta.</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Campañas activas</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{metrics.activeCampaigns}</div>
-              <p className="text-xs text-slate-500 mt-1">Campañas con datos activos en Meta y Google.</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Campañas</CardTitle>
-            </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950">
-              <table className="min-w-full text-left text-sm text-slate-200">
-                <thead className="border-b border-slate-800 bg-slate-900 text-xs uppercase tracking-[0.16em] text-slate-400">
-                  <tr>
-                    <th className="px-3 py-3">Campaña</th>
-                    <th className="px-3 py-3">Plataforma</th>
-                    <th className="px-3 py-3">Impresiones</th>
-                    <th className="px-3 py-3">Clicks</th>
-                    <th className="px-3 py-3">CPM</th>
-                    <th className="px-3 py-3">CPC</th>
-                    <th className="px-3 py-3">CPP</th>
-                    <th className="px-3 py-3">ROAS</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {campaignRows.map((campaign) => (
-                    <tr key={campaign.id} className="border-b border-slate-800 last:border-none">
-                      <td className="px-3 py-3 font-medium text-slate-100">{campaign.name}</td>
-                      <td className="px-3 py-3 text-slate-400">{campaign.source}</td>
-                      <td className="px-3 py-3 text-slate-400">{campaign.impressions.toLocaleString()}</td>
-                      <td className="px-3 py-3 text-slate-400">{campaign.clicks.toLocaleString()}</td>
-                      <td className="px-3 py-3 text-slate-400">{campaign.cpm != null ? `$${campaign.cpm.toFixed(2)}` : '–'}</td>
-                      <td className="px-3 py-3 text-slate-400">${campaign.cpc.toFixed(2)}</td>
-                      <td className="px-3 py-3 text-slate-400">{campaign.cpp != null ? `$${campaign.cpp.toFixed(2)}` : '–'}</td>
-                      <td className="px-3 py-3 text-slate-400">{campaign.roas != null ? `${campaign.roas.toFixed(1)}x` : '–'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
->>>>>>> Stashed changes
       </div>
 
       {/* ── Daily spend + clicks chart ────────────────────────────── */}
       <Card>
         <CardHeader>
-<<<<<<< Updated upstream
           <CardTitle>Gasto diario · {days} días · ({currency})</CardTitle>
         </CardHeader>
         <CardContent className="h-72">
@@ -894,24 +598,8 @@ export default function Marketing() {
               </table>
             </div>
           )}
-=======
-          <CardTitle>Rendimiento de campañas</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={320}>
-            <BarChart data={chartData} margin={{ top: 16, right: 24, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-              <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} />
-              <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="cpc" fill="#3b82f6" name="CPC ($)" />
-              <Bar dataKey="cpp" fill="#f59e0b" name="CPP ($)" />
-            </BarChart>
-          </ResponsiveContainer>
->>>>>>> Stashed changes
         </CardContent>
       </Card>
-    </div>
     </div>
   )
 }

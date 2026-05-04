@@ -6,7 +6,6 @@ import { KanbanBoard } from '../components/crm/KanbanBoard'
 import { LeadDetailSheet } from '../components/crm/LeadDetailSheet'
 import type { Lead, LeadStage } from '../types'
 
-<<<<<<< Updated upstream
 const ALL_STAGES = ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'] as const
 
 export default function CRM() {
@@ -15,26 +14,7 @@ export default function CRM() {
   const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [stageFilter, setStageFilter] = useState<string>('ALL')
   const [sourceFilter, setSourceFilter] = useState<string>('ALL')
-=======
-interface Lead {
-  id: string
-  name: string
-  status: string
-  source: string
-}
-
-const mockLeads: Lead[] = [
-  { id: '1', name: 'Ana Martínez', status: 'Contactado', source: 'Doctoralia' },
-  { id: '2', name: 'Carlos Pérez', status: 'Calificado', source: 'Web' },
-  { id: '3', name: 'Lucía Gómez', status: 'Nuevo', source: 'Doctoralia' },
-]
-
-export default function CRM() {
-  const [leads, setLeads] = useState<Lead[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [isDemo, setIsDemo] = useState(false)
->>>>>>> Stashed changes
+  const [isDemo] = useState(false) // Maintaining variable for consistency if needed by other components
 
   const sources = useMemo(() => {
     const s = new Set(leads.map(l => l.source).filter(Boolean))
@@ -49,7 +29,6 @@ export default function CRM() {
     })
   }, [leads, stageFilter, sourceFilter])
 
-<<<<<<< Updated upstream
   const handleStageChange = async (leadId: string, newStage: LeadStage) => {
     await updateLead(leadId, { status: newStage })
   }
@@ -63,29 +42,6 @@ export default function CRM() {
     const result = await updateLead(id, updates)
     if (result.success && selectedLead?.id === id) {
       setSelectedLead(prev => prev ? { ...prev, ...updates } : prev)
-=======
-        if (Array.isArray(data) && data.length > 0) {
-          setIsDemo(false)
-          setLeads(
-            data.map((item: any) => ({
-              id: String(item.id ?? item.lead_id ?? ''),
-              name: item.name ?? item.full_name ?? item.contact_name ?? 'Desconocido',
-              status: item.stage ?? item.status ?? 'Desconocido',
-              source: item.source ?? 'Edge',
-            })),
-          )
-        } else {
-          throw new Error('No leads returned from API')
-        }
-      } catch (err: any) {
-        console.warn('CRM API call failed, falling back to mock leads:', err)
-        setIsDemo(true)
-        setError('No se pudieron cargar los leads desde la API; utilizando datos de muestra.')
-        setLeads(mockLeads)
-      } finally {
-        setLoading(false)
-      }
->>>>>>> Stashed changes
     }
     return result
   }
@@ -96,22 +52,21 @@ export default function CRM() {
 
   return (
     <div className="space-y-6">
-<<<<<<< Updated upstream
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">CRM</h1>
-          <p className="text-slate-400 mt-1">Lead pipeline — stages, DNI, lost_reason</p>
+          <p className="text-slate-400 mt-1">Pipeline de leads — etapas, DNI, motivo de pérdida</p>
         </div>
       </div>
 
-      {/* Filters */}
+      {/* Filtros */}
       <div className="flex flex-wrap gap-3">
         <select
           value={stageFilter}
           onChange={e => setStageFilter(e.target.value)}
           className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-primary"
         >
-          <option value="ALL">All stages</option>
+          <option value="ALL">Todas las etapas</option>
           {ALL_STAGES.map(s => (
             <option key={s} value={s} className="capitalize">{s}</option>
           ))}
@@ -121,7 +76,7 @@ export default function CRM() {
           onChange={e => setSourceFilter(e.target.value)}
           className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-primary"
         >
-          <option value="ALL">All sources</option>
+          <option value="ALL">Todas las fuentes</option>
           {sources.map(s => (
             <option key={s} value={s}>{s}</option>
           ))}
@@ -131,14 +86,9 @@ export default function CRM() {
             onClick={() => { setStageFilter('ALL'); setSourceFilter('ALL') }}
             className="text-xs text-slate-400 hover:text-white underline"
           >
-            Clear filters
+            Limpiar filtros
           </button>
         )}
-=======
-      <div>
-        <h1 className="text-3xl font-bold">CRM</h1>
-        <p className="text-slate-600 mt-1">Pipeline de leads, etapas y origen de contacto</p>
->>>>>>> Stashed changes
       </div>
 
       {isDemo && (
@@ -151,13 +101,12 @@ export default function CRM() {
         <TabsList>
           <TabsTrigger value="pipeline">Embudo</TabsTrigger>
           <TabsTrigger value="leads">Leads</TabsTrigger>
-<<<<<<< Updated upstream
         </TabsList>
 
         <TabsContent value="pipeline" className="space-y-4 pt-4">
           {loading ? (
             <div className="flex items-center justify-center h-64">
-              <p className="text-slate-400">Loading pipeline...</p>
+              <p className="text-slate-400">Cargando embudo...</p>
             </div>
           ) : (
             <KanbanBoard 
@@ -166,43 +115,16 @@ export default function CRM() {
               onLeadClick={handleLeadClick} 
             />
           )}
-=======
-          <TabsTrigger value="stages">Etapas</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="pipeline" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {['Nuevo', 'Contactado', 'Calificado', 'Cerrado'].map((stage) => (
-              <Card key={stage}>
-                <CardHeader>
-                  <CardTitle className="text-base">{stage}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-2xl font-bold">0</p>
-                  <p className="text-xs text-slate-500 mt-1">Leads en etapa</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
->>>>>>> Stashed changes
         </TabsContent>
 
         <TabsContent value="leads">
           <Card>
             <CardHeader>
-<<<<<<< Updated upstream
-              <CardTitle>All Leads {filteredLeads.length !== leads.length && <span className="text-sm font-normal text-slate-500">({filteredLeads.length} of {leads.length})</span>}</CardTitle>
+              <CardTitle>Todos los leads {filteredLeads.length !== leads.length && <span className="text-sm font-normal text-slate-500">({filteredLeads.length} de {leads.length})</span>}</CardTitle>
             </CardHeader>
             <CardContent>
               {loading ? (
-                <p className="text-slate-400">Fetching leads from Edge Function...</p>
-=======
-              <CardTitle>Todos los leads</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <p className="text-slate-600">Cargando leads desde Edge Function...</p>
->>>>>>> Stashed changes
+                <p className="text-slate-400">Obteniendo leads desde Edge Function...</p>
               ) : (
                 <div className="space-y-3">
                   {error && <p className="text-sm text-yellow-500">{error}</p>}
@@ -228,20 +150,6 @@ export default function CRM() {
             </CardContent>
           </Card>
         </TabsContent>
-<<<<<<< Updated upstream
-=======
-
-        <TabsContent value="stages">
-          <Card>
-            <CardHeader>
-              <CardTitle>Configuración de etapas</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-slate-600">Gestiona las etapas y las transiciones del pipeline de leads.</p>
-            </CardContent>
-          </Card>
-        </TabsContent>
->>>>>>> Stashed changes
       </Tabs>
 
       <LeadDetailSheet 

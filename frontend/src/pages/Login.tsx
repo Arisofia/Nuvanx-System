@@ -42,8 +42,9 @@ export default function Login() {
         <CardContent className="space-y-4">
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="text-sm font-medium">Correo</label>
+              <label htmlFor="login-email" className="text-sm font-medium">Correo</label>
               <Input
+                id="login-email"
                 type="email"
                 placeholder="tu@correo.com"
                 value={email}
@@ -52,8 +53,9 @@ export default function Login() {
               />
             </div>
             <div>
-              <label className="text-sm font-medium">Contraseña</label>
+              <label htmlFor="login-password" className="text-sm font-medium">Contraseña</label>
               <Input
+                id="login-password"
                 type="password"
                 placeholder="••••••••"
                 value={password}
@@ -67,26 +69,8 @@ export default function Login() {
             </Button>
           </form>
 
-<<<<<<< Updated upstream
           <p className="text-xs text-slate-500 text-center">
-            Use your Supabase account to sign in.
-=======
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-slate-200" />
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-white text-slate-500">o</span>
-            </div>
-          </div>
-
-          <Button variant="outline" className="w-full" onClick={handleDemoLogin}>
-            Acceder modo demo
-          </Button>
-
-          <p className="text-xs text-slate-500 text-center">
-            El modo demo permite acceder a datos y funcionalidades de ejemplo.
->>>>>>> Stashed changes
+            Usa tu cuenta de Supabase para iniciar sesión.
           </p>
         </CardContent>
       </Card>

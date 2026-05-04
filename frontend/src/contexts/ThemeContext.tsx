@@ -7,7 +7,7 @@ export interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
 
-export function ThemeProvider({ defaultTheme, children }: { defaultTheme: 'light' | 'dark'; children: ReactNode }) {
+export function ThemeProvider({ defaultTheme, children }: Readonly<{ defaultTheme: 'light' | 'dark'; children: ReactNode }>) {
   const [theme, setTheme] = useState<'light' | 'dark'>(defaultTheme)
 
   const value = useMemo(() => ({ theme, setTheme }), [theme])

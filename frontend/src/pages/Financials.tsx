@@ -7,7 +7,6 @@ import type { FinancialSummary, MonthlyTrend, FinancialsState } from '../types'
 import { SortableTable } from '../components/ui/SortableTable'
 import type { ColDef } from '../components/ui/SortableTable'
 
-<<<<<<< Updated upstream
 const PRESETS = [
   { label: '30d', days: 30 },
   { label: '90d', days: 90 },
@@ -18,14 +17,6 @@ const PRESETS = [
 function toISODate(d: Date) {
   return d.toISOString().slice(0, 10)
 }
-=======
-const mockData = [
-  { month: 'Ene', revenue: 4000, ltv: 2400, cac: 2210 },
-  { month: 'Feb', revenue: 3000, ltv: 1398, cac: 2221 },
-  { month: 'Mar', revenue: 2000, ltv: 9800, cac: 2290 },
-  { month: 'Abr', revenue: 2780, ltv: 3908, cac: 2000 },
-]
->>>>>>> Stashed changes
 
 export default function Financials() {
   const [presetDays, setPresetDays] = useState<number>(0) // 0 = all time
@@ -120,11 +111,10 @@ export default function Financials() {
 
   return (
     <div className="space-y-6">
-<<<<<<< Updated upstream
       <div className="flex flex-col sm:flex-row sm:items-end gap-4">
         <div className="flex-1">
-          <h1 className="text-3xl font-bold">Verified Financials</h1>
-          <p className="text-slate-400 mt-1">Doctoralia settlements, LTV, verified revenue</p>
+          <h1 className="text-3xl font-bold">Finanzas verificadas</h1>
+          <p className="text-slate-400 mt-1">Liquidaciones de Doctoralia, LTV, ingresos verificados</p>
         </div>
         {/* Period presets */}
         <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-1">
@@ -138,7 +128,7 @@ export default function Financials() {
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              {p.label}
+              {p.label === 'Todo' ? 'Todo' : p.label}
             </button>
           ))}
         </div>
@@ -158,11 +148,6 @@ export default function Financials() {
             className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200 text-xs focus:outline-none focus:border-slate-500"
           />
         </div>
-=======
-      <div>
-        <h1 className="text-3xl font-bold">Finanzas verificadas</h1>
-        <p className="text-slate-600 mt-1">Doctoralia, ingresos verificados y métricas de lifetime value</p>
->>>>>>> Stashed changes
       </div>
 
       {state.error && (
@@ -175,92 +160,70 @@ export default function Financials() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="pb-2">
-<<<<<<< Updated upstream
-            <CardTitle className="text-sm font-medium">Verified Revenue (Net)</CardTitle>
+            <CardTitle className="text-sm font-medium">Ingresos verificados (Neto)</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{state.summary ? fmt(state.summary.totalNet) : '—'}</div>
             <p className="text-xs text-slate-500 mt-1">
               {state.summary
-                ? `${state.summary.settledCount} settled · ${state.summary.cancelledCount} cancelled`
-                : 'From Doctoralia settlements'}
+                ? `${state.summary.settledCount} liquidados · ${state.summary.cancelledCount} cancelados`
+                : 'De liquidaciones de Doctoralia'}
             </p>
-=======
-            <CardTitle className="text-sm font-medium">Ingresos verificados</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">$24,580</div>
-            <p className="text-xs text-slate-500 mt-1">Ingresos oficiales reportados por Doctoralia</p>
->>>>>>> Stashed changes
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
-<<<<<<< Updated upstream
-            <CardTitle className="text-sm font-medium">Gross Revenue</CardTitle>
+            <CardTitle className="text-sm font-medium">Ingresos brutos</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{state.summary ? fmt(state.summary.totalGross) : '—'}</div>
-            <p className="text-xs text-slate-500 mt-1">Before discounts</p>
-=======
-            <CardTitle className="text-sm font-medium">LTV medio</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">$1,240</div>
-            <p className="text-xs text-slate-500 mt-1">Valor de vida útil medio por cliente</p>
->>>>>>> Stashed changes
+            <p className="text-xs text-slate-500 mt-1">Antes de descuentos</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Average Ticket</CardTitle>
+            <CardTitle className="text-sm font-medium">Ticket promedio</CardTitle>
           </CardHeader>
           <CardContent>
-<<<<<<< Updated upstream
             <div className="text-2xl font-bold">{state.summary ? fmt(state.summary.avgTicket) : '—'}</div>
-            <p className="text-xs text-slate-500 mt-1">Per settled transaction</p>
+            <p className="text-xs text-slate-500 mt-1">Por transacción liquidada</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Discount Rate</CardTitle>
+            <CardTitle className="text-sm font-medium">Tasa de descuento</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{state.summary ? `${state.summary.discountRate}%` : '—'}</div>
-            <p className="text-xs text-slate-500 mt-1">Discount applied on gross revenue</p>
+            <p className="text-xs text-slate-500 mt-1">Descuento aplicado sobre ingresos brutos</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Avg. Liquidation</CardTitle>
+            <CardTitle className="text-sm font-medium">Promedio de liquidación</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
               {state.summary ? (state.summary.avgLiquidationDays > 0 ? `${state.summary.avgLiquidationDays}d` : '—') : '—'}
             </div>
             <p className="text-xs text-slate-500 mt-1">
-              {state.summary?.avgLiquidationDays === 0 ? 'No intake date on settlements' : 'Days from intake to settlement'}
+              {state.summary?.avgLiquidationDays === 0 ? 'Sin fecha de entrada' : 'Días desde entrada hasta liquidación'}
             </p>
-=======
-            <div className="text-2xl font-bold">$340</div>
-            <p className="text-xs text-slate-500 mt-1">Coste por adquisición</p>
->>>>>>> Stashed changes
           </CardContent>
         </Card>
       </div>
 
       <Card>
         <CardHeader>
-<<<<<<< Updated upstream
-          <CardTitle>Monthly Revenue Trend</CardTitle>
+          <CardTitle>Tendencia de ingresos mensuales</CardTitle>
         </CardHeader>
         <CardContent>
           {state.monthly.length === 0 ? (
-            <p className="text-slate-500 text-sm py-8 text-center">No settlement data available yet.</p>
+            <p className="text-slate-500 text-sm py-8 text-center">No hay datos de liquidación disponibles todavía.</p>
           ) : (
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={state.monthly}>
@@ -272,27 +235,10 @@ export default function Financials() {
                   formatter={(v: number) => fmt(v)}
                 />
                 <Legend />
-                <Line type="monotone" dataKey="net" name="Net Revenue" stroke="#3b82f6" dot={false} strokeWidth={2} />
+                <Line type="monotone" dataKey="net" name="Ingreso Neto" stroke="#3b82f6" dot={false} strokeWidth={2} />
               </LineChart>
             </ResponsiveContainer>
           )}
-=======
-          <CardTitle>Tendencia de ingresos</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={mockData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="month" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Line type="monotone" dataKey="revenue" stroke="#b08b5a" name="Ingresos" />
-              <Line type="monotone" dataKey="ltv" stroke="#10b981" name="LTV" />
-              <Line type="monotone" dataKey="cac" stroke="#ef4444" name="CAC" />
-            </LineChart>
-          </ResponsiveContainer>
->>>>>>> Stashed changes
         </CardContent>
       </Card>
 

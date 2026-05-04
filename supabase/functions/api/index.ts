@@ -3025,7 +3025,6 @@ async function handleReportsDoctoraliaFinancialsGet(ctx: AuthenticatedRouteConte
     const clinicId = usr?.clinic_id;
     if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
 
-<<<<<<< Updated upstream
     // settled_month is 'YYYY-MM'; compare date params truncated to 7 chars
     const fromMonth = (url.searchParams.get('from') ?? '').slice(0, 7);
     const toMonth   = (url.searchParams.get('to')   ?? '').slice(0, 7);
@@ -3054,83 +3053,6 @@ async function handleReportsDoctoraliaFinancialsGet(ctx: AuthenticatedRouteConte
         templateMap[key] = { template_id: row.template_id, template_name: row.template_name,
           operations_count: 0, total_net: 0, total_gross: 0, total_discount: 0,
           cancellation_count: 0, source_system: row.source_system };
-=======
-    const { data: settlements, error } = await adminClient
-      .from('financial_settlements')
-      .select('clinic_id,template_id,template_name,source_system,amount_gross,amount_discount,amount_net,cancelled_at,settled_at,intake_at')
-      .eq('clinic_id', clinicId)
-      .eq('source_system', 'doctoralia')
-      .order('settled_at', { ascending: true });
-    if (error) throw error;
-
-    const rows = (settlements || []).map((row: any) => ({
-      ...row,
-      amount_gross: Number(row.amount_gross ?? 0),
-      amount_discount: Number(row.amount_discount ?? 0),
-      amount_net: Number(row.amount_net ?? 0),
-      cancelled_at: row.cancelled_at,
-      settled_at: row.settled_at,
-      intake_at: row.intake_at,
-    }));
-
-    const byTemplateMap: Record<string, any> = {};
-    const byMonthMap: Record<string, any> = {};
-
-    for (const row of rows) {
-      const month = row.settled_at ? new Date(row.settled_at).toISOString().slice(0, 7) : 'unknown';
-      const templateKey = row.template_id ?? row.template_name ?? 'unknown';
-      if (!byTemplateMap[templateKey]) {
-        byTemplateMap[templateKey] = {
-          template_id: row.template_id,
-          template_name: row.template_name,
-          operations_count: 0,
-          total_net: 0,
-          total_gross: 0,
-          total_discount: 0,
-          cancellation_count: 0,
-          source_system: row.source_system,
-        };
-      }
-      if (row.cancelled_at == null) {
-        byTemplateMap[templateKey].operations_count += 1;
-        byTemplateMap[templateKey].total_net += row.amount_net;
-        byTemplateMap[templateKey].total_gross += row.amount_gross;
-        byTemplateMap[templateKey].total_discount += row.amount_discount;
-      } else {
-        byTemplateMap[templateKey].cancellation_count += 1;
-      }
-
-      if (!byMonthMap[month]) {
-        byMonthMap[month] = {
-          settled_month: month,
-          operations_count: 0,
-          cancellation_count: 0,
-          total_gross: 0,
-          total_discount: 0,
-          total_net: 0,
-          avg_ticket_net: 0,
-          discount_rate_pct: 0,
-          cancellation_rate_pct: 0,
-          avg_liquidation_lag_days: 0,
-          lag_rows: [] as number[],
-        };
-      }
-      const monthEntry = byMonthMap[month];
-      if (row.cancelled_at == null) {
-        monthEntry.operations_count += 1;
-        monthEntry.total_net += row.amount_net;
-        monthEntry.total_gross += row.amount_gross;
-        monthEntry.total_discount += row.amount_discount;
-        if (row.intake_at) {
-          const settledAt = new Date(row.settled_at).getTime();
-          const intakeAt = new Date(row.intake_at).getTime();
-          if (!Number.isNaN(settledAt) && !Number.isNaN(intakeAt) && settledAt >= intakeAt) {
-            monthEntry.lag_rows.push((settledAt - intakeAt) / 86400000);
-          }
-        }
-      } else {
-        monthEntry.cancellation_count += 1;
->>>>>>> Stashed changes
       }
     }
 

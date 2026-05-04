@@ -18,7 +18,7 @@ const sizeClasses: Record<string, string> = {
   lg: 'px-4 py-3 text-base',
 }
 
-export function Button({ children, className = '', variant = 'default', size = 'md', ...props }: ButtonProps) {
+export function Button({ children, className = '', variant = 'default', size = 'md', ...props }: Readonly<ButtonProps>) {
   return (
     <button
       className={`inline-flex items-center justify-center rounded-lg font-medium transition ${variantClasses[variant]} ${sizeClasses[size]} ${className}`}

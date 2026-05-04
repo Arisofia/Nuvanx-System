@@ -16,7 +16,7 @@ const navItems = [
   { label: 'AI', href: '/ai', icon: Sparkles },
 ]
 
-export default function Layout({ children }: { children: React.ReactNode }) {
+export default function Layout({ children }: Readonly<{ children: React.ReactNode }>) {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [location] = useLocation()
 

@@ -102,20 +102,15 @@ export default function AI() {
   return (
     <div className="space-y-6">
       <div>
-<<<<<<< Updated upstream
-        <h1 className="text-3xl font-bold">AI Layer</h1>
-        <p className="text-slate-400 mt-1">AI content generation, suggestions and output history</p>
-=======
         <h1 className="text-3xl font-bold">Capa IA</h1>
-        <p className="text-slate-600 mt-1">Generación de contenido y análisis de campañas con criterio premium</p>
->>>>>>> Stashed changes
+        <p className="text-slate-400 mt-1">Generación de contenido, sugerencias y registro de resultados</p>
       </div>
 
       <Tabs defaultValue="generate" className="w-full">
         <TabsList>
-          <TabsTrigger value="generate" className="gap-2"><Sparkles className="w-4 h-4" />Generate</TabsTrigger>
-          <TabsTrigger value="suggestions" className="gap-2"><Lightbulb className="w-4 h-4" />Suggestions</TabsTrigger>
-          <TabsTrigger value="history" className="gap-2"><History className="w-4 h-4" />History</TabsTrigger>
+          <TabsTrigger value="generate" className="gap-2"><Sparkles className="w-4 h-4" />Generar</TabsTrigger>
+          <TabsTrigger value="suggestions" className="gap-2"><Lightbulb className="w-4 h-4" />Sugerencias</TabsTrigger>
+          <TabsTrigger value="history" className="gap-2"><History className="w-4 h-4" />Historial</TabsTrigger>
         </TabsList>
 
         {/* ── Generate ── */}
@@ -127,13 +122,14 @@ export default function AI() {
             <div className="lg:col-span-2 space-y-4">
               <Card>
                 <CardHeader>
-                  <CardTitle>Generate Content</CardTitle>
+                  <CardTitle>Generar contenido</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div>
-                    <label className="text-sm font-medium">Prompt</label>
+                    <label htmlFor="ai-prompt" className="text-sm font-medium">Prompt</label>
                     <Textarea
-                      placeholder="Describe what you want to generate…"
+                      id="ai-prompt"
+                      placeholder="Describe lo que quieres generar..."
                       value={prompt}
                       onChange={(e) => setPrompt(e.target.value)}
                       className="mt-2"
@@ -142,7 +138,7 @@ export default function AI() {
                   </div>
                   <Button onClick={handleGenerate} disabled={loading || !prompt.trim()} className="w-full gap-2">
                     <Sparkles className="w-4 h-4" />
-                    {loading ? 'Generating…' : 'Generate with AI'}
+                    {loading ? 'Generando...' : 'Generar con IA'}
                   </Button>
                 </CardContent>
               </Card>
@@ -150,7 +146,7 @@ export default function AI() {
               {result !== null && (
                 <Card>
                   <CardHeader>
-                    <CardTitle>Generated Content</CardTitle>
+                    <CardTitle>Contenido generado</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <pre className="whitespace-pre-wrap text-sm text-slate-300 leading-relaxed">{result}</pre>
@@ -161,7 +157,7 @@ export default function AI() {
               {analysisResult !== null && (
                 <Card>
                   <CardHeader>
-                    <CardTitle>Campaign Analysis</CardTitle>
+                    <CardTitle>Análisis de campaña</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <pre className="whitespace-pre-wrap text-sm text-slate-300 leading-relaxed">{analysisResult}</pre>
@@ -173,7 +169,7 @@ export default function AI() {
             <div className="space-y-4">
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Templates</CardTitle>
+                  <CardTitle className="text-base">Plantillas</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <TemplateGallery onSelect={(p) => setPrompt(p)} />
@@ -182,12 +178,12 @@ export default function AI() {
 
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Campaign Analysis</CardTitle>
+                  <CardTitle className="text-base">Análisis de campaña</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <Button variant="outline" className="w-full gap-2" onClick={handleAnalyze} disabled={analyzing}>
                     <BarChart2 className="w-4 h-4" />
-                    {analyzing ? 'Analyzing…' : 'Analyze Performance'}
+                    {analyzing ? 'Analizando...' : 'Analizar rendimiento'}
                   </Button>
                 </CardContent>
               </Card>
@@ -198,12 +194,11 @@ export default function AI() {
         {/* ── Suggestions ── */}
         <TabsContent value="suggestions" className="mt-4">
           <Card>
-<<<<<<< Updated upstream
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-              <CardTitle>AI Suggestions</CardTitle>
+              <CardTitle>Sugerencias de IA</CardTitle>
               <Button onClick={handleFetchSuggestions} disabled={suggestionsLoading} size="sm" className="gap-2">
                 <Lightbulb className="w-4 h-4" />
-                {suggestionsLoading ? 'Loading…' : 'Get Suggestions'}
+                {suggestionsLoading ? 'Cargando...' : 'Obtener sugerencias'}
               </Button>
             </CardHeader>
             <CardContent>
@@ -211,7 +206,7 @@ export default function AI() {
                 <p className="text-sm text-red-500 mb-4">{suggestionsError}</p>
               )}
               {suggestions.length === 0 && !suggestionsLoading && !suggestionsError && (
-                <p className="text-slate-500 text-sm py-4 text-center">Click "Get Suggestions" to receive AI-powered insights based on your leads.</p>
+                <p className="text-slate-500 text-sm py-4 text-center">Haz clic en "Obtener sugerencias" para recibir insights basados en tus leads.</p>
               )}
               <div className="space-y-3">
                 {suggestions.map((s, i) => (
@@ -220,43 +215,22 @@ export default function AI() {
                     <button
                       onClick={() => handleCopy(s, i)}
                       className="shrink-0 text-slate-500 hover:text-slate-200 transition-colors"
-                      title="Copy to clipboard"
+                      title="Copiar al portapapeles"
                     >
                       {copiedIdx === i ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
                     </button>
                   </div>
                 ))}
               </div>
-=======
-            <CardHeader>
-              <CardTitle>Generar contenido</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <label className="text-sm font-medium">Prompt</label>
-                <Textarea
-                  placeholder="Describe lo que necesitas generar (ej.: 'Genera 3 mensajes de WhatsApp para leads de medicina estética')"
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  className="mt-2"
-                  rows={4}
-                />
-              </div>
-              <Button onClick={handleGenerate} disabled={loading || !prompt} className="w-full gap-2">
-                <Sparkles className="w-4 h-4" />
-                {loading ? 'Generando...' : 'Generar con IA'}
-              </Button>
->>>>>>> Stashed changes
             </CardContent>
           </Card>
         </TabsContent>
 
-<<<<<<< Updated upstream
         {/* ── History ── */}
         <TabsContent value="history" className="mt-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-              <CardTitle>Output History</CardTitle>
+              <CardTitle>Historial de resultados</CardTitle>
               <div className="flex items-center gap-2">
                 {outputTypes.length > 1 && (
                   <select
@@ -265,13 +239,13 @@ export default function AI() {
                     className="bg-slate-800 text-white text-xs font-medium px-3 py-1.5 rounded-lg border-none focus:ring-1 focus:ring-slate-500"
                   >
                     {outputTypes.map((t) => (
-                      <option key={t} value={t}>{t === 'all' ? 'All types' : t}</option>
+                      <option key={t} value={t}>{t === 'all' ? 'Todos los tipos' : t}</option>
                     ))}
                   </select>
                 )}
                 <Button onClick={handleFetchOutputs} disabled={outputsLoading} size="sm" variant="outline" className="gap-2">
                   <History className="w-4 h-4" />
-                  {outputsLoading ? 'Loading…' : 'Load History'}
+                  {outputsLoading ? 'Cargando...' : 'Cargar historial'}
                 </Button>
               </div>
             </CardHeader>
@@ -280,7 +254,7 @@ export default function AI() {
                 <p className="text-sm text-red-500 mb-4">{outputsError}</p>
               )}
               {filteredOutputs.length === 0 && !outputsLoading && !outputsError && (
-                <p className="text-slate-500 text-sm py-4 text-center">No output history yet. Click "Load History" to fetch previous AI outputs.</p>
+                <p className="text-slate-500 text-sm py-4 text-center">No hay historial todavía. Haz clic en "Cargar historial" para ver resultados previos.</p>
               )}
               <div className="space-y-3">
                 {filteredOutputs.map((o) => {
@@ -291,7 +265,7 @@ export default function AI() {
                     <div key={o.id} className="p-4 rounded-lg border border-slate-700 bg-slate-900 space-y-2">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-xs font-medium px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
-                          {o.agent_type ?? 'unknown'}
+                          {o.agent_type ?? 'desconocido'}
                         </span>
                         <span className="text-xs text-slate-500">
                           {o.created_at ? new Date(o.created_at).toLocaleString() : ''}
@@ -306,57 +280,6 @@ export default function AI() {
           </Card>
         </TabsContent>
       </Tabs>
-=======
-          <Card className="mt-4">
-            <CardHeader>
-              <CardTitle>Contenido generado</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-slate-600 text-sm">El contenido generado aparecerá aquí...</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Plantillas rápidas</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Button variant="outline" className="w-full justify-start text-left h-auto">
-                <div>
-                  <p className="font-medium text-sm">Seguimiento WhatsApp</p>
-                  <p className="text-xs text-slate-500">Nutre leads vía WhatsApp</p>
-                </div>
-              </Button>
-              <Button variant="outline" className="w-full justify-start text-left h-auto">
-                <div>
-                  <p className="font-medium text-sm">Campaña por email</p>
-                  <p className="text-xs text-slate-500">Plantillas de email masivo</p>
-                </div>
-              </Button>
-              <Button variant="outline" className="w-full justify-start text-left h-auto">
-                <div>
-                  <p className="font-medium text-sm">Copy para anuncios</p>
-                  <p className="text-xs text-slate-500">Variantes para Meta y Google</p>
-                </div>
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Análisis de campaña</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Button variant="outline" className="w-full">
-                Analizar rendimiento
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
->>>>>>> Stashed changes
     </div>
   )
 }

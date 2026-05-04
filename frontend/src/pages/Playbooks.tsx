@@ -40,11 +40,7 @@ export default function Playbooks() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Playbooks</h1>
-<<<<<<< Updated upstream
           <p className="text-slate-400 mt-1">Automation playbooks for lead nurturing and follow-up</p>
-=======
-          <p className="text-slate-600 mt-1">Flujos de automatización para nurturing y seguimiento premium</p>
->>>>>>> Stashed changes
         </div>
         <Button className="gap-2" disabled>
           <Plus className="w-4 h-4" />
@@ -52,7 +48,6 @@ export default function Playbooks() {
         </Button>
       </div>
 
-<<<<<<< Updated upstream
       {loading && (
         <div className="animate-pulse space-y-4">
           <div className="h-40 bg-slate-800 rounded-lg" />
@@ -115,46 +110,6 @@ export default function Playbooks() {
             </Card>
           )
         })}
-=======
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Flujo de cualificación</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-sm text-slate-600">Secuencia automática de WhatsApp para leads nuevos</p>
-            <div className="space-y-2">
-              <div className="text-xs p-2 bg-slate-50 rounded">Paso 1: Enviar mensaje inicial</div>
-              <div className="text-xs p-2 bg-slate-50 rounded">Paso 2: Esperar 2 horas</div>
-              <div className="text-xs p-2 bg-slate-50 rounded">Paso 3: Enviar preguntas de cualificación</div>
-              <div className="text-xs p-2 bg-slate-50 rounded">Paso 4: Derivar a agente si está cualificado</div>
-            </div>
-            <Button variant="outline" size="sm" className="w-full gap-2">
-              <Play className="w-3 h-3" />
-              Ejecutar flujo
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Recordatorio de cita</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-sm text-slate-600">Envía recordatorios 24h antes de la cita programada</p>
-            <div className="space-y-2">
-              <div className="text-xs p-2 bg-slate-50 rounded">Disparo: cita agendada</div>
-              <div className="text-xs p-2 bg-slate-50 rounded">Espera: 24 horas antes</div>
-              <div className="text-xs p-2 bg-slate-50 rounded">Acción: enviar recordatorio WhatsApp</div>
-              <div className="text-xs p-2 bg-slate-50 rounded">Acción: registrar interacción</div>
-            </div>
-            <Button variant="outline" size="sm" className="w-full gap-2">
-              <Play className="w-3 h-3" />
-              Ejecutar flujo
-            </Button>
-          </CardContent>
-        </Card>
->>>>>>> Stashed changes
       </div>
     </div>
   )

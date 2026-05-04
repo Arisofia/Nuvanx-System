@@ -1,19 +1,20 @@
 import { createContext, useEffect, useMemo, useState, ReactNode } from 'react'
+import type { User, Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabaseClient'
 
 export interface AuthContextType {
-  user: any | null
+  user: User | null
   isAuthenticated: boolean
   loading: boolean
   signIn: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
-  getSession: () => Promise<{ session: any | null; error: any }>
+  getSession: () => Promise<{ session: Session | null; error: Error | null }>
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<any | null>(null)
+export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
+  const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {

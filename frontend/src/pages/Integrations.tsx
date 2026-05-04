@@ -117,13 +117,8 @@ export default function Integrations() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-<<<<<<< Updated upstream
-          <h1 className="text-3xl font-bold">Integrations</h1>
-          <p className="text-slate-400 mt-1">Credential vault — Meta Ads, WhatsApp, OpenAI, Gemini, GitHub, Google Ads</p>
-=======
           <h1 className="text-3xl font-bold">Integraciones</h1>
-          <p className="text-slate-600 mt-1">Gestión de credenciales: Meta, WhatsApp, OpenAI, Gemini, GitHub y Google Ads</p>
->>>>>>> Stashed changes
+          <p className="text-slate-400 mt-1">Bóveda de credenciales — Meta Ads, WhatsApp, OpenAI, Gemini, GitHub, Google Ads</p>
         </div>
         <Button className="gap-2" onClick={() => { setShowForm(true); setSaveError(null) }}>
           <Plus className="w-4 h-4" />
@@ -131,18 +126,17 @@ export default function Integrations() {
         </Button>
       </div>
 
-<<<<<<< Updated upstream
       {/* ── Connect form ───────────────────────────────────────────── */}
       {showForm && (
         <Card className="border-slate-700 bg-slate-900">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-base">Connect Integration</CardTitle>
+            <CardTitle className="text-base">Conectar Integración</CardTitle>
             <Button variant="ghost" size="sm" onClick={() => setShowForm(false)}><X className="w-4 h-4" /></Button>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleConnect} className="space-y-3">
               <div>
-                <label className="text-sm font-medium">Service</label>
+                <label className="text-sm font-medium">Servicio</label>
                 <select
                   name="service"
                   value={form.service}
@@ -157,15 +151,15 @@ export default function Integrations() {
 
               <div>
                 <label className="text-sm font-medium">
-                  {form.service === 'meta' ? 'Meta Access Token' :
-                   form.service === 'whatsapp' ? 'WhatsApp System User Token' :
-                   form.service === 'google_ads' ? 'Google Ads Developer Token' :
+                  {form.service === 'meta' ? 'Token de Acceso de Meta' :
+                   form.service === 'whatsapp' ? 'Token de Usuario del Sistema de WhatsApp' :
+                   form.service === 'google_ads' ? 'Token de Desarrollador de Google Ads' :
                    'API Key / Token'}
                 </label>
                 <Input
                   type="password"
                   name="token"
-                  placeholder="Paste your token here"
+                  placeholder="Pega tu token aquí"
                   value={form.token}
                   onChange={handleFieldChange}
                   className="mt-1"
@@ -175,22 +169,22 @@ export default function Integrations() {
               {form.service === 'meta' && (
                 <>
                   <div>
-                    <label className="text-sm font-medium">Ad Account ID <span className="text-red-500">*</span></label>
+                    <label className="text-sm font-medium">ID de la Cuenta Publicitaria <span className="text-red-500">*</span></label>
                     <Input
                       type="text"
                       name="adAccountId"
-                      placeholder="e.g. 123456789012345 or act_123456789012345"
+                      placeholder="ej. 123456789012345 o act_123456789012345"
                       value={form.adAccountId}
                       onChange={handleFieldChange}
                       className="mt-1"
                     />
                   </div>
                   <div>
-                    <label className="text-sm font-medium">Page ID <span className="text-slate-400 font-normal">(optional)</span></label>
+                    <label className="text-sm font-medium">ID de la Página <span className="text-slate-400 font-normal">(opcional)</span></label>
                     <Input
                       type="text"
                       name="pageId"
-                      placeholder="Facebook Page ID for lead webhooks"
+                      placeholder="ID de la página de Facebook para webhooks de leads"
                       value={form.pageId}
                       onChange={handleFieldChange}
                       className="mt-1"
@@ -201,11 +195,11 @@ export default function Integrations() {
 
               {form.service === 'whatsapp' && (
                 <div>
-                  <label className="text-sm font-medium">Phone Number ID <span className="text-red-500">*</span></label>
+                  <label className="text-sm font-medium">ID del Número de Teléfono <span className="text-red-500">*</span></label>
                   <Input
                     type="text"
                     name="phoneNumberId"
-                    placeholder="WhatsApp Business phone number ID"
+                    placeholder="ID del número de teléfono de WhatsApp Business"
                     value={form.phoneNumberId}
                     onChange={handleFieldChange}
                     className="mt-1"
@@ -217,9 +211,9 @@ export default function Integrations() {
 
               <div className="flex gap-2 pt-1">
                 <Button type="submit" disabled={saving} className="flex-1">
-                  {saving ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving…</> : 'Connect'}
+                  {saving ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Guardando…</> : 'Conectar'}
                 </Button>
-                <Button type="button" variant="outline" onClick={() => setShowForm(false)}>Cancel</Button>
+                <Button type="button" variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button>
               </div>
             </form>
           </CardContent>
@@ -227,13 +221,13 @@ export default function Integrations() {
       )}
 
       {loading && (
-        <Card><CardContent className="py-6 text-sm text-slate-400">Loading integrations…</CardContent></Card>
+        <Card><CardContent className="py-6 text-sm text-slate-400">Cargando integraciones…</CardContent></Card>
       )}
       {error && (
         <Card className="border-red-800 bg-red-950/40"><CardContent className="py-6 text-sm text-red-300">{error}</CardContent></Card>
       )}
       {!loading && !error && integrations.length === 0 && (
-        <Card><CardContent className="py-6 text-sm text-slate-400">No integrations connected yet. Click "Add Integration" to get started.</CardContent></Card>
+        <Card><CardContent className="py-6 text-sm text-slate-400">No hay integraciones conectadas aún. Haz clic en "Agregar integración" para comenzar.</CardContent></Card>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -252,27 +246,27 @@ export default function Integrations() {
                 </CardTitle>
                 {isConnected ? (
                   <Badge className="bg-emerald-950 text-emerald-400 border border-emerald-800">
-                    <CheckCircle2 className="w-3 h-3 mr-1" />Connected
+                    <CheckCircle2 className="w-3 h-3 mr-1" />Conectado
                   </Badge>
                 ) : (
                   <Badge className="bg-amber-950 text-amber-400 border border-amber-800">
-                    <AlertCircle className="w-3 h-3 mr-1" />{integration.status || 'Inactive'}
+                    <AlertCircle className="w-3 h-3 mr-1" />{integration.status || 'Inactivo'}
                   </Badge>
                 )}
               </CardHeader>
 
               <CardContent className="space-y-2">
                 {adAccountId && (
-                  <p className="text-xs text-slate-500">Ad Account: <span className="font-mono">{adAccountId}</span></p>
+                  <p className="text-xs text-slate-500">Cuenta Publicitaria: <span className="font-mono">{adAccountId}</span></p>
                 )}
                 {pageId && (
-                  <p className="text-xs text-slate-500">Page ID: <span className="font-mono">{pageId}</span></p>
+                  <p className="text-xs text-slate-500">ID de la Página: <span className="font-mono">{pageId}</span></p>
                 )}
                 {integration.last_error && (
-                  <p className="text-xs text-red-600">Last error: {integration.last_error}</p>
+                  <p className="text-xs text-red-600">Último error: {integration.last_error}</p>
                 )}
                 {integration.updated_at && (
-                  <p className="text-xs text-slate-400">Updated: {new Date(integration.updated_at).toLocaleString()}</p>
+                  <p className="text-xs text-slate-400">Actualizado: {new Date(integration.updated_at).toLocaleString()}</p>
                 )}
                 {testResult[integration.service] && (
                   <p className="text-xs text-slate-300 bg-slate-800 rounded p-2">{testResult[integration.service]}</p>
@@ -285,40 +279,13 @@ export default function Integrations() {
                   onClick={() => handleTest(integration.service)}
                 >
                   {testing === integration.service
-                    ? <><Loader2 className="w-3 h-3 mr-2 animate-spin" />Testing…</>
-                    : 'Test Connection'}
+                    ? <><Loader2 className="w-3 h-3 mr-2 animate-spin" />Probando…</>
+                    : 'Probar Conexión'}
                 </Button>
               </CardContent>
             </Card>
           )
         })}
-=======
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {integrations.map((integration) => (
-          <Card key={integration.name}>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-base">{integration.icon} {integration.name}</CardTitle>
-              {integration.status === 'active' ? (
-                <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
-                  <CheckCircle2 className="w-3 h-3 mr-1" />
-                  Activo
-                </Badge>
-              ) : (
-                <Badge className="bg-yellow-500/10 text-yellow-400 border-yellow-500/20">
-                  <AlertCircle className="w-3 h-3 mr-1" />
-                  Inactivo
-                </Badge>
-              )}
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-slate-600 mb-3">Conectado y listo para operar</p>
-              <Button variant="outline" size="sm" className="w-full">
-                Configurar
-              </Button>
-            </CardContent>
-          </Card>
-        ))}
->>>>>>> Stashed changes
       </div>
     </div>
   )
