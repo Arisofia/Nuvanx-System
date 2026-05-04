@@ -43,12 +43,12 @@ ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "users_select_own" ON users
   FOR SELECT TO authenticated
-  USING (auth.uid() = );
+  USING (auth.uid() = id);
 
 CREATE POLICY "users_update_own" ON users
   FOR UPDATE TO authenticated
-  USING (auth.uid() = )
-  WITH CHECK (auth.uid() = );
+  USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
 
 -- ---------------------------------------------------------------------------
 -- Table: credentials
@@ -101,7 +101,7 @@ ALTER TABLE integrations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.integrations ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "integrations_select_own" ON integrations
   FOR SELECT TO authenticated
-  USING (auth.uid() = );
+  USING (auth.uid() = user_id);
 
 -- ---------------------------------------------------------------------------
 -- Table: leads

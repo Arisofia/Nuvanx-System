@@ -1,10 +1,12 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
-import { AlertCircle, FileBarChart2, TrendingUp, Users, MessageCircle, Stethoscope } from 'lucide-react'
+import { AlertCircle, FileBarChart2, TrendingUp, Users, MessageCircle, Stethoscope, BarChart3 } from 'lucide-react'
 import { invokeApi } from '../lib/supabaseClient'
 import { ExportButton } from '../components/reports/ExportButton'
 import { FilterBar } from '../components/ui/FilterBar'
+import { SortableTable } from '../components/ui/SortableTable'
+import type { ColDef } from '../components/ui/SortableTable'
 
 function EmptyState({ message }: { message: string }) {
   return <p className="text-slate-500 text-sm py-8 text-center">{message}</p>
@@ -86,6 +88,14 @@ export default function Reports() {
   const [docPerfLoading, setDocPerfLoading] = useState(true)
   const [docPerfError, setDocPerfError] = useState<string | null>(null)
 
+  // Campaign ROI
+  const [roiRows, setRoiRows] = useState<any[]>([])
+  const [roiLoading, setRoiLoading] = useState(true)
+  const [roiError, setRoiError] = useState<string | null>(null)
+  const [roiFrom, setRoiFrom] = useState<string>('')
+  const [roiTo, setRoiTo] = useState<string>('')
+  const [roiSource, setRoiSource] = useState<string>('')
+
   // Doctoralia fetch — re-runs on date filter change
   useEffect(() => {
     const params: string[] = []
@@ -123,6 +133,20 @@ export default function Reports() {
       .finally(() => setDocPerfLoading(false))
   }, [])
 
+  // Campaign ROI — re-runs on filter change
+  useEffect(() => {
+    const params: string[] = []
+    if (roiFrom)   params.push(`from=${roiFrom}`)
+    if (roiTo)     params.push(`to=${roiTo}`)
+    if (roiSource) params.push(`source=${encodeURIComponent(roiSource)}`)
+    const qs = params.length ? `?${params.join('&')}` : ''
+    let cancelled = false
+    invokeApi(`/reports/campaign-roi${qs}`)
+      .then((d: any) => { if (!cancelled) { setRoiError(null); setRoiRows(d?.rows ?? []); setRoiLoading(false) } })
+      .catch((e: any) => { if (!cancelled) { setRoiError(e?.message || 'Failed to load campaign ROI.'); setRoiLoading(false) } })
+    return () => { cancelled = true }
+  }, [roiFrom, roiTo, roiSource])
+
   // Local date filters for campaign/source (front-end only)
   const filteredCampaigns = useMemo(() => {
     return campaigns.filter((r) => {
@@ -140,6 +164,25 @@ export default function Reports() {
     })
   }, [sources, srcFrom, srcTo])
 
+  const roiSources = useMemo(
+    () => [...new Set(roiRows.map((r) => r.source).filter(Boolean))] as string[],
+    [roiRows],
+  )
+
+  const roiColumns: ColDef[] = [
+    { key: 'month', label: 'Mes', align: 'left', sortable: true },
+    { key: 'source', label: 'Fuente', align: 'left', sortable: true },
+    { key: 'campaign_name', label: 'Campaña', align: 'left' },
+    { key: 'leads_count', label: 'Leads', align: 'right', sortable: true },
+    { key: 'patients_count', label: 'Pacientes', align: 'right', sortable: true },
+    { key: 'net_revenue', label: 'Revenue neto', align: 'right', sortable: true,
+      format: (v) => v != null ? Number(v).toLocaleString('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }) : null },
+    { key: 'spend', label: 'Spend Meta', align: 'right', sortable: true,
+      format: (v) => v != null ? Number(v).toLocaleString('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }) : null },
+    { key: 'cac', label: 'CAC', align: 'right', sortable: true,
+      format: (v) => v != null ? Number(v).toLocaleString('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }) : null },
+  ]
+
   return (
     <div className="space-y-6">
       <div>
@@ -154,6 +197,7 @@ export default function Reports() {
           <TabsTrigger value="sources" className="gap-2"><Users className="w-4 h-4" />Sources</TabsTrigger>
           <TabsTrigger value="whatsapp" className="gap-2"><MessageCircle className="w-4 h-4" />WhatsApp</TabsTrigger>
           <TabsTrigger value="doctors" className="gap-2"><Stethoscope className="w-4 h-4" />Doctors</TabsTrigger>
+          <TabsTrigger value="campaign-roi" className="gap-2"><BarChart3 className="w-4 h-4" />Campaign ROI</TabsTrigger>
         </TabsList>
 
         {/* ── Doctoralia Financials ── */}
@@ -396,6 +440,34 @@ export default function Reports() {
                     </tbody>
                   </table>
                 </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── Campaign ROI ── */}
+        <TabsContent value="campaign-roi" className="mt-4 space-y-4">
+          <FilterBar
+            onDateChange={(from, to) => { setRoiFrom(from); setRoiTo(to) }}
+            sources={roiSources}
+            sourceValue={roiSource}
+            onSourceChange={setRoiSource}
+          />
+          <Card>
+            <CardHeader>
+              <CardTitle>Campaign ROI</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {roiError && <ErrorState message={roiError} />}
+              {!roiError && (
+                <SortableTable
+                  columns={roiColumns}
+                  rows={roiRows}
+                  loading={roiLoading}
+                  exportFilename="campaign-roi"
+                  emptyMessage="No campaign ROI data available yet."
+                  pageSize={200}
+                />
               )}
             </CardContent>
           </Card>

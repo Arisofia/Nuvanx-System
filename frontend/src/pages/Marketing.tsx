@@ -67,6 +67,7 @@ export default function Marketing() {
 
   const [days, setDays] = useState(30)
   const [customFrom, setCustomFrom] = useState<string>('')
+  const [customTo, setCustomTo] = useState<string>('')
   const [campaignId, setCampaignId] = useState<string>('ALL')
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'PAUSED'>('ALL')
   const [search, setSearch] = useState('')
@@ -78,10 +79,11 @@ export default function Marketing() {
       setState((prev) => ({ ...prev, loading: true, error: null }))
       try {
         const isCustomRange = Boolean(customFrom)
+        const effectiveTo = isCustomRange ? (customTo || todayStr) : todayStr
         const insightsQ = isCustomRange
-          ? `?from=${customFrom}&to=${todayStr}${campaignId !== 'ALL' ? `&campaign_id=${campaignId}` : ''}`
+          ? `?from=${customFrom}&to=${effectiveTo}${campaignId !== 'ALL' ? `&campaign_id=${campaignId}` : ''}`
           : `?days=${days}${campaignId !== 'ALL' ? `&campaign_id=${campaignId}` : ''}`
-        const campaignsQ = isCustomRange ? `?from=${customFrom}&to=${todayStr}` : `?days=${days}`
+        const campaignsQ = isCustomRange ? `?from=${customFrom}&to=${effectiveTo}` : `?days=${days}`
         const [insightsRes, campaignsRes] = await Promise.allSettled([
           invokeApi(`/meta/insights${insightsQ}`),
           invokeApi(`/meta/campaigns${campaignsQ}`),
@@ -124,7 +126,7 @@ export default function Marketing() {
       }
     }
     load()
-  }, [days, campaignId, customFrom])
+  }, [days, campaignId, customFrom, customTo])
 
   const { summary, changes, daily, campaigns, currency, accountId, period, loading, error } = state
 
@@ -198,7 +200,7 @@ export default function Marketing() {
             {([7, 14, 30, 90, 365] as const).map((d) => (
               <button
                 key={d}
-                onClick={() => { setDays(d); setCustomFrom('') }}
+                onClick={() => { setDays(d); setCustomFrom(''); setCustomTo('') }}
                 className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
                   !customFrom && days === d ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'
                 }`}
@@ -207,13 +209,31 @@ export default function Marketing() {
               </button>
             ))}
             <button
-              onClick={() => setCustomFrom(since2025)}
+              onClick={() => { setCustomFrom(since2025); setCustomTo('') }}
               className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                customFrom === since2025 ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+                customFrom === since2025 && !customTo ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
               }`}
             >
               Desde 2025
             </button>
+          </div>
+          {/* Custom date range inputs */}
+          <div className="flex items-center gap-1">
+            <input
+              type="date"
+              value={customFrom}
+              onChange={(e) => setCustomFrom(e.target.value)}
+              className="bg-slate-800 text-white text-xs px-2 py-1.5 rounded-lg border-none focus:ring-1 focus:ring-slate-500"
+              placeholder="Desde"
+            />
+            <span className="text-slate-500 text-xs">→</span>
+            <input
+              type="date"
+              value={customTo}
+              onChange={(e) => setCustomTo(e.target.value)}
+              className="bg-slate-800 text-white text-xs px-2 py-1.5 rounded-lg border-none focus:ring-1 focus:ring-slate-500"
+              placeholder="Hasta"
+            />
           </div>
         </div>
       </div>

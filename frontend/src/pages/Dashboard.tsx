@@ -204,6 +204,9 @@ export default function Dashboard() {
     )
   }
 
+  const isCustomRange = Boolean(customFrom && customTo)
+  const periodLabel = isCustomRange ? `${customFrom} → ${customTo}` : `últimos ${days} días`
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-end gap-4">
@@ -310,7 +313,7 @@ export default function Dashboard() {
               <div className="text-2xl font-bold">{metrics.metaConversions.toLocaleString()}</div>
               {metrics.deltas && <MetricDelta value={metrics.deltas.conversions} />}
             </div>
-            <p className="text-xs text-slate-500 mt-1">Conversiones Meta · últimos {days} días</p>
+            <p className="text-xs text-slate-500 mt-1">Conversiones Meta · {periodLabel}</p>
           </CardContent>
         </Card>
 
@@ -324,7 +327,7 @@ export default function Dashboard() {
               <div className="text-2xl font-bold">{metrics.totalLeads.toLocaleString()}</div>
               {metrics.deltas && <MetricDelta value={metrics.deltas.leads} />}
             </div>
-            <p className="text-xs text-slate-500 mt-1">Leads en BD · últimos {days} días</p>
+            <p className="text-xs text-slate-500 mt-1">Leads en BD · {periodLabel}</p>
           </CardContent>
         </Card>
 
@@ -354,7 +357,7 @@ export default function Dashboard() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Meta Spend (últimos {days} días)</CardTitle>
+            <CardTitle>Meta Spend ({periodLabel})</CardTitle>
           </CardHeader>
           <CardContent className="h-72">
             <ResponsiveContainer width="100%" height="100%">
