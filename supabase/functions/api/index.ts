@@ -960,6 +960,7 @@ const AUTHENTICATED_ROUTE_HANDLERS = new Map<string, RouteHandler>([
   ['reports|source-comparison|GET', handleReportsSourceComparisonGet],
   ['reports|whatsapp-conversion|GET', handleReportsWhatsappConversionGet],
   ['reports|doctor-performance|GET', handleReportsDoctorPerformanceGet],
+  ['reports|campaign-roi|GET', handleReportsCampaignRoiGet],
   ['leads|reconcile|POST', handleLeadsReconcilePost],
 ]);
 
@@ -3078,6 +3079,27 @@ async function handleReportsDoctorPerformanceGet(ctx: AuthenticatedRouteContext)
       .select('*')
       .order('total_appointments', { ascending: false });
     return sendJson({ success: true, doctors: rows || [] });
+  }
+  return null;
+}
+
+async function handleReportsCampaignRoiGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
+  const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
+  if (resource === 'reports' && sub === 'campaign-roi' && req.method === 'GET') {
+    const from   = url.searchParams.get('from')   ?? '';
+    const to     = url.searchParams.get('to')     ?? '';
+    const source = url.searchParams.get('source') ?? '';
+    const { data: rows, error } = await adminClient.rpc('get_campaign_roi', {
+      p_user_id: userId,
+      p_from:    from,
+      p_to:      to,
+      p_source:  source,
+    });
+    if (error) {
+      console.error('get_campaign_roi error:', error);
+      return sendJson({ success: false, code: 'ROI_QUERY_ERROR', message: 'Failed to load campaign ROI.' }, 500);
+    }
+    return sendJson({ success: true, rows: rows || [] });
   }
   return null;
 }
