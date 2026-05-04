@@ -1644,13 +1644,18 @@ async function handleMetaInsightsGet(ctx: AuthenticatedRouteContext): Promise<Re
           return sendJson(payload, validation.statusCode);
         }
   
-        const days = Number.parseInt(url.searchParams.get('days') ?? '30');
+        const requestedDays = Number.parseInt(url.searchParams.get('days') ?? '30');
         const fromParam = url.searchParams.get('from');
         const toParam = url.searchParams.get('to');
         const campaignId = url.searchParams.get('campaign_id');
 
-        const since = fromParam || new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+        const since = fromParam || new Date(Date.now() - requestedDays * 86_400_000).toISOString().slice(0, 10);
         const until = toParam || new Date().toISOString().slice(0, 10);
+        // Compute actual span so period.days reflects the real window, not the default 30.
+        const days = Math.max(
+          1,
+          Math.round((new Date(until).getTime() - new Date(since).getTime()) / 86_400_000) + 1,
+        );
         const prevSince = new Date(new Date(since).getTime() - days * 86_400_000).toISOString().slice(0, 10);
 
         const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,conversions,cost_per_conversion,unique_clicks,actions';
@@ -1953,8 +1958,8 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
       const [data, campAcctRes] = await Promise.allSettled([
         metaFetch(`/${creds.adAccountId}/campaigns`, {
           fields: `id,name,status,objective,daily_budget,lifetime_budget,insights.${insightsDateParam}{impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,cost_per_conversion}`,
-          effective_status: '["ACTIVE","PAUSED","ARCHIVED"]',
-          limit: '200',
+          effective_status: '["ACTIVE","PAUSED","DELETED","ARCHIVED","IN_PROCESS","WITH_ISSUES"]',
+          limit: '500',
         }, creds.accessToken),
         metaFetch(`/${creds.adAccountId}`, { fields: 'currency' }, creds.accessToken),
       ]);
@@ -2002,8 +2007,8 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
       try {
         const fallback = await metaFetch(`/${creds.adAccountId}/campaigns`, {
           fields: 'id,name,status,objective,daily_budget,lifetime_budget',
-          effective_status: '["ACTIVE","PAUSED","ARCHIVED"]',
-          limit: '200',
+          effective_status: '["ACTIVE","PAUSED","DELETED","ARCHIVED","IN_PROCESS","WITH_ISSUES"]',
+          limit: '500',
         }, creds.accessToken);
   
         const fallbackResult = {

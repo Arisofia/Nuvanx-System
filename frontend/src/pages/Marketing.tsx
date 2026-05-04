@@ -274,6 +274,11 @@ export default function Marketing() {
           loading: false,
           error,
         })
+
+        // If the selected campaign no longer exists in the new window, fall back to ALL.
+        if (campaignId !== 'ALL' && !rawCampaigns.some((c) => c.id === campaignId)) {
+          setCampaignId('ALL')
+        }
       } catch (err: any) {
         setState((prev) => ({ ...prev, loading: false, error: err?.message ?? 'Error cargando datos.' }))
       }
