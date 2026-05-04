@@ -2820,16 +2820,19 @@ async function handleTraceabilityFunnel(ctx: AuthenticatedRouteContext): Promise
 }
 
 async function handleTraceabilityCampaigns(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, resource, sub, url, sendJson } = ctx;
+  const { adminClient, userId, resource, sub, url, sendJson } = ctx;
   if (resource === 'traceability' && sub === 'campaigns') {
-    const from = url.searchParams.get('from') ?? '';
-    const to   = url.searchParams.get('to')   ?? '';
+    const from   = url.searchParams.get('from')   ?? '';
+    const to     = url.searchParams.get('to')     ?? '';
+    const source = url.searchParams.get('source') ?? '';
     let query = adminClient
       .from('vw_campaign_performance_real')
       .select('*')
+      .eq('user_id', userId)
       .order('total_leads', { ascending: false });
-    if (from) query = query.gte('first_lead_at', from);
-    if (to)   query = query.lte('last_lead_at', to);
+    if (from)   query = query.gte('first_lead_at', from);
+    if (to)     query = query.lte('last_lead_at', to);
+    if (source) query = query.eq('source', source);
     const { data: rows } = await query;
     return sendJson({ success: true, campaigns: rows || [] });
   }
@@ -3019,16 +3022,19 @@ async function handleReportsDoctoraliaFinancialsGet(ctx: AuthenticatedRouteConte
 }
 
 async function handleReportsCampaignPerformanceGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, resource, sub, req, url, sendJson } = ctx;
+  const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'reports' && sub === 'campaign-performance' && req.method === 'GET') {
-    const from = url.searchParams.get('from') ?? '';
-    const to   = url.searchParams.get('to')   ?? '';
+    const from   = url.searchParams.get('from')   ?? '';
+    const to     = url.searchParams.get('to')     ?? '';
+    const source = url.searchParams.get('source') ?? '';
     let query = adminClient
       .from('vw_campaign_performance_real')
       .select('*')
+      .eq('user_id', userId)
       .order('total_leads', { ascending: false });
-    if (from) query = query.gte('first_lead_at', from);
-    if (to)   query = query.lte('last_lead_at', to);
+    if (from)   query = query.gte('first_lead_at', from);
+    if (to)     query = query.lte('last_lead_at', to);
+    if (source) query = query.eq('source', source);
     const { data: rows } = await query;
     return sendJson({ success: true, campaigns: rows || [] });
   }
