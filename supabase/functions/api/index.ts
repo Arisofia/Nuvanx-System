@@ -915,7 +915,7 @@ async function handleRequest(req: Request): Promise<Response> {
 
 type RouteHandler = (ctx: AuthenticatedRouteContext) => Promise<Response | null>;
 
-const AUTHENTICATED_ROUTE_HANDLERS = new Map<string, RouteHandler>([
+export const AUTHENTICATED_ROUTE_HANDLERS = new Map<string, RouteHandler>([
   ['health|*|*', handleHealth],
   ['auth|me|GET', handleAuthMeGet],
   ['production|audit|GET', handleProductionAuditGet],
@@ -1116,7 +1116,7 @@ interface AuthenticatedRouteContext {
   token: string;
 }
 
-async function handleAuthenticatedRoutes(ctx: AuthenticatedRouteContext): Promise<Response> {
+export async function handleAuthenticatedRoutes(ctx: AuthenticatedRouteContext): Promise<Response> {
   try {
     const candidateKeys = [
       `${ctx.resource}|${ctx.sub}|${ctx.req.method}`,
