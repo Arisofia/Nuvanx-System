@@ -2341,7 +2341,7 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
     const campaignsUntil = campTo || new Date(nowMs).toISOString().slice(0, 10);
     const requestedSinceMs = campFrom
       ? new Date(campFrom).getTime()
-      : nowMs - Math.min(campDays, 90) * 86_400_000;
+      : nowMs - Math.min(Number.isFinite(campDays) ? campDays : 90, 90) * 86_400_000;
     const campaignsSince = new Date(Math.max(requestedSinceMs, nowMs - maxLookbackMs)).toISOString().slice(0, 10);
     const campaignsTimeRange = JSON.stringify({ since: campaignsSince, until: campaignsUntil });
 
