@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { useLeads } from '../hooks/useLeads'
@@ -6,10 +6,27 @@ import { KanbanBoard } from '../components/crm/KanbanBoard'
 import { LeadDetailSheet } from '../components/crm/LeadDetailSheet'
 import type { Lead, LeadStage } from '../types'
 
+const ALL_STAGES = ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'] as const
+
 export default function CRM() {
-  const { leads, loading, error, updateLead } = useLeads()
+  const { leads, loading, error, updateLead, deleteLead } = useLeads()
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
   const [isDetailOpen, setIsDetailOpen] = useState(false)
+  const [stageFilter, setStageFilter] = useState<string>('ALL')
+  const [sourceFilter, setSourceFilter] = useState<string>('ALL')
+
+  const sources = useMemo(() => {
+    const s = new Set(leads.map(l => l.source).filter(Boolean))
+    return Array.from(s).sort()
+  }, [leads])
+
+  const filteredLeads = useMemo(() => {
+    return leads.filter(l => {
+      if (stageFilter !== 'ALL' && l.status !== stageFilter) return false
+      if (sourceFilter !== 'ALL' && l.source !== sourceFilter) return false
+      return true
+    })
+  }, [leads, stageFilter, sourceFilter])
 
   const handleStageChange = async (leadId: string, newStage: LeadStage) => {
     await updateLead(leadId, { status: newStage })
@@ -20,6 +37,18 @@ export default function CRM() {
     setIsDetailOpen(true)
   }
 
+  const handleUpdate = async (id: string, updates: Partial<Lead>) => {
+    const result = await updateLead(id, updates)
+    if (result.success && selectedLead?.id === id) {
+      setSelectedLead(prev => prev ? { ...prev, ...updates } : prev)
+    }
+    return result
+  }
+
+  const handleDelete = async (id: string) => {
+    return deleteLead(id)
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -27,6 +56,38 @@ export default function CRM() {
           <h1 className="text-3xl font-bold">CRM</h1>
           <p className="text-slate-600 mt-1">Lead pipeline — stages, DNI, lost_reason</p>
         </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3">
+        <select
+          value={stageFilter}
+          onChange={e => setStageFilter(e.target.value)}
+          className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-primary"
+        >
+          <option value="ALL">All stages</option>
+          {ALL_STAGES.map(s => (
+            <option key={s} value={s} className="capitalize">{s}</option>
+          ))}
+        </select>
+        <select
+          value={sourceFilter}
+          onChange={e => setSourceFilter(e.target.value)}
+          className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-primary"
+        >
+          <option value="ALL">All sources</option>
+          {sources.map(s => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+        {(stageFilter !== 'ALL' || sourceFilter !== 'ALL') && (
+          <button
+            onClick={() => { setStageFilter('ALL'); setSourceFilter('ALL') }}
+            className="text-xs text-slate-400 hover:text-white underline"
+          >
+            Clear filters
+          </button>
+        )}
       </div>
 
       <Tabs defaultValue="pipeline" className="w-full">
@@ -42,7 +103,7 @@ export default function CRM() {
             </div>
           ) : (
             <KanbanBoard 
-              leads={leads} 
+              leads={filteredLeads} 
               onStageChange={handleStageChange} 
               onLeadClick={handleLeadClick} 
             />
@@ -52,7 +113,7 @@ export default function CRM() {
         <TabsContent value="leads">
           <Card>
             <CardHeader>
-              <CardTitle>All Leads</CardTitle>
+              <CardTitle>All Leads {filteredLeads.length !== leads.length && <span className="text-sm font-normal text-slate-500">({filteredLeads.length} of {leads.length})</span>}</CardTitle>
             </CardHeader>
             <CardContent>
               {loading ? (
@@ -61,7 +122,7 @@ export default function CRM() {
                 <div className="space-y-3">
                   {error && <p className="text-sm text-yellow-500">{error}</p>}
                   <div className="grid gap-3">
-                    {leads.map((lead) => (
+                    {filteredLeads.map((lead) => (
                       <div 
                         key={lead.id} 
                         className="rounded-xl border border-border p-4 bg-slate-950 cursor-pointer hover:border-primary/50 transition-colors"
@@ -87,7 +148,9 @@ export default function CRM() {
       <LeadDetailSheet 
         lead={selectedLead} 
         isOpen={isDetailOpen} 
-        onClose={() => setIsDetailOpen(false)} 
+        onClose={() => setIsDetailOpen(false)}
+        onUpdate={handleUpdate}
+        onDelete={handleDelete}
       />
     </div>
   )

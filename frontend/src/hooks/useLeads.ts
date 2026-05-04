@@ -70,9 +70,22 @@ export function useLeads() {
     }
   }
 
+  const deleteLead = async (id: string) => {
+    try {
+      const response = await invokeApi(`/leads/${id}`, { method: 'DELETE' })
+      if ((response as any).success) {
+        setLeads(prev => prev.filter(lead => lead.id !== id))
+        return { success: true }
+      }
+      return { success: false, error: (response as any).message }
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to delete lead' }
+    }
+  }
+
   useEffect(() => {
     loadLeads()
   }, [loadLeads])
 
-  return { leads, loading, error, refreshLeads: loadLeads, updateLead }
+  return { leads, loading, error, refreshLeads: loadLeads, updateLead, deleteLead }
 }
