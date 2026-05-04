@@ -119,9 +119,11 @@ export interface FinancialSummary {
   totalDiscount: number
   avgTicket: number
   discountRate: number
+  cancellationRate: number
   avgLiquidationDays: number
   settledCount: number
   cancelledCount: number
+  operationsCount: number
 }
 
 export interface MonthlyTrend {

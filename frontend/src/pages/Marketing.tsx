@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import {
   AreaChart, Area, BarChart, Bar,
@@ -29,7 +29,7 @@ function DeltaBadge({ value }: Readonly<{ value: number | undefined }>) {
 
 function StatCard({
   label, value, sub, icon, color = 'text-foreground', delta,
-}: Readonly<{ label: string; value: string; sub?: string; icon: React.ReactNode; color?: string; delta?: number }>) {
+}: Readonly<{ label: string; value: string; sub?: string; icon: ReactNode; color?: string; delta?: number }>) {
   return (
     <Card>
       <CardContent className="pt-4">
@@ -181,6 +181,7 @@ function CampaignTable({ campaigns, filteredCampaigns, currency, summary }: Read
                 {summary && summary.conversions > 0
                   ? fmtCurrency(summary.spend / summary.conversions, currency)
                   : <span className="text-muted" title="No conversions in this period">—</span>}
+              </td>
             </tr>
           </tfoot>
         )}

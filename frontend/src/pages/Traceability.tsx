@@ -43,19 +43,32 @@ export default function Traceability() {
   const [search, setSearch] = useState('')
 
   useEffect(() => {
-    setLoading(true)
-    setError(null)
-    const params = new URLSearchParams({ limit: '500' })
-    if (matchedOnly) params.set('matched', 'true')
-    invokeApi(`/traceability/leads?${params}`)
-      .then((data: any) => {
+    let isActive = true
+
+    const loadTraceability = async () => {
+      setLoading(true)
+      setError(null)
+
+      try {
+        const params = new URLSearchParams({ limit: '500' })
+        if (matchedOnly) params.set('matched', 'true')
+        const data = await invokeApi(`/traceability/leads?${params}`)
+
+        if (!isActive) return
         setRows(data?.leads ?? [])
-        setLoading(false)
-      })
-      .catch((err: any) => {
+      } catch (err: any) {
+        if (!isActive) return
         setError(err?.message ?? 'Error cargando datos de trazabilidad.')
-        setLoading(false)
-      })
+      } finally {
+        if (isActive) setLoading(false)
+      }
+    }
+
+    loadTraceability()
+
+    return () => {
+      isActive = false
+    }
   }, [matchedOnly])
 
   const filtered = rows.filter((r) => {

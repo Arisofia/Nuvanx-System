@@ -189,6 +189,16 @@ export default function Financials() {
 
         <Card>
           <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Operaciones</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{state.summary ? state.summary.operationsCount : '—'}</div>
+            <p className="text-xs text-muted mt-1">Cantidad total de liquidaciones</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Ticket promedio</CardTitle>
           </CardHeader>
           <CardContent>
@@ -204,6 +214,16 @@ export default function Financials() {
           <CardContent>
             <div className="text-2xl font-bold">{state.summary ? `${state.summary.discountRate}%` : '—'}</div>
             <p className="text-xs text-muted mt-1">Descuento aplicado sobre ingresos brutos</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Tasa de cancelación</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{state.summary ? `${state.summary.cancellationRate}%` : '—'}</div>
+            <p className="text-xs text-muted mt-1">Porcentaje de liquidaciones canceladas</p>
           </CardContent>
         </Card>
 

@@ -2777,15 +2777,18 @@ async function handleFinancialsSummary(ctx: AuthenticatedRouteContext): Promise<
 
     let query = adminClient
       .from('financial_settlements')
-      .select('amount_gross, amount_discount, amount_net, template_name, settled_at, intake_at, cancelled_at')
+      .select('amount_gross, amount_discount, amount_net, template_name, settled_at, intake_at, cancelled_at, source_system')
       .eq('clinic_id', clinicId)
+      .eq('source_system', 'doctoralia')
       .order('settled_at', { ascending: false });
     if (fromParam) query = query.gte('settled_at', fromParam);
     if (toParam) query = query.lte('settled_at', toParam);
 
     const { data: rows } = await query;
   
+    const operationsCount = (rows || []).length;
     const settled = (rows || []).filter((r: any) => !r.cancelled_at);
+    const cancelledCount = operationsCount - settled.length;
     const totalNet = settled.reduce((s: number, r: any) => s + Number(r.amount_net), 0);
     const totalGross = settled.reduce((s: number, r: any) => s + Number(r.amount_gross), 0);
     const totalDiscount = settled.reduce((s: number, r: any) => s + Number(r.amount_discount), 0);
@@ -2794,6 +2797,7 @@ async function handleFinancialsSummary(ctx: AuthenticatedRouteContext): Promise<
     // don't export a separate discount column (e.g. Doctoralia net-only exports).
     const effectiveDiscount = totalDiscount > 0 ? totalDiscount : Math.max(0, totalGross - totalNet);
     const discountRate = totalGross > 0 ? (effectiveDiscount / totalGross) * 100 : 0;
+    const cancellationRate = operationsCount > 0 ? (cancelledCount / operationsCount) * 100 : 0;
   
     const liquidationDays = settled
       .filter((r: any) => r.intake_at)
@@ -2835,9 +2839,11 @@ async function handleFinancialsSummary(ctx: AuthenticatedRouteContext): Promise<
         totalDiscount: Math.round(totalDiscount * 100) / 100,
         avgTicket: Math.round(avgTicket * 100) / 100,
         discountRate: Math.round(discountRate * 10) / 10,
+        cancellationRate: Math.round(cancellationRate * 10) / 10,
         avgLiquidationDays: Math.round(avgLiquidationDays * 10) / 10,
         settledCount: settled.length,
-        cancelledCount: (rows || []).length - settled.length,
+        cancelledCount,
+        operationsCount,
       },
       templateMix,
       monthly,

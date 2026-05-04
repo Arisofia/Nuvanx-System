@@ -13,7 +13,7 @@ export function useLeads() {
     try {
       const response = await invokeApi('/leads')
       const data = (response as any).leads
-      
+
       setLeads(
         Array.isArray(data)
           ? data.map((item: any) => ({
@@ -29,7 +29,7 @@ export function useLeads() {
               created_at: item.created_at,
               updated_at: item.updated_at,
             }))
-          : []
+          : [],
       )
     } catch (err: any) {
       console.warn('CRM API call failed:', err)
@@ -43,25 +43,31 @@ export function useLeads() {
   const updateLead = async (id: string, updates: Partial<Lead>) => {
     try {
       // Map 'status' back to 'stage' for the API if necessary
-      const apiUpdates = { ...updates }
-      if (apiUpdates.status) {
-        (apiUpdates as any).stage = apiUpdates.status
+      const apiUpdates: Record<string, unknown> = { ...updates }
+      if ('status' in apiUpdates && apiUpdates.status) {
+        apiUpdates.stage = apiUpdates.status
         delete apiUpdates.status
       }
 
       const response = await invokeApi(`/leads/${id}`, {
         method: 'PATCH',
-        body: apiUpdates as Record<string, unknown>
+        body: apiUpdates,
       })
 
       if ((response as any).success) {
         const updatedLead = (response as any).lead
-        setLeads(prev => prev.map(lead => lead.id === id ? {
-          ...lead,
-          ...updates,
-          id: String(updatedLead.id),
-          status: updatedLead.stage
-        } : lead))
+        setLeads(prev =>
+          prev.map(lead =>
+            lead.id === id
+              ? {
+                  ...lead,
+                  ...updates,
+                  id: String(updatedLead.id),
+                  status: updatedLead.stage,
+                }
+              : lead,
+          ),
+        )
         return { success: true }
       }
       return { success: false, error: (response as any).message }

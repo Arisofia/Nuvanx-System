@@ -11,15 +11,14 @@ export const supabaseKey =
   sanitizeEnv(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) ||
   sanitizeEnv(import.meta.env.VITE_SUPABASE_ANON_KEY)
 
-if (!supabaseUrl || !supabaseKey) {
-  throw new Error(
-    'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY. Mock clients are disabled.',
-  )
-}
-
-export const supabase = createClient(supabaseUrl, supabaseKey)
+export const supabase = createClient(supabaseUrl || '', supabaseKey || '')
 
 export async function invokeApi(path: string, options?: { method?: string; body?: Record<string, unknown> }) {
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error(
+      'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY before calling the API.',
+    )
+  }
   const normalizedPath = path.startsWith('/') ? path : `/${path}`
   const method = options?.method?.toUpperCase() ?? 'GET'
   const body = options?.body
