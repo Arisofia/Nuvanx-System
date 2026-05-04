@@ -112,16 +112,6 @@ export default function Reports() {
   }, [docFrom, docTo])
 
   useEffect(() => {
-    invokeApi('/reports/campaign-performance')
-      .then((d: any) => setCampaigns(d?.campaigns ?? []))
-      .catch((e: any) => setCampError(e?.message || 'Failed to load campaign performance.'))
-      .finally(() => setCampLoading(false))
-
-    invokeApi('/reports/source-comparison')
-      .then((d: any) => setSources(d?.sources ?? []))
-      .catch((e: any) => setSrcError(e?.message || 'Failed to load source comparison.'))
-      .finally(() => setSrcLoading(false))
-
     invokeApi('/reports/whatsapp-conversion')
       .then((d: any) => setCohorts(d?.cohorts ?? []))
       .catch((e: any) => setWaError(e?.message || 'Failed to load WhatsApp conversion.'))
@@ -132,6 +122,46 @@ export default function Reports() {
       .catch((e: any) => setDocPerfError(e?.message || 'Failed to load doctor performance.'))
       .finally(() => setDocPerfLoading(false))
   }, [])
+
+  useEffect(() => {
+    const loadCampaignPerformance = async () => {
+      setCampLoading(true)
+      setCampError(null)
+      const params: string[] = []
+      if (campFrom) params.push(`from=${campFrom}`)
+      if (campTo) params.push(`to=${campTo}`)
+      const qs = params.length ? `?${params.join('&')}` : ''
+      try {
+        const d: any = await invokeApi(`/reports/campaign-performance${qs}`)
+        setCampaigns(d?.campaigns ?? [])
+      } catch (e: any) {
+        setCampError(e?.message || 'Failed to load campaign performance.')
+      } finally {
+        setCampLoading(false)
+      }
+    }
+    loadCampaignPerformance()
+  }, [campFrom, campTo])
+
+  useEffect(() => {
+    const loadSourceComparison = async () => {
+      setSrcLoading(true)
+      setSrcError(null)
+      const params: string[] = []
+      if (srcFrom) params.push(`from=${srcFrom}`)
+      if (srcTo) params.push(`to=${srcTo}`)
+      const qs = params.length ? `?${params.join('&')}` : ''
+      try {
+        const d: any = await invokeApi(`/reports/source-comparison${qs}`)
+        setSources(d?.sources ?? [])
+      } catch (e: any) {
+        setSrcError(e?.message || 'Failed to load source comparison.')
+      } finally {
+        setSrcLoading(false)
+      }
+    }
+    loadSourceComparison()
+  }, [srcFrom, srcTo])
 
   // Campaign ROI — re-runs on filter change
   useEffect(() => {
@@ -202,7 +232,9 @@ export default function Reports() {
 
         {/* ── Doctoralia Financials ── */}
         <TabsContent value="doctoralia" className="mt-4 space-y-4">
-          <FilterBar onDateChange={(from, to) => { setDocFrom(from); setDocTo(to) }} />
+          <div className="rounded-2xl border border-border bg-surface/70 p-3">
+            <FilterBar onDateChange={(from, to) => { setDocFrom(from); setDocTo(to) }} />
+          </div>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <CardTitle>Doctoralia Financials — by Template</CardTitle>
@@ -285,7 +317,9 @@ export default function Reports() {
 
         {/* ── Campaign Performance ── */}
         <TabsContent value="campaigns" className="mt-4 space-y-4">
-          <FilterBar onDateChange={(from, to) => { setCampFrom(from); setCampTo(to) }} />
+          <div className="rounded-2xl border border-border bg-surface/70 p-3">
+            <FilterBar onDateChange={(from, to) => { setCampFrom(from); setCampTo(to) }} />
+          </div>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <CardTitle>Campaign Performance</CardTitle>
@@ -327,7 +361,9 @@ export default function Reports() {
 
         {/* ── Source Comparison ── */}
         <TabsContent value="sources" className="mt-4 space-y-4">
-          <FilterBar onDateChange={(from, to) => { setSrcFrom(from); setSrcTo(to) }} />
+          <div className="rounded-2xl border border-border bg-surface/70 p-3">
+            <FilterBar onDateChange={(from, to) => { setSrcFrom(from); setSrcTo(to) }} />
+          </div>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <CardTitle>Source Comparison</CardTitle>
@@ -447,12 +483,14 @@ export default function Reports() {
 
         {/* ── Campaign ROI ── */}
         <TabsContent value="campaign-roi" className="mt-4 space-y-4">
-          <FilterBar
-            onDateChange={(from, to) => { setRoiFrom(from); setRoiTo(to) }}
-            sources={roiSources}
-            sourceValue={roiSource}
-            onSourceChange={setRoiSource}
-          />
+          <div className="rounded-2xl border border-border bg-surface/70 p-3">
+            <FilterBar
+              onDateChange={(from, to) => { setRoiFrom(from); setRoiTo(to) }}
+              sources={roiSources}
+              sourceValue={roiSource}
+              onSourceChange={setRoiSource}
+            />
+          </div>
           <Card>
             <CardHeader>
               <CardTitle>Campaign ROI</CardTitle>

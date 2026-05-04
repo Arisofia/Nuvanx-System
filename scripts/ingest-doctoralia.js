@@ -73,6 +73,66 @@ function normalizeCellValue(value) {
   return value;
 }
 
+function cleanImporte(raw) {
+  const text = (raw ?? '').toString().trim();
+  if (!text) return 0;
+
+  const dateLike = /^\d{4}[./-]\d{1,2}[./-]\d{1,2}$/.test(text)
+    || /^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/.test(text);
+  if (dateLike) return 0;
+
+  const normalized = text.replaceAll(',', '.').replace(/[^\d.-]/g, '');
+  const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getSpanishMonth(dateValue) {
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat('es-ES', { month: 'long' }).format(date);
+}
+
+function getSpanishWeekday(dateValue) {
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat('es-ES', { weekday: 'long' }).format(date);
+}
+
+function getQuarter(dateValue) {
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return null;
+  return Math.floor(date.getMonth() / 3) + 1;
+}
+
+function getStartHour(hora) {
+  if (!hora) return null;
+  const parts = hora.toString().split(/[-–]/).map((p) => p.trim());
+  return parts[0] || null;
+}
+
+function getFranjaHoraria(startTime) {
+  if (!startTime) return null;
+  const match = /^([0-2]?\d):([0-5]\d)$/.exec(startTime);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  if (hour >= 6 && hour < 12) return 'Mañana (06:00-12:00)';
+  if (hour >= 12 && hour < 15) return 'Mediodía (12:00-15:00)';
+  if (hour >= 15 && hour < 21) return 'Tarde (15:00-21:00)';
+  return 'Noche/Madrugada';
+}
+
+function normalizeSalaBox(value) {
+  const normalized = (value ?? '').toString().trim();
+  if (!normalized || normalized.toLowerCase() === 'sin asignar') return 'N/A';
+  return normalized;
+}
+
+function normalizeProcedencia(value) {
+  const normalized = (value ?? '').toString().trim();
+  if (!normalized || normalized === '-' || normalized.toLowerCase() === 'sin asignar') return 'Desconocido';
+  return normalized;
+}
+
 // ── Config ───────────────────────────────────────────────────────────────────
 const FILE_ID    = process.env.DOCTORALIA_DRIVE_FILE_ID || process.env.DOCTORALIA_SHEET_ID || process.argv[2];
 const SHEET_NAME = process.env.SHEET_NAME || 'Produccion Intermediarios';
@@ -126,16 +186,22 @@ function normPhone(s) {
 
 // ── Asunto parser ────────────────────────────────────────────────────────────
 // Format: "<id>. <FULL NAME> [<phone1> - <phone2>] (<treatment>)"
+// The bracketed part may contain one or more phone numbers with separators or
+// an international prefix like +34 / 0034.
 const ASUNTO_RE = /^(\d+)\.\s+(.+?)\s+\[([^\]]*)\]\s+\((.+?)\)\s*$/;
-const PHONE_RE  = /\d{9}/g;
+const PHONE_RE  = /(?:\+34|0034|34)?\s*(?:[\s.-]*)(\d(?:[\s.-]*\d){8})/g;
 
 function parseAsunto(raw) {
   if (!raw) return null;
   const m = ASUNTO_RE.exec(raw.toString().trim());
   if (!m) return null;
   const [, docId, name, pRaw, treatment] = m;
-  const phones = (pRaw.match(PHONE_RE) || []).map(normPhone).filter(Boolean);
-  return { doc_patient_id: docId, full_name: name.trim(), name_norm: normName(name), phones, treatment: treatment.trim() };
+  const phones = [];
+  let phoneMatch;
+  while ((phoneMatch = PHONE_RE.exec(pRaw)) !== null) {
+    phones.push(phoneMatch[1]);
+  }
+  return { doc_patient_id: docId, full_name: name.trim(), name_norm: normName(name), phones: phones.map(normPhone).filter(Boolean), treatment: treatment.trim() };
 }
 
 // ── Status mapping ───────────────────────────────────────────────────────────
@@ -204,42 +270,69 @@ function processRow(row, COL, uploadId, ingestedAt, sn) {
   if (!asuntoRaw && !fecha) return null;
 
   const parsed   = parseAsunto(asuntoRaw);
-  const rawImporte = Number.parseFloat(importeRaw.replaceAll(',', '.')) || 0;
-  const importe = Number.isNaN(rawImporte) ? 0 : rawImporte;
+  const importe = cleanImporte(importeRaw);
   const status   = mapStatus(estado);
-  const horaStart = hora ? hora.split('-')[0].trim() : null;
+  const horaStart = getStartHour(hora);
   const startISO  = formatISO(fecha, horaStart);
   const creaISO   = formatISO(fechaCrea, horaCrea);
+  const leadTimeMs = startISO && creaISO ? (new Date(startISO).getTime() - new Date(creaISO).getTime()) : null;
+  const leadTimeDays = leadTimeMs !== null ? Number((leadTimeMs / 86_400_000).toFixed(2)) : null;
+  const leadTimeHours = leadTimeMs !== null ? Number((leadTimeMs / 3_600_000).toFixed(2)) : null;
+  const mes = fecha ? getSpanishMonth(fecha) : null;
+  const anio = fecha ? Number(new Date(fecha).getFullYear()) : null;
+  const trimestre = fecha ? getQuarter(fecha) : null;
+  const diaSemana = fecha ? getSpanishWeekday(fecha) : null;
+  const franjaHoraria = getFranjaHoraria(horaStart);
   const idKey     = [fecha, hora, (asuntoRaw || '').slice(0, 80)].join('|');
   const rawHash   = hex32(idKey);
 
+  const citaPerdida = status === 'cancelled' || status === 'no_show';
+  const pacienteTelefono = parsed?.phones?.[0] || null;
+
   const rawIngest = {
-    raw_hash:          rawHash,
-    clinic_id:         CLINIC_ID,
-    upload_id:         uploadId,
-    raw_row:           {},
-    ingested_at:       ingestedAt,
-    source_file_id:    FILE_ID,
-    sheet_name:        sn,
+    raw_hash:            rawHash,
+    clinic_id:           CLINIC_ID,
+    upload_id:           uploadId,
+    raw_row:             {},
+    ingested_at:         ingestedAt,
+    source_file_id:      FILE_ID,
+    sheet_name:          sn,
     estado,
-    fecha:             fecha || null,
-    hora:              hora || null,
-    fecha_creacion:    fechaCrea || null,
-    hora_creacion:     horaCrea || null,
-    asunto:            asuntoRaw || null,
-    agenda:            agenda || null,
-    sala_box:          salaBox || null,
-    confirmada:        confirmada === 'Sí' || confirmada === 'Si',
-    procedencia:       procedencia === '-' ? null : procedencia || null,
-    importe,
-    doc_patient_id:    parsed?.doc_patient_id || null,
-    patient_name:      parsed?.full_name || null,
-    patient_name_norm: parsed?.name_norm || null,
-    phone_primary:     parsed?.phones?.[0] || null,
-    phone_secondary:   parsed?.phones?.[1] || null,
-    treatment:         parsed?.treatment || null,
-    appointment_start: startISO,
-    created_record_at: creaISO,
+    fecha:               fecha || null,
+    hora:                hora || null,
+    fecha_creacion:      fechaCrea || null,
+    hora_creacion:       horaCrea || null,
+    timestamp_cita:      startISO,
+    timestamp_creacion:  creaISO,
+    lead_time_days:      leadTimeDays,
+    lead_time_hours:     leadTimeHours,
+    fecha_mes:           mes,
+    fecha_ano:           anio,
+    trimestre:           trimestre,
+    dia_semana:          diaSemana,
+    hora_inicio:         horaStart,
+    franja_horaria:      franjaHoraria,
+    asunto:              asuntoRaw || null,
+    agenda:              agenda || null,
+    sala_box:            normalizeSalaBox(salaBox),
+    confirmada:          confirmada === 'Sí' || confirmada === 'Si',
+    procedencia:         normalizeProcedencia(procedencia),
+    importe_numerico:    importe,
+    importe_clean:       importe,
+    is_ingreso:          ['pagada', 'realizada'].includes((estado ?? '').toLowerCase()),
+    cita_efectiva:       ['pagada', 'realizada'].includes((estado ?? '').toLowerCase()),
+    cita_perdida:        citaPerdida,
+    doc_patient_id:      parsed?.doc_patient_id || null,
+    paciente_id:         parsed?.doc_patient_id || null,
+    paciente_nombre:     parsed?.full_name || null,
+    paciente_telefono:   pacienteTelefono,
+    procedimiento_nombre: parsed?.treatment || null,
+    patient_name_norm:   parsed?.name_norm || null,
+    phone_primary:       pacienteTelefono,
+    phone_secondary:     parsed?.phones?.[1] || null,
+    treatment:           parsed?.treatment || null,
+    appointment_start:   startISO,
+    created_record_at:   creaISO,
   };
 
   const cancelled = status === 'cancelled', noShow = status === 'no_show';

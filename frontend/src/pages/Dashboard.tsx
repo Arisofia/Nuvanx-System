@@ -386,6 +386,7 @@ function DashboardHeader({
           <div className="pill-group">
             {([7, 14, 30, 90] as const).map((d) => (
               <button
+                type="button"
                 key={d}
                 onClick={() => { setDays(d); setCustomFrom(''); setCustomTo('') }}
                 className={`pill-button ${!customFrom && days === d ? 'selected' : ''}`}

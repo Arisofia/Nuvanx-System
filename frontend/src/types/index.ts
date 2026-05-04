@@ -106,6 +106,7 @@ export interface MarketingState {
   campaigns: CampaignRow[]
   currency: string
   accountId: string
+  accountIds: string[]
   period: { since: string; until: string; days: number } | null
   loading: boolean
   error: string | null

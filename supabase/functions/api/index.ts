@@ -1160,6 +1160,7 @@ export const AUTHENTICATED_ROUTE_HANDLERS = new Map<string, RouteHandler>([
   ['reports|campaign-performance|GET', handleReportsCampaignPerformanceGet],
   ['reports|source-comparison|GET', handleReportsSourceComparisonGet],
   ['reports|whatsapp-conversion|GET', handleReportsWhatsappConversionGet],
+  ['reports|lead-audit|GET', handleReportsLeadAuditGet],
   ['reports|doctor-performance|GET', handleReportsDoctorPerformanceGet],
   ['reports|campaign-roi|GET', handleReportsCampaignRoiGet],
   ['leads|reconcile|POST', handleLeadsReconcilePost],
@@ -3839,6 +3840,49 @@ async function handleReportsWhatsappConversionGet(ctx: AuthenticatedRouteContext
       .from('vw_whatsapp_conversion_real')
       .select('*');
     return sendJson({ success: true, cohorts: rows || [] });
+  }
+  return null;
+}
+
+async function handleReportsLeadAuditGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
+  const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
+  if (resource === 'reports' && sub === 'lead-audit' && req.method === 'GET') {
+    const limit = Math.min(Math.max(Number.parseInt(url.searchParams.get('limit') ?? '250', 10), 1), 1000);
+    const matchedOnly = url.searchParams.get('matched') === 'true';
+    const from = url.searchParams.get('from') ?? '';
+    const to = url.searchParams.get('to') ?? '';
+    const campaignName = url.searchParams.get('campaign_name') ?? '';
+    const phone = url.searchParams.get('phone') ?? '';
+
+    let query = adminClient
+      .from('vw_lead_traceability')
+      .select(
+        'lead_id,lead_name,source,campaign_name,ad_name,form_name,lead_created_at,' +
+        'phone_normalized,patient_id,patient_name,patient_dni,patient_phone,match_confidence,match_class,settlement_date,first_settlement_at'
+      )
+      .eq('lead_user_id', userId)
+      .order('lead_created_at', { ascending: false })
+      .limit(limit);
+
+    if (matchedOnly) query = query.not('patient_id', 'is', null);
+    if (from) query = query.gte('lead_created_at', from);
+    if (to) query = query.lte('lead_created_at', to + 'T23:59:59Z');
+    if (campaignName) query = query.ilike('campaign_name', `%${campaignName}%`);
+    if (phone) query = query.eq('phone_normalized', normalizePhoneForMeta(phone));
+
+    const { data: rows, error } = await query;
+    if (error) throw error;
+
+    const audited = (rows || []).map((row: any) => {
+      const normalizedPatientPhone = normalizePhoneForMeta(row.patient_phone);
+      const phoneCrossMatch = Boolean(row.phone_normalized && normalizedPatientPhone && row.phone_normalized === normalizedPatientPhone);
+      return {
+        ...row,
+        phoneCrossMatch,
+      };
+    });
+
+    return sendJson({ success: true, leads: audited, total: audited.length });
   }
   return null;
 }

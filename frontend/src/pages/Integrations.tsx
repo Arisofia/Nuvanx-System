@@ -72,16 +72,59 @@ export default function Integrations() {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
   }
 
+  const normalizeMetaAdAccountIds = (value: string) => {
+    const ids = Array.from(
+      new Set(
+        String(value)
+          .split(/[\s,;]+/)
+          .map((segment) => segment.trim())
+          .filter(Boolean),
+      ),
+    )
+
+    return ids
+      .map((id) => {
+        const cleaned = id.toLowerCase().startsWith('act_')
+          ? id.slice(4)
+          : id
+        const digits = String(cleaned).replace(/\D/g, '')
+        return digits ? `act_${digits}` : ''
+      })
+      .filter((id, index, arr) => id && arr.indexOf(id) === index)
+  }
+
+  const extractAdAccountIds = (raw: unknown) => {
+    if (Array.isArray(raw)) {
+      return raw.map((value) => String(value).trim()).filter(Boolean)
+    }
+    if (typeof raw === 'string' || typeof raw === 'number') {
+      return String(raw)
+        .split(/[\s,;]+/)
+        .map((value) => value.trim())
+        .filter(Boolean)
+    }
+    return []
+  }
+
   const handleConnect = async (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault()
     setSaveError(null)
     if (!form.token.trim()) { setSaveError('Token / API key is required.'); return }
-    if (form.service === 'meta' && !form.adAccountId.trim()) { setSaveError('Ad Account ID is required for Meta.'); return }
-
-    const metadata: Record<string, string> = {}
     if (form.service === 'meta') {
-      metadata.adAccountId = form.adAccountId.trim()
-      if (form.pageId.trim()) metadata.pageId = form.pageId.trim()
+      if (!form.adAccountId.trim()) { setSaveError('Ad Account ID is required for Meta.'); return }
+      if (!form.pageId.trim()) { setSaveError('Page ID is required for Meta to enable lead webhooks.'); return }
+    }
+
+    const metadata: Record<string, unknown> = {}
+    if (form.service === 'meta') {
+      const adAccountIds = normalizeMetaAdAccountIds(form.adAccountId)
+      if (adAccountIds.length === 0) {
+        setSaveError('Ingrese al menos un ID de cuenta publicitaria válido (act_1234567890 o 1234567890).');
+        return
+      }
+      metadata.adAccountIds = adAccountIds
+      metadata.adAccountId = adAccountIds.join(',')
+      metadata.pageId = form.pageId.trim()
     }
     if (form.service === 'whatsapp') {
       metadata.phoneNumberId = form.phoneNumberId.trim()
@@ -96,6 +139,9 @@ export default function Integrations() {
       setShowForm(false)
       setForm({ service: 'meta', token: '', adAccountId: '', pageId: '', phoneNumberId: '' })
       await loadIntegrations()
+      if (form.service === 'meta') {
+        await handleHealthCheck('meta')
+      }
     } catch (err: any) {
       setSaveError(err?.message ?? 'Failed to connect integration.')
     } finally {
@@ -126,11 +172,13 @@ export default function Integrations() {
     try {
       const res: any = await invokeApi('/health/meta')
       const account = res.ad_account ?? res.accountId ?? ''
+      const accountIds = Array.isArray(res.accountIds) ? res.accountIds : String(res.accountIds ?? '').split(/[\s,;]+/).filter(Boolean)
       const name = res.meta_user ?? res.metaUser ?? 'Meta user'
-      const accountText = account ? ` · ${account}` : ''
+      const accountText = account ? ` · Cuenta: ${account}` : ''
+      const accountIdsText = accountIds.length > 0 ? ` · Cuentas: ${accountIds.join(', ')}` : ''
       setHealthResult((prev) => ({
         ...prev,
-        [service]: `OK: ${name}${accountText}`,
+        [service]: `OK: ${name}${accountText}${accountIdsText}`,
       }))
     } catch (err: any) {
       setHealthResult((prev) => ({ ...prev, [service]: err?.message ?? 'Verificación de Meta falló.' }))
@@ -211,14 +259,15 @@ export default function Integrations() {
                       id="adAccountId-input"
                       type="text"
                       name="adAccountId"
-                      placeholder="ej. 123456789012345 o act_123456789012345"
+                      placeholder="ej. act_123456789012345, act_098765432109876"
                       value={form.adAccountId}
                       onChange={handleFieldChange}
                       className="mt-1"
                     />
+                    <p className="text-xs text-muted mt-1">Puedes añadir varios IDs separados por comas para incorporar datos de varias cuentas.</p>
                   </div>
                   <div>
-                    <label htmlFor="pageId-input" className="text-sm font-medium">ID de la Página <span className="text-muted font-normal">(opcional)</span></label>
+                    <label htmlFor="pageId-input" className="text-sm font-medium">ID de la Página <span className="text-red-500">*</span></label>
                     <Input
                       id="pageId-input"
                       type="text"
@@ -228,6 +277,7 @@ export default function Integrations() {
                       onChange={handleFieldChange}
                       className="mt-1"
                     />
+                    <p className="text-xs text-muted mt-1">Este campo es obligatorio para que el webhook de leads de Meta pueda activarse correctamente.</p>
                   </div>
                 </>
               )}
@@ -275,7 +325,8 @@ export default function Integrations() {
           const isConnected = integration.status === 'connected' || integration.status === 'active'
           const icon = serviceIcons[integration.service] ?? '🔗'
           const meta = integration.metadata ?? {}
-          const adAccountId = (meta.adAccountId ?? meta.ad_account_id ?? '') as string
+          const rawAdAccountIds = meta.adAccountIds ?? meta.ad_account_ids ?? meta.adAccountId ?? meta.ad_account_id ?? ''
+          const adAccountIds = extractAdAccountIds(rawAdAccountIds)
           const pageId = (meta.pageId ?? meta.page_id ?? '') as string
 
           return (
@@ -296,8 +347,10 @@ export default function Integrations() {
               </CardHeader>
 
               <CardContent className="space-y-2">
-                {adAccountId && (
-                  <p className="text-xs text-muted">Cuenta Publicitaria: <span className="font-mono">{adAccountId}</span></p>
+                {adAccountIds.length > 0 && (
+                  <p className="text-xs text-muted">
+                    Cuenta Publicitaria{adAccountIds.length > 1 ? 's' : ''}: <span className="font-mono">{adAccountIds.join(', ')}</span>
+                  </p>
                 )}
                 {pageId && (
                   <p className="text-xs text-muted">ID de la Página: <span className="font-mono">{pageId}</span></p>

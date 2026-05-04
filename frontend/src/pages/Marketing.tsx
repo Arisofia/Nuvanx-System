@@ -332,6 +332,7 @@ const useMarketingData = (days: number, campaignId: string, customFrom: string, 
     campaigns: [],
     currency: 'EUR',
     accountId: '',
+    accountIds: [],
     period: null,
     loading: true,
     error: null,
@@ -360,13 +361,19 @@ const useMarketingData = (days: number, campaignId: string, customFrom: string, 
         const failedBoth = insightsRes.status === 'rejected' && campaignsRes.status === 'rejected'
         const error = failedBoth ? 'No se pudo cargar la información de Meta Ads.' : null
 
+        const accountIds = Array.isArray(insightsData?.accountIds)
+          ? insightsData?.accountIds
+          : Array.isArray(campaignsData?.accountIds)
+            ? campaignsData?.accountIds
+            : []
         setState({
           summary: insightsData?.summary ?? null,
           changes: insightsData?.changes ?? null,
           daily: Array.isArray(insightsData?.daily) ? insightsData.daily : [],
           campaigns: rawCampaigns,
           currency: insightsData?.currency ?? campaignsData?.currency ?? 'EUR',
-          accountId: insightsData?.accountId ?? campaignsData?.accountId ?? '',
+          accountId: insightsData?.accountId ?? campaignsData?.accountId ?? accountIds[0] ?? '',
+          accountIds,
           period: insightsData?.period ?? null,
           loading: false,
           error,
@@ -382,10 +389,10 @@ const useMarketingData = (days: number, campaignId: string, customFrom: string, 
 }
 
 function MarketingHeader({
-  loading, periodLabel, accountId, currency, campaigns, campaignId, setCampaignId,
+  loading, periodLabel, accountIds, currency, campaigns, campaignId, setCampaignId,
   days, setDays, customFrom, setCustomFrom, customTo, setCustomTo, since2025,
 }: Readonly<{
-  loading: boolean; periodLabel: string; accountId: string; currency: string; campaigns: CampaignRow[];
+  loading: boolean; periodLabel: string; accountIds: string[]; currency: string; campaigns: CampaignRow[];
   campaignId: string; setCampaignId: (id: string) => void; days: number; setDays: (d: number) => void;
   customFrom: string; setCustomFrom: (s: string) => void; customTo: string; setCustomTo: (s: string) => void;
   since2025: string;
@@ -395,7 +402,9 @@ function MarketingHeader({
       <div className="flex-1">
         <h1 className="text-3xl font-serif font-bold text-foreground">Marketing · Meta Ads</h1>
         <p className="text-muted mt-1 text-sm">
-          Período: {loading ? '…' : periodLabel}{accountId ? ` · Cuenta: ${accountId}` : ''} · Moneda: {loading ? '…' : currency}
+          Período: {loading ? '…' : periodLabel}
+        {accountIds.length > 0 ? ` · Cuenta${accountIds.length > 1 ? 's' : ''}: ${accountIds.join(', ')}` : ''}
+        · Moneda: {loading ? '…' : currency}
         </p>
       </div>
       <div className="flex items-center gap-2">
@@ -490,7 +499,7 @@ export default function Marketing() {
     }
   }, [state.campaigns, campaignId])
 
-  const { summary, changes, daily, campaigns, currency, accountId, period, loading, error } = state
+  const { summary, changes, daily, campaigns, currency, accountIds, period, loading, error } = state
 
   const activeCampaigns = campaigns.filter((c) => c.status === 'ACTIVE').length
 
@@ -517,7 +526,7 @@ export default function Marketing() {
       <MarketingHeader
         loading={loading}
         periodLabel={periodLabel}
-        accountId={accountId}
+        accountIds={accountIds}
         currency={currency}
         campaigns={campaigns}
         campaignId={campaignId}
