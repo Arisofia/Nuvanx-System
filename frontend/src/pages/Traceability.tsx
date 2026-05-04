@@ -121,7 +121,7 @@ export default function Traceability() {
             <button
               onClick={() => setMatchedOnly((v) => !v)}
               className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                matchedOnly ? 'bg-green-800 text-green-200' : 'bg-card text-muted hover:text-white border border-border'
+                matchedOnly ? 'bg-[#28A745]/20 text-[#28A745]' : 'bg-card text-muted hover:text-foreground border border-border'
               }`}
             >
               Solo cruzados
@@ -134,7 +134,7 @@ export default function Traceability() {
                 placeholder="Buscar lead o paciente…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="pl-7 pr-3 py-1 text-xs bg-surface border border-border rounded w-48 text-white placeholder:text-muted focus:outline-none focus:border-primary"
+                className="pl-7 pr-3 py-1 text-xs bg-surface border border-border rounded w-48 text-foreground placeholder:text-muted focus:outline-none focus:border-primary"
               />
             </div>
           </div>
@@ -182,13 +182,13 @@ export default function Traceability() {
                     return (
                       <tr key={r.lead_id} className="border-b border-border/50 hover:bg-surface/50 transition-colors">
                         <td className="py-2 pr-3">
-                          <p className="font-medium text-white">{r.lead_name ?? '—'}</p>
+                          <p className="font-medium text-foreground">{r.lead_name ?? '—'}</p>
                           {r.stage && (
                             <span className="text-muted text-[10px]">{r.stage}</span>
                           )}
                         </td>
                         <td className="py-2 pr-3">
-                          <p className="text-white">{r.source ?? '—'}</p>
+                          <p className="text-foreground">{r.source ?? '—'}</p>
                           {r.campaign_name && (
                             <p className="text-muted text-[10px] truncate max-w-[160px]">{r.campaign_name}</p>
                           )}
@@ -219,7 +219,7 @@ export default function Traceability() {
                         </td>
                         <td className="py-2 pr-3">
                           {r.patient_name ? (
-                            <p className="text-white">{r.patient_name}</p>
+                            <p className="text-foreground">{r.patient_name}</p>
                           ) : r.doc_patient_id ? (
                             <p className="text-muted text-[10px]">ID: {r.doc_patient_id}</p>
                           ) : (

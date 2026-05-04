@@ -20,7 +20,7 @@ function DeltaBadge({ value }: Readonly<{ value: number | undefined }>) {
   const up = value > 0
   return (
     <span className={`inline-flex items-center gap-0.5 text-xs font-medium px-1.5 py-0.5 rounded ml-2 ${
-      up ? 'bg-emerald-950 text-emerald-400' : 'bg-rose-950 text-rose-400'
+      up ? 'bg-[#28A745]/10 text-[#28A745]' : 'bg-[#D9534F]/10 text-[#D9534F]'
     }`}>
       {up ? '▲' : '▼'} {Math.abs(value).toFixed(1)}%
     </span>
@@ -97,14 +97,14 @@ function CampaignTable({ campaigns, filteredCampaigns, currency, summary }: Read
               <td className="px-3 py-3 text-center">
                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                   c.status === 'ACTIVE'
-                    ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                    ? 'bg-[#28A745]/10 text-[#28A745] border border-[#28A745]/30'
                     : 'bg-card text-muted border border-border'
                 }`}>
                   {c.status === 'ACTIVE' ? '● ' : '○ '}{c.status}
                 </span>
               </td>
               <td className="px-3 py-3 text-center text-muted text-xs">{c.objective || '—'}</td>
-              <td className="px-3 py-3 text-right text-[#d7c5ae] text-xs">
+              <td className="px-3 py-3 text-right text-muted text-xs">
                 {(() => {
                   if (c.dailyBudget != null) {
                     return <><span className="text-muted">día</span> {fmtCurrency(c.dailyBudget, currency)}</>
@@ -115,36 +115,36 @@ function CampaignTable({ campaigns, filteredCampaigns, currency, summary }: Read
                   return '—'
                 })()}
               </td>
-              <td className="px-3 py-3 text-right font-semibold text-emerald-400">
+              <td className="px-3 py-3 text-right font-semibold text-[#28A745]">
                 {c.insights ? fmtCurrency(c.insights.spend, currency) : '—'}
               </td>
-              <td className="px-3 py-3 text-right text-[#d7c5ae]">
+              <td className="px-3 py-3 text-right text-foreground">
                 {c.insights ? c.insights.impressions.toLocaleString('es-MX') : '—'}
               </td>
-              <td className="px-3 py-3 text-right text-[#d7c5ae]">
+              <td className="px-3 py-3 text-right text-foreground">
                 {c.insights ? c.insights.reach.toLocaleString('es-MX') : '—'}
               </td>
-              <td className="px-3 py-3 text-right text-violet-400">
+              <td className="px-3 py-3 text-right text-foreground">
                 {c.insights ? c.insights.clicks.toLocaleString('es-MX') : '—'}
               </td>
-              <td className="px-3 py-3 text-right text-[#d7c5ae]">
+              <td className="px-3 py-3 text-right text-foreground">
                 {c.insights ? `${fmt(c.insights.ctr)}%` : '—'}
               </td>
-              <td className="px-3 py-3 text-right text-amber-400">
+              <td className="px-3 py-3 text-right text-[#C49A6C]">
                 {c.insights ? fmtCurrency(c.insights.cpc, currency) : '—'}
               </td>
-              <td className="px-3 py-3 text-right text-[#d7c5ae]">
+              <td className="px-3 py-3 text-right text-foreground">
                 {c.insights ? fmtCurrency(c.insights.cpm, currency) : '—'}
               </td>
-              <td className="px-3 py-3 text-right text-lime-400">
+              <td className="px-3 py-3 text-right text-[#28A745]">
                 {c.insights ? c.insights.conversions.toLocaleString('es-MX') : '—'}
               </td>
-              <td className="px-3 py-3 text-right text-orange-400">
+              <td className="px-3 py-3 text-right text-[#B08B5A]">
                 {c.insights?.cpp != null ? fmtCurrency(c.insights.cpp, currency) : '—'}
               </td>
               <td className="px-3 py-3 text-right">
                 {c.insights && c.insights.conversions > 0
-                  ? <span className="text-rose-300 font-medium">{fmtCurrency(c.insights.spend / c.insights.conversions, currency)}</span>
+                  ? <span className="text-[#D9534F] font-medium">{fmtCurrency(c.insights.spend / c.insights.conversions, currency)}</span>
                   : <span className="text-muted" title="No conversions in this period">—</span>}
               </td>
             </tr>
@@ -153,10 +153,10 @@ function CampaignTable({ campaigns, filteredCampaigns, currency, summary }: Read
         {/* Totals row */}
         {campaigns.some((c) => c.insights) && (
           <tfoot>
-            <tr className="border-t-2 border-border bg-surface text-xs font-semibold text-[#d7c5ae]">
+            <tr className="border-t-2 border-border bg-surface text-xs font-semibold text-foreground">
               <td className="px-4 py-3 text-muted uppercase tracking-wide">Total cuenta</td>
               <td colSpan={3} />
-              <td className="px-3 py-3 text-right text-emerald-400">
+              <td className="px-3 py-3 text-right text-[#28A745]">
                 {fmtCurrency(summary?.spend ?? 0, currency)}
               </td>
               <td className="px-3 py-3 text-right">
@@ -165,23 +165,22 @@ function CampaignTable({ campaigns, filteredCampaigns, currency, summary }: Read
               <td className="px-3 py-3 text-right">
                 {(summary?.reach ?? 0).toLocaleString('es-MX')}
               </td>
-              <td className="px-3 py-3 text-right text-violet-400">
+              <td className="px-3 py-3 text-right text-foreground">
                 {(summary?.clicks ?? 0).toLocaleString('es-MX')}
               </td>
               <td className="px-3 py-3 text-right">{fmt(summary?.ctr ?? 0)}%</td>
-              <td className="px-3 py-3 text-right text-amber-400">{fmtCurrency(summary?.cpc ?? 0, currency)}</td>
+              <td className="px-3 py-3 text-right text-[#C49A6C]">{fmtCurrency(summary?.cpc ?? 0, currency)}</td>
               <td className="px-3 py-3 text-right">{fmtCurrency(summary?.cpm ?? 0, currency)}</td>
-              <td className="px-3 py-3 text-right text-lime-400">
+              <td className="px-3 py-3 text-right text-[#28A745]">
                 {(summary?.conversions ?? 0).toLocaleString('es-MX')}
               </td>
-              <td className="px-3 py-3 text-right text-orange-400">
+              <td className="px-3 py-3 text-right text-[#B08B5A]">
                 {summary?.cpp ? fmtCurrency(summary.cpp, currency) : '—'}
               </td>
-              <td className="px-3 py-3 text-right text-rose-300">
+              <td className="px-3 py-3 text-right text-[#D9534F]">
                 {summary && summary.conversions > 0
                   ? fmtCurrency(summary.spend / summary.conversions, currency)
                   : <span className="text-muted" title="No conversions in this period">—</span>}
-              </td>
             </tr>
           </tfoot>
         )}
@@ -367,7 +366,7 @@ export default function Marketing() {
             <select
               value={campaignId}
               onChange={(e) => setCampaignId(e.target.value)}
-              className="bg-card text-white text-xs font-medium px-3 py-1.5 rounded-lg border-none focus:ring-1 focus:ring-primary"
+              className="bg-card text-foreground text-xs font-medium px-3 py-1.5 rounded-lg border border-border focus:ring-1 focus:ring-primary"
             >
               <option value="ALL">Todas las campañas</option>
               {campaigns.map((c) => (
@@ -381,7 +380,7 @@ export default function Marketing() {
                 key={d}
                 onClick={() => { setDays(d); setCustomFrom(''); setCustomTo('') }}
                 className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                  !customFrom && days === d ? 'bg-[#3f3224] text-white' : 'text-muted hover:text-white'
+                  !customFrom && days === d ? 'bg-primary/15 text-foreground' : 'text-muted hover:text-foreground'
                 }`}
               >
                 {d}d
@@ -390,7 +389,7 @@ export default function Marketing() {
             <button
               onClick={() => { setCustomFrom(since2025); setCustomTo('') }}
               className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                customFrom === since2025 && !customTo ? 'bg-indigo-600 text-white' : 'text-muted hover:text-white'
+                customFrom === since2025 && !customTo ? 'bg-primary text-white' : 'text-muted hover:text-foreground'
               }`}
             >
               Desde 2025
@@ -402,23 +401,21 @@ export default function Marketing() {
               type="date"
               value={customFrom}
               onChange={(e) => setCustomFrom(e.target.value)}
-              className="bg-card text-white text-xs px-2 py-1.5 rounded-lg border-none focus:ring-1 focus:ring-primary"
-              placeholder="Desde"
+              className="bg-card text-foreground text-xs px-2 py-1.5 rounded-lg border border-border focus:ring-1 focus:ring-primary"
             />
             <span className="text-muted text-xs">→</span>
             <input
               type="date"
               value={customTo}
               onChange={(e) => setCustomTo(e.target.value)}
-              className="bg-card text-white text-xs px-2 py-1.5 rounded-lg border-none focus:ring-1 focus:ring-primary"
-              placeholder="Hasta"
+              className="bg-card text-foreground text-xs px-2 py-1.5 rounded-lg border border-border focus:ring-1 focus:ring-primary"
             />
           </div>
         </div>
       </div>
 
       {error && (
-        <div className="rounded-md border border-amber-300 bg-amber-950/40 px-4 py-3 text-sm text-amber-300">
+        <div className="rounded-md border border-[#E0A020]/30 bg-[#E0A020]/8 px-4 py-3 text-sm text-[#E0A020]">
           {error}
         </div>
       )}
@@ -431,7 +428,7 @@ export default function Marketing() {
             Ejecuta el script de sincronización para importar historial o verifica que el token de Meta Ads sea válido.
           </p>
           <div className="flex justify-center gap-3 mt-2">
-            <code className="bg-surface text-xs text-[#d7c5ae] px-3 py-1.5 rounded-lg border border-border">
+            <code className="bg-surface text-xs text-muted px-3 py-1.5 rounded-lg border border-border">
               node scripts/meta-backfill.js
             </code>
           </div>
@@ -516,26 +513,26 @@ export default function Marketing() {
               <AreaChart data={dailyChart} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="spendGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#34d399" stopOpacity={0.7} />
-                    <stop offset="95%" stopColor="#34d399" stopOpacity={0.05} />
+                    <stop offset="5%" stopColor="#C49A6C" stopOpacity={0.7} />
+                    <stop offset="95%" stopColor="#C49A6C" stopOpacity={0.05} />
                   </linearGradient>
                   <linearGradient id="clicksGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#818cf8" stopOpacity={0.7} />
-                    <stop offset="95%" stopColor="#818cf8" stopOpacity={0.05} />
+                    <stop offset="5%" stopColor="#7A7573" stopOpacity={0.7} />
+                    <stop offset="95%" stopColor="#7A7573" stopOpacity={0.05} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#E6E2DE" vertical={false} />
+                <XAxis dataKey="date" tick={{ fill: '#7A7573', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#7A7573', fontSize: 11 }} axisLine={false} tickLine={false} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', fontSize: 12 }}
+                  contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid #E6E2DE', fontSize: 12 }}
                   formatter={(value: any, name: string) =>
                     name === 'Gasto' ? [`${fmtCurrency(Number(value), currency)}`, `Gasto (${currency})`] : [value, name]
                   }
                 />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Area type="monotone" dataKey="Gasto" stroke="#34d399" fill="url(#spendGrad)" strokeWidth={2} />
-                <Area type="monotone" dataKey="Clics" stroke="#818cf8" fill="url(#clicksGrad)" strokeWidth={2} />
+                <Area type="monotone" dataKey="Gasto" stroke="#C49A6C" fill="url(#spendGrad)" strokeWidth={2} />
+                <Area type="monotone" dataKey="Clics" stroke="#7A7573" fill="url(#clicksGrad)" strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>
           )}
@@ -553,32 +550,32 @@ export default function Marketing() {
               <AreaChart data={dailyRatesChart} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="ctrGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.6} />
-                    <stop offset="95%" stopColor="#f59e0b" stopOpacity={0.02} />
+                    <stop offset="5%" stopColor="#C49A6C" stopOpacity={0.6} />
+                    <stop offset="95%" stopColor="#C49A6C" stopOpacity={0.02} />
                   </linearGradient>
                   <linearGradient id="cpcGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#f472b6" stopOpacity={0.6} />
-                    <stop offset="95%" stopColor="#f472b6" stopOpacity={0.02} />
+                    <stop offset="5%" stopColor="#B08B5A" stopOpacity={0.6} />
+                    <stop offset="95%" stopColor="#B08B5A" stopOpacity={0.02} />
                   </linearGradient>
                   <linearGradient id="cpmGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.6} />
-                    <stop offset="95%" stopColor="#22d3ee" stopOpacity={0.02} />
+                    <stop offset="5%" stopColor="#7A7573" stopOpacity={0.6} />
+                    <stop offset="95%" stopColor="#7A7573" stopOpacity={0.02} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#E6E2DE" vertical={false} />
+                <XAxis dataKey="date" tick={{ fill: '#7A7573', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#7A7573', fontSize: 11 }} axisLine={false} tickLine={false} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', fontSize: 12 }}
+                  contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid #E6E2DE', fontSize: 12 }}
                   formatter={(value: any, name: string) => [
                     name.includes('%') ? `${Number(value).toFixed(2)}%` : `${fmtCurrency(Number(value), currency)}`,
                     name,
                   ]}
                 />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Area type="monotone" dataKey="CTR (%)" stroke="#f59e0b" fill="url(#ctrGrad)" strokeWidth={2} />
-                <Area type="monotone" dataKey="CPC ($)" stroke="#f472b6" fill="url(#cpcGrad)" strokeWidth={2} />
-                <Area type="monotone" dataKey="CPM ($)" stroke="#22d3ee" fill="url(#cpmGrad)" strokeWidth={2} />
+                <Area type="monotone" dataKey="CTR (%)" stroke="#C49A6C" fill="url(#ctrGrad)" strokeWidth={2} />
+                <Area type="monotone" dataKey="CPC ($)" stroke="#B08B5A" fill="url(#cpcGrad)" strokeWidth={2} />
+                <Area type="monotone" dataKey="CPM ($)" stroke="#7A7573" fill="url(#cpmGrad)" strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>
           </CardContent>
@@ -594,26 +591,26 @@ export default function Marketing() {
           <CardContent className="h-72">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={campaignChart} margin={{ top: 8, right: 16, left: 0, bottom: 32 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#E6E2DE" vertical={false} />
                 <XAxis
                   dataKey="name"
-                  tick={{ fill: '#64748b', fontSize: 10 }}
+                  tick={{ fill: '#7A7573', fontSize: 10 }}
                   axisLine={false}
                   tickLine={false}
                   angle={-20}
                   textAnchor="end"
                   interval={0}
                 />
-                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#7A7573', fontSize: 11 }} axisLine={false} tickLine={false} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', fontSize: 12 }}
+                  contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid #E6E2DE', fontSize: 12 }}
                   formatter={(value: any, name: string) =>
                     name === 'Gasto' ? [`${fmtCurrency(Number(value), currency)}`, `Gasto (${currency})`] : [value, name]
                   }
                 />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Bar dataKey="Gasto" fill="#34d399" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Clics" fill="#818cf8" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Gasto" fill="#C49A6C" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Clics" fill="#7A7573" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
@@ -627,7 +624,7 @@ export default function Marketing() {
             key={tab}
             onClick={() => setActiveTab(tab)}
             className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
-              activeTab === tab ? 'bg-[#3f3224] text-white' : 'text-muted hover:text-white'
+              activeTab === tab ? 'bg-primary/15 text-foreground' : 'text-muted hover:text-foreground'
             }`}
           >
             {tab === 'campaigns' ? 'Campañas' : 'Por anuncio'}
@@ -670,7 +667,7 @@ export default function Marketing() {
                   key={s}
                   onClick={() => setStatusFilter(s)}
                   className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                    statusFilter === s ? 'bg-[#3f3224] text-white' : 'text-muted hover:text-white'
+                    statusFilter === s ? 'bg-primary/15 text-foreground' : 'text-muted hover:text-foreground'
                   }`}
                 >
                   {STATUS_LABELS[s]}
@@ -755,34 +752,34 @@ export default function Marketing() {
                         <td className="px-3 py-3 text-center">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                             ad.status === 'ACTIVE'
-                              ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                              ? 'bg-[#28A745]/10 text-[#28A745] border border-[#28A745]/30'
                               : 'bg-card text-muted border border-border'
                           }`}>
                             {ad.status === 'ACTIVE' ? '● ' : '○ '}{ad.status}
                           </span>
                         </td>
-                        <td className="px-3 py-3 text-right font-semibold text-emerald-400">
+                        <td className="px-3 py-3 text-right font-semibold text-[#28A745]">
                           {ad.insights ? fmtCurrency(ad.insights.spend, currency) : '—'}
                         </td>
-                        <td className="px-3 py-3 text-right text-[#d7c5ae]">
+                        <td className="px-3 py-3 text-right text-foreground">
                           {ad.insights ? ad.insights.impressions.toLocaleString('es-MX') : '—'}
                         </td>
-                        <td className="px-3 py-3 text-right text-violet-400">
+                        <td className="px-3 py-3 text-right text-foreground">
                           {ad.insights ? ad.insights.clicks.toLocaleString('es-MX') : '—'}
                         </td>
-                        <td className="px-3 py-3 text-right text-[#d7c5ae]">
+                        <td className="px-3 py-3 text-right text-foreground">
                           {ad.insights ? `${fmt(ad.insights.ctr)}%` : '—'}
                         </td>
-                        <td className="px-3 py-3 text-right text-amber-400">
+                        <td className="px-3 py-3 text-right text-[#C49A6C]">
                           {ad.insights ? fmtCurrency(ad.insights.cpc, currency) : '—'}
                         </td>
-                        <td className="px-3 py-3 text-right text-[#d7c5ae]">
+                        <td className="px-3 py-3 text-right text-foreground">
                           {ad.insights ? fmtCurrency(ad.insights.cpm, currency) : '—'}
                         </td>
-                        <td className="px-3 py-3 text-right text-lime-400">
+                        <td className="px-3 py-3 text-right text-[#28A745]">
                           {ad.insights ? ad.insights.conversions.toLocaleString('es-MX') : '—'}
                         </td>
-                        <td className="px-3 py-3 text-right text-rose-300">
+                        <td className="px-3 py-3 text-right text-[#B08B5A]">
                           {ad.insights?.cpp != null ? fmtCurrency(ad.insights.cpp, currency) : '—'}
                         </td>
                       </tr>

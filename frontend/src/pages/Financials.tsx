@@ -129,8 +129,8 @@ export default function Financials() {
               onClick={() => { setPresetDays(p.days); setFromDate(''); setToDate('') }}
               className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
                 presetDays === p.days && !fromDate && !toDate
-                  ? 'bg-[#3f3224] text-white'
-                  : 'text-muted hover:text-white'
+                  ? 'bg-primary/15 text-foreground'
+                  : 'text-muted hover:text-foreground'
               }`}
             >
               {p.label === 'Todo' ? 'Todo' : p.label}
@@ -156,9 +156,9 @@ export default function Financials() {
       </div>
 
       {state.error && (
-        <div className="p-4 bg-amber-950/40 border border-amber-800 rounded-lg flex gap-3">
-          <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-amber-300">{state.error}</p>
+        <div className="p-4 bg-[#E0A020]/10 border border-[#E0A020]/30 rounded-lg flex gap-3">
+          <AlertCircle className="w-5 h-5 text-[#E0A020] flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-foreground">{state.error}</p>
         </div>
       )}
 
@@ -230,15 +230,15 @@ export default function Financials() {
           ) : (
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={state.monthly}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#E6E2DE" vertical={false} />
+                <XAxis dataKey="month" tick={{ fill: '#7A7573', fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#7A7573', fontSize: 12 }} axisLine={false} tickLine={false} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', fontSize: 12 }}
+                  contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid #E6E2DE', fontSize: 12 }}
                   formatter={(v: number) => fmt(v)}
                 />
                 <Legend />
-                <Line type="monotone" dataKey="net" name="Ingreso Neto" stroke="#3b82f6" dot={false} strokeWidth={2} />
+                <Line type="monotone" dataKey="net" name="Ingreso Neto" stroke="#C49A6C" dot={false} strokeWidth={2} />
               </LineChart>
             </ResponsiveContainer>
           )}

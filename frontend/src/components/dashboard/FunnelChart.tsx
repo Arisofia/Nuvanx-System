@@ -37,19 +37,19 @@ export function FunnelChart({ data }: FunnelChartProps) {
           layout="vertical"
           margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
         >
-          <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#4f3d27" />
+          <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E6E2DE" />
           <XAxis type="number" hide />
           <YAxis
             dataKey="label"
             type="category"
-            tick={{ fill: '#a38f79', fontSize: 12 }}
+            tick={{ fill: '#7A7573', fontSize: 12 }}
             axisLine={false}
             tickLine={false}
           />
           <Tooltip
             cursor={{ fill: 'rgba(255, 255, 255, 0.05)' }}
-            contentStyle={{ backgroundColor: '#17120f', border: '1px solid #4f3d27' }}
-            itemStyle={{ color: '#f7efe6' }}
+            contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid #E6E2DE' }}
+            itemStyle={{ color: '#2E2A28' }}
           />
           <Bar dataKey="count" radius={[0, 4, 4, 0]}>
             {data.map((entry, index) => (

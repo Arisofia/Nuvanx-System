@@ -309,7 +309,7 @@ export default function Dashboard() {
             <select
               value={sourceFilter}
               onChange={(e) => setSourceFilter(e.target.value)}
-              className="bg-card text-white text-xs font-medium px-3 py-1.5 rounded-lg border-none focus:ring-1 focus:ring-primary"
+              className="bg-card text-foreground text-xs font-medium px-3 py-1.5 rounded-lg border border-border focus:ring-1 focus:ring-primary"
             >
               <option value="ALL">All Sources</option>
               {sourcesList.map((s) => (
@@ -321,7 +321,7 @@ export default function Dashboard() {
             <select
               value={campaignId}
               onChange={(e) => setCampaignId(e.target.value)}
-              className="bg-card text-white text-xs font-medium px-3 py-1.5 rounded-lg border-none focus:ring-1 focus:ring-primary"
+              className="bg-card text-foreground text-xs font-medium px-3 py-1.5 rounded-lg border border-border focus:ring-1 focus:ring-primary"
             >
               <option value="ALL">All Campaigns</option>
               {campaignsList.map((c) => (
@@ -336,7 +336,7 @@ export default function Dashboard() {
                   key={d}
                   onClick={() => { setDays(d); setCustomFrom(''); setCustomTo('') }}
                   className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                    !customFrom && days === d ? 'bg-[#3f3224] text-white' : 'text-muted hover:text-white'
+                    !customFrom && days === d ? 'bg-primary/15 text-foreground' : 'text-muted hover:text-foreground'
                   }`}
                 >
                   {d}d
@@ -363,21 +363,21 @@ export default function Dashboard() {
       </div>
 
       {metrics.error && (
-        <div className="p-4 bg-[#170808]/60 border border-[#f16b62]/40 rounded-lg flex gap-3">
-          <AlertCircle className="w-5 h-5 text-[#f16b62] flex-shrink-0 mt-0.5" />
+        <div className="p-4 bg-[#D9534F]/8 border border-[#D9534F]/30 rounded-lg flex gap-3">
+          <AlertCircle className="w-5 h-5 text-[#D9534F] flex-shrink-0 mt-0.5" />
           <div>
-            <p className="font-medium text-[#f16b62]">Connection Error</p>
-            <p className="text-sm text-[#f16b62] mt-1">{metrics.error}</p>
+            <p className="font-medium text-[#D9534F]">Connection Error</p>
+            <p className="text-sm text-[#D9534F] mt-1">{metrics.error}</p>
           </div>
         </div>
       )}
 
       {metrics.metaError && !metrics.error && (
-        <div className="p-4 bg-[#17100a]/60 border border-[#c9a471]/40 rounded-lg flex gap-3">
-          <AlertCircle className="w-5 h-5 text-[#f2b24b] flex-shrink-0 mt-0.5" />
+        <div className="p-4 bg-[#E0A020]/8 border border-[#E0A020]/30 rounded-lg flex gap-3">
+          <AlertCircle className="w-5 h-5 text-[#E0A020] flex-shrink-0 mt-0.5" />
           <div>
-            <p className="font-medium text-[#d7c5ae]">Meta API error</p>
-            <p className="text-sm text-[#d7c5ae] mt-1">
+            <p className="font-medium text-[#5A5250]">Meta API error</p>
+            <p className="text-sm text-[#5A5250] mt-1">
               {metrics.metaError.includes('#200') || metrics.metaError.includes('permission')
                 ? 'Your Meta token is missing ads_management or ads_read permissions, or requires appsecret_proof. Reconnect your Meta account in Integrations to fix this.'
                 : metrics.metaError}
@@ -542,10 +542,10 @@ export default function Dashboard() {
                     <stop offset="95%" stopColor="#c9a471" stopOpacity={0.1} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#4f3d27" vertical={false} />
-                <XAxis dataKey="week" tickLine={false} axisLine={false} tick={{ fill: '#a38f79', fontSize: 12 }} />
-                <YAxis tickLine={false} axisLine={false} tick={{ fill: '#a38f79', fontSize: 12 }} />
-                <Tooltip contentStyle={{ backgroundColor: '#17120f', border: '1px solid #4f3d27' }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#E6E2DE" vertical={false} />
+                <XAxis dataKey="week" tickLine={false} axisLine={false} tick={{ fill: '#7A7573', fontSize: 12 }} />
+                <YAxis tickLine={false} axisLine={false} tick={{ fill: '#7A7573', fontSize: 12 }} />
+                <Tooltip contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid #E6E2DE' }} />
                 <Area type="monotone" dataKey="value" stroke="#c9a471" fill="url(#trendGradient)" strokeWidth={3} />
               </AreaChart>
             </ResponsiveContainer>
@@ -609,10 +609,10 @@ export default function Dashboard() {
               <div className="rounded-xl border border-border p-4 bg-background">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm text-muted">CAC (Meta)</span>
-                  <Target className="h-4 w-4 text-[#f16b62]" />
+                  <Target className="h-4 w-4 text-[#D9534F]" />
                 </div>
                 {metrics.spend > 0 && metrics.metaConversions > 0 ? (
-                  <p className="mt-3 text-2xl font-semibold text-[#f16b62]">
+                  <p className="mt-3 text-2xl font-semibold text-[#D9534F]">
                     ${(metrics.spend / metrics.metaConversions).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 ) : (

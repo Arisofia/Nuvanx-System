@@ -5,21 +5,21 @@ import { useLocation } from 'wouter'
 import ErrorBoundary from './components/ErrorBoundary'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, AuthContext } from './contexts/AuthContext'
-import Layout from './components/Layout.tsx'
-import NotFound from './pages/NotFound.tsx'
-import Login from './pages/Login.tsx'
+import Layout from './components/Layout'
+import NotFound from './pages/NotFound'
+import Login from './pages/Login'
 
-const Dashboard = lazy(() => import('./pages/Dashboard.tsx'))
-const Live = lazy(() => import('./pages/Live.tsx'))
-const CRM = lazy(() => import('./pages/CRM.tsx'))
-const Marketing = lazy(() => import('./pages/Marketing.tsx'))
-const Traceability = lazy(() => import('./pages/Traceability.tsx'))
-const Financials = lazy(() => import('./pages/Financials.tsx'))
-const Intelligence = lazy(() => import('./pages/Intelligence.tsx'))
-const Playbooks = lazy(() => import('./pages/Playbooks.tsx'))
-const Integrations = lazy(() => import('./pages/Integrations.tsx'))
-const AI = lazy(() => import('./pages/AI.tsx'))
-const Reports = lazy(() => import('./pages/Reports.tsx'))
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const Live = lazy(() => import('./pages/Live'))
+const CrmPage = lazy(() => import('./pages/CRM'))
+const Marketing = lazy(() => import('./pages/Marketing'))
+const Traceability = lazy(() => import('./pages/Traceability'))
+const Financials = lazy(() => import('./pages/Financials'))
+const Intelligence = lazy(() => import('./pages/Intelligence'))
+const Playbooks = lazy(() => import('./pages/Playbooks'))
+const Integrations = lazy(() => import('./pages/Integrations'))
+const AiPage = lazy(() => import('./pages/AI'))
+const Reports = lazy(() => import('./pages/Reports'))
 
 const PageLoader = () => (
   <div className="min-h-screen bg-background flex items-center justify-center">
@@ -37,7 +37,7 @@ function Router() {
     if (!isAuthPage && auth && !auth.loading && !auth.isAuthenticated) {
       setLocation('/login')
     }
-  }, [auth?.loading, auth?.isAuthenticated, isAuthPage])
+  }, [auth?.loading, auth?.isAuthenticated, isAuthPage, setLocation, auth])
 
   // Show spinner while auth state is loading to avoid flashing protected content.
   if (!isAuthPage && auth?.loading) {
@@ -49,9 +49,6 @@ function Router() {
   }
 
   // Guard: if auth has resolved and user is not authenticated, render nothing.
-  // The useEffect above will redirect to /login on the next tick. Returning null
-  // here prevents protected pages (and their data-fetching side-effects) from
-  // mounting at all before the redirect fires.
   if (!isAuthPage && !auth?.loading && !auth?.isAuthenticated) {
     return null
   }
@@ -70,7 +67,7 @@ function Router() {
       return <Live />
     }
     if (location === '/crm') {
-      return <CRM />
+      return <CrmPage />
     }
     if (location === '/marketing') {
       return <Marketing />
@@ -91,7 +88,7 @@ function Router() {
       return <Integrations />
     }
     if (location === '/ai') {
-      return <AI />
+      return <AiPage />
     }
     if (location === '/reports') {
       return <Reports />

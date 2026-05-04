@@ -141,7 +141,7 @@ export default function Integrations() {
                   name="service"
                   value={form.service}
                   onChange={handleFieldChange}
-                  className="mt-1 w-full rounded-md border border-border bg-card text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="mt-1 w-full rounded-md border border-border bg-card text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                 >
                   {SUPPORTED_SERVICES.map((s) => (
                     <option key={s} value={s}>{formatServiceName(s)}</option>
@@ -245,7 +245,7 @@ export default function Integrations() {
                   {icon} {formatServiceName(integration.service)}
                 </CardTitle>
                 {isConnected ? (
-                  <Badge className="bg-emerald-950 text-emerald-400 border border-emerald-800">
+                  <Badge className="bg-[#28A745]/10 text-[#28A745] border border-[#28A745]/30">
                     <CheckCircle2 className="w-3 h-3 mr-1" />Conectado
                   </Badge>
                 ) : (

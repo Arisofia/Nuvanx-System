@@ -30,11 +30,11 @@ jobs:
     name: Google Sheets to financial_settlements
     runs-on: ubuntu-latest
     env:
-      GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT || '' }}
-      DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID || '' }}
-      DOCTORALIA_DRIVE_FILE_ID: ${{ secrets.DOCTORALIA_DRIVE_FILE_ID || '' }}
-      DATABASE_URL: ${{ secrets.DATABASE_URL || '' }}
-      CLINIC_ID: ${{ secrets.CLINIC_ID || '' }}
+      GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
+      DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID }}
+      DOCTORALIA_DRIVE_FILE_ID: ${{ secrets.DOCTORALIA_DRIVE_FILE_ID }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      CLINIC_ID: ${{ secrets.CLINIC_ID }}
 
     steps:
       - name: Checkout repository
@@ -47,16 +47,18 @@ jobs:
 
       - name: Preflight - validate required secrets and decode service account
         run: |
+          set -euo pipefail
           MISSING=()
-          [ -z "$GOOGLE_ADS_SERVICE_ACCOUNT" ] && MISSING+=("GOOGLE_ADS_SERVICE_ACCOUNT")
-          [ -z "$DOCTORALIA_SHEET_ID" ] && [ -z "$DOCTORALIA_DRIVE_FILE_ID" ] && MISSING+=("DOCTORALIA_SHEET_ID or DOCTORALIA_DRIVE_FILE_ID")
-          [ -z "$DATABASE_URL"         ] && MISSING+=("DATABASE_URL")
-          [ -z "$CLINIC_ID"            ] && MISSING+=("CLINIC_ID")
+          [ -z "${GOOGLE_ADS_SERVICE_ACCOUNT:-}" ] && MISSING+=("GOOGLE_ADS_SERVICE_ACCOUNT")
+          [ -z "${DOCTORALIA_SHEET_ID:-}" ] && [ -z "${DOCTORALIA_DRIVE_FILE_ID:-}" ] && MISSING+=("DOCTORALIA_SHEET_ID or DOCTORALIA_DRIVE_FILE_ID")
+          [ -z "${DATABASE_URL:-}" ]         && MISSING+=("DATABASE_URL")
+          [ -z "${CLINIC_ID:-}" ]            && MISSING+=("CLINIC_ID")
           if [ ${#MISSING[@]} -gt 0 ]; then
             echo "::error::Missing secrets: ${MISSING[*]}"
             echo "::error::Add them at Settings -> Secrets and variables -> Actions"
             exit 1
           fi
+
           # Accept both formats for GOOGLE_ADS_SERVICE_ACCOUNT:
           #  1) base64(service-account.json)
           #  2) raw JSON object string
@@ -64,9 +66,11 @@ jobs:
             echo "GOOGLE_ADS_SERVICE_ACCOUNT format: raw JSON"
             # Mask the raw JSON to avoid accidental leakage in logs
             echo "::add-mask::$GOOGLE_ADS_SERVICE_ACCOUNT"
-            echo "GOOGLE_SA_JSON<<EOF_GITHUB_ACTION" >> "$GITHUB_ENV"
-            echo "$GOOGLE_ADS_SERVICE_ACCOUNT" >> "$GITHUB_ENV"
-            echo "EOF_GITHUB_ACTION" >> "$GITHUB_ENV"
+            {
+              echo "GOOGLE_SA_JSON<<EOF_GITHUB_ACTION"
+              echo "$GOOGLE_ADS_SERVICE_ACCOUNT"
+              echo "EOF_GITHUB_ACTION"
+            } >> "$GITHUB_ENV"
           else
             DECODED="$(echo "$GOOGLE_ADS_SERVICE_ACCOUNT" | base64 -d 2>/dev/null)" || true
             echo "$DECODED" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null || {
@@ -76,9 +80,11 @@ jobs:
             echo "GOOGLE_ADS_SERVICE_ACCOUNT format: base64 JSON"
             # Mask the decoded JSON to avoid accidental leakage in logs
             echo "::add-mask::$DECODED"
-            echo "GOOGLE_SA_JSON<<EOF_GITHUB_ACTION" >> "$GITHUB_ENV"
-            echo "$DECODED" >> "$GITHUB_ENV"
-            echo "EOF_GITHUB_ACTION" >> "$GITHUB_ENV"
+            {
+              echo "GOOGLE_SA_JSON<<EOF_GITHUB_ACTION"
+              echo "$DECODED"
+              echo "EOF_GITHUB_ACTION"
+            } >> "$GITHUB_ENV"
           fi
 
           echo "All required secrets present and valid."
@@ -89,10 +95,10 @@ jobs:
       - name: Run Doctoralia to DB sync
         run: node scripts/sync-doctoralia.js
         env:
-          GOOGLE_SA_JSON:         ${{ env.GOOGLE_SA_JSON }}
-          DOCTORALIA_SHEET_ID:    ${{ env.DOCTORALIA_SHEET_ID || env.DOCTORALIA_DRIVE_FILE_ID }}
-          DOCTORALIA_DRIVE_FILE_ID: ${{ env.DOCTORALIA_DRIVE_FILE_ID || env.DOCTORALIA_SHEET_ID }}
-          DATABASE_URL:           ${{ env.DATABASE_URL }}
-          CLINIC_ID:              ${{ env.CLINIC_ID }}
-          SHEET_RANGE:            'A1:Z5000'
+          GOOGLE_SA_JSON:           ${{ env.GOOGLE_SA_JSON }}
+          DOCTORALIA_SHEET_ID:      ${{ env.DOCTORALIA_SHEET_ID }}
+          DOCTORALIA_DRIVE_FILE_ID: ${{ env.DOCTORALIA_DRIVE_FILE_ID }}
+          DATABASE_URL:             ${{ env.DATABASE_URL }}
+          CLINIC_ID:                ${{ env.CLINIC_ID }}
+          SHEET_RANGE:              A1:Z5000
           # SHEET_NAME: Sheet1   # Uncomment and set if data is on a specific tab

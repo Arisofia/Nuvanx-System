@@ -118,7 +118,7 @@ export function SortableTable({
                 <th
                   key={col.key}
                   onClick={() => col.sortable !== false && handleSort(col.key)}
-                  className={`px-3 py-2 text-xs font-semibold text-muted whitespace-nowrap uppercase tracking-wide print:text-gray-600 ${alignClass(col.align)} ${col.sortable !== false ? 'cursor-pointer hover:text-white select-none' : ''}`}
+                  className={`px-3 py-2 text-xs font-semibold text-muted whitespace-nowrap uppercase tracking-wide print:text-gray-600 ${alignClass(col.align)} ${col.sortable !== false ? 'cursor-pointer hover:text-foreground select-none' : ''}`}
                 >
                   {col.label}
                   {col.sortable !== false && (
@@ -183,7 +183,7 @@ export function SortableTable({
           <button
             onClick={() => setPage((p) => Math.max(0, p - 1))}
             disabled={page === 0}
-            className="p-1.5 rounded-lg bg-card text-muted hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="p-1.5 rounded-lg bg-card text-muted hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
@@ -193,7 +193,7 @@ export function SortableTable({
           <button
             onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
             disabled={page >= totalPages - 1}
-            className="p-1.5 rounded-lg bg-card text-muted hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="p-1.5 rounded-lg bg-card text-muted hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <ChevronRight className="w-4 h-4" />
           </button>

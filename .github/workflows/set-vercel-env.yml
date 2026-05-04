@@ -2,7 +2,7 @@
 name: Set Vercel Env Vars
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: {}
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -15,12 +15,25 @@ jobs:
     steps:
       - name: Set VITE_ env vars on Vercel project via API
         run: |
+          set -euo pipefail
+
+          if [ -z "${VERCEL_TOKEN:-}" ]; then
+            echo "::error::VERCEL_TOKEN is not set. Configure it in GitHub → Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
           set_var() {
             local KEY=$1 VAL=$2
+            if [ -z "$VAL" ]; then
+              echo "::warning::Skipping ${KEY} because value is empty."
+              return 0
+            fi
+
             # Delete existing first (ignore 404)
             curl -s -o /dev/null -X DELETE \
               "https://api.vercel.com/v10/projects/${PROJECT_ID}/env?key=${KEY}&teamId=${ORG_ID}" \
               -H "Authorization: Bearer ${VERCEL_TOKEN}"
+
             # Create new encrypted env var for all targets
             HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
               "https://api.vercel.com/v10/projects/${PROJECT_ID}/env?teamId=${ORG_ID}" \
@@ -29,13 +42,14 @@ jobs:
               --data-raw "{\"key\":\"${KEY}\",\"value\":\"${VAL}\",\"type\":\"encrypted\",\"target\":[\"production\",\"preview\",\"development\"]}")
             echo "${KEY} -> HTTP ${HTTP}"
           }
+
           set_var "VITE_SUPABASE_URL"             "${VITE_SUPABASE_URL}"
           set_var "VITE_SUPABASE_ANON_KEY"        "${VITE_SUPABASE_ANON_KEY}"
           set_var "VITE_SUPABASE_PUBLISHABLE_KEY" "${VITE_SUPABASE_PUBLISHABLE_KEY}"
         env:
-          VERCEL_TOKEN:                 ${{ secrets.VERCEL_TOKEN }}
-          PROJECT_ID:                   prj_IAOBlV17HeS22KuEfsdkDrGMV9Ze
-          ORG_ID:                       team_R0GOR4jvw1c1gnyBRWYu32O7
-          VITE_SUPABASE_URL:            ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY:       ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VERCEL_TOKEN:                  ${{ secrets.VERCEL_TOKEN }}
+          PROJECT_ID:                    prj_IAOBlV17HeS22KuEfsdkDrGMV9Ze
+          ORG_ID:                        team_R0GOR4jvw1c1gnyBRWYu32O7
+          VITE_SUPABASE_URL:             ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY:        ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}

@@ -34,7 +34,7 @@ export function AgentStatusCard() {
         ) : status?.available ? (
           <div className="space-y-3">
             <div className="flex items-center gap-2 mt-2">
-              <CheckCircle2 className="h-5 w-5 text-[#8ee0b8]" />
+              <CheckCircle2 className="h-5 w-5 text-[#28A745]" />
               <span className="font-bold">Online</span>
               <Badge className="ml-auto capitalize">
                 {status.provider}
@@ -47,7 +47,7 @@ export function AgentStatusCard() {
         ) : (
           <div className="space-y-3">
             <div className="flex items-center gap-2 mt-2">
-              <AlertCircle className="h-5 w-5 text-[#f2b24b]" />
+              <AlertCircle className="h-5 w-5 text-[#E0A020]" />
               <span className="font-bold">Action Required</span>
             </div>
             <p className="text-xs text-muted">

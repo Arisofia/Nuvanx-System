@@ -93,8 +93,8 @@ export function FilterBar({
             onClick={() => setPreset(p.days)}
             className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
               !customMode && activeDays === p.days
-                ? 'bg-[#3f3224] text-white'
-                : 'text-muted hover:text-white'
+                ? 'bg-primary/15 text-foreground'
+                : 'text-muted hover:text-foreground'
             }`}
           >
             {p.label}
@@ -103,7 +103,7 @@ export function FilterBar({
         <button
           onClick={setFrom2025}
           className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-            is2025 ? 'bg-indigo-600 text-white' : 'text-muted hover:text-white'
+            is2025 ? 'bg-primary text-white' : 'text-muted hover:text-foreground'
           }`}
         >
           2025+
@@ -133,7 +133,7 @@ export function FilterBar({
         <select
           value={campaignValue}
           onChange={(e) => onCampaignChange(e.target.value)}
-          className="bg-card text-white text-xs font-medium px-3 py-1.5 rounded-lg border border-border focus:outline-none focus:ring-1 focus:ring-primary max-w-[200px]"
+          className="bg-card text-foreground text-xs font-medium px-3 py-1.5 rounded-lg border border-border focus:outline-none focus:ring-1 focus:ring-primary max-w-[200px]"
         >
           <option value="ALL">All Campaigns</option>
           {campaigns.map((c) => (
@@ -147,7 +147,7 @@ export function FilterBar({
         <select
           value={sourceValue}
           onChange={(e) => onSourceChange(e.target.value)}
-          className="bg-card text-white text-xs font-medium px-3 py-1.5 rounded-lg border border-border focus:outline-none focus:ring-1 focus:ring-primary"
+          className="bg-card text-foreground text-xs font-medium px-3 py-1.5 rounded-lg border border-border focus:outline-none focus:ring-1 focus:ring-primary"
         >
           <option value="ALL">All Sources</option>
           {sources.map((s) => (

@@ -46,6 +46,7 @@ jobs:
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+
       - name: Validate Supabase deployment secrets
         id: validate
         run: |
@@ -59,6 +60,7 @@ jobs:
             echo "::warning::Supabase deploy skipped — missing secrets: ${MISSING[*]}"
             echo "skip_supabase=true" >> "$GITHUB_OUTPUT"
           fi
+
       - name: Supabase DB migrations
         if: steps.validate.outputs.skip_supabase != 'true'
         uses: ./.github/actions/supabase-link-run
@@ -107,6 +109,7 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+
       - name: Deploy Edge Functions
         uses: ./.github/actions/supabase-link-run
         with:
