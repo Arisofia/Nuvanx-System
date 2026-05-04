@@ -26,7 +26,7 @@ SELECT
   l.appointment_status,
   l.attended_at,
   l.no_show_flag,
-  l.patient_id                              AS lead_converted_patient_id,
+  l.converted_patient_id                     AS lead_converted_patient_id,
   l.priority                                AS lead_priority
 FROM public.vw_doctoralia_trazabilidad_360 dr
 LEFT JOIN public.leads l
