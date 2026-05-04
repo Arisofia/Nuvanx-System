@@ -3,6 +3,7 @@
 declare const Deno: any;
 
 import { createClient } from '@supabase/supabase-js';
+import { normalizePhoneForMeta } from '../_shared/phone.ts';
 export { createClient } from '@supabase/supabase-js';
 
 function requireSupabaseEnv(value: string | null | undefined, name: string): string {
@@ -228,6 +229,73 @@ async function metaFetchInsightsWithFallback(path: string, params: Record<string
     }
     return data;
   }
+}
+
+const DEFAULT_META_PIXEL_ID = Deno.env.get('META_PIXEL_ID') ?? '877262375461917';
+
+async function sha256Hex(raw: string): Promise<string> {
+  const data = new TextEncoder().encode(raw.trim().toLowerCase());
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return bytesToHex(new Uint8Array(digest));
+}
+
+async function hashMetaUserData(userData: Record<string, string[]>): Promise<Record<string, string[]>> {
+  const hashed: Record<string, string[]> = {};
+  for (const [key, values] of Object.entries(userData)) {
+    const cleanValues = values.filter(Boolean).map((value) => value.trim().toLowerCase());
+    if (cleanValues.length === 0) continue;
+    hashed[key] = [];
+    for (const value of cleanValues) {
+      hashed[key].push(await sha256Hex(value));
+    }
+  }
+  return hashed;
+}
+
+async function metaPost(path: string, body: any, token: string) {
+  const url = new URL(`${META_GRAPH}${path}`);
+  url.searchParams.set('access_token', token);
+  const appSecret = Deno.env.get('META_APP_SECRET');
+  if (appSecret) {
+    url.searchParams.set('appsecret_proof', await computeAppsecretProof(token, appSecret));
+  }
+
+  const response = await fetch(url.toString(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(20_000),
+  });
+
+  const { data, text } = await parseJsonOrText(response);
+  if (!response.ok) {
+    const err = data?.error ?? {};
+    const message = err.message ?? data?.message ?? text ?? `Meta API ${response.status}`;
+    throw new Error(message);
+  }
+  return data;
+}
+
+async function trackMetaWhatsappConversion(accessToken: string, phone: string | null | undefined, email?: string | null) {
+  const normalizedPhone = normalizePhoneForMeta(phone ?? '');
+  const userData: Record<string, string[]> = {};
+  if (normalizedPhone) userData.ph = [normalizedPhone];
+  if (email) userData.em = [email.trim().toLowerCase()];
+  if (!userData.ph?.length && !userData.em?.length) {
+    throw new Error('Phone or email is required to track WhatsApp conversion.');
+  }
+
+  const hashedUserData = await hashMetaUserData(userData);
+  const payload = {
+    data: [{
+      event_name: 'Contact',
+      event_time: Math.floor(Date.now() / 1000),
+      user_data: hashedUserData,
+      custom_data: { source: 'whatsapp_crm_nuvanx' },
+    }],
+  };
+
+  return await metaPost(`/${DEFAULT_META_PIXEL_ID}/events`, payload, accessToken);
 }
 
 export function parseMetaMetric(raw: unknown): number {
@@ -504,12 +572,35 @@ function resolveLeadName(fields: Record<string, string>, leadgen_id: string): st
   return `Lead ${leadgen_id.slice(-6)}`;
 }
 
+function extractMetaLeadCustomerInfo(fieldData: any[]): Record<string, string> {
+  return (Array.isArray(fieldData) ? fieldData : []).reduce((acc: Record<string, string>, item: any) => {
+    const key = String(item?.name ?? item?.field_name ?? item?.key ?? '').trim();
+    if (!key) return acc;
+    let value = '';
+    if (Array.isArray(item?.values) && item.values.length > 0) {
+      value = String(item.values[0] ?? '').trim();
+    } else if (item?.value !== undefined && item?.value !== null) {
+      value = String(item.value).trim();
+    }
+    if (value) acc[key] = value;
+    return acc;
+  }, {});
+}
+
+function classifyMetaLeadTag(fields: Record<string, string>): string {
+  const normalized = Object.values(fields).join(' ').toLowerCase();
+  return normalized.includes('botox') ? 'neuromodulador/botox' : 'general';
+}
+
 export async function processLeadData(adminClient: any, userId: string, leadData: any) {
   // Parse field_data array into a flat map
   const fields: Record<string, string> = {};
   for (const f of (leadData.field_data ?? [])) {
     fields[(f.name ?? '').toLowerCase()] = f.values?.[0] ?? '';
   }
+
+  const leadDataFields = extractMetaLeadCustomerInfo(leadData.field_data ?? []);
+  const tag = classifyMetaLeadTag(leadDataFields);
 
   const leadgen_id = leadData.id;
   const leadName = resolveLeadName(fields, leadgen_id);
@@ -525,6 +616,9 @@ export async function processLeadData(adminClient: any, userId: string, leadData
   const customFields = Object.fromEntries(
     Object.entries(fields).filter(([k]) => !KNOWN_STANDARD.has(k))
   );
+  if (tag !== 'general') {
+    customFields.meta_tag = tag;
+  }
   const notes = Object.keys(customFields).length > 0 ? JSON.stringify(customFields) : null;
 
   // Priority detection — scan all form values for high-demand treatment keywords
@@ -1060,6 +1154,7 @@ export const AUTHENTICATED_ROUTE_HANDLERS = new Map<string, RouteHandler>([
   ['conversations||*', handleConversations],
   ['figma-events||*', handleFigmaEvents],
   ['whatsapp|send|POST', handleWhatsappSend],
+  ['whatsapp|conversion|POST', handleWhatsappConversionPost],
   ['kpis||GET', handleKpisGet],
   ['reports|doctoralia-financials|GET', handleReportsDoctoraliaFinancialsGet],
   ['reports|campaign-performance|GET', handleReportsCampaignPerformanceGet],
@@ -3336,6 +3431,57 @@ async function handleWhatsappSend(ctx: AuthenticatedRouteContext): Promise<Respo
   const { resource, sub, sendJson } = ctx;
   if (resource === 'whatsapp' && sub === 'send') {
     return sendJson({ success: false, message: 'WhatsApp integration not connected. Add your credentials in Integrations.' }, 503);
+  }
+  return null;
+}
+
+async function handleWhatsappConversionPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
+  const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
+  if (resource === 'whatsapp' && sub === 'conversion' && req.method === 'POST') {
+    let body: any;
+    try {
+      body = await req.json();
+    } catch {
+      return sendJson({ success: false, message: 'Invalid JSON body' }, 400);
+    }
+
+    const phone = String(body.phone ?? '').trim();
+    const email = body.email ? String(body.email).trim() : '';
+    if (!phone && !email) {
+      return sendJson({ success: false, message: 'phone or email is required' }, 400);
+    }
+
+    const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
+    const validation = validateMetaCredentialResult(creds);
+    if (!validation.ok) {
+      return sendJson({ success: false, message: validation.message }, validation.statusCode);
+    }
+
+    try {
+      const result = await trackMetaWhatsappConversion(creds.accessToken, phone || null, email || null);
+      const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+      const clinicId = usr?.clinic_id;
+      let matchedPatientId: string | null = null;
+
+      if (clinicId && phone) {
+        const normalizedPhone = normalizePhoneForMeta(phone);
+        if (normalizedPhone) {
+          const { data: patient } = await adminClient
+            .from('patients').select('id').eq('clinic_id', clinicId).eq('phone_normalized', normalizedPhone).single();
+          matchedPatientId = patient?.id ?? null;
+        }
+      }
+
+      return sendJson({
+        success: true,
+        result,
+        matchedPatientId,
+        phone: phone || null,
+        email: email || null,
+      });
+    } catch (e: any) {
+      return sendJson({ success: false, message: e?.message ?? 'Meta pixel event failed' }, 502);
+    }
   }
   return null;
 }
