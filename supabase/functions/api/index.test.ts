@@ -45,6 +45,7 @@ const {
   parseMetaMetric,
   extractMetaAccountRawValue,
   actionValue,
+  buildCampaignsTimeRange,
 } = api;
 
 describe('normalizeFrontendUrl', () => {
@@ -998,5 +999,50 @@ describe('actionValue', () => {
     const matcher = vi.fn(() => true);
     expect(actionValue(actions, matcher)).toBe(15);
     expect(matcher).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('buildCampaignsTimeRange', () => {
+  // Pin a fixed "now" to make assertions deterministic
+  const now = new Date('2024-06-15T12:00:00Z').getTime(); // 2024-06-15
+
+  it('uses campTo as until and campFrom as since when both are provided', () => {
+    const result = JSON.parse(buildCampaignsTimeRange('2024-05-01', '2024-06-01', 30, now));
+    expect(result.since).toBe('2024-05-01');
+    expect(result.until).toBe('2024-06-01');
+  });
+
+  it('uses campDays to compute since when from/to are absent', () => {
+    const result = JSON.parse(buildCampaignsTimeRange('', '', 30, now));
+    // since = now - 30 days = 2024-05-16
+    expect(result.since).toBe('2024-05-16');
+    expect(result.until).toBe('2024-06-15');
+  });
+
+  it('clamps since to 90 days back when campDays exceeds 90', () => {
+    const result = JSON.parse(buildCampaignsTimeRange('', '', 120, now));
+    // Clamped to now - 90 days = 2024-03-17
+    const expected = new Date(now - 90 * 86_400_000).toISOString().slice(0, 10);
+    expect(result.since).toBe(expected);
+  });
+
+  it('clamps since to 90 days back when campFrom is more than 90 days ago', () => {
+    const result = JSON.parse(buildCampaignsTimeRange('2020-01-01', '2024-06-10', 30, now));
+    const expected = new Date(now - 90 * 86_400_000).toISOString().slice(0, 10);
+    expect(result.since).toBe(expected);
+    // until is still the explicit campTo
+    expect(result.until).toBe('2024-06-10');
+  });
+
+  it('falls back to 90-day window when campDays is NaN', () => {
+    const result = JSON.parse(buildCampaignsTimeRange('', '', NaN, now));
+    const expected = new Date(now - 90 * 86_400_000).toISOString().slice(0, 10);
+    expect(result.since).toBe(expected);
+    expect(result.until).toBe('2024-06-15');
+  });
+
+  it('uses today as until when campTo is absent', () => {
+    const result = JSON.parse(buildCampaignsTimeRange('', '', 7, now));
+    expect(result.until).toBe('2024-06-15');
   });
 });
