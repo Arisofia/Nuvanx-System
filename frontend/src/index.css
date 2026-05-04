@@ -1,4 +1,5 @@
 /* stylelint-disable at-rule-no-unknown */
+@import './tokens.css';
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,600;0,700;1,600&display=swap');
 
 @tailwind base;
@@ -7,20 +8,20 @@
 /* stylelint-enable at-rule-no-unknown */
 
 :root {
-  --color-bg-primary: #F6F1EC;
-  --color-bg-secondary: #FFF9F3;
-  --color-bg-card: #FFFFFF;
+  --color-bg-primary: var(--bg-champagne);
+  --color-bg-secondary: var(--bg-marfil);
+  --color-bg-card: var(--surface);
   --color-border: #E6E2DE;
-  --color-text-primary: #2E2A28;
-  --color-text-secondary: #5A5250;
-  --color-accent: #C49A6C;
+  --color-text-primary: var(--text-dark);
+  --color-text-secondary: var(--text-muted);
+  --color-accent: var(--accent-gold);
   --color-accent-hover: #B08B5A;
-  --color-success: #28A745;
-  --color-error: #D9534F;
+  --color-success: var(--success);
+  --color-error: var(--danger);
   --color-warning: #E0A020;
-  --color-muted: #7A7573;
-  --font-heading: 'Playfair Display', Georgia, serif;
-  --font-body: 'Inter', 'Manrope', system-ui, sans-serif;
+  --color-muted: var(--text-muted);
+  --font-heading: var(--font-serif);
+  --font-body: var(--font-sans);
 }
 
 * {

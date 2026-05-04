@@ -1,0 +1,15 @@
+.card{
+  background: var(--surface);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  box-shadow: var(--shadow-soft);
+  width: 320px;
+}
+.card__media{
+  height: 180px;
+  background: linear-gradient(180deg, #F6F1EC 0%, #FFF9F3 100%);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+.card__title{ font-family: var(--font-serif); font-size: 20px; color: var(--text-dark); margin: 0 0 8px 0; }
+.card__desc{ font-family: var(--font-sans); font-size: 14px; color: var(--text-muted); margin: 0 0 16px 0; }
