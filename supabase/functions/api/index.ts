@@ -960,6 +960,7 @@ export const AUTHENTICATED_ROUTE_HANDLERS = new Map<string, RouteHandler>([
   ['reports|source-comparison|GET', handleReportsSourceComparisonGet],
   ['reports|whatsapp-conversion|GET', handleReportsWhatsappConversionGet],
   ['reports|doctor-performance|GET', handleReportsDoctorPerformanceGet],
+  ['reports|campaign-roi|GET', handleReportsCampaignRoiGet],
   ['leads|reconcile|POST', handleLeadsReconcilePost],
 ]);
 
@@ -1133,7 +1134,7 @@ export async function handleAuthenticatedRoutes(ctx: AuthenticatedRouteContext):
     return ctx.sendJson({ success: false, message: `Route not found: ${ctx.resource}/${ctx.sub}` }, 404);
   } catch (err: any) {
     console.error('Edge Function error:', err);
-    return ctx.sendJson({ success: false, message: 'Internal server error' }, 500);
+    return ctx.sendJson({ success: false, code: 'INTERNAL_ERROR', message: 'An unexpected error occurred. Please try again.' }, 500);
   }
 }
 
@@ -2440,7 +2441,8 @@ async function handleAiAnalyzeCampaignPost(ctx: AuthenticatedRouteContext): Prom
       }
       return sendJson({ success: true, analysis: text, provider: usedProvider, outputId });
     } catch (err: any) {
-      return sendJson({ success: false, message: err?.message ?? 'AI request failed' }, 502);
+      console.error('AI request error:', err);
+      return sendJson({ success: false, code: 'AI_REQUEST_FAILED', message: 'AI request failed. Please try again.' }, 502);
     }
   }
   return null;
@@ -2820,16 +2822,19 @@ async function handleTraceabilityFunnel(ctx: AuthenticatedRouteContext): Promise
 }
 
 async function handleTraceabilityCampaigns(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, resource, sub, url, sendJson } = ctx;
+  const { adminClient, userId, resource, sub, url, sendJson } = ctx;
   if (resource === 'traceability' && sub === 'campaigns') {
-    const from = url.searchParams.get('from') ?? '';
-    const to   = url.searchParams.get('to')   ?? '';
+    const from   = url.searchParams.get('from')   ?? '';
+    const to     = url.searchParams.get('to')     ?? '';
+    const source = url.searchParams.get('source') ?? '';
     let query = adminClient
       .from('vw_campaign_performance_real')
       .select('*')
+      .eq('user_id', userId)
       .order('total_leads', { ascending: false });
-    if (from) query = query.gte('first_lead_at', from);
-    if (to)   query = query.lte('last_lead_at', to);
+    if (from)   query = query.gte('first_lead_at', from);
+    if (to)     query = query.lte('last_lead_at', to);
+    if (source) query = query.eq('source', source);
     const { data: rows } = await query;
     return sendJson({ success: true, campaigns: rows || [] });
   }
@@ -3019,16 +3024,19 @@ async function handleReportsDoctoraliaFinancialsGet(ctx: AuthenticatedRouteConte
 }
 
 async function handleReportsCampaignPerformanceGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, resource, sub, req, url, sendJson } = ctx;
+  const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'reports' && sub === 'campaign-performance' && req.method === 'GET') {
-    const from = url.searchParams.get('from') ?? '';
-    const to   = url.searchParams.get('to')   ?? '';
+    const from   = url.searchParams.get('from')   ?? '';
+    const to     = url.searchParams.get('to')     ?? '';
+    const source = url.searchParams.get('source') ?? '';
     let query = adminClient
       .from('vw_campaign_performance_real')
       .select('*')
+      .eq('user_id', userId)
       .order('total_leads', { ascending: false });
-    if (from) query = query.gte('first_lead_at', from);
-    if (to)   query = query.lte('last_lead_at', to);
+    if (from)   query = query.gte('first_lead_at', from);
+    if (to)     query = query.lte('last_lead_at', to);
+    if (source) query = query.eq('source', source);
     const { data: rows } = await query;
     return sendJson({ success: true, campaigns: rows || [] });
   }
@@ -3075,13 +3083,37 @@ async function handleReportsDoctorPerformanceGet(ctx: AuthenticatedRouteContext)
   return null;
 }
 
+async function handleReportsCampaignRoiGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
+  const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
+  if (resource === 'reports' && sub === 'campaign-roi' && req.method === 'GET') {
+    const from   = url.searchParams.get('from')   ?? '';
+    const to     = url.searchParams.get('to')     ?? '';
+    const source = url.searchParams.get('source') ?? '';
+    const { data: rows, error } = await adminClient.rpc('get_campaign_roi', {
+      p_user_id: userId,
+      p_from:    from,
+      p_to:      to,
+      p_source:  source,
+    });
+    if (error) {
+      console.error('get_campaign_roi error:', error);
+      return sendJson({ success: false, code: 'ROI_QUERY_ERROR', message: 'Failed to load campaign ROI.' }, 500);
+    }
+    return sendJson({ success: true, rows: rows || [] });
+  }
+  return null;
+}
+
 async function handleLeadsReconcilePost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, resource, sub, sub2, req, sendJson } = ctx;
   if (resource === 'leads' && sub2 === 'reconcile' && req.method === 'POST') {
     const leadId = sub;
     if (!leadId) return sendJson({ success: false, message: 'lead id required' }, 400);
     const { data, error } = await adminClient.rpc('reconcile_lead_to_patient', { p_lead_id: leadId });
-    if (error) return sendJson({ success: false, message: error.message }, 500);
+    if (error) {
+      console.error('reconcile_lead_to_patient error:', error);
+      return sendJson({ success: false, code: 'RECONCILE_ERROR', message: 'Failed to reconcile lead.' }, 500);
+    }
     return sendJson({ success: true, matched: data !== null, patient_id: data ?? null });
   }
   return null;
@@ -3094,7 +3126,7 @@ Deno.serve(async (req: Request) => {
   } catch (topLevelErr: any) {
     console.error('Unhandled top-level error in handleRequest:', topLevelErr);
     return new Response(
-      JSON.stringify({ success: false, message: 'Unexpected server error' }),
+      JSON.stringify({ success: false, code: 'UNHANDLED_ERROR', message: 'An unexpected server error occurred.' }),
       { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } },
     );
   }

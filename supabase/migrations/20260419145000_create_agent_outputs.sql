@@ -24,14 +24,14 @@ CREATE POLICY agent_outputs_insert_own
   ON public.agent_outputs
   FOR INSERT
   TO authenticated
-  WITH CHECK (auth.uid() = );
+  WITH CHECK (auth.uid() = user_id);
 
 DROP POLICY IF EXISTS agent_outputs_select_own ON public.agent_outputs;
 CREATE POLICY agent_outputs_select_own
   ON public.agent_outputs
   FOR SELECT
   TO authenticated
-  USING (auth.uid() = );
+  USING (auth.uid() = user_id);
 
 DROP POLICY IF EXISTS agent_outputs_service_all ON public.agent_outputs;
 CREATE POLICY agent_outputs_service_all

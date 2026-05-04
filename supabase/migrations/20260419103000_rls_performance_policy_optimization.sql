@@ -16,14 +16,14 @@ BEGIN
       ON public.agent_outputs
       FOR INSERT
       TO authenticated
-      WITH CHECK (auth.uid() = );
+      WITH CHECK (auth.uid() = user_id);
 
     DROP POLICY IF EXISTS agent_outputs_select_own ON public.agent_outputs;
     CREATE POLICY agent_outputs_select_own
       ON public.agent_outputs
       FOR SELECT
       TO authenticated
-      USING (auth.uid() = );
+      USING (auth.uid() = user_id);
 
     DROP POLICY IF EXISTS agent_outputs_service_all ON public.agent_outputs;
     CREATE POLICY agent_outputs_service_all
@@ -45,7 +45,7 @@ CREATE POLICY integrations_insert_own
   ON public.integrations
   FOR INSERT
   TO authenticated
-  WITH CHECK (auth.uid() = );
+  WITH CHECK (auth.uid() = user_id);
 
 ALTER TABLE public.integrations ENABLE ROW LEVEL SECURITY;
 
@@ -54,8 +54,8 @@ CREATE POLICY integrations_update_own
   ON public.integrations
   FOR UPDATE
   TO authenticated
-  USING (auth.uid() = )
-  WITH CHECK (auth.uid() = );
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
 
 ALTER TABLE public.integrations ENABLE ROW LEVEL SECURITY;
 
@@ -64,7 +64,7 @@ CREATE POLICY integrations_delete_own
   ON public.integrations
   FOR DELETE
   TO authenticated
-  USING (auth.uid() = );
+  USING (auth.uid() = user_id);
 
 ALTER TABLE public.integrations ENABLE ROW LEVEL SECURITY;
 
@@ -86,7 +86,7 @@ CREATE POLICY credentials_delete_own
   ON public.credentials
   FOR DELETE
   TO authenticated
-  USING (auth.uid() = );
+  USING (auth.uid() = user_id);
 
 ALTER TABLE public.credentials ENABLE ROW LEVEL SECURITY;
 
@@ -95,8 +95,8 @@ CREATE POLICY credentials_update_own
   ON public.credentials
   FOR UPDATE
   TO authenticated
-  USING (auth.uid() = )
-  WITH CHECK (auth.uid() = );
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
 
 ALTER TABLE public.credentials ENABLE ROW LEVEL SECURITY;
 
@@ -106,7 +106,7 @@ CREATE POLICY credentials_service_role_only
   AS RESTRICTIVE
   FOR ALL
   TO public
-  USING (((SELECT current_setting('role'::text, true)) = 'service_role'::text) OR (auth.uid() = ));
+  USING (((SELECT current_setting('role'::text, true)) = 'service_role'::text) OR (auth.uid() = user_id));
 
 -- ---------------------------------------------------------------------------
 -- leads
@@ -118,8 +118,8 @@ CREATE POLICY leads_owner_only
   ON public.leads
   FOR ALL
   TO public
-  USING (((SELECT current_setting('role'::text, true)) = 'service_role'::text) OR (auth.uid() = ))
-  WITH CHECK (((SELECT current_setting('role'::text, true)) = 'service_role'::text) OR (auth.uid() = ));
+  USING (((SELECT current_setting('role'::text, true)) = 'service_role'::text) OR (auth.uid() = user_id))
+  WITH CHECK (((SELECT current_setting('role'::text, true)) = 'service_role'::text) OR (auth.uid() = user_id));
 
 -- ---------------------------------------------------------------------------
 -- dashboard_metrics
@@ -170,8 +170,8 @@ CREATE POLICY playbook_executions_user
   ON public.playbook_executions
   FOR ALL
   TO authenticated
-  USING (auth.uid() = )
-  WITH CHECK (auth.uid() = );
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
 
 -- ---------------------------------------------------------------------------
 -- clinic-scoped SELECT policies

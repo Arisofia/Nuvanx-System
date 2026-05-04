@@ -24,10 +24,38 @@ export default function Intelligence() {
   )
   const [traceSource, setTraceSource] = useState<string>('')
 
+  // Attribution filter state
+  const [attrFrom, setAttrFrom] = useState<string>(() => new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10))
+  const [attrTo, setAttrTo] = useState<string>(() => new Date().toISOString().slice(0, 10))
+  const [attrSource, setAttrSource] = useState<string>('')
+
   const traceSources = useMemo(
     () => [...new Set(traceability.map((l: any) => l.source).filter(Boolean))] as string[],
     [traceability],
   )
+
+  const attrSources = useMemo(
+    () => [...new Set(campaigns.map((c: any) => c.source).filter(Boolean))] as string[],
+    [campaigns],
+  )
+
+  const attributionColumns: ColDef[] = [
+    { key: 'source', label: 'Fuente', align: 'left' },
+    { key: 'campaign_name', label: 'Campaña', align: 'left' },
+    { key: 'total_leads', label: 'Leads', align: 'right', sortable: true },
+    { key: 'contacted', label: 'Contactados', align: 'right', sortable: true },
+    { key: 'replied', label: 'Respondieron', align: 'right', sortable: true },
+    { key: 'booked', label: 'Reservados', align: 'right', sortable: true },
+    { key: 'closed_won', label: 'Ganados', align: 'right', sortable: true },
+    { key: 'reply_rate_pct', label: 'Reply %', align: 'right', sortable: true,
+      format: (v) => v != null ? `${v}%` : null },
+    { key: 'lead_to_close_rate_pct', label: 'Cierre %', align: 'right', sortable: true,
+      format: (v) => v != null ? `${v}%` : null },
+    { key: 'verified_revenue_crm', label: 'Revenue', align: 'right', sortable: true,
+      format: (v) => v != null ? Number(v).toLocaleString('es-MX', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 }) : null },
+    { key: 'avg_reply_delay_min', label: 'Resp. (min)', align: 'right', sortable: true,
+      format: (v) => v != null ? String(v) : null },
+  ]
 
   const traceabilityRows = useMemo(
     () => traceability.map((row: TraceabilityLead) => ({
@@ -69,16 +97,6 @@ export default function Intelligence() {
         setLoading((prev) => ({ ...prev, funnel: false }))
       })
 
-    invokeApi('/traceability/campaigns')
-      .then((data: any) => {
-        setCampaigns(Array.isArray(data?.campaigns) ? data.campaigns : [])
-        setLoading((prev) => ({ ...prev, campaigns: false }))
-      })
-      .catch((err: any) => {
-        setError((prev) => ({ ...prev, campaigns: err?.message || 'Failed to load campaigns.' }))
-        setLoading((prev) => ({ ...prev, campaigns: false }))
-      })
-
     invokeApi('/conversations')
       .then((data: any) => {
         setConversations(Array.isArray(data?.conversations) ? data.conversations.slice(0, 20) : [])
@@ -89,6 +107,24 @@ export default function Intelligence() {
         setLoading((prev) => ({ ...prev, conversations: false }))
       })
   }, [])
+
+  // Separate effect for attribution so filters trigger re-fetch
+  useEffect(() => {
+    const params: string[] = []
+    if (attrFrom) params.push(`from=${attrFrom}`)
+    if (attrTo)   params.push(`to=${attrTo}`)
+    if (attrSource) params.push(`source=${encodeURIComponent(attrSource)}`)
+    const qs = params.length ? `?${params.join('&')}` : ''
+    invokeApi(`/traceability/campaigns${qs}`)
+      .then((data: any) => {
+        setCampaigns(Array.isArray(data?.campaigns) ? data.campaigns : [])
+        setLoading((prev) => ({ ...prev, campaigns: false }))
+      })
+      .catch((err: any) => {
+        setError((prev) => ({ ...prev, campaigns: err?.message || 'Failed to load campaigns.' }))
+        setLoading((prev) => ({ ...prev, campaigns: false }))
+      })
+  }, [attrFrom, attrTo, attrSource])
 
   // Separate effect for traceability so filters trigger re-fetch
   useEffect(() => {
@@ -127,52 +163,25 @@ export default function Intelligence() {
             <CardHeader>
               <CardTitle>Multi-Touch Attribution</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
+              <FilterBar
+                onDateChange={(from, to) => { setAttrFrom(from); setAttrTo(to) }}
+                sources={attrSources}
+                sourceValue={attrSource}
+                onSourceChange={setAttrSource}
+              />
               {loading.campaigns ? (
-                <p className="text-slate-500 text-sm">Loading attribution data…</p>
+                <p className="text-slate-500 text-sm">Cargando datos de atribución…</p>
               ) : error.campaigns ? (
                 <p className="text-sm text-red-500">{error.campaigns}</p>
-              ) : campaigns.length === 0 ? (
-                <p className="text-slate-500 text-sm">No attribution data available yet.</p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-slate-700">
-                        <th className="text-left text-xs font-semibold text-slate-400 px-3 py-2">Source / Campaign</th>
-                        <th className="text-right text-xs font-semibold text-slate-400 px-3 py-2">Leads</th>
-                        <th className="text-right text-xs font-semibold text-slate-400 px-3 py-2">Contacted</th>
-                        <th className="text-right text-xs font-semibold text-slate-400 px-3 py-2">Replied</th>
-                        <th className="text-right text-xs font-semibold text-slate-400 px-3 py-2">Booked</th>
-                        <th className="text-right text-xs font-semibold text-slate-400 px-3 py-2">Won</th>
-                        <th className="text-right text-xs font-semibold text-slate-400 px-3 py-2">Reply %</th>
-                        <th className="text-right text-xs font-semibold text-slate-400 px-3 py-2">Close %</th>
-                        <th className="text-right text-xs font-semibold text-slate-400 px-3 py-2">Reply lag (min)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {campaigns.map((c, i) => (
-                        <tr key={i} className="border-b border-slate-800 hover:bg-slate-800/50">
-                          <td className="px-3 py-2 text-sm text-slate-300">
-                            {c.source}{c.campaign_name ? ` — ${c.campaign_name}` : ''}
-                          </td>
-                          <td className="px-3 py-2 text-sm text-slate-300 text-right">{c.total_leads}</td>
-                          <td className="px-3 py-2 text-sm text-slate-300 text-right">{c.contacted ?? '—'}</td>
-                          <td className="px-3 py-2 text-sm text-slate-300 text-right">{c.replied ?? '—'}</td>
-                          <td className="px-3 py-2 text-sm text-slate-300 text-right">{c.booked ?? '—'}</td>
-                          <td className="px-3 py-2 text-sm text-slate-300 text-right">{c.closed_won ?? '—'}</td>
-                          <td className="px-3 py-2 text-sm text-slate-300 text-right">
-                            {c.reply_rate_pct != null ? `${c.reply_rate_pct}%` : '—'}
-                          </td>
-                          <td className="px-3 py-2 text-sm text-slate-300 text-right">
-                            {c.lead_to_close_rate_pct != null ? `${c.lead_to_close_rate_pct}%` : '—'}
-                          </td>
-                          <td className="px-3 py-2 text-sm text-slate-300 text-right">{c.avg_reply_delay_min ?? '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <SortableTable
+                  columns={attributionColumns}
+                  rows={campaigns as unknown as Record<string, unknown>[]}
+                  exportFilename="attribution-campaigns"
+                  pageSize={200}
+                  emptyMessage="No hay datos de atribución para el período seleccionado."
+                />
               )}
             </CardContent>
           </Card>
