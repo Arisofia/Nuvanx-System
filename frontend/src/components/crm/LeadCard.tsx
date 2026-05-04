@@ -8,7 +8,7 @@ interface LeadCardProps {
   onClick: (lead: Lead) => void
 }
 
-export function LeadCard({ lead, onClick }: LeadCardProps) {
+export function LeadCard({ lead, onClick }: Readonly<LeadCardProps>) {
   const {
     attributes,
     listeners,

@@ -3137,6 +3137,14 @@ async function handleReportsDoctoraliaFinancialsGet(ctx: AuthenticatedRouteConte
     }));
 
     // Monthly rollup: vw_doctoralia_by_month already has all aggregates pre-computed
+    function computeAvgTicketNet(row: any): number {
+      if (row.avg_ticket_net == null) {
+        if (!row.operations_count) return 0;
+        return Math.round((Number(row.total_net ?? 0) / row.operations_count) * 100) / 100;
+      }
+      return Math.round(Number(row.avg_ticket_net) * 100) / 100;
+    }
+
     const byMonth = (monthRows || []).map((m: any) => ({
       settled_month: m.settled_month,
       operations_count: m.operations_count,
@@ -3144,9 +3152,7 @@ async function handleReportsDoctoraliaFinancialsGet(ctx: AuthenticatedRouteConte
       total_gross: Math.round(Number(m.total_gross ?? 0) * 100) / 100,
       total_discount: Math.round(Number(m.total_discount ?? 0) * 100) / 100,
       total_net: Math.round(Number(m.total_net ?? 0) * 100) / 100,
-      avg_ticket_net: m.avg_ticket_net != null
-        ? Math.round(Number(m.avg_ticket_net) * 100) / 100
-        : (m.operations_count ? Math.round((Number(m.total_net ?? 0) / m.operations_count) * 100) / 100 : 0),
+      avg_ticket_net: computeAvgTicketNet(m),
       discount_rate_pct: Number(m.discount_rate_pct ?? 0),
       cancellation_rate_pct: Number(m.cancellation_rate_pct ?? 0),
       avg_liquidation_lag_days: Number(m.avg_liquidation_lag_days ?? 0),

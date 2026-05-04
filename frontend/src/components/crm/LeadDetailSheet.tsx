@@ -12,7 +12,7 @@ interface LeadDetailSheetProps {
 
 const STAGES = ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'] as const
 
-export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: LeadDetailSheetProps) {
+export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: Readonly<LeadDetailSheetProps>) {
   const [isEditing, setIsEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
