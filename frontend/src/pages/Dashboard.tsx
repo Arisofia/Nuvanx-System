@@ -302,7 +302,7 @@ export default function Dashboard() {
             <select
               value={sourceFilter}
               onChange={(e) => setSourceFilter(e.target.value)}
-              className="bg-card text-foreground text-xs font-medium px-3 py-1.5 rounded-lg border border-border focus:ring-1 focus:ring-primary"
+              className="field-select"
             >
               <option value="ALL">All Sources</option>
               {sourcesList.map((s) => (
@@ -314,7 +314,7 @@ export default function Dashboard() {
             <select
               value={campaignId}
               onChange={(e) => setCampaignId(e.target.value)}
-              className="bg-card text-foreground text-xs font-medium px-3 py-1.5 rounded-lg border border-border focus:ring-1 focus:ring-primary"
+              className="field-select"
             >
               <option value="ALL">All Campaigns</option>
               {campaignsList.map((c) => (
@@ -323,14 +323,12 @@ export default function Dashboard() {
             </select>
           )}
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1 bg-card rounded-lg p-1">
+            <div className="pill-group">
               {([7, 14, 30, 90] as const).map((d) => (
                 <button
                   key={d}
                   onClick={() => { setDays(d); setCustomFrom(''); setCustomTo('') }}
-                  className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                    !customFrom && days === d ? 'bg-primary/15 text-foreground' : 'text-muted hover:text-foreground'
-                  }`}
+                  className={`pill-button ${!customFrom && days === d ? 'selected' : ''}`}
                 >
                   {d}d
                 </button>
@@ -341,14 +339,14 @@ export default function Dashboard() {
                 type="date"
                 value={customFrom}
                 onChange={(e) => { setCustomFrom(e.target.value); setCustomTo((prev) => prev || new Date().toISOString().slice(0, 10)) }}
-                className="bg-card border border-border rounded px-2 py-1 text-foreground text-xs focus:outline-none focus:border-muted w-32"
+                className="field-input w-32"
               />
               <span className="text-muted">→</span>
               <input
                 type="date"
                 value={customTo}
                 onChange={(e) => setCustomTo(e.target.value)}
-                className="bg-card border border-border rounded px-2 py-1 text-foreground text-xs focus:outline-none focus:border-muted w-32"
+                className="field-input w-32"
               />
             </div>
           </div>
@@ -356,30 +354,30 @@ export default function Dashboard() {
       </div>
 
       {metrics.error && (
-        <div className="p-4 bg-[#D9534F]/8 border border-[#D9534F]/30 rounded-lg flex gap-3">
-          <AlertCircle className="w-5 h-5 text-[#D9534F] flex-shrink-0 mt-0.5" />
+        <div className="alert-card alert-error">
+          <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="font-medium text-[#D9534F]">Connection Error</p>
-            <p className="text-sm text-[#D9534F] mt-1">{metrics.error}</p>
+            <p className="font-medium">Error de conexión</p>
+            <p className="text-sm mt-1">{metrics.error}</p>
           </div>
         </div>
       )}
 
       {metrics.metaError && !metrics.error && (
-        <div className="p-4 bg-[#E0A020]/8 border border-[#E0A020]/30 rounded-lg flex gap-3">
-          <AlertCircle className="w-5 h-5 text-[#E0A020] flex-shrink-0 mt-0.5" />
+        <div className="alert-card alert-warning">
+          <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="font-medium text-[#5A5250]">Meta API error</p>
-            <p className="text-sm text-[#5A5250] mt-1">
+            <p className="font-medium">Error de Meta API</p>
+            <p className="text-sm mt-1">
               {metrics.metaError.includes('#200') || metrics.metaError.includes('permission')
-                ? 'Your Meta token is missing ads_management or ads_read permissions, or requires appsecret_proof. Reconnect your Meta account in Integrations to fix this.'
+                ? 'Tu token de Meta puede necesitar permisos ads_management o ads_read, o appsecret_proof. Reconecta tu cuenta en Integraciones para corregirlo.'
                 : metrics.metaError}
             </p>
             <a
               href="/integrations"
               className="inline-block mt-2 text-sm font-medium text-primary underline hover:text-accent"
             >
-              Go to Integrations →
+              Ir a Integraciones →
             </a>
           </div>
         </div>
@@ -448,7 +446,7 @@ export default function Dashboard() {
             <CardTitle>Meta Spend ({periodLabel})</CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-            <div className="rounded-xl border border-border p-4 bg-background">
+            <div className="info-card">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm text-muted">Inversión Meta</span>
                 <DollarSign className="h-4 w-4 text-primary" />
@@ -456,7 +454,7 @@ export default function Dashboard() {
               <p className="mt-3 text-2xl font-semibold">${metrics.spend.toLocaleString()}</p>
               <p className="text-xs text-muted mt-1">Inversión Meta en la ventana seleccionada</p>
             </div>
-            <div className="rounded-xl border border-border p-4 bg-background">
+            <div className="info-card">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm text-muted">Leads generados (Meta)</span>
                 <Users className="h-4 w-4 text-primary" />
@@ -464,7 +462,7 @@ export default function Dashboard() {
               <p className="mt-3 text-2xl font-semibold">{combined.metaEstimatedLeads.toLocaleString()}</p>
               <p className="text-xs text-muted mt-1">Estimación de leads generados por Meta</p>
             </div>
-            <div className="rounded-xl border border-border p-4 bg-background">
+            <div className="info-card">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm text-muted">Leads registrados en CRM</span>
                 <Users className="h-4 w-4 text-primary" />
@@ -472,7 +470,7 @@ export default function Dashboard() {
               <p className="mt-3 text-2xl font-semibold">{metrics.totalLeads.toLocaleString()}</p>
               <p className="text-xs text-muted mt-1">Leads que ya se han registrado en el CRM</p>
             </div>
-            <div className="rounded-xl border border-border p-4 bg-background">
+            <div className="info-card">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm text-muted">Ingresos verificados (Doctoralia)</span>
                 <DollarSign className="h-4 w-4 text-primary" />
@@ -553,7 +551,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-              <div className="rounded-xl border border-border p-4 bg-background">
+              <div className="info-card">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm text-muted">Inversión</span>
                   <DollarSign className="h-4 w-4 text-primary" />
@@ -563,7 +561,7 @@ export default function Dashboard() {
                   {metrics.deltas && <MetricDelta value={metrics.deltas.spend} inverse />}
                 </div>
               </div>
-              <div className="rounded-xl border border-border p-4 bg-background">
+              <div className="info-card">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm text-muted">Revenue (Settled)</span>
                   <DollarSign className="h-4 w-4 text-primary" />
@@ -574,7 +572,7 @@ export default function Dashboard() {
                 </div>
                 <p className="text-xs text-muted mt-1">{metrics.settledCount ?? 0} settled · Doctoralia</p>
               </div>
-              <div className="rounded-xl border border-border p-4 bg-background">
+              <div className="info-card">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm text-muted">Pipeline (Est.)</span>
                   <DollarSign className="h-4 w-4 text-accent" />
@@ -584,7 +582,7 @@ export default function Dashboard() {
                 </div>
                 <p className="text-xs text-muted mt-1">{metrics.totalRevenue === 0 ? 'No pipeline revenue yet' : 'Sum of leads.revenue'}</p>
               </div>
-              <div className="rounded-xl border border-border p-4 bg-background">
+              <div className="info-card">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm text-muted">CPC medio</span>
                   <ArrowUpRight className="h-4 w-4 text-primary" />
@@ -592,20 +590,20 @@ export default function Dashboard() {
                 <p className="mt-3 text-2xl font-semibold">${metrics.averageCpc.toFixed(2)}</p>
                 <p className="text-xs text-muted mt-1">Coste medio por clic en Meta</p>
               </div>
-              <div className="rounded-xl border border-border p-4 bg-background">
+              <div className="info-card">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm text-muted">Conversiones</span>
                   <Percent className="h-4 w-4 text-primary" />
                 </div>
                 <p className="mt-3 text-2xl font-semibold">{metrics.metaConversions.toLocaleString()}</p>
               </div>
-              <div className="rounded-xl border border-border p-4 bg-background">
+              <div className="info-card">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm text-muted">CAC (Meta)</span>
-                  <Target className="h-4 w-4 text-[#D9534F]" />
+                  <Target className="h-4 w-4 text-danger" />
                 </div>
                 {metrics.spend > 0 && metrics.metaConversions > 0 ? (
-                  <p className="mt-3 text-2xl font-semibold text-[#D9534F]">
+                  <p className="mt-3 text-2xl font-semibold text-danger">
                     ${(metrics.spend / metrics.metaConversions).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 ) : (

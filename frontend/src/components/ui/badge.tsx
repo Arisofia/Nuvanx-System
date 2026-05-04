@@ -6,7 +6,7 @@ interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 
 export function Badge({ children, className = '', ...props }: Readonly<BadgeProps>) {
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-medium ${className}`} {...props}>
+    <span className={`badge ${className}`} {...props}>
       {children}
     </span>
   )
