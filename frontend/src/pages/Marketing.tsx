@@ -69,7 +69,7 @@ export default function Marketing() {
   const [customFrom, setCustomFrom] = useState<string>('')
   const [customTo, setCustomTo] = useState<string>('')
   const [campaignId, setCampaignId] = useState<string>('ALL')
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'PAUSED'>('ALL')
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'PAUSED' | 'ARCHIVED'>('ALL')
   const [search, setSearch] = useState('')
 
   const since2025 = '2025-01-01'
@@ -453,7 +453,7 @@ export default function Marketing() {
             />
             {/* Status filter */}
             <div className="flex gap-1 bg-slate-800 rounded-lg p-1">
-              {(['ALL', 'ACTIVE', 'PAUSED'] as const).map((s) => (
+              {(['ALL', 'ACTIVE', 'PAUSED', 'ARCHIVED'] as const).map((s) => (
                 <button
                   key={s}
                   onClick={() => setStatusFilter(s)}
@@ -461,7 +461,7 @@ export default function Marketing() {
                     statusFilter === s ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'
                   }`}
                 >
-                  {s === 'ALL' ? 'Todas' : s === 'ACTIVE' ? 'Activas' : 'Pausadas'}
+                  {s === 'ALL' ? 'Todas' : s === 'ACTIVE' ? 'Activas' : s === 'PAUSED' ? 'Pausadas' : 'Archivadas'}
                 </button>
               ))}
             </div>

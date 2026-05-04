@@ -1923,7 +1923,8 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
       const [data, campAcctRes] = await Promise.allSettled([
         metaFetch(`/${creds.adAccountId}/campaigns`, {
           fields: `id,name,status,objective,daily_budget,lifetime_budget,insights.${insightsDateParam}{impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,cost_per_conversion}`,
-          limit: '100',
+          effective_status: '["ACTIVE","PAUSED","ARCHIVED"]',
+          limit: '200',
         }, creds.accessToken),
         metaFetch(`/${creds.adAccountId}`, { fields: 'currency' }, creds.accessToken),
       ]);
@@ -1971,7 +1972,8 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
       try {
         const fallback = await metaFetch(`/${creds.adAccountId}/campaigns`, {
           fields: 'id,name,status,objective,daily_budget,lifetime_budget',
-          limit: '100',
+          effective_status: '["ACTIVE","PAUSED","ARCHIVED"]',
+          limit: '200',
         }, creds.accessToken);
   
         const fallbackResult = {
