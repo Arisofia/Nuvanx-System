@@ -120,7 +120,8 @@ async function main() {
   const until = argUntil ?? yesterday.toISOString().slice(0, 10);
 
   console.log(`[meta-backfill] Fetching account-level daily insights: ${since} → ${until}`);
-  console.log(`[meta-backfill] Ad Account: ${adAccountId}`);
+  const maskedAdAccountId = adAccountId.replace(/.(?=.{4})/g, '*');
+  console.log(`[meta-backfill] Ad Account: ${maskedAdAccountId}`);
 
   const data = await metaFetch(`/${adAccountId}/insights`, {
     fields: 'date_start,impressions,reach,clicks,spend,conversions,ctr,cpc,cpm,actions',
