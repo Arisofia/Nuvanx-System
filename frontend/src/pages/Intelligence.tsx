@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { invokeApi } from '../lib/supabaseClient'
 import type { FunnelRow, CampaignPerformance as Campaign, Conversation, TraceabilityLead } from '../types'
+import { FilterBar } from '../components/ui/FilterBar'
 
 export default function Intelligence() {
   const [funnel, setFunnel] = useState<FunnelRow[]>([])
@@ -11,6 +12,20 @@ export default function Intelligence() {
   const [traceability, setTraceability] = useState<TraceabilityLead[]>([])
   const [loading, setLoading] = useState({ funnel: true, campaigns: true, conversations: true, traceability: true })
   const [error, setError] = useState<{ funnel?: string; campaigns?: string; conversations?: string; traceability?: string }>({})
+
+  // Traceability filter state
+  const [traceFrom, setTraceFrom] = useState<string>(
+    () => new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10)
+  )
+  const [traceTo, setTraceTo] = useState<string>(
+    () => new Date().toISOString().slice(0, 10)
+  )
+  const [traceSource, setTraceSource] = useState<string>('')
+
+  const traceSources = useMemo(
+    () => [...new Set(traceability.map((l: any) => l.source).filter(Boolean))] as string[],
+    [traceability],
+  )
 
   useEffect(() => {
     invokeApi('/traceability/funnel')
@@ -42,8 +57,15 @@ export default function Intelligence() {
         setError((prev) => ({ ...prev, conversations: err?.message || 'Failed to load conversations.' }))
         setLoading((prev) => ({ ...prev, conversations: false }))
       })
+  }, [])
 
-    invokeApi('/traceability/leads')
+  // Separate effect for traceability so filters trigger re-fetch
+  useEffect(() => {
+    const params: string[] = [`limit=500`]
+    if (traceFrom) params.push(`from=${traceFrom}`)
+    if (traceTo) params.push(`to=${traceTo}`)
+    if (traceSource) params.push(`source=${encodeURIComponent(traceSource)}`)
+    invokeApi(`/traceability/leads?${params.join('&')}`)
       .then((data: any) => {
         setTraceability(Array.isArray(data?.leads) ? data.leads : [])
         setLoading((prev) => ({ ...prev, traceability: false }))
@@ -52,7 +74,7 @@ export default function Intelligence() {
         setError((prev) => ({ ...prev, traceability: err?.message || 'Failed to load traceability.' }))
         setLoading((prev) => ({ ...prev, traceability: false }))
       })
-  }, [])
+  }, [traceFrom, traceTo, traceSource])
 
   return (
     <div className="space-y-6">
@@ -192,7 +214,14 @@ export default function Intelligence() {
             <CardHeader>
               <CardTitle>Lead → Patient → Revenue</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
+              {/* Filter bar */}
+              <FilterBar
+                onDateChange={(from, to) => { setTraceFrom(from); setTraceTo(to) }}
+                sources={traceSources}
+                sourceValue={traceSource}
+                onSourceChange={setTraceSource}
+              />
               {loading.traceability ? (
                 <p className="text-slate-500 text-sm">Cargando trazabilidad…</p>
               ) : error.traceability ? (
@@ -214,6 +243,7 @@ export default function Intelligence() {
                         <th className="text-left text-xs font-semibold text-slate-400 px-3 py-2 whitespace-nowrap">Fuente</th>
                         <th className="text-left text-xs font-semibold text-slate-400 px-3 py-2 whitespace-nowrap">Campaña</th>
                         <th className="text-left text-xs font-semibold text-slate-400 px-3 py-2 whitespace-nowrap">Lead creado</th>
+                        <th className="text-left text-xs font-semibold text-slate-400 px-3 py-2 whitespace-nowrap">Etapa</th>
                         <th className="text-left text-xs font-semibold text-slate-400 px-3 py-2 whitespace-nowrap">Paciente</th>
                         <th className="text-left text-xs font-semibold text-slate-400 px-3 py-2 whitespace-nowrap">DNI</th>
                         <th className="text-left text-xs font-semibold text-slate-400 px-3 py-2 whitespace-nowrap">Teléfono</th>
@@ -237,6 +267,13 @@ export default function Intelligence() {
                             <td className="px-3 py-2 text-slate-300 max-w-[160px] truncate">{row.campaign_name ?? '—'}</td>
                             <td className="px-3 py-2 text-slate-400 whitespace-nowrap">
                               {row.lead_created_at ? new Date(row.lead_created_at).toLocaleDateString('es-MX') : '—'}
+                            </td>
+                            <td className="px-3 py-2 whitespace-nowrap">
+                              {row.doctoralia_net != null
+                                ? <span className="text-emerald-400 text-xs font-medium">Revenue</span>
+                                : row.patient_id
+                                  ? <span className="text-amber-400 text-xs font-medium">Patient</span>
+                                  : <span className="text-slate-500 text-xs">Lead only</span>}
                             </td>
                             <td className="px-3 py-2 text-slate-300">{row.patient_name ?? <span className="text-slate-600 italic">sin match</span>}</td>
                             <td className="px-3 py-2 text-slate-400 font-mono text-xs">{row.patient_dni ?? '—'}</td>

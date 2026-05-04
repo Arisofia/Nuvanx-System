@@ -94,3 +94,23 @@ body {
     @apply w-2 h-2 rounded-full inline-block;
   }
 }
+
+@media print {
+  body {
+    background-color: #ffffff !important;
+    color: #111827 !important;
+  }
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  /* Force table text to dark so it shows on white paper */
+  table, th, td {
+    color: #111827 !important;
+    border-color: #d1d5db !important;
+  }
+  /* Hide interactive chrome */
+  nav, aside, button, input, select, .print\:hidden {
+    display: none !important;
+  }
+}

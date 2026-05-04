@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
-import { TrendingUp, Users, Zap, AlertCircle, DollarSign, ArrowUpRight, Percent } from 'lucide-react'
+import { TrendingUp, Users, Zap, AlertCircle, DollarSign, ArrowUpRight, Percent, Target } from 'lucide-react'
 import {
   Area,
   AreaChart,
@@ -19,6 +19,8 @@ import { AgentStatusCard } from '../components/dashboard/AgentStatusCard'
 
 export default function Dashboard() {
   const [days, setDays] = useState<7 | 14 | 30 | 90>(30)
+  const [customFrom, setCustomFrom] = useState<string>('')
+  const [customTo, setCustomTo] = useState<string>('')
   const [campaignId, setCampaignId] = useState<string>('ALL')
   const [sourceFilter, setSourceFilter] = useState<string>('ALL')
   const [sourcesList, setSourcesList] = useState<string[]>([])
@@ -85,12 +87,16 @@ export default function Dashboard() {
       }
 
       try {
-        const queryParams = `?days=${days}${campaignId !== 'ALL' ? `&campaign_id=${campaignId}` : ''}`
-        const dashboardParams = `${queryParams}${sourceFilter !== 'ALL' ? `&source=${sourceFilter}` : ''}`
+        const isCustomRange = Boolean(customFrom && customTo)
+        const baseParams = isCustomRange ? `?from=${customFrom}&to=${customTo}` : `?days=${days}`
+        const campaignParam = campaignId !== 'ALL' ? `&campaign_id=${campaignId}` : ''
+        const sourceParam = sourceFilter !== 'ALL' ? `&source=${sourceFilter}` : ''
+        const queryParams = `${baseParams}${campaignParam}`
+        const dashboardParams = `${queryParams}${sourceParam}`
         const [metricsResult, metaTrendsResult, campaignsResult, insightsResult, funnelResult] = await Promise.allSettled([
           invokeApi(`/dashboard/metrics${dashboardParams}`),
           invokeApi(`/dashboard/meta-trends${queryParams}`),
-          invokeApi(`/meta/campaigns?days=${days}`),
+          invokeApi(`/meta/campaigns${isCustomRange ? `?from=${customFrom}&to=${customTo}` : `?days=${days}`}`),
           invokeApi(`/meta/insights${queryParams}`),
           invokeApi('/dashboard/lead-flow'),
         ])
@@ -181,7 +187,7 @@ export default function Dashboard() {
     }
 
     fetchMetrics()
-  }, [days, campaignId, sourceFilter, campaignsList.length, sourcesList.length])
+  }, [days, customFrom, customTo, campaignId, sourceFilter, campaignsList.length, sourcesList.length])
 
   if (metrics.loading) {
     return (
@@ -230,18 +236,35 @@ export default function Dashboard() {
               ))}
             </select>
           )}
-          <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-1">
-            {([7, 14, 30, 90] as const).map((d) => (
-              <button
-                key={d}
-                onClick={() => setDays(d)}
-                className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                  days === d ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                {d}d
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-1">
+              {([7, 14, 30, 90] as const).map((d) => (
+                <button
+                  key={d}
+                  onClick={() => { setDays(d); setCustomFrom(''); setCustomTo('') }}
+                  className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                    !customFrom && days === d ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {d}d
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-1 text-xs text-slate-400 print:hidden">
+              <input
+                type="date"
+                value={customFrom}
+                onChange={(e) => { setCustomFrom(e.target.value); setCustomTo((prev) => prev || new Date().toISOString().slice(0, 10)) }}
+                className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200 text-xs focus:outline-none focus:border-slate-500 w-32"
+              />
+              <span className="text-slate-500">→</span>
+              <input
+                type="date"
+                value={customTo}
+                onChange={(e) => setCustomTo(e.target.value)}
+                className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200 text-xs focus:outline-none focus:border-slate-500 w-32"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -404,6 +427,23 @@ export default function Dashboard() {
                   <Percent className="h-4 w-4 text-amber-400" />
                 </div>
                 <p className="mt-3 text-2xl font-semibold">{metrics.metaConversions.toLocaleString()}</p>
+              </div>
+              <div className="rounded-xl border border-border p-4 bg-slate-950">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm text-slate-400">CAC (Meta)</span>
+                  <Target className="h-4 w-4 text-rose-400" />
+                </div>
+                {metrics.spend > 0 && metrics.metaConversions > 0 ? (
+                  <p className="mt-3 text-2xl font-semibold text-rose-300">
+                    ${(metrics.spend / metrics.metaConversions).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                ) : (
+                  <p
+                    className="mt-3 text-2xl font-semibold text-slate-500"
+                    title={metrics.metaConversions === 0 ? 'No conversions recorded in this period' : 'No spend data'}
+                  >—</p>
+                )}
+                <p className="text-xs text-slate-500 mt-1">spend ÷ conversions</p>
               </div>
             </div>
           </CardContent>

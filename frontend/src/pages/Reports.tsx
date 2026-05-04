@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { AlertCircle, FileBarChart2, TrendingUp, Users, MessageCircle, Stethoscope } from 'lucide-react'
 import { invokeApi } from '../lib/supabaseClient'
 import { ExportButton } from '../components/reports/ExportButton'
+import { FilterBar } from '../components/ui/FilterBar'
 
 function EmptyState({ message }: { message: string }) {
   return <p className="text-slate-500 text-sm py-8 text-center">{message}</p>
@@ -58,16 +59,22 @@ export default function Reports() {
   const [docData, setDocData] = useState<{ templateSummary: any[]; byMonth: any[] } | null>(null)
   const [docLoading, setDocLoading] = useState(true)
   const [docError, setDocError] = useState<string | null>(null)
+  const [docFrom, setDocFrom] = useState<string>('')
+  const [docTo, setDocTo] = useState<string>('')
 
   // Campaign Performance
   const [campaigns, setCampaigns] = useState<any[]>([])
   const [campLoading, setCampLoading] = useState(true)
   const [campError, setCampError] = useState<string | null>(null)
+  const [campFrom, setCampFrom] = useState<string>('')
+  const [campTo, setCampTo] = useState<string>('')
 
   // Source Comparison
   const [sources, setSources] = useState<any[]>([])
   const [srcLoading, setSrcLoading] = useState(true)
   const [srcError, setSrcError] = useState<string | null>(null)
+  const [srcFrom, setSrcFrom] = useState<string>('')
+  const [srcTo, setSrcTo] = useState<string>('')
 
   // WhatsApp Conversion
   const [cohorts, setCohorts] = useState<any[]>([])
@@ -79,12 +86,22 @@ export default function Reports() {
   const [docPerfLoading, setDocPerfLoading] = useState(true)
   const [docPerfError, setDocPerfError] = useState<string | null>(null)
 
+  // Doctoralia fetch — re-runs on date filter change
   useEffect(() => {
-    invokeApi('/reports/doctoralia-financials')
-      .then((d: any) => setDocData({ templateSummary: d?.templateSummary ?? [], byMonth: d?.byMonth ?? [] }))
+    const params: string[] = []
+    if (docFrom) params.push(`from=${docFrom}`)
+    if (docTo) params.push(`to=${docTo}`)
+    const qs = params.length ? `?${params.join('&')}` : ''
+    invokeApi(`/reports/doctoralia-financials${qs}`)
+      .then((d: any) => {
+        setDocError(null)
+        setDocData({ templateSummary: d?.templateSummary ?? [], byMonth: d?.byMonth ?? [] })
+      })
       .catch((e: any) => setDocError(e?.message || 'Failed to load Doctoralia financials.'))
       .finally(() => setDocLoading(false))
+  }, [docFrom, docTo])
 
+  useEffect(() => {
     invokeApi('/reports/campaign-performance')
       .then((d: any) => setCampaigns(d?.campaigns ?? []))
       .catch((e: any) => setCampError(e?.message || 'Failed to load campaign performance.'))
@@ -106,6 +123,23 @@ export default function Reports() {
       .finally(() => setDocPerfLoading(false))
   }, [])
 
+  // Local date filters for campaign/source (front-end only)
+  const filteredCampaigns = useMemo(() => {
+    return campaigns.filter((r) => {
+      if (campFrom && r.last_lead_at && r.last_lead_at < campFrom) return false
+      if (campTo && r.first_lead_at && r.first_lead_at > campTo) return false
+      return true
+    })
+  }, [campaigns, campFrom, campTo])
+
+  const filteredSources = useMemo(() => {
+    return sources.filter((r) => {
+      if (srcFrom && r.last_lead_at && r.last_lead_at < srcFrom) return false
+      if (srcTo && r.first_lead_at && r.first_lead_at > srcTo) return false
+      return true
+    })
+  }, [sources, srcFrom, srcTo])
+
   return (
     <div className="space-y-6">
       <div>
@@ -123,7 +157,8 @@ export default function Reports() {
         </TabsList>
 
         {/* ── Doctoralia Financials ── */}
-        <TabsContent value="doctoralia" className="mt-4">
+        <TabsContent value="doctoralia" className="mt-4 space-y-4">
+          <FilterBar onDateChange={(from, to) => { setDocFrom(from); setDocTo(to) }} />
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <CardTitle>Doctoralia Financials — by Template</CardTitle>
@@ -165,27 +200,65 @@ export default function Reports() {
               )}
             </CardContent>
           </Card>
+          {/* Monthly detail table */}
+          {!docLoading && (docData?.byMonth.length ?? 0) > 0 && (
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0">
+                <CardTitle>Monthly Detail</CardTitle>
+                <ExportButton
+                  data={docData!.byMonth}
+                  filename="doctoralia-by-month"
+                  disabled={docLoading}
+                />
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <TableHead cols={['Month', 'Ops', 'Cancels', 'Gross', 'Net', 'Avg Ticket', 'Cancel %', 'Discount %']} />
+                    <tbody>
+                      {docData!.byMonth.map((r, i) => (
+                        <TableRow
+                          key={i}
+                          cells={[
+                            r.settled_month,
+                            r.operations_count,
+                            r.cancellation_count ?? '—',
+                            curr(r.total_gross),
+                            curr(r.total_net),
+                            curr(r.avg_ticket_net),
+                            pct(r.cancellation_rate_pct),
+                            pct(r.discount_rate_pct),
+                          ]}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* ── Campaign Performance ── */}
-        <TabsContent value="campaigns" className="mt-4">
+        <TabsContent value="campaigns" className="mt-4 space-y-4">
+          <FilterBar onDateChange={(from, to) => { setCampFrom(from); setCampTo(to) }} />
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <CardTitle>Campaign Performance</CardTitle>
-              <ExportButton data={campaigns} filename="campaign-performance" disabled={campLoading} />
+              <ExportButton data={filteredCampaigns} filename="campaign-performance" disabled={campLoading} />
             </CardHeader>
             <CardContent>
               {campError && <ErrorState message={campError} />}
               {campLoading && !campError && <EmptyState message="Loading…" />}
-              {!campLoading && !campError && campaigns.length === 0 && (
+              {!campLoading && !campError && filteredCampaigns.length === 0 && (
                 <EmptyState message="No campaign data available yet." />
               )}
-              {!campLoading && !campError && campaigns.length > 0 && (
+              {!campLoading && !campError && filteredCampaigns.length > 0 && (
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <TableHead cols={['Campaign', 'Leads', 'Contacted', 'Replied', 'Booked', 'Closed', 'Close %', 'Reply delay (min)']} />
                     <tbody>
-                      {campaigns.map((r, i) => (
+                      {filteredCampaigns.map((r, i) => (
                         <TableRow
                           key={i}
                           cells={[
@@ -209,24 +282,25 @@ export default function Reports() {
         </TabsContent>
 
         {/* ── Source Comparison ── */}
-        <TabsContent value="sources" className="mt-4">
+        <TabsContent value="sources" className="mt-4 space-y-4">
+          <FilterBar onDateChange={(from, to) => { setSrcFrom(from); setSrcTo(to) }} />
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <CardTitle>Source Comparison</CardTitle>
-              <ExportButton data={sources} filename="source-comparison" disabled={srcLoading} />
+              <ExportButton data={filteredSources} filename="source-comparison" disabled={srcLoading} />
             </CardHeader>
             <CardContent>
               {srcError && <ErrorState message={srcError} />}
               {srcLoading && !srcError && <EmptyState message="Loading…" />}
-              {!srcLoading && !srcError && sources.length === 0 && (
+              {!srcLoading && !srcError && filteredSources.length === 0 && (
                 <EmptyState message="No source comparison data available yet." />
               )}
-              {!srcLoading && !srcError && sources.length > 0 && (
+              {!srcLoading && !srcError && filteredSources.length > 0 && (
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <TableHead cols={['Source', 'Leads', 'Reply %', 'Booking %', 'Close %', 'Avg Reply (min)', 'Verified Revenue']} />
                     <tbody>
-                      {sources.map((r, i) => (
+                      {filteredSources.map((r, i) => (
                         <TableRow
                           key={i}
                           cells={[

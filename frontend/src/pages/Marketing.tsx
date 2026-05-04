@@ -7,6 +7,7 @@ import {
 import { TrendingUp, TrendingDown, Eye, MousePointerClick, DollarSign, Target, Megaphone, Activity } from 'lucide-react'
 import { invokeApi } from '../lib/supabaseClient'
 import type { CampaignRow, AccountSummary, DailyPoint, MetaChanges as Changes, MarketingState } from '../types'
+import { ExportButton } from '../components/reports/ExportButton'
 
 const fmt = (n: number, decimals = 2) =>
   n.toLocaleString('es-MX', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
@@ -48,6 +49,9 @@ function StatCard({
   )
 }
 
+const MARKETING_TODAY = new Date().toISOString().slice(0, 10)
+const todayStr = MARKETING_TODAY
+
 export default function Marketing() {
   const [state, setState] = useState<MarketingState>({
     summary: null,
@@ -68,7 +72,6 @@ export default function Marketing() {
   const [search, setSearch] = useState('')
 
   const since2025 = '2025-01-01'
-  const todayStr = new Date().toISOString().slice(0, 10)
 
   useEffect(() => {
     const load = async () => {
@@ -78,7 +81,7 @@ export default function Marketing() {
         const insightsQ = isCustomRange
           ? `?from=${customFrom}&to=${todayStr}${campaignId !== 'ALL' ? `&campaign_id=${campaignId}` : ''}`
           : `?days=${days}${campaignId !== 'ALL' ? `&campaign_id=${campaignId}` : ''}`
-        const campaignsQ = isCustomRange ? `?days=365` : `?days=${days}`
+        const campaignsQ = isCustomRange ? `?from=${customFrom}&to=${todayStr}` : `?days=${days}`
         const [insightsRes, campaignsRes] = await Promise.allSettled([
           invokeApi(`/meta/insights${insightsQ}`),
           invokeApi(`/meta/campaigns${campaignsQ}`),
@@ -406,6 +409,28 @@ export default function Marketing() {
         <CardHeader>
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <CardTitle className="flex-1">Detalle por campaña</CardTitle>
+            {/* Export */}
+            <ExportButton
+              data={filteredCampaigns.map((c) => ({
+                name: c.name,
+                status: c.status,
+                objective: c.objective,
+                spend: c.insights?.spend ?? '',
+                impressions: c.insights?.impressions ?? '',
+                reach: c.insights?.reach ?? '',
+                clicks: c.insights?.clicks ?? '',
+                ctr: c.insights?.ctr ?? '',
+                cpc: c.insights?.cpc ?? '',
+                cpm: c.insights?.cpm ?? '',
+                conversions: c.insights?.conversions ?? '',
+                cpp: c.insights?.cpp ?? '',
+                cac: c.insights && c.insights.conversions > 0
+                  ? (c.insights.spend / c.insights.conversions).toFixed(2)
+                  : '',
+              }))}
+              filename="meta-campaigns"
+              disabled={loading}
+            />
             {/* Status filter */}
             <div className="flex gap-1 bg-slate-800 rounded-lg p-1">
               {(['ALL', 'ACTIVE', 'PAUSED'] as const).map((s) => (
@@ -455,6 +480,7 @@ export default function Marketing() {
                     <th className="text-right px-3 py-3">CPM</th>
                     <th className="text-right px-3 py-3">Conversiones</th>
                     <th className="text-right px-3 py-3">CPP</th>
+                    <th className="text-right px-3 py-3" title="Customer Acquisition Cost = Gasto ÷ Conversiones">CAC</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
@@ -507,6 +533,11 @@ export default function Marketing() {
                       <td className="px-3 py-3 text-right text-orange-400">
                         {c.insights?.cpp != null ? fmtCurrency(c.insights.cpp, currency) : '—'}
                       </td>
+                      <td className="px-3 py-3 text-right">
+                        {c.insights && c.insights.conversions > 0
+                          ? <span className="text-rose-300 font-medium">{fmtCurrency(c.insights.spend / c.insights.conversions, currency)}</span>
+                          : <span className="text-slate-500" title="No conversions in this period">—</span>}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -536,6 +567,11 @@ export default function Marketing() {
                       </td>
                       <td className="px-3 py-3 text-right text-orange-400">
                         {summary?.cpp ? fmtCurrency(summary.cpp, currency) : '—'}
+                      </td>
+                      <td className="px-3 py-3 text-right text-rose-300">
+                        {summary && summary.conversions > 0
+                          ? fmtCurrency(summary.spend / summary.conversions, currency)
+                          : <span className="text-slate-500" title="No conversions in this period">—</span>}
                       </td>
                     </tr>
                   </tfoot>

@@ -4,6 +4,8 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { AlertCircle } from 'lucide-react'
 import { invokeApi } from '../lib/supabaseClient'
 import type { FinancialSummary, MonthlyTrend, FinancialsState } from '../types'
+import { SortableTable } from '../components/ui/SortableTable'
+import type { ColDef } from '../components/ui/SortableTable'
 
 const PRESETS = [
   { label: '30d', days: 30 },
@@ -66,6 +68,24 @@ export default function Financials() {
 
   const fmt = (n: number) =>
     n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 })
+
+  const monthlyColumns: ColDef[] = [
+    { key: 'month', label: 'Month', align: 'left' },
+    { key: 'gross', label: 'Gross', align: 'right', format: (v) => v != null ? fmt(Number(v)) : null },
+    { key: 'net', label: 'Net', align: 'right', format: (v) => v != null ? fmt(Number(v)) : null },
+    { key: 'discount', label: 'Discount', align: 'right', format: (v) => v != null ? fmt(Number(v)) : null },
+    { key: 'count', label: 'Ops', align: 'right' },
+    { key: 'avgTicket', label: 'Avg Ticket', align: 'right', format: (v) => v != null ? fmt(Number(v)) : null },
+  ]
+
+  const monthlyRows = state.monthly.map((m: MonthlyTrend) => ({
+    month: m.month,
+    gross: m.gross ?? null,
+    net: m.net,
+    discount: m.discount ?? null,
+    count: m.count ?? null,
+    avgTicket: m.count && m.count > 0 ? Math.round(m.net / m.count) : null,
+  }))
 
   if (state.loading) {
     return (
@@ -214,6 +234,23 @@ export default function Financials() {
           )}
         </CardContent>
       </Card>
+
+      {monthlyRows.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Monthly Revenue — Full Table</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <SortableTable
+              columns={monthlyColumns}
+              rows={monthlyRows}
+              exportFilename="financials-monthly"
+              pageSize={60}
+              emptyMessage="No monthly data available."
+            />
+          </CardContent>
+        </Card>
+      )}
 
       {state.templateMix.length > 0 && (
         <Card>

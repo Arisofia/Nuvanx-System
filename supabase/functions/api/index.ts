@@ -1911,12 +1911,17 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
       if (validation.statusCode === 400) payload.notConnected = creds.notConnected || !creds.adAccountId;
       return sendJson(payload, validation.statusCode);
     }
+    const campFrom = url.searchParams.get('from') ?? '';
+    const campTo   = url.searchParams.get('to')   ?? '';
     const campDays = Number.parseInt(url.searchParams.get('days') ?? '30');
-    const campPreset = campDays <= 7 ? 'last_7d' : campDays <= 14 ? 'last_14d' : campDays <= 30 ? 'last_30d' : 'last_90d';
+    // Use time_range for custom dates (no day cap); fall back to preset (max 90d)
+    const insightsDateParam = campFrom && campTo
+      ? `time_range(${JSON.stringify({ since: campFrom, until: campTo })})`
+      : `date_preset(${campDays <= 7 ? 'last_7d' : campDays <= 14 ? 'last_14d' : campDays <= 30 ? 'last_30d' : 'last_90d'})`;
     try {
       const [data, campAcctRes] = await Promise.allSettled([
         metaFetch(`/${creds.adAccountId}/campaigns`, {
-          fields: `id,name,status,objective,daily_budget,lifetime_budget,insights.date_preset(${campPreset}){impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,cost_per_conversion}`,
+          fields: `id,name,status,objective,daily_budget,lifetime_budget,insights.${insightsDateParam}{impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,cost_per_conversion}`,
           limit: '100',
         }, creds.accessToken),
         metaFetch(`/${creds.adAccountId}`, { fields: 'currency' }, creds.accessToken),
@@ -2774,6 +2779,10 @@ async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<
   if (resource === 'traceability' && sub === 'leads') {
     const limit = Math.min(Math.max(Number.parseInt(url.searchParams.get('limit') ?? '250'), 1), 500);
     const matchedOnly = url.searchParams.get('matched') === 'true';
+    const from = url.searchParams.get('from') ?? '';
+    const to   = url.searchParams.get('to')   ?? '';
+    const source = url.searchParams.get('source') ?? '';
+    const campaignName = url.searchParams.get('campaign_name') ?? '';
 
     let query = adminClient
       .from('vw_lead_traceability')
@@ -2787,9 +2796,11 @@ async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<
       .order('lead_created_at', { ascending: false })
       .limit(limit);
 
-    if (matchedOnly) {
-      query = query.not('patient_id', 'is', null);
-    }
+    if (matchedOnly) query = query.not('patient_id', 'is', null);
+    if (from) query = query.gte('lead_created_at', from);
+    if (to)   query = query.lte('lead_created_at', to + 'T23:59:59Z');
+    if (source) query = query.eq('source', source);
+    if (campaignName) query = query.ilike('campaign_name', `%${campaignName}%`);
 
     const { data: rows, error } = await query;
     if (error) throw error;
@@ -2809,9 +2820,17 @@ async function handleTraceabilityFunnel(ctx: AuthenticatedRouteContext): Promise
 }
 
 async function handleTraceabilityCampaigns(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, resource, sub, sendJson } = ctx;
+  const { adminClient, resource, sub, url, sendJson } = ctx;
   if (resource === 'traceability' && sub === 'campaigns') {
-    const { data: rows } = await adminClient.from('vw_campaign_performance_real').select('*').order('total_leads', { ascending: false });
+    const from = url.searchParams.get('from') ?? '';
+    const to   = url.searchParams.get('to')   ?? '';
+    let query = adminClient
+      .from('vw_campaign_performance_real')
+      .select('*')
+      .order('total_leads', { ascending: false });
+    if (from) query = query.gte('first_lead_at', from);
+    if (to)   query = query.lte('last_lead_at', to);
+    const { data: rows } = await query;
     return sendJson({ success: true, campaigns: rows || [] });
   }
   return null;
@@ -2942,21 +2961,31 @@ async function handleKpisGet(ctx: AuthenticatedRouteContext): Promise<Response |
 }
 
 async function handleReportsDoctoraliaFinancialsGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, userId, resource, sub, req, sendJson } = ctx;
+  const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'reports' && sub === 'doctoralia-financials' && req.method === 'GET') {
     const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
     const clinicId = usr?.clinic_id;
     if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
-  
-    const { data: byTemplate } = await adminClient
+
+    // settled_month is 'YYYY-MM'; compare date params truncated to 7 chars
+    const fromMonth = (url.searchParams.get('from') ?? '').slice(0, 7);
+    const toMonth   = (url.searchParams.get('to')   ?? '').slice(0, 7);
+
+    let templateQ = adminClient
       .from('vw_doctoralia_financials')
       .select('*')
       .order('settled_month', { ascending: true });
-  
-    const { data: byMonth } = await adminClient
+    if (fromMonth) templateQ = templateQ.gte('settled_month', fromMonth);
+    if (toMonth)   templateQ = templateQ.lte('settled_month', toMonth);
+    const { data: byTemplate } = await templateQ;
+
+    let monthQ = adminClient
       .from('vw_doctoralia_by_month')
       .select('*')
       .order('settled_month', { ascending: true });
+    if (fromMonth) monthQ = monthQ.gte('settled_month', fromMonth);
+    if (toMonth)   monthQ = monthQ.lte('settled_month', toMonth);
+    const { data: byMonth } = await monthQ;
   
     // Template-level summary (collapse across months)
     const templateMap: Record<string, any> = {};
@@ -2990,24 +3019,34 @@ async function handleReportsDoctoraliaFinancialsGet(ctx: AuthenticatedRouteConte
 }
 
 async function handleReportsCampaignPerformanceGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, resource, sub, req, sendJson } = ctx;
+  const { adminClient, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'reports' && sub === 'campaign-performance' && req.method === 'GET') {
-    const { data: rows } = await adminClient
+    const from = url.searchParams.get('from') ?? '';
+    const to   = url.searchParams.get('to')   ?? '';
+    let query = adminClient
       .from('vw_campaign_performance_real')
       .select('*')
       .order('total_leads', { ascending: false });
+    if (from) query = query.gte('first_lead_at', from);
+    if (to)   query = query.lte('last_lead_at', to);
+    const { data: rows } = await query;
     return sendJson({ success: true, campaigns: rows || [] });
   }
   return null;
 }
 
 async function handleReportsSourceComparisonGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, resource, sub, req, sendJson } = ctx;
+  const { adminClient, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'reports' && sub === 'source-comparison' && req.method === 'GET') {
-    const { data: rows } = await adminClient
+    const from = url.searchParams.get('from') ?? '';
+    const to   = url.searchParams.get('to')   ?? '';
+    let query = adminClient
       .from('vw_source_comparison')
       .select('*')
       .order('total_leads', { ascending: false });
+    if (from) query = query.gte('first_lead_at', from);
+    if (to)   query = query.lte('last_lead_at', to);
+    const { data: rows } = await query;
     return sendJson({ success: true, sources: rows || [] });
   }
   return null;
