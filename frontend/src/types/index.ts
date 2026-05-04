@@ -8,6 +8,8 @@
 export interface DashboardMetrics {
   totalLeads: number
   conversionRate: number
+  patientMatches?: number
+  patientConversionRate?: number
   activeCampaigns: number
   spend: number
   averageCpc: number
@@ -20,6 +22,7 @@ export interface DashboardMetrics {
     revenue: number
     spend: number
     conversions: number
+    patientMatches?: number
   }
   loading: boolean
   error: string | null

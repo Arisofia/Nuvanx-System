@@ -158,6 +158,8 @@ export default function Dashboard() {
         setMetrics({
           totalLeads: Number(metricsData.totalLeads ?? 0),
           conversionRate: Number(metricsData.conversionRate ?? 0),
+          patientMatches: Number(metricsData.patientMatches ?? 0),
+          patientConversionRate: Number(metricsData.patientConversionRate ?? 0),
           verifiedRevenue: Number(metricsData.verifiedRevenue ?? 0),
           totalRevenue: Number(metricsData.totalRevenue ?? 0),
           settledCount: Number(metricsData.settledCount ?? 0),
@@ -169,6 +171,7 @@ export default function Dashboard() {
             leads: metricsData.deltas?.leads ?? 0,
             revenue: metricsData.deltas?.revenue ?? 0,
             conversions: metricsData.deltas?.conversions ?? 0,
+            patientMatches: metricsData.deltas?.patientMatches ?? 0,
             spend: Number(spendDelta),
           },
           loading: false,
@@ -338,7 +341,12 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{metrics.conversionRate}%</div>
-            <p className="text-xs text-slate-500 mt-1">Calculado desde leads en BD</p>
+            <p className="text-xs text-slate-500 mt-1">Leads → treatment/closed</p>
+            {(metrics.patientConversionRate ?? 0) > 0 && (
+              <p className="text-xs text-emerald-400 mt-0.5">
+                {metrics.patientConversionRate}% → paciente confirmado ({metrics.patientMatches})
+              </p>
+            )}
           </CardContent>
         </Card>
 

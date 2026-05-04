@@ -1408,12 +1408,12 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
       prevUntil = new Date(currentSinceTs).toISOString().slice(0, 10);
     }
 
-    let leadsQuery = adminClient.from('leads').select('stage, revenue, source, created_at').eq('user_id', userId);
+    let leadsQuery = adminClient.from('leads').select('stage, revenue, source, created_at, converted_patient_id').eq('user_id', userId);
     if (since) leadsQuery = leadsQuery.gte('created_at', since);
     if (until) leadsQuery = leadsQuery.lte('created_at', until);
     if (sourceFilter) leadsQuery = leadsQuery.eq('source', sourceFilter);
 
-    let prevLeadsQuery = adminClient.from('leads').select('stage, revenue, source, created_at').eq('user_id', userId);
+    let prevLeadsQuery = adminClient.from('leads').select('stage, revenue, source, created_at, converted_patient_id').eq('user_id', userId);
     if (prevSince) prevLeadsQuery = prevLeadsQuery.gte('created_at', prevSince);
     if (prevUntil) prevLeadsQuery = prevLeadsQuery.lte('created_at', prevUntil);
     if (sourceFilter) prevLeadsQuery = prevLeadsQuery.eq('source', sourceFilter);
@@ -1442,7 +1442,7 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
         : Promise.resolve({ data: [], error: null }),
     ]);
     if (leadsRes.error) throw leadsRes.error;
-    type LeadMetric = { stage: any; revenue: any; source?: string };
+    type LeadMetric = { stage: any; revenue: any; source?: string; converted_patient_id?: string | null };
     const leads: LeadMetric[] = leadsRes.data ?? [];
     const prevLeads: LeadMetric[] = prevLeadsRes.data ?? [];
     const integrations = intRes.data ?? [];
@@ -1463,7 +1463,11 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
     const conversions = leads.filter((l: any) => l.stage === 'treatment' || l.stage === 'closed').length;
     const prevConversions = prevLeads.filter((l: any) => l.stage === 'treatment' || l.stage === 'closed').length;
 
+    const patientMatches = leads.filter((l: any) => l.converted_patient_id != null).length;
+    const prevPatientMatches = prevLeads.filter((l: any) => l.converted_patient_id != null).length;
+
     const conversionRate = totalLeads > 0 ? Number.parseFloat(((conversions / totalLeads) * 100).toFixed(1)) : 0;
+    const patientConversionRate = totalLeads > 0 ? Number.parseFloat(((patientMatches / totalLeads) * 100).toFixed(1)) : 0;
     
     const calculateDelta = (curr: number, prev: number) => {
       if (prev === 0) return curr > 0 ? 100 : 0;
@@ -1474,6 +1478,7 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
       leads: calculateDelta(totalLeads, prevTotalLeads),
       revenue: calculateDelta(verifiedRevenue, prevVerifiedRevenue),
       conversions: calculateDelta(conversions, prevConversions),
+      patientMatches: calculateDelta(patientMatches, prevPatientMatches),
     };
 
     const stages = ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'];
@@ -1491,7 +1496,9 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
         totalLeads, totalRevenue: Number.parseFloat(totalRevenue.toFixed(2)),
         verifiedRevenue: Number.parseFloat(verifiedRevenue.toFixed(2)),
         settledCount,
-        conversions, conversionRate, byStage, bySource,
+        conversions, conversionRate,
+        patientMatches, patientConversionRate,
+        byStage, bySource,
         connectedIntegrations, totalIntegrations: integrations.length,
         deltas,
       },
