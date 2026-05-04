@@ -21,11 +21,11 @@ interface FunnelChartProps {
 }
 
 const STAGE_COLORS: Record<string, string> = {
-  lead: '#38bdf8',
-  whatsapp: '#4ade80',
-  appointment: '#fbbf24',
-  treatment: '#f87171',
-  closed: '#818cf8',
+  lead: '#c9a471',
+  whatsapp: '#d4b37d',
+  appointment: '#b08b5a',
+  treatment: '#8ee0b8',
+  closed: '#a38f79',
 }
 
 export function FunnelChart({ data }: FunnelChartProps) {
@@ -37,23 +37,23 @@ export function FunnelChart({ data }: FunnelChartProps) {
           layout="vertical"
           margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
         >
-          <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#334155" />
+          <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#4f3d27" />
           <XAxis type="number" hide />
           <YAxis
             dataKey="label"
             type="category"
-            tick={{ fill: '#94a3b8', fontSize: 12 }}
+            tick={{ fill: '#a38f79', fontSize: 12 }}
             axisLine={false}
             tickLine={false}
           />
           <Tooltip
             cursor={{ fill: 'rgba(255, 255, 255, 0.05)' }}
-            contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155' }}
-            itemStyle={{ color: '#f8fafc' }}
+            contentStyle={{ backgroundColor: '#17120f', border: '1px solid #4f3d27' }}
+            itemStyle={{ color: '#f7efe6' }}
           />
           <Bar dataKey="count" radius={[0, 4, 4, 0]}>
             {data.map((entry, index) => (
-              <Cell key={`cell-${index}`} fill={STAGE_COLORS[entry.stage] || '#38bdf8'} />
+              <Cell key={`cell-${index}`} fill={STAGE_COLORS[entry.stage] || '#c9a471'} />
             ))}
           </Bar>
         </BarChart>

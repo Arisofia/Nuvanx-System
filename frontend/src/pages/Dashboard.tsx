@@ -363,28 +363,28 @@ export default function Dashboard() {
       </div>
 
       {metrics.error && (
-        <div className="p-4 bg-red-950/40 border border-red-800 rounded-lg flex gap-3">
-          <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+        <div className="p-4 bg-[#170808]/60 border border-[#f16b62]/40 rounded-lg flex gap-3">
+          <AlertCircle className="w-5 h-5 text-[#f16b62] flex-shrink-0 mt-0.5" />
           <div>
-            <p className="font-medium text-red-300">Connection Error</p>
-            <p className="text-sm text-red-300 mt-1">{metrics.error}</p>
+            <p className="font-medium text-[#f16b62]">Connection Error</p>
+            <p className="text-sm text-[#f16b62] mt-1">{metrics.error}</p>
           </div>
         </div>
       )}
 
       {metrics.metaError && !metrics.error && (
-        <div className="p-4 bg-amber-950/40 border border-amber-800 rounded-lg flex gap-3">
-          <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+        <div className="p-4 bg-[#17100a]/60 border border-[#c9a471]/40 rounded-lg flex gap-3">
+          <AlertCircle className="w-5 h-5 text-[#f2b24b] flex-shrink-0 mt-0.5" />
           <div>
-            <p className="font-medium text-amber-300">Meta API error</p>
-            <p className="text-sm text-amber-300 mt-1">
+            <p className="font-medium text-[#d7c5ae]">Meta API error</p>
+            <p className="text-sm text-[#d7c5ae] mt-1">
               {metrics.metaError.includes('#200') || metrics.metaError.includes('permission')
                 ? 'Your Meta token is missing ads_management or ads_read permissions, or requires appsecret_proof. Reconnect your Meta account in Integrations to fix this.'
                 : metrics.metaError}
             </p>
             <a
               href="/integrations"
-              className="inline-block mt-2 text-sm font-medium text-amber-400 underline hover:text-amber-200"
+              className="inline-block mt-2 text-sm font-medium text-primary underline hover:text-accent"
             >
               Go to Integrations →
             </a>
@@ -430,7 +430,7 @@ export default function Dashboard() {
             <div className="text-2xl font-bold">{metrics.conversionRate}%</div>
             <p className="text-xs text-muted mt-1">Leads → treatment/closed</p>
             {(metrics.patientConversionRate ?? 0) > 0 && (
-              <p className="text-xs text-emerald-400 mt-0.5">
+              <p className="text-xs text-[#8ee0b8] mt-0.5">
                 {metrics.patientConversionRate}% → paciente confirmado ({metrics.patientMatches})
               </p>
             )}
@@ -458,7 +458,7 @@ export default function Dashboard() {
             <div className="rounded-xl border border-border p-4 bg-background">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm text-muted">Inversión Meta</span>
-                <DollarSign className="h-4 w-4 text-emerald-400" />
+                <DollarSign className="h-4 w-4 text-primary" />
               </div>
               <p className="mt-3 text-2xl font-semibold">${metrics.spend.toLocaleString()}</p>
               <p className="text-xs text-muted mt-1">Inversión Meta en la ventana seleccionada</p>
@@ -466,7 +466,7 @@ export default function Dashboard() {
             <div className="rounded-xl border border-border p-4 bg-background">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm text-muted">Leads generados (Meta)</span>
-                <Users className="h-4 w-4 text-sky-400" />
+                <Users className="h-4 w-4 text-primary" />
               </div>
               <p className="mt-3 text-2xl font-semibold">{combined.metaEstimatedLeads.toLocaleString()}</p>
               <p className="text-xs text-muted mt-1">Estimación de leads generados por Meta</p>
@@ -474,7 +474,7 @@ export default function Dashboard() {
             <div className="rounded-xl border border-border p-4 bg-background">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm text-muted">Leads registrados en CRM</span>
-                <Users className="h-4 w-4 text-sky-400" />
+                <Users className="h-4 w-4 text-primary" />
               </div>
               <p className="mt-3 text-2xl font-semibold">{metrics.totalLeads.toLocaleString()}</p>
               <p className="text-xs text-muted mt-1">Leads que ya se han registrado en el CRM</p>
@@ -482,7 +482,7 @@ export default function Dashboard() {
             <div className="rounded-xl border border-border p-4 bg-background">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm text-muted">Ingresos verificados (Doctoralia)</span>
-                <DollarSign className="h-4 w-4 text-amber-400" />
+                <DollarSign className="h-4 w-4 text-primary" />
               </div>
               <p className="mt-3 text-2xl font-semibold">${combined.verifiedRevenue.toLocaleString()}</p>
               <p className="text-xs text-muted mt-1">Ingresos oficiales verificados por Doctoralia</p>
@@ -496,7 +496,7 @@ export default function Dashboard() {
               <div className="flex flex-col gap-2">
                 <CardTitle>Embudo real</CardTitle>
                 {isFunnelDemo && (
-                  <p className="text-xs text-yellow-700">
+                  <p className="text-xs text-[#c9a471]">
                     Modo demo: usando datos mock; conecta Meta y Doctoralia para ver datos reales.
                   </p>
                 )}
@@ -538,15 +538,15 @@ export default function Dashboard() {
               <AreaChart data={trendData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.8} />
-                    <stop offset="95%" stopColor="#38bdf8" stopOpacity={0.1} />
+                    <stop offset="5%" stopColor="#c9a471" stopOpacity={0.8} />
+                    <stop offset="95%" stopColor="#c9a471" stopOpacity={0.1} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-                <XAxis dataKey="week" tickLine={false} axisLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                <YAxis tickLine={false} axisLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155' }} />
-                <Area type="monotone" dataKey="value" stroke="#38bdf8" fill="url(#trendGradient)" strokeWidth={3} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#4f3d27" vertical={false} />
+                <XAxis dataKey="week" tickLine={false} axisLine={false} tick={{ fill: '#a38f79', fontSize: 12 }} />
+                <YAxis tickLine={false} axisLine={false} tick={{ fill: '#a38f79', fontSize: 12 }} />
+                <Tooltip contentStyle={{ backgroundColor: '#17120f', border: '1px solid #4f3d27' }} />
+                <Area type="monotone" dataKey="value" stroke="#c9a471" fill="url(#trendGradient)" strokeWidth={3} />
               </AreaChart>
             </ResponsiveContainer>
           </CardContent>
@@ -563,7 +563,7 @@ export default function Dashboard() {
               <div className="rounded-xl border border-border p-4 bg-background">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm text-muted">Inversión</span>
-                  <DollarSign className="h-4 w-4 text-emerald-400" />
+                  <DollarSign className="h-4 w-4 text-primary" />
                 </div>
                 <div className="flex items-baseline gap-2 mt-3">
                   <p className="text-2xl font-semibold">${metrics.spend.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
@@ -573,7 +573,7 @@ export default function Dashboard() {
               <div className="rounded-xl border border-border p-4 bg-background">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm text-muted">Revenue (Settled)</span>
-                  <DollarSign className="h-4 w-4 text-emerald-400" />
+                  <DollarSign className="h-4 w-4 text-primary" />
                 </div>
                 <div className="flex items-baseline gap-2 mt-3">
                   <p className="text-2xl font-semibold">${(metrics.verifiedRevenue ?? 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
@@ -584,7 +584,7 @@ export default function Dashboard() {
               <div className="rounded-xl border border-border p-4 bg-background">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm text-muted">Pipeline (Est.)</span>
-                  <DollarSign className="h-4 w-4 text-violet-400" />
+                  <DollarSign className="h-4 w-4 text-accent" />
                 </div>
                 <div className="flex items-baseline gap-2 mt-3">
                   <p className="text-2xl font-semibold">${(metrics.totalRevenue ?? 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
@@ -594,7 +594,7 @@ export default function Dashboard() {
               <div className="rounded-xl border border-border p-4 bg-background">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm text-muted">CPC medio</span>
-                  <ArrowUpRight className="h-4 w-4 text-sky-400" />
+                  <ArrowUpRight className="h-4 w-4 text-primary" />
                 </div>
                 <p className="mt-3 text-2xl font-semibold">${metrics.averageCpc.toFixed(2)}</p>
                 <p className="text-xs text-muted mt-1">Coste medio por clic en Meta</p>
@@ -602,17 +602,17 @@ export default function Dashboard() {
               <div className="rounded-xl border border-border p-4 bg-background">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm text-muted">Conversiones</span>
-                  <Percent className="h-4 w-4 text-amber-400" />
+                  <Percent className="h-4 w-4 text-primary" />
                 </div>
                 <p className="mt-3 text-2xl font-semibold">{metrics.metaConversions.toLocaleString()}</p>
               </div>
               <div className="rounded-xl border border-border p-4 bg-background">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm text-muted">CAC (Meta)</span>
-                  <Target className="h-4 w-4 text-rose-400" />
+                  <Target className="h-4 w-4 text-[#f16b62]" />
                 </div>
                 {metrics.spend > 0 && metrics.metaConversions > 0 ? (
-                  <p className="mt-3 text-2xl font-semibold text-rose-300">
+                  <p className="mt-3 text-2xl font-semibold text-[#f16b62]">
                     ${(metrics.spend / metrics.metaConversions).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 ) : (
