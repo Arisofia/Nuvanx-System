@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useLocation } from 'wouter'
-import { Menu, X, LogOut, Home, Activity, Users, Megaphone, DollarSign, BarChart2, BookOpen, Plug, Sparkles } from 'lucide-react'
+import { Menu, X, LogOut, Home, Activity, Users, Megaphone, DollarSign, BarChart2, BookOpen, Plug, Sparkles, FileBarChart2 } from 'lucide-react'
 import { Button } from './ui/button'
 
 const navItems = [
@@ -11,6 +11,7 @@ const navItems = [
   { label: 'Financials', href: '/financials', icon: DollarSign },
   { label: 'Intelligence', href: '/intelligence', icon: BarChart2 },
   { label: 'Playbooks', href: '/playbooks', icon: BookOpen },
+  { label: 'Reports', href: '/reports', icon: FileBarChart2 },
   { label: 'Integrations', href: '/integrations', icon: Plug },
   { label: 'AI', href: '/ai', icon: Sparkles },
 ]

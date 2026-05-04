@@ -18,6 +18,7 @@ const Intelligence = lazy(() => import('./pages/Intelligence.tsx'))
 const Playbooks = lazy(() => import('./pages/Playbooks.tsx'))
 const Integrations = lazy(() => import('./pages/Integrations.tsx'))
 const AI = lazy(() => import('./pages/AI.tsx'))
+const Reports = lazy(() => import('./pages/Reports.tsx'))
 
 const PageLoader = () => (
   <div className="min-h-screen bg-background flex items-center justify-center">
@@ -87,6 +88,9 @@ function Router() {
     }
     if (location === '/ai') {
       return <AI />
+    }
+    if (location === '/reports') {
+      return <Reports />
     }
     return <NotFound />
   })()
