@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent, type FormEventHandler } from 'react'
+import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -70,7 +70,7 @@ export default function Integrations() {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
   }
 
-  const handleConnect: FormEventHandler<HTMLFormElement> = async (e) => {
+  const handleConnect = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setSaveError(null)
     if (!form.token.trim()) { setSaveError('Token / API key is required.'); return }

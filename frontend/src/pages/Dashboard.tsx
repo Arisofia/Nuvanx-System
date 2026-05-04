@@ -89,10 +89,6 @@ export default function Dashboard() {
     }
   }
 
-  function resolveCampaigns(campaignsResponse: any) {
-    return Array.isArray(campaignsResponse?.campaigns) ? campaignsResponse.campaigns : []
-  }
-
   function resolveInsightsTotals(insightsSummary: any, campaigns: any[]) {
     const spend = insightsSummary?.spend == null
       ? Number(campaigns.reduce((sum: number, c: any) => sum + Number(c.insights?.spend ?? 0), 0))
