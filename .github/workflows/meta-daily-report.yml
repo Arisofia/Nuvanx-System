@@ -25,6 +25,7 @@ jobs:
       REPORT_DAYS: 30
       META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
       META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
+      META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       CLINIC_ID: ${{ secrets.CLINIC_ID }}
       REPORT_USER_ID: ${{ vars.REPORT_USER_ID || secrets.REPORT_USER_ID }}
@@ -42,8 +43,9 @@ jobs:
           MISSING=()
           [ -z "$META_ACCESS_TOKEN" ] && MISSING+=("META_ACCESS_TOKEN")
           [ -z "$META_AD_ACCOUNT_ID" ] && MISSING+=("META_AD_ACCOUNT_ID")
-          [ -z "$DATABASE_URL" ] && MISSING+=("DATABASE_URL")
-          [ -z "$CLINIC_ID" ] && MISSING+=("CLINIC_ID")
+          [ -z "$META_APP_SECRET" ]    && MISSING+=("META_APP_SECRET")
+          [ -z "$DATABASE_URL" ]       && MISSING+=("DATABASE_URL")
+          [ -z "$CLINIC_ID" ]          && MISSING+=("CLINIC_ID")
           if [ ${#MISSING[@]} -gt 0 ]; then
             echo "::error::Missing required secrets: ${MISSING[*]}"
             exit 1

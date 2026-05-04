@@ -230,6 +230,16 @@ function summariseGoogleAds(results) {
 async function metaFetch(endpoint, params, token) {
   const url = new URL(`${META_GRAPH}${endpoint}`);
   url.searchParams.set('access_token', token);
+
+  // Add appsecret_proof when META_APP_SECRET is configured.
+  // Meta requires this for System User tokens when the app has
+  // "Require App Secret" enabled in Advanced Settings.
+  const appSecret = process.env.META_APP_SECRET;
+  if (appSecret) {
+    const proof = crypto.createHmac('sha256', appSecret).update(token).digest('hex');
+    url.searchParams.set('appsecret_proof', proof);
+  }
+
   for (const [k, v] of Object.entries(params)) {
     url.searchParams.set(k, v);
   }
@@ -512,9 +522,15 @@ async function fetchMetaInsights(adAccountId, since, until, token) {
     }, token);
     return Array.isArray(insights?.data) ? insights.data : [];
   } catch (err) {
-    console.warn(`[meta-daily-report] Meta insights fetch failed: ${err.message}`);
-    console.warn('[meta-daily-report] Generating report with empty Meta dataset.');
-    return [];
+    // Emit a GitHub Actions error annotation so the run is marked as failed,
+    // not just a silent zero-report that looks like a successful run.
+    const msg = `Meta API call failed — report would be all zeros. ${err.message}`;
+    if (process.env.GITHUB_ACTIONS) {
+      process.stdout.write(`::error::${msg}\n`);
+    } else {
+      console.error(`[meta-daily-report] ${msg}`);
+    }
+    throw err;
   }
 }
 
