@@ -1807,7 +1807,7 @@ async function handleDashboardMetaTrends(ctx: AuthenticatedRouteContext): Promis
       );
 
       const accountResults = await Promise.allSettled(creds.adAccountIds.map(async (accountId: string) => {
-        const data = await metaFetchInsightsWithFallback(`/${accountId}/insights`, params, creds.accessToken, campaignId);
+        const data = await metaFetchInsightsWithFallback(`/${accountId}/insights`, params, creds.accessToken, campaignId ?? undefined);
         return { accountId, data };
       }));
 
@@ -1981,8 +1981,8 @@ async function handleMetaInsightsGet(ctx: AuthenticatedRouteContext): Promise<Re
 
       const accountResults = await Promise.allSettled(creds.adAccountIds.map(async (accountId: string) => {
         const [current, previous, account] = await Promise.all([
-          metaFetchInsightsWithFallback(`/${accountId}/insights`, params, creds.accessToken, campaignId),
-          metaFetchInsightsWithFallback(`/${accountId}/insights`, prevParams, creds.accessToken, campaignId),
+          metaFetchInsightsWithFallback(`/${accountId}/insights`, params, creds.accessToken, campaignId ?? undefined),
+          metaFetchInsightsWithFallback(`/${accountId}/insights`, prevParams, creds.accessToken, campaignId ?? undefined),
           metaFetch(`/${accountId}`, { fields: 'currency' }, creds.accessToken),
         ]);
         return { accountId, current, previous, currency: account?.currency ?? 'EUR' };

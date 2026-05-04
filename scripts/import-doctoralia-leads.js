@@ -112,8 +112,16 @@ async function main() {
   });
 
   if (DRY_RUN) {
-    console.log('\n[DRY RUN] First 5 rows that would be upserted:');
-    console.log(JSON.stringify(leadRows.slice(0, 5), null, 2));
+    const safePreview = leadRows.slice(0, 5).map((row) => ({
+      source: row.source,
+      stage: row.stage,
+      external_id: row.external_id,
+      revenue: row.revenue,
+      created_at: row.created_at,
+      has_notes: row.notes != null,
+    }));
+    console.log('\n[DRY RUN] First 5 sanitized rows that would be upserted:');
+    console.log(JSON.stringify(safePreview, null, 2));
     console.log(`\n[DRY RUN] Total: ${leadRows.length} rows (no DB writes).`);
     return;
   }
