@@ -18,7 +18,7 @@ export default function CRM() {
 
   const sources = useMemo(() => {
     const s = new Set(leads.map(l => l.source).filter(Boolean))
-    return Array.from(s).sort()
+    return Array.from(s).sort((a, b) => a.localeCompare(b))
   }, [leads])
 
   const filteredLeads = useMemo(() => {
@@ -130,9 +130,10 @@ export default function CRM() {
                   {error && <p className="text-sm text-yellow-500">{error}</p>}
                   <div className="grid gap-3">
                     {filteredLeads.map((lead) => (
-                      <div 
-                        key={lead.id} 
-                        className="rounded-xl border border-border p-4 bg-slate-950 cursor-pointer hover:border-primary/50 transition-colors"
+                      <button
+                        key={lead.id}
+                        type="button"
+                        className="rounded-xl border border-border p-4 bg-slate-950 text-left cursor-pointer hover:border-primary/50 transition-colors"
                         onClick={() => handleLeadClick(lead)}
                       >
                         <div className="flex items-center justify-between gap-3">
@@ -142,7 +143,7 @@ export default function CRM() {
                           </span>
                         </div>
                         <p className="text-xs text-slate-400 mt-1">Origen: {lead.source}</p>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </div>

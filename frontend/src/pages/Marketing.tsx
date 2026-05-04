@@ -6,7 +6,7 @@ import {
 } from 'recharts'
 import { TrendingUp, TrendingDown, Eye, MousePointerClick, DollarSign, Target, Megaphone, Activity } from 'lucide-react'
 import { invokeApi } from '../lib/supabaseClient'
-import type { CampaignRow, AccountSummary, DailyPoint, MetaChanges as Changes, MarketingState } from '../types'
+import type { CampaignRow, MarketingState } from '../types'
 import { ExportButton } from '../components/reports/ExportButton'
 
 const fmt = (n: number, decimals = 2) =>
@@ -15,7 +15,7 @@ const fmt = (n: number, decimals = 2) =>
 const fmtCurrency = (n: number, currency = 'EUR') =>
   n.toLocaleString('es-MX', { style: 'currency', currency, minimumFractionDigits: 2 })
 
-function DeltaBadge({ value }: { value: number | undefined }) {
+function DeltaBadge({ value }: Readonly<{ value: number | undefined }>) {
   if (value == null || value === 0) return null
   const up = value > 0
   return (
@@ -29,7 +29,7 @@ function DeltaBadge({ value }: { value: number | undefined }) {
 
 function StatCard({
   label, value, sub, icon, color = 'text-white', delta,
-}: { label: string; value: string; sub?: string; icon: React.ReactNode; color?: string; delta?: number }) {
+}: Readonly<{ label: string; value: string; sub?: string; icon: React.ReactNode; color?: string; delta?: number }>) {
   return (
     <Card>
       <CardContent className="pt-4">
@@ -51,6 +51,144 @@ function StatCard({
 
 const MARKETING_TODAY = new Date().toISOString().slice(0, 10)
 const todayStr = MARKETING_TODAY
+
+const STATUS_LABELS = {
+  ALL: 'Todas',
+  ACTIVE: 'Activas',
+  PAUSED: 'Pausadas',
+  ARCHIVED: 'Archivadas',
+} as const
+
+interface CampaignTableProps {
+  campaigns: CampaignRow[];
+  filteredCampaigns: CampaignRow[];
+  currency: string;
+  summary: MarketingState['summary'];
+}
+
+function CampaignTable({ campaigns, filteredCampaigns, currency, summary }: Readonly<CampaignTableProps>) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-slate-800 text-xs text-slate-400 uppercase tracking-wide">
+            <th className="text-left px-4 py-3">Campaña</th>
+            <th className="text-center px-3 py-3">Estado</th>
+            <th className="text-center px-3 py-3">Objetivo</th>
+            <th className="text-right px-3 py-3">Presupuesto</th>
+            <th className="text-right px-3 py-3">Gasto</th>
+            <th className="text-right px-3 py-3">Impresiones</th>
+            <th className="text-right px-3 py-3">Alcance</th>
+            <th className="text-right px-3 py-3">Clics</th>
+            <th className="text-right px-3 py-3">CTR</th>
+            <th className="text-right px-3 py-3">CPC</th>
+            <th className="text-right px-3 py-3">CPM</th>
+            <th className="text-right px-3 py-3">Conversiones</th>
+            <th className="text-right px-3 py-3">CPP</th>
+            <th className="text-right px-3 py-3" title="Customer Acquisition Cost = Gasto ÷ Conversiones">CAC</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-800">
+          {filteredCampaigns.map((c) => (
+            <tr key={c.id} className="hover:bg-slate-800/40 transition-colors">
+              <td className="px-4 py-3 font-medium max-w-[200px]">
+                <span title={c.name} className="truncate block">{c.name}</span>
+              </td>
+              <td className="px-3 py-3 text-center">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                  c.status === 'ACTIVE'
+                    ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                    : 'bg-slate-800 text-slate-400 border border-slate-700'
+                }`}>
+                  {c.status === 'ACTIVE' ? '● ' : '○ '}{c.status}
+                </span>
+              </td>
+              <td className="px-3 py-3 text-center text-slate-400 text-xs">{c.objective || '—'}</td>
+              <td className="px-3 py-3 text-right text-slate-300 text-xs">
+                {(() => {
+                  if (c.dailyBudget != null) {
+                    return <><span className="text-slate-500">día</span> {fmtCurrency(c.dailyBudget, currency)}</>
+                  }
+                  if (c.lifetimeBudget != null) {
+                    return <><span className="text-slate-500">vit</span> {fmtCurrency(c.lifetimeBudget, currency)}</>
+                  }
+                  return '—'
+                })()}
+              </td>
+              <td className="px-3 py-3 text-right font-semibold text-emerald-400">
+                {c.insights ? fmtCurrency(c.insights.spend, currency) : '—'}
+              </td>
+              <td className="px-3 py-3 text-right text-slate-300">
+                {c.insights ? c.insights.impressions.toLocaleString('es-MX') : '—'}
+              </td>
+              <td className="px-3 py-3 text-right text-slate-300">
+                {c.insights ? c.insights.reach.toLocaleString('es-MX') : '—'}
+              </td>
+              <td className="px-3 py-3 text-right text-violet-400">
+                {c.insights ? c.insights.clicks.toLocaleString('es-MX') : '—'}
+              </td>
+              <td className="px-3 py-3 text-right text-slate-300">
+                {c.insights ? `${fmt(c.insights.ctr)}%` : '—'}
+              </td>
+              <td className="px-3 py-3 text-right text-amber-400">
+                {c.insights ? fmtCurrency(c.insights.cpc, currency) : '—'}
+              </td>
+              <td className="px-3 py-3 text-right text-slate-300">
+                {c.insights ? fmtCurrency(c.insights.cpm, currency) : '—'}
+              </td>
+              <td className="px-3 py-3 text-right text-lime-400">
+                {c.insights ? c.insights.conversions.toLocaleString('es-MX') : '—'}
+              </td>
+              <td className="px-3 py-3 text-right text-orange-400">
+                {c.insights?.cpp != null ? fmtCurrency(c.insights.cpp, currency) : '—'}
+              </td>
+              <td className="px-3 py-3 text-right">
+                {c.insights && c.insights.conversions > 0
+                  ? <span className="text-rose-300 font-medium">{fmtCurrency(c.insights.spend / c.insights.conversions, currency)}</span>
+                  : <span className="text-slate-500" title="No conversions in this period">—</span>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+        {/* Totals row */}
+        {campaigns.some((c) => c.insights) && (
+          <tfoot>
+            <tr className="border-t-2 border-slate-700 bg-slate-900 text-xs font-semibold text-slate-300">
+              <td className="px-4 py-3 text-slate-400 uppercase tracking-wide">Total cuenta</td>
+              <td colSpan={3} />
+              <td className="px-3 py-3 text-right text-emerald-400">
+                {fmtCurrency(summary?.spend ?? 0, currency)}
+              </td>
+              <td className="px-3 py-3 text-right">
+                {(summary?.impressions ?? 0).toLocaleString('es-MX')}
+              </td>
+              <td className="px-3 py-3 text-right">
+                {(summary?.reach ?? 0).toLocaleString('es-MX')}
+              </td>
+              <td className="px-3 py-3 text-right text-violet-400">
+                {(summary?.clicks ?? 0).toLocaleString('es-MX')}
+              </td>
+              <td className="px-3 py-3 text-right">{fmt(summary?.ctr ?? 0)}%</td>
+              <td className="px-3 py-3 text-right text-amber-400">{fmtCurrency(summary?.cpc ?? 0, currency)}</td>
+              <td className="px-3 py-3 text-right">{fmtCurrency(summary?.cpm ?? 0, currency)}</td>
+              <td className="px-3 py-3 text-right text-lime-400">
+                {(summary?.conversions ?? 0).toLocaleString('es-MX')}
+              </td>
+              <td className="px-3 py-3 text-right text-orange-400">
+                {summary?.cpp ? fmtCurrency(summary.cpp, currency) : '—'}
+              </td>
+              <td className="px-3 py-3 text-right text-rose-300">
+                {summary && summary.conversions > 0
+                  ? fmtCurrency(summary.spend / summary.conversions, currency)
+                  : <span className="text-slate-500" title="No conversions in this period">—</span>}
+              </td>
+            </tr>
+          </tfoot>
+        )}
+      </table>
+    </div>
+  )
+}
 
 export default function Marketing() {
   const [state, setState] = useState<MarketingState>({
@@ -79,13 +217,29 @@ export default function Marketing() {
       try {
         const isCustomRange = Boolean(customFrom)
         const effectiveTo = isCustomRange ? (customTo || todayStr) : todayStr
-        const insightsQ = isCustomRange
-          ? `?from=${customFrom}&to=${effectiveTo}${campaignId !== 'ALL' ? `&campaign_id=${campaignId}` : ''}`
-          : `?days=${days}${campaignId !== 'ALL' ? `&campaign_id=${campaignId}` : ''}`
-        const campaignsQ = isCustomRange ? `?from=${customFrom}&to=${effectiveTo}` : `?days=${days}`
+
+        const insightsParams = new URLSearchParams()
+        if (isCustomRange) {
+          insightsParams.set('from', customFrom)
+          insightsParams.set('to', effectiveTo)
+        } else {
+          insightsParams.set('days', String(days))
+        }
+        if (campaignId !== 'ALL') {
+          insightsParams.set('campaign_id', campaignId)
+        }
+
+        const campaignsParams = new URLSearchParams()
+        if (isCustomRange) {
+          campaignsParams.set('from', customFrom)
+          campaignsParams.set('to', effectiveTo)
+        } else {
+          campaignsParams.set('days', String(days))
+        }
+
         const [insightsRes, campaignsRes] = await Promise.allSettled([
-          invokeApi(`/meta/insights${insightsQ}`),
-          invokeApi(`/meta/campaigns${campaignsQ}`),
+          invokeApi(`/meta/insights?${insightsParams.toString()}`),
+          invokeApi(`/meta/campaigns?${campaignsParams.toString()}`),
         ])
 
         const insightsData = insightsRes.status === 'fulfilled' ? insightsRes.value : null
@@ -160,11 +314,11 @@ export default function Marketing() {
     .filter((c) => c.insights)
     .map((c) => ({
       name: c.name.length > 22 ? c.name.slice(0, 22) + '…' : c.name,
-      Gasto: c.insights!.spend,
-      Clics: c.insights!.clicks,
-      Impresiones: Math.round(c.insights!.impressions / 100),
-      CTR: Number(c.insights!.ctr.toFixed(2)),
-      CPC: Number(c.insights!.cpc.toFixed(3)),
+      Gasto: c.insights.spend,
+      Clics: c.insights.clicks,
+      Impresiones: Math.round(c.insights.impressions / 100),
+      CTR: Number(c.insights.ctr.toFixed(2)),
+      CPC: Number(c.insights.cpc.toFixed(3)),
     }))
 
   const periodLabel = period
@@ -310,11 +464,13 @@ export default function Marketing() {
           <CardTitle>Gasto diario · {days} días · ({currency})</CardTitle>
         </CardHeader>
         <CardContent className="h-72">
-          {loading ? (
+          {loading && (
             <div className="h-full flex items-center justify-center text-slate-500 text-sm">Cargando…</div>
-          ) : dailyChart.length === 0 ? (
+          )}
+          {!loading && dailyChart.length === 0 && (
             <div className="h-full flex items-center justify-center text-slate-500 text-sm">Sin datos diarios</div>
-          ) : (
+          )}
+          {!loading && dailyChart.length > 0 && (
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={dailyChart} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
                 <defs>
@@ -443,7 +599,7 @@ export default function Marketing() {
                 cpm: c.insights?.cpm ?? '',
                 conversions: c.insights?.conversions ?? '',
                 cpp: c.insights?.cpp ?? '',
-                cac: c.insights && c.insights.conversions > 0
+                cac: (c.insights && c.insights.conversions > 0)
                   ? (c.insights.spend / c.insights.conversions).toFixed(2)
                   : '',
               }))}
@@ -460,7 +616,7 @@ export default function Marketing() {
                     statusFilter === s ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'
                   }`}
                 >
-                  {s === 'ALL' ? 'Todas' : s === 'ACTIVE' ? 'Activas' : s === 'PAUSED' ? 'Pausadas' : 'Archivadas'}
+                  {STATUS_LABELS[s]}
                 </button>
               ))}
             </div>
@@ -475,128 +631,21 @@ export default function Marketing() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          {loading ? (
+          {loading && (
             <p className="p-4 text-sm text-slate-500">Cargando campañas…</p>
-          ) : filteredCampaigns.length === 0 ? (
+          )}
+          {!loading && filteredCampaigns.length === 0 && (
             <p className="p-4 text-sm text-slate-500">
               {campaigns.length === 0 ? 'No hay campañas disponibles.' : 'Ninguna campaña coincide con los filtros.'}
             </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-800 text-xs text-slate-400 uppercase tracking-wide">
-                    <th className="text-left px-4 py-3">Campaña</th>
-                    <th className="text-center px-3 py-3">Estado</th>
-                    <th className="text-center px-3 py-3">Objetivo</th>
-                    <th className="text-right px-3 py-3">Presupuesto</th>
-                    <th className="text-right px-3 py-3">Gasto</th>
-                    <th className="text-right px-3 py-3">Impresiones</th>
-                    <th className="text-right px-3 py-3">Alcance</th>
-                    <th className="text-right px-3 py-3">Clics</th>
-                    <th className="text-right px-3 py-3">CTR</th>
-                    <th className="text-right px-3 py-3">CPC</th>
-                    <th className="text-right px-3 py-3">CPM</th>
-                    <th className="text-right px-3 py-3">Conversiones</th>
-                    <th className="text-right px-3 py-3">CPP</th>
-                    <th className="text-right px-3 py-3" title="Customer Acquisition Cost = Gasto ÷ Conversiones">CAC</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800">
-                  {filteredCampaigns.map((c) => (
-                    <tr key={c.id} className="hover:bg-slate-800/40 transition-colors">
-                      <td className="px-4 py-3 font-medium max-w-[200px]">
-                        <span title={c.name} className="truncate block">{c.name}</span>
-                      </td>
-                      <td className="px-3 py-3 text-center">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                          c.status === 'ACTIVE'
-                            ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
-                            : 'bg-slate-800 text-slate-400 border border-slate-700'
-                        }`}>
-                          {c.status === 'ACTIVE' ? '● ' : '○ '}{c.status}
-                        </span>
-                      </td>
-                      <td className="px-3 py-3 text-center text-slate-400 text-xs">{c.objective || '—'}</td>
-                      <td className="px-3 py-3 text-right text-slate-300 text-xs">
-                        {c.dailyBudget != null
-                          ? <><span className="text-slate-500">día</span> {fmtCurrency(c.dailyBudget, currency)}</>
-                          : c.lifetimeBudget != null
-                            ? <><span className="text-slate-500">vit</span> {fmtCurrency(c.lifetimeBudget, currency)}</>
-                            : '—'}
-                      </td>
-                      <td className="px-3 py-3 text-right font-semibold text-emerald-400">
-                        {c.insights ? fmtCurrency(c.insights.spend, currency) : '—'}
-                      </td>
-                      <td className="px-3 py-3 text-right text-slate-300">
-                        {c.insights ? c.insights.impressions.toLocaleString('es-MX') : '—'}
-                      </td>
-                      <td className="px-3 py-3 text-right text-slate-300">
-                        {c.insights ? c.insights.reach.toLocaleString('es-MX') : '—'}
-                      </td>
-                      <td className="px-3 py-3 text-right text-violet-400">
-                        {c.insights ? c.insights.clicks.toLocaleString('es-MX') : '—'}
-                      </td>
-                      <td className="px-3 py-3 text-right text-slate-300">
-                        {c.insights ? `${fmt(c.insights.ctr)}%` : '—'}
-                      </td>
-                      <td className="px-3 py-3 text-right text-amber-400">
-                        {c.insights ? fmtCurrency(c.insights.cpc, currency) : '—'}
-                      </td>
-                      <td className="px-3 py-3 text-right text-slate-300">
-                        {c.insights ? fmtCurrency(c.insights.cpm, currency) : '—'}
-                      </td>
-                      <td className="px-3 py-3 text-right text-lime-400">
-                        {c.insights ? c.insights.conversions.toLocaleString('es-MX') : '—'}
-                      </td>
-                      <td className="px-3 py-3 text-right text-orange-400">
-                        {c.insights?.cpp != null ? fmtCurrency(c.insights.cpp, currency) : '—'}
-                      </td>
-                      <td className="px-3 py-3 text-right">
-                        {c.insights && c.insights.conversions > 0
-                          ? <span className="text-rose-300 font-medium">{fmtCurrency(c.insights.spend / c.insights.conversions, currency)}</span>
-                          : <span className="text-slate-500" title="No conversions in this period">—</span>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                {/* Totals row */}
-                {campaigns.some((c) => c.insights) && (
-                  <tfoot>
-                    <tr className="border-t-2 border-slate-700 bg-slate-900 text-xs font-semibold text-slate-300">
-                      <td className="px-4 py-3 text-slate-400 uppercase tracking-wide">Total cuenta</td>
-                      <td colSpan={3} />
-                      <td className="px-3 py-3 text-right text-emerald-400">
-                        {fmtCurrency(summary?.spend ?? 0, currency)}
-                      </td>
-                      <td className="px-3 py-3 text-right">
-                        {(summary?.impressions ?? 0).toLocaleString('es-MX')}
-                      </td>
-                      <td className="px-3 py-3 text-right">
-                        {(summary?.reach ?? 0).toLocaleString('es-MX')}
-                      </td>
-                      <td className="px-3 py-3 text-right text-violet-400">
-                        {(summary?.clicks ?? 0).toLocaleString('es-MX')}
-                      </td>
-                      <td className="px-3 py-3 text-right">{fmt(summary?.ctr ?? 0)}%</td>
-                      <td className="px-3 py-3 text-right text-amber-400">{fmtCurrency(summary?.cpc ?? 0, currency)}</td>
-                      <td className="px-3 py-3 text-right">{fmtCurrency(summary?.cpm ?? 0, currency)}</td>
-                      <td className="px-3 py-3 text-right text-lime-400">
-                        {(summary?.conversions ?? 0).toLocaleString('es-MX')}
-                      </td>
-                      <td className="px-3 py-3 text-right text-orange-400">
-                        {summary?.cpp ? fmtCurrency(summary.cpp, currency) : '—'}
-                      </td>
-                      <td className="px-3 py-3 text-right text-rose-300">
-                        {summary && summary.conversions > 0
-                          ? fmtCurrency(summary.spend / summary.conversions, currency)
-                          : <span className="text-slate-500" title="No conversions in this period">—</span>}
-                      </td>
-                    </tr>
-                  </tfoot>
-                )}
-              </table>
-            </div>
+          )}
+          {!loading && filteredCampaigns.length > 0 && (
+            <CampaignTable
+              campaigns={campaigns}
+              filteredCampaigns={filteredCampaigns}
+              currency={currency}
+              summary={summary}
+            />
           )}
         </CardContent>
       </Card>

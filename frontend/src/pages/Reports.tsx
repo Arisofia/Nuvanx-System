@@ -8,11 +8,11 @@ import { FilterBar } from '../components/ui/FilterBar'
 import { SortableTable } from '../components/ui/SortableTable'
 import type { ColDef } from '../components/ui/SortableTable'
 
-function EmptyState({ message }: { message: string }) {
+function EmptyState({ message }: Readonly<{ message: string }>) {
   return <p className="text-slate-500 text-sm py-8 text-center">{message}</p>
 }
 
-function ErrorState({ message }: { message: string }) {
+function ErrorState({ message }: Readonly<{ message: string }>) {
   return (
     <div className="p-4 bg-red-950 border border-red-800 rounded-lg flex gap-3">
       <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
@@ -21,7 +21,7 @@ function ErrorState({ message }: { message: string }) {
   )
 }
 
-function TableHead({ cols }: { cols: string[] }) {
+function TableHead({ cols }: Readonly<{ cols: string[] }>) {
   return (
     <thead>
       <tr className="border-b border-slate-700">
@@ -35,11 +35,11 @@ function TableHead({ cols }: { cols: string[] }) {
   )
 }
 
-function TableRow({ cells }: { cells: (string | number | null | undefined)[] }) {
+function TableRow({ cells }: Readonly<{ cells: (string | number | null | undefined)[] }>) {
   return (
     <tr className="border-b border-slate-800 hover:bg-slate-800/50 transition-colors">
       {cells.map((c, i) => (
-        <td key={i} className="px-3 py-2 text-sm text-slate-300 whitespace-nowrap">
+        <td key={`${c}-${i}`} className="px-3 py-2 text-sm text-slate-300 whitespace-nowrap">
           {c ?? '—'}
         </td>
       ))}
@@ -48,12 +48,12 @@ function TableRow({ cells }: { cells: (string | number | null | undefined)[] }) 
 }
 
 function pct(n: number | null | undefined) {
-  return n != null ? `${n}%` : '—'
+  return n == null ? '—' : `${n}%`
 }
 function curr(n: number | null | undefined) {
-  return n != null
-    ? n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 })
-    : '—'
+  return n == null
+    ? '—'
+    : n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 })
 }
 
 export default function Reports() {
@@ -176,11 +176,11 @@ export default function Reports() {
     { key: 'leads_count', label: 'Leads', align: 'right', sortable: true },
     { key: 'patients_count', label: 'Pacientes', align: 'right', sortable: true },
     { key: 'net_revenue', label: 'Revenue neto', align: 'right', sortable: true,
-      format: (v) => v != null ? Number(v).toLocaleString('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }) : null },
+      format: (v) => v == null ? null : Number(v).toLocaleString('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }) },
     { key: 'spend', label: 'Spend Meta', align: 'right', sortable: true,
-      format: (v) => v != null ? Number(v).toLocaleString('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }) : null },
+      format: (v) => v == null ? null : Number(v).toLocaleString('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }) },
     { key: 'cac', label: 'CAC', align: 'right', sortable: true,
-      format: (v) => v != null ? Number(v).toLocaleString('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }) : null },
+      format: (v) => v == null ? null : Number(v).toLocaleString('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }) },
   ]
 
   return (
@@ -225,9 +225,9 @@ export default function Reports() {
                   <table className="w-full">
                     <TableHead cols={['Template', 'Ops', 'Net Revenue', 'Avg Ticket', 'Share %', 'Cancel %']} />
                     <tbody>
-                      {docData!.templateSummary.map((r, i) => (
+                      {docData.templateSummary.map((r) => (
                         <TableRow
-                          key={i}
+                          key={r.template_name}
                           cells={[
                             r.template_name,
                             r.operations_count,
@@ -250,7 +250,7 @@ export default function Reports() {
               <CardHeader className="flex flex-row items-center justify-between space-y-0">
                 <CardTitle>Monthly Detail</CardTitle>
                 <ExportButton
-                  data={docData!.byMonth}
+                  data={docData.byMonth}
                   filename="doctoralia-by-month"
                   disabled={docLoading}
                 />
@@ -260,9 +260,9 @@ export default function Reports() {
                   <table className="w-full">
                     <TableHead cols={['Month', 'Ops', 'Cancels', 'Gross', 'Net', 'Avg Ticket', 'Cancel %', 'Discount %']} />
                     <tbody>
-                      {docData!.byMonth.map((r, i) => (
+                      {docData.byMonth.map((r) => (
                         <TableRow
-                          key={i}
+                          key={r.settled_month}
                           cells={[
                             r.settled_month,
                             r.operations_count,
@@ -302,9 +302,9 @@ export default function Reports() {
                   <table className="w-full">
                     <TableHead cols={['Campaign', 'Leads', 'Contacted', 'Replied', 'Booked', 'Closed', 'Close %', 'Reply delay (min)']} />
                     <tbody>
-                      {filteredCampaigns.map((r, i) => (
+                      {filteredCampaigns.map((r) => (
                         <TableRow
-                          key={i}
+                          key={r.campaign_name}
                           cells={[
                             r.campaign_name,
                             r.total_leads,
@@ -344,9 +344,9 @@ export default function Reports() {
                   <table className="w-full">
                     <TableHead cols={['Source', 'Leads', 'Reply %', 'Booking %', 'Close %', 'Avg Reply (min)', 'Verified Revenue']} />
                     <tbody>
-                      {filteredSources.map((r, i) => (
+                      {filteredSources.map((r) => (
                         <TableRow
-                          key={i}
+                          key={r.source_label ?? r.source}
                           cells={[
                             r.source_label ?? r.source,
                             r.total_leads,

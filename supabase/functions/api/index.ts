@@ -2,8 +2,7 @@
 /** @ts-ignore: Deno global is provided by Supabase Edge Runtime */
 declare const Deno: any;
 
-import { createClient } from '@supabase/supabase-js';
-export { createClient };
+export { createClient } from '@supabase/supabase-js';
 
 function requireSupabaseEnv(value: string | null | undefined, name: string): string {
   const normalized = value?.trim() ?? '';
@@ -129,10 +128,10 @@ export async function decryptCred(encoded: string): Promise<string> {
   combined.set(ct); combined.set(tag, ct.length);
   const km = await crypto.subtle.importKey('raw', new TextEncoder().encode(masterKey), 'PBKDF2', false, ['deriveKey']);
   const aesKey = await crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: salt.buffer as ArrayBuffer, iterations: 100_000, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt: salt.buffer, iterations: 100_000, hash: 'SHA-256' },
     km, { name: 'AES-GCM', length: 256 }, false, ['decrypt'],
   );
-  return new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv.buffer as ArrayBuffer }, aesKey, combined.buffer as ArrayBuffer));
+  return new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv.buffer }, aesKey, combined.buffer));
 }
 
 // ── Meta Graph API ────────────────────────────────────────────────────────────
@@ -181,8 +180,7 @@ export function parseMetaMetric(raw: unknown): number {
   }
   if (raw && typeof raw === 'object') {
     const rawObj = raw as Record<string, unknown>;
-    const n = Number.parseFloat(String(rawObj.value ?? 0));
-    return Number.isFinite(n) ? n : 0;
+    return parseMetaMetric(rawObj.value ?? 0);
   }
   return 0;
 }
@@ -576,7 +574,7 @@ export function extractMetaAccountRawValue(raw: unknown): string {
   if (raw === undefined || raw === null) return '';
   if (typeof raw === 'object' && raw !== null) {
     const rawObj = raw as Record<string, unknown>;
-    return String(rawObj.adAccountId ?? rawObj.ad_account_id ?? '').trim();
+    return extractMetaAccountRawValue(rawObj.adAccountId ?? rawObj.ad_account_id ?? '');
   }
   if (typeof raw === 'string' || typeof raw === 'number') {
     return String(raw).trim();
@@ -973,10 +971,10 @@ interface PublicRouteContext {
   sendJson: (data: unknown, status?: number, extraHeaders?: Record<string, string>) => Response;
 }
 
-export async function handlePublicRoutes(ctx: PublicRouteContext): Promise<Response | null> {
-  const { req, url, resource, sub, sendJson } = ctx;
+async function handleMetaWebhook(ctx: PublicRouteContext): Promise<Response | null> {
+  const { req, url } = ctx;
 
-  if (resource === 'webhooks' && sub === 'meta' && req.method === 'GET') {
+  if (req.method === 'GET') {
     const mode = url.searchParams.get('hub.mode');
     const challenge = url.searchParams.get('hub.challenge');
     const verifyToken = url.searchParams.get('hub.verify_token');
@@ -988,7 +986,7 @@ export async function handlePublicRoutes(ctx: PublicRouteContext): Promise<Respo
     return new Response('Forbidden', { status: 403 });
   }
 
-  if (resource === 'webhooks' && sub === 'meta' && req.method === 'POST') {
+  if (req.method === 'POST') {
     const appSecret = Deno.env.get('META_APP_SECRET');
     const rawBody = await req.text();
 
@@ -1080,7 +1078,13 @@ export async function handlePublicRoutes(ctx: PublicRouteContext): Promise<Respo
     return new Response('ok', { status: 200 });
   }
 
-  if (resource === 'health' && sub === 'secrets' && req.method === 'GET') {
+  return null;
+}
+
+function handleHealthRoutes(ctx: PublicRouteContext): Response | null {
+  const { resource, sub, sendJson } = ctx;
+
+  if (resource === 'health' && sub === 'secrets') {
     const encryptionKeyRaw = String(Deno.env.get('ENCRYPTION_KEY') ?? '');
     const hasEncryptionKey = Boolean(encryptionKeyRaw.trim());
     const hasServiceKey = Boolean(String(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '').trim());
@@ -1096,8 +1100,22 @@ export async function handlePublicRoutes(ctx: PublicRouteContext): Promise<Respo
     });
   }
 
-  if (resource === 'health' && req.method === 'GET') {
+  if (resource === 'health') {
     return sendJson({ success: true, status: 'ok', timestamp: new Date().toISOString() });
+  }
+
+  return null;
+}
+
+export async function handlePublicRoutes(ctx: PublicRouteContext): Promise<Response | null> {
+  const { resource, sub } = ctx;
+
+  if (resource === 'webhooks' && sub === 'meta') {
+    return await handleMetaWebhook(ctx);
+  }
+
+  if (resource === 'health') {
+    return handleHealthRoutes(ctx);
   }
 
   return null;
@@ -1234,7 +1252,7 @@ async function handleProductionAuditGet(ctx: AuthenticatedRouteContext): Promise
         },
         user_mismatch: publicUserDelta,
         warnings: [
-          ...(publicUserDelta !== 0 ? [
+          ...(publicUserDelta === 0 ? [] : [
             publicUserDelta > 0
               ? `Detected ${publicUserDelta} public.users row(s) without matching auth.users. This can cause incorrect clinic_id resolution or empty results for affected users.`
               : `Detected ${Math.abs(publicUserDelta)} auth.users row(s) without matching public.users. This may indicate incomplete user cleanup.`
@@ -1453,7 +1471,6 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
     const prevTotalLeads = prevLeads.length;
 
     const totalRevenue = leads.reduce((s: number, l: any) => s + Number(l.revenue || 0), 0);
-    const prevTotalRevenue = prevLeads.reduce((s: number, l: any) => s + Number(l.revenue || 0), 0);
 
     const verifiedRevenue = settlements.reduce((s: number, r: any) => s + Number(r.amount_net), 0);
     const prevVerifiedRevenue = prevSettlements.reduce((s: number, r: any) => s + Number(r.amount_net), 0);
@@ -1923,9 +1940,14 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
     const campTo   = url.searchParams.get('to')   ?? '';
     const campDays = Number.parseInt(url.searchParams.get('days') ?? '30');
     // Use time_range for custom dates (no day cap); fall back to preset (max 90d)
+    let datePreset = 'last_90d';
+    if (campDays <= 7) datePreset = 'last_7d';
+    else if (campDays <= 14) datePreset = 'last_14d';
+    else if (campDays <= 30) datePreset = 'last_30d';
+
     const insightsDateParam = campFrom && campTo
       ? `time_range(${JSON.stringify({ since: campFrom, until: campTo })})`
-      : `date_preset(${campDays <= 7 ? 'last_7d' : campDays <= 14 ? 'last_14d' : campDays <= 30 ? 'last_30d' : 'last_90d'})`;
+      : `date_preset(${datePreset})`;
     try {
       const [data, campAcctRes] = await Promise.allSettled([
         metaFetch(`/${creds.adAccountId}/campaigns`, {
@@ -2909,16 +2931,29 @@ async function handleKpisGet(ctx: AuthenticatedRouteContext): Promise<Response |
   const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'kpis' && sub === '' && req.method === 'GET') {
     const days = Math.min(Math.max(Number.parseInt(url.searchParams.get('days') ?? '30', 10), 1), 90);
-    const since = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
-    const until = new Date().toISOString().slice(0, 10);
+    const fromParam = url.searchParams.get('from') ?? '';
+    const toParam = url.searchParams.get('to') ?? '';
+    const since = fromParam || new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+    const until = toParam || new Date().toISOString().slice(0, 10);
     const period = { since, until, range: `${days}d` };
 
     const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
     const clinicId = usr?.clinic_id;
     if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
 
-    const [leadCountRes, settlementsRes] = await Promise.all([
-      adminClient.from('leads').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+    const metaSources = ['meta_leadgen', 'meta_lead_gen', 'facebook_leadgen'];
+    const [leadCountRes, leadMetaCountRes, settlementsRes] = await Promise.all([
+      adminClient.from('leads')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .gte('created_at', since)
+        .lte('created_at', until),
+      adminClient.from('leads')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .in('source', metaSources)
+        .gte('created_at', since)
+        .lte('created_at', until),
       adminClient.from('financial_settlements')
         .select('patient_id, amount_net, cancelled_at, settled_at, source_system')
         .eq('clinic_id', clinicId)
@@ -2929,9 +2964,11 @@ async function handleKpisGet(ctx: AuthenticatedRouteContext): Promise<Response |
     ]);
 
     if (leadCountRes.error) throw leadCountRes.error;
+    if (leadMetaCountRes.error) throw leadMetaCountRes.error;
     if (settlementsRes.error) throw settlementsRes.error;
 
-    const totalLeads = leadCountRes.count ?? 0;
+    const crmLeads = leadCountRes.count ?? 0;
+    const metaLeads = leadMetaCountRes.count ?? 0;
     const settlements = (settlementsRes.data ?? []).filter((r: any) => r.settled_at && Number(r.amount_net) > 0);
 
     const patientFirstSettlement: Record<string, string> = {};
@@ -2971,9 +3008,7 @@ async function handleKpisGet(ctx: AuthenticatedRouteContext): Promise<Response |
     try {
       const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
       const validation = validateMetaCredentialResult(creds);
-      if (!validation.ok) {
-        metaResult.message = validation.message;
-      } else {
+      if (validation.ok) {
         const metaData = await metaFetch(`/${creds.adAccountId}/insights`, {
           fields: 'date_start,spend,conversions',
           time_range: JSON.stringify({ since, until }),
@@ -2986,14 +3021,23 @@ async function handleKpisGet(ctx: AuthenticatedRouteContext): Promise<Response |
         metaResult.spend = Number.parseFloat(totalSpend.toFixed(2));
         metaResult.leads = totalLeadsMeta;
         metaResult.live = true;
+      } else {
+        metaResult.message = validation.message;
       }
     } catch (e: any) {
       metaResult.message = e?.message ?? 'Meta API error';
     }
 
     const newVerifiedPatients = verifiedPatientIds.size;
+    const verifiedRevenueRounded = Number.parseFloat(verifiedRevenue.toFixed(2));
+    const avgTicket = newVerifiedPatients > 0
+      ? Number.parseFloat((verifiedRevenueRounded / newVerifiedPatients).toFixed(2))
+      : null;
     const cacDoctoralia = newVerifiedPatients > 0
       ? Number.parseFloat((metaResult.spend / newVerifiedPatients).toFixed(2))
+      : null;
+    const metaCpl = metaResult.leads > 0
+      ? Number.parseFloat((metaResult.spend / metaResult.leads).toFixed(2))
       : null;
 
     return sendJson({
@@ -3002,15 +3046,18 @@ async function handleKpisGet(ctx: AuthenticatedRouteContext): Promise<Response |
       meta: {
         spend: metaResult.spend,
         leads: metaResult.leads,
+        cpl: metaCpl,
         live: metaResult.live,
         message: metaResult.message,
       },
       crm: {
-        totalLeads,
+        totalLeads: crmLeads,
+        metaLeads,
       },
       doctoralia: {
         newVerifiedPatients,
-        verifiedRevenue: Number.parseFloat(verifiedRevenue.toFixed(2)),
+        verifiedRevenue: verifiedRevenueRounded,
+        avgTicket,
         cacDoctoralia,
       },
     });
@@ -3032,6 +3079,9 @@ async function handleReportsDoctoraliaFinancialsGet(ctx: AuthenticatedRouteConte
     let templateQ = adminClient
       .from('vw_doctoralia_financials')
       .select('*')
+      .eq('source_system', 'doctoralia')
+      .gt('amount_net', 0)
+      .is('cancelled_at', null)
       .order('settled_month', { ascending: true });
     if (fromMonth) templateQ = templateQ.gte('settled_month', fromMonth);
     if (toMonth)   templateQ = templateQ.lte('settled_month', toMonth);
@@ -3040,6 +3090,9 @@ async function handleReportsDoctoraliaFinancialsGet(ctx: AuthenticatedRouteConte
     let monthQ = adminClient
       .from('vw_doctoralia_by_month')
       .select('*')
+      .eq('source_system', 'doctoralia')
+      .gt('amount_net', 0)
+      .is('cancelled_at', null)
       .order('settled_month', { ascending: true });
     if (fromMonth) monthQ = monthQ.gte('settled_month', fromMonth);
     if (toMonth)   monthQ = monthQ.lte('settled_month', toMonth);

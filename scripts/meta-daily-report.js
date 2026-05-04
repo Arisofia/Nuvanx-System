@@ -227,7 +227,11 @@ function summariseGoogleAds(results) {
 
 // ─── Meta fetch ───────────────────────────────────────────────────────────────
 
-async function metaFetch(endpoint, params, token) {
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function metaFetch(endpoint, params, token, attempt = 1) {
   const url = new URL(`${META_GRAPH}${endpoint}`);
   url.searchParams.set('access_token', token);
 
@@ -244,36 +248,59 @@ async function metaFetch(endpoint, params, token) {
     url.searchParams.set(k, v);
   }
 
-  const response = await fetch(url.toString(), { signal: AbortSignal.timeout(30000) });
-  const data = await response.json();
+  try {
+    const response = await fetch(url.toString(), { signal: AbortSignal.timeout(30000) });
+    const data = await response.json();
 
-  if (!response.ok) {
-    const error = data?.error || {};
-    const msg = error.message || `Meta API ${response.status}`;
-    const code = error.code || 'unknown';
-    const subcode = error.error_subcode || 'unknown';
-    const traceId = error.fbtrace_id || 'unknown';
+    if (!response.ok) {
+      const error = data?.error || {};
+      const msg = error.message || `Meta API ${response.status}`;
+      const code = error.code || 'unknown';
+      const subcode = error.error_subcode || 'unknown';
+      const traceId = error.fbtrace_id || 'unknown';
 
-    const fullErrorMsg = `[Meta Error] Code: ${code}, Subcode: ${subcode}, Message: ${msg} (trace_id: ${traceId})`;
+      const fullErrorMsg = `[Meta Error] Code: ${code}, Subcode: ${subcode}, Message: ${msg} (trace_id: ${traceId})`;
+      const isTransient = [429, 500, 502, 503, 504].includes(response.status)
+        || String(msg).toLowerCase().includes('throttl')
+        || String(msg).toLowerCase().includes('rate limit')
+        || [4, 17, 613, 800].includes(Number(code));
 
-    if (
-      msg.includes('user logged out') ||
-      msg.includes('session is invalid') ||
-      msg.includes('Invalid OAuth access token') ||
-      msg.includes('token has expired')
-    ) {
-      throw new Error(
-        `META_ACCESS_TOKEN is a user-session token that has been invalidated. ` +
-        `Use a Meta System User access token instead: ` +
-        `Business Settings → Users → System Users → generate a token with ads_read / ads_management scopes. ` +
-        `Update the META_ACCESS_TOKEN secret in GitHub → Settings → Secrets → Actions. ` +
-        `Original error: ${fullErrorMsg}`,
-      );
+      if (attempt < 3 && isTransient) {
+        const backoffMs = 500 * Math.pow(2, attempt - 1);
+        console.warn(`[meta-daily-report] Transient Meta error on attempt ${attempt}: ${msg}. Retrying after ${backoffMs}ms.`);
+        await sleep(backoffMs);
+        return metaFetch(endpoint, params, token, attempt + 1);
+      }
+
+      if (
+        msg.includes('user logged out') ||
+        msg.includes('session is invalid') ||
+        msg.includes('Invalid OAuth access token') ||
+        msg.includes('token has expired')
+      ) {
+        throw new Error(
+          `META_ACCESS_TOKEN is a user-session token that has been invalidated. ` +
+          `Use a Meta System User access token instead: ` +
+          `Business Settings → Users → System Users → generate a token with ads_read / ads_management scopes. ` +
+          `Update the META_ACCESS_TOKEN secret in GitHub → Settings → Secrets → Actions. ` +
+          `Original error: ${fullErrorMsg}`,
+        );
+      }
+      throw new Error(fullErrorMsg);
     }
-    throw new Error(fullErrorMsg);
-  }
 
-  return data;
+    return data;
+  } catch (err) {
+    const message = String(err?.message || '').toLowerCase();
+    const isTimeout = message.includes('timeout') || message.includes('aborted') || message.includes('networkerror');
+    if (attempt < 3 && isTimeout) {
+      const backoffMs = 500 * Math.pow(2, attempt - 1);
+      console.warn(`[meta-daily-report] Meta fetch timeout on attempt ${attempt}. Retrying after ${backoffMs}ms.`);
+      await sleep(backoffMs);
+      return metaFetch(endpoint, params, token, attempt + 1);
+    }
+    throw err;
+  }
 }
 
 async function metaFetchWithFallback(endpoint, params, token) {

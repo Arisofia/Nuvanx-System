@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
-import { TrendingUp, Users, Zap, AlertCircle, DollarSign, ArrowUpRight, Percent, Target } from 'lucide-react'
+import { TrendingUp, Users, AlertCircle, DollarSign, ArrowUpRight, Percent, Target } from 'lucide-react'
 import {
   Area,
   AreaChart,
@@ -39,9 +39,13 @@ const DEMO_DASHBOARD_METRICS: DashboardMetrics = {
   activeCampaigns: 8,
   spend: 37_200,
   averageCpc: 1.07,
+  metaConversions: 92,
   loading: false,
   error: null,
+  metaError: null,
 }
+
+const defaultTrend: MetaTrendPoint[] = []
 
 const DEMO_COMBINED_METRICS: CombinedMetrics = {
   metaEstimatedLeads: 92,
@@ -79,6 +83,10 @@ export default function Dashboard() {
     error: null,
     metaError: null,
   })
+  const [combined, setCombined] = useState<CombinedMetrics>(DEMO_COMBINED_METRICS)
+  const [funnel, setFunnel] = useState<RealFunnel>(DEMO_FUNNEL)
+  const [isDemo, setIsDemo] = useState<boolean>(true)
+  const [isFunnelDemo, setIsFunnelDemo] = useState<boolean>(true)
   const [trendData, setTrendData] = useState<MetaTrendPoint[]>([])
   const [activity, setActivity] = useState<ActivityEvent[]>([])
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
@@ -135,18 +143,20 @@ export default function Dashboard() {
         const sourceParam = sourceFilter !== 'ALL' ? `&source=${sourceFilter}` : ''
         const queryParams = `${baseParams}${campaignParam}`
         const dashboardParams = `${queryParams}${sourceParam}`
-        const [metricsResult, metaTrendsResult, campaignsResult, insightsResult, funnelResult] = await Promise.allSettled([
+        const [metricsResult, metaTrendsResult, campaignsResult, insightsResult, funnelResult, kpisResult] = await Promise.allSettled([
           invokeApi(`/dashboard/metrics${dashboardParams}`),
           invokeApi(`/dashboard/meta-trends${queryParams}`),
           invokeApi(`/meta/campaigns${isCustomRange ? `?from=${customFrom}&to=${customTo}` : `?days=${days}`}`),
           invokeApi(`/meta/insights${queryParams}`),
           invokeApi('/dashboard/lead-flow'),
+          invokeApi(`/kpis${dashboardParams}`),
         ])
 
         // Lead/DB metrics — fatal if this fails
         if (metricsResult.status === 'rejected') {
           throw metricsResult.reason
         }
+        const kpisResponse = kpisResult.status === 'fulfilled' ? kpisResult.value : null
         const metricsData = metricsResult.value?.metrics ?? {}
         if (metricsData.bySource && Object.keys(metricsData.bySource).length > 0 && sourcesList.length === 0) {
           setSourcesList(Object.keys(metricsData.bySource))
@@ -188,7 +198,7 @@ export default function Dashboard() {
 
         const spendDelta = insightsResponse?.changes?.spend ?? 0
 
-        const hasRealDashboardMetrics = kpisResponse?.success === true && totalLeads >= 0
+        const hasRealDashboardMetrics = kpisResponse?.success === true
 
         if (!hasRealDashboardMetrics) {
           setIsDemo(true)
@@ -201,7 +211,7 @@ export default function Dashboard() {
         }
 
         setIsDemo(false)
-        setIsFunnelDemo(doctoraliaPatients === 0)
+        setIsFunnelDemo((kpisResponse?.doctoralia?.newVerifiedPatients ?? 0) === 0)
         setTrendData(
           Array.isArray(metaTrendsResponse?.trends)
             ? metaTrendsResponse.trends.map((item: any) => ({
@@ -236,19 +246,21 @@ export default function Dashboard() {
         })
 
         setCombined({
-          metaEstimatedLeads: metaLeads,
-          verifiedRevenue: doctoraliaRevenue,
-          metaCpl,
-          revenuePerLead,
+          metaEstimatedLeads: Number(kpisResponse?.meta?.leads ?? insightsSummary?.conversions ?? 0),
+          verifiedRevenue: Number(kpisResponse?.doctoralia?.verifiedRevenue ?? Number(metricsData.verifiedRevenue ?? 0)),
+          metaCpl: Number(kpisResponse?.meta?.cpl ?? 0),
+          revenuePerLead: kpisResponse?.doctoralia?.newVerifiedPatients > 0
+            ? Number.parseFloat(((kpisResponse?.doctoralia?.verifiedRevenue ?? 0) / kpisResponse.doctoralia.newVerifiedPatients).toFixed(2))
+            : 0,
         })
 
         setFunnel({
-          metaSpend,
-          metaLeads,
-          crmLeads: totalLeads,
-          doctoraliaRevenue,
-          doctoraliaPatients,
-          cac,
+          metaSpend: Number(kpisResponse?.meta?.spend ?? spend),
+          metaLeads: Number(kpisResponse?.meta?.leads ?? metaConversions),
+          crmLeads: Number(kpisResponse?.crm?.totalLeads ?? Number(metricsData.totalLeads ?? 0)),
+          doctoraliaRevenue: Number(kpisResponse?.doctoralia?.verifiedRevenue ?? Number(metricsData.verifiedRevenue ?? 0)),
+          doctoraliaPatients: Number(kpisResponse?.doctoralia?.newVerifiedPatients ?? 0),
+          cac: Number(kpisResponse?.doctoralia?.cacDoctoralia ?? 0),
         })
       } catch (err: any) {
         console.error('Dashboard fetch failed:', err)
@@ -516,7 +528,7 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_0.85fr] xl:grid-cols-[1.6fr_0.9fr] gap-4">
           <Card>
             <CardHeader>
-              <CardTitle>Meta Spend (últimos {range === '30d' ? '30 días' : '7 días'})</CardTitle>
+              <CardTitle>Meta Spend ({periodLabel})</CardTitle>
             </CardHeader>
             <CardContent className="h-72">
             <ResponsiveContainer width="100%" height="100%">
@@ -623,7 +635,7 @@ export default function Dashboard() {
           ) : (
             <div className="space-y-3 max-h-64 overflow-y-auto">
               {activity.map((ev) => (
-                <div className="p-3 bg-slate-900 rounded-lg border border-slate-700">
+                <div key={`${ev.ts}-${ev.label}`} className="p-3 bg-slate-900 rounded-lg border border-slate-700">
                   <p className="text-sm font-medium">{ev.label}</p>
                   <p className="text-xs text-slate-500 mt-1">{ev.detail} • {new Date(ev.ts).toLocaleTimeString()}</p>
                 </div>
