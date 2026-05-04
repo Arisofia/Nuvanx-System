@@ -1,6 +1,9 @@
 -- Migration: add user_id + source to vw_campaign_performance_real
 -- This allows per-user isolation and source-level attribution in the Attribution tab.
 
+-- Drop previous version to avoid column rename/reorder errors on deploy
+DROP VIEW IF EXISTS public.vw_campaign_performance_real;
+
 CREATE OR REPLACE VIEW public.vw_campaign_performance_real AS
 SELECT
   l.user_id,
