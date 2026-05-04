@@ -85,7 +85,6 @@ export default function Dashboard() {
   })
   const [combined, setCombined] = useState<CombinedMetrics>(DEMO_COMBINED_METRICS)
   const [funnel, setFunnel] = useState<RealFunnel>(DEMO_FUNNEL)
-  const [isDemo, setIsDemo] = useState<boolean>(true)
   const [isFunnelDemo, setIsFunnelDemo] = useState<boolean>(true)
   const [trendData, setTrendData] = useState<MetaTrendPoint[]>([])
   const [activity, setActivity] = useState<ActivityEvent[]>([])
@@ -201,7 +200,6 @@ export default function Dashboard() {
         const hasRealDashboardMetrics = kpisResponse?.success === true
 
         if (!hasRealDashboardMetrics) {
-          setIsDemo(true)
           setIsFunnelDemo(true)
           setMetrics(DEMO_DASHBOARD_METRICS)
           setTrendData(defaultTrend)
@@ -210,7 +208,6 @@ export default function Dashboard() {
           return
         }
 
-        setIsDemo(false)
         setIsFunnelDemo((kpisResponse?.doctoralia?.newVerifiedPatients ?? 0) === 0)
         setTrendData(
           Array.isArray(metaTrendsResponse?.trends)
