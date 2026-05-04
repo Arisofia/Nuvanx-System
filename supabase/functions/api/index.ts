@@ -2314,6 +2314,28 @@ function mapMetaCampaign(c: any) {
   };
 }
 
+/** Derives the `time_range` JSON string for the Meta campaigns list fetch.
+ *
+ * The window matches the caller's requested period (from/to/days) and is
+ * clamped to 90 days — the Meta API maximum for the `time_range` filter.
+ * Falls back to the full 90-day window when no period params are supplied or
+ * when `days` is not a finite number.
+ */
+export function buildCampaignsTimeRange(
+  campFrom: string,
+  campTo: string,
+  campDays: number,
+  nowMs: number = Date.now(),
+): string {
+  const maxLookbackMs = 90 * 86_400_000;
+  const until = campTo || new Date(nowMs).toISOString().slice(0, 10);
+  const requestedSinceMs = campFrom
+    ? new Date(campFrom).getTime()
+    : nowMs - Math.min(Number.isFinite(campDays) ? campDays * 86_400_000 : maxLookbackMs, maxLookbackMs);
+  const since = new Date(Math.max(requestedSinceMs, nowMs - maxLookbackMs)).toISOString().slice(0, 10);
+  return JSON.stringify({ since, until });
+}
+
 async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'meta' && sub === 'campaigns' && req.method === 'GET') {
@@ -2333,12 +2355,15 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
       ? `time_range(${JSON.stringify({ since: campFrom, until: campTo })})`
       : `date_preset(${datePreset})`;
 
+    const campaignsTimeRange = buildCampaignsTimeRange(campFrom, campTo, campDays);
+
     try {
       const accountResults = await Promise.allSettled(creds.adAccountIds.map(async (accountId: string) => {
         const [data, account] = await Promise.all([
           metaFetch(`/${accountId}/campaigns`, {
             fields: `id,name,status,objective,daily_budget,lifetime_budget,insights.${insightsDateParam}{impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,actions,cost_per_action_type,quality_ranking,engagement_rate_ranking}`,
             effective_status: '["ACTIVE","PAUSED","DELETED","ARCHIVED","IN_PROCESS","WITH_ISSUES"]',
+            time_range: campaignsTimeRange,
             limit: '500',
           }, creds.accessToken),
           metaFetch(`/${accountId}`, { fields: 'currency' }, creds.accessToken),
@@ -2375,6 +2400,7 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
           return await metaFetch(`/${accountId}/campaigns`, {
             fields: 'id,name,status,objective,daily_budget,lifetime_budget',
             effective_status: '["ACTIVE","PAUSED","DELETED","ARCHIVED","IN_PROCESS","WITH_ISSUES"]',
+            time_range: campaignsTimeRange,
             limit: '500',
           }, creds.accessToken);
         }));
