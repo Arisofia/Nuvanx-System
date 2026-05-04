@@ -13,6 +13,8 @@ export interface DashboardMetrics {
   averageCpc: number
   metaConversions: number
   verifiedRevenue?: number
+  totalRevenue?: number
+  settledCount?: number
   deltas?: {
     leads: number
     revenue: number
@@ -124,9 +126,17 @@ export interface MonthlyTrend {
   net: number
 }
 
+export interface TemplateMixRow {
+  name: string
+  count: number
+  net: number
+  pct: number
+}
+
 export interface FinancialsState {
   summary: FinancialSummary | null
   monthly: MonthlyTrend[]
+  templateMix: TemplateMixRow[]
   loading: boolean
   error: string | null
 }
@@ -181,7 +191,21 @@ export interface FunnelRow {
 export interface CampaignPerformance {
   source: string
   campaign_name?: string
+  campaign_id?: string
   total_leads: number
+  contacted?: number
+  replied?: number
+  booked?: number
+  attended?: number
+  no_shows?: number
+  closed?: number
+  closed_won?: number
+  estimated_revenue?: number
+  verified_revenue_crm?: number
+  reply_rate_pct?: number
+  lead_to_close_rate_pct?: number
+  no_show_rate_pct?: number
+  avg_reply_delay_min?: number
   pct?: number
 }
 

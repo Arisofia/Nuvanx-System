@@ -23,6 +23,7 @@ export default function Financials() {
   const [state, setState] = useState<FinancialsState>({
     summary: null,
     monthly: [],
+    templateMix: [],
     loading: true,
     error: null,
   })
@@ -49,6 +50,7 @@ export default function Financials() {
         setState({
           summary: data?.summary ?? null,
           monthly: Array.isArray(data?.monthly) ? data.monthly : [],
+          templateMix: Array.isArray(data?.templateMix) ? data.templateMix : [],
           loading: false,
           error: data?.summary ? null : 'No financial data available yet.',
         })
@@ -70,11 +72,11 @@ export default function Financials() {
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Verified Financials</h1>
-          <p className="text-slate-600 mt-1">Doctoralia settlements, LTV, verified revenue</p>
+          <p className="text-slate-400 mt-1">Doctoralia settlements, LTV, verified revenue</p>
         </div>
         <div className="animate-pulse space-y-4">
-          <div className="h-24 bg-slate-200 rounded-lg" />
-          <div className="h-24 bg-slate-200 rounded-lg" />
+          <div className="h-24 bg-slate-800 rounded-lg" />
+          <div className="h-24 bg-slate-800 rounded-lg" />
         </div>
       </div>
     )
@@ -85,7 +87,7 @@ export default function Financials() {
       <div className="flex flex-col sm:flex-row sm:items-end gap-4">
         <div className="flex-1">
           <h1 className="text-3xl font-bold">Verified Financials</h1>
-          <p className="text-slate-600 mt-1">Doctoralia settlements, LTV, verified revenue</p>
+          <p className="text-slate-400 mt-1">Doctoralia settlements, LTV, verified revenue</p>
         </div>
         {/* Period presets */}
         <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-1">
@@ -122,13 +124,13 @@ export default function Financials() {
       </div>
 
       {state.error && (
-        <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg flex gap-3">
-          <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-yellow-800">{state.error}</p>
+        <div className="p-4 bg-amber-950/40 border border-amber-800 rounded-lg flex gap-3">
+          <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-amber-300">{state.error}</p>
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Verified Revenue (Net)</CardTitle>
@@ -136,8 +138,20 @@ export default function Financials() {
           <CardContent>
             <div className="text-2xl font-bold">{state.summary ? fmt(state.summary.totalNet) : '—'}</div>
             <p className="text-xs text-slate-500 mt-1">
-              {state.summary ? `${state.summary.settledCount} settled transactions` : 'From Doctoralia settlements'}
+              {state.summary
+                ? `${state.summary.settledCount} settled · ${state.summary.cancelledCount} cancelled`
+                : 'From Doctoralia settlements'}
             </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Gross Revenue</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{state.summary ? fmt(state.summary.totalGross) : '—'}</div>
+            <p className="text-xs text-slate-500 mt-1">Before discounts</p>
           </CardContent>
         </Card>
 
@@ -160,6 +174,20 @@ export default function Financials() {
             <p className="text-xs text-slate-500 mt-1">Discount applied on gross revenue</p>
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Avg. Liquidation</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {state.summary ? (state.summary.avgLiquidationDays > 0 ? `${state.summary.avgLiquidationDays}d` : '—') : '—'}
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              {state.summary?.avgLiquidationDays === 0 ? 'No intake date on settlements' : 'Days from intake to settlement'}
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
       <Card>
@@ -172,17 +200,52 @@ export default function Financials() {
           ) : (
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={state.monthly}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" />
-                <YAxis />
-                <Tooltip formatter={(v: number) => fmt(v)} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', fontSize: 12 }}
+                  formatter={(v: number) => fmt(v)}
+                />
                 <Legend />
-                <Line type="monotone" dataKey="net" name="Net Revenue" stroke="#3b82f6" dot={false} />
+                <Line type="monotone" dataKey="net" name="Net Revenue" stroke="#3b82f6" dot={false} strokeWidth={2} />
               </LineChart>
             </ResponsiveContainer>
           )}
         </CardContent>
       </Card>
+
+      {state.templateMix.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Revenue by Template</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-slate-700">
+                    <th className="text-left text-xs font-semibold text-slate-400 px-3 py-2">Template</th>
+                    <th className="text-right text-xs font-semibold text-slate-400 px-3 py-2">Ops</th>
+                    <th className="text-right text-xs font-semibold text-slate-400 px-3 py-2">Net Revenue</th>
+                    <th className="text-right text-xs font-semibold text-slate-400 px-3 py-2">Share %</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {state.templateMix.map((t, i) => (
+                    <tr key={i} className="border-b border-slate-800 hover:bg-slate-800/50">
+                      <td className="px-3 py-2 text-sm text-slate-300">{t.name}</td>
+                      <td className="px-3 py-2 text-sm text-slate-300 text-right">{t.count}</td>
+                      <td className="px-3 py-2 text-sm text-slate-300 text-right">{fmt(t.net)}</td>
+                      <td className="px-3 py-2 text-sm text-slate-300 text-right">{t.pct}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

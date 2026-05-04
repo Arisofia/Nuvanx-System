@@ -118,7 +118,7 @@ export default function Integrations() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Integrations</h1>
-          <p className="text-slate-600 mt-1">Credential vault — Meta Ads, WhatsApp, OpenAI, Gemini, GitHub, Google Ads</p>
+          <p className="text-slate-400 mt-1">Credential vault — Meta Ads, WhatsApp, OpenAI, Gemini, GitHub, Google Ads</p>
         </div>
         <Button className="gap-2" onClick={() => { setShowForm(true); setSaveError(null) }}>
           <Plus className="w-4 h-4" />
@@ -128,7 +128,7 @@ export default function Integrations() {
 
       {/* ── Connect form ───────────────────────────────────────────── */}
       {showForm && (
-        <Card className="border-blue-200 bg-blue-50">
+        <Card className="border-slate-700 bg-slate-900">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-base">Connect Integration</CardTitle>
             <Button variant="ghost" size="sm" onClick={() => setShowForm(false)}><X className="w-4 h-4" /></Button>
@@ -141,7 +141,7 @@ export default function Integrations() {
                   name="service"
                   value={form.service}
                   onChange={handleFieldChange}
-                  className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="mt-1 w-full rounded-md border border-slate-700 bg-slate-800 text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
                 >
                   {SUPPORTED_SERVICES.map((s) => (
                     <option key={s} value={s}>{formatServiceName(s)}</option>
@@ -207,7 +207,7 @@ export default function Integrations() {
                 </div>
               )}
 
-              {saveError && <p className="text-sm text-red-600">{saveError}</p>}
+              {saveError && <p className="text-sm text-red-400">{saveError}</p>}
 
               <div className="flex gap-2 pt-1">
                 <Button type="submit" disabled={saving} className="flex-1">
@@ -221,13 +221,13 @@ export default function Integrations() {
       )}
 
       {loading && (
-        <Card><CardContent className="py-6 text-sm text-slate-600">Loading integrations…</CardContent></Card>
+        <Card><CardContent className="py-6 text-sm text-slate-400">Loading integrations…</CardContent></Card>
       )}
       {error && (
-        <Card className="border-red-200 bg-red-50"><CardContent className="py-6 text-sm text-red-700">{error}</CardContent></Card>
+        <Card className="border-red-800 bg-red-950/40"><CardContent className="py-6 text-sm text-red-300">{error}</CardContent></Card>
       )}
       {!loading && !error && integrations.length === 0 && (
-        <Card><CardContent className="py-6 text-sm text-slate-600">No integrations connected yet. Click "Add Integration" to get started.</CardContent></Card>
+        <Card><CardContent className="py-6 text-sm text-slate-400">No integrations connected yet. Click "Add Integration" to get started.</CardContent></Card>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -245,11 +245,11 @@ export default function Integrations() {
                   {icon} {formatServiceName(integration.service)}
                 </CardTitle>
                 {isConnected ? (
-                  <Badge className="bg-green-50 text-green-700 border-green-200">
+                  <Badge className="bg-emerald-950 text-emerald-400 border border-emerald-800">
                     <CheckCircle2 className="w-3 h-3 mr-1" />Connected
                   </Badge>
                 ) : (
-                  <Badge className="bg-yellow-50 text-yellow-700 border-yellow-200">
+                  <Badge className="bg-amber-950 text-amber-400 border border-amber-800">
                     <AlertCircle className="w-3 h-3 mr-1" />{integration.status || 'Inactive'}
                   </Badge>
                 )}
@@ -269,7 +269,7 @@ export default function Integrations() {
                   <p className="text-xs text-slate-400">Updated: {new Date(integration.updated_at).toLocaleString()}</p>
                 )}
                 {testResult[integration.service] && (
-                  <p className="text-xs text-slate-700 bg-slate-50 rounded p-2">{testResult[integration.service]}</p>
+                  <p className="text-xs text-slate-300 bg-slate-800 rounded p-2">{testResult[integration.service]}</p>
                 )}
                 <Button
                   variant="outline"

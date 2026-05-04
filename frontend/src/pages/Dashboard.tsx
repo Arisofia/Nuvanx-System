@@ -153,6 +153,8 @@ export default function Dashboard() {
           totalLeads: Number(metricsData.totalLeads ?? 0),
           conversionRate: Number(metricsData.conversionRate ?? 0),
           verifiedRevenue: Number(metricsData.verifiedRevenue ?? 0),
+          totalRevenue: Number(metricsData.totalRevenue ?? 0),
+          settledCount: Number(metricsData.settledCount ?? 0),
           activeCampaigns: campaigns.filter((c: any) => c.status === 'ACTIVE').length,
           spend,
           averageCpc: Number.isFinite(avgCpcRaw) ? Number.parseFloat(avgCpcRaw.toFixed(2)) : 0,
@@ -186,11 +188,11 @@ export default function Dashboard() {
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Dashboard</h1>
-          <p className="text-slate-600 mt-1">Loading metrics...</p>
+          <p className="text-slate-400 mt-1">Loading metrics...</p>
         </div>
         <div className="animate-pulse space-y-4">
-          <div className="h-24 bg-slate-200 rounded-lg" />
-          <div className="h-24 bg-slate-200 rounded-lg" />
+          <div className="h-24 bg-slate-800 rounded-lg" />
+          <div className="h-24 bg-slate-800 rounded-lg" />
         </div>
       </div>
     )
@@ -201,7 +203,7 @@ export default function Dashboard() {
       <div className="flex flex-col sm:flex-row sm:items-end gap-4">
         <div className="flex-1">
           <h1 className="text-3xl font-bold">Dashboard</h1>
-          <p className="text-slate-600 mt-1">Control centre — Meta KPIs, agent status, adaptive plan</p>
+          <p className="text-slate-400 mt-1">Control centre — Meta KPIs, agent status, adaptive plan</p>
         </div>
         <div className="flex flex-col sm:flex-row items-center gap-2">
           {sourcesList.length > 0 && (
@@ -245,28 +247,28 @@ export default function Dashboard() {
       </div>
 
       {metrics.error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg flex gap-3">
-          <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+        <div className="p-4 bg-red-950/40 border border-red-800 rounded-lg flex gap-3">
+          <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="font-medium text-red-900">Connection Error</p>
-            <p className="text-sm text-red-800 mt-1">{metrics.error}</p>
+            <p className="font-medium text-red-300">Connection Error</p>
+            <p className="text-sm text-red-300 mt-1">{metrics.error}</p>
           </div>
         </div>
       )}
 
       {metrics.metaError && !metrics.error && (
-        <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg flex gap-3">
-          <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+        <div className="p-4 bg-amber-950/40 border border-amber-800 rounded-lg flex gap-3">
+          <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="font-medium text-amber-900">Meta Ads not connected</p>
-            <p className="text-sm text-amber-800 mt-1">
+            <p className="font-medium text-amber-300">Meta Ads not connected</p>
+            <p className="text-sm text-amber-300 mt-1">
               {metrics.metaError.includes('#200') || metrics.metaError.includes('permission')
                 ? 'Your Meta token is missing ads_management or ads_read permissions. Reconnect your Meta account in Integrations to fix this.'
                 : metrics.metaError}
             </p>
             <a
               href="/integrations"
-              className="inline-block mt-2 text-sm font-medium text-amber-700 underline hover:text-amber-900"
+              className="inline-block mt-2 text-sm font-medium text-amber-400 underline hover:text-amber-200"
             >
               Go to Integrations →
             </a>
@@ -377,6 +379,17 @@ export default function Dashboard() {
                   <p className="text-2xl font-semibold">${(metrics.verifiedRevenue ?? 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                   {metrics.deltas && <MetricDelta value={metrics.deltas.revenue} />}
                 </div>
+                <p className="text-xs text-slate-500 mt-1">{metrics.settledCount ?? 0} settled · Doctoralia</p>
+              </div>
+              <div className="rounded-xl border border-border p-4 bg-slate-950">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm text-slate-400">Pipeline (Est.)</span>
+                  <DollarSign className="h-4 w-4 text-violet-400" />
+                </div>
+                <div className="flex items-baseline gap-2 mt-3">
+                  <p className="text-2xl font-semibold">${(metrics.totalRevenue ?? 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">{metrics.totalRevenue === 0 ? 'No pipeline revenue yet' : 'Sum of leads.revenue'}</p>
               </div>
               <div className="rounded-xl border border-border p-4 bg-slate-950">
                 <div className="flex items-center justify-between gap-2">
@@ -407,7 +420,7 @@ export default function Dashboard() {
           ) : (
             <div className="space-y-3 max-h-64 overflow-y-auto">
               {activity.map((ev) => (
-                <div key={ev.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                <div className="p-3 bg-slate-900 rounded-lg border border-slate-700">
                   <p className="text-sm font-medium">{ev.label}</p>
                   <p className="text-xs text-slate-500 mt-1">{ev.detail} • {new Date(ev.ts).toLocaleTimeString()}</p>
                 </div>

@@ -54,7 +54,7 @@ export default function CRM() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">CRM</h1>
-          <p className="text-slate-600 mt-1">Lead pipeline — stages, DNI, lost_reason</p>
+          <p className="text-slate-400 mt-1">Lead pipeline — stages, DNI, lost_reason</p>
         </div>
       </div>
 
@@ -99,7 +99,7 @@ export default function CRM() {
         <TabsContent value="pipeline" className="space-y-4 pt-4">
           {loading ? (
             <div className="flex items-center justify-center h-64">
-              <p className="text-slate-600">Loading pipeline...</p>
+              <p className="text-slate-400">Loading pipeline...</p>
             </div>
           ) : (
             <KanbanBoard 
@@ -117,7 +117,7 @@ export default function CRM() {
             </CardHeader>
             <CardContent>
               {loading ? (
-                <p className="text-slate-600">Fetching leads from Edge Function...</p>
+                <p className="text-slate-400">Fetching leads from Edge Function...</p>
               ) : (
                 <div className="space-y-3">
                   {error && <p className="text-sm text-yellow-500">{error}</p>}

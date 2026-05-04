@@ -49,7 +49,7 @@ export default function Intelligence() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Intelligence</h1>
-        <p className="text-slate-600 mt-1">Campaign attribution, WhatsApp funnel, conversation log</p>
+        <p className="text-slate-400 mt-1">Campaign attribution, WhatsApp funnel, conversation log</p>
       </div>
 
       <Tabs defaultValue="attribution" className="w-full">
@@ -72,16 +72,43 @@ export default function Intelligence() {
               ) : campaigns.length === 0 ? (
                 <p className="text-slate-500 text-sm">No attribution data available yet.</p>
               ) : (
-                <div className="space-y-3">
-                  {campaigns.map((c, i) => {
-                    const pct = totalLeads > 0 ? Math.round((Number(c.total_leads) / totalLeads) * 100) : 0
-                    return (
-                      <div key={i} className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                        <p className="text-sm font-medium">{c.source}{c.campaign_name ? ` — ${c.campaign_name}` : ''}</p>
-                        <p className="text-xs text-slate-500 mt-1">{c.total_leads} leads ({pct}% of total)</p>
-                      </div>
-                    )
-                  })}
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-slate-700">
+                        <th className="text-left text-xs font-semibold text-slate-400 px-3 py-2">Source / Campaign</th>
+                        <th className="text-right text-xs font-semibold text-slate-400 px-3 py-2">Leads</th>
+                        <th className="text-right text-xs font-semibold text-slate-400 px-3 py-2">Contacted</th>
+                        <th className="text-right text-xs font-semibold text-slate-400 px-3 py-2">Replied</th>
+                        <th className="text-right text-xs font-semibold text-slate-400 px-3 py-2">Booked</th>
+                        <th className="text-right text-xs font-semibold text-slate-400 px-3 py-2">Won</th>
+                        <th className="text-right text-xs font-semibold text-slate-400 px-3 py-2">Reply %</th>
+                        <th className="text-right text-xs font-semibold text-slate-400 px-3 py-2">Close %</th>
+                        <th className="text-right text-xs font-semibold text-slate-400 px-3 py-2">Reply lag (min)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {campaigns.map((c, i) => (
+                        <tr key={i} className="border-b border-slate-800 hover:bg-slate-800/50">
+                          <td className="px-3 py-2 text-sm text-slate-300">
+                            {c.source}{c.campaign_name ? ` — ${c.campaign_name}` : ''}
+                          </td>
+                          <td className="px-3 py-2 text-sm text-slate-300 text-right">{c.total_leads}</td>
+                          <td className="px-3 py-2 text-sm text-slate-300 text-right">{c.contacted ?? '—'}</td>
+                          <td className="px-3 py-2 text-sm text-slate-300 text-right">{c.replied ?? '—'}</td>
+                          <td className="px-3 py-2 text-sm text-slate-300 text-right">{c.booked ?? '—'}</td>
+                          <td className="px-3 py-2 text-sm text-slate-300 text-right">{c.closed_won ?? '—'}</td>
+                          <td className="px-3 py-2 text-sm text-slate-300 text-right">
+                            {c.reply_rate_pct != null ? `${c.reply_rate_pct}%` : '—'}
+                          </td>
+                          <td className="px-3 py-2 text-sm text-slate-300 text-right">
+                            {c.lead_to_close_rate_pct != null ? `${c.lead_to_close_rate_pct}%` : '—'}
+                          </td>
+                          <td className="px-3 py-2 text-sm text-slate-300 text-right">{c.avg_reply_delay_min ?? '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </CardContent>
@@ -103,9 +130,9 @@ export default function Intelligence() {
               ) : (
                 <div className="space-y-2">
                   {funnel.map((row, i) => (
-                    <div key={i} className={`flex justify-between items-center p-2 rounded bg-blue-${Math.min(50 + i * 50, 300)}`}>
-                      <span className="capitalize">{String(row.stage).replace(/_/g, ' ')}</span>
-                      <span className="font-bold">
+                    <div key={i} className="flex justify-between items-center p-3 rounded-lg bg-slate-900 border border-slate-700">
+                      <span className="capitalize text-sm text-slate-300">{String(row.stage).replace(/_/g, ' ')}</span>
+                      <span className="font-bold text-sm">
                         {row.count.toLocaleString()}
                         {row.pct != null ? ` (${row.pct}%)` : ''}
                       </span>
@@ -132,16 +159,16 @@ export default function Intelligence() {
               ) : (
                 <div className="space-y-3">
                   {conversations.map((conv) => (
-                    <div key={conv.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                    <div key={conv.id} className="p-3 bg-slate-900 rounded-lg border border-slate-700">
                       <div className="flex justify-between">
                         <p className="text-sm font-medium">{conv.phone ?? conv.id}</p>
                         <span className="text-xs text-slate-500 capitalize">{conv.direction}</span>
                       </div>
                       {conv.message_preview && (
-                        <p className="text-xs text-slate-600 mt-1 truncate">{conv.message_preview}</p>
+                        <p className="text-xs text-slate-400 mt-1 truncate">{conv.message_preview}</p>
                       )}
                       {conv.sent_at && (
-                        <p className="text-xs text-slate-400 mt-1">{new Date(conv.sent_at).toLocaleString()}</p>
+                        <p className="text-xs text-slate-500 mt-1">{new Date(conv.sent_at).toLocaleString()}</p>
                       )}
                     </div>
                   ))}

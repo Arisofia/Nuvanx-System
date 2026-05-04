@@ -58,7 +58,7 @@ export default function Live() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Live Dashboard</h1>
-        <p className="text-slate-600 mt-1">Real-time lead flow + activity feed</p>
+        <p className="text-slate-400 mt-1">Real-time lead flow + activity feed</p>
       </div>
 
       <Card>
@@ -74,9 +74,9 @@ export default function Live() {
           ) : (
             <div className="space-y-3 max-h-[480px] overflow-y-auto">
               {events.map((ev) => (
-                <div key={ev.id + ev.ts} className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                <div key={ev.id + ev.ts} className="p-3 bg-slate-900 rounded-lg border border-slate-700">
                   <p className="text-sm font-medium">{ev.label}</p>
-                  {ev.detail && <p className="text-xs text-slate-500 mt-1">{ev.detail} • {new Date(ev.ts).toLocaleTimeString()}</p>}
+                  {ev.detail && <p className="text-xs text-slate-400 mt-1">{ev.detail} • {new Date(ev.ts).toLocaleTimeString()}</p>}
                 </div>
               ))}
             </div>
