@@ -10,12 +10,23 @@ Uso:
 
 import os
 import sys
+import hmac
+import hashlib
 import requests
 
 ACCESS_TOKEN = os.getenv('META_ACCESS_TOKEN', 'tu_token_de_acceso')
 PAGE_ID = os.getenv('META_PAGE_ID', '685010274687129')
 API_VERSION = os.getenv('META_API_VERSION', 'v21.0')
+META_APP_SECRET = os.getenv('META_APP_SECRET', '')
 API_BASE = f'https://graph.facebook.com/{API_VERSION}/'
+
+
+def compute_appsecret_proof(access_token, app_secret):
+    return hmac.new(
+        app_secret.encode('utf-8'),
+        access_token.encode('utf-8'),
+        hashlib.sha256,
+    ).hexdigest()
 
 
 def normalize_field_data(field_data):
@@ -52,6 +63,8 @@ def migrate_historical_leads():
         'access_token': ACCESS_TOKEN,
         'limit': 100,
     }
+    if META_APP_SECRET:
+        params['appsecret_proof'] = compute_appsecret_proof(ACCESS_TOKEN, META_APP_SECRET)
     total_updated = 0
 
     while next_url:
