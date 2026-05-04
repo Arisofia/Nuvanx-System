@@ -17,6 +17,7 @@
     "supabase:migration:list": "npx --yes supabase migration list",
     "supabase:migration:push": "npx --yes supabase db push",
     "supabase:types": "npx --yes supabase gen types typescript --local --schema public > frontend/src/lib/supabase/types.ts",
+    "test:e2e": "npm --prefix frontend run test:e2e",
     "production:e2e": "node scripts/production-e2e.js",
     "integration:connect": "node scripts/connect-integration.js",
     "setup:production": "bash scripts/setup-production.sh",

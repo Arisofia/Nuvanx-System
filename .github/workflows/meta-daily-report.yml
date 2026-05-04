@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://json.schemastore.org/github-workflow
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
 name: Daily Unified Automation
 
 env:
@@ -19,14 +19,15 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    environment: production
+    environment:
+      name: production
     env:
       REPORT_DAYS: 30
       META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
       META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       CLINIC_ID: ${{ secrets.CLINIC_ID }}
-      REPORT_USER_ID: ${{ secrets.REPORT_USER_ID }}
+      REPORT_USER_ID: ${{ vars.REPORT_USER_ID || secrets.REPORT_USER_ID }}
       GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT || '' }}
       GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN || '' }}
       GOOGLE_ADS_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_CUSTOMER_ID || '' }}
@@ -58,17 +59,17 @@ jobs:
   # Trigger independent sync workflow
   doctoralia-sync:
     needs: report
-    uses: "./.github/workflows/sync-doctoralia.yml"
+    uses: ./.github/workflows/sync-doctoralia.yml
     secrets: inherit
 
   # Trigger independent security workflow
   supabase-security:
     needs: doctoralia-sync
-    uses: "./.github/workflows/supabase-security.yml"
+    uses: ./.github/workflows/supabase-security.yml
     secrets: inherit
 
   # Trigger independent E2E workflow
   production-e2e:
     needs: supabase-security
-    uses: "./.github/workflows/e2e-only.yml"
+    uses: ./.github/workflows/e2e-only.yml
     secrets: inherit

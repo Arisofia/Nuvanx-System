@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://json.schemastore.org/github-workflow
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
 name: Sync Doctoralia Financials
 
 env:
@@ -82,12 +82,6 @@ jobs:
           fi
 
           echo "All required secrets present and valid."
-        env:
-          GOOGLE_ADS_SERVICE_ACCOUNT: ${{ env.GOOGLE_ADS_SERVICE_ACCOUNT }}
-          DOCTORALIA_SHEET_ID: ${{ env.DOCTORALIA_SHEET_ID }}
-          DOCTORALIA_DRIVE_FILE_ID: ${{ env.DOCTORALIA_DRIVE_FILE_ID }}
-          DATABASE_URL:        ${{ env.DATABASE_URL }}
-          CLINIC_ID:           ${{ env.CLINIC_ID }}
 
       - name: Install sync dependencies
         run: npm install --no-save googleapis pg

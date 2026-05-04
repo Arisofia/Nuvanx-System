@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://json.schemastore.org/github-workflow
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
 ###############################################################################
 # Deploy Supabase - sequential pipeline on main
 #
@@ -44,7 +44,6 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-      SKIP_SUPABASE: 'false'
     steps:
       - uses: actions/checkout@v4
       - name: Validate Supabase deployment secrets
@@ -59,7 +58,6 @@ jobs:
           if [ ${#MISSING[@]} -gt 0 ]; then
             echo "::warning::Supabase deploy skipped — missing secrets: ${MISSING[*]}"
             echo "skip_supabase=true" >> "$GITHUB_OUTPUT"
-            echo "SKIP_SUPABASE=true" >> "$GITHUB_ENV"
           fi
       - name: Supabase DB migrations
         if: steps.validate.outputs.skip_supabase != 'true'
