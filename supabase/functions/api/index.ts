@@ -2333,12 +2333,19 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
       ? `time_range(${JSON.stringify({ since: campFrom, until: campTo })})`
       : `date_preset(${datePreset})`;
 
+    // Fetch campaigns active at any point in the last 90 days (Meta API maximum) plus all
+    // currently active campaigns, so the list is never stale or artificially truncated.
+    const campaignsUntil = new Date().toISOString().slice(0, 10);
+    const campaignsSince = new Date(Date.now() - 90 * 86_400_000).toISOString().slice(0, 10);
+    const campaignsTimeRange = JSON.stringify({ since: campaignsSince, until: campaignsUntil });
+
     try {
       const accountResults = await Promise.allSettled(creds.adAccountIds.map(async (accountId: string) => {
         const [data, account] = await Promise.all([
           metaFetch(`/${accountId}/campaigns`, {
             fields: `id,name,status,objective,daily_budget,lifetime_budget,insights.${insightsDateParam}{impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,actions,cost_per_action_type,quality_ranking,engagement_rate_ranking}`,
             effective_status: '["ACTIVE","PAUSED","DELETED","ARCHIVED","IN_PROCESS","WITH_ISSUES"]',
+            time_range: campaignsTimeRange,
             limit: '500',
           }, creds.accessToken),
           metaFetch(`/${accountId}`, { fields: 'currency' }, creds.accessToken),
@@ -2375,6 +2382,7 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
           return await metaFetch(`/${accountId}/campaigns`, {
             fields: 'id,name,status,objective,daily_budget,lifetime_budget',
             effective_status: '["ACTIVE","PAUSED","DELETED","ARCHIVED","IN_PROCESS","WITH_ISSUES"]',
+            time_range: campaignsTimeRange,
             limit: '500',
           }, creds.accessToken);
         }));
