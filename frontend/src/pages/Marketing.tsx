@@ -35,14 +35,14 @@ function StatCard({
       <CardContent className="pt-4">
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">{label}</p>
+            <p className="text-xs text-muted font-medium uppercase tracking-wide">{label}</p>
             <div className="flex items-center mt-1">
               <p className={`text-2xl font-bold ${color}`}>{value}</p>
               <DeltaBadge value={delta} />
             </div>
-            {sub && <p className="text-xs text-slate-500 mt-1">{sub}</p>}
+            {sub && <p className="text-xs text-muted mt-1">{sub}</p>}
           </div>
-          <div className="p-2 rounded-lg bg-slate-800">{icon}</div>
+          <div className="p-2 rounded-lg bg-card">{icon}</div>
         </div>
       </CardContent>
     </Card>
@@ -71,7 +71,7 @@ function CampaignTable({ campaigns, filteredCampaigns, currency, summary }: Read
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-slate-800 text-xs text-slate-400 uppercase tracking-wide">
+          <tr className="border-b border-[#2d2218] text-xs text-muted uppercase tracking-wide">
             <th className="text-left px-4 py-3">Campaña</th>
             <th className="text-center px-3 py-3">Estado</th>
             <th className="text-center px-3 py-3">Objetivo</th>
@@ -88,9 +88,9 @@ function CampaignTable({ campaigns, filteredCampaigns, currency, summary }: Read
             <th className="text-right px-3 py-3" title="Customer Acquisition Cost = Gasto ÷ Conversiones">CAC</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-800">
+        <tbody className="divide-y divide-border">
           {filteredCampaigns.map((c) => (
-            <tr key={c.id} className="hover:bg-slate-800/40 transition-colors">
+            <tr key={c.id} className="hover:bg-card/40 transition-colors">
               <td className="px-4 py-3 font-medium max-w-[200px]">
                 <span title={c.name} className="truncate block">{c.name}</span>
               </td>
@@ -98,19 +98,19 @@ function CampaignTable({ campaigns, filteredCampaigns, currency, summary }: Read
                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                   c.status === 'ACTIVE'
                     ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
-                    : 'bg-slate-800 text-slate-400 border border-slate-700'
+                    : 'bg-card text-muted border border-border'
                 }`}>
                   {c.status === 'ACTIVE' ? '● ' : '○ '}{c.status}
                 </span>
               </td>
-              <td className="px-3 py-3 text-center text-slate-400 text-xs">{c.objective || '—'}</td>
-              <td className="px-3 py-3 text-right text-slate-300 text-xs">
+              <td className="px-3 py-3 text-center text-muted text-xs">{c.objective || '—'}</td>
+              <td className="px-3 py-3 text-right text-[#d7c5ae] text-xs">
                 {(() => {
                   if (c.dailyBudget != null) {
-                    return <><span className="text-slate-500">día</span> {fmtCurrency(c.dailyBudget, currency)}</>
+                    return <><span className="text-muted">día</span> {fmtCurrency(c.dailyBudget, currency)}</>
                   }
                   if (c.lifetimeBudget != null) {
-                    return <><span className="text-slate-500">vit</span> {fmtCurrency(c.lifetimeBudget, currency)}</>
+                    return <><span className="text-muted">vit</span> {fmtCurrency(c.lifetimeBudget, currency)}</>
                   }
                   return '—'
                 })()}
@@ -118,22 +118,22 @@ function CampaignTable({ campaigns, filteredCampaigns, currency, summary }: Read
               <td className="px-3 py-3 text-right font-semibold text-emerald-400">
                 {c.insights ? fmtCurrency(c.insights.spend, currency) : '—'}
               </td>
-              <td className="px-3 py-3 text-right text-slate-300">
+              <td className="px-3 py-3 text-right text-[#d7c5ae]">
                 {c.insights ? c.insights.impressions.toLocaleString('es-MX') : '—'}
               </td>
-              <td className="px-3 py-3 text-right text-slate-300">
+              <td className="px-3 py-3 text-right text-[#d7c5ae]">
                 {c.insights ? c.insights.reach.toLocaleString('es-MX') : '—'}
               </td>
               <td className="px-3 py-3 text-right text-violet-400">
                 {c.insights ? c.insights.clicks.toLocaleString('es-MX') : '—'}
               </td>
-              <td className="px-3 py-3 text-right text-slate-300">
+              <td className="px-3 py-3 text-right text-[#d7c5ae]">
                 {c.insights ? `${fmt(c.insights.ctr)}%` : '—'}
               </td>
               <td className="px-3 py-3 text-right text-amber-400">
                 {c.insights ? fmtCurrency(c.insights.cpc, currency) : '—'}
               </td>
-              <td className="px-3 py-3 text-right text-slate-300">
+              <td className="px-3 py-3 text-right text-[#d7c5ae]">
                 {c.insights ? fmtCurrency(c.insights.cpm, currency) : '—'}
               </td>
               <td className="px-3 py-3 text-right text-lime-400">
@@ -145,7 +145,7 @@ function CampaignTable({ campaigns, filteredCampaigns, currency, summary }: Read
               <td className="px-3 py-3 text-right">
                 {c.insights && c.insights.conversions > 0
                   ? <span className="text-rose-300 font-medium">{fmtCurrency(c.insights.spend / c.insights.conversions, currency)}</span>
-                  : <span className="text-slate-500" title="No conversions in this period">—</span>}
+                  : <span className="text-muted" title="No conversions in this period">—</span>}
               </td>
             </tr>
           ))}
@@ -153,8 +153,8 @@ function CampaignTable({ campaigns, filteredCampaigns, currency, summary }: Read
         {/* Totals row */}
         {campaigns.some((c) => c.insights) && (
           <tfoot>
-            <tr className="border-t-2 border-slate-700 bg-slate-900 text-xs font-semibold text-slate-300">
-              <td className="px-4 py-3 text-slate-400 uppercase tracking-wide">Total cuenta</td>
+            <tr className="border-t-2 border-border bg-surface text-xs font-semibold text-[#d7c5ae]">
+              <td className="px-4 py-3 text-muted uppercase tracking-wide">Total cuenta</td>
               <td colSpan={3} />
               <td className="px-3 py-3 text-right text-emerald-400">
                 {fmtCurrency(summary?.spend ?? 0, currency)}
@@ -180,7 +180,7 @@ function CampaignTable({ campaigns, filteredCampaigns, currency, summary }: Read
               <td className="px-3 py-3 text-right text-rose-300">
                 {summary && summary.conversions > 0
                   ? fmtCurrency(summary.spend / summary.conversions, currency)
-                  : <span className="text-slate-500" title="No conversions in this period">—</span>}
+                  : <span className="text-muted" title="No conversions in this period">—</span>}
               </td>
             </tr>
           </tfoot>
@@ -336,7 +336,7 @@ export default function Marketing() {
       <div className="flex flex-col sm:flex-row sm:items-end gap-4">
         <div className="flex-1">
           <h1 className="text-3xl font-bold">Marketing · Meta Ads</h1>
-          <p className="text-slate-400 mt-1 text-sm">
+          <p className="text-muted mt-1 text-sm">
             Período: {loading ? '…' : periodLabel}{accountId ? ` · Cuenta: ${accountId}` : ''} · Moneda: {loading ? '…' : currency}
           </p>
         </div>
@@ -346,7 +346,7 @@ export default function Marketing() {
             <select
               value={campaignId}
               onChange={(e) => setCampaignId(e.target.value)}
-              className="bg-slate-800 text-white text-xs font-medium px-3 py-1.5 rounded-lg border-none focus:ring-1 focus:ring-slate-500"
+              className="bg-card text-white text-xs font-medium px-3 py-1.5 rounded-lg border-none focus:ring-1 focus:ring-primary"
             >
               <option value="ALL">Todas las campañas</option>
               {campaigns.map((c) => (
@@ -354,13 +354,13 @@ export default function Marketing() {
               ))}
             </select>
           )}
-          <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-1">
+          <div className="flex items-center gap-1 bg-card rounded-lg p-1">
             {([7, 14, 30, 90, 365] as const).map((d) => (
               <button
                 key={d}
                 onClick={() => { setDays(d); setCustomFrom(''); setCustomTo('') }}
                 className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                  !customFrom && days === d ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'
+                  !customFrom && days === d ? 'bg-[#3f3224] text-white' : 'text-muted hover:text-white'
                 }`}
               >
                 {d}d
@@ -369,7 +369,7 @@ export default function Marketing() {
             <button
               onClick={() => { setCustomFrom(since2025); setCustomTo('') }}
               className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                customFrom === since2025 && !customTo ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+                customFrom === since2025 && !customTo ? 'bg-indigo-600 text-white' : 'text-muted hover:text-white'
               }`}
             >
               Desde 2025
@@ -381,15 +381,15 @@ export default function Marketing() {
               type="date"
               value={customFrom}
               onChange={(e) => setCustomFrom(e.target.value)}
-              className="bg-slate-800 text-white text-xs px-2 py-1.5 rounded-lg border-none focus:ring-1 focus:ring-slate-500"
+              className="bg-card text-white text-xs px-2 py-1.5 rounded-lg border-none focus:ring-1 focus:ring-primary"
               placeholder="Desde"
             />
-            <span className="text-slate-500 text-xs">→</span>
+            <span className="text-muted text-xs">→</span>
             <input
               type="date"
               value={customTo}
               onChange={(e) => setCustomTo(e.target.value)}
-              className="bg-slate-800 text-white text-xs px-2 py-1.5 rounded-lg border-none focus:ring-1 focus:ring-slate-500"
+              className="bg-card text-white text-xs px-2 py-1.5 rounded-lg border-none focus:ring-1 focus:ring-primary"
               placeholder="Hasta"
             />
           </div>
@@ -399,6 +399,21 @@ export default function Marketing() {
       {error && (
         <div className="rounded-md border border-amber-300 bg-amber-950/40 px-4 py-3 text-sm text-amber-300">
           {error}
+        </div>
+      )}
+
+      {/* Empty state: no meta data for selected period */}
+      {!loading && !error && !summary && campaigns.length === 0 && (
+        <div className="rounded-xl border border-dashed border-border bg-card/50 p-10 text-center space-y-3">
+          <p className="text-muted font-medium">No hay datos de Meta Ads para este período</p>
+          <p className="text-muted text-xs max-w-md mx-auto">
+            Ejecuta el script de sincronización para importar historial o verifica que el token de Meta Ads sea válido.
+          </p>
+          <div className="flex justify-center gap-3 mt-2">
+            <code className="bg-surface text-xs text-[#d7c5ae] px-3 py-1.5 rounded-lg border border-border">
+              node scripts/meta-backfill.js
+            </code>
+          </div>
         </div>
       )}
 
@@ -470,10 +485,10 @@ export default function Marketing() {
         </CardHeader>
         <CardContent className="h-72">
           {loading && (
-            <div className="h-full flex items-center justify-center text-slate-500 text-sm">Cargando…</div>
+            <div className="h-full flex items-center justify-center text-muted text-sm">Cargando…</div>
           )}
           {!loading && dailyChart.length === 0 && (
-            <div className="h-full flex items-center justify-center text-slate-500 text-sm">Sin datos diarios</div>
+            <div className="h-full flex items-center justify-center text-muted text-sm">Sin datos diarios</div>
           )}
           {!loading && dailyChart.length > 0 && (
             <ResponsiveContainer width="100%" height="100%">
@@ -612,13 +627,13 @@ export default function Marketing() {
               disabled={loading}
             />
             {/* Status filter */}
-            <div className="flex gap-1 bg-slate-800 rounded-lg p-1">
+            <div className="flex gap-1 bg-card rounded-lg p-1">
               {(['ALL', 'ACTIVE', 'PAUSED', 'ARCHIVED'] as const).map((s) => (
                 <button
                   key={s}
                   onClick={() => setStatusFilter(s)}
                   className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                    statusFilter === s ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'
+                    statusFilter === s ? 'bg-[#3f3224] text-white' : 'text-muted hover:text-white'
                   }`}
                 >
                   {STATUS_LABELS[s]}
@@ -631,16 +646,16 @@ export default function Marketing() {
               placeholder="Buscar campaña…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="bg-slate-800 border border-slate-700 text-sm text-slate-200 placeholder-slate-500 rounded-lg px-3 py-1.5 w-48 focus:outline-none focus:border-slate-500"
+              className="bg-card border border-border text-sm text-foreground placeholder-muted rounded-lg px-3 py-1.5 w-48 focus:outline-none focus:border-muted"
             />
           </div>
         </CardHeader>
         <CardContent className="p-0">
           {loading && (
-            <p className="p-4 text-sm text-slate-500">Cargando campañas…</p>
+            <p className="p-4 text-sm text-muted">Cargando campañas…</p>
           )}
           {!loading && filteredCampaigns.length === 0 && (
-            <p className="p-4 text-sm text-slate-500">
+            <p className="p-4 text-sm text-muted">
               {campaigns.length === 0 ? 'No hay campañas disponibles.' : 'Ninguna campaña coincide con los filtros.'}
             </p>
           )}

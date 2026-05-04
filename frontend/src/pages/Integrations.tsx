@@ -118,7 +118,7 @@ export default function Integrations() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Integraciones</h1>
-          <p className="text-slate-400 mt-1">Bóveda de credenciales — Meta Ads, WhatsApp, OpenAI, Gemini, GitHub, Google Ads</p>
+          <p className="text-muted mt-1">Bóveda de credenciales — Meta Ads, WhatsApp, OpenAI, Gemini, GitHub, Google Ads</p>
         </div>
         <Button className="gap-2" onClick={() => { setShowForm(true); setSaveError(null) }}>
           <Plus className="w-4 h-4" />
@@ -128,7 +128,7 @@ export default function Integrations() {
 
       {/* ── Connect form ───────────────────────────────────────────── */}
       {showForm && (
-        <Card className="border-slate-700 bg-slate-900">
+        <Card className="border-border bg-surface">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-base">Conectar Integración</CardTitle>
             <Button variant="ghost" size="sm" onClick={() => setShowForm(false)}><X className="w-4 h-4" /></Button>
@@ -141,7 +141,7 @@ export default function Integrations() {
                   name="service"
                   value={form.service}
                   onChange={handleFieldChange}
-                  className="mt-1 w-full rounded-md border border-slate-700 bg-slate-800 text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+                  className="mt-1 w-full rounded-md border border-border bg-card text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                 >
                   {SUPPORTED_SERVICES.map((s) => (
                     <option key={s} value={s}>{formatServiceName(s)}</option>
@@ -180,7 +180,7 @@ export default function Integrations() {
                     />
                   </div>
                   <div>
-                    <label className="text-sm font-medium">ID de la Página <span className="text-slate-400 font-normal">(opcional)</span></label>
+                    <label className="text-sm font-medium">ID de la Página <span className="text-muted font-normal">(opcional)</span></label>
                     <Input
                       type="text"
                       name="pageId"
@@ -221,13 +221,13 @@ export default function Integrations() {
       )}
 
       {loading && (
-        <Card><CardContent className="py-6 text-sm text-slate-400">Cargando integraciones…</CardContent></Card>
+        <Card><CardContent className="py-6 text-sm text-muted">Cargando integraciones…</CardContent></Card>
       )}
       {error && (
         <Card className="border-red-800 bg-red-950/40"><CardContent className="py-6 text-sm text-red-300">{error}</CardContent></Card>
       )}
       {!loading && !error && integrations.length === 0 && (
-        <Card><CardContent className="py-6 text-sm text-slate-400">No hay integraciones conectadas aún. Haz clic en "Agregar integración" para comenzar.</CardContent></Card>
+        <Card><CardContent className="py-6 text-sm text-muted">No hay integraciones conectadas aún. Haz clic en "Agregar integración" para comenzar.</CardContent></Card>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -257,19 +257,19 @@ export default function Integrations() {
 
               <CardContent className="space-y-2">
                 {adAccountId && (
-                  <p className="text-xs text-slate-500">Cuenta Publicitaria: <span className="font-mono">{adAccountId}</span></p>
+                  <p className="text-xs text-muted">Cuenta Publicitaria: <span className="font-mono">{adAccountId}</span></p>
                 )}
                 {pageId && (
-                  <p className="text-xs text-slate-500">ID de la Página: <span className="font-mono">{pageId}</span></p>
+                  <p className="text-xs text-muted">ID de la Página: <span className="font-mono">{pageId}</span></p>
                 )}
                 {integration.last_error && (
                   <p className="text-xs text-red-600">Último error: {integration.last_error}</p>
                 )}
                 {integration.updated_at && (
-                  <p className="text-xs text-slate-400">Actualizado: {new Date(integration.updated_at).toLocaleString()}</p>
+                  <p className="text-xs text-muted">Actualizado: {new Date(integration.updated_at).toLocaleString()}</p>
                 )}
                 {testResult[integration.service] && (
-                  <p className="text-xs text-slate-300 bg-slate-800 rounded p-2">{testResult[integration.service]}</p>
+                  <p className="text-xs text-[#d7c5ae] bg-card rounded p-2">{testResult[integration.service]}</p>
                 )}
                 <Button
                   variant="outline"

@@ -58,30 +58,30 @@ export default function Live() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Panel en vivo</h1>
-        <p className="text-slate-400 mt-1">Flujo de leads en tiempo real y actividad de campañas</p>
+        <p className="text-muted mt-1">Flujo de leads en tiempo real y actividad de campañas</p>
       </div>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle>Actividad en vivo</CardTitle>
-          <Activity className={`h-4 w-4 ${connected ? 'text-green-500 animate-pulse' : 'text-slate-400'}`} />
+          <Activity className={`h-4 w-4 ${connected ? 'text-green-500 animate-pulse' : 'text-muted'}`} />
         </CardHeader>
         <CardContent>
           {events.length === 0 ? (
-            <p className="text-sm text-slate-500 py-4 text-center">
+            <p className="text-sm text-muted py-4 text-center">
               {connected ? 'Esperando nuevos eventos...' : 'Conectando con Supabase Realtime...'}
             </p>
           ) : (
             <div className="space-y-3 max-h-[480px] overflow-y-auto">
               {events.map((ev) => (
-                <div key={ev.id + ev.ts} className="p-3 bg-slate-900 rounded-lg border border-slate-700">
+                <div key={ev.id + ev.ts} className="p-3 bg-surface rounded-lg border border-border">
                   <p className="text-sm font-medium">{ev.label}</p>
-                  {ev.detail && <p className="text-xs text-slate-400 mt-1">{ev.detail} • {new Date(ev.ts).toLocaleTimeString()}</p>}
+                  {ev.detail && <p className="text-xs text-muted mt-1">{ev.detail} • {new Date(ev.ts).toLocaleTimeString()}</p>}
                 </div>
               ))}
             </div>
           )}
-          <p className="text-xs text-slate-400 mt-4">
+          <p className="text-xs text-muted mt-4">
             {connected ? 'Conectado — escuchando cambios en la tabla de leads.' : 'Conectando con Supabase Realtime...'}
           </p>
         </CardContent>

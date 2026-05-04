@@ -80,8 +80,9 @@ export function buildCorsHeaders(origin: string | null) {
 }
 
 // ── Web Crypto helpers (PBKDF2 + AES-256-GCM — mirrors backend encryption) ───
-export function hexToBytes(hex: string): Uint8Array {
-  const arr = new Uint8Array(hex.length >>> 1);
+export function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
+  const buf = new ArrayBuffer(hex.length >>> 1);
+  const arr = new Uint8Array(buf);
   for (let i = 0; i < hex.length; i += 2) arr[i >>> 1] = Number.parseInt(hex.slice(i, i + 2), 16);
   return arr;
 }
@@ -93,18 +94,18 @@ export function bytesToHex(bytes: Uint8Array): string {
 async function encryptCred(raw: string): Promise<string> {
   const masterKey = Deno.env.get('ENCRYPTION_KEY');
   if (!masterKey) throw new Error('ENCRYPTION_KEY not set in Edge Function secrets');
-  const salt = new Uint8Array(32);
+  const salt = new Uint8Array(new ArrayBuffer(32));
   crypto.getRandomValues(salt);
-  const iv = new Uint8Array(12);
+  const iv = new Uint8Array(new ArrayBuffer(12));
   crypto.getRandomValues(iv);
   const km = await crypto.subtle.importKey('raw', new TextEncoder().encode(masterKey), 'PBKDF2', false, ['deriveKey']);
   const aesKey = await crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt, iterations: 100_000, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt: salt.buffer, iterations: 100_000, hash: 'SHA-256' },
     km, { name: 'AES-GCM', length: 256 }, false, ['encrypt'],
   );
   const ciphertextWithTag = new Uint8Array(
     await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv },
+      { name: 'AES-GCM', iv: iv.buffer },
       aesKey,
       new TextEncoder().encode(raw),
     ),
@@ -161,7 +162,8 @@ export async function metaFetch(path: string, params: Record<string, string>, to
   const r = await fetch(url.toString(), { signal: AbortSignal.timeout(20_000) });
   const { data: d, text } = await parseJsonOrText(r);
   if (!r.ok) {
-    const msg = d?.error?.message ?? d?.message ?? (text || `Meta API ${r.status}`);
+    const e = d?.error ?? {};
+    const msg = `${e.message ?? d?.message ?? text ?? `Meta API ${r.status}`} (code=${e.code ?? '?'}, sub=${e.error_subcode ?? '?'}, type=${e.type ?? '?'})`;
     throw new Error(msg);
   }
   return d;
@@ -2948,7 +2950,7 @@ async function handleKpisGet(ctx: AuthenticatedRouteContext): Promise<Response |
     if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
 
     const metaSources = ['meta_leadgen', 'meta_lead_gen', 'facebook_leadgen'];
-    const [leadCountRes, leadMetaCountRes, settlementsRes] = await Promise.all([
+    const [leadCountRes, leadMetaCountRes, leadsByStageRes, settlementsRes, metaDailyInsightsRes] = await Promise.all([
       adminClient.from('leads')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', userId)
@@ -2960,13 +2962,23 @@ async function handleKpisGet(ctx: AuthenticatedRouteContext): Promise<Response |
         .in('source', metaSources)
         .gte('created_at', since)
         .lte('created_at', until),
+      adminClient.from('leads')
+        .select('stage')
+        .eq('user_id', userId)
+        .gte('created_at', since)
+        .lte('created_at', until),
       adminClient.from('financial_settlements')
-        .select('patient_id, amount_net, cancelled_at, settled_at, source_system')
+        .select('id, patient_id, dni_hash, amount_net, cancelled_at, settled_at, source_system')
         .eq('clinic_id', clinicId)
         .eq('source_system', 'doctoralia')
         .is('cancelled_at', null)
         .gt('amount_net', 0)
         .order('settled_at', { ascending: true }),
+      adminClient.from('meta_daily_insights')
+        .select('date, spend, impressions, clicks, conversions, ctr, cpc')
+        .eq('user_id', userId)
+        .gte('date', since)
+        .lte('date', until),
     ]);
 
     if (leadCountRes.error) throw leadCountRes.error;
@@ -2975,12 +2987,35 @@ async function handleKpisGet(ctx: AuthenticatedRouteContext): Promise<Response |
 
     const crmLeads = leadCountRes.count ?? 0;
     const metaLeads = leadMetaCountRes.count ?? 0;
+
+    // Build by_stage breakdown
+    const stageOrder = ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'];
+    const byStage: Record<string, number> = { lead: 0, whatsapp: 0, appointment: 0, treatment: 0, closed: 0 };
+    for (const row of (leadsByStageRes.data ?? [])) {
+      const s = (row.stage ?? 'lead').toLowerCase();
+      if (s in byStage) byStage[s]++;
+      else byStage['lead']++;
+    }
+    const firstStageCount = byStage[stageOrder[0]] || 0;
+    const lastStageCount = byStage[stageOrder[stageOrder.length - 1]] || 0;
+    const conversionRateLeadToAppointment = (byStage['lead'] + byStage['whatsapp']) > 0
+      ? Number.parseFloat(((byStage['appointment'] / (byStage['lead'] + byStage['whatsapp'])) * 100).toFixed(1))
+      : 0;
+
+    // meta_daily_insights cached data
+    const cachedInsights = metaDailyInsightsRes.data ?? [];
+    const hasCachedMeta = cachedInsights.length > 0;
+    const cachedSpend = cachedInsights.reduce((s: number, r: any) => s + Number(r.spend ?? 0), 0);
+    const cachedImpressions = cachedInsights.reduce((s: number, r: any) => s + Number(r.impressions ?? 0), 0);
+    const cachedClicks = cachedInsights.reduce((s: number, r: any) => s + Number(r.clicks ?? 0), 0);
+    const cachedConversions = cachedInsights.reduce((s: number, r: any) => s + Number(r.conversions ?? 0), 0);
     const settlements = (settlementsRes.data ?? []).filter((r: any) => r.settled_at && Number(r.amount_net) > 0);
 
     const patientFirstSettlement: Record<string, string> = {};
     const firstSettlementRows: Record<string, any[]> = {};
     for (const row of settlements) {
-      const patientId = String(row.patient_id ?? '').trim();
+      // Use patient_id first, then dni_hash as fallback to identify unique patients
+      const patientId = String(row.patient_id ?? row.dni_hash ?? '').trim();
       if (!patientId) continue;
       const settledAt = String(row.settled_at);
       if (!patientFirstSettlement[patientId] || new Date(settledAt) < new Date(patientFirstSettlement[patientId])) {
@@ -3005,33 +3040,61 @@ async function handleKpisGet(ctx: AuthenticatedRouteContext): Promise<Response |
       }
     }
 
-    const metaResult = { spend: 0, leads: 0, live: false, message: '' } as {
+    const metaResult = { spend: 0, leads: 0, impressions: 0, clicks: 0, ctr: 0, cpc: 0, live: false, message: '', data_source: 'none' } as {
       spend: number
       leads: number
+      impressions: number
+      clicks: number
+      ctr: number
+      cpc: number
       live: boolean
       message: string
+      data_source: string
     };
     try {
       const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
       const validation = validateMetaCredentialResult(creds);
       if (validation.ok) {
         const metaData = await metaFetch(`/${creds.adAccountId}/insights`, {
-          fields: 'date_start,spend,conversions',
+          fields: 'date_start,spend,impressions,clicks,ctr,cpc,conversions',
           time_range: JSON.stringify({ since, until }),
           time_increment: '1',
           limit: '1000',
         }, creds.accessToken);
         const insightRows = Array.isArray(metaData?.data) ? metaData.data : [];
-        const totalSpend = insightRows.reduce((sum: number, row: any) => sum + parseMetaMetric(row.spend), 0);
-        const totalLeadsMeta = insightRows.reduce((sum: number, row: any) => sum + parseMetaMetric(row.conversions), 0);
-        metaResult.spend = Number.parseFloat(totalSpend.toFixed(2));
-        metaResult.leads = totalLeadsMeta;
+        metaResult.spend = Number.parseFloat(insightRows.reduce((sum: number, row: any) => sum + parseMetaMetric(row.spend), 0).toFixed(2));
+        metaResult.leads = insightRows.reduce((sum: number, row: any) => sum + parseMetaMetric(row.conversions), 0);
+        metaResult.impressions = insightRows.reduce((sum: number, row: any) => sum + parseMetaMetric(row.impressions), 0);
+        metaResult.clicks = insightRows.reduce((sum: number, row: any) => sum + parseMetaMetric(row.clicks), 0);
+        metaResult.ctr = metaResult.impressions > 0 ? Number.parseFloat(((metaResult.clicks / metaResult.impressions) * 100).toFixed(2)) : 0;
+        metaResult.cpc = metaResult.clicks > 0 ? Number.parseFloat((metaResult.spend / metaResult.clicks).toFixed(2)) : 0;
         metaResult.live = true;
+        metaResult.data_source = 'meta_api';
       } else {
         metaResult.message = validation.message;
+        // Fallback to cached meta_daily_insights
+        if (hasCachedMeta) {
+          metaResult.spend = Number.parseFloat(cachedSpend.toFixed(2));
+          metaResult.leads = cachedConversions;
+          metaResult.impressions = cachedImpressions;
+          metaResult.clicks = cachedClicks;
+          metaResult.ctr = cachedImpressions > 0 ? Number.parseFloat(((cachedClicks / cachedImpressions) * 100).toFixed(2)) : 0;
+          metaResult.cpc = cachedClicks > 0 ? Number.parseFloat((cachedSpend / cachedClicks).toFixed(2)) : 0;
+          metaResult.data_source = 'meta_daily_insights';
+        }
       }
     } catch (e: any) {
       metaResult.message = e?.message ?? 'Meta API error';
+      // Fallback to cached meta_daily_insights on API error
+      if (hasCachedMeta) {
+        metaResult.spend = Number.parseFloat(cachedSpend.toFixed(2));
+        metaResult.leads = cachedConversions;
+        metaResult.impressions = cachedImpressions;
+        metaResult.clicks = cachedClicks;
+        metaResult.ctr = cachedImpressions > 0 ? Number.parseFloat(((cachedClicks / cachedImpressions) * 100).toFixed(2)) : 0;
+        metaResult.cpc = cachedClicks > 0 ? Number.parseFloat((cachedSpend / cachedClicks).toFixed(2)) : 0;
+        metaResult.data_source = 'meta_daily_insights';
+      }
     }
 
     const newVerifiedPatients = verifiedPatientIds.size;
@@ -3046,6 +3109,16 @@ async function handleKpisGet(ctx: AuthenticatedRouteContext): Promise<Response |
       ? Number.parseFloat((metaResult.spend / metaResult.leads).toFixed(2))
       : null;
 
+    const metaSpendReal = metaResult.live || metaResult.data_source === 'meta_daily_insights';
+    const leadsReal = crmLeads > 0;
+    const doctoraliaSettlementsReal = settlements.length > 0;
+    const doctoraliaMatchingReal = newVerifiedPatients > 0;
+    const overallMode = (metaSpendReal && leadsReal && doctoraliaSettlementsReal)
+      ? 'full_real'
+      : (doctoraliaSettlementsReal || metaSpendReal || leadsReal)
+        ? 'partial_demo'
+        : 'full_demo';
+
     return sendJson({
       success: true,
       period,
@@ -3053,18 +3126,39 @@ async function handleKpisGet(ctx: AuthenticatedRouteContext): Promise<Response |
         spend: metaResult.spend,
         leads: metaResult.leads,
         cpl: metaCpl,
+        impressions: metaResult.impressions,
+        clicks: metaResult.clicks,
+        ctr: metaResult.ctr,
+        cpc: metaResult.cpc,
         live: metaResult.live,
         message: metaResult.message,
+        data_source: metaResult.data_source,
+        is_real: metaSpendReal,
       },
       crm: {
         totalLeads: crmLeads,
         metaLeads,
+        by_stage: byStage,
+        conversion_rate_lead_to_appointment: conversionRateLeadToAppointment,
+        is_real: leadsReal,
       },
       doctoralia: {
+        total_settlements: settlements.length,
         newVerifiedPatients,
         verifiedRevenue: verifiedRevenueRounded,
         avgTicket,
         cacDoctoralia,
+        cac_formula: 'meta_spend / new_verified_patients',
+        cac_confidence: (metaSpendReal && doctoraliaMatchingReal) ? 'high' : doctoraliaMatchingReal ? 'medium' : 'low',
+        is_real: doctoraliaSettlementsReal,
+        data_source: 'financial_settlements',
+      },
+      data_quality: {
+        leads_real: leadsReal,
+        meta_spend_real: metaSpendReal,
+        doctoralia_settlements_real: doctoraliaSettlementsReal,
+        doctoralia_matching_real: doctoraliaMatchingReal,
+        overall_mode: overallMode,
       },
     });
   }

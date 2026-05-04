@@ -177,7 +177,9 @@ minimum_password_length = 8
 # are: `letters_digits`, `lower_upper_letters_digits`, `lower_upper_letters_digits_symbols`
 password_requirements = "lower_upper_letters_digits"
 # NOTE: Leaked password protection (HaveIBeenPwned.org) requires Supabase Pro plan.
-# Enable via: Dashboard → Authentication → Providers → Password → "Prevent use of leaked passwords"
+# Enable via: Dashboard → Authentication → Security → "Prevent use of leaked passwords"
+# Direct link: https://supabase.com/dashboard/project/ssvvuuysgxyqvmovrlvk/auth/security
+# See: https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection
 
 # Configure passkey sign-ins.
 # [auth.passkey]

@@ -103,7 +103,7 @@ export default function AI() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Capa IA</h1>
-        <p className="text-slate-400 mt-1">Generación de contenido, sugerencias y registro de resultados</p>
+        <p className="text-muted mt-1">Generación de contenido, sugerencias y registro de resultados</p>
       </div>
 
       <Tabs defaultValue="generate" className="w-full">
@@ -149,7 +149,7 @@ export default function AI() {
                     <CardTitle>Contenido generado</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <pre className="whitespace-pre-wrap text-sm text-slate-300 leading-relaxed">{result}</pre>
+                    <pre className="whitespace-pre-wrap text-sm text-[#d7c5ae] leading-relaxed">{result}</pre>
                   </CardContent>
                 </Card>
               )}
@@ -160,7 +160,7 @@ export default function AI() {
                     <CardTitle>Análisis de campaña</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <pre className="whitespace-pre-wrap text-sm text-slate-300 leading-relaxed">{analysisResult}</pre>
+                    <pre className="whitespace-pre-wrap text-sm text-[#d7c5ae] leading-relaxed">{analysisResult}</pre>
                   </CardContent>
                 </Card>
               )}
@@ -206,15 +206,15 @@ export default function AI() {
                 <p className="text-sm text-red-500 mb-4">{suggestionsError}</p>
               )}
               {suggestions.length === 0 && !suggestionsLoading && !suggestionsError && (
-                <p className="text-slate-500 text-sm py-4 text-center">Haz clic en "Obtener sugerencias" para recibir insights basados en tus leads.</p>
+                <p className="text-muted text-sm py-4 text-center">Haz clic en "Obtener sugerencias" para recibir insights basados en tus leads.</p>
               )}
               <div className="space-y-3">
                 {suggestions.map((s) => (
-                  <div key={s} className="flex items-start justify-between gap-3 p-4 rounded-lg border border-slate-700 bg-slate-900">
-                    <p className="text-sm text-slate-200 flex-1">{s}</p>
+                  <div key={s} className="flex items-start justify-between gap-3 p-4 rounded-lg border border-border bg-surface">
+                    <p className="text-sm text-foreground flex-1">{s}</p>
                     <button
                       onClick={() => handleCopy(s, suggestions.indexOf(s))}
-                      className="shrink-0 text-slate-500 hover:text-slate-200 transition-colors"
+                      className="shrink-0 text-muted hover:text-foreground transition-colors"
                       title="Copiar al portapapeles"
                     >
                       {copiedIdx === suggestions.indexOf(s) ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
@@ -236,7 +236,7 @@ export default function AI() {
                   <select
                     value={typeFilter}
                     onChange={(e) => setTypeFilter(e.target.value)}
-                    className="bg-slate-800 text-white text-xs font-medium px-3 py-1.5 rounded-lg border-none focus:ring-1 focus:ring-slate-500"
+                    className="bg-card text-white text-xs font-medium px-3 py-1.5 rounded-lg border-none focus:ring-1 focus:ring-primary"
                   >
                     {outputTypes.map((t) => (
                       <option key={t} value={t}>{t === 'all' ? 'Todos los tipos' : t}</option>
@@ -254,7 +254,7 @@ export default function AI() {
                 <p className="text-sm text-red-500 mb-4">{outputsError}</p>
               )}
               {filteredOutputs.length === 0 && !outputsLoading && !outputsError && (
-                <p className="text-slate-500 text-sm py-4 text-center">No hay historial todavía. Haz clic en "Cargar historial" para ver resultados previos.</p>
+                <p className="text-muted text-sm py-4 text-center">No hay historial todavía. Haz clic en "Cargar historial" para ver resultados previos.</p>
               )}
               <div className="space-y-3">
                 {filteredOutputs.map((o) => {
@@ -262,16 +262,16 @@ export default function AI() {
                     ? o.output
                     : o.output?.content ?? o.output?.result ?? JSON.stringify(o.output ?? {})
                   return (
-                    <div key={o.id} className="p-4 rounded-lg border border-slate-700 bg-slate-900 space-y-2">
+                    <div key={o.id} className="p-4 rounded-lg border border-border bg-surface space-y-2">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-medium px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                        <span className="text-xs font-medium px-2 py-0.5 rounded bg-card text-[#d7c5ae] border border-border">
                           {o.agent_type ?? 'desconocido'}
                         </span>
-                        <span className="text-xs text-slate-500">
+                        <span className="text-xs text-muted">
                           {o.created_at ? new Date(o.created_at).toLocaleString() : ''}
                         </span>
                       </div>
-                      <p className="text-sm text-slate-300 line-clamp-3 whitespace-pre-wrap">{content}</p>
+                      <p className="text-sm text-[#d7c5ae] line-clamp-3 whitespace-pre-wrap">{content}</p>
                     </div>
                   )
                 })}

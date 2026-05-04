@@ -41,12 +41,12 @@ export function LeadCard({ lead, onClick }: Readonly<LeadCardProps>) {
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onClick(lead) }}
       className="w-full text-left bg-transparent border-0 p-0 cursor-pointer"
     >
-      <Card className="bg-slate-950 border-slate-800 hover:border-slate-700 transition-colors mb-3 active:cursor-grabbing">
+      <Card className="bg-background border-[#2d2218] hover:border-border transition-colors mb-3 active:cursor-grabbing">
         <CardContent className="p-4">
           <div className="flex flex-col gap-1">
             <span className="font-semibold text-white truncate">{lead.name}</span>
             <div className="flex items-center justify-between mt-2">
-              <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">
+              <span className="text-[10px] uppercase tracking-wider text-muted font-bold">
                 {lead.source}
               </span>
               {lead.revenue ? (

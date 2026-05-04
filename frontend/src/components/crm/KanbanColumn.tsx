@@ -16,10 +16,10 @@ export function KanbanColumn({ id, title, leads, onLeadClick }: KanbanColumnProp
   })
 
   return (
-    <div className="flex flex-col min-w-[280px] w-full bg-slate-900/50 rounded-xl border border-slate-800/50 p-3 h-full min-h-[500px]">
+    <div className="flex flex-col min-w-[280px] w-full bg-surface/50 rounded-xl border border-[#2d2218]/50 p-3 h-full min-h-[500px]">
       <div className="flex items-center justify-between mb-4 px-2">
-        <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest">
-          {title} <span className="ml-2 text-xs font-normal text-slate-500">({leads.length})</span>
+        <h3 className="text-sm font-bold text-muted uppercase tracking-widest">
+          {title} <span className="ml-2 text-xs font-normal text-muted">({leads.length})</span>
         </h3>
       </div>
 
@@ -30,7 +30,7 @@ export function KanbanColumn({ id, title, leads, onLeadClick }: KanbanColumnProp
           ))}
         </SortableContext>
         {leads.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-32 border-2 border-dashed border-slate-800 rounded-xl opacity-20">
+          <div className="flex flex-col items-center justify-center h-32 border-2 border-dashed border-[#2d2218] rounded-xl opacity-20">
             <p className="text-xs">No leads</p>
           </div>
         )}

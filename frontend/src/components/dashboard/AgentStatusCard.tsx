@@ -26,11 +26,11 @@ export function AgentStatusCard() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium">AI Agent Status</CardTitle>
-        <Brain className="h-4 w-4 text-slate-500" />
+        <Brain className="h-4 w-4 text-muted" />
       </CardHeader>
       <CardContent>
         {loading ? (
-          <div className="h-10 animate-pulse bg-slate-800 rounded mt-2" />
+          <div className="h-10 animate-pulse bg-card rounded mt-2" />
         ) : status?.available ? (
           <div className="space-y-3">
             <div className="flex items-center gap-2 mt-2">
@@ -40,7 +40,7 @@ export function AgentStatusCard() {
                 {status.provider}
               </Badge>
             </div>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted">
               AI insights and content generation active.
             </p>
           </div>
@@ -50,7 +50,7 @@ export function AgentStatusCard() {
               <AlertCircle className="h-5 w-5 text-amber-500" />
               <span className="font-bold">Action Required</span>
             </div>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted">
               Connect OpenAI or Gemini to enable AI features.
             </p>
           </div>

@@ -92,11 +92,11 @@ export default function Financials() {
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Verified Financials</h1>
-          <p className="text-slate-400 mt-1">Doctoralia settlements, LTV, verified revenue</p>
+          <p className="text-muted mt-1">Doctoralia settlements, LTV, verified revenue</p>
         </div>
         <div className="animate-pulse space-y-4">
-          <div className="h-24 bg-slate-800 rounded-lg" />
-          <div className="h-24 bg-slate-800 rounded-lg" />
+          <div className="h-24 bg-card rounded-lg" />
+          <div className="h-24 bg-card rounded-lg" />
         </div>
       </div>
     )
@@ -119,18 +119,18 @@ export default function Financials() {
       <div className="flex flex-col sm:flex-row sm:items-end gap-4">
         <div className="flex-1">
           <h1 className="text-3xl font-bold">Finanzas verificadas</h1>
-          <p className="text-slate-400 mt-1">Liquidaciones de Doctoralia, LTV, ingresos verificados</p>
+          <p className="text-muted mt-1">Liquidaciones de Doctoralia, LTV, ingresos verificados</p>
         </div>
         {/* Period presets */}
-        <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-1">
+        <div className="flex items-center gap-1 bg-card rounded-lg p-1">
           {PRESETS.map((p) => (
             <button
               key={p.label}
               onClick={() => { setPresetDays(p.days); setFromDate(''); setToDate('') }}
               className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
                 presetDays === p.days && !fromDate && !toDate
-                  ? 'bg-slate-600 text-white'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-[#3f3224] text-white'
+                  : 'text-muted hover:text-white'
               }`}
             >
               {p.label === 'Todo' ? 'Todo' : p.label}
@@ -138,19 +138,19 @@ export default function Financials() {
           ))}
         </div>
         {/* Custom date range */}
-        <div className="flex items-center gap-2 text-xs text-slate-400">
+        <div className="flex items-center gap-2 text-xs text-muted">
           <input
             type="date"
             value={fromDate}
             onChange={(e) => { setFromDate(e.target.value); setPresetDays(-1) }}
-            className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200 text-xs focus:outline-none focus:border-slate-500"
+            className="bg-card border border-border rounded px-2 py-1 text-foreground text-xs focus:outline-none focus:border-muted"
           />
           <span>→</span>
           <input
             type="date"
             value={toDate}
             onChange={(e) => { setToDate(e.target.value); setPresetDays(-1) }}
-            className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200 text-xs focus:outline-none focus:border-slate-500"
+            className="bg-card border border-border rounded px-2 py-1 text-foreground text-xs focus:outline-none focus:border-muted"
           />
         </div>
       </div>
@@ -169,7 +169,7 @@ export default function Financials() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{state.summary ? fmt(state.summary.totalNet) : '—'}</div>
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="text-xs text-muted mt-1">
               {state.summary
                 ? `${state.summary.settledCount} liquidados · ${state.summary.cancelledCount} cancelados`
                 : 'De liquidaciones de Doctoralia'}
@@ -183,7 +183,7 @@ export default function Financials() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{state.summary ? fmt(state.summary.totalGross) : '—'}</div>
-            <p className="text-xs text-slate-500 mt-1">Antes de descuentos</p>
+            <p className="text-xs text-muted mt-1">Antes de descuentos</p>
           </CardContent>
         </Card>
 
@@ -193,7 +193,7 @@ export default function Financials() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{state.summary ? fmt(state.summary.avgTicket) : '—'}</div>
-            <p className="text-xs text-slate-500 mt-1">Por transacción liquidada</p>
+            <p className="text-xs text-muted mt-1">Por transacción liquidada</p>
           </CardContent>
         </Card>
 
@@ -203,7 +203,7 @@ export default function Financials() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{state.summary ? `${state.summary.discountRate}%` : '—'}</div>
-            <p className="text-xs text-slate-500 mt-1">Descuento aplicado sobre ingresos brutos</p>
+            <p className="text-xs text-muted mt-1">Descuento aplicado sobre ingresos brutos</p>
           </CardContent>
         </Card>
 
@@ -213,7 +213,7 @@ export default function Financials() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{liquidationLabel}</div>
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="text-xs text-muted mt-1">
               {state.summary?.avgLiquidationDays === 0 ? 'Sin fecha de entrada' : 'Días desde entrada hasta liquidación'}
             </p>
           </CardContent>
@@ -226,7 +226,7 @@ export default function Financials() {
         </CardHeader>
         <CardContent>
           {state.monthly.length === 0 ? (
-            <p className="text-slate-500 text-sm py-8 text-center">No hay datos de liquidación disponibles todavía.</p>
+            <p className="text-muted text-sm py-8 text-center">No hay datos de liquidación disponibles todavía.</p>
           ) : (
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={state.monthly}>

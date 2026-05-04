@@ -86,15 +86,15 @@ export function FilterBar({
   return (
     <div className="flex flex-wrap items-center gap-2 print:hidden">
       {/* Preset buttons */}
-      <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-1">
+      <div className="flex items-center gap-1 bg-card rounded-lg p-1">
         {PRESETS.map((p) => (
           <button
             key={p.label}
             onClick={() => setPreset(p.days)}
             className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
               !customMode && activeDays === p.days
-                ? 'bg-slate-600 text-white'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-[#3f3224] text-white'
+                : 'text-muted hover:text-white'
             }`}
           >
             {p.label}
@@ -103,7 +103,7 @@ export function FilterBar({
         <button
           onClick={setFrom2025}
           className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-            is2025 ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+            is2025 ? 'bg-indigo-600 text-white' : 'text-muted hover:text-white'
           }`}
         >
           2025+
@@ -112,19 +112,19 @@ export function FilterBar({
 
       {/* Custom date inputs */}
       <div className="flex items-center gap-1">
-        <Calendar className="w-3.5 h-3.5 text-slate-500" />
+        <Calendar className="w-3.5 h-3.5 text-muted" />
         <input
           type="date"
           value={from}
           onChange={(e) => handleFromChange(e.target.value)}
-          className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200 text-xs focus:outline-none focus:border-slate-500 w-32"
+          className="bg-card border border-border rounded px-2 py-1 text-foreground text-xs focus:outline-none focus:border-muted w-32"
         />
-        <span className="text-slate-500 text-xs">→</span>
+        <span className="text-muted text-xs">→</span>
         <input
           type="date"
           value={to}
           onChange={(e) => handleToChange(e.target.value)}
-          className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200 text-xs focus:outline-none focus:border-slate-500 w-32"
+          className="bg-card border border-border rounded px-2 py-1 text-foreground text-xs focus:outline-none focus:border-muted w-32"
         />
       </div>
 
@@ -133,7 +133,7 @@ export function FilterBar({
         <select
           value={campaignValue}
           onChange={(e) => onCampaignChange(e.target.value)}
-          className="bg-slate-800 text-white text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-500 max-w-[200px]"
+          className="bg-card text-white text-xs font-medium px-3 py-1.5 rounded-lg border border-border focus:outline-none focus:ring-1 focus:ring-primary max-w-[200px]"
         >
           <option value="ALL">All Campaigns</option>
           {campaigns.map((c) => (
@@ -147,7 +147,7 @@ export function FilterBar({
         <select
           value={sourceValue}
           onChange={(e) => onSourceChange(e.target.value)}
-          className="bg-slate-800 text-white text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-500"
+          className="bg-card text-white text-xs font-medium px-3 py-1.5 rounded-lg border border-border focus:outline-none focus:ring-1 focus:ring-primary"
         >
           <option value="ALL">All Sources</option>
           {sources.map((s) => (

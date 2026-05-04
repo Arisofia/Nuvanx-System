@@ -40,7 +40,7 @@ export default function Playbooks() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Playbooks</h1>
-          <p className="text-slate-400 mt-1">Automation playbooks for lead nurturing and follow-up</p>
+          <p className="text-muted mt-1">Automation playbooks for lead nurturing and follow-up</p>
         </div>
         <Button className="gap-2" disabled>
           <Plus className="w-4 h-4" />
@@ -50,8 +50,8 @@ export default function Playbooks() {
 
       {loading && (
         <div className="animate-pulse space-y-4">
-          <div className="h-40 bg-slate-800 rounded-lg" />
-          <div className="h-40 bg-slate-800 rounded-lg" />
+          <div className="h-40 bg-card rounded-lg" />
+          <div className="h-40 bg-card rounded-lg" />
         </div>
       )}
 
@@ -63,7 +63,7 @@ export default function Playbooks() {
       )}
 
       {!loading && !error && playbooks.length === 0 && (
-        <p className="text-slate-500 text-sm">No playbooks found. Add them in the database.</p>
+        <p className="text-muted text-sm">No playbooks found. Add them in the database.</p>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -73,20 +73,20 @@ export default function Playbooks() {
             <Card key={pb.id}>
               <CardHeader>
                 <CardTitle className="text-base">{pb.title ?? pb.name}</CardTitle>
-                {pb.category && <p className="text-xs text-slate-400 mt-1 uppercase tracking-wide">{pb.category}</p>}
+                {pb.category && <p className="text-xs text-muted mt-1 uppercase tracking-wide">{pb.category}</p>}
               </CardHeader>
               <CardContent className="space-y-3">
-                {pb.description && <p className="text-sm text-slate-400">{pb.description}</p>}
+                {pb.description && <p className="text-sm text-muted">{pb.description}</p>}
                 {pb.steps.length > 0 && (
                   <div className="space-y-1">
                     {pb.steps.map((step: any) => (
-                        <div key={typeof step === 'string' ? step : (step?.id ?? step?.label ?? step?.action ?? JSON.stringify(step))} className="text-xs p-2 bg-slate-800 rounded text-slate-300">
+                        <div key={typeof step === 'string' ? step : (step?.id ?? step?.label ?? step?.action ?? JSON.stringify(step))} className="text-xs p-2 bg-card rounded text-[#d7c5ae]">
                         {typeof step === 'string' ? step : step?.label ?? step?.action ?? JSON.stringify(step)}
                       </div>
                     ))}
                   </div>
                 )}
-                <div className="flex items-center justify-between text-xs text-slate-400">
+                <div className="flex items-center justify-between text-xs text-muted">
                   <span>Runs: {pb.runs}</span>
                   {pb.lastRunAt && <span>Last: {new Date(pb.lastRunAt).toLocaleDateString()}</span>}
                 </div>

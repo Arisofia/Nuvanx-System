@@ -94,14 +94,14 @@ export function SortableTable({
   }
 
   if (loading) {
-    return <p className="text-slate-500 text-sm py-8 text-center">Loading…</p>
+    return <p className="text-muted text-sm py-8 text-center">Loading…</p>
   }
 
   return (
     <div className={`space-y-3 ${className}`}>
       {/* Controls row */}
       <div className="flex items-center justify-between gap-2 print:hidden">
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted">
           {sorted.length.toLocaleString()} rows
           {totalPages > 1 ? ` · page ${page + 1} / ${totalPages}` : ''}
         </p>
@@ -113,12 +113,12 @@ export function SortableTable({
       <div className="overflow-x-auto">
         <table className="w-full text-sm print:text-xs">
           <thead>
-            <tr className="border-b border-slate-700 print:border-gray-400">
+            <tr className="border-b border-border print:border-gray-400">
               {columns.map((col) => (
                 <th
                   key={col.key}
                   onClick={() => col.sortable !== false && handleSort(col.key)}
-                  className={`px-3 py-2 text-xs font-semibold text-slate-400 whitespace-nowrap uppercase tracking-wide print:text-gray-600 ${alignClass(col.align)} ${col.sortable !== false ? 'cursor-pointer hover:text-white select-none' : ''}`}
+                  className={`px-3 py-2 text-xs font-semibold text-muted whitespace-nowrap uppercase tracking-wide print:text-gray-600 ${alignClass(col.align)} ${col.sortable !== false ? 'cursor-pointer hover:text-white select-none' : ''}`}
                 >
                   {col.label}
                   {col.sortable !== false && (
@@ -133,7 +133,7 @@ export function SortableTable({
               <tr>
                 <td
                   colSpan={columns.length}
-                  className="px-3 py-10 text-center text-slate-500 text-sm"
+                  className="px-3 py-10 text-center text-muted text-sm"
                 >
                   {emptyMessage}
                 </td>
@@ -142,7 +142,7 @@ export function SortableTable({
               paginated.map((row, i) => (
                 <tr
                   key={i}
-                  className="border-b border-slate-800 hover:bg-slate-800/50 transition-colors print:border-gray-200"
+                  className="border-b border-[#2d2218] hover:bg-card/50 transition-colors print:border-gray-200"
                 >
                   {columns.map((col) => {
                     const raw = row[col.key]
@@ -150,7 +150,7 @@ export function SortableTable({
                     return (
                       <td
                         key={col.key}
-                        className={`px-3 py-2 text-slate-300 whitespace-nowrap print:text-gray-900 ${alignClass(col.align)}`}
+                        className={`px-3 py-2 text-[#d7c5ae] whitespace-nowrap print:text-gray-900 ${alignClass(col.align)}`}
                       >
                         {display == null ? '—' : String(display)}
                       </td>
@@ -162,7 +162,7 @@ export function SortableTable({
           </tbody>
           {footerRow && (
             <tfoot>
-              <tr className="border-t-2 border-slate-600 bg-slate-900 font-semibold text-xs text-slate-300 print:border-gray-400 print:bg-gray-100 print:text-gray-900">
+              <tr className="border-t-2 border-[#5c4a33] bg-surface font-semibold text-xs text-[#d7c5ae] print:border-gray-400 print:bg-gray-100 print:text-gray-900">
                 {footerRow.map((cell, i) => (
                   <td
                     key={i}
@@ -183,17 +183,17 @@ export function SortableTable({
           <button
             onClick={() => setPage((p) => Math.max(0, p - 1))}
             disabled={page === 0}
-            className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="p-1.5 rounded-lg bg-card text-muted hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <span className="text-xs text-slate-400">
+          <span className="text-xs text-muted">
             {page + 1} / {totalPages}
           </span>
           <button
             onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
             disabled={page >= totalPages - 1}
-            className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="p-1.5 rounded-lg bg-card text-muted hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <ChevronRight className="w-4 h-4" />
           </button>

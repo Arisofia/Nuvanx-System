@@ -39,7 +39,7 @@ export function TabsTrigger({ value, className = '', children, ...props }: Reado
   return (
     <button
       type="button"
-      className={`rounded-lg border border-border px-3 py-2 text-sm transition ${context.value === value ? 'bg-primary text-white' : 'bg-slate-950 text-slate-200'} ${className}`}
+      className={`rounded-lg border border-border px-3 py-2 text-sm transition ${context.value === value ? 'bg-primary text-white' : 'bg-background text-foreground'} ${className}`}
       onClick={() => context.setValue(value)}
       {...props}
     >

@@ -33,11 +33,11 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-brand-50 via-slate-50 to-brand-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-brand-50 via-brand-50 to-brand-100 flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl">Acceso NUVANX</CardTitle>
-          <p className="text-sm text-slate-600 mt-2">Plataforma premium de inteligencia y operación</p>
+          <p className="text-sm text-muted mt-2">Plataforma premium de inteligencia y operación</p>
         </CardHeader>
         <CardContent className="space-y-4">
           <form onSubmit={handleLogin} className="space-y-4">
@@ -69,7 +69,7 @@ export default function Login() {
             </Button>
           </form>
 
-          <p className="text-xs text-slate-500 text-center">
+          <p className="text-xs text-muted text-center">
             Usa tu cuenta de Supabase para iniciar sesión.
           </p>
         </CardContent>

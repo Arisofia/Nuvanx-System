@@ -360,6 +360,70 @@ async function maybeLoadDbSignals({ databaseUrl, clinicId, sinceIso, untilExclus
   }
 }
 
+async function persistMetaDailyInsights({ databaseUrl, reportUserId, adAccountId, since, until, token }) {
+  if (!databaseUrl || !reportUserId) return null;
+
+  // Fetch account-level daily insights with time_increment=1
+  const insights = await metaFetch(`/${adAccountId}/insights`, {
+    fields: 'date_start,impressions,reach,clicks,spend,conversions,ctr,cpc,cpm,actions',
+    time_range: JSON.stringify({ since, until }),
+    time_increment: '1',
+    level: 'account',
+    limit: '1000',
+  }, token);
+
+  const rows = Array.isArray(insights?.data) ? insights.data : [];
+  if (rows.length === 0) return null;
+
+  const getAction = (actions, type) =>
+    Number((actions || []).find((a) => a.action_type === type)?.value ?? 0);
+
+  const upsertRows = rows.map((row) => ({
+    user_id: reportUserId,
+    ad_account_id: adAccountId,
+    date: row.date_start,
+    impressions: Number(row.impressions ?? 0),
+    reach: Number(row.reach ?? 0),
+    clicks: Number(row.clicks ?? 0),
+    spend: Number(row.spend ?? 0),
+    conversions: Number(row.conversions ?? getAction(row.actions, 'lead') ?? 0),
+    ctr: Number(row.ctr ?? 0),
+    cpc: Number(row.cpc ?? 0),
+    cpm: Number(row.cpm ?? 0),
+    messaging_conversations: getAction(row.actions, 'onsite_conversion.messaging_conversation_started_7d'),
+    updated_at: new Date().toISOString(),
+  }));
+
+  const { Client } = require('pg');
+  const db = new Client({ connectionString: databaseUrl });
+  await db.connect();
+  try {
+    for (const r of upsertRows) {
+      await db.query(`
+        INSERT INTO public.meta_daily_insights
+          (user_id, ad_account_id, date, impressions, reach, clicks, spend, conversions, ctr, cpc, cpm, messaging_conversations, updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+        ON CONFLICT (user_id, ad_account_id, date)
+        DO UPDATE SET
+          impressions             = EXCLUDED.impressions,
+          reach                   = EXCLUDED.reach,
+          clicks                  = EXCLUDED.clicks,
+          spend                   = EXCLUDED.spend,
+          conversions             = EXCLUDED.conversions,
+          ctr                     = EXCLUDED.ctr,
+          cpc                     = EXCLUDED.cpc,
+          cpm                     = EXCLUDED.cpm,
+          messaging_conversations = EXCLUDED.messaging_conversations,
+          updated_at              = EXCLUDED.updated_at
+      `, [r.user_id, r.ad_account_id, r.date, r.impressions, r.reach, r.clicks, r.spend, r.conversions, r.ctr, r.cpc, r.cpm, r.messaging_conversations, r.updated_at]);
+    }
+    console.log(`[meta-daily-report] Persisted ${upsertRows.length} rows to meta_daily_insights`);
+    return upsertRows.length;
+  } finally {
+    await db.end();
+  }
+}
+
 async function maybePersistOutput({ databaseUrl, reportUserId, clinicId, markdown, metadata }) {
   if (!databaseUrl || !reportUserId) return null;
 
@@ -732,6 +796,15 @@ async function main() {
     });
   } catch (err) {
     console.warn(`[meta-daily-report] Could not persist to agent_outputs: ${err.message}`);
+  }
+
+  // Persist daily insights to meta_daily_insights for /kpis fallback
+  if (databaseUrl && reportUserId) {
+    try {
+      await persistMetaDailyInsights({ databaseUrl, reportUserId, adAccountId, since, until, token });
+    } catch (err) {
+      console.warn(`[meta-daily-report] Could not persist to meta_daily_insights: ${err.message}`);
+    }
   }
 
   if (process.env.GITHUB_STEP_SUMMARY) {

@@ -53,7 +53,7 @@ export default function Layout({ children }: Readonly<{ children: React.ReactNod
         </div>
       </aside>
 
-      <main className="flex-1 overflow-auto bg-slate-950 text-white">
+      <main className="flex-1 overflow-auto bg-background text-foreground">
         <div className="p-8">{children}</div>
       </main>
     </div>

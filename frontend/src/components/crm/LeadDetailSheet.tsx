@@ -73,7 +73,7 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
 
   const field = (label: string, value: string) => (
     <div>
-      <p className="text-xs text-slate-500 mb-1">{label}</p>
+      <p className="text-xs text-muted mb-1">{label}</p>
       <p className="text-white">{value || '—'}</p>
     </div>
   )
@@ -85,13 +85,13 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
     placeholder?: string
   ) => (
     <div>
-      <label className="text-xs text-slate-500 mb-1 block">{label}</label>
+      <label className="text-xs text-muted mb-1 block">{label}</label>
       <input
         type={type}
         value={form[key]}
         onChange={e => setForm(prev => ({ ...prev, [key]: e.target.value }))}
         placeholder={placeholder}
-        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-primary"
+        className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm text-white placeholder-muted focus:outline-none focus:border-primary"
       />
     </div>
   )
@@ -105,28 +105,28 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
         onClick={onClose}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onClose() }}
       />
-      <div className="relative w-full max-w-md h-full bg-slate-900 border-l border-slate-800 shadow-2xl p-6 flex flex-col animate-in slide-in-from-right duration-300">
+      <div className="relative w-full max-w-md h-full bg-surface border-l border-[#2d2218] shadow-2xl p-6 flex flex-col animate-in slide-in-from-right duration-300">
         <div className="flex items-center justify-between mb-8">
           <h2 className="text-xl font-bold text-white">
             {isEditing ? 'Edit Lead' : 'Lead Details'}
           </h2>
-          <Button variant="ghost" onClick={onClose} className="text-slate-400 hover:text-white">✕</Button>
+          <Button variant="ghost" onClick={onClose} className="text-muted hover:text-white">✕</Button>
         </div>
 
         <div className="flex-1 overflow-y-auto space-y-8">
           <section>
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Basic Information</h3>
-            <div className="grid gap-4 bg-slate-950/50 rounded-xl p-4 border border-slate-800/50">
+            <h3 className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Basic Information</h3>
+            <div className="grid gap-4 bg-background/50 rounded-xl p-4 border border-[#2d2218]/50">
               {isEditing ? (
                 <>
                   {input('Name', 'name')}
                   <div>
-                    <label htmlFor="lead-stage-select" className="text-xs text-slate-500 mb-1 block">Stage</label>
+                    <label htmlFor="lead-stage-select" className="text-xs text-muted mb-1 block">Stage</label>
                     <select
                       id="lead-stage-select"
                       value={form.status}
                       onChange={e => setForm(prev => ({ ...prev, status: e.target.value }))}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
+                      className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
                     >
                       {STAGES.map(s => (
                         <option key={s} value={s} className="capitalize">{s}</option>
@@ -138,7 +138,7 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
                 <>
                   {field('Name', lead.name)}
                   <div>
-                    <p className="text-xs text-slate-500 mb-1">Status</p>
+                    <p className="text-xs text-muted mb-1">Status</p>
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold uppercase bg-primary/20 text-primary border border-primary/20">
                       {lead.status}
                     </span>
@@ -150,8 +150,8 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
           </section>
 
           <section>
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Contact Details</h3>
-            <div className="grid gap-4 bg-slate-950/50 rounded-xl p-4 border border-slate-800/50">
+            <h3 className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Contact Details</h3>
+            <div className="grid gap-4 bg-background/50 rounded-xl p-4 border border-[#2d2218]/50">
               {isEditing ? (
                 <>
                   {input('Phone', 'phone', 'tel', '+34 600 000 000')}
@@ -168,13 +168,13 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
           </section>
 
           <section>
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Financials</h3>
-            <div className="grid gap-4 bg-slate-950/50 rounded-xl p-4 border border-slate-800/50">
+            <h3 className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Financials</h3>
+            <div className="grid gap-4 bg-background/50 rounded-xl p-4 border border-[#2d2218]/50">
               {isEditing ? (
                 input('Estimated Revenue (€)', 'revenue', 'number', '0')
               ) : (
                 <div>
-                  <p className="text-xs text-slate-500 mb-1">Estimated Revenue</p>
+                  <p className="text-xs text-muted mb-1">Estimated Revenue</p>
                   <p className="text-emerald-500 font-bold text-lg">
                     €{lead.revenue ? Number(lead.revenue).toLocaleString() : '0.00'}
                   </p>
@@ -184,18 +184,18 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
           </section>
 
           <section>
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Notes</h3>
-            <div className="bg-slate-950/50 rounded-xl p-4 border border-slate-800/50 min-h-[100px]">
+            <h3 className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Notes</h3>
+            <div className="bg-background/50 rounded-xl p-4 border border-[#2d2218]/50 min-h-[100px]">
               {isEditing ? (
                 <textarea
                   value={form.notes}
                   onChange={e => setForm(prev => ({ ...prev, notes: e.target.value }))}
                   rows={4}
-                  className="w-full bg-transparent text-sm text-slate-300 resize-none focus:outline-none placeholder-slate-600"
+                  className="w-full bg-transparent text-sm text-[#d7c5ae] resize-none focus:outline-none placeholder-muted"
                   placeholder="Add notes..."
                 />
               ) : (
-                <p className="text-slate-300 text-sm whitespace-pre-wrap">
+                <p className="text-[#d7c5ae] text-sm whitespace-pre-wrap">
                   {lead.notes || 'No notes available for this lead.'}
                 </p>
               )}
@@ -207,7 +207,7 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
           )}
         </div>
 
-        <div className="pt-6 border-t border-slate-800">
+        <div className="pt-6 border-t border-[#2d2218]">
           {isEditing ? (
             <div className="flex gap-3">
               <Button

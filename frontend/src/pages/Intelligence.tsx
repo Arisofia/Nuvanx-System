@@ -147,7 +147,7 @@ export default function Intelligence() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Inteligencia</h1>
-        <p className="text-slate-400 mt-1">Atribución de campañas, embudo WhatsApp y registro de conversaciones</p>
+        <p className="text-muted mt-1">Atribución de campañas, embudo WhatsApp y registro de conversaciones</p>
       </div>
 
       <Tabs defaultValue="attribution" className="w-full">
@@ -171,7 +171,7 @@ export default function Intelligence() {
                 onSourceChange={setAttrSource}
               />
               {loading.campaigns ? (
-                <p className="text-slate-500 text-sm">Cargando datos de atribución…</p>
+                <p className="text-muted text-sm">Cargando datos de atribución…</p>
               ) : error.campaigns ? (
                 <p className="text-sm text-red-500">{error.campaigns}</p>
               ) : (
@@ -194,16 +194,16 @@ export default function Intelligence() {
             </CardHeader>
             <CardContent>
               {loading.funnel ? (
-                <p className="text-slate-500 text-sm">Cargando datos del embudo…</p>
+                <p className="text-muted text-sm">Cargando datos del embudo…</p>
               ) : error.funnel ? (
                 <p className="text-sm text-red-500">{error.funnel}</p>
               ) : funnel.length === 0 ? (
-                <p className="text-slate-500 text-sm">No hay datos del embudo disponibles todavía.</p>
+                <p className="text-muted text-sm">No hay datos del embudo disponibles todavía.</p>
               ) : (
                 <div className="space-y-2">
                   {funnel.map((row, i) => (
-                    <div key={i} className="flex justify-between items-center p-3 rounded-lg bg-slate-900 border border-slate-700">
-                      <span className="capitalize text-sm text-slate-300">{String(row.stage).replace(/_/g, ' ')}</span>
+                    <div key={i} className="flex justify-between items-center p-3 rounded-lg bg-surface border border-border">
+                      <span className="capitalize text-sm text-[#d7c5ae]">{String(row.stage).replace(/_/g, ' ')}</span>
                       <span className="font-bold text-sm">
                         {row.count.toLocaleString()}
                         {row.pct != null ? ` (${row.pct}%)` : ''}
@@ -223,24 +223,24 @@ export default function Intelligence() {
             </CardHeader>
             <CardContent>
               {loading.conversations ? (
-                <p className="text-slate-500 text-sm">Cargando conversaciones…</p>
+                <p className="text-muted text-sm">Cargando conversaciones…</p>
               ) : error.conversations ? (
                 <p className="text-sm text-red-500">{error.conversations}</p>
               ) : conversations.length === 0 ? (
-                <p className="text-slate-500 text-sm">No se encontraron conversaciones.</p>
+                <p className="text-muted text-sm">No se encontraron conversaciones.</p>
               ) : (
                 <div className="space-y-3">
                   {conversations.map((conv) => (
-                    <div key={conv.id} className="p-3 bg-slate-900 rounded-lg border border-slate-700">
+                    <div key={conv.id} className="p-3 bg-surface rounded-lg border border-border">
                       <div className="flex justify-between">
                         <p className="text-sm font-medium">{conv.phone ?? conv.id}</p>
-                        <span className="text-xs text-slate-500 capitalize">{conv.direction}</span>
+                        <span className="text-xs text-muted capitalize">{conv.direction}</span>
                       </div>
                       {conv.message_preview && (
-                        <p className="text-xs text-slate-400 mt-1 truncate">{conv.message_preview}</p>
+                        <p className="text-xs text-muted mt-1 truncate">{conv.message_preview}</p>
                       )}
                       {conv.sent_at && (
-                        <p className="text-xs text-slate-500 mt-1">{new Date(conv.sent_at).toLocaleString()}</p>
+                        <p className="text-xs text-muted mt-1">{new Date(conv.sent_at).toLocaleString()}</p>
                       )}
                     </div>
                   ))}
@@ -263,13 +263,13 @@ export default function Intelligence() {
                 onSourceChange={setTraceSource}
               />
               {loading.traceability ? (
-                <p className="text-slate-500 text-sm">Cargando trazabilidad…</p>
+                <p className="text-muted text-sm">Cargando trazabilidad…</p>
               ) : error.traceability ? (
                 <p className="text-sm text-red-500">{error.traceability}</p>
               ) : traceability.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
-                  <p className="text-slate-300 font-medium">No hay datos de trazabilidad todavía</p>
-                  <p className="text-slate-500 text-sm max-w-md">
+                  <p className="text-[#d7c5ae] font-medium">No hay datos de trazabilidad todavía</p>
+                  <p className="text-muted text-sm max-w-md">
                     Cuando el sistema ejecute el matching de Doctoralia (por DNI o nombre/teléfono),
                     cada lead se vinculará a su paciente y a su historial de liquidaciones.
                     Los datos aparecerán aquí automáticamente.

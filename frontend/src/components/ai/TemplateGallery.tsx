@@ -43,7 +43,7 @@ export function TemplateGallery({ onSelect }: Props) {
             className={`text-xs px-3 py-1 rounded-full border transition-colors ${
               activeCategory === cat
                 ? 'bg-primary text-primary-foreground border-primary'
-                : 'border-slate-600 text-slate-400 hover:border-slate-400 hover:text-slate-200'
+                : 'border-[#5c4a33] text-muted hover:border-primary hover:text-foreground'
             }`}
           >
             {cat}
@@ -56,15 +56,15 @@ export function TemplateGallery({ onSelect }: Props) {
           <button
             key={t.label}
             onClick={() => onSelect(t.prompt)}
-            className="text-left p-3 rounded-lg border border-slate-700 bg-slate-900 hover:border-slate-500 hover:bg-slate-800 transition-colors"
+            className="text-left p-3 rounded-lg border border-border bg-surface hover:border-muted hover:bg-card transition-colors"
           >
             <div className="flex items-start justify-between gap-2">
-              <span className="text-sm font-medium text-slate-200">{t.label}</span>
-              <span className="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 shrink-0">
+              <span className="text-sm font-medium text-foreground">{t.label}</span>
+              <span className="text-xs px-2 py-0.5 rounded bg-card text-muted border border-border shrink-0">
                 {t.category}
               </span>
             </div>
-            <p className="text-xs text-slate-500 mt-1 line-clamp-2">{t.prompt}</p>
+            <p className="text-xs text-muted mt-1 line-clamp-2">{t.prompt}</p>
           </button>
         ))}
       </div>

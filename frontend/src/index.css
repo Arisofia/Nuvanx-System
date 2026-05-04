@@ -50,16 +50,16 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #111827;
+  background: #120f0c;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #374151;
+  background: #2d2218;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #4b5563;
+  background: #4f3d27;
 }
 
 @layer components {
@@ -76,11 +76,11 @@ body {
   }
 
   .btn-ghost {
-    @apply hover:bg-dark-700 text-gray-400 hover:text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200;
+    @apply hover:bg-dark-700 text-muted hover:text-foreground font-medium px-4 py-2 rounded-lg transition-colors duration-200;
   }
 
   .input {
-    @apply bg-dark-800 border border-dark-600 text-white placeholder-gray-500 rounded-lg px-4 py-2.5 w-full focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all duration-200;
+    @apply bg-dark-800 border border-dark-600 text-foreground placeholder:text-muted rounded-lg px-4 py-2.5 w-full focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200;
   }
 
   .badge-active {
@@ -88,7 +88,7 @@ body {
   }
 
   .badge-draft {
-    @apply inline-flex items-center gap-1.5 bg-gray-500/10 text-gray-400 text-xs font-medium px-2.5 py-1 rounded-full;
+    @apply inline-flex items-center gap-1.5 bg-muted/10 text-muted text-xs font-medium px-2.5 py-1 rounded-full;
   }
 
   .badge-error {

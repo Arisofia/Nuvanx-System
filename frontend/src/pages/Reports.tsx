@@ -9,7 +9,7 @@ import { SortableTable } from '../components/ui/SortableTable'
 import type { ColDef } from '../components/ui/SortableTable'
 
 function EmptyState({ message }: Readonly<{ message: string }>) {
-  return <p className="text-slate-500 text-sm py-8 text-center">{message}</p>
+  return <p className="text-muted text-sm py-8 text-center">{message}</p>
 }
 
 function ErrorState({ message }: Readonly<{ message: string }>) {
@@ -24,9 +24,9 @@ function ErrorState({ message }: Readonly<{ message: string }>) {
 function TableHead({ cols }: Readonly<{ cols: string[] }>) {
   return (
     <thead>
-      <tr className="border-b border-slate-700">
+      <tr className="border-b border-border">
         {cols.map((c) => (
-          <th key={c} className="text-left text-xs font-semibold text-slate-400 px-3 py-2 whitespace-nowrap">
+          <th key={c} className="text-left text-xs font-semibold text-muted px-3 py-2 whitespace-nowrap">
             {c}
           </th>
         ))}
@@ -37,9 +37,9 @@ function TableHead({ cols }: Readonly<{ cols: string[] }>) {
 
 function TableRow({ cells }: Readonly<{ cells: (string | number | null | undefined)[] }>) {
   return (
-    <tr className="border-b border-slate-800 hover:bg-slate-800/50 transition-colors">
+    <tr className="border-b border-[#2d2218] hover:bg-card/50 transition-colors">
       {cells.map((c, i) => (
-        <td key={`${c}-${i}`} className="px-3 py-2 text-sm text-slate-300 whitespace-nowrap">
+        <td key={`${c}-${i}`} className="px-3 py-2 text-sm text-[#d7c5ae] whitespace-nowrap">
           {c ?? '—'}
         </td>
       ))}
@@ -187,7 +187,7 @@ export default function Reports() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Reports</h1>
-        <p className="text-slate-400 mt-1">Doctoralia financials, campaign attribution, source comparison, WhatsApp funnel, doctor performance</p>
+        <p className="text-muted mt-1">Doctoralia financials, campaign attribution, source comparison, WhatsApp funnel, doctor performance</p>
       </div>
 
       <Tabs defaultValue="doctoralia" className="w-full">
