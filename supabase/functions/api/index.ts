@@ -2,7 +2,8 @@
 /** @ts-ignore: Deno global is provided by Supabase Edge Runtime */
 declare const Deno: any;
 
-export { createClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
+export { createClient };
 
 function requireSupabaseEnv(value: string | null | undefined, name: string): string {
   const normalized = value?.trim() ?? '';
@@ -128,10 +129,10 @@ export async function decryptCred(encoded: string): Promise<string> {
   combined.set(ct); combined.set(tag, ct.length);
   const km = await crypto.subtle.importKey('raw', new TextEncoder().encode(masterKey), 'PBKDF2', false, ['deriveKey']);
   const aesKey = await crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: salt.buffer, iterations: 100_000, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt, iterations: 100_000, hash: 'SHA-256' },
     km, { name: 'AES-GCM', length: 256 }, false, ['decrypt'],
   );
-  return new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv.buffer }, aesKey, combined.buffer));
+  return new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, aesKey, combined));
 }
 
 // ── Meta Graph API ────────────────────────────────────────────────────────────
