@@ -635,9 +635,14 @@ async function main() {
     rate: totals.clicks > 0 ? (landingViews / totals.clicks) * 100 : 0,
   };
 
-  const dbSignals = await maybeLoadDbSignals({
-    databaseUrl, clinicId, sinceIso: since, untilExclusiveIso: untilExclusive,
-  });
+  let dbSignals = { available: false, rows: [] };
+  try {
+    dbSignals = await maybeLoadDbSignals({
+      databaseUrl, clinicId, sinceIso: since, untilExclusiveIso: untilExclusive,
+    });
+  } catch (err) {
+    console.warn(`[meta-daily-report] Could not load CRM signals (DB): ${err.message}`);
+  }
 
   const recommendations = generateRecommendations(channels, landing, wasteCampaigns, dbSignals);
 
