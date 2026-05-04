@@ -15,7 +15,7 @@
   "less.validate": false,
   "scss.validate": false,
   "js/ts.tsdk.path": "frontend/node_modules/typescript/lib",
-  "typescript.preferences.includePackageJsonAutoImports": "on",
+  "js/ts.preferences.includePackageJsonAutoImports": "on",
   "deno.enable": false,
   "deno.enablePaths": ["supabase/functions"],
   "deno.config": "supabase/functions/deno.json"

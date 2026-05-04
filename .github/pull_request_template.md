@@ -19,4 +19,4 @@ Describe brevemente los cambios realizados y por qué son necesarios.
 
 ## Notas adicionales
 
-Incluya cualquier contexto adicional, instrucciones de prueba, o variables de entorno necesarias.
+Incluye cualquier contexto adicional, instrucciones de prueba, o variables de entorno necesarias.
