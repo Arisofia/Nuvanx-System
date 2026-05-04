@@ -1133,7 +1133,7 @@ async function handleAuthenticatedRoutes(ctx: AuthenticatedRouteContext): Promis
     return ctx.sendJson({ success: false, message: `Route not found: ${ctx.resource}/${ctx.sub}` }, 404);
   } catch (err: any) {
     console.error('Edge Function error:', err);
-    return ctx.sendJson({ success: false, message: err.message || 'Internal server error' }, 500);
+    return ctx.sendJson({ success: false, code: 'INTERNAL_ERROR', message: 'An unexpected error occurred. Please try again.' }, 500);
   }
 }
 
@@ -2440,7 +2440,8 @@ async function handleAiAnalyzeCampaignPost(ctx: AuthenticatedRouteContext): Prom
       }
       return sendJson({ success: true, analysis: text, provider: usedProvider, outputId });
     } catch (err: any) {
-      return sendJson({ success: false, message: err?.message ?? 'AI request failed' }, 502);
+      console.error('AI request error:', err);
+      return sendJson({ success: false, code: 'AI_REQUEST_FAILED', message: 'AI request failed. Please try again.' }, 502);
     }
   }
   return null;
@@ -3087,7 +3088,10 @@ async function handleLeadsReconcilePost(ctx: AuthenticatedRouteContext): Promise
     const leadId = sub;
     if (!leadId) return sendJson({ success: false, message: 'lead id required' }, 400);
     const { data, error } = await adminClient.rpc('reconcile_lead_to_patient', { p_lead_id: leadId });
-    if (error) return sendJson({ success: false, message: error.message }, 500);
+    if (error) {
+      console.error('reconcile_lead_to_patient error:', error);
+      return sendJson({ success: false, code: 'RECONCILE_ERROR', message: 'Failed to reconcile lead.' }, 500);
+    }
     return sendJson({ success: true, matched: data !== null, patient_id: data ?? null });
   }
   return null;
@@ -3100,7 +3104,7 @@ Deno.serve(async (req: Request) => {
   } catch (topLevelErr: any) {
     console.error('Unhandled top-level error in handleRequest:', topLevelErr);
     return new Response(
-      JSON.stringify({ success: false, message: topLevelErr?.message ?? 'Unexpected server error', stack: topLevelErr?.stack ?? '' }),
+      JSON.stringify({ success: false, code: 'UNHANDLED_ERROR', message: 'An unexpected server error occurred.' }),
       { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } },
     );
   }
