@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { AlertCircle } from 'lucide-react'
 import { invokeApi } from '../lib/supabaseClient'
-import type { FinancialSummary, MonthlyTrend, FinancialsState } from '../types'
+import type { MonthlyTrend, FinancialsState } from '../types'
 import { SortableTable } from '../components/ui/SortableTable'
 import type { ColDef } from '../components/ui/SortableTable'
 
@@ -71,11 +71,11 @@ export default function Financials() {
 
   const monthlyColumns: ColDef[] = [
     { key: 'month', label: 'Month', align: 'left' },
-    { key: 'gross', label: 'Gross', align: 'right', format: (v) => v != null ? fmt(Number(v)) : null },
-    { key: 'net', label: 'Net', align: 'right', format: (v) => v != null ? fmt(Number(v)) : null },
-    { key: 'discount', label: 'Discount', align: 'right', format: (v) => v != null ? fmt(Number(v)) : null },
+    { key: 'gross', label: 'Gross', align: 'right', format: (v) => v == null ? null : fmt(Number(v)) },
+    { key: 'net', label: 'Net', align: 'right', format: (v) => v == null ? null : fmt(Number(v)) },
+    { key: 'discount', label: 'Discount', align: 'right', format: (v) => v == null ? null : fmt(Number(v)) },
     { key: 'count', label: 'Ops', align: 'right' },
-    { key: 'avgTicket', label: 'Avg Ticket', align: 'right', format: (v) => v != null ? fmt(Number(v)) : null },
+    { key: 'avgTicket', label: 'Avg Ticket', align: 'right', format: (v) => v == null ? null : fmt(Number(v)) },
   ]
 
   const monthlyRows = state.monthly.map((m: MonthlyTrend) => ({
@@ -105,9 +105,14 @@ export default function Financials() {
   const templateMixColumns: ColDef[] = [
     { key: 'name', label: 'Template', align: 'left' },
     { key: 'count', label: 'Ops', align: 'right' },
-    { key: 'net', label: 'Net Revenue', align: 'right', format: (v) => v != null ? fmt(Number(v)) : null },
-    { key: 'pct', label: 'Share %', align: 'right', format: (v) => v != null ? `${v}%` : null },
+    { key: 'net', label: 'Net Revenue', align: 'right', format: (v) => v == null ? null : fmt(Number(v)) },
+    { key: 'pct', label: 'Share %', align: 'right', format: (v) => v == null ? null : `${v}%` },
   ]
+
+  const liquidationLabel =
+    state.summary && state.summary.avgLiquidationDays > 0
+      ? `${state.summary.avgLiquidationDays}d`
+      : '—'
 
   return (
     <div className="space-y-6">
@@ -207,9 +212,7 @@ export default function Financials() {
             <CardTitle className="text-sm font-medium">Promedio de liquidación</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {state.summary ? (state.summary.avgLiquidationDays > 0 ? `${state.summary.avgLiquidationDays}d` : '—') : '—'}
-            </div>
+            <div className="text-2xl font-bold">{liquidationLabel}</div>
             <p className="text-xs text-slate-500 mt-1">
               {state.summary?.avgLiquidationDays === 0 ? 'Sin fecha de entrada' : 'Días desde entrada hasta liquidación'}
             </p>
