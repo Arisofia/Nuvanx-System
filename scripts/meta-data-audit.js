@@ -38,7 +38,7 @@ function metaUrl(path, params) {
   return `${base}?${qs}`;
 }
 
-async function supabaseQuery(table, select, filtersArr = [], order = '', limit = '') {
+function supabaseQuery(table, select, filtersArr = [], order = '', limit = '') {
   let url = `${SUPABASE_URL}/rest/v1/${table}?select=${encodeURIComponent(select)}`;
   // filtersArr: [{col, op, val}] => col=op.val
   for (const { col, op, val } of filtersArr) {
@@ -46,7 +46,7 @@ async function supabaseQuery(table, select, filtersArr = [], order = '', limit =
   }
   if (order) url += `&order=${encodeURIComponent(order)}`;
   if (limit) url += `&limit=${limit}`;
-  const res = await new Promise((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     const u = new URL(url);
     const options = {
       hostname: u.hostname,
@@ -70,7 +70,6 @@ async function supabaseQuery(table, select, filtersArr = [], order = '', limit =
     req.on('error', reject);
     req.end();
   });
-  return res;
 }
 
 function fmt(n) {
