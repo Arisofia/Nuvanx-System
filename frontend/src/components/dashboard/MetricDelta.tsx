@@ -1,8 +1,8 @@
 import { TrendingDown, TrendingUp } from 'lucide-react'
 
 interface MetricDeltaProps {
-  value: number
-  inverse?: boolean
+  readonly value: number
+  readonly inverse?: boolean
 }
 
 export function MetricDelta({ value, inverse = false }: MetricDeltaProps) {

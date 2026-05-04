@@ -13,6 +13,9 @@ export function normalizePhoneToE164(input: string | null | undefined, countryCo
     return `+${digits}`;
   }
 
+  const digits = candidate.replaceAll(/\D/g, '');
+  if (digits.length < 8 || digits.length > 15) return '';
+
   const nodeProcess = (globalThis as any).process;
   const fallbackCountryCode = (
     countryCode
@@ -24,9 +27,6 @@ export function normalizePhoneToE164(input: string | null | undefined, countryCo
   if (!fallbackCountryCode) {
     throw new Error('DEFAULT_PHONE_COUNTRY_CODE environment variable is not set. Phone normalization cannot proceed.');
   }
-
-  const digits = candidate.replaceAll(/\D/g, '');
-  if (digits.length < 8 || digits.length > 15) return '';
 
   if (digits.length <= 12 && !digits.startsWith(fallbackCountryCode)) {
     return `+${fallbackCountryCode}${digits}`;

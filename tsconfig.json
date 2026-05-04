@@ -11,18 +11,18 @@
     "baseUrl": ".",
     "ignoreDeprecations": "6.0",
     "paths": {
-      "vitest": ["frontend/node_modules/vitest/dist/index.d.ts"],
-      "vitest/*": ["frontend/node_modules/vitest/dist/*.d.ts"]
+      "vitest": ["node_modules/vitest/dist/index.d.ts"],
+      "vitest/*": ["node_modules/vitest/dist/*.d.ts"]
     },
-    "typeRoots": ["frontend/node_modules/@types", "frontend/node_modules/vitest"]
+    "typeRoots": ["node_modules/@types", "node_modules/vitest", "frontend/node_modules/@types"]
   },
   "include": [
-    "shared/**/*.ts"
+    "shared/**/*.ts",
+    "supabase/functions/**/*.ts"
   ],
   "exclude": [
     "frontend",
     "backend",
-    "supabase",
     "**/node_modules"
   ]
 }

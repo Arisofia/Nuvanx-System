@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useEffect, useState, type ChangeEvent, type FormEventHandler } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -28,7 +28,11 @@ const serviceLabels: Record<string, string> = {
 }
 
 function formatServiceName(service: string) {
-  return serviceLabels[service] ?? service.replaceAll('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase())
+  const label = serviceLabels[service] ?? service.replaceAll('_', ' ')
+  return label
+    .split(' ')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
 }
 
 const SUPPORTED_SERVICES = ['meta', 'whatsapp', 'openai', 'gemini', 'github', 'google_ads']
@@ -66,7 +70,7 @@ export default function Integrations() {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
   }
 
-  const handleConnect = async (e: FormEvent) => {
+  const handleConnect: FormEventHandler<HTMLFormElement> = async (e) => {
     e.preventDefault()
     setSaveError(null)
     if (!form.token.trim()) { setSaveError('Token / API key is required.'); return }
@@ -113,6 +117,15 @@ export default function Integrations() {
     }
   }
 
+  let tokenLabel = 'API Key / Token'
+  if (form.service === 'meta') {
+    tokenLabel = 'Token de Acceso de Meta'
+  } else if (form.service === 'whatsapp') {
+    tokenLabel = 'Token de Usuario del Sistema de WhatsApp'
+  } else if (form.service === 'google_ads') {
+    tokenLabel = 'Token de Desarrollador de Google Ads'
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -139,8 +152,9 @@ export default function Integrations() {
           <CardContent>
             <form onSubmit={handleConnect} className="space-y-3">
               <div>
-                <label className="text-sm font-medium">Servicio</label>
+                <label htmlFor="service-select" className="text-sm font-medium">Servicio</label>
                 <select
+                  id="service-select"
                   name="service"
                   value={form.service}
                   onChange={handleFieldChange}
@@ -153,13 +167,11 @@ export default function Integrations() {
               </div>
 
               <div>
-                <label className="text-sm font-medium">
-                  {form.service === 'meta' ? 'Token de Acceso de Meta' :
-                   form.service === 'whatsapp' ? 'Token de Usuario del Sistema de WhatsApp' :
-                   form.service === 'google_ads' ? 'Token de Desarrollador de Google Ads' :
-                   'API Key / Token'}
+                <label htmlFor="token-input" className="text-sm font-medium">
+                  {tokenLabel}
                 </label>
                 <Input
+                  id="token-input"
                   type="password"
                   name="token"
                   placeholder="Pega tu token aquí"
@@ -172,8 +184,9 @@ export default function Integrations() {
               {form.service === 'meta' && (
                 <>
                   <div>
-                    <label className="text-sm font-medium">ID de la Cuenta Publicitaria <span className="text-red-500">*</span></label>
+                    <label htmlFor="adAccountId-input" className="text-sm font-medium">ID de la Cuenta Publicitaria <span className="text-red-500">*</span></label>
                     <Input
+                      id="adAccountId-input"
                       type="text"
                       name="adAccountId"
                       placeholder="ej. 123456789012345 o act_123456789012345"
@@ -183,8 +196,9 @@ export default function Integrations() {
                     />
                   </div>
                   <div>
-                    <label className="text-sm font-medium">ID de la Página <span className="text-muted font-normal">(opcional)</span></label>
+                    <label htmlFor="pageId-input" className="text-sm font-medium">ID de la Página <span className="text-muted font-normal">(opcional)</span></label>
                     <Input
+                      id="pageId-input"
                       type="text"
                       name="pageId"
                       placeholder="ID de la página de Facebook para webhooks de leads"
@@ -198,8 +212,9 @@ export default function Integrations() {
 
               {form.service === 'whatsapp' && (
                 <div>
-                  <label className="text-sm font-medium">ID del Número de Teléfono <span className="text-red-500">*</span></label>
+                  <label htmlFor="phoneNumberId-input" className="text-sm font-medium">ID del Número de Teléfono <span className="text-red-500">*</span></label>
                   <Input
+                    id="phoneNumberId-input"
                     type="text"
                     name="phoneNumberId"
                     placeholder="ID del número de teléfono de WhatsApp Business"

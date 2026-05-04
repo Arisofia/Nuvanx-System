@@ -12,7 +12,7 @@ export function useLeads() {
     setError(null)
     try {
       const response = await invokeApi('/leads')
-      const data = (response as any).leads
+      const data = response.leads
 
       setLeads(
         Array.isArray(data)
@@ -54,8 +54,8 @@ export function useLeads() {
         body: apiUpdates,
       })
 
-      if ((response as any).success) {
-        const updatedLead = (response as any).lead
+      if (response.success) {
+        const updatedLead = response.lead
         setLeads(prev =>
           prev.map(lead =>
             lead.id === id
@@ -70,7 +70,7 @@ export function useLeads() {
         )
         return { success: true }
       }
-      return { success: false, error: (response as any).message }
+      return { success: false, error: response.message }
     } catch (err: any) {
       return { success: false, error: err?.message || 'Failed to update lead' }
     }
@@ -79,11 +79,11 @@ export function useLeads() {
   const deleteLead = async (id: string) => {
     try {
       const response = await invokeApi(`/leads/${id}`, { method: 'DELETE' })
-      if ((response as any).success) {
+      if (response.success) {
         setLeads(prev => prev.filter(lead => lead.id !== id))
         return { success: true }
       }
-      return { success: false, error: (response as any).message }
+      return { success: false, error: response.message }
     } catch (err: any) {
       return { success: false, error: err?.message || 'Failed to delete lead' }
     }

@@ -80,6 +80,98 @@ export default function Dashboard() {
   const [activity, setActivity] = useState<ActivityEvent[]>([])
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
 
+  function buildDashboardPaths(isCustomRange: boolean, customFrom: string, customTo: string, days: number) {
+    const baseParams = isCustomRange ? `?from=${customFrom}&to=${customTo}` : `?days=${days}`
+    const campaignsPath = isCustomRange ? `?from=${customFrom}&to=${customTo}` : `?days=${days}`
+    return {
+      baseParams,
+      campaignsPath,
+    }
+  }
+
+  function resolveCampaigns(campaignsResponse: any) {
+    return Array.isArray(campaignsResponse?.campaigns) ? campaignsResponse.campaigns : []
+  }
+
+  function resolveInsightsTotals(insightsSummary: any, campaigns: any[]) {
+    const spend = insightsSummary?.spend == null
+      ? Number(campaigns.reduce((sum: number, c: any) => sum + Number(c.insights?.spend ?? 0), 0))
+      : Number(insightsSummary.spend)
+
+    const avgCpcRaw = insightsSummary?.cpc == null
+      ? Number(
+          campaigns.reduce((sum: number, c: any) => sum + Number(c.insights?.cpc ?? 0), 0) /
+            Math.max(campaigns.filter((c: any) => Number(c.insights?.cpc ?? 0) > 0).length, 1),
+        )
+      : Number(insightsSummary.cpc)
+
+    const metaConversions = insightsSummary?.conversions == null
+      ? campaigns.reduce((sum: number, c: any) => sum + Number(c.insights?.conversions ?? 0), 0)
+      : Number(insightsSummary.conversions)
+
+    return { spend, avgCpcRaw, metaConversions }
+  }
+
+  function buildMetaFailureMessage(campaignsResult: PromiseSettledResult<any>, insightsResult: PromiseSettledResult<any>) {
+    if (campaignsResult.status === 'rejected' || insightsResult.status === 'rejected') {
+      return (campaignsResult as any).reason?.message || (insightsResult as any).reason?.message || 'Meta API unavailable'
+    }
+    return null
+  }
+
+  function buildDashboardState(
+    metricsData: any,
+    campaigns: any[],
+    insightsResponse: any,
+    kpisResponse: any,
+    spend: number,
+    avgCpcRaw: number,
+    metaConversions: number,
+    spendDelta: number,
+  ) {
+    return {
+      metrics: {
+        totalLeads: Number(metricsData.totalLeads ?? 0),
+        conversionRate: Number(metricsData.conversionRate ?? 0),
+        patientMatches: Number(metricsData.patientMatches ?? 0),
+        patientConversionRate: Number(metricsData.patientConversionRate ?? 0),
+        verifiedRevenue: Number(metricsData.verifiedRevenue ?? 0),
+        totalRevenue: Number(metricsData.totalRevenue ?? 0),
+        settledCount: Number(metricsData.settledCount ?? 0),
+        activeCampaigns: campaigns.filter((c: any) => c.status === 'ACTIVE').length,
+        spend,
+        averageCpc: Number.isFinite(avgCpcRaw) ? Number.parseFloat(avgCpcRaw.toFixed(2)) : 0,
+        metaConversions,
+        deltas: {
+          leads: metricsData.deltas?.leads ?? 0,
+          revenue: metricsData.deltas?.revenue ?? 0,
+          conversions: metricsData.deltas?.conversions ?? 0,
+          patientMatches: metricsData.deltas?.patientMatches ?? 0,
+          spend: Number(spendDelta),
+        },
+        loading: false,
+        error: null,
+        metaError: null,
+      },
+      combined: {
+        metaEstimatedLeads: Number(kpisResponse?.meta?.leads ?? insightsResponse?.summary?.conversions ?? 0),
+        verifiedRevenue: Number(kpisResponse?.doctoralia?.verifiedRevenue ?? Number(metricsData.verifiedRevenue ?? 0)),
+        metaCpl: Number(kpisResponse?.meta?.cpl ?? 0),
+        revenuePerLead: kpisResponse?.doctoralia?.newVerifiedPatients > 0
+          ? Number.parseFloat(((kpisResponse?.doctoralia?.verifiedRevenue ?? 0) / kpisResponse.doctoralia.newVerifiedPatients).toFixed(2))
+          : 0,
+      },
+      funnel: {
+        metaSpend: Number(kpisResponse?.meta?.spend ?? spend),
+        metaLeads: Number(kpisResponse?.meta?.leads ?? metaConversions),
+        crmLeads: Number(kpisResponse?.crm?.totalLeads ?? Number(metricsData.totalLeads ?? 0)),
+        doctoraliaRevenue: Number(kpisResponse?.doctoralia?.verifiedRevenue ?? Number(metricsData.verifiedRevenue ?? 0)),
+        doctoraliaPatients: Number(kpisResponse?.doctoralia?.newVerifiedPatients ?? 0),
+        cac: Number(kpisResponse?.doctoralia?.cacDoctoralia ?? 0),
+      },
+    }
+  }
+
   useEffect(() => {
     const channel = supabase
       .channel('dashboard-lead-feed')
@@ -127,15 +219,15 @@ export default function Dashboard() {
 
       try {
         const isCustomRange = Boolean(customFrom && customTo)
-        const baseParams = isCustomRange ? `?from=${customFrom}&to=${customTo}` : `?days=${days}`
-        const campaignParam = campaignId !== 'ALL' ? `&campaign_id=${campaignId}` : ''
-        const sourceParam = sourceFilter !== 'ALL' ? `&source=${sourceFilter}` : ''
+        const { baseParams, campaignsPath } = buildDashboardPaths(isCustomRange, customFrom, customTo, days)
+        const campaignParam = campaignId === 'ALL' ? '' : `&campaign_id=${campaignId}`
+        const sourceParam = sourceFilter === 'ALL' ? '' : `&source=${sourceFilter}`
         const queryParams = `${baseParams}${campaignParam}`
         const dashboardParams = `${queryParams}${sourceParam}`
         const [metricsResult, metaTrendsResult, campaignsResult, insightsResult, funnelResult, kpisResult] = await Promise.allSettled([
           invokeApi(`/dashboard/metrics${dashboardParams}`),
           invokeApi(`/dashboard/meta-trends${queryParams}`),
-          invokeApi(`/meta/campaigns${isCustomRange ? `?from=${customFrom}&to=${customTo}` : `?days=${days}`}`),
+          invokeApi(`/meta/campaigns${campaignsPath}`),
           invokeApi(`/meta/insights${queryParams}`),
           invokeApi('/dashboard/lead-flow'),
           invokeApi(`/kpis${dashboardParams}`),
@@ -160,9 +252,7 @@ export default function Dashboard() {
         const metaTrendsResponse = metaTrendsResult.status === 'fulfilled' ? metaTrendsResult.value : null
         const insightsResponse = insightsResult.status === 'fulfilled' ? insightsResult.value : null
 
-        const metaFailureMessage = (campaignsResult.status === 'rejected' || insightsResult.status === 'rejected')
-          ? ((campaignsResult as any).reason?.message || (insightsResult as any).reason?.message || 'Meta API unavailable')
-          : null
+        const metaFailureMessage = buildMetaFailureMessage(campaignsResult, insightsResult)
 
         const campaigns = Array.isArray(campaignsResponse?.campaigns) ? campaignsResponse.campaigns : []
         if (campaigns.length > 0 && campaignsList.length === 0) {
@@ -172,19 +262,7 @@ export default function Dashboard() {
         // Use account-level summary from /meta/insights for accurate totals;
         // fall back to summing per-campaign if insights endpoint failed.
         const insightsSummary = insightsResponse?.summary
-        const spend = insightsSummary?.spend != null
-          ? Number(insightsSummary.spend)
-          : Number(campaigns.reduce((sum: number, c: any) => sum + Number(c.insights?.spend ?? 0), 0))
-        const avgCpcRaw = insightsSummary?.cpc != null
-          ? Number(insightsSummary.cpc)
-          : Number(
-              campaigns.reduce((sum: number, c: any) => sum + Number(c.insights?.cpc ?? 0), 0) /
-                Math.max(campaigns.filter((c: any) => Number(c.insights?.cpc ?? 0) > 0).length, 1),
-            )
-        const metaConversions = insightsSummary?.conversions != null
-          ? Number(insightsSummary.conversions)
-          : campaigns.reduce((sum: number, c: any) => sum + Number(c.insights?.conversions ?? 0), 0)
-
+        const { spend, avgCpcRaw, metaConversions } = resolveInsightsTotals(insightsSummary, campaigns)
         const spendDelta = insightsResponse?.changes?.spend ?? 0
 
         const hasRealDashboardMetrics = kpisResponse?.success === true
@@ -214,47 +292,20 @@ export default function Dashboard() {
             : [],
         )
 
-        setMetrics({
-          totalLeads: Number(metricsData.totalLeads ?? 0),
-          conversionRate: Number(metricsData.conversionRate ?? 0),
-          patientMatches: Number(metricsData.patientMatches ?? 0),
-          patientConversionRate: Number(metricsData.patientConversionRate ?? 0),
-          verifiedRevenue: Number(metricsData.verifiedRevenue ?? 0),
-          totalRevenue: Number(metricsData.totalRevenue ?? 0),
-          settledCount: Number(metricsData.settledCount ?? 0),
-          activeCampaigns: campaigns.filter((c: any) => c.status === 'ACTIVE').length,
+        const { metrics: metricsPayload, combined: combinedPayload, funnel: funnelPayload } = buildDashboardState(
+          metricsData,
+          campaigns,
+          insightsResponse,
+          kpisResponse,
           spend,
-          averageCpc: Number.isFinite(avgCpcRaw) ? Number.parseFloat(avgCpcRaw.toFixed(2)) : 0,
+          avgCpcRaw,
           metaConversions,
-          deltas: {
-            leads: metricsData.deltas?.leads ?? 0,
-            revenue: metricsData.deltas?.revenue ?? 0,
-            conversions: metricsData.deltas?.conversions ?? 0,
-            patientMatches: metricsData.deltas?.patientMatches ?? 0,
-            spend: Number(spendDelta),
-          },
-          loading: false,
-          error: null,
-          metaError: metaFailureMessage,
-        })
+          spendDelta,
+        )
 
-        setCombined({
-          metaEstimatedLeads: Number(kpisResponse?.meta?.leads ?? insightsSummary?.conversions ?? 0),
-          verifiedRevenue: Number(kpisResponse?.doctoralia?.verifiedRevenue ?? Number(metricsData.verifiedRevenue ?? 0)),
-          metaCpl: Number(kpisResponse?.meta?.cpl ?? 0),
-          revenuePerLead: kpisResponse?.doctoralia?.newVerifiedPatients > 0
-            ? Number.parseFloat(((kpisResponse?.doctoralia?.verifiedRevenue ?? 0) / kpisResponse.doctoralia.newVerifiedPatients).toFixed(2))
-            : 0,
-        })
-
-        setFunnel({
-          metaSpend: Number(kpisResponse?.meta?.spend ?? spend),
-          metaLeads: Number(kpisResponse?.meta?.leads ?? metaConversions),
-          crmLeads: Number(kpisResponse?.crm?.totalLeads ?? Number(metricsData.totalLeads ?? 0)),
-          doctoraliaRevenue: Number(kpisResponse?.doctoralia?.verifiedRevenue ?? Number(metricsData.verifiedRevenue ?? 0)),
-          doctoraliaPatients: Number(kpisResponse?.doctoralia?.newVerifiedPatients ?? 0),
-          cac: Number(kpisResponse?.doctoralia?.cacDoctoralia ?? 0),
-        })
+        setMetrics({ ...metricsPayload, metaError: metaFailureMessage })
+        setCombined(combinedPayload)
+        setFunnel(funnelPayload)
       } catch (err: any) {
         console.error('Dashboard fetch failed:', err)
         setMetrics((prev) => ({

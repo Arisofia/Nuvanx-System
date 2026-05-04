@@ -1,4 +1,5 @@
 import React from 'react';
+import PropTypes from 'prop-types';
 import './tokens.css';
 import './button.css';
 
@@ -19,3 +20,8 @@ function Button({ variant = 'primary', children, ...props }) {
     </button>
   );
 }
+
+Button.propTypes = {
+  variant: PropTypes.string,
+  children: PropTypes.node.isRequired,
+};

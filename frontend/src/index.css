@@ -149,7 +149,7 @@ body {
   .badge-warning {
     background-color: rgba(224, 160, 32, 0.12);
     border-color: rgba(224, 160, 32, 0.28);
-    color: #8c6f18;
+    color: var(--color-text-primary);
   }
 
   .badge-danger {
@@ -182,7 +182,7 @@ body {
   .mode-partial_demo {
     background-color: rgba(224, 160, 32, 0.12);
     border-color: rgba(224, 160, 32, 0.28);
-    color: #8c6f18;
+    color: var(--color-text-primary);
   }
 
   .mode-full_demo {
@@ -237,7 +237,7 @@ body {
   .alert-warning {
     background-color: rgba(224, 160, 32, 0.08);
     border-color: rgba(224, 160, 32, 0.28);
-    color: #8c6f18;
+    color: var(--color-text-primary);
   }
 
   .info-card {

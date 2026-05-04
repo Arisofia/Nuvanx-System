@@ -3,7 +3,7 @@
 declare const Deno: any;
 
 import { createClient } from '@supabase/supabase-js';
-export { createClient };
+export { createClient } from '@supabase/supabase-js';
 
 function requireSupabaseEnv(value: string | null | undefined, name: string): string {
   const normalized = value?.trim() ?? '';
@@ -163,7 +163,8 @@ export async function metaFetch(path: string, params: Record<string, string>, to
   const { data: d, text } = await parseJsonOrText(r);
   if (!r.ok) {
     const e = d?.error ?? {};
-    const msg = `${e.message ?? d?.message ?? text ?? `Meta API ${r.status}`} (code=${e.code ?? '?'}, sub=${e.error_subcode ?? '?'}, type=${e.type ?? '?'})`;
+    const metaErrorMessage = e.message ?? d?.message ?? text ?? `Meta API ${r.status}`;
+    const msg = `${metaErrorMessage} (code=${e.code ?? '?'}, sub=${e.error_subcode ?? '?'}, type=${e.type ?? '?'})`;
     throw new Error(msg);
   }
   return d;
@@ -976,113 +977,124 @@ interface PublicRouteContext {
 }
 
 async function handleMetaWebhook(ctx: PublicRouteContext): Promise<Response | null> {
-  const { req, url } = ctx;
+  const { req } = ctx;
+  if (req.method === 'GET') return handleMetaWebhookGet(ctx);
+  if (req.method === 'POST') return handleMetaWebhookPost(ctx);
+  return null;
+}
 
-  if (req.method === 'GET') {
-    const mode = url.searchParams.get('hub.mode');
-    const challenge = url.searchParams.get('hub.challenge');
-    const verifyToken = url.searchParams.get('hub.verify_token');
-    const expected = Deno.env.get('META_WEBHOOK_VERIFY_TOKEN') ?? Deno.env.get('META_VERIFY_TOKEN');
-    if (!expected) return new Response('Verify token not configured', { status: 503 });
-    if (mode === 'subscribe' && verifyToken === expected) {
-      return new Response(challenge ?? '', { status: 200, headers: { 'Content-Type': 'text/plain' } });
-    }
-    return new Response('Forbidden', { status: 403 });
+function handleMetaWebhookGet(ctx: PublicRouteContext): Response | null {
+  const { url } = ctx;
+  const mode = url.searchParams.get('hub.mode');
+  const challenge = url.searchParams.get('hub.challenge');
+  const verifyToken = url.searchParams.get('hub.verify_token');
+  const expected = Deno.env.get('META_WEBHOOK_VERIFY_TOKEN') ?? Deno.env.get('META_VERIFY_TOKEN');
+  if (!expected) return new Response('Verify token not configured', { status: 503 });
+  if (mode === 'subscribe' && verifyToken === expected) {
+    return new Response(challenge ?? '', { status: 200, headers: { 'Content-Type': 'text/plain' } });
+  }
+  return new Response('Forbidden', { status: 403 });
+}
+
+async function handleMetaWebhookPost(ctx: PublicRouteContext): Promise<Response | null> {
+  const { req } = ctx;
+  const appSecret = Deno.env.get('META_APP_SECRET');
+  const rawBody = await req.text();
+
+  if (!appSecret && !IS_DEVELOPMENT) {
+    return new Response('Meta App Secret not configured', { status: 500 });
   }
 
-  if (req.method === 'POST') {
-    const appSecret = Deno.env.get('META_APP_SECRET');
-    const rawBody = await req.text();
+  if (appSecret) {
+    const signature = req.headers.get('X-Hub-Signature-256') ?? '';
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw', enc.encode(appSecret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
+    );
+    const sig = await crypto.subtle.sign('HMAC', key, enc.encode(rawBody));
+    const expectedSig = 'sha256=' + Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, '0')).join('');
+    if (signature !== expectedSig) return new Response('Unauthorized', { status: 403 });
+  }
 
-    if (!appSecret && !IS_DEVELOPMENT) {
-      return new Response('Meta App Secret not configured', { status: 500 });
-    }
-
-    if (appSecret) {
-      const signature = req.headers.get('X-Hub-Signature-256') ?? '';
-      const enc = new TextEncoder();
-      const key = await crypto.subtle.importKey(
-        'raw', enc.encode(appSecret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
-      );
-      const sig = await crypto.subtle.sign('HMAC', key, enc.encode(rawBody));
-      const expectedSig = 'sha256=' + Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, '0')).join('');
-      if (signature !== expectedSig) return new Response('Unauthorized', { status: 403 });
-    }
-
-    let payload: any;
-    try {
-      payload = JSON.parse(rawBody);
-    } catch {
-      return new Response('ok', { status: 200 });
-    }
-    if (payload.object !== 'page') return new Response('ok', { status: 200 });
-
-    const adminClient = supabaseClientFactory.create(Deno.env.get('SUPABASE_URL') ?? null, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? null, {
-      auth: { persistSession: false },
-    });
-
-    for (const entry of (payload.entry ?? [])) {
-      for (const change of (entry.changes ?? [])) {
-        if (change.field !== 'leadgen') continue;
-        const val = change.value ?? {};
-        const { leadgen_id, page_id } = val;
-        if (!leadgen_id) continue;
-
-        const { data: intgs } = await adminClient
-          .from('integrations')
-          .select('user_id, metadata')
-          .eq('service', 'meta')
-          .eq('status', 'connected');
-
-        const connected = intgs ?? [];
-        let matchingIntg = connected.find((i: any) => {
-          const m = i.metadata ?? {};
-          return m.pageId === page_id || m.page_id === page_id;
-        });
-        if (matchingIntg == null) {
-          const noPageIdSet = connected.every((i: any) => !i.metadata?.pageId && !i.metadata?.page_id);
-          if (noPageIdSet && connected.length === 1) {
-            matchingIntg = connected[0];
-          }
-        }
-
-        if (matchingIntg == null) {
-          continue;
-        }
-
-        const webhookUserId = matchingIntg.user_id;
-        const { data: credRow } = await adminClient
-          .from('credentials')
-          .select('encrypted_key')
-          .eq('user_id', webhookUserId)
-          .eq('service', 'meta')
-          .single();
-        if (!credRow) continue;
-
-        let accessToken: string;
-        try {
-          accessToken = await publicRouteHelpers.decryptCred(credRow.encrypted_key);
-        } catch {
-          continue;
-        }
-
-        let leadData: any;
-        try {
-          leadData = await publicRouteHelpers.metaFetch(`/${leadgen_id}`, {
-            fields: 'field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,adset_id,page_id',
-          }, accessToken);
-        } catch {
-          continue;
-        }
-
-        await publicRouteHelpers.processLeadData(adminClient, webhookUserId, leadData);
-      }
-    }
-
+  let payload: any;
+  try {
+    payload = JSON.parse(rawBody);
+  } catch {
     return new Response('ok', { status: 200 });
   }
+  if (payload.object !== 'page') return new Response('ok', { status: 200 });
 
-  return null;
+  const adminClient = supabaseClientFactory.create(Deno.env.get('SUPABASE_URL') ?? null, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? null, {
+    auth: { persistSession: false },
+  });
+
+  for (const entry of (payload.entry ?? [])) {
+    for (const change of (entry.changes ?? [])) {
+      if (change.field !== 'leadgen') continue;
+      const val = change.value ?? {};
+      const { leadgen_id, page_id } = val;
+      if (!leadgen_id) continue;
+
+      const { data: intgs } = await adminClient
+        .from('integrations')
+        .select('user_id, metadata')
+        .eq('service', 'meta')
+        .eq('status', 'connected');
+
+      const connected = intgs ?? [];
+      let matchingIntg = connected.find((i: any) => {
+        const m = i.metadata ?? {};
+        return m.pageId === page_id || m.page_id === page_id;
+      });
+      if (matchingIntg == null) {
+        const noPageIdSet = connected.every((i: any) => !i.metadata?.pageId && !i.metadata?.page_id);
+        if (noPageIdSet && connected.length === 1) {
+          matchingIntg = connected[0];
+        }
+      }
+
+      if (matchingIntg == null) {
+        continue;
+      }
+
+      const webhookUserId = matchingIntg.user_id;
+      const { data: credRow } = await adminClient
+        .from('credentials')
+        .select('encrypted_key')
+        .eq('user_id', webhookUserId)
+        .eq('service', 'meta')
+        .single();
+      if (!credRow) continue;
+
+      let accessToken: string;
+      try {
+        accessToken = await publicRouteHelpers.decryptCred(credRow.encrypted_key);
+      } catch {
+        continue;
+      }
+
+      let leadData: any;
+      try {
+        leadData = await publicRouteHelpers.metaFetch(`/${leadgen_id}`, {
+          fields: 'field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,adset_id,page_id',
+        }, accessToken);
+      } catch {
+        continue;
+      }
+
+      await publicRouteHelpers.processLeadData(adminClient, webhookUserId, leadData);
+    }
+  }
+
+  return new Response('ok', { status: 200 });
+}
+
+function throwIfError(result: { error?: any } | null | undefined): void {
+  if (result?.error) throw result.error;
+}
+
+function pushWarning(condition: boolean, message: string, warnings: string[]): void {
+  if (condition) warnings.push(message);
 }
 
 function handleHealthRoutes(ctx: PublicRouteContext): Response | null {
@@ -1188,7 +1200,18 @@ async function handleAuthMeGet(ctx: AuthenticatedRouteContext): Promise<Response
 async function handleProductionAuditGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource === 'production' && sub === 'audit' && req.method === 'GET') {
-    const [agentOutputs, metaCacheCount, leadsCount, publicUsers, authUsers, doctoraliaPatients, doctorsCount, treatmentTypesCount, activeMetaIntegration, latestMetaCache] = await Promise.all([
+    const [
+      agentOutputs,
+      metaCacheCount,
+      leadsCount,
+      publicUsers,
+      authUsers,
+      doctoraliaPatients,
+      doctorsCount,
+      treatmentTypesCount,
+      activeMetaIntegration,
+      latestMetaCache,
+    ] = await Promise.all([
       adminClient.from('agent_outputs').select('id', { count: 'exact', head: true }),
       adminClient.from('meta_cache').select('id', { count: 'exact', head: true }),
       adminClient.from('leads').select('id', { count: 'exact', head: true }).eq('user_id', userId),
@@ -1200,17 +1223,20 @@ async function handleProductionAuditGet(ctx: AuthenticatedRouteContext): Promise
       adminClient.from('integrations').select('metadata').eq('user_id', userId).eq('service', 'meta').single(),
       adminClient.from('meta_cache').select('updated_at').order('updated_at', { ascending: false }).limit(1).maybeSingle(),
     ]);
-    if (agentOutputs.error) throw agentOutputs.error;
-    if (metaCacheCount.error) throw metaCacheCount.error;
-    if (leadsCount.error) throw leadsCount.error;
-    if (publicUsers.error) throw publicUsers.error;
-    if (authUsers.error) throw authUsers.error;
-    if (doctoraliaPatients.error) throw doctoraliaPatients.error;
-    if (doctorsCount.error) throw doctorsCount.error;
-    if (treatmentTypesCount.error) throw treatmentTypesCount.error;
-    if (activeMetaIntegration.error) throw activeMetaIntegration.error;
-    if (latestMetaCache.error) throw latestMetaCache.error;
-  
+
+    [
+      agentOutputs,
+      metaCacheCount,
+      leadsCount,
+      publicUsers,
+      authUsers,
+      doctoraliaPatients,
+      doctorsCount,
+      treatmentTypesCount,
+      activeMetaIntegration,
+      latestMetaCache,
+    ].forEach(throwIfError);
+
     const metadata = activeMetaIntegration.data?.metadata ?? {};
     const pageId = metadata.pageId ?? metadata.page_id ?? null;
     const adAccountId = metadata.adAccountId ?? metadata.ad_account_id ?? null;
@@ -1225,22 +1251,21 @@ async function handleProductionAuditGet(ctx: AuthenticatedRouteContext): Promise
     if (futureIntakes.error) throw futureIntakes.error;
 
     const futureSettlementCount = Number(futureSettled.count ?? 0) + Number(futureIntakes.count ?? 0);
-    const settlementWarnings = [];
+    const settlementWarnings: string[] = [];
     if (futureSettlementCount > 0) {
       settlementWarnings.push(`Detected ${futureSettlementCount} settlement rows with future dates. Verify whether these are pre-paid scheduled appointments or test data.`);
     }
   
-    const doctoraliaWarnings = [];
-    if (Number(doctoraliaPatients.count ?? 0) === 0) {
-      doctoraliaWarnings.push('Detected 0 doctoralia_patients rows. Doctoralia patient normalization has not run or ingestion is missing.');
-    }
-    if (Number(doctorsCount.count ?? 0) === 0) {
-      doctoraliaWarnings.push('Detected 0 doctors rows. Reference doctor catalog ingestion is empty and may block performance analysis.');
-    }
-    if (Number(treatmentTypesCount.count ?? 0) === 0) {
-      doctoraliaWarnings.push('Detected 0 treatment_types rows. Reference treatment catalog ingestion is empty and may block performance analysis.');
-    }
-  
+    const doctoraliaWarnings: string[] = [];
+      pushWarning(Number(doctoraliaPatients.count ?? 0) === 0,
+        'Detected 0 doctoralia_patients rows. Doctoralia patient normalization has not run or ingestion is missing.',
+        doctoraliaWarnings);
+      pushWarning(Number(doctorsCount.count ?? 0) === 0,
+        'Detected 0 doctors rows. Reference doctor catalog ingestion is empty and may block performance analysis.',
+        doctoraliaWarnings);
+      pushWarning(Number(treatmentTypesCount.count ?? 0) === 0,
+        'Detected 0 treatment_types rows. Reference treatment catalog ingestion is empty and may block performance analysis.',
+        doctoraliaWarnings);
     return sendJson({
       success: true,
       audit: {
@@ -3081,15 +3106,13 @@ async function handleKpisGet(ctx: AuthenticatedRouteContext): Promise<Response |
     const metaLeads = leadMetaCountRes.count ?? 0;
 
     // Build by_stage breakdown
-    const stageOrder = ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'];
     const byStage: Record<string, number> = { lead: 0, whatsapp: 0, appointment: 0, treatment: 0, closed: 0 };
     for (const row of (leadsByStageRes.data ?? [])) {
       const s = (row.stage ?? 'lead').toLowerCase();
       if (s in byStage) byStage[s]++;
       else byStage['lead']++;
     }
-    const firstStageCount = byStage[stageOrder[0]] || 0;
-    const lastStageCount = byStage[stageOrder[stageOrder.length - 1]] || 0;
+
     const conversionRateLeadToAppointment = (byStage['lead'] + byStage['whatsapp']) > 0
       ? Number.parseFloat(((byStage['appointment'] / (byStage['lead'] + byStage['whatsapp'])) * 100).toFixed(1))
       : 0;
@@ -3205,11 +3228,20 @@ async function handleKpisGet(ctx: AuthenticatedRouteContext): Promise<Response |
     const leadsReal = crmLeads > 0;
     const doctoraliaSettlementsReal = settlements.length > 0;
     const doctoraliaMatchingReal = newVerifiedPatients > 0;
-    const overallMode = (metaSpendReal && leadsReal && doctoraliaSettlementsReal)
-      ? 'full_real'
-      : (doctoraliaSettlementsReal || metaSpendReal || leadsReal)
-        ? 'partial_demo'
-        : 'full_demo';
+    const hasAnyRealMetric = doctoraliaSettlementsReal || metaSpendReal || leadsReal;
+    let overallMode = 'full_demo';
+    if (metaSpendReal && leadsReal && doctoraliaSettlementsReal) {
+      overallMode = 'full_real';
+    } else if (hasAnyRealMetric) {
+      overallMode = 'partial_demo';
+    }
+
+    let cacConfidence = 'low';
+    if (metaSpendReal && doctoraliaMatchingReal) {
+      cacConfidence = 'high';
+    } else if (doctoraliaMatchingReal) {
+      cacConfidence = 'medium';
+    }
 
     return sendJson({
       success: true,
@@ -3241,7 +3273,7 @@ async function handleKpisGet(ctx: AuthenticatedRouteContext): Promise<Response |
         avgTicket,
         cacDoctoralia,
         cac_formula: 'meta_spend / new_verified_patients',
-        cac_confidence: (metaSpendReal && doctoraliaMatchingReal) ? 'high' : doctoraliaMatchingReal ? 'medium' : 'low',
+        cac_confidence: cacConfidence,
         is_real: doctoraliaSettlementsReal,
         data_source: 'financial_settlements',
       },
@@ -3328,13 +3360,6 @@ async function handleReportsDoctoraliaFinancialsGet(ctx: AuthenticatedRouteConte
     }));
 
     // Monthly rollup: vw_doctoralia_by_month already has all aggregates pre-computed
-    function computeAvgTicketNet(row: any): number {
-      if (row.avg_ticket_net == null) {
-        if (!row.operations_count) return 0;
-        return Math.round((Number(row.total_net ?? 0) / row.operations_count) * 100) / 100;
-      }
-      return Math.round(Number(row.avg_ticket_net) * 100) / 100;
-    }
 
     const byMonth = (monthRows || []).map((m: any) => ({
       settled_month: m.settled_month,
@@ -3352,6 +3377,14 @@ async function handleReportsDoctoraliaFinancialsGet(ctx: AuthenticatedRouteConte
     return sendJson({ success: true, byTemplate, byMonth, templateSummary });
   }
   return null;
+}
+
+function computeAvgTicketNet(row: any): number {
+  if (row.avg_ticket_net == null) {
+    if (!row.operations_count) return 0;
+    return Math.round((Number(row.total_net ?? 0) / row.operations_count) * 100) / 100;
+  }
+  return Math.round(Number(row.avg_ticket_net) * 100) / 100;
 }
 
 async function handleReportsCampaignPerformanceGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
