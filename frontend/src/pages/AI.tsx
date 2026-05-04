@@ -102,8 +102,13 @@ export default function AI() {
   return (
     <div className="space-y-6">
       <div>
+<<<<<<< Updated upstream
         <h1 className="text-3xl font-bold">AI Layer</h1>
         <p className="text-slate-400 mt-1">AI content generation, suggestions and output history</p>
+=======
+        <h1 className="text-3xl font-bold">Capa IA</h1>
+        <p className="text-slate-600 mt-1">Generación de contenido y análisis de campañas con criterio premium</p>
+>>>>>>> Stashed changes
       </div>
 
       <Tabs defaultValue="generate" className="w-full">
@@ -193,6 +198,7 @@ export default function AI() {
         {/* ── Suggestions ── */}
         <TabsContent value="suggestions" className="mt-4">
           <Card>
+<<<<<<< Updated upstream
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
               <CardTitle>AI Suggestions</CardTitle>
               <Button onClick={handleFetchSuggestions} disabled={suggestionsLoading} size="sm" className="gap-2">
@@ -221,10 +227,31 @@ export default function AI() {
                   </div>
                 ))}
               </div>
+=======
+            <CardHeader>
+              <CardTitle>Generar contenido</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <label className="text-sm font-medium">Prompt</label>
+                <Textarea
+                  placeholder="Describe lo que necesitas generar (ej.: 'Genera 3 mensajes de WhatsApp para leads de medicina estética')"
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  className="mt-2"
+                  rows={4}
+                />
+              </div>
+              <Button onClick={handleGenerate} disabled={loading || !prompt} className="w-full gap-2">
+                <Sparkles className="w-4 h-4" />
+                {loading ? 'Generando...' : 'Generar con IA'}
+              </Button>
+>>>>>>> Stashed changes
             </CardContent>
           </Card>
         </TabsContent>
 
+<<<<<<< Updated upstream
         {/* ── History ── */}
         <TabsContent value="history" className="mt-4">
           <Card>
@@ -279,6 +306,57 @@ export default function AI() {
           </Card>
         </TabsContent>
       </Tabs>
+=======
+          <Card className="mt-4">
+            <CardHeader>
+              <CardTitle>Contenido generado</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-slate-600 text-sm">El contenido generado aparecerá aquí...</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Plantillas rápidas</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <Button variant="outline" className="w-full justify-start text-left h-auto">
+                <div>
+                  <p className="font-medium text-sm">Seguimiento WhatsApp</p>
+                  <p className="text-xs text-slate-500">Nutre leads vía WhatsApp</p>
+                </div>
+              </Button>
+              <Button variant="outline" className="w-full justify-start text-left h-auto">
+                <div>
+                  <p className="font-medium text-sm">Campaña por email</p>
+                  <p className="text-xs text-slate-500">Plantillas de email masivo</p>
+                </div>
+              </Button>
+              <Button variant="outline" className="w-full justify-start text-left h-auto">
+                <div>
+                  <p className="font-medium text-sm">Copy para anuncios</p>
+                  <p className="text-xs text-slate-500">Variantes para Meta y Google</p>
+                </div>
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Análisis de campaña</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Button variant="outline" className="w-full">
+                Analizar rendimiento
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+>>>>>>> Stashed changes
     </div>
   )
 }

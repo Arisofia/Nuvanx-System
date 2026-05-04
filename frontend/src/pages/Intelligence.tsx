@@ -146,23 +146,35 @@ export default function Intelligence() {
   return (
     <div className="space-y-6">
       <div>
+<<<<<<< Updated upstream
         <h1 className="text-3xl font-bold">Intelligence</h1>
         <p className="text-slate-400 mt-1">Campaign attribution, WhatsApp funnel, conversation log</p>
+=======
+        <h1 className="text-3xl font-bold">Inteligencia</h1>
+        <p className="text-slate-600 mt-1">Atribución de campañas, embudo WhatsApp y conversación activa</p>
+>>>>>>> Stashed changes
       </div>
 
       <Tabs defaultValue="attribution" className="w-full">
         <TabsList>
+<<<<<<< Updated upstream
           <TabsTrigger value="attribution">Attribution</TabsTrigger>
           <TabsTrigger value="funnel">WhatsApp Funnel</TabsTrigger>
           <TabsTrigger value="conversations">Conversations</TabsTrigger>
           <TabsTrigger value="traceability">Traceability</TabsTrigger>
+=======
+          <TabsTrigger value="attribution">Atribución</TabsTrigger>
+          <TabsTrigger value="funnel">Embudo WhatsApp</TabsTrigger>
+          <TabsTrigger value="conversations">Conversaciones</TabsTrigger>
+>>>>>>> Stashed changes
         </TabsList>
 
         <TabsContent value="attribution">
           <Card>
             <CardHeader>
-              <CardTitle>Multi-Touch Attribution</CardTitle>
+              <CardTitle>Atribución multi-touch</CardTitle>
             </CardHeader>
+<<<<<<< Updated upstream
             <CardContent className="space-y-4">
               <FilterBar
                 onDateChange={(from, to) => { setAttrFrom(from); setAttrTo(to) }}
@@ -183,6 +195,23 @@ export default function Intelligence() {
                   emptyMessage="No hay datos de atribución para el período seleccionado."
                 />
               )}
+=======
+            <CardContent>
+              <div className="space-y-3">
+                <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                  <p className="text-sm font-medium">Meta Lead Ads → WhatsApp → Cita</p>
+                  <p className="text-xs text-slate-500 mt-1">45% de conversiones</p>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                  <p className="text-sm font-medium">Google Ads → Landing Page → Lead</p>
+                  <p className="text-xs text-slate-500 mt-1">35% de conversiones</p>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                  <p className="text-sm font-medium">Orgánico → Directo → Conversión</p>
+                  <p className="text-xs text-slate-500 mt-1">20% de conversiones</p>
+                </div>
+              </div>
+>>>>>>> Stashed changes
             </CardContent>
           </Card>
         </TabsContent>
@@ -190,9 +219,10 @@ export default function Intelligence() {
         <TabsContent value="funnel">
           <Card>
             <CardHeader>
-              <CardTitle>WhatsApp Conversion Funnel</CardTitle>
+              <CardTitle>Embudo de conversión WhatsApp</CardTitle>
             </CardHeader>
             <CardContent>
+<<<<<<< Updated upstream
               {loading.funnel ? (
                 <p className="text-slate-500 text-sm">Loading funnel data…</p>
               ) : error.funnel ? (
@@ -212,6 +242,26 @@ export default function Intelligence() {
                   ))}
                 </div>
               )}
+=======
+              <div className="space-y-2">
+                <div className="flex justify-between items-center p-2 bg-brand-50 rounded">
+                  <span>Mensajes enviados</span>
+                  <span className="font-bold">1.234</span>
+                </div>
+                <div className="flex justify-between items-center p-2 bg-brand-100 rounded">
+                  <span>Mensajes leídos</span>
+                  <span className="font-bold">892 (72%)</span>
+                </div>
+                <div className="flex justify-between items-center p-2 bg-brand-200 rounded">
+                  <span>Respuestas</span>
+                  <span className="font-bold">456 (51%)</span>
+                </div>
+                <div className="flex justify-between items-center p-2 bg-brand-300 rounded">
+                  <span>Citas agendadas</span>
+                  <span className="font-bold">128 (28%)</span>
+                </div>
+              </div>
+>>>>>>> Stashed changes
             </CardContent>
           </Card>
         </TabsContent>
@@ -219,9 +269,10 @@ export default function Intelligence() {
         <TabsContent value="conversations">
           <Card>
             <CardHeader>
-              <CardTitle>Recent Conversations</CardTitle>
+              <CardTitle>Conversaciones recientes</CardTitle>
             </CardHeader>
             <CardContent>
+<<<<<<< Updated upstream
               {loading.conversations ? (
                 <p className="text-slate-500 text-sm">Loading conversations…</p>
               ) : error.conversations ? (
@@ -246,6 +297,9 @@ export default function Intelligence() {
                   ))}
                 </div>
               )}
+=======
+              <p className="text-slate-600">Cargando conversaciones desde Edge Function...</p>
+>>>>>>> Stashed changes
             </CardContent>
           </Card>
         </TabsContent>

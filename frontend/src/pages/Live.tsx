@@ -57,12 +57,18 @@ export default function Live() {
   return (
     <div className="space-y-6">
       <div>
+<<<<<<< Updated upstream
         <h1 className="text-3xl font-bold">Live Dashboard</h1>
         <p className="text-slate-400 mt-1">Real-time lead flow + activity feed</p>
+=======
+        <h1 className="text-3xl font-bold">Panel en vivo</h1>
+        <p className="text-slate-600 mt-1">Flujo de leads en tiempo real y actividad de campañas</p>
+>>>>>>> Stashed changes
       </div>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+<<<<<<< Updated upstream
           <CardTitle>Live Activity Feed</CardTitle>
           <Activity className={`h-4 w-4 ${connected ? 'text-green-500 animate-pulse' : 'text-slate-400'}`} />
         </CardHeader>
@@ -84,6 +90,27 @@ export default function Live() {
           <p className="text-xs text-slate-400 mt-4">
             {connected ? 'Connected — listening for changes on leads table.' : 'Connecting to Supabase Realtime…'}
           </p>
+=======
+          <CardTitle>Actividad en vivo</CardTitle>
+          <Activity className="h-4 w-4 text-green-500 animate-pulse" />
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            <div className="p-3 bg-brand-50 rounded-lg border border-brand-200">
+              <p className="text-sm font-medium">Nuevo lead recibido</p>
+              <p className="text-xs text-slate-500 mt-1">Desde Meta Lead Ads • 2 minutos</p>
+            </div>
+            <div className="p-3 bg-brand-100 rounded-lg border border-brand-200">
+              <p className="text-sm font-medium">Mensaje de WhatsApp enviado</p>
+              <p className="text-xs text-slate-500 mt-1">Secuencia de seguimiento iniciada • 5 minutos</p>
+            </div>
+            <div className="p-3 bg-brand-200 rounded-lg border border-brand-300">
+              <p className="text-sm font-medium">Cita programada</p>
+              <p className="text-xs text-slate-500 mt-1">Lead moved to stage: Appointment • 12 minutos</p>
+            </div>
+          </div>
+          <p className="text-xs text-slate-500 mt-4">Conectando con Supabase Realtime...</p>
+>>>>>>> Stashed changes
         </CardContent>
       </Card>
     </div>

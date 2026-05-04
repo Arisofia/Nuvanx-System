@@ -117,15 +117,21 @@ export default function Integrations() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
+<<<<<<< Updated upstream
           <h1 className="text-3xl font-bold">Integrations</h1>
           <p className="text-slate-400 mt-1">Credential vault — Meta Ads, WhatsApp, OpenAI, Gemini, GitHub, Google Ads</p>
+=======
+          <h1 className="text-3xl font-bold">Integraciones</h1>
+          <p className="text-slate-600 mt-1">Gestión de credenciales: Meta, WhatsApp, OpenAI, Gemini, GitHub y Google Ads</p>
+>>>>>>> Stashed changes
         </div>
         <Button className="gap-2" onClick={() => { setShowForm(true); setSaveError(null) }}>
           <Plus className="w-4 h-4" />
-          Add Integration
+          Agregar integración
         </Button>
       </div>
 
+<<<<<<< Updated upstream
       {/* ── Connect form ───────────────────────────────────────────── */}
       {showForm && (
         <Card className="border-slate-700 bg-slate-900">
@@ -286,6 +292,33 @@ export default function Integrations() {
             </Card>
           )
         })}
+=======
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {integrations.map((integration) => (
+          <Card key={integration.name}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-base">{integration.icon} {integration.name}</CardTitle>
+              {integration.status === 'active' ? (
+                <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
+                  <CheckCircle2 className="w-3 h-3 mr-1" />
+                  Activo
+                </Badge>
+              ) : (
+                <Badge className="bg-yellow-500/10 text-yellow-400 border-yellow-500/20">
+                  <AlertCircle className="w-3 h-3 mr-1" />
+                  Inactivo
+                </Badge>
+              )}
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-slate-600 mb-3">Conectado y listo para operar</p>
+              <Button variant="outline" size="sm" className="w-full">
+                Configurar
+              </Button>
+            </CardContent>
+          </Card>
+        ))}
+>>>>>>> Stashed changes
       </div>
     </div>
   )

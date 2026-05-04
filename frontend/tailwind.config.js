@@ -4,25 +4,41 @@ export default {
   theme: {
     extend: {
       colors: {
+        background: '#080705',
+        surface: '#120f0c',
+        card: '#17120f',
+        border: '#4f3d27',
+        foreground: '#f7efe6',
+        muted: '#a38f79',
+        primary: '#c9a471',
+        secondary: '#b08b5a',
+        accent: '#d4b37d',
+        'accent-hover': '#b99956',
         brand: {
-          50: '#f5f3ff', 100: '#ede9fe', 200: '#ddd6fe',
-          300: '#c4b5fd', 400: '#a78bfa', 500: '#8b5cf6',
-          600: '#7c3aed', 700: '#6d28d9', 800: '#5b21b6',
-          900: '#4c1d95',
+          50: '#fdf7f0',
+          100: '#f8efe0',
+          200: '#eed8c1',
+          300: '#e4c2a0',
+          400: '#d0a270',
+          500: '#c09a5f',
+          600: '#a27c4c',
+          700: '#84643b',
+          800: '#664f2f',
+          900: '#4a3925',
         },
         dark: {
-          900: '#050507', 800: '#0c0c10', 700: '#15161b',
-          600: '#23252d', 500: '#31343f',
+          900: '#050507',
+          800: '#0b0b0f',
+          700: '#16161d',
+          600: '#272b34',
+          500: '#383f4d',
         },
-        metal: {
-          100: '#f5f5f7',
-          200: '#e5e7eb',
-          300: '#d1d5db',
-          400: '#9ca3af',
-          500: '#6b7280',
-        },
-      }
-    }
+      },
+      fontFamily: {
+        sans: ['Manrope', 'Inter', 'system-ui', 'sans-serif'],
+        serif: ['Playfair Display', 'Georgia', 'serif'],
+      },
+    },
   },
   plugins: [],
 }

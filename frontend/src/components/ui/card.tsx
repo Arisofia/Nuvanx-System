@@ -22,7 +22,7 @@ export function CardHeader({ children, className = '', ...props }: CardProps) {
 
 export function CardTitle({ children, className = '', ...props }: CardProps) {
   return (
-    <h2 className={`text-lg font-semibold ${className}`} {...props}>
+    <h2 className={`text-lg font-semibold font-serif tracking-tight text-foreground ${className}`} {...props}>
       {children}
     </h2>
   )

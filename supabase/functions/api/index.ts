@@ -2906,69 +2906,113 @@ async function handleWhatsappSend(ctx: AuthenticatedRouteContext): Promise<Respo
 }
 
 async function handleKpisGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, userId, resource, sub, req, sendJson } = ctx;
+  const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'kpis' && sub === '' && req.method === 'GET') {
+    const days = Math.min(Math.max(Number.parseInt(url.searchParams.get('days') ?? '30', 10), 1), 90);
+    const since = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+    const until = new Date().toISOString().slice(0, 10);
+    const period = { since, until, range: `${days}d` };
+
     const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
     const clinicId = usr?.clinic_id;
     if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
-  
-    // Real Doctoralia KPIs (from financial_settlements)
-    const { data: settlements } = await adminClient
-      .from('financial_settlements')
-      .select('amount_gross, amount_discount, amount_net, settled_at, intake_at, cancelled_at, template_name')
-      .eq('clinic_id', clinicId);
-  
-    const settled = (settlements || []).filter((r: any) => !r.cancelled_at);
-    const totalNet    = settled.reduce((s: number, r: any) => s + Number(r.amount_net), 0);
-    const totalGross  = settled.reduce((s: number, r: any) => s + Number(r.amount_gross), 0);
-    const avgTicket   = settled.length ? totalNet / settled.length : 0;
-    const discountRate = totalGross ? (settled.reduce((s: number, r: any) => s + Number(r.amount_discount), 0) / totalGross) * 100 : 0;
-    const lags = settled.filter((r: any) => r.intake_at).map((r: any) =>
-      (new Date(r.settled_at).getTime() - new Date(r.intake_at).getTime()) / 86400000);
-    const avgLag = lags.length ? lags.reduce((a: number, b: number) => a + b, 0) / lags.length : 0;
-  
-    // Real patient KPIs
-    const { count: patientCount } = await adminClient
-      .from('patients').select('id', { count: 'exact', head: true }).eq('clinic_id', clinicId);
-  
-    // Lead counts (will be 0 until Meta webhook fires)
-    const { count: leadCount } = await adminClient
-      .from('leads').select('id', { count: 'exact', head: true }).eq('user_id', userId);
-    const { count: contactedCount } = await adminClient
-      .from('leads').select('id', { count: 'exact', head: true })
-      .eq('user_id', userId).not('first_outbound_at', 'is', null);
-    const { count: repliedCount } = await adminClient
-      .from('leads').select('id', { count: 'exact', head: true })
-      .eq('user_id', userId).not('first_inbound_at', 'is', null);
-  
-    // Blocked KPIs
-    const { data: blocked } = await adminClient
-      .from('kpi_blocked')
-      .select('kpi_name, kpi_group, blocked_reason, required_field');
-  
+
+    const [leadCountRes, settlementsRes] = await Promise.all([
+      adminClient.from('leads').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+      adminClient.from('financial_settlements')
+        .select('patient_id, amount_net, cancelled_at, settled_at, source_system')
+        .eq('clinic_id', clinicId)
+        .eq('source_system', 'doctoralia')
+        .is('cancelled_at', null)
+        .gt('amount_net', 0)
+        .order('settled_at', { ascending: true }),
+    ]);
+
+    if (leadCountRes.error) throw leadCountRes.error;
+    if (settlementsRes.error) throw settlementsRes.error;
+
+    const totalLeads = leadCountRes.count ?? 0;
+    const settlements = (settlementsRes.data ?? []).filter((r: any) => r.settled_at && Number(r.amount_net) > 0);
+
+    const patientFirstSettlement: Record<string, string> = {};
+    const firstSettlementRows: Record<string, any[]> = {};
+    for (const row of settlements) {
+      const patientId = String(row.patient_id ?? '').trim();
+      if (!patientId) continue;
+      const settledAt = String(row.settled_at);
+      if (!patientFirstSettlement[patientId] || new Date(settledAt) < new Date(patientFirstSettlement[patientId])) {
+        patientFirstSettlement[patientId] = settledAt;
+        firstSettlementRows[patientId] = [row];
+      } else if (new Date(settledAt).getTime() === new Date(patientFirstSettlement[patientId]).getTime()) {
+        firstSettlementRows[patientId].push(row);
+      }
+    }
+
+    const windowStart = new Date(`${since}T00:00:00Z`);
+    const windowEnd = new Date(`${until}T23:59:59Z`);
+    const verifiedPatientIds = new Set<string>();
+    let verifiedRevenue = 0;
+    for (const patientId of Object.keys(patientFirstSettlement)) {
+      const firstDate = new Date(patientFirstSettlement[patientId]);
+      if (firstDate >= windowStart && firstDate <= windowEnd) {
+        verifiedPatientIds.add(patientId);
+        for (const row of firstSettlementRows[patientId] || []) {
+          verifiedRevenue += Number(row.amount_net ?? 0);
+        }
+      }
+    }
+
+    const metaResult = { spend: 0, leads: 0, live: false, message: '' } as {
+      spend: number
+      leads: number
+      live: boolean
+      message: string
+    };
+    try {
+      const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
+      const validation = validateMetaCredentialResult(creds);
+      if (!validation.ok) {
+        metaResult.message = validation.message;
+      } else {
+        const metaData = await metaFetch(`/${creds.adAccountId}/insights`, {
+          fields: 'date_start,spend,conversions',
+          time_range: JSON.stringify({ since, until }),
+          time_increment: '1',
+          limit: '1000',
+        }, creds.accessToken);
+        const insightRows = Array.isArray(metaData?.data) ? metaData.data : [];
+        const totalSpend = insightRows.reduce((sum: number, row: any) => sum + parseMetaMetric(row.spend), 0);
+        const totalLeadsMeta = insightRows.reduce((sum: number, row: any) => sum + parseMetaMetric(row.conversions), 0);
+        metaResult.spend = Number.parseFloat(totalSpend.toFixed(2));
+        metaResult.leads = totalLeadsMeta;
+        metaResult.live = true;
+      }
+    } catch (e: any) {
+      metaResult.message = e?.message ?? 'Meta API error';
+    }
+
+    const newVerifiedPatients = verifiedPatientIds.size;
+    const cacDoctoralia = newVerifiedPatients > 0
+      ? Number.parseFloat((metaResult.spend / newVerifiedPatients).toFixed(2))
+      : null;
+
     return sendJson({
       success: true,
-      asOf: new Date().toISOString(),
+      period,
+      meta: {
+        spend: metaResult.spend,
+        leads: metaResult.leads,
+        live: metaResult.live,
+        message: metaResult.message,
+      },
+      crm: {
+        totalLeads,
+      },
       doctoralia: {
-        settledCount: settled.length,
-        cancelledCount: (settlements || []).length - settled.length,
-        totalNet:    Math.round(totalNet * 100) / 100,
-        totalGross:  Math.round(totalGross * 100) / 100,
-        avgTicket:   Math.round(avgTicket * 100) / 100,
-        discountRate: Math.round(discountRate * 10) / 10,
-        avgLiquidationDays: Math.round(avgLag * 10) / 10,
+        newVerifiedPatients,
+        verifiedRevenue: Number.parseFloat(verifiedRevenue.toFixed(2)),
+        cacDoctoralia,
       },
-      acquisition: {
-        totalLeads: leadCount ?? 0,
-        contacted:  contactedCount ?? 0,
-        replied:    repliedCount ?? 0,
-        contactRate: leadCount ? Math.round(((contactedCount ?? 0) / leadCount) * 1000) / 10 : null,
-        replyRate:   (contactedCount ?? 0) > 0 ? Math.round(((repliedCount ?? 0) / (contactedCount ?? 1)) * 1000) / 10 : null,
-      },
-      patients: {
-        total: patientCount ?? 0,
-      },
-      blocked: blocked || [],
     });
   }
   return null;
@@ -2981,6 +3025,7 @@ async function handleReportsDoctoraliaFinancialsGet(ctx: AuthenticatedRouteConte
     const clinicId = usr?.clinic_id;
     if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
 
+<<<<<<< Updated upstream
     // settled_month is 'YYYY-MM'; compare date params truncated to 7 chars
     const fromMonth = (url.searchParams.get('from') ?? '').slice(0, 7);
     const toMonth   = (url.searchParams.get('to')   ?? '').slice(0, 7);
@@ -3009,25 +3054,115 @@ async function handleReportsDoctoraliaFinancialsGet(ctx: AuthenticatedRouteConte
         templateMap[key] = { template_id: row.template_id, template_name: row.template_name,
           operations_count: 0, total_net: 0, total_gross: 0, total_discount: 0,
           cancellation_count: 0, source_system: row.source_system };
+=======
+    const { data: settlements, error } = await adminClient
+      .from('financial_settlements')
+      .select('clinic_id,template_id,template_name,source_system,amount_gross,amount_discount,amount_net,cancelled_at,settled_at,intake_at')
+      .eq('clinic_id', clinicId)
+      .eq('source_system', 'doctoralia')
+      .order('settled_at', { ascending: true });
+    if (error) throw error;
+
+    const rows = (settlements || []).map((row: any) => ({
+      ...row,
+      amount_gross: Number(row.amount_gross ?? 0),
+      amount_discount: Number(row.amount_discount ?? 0),
+      amount_net: Number(row.amount_net ?? 0),
+      cancelled_at: row.cancelled_at,
+      settled_at: row.settled_at,
+      intake_at: row.intake_at,
+    }));
+
+    const byTemplateMap: Record<string, any> = {};
+    const byMonthMap: Record<string, any> = {};
+
+    for (const row of rows) {
+      const month = row.settled_at ? new Date(row.settled_at).toISOString().slice(0, 7) : 'unknown';
+      const templateKey = row.template_id ?? row.template_name ?? 'unknown';
+      if (!byTemplateMap[templateKey]) {
+        byTemplateMap[templateKey] = {
+          template_id: row.template_id,
+          template_name: row.template_name,
+          operations_count: 0,
+          total_net: 0,
+          total_gross: 0,
+          total_discount: 0,
+          cancellation_count: 0,
+          source_system: row.source_system,
+        };
       }
-      templateMap[key].operations_count  += Number(row.operations_count ?? 0);
-      templateMap[key].total_net         += Number(row.total_net ?? 0);
-      templateMap[key].total_gross       += Number(row.total_gross ?? 0);
-      templateMap[key].total_discount    += Number(row.total_discount ?? 0);
-      templateMap[key].cancellation_count += Number(row.cancellation_count ?? 0);
+      if (row.cancelled_at == null) {
+        byTemplateMap[templateKey].operations_count += 1;
+        byTemplateMap[templateKey].total_net += row.amount_net;
+        byTemplateMap[templateKey].total_gross += row.amount_gross;
+        byTemplateMap[templateKey].total_discount += row.amount_discount;
+      } else {
+        byTemplateMap[templateKey].cancellation_count += 1;
+      }
+
+      if (!byMonthMap[month]) {
+        byMonthMap[month] = {
+          settled_month: month,
+          operations_count: 0,
+          cancellation_count: 0,
+          total_gross: 0,
+          total_discount: 0,
+          total_net: 0,
+          avg_ticket_net: 0,
+          discount_rate_pct: 0,
+          cancellation_rate_pct: 0,
+          avg_liquidation_lag_days: 0,
+          lag_rows: [] as number[],
+        };
+      }
+      const monthEntry = byMonthMap[month];
+      if (row.cancelled_at == null) {
+        monthEntry.operations_count += 1;
+        monthEntry.total_net += row.amount_net;
+        monthEntry.total_gross += row.amount_gross;
+        monthEntry.total_discount += row.amount_discount;
+        if (row.intake_at) {
+          const settledAt = new Date(row.settled_at).getTime();
+          const intakeAt = new Date(row.intake_at).getTime();
+          if (!Number.isNaN(settledAt) && !Number.isNaN(intakeAt) && settledAt >= intakeAt) {
+            monthEntry.lag_rows.push((settledAt - intakeAt) / 86400000);
+          }
+        }
+      } else {
+        monthEntry.cancellation_count += 1;
+>>>>>>> Stashed changes
+      }
     }
-    const totalNetAll = Object.values(templateMap).reduce((s: any, t: any) => s + t.total_net, 0);
-    const templateSummary = Object.values(templateMap).map((t: any) => ({
+
+    const byTemplate = Object.values(byTemplateMap).map((t: any) => ({
       ...t,
-      total_net:    Math.round(t.total_net * 100) / 100,
-      total_gross:  Math.round(t.total_gross * 100) / 100,
-      avg_ticket:   t.operations_count ? Math.round((t.total_net / t.operations_count) * 100) / 100 : 0,
-      revenue_share_pct: totalNetAll ? Math.round((t.total_net / totalNetAll) * 1000) / 10 : 0,
-      cancellation_rate_pct: t.operations_count
-        ? Math.round((t.cancellation_count / t.operations_count) * 1000) / 10 : 0,
+      total_net: Math.round(t.total_net * 100) / 100,
+      total_gross: Math.round(t.total_gross * 100) / 100,
+      avg_ticket: t.operations_count ? Math.round((t.total_net / t.operations_count) * 100) / 100 : 0,
+      revenue_share_pct: 0,
+      cancellation_rate_pct: t.operations_count ? Math.round((t.cancellation_count / t.operations_count) * 1000) / 10 : 0,
     })).sort((a: any, b: any) => b.total_net - a.total_net);
-  
-    return sendJson({ success: true, byTemplate: byTemplate || [], byMonth: byMonth || [], templateSummary });
+
+    const totalNetAll = byTemplate.reduce((sum: number, row: any) => sum + Number(row.total_net ?? 0), 0);
+    const templateSummary = byTemplate.map((t: any) => ({
+      ...t,
+      revenue_share_pct: totalNetAll ? Math.round((t.total_net / totalNetAll) * 1000) / 10 : 0,
+    }));
+
+    const byMonth = Object.values(byMonthMap).map((m: any) => ({
+      settled_month: m.settled_month,
+      operations_count: m.operations_count,
+      cancellation_count: m.cancellation_count,
+      total_gross: Math.round(m.total_gross * 100) / 100,
+      total_discount: Math.round(m.total_discount * 100) / 100,
+      total_net: Math.round(m.total_net * 100) / 100,
+      avg_ticket_net: m.operations_count ? Math.round((m.total_net / m.operations_count) * 100) / 100 : 0,
+      discount_rate_pct: m.total_gross ? Math.round((m.total_discount / m.total_gross) * 1000) / 10 : 0,
+      cancellation_rate_pct: m.operations_count ? Math.round((m.cancellation_count / m.operations_count) * 1000) / 10 : 0,
+      avg_liquidation_lag_days: m.lag_rows.length ? Math.round((m.lag_rows.reduce((sum: number, value: number) => sum + value, 0) / m.lag_rows.length) * 10) / 10 : 0,
+    })).sort((a: any, b: any) => a.settled_month.localeCompare(b.settled_month));
+
+    return sendJson({ success: true, byTemplate, byMonth, templateSummary });
   }
   return null;
 }
