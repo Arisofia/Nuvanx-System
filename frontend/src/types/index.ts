@@ -217,6 +217,27 @@ export interface Conversation {
   sent_at?: string
 }
 
+export interface TraceabilityLead {
+  lead_id: string
+  lead_name?: string
+  source?: string
+  campaign_name?: string
+  lead_created_at: string
+  patient_id?: string
+  patient_name?: string
+  patient_dni?: string
+  patient_phone?: string
+  patient_last_visit?: string
+  patient_ltv?: number
+  doc_patient_id?: string
+  match_confidence?: number
+  match_class?: string
+  settlement_date?: string
+  first_settlement_at?: string
+  doctoralia_net?: number
+  doctoralia_template_name?: string
+}
+
 // ── Live ──────────────────────────────────────────────────────────────────────
 
 export interface LiveEvent {

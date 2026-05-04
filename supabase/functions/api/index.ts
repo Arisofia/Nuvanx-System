@@ -1717,6 +1717,7 @@ async function handleMetaInsightsGet(ctx: AuthenticatedRouteContext): Promise<Re
           await setMetaCache(adminClient, userId, `meta:insights:${days}`, result);
           return sendJson(result);
         } catch (e: any) {
+          // Fallback 1: in-memory key-value cache
           const cached = await getMetaCache(adminClient, userId, `meta:insights:${days}`);
           if (cached) {
             return sendJson({
@@ -1729,6 +1730,56 @@ async function handleMetaInsightsGet(ctx: AuthenticatedRouteContext): Promise<Re
               message: `Meta API error: ${e.message}. Showing cached data.`
             });
           }
+
+          // Fallback 2: persistent meta_daily_insights table
+          const { data: dbRows, error: dbErr } = await adminClient
+            .from('meta_daily_insights')
+            .select('date,impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,messaging_conversations')
+            .eq('user_id', userId)
+            .eq('ad_account_id', creds.adAccountId)
+            .gte('date', since)
+            .lte('date', until)
+            .order('date', { ascending: true });
+
+          if (!dbErr && Array.isArray(dbRows) && dbRows.length > 0) {
+            const sumN = (arr: any[], k: string) => arr.reduce((s: number, d: any) => s + Number(d[k] || 0), 0);
+            const dbSummary = {
+              impressions: Math.round(sumN(dbRows, 'impressions')),
+              reach: Math.round(sumN(dbRows, 'reach')),
+              clicks: Math.round(sumN(dbRows, 'clicks')),
+              spend: Number.parseFloat(sumN(dbRows, 'spend').toFixed(2)),
+              conversions: Math.round(sumN(dbRows, 'conversions')),
+              messagingConversationStarted: Math.round(sumN(dbRows, 'messaging_conversations')),
+              ctr: dbRows.length ? Number.parseFloat((sumN(dbRows, 'ctr') / dbRows.length).toFixed(2)) : 0,
+              cpc: dbRows.length ? Number.parseFloat((sumN(dbRows, 'cpc') / dbRows.length).toFixed(2)) : 0,
+              cpm: dbRows.length ? Number.parseFloat((sumN(dbRows, 'cpm') / dbRows.length).toFixed(2)) : 0,
+              cpp: 0,
+            };
+            return sendJson({
+              success: true,
+              source: 'db',
+              cached: false,
+              degraded: true,
+              accountId: creds.adAccountId,
+              currency: 'EUR',
+              period: { since, until, days },
+              summary: dbSummary,
+              changes: {},
+              daily: dbRows.map((r: any) => ({
+                date: r.date,
+                impressions: Number(r.impressions),
+                reach: Number(r.reach),
+                clicks: Number(r.clicks),
+                spend: Number(r.spend),
+                ctr: Number(r.ctr),
+                cpc: Number(r.cpc),
+                cpm: Number(r.cpm),
+                messagingConversationStarted: Number(r.messaging_conversations),
+              })),
+              message: `Meta API unavailable. Showing ${dbRows.length} days from local DB (last backfill). Run POST /meta/backfill to refresh.`,
+            });
+          }
+
           return sendJson({ success: false, metaApiError: true, message: e.message }, 502);
         }
       }
@@ -1744,21 +1795,45 @@ async function handleMetaBackfillPost(ctx: AuthenticatedRouteContext): Promise<R
       return sendJson({ success: false, message: validation.message }, validation.statusCode);
     }
   
-    const days = Math.min(Math.max(Number.parseInt(url.searchParams.get('days') ?? '7'), 1), 90);
-    const sinceDate = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+    // Allow up to 500 days so a one-time backfill can cover all of 2025 onward
+    const days = Math.min(Math.max(Number.parseInt(url.searchParams.get('days') ?? '7'), 1), 500);
+    const fromParam = url.searchParams.get('from');
+    const sinceDate = fromParam || new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
     const untilDate = new Date().toISOString().slice(0, 10);
-    const sinceTs = Math.floor((Date.now() - days * 86_400_000) / 1000);
-  
-    // 1. Warm insights cache (best-effort)
+    const sinceTs = Math.floor(new Date(sinceDate).getTime() / 1000);
+
+    // 1. Fetch and persist daily insights to meta_daily_insights
     const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,conversions';
+    let insightsDailyRows: any[] = [];
     try {
-      await metaFetch(`/${creds.adAccountId}/insights`, {
+      const insightsRes = await metaFetch(`/${creds.adAccountId}/insights`, {
         fields, time_range: JSON.stringify({ since: sinceDate, until: untilDate }), time_increment: '1', limit: '1000',
       }, creds.accessToken);
+      insightsDailyRows = insightsRes?.data ?? [];
+      if (insightsDailyRows.length > 0) {
+        const dbRows = insightsDailyRows.map((r: any) => ({
+          user_id: userId,
+          ad_account_id: creds.adAccountId,
+          date: r.date_start,
+          impressions: Math.round(Number(r.impressions || 0)),
+          reach: Math.round(Number(r.reach || 0)),
+          clicks: Math.round(Number(r.clicks || 0)),
+          spend: Number(r.spend || 0),
+          conversions: Math.round(Number(r.conversions || 0)),
+          ctr: Number(r.ctr || 0),
+          cpc: Number(r.cpc || 0),
+          cpm: Number(r.cpm || 0),
+          messaging_conversations: 0,
+          updated_at: new Date().toISOString(),
+        }));
+        await adminClient
+          .from('meta_daily_insights')
+          .upsert(dbRows, { onConflict: 'user_id,ad_account_id,date' });
+      }
     } catch (e: any) {
-      console.warn('Meta backfill cache warm failed:', e?.message ?? e);
+      console.warn('Meta backfill insights persist failed:', e?.message ?? e);
     }
-  
+
     // 2. Fetch and ingest leads
     let totalFetched = 0;
     try {
@@ -1790,7 +1865,10 @@ async function handleMetaBackfillPost(ctx: AuthenticatedRouteContext): Promise<R
     const backfillResult = {
       success: true,
       totalLeadsBackfilled: totalFetched,
-      message: `Backfill completed for last ${days} days. ${totalFetched} leads ingested. Insights cache warmed.`,
+      dailyInsightsPersisted: insightsDailyRows.length,
+      since: sinceDate,
+      until: untilDate,
+      message: `Backfill completed (${sinceDate} → ${untilDate}). ${insightsDailyRows.length} daily insight rows persisted. ${totalFetched} leads ingested.`,
     };
     await setMetaCache(adminClient, userId, `meta:backfill:${creds.adAccountId}`, backfillResult);
     return sendJson(backfillResult);
@@ -2692,18 +2770,31 @@ async function handleFinancialsPatients(ctx: AuthenticatedRouteContext): Promise
 }
 
 async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, userId, resource, sub, sendJson } = ctx;
+  const { adminClient, userId, resource, sub, url, sendJson } = ctx;
   if (resource === 'traceability' && sub === 'leads') {
-    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
-    const clinicId = usr?.clinic_id;
-    if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
-  
-    const { data: rows } = await adminClient
+    const limit = Math.min(Math.max(Number.parseInt(url.searchParams.get('limit') ?? '250'), 1), 500);
+    const matchedOnly = url.searchParams.get('matched') === 'true';
+
+    let query = adminClient
       .from('vw_lead_traceability')
-      .select('*')
-      .limit(250);
-  
-    return sendJson({ success: true, leads: rows || [] });
+      .select(
+        'lead_id,lead_name,source,campaign_name,lead_created_at,' +
+        'patient_id,patient_name,patient_dni,patient_phone,patient_last_visit,patient_ltv,' +
+        'doc_patient_id,match_confidence,match_class,' +
+        'settlement_date,first_settlement_at,doctoralia_net,doctoralia_template_name'
+      )
+      .eq('lead_user_id', userId)
+      .order('lead_created_at', { ascending: false })
+      .limit(limit);
+
+    if (matchedOnly) {
+      query = query.not('patient_id', 'is', null);
+    }
+
+    const { data: rows, error } = await query;
+    if (error) throw error;
+
+    return sendJson({ success: true, leads: rows || [], total: (rows || []).length });
   }
   return null;
 }

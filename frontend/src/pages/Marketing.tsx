@@ -62,18 +62,26 @@ export default function Marketing() {
   })
 
   const [days, setDays] = useState(30)
+  const [customFrom, setCustomFrom] = useState<string>('')
   const [campaignId, setCampaignId] = useState<string>('ALL')
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'PAUSED'>('ALL')
   const [search, setSearch] = useState('')
+
+  const since2025 = '2025-01-01'
+  const todayStr = new Date().toISOString().slice(0, 10)
 
   useEffect(() => {
     const load = async () => {
       setState((prev) => ({ ...prev, loading: true, error: null }))
       try {
-        const queryParams = `?days=${days}${campaignId !== 'ALL' ? `&campaign_id=${campaignId}` : ''}`
+        const isCustomRange = Boolean(customFrom)
+        const insightsQ = isCustomRange
+          ? `?from=${customFrom}&to=${todayStr}${campaignId !== 'ALL' ? `&campaign_id=${campaignId}` : ''}`
+          : `?days=${days}${campaignId !== 'ALL' ? `&campaign_id=${campaignId}` : ''}`
+        const campaignsQ = isCustomRange ? `?days=365` : `?days=${days}`
         const [insightsRes, campaignsRes] = await Promise.allSettled([
-          invokeApi(`/meta/insights${queryParams}`),
-          invokeApi(`/meta/campaigns?days=${days}`),
+          invokeApi(`/meta/insights${insightsQ}`),
+          invokeApi(`/meta/campaigns${campaignsQ}`),
         ])
 
         const insightsData = insightsRes.status === 'fulfilled' ? insightsRes.value : null
@@ -113,7 +121,7 @@ export default function Marketing() {
       }
     }
     load()
-  }, [days, campaignId])
+  }, [days, campaignId, customFrom])
 
   const { summary, changes, daily, campaigns, currency, accountId, period, loading, error } = state
 
@@ -184,17 +192,25 @@ export default function Marketing() {
             </select>
           )}
           <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-1">
-            {([7, 14, 30, 90] as const).map((d) => (
+            {([7, 14, 30, 90, 365] as const).map((d) => (
               <button
                 key={d}
-                onClick={() => setDays(d)}
+                onClick={() => { setDays(d); setCustomFrom('') }}
                 className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                  days === d ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'
+                  !customFrom && days === d ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'
                 }`}
               >
                 {d}d
               </button>
             ))}
+            <button
+              onClick={() => setCustomFrom(since2025)}
+              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                customFrom === since2025 ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Desde 2025
+            </button>
           </div>
         </div>
       </div>
