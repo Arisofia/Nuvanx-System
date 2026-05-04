@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, type ReactNode } from 'react'
+import { useEffect, useState, useMemo, useRef, useCallback, useReducer, type ReactNode } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import {
   AreaChart, Area, BarChart, Bar,
@@ -14,6 +14,52 @@ const fmt = (n: number, decimals = 2) =>
 
 const fmtCurrency = (n: number, currency = 'EUR') =>
   n.toLocaleString('es-MX', { style: 'currency', currency, minimumFractionDigits: 2 })
+
+const formatTooltipValue = (value: any, name: string, currency: string) => {
+  if (name.includes('%')) {
+    return `${Number(value).toFixed(2)}%`
+  }
+  return fmtCurrency(Number(value), currency)
+}
+
+const formatChartTooltip = (value: any, name: string, currency: string) => {
+  if (name === 'Gasto') {
+    return [`${fmtCurrency(Number(value), currency)}`, `Gasto (${currency})`]
+  }
+  return [value, name]
+}
+
+type AdsState = {
+  ads: any[]
+  loading: boolean
+  loaded: boolean
+  error: string | null
+}
+
+type AdsAction =
+  | { type: 'start' }
+  | { type: 'success'; ads: any[] }
+  | { type: 'failure'; error: string }
+
+const initialAdsState: AdsState = {
+  ads: [],
+  loading: false,
+  loaded: false,
+  error: null,
+}
+
+function adsReducer(state: AdsState, action: AdsAction): AdsState {
+  switch (action.type) {
+    case 'start':
+      return { ...state, loading: true, error: null }
+    case 'success':
+      return { ads: action.ads, loading: false, loaded: true, error: null }
+    case 'failure':
+      return { ads: [], loading: false, loaded: true, error: action.error }
+    default:
+      return state
+  }
+}
 
 function DeltaBadge({ value }: Readonly<{ value: number | undefined }>) {
   if (value == null || value === 0) return null
@@ -361,11 +407,14 @@ const useMarketingData = (days: number, campaignId: string, customFrom: string, 
         const failedBoth = insightsRes.status === 'rejected' && campaignsRes.status === 'rejected'
         const error = failedBoth ? 'No se pudo cargar la información de Meta Ads.' : null
 
-        const accountIds = Array.isArray(insightsData?.accountIds)
-          ? insightsData?.accountIds
-          : Array.isArray(campaignsData?.accountIds)
-            ? campaignsData?.accountIds
-            : []
+        let accountIds: string[]
+        if (Array.isArray(insightsData?.accountIds)) {
+          accountIds = insightsData.accountIds
+        } else if (Array.isArray(campaignsData?.accountIds)) {
+          accountIds = campaignsData.accountIds
+        } else {
+          accountIds = []
+        }
         setState({
           summary: insightsData?.summary ?? null,
           changes: insightsData?.changes ?? null,
@@ -397,14 +446,19 @@ function MarketingHeader({
   customFrom: string; setCustomFrom: (s: string) => void; customTo: string; setCustomTo: (s: string) => void;
   since2025: string;
 }>) {
+  const accountCountSuffix = accountIds.length > 1 ? 's' : ''
+  const accountLabel = accountIds.length > 0
+    ? ` · Cuenta${accountCountSuffix}: ${accountIds.join(', ')}`
+    : ''
+
   return (
     <div className="flex flex-col sm:flex-row sm:items-end gap-4">
       <div className="flex-1">
         <h1 className="text-3xl font-serif font-bold text-foreground">Marketing · Meta Ads</h1>
         <p className="text-muted mt-1 text-sm">
           Período: {loading ? '…' : periodLabel}
-        {accountIds.length > 0 ? ` · Cuenta${accountIds.length > 1 ? 's' : ''}: ${accountIds.join(', ')}` : ''}
-        · Moneda: {loading ? '…' : currency}
+          {accountLabel}
+          · Moneda: {loading ? '…' : currency}
         </p>
       </div>
       <div className="flex items-center gap-2">
@@ -469,43 +523,52 @@ export default function Marketing() {
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'PAUSED' | 'ARCHIVED'>('ALL')
   const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState<'campaigns' | 'ads'>('campaigns')
-  const [adsState, setAdsState] = useState<{ ads: any[]; loading: boolean; loaded: boolean; error: string | null }>({
-    ads: [], loading: false, loaded: false, error: null,
-  })
+  const [adsState, adsDispatch] = useReducer(adsReducer, initialAdsState)
 
   const state = useMarketingData(days, campaignId, customFrom, customTo)
 
   const since2025 = '2025-01-01'
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
+  const fetchAds = useCallback(async () => {
+    adsDispatch({ type: 'start' })
+    const params = buildMarketingParams(Boolean(customFrom), customFrom, customTo, days)
+
+    try {
+      const data: any = await invokeApi(`/meta/ads?${params}`)
+      if (!mountedRef.current) return
+      adsDispatch({ type: 'success', ads: data?.ads ?? [] })
+    } catch (err: any) {
+      if (!mountedRef.current) return
+      adsDispatch({ type: 'failure', error: err?.message ?? 'Error cargando anuncios.' })
+    }
+  }, [customFrom, customTo, days])
 
   // Fetch ads on demand when ads tab is first opened
   useEffect(() => {
-    if (activeTab !== 'ads') return
-    if (adsState.loaded) return
-    setAdsState((prev) => ({ ...prev, loading: true, error: null }))
-    const params = buildMarketingParams(Boolean(customFrom), customFrom, customTo, days)
-    invokeApi(`/meta/ads?${params}`)
-      .then((data: any) => {
-        setAdsState({ ads: data?.ads ?? [], loading: false, loaded: true, error: null })
-      })
-      .catch((err: any) => {
-        setAdsState({ ads: [], loading: false, loaded: true, error: err?.message ?? 'Error cargando anuncios.' })
-      })
-  }, [activeTab, adsState.loaded, days, customFrom, customTo])
-
-  // If the selected campaign no longer exists in the current state window, fall back to ALL.
-  useEffect(() => {
-    if (campaignId !== 'ALL' && state.campaigns.length > 0 && !state.campaigns.some((c) => c.id === campaignId)) {
-      setCampaignId('ALL')
-    }
-  }, [state.campaigns, campaignId])
+    if (activeTab !== 'ads' || adsState.loaded) return
+    fetchAds()
+  }, [activeTab, adsState.loaded, fetchAds])
 
   const { summary, changes, daily, campaigns, currency, accountIds, period, loading, error } = state
+
+  const effectiveCampaignId = useMemo(() => {
+    if (campaignId === 'ALL') return 'ALL'
+    return state.campaigns.some((c) => c.id === campaignId) ? campaignId : 'ALL'
+  }, [campaignId, state.campaigns])
 
   const activeCampaigns = campaigns.filter((c) => c.status === 'ACTIVE').length
 
   const filteredCampaigns = useMemo(() => {
-    return campaigns.filter((c) => filterCampaign(c, campaignId, statusFilter, search))
-  }, [campaigns, campaignId, statusFilter, search])
+    return campaigns.filter((c) => filterCampaign(c, effectiveCampaignId, statusFilter, search))
+  }, [campaigns, effectiveCampaignId, statusFilter, search])
 
   const dailyChart = useMemo(() => daily.map(mapDailyToChart), [daily])
 
@@ -529,7 +592,7 @@ export default function Marketing() {
         accountIds={accountIds}
         currency={currency}
         campaigns={campaigns}
-        campaignId={campaignId}
+        campaignId={effectiveCampaignId}
         setCampaignId={setCampaignId}
         days={days}
         setDays={setDays}
@@ -652,9 +715,7 @@ export default function Marketing() {
                 <YAxis tick={{ fill: '#7A7573', fontSize: 11 }} axisLine={false} tickLine={false} />
                 <Tooltip
                   contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid #E6E2DE', fontSize: 12 }}
-                  formatter={(value: any, name: string) =>
-                    name === 'Gasto' ? [`${fmtCurrency(Number(value), currency)}`, `Gasto (${currency})`] : [value, name]
-                  }
+                  formatter={(value: any, name: string) => formatChartTooltip(value, name, currency)}
                 />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 <Area type="monotone" dataKey="Gasto" stroke="#C49A6C" fill="url(#spendGrad)" strokeWidth={2} />
@@ -693,10 +754,7 @@ export default function Marketing() {
                 <YAxis tick={{ fill: '#7A7573', fontSize: 11 }} axisLine={false} tickLine={false} />
                 <Tooltip
                   contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid #E6E2DE', fontSize: 12 }}
-                  formatter={(value: any, name: string) => [
-                    name.includes('%') ? `${Number(value).toFixed(2)}%` : `${fmtCurrency(Number(value), currency)}`,
-                    name,
-                  ]}
+                  formatter={(value: any, name: string) => [formatTooltipValue(value, name, currency), name]}
                 />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 <Area type="monotone" dataKey="CTR (%)" stroke="#C49A6C" fill="url(#ctrGrad)" strokeWidth={2} />

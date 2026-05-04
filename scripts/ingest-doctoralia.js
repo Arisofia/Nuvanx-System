@@ -81,7 +81,7 @@ function cleanImporte(raw) {
     || /^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/.test(text);
   if (dateLike) return 0;
 
-  const normalized = text.replaceAll(',', '.').replace(/[^\d.-]/g, '');
+  const normalized = text.replaceAll(',', '.').replaceAll(/[^\d.-]/g, '');
   const parsed = Number.parseFloat(normalized);
   return Number.isFinite(parsed) ? parsed : 0;
 }
@@ -276,8 +276,8 @@ function processRow(row, COL, uploadId, ingestedAt, sn) {
   const startISO  = formatISO(fecha, horaStart);
   const creaISO   = formatISO(fechaCrea, horaCrea);
   const leadTimeMs = startISO && creaISO ? (new Date(startISO).getTime() - new Date(creaISO).getTime()) : null;
-  const leadTimeDays = leadTimeMs !== null ? Number((leadTimeMs / 86_400_000).toFixed(2)) : null;
-  const leadTimeHours = leadTimeMs !== null ? Number((leadTimeMs / 3_600_000).toFixed(2)) : null;
+  const leadTimeDays = leadTimeMs == null ? null : Number((leadTimeMs / 86_400_000).toFixed(2));
+  const leadTimeHours = leadTimeMs == null ? null : Number((leadTimeMs / 3_600_000).toFixed(2));
   const mes = fecha ? getSpanishMonth(fecha) : null;
   const anio = fecha ? Number(new Date(fecha).getFullYear()) : null;
   const trimestre = fecha ? getQuarter(fecha) : null;

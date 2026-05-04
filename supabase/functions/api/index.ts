@@ -182,6 +182,33 @@ function shouldRetryInsightFilterError(message: string) {
   );
 }
 
+function buildInsightsAlternateFiltering(originalFiltering: string) {
+  try {
+    const filters = JSON.parse(originalFiltering);
+    if (!Array.isArray(filters)) return null;
+
+    const alternates = filters.map((filter: any) => {
+      if (filter.field === 'campaign_id') return { ...filter, field: 'campaign.id' };
+      if (filter.field === 'campaign.id') return { ...filter, field: 'campaign_id' };
+      return filter;
+    });
+
+    const hasAlternate = alternates.some((filter: any) => filter.field === 'campaign_id' || filter.field === 'campaign.id');
+    return hasAlternate ? alternates : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildInsightsFallbackParams(params: Record<string, string>) {
+  const fallbackParams = { ...params };
+  delete fallbackParams.filtering;
+  if (fallbackParams.fields && !fallbackParams.fields.includes('campaign_id')) {
+    fallbackParams.fields = `${fallbackParams.fields},campaign_id`;
+  }
+  return fallbackParams;
+}
+
 async function metaFetchInsightsWithFallback(path: string, params: Record<string, string>, token: string, campaignId?: string) {
   try {
     return await metaFetch(path, params, token);
@@ -191,38 +218,17 @@ async function metaFetchInsightsWithFallback(path: string, params: Record<string
     if (!shouldRetryInsightFilterError(message)) throw err;
 
     const originalFiltering = params.filtering;
-    let attemptedAlternate = false;
-    if (originalFiltering) {
+    const alternates = originalFiltering ? buildInsightsAlternateFiltering(originalFiltering) : null;
+    if (alternates) {
+      const alternateParams = { ...params, filtering: JSON.stringify(alternates) };
       try {
-        const filters = JSON.parse(originalFiltering);
-        if (Array.isArray(filters)) {
-          const alternates = filters.map((filter: any) => {
-            if (filter.field === 'campaign_id') return { ...filter, field: 'campaign.id' };
-            if (filter.field === 'campaign.id') return { ...filter, field: 'campaign_id' };
-            return filter;
-          });
-          const hasAlternate = alternates.some((filter: any) => filter.field === 'campaign_id' || filter.field === 'campaign.id');
-          if (hasAlternate) {
-            attemptedAlternate = true;
-            const alternateParams = { ...params, filtering: JSON.stringify(alternates) };
-            try {
-              return await metaFetch(path, alternateParams, token);
-            } catch {
-              // Continue to full fallback below.
-            }
-          }
-        }
+        return await metaFetch(path, alternateParams, token);
       } catch {
-        // If parsing fails, proceed to the simpler fallback.
+        // Continue to full fallback below.
       }
     }
 
-    const fallbackParams = { ...params };
-    delete fallbackParams.filtering;
-    if (fallbackParams.fields && !fallbackParams.fields.includes('campaign_id')) {
-      fallbackParams.fields = `${fallbackParams.fields},campaign_id`;
-    }
-
+    const fallbackParams = buildInsightsFallbackParams(params);
     const data = await metaFetch(path, fallbackParams, token);
     if (Array.isArray(data?.data)) {
       return { ...data, data: data.data.filter((item: any) => String(item?.campaign_id) === String(campaignId)) };
@@ -1806,8 +1812,8 @@ async function handleDashboardMetaTrends(ctx: AuthenticatedRouteContext): Promis
       }));
 
       const successfulAccounts = accountResults
-        .filter((result) => result.status === 'fulfilled')
-        .map((result) => (result as PromiseFulfilledResult<any>).value);
+        .filter(isFulfilled)
+        .map((result) => result.value);
       if (successfulAccounts.length === 0) {
         throw (accountResults.find((result) => result.status === 'rejected') as PromiseRejectedResult)?.reason ?? new Error('Meta API error');
       }
@@ -1983,8 +1989,8 @@ async function handleMetaInsightsGet(ctx: AuthenticatedRouteContext): Promise<Re
       }));
 
       const successfulAccounts = accountResults
-        .filter((result) => result.status === 'fulfilled')
-        .map((result) => (result as PromiseFulfilledResult<any>).value);
+        .filter(isFulfilled)
+        .map((result) => result.value);
 
       if (successfulAccounts.length === 0) {
         throw (accountResults.find((result) => result.status === 'rejected') as PromiseRejectedResult)?.reason ?? new Error('Meta API error');
@@ -2274,6 +2280,10 @@ function getMetaDatePreset(days: number) {
   return 'last_90d';
 }
 
+function isFulfilled<T>(result: PromiseSettledResult<T>): result is PromiseFulfilledResult<T> {
+  return result.status === 'fulfilled';
+}
+
 function mapMetaCampaign(c: any) {
   const ins = c.insights?.data?.[0];
   const conversions = parseMetaMetric(ins?.conversions);
@@ -2337,8 +2347,8 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
       }));
 
       const successfulAccounts = accountResults
-        .filter((result) => result.status === 'fulfilled')
-        .map((result) => (result as PromiseFulfilledResult<any>).value);
+        .filter(isFulfilled)
+        .map((result) => result.value);
 
       if (successfulAccounts.length === 0) {
         throw (accountResults.find((result) => result.status === 'rejected') as PromiseRejectedResult)?.reason ?? new Error('Meta API error');
@@ -2459,8 +2469,8 @@ async function handleMetaAdsGet(ctx: AuthenticatedRouteContext): Promise<Respons
       }));
 
       const successfulAccounts = accountResults
-        .filter((result) => result.status === 'fulfilled')
-        .map((result) => (result as PromiseFulfilledResult<any>).value);
+        .filter(isFulfilled)
+        .map((result) => result.value);
 
       if (successfulAccounts.length === 0) {
         throw (accountResults.find((result) => result.status === 'rejected') as PromiseRejectedResult)?.reason ?? new Error('Meta API error');
@@ -3596,8 +3606,8 @@ async function handleKpisGet(ctx: AuthenticatedRouteContext): Promise<Response |
       }));
 
       const successfulAccounts = accountResults
-        .filter((result) => result.status === 'fulfilled')
-        .map((result) => (result as PromiseFulfilledResult<any>).value);
+        .filter(isFulfilled)
+        .map((result) => result.value);
 
       const insightRows = successfulAccounts.flatMap((acct: any) => Array.isArray(acct?.data) ? acct.data : []);
       metaResult.spend = Number.parseFloat(insightRows.reduce((sum: number, row: any) => sum + parseMetaMetric(row.spend), 0).toFixed(2));

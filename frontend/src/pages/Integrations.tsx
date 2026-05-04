@@ -87,7 +87,7 @@ export default function Integrations() {
         const cleaned = id.toLowerCase().startsWith('act_')
           ? id.slice(4)
           : id
-        const digits = String(cleaned).replace(/\D/g, '')
+        const digits = String(cleaned).replaceAll(/\D/g, '')
         return digits ? `act_${digits}` : ''
       })
       .filter((id, index, arr) => id && arr.indexOf(id) === index)

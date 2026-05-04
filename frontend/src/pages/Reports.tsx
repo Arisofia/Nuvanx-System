@@ -420,18 +420,21 @@ export default function Reports() {
                   <table className="w-full">
                     <TableHead cols={['Cohort', 'Leads', 'Est. Revenue', 'Verified Revenue', 'Avg Reply (min)']} />
                     <tbody>
-                      {cohorts.map((r, i) => (
-                        <TableRow
-                          key={i}
-                          cells={[
-                            String(r.cohort).replace(/_/g, ' '),
-                            r.lead_count,
-                            curr(r.estimated_revenue),
-                            curr(r.verified_revenue_crm),
-                            r.avg_reply_delay_min ?? '—',
-                          ]}
-                        />
-                      ))}
+                      {cohorts.map((r) => {
+                        const cohortKey = `${String(r.cohort)}-${String(r.lead_count)}`
+                        return (
+                          <TableRow
+                            key={cohortKey}
+                            cells={[
+                              String(r.cohort).replaceAll('_', ' '),
+                              r.lead_count,
+                              curr(r.estimated_revenue),
+                              curr(r.verified_revenue_crm),
+                              r.avg_reply_delay_min ?? '—',
+                            ]}
+                          />
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -458,21 +461,24 @@ export default function Reports() {
                   <table className="w-full">
                     <TableHead cols={['Doctor', 'Specialty', 'Appointments', 'Attended', 'No-show', 'Attended %', 'No-show %', 'Verified Revenue']} />
                     <tbody>
-                      {doctors.map((r, i) => (
-                        <TableRow
-                          key={i}
-                          cells={[
-                            r.doctor_name,
-                            r.specialty ?? '—',
-                            r.total_appointments,
-                            r.attended_count,
-                            r.no_show_count,
-                            pct(r.attended_rate_pct),
-                            pct(r.no_show_rate_pct),
-                            curr(r.verified_revenue_crm),
-                          ]}
-                        />
-                      ))}
+                      {doctors.map((r) => {
+                        const doctorKey = `${String(r.doctor_name)}-${String(r.specialty ?? 'unknown')}`
+                        return (
+                          <TableRow
+                            key={doctorKey}
+                            cells={[
+                              r.doctor_name,
+                              r.specialty ?? '—',
+                              r.total_appointments,
+                              r.attended_count,
+                              r.no_show_count,
+                              pct(r.attended_rate_pct),
+                              pct(r.no_show_rate_pct),
+                              curr(r.verified_revenue_crm),
+                            ]}
+                          />
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
