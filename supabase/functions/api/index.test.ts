@@ -36,6 +36,8 @@ const {
   bytesToHex,
   decryptCred,
   handlePublicRoutes,
+  handleAuthenticatedRoutes,
+  AUTHENTICATED_ROUTE_HANDLERS,
   processLeadData,
   createClient,
   createSupabaseClient,
@@ -998,5 +1000,102 @@ describe('actionValue', () => {
     const matcher = vi.fn(() => true);
     expect(actionValue(actions, matcher)).toBe(15);
     expect(matcher).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('handleAuthenticatedRoutes error handling — no information disclosure', () => {
+  const makeAuthCtx = (resource: string, sub: string, method = 'GET') => {
+    const responses: { body: unknown; status: number }[] = [];
+    const sendJson = (data: unknown, status = 200) => {
+      responses.push({ body: data, status });
+      return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
+    };
+    return {
+      ctx: {
+        adminClient: {},
+        userId: 'user-1',
+        authUser: {},
+        resource,
+        sub,
+        sub2: '',
+        req: new Request(`https://example.com/api/${resource}/${sub}`, { method }),
+        url: new URL(`https://example.com/api/${resource}/${sub}`),
+        sendJson,
+        token: 'tok',
+      } as any,
+      responses,
+    };
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('returns generic 500 without raw err.message when a route handler throws', async () => {
+    const sensitiveMessage = 'DB_PASSWORD=secret-value-12345';
+    const throwingHandler = vi.fn().mockRejectedValue(new Error(sensitiveMessage));
+    AUTHENTICATED_ROUTE_HANDLERS.set('__test__|throw|GET', throwingHandler);
+
+    try {
+      const { ctx } = makeAuthCtx('__test__', 'throw', 'GET');
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const response = await handleAuthenticatedRoutes(ctx);
+
+      expect(response.status).toBe(500);
+      const body = await response.json();
+      expect(body.message).toBe('Internal server error');
+      expect(JSON.stringify(body)).not.toContain(sensitiveMessage);
+      expect(body).not.toHaveProperty('stack');
+      expect(consoleSpy).toHaveBeenCalled();
+    } finally {
+      AUTHENTICATED_ROUTE_HANDLERS.delete('__test__|throw|GET');
+    }
+  });
+
+  it('returns generic 500 without a stack field when a route handler throws an error with a stack', async () => {
+    const thrownErr = new Error('internal failure');
+    thrownErr.stack = 'Error: internal failure\n  at secret/internal/path.ts:99:5';
+    AUTHENTICATED_ROUTE_HANDLERS.set('__test__|stack|GET', vi.fn().mockRejectedValue(thrownErr));
+
+    try {
+      const { ctx } = makeAuthCtx('__test__', 'stack', 'GET');
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const response = await handleAuthenticatedRoutes(ctx);
+
+      expect(response.status).toBe(500);
+      const body = await response.json();
+      expect(body.message).toBe('Internal server error');
+      expect(JSON.stringify(body)).not.toContain('secret/internal/path.ts');
+    } finally {
+      AUTHENTICATED_ROUTE_HANDLERS.delete('__test__|stack|GET');
+    }
+  });
+});
+
+describe('Deno.serve top-level error handler — no information disclosure', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('returns generic 500 without raw message or stack when handleRequest throws', async () => {
+    const denoStub = (globalThis as any).Deno;
+    const serveHandler = denoStub.serve.mock.calls[0][0] as (req: Request) => Promise<Response>;
+
+    const sensitiveMessage = 'SECRET_API_KEY=abc-sensitive-12345';
+    vi.spyOn(denoStub.env, 'get').mockImplementation(() => {
+      throw new Error(sensitiveMessage);
+    });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const req = new Request('https://example.com/api/nonpublic-resource');
+    const response = await serveHandler(req);
+
+    expect(response.status).toBe(500);
+    const body = await response.json();
+    expect(body.message).toBe('Unexpected server error');
+    expect(JSON.stringify(body)).not.toContain(sensitiveMessage);
+    expect(body).not.toHaveProperty('stack');
   });
 });

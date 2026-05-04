@@ -915,7 +915,7 @@ async function handleRequest(req: Request): Promise<Response> {
 
 type RouteHandler = (ctx: AuthenticatedRouteContext) => Promise<Response | null>;
 
-const AUTHENTICATED_ROUTE_HANDLERS = new Map<string, RouteHandler>([
+export const AUTHENTICATED_ROUTE_HANDLERS = new Map<string, RouteHandler>([
   ['health|*|*', handleHealth],
   ['auth|me|GET', handleAuthMeGet],
   ['production|audit|GET', handleProductionAuditGet],
@@ -1115,7 +1115,7 @@ interface AuthenticatedRouteContext {
   token: string;
 }
 
-async function handleAuthenticatedRoutes(ctx: AuthenticatedRouteContext): Promise<Response> {
+export async function handleAuthenticatedRoutes(ctx: AuthenticatedRouteContext): Promise<Response> {
   try {
     const candidateKeys = [
       `${ctx.resource}|${ctx.sub}|${ctx.req.method}`,
@@ -1133,7 +1133,7 @@ async function handleAuthenticatedRoutes(ctx: AuthenticatedRouteContext): Promis
     return ctx.sendJson({ success: false, message: `Route not found: ${ctx.resource}/${ctx.sub}` }, 404);
   } catch (err: any) {
     console.error('Edge Function error:', err);
-    return ctx.sendJson({ success: false, message: err.message || 'Internal server error' }, 500);
+    return ctx.sendJson({ success: false, message: 'Internal server error' }, 500);
   }
 }
 
