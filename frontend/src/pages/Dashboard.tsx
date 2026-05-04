@@ -378,7 +378,7 @@ export default function Dashboard() {
           <div>
             <p className="font-medium text-amber-300">Meta API error</p>
             <p className="text-sm text-amber-300 mt-1">
-              {metrics.metaError.includes('#200') || metrics.metaError.includes('permission') || metrics.metaError.toLowerCase().includes('invalid parameter')
+              {metrics.metaError.includes('#200') || metrics.metaError.includes('permission')
                 ? 'Your Meta token is missing ads_management or ads_read permissions, or requires appsecret_proof. Reconnect your Meta account in Integrations to fix this.'
                 : metrics.metaError}
             </p>

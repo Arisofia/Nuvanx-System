@@ -1661,7 +1661,7 @@ async function handleMetaInsightsGet(ctx: AuthenticatedRouteContext): Promise<Re
         );
         const prevSince = new Date(new Date(since).getTime() - days * 86_400_000).toISOString().slice(0, 10);
 
-        const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,conversions,cost_per_conversion,unique_clicks,actions';
+        const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,conversions,actions';
   
         try {
           const params: Record<string, string> = {
@@ -1676,7 +1676,7 @@ async function handleMetaInsightsGet(ctx: AuthenticatedRouteContext): Promise<Re
           }
 
           const prevParams: Record<string, string> = {
-            fields: 'impressions,reach,clicks,spend,conversions,cost_per_conversion',
+            fields: 'impressions,reach,clicks,spend,conversions',
             time_range: JSON.stringify({ since: prevSince, until: since }),
           };
 
@@ -1960,7 +1960,7 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
     try {
       const [data, campAcctRes] = await Promise.allSettled([
         metaFetch(`/${creds.adAccountId}/campaigns`, {
-          fields: `id,name,status,objective,daily_budget,lifetime_budget,insights.${insightsDateParam}{impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,cost_per_conversion}`,
+          fields: `id,name,status,objective,daily_budget,lifetime_budget,insights.${insightsDateParam}{impressions,reach,clicks,spend,ctr,cpc,cpm,conversions}`,
           effective_status: '["ACTIVE","PAUSED","DELETED","ARCHIVED","IN_PROCESS","WITH_ISSUES"]',
           limit: '500',
         }, creds.accessToken),
@@ -1978,11 +1978,7 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
         campaigns: ((data.status === 'fulfilled' ? data.value?.data : null) ?? []).map((c: any) => {
           const ins = c.insights?.data?.[0];
           const conversions = parseMetaMetric(ins?.conversions);
-          const cppRaw = parseMetaMetric(ins?.cost_per_conversion);
-          let cpp: number | null = cppRaw;
-          if (cpp <= 0) {
-            cpp = conversions > 0 ? Number.parseFloat((Number.parseFloat(ins.spend || 0) / conversions).toFixed(2)) : null;
-          }
+          const cpp: number | null = conversions > 0 ? Number.parseFloat((Number.parseFloat(ins?.spend || 0) / conversions).toFixed(2)) : null;
           return {
             id: c.id,
             name: c.name,
