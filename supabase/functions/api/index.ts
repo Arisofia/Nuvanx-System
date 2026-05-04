@@ -931,6 +931,7 @@ export const AUTHENTICATED_ROUTE_HANDLERS = new Map<string, RouteHandler>([
   ['meta|backfill|POST', handleMetaBackfillPost],
   ['health|meta|*', handleHealthMeta],
   ['meta|campaigns|GET', handleMetaCampaignsGet],
+  ['meta|ads|GET', handleMetaAdsGet],
   ['ai|analyze|POST', handleAiAnalyzePost],
   ['integrations||PATCH', handleIntegrationsPatch],
   ['integrations|validate-all|GET', handleIntegrationsValidateAllGet],
@@ -2033,6 +2034,95 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
         return sendJson(fallbackResult);
       } catch (fallbackError: any) {
         return sendJson({ success: false, metaApiError: true, message: fallbackError?.message ?? e?.message ?? 'Meta API error' }, 502);
+      }
+    }
+  }
+  return null;
+}
+
+async function handleMetaAdsGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
+  const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
+  if (resource === 'meta' && sub === 'ads' && req.method === 'GET') {
+    const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
+    const validation = validateMetaCredentialResult(creds);
+    if (!validation.ok) {
+      const payload: any = { success: false, message: validation.message };
+      if (validation.statusCode === 400) payload.notConnected = creds.notConnected || !creds.adAccountId;
+      return sendJson(payload, validation.statusCode);
+    }
+    const adsFrom = url.searchParams.get('from') ?? '';
+    const adsTo   = url.searchParams.get('to')   ?? '';
+    const adsDays = Number.parseInt(url.searchParams.get('days') ?? '30');
+    let datePreset = 'last_30d';
+    if (adsDays <= 7) datePreset = 'last_7d';
+    else if (adsDays <= 14) datePreset = 'last_14d';
+    else if (adsDays <= 90) datePreset = 'last_90d';
+
+    const insightsDateParam = adsFrom && adsTo
+      ? `time_range(${JSON.stringify({ since: adsFrom, until: adsTo })})`
+      : `date_preset(${datePreset})`;
+
+    try {
+      const [adsData, acctData] = await Promise.allSettled([
+        metaFetch(`/${creds.adAccountId}/ads`, {
+          fields: `id,name,status,adset_id,adset{name},campaign_id,campaign{name},creative{id,name},insights.${insightsDateParam}{impressions,reach,clicks,spend,ctr,cpc,cpm,actions,cost_per_action_type}`,
+          effective_status: '["ACTIVE","PAUSED","DELETED","ARCHIVED","IN_PROCESS","WITH_ISSUES"]',
+          limit: '500',
+        }, creds.accessToken),
+        metaFetch(`/${creds.adAccountId}`, { fields: 'currency' }, creds.accessToken),
+      ]);
+      if (adsData.status === 'rejected') throw adsData.reason;
+      const currency: string = acctData.status === 'fulfilled' ? (acctData.value?.currency ?? 'EUR') : 'EUR';
+
+      const ads = ((adsData.status === 'fulfilled' ? adsData.value?.data : null) ?? []).map((ad: any) => {
+        const ins = ad.insights?.data?.[0];
+        const conversions = ins ? actionValue(ins.actions, (t) => t.includes('lead') || t.includes('conversion') || t.includes('complete_registration')) : 0;
+        const spend = parseMetaMetric(ins?.spend);
+        const cpp = conversions > 0 ? Number.parseFloat((spend / conversions).toFixed(2)) : null;
+        return {
+          id: ad.id,
+          name: ad.name,
+          status: ad.status,
+          adsetId: ad.adset_id ?? null,
+          adsetName: ad.adset?.name ?? null,
+          campaignId: ad.campaign_id ?? null,
+          campaignName: ad.campaign?.name ?? null,
+          insights: ins ? {
+            impressions: parseMetaMetric(ins.impressions),
+            reach: parseMetaMetric(ins.reach),
+            clicks: parseMetaMetric(ins.clicks),
+            spend,
+            ctr: parseMetaMetric(ins.ctr),
+            cpc: parseMetaMetric(ins.cpc),
+            cpm: parseMetaMetric(ins.cpm),
+            conversions,
+            cpp,
+          } : null,
+        };
+      });
+
+      return sendJson({ success: true, accountId: creds.adAccountId, currency, ads });
+    } catch (e: any) {
+      // Fallback: return ad metadata without insights
+      try {
+        const fallback = await metaFetch(`/${creds.adAccountId}/ads`, {
+          fields: 'id,name,status,adset_id,adset{name},campaign_id,campaign{name}',
+          effective_status: '["ACTIVE","PAUSED","DELETED","ARCHIVED","IN_PROCESS","WITH_ISSUES"]',
+          limit: '500',
+        }, creds.accessToken);
+        const ads = (fallback?.data ?? []).map((ad: any) => ({
+          id: ad.id,
+          name: ad.name,
+          status: ad.status,
+          adsetId: ad.adset_id ?? null,
+          adsetName: ad.adset?.name ?? null,
+          campaignId: ad.campaign_id ?? null,
+          campaignName: ad.campaign?.name ?? null,
+          insights: null,
+        }));
+        return sendJson({ success: true, accountId: creds.adAccountId, currency: 'EUR', ads, warning: 'Insights no disponibles.' });
+      } catch (fallbackErr: any) {
+        return sendJson({ success: false, metaApiError: true, message: fallbackErr?.message ?? e?.message ?? 'Meta API error' }, 502);
       }
     }
   }

@@ -9,15 +9,17 @@ function eventFromPayload(eventType: string, record: any): LiveEvent {
   const source = record.source ?? ''
   const stage = record.stage ?? ''
 
-  let label = 'Lead activity'
+  let label = 'Nuevo lead recibido'
   let detail = ''
 
   if (eventType === 'INSERT') {
-    label = `New lead received`
-    detail = source ? `From ${source}` : 'New entry in pipeline'
+    detail = source ? `Fuente: ${source}` : 'Entrada en el pipeline'
   } else if (eventType === 'UPDATE') {
-    label = `Lead updated`
-    detail = stage ? `Stage: ${stage}` : 'Record updated'
+    label = 'Lead actualizado'
+    detail = stage ? `Etapa: ${stage}` : 'Registro actualizado'
+  } else if (eventType === 'SETTLEMENT') {
+    label = 'Liquidación Doctoralia'
+    detail = source
   }
 
   return {
@@ -33,6 +35,49 @@ export default function Live() {
   const [events, setEvents] = useState<LiveEvent[]>([])
   const [connected, setConnected] = useState(false)
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
+
+  // Preload recent activity from leads + financial_settlements
+  useEffect(() => {
+    const load = async () => {
+      const results: LiveEvent[] = []
+
+      // Recent leads
+      const { data: leads } = await supabase
+        .from('leads')
+        .select('id, source, stage, created_at, updated_at')
+        .order('created_at', { ascending: false })
+        .limit(20)
+      if (leads) {
+        for (const l of leads) {
+          results.push(eventFromPayload('INSERT', l))
+        }
+      }
+
+      // Recent settlements
+      const { data: settlements } = await supabase
+        .from('financial_settlements')
+        .select('id, template_name, amount_net, settled_at, created_at')
+        .order('settled_at', { ascending: false })
+        .limit(20)
+      if (settlements) {
+        for (const s of settlements) {
+          const net = s.amount_net ? `€${Number(s.amount_net).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''
+          results.push({
+            id: `settlement-${s.id}`,
+            type: 'SETTLEMENT',
+            label: 'Liquidación Doctoralia',
+            detail: [s.template_name, net].filter(Boolean).join(' · '),
+            ts: s.settled_at ?? s.created_at ?? new Date().toISOString(),
+          })
+        }
+      }
+
+      // Sort combined by timestamp desc, keep latest 50
+      results.sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime())
+      setEvents(results.slice(0, 50))
+    }
+    load()
+  }, [])
 
   useEffect(() => {
     const channel = supabase
@@ -69,7 +114,7 @@ export default function Live() {
         <CardContent>
           {events.length === 0 ? (
             <p className="text-sm text-muted py-4 text-center">
-              {connected ? 'Esperando nuevos eventos...' : 'Conectando con Supabase Realtime...'}
+              {connected ? 'Sin actividad reciente. Esperando nuevos eventos…' : 'Conectando con Supabase Realtime…'}
             </p>
           ) : (
             <div className="space-y-3 max-h-[480px] overflow-y-auto">
@@ -82,7 +127,7 @@ export default function Live() {
             </div>
           )}
           <p className="text-xs text-muted mt-4">
-            {connected ? 'Conectado — escuchando cambios en la tabla de leads.' : 'Conectando con Supabase Realtime...'}
+            {connected ? 'Conectado — escuchando cambios en tiempo real.' : 'Conectando con Supabase Realtime…'}
           </p>
         </CardContent>
       </Card>

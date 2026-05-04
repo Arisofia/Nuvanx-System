@@ -208,6 +208,10 @@ export default function Marketing() {
   const [campaignId, setCampaignId] = useState<string>('ALL')
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'PAUSED' | 'ARCHIVED'>('ALL')
   const [search, setSearch] = useState('')
+  const [activeTab, setActiveTab] = useState<'campaigns' | 'ads'>('campaigns')
+  const [adsState, setAdsState] = useState<{ ads: any[]; loading: boolean; loaded: boolean; error: string | null }>({
+    ads: [], loading: false, loaded: false, error: null,
+  })
 
   const since2025 = '2025-01-01'
 
@@ -285,6 +289,23 @@ export default function Marketing() {
     }
     load()
   }, [days, campaignId, customFrom, customTo])
+
+  // Fetch ads on demand when ads tab is first opened
+  useEffect(() => {
+    if (activeTab !== 'ads') return
+    if (adsState.loaded) return
+    setAdsState((prev) => ({ ...prev, loading: true, error: null }))
+    const params = new URLSearchParams()
+    if (customFrom) { params.set('from', customFrom); params.set('to', customTo || todayStr) }
+    else { params.set('days', String(days)) }
+    invokeApi(`/meta/ads?${params}`)
+      .then((data: any) => {
+        setAdsState({ ads: data?.ads ?? [], loading: false, loaded: true, error: null })
+      })
+      .catch((err: any) => {
+        setAdsState({ ads: [], loading: false, loaded: true, error: err?.message ?? 'Error cargando anuncios.' })
+      })
+  }, [activeTab, adsState.loaded, days, customFrom, customTo])
 
   const { summary, changes, daily, campaigns, currency, accountId, period, loading, error } = state
 
@@ -599,7 +620,23 @@ export default function Marketing() {
         </Card>
       )}
 
+      {/* ── Tab switcher: Campañas / Anuncios ─────────────────────── */}
+      <div className="flex gap-1 bg-card border border-border rounded-lg p-1 w-fit">
+        {(['campaigns', 'ads'] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
+              activeTab === tab ? 'bg-[#3f3224] text-white' : 'text-muted hover:text-white'
+            }`}
+          >
+            {tab === 'campaigns' ? 'Campañas' : 'Por anuncio'}
+          </button>
+        ))}
+      </div>
+
       {/* ── Campaign detail table ─────────────────────────────────── */}
+      {activeTab === 'campaigns' && (
       <Card>
         <CardHeader>
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
@@ -669,6 +706,94 @@ export default function Marketing() {
           )}
         </CardContent>
       </Card>
+      )} {/* end campaigns tab */}
+
+      {/* ── Ads breakdown table ──────────────────────────────────── */}
+      {activeTab === 'ads' && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex-1">Detalle por anuncio</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {adsState.loading && (
+              <p className="p-4 text-sm text-muted animate-pulse">Cargando anuncios…</p>
+            )}
+            {!adsState.loading && adsState.error && (
+              <p className="p-4 text-sm text-red-400">{adsState.error}</p>
+            )}
+            {!adsState.loading && !adsState.error && adsState.ads.length === 0 && (
+              <p className="p-4 text-sm text-muted">No hay anuncios disponibles para el período seleccionado.</p>
+            )}
+            {!adsState.loading && !adsState.error && adsState.ads.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-xs text-muted uppercase tracking-wide">
+                      <th className="text-left px-4 py-3">Anuncio</th>
+                      <th className="text-left px-3 py-3">Campaña</th>
+                      <th className="text-center px-3 py-3">Estado</th>
+                      <th className="text-right px-3 py-3">Gasto</th>
+                      <th className="text-right px-3 py-3">Impresiones</th>
+                      <th className="text-right px-3 py-3">Clics</th>
+                      <th className="text-right px-3 py-3">CTR</th>
+                      <th className="text-right px-3 py-3">CPC</th>
+                      <th className="text-right px-3 py-3">CPM</th>
+                      <th className="text-right px-3 py-3">Conversiones</th>
+                      <th className="text-right px-3 py-3">CPP</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {adsState.ads.map((ad: any) => (
+                      <tr key={ad.id} className="hover:bg-card/40 transition-colors">
+                        <td className="px-4 py-3 font-medium max-w-[200px]">
+                          <span title={ad.name} className="truncate block">{ad.name}</span>
+                          {ad.adsetName && <span className="text-muted text-xs truncate block">{ad.adsetName}</span>}
+                        </td>
+                        <td className="px-3 py-3 text-muted text-xs max-w-[160px]">
+                          <span title={ad.campaignName ?? ''} className="truncate block">{ad.campaignName ?? '—'}</span>
+                        </td>
+                        <td className="px-3 py-3 text-center">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                            ad.status === 'ACTIVE'
+                              ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                              : 'bg-card text-muted border border-border'
+                          }`}>
+                            {ad.status === 'ACTIVE' ? '● ' : '○ '}{ad.status}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-right font-semibold text-emerald-400">
+                          {ad.insights ? fmtCurrency(ad.insights.spend, currency) : '—'}
+                        </td>
+                        <td className="px-3 py-3 text-right text-[#d7c5ae]">
+                          {ad.insights ? ad.insights.impressions.toLocaleString('es-MX') : '—'}
+                        </td>
+                        <td className="px-3 py-3 text-right text-violet-400">
+                          {ad.insights ? ad.insights.clicks.toLocaleString('es-MX') : '—'}
+                        </td>
+                        <td className="px-3 py-3 text-right text-[#d7c5ae]">
+                          {ad.insights ? `${fmt(ad.insights.ctr)}%` : '—'}
+                        </td>
+                        <td className="px-3 py-3 text-right text-amber-400">
+                          {ad.insights ? fmtCurrency(ad.insights.cpc, currency) : '—'}
+                        </td>
+                        <td className="px-3 py-3 text-right text-[#d7c5ae]">
+                          {ad.insights ? fmtCurrency(ad.insights.cpm, currency) : '—'}
+                        </td>
+                        <td className="px-3 py-3 text-right text-lime-400">
+                          {ad.insights ? ad.insights.conversions.toLocaleString('es-MX') : '—'}
+                        </td>
+                        <td className="px-3 py-3 text-right text-rose-300">
+                          {ad.insights?.cpp != null ? fmtCurrency(ad.insights.cpp, currency) : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

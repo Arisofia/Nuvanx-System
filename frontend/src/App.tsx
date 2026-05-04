@@ -13,6 +13,7 @@ const Dashboard = lazy(() => import('./pages/Dashboard.tsx'))
 const Live = lazy(() => import('./pages/Live.tsx'))
 const CRM = lazy(() => import('./pages/CRM.tsx'))
 const Marketing = lazy(() => import('./pages/Marketing.tsx'))
+const Traceability = lazy(() => import('./pages/Traceability.tsx'))
 const Financials = lazy(() => import('./pages/Financials.tsx'))
 const Intelligence = lazy(() => import('./pages/Intelligence.tsx'))
 const Playbooks = lazy(() => import('./pages/Playbooks.tsx'))
@@ -73,6 +74,9 @@ function Router() {
     }
     if (location === '/marketing') {
       return <Marketing />
+    }
+    if (location === '/traceability') {
+      return <Traceability />
     }
     if (location === '/financials') {
       return <Financials />
