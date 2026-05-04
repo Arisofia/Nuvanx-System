@@ -12,6 +12,12 @@ export interface DashboardMetrics {
   spend: number
   averageCpc: number
   metaConversions: number
+  deltas?: {
+    leads: number
+    revenue: number
+    spend: number
+    conversions: number
+  }
   loading: boolean
   error: string | null
   metaError: string | null
@@ -133,6 +139,13 @@ export interface Lead {
   name: string
   status: LeadStage | string
   source: string
+  email?: string
+  phone?: string
+  dni?: string
+  notes?: string
+  revenue?: number
+  created_at?: string
+  updated_at?: string
 }
 
 // ── Integrations ──────────────────────────────────────────────────────────────

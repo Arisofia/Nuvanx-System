@@ -13,12 +13,17 @@ import {
 import { invokeApi, supabase, supabaseKey, supabaseUrl } from '../lib/supabaseClient'
 import type { DashboardMetrics, MetaTrendPoint, ActivityEvent } from '../types'
 
+import { MetricDelta } from '../components/dashboard/MetricDelta'
+import { FunnelChart } from '../components/dashboard/FunnelChart'
+import { AgentStatusCard } from '../components/dashboard/AgentStatusCard'
+
 export default function Dashboard() {
   const [days, setDays] = useState<7 | 14 | 30 | 90>(30)
   const [campaignId, setCampaignId] = useState<string>('ALL')
   const [sourceFilter, setSourceFilter] = useState<string>('ALL')
   const [sourcesList, setSourcesList] = useState<string[]>([])
   const [campaignsList, setCampaignsList] = useState<{ id: string, name: string }[]>([])
+  const [funnelData, setFunnelData] = useState<any[]>([])
   const [metrics, setMetrics] = useState<DashboardMetrics>({
     totalLeads: 0,
     conversionRate: 0,
@@ -82,11 +87,12 @@ export default function Dashboard() {
       try {
         const queryParams = `?days=${days}${campaignId !== 'ALL' ? `&campaign_id=${campaignId}` : ''}`
         const dashboardParams = `${queryParams}${sourceFilter !== 'ALL' ? `&source=${sourceFilter}` : ''}`
-        const [metricsResult, metaTrendsResult, campaignsResult, insightsResult] = await Promise.allSettled([
+        const [metricsResult, metaTrendsResult, campaignsResult, insightsResult, funnelResult] = await Promise.allSettled([
           invokeApi(`/dashboard/metrics${dashboardParams}`),
           invokeApi(`/dashboard/meta-trends${queryParams}`),
           invokeApi(`/meta/campaigns?days=${days}`),
           invokeApi(`/meta/insights${queryParams}`),
+          invokeApi('/dashboard/lead-flow'),
         ])
 
         // Lead/DB metrics — fatal if this fails
@@ -96,6 +102,10 @@ export default function Dashboard() {
         const metricsData = metricsResult.value?.metrics ?? {}
         if (metricsData.bySource && Object.keys(metricsData.bySource).length > 0 && sourcesList.length === 0) {
           setSourcesList(Object.keys(metricsData.bySource))
+        }
+
+        if (funnelResult.status === 'fulfilled') {
+          setFunnelData(funnelResult.value.funnel || [])
         }
 
         // Meta API calls — non-fatal, show specific warning
@@ -128,6 +138,8 @@ export default function Dashboard() {
           ? Number(insightsSummary.conversions)
           : campaigns.reduce((sum: number, c: any) => sum + Number(c.insights?.conversions ?? 0), 0)
 
+        const spendDelta = insightsResponse?.changes?.spend ?? 0
+
         setTrendData(
           Array.isArray(metaTrendsResponse?.trends)
             ? metaTrendsResponse.trends.map((item: any) => ({
@@ -144,6 +156,12 @@ export default function Dashboard() {
           spend,
           averageCpc: Number.isFinite(avgCpcRaw) ? Number.parseFloat(avgCpcRaw.toFixed(2)) : 0,
           metaConversions,
+          deltas: {
+            leads: metricsData.deltas?.leads ?? 0,
+            revenue: metricsData.deltas?.revenue ?? 0,
+            conversions: metricsData.deltas?.conversions ?? 0,
+            spend: Number(spendDelta),
+          },
           loading: false,
           error: null,
           metaError: metaFailureMessage,
@@ -255,15 +273,32 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Conversions</CardTitle>
             <Users className="h-4 w-4 text-slate-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{metrics.metaConversions.toLocaleString()}</div>
+            <div className="flex items-baseline gap-2">
+              <div className="text-2xl font-bold">{metrics.metaConversions.toLocaleString()}</div>
+              {metrics.deltas && <MetricDelta value={metrics.deltas.conversions} />}
+            </div>
             <p className="text-xs text-slate-500 mt-1">Conversiones Meta · últimos {days} días</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Leads</CardTitle>
+            <Users className="h-4 w-4 text-slate-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-baseline gap-2">
+              <div className="text-2xl font-bold">{metrics.totalLeads.toLocaleString()}</div>
+              {metrics.deltas && <MetricDelta value={metrics.deltas.leads} />}
+            </div>
+            <p className="text-xs text-slate-500 mt-1">Leads en BD · últimos {days} días</p>
           </CardContent>
         </Card>
 
@@ -278,19 +313,19 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Campaigns</CardTitle>
-            <Zap className="h-4 w-4 text-slate-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{metrics.activeCampaigns}</div>
-            <p className="text-xs text-slate-500 mt-1">Campañas Meta activas</p>
-          </CardContent>
-        </Card>
+        <AgentStatusCard />
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[1.25fr_0.75fr] gap-4">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Lead Funnel</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <FunnelChart data={funnelData} />
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>Meta Spend (últimos {days} días)</CardTitle>
@@ -313,19 +348,34 @@ export default function Dashboard() {
             </ResponsiveContainer>
           </CardContent>
         </Card>
+      </div>
 
+      <div className="grid grid-cols-1 gap-4">
         <Card>
           <CardHeader>
             <CardTitle>Meta Campaign KPIs</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
               <div className="rounded-xl border border-border p-4 bg-slate-950">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm text-slate-400">Spend</span>
                   <DollarSign className="h-4 w-4 text-emerald-400" />
                 </div>
-                <p className="mt-3 text-2xl font-semibold">${metrics.spend.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                <div className="flex items-baseline gap-2 mt-3">
+                  <p className="text-2xl font-semibold">${metrics.spend.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                  {metrics.deltas && <MetricDelta value={metrics.deltas.spend} inverse />}
+                </div>
+              </div>
+              <div className="rounded-xl border border-border p-4 bg-slate-950">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm text-slate-400">Revenue (Settled)</span>
+                  <DollarSign className="h-4 w-4 text-emerald-400" />
+                </div>
+                <div className="flex items-baseline gap-2 mt-3">
+                  <p className="text-2xl font-semibold">${(metrics as any).verifiedRevenue?.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? '0.00'}</p>
+                  {metrics.deltas && <MetricDelta value={metrics.deltas.revenue} />}
+                </div>
               </div>
               <div className="rounded-xl border border-border p-4 bg-slate-950">
                 <div className="flex items-center justify-between gap-2">

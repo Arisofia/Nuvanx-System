@@ -1,73 +1,52 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
-import { invokeApi } from '../lib/supabaseClient'
-import type { Lead } from '../types'
+import { useLeads } from '../hooks/useLeads'
+import { KanbanBoard } from '../components/crm/KanbanBoard'
+import { LeadDetailSheet } from '../components/crm/LeadDetailSheet'
+import type { Lead, LeadStage } from '../types'
 
 export default function CRM() {
-  const [leads, setLeads] = useState<Lead[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const { leads, loading, error, updateLead } = useLeads()
+  const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
+  const [isDetailOpen, setIsDetailOpen] = useState(false)
 
-  useEffect(() => {
-    const loadLeads = async () => {
-      setLoading(true)
-      setError(null)
+  const handleStageChange = async (leadId: string, newStage: LeadStage) => {
+    await updateLead(leadId, { status: newStage })
+  }
 
-      try {
-        const response = await invokeApi('/leads')
-        const data = (response as any).leads
-
-        setLeads(
-          Array.isArray(data)
-            ? data.map((item: any) => ({
-                id: String(item.id ?? item.lead_id ?? ''),
-                name: item.name ?? item.full_name ?? item.contact_name ?? 'Unknown',
-                status: item.stage ?? item.status ?? 'Unknown',
-                source: item.source ?? 'Edge',
-              }))
-            : [],
-        )
-      } catch (err: any) {
-        console.warn('CRM API call failed:', err)
-        setError(err?.message || 'Unable to load leads from API.')
-        setLeads([])
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    loadLeads()
-  }, [])
+  const handleLeadClick = (lead: Lead) => {
+    setSelectedLead(lead)
+    setIsDetailOpen(true)
+  }
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">CRM</h1>
-        <p className="text-slate-600 mt-1">Lead pipeline — stages, DNI, lost_reason</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">CRM</h1>
+          <p className="text-slate-600 mt-1">Lead pipeline — stages, DNI, lost_reason</p>
+        </div>
       </div>
 
       <Tabs defaultValue="pipeline" className="w-full">
         <TabsList>
           <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
           <TabsTrigger value="leads">Leads</TabsTrigger>
-          <TabsTrigger value="stages">Stages</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="pipeline" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            {(['lead', 'whatsapp', 'appointment', 'treatment', 'closed'] as const).map((stage) => (
-              <Card key={stage}>
-                <CardHeader>
-                  <CardTitle className="text-base capitalize">{stage} ({leads.filter(lead => lead.status === stage).length})</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-2xl font-bold">{leads.filter(lead => lead.status === stage).length}</p>
-                  <p className="text-xs text-slate-500 mt-1">Leads in stage</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+        <TabsContent value="pipeline" className="space-y-4 pt-4">
+          {loading ? (
+            <div className="flex items-center justify-center h-64">
+              <p className="text-slate-600">Loading pipeline...</p>
+            </div>
+          ) : (
+            <KanbanBoard 
+              leads={leads} 
+              onStageChange={handleStageChange} 
+              onLeadClick={handleLeadClick} 
+            />
+          )}
         </TabsContent>
 
         <TabsContent value="leads">
@@ -83,10 +62,16 @@ export default function CRM() {
                   {error && <p className="text-sm text-yellow-500">{error}</p>}
                   <div className="grid gap-3">
                     {leads.map((lead) => (
-                      <div key={lead.id} className="rounded-xl border border-border p-4 bg-slate-950">
+                      <div 
+                        key={lead.id} 
+                        className="rounded-xl border border-border p-4 bg-slate-950 cursor-pointer hover:border-primary/50 transition-colors"
+                        onClick={() => handleLeadClick(lead)}
+                      >
                         <div className="flex items-center justify-between gap-3">
                           <p className="font-medium text-white">{lead.name}</p>
-                          <span className="text-xs uppercase text-slate-500">{lead.status}</span>
+                          <span className="text-xs uppercase px-2 py-0.5 rounded bg-slate-900 text-slate-400 border border-slate-800">
+                            {lead.status}
+                          </span>
                         </div>
                         <p className="text-xs text-slate-400 mt-1">Source: {lead.source}</p>
                       </div>
@@ -97,18 +82,13 @@ export default function CRM() {
             </CardContent>
           </Card>
         </TabsContent>
-
-        <TabsContent value="stages">
-          <Card>
-            <CardHeader>
-              <CardTitle>Stage Configuration</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-slate-600">Manage lead pipeline stages and transitions.</p>
-            </CardContent>
-          </Card>
-        </TabsContent>
       </Tabs>
+
+      <LeadDetailSheet 
+        lead={selectedLead} 
+        isOpen={isDetailOpen} 
+        onClose={() => setIsDetailOpen(false)} 
+      />
     </div>
   )
 }

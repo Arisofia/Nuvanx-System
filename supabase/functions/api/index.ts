@@ -921,6 +921,8 @@ const AUTHENTICATED_ROUTE_HANDLERS = new Map<string, RouteHandler>([
   ['production|audit|GET', handleProductionAuditGet],
   ['leads||GET', handleLeadsGet],
   ['leads||POST', handleLeadsPost],
+  ['leads||PATCH', handleLeadsPatch],
+  ['leads||DELETE', handleLeadsDelete],
   ['dashboard|metrics|*', handleDashboardMetrics],
   ['dashboard|lead-flow|*', handleDashboardLeadFlow],
   ['dashboard|meta-trends|*', handleDashboardMetaTrends],
@@ -1260,15 +1262,39 @@ async function handleProductionAuditGet(ctx: AuthenticatedRouteContext): Promise
 }
 
 async function handleLeadsGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, userId, resource, sub, req, sendJson } = ctx;
+  const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'leads' && req.method === 'GET' && sub === '') {
-    const { data, error } = await adminClient
+    const source = url.searchParams.get('source');
+    const stage = url.searchParams.get('stage');
+
+    let query = adminClient
       .from('leads')
       .select('*')
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
+
+    if (source) query = query.eq('source', source);
+    if (stage) query = query.eq('stage', stage);
+
+    const { data, error } = await query;
     if (error) throw error;
     return sendJson({ success: true, leads: data, total: data.length });
+  }
+  return null;
+}
+
+async function handleLeadsDelete(ctx: AuthenticatedRouteContext): Promise<Response | null> {
+  const { adminClient, userId, resource, sub, req, sendJson } = ctx;
+  if (resource === 'leads' && req.method === 'DELETE' && sub !== '') {
+    const leadId = sub;
+    const { error } = await adminClient
+      .from('leads')
+      .delete()
+      .eq('id', leadId)
+      .eq('user_id', userId);
+
+    if (error) throw error;
+    return sendJson({ success: true, message: 'Lead deleted' });
   }
   return null;
 }
@@ -1320,6 +1346,41 @@ async function handleLeadsPost(ctx: AuthenticatedRouteContext): Promise<Response
   return null;
 }
 
+async function handleLeadsPatch(ctx: AuthenticatedRouteContext): Promise<Response | null> {
+  const { adminClient, userId, resource, sub, req, sendJson } = ctx;
+  if (resource === 'leads' && req.method === 'PATCH' && sub !== '') {
+    const leadId = sub;
+    const body = await req.json();
+    
+    // Only allow updating specific fields
+    const allowedFields = ['stage', 'name', 'phone', 'dni', 'notes', 'revenue'];
+    const updateData: Record<string, any> = {};
+    for (const field of allowedFields) {
+      if (Object.hasOwn(body, field)) {
+        updateData[field] = body[field];
+      }
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return sendJson({ success: false, message: 'No valid fields provided for update' }, 400);
+    }
+
+    const { data, error } = await adminClient
+      .from('leads')
+      .update(updateData)
+      .eq('id', leadId)
+      .eq('user_id', userId)
+      .select()
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return sendJson({ success: false, message: 'Lead not found' }, 404);
+
+    return sendJson({ success: true, lead: data });
+  }
+  return null;
+}
+
 async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, url, sendJson } = ctx;
   if (resource === 'dashboard' && sub === 'metrics') {
@@ -1336,10 +1397,25 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
       : null);
     const until = toParam || null;
 
+    // Comparison period logic
+    let prevSince: string | null = null;
+    let prevUntil: string | null = since;
+    if (days > 0) {
+      const nowTs = Date.now();
+      const currentSinceTs = since ? new Date(since).getTime() : nowTs - days * 86_400_000;
+      prevSince = new Date(currentSinceTs - days * 86_400_000).toISOString().slice(0, 10);
+      prevUntil = new Date(currentSinceTs).toISOString().slice(0, 10);
+    }
+
     let leadsQuery = adminClient.from('leads').select('stage, revenue, source, created_at').eq('user_id', userId);
     if (since) leadsQuery = leadsQuery.gte('created_at', since);
     if (until) leadsQuery = leadsQuery.lte('created_at', until);
     if (sourceFilter) leadsQuery = leadsQuery.eq('source', sourceFilter);
+
+    let prevLeadsQuery = adminClient.from('leads').select('stage, revenue, source, created_at').eq('user_id', userId);
+    if (prevSince) prevLeadsQuery = prevLeadsQuery.gte('created_at', prevSince);
+    if (prevUntil) prevLeadsQuery = prevLeadsQuery.lte('created_at', prevUntil);
+    if (sourceFilter) prevLeadsQuery = prevLeadsQuery.eq('source', sourceFilter);
 
     let settlementsQuery = adminClient.from('financial_settlements')
       .select('amount_net, cancelled_at, settled_at, template_name')
@@ -1347,26 +1423,58 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
     if (since) settlementsQuery = settlementsQuery.gte('settled_at', since);
     if (until) settlementsQuery = settlementsQuery.lte('settled_at', until);
 
-    const [leadsRes, intRes, settlementsRes] = await Promise.all([
+    let prevSettlementsQuery = adminClient.from('financial_settlements')
+      .select('amount_net, cancelled_at, settled_at, template_name')
+      .eq('clinic_id', clinicId);
+    if (prevSince) prevSettlementsQuery = prevSettlementsQuery.gte('settled_at', prevSince);
+    if (prevUntil) prevSettlementsQuery = prevSettlementsQuery.lte('settled_at', prevUntil);
+
+    const [leadsRes, prevLeadsRes, intRes, settlementsRes, prevSettlementsRes] = await Promise.all([
       leadsQuery,
+      prevLeadsQuery,
       adminClient.from('integrations').select('service, status').eq('user_id', userId),
       clinicId
         ? settlementsQuery
+        : Promise.resolve({ data: [], error: null }),
+      clinicId
+        ? prevSettlementsQuery
         : Promise.resolve({ data: [], error: null }),
     ]);
     if (leadsRes.error) throw leadsRes.error;
     type LeadMetric = { stage: any; revenue: any; source?: string };
     const leads: LeadMetric[] = leadsRes.data ?? [];
+    const prevLeads: LeadMetric[] = prevLeadsRes.data ?? [];
     const integrations = intRes.data ?? [];
     const settlements = (settlementsRes.data ?? []).filter((r: any) => !r.cancelled_at);
+    const prevSettlements = (prevSettlementsRes.data ?? []).filter((r: any) => !r.cancelled_at);
   
     const totalLeads = leads.length;
+    const prevTotalLeads = prevLeads.length;
+
     const totalRevenue = leads.reduce((s: number, l: any) => s + Number(l.revenue || 0), 0);
+    const prevTotalRevenue = prevLeads.reduce((s: number, l: any) => s + Number(l.revenue || 0), 0);
+
     const verifiedRevenue = settlements.reduce((s: number, r: any) => s + Number(r.amount_net), 0);
+    const prevVerifiedRevenue = prevSettlements.reduce((s: number, r: any) => s + Number(r.amount_net), 0);
+
     const settledCount = settlements.length;
   
     const conversions = leads.filter((l: any) => l.stage === 'treatment' || l.stage === 'closed').length;
+    const prevConversions = prevLeads.filter((l: any) => l.stage === 'treatment' || l.stage === 'closed').length;
+
     const conversionRate = totalLeads > 0 ? Number.parseFloat(((conversions / totalLeads) * 100).toFixed(1)) : 0;
+    
+    const calculateDelta = (curr: number, prev: number) => {
+      if (prev === 0) return curr > 0 ? 100 : 0;
+      return Number.parseFloat((((curr - prev) / prev) * 100).toFixed(1));
+    };
+
+    const deltas = {
+      leads: calculateDelta(totalLeads, prevTotalLeads),
+      revenue: calculateDelta(verifiedRevenue, prevVerifiedRevenue),
+      conversions: calculateDelta(conversions, prevConversions),
+    };
+
     const stages = ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'];
     const byStage: Record<string, number> = {};
     for (const s of stages) byStage[s] = leads.filter((l: any) => l.stage === s).length;
@@ -1384,6 +1492,7 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
         settledCount,
         conversions, conversionRate, byStage, bySource,
         connectedIntegrations, totalIntegrations: integrations.length,
+        deltas,
       },
     });
   }
