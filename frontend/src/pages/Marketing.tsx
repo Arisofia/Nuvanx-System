@@ -28,7 +28,7 @@ function DeltaBadge({ value }: Readonly<{ value: number | undefined }>) {
 }
 
 function StatCard({
-  label, value, sub, icon, color = 'text-white', delta,
+  label, value, sub, icon, color = 'text-foreground', delta,
 }: Readonly<{ label: string; value: string; sub?: string; icon: React.ReactNode; color?: string; delta?: number }>) {
   return (
     <Card>
@@ -71,7 +71,7 @@ function CampaignTable({ campaigns, filteredCampaigns, currency, summary }: Read
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-[#2d2218] text-xs text-muted uppercase tracking-wide">
+          <tr className="border-b border-border text-xs text-muted uppercase tracking-wide">
             <th className="text-left px-4 py-3">Campaña</th>
             <th className="text-center px-3 py-3">Estado</th>
             <th className="text-center px-3 py-3">Objetivo</th>
@@ -355,7 +355,7 @@ export default function Marketing() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-end gap-4">
         <div className="flex-1">
-          <h1 className="text-3xl font-bold">Marketing · Meta Ads</h1>
+          <h1 className="text-3xl font-serif font-bold text-foreground">Marketing · Meta Ads</h1>
           <p className="text-muted mt-1 text-sm">
             Período: {loading ? '…' : periodLabel}{accountId ? ` · Cuenta: ${accountId}` : ''} · Moneda: {loading ? '…' : currency}
           </p>

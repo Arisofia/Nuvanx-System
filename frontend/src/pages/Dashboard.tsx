@@ -280,7 +280,7 @@ export default function Dashboard() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold">Dashboard</h1>
+          <h1 className="text-3xl font-serif font-bold">Dashboard</h1>
           <p className="text-muted mt-1">Loading metrics...</p>
         </div>
         <div className="animate-pulse space-y-4">
@@ -299,7 +299,7 @@ export default function Dashboard() {
       <div className="flex flex-col sm:flex-row sm:items-end gap-4">
         <div className="flex-1">
           <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold">Dashboard</h1>
+            <h1 className="text-3xl font-serif font-bold">Dashboard</h1>
             <DataModeBadge overallMode={dataMode as any} />
           </div>
           <p className="text-muted mt-1">Control centre — Meta KPIs, agent status, adaptive plan</p>

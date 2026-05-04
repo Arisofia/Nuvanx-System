@@ -102,7 +102,7 @@ export default function Live() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Panel en vivo</h1>
+        <h1 className="text-3xl font-serif font-bold text-foreground">Panel en vivo</h1>
         <p className="text-muted mt-1">Flujo de leads en tiempo real y actividad de campañas</p>
       </div>
 

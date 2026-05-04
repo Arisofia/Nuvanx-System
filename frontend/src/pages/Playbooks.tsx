@@ -39,7 +39,7 @@ export default function Playbooks() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Playbooks</h1>
+          <h1 className="text-3xl font-serif font-bold text-foreground">Playbooks</h1>
           <p className="text-muted mt-1">Automation playbooks for lead nurturing and follow-up</p>
         </div>
         <Button className="gap-2" disabled>
@@ -56,9 +56,9 @@ export default function Playbooks() {
       )}
 
       {error && (
-        <div className="p-4 bg-red-950/40 border border-red-800 rounded-lg flex gap-3">
-          <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-red-300">{error}</p>
+        <div className="p-4 bg-[#D9534F]/8 border border-[#D9534F]/30 rounded-lg flex gap-3">
+          <AlertCircle className="w-5 h-5 text-[#D9534F] flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-[#D9534F]">{error}</p>
         </div>
       )}
 
@@ -80,7 +80,7 @@ export default function Playbooks() {
                 {pb.steps.length > 0 && (
                   <div className="space-y-1">
                     {pb.steps.map((step: any) => (
-                        <div key={typeof step === 'string' ? step : (step?.id ?? step?.label ?? step?.action ?? JSON.stringify(step))} className="text-xs p-2 bg-card rounded text-[#d7c5ae]">
+                      <div key={typeof step === 'string' ? step : (step?.id ?? step?.label ?? step?.action ?? JSON.stringify(step))} className="text-xs p-2 bg-card rounded text-foreground">
                         {typeof step === 'string' ? step : step?.label ?? step?.action ?? JSON.stringify(step)}
                       </div>
                     ))}
@@ -91,10 +91,10 @@ export default function Playbooks() {
                   {pb.lastRunAt && <span>Last: {new Date(pb.lastRunAt).toLocaleDateString()}</span>}
                 </div>
                 {run?.result && (
-                  <div className="rounded-md bg-emerald-950/40 border border-emerald-800 p-3 text-xs text-emerald-300 whitespace-pre-wrap">{run.result}</div>
+                  <div className="rounded-md bg-[#28A745]/10 border border-[#28A745]/20 p-3 text-xs text-[#28A745] whitespace-pre-wrap">{run.result}</div>
                 )}
                 {run?.error && (
-                  <div className="rounded-md bg-red-950/40 border border-red-800 p-3 text-xs text-red-300">{run.error}</div>
+                  <div className="rounded-md bg-[#D9534F]/8 border border-[#D9534F]/30 p-3 text-xs text-[#D9534F]">{run.error}</div>
                 )}
                 <Button
                   variant="outline"

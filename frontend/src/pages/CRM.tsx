@@ -67,7 +67,7 @@ export default function CRM() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">CRM</h1>
+          <h1 className="text-3xl font-serif font-bold text-foreground">CRM</h1>
           <p className="text-muted mt-1">Pipeline de leads — etapas, DNI, motivo de pérdida</p>
         </div>
       </div>
@@ -76,10 +76,10 @@ export default function CRM() {
       {!loading && leads.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           {([
-            { key: 'lead',        label: 'Lead',       color: 'text-blue-400'   },
-            { key: 'whatsapp',    label: 'WhatsApp',   color: 'text-green-400'  },
-            { key: 'appointment', label: 'Cita',       color: 'text-yellow-400' },
-            { key: 'treatment',   label: 'Tratamiento',color: 'text-orange-400' },
+            { key: 'lead',        label: 'Lead',       color: 'text-primary'      },
+            { key: 'whatsapp',    label: 'WhatsApp',   color: 'text-[#28A745]'  },
+            { key: 'appointment', label: 'Cita',       color: 'text-[#E0A020]' },
+            { key: 'treatment',   label: 'Tratamiento',color: 'text-[#B08B5A]' },
             { key: 'closed',      label: 'Cerrado',    color: 'text-primary'    },
           ] as const).map(({ key, label, color }) => (
             <button
@@ -105,7 +105,7 @@ export default function CRM() {
 
       {conversionRate !== null && !loading && (
         <p className="text-xs text-muted">
-          Conversión lead → cita: <span className="text-white font-medium">{conversionRate}%</span>
+          Conversión lead → cita: <span className="text-foreground font-medium">{conversionRate}%</span>
         </p>
       )}
 
@@ -114,7 +114,7 @@ export default function CRM() {
         <select
           value={stageFilter}
           onChange={e => setStageFilter(e.target.value)}
-          className="bg-surface border border-border rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-primary"
+          className="bg-surface border border-border rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
         >
           <option value="ALL">Todas las etapas</option>
           {ALL_STAGES.map(s => (
@@ -124,7 +124,7 @@ export default function CRM() {
         <select
           value={sourceFilter}
           onChange={e => setSourceFilter(e.target.value)}
-          className="bg-surface border border-border rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-primary"
+          className="bg-surface border border-border rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
         >
           <option value="ALL">Todas las fuentes</option>
           {sources.map(s => (
@@ -134,7 +134,7 @@ export default function CRM() {
         {(stageFilter !== 'ALL' || sourceFilter !== 'ALL') && (
           <button
             onClick={() => { setStageFilter('ALL'); setSourceFilter('ALL') }}
-            className="text-xs text-muted hover:text-white underline"
+            className="text-xs text-muted hover:text-foreground underline"
           >
             Limpiar filtros
           </button>
@@ -142,7 +142,7 @@ export default function CRM() {
       </div>
 
       {isDemo && (
-        <div className="mb-4 p-3 rounded bg-yellow-50 text-xs text-yellow-800 border border-yellow-200">
+        <div className="mb-4 p-3 rounded bg-[#E0A020]/10 text-xs text-foreground border border-[#E0A020]/30">
           Modo demo: algunos datos se muestran con valores simulados porque la API de leads no respondió o faltan credenciales.
         </div>
       )}
@@ -177,7 +177,7 @@ export default function CRM() {
                 <p className="text-muted">Obteniendo leads desde Edge Function...</p>
               ) : (
                 <div className="space-y-3">
-                  {error && <p className="text-sm text-yellow-500">{error}</p>}
+                  {error && <p className="text-sm text-[#E0A020]">{error}</p>}
                   <div className="grid gap-3">
                     {filteredLeads.map((lead) => (
                       <button
@@ -187,8 +187,8 @@ export default function CRM() {
                         onClick={() => handleLeadClick(lead)}
                       >
                         <div className="flex items-center justify-between gap-3">
-                          <p className="font-medium text-white">{lead.name}</p>
-                          <span className="text-xs uppercase px-2 py-0.5 rounded bg-surface text-muted border border-[#2d2218]">
+                          <p className="font-medium text-foreground">{lead.name}</p>
+                          <span className="text-xs uppercase px-2 py-0.5 rounded bg-surface text-muted border border-border">
                             {lead.status}
                           </span>
                         </div>

@@ -14,9 +14,9 @@ function EmptyState({ message }: Readonly<{ message: string }>) {
 
 function ErrorState({ message }: Readonly<{ message: string }>) {
   return (
-    <div className="p-4 bg-red-950 border border-red-800 rounded-lg flex gap-3">
-      <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
-      <p className="text-sm text-red-300">{message}</p>
+    <div className="p-4 bg-[#D9534F]/8 border border-[#D9534F]/30 rounded-lg flex gap-3">
+      <AlertCircle className="w-5 h-5 text-[#D9534F] shrink-0 mt-0.5" />
+      <p className="text-sm text-[#D9534F]">{message}</p>
     </div>
   )
 }
@@ -186,7 +186,7 @@ export default function Reports() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Reports</h1>
+        <h1 className="text-3xl font-serif font-bold text-foreground">Reports</h1>
         <p className="text-muted mt-1">Doctoralia financials, campaign attribution, source comparison, WhatsApp funnel, doctor performance</p>
       </div>
 

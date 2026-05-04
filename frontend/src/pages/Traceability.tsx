@@ -76,7 +76,7 @@ export default function Traceability() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Cruces Doctoralia</h1>
+        <h1 className="text-3xl font-serif font-bold text-foreground">Cruces Doctoralia</h1>
         <p className="text-muted mt-1">Trazabilidad de leads Meta → pacientes Doctoralia → ingresos verificados</p>
       </div>
 
@@ -91,7 +91,7 @@ export default function Traceability() {
         <Card>
           <CardContent className="pt-4">
             <p className="text-xs text-muted uppercase tracking-wide">Cruzados con Doctoralia</p>
-            <p className="text-2xl font-bold mt-1 text-green-400">{matchedCount}</p>
+            <p className="text-2xl font-bold mt-1 text-[#28A745]">{matchedCount}</p>
           </CardContent>
         </Card>
         <Card>
@@ -144,7 +144,7 @@ export default function Traceability() {
             <p className="text-sm text-muted py-8 text-center animate-pulse">Cargando trazabilidad…</p>
           )}
           {!loading && error && (
-            <p className="text-sm text-red-400 py-8 text-center">{error}</p>
+            <p className="text-sm text-[#D9534F] py-8 text-center">{error}</p>
           )}
           {!loading && !error && filtered.length === 0 && (
             <div className="py-12 text-center space-y-2">

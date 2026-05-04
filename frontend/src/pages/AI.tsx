@@ -102,7 +102,7 @@ export default function AI() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Capa IA</h1>
+        <h1 className="text-3xl font-serif font-bold text-foreground">Capa IA</h1>
         <p className="text-muted mt-1">Generación de contenido, sugerencias y registro de resultados</p>
       </div>
 
@@ -116,7 +116,7 @@ export default function AI() {
         {/* ── Generate ── */}
         <TabsContent value="generate" className="mt-4 space-y-4">
           {error && (
-            <div className="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
+            <div className="rounded-md border border-[#D9534F]/30 bg-[#D9534F]/8 px-4 py-3 text-sm text-[#D9534F]">{error}</div>
           )}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-4">
@@ -236,7 +236,7 @@ export default function AI() {
                   <select
                     value={typeFilter}
                     onChange={(e) => setTypeFilter(e.target.value)}
-                    className="bg-card text-white text-xs font-medium px-3 py-1.5 rounded-lg border-none focus:ring-1 focus:ring-primary"
+                    className="bg-card text-foreground text-xs font-medium px-3 py-1.5 rounded-lg border-none focus:ring-1 focus:ring-primary"
                   >
                     {outputTypes.map((t) => (
                       <option key={t} value={t}>{t === 'all' ? 'Todos los tipos' : t}</option>

@@ -117,7 +117,7 @@ export default function Integrations() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Integraciones</h1>
+          <h1 className="text-3xl font-serif font-bold text-foreground">Integraciones</h1>
           <p className="text-muted mt-1">Bóveda de credenciales — Meta Ads, WhatsApp, OpenAI, Gemini, GitHub, Google Ads</p>
         </div>
         <Button className="gap-2" onClick={() => { setShowForm(true); setSaveError(null) }}>
@@ -207,7 +207,7 @@ export default function Integrations() {
                 </div>
               )}
 
-              {saveError && <p className="text-sm text-red-400">{saveError}</p>}
+              {saveError && <p className="text-sm text-[#D9534F]">{saveError}</p>}
 
               <div className="flex gap-2 pt-1">
                 <Button type="submit" disabled={saving} className="flex-1">
@@ -224,7 +224,7 @@ export default function Integrations() {
         <Card><CardContent className="py-6 text-sm text-muted">Cargando integraciones…</CardContent></Card>
       )}
       {error && (
-        <Card className="border-red-800 bg-red-950/40"><CardContent className="py-6 text-sm text-red-300">{error}</CardContent></Card>
+        <Card className="border-[#D9534F]/30 bg-[#D9534F]/8"><CardContent className="py-6 text-sm text-[#D9534F]">{error}</CardContent></Card>
       )}
       {!loading && !error && integrations.length === 0 && (
         <Card><CardContent className="py-6 text-sm text-muted">No hay integraciones conectadas aún. Haz clic en "Agregar integración" para comenzar.</CardContent></Card>
@@ -249,7 +249,7 @@ export default function Integrations() {
                     <CheckCircle2 className="w-3 h-3 mr-1" />Conectado
                   </Badge>
                 ) : (
-                  <Badge className="bg-amber-950 text-amber-400 border border-amber-800">
+                  <Badge className="bg-[#E0A020]/10 text-[#E0A020] border border-[#E0A020]/30">
                     <AlertCircle className="w-3 h-3 mr-1" />{integration.status || 'Inactivo'}
                   </Badge>
                 )}
@@ -263,13 +263,13 @@ export default function Integrations() {
                   <p className="text-xs text-muted">ID de la Página: <span className="font-mono">{pageId}</span></p>
                 )}
                 {integration.last_error && (
-                  <p className="text-xs text-red-600">Último error: {integration.last_error}</p>
+                  <p className="text-xs text-[#D9534F]">Último error: {integration.last_error}</p>
                 )}
                 {integration.updated_at && (
                   <p className="text-xs text-muted">Actualizado: {new Date(integration.updated_at).toLocaleString()}</p>
                 )}
                 {testResult[integration.service] && (
-                  <p className="text-xs text-[#d7c5ae] bg-card rounded p-2">{testResult[integration.service]}</p>
+                  <p className="text-xs text-foreground bg-card rounded p-2">{testResult[integration.service]}</p>
                 )}
                 <Button
                   variant="outline"

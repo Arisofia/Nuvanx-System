@@ -91,7 +91,7 @@ export default function Financials() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold">Verified Financials</h1>
+          <h1 className="text-3xl font-serif font-bold text-foreground">Verified Financials</h1>
           <p className="text-muted mt-1">Doctoralia settlements, LTV, verified revenue</p>
         </div>
         <div className="animate-pulse space-y-4">
@@ -118,7 +118,7 @@ export default function Financials() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-end gap-4">
         <div className="flex-1">
-          <h1 className="text-3xl font-bold">Finanzas verificadas</h1>
+          <h1 className="text-3xl font-serif font-bold text-foreground">Finanzas verificadas</h1>
           <p className="text-muted mt-1">Liquidaciones de Doctoralia, LTV, ingresos verificados</p>
         </div>
         {/* Period presets */}

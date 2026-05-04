@@ -146,7 +146,7 @@ export default function Intelligence() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Inteligencia</h1>
+        <h1 className="text-3xl font-serif font-bold text-foreground">Inteligencia</h1>
         <p className="text-muted mt-1">Atribución de campañas, embudo WhatsApp y registro de conversaciones</p>
       </div>
 
@@ -173,7 +173,7 @@ export default function Intelligence() {
               {loading.campaigns ? (
                 <p className="text-muted text-sm">Cargando datos de atribución…</p>
               ) : error.campaigns ? (
-                <p className="text-sm text-red-500">{error.campaigns}</p>
+                <p className="text-sm text-[#D9534F]">{error.campaigns}</p>
               ) : (
                 <SortableTable
                   columns={attributionColumns}
@@ -196,7 +196,7 @@ export default function Intelligence() {
               {loading.funnel ? (
                 <p className="text-muted text-sm">Cargando datos del embudo…</p>
               ) : error.funnel ? (
-                <p className="text-sm text-red-500">{error.funnel}</p>
+                <p className="text-sm text-[#D9534F]">{error.funnel}</p>
               ) : funnel.length === 0 ? (
                 <p className="text-muted text-sm">No hay datos del embudo disponibles todavía.</p>
               ) : (
@@ -225,7 +225,7 @@ export default function Intelligence() {
               {loading.conversations ? (
                 <p className="text-muted text-sm">Cargando conversaciones…</p>
               ) : error.conversations ? (
-                <p className="text-sm text-red-500">{error.conversations}</p>
+                <p className="text-sm text-[#D9534F]">{error.conversations}</p>
               ) : conversations.length === 0 ? (
                 <p className="text-muted text-sm">No se encontraron conversaciones.</p>
               ) : (
@@ -265,7 +265,7 @@ export default function Intelligence() {
               {loading.traceability ? (
                 <p className="text-muted text-sm">Cargando trazabilidad…</p>
               ) : error.traceability ? (
-                <p className="text-sm text-red-500">{error.traceability}</p>
+                <p className="text-sm text-[#D9534F]">{error.traceability}</p>
               ) : traceability.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
                   <p className="text-[#d7c5ae] font-medium">No hay datos de trazabilidad todavía</p>
