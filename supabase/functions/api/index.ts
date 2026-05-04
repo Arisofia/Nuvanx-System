@@ -3076,46 +3076,57 @@ async function handleReportsDoctoraliaFinancialsGet(ctx: AuthenticatedRouteConte
     const fromMonth = (url.searchParams.get('from') ?? '').slice(0, 7);
     const toMonth   = (url.searchParams.get('to')   ?? '').slice(0, 7);
 
+    // vw_doctoralia_financials: rows are already aggregated per template × month by the DB view
     let templateQ = adminClient
       .from('vw_doctoralia_financials')
       .select('*')
       .eq('source_system', 'doctoralia')
-      .gt('amount_net', 0)
-      .is('cancelled_at', null)
       .order('settled_month', { ascending: true });
     if (fromMonth) templateQ = templateQ.gte('settled_month', fromMonth);
     if (toMonth)   templateQ = templateQ.lte('settled_month', toMonth);
-    const { data: byTemplate } = await templateQ;
+    const { data: templateRows } = await templateQ;
 
+    // vw_doctoralia_by_month: rows are already aggregated per month by the DB view
     let monthQ = adminClient
       .from('vw_doctoralia_by_month')
       .select('*')
-      .eq('source_system', 'doctoralia')
-      .gt('amount_net', 0)
-      .is('cancelled_at', null)
       .order('settled_month', { ascending: true });
     if (fromMonth) monthQ = monthQ.gte('settled_month', fromMonth);
     if (toMonth)   monthQ = monthQ.lte('settled_month', toMonth);
-    const { data: byMonth } = await monthQ;
-  
-    // Template-level summary (collapse across months)
+    const { data: monthRows } = await monthQ;
+
+    // Template-level summary: collapse vw_doctoralia_financials rows across months
     const templateMap: Record<string, any> = {};
-    for (const row of (byTemplate || [])) {
+    for (const row of (templateRows || [])) {
       const key = row.template_id || row.template_name;
       if (!templateMap[key]) {
-        templateMap[key] = { template_id: row.template_id, template_name: row.template_name,
-          operations_count: 0, total_net: 0, total_gross: 0, total_discount: 0,
-          cancellation_count: 0, source_system: row.source_system };
+        templateMap[key] = {
+          template_id: row.template_id,
+          template_name: row.template_name,
+          operations_count: 0,
+          total_net: 0,
+          total_gross: 0,
+          total_discount: 0,
+          cancellation_count: 0,
+          source_system: row.source_system,
+        };
       }
+      templateMap[key].operations_count  += Number(row.operations_count  ?? 0);
+      templateMap[key].total_net         += Number(row.total_net         ?? 0);
+      templateMap[key].total_gross       += Number(row.total_gross       ?? 0);
+      templateMap[key].total_discount    += Number(row.total_discount    ?? 0);
+      templateMap[key].cancellation_count += Number(row.cancellation_count ?? 0);
     }
 
-    const byTemplate = Object.values(byTemplateMap).map((t: any) => ({
+    const byTemplate = Object.values(templateMap).map((t: any) => ({
       ...t,
       total_net: Math.round(t.total_net * 100) / 100,
       total_gross: Math.round(t.total_gross * 100) / 100,
       avg_ticket: t.operations_count ? Math.round((t.total_net / t.operations_count) * 100) / 100 : 0,
       revenue_share_pct: 0,
-      cancellation_rate_pct: t.operations_count ? Math.round((t.cancellation_count / t.operations_count) * 1000) / 10 : 0,
+      cancellation_rate_pct: t.operations_count
+        ? Math.round((t.cancellation_count / t.operations_count) * 1000) / 10
+        : 0,
     })).sort((a: any, b: any) => b.total_net - a.total_net);
 
     const totalNetAll = byTemplate.reduce((sum: number, row: any) => sum + Number(row.total_net ?? 0), 0);
@@ -3124,17 +3135,20 @@ async function handleReportsDoctoraliaFinancialsGet(ctx: AuthenticatedRouteConte
       revenue_share_pct: totalNetAll ? Math.round((t.total_net / totalNetAll) * 1000) / 10 : 0,
     }));
 
-    const byMonth = Object.values(byMonthMap).map((m: any) => ({
+    // Monthly rollup: vw_doctoralia_by_month already has all aggregates pre-computed
+    const byMonth = (monthRows || []).map((m: any) => ({
       settled_month: m.settled_month,
       operations_count: m.operations_count,
       cancellation_count: m.cancellation_count,
-      total_gross: Math.round(m.total_gross * 100) / 100,
-      total_discount: Math.round(m.total_discount * 100) / 100,
-      total_net: Math.round(m.total_net * 100) / 100,
-      avg_ticket_net: m.operations_count ? Math.round((m.total_net / m.operations_count) * 100) / 100 : 0,
-      discount_rate_pct: m.total_gross ? Math.round((m.total_discount / m.total_gross) * 1000) / 10 : 0,
-      cancellation_rate_pct: m.operations_count ? Math.round((m.cancellation_count / m.operations_count) * 1000) / 10 : 0,
-      avg_liquidation_lag_days: m.lag_rows.length ? Math.round((m.lag_rows.reduce((sum: number, value: number) => sum + value, 0) / m.lag_rows.length) * 10) / 10 : 0,
+      total_gross: Math.round(Number(m.total_gross ?? 0) * 100) / 100,
+      total_discount: Math.round(Number(m.total_discount ?? 0) * 100) / 100,
+      total_net: Math.round(Number(m.total_net ?? 0) * 100) / 100,
+      avg_ticket_net: m.avg_ticket_net != null
+        ? Math.round(Number(m.avg_ticket_net) * 100) / 100
+        : (m.operations_count ? Math.round((Number(m.total_net ?? 0) / m.operations_count) * 100) / 100 : 0),
+      discount_rate_pct: Number(m.discount_rate_pct ?? 0),
+      cancellation_rate_pct: Number(m.cancellation_rate_pct ?? 0),
+      avg_liquidation_lag_days: Number(m.avg_liquidation_lag_days ?? 0),
     })).sort((a: any, b: any) => a.settled_month.localeCompare(b.settled_month));
 
     return sendJson({ success: true, byTemplate, byMonth, templateSummary });
