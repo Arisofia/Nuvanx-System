@@ -12,6 +12,7 @@ export interface DashboardMetrics {
   spend: number
   averageCpc: number
   metaConversions: number
+  verifiedRevenue?: number
   deltas?: {
     leads: number
     revenue: number

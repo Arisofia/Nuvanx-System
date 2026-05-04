@@ -152,6 +152,7 @@ export default function Dashboard() {
         setMetrics({
           totalLeads: Number(metricsData.totalLeads ?? 0),
           conversionRate: Number(metricsData.conversionRate ?? 0),
+          verifiedRevenue: Number(metricsData.verifiedRevenue ?? 0),
           activeCampaigns: campaigns.filter((c: any) => c.status === 'ACTIVE').length,
           spend,
           averageCpc: Number.isFinite(avgCpcRaw) ? Number.parseFloat(avgCpcRaw.toFixed(2)) : 0,
@@ -373,7 +374,7 @@ export default function Dashboard() {
                   <DollarSign className="h-4 w-4 text-emerald-400" />
                 </div>
                 <div className="flex items-baseline gap-2 mt-3">
-                  <p className="text-2xl font-semibold">${(metrics as any).verifiedRevenue?.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? '0.00'}</p>
+                  <p className="text-2xl font-semibold">${(metrics.verifiedRevenue ?? 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                   {metrics.deltas && <MetricDelta value={metrics.deltas.revenue} />}
                 </div>
               </div>
