@@ -16,7 +16,7 @@ SELECT
   l.created_at                              AS lead_created_at,
   COALESCE(m.campaign_name, l.campaign_name) AS campaign_name,
   COALESCE(m.ad_name, l.ad_name)             AS ad_name,
-  COALESCE(m.form_name, l.form_name)         AS form_name,
+  l.form_name                                AS form_name,
   m.campaign_id,
   m.adset_id,
   m.adset_name,
