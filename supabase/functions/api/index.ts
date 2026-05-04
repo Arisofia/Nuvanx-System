@@ -3094,7 +3094,7 @@ Deno.serve(async (req: Request) => {
   } catch (topLevelErr: any) {
     console.error('Unhandled top-level error in handleRequest:', topLevelErr);
     return new Response(
-      JSON.stringify({ success: false, message: topLevelErr?.message ?? 'Unexpected server error', stack: topLevelErr?.stack ?? '' }),
+      JSON.stringify({ success: false, message: 'Unexpected server error' }),
       { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } },
     );
   }
