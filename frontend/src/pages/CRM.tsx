@@ -14,7 +14,6 @@ export default function CRM() {
   const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [stageFilter, setStageFilter] = useState<string>('ALL')
   const [sourceFilter, setSourceFilter] = useState<string>('ALL')
-  const [isDemo] = useState(false) // Maintaining variable for consistency if needed by other components
 
   const sources = useMemo(() => {
     const s = new Set(leads.map(l => l.source).filter(Boolean))
@@ -140,12 +139,6 @@ export default function CRM() {
           </button>
         )}
       </div>
-
-      {isDemo && (
-        <div className="mb-4 p-3 rounded bg-[#E0A020]/10 text-xs text-foreground border border-[#E0A020]/30">
-          Modo demo: algunos datos se muestran con valores simulados porque la API de leads no respondió o faltan credenciales.
-        </div>
-      )}
 
       <Tabs defaultValue="pipeline" className="w-full">
         <TabsList>

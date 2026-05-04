@@ -119,6 +119,9 @@ export default function Integrations() {
         <div>
           <h1 className="text-3xl font-serif font-bold text-foreground">Integraciones</h1>
           <p className="text-muted mt-1">Bóveda de credenciales — Meta Ads, WhatsApp, OpenAI, Gemini, GitHub, Google Ads</p>
+          <p className="text-xs text-muted mt-1">
+            Inicia sesión con credenciales reales y consulta <a href="mailto:support@nuvanx.com" className="text-primary underline">support@nuvanx.com</a> si necesitas ayuda con tokens.
+          </p>
         </div>
         <Button className="gap-2" onClick={() => { setShowForm(true); setSaveError(null) }}>
           <Plus className="w-4 h-4" />

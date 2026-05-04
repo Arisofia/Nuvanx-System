@@ -72,6 +72,9 @@ export default function Login() {
           <p className="text-xs text-muted text-center">
             Usa tu cuenta de Supabase para iniciar sesión.
           </p>
+          <p className="text-xs text-muted text-center">
+            ¿Olvidaste tu contraseña? Escríbenos a <a href="mailto:support@nuvanx.com" className="text-primary underline">support@nuvanx.com</a>.
+          </p>
         </CardContent>
       </Card>
     </div>

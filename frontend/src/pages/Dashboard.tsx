@@ -34,35 +34,23 @@ interface RealFunnel {
   cac: number
 }
 
-const DEMO_DASHBOARD_METRICS: DashboardMetrics = {
-  totalLeads: 86,
-  conversionRate: 4.2,
-  activeCampaigns: 8,
-  spend: 37_200,
-  averageCpc: 1.07,
-  metaConversions: 92,
-  loading: false,
-  error: null,
-  metaError: null,
+const EMPTY_COMBINED_METRICS: CombinedMetrics = {
+  metaEstimatedLeads: 0,
+  verifiedRevenue: 0,
+  metaCpl: 0,
+  revenuePerLead: 0,
+}
+
+const EMPTY_FUNNEL: RealFunnel = {
+  metaSpend: 0,
+  metaLeads: 0,
+  crmLeads: 0,
+  doctoraliaRevenue: 0,
+  doctoraliaPatients: 0,
+  cac: 0,
 }
 
 const defaultTrend: MetaTrendPoint[] = []
-
-const DEMO_COMBINED_METRICS: CombinedMetrics = {
-  metaEstimatedLeads: 92,
-  verifiedRevenue: 19_400,
-  metaCpl: 1.18,
-  revenuePerLead: 212,
-}
-
-const DEMO_FUNNEL: RealFunnel = {
-  metaSpend: 12_450,
-  metaLeads: 320,
-  crmLeads: 250,
-  doctoraliaRevenue: 24_580,
-  doctoraliaPatients: 190,
-  cac: 65,
-}
 
 export default function Dashboard() {
   const [days, setDays] = useState<7 | 14 | 30 | 90>(30)
@@ -84,9 +72,9 @@ export default function Dashboard() {
     error: null,
     metaError: null,
   })
-  const [combined, setCombined] = useState<CombinedMetrics>(DEMO_COMBINED_METRICS)
-  const [funnel, setFunnel] = useState<RealFunnel>(DEMO_FUNNEL)
-  const [isFunnelDemo, setIsFunnelDemo] = useState<boolean>(true)
+  const [combined, setCombined] = useState<CombinedMetrics>(EMPTY_COMBINED_METRICS)
+  const [funnel, setFunnel] = useState<RealFunnel>(EMPTY_FUNNEL)
+  const [isFunnelDemo, setIsFunnelDemo] = useState<boolean>(false)
   const [dataMode, setDataMode] = useState<string | undefined>(undefined)
   const [trendData, setTrendData] = useState<MetaTrendPoint[]>([])
   const [activity, setActivity] = useState<ActivityEvent[]>([])
@@ -202,11 +190,16 @@ export default function Dashboard() {
         const hasRealDashboardMetrics = kpisResponse?.success === true
 
         if (!hasRealDashboardMetrics) {
-          setIsFunnelDemo(true)
-          setMetrics(DEMO_DASHBOARD_METRICS)
+          setIsFunnelDemo(false)
           setTrendData(defaultTrend)
-          setCombined(DEMO_COMBINED_METRICS)
-          setFunnel(DEMO_FUNNEL)
+          setCombined(EMPTY_COMBINED_METRICS)
+          setFunnel(EMPTY_FUNNEL)
+          setMetrics((prev) => ({
+            ...prev,
+            loading: false,
+            error: 'No real KPI data available. Conecta Meta y Doctoralia para ver datos reales.',
+            metaError: null,
+          }))
           return
         }
 
@@ -497,7 +490,7 @@ export default function Dashboard() {
                 <CardTitle>Embudo real</CardTitle>
                 {isFunnelDemo && (
                   <p className="text-xs text-[#c9a471]">
-                    Modo demo: usando datos mock; conecta Meta y Doctoralia para ver datos reales.
+                    No hay pacientes Doctoralia verificados en el periodo seleccionado.
                   </p>
                 )}
               </div>
