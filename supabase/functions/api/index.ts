@@ -1256,7 +1256,7 @@ async function handleProductionAuditGet(ctx: AuthenticatedRouteContext): Promise
             publicUserDelta > 0
               ? `Detected ${publicUserDelta} public.users row(s) without matching auth.users. This can cause incorrect clinic_id resolution or empty results for affected users.`
               : `Detected ${Math.abs(publicUserDelta)} auth.users row(s) without matching public.users. This may indicate incomplete user cleanup.`
-          ] : []),
+          ]),
           ...settlementWarnings,
           ...doctoraliaWarnings,
         ],
