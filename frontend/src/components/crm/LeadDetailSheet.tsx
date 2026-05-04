@@ -34,7 +34,7 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: L
         phone: lead.phone ?? '',
         dni: lead.dni ?? '',
         notes: lead.notes ?? '',
-        revenue: lead.revenue != null ? String(lead.revenue) : '',
+        revenue: lead.revenue == null ? '' : String(lead.revenue),
       })
     }
     setIsEditing(false)
@@ -52,7 +52,7 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: L
       phone: form.phone || undefined,
       dni: form.dni || undefined,
       notes: form.notes || undefined,
-      revenue: form.revenue !== '' ? Number(form.revenue) : undefined,
+      revenue: form.revenue === '' ? undefined : Number(form.revenue),
     }
     const result = await onUpdate(lead.id, updates)
     setSaving(false)
@@ -64,7 +64,7 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: L
   }
 
   const handleDelete = async () => {
-    if (!window.confirm(`Archive lead "${lead.name}"? This cannot be undone.`)) return
+    if (globalThis.confirm(`Archive lead "${lead.name}"? This cannot be undone.`) === false) return
     setDeleting(true)
     await onDelete(lead.id)
     setDeleting(false)
@@ -98,7 +98,13 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: L
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm transition-all duration-300">
-      <div className="absolute inset-0 cursor-pointer" onClick={onClose} />
+      <button
+        type="button"
+        className="absolute inset-0 cursor-pointer"
+        aria-label="Cerrar panel"
+        onClick={onClose}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onClose() }}
+      />
       <div className="relative w-full max-w-md h-full bg-slate-900 border-l border-slate-800 shadow-2xl p-6 flex flex-col animate-in slide-in-from-right duration-300">
         <div className="flex items-center justify-between mb-8">
           <h2 className="text-xl font-bold text-white">
@@ -115,8 +121,9 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: L
                 <>
                   {input('Name', 'name')}
                   <div>
-                    <label className="text-xs text-slate-500 mb-1 block">Stage</label>
+                    <label htmlFor="lead-stage-select" className="text-xs text-slate-500 mb-1 block">Stage</label>
                     <select
+                      id="lead-stage-select"
                       value={form.status}
                       onChange={e => setForm(prev => ({ ...prev, status: e.target.value }))}
                       className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"

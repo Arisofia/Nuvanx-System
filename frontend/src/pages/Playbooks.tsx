@@ -79,8 +79,8 @@ export default function Playbooks() {
                 {pb.description && <p className="text-sm text-slate-400">{pb.description}</p>}
                 {pb.steps.length > 0 && (
                   <div className="space-y-1">
-                    {pb.steps.map((step: any, i: number) => (
-                        <div key={i} className="text-xs p-2 bg-slate-800 rounded text-slate-300">
+                    {pb.steps.map((step: any) => (
+                        <div key={typeof step === 'string' ? step : (step?.id ?? step?.label ?? step?.action ?? JSON.stringify(step))} className="text-xs p-2 bg-slate-800 rounded text-slate-300">
                         {typeof step === 'string' ? step : step?.label ?? step?.action ?? JSON.stringify(step)}
                       </div>
                     ))}

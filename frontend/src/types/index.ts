@@ -151,7 +151,7 @@ export type LeadStage = 'lead' | 'whatsapp' | 'appointment' | 'treatment' | 'clo
 export interface Lead {
   id: string
   name: string
-  status: LeadStage | string
+  status: string
   source: string
   email?: string
   phone?: string

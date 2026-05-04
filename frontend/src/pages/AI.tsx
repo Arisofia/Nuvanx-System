@@ -209,15 +209,15 @@ export default function AI() {
                 <p className="text-slate-500 text-sm py-4 text-center">Haz clic en "Obtener sugerencias" para recibir insights basados en tus leads.</p>
               )}
               <div className="space-y-3">
-                {suggestions.map((s, i) => (
-                  <div key={i} className="flex items-start justify-between gap-3 p-4 rounded-lg border border-slate-700 bg-slate-900">
+                {suggestions.map((s) => (
+                  <div key={s} className="flex items-start justify-between gap-3 p-4 rounded-lg border border-slate-700 bg-slate-900">
                     <p className="text-sm text-slate-200 flex-1">{s}</p>
                     <button
-                      onClick={() => handleCopy(s, i)}
+                      onClick={() => handleCopy(s, suggestions.indexOf(s))}
                       className="shrink-0 text-slate-500 hover:text-slate-200 transition-colors"
                       title="Copiar al portapapeles"
                     >
-                      {copiedIdx === i ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                      {copiedIdx === suggestions.indexOf(s) ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
                     </button>
                   </div>
                 ))}

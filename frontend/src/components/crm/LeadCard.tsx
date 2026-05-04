@@ -31,13 +31,15 @@ export function LeadCard({ lead, onClick }: LeadCardProps) {
   }
 
   return (
-    <div
+    <button
+      type="button"
       ref={setNodeRef}
       style={style}
       {...attributes}
       {...listeners}
       onClick={() => onClick(lead)}
-      className="cursor-pointer"
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onClick(lead) }}
+      className="w-full text-left bg-transparent border-0 p-0 cursor-pointer"
     >
       <Card className="bg-slate-950 border-slate-800 hover:border-slate-700 transition-colors mb-3 active:cursor-grabbing">
         <CardContent className="p-4">
@@ -56,6 +58,6 @@ export function LeadCard({ lead, onClick }: LeadCardProps) {
           </div>
         </CardContent>
       </Card>
-    </div>
+    </button>
   )
 }
