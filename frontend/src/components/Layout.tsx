@@ -12,6 +12,7 @@ const navItems = [
   { label: 'Financials', href: '/financials', icon: DollarSign },
   { label: 'Intelligence', href: '/intelligence', icon: BarChart2 },
   { label: 'Playbooks', href: '/playbooks', icon: BookOpen },
+  { label: 'Guía Endolift', href: '/sales-playbook', icon: BookOpen },
   { label: 'Reports', href: '/reports', icon: FileBarChart2 },
   { label: 'Integrations', href: '/integrations', icon: Plug },
   { label: 'AI', href: '/ai', icon: Sparkles },

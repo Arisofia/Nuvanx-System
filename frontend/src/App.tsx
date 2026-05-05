@@ -17,6 +17,7 @@ const Traceability = lazy(() => import('./pages/Traceability'))
 const Financials = lazy(() => import('./pages/Financials'))
 const Intelligence = lazy(() => import('./pages/Intelligence'))
 const Playbooks = lazy(() => import('./pages/Playbooks'))
+const SalesPlaybook = lazy(() => import('./pages/SalesPlaybook'))
 const Integrations = lazy(() => import('./pages/Integrations'))
 const AiPage = lazy(() => import('./pages/AI'))
 const Reports = lazy(() => import('./pages/Reports'))
@@ -83,6 +84,9 @@ function Router() {
     }
     if (location === '/playbooks') {
       return <Playbooks />
+    }
+    if (location === '/sales-playbook') {
+      return <SalesPlaybook />
     }
     if (location === '/integrations') {
       return <Integrations />
