@@ -161,19 +161,19 @@ const h2 = (t) => console.log(`\n▶ ${t}`);
       console.log('  - POST /meta/backfill was not run to ingest historical data.');
     } else {
       console.log(`  Found ${res.body.length} rows for March 2025.`);
-      const sumN = (k) => res.body.reduce((s, d) => s + Number(d[k] || 0), 0);
+      const sumN = (k) => res.body.reduce((s, d) => s + Number(d[k] ?? 0), 0);
       console.log(`  Spend       : ${cur(Number(sumN('spend').toFixed(2)))}`);
       console.log(`  Impressions : ${fmt(Math.round(sumN('impressions')))}`);
       console.log(`  Clicks      : ${fmt(Math.round(sumN('clicks')))}`);
       console.log(`  Conversions : ${fmt(Math.round(sumN('conversions')))}`);
       console.log('  Daily breakdown:');
       for (const d of res.body) {
-        const sp = Number(d.spend || 0);
+        const sp = Number(d.spend ?? 0);
         if (sp > 0) {
           console.log(`    ${d.date}  spend=${cur(sp)}  clicks=${d.clicks}  impr=${d.impressions}  conv=${d.conversions}`);
         }
       }
-      const zeroDays = res.body.filter(d => Number(d.spend || 0) === 0);
+      const zeroDays = res.body.filter(d => Number(d.spend ?? 0) === 0);
       if (zeroDays.length > 0) {
         console.log(`  Days with spend=0: ${zeroDays.length}  (${zeroDays.map(d => d.date).join(', ')})`);
       }
@@ -200,7 +200,7 @@ const h2 = (t) => console.log(`\n▶ ${t}`);
       console.log('  No rows found in meta_daily_insights for the last 90 days.');
       console.log('  → Run POST /meta/backfill?days=90 to populate this table.');
     } else {
-      const sumN = (k) => res.body.reduce((s, d) => s + Number(d[k] || 0), 0);
+      const sumN = (k) => res.body.reduce((s, d) => s + Number(d[k] ?? 0), 0);
       console.log(`  Found ${res.body.length} rows for last 90 days.`);
       console.log(`  Spend       : ${cur(Number(sumN('spend').toFixed(2)))}`);
       console.log(`  Impressions : ${fmt(Math.round(sumN('impressions')))}`);
@@ -256,7 +256,7 @@ const h2 = (t) => console.log(`\n▶ ${t}`);
         const d = row.data;
         if (!d) continue;
         h2(`Cache entry: ${row.id}  (last updated ${row.updated_at?.slice(0, 19)})`);
-        console.log(`  Source: ${d.source || '—'}  Cached: ${d.cached}  Degraded: ${d.degraded || false}`);
+        console.log(`  Source: ${d.source ?? '—'}  Cached: ${d.cached}  Degraded: ${d.degraded ?? false}`);
         if (d.period) {
           console.log(`  Period: ${d.period.since} → ${d.period.until}  (${d.period.days} days)`);
         }
@@ -300,7 +300,7 @@ const h2 = (t) => console.log(`\n▶ ${t}`);
               console.log(`\n    Campaign  : ${c.name}`);
               console.log(`    ID        : ${c.id}`);
               console.log(`    Status    : ${c.status}`);
-              console.log(`    Objective : ${c.objective || '—'}`);
+              console.log(`    Objective : ${c.objective ?? '—'}`);
               console.log(`    Spend     : ${cur(sp)}`);
               console.log(`    Impress.  : ${fmt(Math.round(im))}`);
               console.log(`    Clicks    : ${fmt(Math.round(cl))}`);
@@ -320,9 +320,9 @@ const h2 = (t) => console.log(`\n▶ ${t}`);
 
         // ── daily breakdown (max 15 rows with spend > 0) ───────────────────
         if (Array.isArray(d.daily) && d.daily.length > 0) {
-          const activeDays = d.daily.filter(dd => Number(dd.spend || 0) > 0);
-          const zeroDays   = d.daily.filter(dd => Number(dd.spend || 0) === 0);
-          const missing    = (d.period?.days || 0) - d.daily.length;
+          const activeDays = d.daily.filter(dd => Number(dd.spend ?? 0) > 0);
+          const zeroDays   = d.daily.filter(dd => Number(dd.spend ?? 0) === 0);
+          const missing    = (d.period?.days ?? 0) - d.daily.length;
           console.log(`  ── Daily breakdown: ${d.daily.length} rows  (${activeDays.length} with spend > 0, ${zeroDays.length} zero-spend)`);
           if (missing > 0) {
             console.log(`     ${missing} days missing from API response — Meta omits days with no ad activity.`);
@@ -330,10 +330,10 @@ const h2 = (t) => console.log(`\n▶ ${t}`);
           if (activeDays.length > 0) {
             console.log('     Date        Impr      Clicks  Spend       Conv   CTR      CPC      CPM');
             for (const dd of activeDays.slice(-15)) {
-              const sp = Number(dd.spend || 0);
-              const cl = Number(dd.clicks || 0);
-              const im = Number(dd.impressions || 0);
-              const cv = Number(dd.conversions || 0);
+              const sp = Number(dd.spend ?? 0);
+              const cl = Number(dd.clicks ?? 0);
+              const im = Number(dd.impressions ?? 0);
+              const cv = Number(dd.conversions ?? 0);
               const ctr2 = im > 0 ? (cl / im * 100).toFixed(2) : '—';
               const cpc2 = cl > 0 ? (sp / cl).toFixed(2) : '—';
               const cpm2 = im > 0 ? (sp / im * 1000).toFixed(2) : '—';
