@@ -53,7 +53,7 @@ function pct(n: number | null | undefined) {
 function curr(n: number | null | undefined) {
   return n == null
     ? '—'
-    : n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 })
+    : n.toLocaleString('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
 }
 
 export default function Reports() {
@@ -334,7 +334,7 @@ export default function Reports() {
               {!campLoading && !campError && filteredCampaigns.length > 0 && (
                 <div className="overflow-x-auto">
                   <table className="w-full">
-                    <TableHead cols={['Campaign', 'Leads', 'Contacted', 'Replied', 'Booked', 'Closed', 'Close %', 'Reply delay (min)']} />
+                    <TableHead cols={['Campaign', 'Leads', 'Contacted', 'Replied', 'Booked', 'Closed', '% Cita', '% No-show', 'Rev. CRM', 'Reply delay (min)']} />
                     <tbody>
                       {filteredCampaigns.map((r) => (
                         <TableRow
@@ -346,7 +346,9 @@ export default function Reports() {
                             r.replied,
                             r.booked,
                             r.closed,
-                            pct(r.lead_to_close_rate_pct),
+                            pct(r.replied_to_booked_pct),
+                            pct(r.no_show_rate_pct),
+                            curr(r.verified_revenue_crm),
                             r.avg_reply_delay_min ?? '—',
                           ]}
                         />
@@ -378,7 +380,7 @@ export default function Reports() {
               {!srcLoading && !srcError && filteredSources.length > 0 && (
                 <div className="overflow-x-auto">
                   <table className="w-full">
-                    <TableHead cols={['Source', 'Leads', 'Reply %', 'Booking %', 'Close %', 'Avg Reply (min)', 'Verified Revenue']} />
+                    <TableHead cols={['Source', 'Leads', 'Contacted', 'Reply %', 'Booking %', 'Close %', 'Avg Reply (min)', 'Verified Revenue']} />
                     <tbody>
                       {filteredSources.map((r) => (
                         <TableRow
@@ -386,11 +388,12 @@ export default function Reports() {
                           cells={[
                             r.source_label ?? r.source,
                             r.total_leads,
+                            r.contacted,
                             pct(r.reply_rate_pct),
-                            pct(r.booking_rate_pct),
-                            pct(r.close_rate_pct),
+                            pct(r.replied_to_booked_pct),
+                            pct(r.lead_to_close_rate_pct),
                             r.avg_reply_delay_min ?? '—',
-                            curr(r.verified_revenue),
+                            curr(r.verified_revenue_crm),
                           ]}
                         />
                       ))}

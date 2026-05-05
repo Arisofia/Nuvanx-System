@@ -32,6 +32,15 @@ interface RealFunnel {
   doctoraliaRevenue: number
   doctoraliaPatients: number
   cac: number
+  cacConfidence: number
+}
+
+interface DashboardQuality {
+  overallMode: string
+  metaDataSource: string
+  metaIsReal: boolean
+  crmIsReal: boolean
+  doctoraliaIsReal: boolean
 }
 
 const EMPTY_COMBINED_METRICS: CombinedMetrics = {
@@ -149,7 +158,15 @@ function buildDashboardState(options: DashboardStateOptions) {
       doctoraliaRevenue: Number(kpisResponse?.doctoralia?.verifiedRevenue ?? Number(metricsData.verifiedRevenue ?? 0)),
       doctoraliaPatients: Number(kpisResponse?.doctoralia?.newVerifiedPatients ?? 0),
       cac: Number(kpisResponse?.doctoralia?.cacDoctoralia ?? 0),
+      cacConfidence: kpisResponse?.doctoralia?.cac_confidence ?? 0,
     },
+    quality: {
+      overallMode: kpisResponse?.data_quality?.overall_mode,
+      metaDataSource: kpisResponse?.meta?.data_source,
+      metaIsReal: kpisResponse?.meta?.is_real,
+      crmIsReal: kpisResponse?.crm?.is_real,
+      doctoraliaIsReal: kpisResponse?.doctoralia?.is_real,
+    }
   }
 }
 
@@ -175,7 +192,8 @@ function useDashboardData(
     metaError: null,
   })
   const [combined, setCombined] = useState<CombinedMetrics>(EMPTY_COMBINED_METRICS)
-  const [funnel, setFunnel] = useState<RealFunnel>(EMPTY_FUNNEL)
+  const [funnel, setFunnel] = useState<RealFunnel | null>(null)
+  const [quality, setQuality] = useState<any>(null)
   const [isFunnelDemo, setIsFunnelDemo] = useState<boolean>(false)
   const [dataMode, setDataMode] = useState<string | undefined>(undefined)
   const [trendData, setTrendData] = useState<MetaTrendPoint[]>([])
@@ -252,7 +270,7 @@ function useDashboardData(
           : [],
       )
 
-      const { metrics: metricsPayload, combined: combinedPayload, funnel: funnelPayload } = buildDashboardState({
+      const { metrics: metricsPayload, combined: combinedPayload, funnel: funnelPayload, quality: qualityPayload } = buildDashboardState({
         metricsData,
         campaigns,
         insightsResponse,
@@ -266,6 +284,7 @@ function useDashboardData(
       setMetrics({ ...metricsPayload, metaError: metaFailureMessage })
       setCombined(combinedPayload)
       setFunnel(funnelPayload)
+      setQuality(qualityPayload)
     }
 
     const fetchMetrics = async () => {
@@ -320,6 +339,7 @@ function useDashboardData(
     trendData,
     sourcesList,
     campaignsList,
+    quality,
   }
 }
 
@@ -471,14 +491,27 @@ function AlertSection({ error, metaError }: AlertSectionProps) {
 interface MetricsGridProps {
   readonly metrics: DashboardMetrics
   readonly periodLabel: string
+  readonly quality: DashboardQuality | null
 }
 
-function MetricsGrid({ metrics, periodLabel }: MetricsGridProps) {
+function MetricsGrid({ metrics, periodLabel, quality }: MetricsGridProps) {
+  const renderIsReal = (isReal: boolean | undefined) => {
+    if (isReal === undefined) return null;
+    return (
+      <span className={`text-[10px] px-1 rounded border ${isReal ? 'text-green-400 border-green-400/30 bg-green-400/5' : 'text-amber-400 border-amber-400/30 bg-amber-400/5'}`}>
+        {isReal ? 'Real' : 'Parcial'}
+      </span>
+    );
+  };
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Conversiones Meta</CardTitle>
+          <div className="flex flex-col">
+            <CardTitle className="text-sm font-medium">Conversiones Meta</CardTitle>
+            {renderIsReal(quality?.metaIsReal)}
+          </div>
           <Users className="h-4 w-4 text-muted" />
         </CardHeader>
         <CardContent>
@@ -492,7 +525,10 @@ function MetricsGrid({ metrics, periodLabel }: MetricsGridProps) {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Leads registrados en CRM</CardTitle>
+          <div className="flex flex-col">
+            <CardTitle className="text-sm font-medium">Leads registrados en CRM</CardTitle>
+            {renderIsReal(quality?.crmIsReal)}
+          </div>
           <Users className="h-4 w-4 text-muted" />
         </CardHeader>
         <CardContent>
@@ -506,7 +542,10 @@ function MetricsGrid({ metrics, periodLabel }: MetricsGridProps) {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Tasa de conversión Meta</CardTitle>
+          <div className="flex flex-col">
+            <CardTitle className="text-sm font-medium">Tasa de conversión Meta</CardTitle>
+            {renderIsReal(quality?.doctoraliaIsReal)}
+          </div>
           <TrendingUp className="h-4 w-4 text-muted" />
         </CardHeader>
         <CardContent>
@@ -532,6 +571,7 @@ interface FunnelAndSpendSectionProps {
   readonly periodLabel: string
   readonly funnel: RealFunnel | null
   readonly isFunnelDemo: boolean
+  readonly quality: DashboardQuality | null
 }
 
 function FunnelAndSpendSection({
@@ -541,6 +581,7 @@ function FunnelAndSpendSection({
   periodLabel,
   funnel,
   isFunnelDemo,
+  quality,
 }: FunnelAndSpendSectionProps) {
   return (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -554,8 +595,13 @@ function FunnelAndSpendSection({
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle>Meta Spend ({periodLabel})</CardTitle>
+          {quality?.metaDataSource && (
+            <span className="text-[10px] text-muted-foreground uppercase bg-surface px-1.5 py-0.5 rounded border border-border">
+              Source: {quality.metaDataSource.replace('_', ' ')}
+            </span>
+          )}
         </CardHeader>
         <CardContent className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           <div className="info-card">
@@ -621,11 +667,18 @@ function FunnelAndSpendSection({
             <div>
               <p className="text-muted">Ingresos verificados (Doctoralia)</p>
               <p className="text-lg font-bold">€{funnel.doctoraliaRevenue.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-              <p className="text-xs text-muted mt-1">
-                {funnel.doctoraliaPatients > 0
-                  ? `CAC Doctoralia: €${funnel.cac.toLocaleString()}`
-                  : 'CAC Doctoralia: n/a (sin pacientes verificados en el periodo)'}
-              </p>
+              <div className="flex flex-col gap-0.5 mt-1">
+                <p className="text-xs text-muted">
+                  {funnel.doctoraliaPatients > 0
+                    ? `CAC Doctoralia: €${funnel.cac.toLocaleString()}`
+                    : 'CAC Doctoralia: n/a (sin pacientes verificados)'}
+                </p>
+                {funnel.doctoraliaPatients > 0 && (
+                  <p className={`text-[10px] font-medium ${funnel.cacConfidence > 0.7 ? 'text-green-400' : 'text-amber-400'}`}>
+                    Confianza: {Math.round(funnel.cacConfidence * 100)}%
+                  </p>
+                )}
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -791,6 +844,7 @@ export default function Dashboard() {
     trendData,
     sourcesList,
     campaignsList,
+    quality,
   } = useDashboardData(
     days,
     customFrom,
@@ -867,7 +921,7 @@ export default function Dashboard() {
 
       <AlertSection error={metrics.error} metaError={metrics.metaError} />
 
-      <MetricsGrid metrics={metrics} periodLabel={periodLabel} />
+      <MetricsGrid metrics={metrics} periodLabel={periodLabel} quality={quality} />
 
       <FunnelAndSpendSection
         funnelData={funnelData}
@@ -876,6 +930,7 @@ export default function Dashboard() {
         periodLabel={periodLabel}
         funnel={funnel}
         isFunnelDemo={isFunnelDemo}
+        quality={quality}
       />
 
       <CampaignKpisSection metrics={metrics} trendData={trendData} periodLabel={periodLabel} />
