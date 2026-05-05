@@ -101,7 +101,7 @@ describe('buildCorsHeaders', () => {
     originalProcessDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'process');
     originalDenoDescriptorLocal = Object.getOwnPropertyDescriptor(globalThis, 'Deno');
     vi.spyOn(globalThis, 'process', 'get').mockReturnValue({ env: {} } as any);
-    vi.spyOn(globalThis, 'Deno', 'get').mockReturnValue(undefined as any);
+    vi.spyOn(globalThis as any, 'Deno', 'get').mockReturnValue(undefined as any);
     ALLOWED_CORS_ORIGINS.clear();
     ALLOWED_CORS_ORIGINS.add('https://app.example.com');
     ALLOWED_CORS_ORIGINS.add('https://dashboard.example.com');
@@ -349,7 +349,7 @@ describe('decryptCred', () => {
   beforeEach(() => {
     denoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno');
     cryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
-    vi.spyOn(globalThis, 'Deno', 'get').mockReturnValue({ env: { get: vi.fn() } } as any);
+    vi.spyOn(globalThis as any, 'Deno', 'get').mockReturnValue({ env: { get: vi.fn() } } as any);
   });
 
   afterEach(() => {
@@ -361,7 +361,7 @@ describe('decryptCred', () => {
   it('throws when ENCRYPTION_KEY is not set', async () => {
     const deno = (globalThis as any).Deno;
     deno.env.get.mockReturnValue(undefined);
-    await expect(() => decryptCred('aa:bb:cc:dd')).rejects.toThrowError('ENCRYPTION_KEY not set in Edge Function secrets');
+    await expect(() => decryptCred('aa:bb:cc:dd')).rejects.toThrow('ENCRYPTION_KEY not set in Edge Function secrets');
     expect(deno.env.get).toHaveBeenCalledWith('ENCRYPTION_KEY');
   });
 
@@ -369,7 +369,7 @@ describe('decryptCred', () => {
     const deno = (globalThis as any).Deno;
     deno.env.get.mockReturnValue('dummy-key');
     for (const encoded of ['one-part', 'a:b:c', 'a:b:c:d:e']) {
-      await expect(() => decryptCred(encoded as any)).rejects.toThrowError('malformed ciphertext');
+      await expect(() => decryptCred(encoded as any)).rejects.toThrow('malformed ciphertext');
     }
   });
 
@@ -418,7 +418,7 @@ describe('decryptCred', () => {
     vi.spyOn(globalThis.crypto.subtle, 'deriveKey').mockResolvedValue('aes-key-object' as any);
     vi.spyOn(globalThis.crypto.subtle, 'decrypt').mockRejectedValue(new Error('Decrypt failed'));
 
-    await expect(() => decryptCred('aa:bb:ccdd:0102')).rejects.toThrowError('Decrypt failed');
+    await expect(() => decryptCred('aa:bb:ccdd:0102')).rejects.toThrow('Decrypt failed');
   });
 });
 
@@ -440,7 +440,7 @@ describe('handlePublicRoutes', () => {
   beforeEach(() => {
     originalDenoDescriptorLocal = Object.getOwnPropertyDescriptor(globalThis, 'Deno');
     originalCryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
-    vi.spyOn(globalThis, 'Deno', 'get').mockReturnValue({ env: { get: vi.fn() } } as any);
+    vi.spyOn(globalThis as any, 'Deno', 'get').mockReturnValue({ env: { get: vi.fn() } } as any);
   });
 
   afterEach(() => {
@@ -666,7 +666,7 @@ describe('handlePublicRoutes', () => {
       expect(metaFetchMock).toHaveBeenCalledWith(
         '/LEAD_ID',
         {
-          fields: 'field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,adset_id,page_id',
+          fields: 'field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,campaign_name,adset_id,adset_name,page_id,is_organic,platform',
         },
         'access-token',
       );
@@ -711,6 +711,195 @@ describe('handlePublicRoutes', () => {
       expect(decryptCredMock).not.toHaveBeenCalled();
       expect(metaFetchMock).not.toHaveBeenCalled();
       expect(processLeadDataMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('WhatsApp webhooks GET verification', () => {
+    it('returns 503 when verify token env is not configured', async () => {
+      const envGet = (globalThis as any).Deno.env.get as ReturnType<typeof vi.fn>;
+      envGet.mockReturnValue(undefined);
+
+      const url = new URL(
+        'https://example.com/webhooks/whatsapp?hub.mode=subscribe&hub.challenge=123&hub.verify_token=token',
+      );
+      const ctx = makeCtx({
+        resource: 'webhooks',
+        sub: 'whatsapp',
+        req: new Request(url.toString(), { method: 'GET' }),
+        url,
+      });
+
+      const res = await handlePublicRoutes(ctx);
+
+      expect(res.status).toBe(503);
+      expect(await res.text()).toBe('Verify token not configured');
+    });
+
+    it('returns 200 with challenge when mode=subscribe and verify token matches expected', async () => {
+      const envGet = (globalThis as any).Deno.env.get as ReturnType<typeof vi.fn>;
+      envGet
+        .mockImplementationOnce((key: string) => (key === 'WHATSAPP_WEBHOOK_VERIFY_TOKEN' ? 'expected-token' : null))
+        .mockImplementation((key: string) => (key === 'META_WEBHOOK_VERIFY_TOKEN' ? 'fallback-token' : null));
+
+      const url = new URL(
+        'https://example.com/webhooks/whatsapp?hub.mode=subscribe&hub.challenge=abc123&hub.verify_token=expected-token',
+      );
+      const ctx = makeCtx({
+        resource: 'webhooks',
+        sub: 'whatsapp',
+        req: new Request(url.toString(), { method: 'GET' }),
+        url,
+      });
+
+      const res = await handlePublicRoutes(ctx);
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Content-Type')).toBe('text/plain');
+      expect(await res.text()).toBe('abc123');
+    });
+
+    it('falls back to META webhook verify token when WHATSAPP token is not set', async () => {
+      const envGet = (globalThis as any).Deno.env.get as ReturnType<typeof vi.fn>;
+      envGet.mockImplementation((key: string) => (key === 'META_WEBHOOK_VERIFY_TOKEN' ? 'fallback-token' : null));
+
+      const url = new URL(
+        'https://example.com/webhooks/whatsapp?hub.mode=subscribe&hub.challenge=abc123&hub.verify_token=fallback-token',
+      );
+      const ctx = makeCtx({
+        resource: 'webhooks',
+        sub: 'whatsapp',
+        req: new Request(url.toString(), { method: 'GET' }),
+        url,
+      });
+
+      const res = await handlePublicRoutes(ctx);
+
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe('abc123');
+    });
+
+    it('returns 403 when mode/verify token combination is incorrect', async () => {
+      const envGet = (globalThis as any).Deno.env.get as ReturnType<typeof vi.fn>;
+      envGet.mockImplementation((key: string) => (key === 'WHATSAPP_WEBHOOK_VERIFY_TOKEN' ? 'expected-token' : null));
+
+      const url = new URL(
+        'https://example.com/webhooks/whatsapp?hub.mode=invalid&hub.challenge=abc123&hub.verify_token=wrong',
+      );
+      const ctx = makeCtx({
+        resource: 'webhooks',
+        sub: 'whatsapp',
+        req: new Request(url.toString(), { method: 'GET' }),
+        url,
+      });
+
+      const res = await handlePublicRoutes(ctx);
+      expect(res.status).toBe(403);
+      expect(await res.text()).toBe('Forbidden');
+    });
+  });
+
+  describe('WhatsApp webhooks POST', () => {
+    it('returns Unauthorized when appSecret is set and signature does not match', async () => {
+      const envGet = (globalThis as any).Deno.env.get as ReturnType<typeof vi.fn>;
+      envGet.mockImplementation((key: string) => {
+        if (key === 'META_APP_SECRET') return 'test-secret';
+        return null;
+      });
+
+      const importKeyMock = vi.fn().mockResolvedValue('key');
+      const signMock = vi.fn().mockResolvedValue(new Uint8Array([0x01, 0x02]).buffer);
+      vi.spyOn(globalThis, 'crypto', 'get').mockReturnValue({
+        subtle: {
+          importKey: importKeyMock,
+          sign: signMock,
+        },
+      } as any);
+
+      const body = JSON.stringify({ foo: 'bar' });
+      const req = new Request('https://example.com/webhooks/whatsapp', {
+        method: 'POST',
+        body,
+        headers: {
+          'X-Hub-Signature-256': 'sha256=deadbeef',
+        },
+      });
+      const ctx = makeCtx({ resource: 'webhooks', sub: 'whatsapp', req });
+
+      const res = await handlePublicRoutes(ctx);
+
+      expect(res.status).toBe(403);
+      expect(await res.text()).toBe('Unauthorized');
+    });
+
+    it('returns ok when JSON parse fails (invalid JSON)', async () => {
+      const envGet = (globalThis as any).Deno.env.get as ReturnType<typeof vi.fn>;
+      envGet.mockImplementation((key: string) => null);
+
+      const req = new Request('https://example.com/webhooks/whatsapp', {
+        method: 'POST',
+        body: 'not-json',
+      });
+      const ctx = makeCtx({ resource: 'webhooks', sub: 'whatsapp', req });
+
+      const res = await handlePublicRoutes(ctx);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe('ok');
+    });
+
+    it('processes a valid WhatsApp inbound message and creates a lead record', async () => {
+      const envGet = (globalThis as any).Deno.env.get as ReturnType<typeof vi.fn>;
+      envGet.mockImplementation((key: string) => {
+        if (key === 'META_APP_SECRET') return null;
+        if (key === 'SUPABASE_URL') return 'https://supabase.example.com';
+        if (key === 'SUPABASE_SERVICE_ROLE_KEY') return 'service-key';
+        return null;
+      });
+
+      const integrationsQuery = {
+        data: [{ user_id: 'user1', metadata: { phone_number_id: '123' } }],
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+      };
+      const leadsQuery = {
+        upsert: vi.fn().mockReturnThis(),
+        select: vi.fn().mockReturnThis(),
+        maybeSingle: vi.fn().mockResolvedValue({ data: { id: 'lead1' } }),
+      };
+      const adminClient = {
+        from: vi.fn((table: string) => (table === 'integrations' ? integrationsQuery : leadsQuery)),
+      };
+
+      const createClientMock = vi.spyOn(api.supabaseClientFactory, 'create').mockReturnValue(adminClient as any);
+
+      const body = JSON.stringify({
+        entry: [
+          {
+            changes: [
+              {
+                value: {
+                  messaging_product: 'whatsapp',
+                  metadata: { phone_number_id: '123' },
+                  contacts: [{ wa_id: '1234', profile: { name: 'Alice' } }],
+                  messages: [{ id: 'msg1', from: '1234', timestamp: '1690000000', text: { body: 'Hello' } }],
+                },
+              },
+            ],
+          },
+        ],
+      });
+      const req = new Request('https://example.com/webhooks/whatsapp', {
+        method: 'POST',
+        body,
+      });
+      const ctx = makeCtx({ resource: 'webhooks', sub: 'whatsapp', req });
+
+      const res = await handlePublicRoutes(ctx);
+
+      expect(createClientMock).toHaveBeenCalled();
+      expect(adminClient.from).toHaveBeenCalledWith('integrations');
+      expect(leadsQuery.upsert).toHaveBeenCalled();
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe('ok');
     });
   });
 
@@ -837,7 +1026,7 @@ describe('metaFetch', () => {
     expect(urlObj.searchParams.get('access_token')).toBe(token);
     expect(urlObj.searchParams.get('fields')).toBe('id,name');
     expect(urlObj.searchParams.get('limit')).toBe('10');
-    expect((options as any).signal).toBeInstanceOf(AbortSignal);
+    expect(options.signal).toBeInstanceOf(AbortSignal);
   });
 
   it('throws error from d.error.message when response is not ok', async () => {
@@ -849,7 +1038,7 @@ describe('metaFetch', () => {
       text: vi.fn().mockResolvedValue(JSON.stringify({ error: { message: 'OAuthException: Invalid token' } })),
     } as any);
 
-    await expect(() => metaFetch(path, {}, token)).rejects.toThrowError('OAuthException: Invalid token');
+    await expect(() => metaFetch(path, {}, token)).rejects.toThrow('OAuthException: Invalid token');
   });
 
   it('falls back to d.message when error.message is absent', async () => {
@@ -861,7 +1050,7 @@ describe('metaFetch', () => {
       text: vi.fn().mockResolvedValue(JSON.stringify({ message: 'Rate limit exceeded' })),
     } as any);
 
-    await expect(() => metaFetch(path, {}, token)).rejects.toThrowError('Rate limit exceeded');
+    await expect(() => metaFetch(path, {}, token)).rejects.toThrow('Rate limit exceeded');
   });
 
   it('falls back to text when no error object is present', async () => {
@@ -873,7 +1062,7 @@ describe('metaFetch', () => {
       text: vi.fn().mockResolvedValue('Some raw error text'),
     } as any);
 
-    await expect(() => metaFetch(path, {}, token)).rejects.toThrowError('Some raw error text');
+    await expect(() => metaFetch(path, {}, token)).rejects.toThrow('Some raw error text');
   });
 
   it('falls back to default Meta API status text when no text is present', async () => {
@@ -885,7 +1074,7 @@ describe('metaFetch', () => {
       text: vi.fn().mockResolvedValue(''),
     } as any);
 
-    await expect(() => metaFetch(path, {}, token)).rejects.toThrowError('Meta API 403');
+    await expect(() => metaFetch(path, {}, token)).rejects.toThrow('Meta API 403');
   });
 });
 
@@ -1035,7 +1224,7 @@ describe('buildCampaignsTimeRange', () => {
   });
 
   it('falls back to 90-day window when campDays is NaN', () => {
-    const result = JSON.parse(buildCampaignsTimeRange('', '', NaN, now));
+    const result = JSON.parse(buildCampaignsTimeRange('', '', Number.NaN, now));
     const expected = new Date(now - 90 * 86_400_000).toISOString().slice(0, 10);
     expect(result.since).toBe(expected);
     expect(result.until).toBe('2024-06-15');

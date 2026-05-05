@@ -14,6 +14,16 @@ function requireSupabaseEnv(value: string | null | undefined, name: string): str
   return normalized;
 }
 
+declare global {
+  interface ObjectConstructor {
+    hasOwn?(o: unknown, p: PropertyKey): boolean;
+  }
+}
+
+function hasOwn(obj: unknown, key: PropertyKey): boolean {
+  return Boolean(Object.hasOwn?.(obj, key));
+}
+
 export const supabaseClientFactory = {
   create(url: string | null, key: string | null, options: any) {
     return createClient(
@@ -164,7 +174,7 @@ export async function metaFetch(path: string, params: Record<string, string>, to
   const { data: d, text } = await parseJsonOrText(r);
   if (!r.ok) {
     const e = d?.error ?? {};
-    const metaErrorMessage = e.message ?? d?.message ?? text ?? `Meta API ${r.status}`;
+    const metaErrorMessage = e.message ?? d?.message ?? (text?.trim() ? text : `Meta API ${r.status}`);
     const msg = `${metaErrorMessage} (code=${e.code ?? '?'}, sub=${e.error_subcode ?? '?'}, type=${e.type ?? '?'})`;
     throw new Error(msg);
   }
@@ -569,6 +579,103 @@ function getOpenAIErrorMessage(model: string, data: any, text: string, status: n
   return `${model}: ${innerMessage}`;
 }
 
+function parseMetaLeadCreatedAt(rawTime: any): string {
+  if (rawTime == null) return new Date().toISOString();
+  if (typeof rawTime === 'number') return new Date(rawTime * 1000).toISOString();
+  if (typeof rawTime === 'string' && /^\d+$/.test(rawTime)) return new Date(Number(rawTime) * 1000).toISOString();
+  const parsed = new Date(rawTime);
+  return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
+}
+
+function parseMetaLeadFields(fieldData: any[]): { fields: Record<string, string>; rawFieldData: Record<string, string> } {
+  const fields: Record<string, string> = {};
+  const rawFieldData: Record<string, string> = {};
+
+  for (const item of (fieldData ?? [])) {
+    const fieldName = String(item?.name ?? '').trim();
+    if (!fieldName) continue;
+    const value = String(item?.values?.[0] ?? item?.value ?? '').trim();
+    fields[fieldName.toLowerCase()] = value;
+    rawFieldData[fieldName] = value;
+  }
+
+  return { fields, rawFieldData };
+}
+
+function buildMetaLeadNotes(fields: Record<string, string>, tag: string): string | null {
+  const KNOWN_STANDARD = new Set([
+    'full_name', 'nombre_completo', 'nombre', 'name', 'first_name', 'last_name',
+    'email', 'phone_number', 'telefono', 'phone', 'dni', 'nif', 'national_id',
+    'city', 'ciudad', 'state', 'provincia', 'region',
+    'zip_code', 'postal_code', 'zip', 'cp',
+    'gender', 'sexo',
+  ]);
+
+  const customFields = Object.fromEntries(
+    Object.entries(fields).filter(([key]) => !KNOWN_STANDARD.has(key)),
+  );
+
+  if (tag !== 'general') {
+    customFields.meta_tag = tag;
+  }
+
+  return Object.keys(customFields).length > 0 ? JSON.stringify(customFields) : null;
+}
+
+function buildMetaLeadPriority(fields: Record<string, string>, notes: string | null): string {
+  const HIGH_PRIORITY_KEYWORDS = /botox|bótox|neuromodulador|toxina\s*botulínica|botulínica|relleno|hialu|hialurón|rinomodelación|bichectomía|lifting/i;
+  const allValues = Object.values(fields).join(' ') + ' ' + (notes ?? '');
+  return HIGH_PRIORITY_KEYWORDS.test(allValues) ? 'high' : 'normal';
+}
+
+async function extractMetaLeadStandardFields(fields: Record<string, string>, leadData: any) {
+  const leadgen_id = leadData.id;
+  const leadName = resolveLeadName(fields, leadgen_id);
+  const email = fields['email'] ?? null;
+  const phone = fields['phone_number'] ?? fields['telefono'] ?? fields['phone'] ?? null;
+  const dni = fields['dni'] ?? fields['nif'] ?? fields['national_id'] ?? null;
+  const firstName = fields['first_name'] ?? fields['nombre'] ?? fields['nombre1'] ?? null;
+  const lastName = fields['last_name'] ?? fields['apellido'] ?? fields['apellidos'] ?? null;
+  const city = fields['city'] ?? fields['ciudad'] ?? null;
+  const state = fields['state'] ?? fields['provincia'] ?? fields['region'] ?? null;
+  const zipCode = fields['zip_code'] ?? fields['postal_code'] ?? fields['zip'] ?? fields['cp'] ?? null;
+  const gender = fields['gender'] ?? fields['sexo'] ?? null;
+  const metaPlatform = leadData.platform ?? leadData.meta_platform ?? null;
+  const metaAdId = leadData.ad_id ?? null;
+  const explicitOrganic = leadData.is_organic === true || String(leadData.is_organic).toLowerCase() === 'true';
+  const explicitPaid = leadData.is_organic === false || String(leadData.is_organic).toLowerCase() === 'false';
+  const inferredOrganic = !explicitPaid && !metaAdId && !leadData.campaign_id && !leadData.adset_id;
+  const isOrganic = explicitOrganic || inferredOrganic;
+  const metaAdName = leadData.ad_name ?? null;
+  const metaFormId = leadData.form_id ?? null;
+  const assetUrl = leadData.asset_url ?? leadData.image_url ?? leadData.video_url ?? null;
+
+  const hashedPhone = phone ? await sha256Hex(phone) : null;
+  const hashedEmail = email ? await sha256Hex(email) : null;
+
+  return {
+    leadgen_id,
+    leadName,
+    email,
+    phone,
+    dni,
+    firstName,
+    lastName,
+    city,
+    state,
+    zipCode,
+    gender,
+    metaPlatform,
+    metaAdId,
+    isOrganic,
+    metaAdName,
+    metaFormId,
+    assetUrl,
+    hashedPhone,
+    hashedEmail,
+  };
+}
+
 function resolveLeadName(fields: Record<string, string>, leadgen_id: string): string {
   const firstName = fields['first_name'] ?? fields['nombre'] ?? fields['nombre1'] ?? '';
   const lastName = fields['last_name'] ?? fields['apellido'] ?? fields['apellidos'] ?? '';
@@ -602,80 +709,37 @@ function classifyMetaLeadTag(fields: Record<string, string>): string {
 }
 
 export async function processLeadData(adminClient: any, userId: string, leadData: any) {
-  // Parse field_data array into a flat map
-  const fields: Record<string, string> = {};
-  const rawFieldData: Record<string, string> = {};
-  for (const f of (leadData.field_data ?? [])) {
-    const fieldName = String(f.name ?? '').trim();
-    const value = String(f.values?.[0] ?? '').trim();
-    fields[fieldName.toLowerCase()] = value;
-    if (fieldName) rawFieldData[fieldName] = value;
-  }
-
+  const { fields, rawFieldData } = parseMetaLeadFields(leadData.field_data ?? []);
   const leadDataFields = extractMetaLeadCustomerInfo(leadData.field_data ?? []);
   const tag = classifyMetaLeadTag(leadDataFields);
 
-  const leadgen_id = leadData.id;
-  const leadName = resolveLeadName(fields, leadgen_id);
-  const email    = fields['email']        ?? null;
-  const phone    = fields['phone_number'] ?? fields['telefono'] ?? fields['phone'] ?? null;
-  const dni      = fields['dni']          ?? fields['nif']      ?? fields['national_id'] ?? null;
-  const firstName = fields['first_name']  ?? fields['nombre'] ?? fields['nombre1'] ?? null;
-  const lastName  = fields['last_name']   ?? fields['apellido'] ?? fields['apellidos'] ?? null;
-  const city      = fields['city']        ?? fields['ciudad'] ?? null;
-  const state     = fields['state']       ?? fields['provincia'] ?? fields['region'] ?? null;
-  const zipCode   = fields['zip_code']    ?? fields['postal_code'] ?? fields['zip'] ?? fields['cp'] ?? null;
-  const gender    = fields['gender']      ?? fields['sexo'] ?? null;
-  const metaPlatform = leadData.platform ?? leadData.meta_platform ?? null;
-  const metaAdId = leadData.ad_id ?? null;
-  const explicitOrganic = leadData.is_organic === true || String(leadData.is_organic).toLowerCase() === 'true';
-  const explicitPaid = leadData.is_organic === false || String(leadData.is_organic).toLowerCase() === 'false';
-  const inferredOrganic = !explicitPaid && !metaAdId && !leadData.campaign_id && !leadData.adset_id;
-  const isOrganic = explicitOrganic || inferredOrganic;
-  const metaAdName = leadData.ad_name ?? null;
-  const metaFormId = leadData.form_id ?? null;
-  const assetUrl = leadData.asset_url ?? leadData.image_url ?? leadData.video_url ?? null;
-  const hashedPhone = phone ? await sha256Hex(phone) : null;
-  const hashedEmail = email ? await sha256Hex(email) : null;
+  const {
+    leadgen_id,
+    leadName,
+    email,
+    phone,
+    dni,
+    firstName,
+    lastName,
+    city,
+    state,
+    zipCode,
+    gender,
+    metaPlatform,
+    metaAdId,
+    isOrganic,
+    metaAdName,
+    metaFormId,
+    assetUrl,
+    hashedPhone,
+    hashedEmail,
+  } = await extractMetaLeadStandardFields(fields, leadData);
 
-  // Any non-standard custom fields (e.g. 'Tratamiento de interés') → notes JSON
-  const KNOWN_STANDARD = new Set([
-    'full_name', 'nombre_completo', 'nombre', 'name', 'first_name', 'last_name',
-    'email', 'phone_number', 'telefono', 'phone', 'dni', 'nif', 'national_id',
-    'city', 'ciudad', 'state', 'provincia', 'region',
-    'zip_code', 'postal_code', 'zip', 'cp',
-    'gender', 'sexo',
-  ]);
-  const customFields = Object.fromEntries(
-    Object.entries(fields).filter(([k]) => !KNOWN_STANDARD.has(k))
-  );
-  if (tag !== 'general') {
-    customFields.meta_tag = tag;
-  }
-  const notes = Object.keys(customFields).length > 0 ? JSON.stringify(customFields) : null;
-
-  // Priority detection — scan all form values for high-demand treatment keywords
-  const HIGH_PRIORITY_KEYWORDS = /botox|bótox|neuromodulador|toxina\s*botulínica|botulínica|relleno|hialu|hialurón|rinomodelación|bichectomía|lifting/i;
-  const allValues = Object.values(fields).join(' ') + ' ' + (notes ?? '');
-  const priority = HIGH_PRIORITY_KEYWORDS.test(allValues) ? 'high' : 'normal';
+  const notes = buildMetaLeadNotes(fields, tag);
+  const priority = buildMetaLeadPriority(fields, notes);
 
   // Upsert lead — idempotent via partial unique index (user_id, source, external_id)
-  let createdAt: string;
-  try {
-    const rawTime = leadData.created_time;
-    if (!rawTime) {
-      createdAt = new Date().toISOString();
-    } else if (typeof rawTime === 'number') {
-      createdAt = new Date(rawTime * 1000).toISOString();
-    } else if (typeof rawTime === 'string' && /^\d+$/.test(rawTime)) {
-      createdAt = new Date(Number(rawTime) * 1000).toISOString();
-    } else {
-      const d = new Date(rawTime);
-      createdAt = Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
-    }
-  } catch {
-    createdAt = new Date().toISOString();
-  }
+  const createdAt = parseMetaLeadCreatedAt(leadData.created_time);
 
   const { data: lead } = await adminClient
     .from('leads')
@@ -1344,6 +1408,142 @@ async function handleMetaWebhookPost(ctx: PublicRouteContext): Promise<Response 
   return new Response('ok', { status: 200 });
 }
 
+async function handleWhatsappWebhook(ctx: PublicRouteContext): Promise<Response | null> {
+  const { req } = ctx;
+  if (req.method === 'GET') return handleWhatsappWebhookGet(ctx);
+  if (req.method === 'POST') return await handleWhatsappWebhookPost(ctx);
+  return null;
+}
+
+function handleWhatsappWebhookGet(ctx: PublicRouteContext): Response | null {
+  const { url } = ctx;
+  const mode = url.searchParams.get('hub.mode');
+  const challenge = url.searchParams.get('hub.challenge');
+  const verifyToken = url.searchParams.get('hub.verify_token');
+  const expected = String(Deno.env.get('WHATSAPP_WEBHOOK_VERIFY_TOKEN') ?? Deno.env.get('META_WEBHOOK_VERIFY_TOKEN') ?? Deno.env.get('META_VERIFY_TOKEN') ?? '');
+  if (!expected) return new Response('Verify token not configured', { status: 503 });
+  if (mode === 'subscribe' && verifyToken === expected) {
+    return new Response(challenge ?? '', { status: 200, headers: { 'Content-Type': 'text/plain' } });
+  }
+  return new Response('Forbidden', { status: 403 });
+}
+
+async function handleWhatsappWebhookPost(ctx: PublicRouteContext): Promise<Response | null> {
+  const { req } = ctx;
+  const appSecret = Deno.env.get('META_APP_SECRET');
+  const rawBody = await req.text();
+
+  if (!appSecret && !IS_DEVELOPMENT) {
+    return new Response('Meta App Secret not configured', { status: 500 });
+  }
+
+  if (appSecret) {
+    const signature = req.headers.get('X-Hub-Signature-256') ?? '';
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw', enc.encode(appSecret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
+    );
+    const sig = await crypto.subtle.sign('HMAC', key, enc.encode(rawBody));
+    const expectedSig = 'sha256=' + Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, '0')).join('');
+    if (signature !== expectedSig) return new Response('Unauthorized', { status: 403 });
+  }
+
+  let payload: any;
+  try {
+    payload = JSON.parse(rawBody);
+  } catch {
+    return new Response('ok', { status: 200 });
+  }
+
+  const adminClient = supabaseClientFactory.create(Deno.env.get('SUPABASE_URL') ?? null, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? null, {
+    auth: { persistSession: false },
+  });
+
+  for (const entry of (payload.entry ?? [])) {
+    for (const change of (entry.changes ?? [])) {
+      await processWhatsappWebhookChange(adminClient, change);
+    }
+  }
+
+  return new Response('ok', { status: 200 });
+}
+
+async function processWhatsappWebhookChange(adminClient: any, change: any): Promise<void> {
+  const value = change?.value ?? {};
+  if (String(value?.messaging_product ?? '').toLowerCase() !== 'whatsapp') return;
+  if (!Array.isArray(value?.messages)) return;
+
+  const { data: integrations } = await adminClient
+    .from('integrations')
+    .select('user_id, metadata')
+    .eq('service', 'whatsapp')
+    .eq('status', 'connected');
+
+  const connected = integrations ?? [];
+  if (!connected.length) return;
+
+  const payloadNumberId = normalizePhoneNumberId(value.metadata?.phone_number_id ?? value.metadata?.phoneNumberId ?? '');
+  let matchingIntegration = connected.find((integration: any) => {
+    const metadata = integration.metadata ?? {};
+    return normalizePhoneNumberId(metadata?.phoneNumberId ?? metadata?.phone_number_id ?? '') === payloadNumberId;
+  });
+
+  if (!matchingIntegration) {
+    const noMetadataPhoneNumbers = connected.every((integration: any) => {
+      const metadata = integration.metadata ?? {};
+      return !normalizePhoneNumberId(metadata?.phoneNumberId ?? metadata?.phone_number_id ?? '');
+    });
+    if (noMetadataPhoneNumbers && connected.length === 1) {
+      matchingIntegration = connected[0];
+    }
+  }
+
+  if (!matchingIntegration) return;
+  await processWhatsappWebhookMessage(adminClient, matchingIntegration.user_id, value);
+}
+
+async function processWhatsappWebhookMessage(adminClient: any, userId: string, value: any): Promise<boolean> {
+  const messages = Array.isArray(value.messages) ? value.messages : [];
+  if (!messages.length) return false;
+
+  const message = messages[0];
+  const contact = Array.isArray(value.contacts) ? value.contacts[0] : null;
+  const phone = String(contact?.wa_id ?? message?.from ?? '').trim();
+  if (!phone) return false;
+
+  const name = String(contact?.profile?.name ?? contact?.name ?? '').trim() || phone;
+  const text = String(message?.text?.body ?? message?.body ?? '').trim();
+  const snippet = text || `${String(message?.type ?? 'whatsapp')} message`;
+  const safeSnippet = snippet.length > 250 ? `${snippet.slice(0, 247)}...` : snippet;
+  const createdAtMeta = message?.timestamp ? new Date(Number(message.timestamp) * 1000).toISOString() : new Date().toISOString();
+  const hashedPhone = await sha256Hex(phone);
+
+  const { data: lead } = await adminClient
+    .from('leads')
+    .upsert({
+      user_id:         userId,
+      external_id:     `whatsapp:${phone}`,
+      source:          'whatsapp',
+      stage:           'lead',
+      name:            name || null,
+      phone,
+      notes:           safeSnippet ? `WhatsApp inbound: ${safeSnippet}` : 'WhatsApp inbound message received',
+      telefono_hash:   hashedPhone,
+      email_hash:      null,
+      raw_field_data:  {
+        metadata: value.metadata ?? null,
+        contacts: value.contacts ?? null,
+        messages: value.messages ?? null,
+      },
+      created_at_meta: createdAtMeta,
+      created_at:      createdAtMeta,
+    }, { onConflict: 'user_id,source,external_id', ignoreDuplicates: true })
+    .select('id')
+    .maybeSingle();
+
+  return Boolean(lead?.id);
+}
+
 function throwIfError(result: { error?: any } | null | undefined): void {
   if (result?.error) throw result.error;
 }
@@ -1383,6 +1583,10 @@ export async function handlePublicRoutes(ctx: PublicRouteContext): Promise<Respo
 
   if (resource === 'webhooks' && sub === 'meta') {
     return await handleMetaWebhook(ctx);
+  }
+
+  if (resource === 'webhooks' && sub === 'whatsapp') {
+    return await handleWhatsappWebhook(ctx);
   }
 
   if (resource === 'health') {
@@ -1662,7 +1866,7 @@ async function handleLeadsPatch(ctx: AuthenticatedRouteContext): Promise<Respons
     const allowedFields = ['stage', 'name', 'phone', 'dni', 'notes', 'revenue'];
     const updateData: Record<string, any> = {};
     for (const field of allowedFields) {
-      if (Object.prototype.hasOwnProperty.call(body, field)) {
+      if (hasOwn(body, field)) {
         updateData[field] = body[field];
       }
     }
@@ -2027,23 +2231,75 @@ function calculateMetaInsightsSummary(daily: any[]) {
   return { ...curr, ctr, cpc, cpm, cpp };
 }
 
-function calculateMetaInsightsPrev(prevData: any[]) {
-  if (prevData.length === 0) return { impressions: 0, reach: 0, clicks: 0, spend: 0, conversions: 0 };
-  return prevData.reduce((acc: any, row: any) => ({
-    impressions: Number.parseFloat(acc.impressions ?? 0) + Number.parseFloat(row.impressions ?? 0),
-    reach: Number.parseFloat(acc.reach ?? 0) + Number.parseFloat(row.reach ?? 0),
-    clicks: Number.parseFloat(acc.clicks ?? 0) + Number.parseFloat(row.clicks ?? 0),
-    spend: Number.parseFloat(acc.spend ?? 0) + Number.parseFloat(row.spend ?? 0),
-    conversions: Number.parseFloat(acc.conversions ?? 0) + Number.parseFloat(row.conversions ?? 0),
-  }), { impressions: 0, reach: 0, clicks: 0, spend: 0, conversions: 0 });
+function buildMetaInsightsLiveResult(successfulAccounts: any[], creds: any, since: string, until: string, days: number) {
+  const currency: string = successfulAccounts.find((acct: any) => acct.currency)?.currency ?? 'EUR';
+
+  const daily = mergeMetaInsightsDailyByDate(successfulAccounts.flatMap((acct: any) => Array.isArray(acct.current?.data) ? acct.current.data : []));
+  const prevData = successfulAccounts.flatMap((acct: any) => {
+    const prevValue = acct.previous?.data;
+    if (Array.isArray(prevValue)) return prevValue;
+    return prevValue ? [prevValue] : [];
+  });
+  const prevD = calculateMetaInsightsPrev(prevData);
+  const summary = calculateMetaInsightsSummary(daily);
+
+  return {
+    success: true,
+    source: 'live',
+    cached: false,
+    accountId: creds.adAccountId,
+    accountIds: creds.adAccountIds,
+    currency,
+    period: { since, until, days },
+    summary,
+    changes: {
+      impressions: percentChange(summary.impressions, Number.parseFloat(prevD.impressions ?? 0)),
+      reach: percentChange(summary.reach, Number.parseFloat(prevD.reach ?? 0)),
+      clicks: percentChange(summary.clicks, Number.parseFloat(prevD.clicks ?? 0)),
+      spend: percentChange(summary.spend, Number.parseFloat(prevD.spend ?? 0)),
+      conversions: percentChange(summary.conversions, Number.parseFloat(prevD.conversions ?? 0)),
+    },
+    daily: daily.map((d: any) => ({
+      date: d.date_start,
+      impressions: Number.parseFloat(d.impressions || 0),
+      reach: Number.parseFloat(d.reach || 0),
+      clicks: Number.parseFloat(d.clicks || 0),
+      spend: Number.parseFloat(d.spend || 0),
+      ctr: Number.parseFloat(d.ctr || 0),
+      cpc: Number.parseFloat(d.cpc || 0),
+      cpm: Number.parseFloat(d.cpm || 0),
+      messagingConversationStarted: actionValue(d.actions, isMessagingConversationAction),
+    })),
+  };
 }
 
-async function fetchMetaInsightsFallbackFromDb(adminClient: any, userId: string, adAccountIds: string[] | readonly string[], since: string, until: string, days: number, creds: any, sendJson: any, e: Error) {
+function calculateMetaInsightsPrev(prevData: any[]) {
+  const sumField = (key: string) => prevData.reduce((sum: number, row: any) => sum + parseMetaMetric(row[key]), 0);
+  return {
+    impressions: sumField('impressions'),
+    reach: sumField('reach'),
+    clicks: sumField('clicks'),
+    spend: sumField('spend'),
+    conversions: sumField('conversions'),
+  };
+}
+
+async function fetchMetaInsightsFallbackFromDb(params: {
+  adminClient: any;
+  userId: string;
+  creds: any;
+  since: string;
+  until: string;
+  days: number;
+  sendJson: any;
+  e: Error;
+}) {
+  const { adminClient, userId, creds, since, until, days, sendJson, e } = params;
   const { data: dbRows, error: dbErr } = await adminClient
     .from('meta_daily_insights')
     .select('date,impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,messaging_conversations')
     .eq('user_id', userId)
-    .in('ad_account_id', adAccountIds)
+    .in('ad_account_id', creds.adAccountIds)
     .gte('date', since)
     .lte('date', until)
     .order('date', { ascending: true });
@@ -2093,103 +2349,69 @@ async function fetchMetaInsightsFallbackFromDb(adminClient: any, userId: string,
 async function handleMetaInsightsGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'meta' && sub === 'insights' && req.method === 'GET') {
-    const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
-    const validation = validateMetaCredentialResult(creds);
-    if (!validation.ok) {
-      const payload: any = { success: false, message: validation.message };
-      if (validation.statusCode === 400) payload.notConnected = creds.notConnected || !creds.adAccountId;
-      return sendJson(payload, validation.statusCode);
-    }
-
-    const { since, until, days, prevSince } = getMetaInsightsTimePeriods(url);
-    const campaignId = url.searchParams.get('campaign_id');
-    const fields = campaignId
-      ? 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,conversions,actions,cost_per_action_type,quality_ranking,engagement_rate_ranking,campaign_id'
-      : 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,conversions,actions,cost_per_action_type,quality_ranking,engagement_rate_ranking';
-    try {
-      const params = buildMetaInsightsParams(fields, since, until, campaignId);
-      const prevFields = campaignId ? 'impressions,reach,clicks,spend,conversions,campaign_id' : 'impressions,reach,clicks,spend,conversions';
-      const prevParams = buildMetaInsightsParams(prevFields, prevSince, since, campaignId);
-      delete prevParams.time_increment;
-
-      const accountResults = await Promise.allSettled(creds.adAccountIds.map(async (accountId: string) => {
-        const [current, previous, account] = await Promise.all([
-          metaFetchInsightsWithFallback(`/${accountId}/insights`, params, creds.accessToken, campaignId ?? undefined),
-          metaFetchInsightsWithFallback(`/${accountId}/insights`, prevParams, creds.accessToken, campaignId ?? undefined),
-          metaFetch(`/${accountId}`, { fields: 'currency' }, creds.accessToken),
-        ]);
-        return { accountId, current, previous, currency: account?.currency ?? 'EUR' };
-      }));
-
-      const successfulAccounts = accountResults
-        .filter(isFulfilled)
-        .map((result) => result.value);
-
-      if (successfulAccounts.length === 0) {
-        throw (accountResults.find((result) => result.status === 'rejected') as PromiseRejectedResult)?.reason ?? new Error('Meta API error');
-      }
-
-      const currency: string = successfulAccounts.find((acct) => acct.currency)?.currency ?? 'EUR';
-
-      const daily = mergeMetaInsightsDailyByDate(successfulAccounts.flatMap((acct: any) => Array.isArray(acct.current?.data) ? acct.current.data : []));
-      const prevData = successfulAccounts.flatMap((acct: any) => {
-        const prevValue = acct.previous?.data;
-        if (Array.isArray(prevValue)) return prevValue;
-        return prevValue ? [prevValue] : [];
-      });
-      const prevD = calculateMetaInsightsPrev(prevData);
-      const summary = calculateMetaInsightsSummary(daily);
-
-      const result = {
-        success: true,
-        source: 'live',
-        cached: false,
-        accountId: creds.adAccountId,
-        accountIds: creds.adAccountIds,
-        currency,
-        period: { since, until, days },
-        summary,
-        changes: {
-          impressions: percentChange(summary.impressions, Number.parseFloat(prevD.impressions ?? 0)),
-          reach: percentChange(summary.reach, Number.parseFloat(prevD.reach ?? 0)),
-          clicks: percentChange(summary.clicks, Number.parseFloat(prevD.clicks ?? 0)),
-          spend: percentChange(summary.spend, Number.parseFloat(prevD.spend ?? 0)),
-          conversions: percentChange(summary.conversions, Number.parseFloat(prevD.conversions ?? 0)),
-        },
-        daily: daily.map((d: any) => ({
-          date: d.date_start,
-          impressions: Number.parseFloat(d.impressions || 0),
-          reach: Number.parseFloat(d.reach || 0),
-          clicks: Number.parseFloat(d.clicks || 0),
-          spend: Number.parseFloat(d.spend || 0),
-          ctr: Number.parseFloat(d.ctr || 0),
-          cpc: Number.parseFloat(d.cpc || 0),
-          cpm: Number.parseFloat(d.cpm || 0),
-          messagingConversationStarted: actionValue(d.actions, isMessagingConversationAction),
-        })),
-      };
-
-      await setMetaCache(adminClient, userId, `meta:insights:${days}`, result);
-      return sendJson(result);
-    } catch (e: any) {
-      const cached = await getMetaCache(adminClient, userId, `meta:insights:${days}`);
-      if (cached) {
-        return sendJson({
-          ...cached.data,
-          source: cached.data?.source || 'cache',
-          cached: true,
-          degraded: true,
-          accountId: creds.adAccountId,
-          accountIds: creds.adAccountIds,
-          last_success: cached.updated_at,
-          message: `Meta API error: ${e.message}. Showing cached data.`
-        });
-      }
-
-      return fetchMetaInsightsFallbackFromDb(adminClient, userId, creds.adAccountIds, since, until, days, creds, sendJson, e);
-    }
+    return await processMetaInsightsGet(adminClient, userId, url, sendJson);
   }
   return null;
+}
+
+async function processMetaInsightsGet(adminClient: any, userId: string, url: URL, sendJson: any): Promise<Response> {
+  const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
+  const validation = validateMetaCredentialResult(creds);
+  if (!validation.ok) {
+    const payload: any = { success: false, message: validation.message };
+    if (validation.statusCode === 400) payload.notConnected = creds.notConnected || !creds.adAccountId;
+    return sendJson(payload, validation.statusCode);
+  }
+
+  const { since, until, days, prevSince } = getMetaInsightsTimePeriods(url);
+  const campaignId = url.searchParams.get('campaign_id');
+  const fields = campaignId
+    ? 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,conversions,actions,cost_per_action_type,quality_ranking,engagement_rate_ranking,campaign_id'
+    : 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,frequency,conversions,actions,cost_per_action_type,quality_ranking,engagement_rate_ranking';
+
+  try {
+    const params = buildMetaInsightsParams(fields, since, until, campaignId);
+    const prevFields = campaignId ? 'impressions,reach,clicks,spend,conversions,campaign_id' : 'impressions,reach,clicks,spend,conversions';
+    const prevParams = buildMetaInsightsParams(prevFields, prevSince, since, campaignId);
+    delete prevParams.time_increment;
+
+    const accountResults = await Promise.allSettled(creds.adAccountIds.map(async (accountId: string) => {
+      const [current, previous, account] = await Promise.all([
+        metaFetchInsightsWithFallback(`/${accountId}/insights`, params, creds.accessToken, campaignId ?? undefined),
+        metaFetchInsightsWithFallback(`/${accountId}/insights`, prevParams, creds.accessToken, campaignId ?? undefined),
+        metaFetch(`/${accountId}`, { fields: 'currency' }, creds.accessToken),
+      ]);
+      return { accountId, current, previous, currency: account?.currency ?? 'EUR' };
+    }));
+
+    const successfulAccounts = accountResults
+      .filter(isFulfilled)
+      .map((result) => result.value);
+
+    if (successfulAccounts.length === 0) {
+      throw (accountResults.find((result) => result.status === 'rejected') as PromiseRejectedResult)?.reason ?? new Error('Meta API error');
+    }
+
+    const result = buildMetaInsightsLiveResult(successfulAccounts, creds, since, until, days);
+    await setMetaCache(adminClient, userId, `meta:insights:${days}`, result);
+    return sendJson(result);
+  } catch (e: any) {
+    const cached = await getMetaCache(adminClient, userId, `meta:insights:${days}`);
+    if (cached) {
+      return sendJson({
+        ...cached.data,
+        source: cached.data?.source || 'cache',
+        cached: true,
+        degraded: true,
+        accountId: creds.adAccountId,
+        accountIds: creds.adAccountIds,
+        last_success: cached.updated_at,
+        message: `Meta API error: ${e.message}. Showing cached data.`
+      });
+    }
+
+    return fetchMetaInsightsFallbackFromDb({ adminClient, userId, creds, since, until, days, sendJson, e });
+  }
 }
 
 async function persistMetaDailyInsights(adminClient: any, userId: string, adAccountId: string, accessToken: string, sinceDate: string, untilDate: string): Promise<number> {
@@ -3465,74 +3687,76 @@ function calculateFinancialMetrics(rows: any[]) {
 async function handleFinancialsSummary(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, url, sendJson } = ctx;
   if (resource === 'financials' && sub === 'summary') {
-    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
-    const clinicId = usr?.clinic_id;
-    if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
-
-    const fromParam = url.searchParams.get('from') ?? '';
-    const toParam = url.searchParams.get('to') ?? '';
-
-    let query = adminClient
-      .from('financial_settlements')
-      .select('amount_gross, amount_discount, amount_net, template_name, settled_at, intake_at, cancelled_at, source_system')
-      .eq('clinic_id', clinicId)
-      .eq('source_system', 'doctoralia')
-      .order('settled_at', { ascending: false });
-    if (fromParam) query = query.gte('settled_at', fromParam);
-    if (toParam) query = query.lte('settled_at', toParam);
-
-    const { data: rows } = await query;
-    const metrics = calculateFinancialMetrics(rows || []);
-    const { settled, totalNet } = metrics;
-  
-    // Template mix
-    const templateMap: Record<string, { count: number; net: number }> = {};
-    for (const r of settled) {
-      const t = r.template_name || 'Unknown';
-      if (!templateMap[t]) templateMap[t] = { count: 0, net: 0 };
-      templateMap[t].count++;
-      templateMap[t].net += Number(r.amount_net);
-    }
-    const templateMix = Object.entries(templateMap).map(([name, v]) => ({
-      name,
-      count: v.count,
-      net: Math.round(v.net * 100) / 100,
-      pct: Math.round((v.net / (totalNet || 1)) * 1000) / 10,
-    })).sort((a, b) => b.net - a.net);
-  
-    // Monthly trend (last 6 months)
-    const monthMap: Record<string, number> = {};
-    for (const r of settled) {
-      const m = r.settled_at?.slice(0, 7);
-      if (m) monthMap[m] = (monthMap[m] || 0) + Number(r.amount_net);
-    }
-    const monthly = Object.entries(monthMap)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([month, net]) => ({ month, net: Math.round(net * 100) / 100 }));
-  
-    return sendJson({
-      success: true,
-      summary: {
-        totalNet: Math.round(metrics.totalNet * 100) / 100,
-        totalGross: Math.round(metrics.totalGross * 100) / 100,
-        totalDiscount: Math.round(metrics.totalDiscount * 100) / 100,
-        avgTicket: Math.round(metrics.avgTicket * 100) / 100,
-        discountRate: Math.round(metrics.discountRate * 10) / 10,
-        cancellationRate: Math.round(metrics.cancellationRate * 10) / 10,
-        avgLiquidationDays: Math.round(metrics.avgLiquidationDays * 10) / 10,
-        settledCount: metrics.settledCount,
-        cancelledCount: metrics.cancelledCount,
-        operationsCount: metrics.operationsCount,
-      },
-      templateMix,
-      monthly,
-      diagnostics: {
-        reason: settled.length > 0 ? 'ok' : 'no_settlements',
-        clinicId,
-      },
-    });
+    return await processFinancialsSummary(adminClient, userId, url, sendJson);
   }
   return null;
+}
+
+async function processFinancialsSummary(adminClient: any, userId: string, url: URL, sendJson: any): Promise<Response> {
+  const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+  const clinicId = usr?.clinic_id;
+  if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
+
+  const fromParam = url.searchParams.get('from') ?? '';
+  const toParam = url.searchParams.get('to') ?? '';
+
+  let query = adminClient
+    .from('financial_settlements')
+    .select('amount_gross, amount_discount, amount_net, template_name, settled_at, intake_at, cancelled_at, source_system')
+    .eq('clinic_id', clinicId)
+    .eq('source_system', 'doctoralia')
+    .order('settled_at', { ascending: false });
+  if (fromParam) query = query.gte('settled_at', fromParam);
+  if (toParam) query = query.lte('settled_at', toParam);
+
+  const { data: rows } = await query;
+  const metrics = calculateFinancialMetrics(rows || []);
+  const { settled, totalNet } = metrics;
+
+  const templateMap: Record<string, { count: number; net: number }> = {};
+  for (const r of settled) {
+    const t = r.template_name || 'Unknown';
+    if (!templateMap[t]) templateMap[t] = { count: 0, net: 0 };
+    templateMap[t].count++;
+    templateMap[t].net += Number(r.amount_net);
+  }
+  const templateMix = Object.entries(templateMap).map(([name, v]) => ({
+    name,
+    count: v.count,
+    net: Math.round(v.net * 100) / 100,
+    pct: Math.round((v.net / (totalNet || 1)) * 1000) / 10,
+  })).sort((a, b) => b.net - a.net);
+
+  const monthMap: Record<string, number> = {};
+  for (const r of settled) {
+    const m = r.settled_at?.slice(7);
+    if (m) monthMap[m] = (monthMap[m] || 0) + Number(r.amount_net);
+  }
+  const monthly = Object.entries(monthMap)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([month, net]) => ({ month, net: Math.round(net * 100) / 100 }));
+
+  return sendJson({
+    success: true,
+    summary: {
+      totalNet: Math.round(metrics.totalNet * 100) / 100,
+      totalGross: Math.round(metrics.totalGross * 100) / 100,
+      totalDiscount: Math.round(metrics.totalDiscount * 100) / 100,
+      avgTicket: Math.round(metrics.avgTicket * 100) / 100,
+      discountRate: Math.round(metrics.discountRate * 10) / 10,
+      cancellationRate: Math.round(metrics.cancellationRate * 10) / 10,
+      avgLiquidationDays: Math.round(metrics.avgLiquidationDays * 10) / 10,
+      settledCount: metrics.settledCount,
+      cancelledCount: metrics.cancelledCount,
+      operationsCount: metrics.operationsCount,
+    },
+    templateMix,
+    monthly,
+    diagnostics: {
+      reason: settled.length > 0 ? 'ok' : 'no_settlements',
+      clinicId,
+    },
+  });
 }
 
 async function handleFinancialsSettlements(ctx: AuthenticatedRouteContext): Promise<Response | null> {
@@ -3844,83 +4068,96 @@ async function matchLeadByEmail(adminClient: any, userId: string, email: string)
   return lead ?? null;
 }
 
+async function findWhatsappConversionLead(adminClient: any, userId: string, phone: string, email: string) {
+  const normalizedPhone = normalizePhoneForMeta(phone);
+  let matchedLead = normalizedPhone
+    ? await matchLeadByPhone(adminClient, userId, normalizedPhone)
+    : null;
+  let leadMatchMethod: string | null = null;
+
+  if (!matchedLead && email) {
+    matchedLead = await matchLeadByEmail(adminClient, userId, email);
+    leadMatchMethod = matchedLead ? 'email' : null;
+  } else if (matchedLead) {
+    leadMatchMethod = 'phone';
+  }
+
+  return { matchedLead, leadMatchMethod };
+}
+
+async function updateLeadStageToWhatsapp(adminClient: any, userId: string, matchedLead: any): Promise<boolean> {
+  if (!matchedLead?.id) return false;
+  const currentStage = String(matchedLead.stage ?? 'lead').toLowerCase();
+  if (currentStage !== 'lead') return false;
+
+  const { error } = await adminClient
+    .from('leads')
+    .update({ stage: 'whatsapp', first_inbound_at: new Date().toISOString() })
+    .eq('id', matchedLead.id)
+    .eq('user_id', userId);
+
+  return !error;
+}
+
 async function handleWhatsappConversionPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'whatsapp' && sub === 'conversion' && req.method === 'POST') {
-    let body: any;
-    try {
-      body = await req.json();
-    } catch {
-      return sendJson({ success: false, message: 'Invalid JSON body' }, 400);
-    }
-
-    const phone = String(body.phone ?? '').trim();
-    const email = body.email ? String(body.email).trim() : '';
-    if (!phone && !email) {
-      return sendJson({ success: false, message: 'phone or email is required' }, 400);
-    }
-
-    const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
-    const validation = validateMetaCredentialResult(creds);
-    if (!validation.ok) {
-      return sendJson({ success: false, message: validation.message }, validation.statusCode);
-    }
-
-    try {
-      const result = await trackMetaWhatsappConversion(creds.accessToken, phone || null, email || null);
-      const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
-      const clinicId = usr?.clinic_id;
-      let matchedPatientId: string | null = null;
-      let matchedLeadId: string | null = null;
-      let leadStageUpdated = false;
-      let leadMatchMethod: string | null = null;
-
-      if (clinicId && phone) {
-        matchedPatientId = await matchPatientByPhone(adminClient, clinicId, normalizePhoneForMeta(phone));
-      }
-
-      const normalizedPhone = normalizePhoneForMeta(phone);
-      let matchedLead = normalizedPhone
-        ? await matchLeadByPhone(adminClient, userId, normalizedPhone)
-        : null;
-      if (!matchedLead && email) {
-        matchedLead = await matchLeadByEmail(adminClient, userId, email);
-        leadMatchMethod = 'email';
-      } else if (matchedLead) {
-        leadMatchMethod = 'phone';
-      }
-
-      if (matchedLead) {
-        matchedLeadId = matchedLead.id;
-        const currentStage = String(matchedLead.stage ?? 'lead').toLowerCase();
-        if (currentStage === 'lead') {
-          const updateData: any = { stage: 'whatsapp' };
-          const now = new Date().toISOString();
-          updateData.first_inbound_at = now;
-          const { error } = await adminClient
-            .from('leads')
-            .update(updateData)
-            .eq('id', matchedLeadId)
-            .eq('user_id', userId);
-          if (!error) leadStageUpdated = true;
-        }
-      }
-
-      return sendJson({
-        success: true,
-        result,
-        matchedPatientId,
-        matchedLeadId,
-        leadMatchMethod,
-        leadStageUpdated,
-        phone: phone || null,
-        email: email || null,
-      });
-    } catch (e: any) {
-      return sendJson({ success: false, message: e?.message ?? 'Meta pixel event failed' }, 502);
-    }
+    return await processWhatsappConversionPost(adminClient, userId, req, url, sendJson);
   }
   return null;
+}
+
+async function processWhatsappConversionPost(adminClient: any, userId: string, req: Request, url: URL, sendJson: any): Promise<Response> {
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return sendJson({ success: false, message: 'Invalid JSON body' }, 400);
+  }
+
+  const phone = String(body.phone ?? '').trim();
+  const email = body.email ? String(body.email).trim() : '';
+  if (!phone && !email) {
+    return sendJson({ success: false, message: 'phone or email is required' }, 400);
+  }
+
+  const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
+  const validation = validateMetaCredentialResult(creds);
+  if (!validation.ok) {
+    return sendJson({ success: false, message: validation.message }, validation.statusCode);
+  }
+
+  try {
+    const result = await trackMetaWhatsappConversion(creds.accessToken, phone || null, email || null);
+    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+    const clinicId = usr?.clinic_id;
+    let matchedPatientId: string | null = null;
+    let matchedLeadId: string | null = null;
+    let leadStageUpdated = false;
+
+    if (clinicId && phone) {
+      matchedPatientId = await matchPatientByPhone(adminClient, clinicId, normalizePhoneForMeta(phone));
+    }
+
+    const { matchedLead, leadMatchMethod } = await findWhatsappConversionLead(adminClient, userId, phone, email);
+    if (matchedLead) {
+      matchedLeadId = matchedLead.id;
+      leadStageUpdated = await updateLeadStageToWhatsapp(adminClient, userId, matchedLead);
+    }
+
+    return sendJson({
+      success: true,
+      result,
+      matchedPatientId,
+      matchedLeadId,
+      leadMatchMethod,
+      leadStageUpdated,
+      phone: phone || null,
+      email: email || null,
+    });
+  } catch (e: any) {
+    return sendJson({ success: false, message: e?.message ?? 'Meta pixel event failed' }, 502);
+  }
 }
 
 function getKpiDateRange(url: URL) {
@@ -3977,6 +4214,10 @@ function calculateVerifiedRevenueInRange(patientFirstSettlement: Record<string, 
 }
 
 async function fetchMetaKpis(adminClient: any, userId: string, url: URL, since: string, until: string, hasCachedMeta: boolean, cachedMetrics: any) {
+  return await loadMetaKpis(adminClient, userId, url, since, until, hasCachedMeta, cachedMetrics);
+}
+
+async function loadMetaKpis(adminClient: any, userId: string, url: URL, since: string, until: string, hasCachedMeta: boolean, cachedMetrics: any) {
   const metaResult = { spend: 0, leads: 0, impressions: 0, clicks: 0, ctr: 0, cpc: 0, live: false, message: '', data_source: 'none' } as any;
   try {
     const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
@@ -4036,15 +4277,16 @@ function determineKpiDataQuality(metaResult: any, crmLeads: number, settlementsC
   const leadsReal = crmLeads > 0;
   const doctoraliaSettlementsReal = settlementsCount > 0;
   const doctoraliaMatchingReal = newVerifiedPatients > 0;
-  const hasAnyRealMetric = doctoraliaSettlementsReal || metaSpendReal || leadsReal;
 
-  let overallMode = 'full_demo';
-  if (metaSpendReal && leadsReal && doctoraliaSettlementsReal) overallMode = 'full_real';
-  else if (hasAnyRealMetric) overallMode = 'partial_demo';
+  const overallMode = metaSpendReal && leadsReal && doctoraliaSettlementsReal
+    ? 'full_real'
+    : (metaSpendReal || leadsReal || doctoraliaSettlementsReal)
+      ? 'partial_demo'
+      : 'full_demo';
 
-  let cacConfidence = 'low';
-  if (metaSpendReal && doctoraliaMatchingReal) cacConfidence = 'high';
-  else if (doctoraliaMatchingReal) cacConfidence = 'medium';
+  const cacConfidence = doctoraliaMatchingReal
+    ? (metaSpendReal ? 'high' : 'medium')
+    : 'low';
 
   return {
     metaSpendReal,
@@ -4052,115 +4294,119 @@ function determineKpiDataQuality(metaResult: any, crmLeads: number, settlementsC
     doctoraliaSettlementsReal,
     doctoraliaMatchingReal,
     overallMode,
-    cacConfidence
+    cacConfidence,
   };
 }
 
 async function handleKpisGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'kpis' && sub === '' && req.method === 'GET') {
-    const { since, until, period } = getKpiDateRange(url);
-
-    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
-    const clinicId = usr?.clinic_id;
-    if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
-
-    const metaSources = ['meta_leadgen', 'meta_lead_gen', 'facebook_leadgen'];
-    const [leadCountRes, leadMetaCountRes, leadsByStageRes, settlementsRes, metaDailyInsightsRes] = await Promise.all([
-      adminClient.from('leads').select('id', { count: 'exact', head: true }).eq('user_id', userId).gte('created_at', since).lte('created_at', until),
-      adminClient.from('leads').select('id', { count: 'exact', head: true }).eq('user_id', userId).in('source', metaSources).gte('created_at', since).lte('created_at', until),
-      adminClient.from('leads').select('stage').eq('user_id', userId).gte('created_at', since).lte('created_at', until),
-      adminClient.from('financial_settlements').select('id, patient_id, dni_hash, amount_net, cancelled_at, settled_at, source_system').eq('clinic_id', clinicId).eq('source_system', 'doctoralia').is('cancelled_at', null).gt('amount_net', 0).order('settled_at', { ascending: true }),
-      adminClient.from('meta_daily_insights').select('date, spend, impressions, clicks, conversions, ctr, cpc').eq('user_id', userId).gte('date', since).lte('date', until),
-    ]);
-
-    if (leadCountRes.error) throw leadCountRes.error;
-    if (leadMetaCountRes.error) throw leadMetaCountRes.error;
-    if (settlementsRes.error) throw settlementsRes.error;
-
-    const crmLeads = leadCountRes.count ?? 0;
-    const metaLeads = leadMetaCountRes.count ?? 0;
-    const byStage = processLeadsByStage(leadsByStageRes.data ?? []);
-
-    const conversionRateLeadToAppointment = (byStage['lead'] + byStage['whatsapp']) > 0
-      ? Number.parseFloat(((byStage['appointment'] / (byStage['lead'] + byStage['whatsapp'])) * 100).toFixed(1))
-      : 0;
-
-    const cachedInsights = metaDailyInsightsRes.data ?? [];
-    const hasCachedMeta = cachedInsights.length > 0;
-    const settlements = (settlementsRes.data ?? []).filter((r: any) => r.settled_at && Number(r.amount_net) > 0);
-
-    const { patientFirstSettlement, firstSettlementRows } = identifyUniquePatients(settlements);
-    const { verifiedPatientIds, verifiedRevenue } = calculateVerifiedRevenueInRange(patientFirstSettlement, firstSettlementRows, since, until);
-
-    const cachedMetrics = {
-      spend: cachedInsights.reduce((s: number, r: any) => s + Number(r.spend ?? 0), 0),
-      conversions: cachedInsights.reduce((s: number, r: any) => s + Number(r.conversions ?? 0), 0),
-      impressions: cachedInsights.reduce((s: number, r: any) => s + Number(r.impressions ?? 0), 0),
-      clicks: cachedInsights.reduce((s: number, r: any) => s + Number(r.clicks ?? 0), 0),
-    };
-
-    const metaResult = await fetchMetaKpis(adminClient, userId, url, since, until, hasCachedMeta, cachedMetrics);
-
-    const newVerifiedPatients = verifiedPatientIds.size;
-    const verifiedRevenueRounded = Number.parseFloat(verifiedRevenue.toFixed(2));
-    const avgTicket = newVerifiedPatients > 0 ? Number.parseFloat((verifiedRevenueRounded / newVerifiedPatients).toFixed(2)) : null;
-    const cacDoctoralia = newVerifiedPatients > 0 ? Number.parseFloat((metaResult.spend / newVerifiedPatients).toFixed(2)) : null;
-    const metaCpl = metaResult.leads > 0 ? Number.parseFloat((metaResult.spend / metaResult.leads).toFixed(2)) : null;
-
-    const {
-      metaSpendReal,
-      leadsReal,
-      doctoraliaSettlementsReal,
-      doctoraliaMatchingReal,
-      overallMode,
-      cacConfidence
-    } = determineKpiDataQuality(metaResult, crmLeads, settlements.length, newVerifiedPatients);
-
-    return sendJson({
-      success: true,
-      period,
-      meta: {
-        spend: metaResult.spend,
-        leads: metaResult.leads,
-        cpl: metaCpl,
-        impressions: metaResult.impressions,
-        clicks: metaResult.clicks,
-        ctr: metaResult.ctr,
-        cpc: metaResult.cpc,
-        live: metaResult.live,
-        message: metaResult.message,
-        data_source: metaResult.data_source,
-        is_real: metaSpendReal,
-      },
-      crm: {
-        totalLeads: crmLeads,
-        metaLeads,
-        by_stage: byStage,
-        conversion_rate_lead_to_appointment: conversionRateLeadToAppointment,
-        is_real: leadsReal,
-      },
-      doctoralia: {
-        total_settlements: settlements.length,
-        newVerifiedPatients,
-        verifiedRevenue: verifiedRevenueRounded,
-        avgTicket,
-        cacDoctoralia,
-        cac_formula: 'meta_spend / new_verified_patients',
-        cac_confidence: cacConfidence,
-        is_real: doctoraliaSettlementsReal,
-        data_source: 'financial_settlements',
-      },
-      data_quality: {
-        leads_real: leadsReal,
-        meta_spend_real: metaSpendReal,
-        doctoralia_settlements_real: doctoraliaSettlementsReal,
-        doctoralia_matching_real: doctoraliaMatchingReal,
-        overall_mode: overallMode,
-      },
-    });
+    return await processKpisGet(adminClient, userId, url, sendJson);
   }
   return null;
+}
+
+async function processKpisGet(adminClient: any, userId: string, url: URL, sendJson: any): Promise<Response> {
+  const { since, until, period } = getKpiDateRange(url);
+
+  const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+  const clinicId = usr?.clinic_id;
+  if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
+
+  const metaSources = ['meta_leadgen', 'meta_lead_gen', 'facebook_leadgen'];
+  const [leadCountRes, leadMetaCountRes, leadsByStageRes, settlementsRes, metaDailyInsightsRes] = await Promise.all([
+    adminClient.from('leads').select('id', { count: 'exact', head: true }).eq('user_id', userId).gte('created_at', since).lte('created_at', until),
+    adminClient.from('leads').select('id', { count: 'exact', head: true }).eq('user_id', userId).in('source', metaSources).gte('created_at', since).lte('created_at', until),
+    adminClient.from('leads').select('stage').eq('user_id', userId).gte('created_at', since).lte('created_at', until),
+    adminClient.from('financial_settlements').select('id, patient_id, dni_hash, amount_net, cancelled_at, settled_at, source_system').eq('clinic_id', clinicId).eq('source_system', 'doctoralia').is('cancelled_at', null).gt('amount_net', 0).order('settled_at', { ascending: true }),
+    adminClient.from('meta_daily_insights').select('date, spend, impressions, clicks, conversions, ctr, cpc').eq('user_id', userId).gte('date', since).lte('date', until),
+  ]);
+
+  if (leadCountRes.error) throw leadCountRes.error;
+  if (leadMetaCountRes.error) throw leadMetaCountRes.error;
+  if (settlementsRes.error) throw settlementsRes.error;
+
+  const crmLeads = leadCountRes.count ?? 0;
+  const metaLeads = leadMetaCountRes.count ?? 0;
+  const byStage = processLeadsByStage(leadsByStageRes.data ?? []);
+
+  const conversionRateLeadToAppointment = (byStage['lead'] + byStage['whatsapp']) > 0
+    ? Number.parseFloat(((byStage['appointment'] / (byStage['lead'] + byStage['whatsapp'])) * 100).toFixed(1))
+    : 0;
+
+  const cachedInsights = metaDailyInsightsRes.data ?? [];
+  const hasCachedMeta = cachedInsights.length > 0;
+  const settlements = (settlementsRes.data ?? []).filter((r: any) => r.settled_at && Number(r.amount_net) > 0);
+
+  const { patientFirstSettlement, firstSettlementRows } = identifyUniquePatients(settlements);
+  const { verifiedPatientIds, verifiedRevenue } = calculateVerifiedRevenueInRange(patientFirstSettlement, firstSettlementRows, since, until);
+
+  const cachedMetrics = {
+    spend: cachedInsights.reduce((s: number, r: any) => s + Number(r.spend ?? 0), 0),
+    conversions: cachedInsights.reduce((s: number, r: any) => s + Number(r.conversions ?? 0), 0),
+    impressions: cachedInsights.reduce((s: number, r: any) => s + Number(r.impressions ?? 0), 0),
+    clicks: cachedInsights.reduce((s: number, r: any) => s + Number(r.clicks ?? 0), 0),
+  };
+
+  const metaResult = await fetchMetaKpis(adminClient, userId, url, since, until, hasCachedMeta, cachedMetrics);
+
+  const newVerifiedPatients = verifiedPatientIds.size;
+  const verifiedRevenueRounded = Number.parseFloat(verifiedRevenue.toFixed(2));
+  const avgTicket = newVerifiedPatients > 0 ? Number.parseFloat((verifiedRevenueRounded / newVerifiedPatients).toFixed(2)) : null;
+  const cacDoctoralia = newVerifiedPatients > 0 ? Number.parseFloat((metaResult.spend / newVerifiedPatients).toFixed(2)) : null;
+  const metaCpl = metaResult.leads > 0 ? Number.parseFloat((metaResult.spend / metaResult.leads).toFixed(2)) : null;
+
+  const {
+    metaSpendReal,
+    leadsReal,
+    doctoraliaSettlementsReal,
+    doctoraliaMatchingReal,
+    overallMode,
+    cacConfidence
+  } = determineKpiDataQuality(metaResult, crmLeads, settlements.length, newVerifiedPatients);
+
+  return sendJson({
+    success: true,
+    period,
+    meta: {
+      spend: metaResult.spend,
+      leads: metaResult.leads,
+      cpl: metaCpl,
+      impressions: metaResult.impressions,
+      clicks: metaResult.clicks,
+      ctr: metaResult.ctr,
+      cpc: metaResult.cpc,
+      live: metaResult.live,
+      message: metaResult.message,
+      data_source: metaResult.data_source,
+      is_real: metaSpendReal,
+    },
+    crm: {
+      totalLeads: crmLeads,
+      metaLeads,
+      by_stage: byStage,
+      conversion_rate_lead_to_appointment: conversionRateLeadToAppointment,
+      is_real: leadsReal,
+    },
+    doctoralia: {
+      total_settlements: settlements.length,
+      newVerifiedPatients,
+      verifiedRevenue: verifiedRevenueRounded,
+      avgTicket,
+      cacDoctoralia,
+      cac_formula: 'meta_spend / new_verified_patients',
+      cac_confidence: cacConfidence,
+      is_real: doctoraliaSettlementsReal,
+      data_source: 'financial_settlements',
+    },
+    data_quality: {
+      leads_real: leadsReal,
+      meta_spend_real: metaSpendReal,
+      doctoralia_settlements_real: doctoraliaSettlementsReal,
+      doctoralia_matching_real: doctoraliaMatchingReal,
+      overall_mode: overallMode,
+    },
+  });
 }
 
 function aggregateDoctoraliaTemplates(templateRows: any[]) {
@@ -4227,8 +4473,8 @@ async function handleReportsDoctoraliaFinancialsGet(ctx: AuthenticatedRouteConte
     if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
 
     // settled_month is 'YYYY-MM'; compare date params truncated to 7 chars
-    const fromMonth = (url.searchParams.get('from') ?? '').slice(0, 7);
-    const toMonth   = (url.searchParams.get('to')   ?? '').slice(0, 7);
+    const fromMonth = (url.searchParams.get('from') ?? '').slice(7);
+    const toMonth   = (url.searchParams.get('to')   ?? '').slice(7);
 
     // vw_doctoralia_financials: rows are already aggregated per template × month by the DB view
     let templateQ = adminClient
@@ -4425,8 +4671,8 @@ function json(data: unknown, status = 200, extraHeaders: Record<string, string> 
     Object.entries(payload).filter(([key]) => !['success', 'data', 'error', 'message'].includes(key)),
   );
 
-  if (!Object.prototype.hasOwnProperty.call(payload, 'success')) payload.success = Boolean(success);
-  if (!Object.prototype.hasOwnProperty.call(payload, 'data')) {
+  if (!hasOwn(payload, 'success')) payload.success = Boolean(success);
+  if (!hasOwn(payload, 'data')) {
     payload.data = Object.keys(derivedData).length > 0 ? derivedData : null;
   }
   if (payload.error === undefined) {
