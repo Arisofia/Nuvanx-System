@@ -64,8 +64,13 @@ function normalizeAdAccountIds(raw) {
     .filter(Boolean);
 }
 
-const rawAccounts = rawAccountsEnv ?? rawAccount;
+const rawAccounts = rawAccount || rawAccountsEnv;
 const adAccountIds = normalizeAdAccountIds(rawAccounts);
+
+function safeNumber(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : 0;
+}
 
 // ─── Validation ─────────────────────────────────────────────────────────────
 if (!token || adAccountIds.length === 0 || !databaseUrl) {
@@ -80,12 +85,13 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-async function metaFetch(endpoint, params, attempt = 1) {
+async function metaFetch(endpoint, params = {}, accessTokenOverride, attempt = 1) {
   const url = new URL(`${META_GRAPH}${endpoint}`);
-  url.searchParams.set('access_token', token);
+  const accessToken = accessTokenOverride || token;
+  url.searchParams.set('access_token', accessToken);
 
   if (appSecret) {
-    const proof = crypto.createHmac('sha256', appSecret).update(token).digest('hex');
+    const proof = crypto.createHmac('sha256', appSecret).update(accessToken).digest('hex');
     url.searchParams.set('appsecret_proof', proof);
   }
 
@@ -193,6 +199,45 @@ async function resolveReportUserId(db) {
   );
 }
 
+async function resolveMetaPageId(db, userId) {
+  if (process.env.META_PAGE_ID) return process.env.META_PAGE_ID;
+
+  const { rows } = await db.query(
+    `SELECT metadata->>'pageId' AS page_id,
+            metadata->>'page_id' AS page_id_alt
+     FROM public.integrations
+     WHERE service = 'meta'
+       AND user_id = $1
+     LIMIT 1`,
+    [userId]
+  );
+  const row = rows[0] || {};
+  return row.page_id || row.page_id_alt || null;
+}
+
+async function resolvePageAccessToken(pageId) {
+  const url = new URL(`${META_GRAPH}/me/accounts`);
+  url.searchParams.set('access_token', token);
+  if (appSecret) {
+    const proof = crypto.createHmac('sha256', appSecret).update(token).digest('hex');
+    url.searchParams.set('appsecret_proof', proof);
+  }
+  url.searchParams.set('fields', 'id,name,access_token');
+  url.searchParams.set('limit', '50');
+
+  const response = await fetch(url.toString(), { signal: AbortSignal.timeout(30000) });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(`[Meta Error] ${data?.error?.message ?? response.statusText}`);
+  }
+
+  const page = (Array.isArray(data?.data) ? data.data : []).find((item) => String(item.id) === String(pageId));
+  if (!page || !page.access_token) {
+    throw new Error(`Page access token not found for Page ID ${pageId}`);
+  }
+  return page.access_token;
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   // Trim to handle GitHub Actions passing empty-string '' for unset inputs.
@@ -252,14 +297,14 @@ async function main() {
         user_id:                 reportUserId,
         ad_account_id:           adAccountId,
         date:                    row.date_start,
-        impressions:             Number(row.impressions ?? 0),
-        reach:                   Number(row.reach ?? 0),
-        clicks:                  Number(row.clicks ?? 0),
-        spend:                   Number(row.spend ?? 0),
-        conversions:             Number(row.conversions ?? getAction(row.actions, 'lead') ?? 0),
-        ctr:                     Number(row.ctr ?? 0),
-        cpc:                     Number(row.cpc ?? 0),
-        cpm:                     Number(row.cpm ?? 0),
+        impressions:             safeNumber(row.impressions),
+        reach:                   safeNumber(row.reach),
+        clicks:                  safeNumber(row.clicks),
+        spend:                   safeNumber(row.spend),
+        conversions:             safeNumber(row.conversions ?? getAction(row.actions, 'lead') ?? 0),
+        ctr:                     safeNumber(row.ctr),
+        cpc:                     safeNumber(row.cpc),
+        cpm:                     safeNumber(row.cpm),
         messaging_conversations: getAction(row.actions, 'onsite_conversion.messaging_conversation_started_7d'),
         updated_at:              new Date().toISOString(),
       }));
@@ -287,6 +332,10 @@ async function main() {
         totalUpserted++;
       }
       console.log(`[meta-backfill] ✓ Upserted ${upsertRows.length} rows into meta_daily_insights for ${adAccountId}`);
+
+      const sinceTs = Math.floor(new Date(`${since}T00:00:00Z`).getTime() / 1000);
+      const leadRows = await ingestMetaLeadsFromForms(db, reportUserId, adAccountId, sinceTs);
+      console.log(`[meta-backfill] ✓ Ingested ${leadRows} leads into public.leads for ${adAccountId}`);
     } catch (err) {
       console.error(`[meta-backfill] Failed to backfill ${adAccountId}:`, err.message ?? err);
       firstError = firstError || err;
@@ -299,6 +348,189 @@ async function main() {
     throw firstError;
   }
   console.log(`[meta-backfill] ✓ Upserted ${totalUpserted} rows into meta_daily_insights`);
+}
+
+async function ingestMetaLeadsFromForms(db, userId, adAccountId, sinceTs) {
+  let totalFetched = 0;
+  const pageId = await resolveMetaPageId(db, userId);
+  if (!pageId) {
+    console.warn('[meta-backfill] No META_PAGE_ID configured and no pageId found in integrations metadata. Skipping lead ingestion.');
+    return 0;
+  }
+  const pageToken = await resolvePageAccessToken(pageId);
+  const formsRes = await metaFetch(`/${pageId}/leadgen_forms`, {
+    fields: 'id,name',
+    limit: '50',
+  }, pageToken);
+
+  for (const form of (formsRes?.data ?? [])) {
+    try {
+      const leadsRes = await metaFetch(`/${form.id}/leads`, {
+        fields: 'id,field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,campaign_name,adset_id,adset_name,page_id',
+        filtering: JSON.stringify([{ field: 'time_created', operator: 'GREATER_THAN', value: sinceTs }]),
+        limit: '500',
+      }, pageToken);
+
+      for (const leadData of (leadsRes?.data ?? [])) {
+        try {
+          const success = await processLeadData(db, userId, leadData);
+          if (success) totalFetched++;
+        } catch (leadError) {
+          console.warn(`[meta-backfill] Skipping lead ${leadData?.id ?? '(unknown)'} from form ${form?.id}:`, leadError?.message ?? leadError);
+        }
+      }
+    } catch (formError) {
+      console.warn(`[meta-backfill] Meta lead ingestion failed for form ${form?.id}:`, formError?.message ?? formError);
+    }
+  }
+
+  return totalFetched;
+}
+
+function resolveLeadName(fields, leadgen_id) {
+  const firstName = fields['first_name'] ?? fields['nombre'] ?? fields['nombre1'] ?? '';
+  const lastName = fields['last_name'] ?? fields['apellido'] ?? fields['apellidos'] ?? '';
+  const explicitName = fields['full_name'] ?? fields['nombre_completo'] ?? fields['nombre'] ?? fields['name'] ?? '';
+
+  if (explicitName) return explicitName;
+  if (firstName && lastName) return `${firstName} ${lastName}`;
+  if (firstName) return firstName;
+  if (lastName) return lastName;
+  return `Lead ${leadgen_id.slice(-6)}`;
+}
+
+function extractMetaLeadCustomerInfo(fieldData) {
+  return (Array.isArray(fieldData) ? fieldData : []).reduce((acc, item) => {
+    const key = String(item?.name ?? item?.field_name ?? item?.key ?? '').trim();
+    if (!key) return acc;
+    let value = '';
+    if (Array.isArray(item?.values) && item.values.length > 0) {
+      value = String(item.values[0] ?? '').trim();
+    } else if (item?.value !== undefined && item?.value !== null) {
+      value = String(item.value).trim();
+    }
+    if (value) acc[key] = value;
+    return acc;
+  }, {});
+}
+
+function classifyMetaLeadTag(fields) {
+  const normalized = Object.values(fields).join(' ').toLowerCase();
+  return normalized.includes('botox') ? 'neuromodulador/botox' : 'general';
+}
+
+async function processLeadData(db, userId, leadData) {
+  const fields = {};
+  for (const f of (leadData.field_data ?? [])) {
+    fields[(f.name ?? '').toLowerCase()] = f.values?.[0] ?? '';
+  }
+
+  const leadDataFields = extractMetaLeadCustomerInfo(leadData.field_data ?? []);
+  const tag = classifyMetaLeadTag(leadDataFields);
+
+  const leadgen_id = leadData.id;
+  const leadName = resolveLeadName(fields, leadgen_id);
+  const email = fields['email'] ?? null;
+  const phone = fields['phone_number'] ?? fields['telefono'] ?? fields['phone'] ?? null;
+  const dni = fields['dni'] ?? fields['nif'] ?? fields['national_id'] ?? null;
+
+  const KNOWN_STANDARD = new Set([
+    'full_name', 'nombre_completo', 'nombre', 'name', 'first_name', 'last_name',
+    'email', 'phone_number', 'telefono', 'phone', 'dni', 'nif', 'national_id',
+  ]);
+  const customFields = Object.fromEntries(
+    Object.entries(fields).filter(([k]) => !KNOWN_STANDARD.has(k))
+  );
+  if (tag !== 'general') {
+    customFields.meta_tag = tag;
+  }
+  const notes = Object.keys(customFields).length > 0 ? JSON.stringify(customFields) : null;
+
+  const HIGH_PRIORITY_KEYWORDS = /botox|bótox|neuromodulador|toxina\s*botulínica|botulínica|relleno|hialu|hialurón|rinomodelación|bichectomía|lifting/i;
+  const allValues = Object.values(fields).join(' ') + ' ' + (notes ?? '');
+  const priority = HIGH_PRIORITY_KEYWORDS.test(allValues) ? 'high' : 'normal';
+
+  let createdAt;
+  try {
+    const rawTime = leadData.created_time;
+    if (!rawTime) {
+      createdAt = new Date().toISOString();
+    } else if (typeof rawTime === 'number') {
+      createdAt = new Date(rawTime * 1000).toISOString();
+    } else if (typeof rawTime === 'string' && /^\d+$/.test(rawTime)) {
+      createdAt = new Date(Number(rawTime) * 1000).toISOString();
+    } else {
+      const d = new Date(rawTime);
+      createdAt = Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+    }
+  } catch {
+    createdAt = new Date().toISOString();
+  }
+
+  const { rows: existingLeadRows } = await db.query(
+    `SELECT id FROM public.leads WHERE user_id = $1 AND source = 'meta_leadgen' AND external_id = $2 LIMIT 1`,
+    [userId, leadgen_id]
+  );
+  if (existingLeadRows.length > 0) {
+    return false;
+  }
+
+  const leadResult = await db.query(`
+    INSERT INTO public.leads
+      (user_id, external_id, source, name, email, phone, dni, notes, priority,
+       stage, campaign_id, campaign_name, adset_id, adset_name, ad_id, ad_name,
+       form_id, form_name, created_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+    RETURNING id
+  `, [
+    userId,
+    leadgen_id,
+    'meta_leadgen',
+    leadName,
+    email,
+    phone,
+    dni || null,
+    notes || null,
+    priority,
+    'lead',
+    leadData.campaign_id ?? null,
+    leadData.campaign_name ?? null,
+    leadData.adset_id ?? null,
+    leadData.adset_name ?? null,
+    leadData.ad_id ?? null,
+    leadData.ad_name ?? null,
+    leadData.form_id ?? null,
+    leadData.form_name ?? null,
+    createdAt,
+  ]);
+
+  const insertedLead = leadResult?.rows?.[0]?.id;
+  if (insertedLead) {
+    await db.query(`
+      DELETE FROM public.meta_attribution
+       WHERE leadgen_id = $1
+    `, [leadgen_id]);
+
+    await db.query(`
+      INSERT INTO public.meta_attribution
+        (lead_id, leadgen_id, page_id, form_id, campaign_id, campaign_name,
+         adset_id, adset_name, ad_id, ad_name)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+    `, [
+      insertedLead,
+      leadgen_id,
+      leadData.page_id ?? null,
+      leadData.form_id ?? null,
+      leadData.campaign_id ?? null,
+      leadData.campaign_name ?? null,
+      leadData.adset_id ?? null,
+      leadData.adset_name ?? null,
+      leadData.ad_id ?? null,
+      leadData.ad_name ?? null,
+    ]);
+    return true;
+  }
+  return false;
 }
 
 main().catch((err) => {
