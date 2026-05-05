@@ -525,8 +525,19 @@ export default function Marketing() {
   const [campaignId, setCampaignId] = useState<string>('ALL')
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'PAUSED' | 'ARCHIVED'>('ALL')
   const [search, setSearch] = useState('')
-  const [activeTab, setActiveTab] = useState<'campaigns' | 'ads'>('campaigns')
+  const [activeTab, setActiveTab] = useState<'campaigns' | 'ads' | 'organic'>('campaigns')
   const [adsState, adsDispatch] = useReducer(adsReducer, initialAdsState)
+
+  // ── Organic (Page) data ───────────────────────────────────────────────
+  const [organicLoading, setOrganicLoading] = useState(false)
+  const [organicError, setOrganicError] = useState<string | null>(null)
+  const [organicSummary, setOrganicSummary] = useState<{
+    impressions: number; reach: number; engagements: number;
+    video_views: number; page_views: number; reactions: number;
+  } | null>(null)
+  const [organicDaily, setOrganicDaily] = useState<Array<{ date: string; impressions: number; engagements: number; video_views: number; reactions: number }>>([])
+  const [organicPosts, setOrganicPosts] = useState<Array<any>>([])
+  const [organicKeyword, setOrganicKeyword] = useState('')
 
   const state = useMarketingData(days, campaignId, customFrom, customTo)
 
@@ -559,6 +570,36 @@ export default function Marketing() {
     if (activeTab !== 'ads' || adsState.loaded) return
     fetchAds()
   }, [activeTab, adsState.loaded, fetchAds])
+
+  // ── Fetch organic Page insights (daily series + posts) ────────────────
+  const fetchOrganic = useCallback(async (kw: string = '') => {
+    setOrganicLoading(true)
+    setOrganicError(null)
+    try {
+      const dailyParams = new URLSearchParams({ days: String(days) }).toString()
+      const postsParams = new URLSearchParams({ limit: '50', ...(kw ? { keyword: kw } : {}) }).toString()
+      const [dailyRes, postsRes]: any[] = await Promise.all([
+        invokeApi(`/meta/organic/daily?${dailyParams}`),
+        invokeApi(`/meta/organic/posts?${postsParams}`),
+      ])
+      if (!mountedRef.current) return
+      setOrganicSummary(dailyRes?.summary ?? null)
+      setOrganicDaily(Array.isArray(dailyRes?.daily) ? dailyRes.daily : [])
+      setOrganicPosts(Array.isArray(postsRes?.posts) ? postsRes.posts : [])
+    } catch (err: any) {
+      if (!mountedRef.current) return
+      setOrganicError(err?.message ?? 'Error cargando datos orgánicos.')
+    } finally {
+      if (mountedRef.current) setOrganicLoading(false)
+    }
+  }, [days])
+
+  // Fetch organic on demand + when days change while tab open
+  useEffect(() => {
+    if (activeTab !== 'organic') return
+    fetchOrganic(organicKeyword)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, days])
 
   const { summary, changes, daily, campaigns, currency, accountIds, period, loading, error } = state
 
@@ -804,9 +845,9 @@ export default function Marketing() {
         </Card>
       )}
 
-      {/* ── Tab switcher: Campañas / Anuncios ─────────────────────── */}
+      {/* ── Tab switcher: Campañas / Anuncios / Orgánico ──────────── */}
       <div className="flex gap-1 bg-card border border-border rounded-lg p-1 w-fit">
-        {(['campaigns', 'ads'] as const).map((tab) => (
+        {(['campaigns', 'ads', 'organic'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -814,7 +855,7 @@ export default function Marketing() {
               activeTab === tab ? 'bg-primary/15 text-foreground' : 'text-muted hover:text-foreground'
             }`}
           >
-            {tab === 'campaigns' ? 'Campañas' : 'Por anuncio'}
+            {{ campaigns: 'Campañas', ads: 'Por anuncio', organic: 'Orgánico' }[tab]}
           </button>
         ))}
       </div>
@@ -902,6 +943,127 @@ export default function Marketing() {
             <AdsTable adsState={adsState} currency={currency} />
           </CardContent>
         </Card>
+      )}
+
+      {activeTab === 'organic' && (
+        <div className="space-y-4">
+          {organicError && (
+            <Card><CardContent className="p-4 text-sm text-red-400">{organicError}</CardContent></Card>
+          )}
+
+          {/* Summary cards */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            {[
+              { label: 'Alcance único', value: organicSummary?.reach ?? 0 },
+              { label: 'Interacciones', value: organicSummary?.engagements ?? 0 },
+              { label: 'Vistas página', value: organicSummary?.page_views ?? 0 },
+              { label: 'Vistas video', value: organicSummary?.video_views ?? 0 },
+              { label: 'Reacciones', value: organicSummary?.reactions ?? 0 },
+              { label: 'Posts (90d)', value: organicPosts.length },
+            ].map((m) => (
+              <Card key={m.label}>
+                <CardContent className="p-3">
+                  <div className="text-xs text-muted">{m.label}</div>
+                  <div className="text-xl font-semibold text-foreground mt-1">
+                    {organicLoading ? '…' : Number(m.value).toLocaleString('es-MX')}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Daily area chart */}
+          <Card>
+            <CardHeader><CardTitle>Tendencia orgánica diaria</CardTitle></CardHeader>
+            <CardContent style={{ height: 260 }}>
+              {organicLoading && <p className="text-sm text-muted">Cargando…</p>}
+              {!organicLoading && organicDaily.length === 0 && (
+                <p className="text-sm text-muted">Sin datos en el período seleccionado.</p>
+              )}
+              {!organicLoading && organicDaily.length > 0 && (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={organicDaily}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
+                    <XAxis dataKey="date" stroke="#8a8a8a" tick={{ fontSize: 11 }} />
+                    <YAxis stroke="#8a8a8a" tick={{ fontSize: 11 }} />
+                    <Tooltip />
+                    <Legend />
+                    <Area type="monotone" dataKey="impressions" name="Alcance" stroke="#9F8A75" fill="#9F8A7544" />
+                    <Area type="monotone" dataKey="engagements" name="Interacciones" stroke="#7A7573" fill="#7A757344" />
+                    <Area type="monotone" dataKey="video_views" name="Video views" stroke="#C9B498" fill="#C9B49844" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Posts table with keyword filter */}
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                <CardTitle className="flex-1">Posts orgánicos (top 50)</CardTitle>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Filtrar por palabra (ej. co2)…"
+                    value={organicKeyword}
+                    onChange={(e) => setOrganicKeyword(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') fetchOrganic(organicKeyword) }}
+                    className="bg-card border border-border text-sm text-foreground placeholder-muted rounded-lg px-3 py-1.5 w-56 focus:outline-none focus:border-muted"
+                  />
+                  <button
+                    onClick={() => fetchOrganic(organicKeyword)}
+                    className="px-3 py-1.5 rounded-lg bg-primary/15 text-foreground text-sm hover:bg-primary/25"
+                  >Filtrar</button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 overflow-x-auto">
+              {organicLoading && <p className="p-4 text-sm text-muted">Cargando posts…</p>}
+              {!organicLoading && organicPosts.length === 0 && (
+                <p className="p-4 text-sm text-muted">Sin posts.</p>
+              )}
+              {!organicLoading && organicPosts.length > 0 && (
+                <table className="w-full text-sm">
+                  <thead className="bg-card/40 text-xs text-muted">
+                    <tr>
+                      <th className="text-left px-3 py-2">Fecha</th>
+                      <th className="text-left px-3 py-2">Mensaje</th>
+                      <th className="text-left px-3 py-2">Tipo</th>
+                      <th className="text-right px-3 py-2">Alcance</th>
+                      <th className="text-right px-3 py-2">Interacc.</th>
+                      <th className="text-right px-3 py-2">Reacc.</th>
+                      <th className="text-right px-3 py-2">Video views</th>
+                      <th className="text-left px-3 py-2">Link</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {organicPosts.map((p) => (
+                      <tr key={p.post_id} className="border-t border-border/50">
+                        <td className="px-3 py-2 whitespace-nowrap text-muted">
+                          {p.created_time ? new Date(p.created_time).toISOString().slice(0, 10) : '—'}
+                        </td>
+                        <td className="px-3 py-2 max-w-md truncate" title={p.message ?? ''}>
+                          {p.message ?? '—'}
+                        </td>
+                        <td className="px-3 py-2 text-muted">{p.is_video ? 'Video' : (p.status_type ?? '—')}</td>
+                        <td className="px-3 py-2 text-right">{Number(p.reach || 0).toLocaleString('es-MX')}</td>
+                        <td className="px-3 py-2 text-right">{Number(p.engaged_users || 0).toLocaleString('es-MX')}</td>
+                        <td className="px-3 py-2 text-right">{Number(p.reactions || 0).toLocaleString('es-MX')}</td>
+                        <td className="px-3 py-2 text-right">{Number(p.video_views || 0).toLocaleString('es-MX')}</td>
+                        <td className="px-3 py-2">
+                          {p.permalink_url
+                            ? <a href={p.permalink_url} target="_blank" rel="noopener noreferrer" className="text-primary underline">Ver</a>
+                            : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   )

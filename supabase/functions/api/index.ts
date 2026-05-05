@@ -1133,6 +1133,7 @@ export const AUTHENTICATED_ROUTE_HANDLERS = new Map<string, RouteHandler>([
   ['dashboard|meta-trends|*', handleDashboardMetaTrends],
   ['meta|insights|GET', handleMetaInsightsGet],
   ['meta|backfill|POST', handleMetaBackfillPost],
+  ['meta|organic|GET', handleMetaOrganicGet],
   ['health|meta|*', handleHealthMeta],
   ['meta|campaigns|GET', handleMetaCampaignsGet],
   ['meta|ads|GET', handleMetaAdsGet],
@@ -2187,6 +2188,78 @@ async function ingestMetaLeadsFromForms(adminClient: any, userId: string, adAcco
   }
 
   return totalFetched;
+}
+
+// ── Meta Organic (Page-level + Post-level) ────────────────────────────────
+async function handleMetaOrganicGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
+  const { adminClient, userId, resource, sub, sub2, req, url, sendJson } = ctx;
+  if (resource !== 'meta' || sub !== 'organic' || req.method !== 'GET') return null;
+
+  // Resolve pageId from integrations.metadata
+  const { data: integ } = await adminClient
+    .from('integrations')
+    .select('metadata')
+    .eq('user_id', userId)
+    .eq('service', 'meta')
+    .maybeSingle();
+
+  const meta = (integ?.metadata ?? {}) as Record<string, any>;
+  const pageId = meta.pageId ?? meta.page_id ?? null;
+  if (!pageId) {
+    return sendJson({ success: false, message: 'No Page ID configured for this Meta integration.' }, 400);
+  }
+
+  const days = Math.min(Math.max(Number.parseInt(url.searchParams.get('days') ?? '30', 10) || 30, 1), 365);
+  const today = new Date();
+  const untilDate = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - 1));
+  const sinceDate = new Date(Date.UTC(untilDate.getUTCFullYear(), untilDate.getUTCMonth(), untilDate.getUTCDate() - (days - 1)));
+  const until = untilDate.toISOString().slice(0, 10);
+  const sinceStr = sinceDate.toISOString().slice(0, 10);
+
+  if (sub2 === 'posts') {
+    const keyword = (url.searchParams.get('keyword') ?? '').trim();
+    const limit = Math.min(Math.max(Number.parseInt(url.searchParams.get('limit') ?? '50', 10) || 50, 1), 200);
+    let query = adminClient
+      .from('meta_post_performance')
+      .select('post_id, created_time, message, status_type, permalink_url, impressions, reach, engaged_users, reactions, comments, shares, video_views, is_video')
+      .eq('user_id', userId)
+      .eq('page_id', pageId)
+      .order('created_time', { ascending: false })
+      .limit(limit);
+    if (keyword) query = query.ilike('message', `%${keyword}%`);
+    const { data, error } = await query;
+    if (error) return sendJson({ success: false, message: error.message }, 500);
+    return sendJson({ success: true, pageId, count: data?.length ?? 0, posts: data ?? [] });
+  }
+
+  // Default: daily series + summary
+  const { data: rows, error } = await adminClient
+    .from('meta_organic_daily')
+    .select('date, impressions, reach, engagements, video_views, page_views, reactions')
+    .eq('user_id', userId)
+    .eq('page_id', pageId)
+    .gte('date', sinceStr)
+    .lte('date', until)
+    .order('date', { ascending: true });
+  if (error) return sendJson({ success: false, message: error.message }, 500);
+
+  const daily = rows ?? [];
+  const summary = daily.reduce((acc: any, r: any) => ({
+    impressions: acc.impressions + Number(r.impressions || 0),
+    reach: acc.reach + Number(r.reach || 0),
+    engagements: acc.engagements + Number(r.engagements || 0),
+    video_views: acc.video_views + Number(r.video_views || 0),
+    page_views: acc.page_views + Number(r.page_views || 0),
+    reactions: acc.reactions + Number(r.reactions || 0),
+  }), { impressions: 0, reach: 0, engagements: 0, video_views: 0, page_views: 0, reactions: 0 });
+
+  return sendJson({
+    success: true,
+    pageId,
+    period: { since: sinceStr, until, days },
+    summary,
+    daily,
+  });
 }
 
 async function handleMetaBackfillPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
