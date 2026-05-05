@@ -604,8 +604,12 @@ function classifyMetaLeadTag(fields: Record<string, string>): string {
 export async function processLeadData(adminClient: any, userId: string, leadData: any) {
   // Parse field_data array into a flat map
   const fields: Record<string, string> = {};
+  const rawFieldData: Record<string, string> = {};
   for (const f of (leadData.field_data ?? [])) {
-    fields[(f.name ?? '').toLowerCase()] = f.values?.[0] ?? '';
+    const fieldName = String(f.name ?? '').trim();
+    const value = String(f.values?.[0] ?? '').trim();
+    fields[fieldName.toLowerCase()] = value;
+    if (fieldName) rawFieldData[fieldName] = value;
   }
 
   const leadDataFields = extractMetaLeadCustomerInfo(leadData.field_data ?? []);
@@ -616,11 +620,31 @@ export async function processLeadData(adminClient: any, userId: string, leadData
   const email    = fields['email']        ?? null;
   const phone    = fields['phone_number'] ?? fields['telefono'] ?? fields['phone'] ?? null;
   const dni      = fields['dni']          ?? fields['nif']      ?? fields['national_id'] ?? null;
+  const firstName = fields['first_name']  ?? fields['nombre'] ?? fields['nombre1'] ?? null;
+  const lastName  = fields['last_name']   ?? fields['apellido'] ?? fields['apellidos'] ?? null;
+  const city      = fields['city']        ?? fields['ciudad'] ?? null;
+  const state     = fields['state']       ?? fields['provincia'] ?? fields['region'] ?? null;
+  const zipCode   = fields['zip_code']    ?? fields['postal_code'] ?? fields['zip'] ?? fields['cp'] ?? null;
+  const gender    = fields['gender']      ?? fields['sexo'] ?? null;
+  const metaPlatform = leadData.platform ?? leadData.meta_platform ?? null;
+  const metaAdId = leadData.ad_id ?? null;
+  const explicitOrganic = leadData.is_organic === true || String(leadData.is_organic).toLowerCase() === 'true';
+  const explicitPaid = leadData.is_organic === false || String(leadData.is_organic).toLowerCase() === 'false';
+  const inferredOrganic = !explicitPaid && !metaAdId && !leadData.campaign_id && !leadData.adset_id;
+  const isOrganic = explicitOrganic || inferredOrganic;
+  const metaAdName = leadData.ad_name ?? null;
+  const metaFormId = leadData.form_id ?? null;
+  const assetUrl = leadData.asset_url ?? leadData.image_url ?? leadData.video_url ?? null;
+  const hashedPhone = phone ? await sha256Hex(phone) : null;
+  const hashedEmail = email ? await sha256Hex(email) : null;
 
   // Any non-standard custom fields (e.g. 'Tratamiento de interés') → notes JSON
   const KNOWN_STANDARD = new Set([
     'full_name', 'nombre_completo', 'nombre', 'name', 'first_name', 'last_name',
     'email', 'phone_number', 'telefono', 'phone', 'dni', 'nif', 'national_id',
+    'city', 'ciudad', 'state', 'provincia', 'region',
+    'zip_code', 'postal_code', 'zip', 'cp',
+    'gender', 'sexo',
   ]);
   const customFields = Object.fromEntries(
     Object.entries(fields).filter(([k]) => !KNOWN_STANDARD.has(k))
@@ -656,25 +680,42 @@ export async function processLeadData(adminClient: any, userId: string, leadData
   const { data: lead } = await adminClient
     .from('leads')
     .upsert({
-      user_id:       userId,
-      external_id:   leadgen_id,
-      source:        'meta_leadgen',
-      name:          leadName,
+      user_id:         userId,
+      external_id:     leadgen_id,
+      source:          'meta_leadgen',
+      name:            leadName,
       email,
       phone,
-      dni:           dni || null,
-      notes:         notes || null,
+      dni:             dni || null,
+      first_name:      firstName,
+      last_name:       lastName,
+      city,
+      state,
+      zip_code:        zipCode,
+      gender,
+      notes:           notes || null,
       priority,
-      stage:         'lead',
-      campaign_id:   leadData.campaign_id ?? null,
-      campaign_name: leadData.campaign_name ?? null,
-      adset_id:      leadData.adset_id    ?? null,
-      adset_name:    leadData.adset_name  ?? null,
-      ad_id:         leadData.ad_id       ?? null,
-      ad_name:       leadData.ad_name     ?? null,
-      form_id:       leadData.form_id     ?? null,
-      form_name:     leadData.form_name   ?? null,
-      created_at:    createdAt,
+      stage:           'lead',
+      campaign_id:     leadData.campaign_id ?? null,
+      campaign_name:   leadData.campaign_name ?? null,
+      adset_id:        leadData.adset_id    ?? null,
+      adset_name:      leadData.adset_name  ?? null,
+      ad_id:           leadData.ad_id       ?? null,
+      ad_name:         leadData.ad_name     ?? null,
+      form_id:           leadData.form_id     ?? null,
+      form_name:         leadData.form_name   ?? null,
+      meta_ad_id:        metaAdId,
+      meta_ad_name:      metaAdName,
+      meta_form_id:      metaFormId,
+      meta_platform:     metaPlatform,
+      is_organic:        isOrganic,
+      created_at_meta:   createdAt,
+      asset_url:         assetUrl,
+      telefono_hash:     hashedPhone,
+      email_hash:        hashedEmail,
+      raw_field_data:    Object.keys(rawFieldData).length ? rawFieldData : null,
+      lead_quality_score: null,
+      created_at:        createdAt,
     }, { onConflict: 'user_id,source,external_id', ignoreDuplicates: true })
     .select('id')
     .maybeSingle();
@@ -1253,7 +1294,7 @@ async function processMetaLeadChange(adminClient: any, change: any): Promise<voi
   let leadData: any;
   try {
     leadData = await publicRouteHelpers.metaFetch(`/${leadgen_id}`, {
-      fields: 'field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,campaign_name,adset_id,adset_name,page_id',
+      fields: 'field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,campaign_name,adset_id,adset_name,page_id,is_organic,platform',
     }, accessToken);
   } catch {
     return;
@@ -3776,6 +3817,33 @@ async function matchPatientByPhone(adminClient: any, clinicId: string, normalize
   return patient?.id ?? null;
 }
 
+async function matchLeadByPhone(adminClient: any, userId: string, normalizedPhone: string) {
+  if (!normalizedPhone) return null;
+  const { data: lead } = await adminClient
+    .from('leads')
+    .select('id, stage, phone_normalized')
+    .eq('user_id', userId)
+    .eq('phone_normalized', normalizedPhone)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return lead ?? null;
+}
+
+async function matchLeadByEmail(adminClient: any, userId: string, email: string) {
+  if (!email) return null;
+  const normalizedEmail = String(email).trim();
+  const { data: lead } = await adminClient
+    .from('leads')
+    .select('id, stage, email')
+    .eq('user_id', userId)
+    .ilike('email', normalizedEmail)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return lead ?? null;
+}
+
 async function handleWhatsappConversionPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'whatsapp' && sub === 'conversion' && req.method === 'POST') {
@@ -3803,15 +3871,48 @@ async function handleWhatsappConversionPost(ctx: AuthenticatedRouteContext): Pro
       const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
       const clinicId = usr?.clinic_id;
       let matchedPatientId: string | null = null;
+      let matchedLeadId: string | null = null;
+      let leadStageUpdated = false;
+      let leadMatchMethod: string | null = null;
 
       if (clinicId && phone) {
         matchedPatientId = await matchPatientByPhone(adminClient, clinicId, normalizePhoneForMeta(phone));
+      }
+
+      const normalizedPhone = normalizePhoneForMeta(phone);
+      let matchedLead = normalizedPhone
+        ? await matchLeadByPhone(adminClient, userId, normalizedPhone)
+        : null;
+      if (!matchedLead && email) {
+        matchedLead = await matchLeadByEmail(adminClient, userId, email);
+        leadMatchMethod = 'email';
+      } else if (matchedLead) {
+        leadMatchMethod = 'phone';
+      }
+
+      if (matchedLead) {
+        matchedLeadId = matchedLead.id;
+        const currentStage = String(matchedLead.stage ?? 'lead').toLowerCase();
+        if (currentStage === 'lead') {
+          const updateData: any = { stage: 'whatsapp' };
+          const now = new Date().toISOString();
+          updateData.first_inbound_at = now;
+          const { error } = await adminClient
+            .from('leads')
+            .update(updateData)
+            .eq('id', matchedLeadId)
+            .eq('user_id', userId);
+          if (!error) leadStageUpdated = true;
+        }
       }
 
       return sendJson({
         success: true,
         result,
         matchedPatientId,
+        matchedLeadId,
+        leadMatchMethod,
+        leadStageUpdated,
         phone: phone || null,
         email: email || null,
       });
