@@ -142,15 +142,33 @@ async function resolveReportUserId(db) {
 
 async function main() {
   const argv = process.argv.slice(2);
-  const argSince = argv.find((a) => a.startsWith('--since='))?.split('=')[1] ?? process.env.BACKFILL_SINCE;
-  const argUntil = argv.find((a) => a.startsWith('--until='))?.split('=')[1] ?? process.env.BACKFILL_UNTIL;
+  // Trim to handle GitHub Actions passing empty-string '' for unset inputs.
+  // Use || (not ??) so that empty strings fall through to the computed default.
+  const argSince = (argv.find((a) => a.startsWith('--since='))?.split('=')[1] ?? process.env.BACKFILL_SINCE ?? '').trim();
+  const argUntil = (argv.find((a) => a.startsWith('--until='))?.split('=')[1] ?? process.env.BACKFILL_UNTIL ?? '').trim();
+
+  function toYMD(d) {
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+  function assertYMD(label, value) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      throw new Error(`${label} must be YYYY-MM-DD, got: ${JSON.stringify(value)}`);
+    }
+  }
 
   const today     = new Date();
   const yesterday = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - 1));
-  const startDate = new Date(Date.UTC(yesterday.getUTCFullYear(), yesterday.getUTCMonth(), yesterday.getUTCDate() - BACKFILL_DAYS));
 
-  const since = argSince ?? startDate.toISOString().slice(0, 10);
-  const until = argUntil ?? yesterday.toISOString().slice(0, 10);
+  const until = argUntil || toYMD(yesterday);
+  assertYMD('BACKFILL_UNTIL', until);
+
+  const startDate = new Date(`${until}T00:00:00Z`);
+  startDate.setUTCDate(startDate.getUTCDate() - BACKFILL_DAYS);
+  const since = argSince || toYMD(startDate);
+  assertYMD('BACKFILL_SINCE', since);
 
   console.log(`[meta-backfill] Fetching account-level daily insights: ${since} → ${until}`);
   const maskedAdAccountId = adAccountId.replace(/.(?=.{4})/g, '*');
