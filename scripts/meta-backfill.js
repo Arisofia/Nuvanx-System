@@ -50,7 +50,7 @@ function normalizeAdAccountId(raw) {
   if (!value) return '';
   if (!value.startsWith('act_')) value = `act_${value}`;
   const numericId = value.replace(/^act_/, '');
-  return numericId && /^[0-9]+$/.test(numericId) ? `act_${numericId}` : '';
+  return numericId && /^\d+$/.test(numericId) ? `act_${numericId}` : '';
 }
 
 function normalizeAdAccountIds(raw) {
@@ -135,6 +135,19 @@ function getAction(actions, type) {
   return Number((actions ?? []).find((a) => a.action_type === type)?.value ?? 0);
 }
 
+function toYMD(d) {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function assertYMD(label, value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new Error(`${label} must be YYYY-MM-DD, got: ${JSON.stringify(value)}`);
+  }
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 /** Resolve the user_id: use env var if given, otherwise auto-discover from integrations table. */
@@ -183,18 +196,6 @@ async function main() {
   const argSince = (argv.find((a) => a.startsWith('--since='))?.split('=')[1] ?? process.env.BACKFILL_SINCE ?? '').trim();
   const argUntil = (argv.find((a) => a.startsWith('--until='))?.split('=')[1] ?? process.env.BACKFILL_UNTIL ?? '').trim();
 
-  function toYMD(d) {
-    const y = d.getUTCFullYear();
-    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(d.getUTCDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-  }
-  function assertYMD(label, value) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-      throw new Error(`${label} must be YYYY-MM-DD, got: ${JSON.stringify(value)}`);
-    }
-  }
-
   const today     = new Date();
   const yesterday = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - 1));
 
@@ -207,7 +208,7 @@ async function main() {
   assertYMD('BACKFILL_SINCE', since);
 
   console.log(`[meta-backfill] Fetching account-level daily insights: ${since} → ${until}`);
-  const maskedAccounts = adAccountIds.map((id) => id.replace(/.(?=.{4})/g, '*')).join(', ');
+  const maskedAccounts = adAccountIds.map((id) => id.replaceAll(/.(?=.{4})/g, '*')).join(', ');
   console.log(`[meta-backfill] Ad Accounts: ${maskedAccounts}`);
 
   const db = new Client({ connectionString: databaseUrl });
