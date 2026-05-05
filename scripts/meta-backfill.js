@@ -30,21 +30,49 @@ const META_GRAPH = 'https://graph.facebook.com/v22.0';
 const {
   META_ACCESS_TOKEN: token,
   META_AD_ACCOUNT_ID: rawAccount,
+  META_AD_ACCOUNT_IDS: rawAccountsEnv,
   META_APP_SECRET:    appSecret,
   DATABASE_URL:       databaseUrl,
   REPORT_USER_ID:     reportUserIdEnv,
 } = process.env;
 
-const BACKFILL_DAYS  = Math.min(Number.parseInt(process.env.BACKFILL_DAYS ?? '90', 10), 365);
+const parsedBackfillDays = Number.parseInt(process.env.BACKFILL_DAYS || '90', 10);
+const BACKFILL_DAYS = Number.isFinite(parsedBackfillDays) && parsedBackfillDays > 0
+  ? Math.min(parsedBackfillDays, 365)
+  : 90;
 
-// ─── Validation ───────────────────────────────────────────────────────────────
-if (!token || !rawAccount || !databaseUrl) {
-  console.error('[meta-backfill] Missing required env vars.');
-  console.error('  Required: META_ACCESS_TOKEN, META_AD_ACCOUNT_ID, DATABASE_URL');
-  process.exit(1);
+function normalizeAdAccountId(raw) {
+  if (raw === undefined || raw === null) return '';
+  let value = String(raw).trim();
+  if (value.startsWith('"') && value.endsWith('"')) {
+    value = value.slice(1, -1).trim();
+  }
+  if (!value) return '';
+  if (!value.startsWith('act_')) value = `act_${value}`;
+  const numericId = value.replace(/^act_/, '');
+  return numericId && /^[0-9]+$/.test(numericId) ? `act_${numericId}` : '';
 }
 
-const adAccountId = rawAccount.startsWith('act_') ? rawAccount : `act_${rawAccount}`;
+function normalizeAdAccountIds(raw) {
+  if (Array.isArray(raw)) return raw.flatMap((item) => normalizeAdAccountIds(item));
+  if (raw === undefined || raw === null) return [];
+  const value = String(raw).trim();
+  if (!value) return [];
+  return value
+    .split(/[,;\s]+/)
+    .map(normalizeAdAccountId)
+    .filter(Boolean);
+}
+
+const rawAccounts = rawAccountsEnv ?? rawAccount;
+const adAccountIds = normalizeAdAccountIds(rawAccounts);
+
+// ─── Validation ─────────────────────────────────────────────────────────────
+if (!token || adAccountIds.length === 0 || !databaseUrl) {
+  console.error('[meta-backfill] Missing required env vars.');
+  console.error('  Required: META_ACCESS_TOKEN, META_AD_ACCOUNT_ID or META_AD_ACCOUNT_IDS, DATABASE_URL');
+  process.exit(1);
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -113,14 +141,22 @@ function getAction(actions, type) {
 async function resolveReportUserId(db) {
   if (reportUserIdEnv) return reportUserIdEnv;
 
-  // Try to find via integrations.metadata->>'ad_account_id'
+  const conditions = adAccountIds.map((_, index) => `(
+      metadata->>'adAccountId' = $${index * 2 + 1}
+      OR metadata->>'ad_account_id' = $${index * 2 + 1}
+      OR metadata->>'adAccountIds' LIKE $${index * 2 + 2}
+      OR metadata->>'ad_account_ids' LIKE $${index * 2 + 2}
+    )`).join(' OR ');
+
+  const params = adAccountIds.flatMap((id) => [id, `%${id}%`]);
   const { rows: intRows } = await db.query(
     `SELECT user_id FROM public.integrations
      WHERE service = 'meta'
-       AND (metadata->>'ad_account_id' = $1 OR metadata->>'ad_account_id' = $2)
+       AND (${conditions})
      LIMIT 1`,
-    [adAccountId, adAccountId.replace('act_', '')]
+    params
   );
+
   if (intRows.length > 0) {
     console.log('[meta-backfill] Auto-discovered REPORT_USER_ID from integrations table.');
     return intRows[0].user_id;
@@ -171,8 +207,8 @@ async function main() {
   assertYMD('BACKFILL_SINCE', since);
 
   console.log(`[meta-backfill] Fetching account-level daily insights: ${since} → ${until}`);
-  const maskedAdAccountId = adAccountId.replace(/.(?=.{4})/g, '*');
-  console.log(`[meta-backfill] Ad Account: ${maskedAdAccountId}`);
+  const maskedAccounts = adAccountIds.map((id) => id.replace(/.(?=.{4})/g, '*')).join(', ');
+  console.log(`[meta-backfill] Ad Accounts: ${maskedAccounts}`);
 
   const db = new Client({ connectionString: databaseUrl });
   await db.connect();
@@ -184,66 +220,79 @@ async function main() {
     throw err;
   }
 
-  const data = await metaFetch(`/${adAccountId}/insights`, {
-    fields: 'date_start,impressions,reach,clicks,spend,conversions,ctr,cpc,cpm,actions',
-    time_range: JSON.stringify({ since, until }),
-    time_increment: '1',
-    level: 'account',
-    limit: '1000',
-  });
+  let totalUpserted = 0;
+  let firstError = null;
 
-  const rows = Array.isArray(data?.data) ? data.data : [];
-  console.log(`[meta-backfill] Received ${rows.length} daily rows from Meta`);
+  for (const adAccountId of adAccountIds) {
+    try {
+      console.log(`[meta-backfill] Fetching account-level daily insights for ${adAccountId}: ${since} → ${until}`);
+      const data = await metaFetch(`/${adAccountId}/insights`, {
+        fields: 'date_start,impressions,reach,clicks,spend,conversions,ctr,cpc,cpm,actions',
+        time_range: JSON.stringify({ since, until }),
+        time_increment: '1',
+        level: 'account',
+        limit: '1000',
+      });
 
-  if (rows.length === 0) {
-    console.log('[meta-backfill] No data returned — nothing to persist.');
-    return;
-  }
+      const rows = Array.isArray(data?.data) ? data.data : [];
+      console.log(`[meta-backfill] Received ${rows.length} daily rows from Meta for ${adAccountId}`);
 
-  const upsertRows = rows.map((row) => ({
-    user_id:                 reportUserId,
-    ad_account_id:           adAccountId,
-    date:                    row.date_start,
-    impressions:             Number(row.impressions ?? 0),
-    reach:                   Number(row.reach ?? 0),
-    clicks:                  Number(row.clicks ?? 0),
-    spend:                   Number(row.spend ?? 0),
-    conversions:             Number(row.conversions ?? getAction(row.actions, 'lead') ?? 0),
-    ctr:                     Number(row.ctr ?? 0),
-    cpc:                     Number(row.cpc ?? 0),
-    cpm:                     Number(row.cpm ?? 0),
-    messaging_conversations: getAction(row.actions, 'onsite_conversion.messaging_conversation_started_7d'),
-    updated_at:              new Date().toISOString(),
-  }));
+      if (rows.length === 0) {
+        console.log('[meta-backfill] No data returned — nothing to persist.');
+        continue;
+      }
 
-  let upserted = 0;
-  try {
-    for (const r of upsertRows) {
-      await db.query(`
-        INSERT INTO public.meta_daily_insights
-          (user_id, ad_account_id, date, impressions, reach, clicks, spend,
-           conversions, ctr, cpc, cpm, messaging_conversations, updated_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-        ON CONFLICT (user_id, ad_account_id, date)
-        DO UPDATE SET
-          impressions             = EXCLUDED.impressions,
-          reach                   = EXCLUDED.reach,
-          clicks                  = EXCLUDED.clicks,
-          spend                   = EXCLUDED.spend,
-          conversions             = EXCLUDED.conversions,
-          ctr                     = EXCLUDED.ctr,
-          cpc                     = EXCLUDED.cpc,
-          cpm                     = EXCLUDED.cpm,
-          messaging_conversations = EXCLUDED.messaging_conversations,
-          updated_at              = EXCLUDED.updated_at
-      `, [r.user_id, r.ad_account_id, r.date, r.impressions, r.reach, r.clicks,
-          r.spend, r.conversions, r.ctr, r.cpc, r.cpm, r.messaging_conversations, r.updated_at]);
-      upserted++;
+      const upsertRows = rows.map((row) => ({
+        user_id:                 reportUserId,
+        ad_account_id:           adAccountId,
+        date:                    row.date_start,
+        impressions:             Number(row.impressions ?? 0),
+        reach:                   Number(row.reach ?? 0),
+        clicks:                  Number(row.clicks ?? 0),
+        spend:                   Number(row.spend ?? 0),
+        conversions:             Number(row.conversions ?? getAction(row.actions, 'lead') ?? 0),
+        ctr:                     Number(row.ctr ?? 0),
+        cpc:                     Number(row.cpc ?? 0),
+        cpm:                     Number(row.cpm ?? 0),
+        messaging_conversations: getAction(row.actions, 'onsite_conversion.messaging_conversation_started_7d'),
+        updated_at:              new Date().toISOString(),
+      }));
+
+      for (const r of upsertRows) {
+        await db.query(`
+          INSERT INTO public.meta_daily_insights
+            (user_id, ad_account_id, date, impressions, reach, clicks, spend,
+             conversions, ctr, cpc, cpm, messaging_conversations, updated_at)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+          ON CONFLICT (user_id, ad_account_id, date)
+          DO UPDATE SET
+            impressions             = EXCLUDED.impressions,
+            reach                   = EXCLUDED.reach,
+            clicks                  = EXCLUDED.clicks,
+            spend                   = EXCLUDED.spend,
+            conversions             = EXCLUDED.conversions,
+            ctr                     = EXCLUDED.ctr,
+            cpc                     = EXCLUDED.cpc,
+            cpm                     = EXCLUDED.cpm,
+            messaging_conversations = EXCLUDED.messaging_conversations,
+            updated_at              = EXCLUDED.updated_at
+        `, [r.user_id, r.ad_account_id, r.date, r.impressions, r.reach, r.clicks,
+            r.spend, r.conversions, r.ctr, r.cpc, r.cpm, r.messaging_conversations, r.updated_at]);
+        totalUpserted++;
+      }
+      console.log(`[meta-backfill] ✓ Upserted ${upsertRows.length} rows into meta_daily_insights for ${adAccountId}`);
+    } catch (err) {
+      console.error(`[meta-backfill] Failed to backfill ${adAccountId}:`, err.message ?? err);
+      firstError = firstError || err;
     }
-    console.log(`[meta-backfill] ✓ Upserted ${upserted} rows into meta_daily_insights`);
-  } finally {
-    await db.end();
   }
+
+  await db.end();
+
+  if (firstError) {
+    throw firstError;
+  }
+  console.log(`[meta-backfill] ✓ Upserted ${totalUpserted} rows into meta_daily_insights`);
 }
 
 main().catch((err) => {
