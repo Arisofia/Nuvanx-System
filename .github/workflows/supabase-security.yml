@@ -14,7 +14,12 @@ env:
 #   DATABASE_URL            — optional fallback to derive SUPABASE_DB_PASSWORD
 
 on:
-  push:
+  # On push to main, wait for Deploy Supabase to finish so the lint runs against
+  # the just-applied migrations (avoids race conditions when a migration both
+  # introduces and fixes a function in adjacent commits).
+  workflow_run:
+    workflows: ["Deploy Supabase"]
+    types: [completed]
     branches: [main]
   pull_request:
     branches: [main]
@@ -35,6 +40,8 @@ jobs:
     name: RLS & security lint
     runs-on: ubuntu-latest
     timeout-minutes: 8
+    # When triggered by Deploy Supabase finishing, only run if the deploy succeeded.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     permissions:
       contents: read
     env:
