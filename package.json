@@ -13,7 +13,7 @@
     "meta:weekly:report": "node scripts/meta-weekly-report.js",
     "ingest:doctoralia": "node scripts/ingest-doctoralia.js",
     "supabase:functions:list": "npx --yes supabase functions list",
-    "supabase:functions:deploy:api": "npx --yes supabase functions deploy api",
+    "supabase:functions:deploy:api": "npx --yes supabase functions deploy api --no-verify-jwt",
     "supabase:migration:list": "npx --yes supabase migration list",
     "supabase:migration:push": "npx --yes supabase db push",
     "supabase:types": "npx --yes supabase gen types typescript --local --schema public > frontend/src/lib/supabase/types.ts",

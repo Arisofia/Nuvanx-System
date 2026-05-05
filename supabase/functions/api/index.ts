@@ -336,6 +336,9 @@ function isMessagingConversationAction(type: string): boolean {
   return type.includes('conversation_started')
     || type.includes('messaging')
     || type.includes('whatsapp')
+    || type.includes('lead')
+    || type.includes('contact')
+    || type.includes('submit_application')
     || type === 'onsite_conversion.messaging_conversation_started_7d';
 }
 
@@ -1922,13 +1925,16 @@ function buildMetaInsightsParams(fields: string, since: string, until: string, c
 
 function aggregateMetaInsightsSummary(daily: any[]) {
   const sumN = (arr: any[], k: string) => arr.reduce((s: number, d: any) => s + Number.parseFloat(d[k] || 0), 0);
+  const messaging = daily.reduce((sum: number, day: any) => sum + actionValue(day.actions, isMessagingConversationAction), 0);
+  const rawConversions = Math.round(sumN(daily, 'conversions'));
+  
   return {
     impressions: Math.round(sumN(daily, 'impressions')),
     reach: Math.round(sumN(daily, 'reach')),
     clicks: Math.round(sumN(daily, 'clicks')),
     spend: Number.parseFloat(sumN(daily, 'spend').toFixed(2)),
-    conversions: Math.round(sumN(daily, 'conversions')),
-    messagingConversationStarted: daily.reduce((sum: number, day: any) => sum + actionValue(day.actions, isMessagingConversationAction), 0),
+    conversions: rawConversions || messaging,
+    messagingConversationStarted: messaging,
   };
 }
 
