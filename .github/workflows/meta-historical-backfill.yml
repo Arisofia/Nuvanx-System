@@ -32,7 +32,6 @@ jobs:
       META_AD_ACCOUNT_ID:  ${{ secrets.META_AD_ACCOUNT_ID }}
       META_APP_SECRET:     ${{ secrets.META_APP_SECRET }}
       DATABASE_URL:        ${{ secrets.DATABASE_URL }}
-      REPORT_USER_ID:      ${{ vars.REPORT_USER_ID || secrets.REPORT_USER_ID }}
       BACKFILL_DAYS:       ${{ github.event.inputs.days }}
       BACKFILL_SINCE:      ${{ github.event.inputs.since }}
       BACKFILL_UNTIL:      ${{ github.event.inputs.until }}
@@ -42,14 +41,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       - name: Validate required secrets
         run: |
           MISSING=()
           [ -z "$META_ACCESS_TOKEN" ]  && MISSING+=("META_ACCESS_TOKEN")
           [ -z "$META_AD_ACCOUNT_ID" ] && MISSING+=("META_AD_ACCOUNT_ID")
-          [ -z "$META_APP_SECRET" ]    && MISSING+=("META_APP_SECRET")
           [ -z "$DATABASE_URL" ]       && MISSING+=("DATABASE_URL")
-          [ -z "$REPORT_USER_ID" ]     && MISSING+=("REPORT_USER_ID")
           if [ ${#MISSING[@]} -gt 0 ]; then
             echo "::error::Missing required secrets: ${MISSING[*]}"
             exit 1

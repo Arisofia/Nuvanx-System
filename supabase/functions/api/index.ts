@@ -1170,6 +1170,7 @@ export const AUTHENTICATED_ROUTE_HANDLERS = new Map<string, RouteHandler>([
   ['reports|doctor-performance|GET', handleReportsDoctorPerformanceGet],
   ['reports|campaign-roi|GET', handleReportsCampaignRoiGet],
   ['leads|reconcile|POST', handleLeadsReconcilePost],
+  ['agenda|doctoralia|GET', handleAgendaDoctoraliaGet],
 ]);
 
 
@@ -3348,6 +3349,110 @@ async function handleFinancialsPatients(ctx: AuthenticatedRouteContext): Promise
         clinicId,
       },
     });
+  }
+  return null;
+}
+
+async function handleAgendaDoctoraliaGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
+  const { adminClient, userId, resource, sub, url, sendJson } = ctx;
+  if (resource === 'agenda' && sub === 'doctoralia') {
+    const clinicId = await resolveClinicId(adminClient, userId);
+    if (!clinicId) return sendJson({ success: false, message: 'Clinic not configured for this user.' }, 400);
+
+    const date = url.searchParams.get('date') ?? new Date().toISOString().slice(0, 10);
+
+    // Fetch appointments from doctoralia_raw for the given date, joined with
+    // doctoralia_patients to get the Meta campaign attribution.
+    const { data: rows, error } = await adminClient
+      .from('doctoralia_raw')
+      .select(
+        'raw_hash,paciente_id,paciente_nombre,patient_name,hora,hora_inicio,estado,' +
+        'asunto,procedimiento_nombre,treatment,agenda,sala_box,procedencia,' +
+        'importe_numerico,importe_clean,importe,confirmada,timestamp_cita,appointment_start,' +
+        'doc_patient_id'
+      )
+      .eq('clinic_id', clinicId)
+      .eq('fecha', date)
+      .order('hora', { ascending: true });
+
+    if (error) throw error;
+
+    if (!rows || rows.length === 0) {
+      return sendJson({ success: true, appointments: [], total: 0 });
+    }
+
+    // Collect doc_patient_ids to resolve Meta campaign attribution
+    const docIds = [...new Set((rows as any[]).map((r: any) => r.doc_patient_id).filter(Boolean))];
+    let patientMap: Map<string, any> = new Map();
+
+    if (docIds.length > 0) {
+      const { data: dpRows } = await adminClient
+        .from('doctoralia_patients')
+        .select('doc_patient_id,lead_id,match_class,match_confidence')
+        .eq('clinic_id', clinicId)
+        .in('doc_patient_id', docIds);
+
+      if (dpRows && dpRows.length > 0) {
+        const leadIds = [...new Set((dpRows as any[]).map((d: any) => d.lead_id).filter(Boolean))];
+        let leadCampaignMap: Map<string, string> = new Map();
+
+        if (leadIds.length > 0) {
+          const { data: leadRows } = await adminClient
+            .from('leads')
+            .select('id,source,stage')
+            .eq('user_id', userId)
+            .in('id', leadIds);
+
+          // Try to get campaign name from vw_lead_traceability
+          const { data: traceRows } = await adminClient
+            .from('vw_lead_traceability')
+            .select('lead_id,campaign_name,source')
+            .eq('lead_user_id', userId)
+            .in('lead_id', leadIds);
+
+          for (const t of (traceRows ?? [])) {
+            if (t.campaign_name) leadCampaignMap.set(t.lead_id, t.campaign_name);
+          }
+          for (const l of (leadRows ?? [])) {
+            if (!leadCampaignMap.has(l.id) && l.source) leadCampaignMap.set(l.id, l.source);
+          }
+        }
+
+        for (const dp of (dpRows as any[])) {
+          patientMap.set(dp.doc_patient_id, {
+            lead_id: dp.lead_id,
+            match_class: dp.match_class,
+            match_confidence: dp.match_confidence,
+            campaign_name: dp.lead_id ? (leadCampaignMap.get(dp.lead_id) ?? null) : null,
+          });
+        }
+      }
+    }
+
+    const appointments = (rows as any[]).map((r: any) => {
+      const attr = r.doc_patient_id ? patientMap.get(r.doc_patient_id) : null;
+      return {
+        raw_hash: r.raw_hash,
+        paciente_nombre: r.paciente_nombre ?? r.patient_name ?? null,
+        hora: r.hora_inicio ?? r.hora ?? null,
+        estado: r.estado ?? null,
+        asunto: r.procedimiento_nombre ?? r.treatment ?? r.asunto ?? null,
+        agenda: r.agenda ?? null,
+        sala_box: r.sala_box ?? null,
+        procedencia: r.procedencia ?? null,
+        importe: r.importe_numerico ?? r.importe_clean ?? Number(r.importe ?? 0) ?? null,
+        confirmada: r.confirmada ?? false,
+        timestamp_cita: r.timestamp_cita ?? r.appointment_start ?? null,
+        doc_patient_id: r.doc_patient_id ?? null,
+        // Meta campaign attribution
+        lead_id: attr?.lead_id ?? null,
+        campaign_name: attr?.campaign_name ?? null,
+        match_class: attr?.match_class ?? null,
+        match_confidence: attr?.match_confidence ?? null,
+      };
+    });
+
+    return sendJson({ success: true, appointments, total: appointments.length, date });
   }
   return null;
 }

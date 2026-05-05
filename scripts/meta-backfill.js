@@ -9,9 +9,11 @@
  *   META_ACCESS_TOKEN   — Meta System User access token (never-expiring)
  *   META_AD_ACCOUNT_ID  — e.g. "act_123456789"
  *   DATABASE_URL        — Postgres connection string
- *   REPORT_USER_ID      — UUID of the user row in public.users
  *
  * Optional:
+ *   REPORT_USER_ID      — UUID of the user row in public.users.
+ *                         If omitted, the script auto-discovers the user whose
+ *                         Meta integration matches META_AD_ACCOUNT_ID.
  *   META_APP_SECRET     — if set, adds appsecret_proof to all requests
  *   BACKFILL_DAYS       — number of days to back-fill (default 90, max 365)
  *   BACKFILL_SINCE      — explicit start date YYYY-MM-DD (overrides BACKFILL_DAYS)
@@ -30,15 +32,15 @@ const {
   META_AD_ACCOUNT_ID: rawAccount,
   META_APP_SECRET:    appSecret,
   DATABASE_URL:       databaseUrl,
-  REPORT_USER_ID:     reportUserId,
+  REPORT_USER_ID:     reportUserIdEnv,
 } = process.env;
 
 const BACKFILL_DAYS  = Math.min(Number.parseInt(process.env.BACKFILL_DAYS ?? '90', 10), 365);
 
 // ─── Validation ───────────────────────────────────────────────────────────────
-if (!token || !rawAccount || !databaseUrl || !reportUserId) {
+if (!token || !rawAccount || !databaseUrl) {
   console.error('[meta-backfill] Missing required env vars.');
-  console.error('  Required: META_ACCESS_TOKEN, META_AD_ACCOUNT_ID, DATABASE_URL, REPORT_USER_ID');
+  console.error('  Required: META_ACCESS_TOKEN, META_AD_ACCOUNT_ID, DATABASE_URL');
   process.exit(1);
 }
 
@@ -107,6 +109,37 @@ function getAction(actions, type) {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
+/** Resolve the user_id: use env var if given, otherwise auto-discover from integrations table. */
+async function resolveReportUserId(db) {
+  if (reportUserIdEnv) return reportUserIdEnv;
+
+  // Try to find via integrations.metadata->>'ad_account_id'
+  const { rows: intRows } = await db.query(
+    `SELECT user_id FROM public.integrations
+     WHERE service = 'meta'
+       AND (metadata->>'ad_account_id' = $1 OR metadata->>'ad_account_id' = $2)
+     LIMIT 1`,
+    [adAccountId, adAccountId.replace('act_', '')]
+  );
+  if (intRows.length > 0) {
+    console.log('[meta-backfill] Auto-discovered REPORT_USER_ID from integrations table.');
+    return intRows[0].user_id;
+  }
+
+  // Fallback: any user with a meta integration
+  const { rows: fallbackRows } = await db.query(
+    `SELECT user_id FROM public.integrations WHERE service = 'meta' LIMIT 1`
+  );
+  if (fallbackRows.length > 0) {
+    console.log('[meta-backfill] Auto-discovered REPORT_USER_ID (fallback: first meta integration).');
+    return fallbackRows[0].user_id;
+  }
+
+  throw new Error(
+    'Cannot determine REPORT_USER_ID: no Meta integration found in DB and REPORT_USER_ID env var is not set.'
+  );
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   const argSince = argv.find((a) => a.startsWith('--since='))?.split('=')[1] ?? process.env.BACKFILL_SINCE;
@@ -122,6 +155,16 @@ async function main() {
   console.log(`[meta-backfill] Fetching account-level daily insights: ${since} → ${until}`);
   const maskedAdAccountId = adAccountId.replace(/.(?=.{4})/g, '*');
   console.log(`[meta-backfill] Ad Account: ${maskedAdAccountId}`);
+
+  const db = new Client({ connectionString: databaseUrl });
+  await db.connect();
+  let reportUserId;
+  try {
+    reportUserId = await resolveReportUserId(db);
+  } catch (err) {
+    await db.end();
+    throw err;
+  }
 
   const data = await metaFetch(`/${adAccountId}/insights`, {
     fields: 'date_start,impressions,reach,clicks,spend,conversions,ctr,cpc,cpm,actions',
@@ -154,9 +197,6 @@ async function main() {
     messaging_conversations: getAction(row.actions, 'onsite_conversion.messaging_conversation_started_7d'),
     updated_at:              new Date().toISOString(),
   }));
-
-  const db = new Client({ connectionString: databaseUrl });
-  await db.connect();
 
   let upserted = 0;
   try {

@@ -1,24 +1,29 @@
 import { useEffect, useRef, useState, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
-import { Activity, CalendarDays, ChevronLeft, ChevronRight, Tag, User, CheckCircle2, XCircle } from 'lucide-react'
+import { Activity, CalendarDays, ChevronLeft, ChevronRight, Tag, User, CheckCircle2, XCircle, Clock, Stethoscope, MapPin } from 'lucide-react'
 import { supabase, invokeApi } from '../lib/supabaseClient'
 import type { LiveEvent } from '../types'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-interface AgendaRow {
-  lead_id: string
-  lead_name: string | null
-  source: string | null
-  stage: string | null
-  campaign_name: string | null
-  lead_created_at: string
-  patient_id: string | null
-  patient_name: string | null
+interface DoctoraliaAppointment {
+  raw_hash: string
+  paciente_nombre: string | null
+  hora: string | null
+  estado: string | null
+  asunto: string | null
+  agenda: string | null
+  sala_box: string | null
+  procedencia: string | null
+  importe: number | null
+  confirmada: boolean
+  timestamp_cita: string | null
   doc_patient_id: string | null
+  // Campaign attribution
+  lead_id: string | null
+  campaign_name: string | null
   match_class: string | null
   match_confidence: number | null
-  doctoralia_template_name: string | null
 }
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
@@ -51,64 +56,21 @@ function CampaignBadge({ name }: { name: string | null }) {
   )
 }
 
-// ── Match badge ────────────────────────────────────────────────────────────────
+// ── Estado badge ───────────────────────────────────────────────────────────────
 
-const MATCH_LABELS: Record<string, string> = {
-  exact_phone: 'Tel. exacto',
-  exact_dni: 'DNI exacto',
-  exact_name: 'Nombre exacto',
-  fuzzy_name: 'Nombre similar',
-  partial: 'Parcial',
-}
-
-function MatchBadge({ row }: { row: AgendaRow }) {
-  const matched = Boolean(row.patient_id || row.doc_patient_id)
-  if (matched) {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-green-500/15 text-green-400 border border-green-500/25">
-        <CheckCircle2 className="h-2.5 w-2.5 shrink-0" />
-        {row.match_class ? (MATCH_LABELS[row.match_class] ?? 'Cruzado') : 'Cruzado'}
-        {row.match_confidence != null && (
-          <span className="opacity-70">({Math.round(row.match_confidence * 100)}%)</span>
-        )}
-      </span>
-    )
-  }
+function EstadoBadge({ estado, confirmada }: { estado: string | null; confirmada: boolean }) {
+  const e = (estado ?? '').toLowerCase()
+  let cls = 'bg-border/40 text-muted border-border'
+  let Icon = XCircle
+  if (e.includes('confirm') || confirmada) { cls = 'bg-green-500/15 text-green-400 border-green-500/25'; Icon = CheckCircle2 }
+  else if (e.includes('asist') || e.includes('showed')) { cls = 'bg-primary/15 text-primary border-primary/25'; Icon = CheckCircle2 }
+  else if (e.includes('cancel')) { cls = 'bg-red-500/15 text-red-400 border-red-500/25'; Icon = XCircle }
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-border/40 text-muted border border-border">
-      <XCircle className="h-2.5 w-2.5 shrink-0" />
-      Sin cruce Doc.
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${cls}`}>
+      <Icon className="h-2.5 w-2.5 shrink-0" />
+      {estado ?? 'Sin estado'}
     </span>
   )
-}
-
-// ── Live feed helpers ─────────────────────────────────────────────────────────
-
-function eventFromPayload(eventType: string, record: any): LiveEvent {
-  const ts = record.created_at ?? record.updated_at ?? new Date().toISOString()
-  const source = record.source ?? ''
-  const stage = record.stage ?? ''
-
-  let label = 'Nuevo lead recibido'
-  let detail = ''
-
-  if (eventType === 'INSERT') {
-    detail = source ? `Fuente: ${source}` : 'Entrada en el pipeline'
-  } else if (eventType === 'UPDATE') {
-    label = 'Lead actualizado'
-    detail = stage ? `Etapa: ${stage}` : 'Registro actualizado'
-  } else if (eventType === 'SETTLEMENT') {
-    label = 'Liquidación Doctoralia'
-    detail = source
-  }
-
-  return {
-    id: String(record.id ?? Math.random()),
-    type: eventType,
-    label,
-    detail,
-    ts,
-  }
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
@@ -116,7 +78,7 @@ function eventFromPayload(eventType: string, record: any): LiveEvent {
 export default function Live() {
   // ── Agenda state ───────────────────────────────────────────────────────────
   const [selectedDate, setSelectedDate] = useState<string>(toLocalDateStr(new Date()))
-  const [agendaRows, setAgendaRows] = useState<AgendaRow[]>([])
+  const [appointments, setAppointments] = useState<DoctoraliaAppointment[]>([])
   const [agendaLoading, setAgendaLoading] = useState(false)
   const [agendaError, setAgendaError] = useState<string | null>(null)
 
@@ -125,17 +87,16 @@ export default function Live() {
   const [connected, setConnected] = useState(false)
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
 
-  // ── Agenda: load when date changes ────────────────────────────────────────
+  // ── Agenda: load Doctoralia patients for the selected date ─────────────────
   useEffect(() => {
     let active = true
     const load = async () => {
       setAgendaLoading(true)
       setAgendaError(null)
       try {
-        const params = new URLSearchParams({ from: selectedDate, to: selectedDate, limit: '200' })
-        const data = await invokeApi(`/traceability/leads?${params}`)
+        const data = await invokeApi(`/agenda/doctoralia?date=${selectedDate}`)
         if (!active) return
-        setAgendaRows(data?.leads ?? [])
+        setAppointments(data?.appointments ?? [])
       } catch (err: any) {
         if (!active) return
         setAgendaError(err?.message ?? 'Error cargando agenda.')
@@ -149,46 +110,37 @@ export default function Live() {
 
   // ── Agenda: group by hour ─────────────────────────────────────────────────
   const groupedByHour = useMemo(() => {
-    const map = new Map<string, AgendaRow[]>()
-    const sorted = [...agendaRows].sort(
-      (a, b) => new Date(a.lead_created_at).getTime() - new Date(b.lead_created_at).getTime()
-    )
+    const map = new Map<string, DoctoraliaAppointment[]>()
+    const sorted = [...appointments].sort((a, b) => {
+      const ta = a.hora ?? '00:00'
+      const tb = b.hora ?? '00:00'
+      return ta.localeCompare(tb)
+    })
     for (const row of sorted) {
-      const hour = new Date(row.lead_created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
-      if (!map.has(hour)) map.set(hour, [])
-      map.get(hour)!.push(row)
+      const key = row.hora ? row.hora.slice(0, 5) : 'Sin hora'
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push(row)
     }
     return map
-  }, [agendaRows])
+  }, [appointments])
 
-  // ── Live feed: preload ─────────────────────────────────────────────────────
+  // ── Live feed: preload recent Doctoralia events ────────────────────────────
   useEffect(() => {
     const load = async () => {
       const results: LiveEvent[] = []
-      const { data: leads } = await supabase
-        .from('leads')
-        .select('id, source, stage, created_at, updated_at')
-        .order('created_at', { ascending: false })
-        .limit(20)
-      if (leads) {
-        for (const l of leads) results.push(eventFromPayload('INSERT', l))
-      }
-      const { data: settlements } = await supabase
-        .from('financial_settlements')
-        .select('id, template_name, amount_net, settled_at, created_at')
-        .order('settled_at', { ascending: false })
-        .limit(20)
-      if (settlements) {
-        for (const s of settlements) {
-          const net = s.amount_net
-            ? `€${Number(s.amount_net).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-            : ''
+      const { data: rawRows } = await supabase
+        .from('doctoralia_raw')
+        .select('raw_hash, paciente_nombre, patient_name, estado, agenda, importe_numerico, timestamp_cita, fecha')
+        .order('timestamp_cita', { ascending: false })
+        .limit(30)
+      if (rawRows) {
+        for (const r of rawRows) {
           results.push({
-            id: `settlement-${s.id}`,
-            type: 'SETTLEMENT',
-            label: 'Liquidación Doctoralia',
-            detail: [s.template_name, net].filter(Boolean).join(' · '),
-            ts: s.settled_at ?? s.created_at ?? new Date().toISOString(),
+            id: String(r.raw_hash ?? Math.random()),
+            type: 'DOCTORALIA',
+            label: r.paciente_nombre ?? r.patient_name ?? 'Paciente Doctoralia',
+            detail: [r.agenda, r.estado, r.importe_numerico != null ? `€${Number(r.importe_numerico).toLocaleString('es-ES', { minimumFractionDigits: 0 })}` : ''].filter(Boolean).join(' · '),
+            ts: r.timestamp_cita ?? (r.fecha ? r.fecha + 'T09:00:00Z' : new Date().toISOString()),
           })
         }
       }
@@ -198,20 +150,42 @@ export default function Live() {
     load()
   }, [])
 
-  // ── Live feed: realtime subscription ──────────────────────────────────────
+  // ── Live feed: realtime subscription on doctoralia_raw ────────────────────
   useEffect(() => {
     const channel = supabase
-      .channel('live-lead-feed')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads' }, (payload) => {
-        setEvents((prev) => [eventFromPayload('INSERT', payload.new), ...prev].slice(0, 50))
-        // Refresh agenda if the new lead falls on the selected day
-        const newDay = toLocalDateStr(new Date(payload.new.created_at ?? Date.now()))
-        if (newDay === selectedDate) {
-          setAgendaRows((prev) => [payload.new as AgendaRow, ...prev])
+      .channel('live-doctoralia-feed')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'doctoralia_raw' }, (payload) => {
+        const r = payload.new as any
+        const ev: LiveEvent = {
+          id: String(r.raw_hash ?? Math.random()),
+          type: 'DOCTORALIA',
+          label: r.paciente_nombre ?? r.patient_name ?? 'Nuevo paciente Doctoralia',
+          detail: [r.agenda, r.estado].filter(Boolean).join(' · '),
+          ts: r.timestamp_cita ?? r.fecha ?? new Date().toISOString(),
         }
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads' }, (payload) => {
-        setEvents((prev) => [eventFromPayload('UPDATE', payload.new), ...prev].slice(0, 50))
+        setEvents((prev) => [ev, ...prev].slice(0, 50))
+        // Refresh agenda if the appointment is on the selected day
+        const apptDay = (r.fecha ?? '').slice(0, 10)
+        if (apptDay === selectedDate) {
+          setAppointments((prev) => [{
+            raw_hash: r.raw_hash,
+            paciente_nombre: r.paciente_nombre ?? r.patient_name ?? null,
+            hora: r.hora_inicio ?? r.hora ?? null,
+            estado: r.estado ?? null,
+            asunto: r.procedimiento_nombre ?? r.treatment ?? r.asunto ?? null,
+            agenda: r.agenda ?? null,
+            sala_box: r.sala_box ?? null,
+            procedencia: r.procedencia ?? null,
+            importe: r.importe_numerico ?? null,
+            confirmada: r.confirmada ?? false,
+            timestamp_cita: r.timestamp_cita ?? null,
+            doc_patient_id: r.doc_patient_id ?? null,
+            lead_id: null,
+            campaign_name: null,
+            match_class: null,
+            match_confidence: null,
+          }, ...prev])
+        }
       })
       .subscribe((status) => setConnected(status === 'SUBSCRIBED'))
 
@@ -232,7 +206,7 @@ export default function Live() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-serif font-bold text-foreground">Panel en vivo</h1>
-        <p className="text-muted mt-1">Agenda de leads por día y flujo en tiempo real</p>
+        <p className="text-muted mt-1">Agenda Doctoralia del día y flujo en tiempo real</p>
       </div>
 
       {/* ── AGENDA ─────────────────────────────────────────────────────────── */}
@@ -240,7 +214,7 @@ export default function Live() {
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
           <CardTitle className="flex items-center gap-2">
             <CalendarDays className="h-4 w-4 text-primary" />
-            Agenda de leads
+            Agenda Doctoralia
           </CardTitle>
           {/* Day picker */}
           <div className="flex items-center gap-2">
@@ -283,32 +257,27 @@ export default function Live() {
           {!agendaLoading && agendaError && (
             <p className="text-sm text-[#D9534F] py-8 text-center">{agendaError}</p>
           )}
-          {!agendaLoading && !agendaError && agendaRows.length === 0 && (
+          {!agendaLoading && !agendaError && appointments.length === 0 && (
             <div className="py-10 text-center space-y-1">
               <CalendarDays className="h-8 w-8 text-muted mx-auto" />
-              <p className="text-sm text-muted">Sin leads registrados para este día.</p>
+              <p className="text-sm text-muted">Sin citas registradas en Doctoralia para este día.</p>
             </div>
           )}
 
-          {!agendaLoading && !agendaError && agendaRows.length > 0 && (
+          {!agendaLoading && !agendaError && appointments.length > 0 && (
             <div className="space-y-1">
               {/* Summary counts */}
-              <div className="flex gap-4 mb-4 text-xs text-muted">
-                <span><span className="font-semibold text-foreground">{agendaRows.length}</span> leads</span>
-                <span>
-                  <span className="font-semibold text-primary">
-                    {agendaRows.filter((r) => r.campaign_name).length}
-                  </span> con campaña
-                </span>
-                <span>
-                  <span className="font-semibold text-muted">
-                    {agendaRows.filter((r) => !r.campaign_name).length}
-                  </span> sin campaña
-                </span>
+              <div className="flex flex-wrap gap-4 mb-4 text-xs text-muted">
+                <span><span className="font-semibold text-foreground">{appointments.length}</span> pacientes</span>
                 <span>
                   <span className="font-semibold text-green-400">
-                    {agendaRows.filter((r) => r.patient_id || r.doc_patient_id).length}
-                  </span> cruzados Doctoralia
+                    {appointments.filter((r) => r.confirmada).length}
+                  </span> confirmados
+                </span>
+                <span>
+                  <span className="font-semibold text-primary">
+                    {appointments.filter((r) => r.campaign_name).length}
+                  </span> con campaña Meta
                 </span>
               </div>
 
@@ -316,39 +285,56 @@ export default function Live() {
               {Array.from(groupedByHour.entries()).map(([hour, rows]) => (
                 <div key={hour} className="flex gap-3">
                   {/* Time column */}
-                  <div className="w-12 shrink-0 pt-2.5">
-                    <span className="text-[10px] font-mono text-muted">{hour}</span>
+                  <div className="w-14 shrink-0 pt-2.5">
+                    <span className="text-[10px] font-mono text-muted flex items-center gap-0.5">
+                      <Clock className="h-2.5 w-2.5" />{hour}
+                    </span>
                   </div>
                   {/* Events column */}
                   <div className="flex-1 space-y-1.5 border-l border-border pl-3 pb-3">
                     {rows.map((row) => (
                       <div
-                        key={row.lead_id}
+                        key={row.raw_hash}
                         className="p-3 bg-surface rounded-lg border border-border hover:border-primary/40 transition-colors"
                       >
                         <div className="flex items-start justify-between gap-2">
-                          {/* Name + source */}
+                          {/* Patient name */}
                           <div className="flex items-center gap-1.5 min-w-0">
                             <User className="h-3.5 w-3.5 text-muted shrink-0" />
                             <span className="text-sm font-medium text-foreground truncate">
-                              {row.lead_name ?? 'Lead sin nombre'}
+                              {row.paciente_nombre ?? 'Paciente sin nombre'}
                             </span>
-                            {row.source && (
-                              <span className="text-[10px] text-muted shrink-0">· {row.source}</span>
-                            )}
                           </div>
-                          {/* Stage */}
-                          {row.stage && (
-                            <span className="text-[10px] text-muted shrink-0 hidden sm:block">{row.stage}</span>
+                          {/* Import */}
+                          {row.importe != null && row.importe > 0 && (
+                            <span className="text-xs font-semibold text-foreground shrink-0">
+                              €{Number(row.importe).toLocaleString('es-ES', { minimumFractionDigits: 0 })}
+                            </span>
                           )}
                         </div>
+                        {/* Service / treatment */}
+                        {row.asunto && (
+                          <div className="flex items-center gap-1 mt-1.5">
+                            <Stethoscope className="h-3 w-3 text-muted shrink-0" />
+                            <span className="text-xs text-muted truncate">{row.asunto}</span>
+                          </div>
+                        )}
+                        {/* Room / agenda */}
+                        {(row.sala_box || row.agenda) && (
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <MapPin className="h-3 w-3 text-muted shrink-0" />
+                            <span className="text-xs text-muted truncate">
+                              {[row.agenda, row.sala_box].filter(Boolean).join(' · ')}
+                            </span>
+                          </div>
+                        )}
                         {/* Badges row */}
                         <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                          <EstadoBadge estado={row.estado} confirmada={row.confirmada} />
                           <CampaignBadge name={row.campaign_name} />
-                          <MatchBadge row={row} />
-                          {(row.patient_id || row.doc_patient_id) && row.doctoralia_template_name && (
-                            <span className="text-[10px] text-muted truncate max-w-[180px]">
-                              {row.doctoralia_template_name}
+                          {row.procedencia && (
+                            <span className="text-[10px] text-muted border border-border rounded-full px-2 py-0.5">
+                              {row.procedencia}
                             </span>
                           )}
                         </div>
