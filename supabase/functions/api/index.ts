@@ -2356,7 +2356,12 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
       ? `time_range(${JSON.stringify({ since: campFrom, until: campTo })})`
       : `date_preset(${datePreset})`;
 
-    const campaignsTimeRange = buildCampaignsTimeRange(campFrom, campTo, campDays);
+    // NOTE: We intentionally do NOT pass `time_range` to the /campaigns listing
+    // endpoint. Combined with `effective_status` it filters out campaigns whose
+    // delivery falls outside the window (frequently yielding 0 results even
+    // when paused/archived campaigns exist). The `insights.{date_param}`
+    // subfield already scopes the per-campaign metrics to the requested period.
+    // (`buildCampaignsTimeRange` is still exported for tests and future use.)
 
     try {
       const accountResults = await Promise.allSettled(creds.adAccountIds.map(async (accountId: string) => {
@@ -2364,7 +2369,6 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
           metaFetch(`/${accountId}/campaigns`, {
             fields: `id,name,status,objective,daily_budget,lifetime_budget,insights.${insightsDateParam}{impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,actions,cost_per_action_type,quality_ranking,engagement_rate_ranking}`,
             effective_status: '["ACTIVE","PAUSED","DELETED","ARCHIVED","IN_PROCESS","WITH_ISSUES"]',
-            time_range: campaignsTimeRange,
             limit: '500',
           }, creds.accessToken),
           metaFetch(`/${accountId}`, { fields: 'currency' }, creds.accessToken),
@@ -2401,7 +2405,6 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
           return await metaFetch(`/${accountId}/campaigns`, {
             fields: 'id,name,status,objective,daily_budget,lifetime_budget',
             effective_status: '["ACTIVE","PAUSED","DELETED","ARCHIVED","IN_PROCESS","WITH_ISSUES"]',
-            time_range: campaignsTimeRange,
             limit: '500',
           }, creds.accessToken);
         }));

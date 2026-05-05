@@ -249,8 +249,11 @@ const mapCampaignRow = (c: any): CampaignRow => ({
 const buildMarketingParams = (isCustomRange: boolean, customFrom: string, customTo: string, days: number, campaignId?: string) => {
   const p = new URLSearchParams()
   if (isCustomRange) {
-    p.set('from', customFrom)
+    if (customFrom) p.set('from', customFrom)
     p.set('to', customTo || MARKETING_TODAY)
+    // If only `to` is provided, the backend uses `days` as the lookback
+    // window from `to` to derive `since`.
+    if (!customFrom) p.set('days', String(days))
   } else {
     p.set('days', String(days))
   }
@@ -388,7 +391,7 @@ const useMarketingData = (days: number, campaignId: string, customFrom: string, 
     const load = async () => {
       setState((prev) => ({ ...prev, loading: true, error: null }))
       try {
-        const isCustomRange = Boolean(customFrom)
+        const isCustomRange = Boolean(customFrom || customTo)
         const iParams = buildMarketingParams(isCustomRange, customFrom, customTo, days, campaignId)
         const cParams = buildMarketingParams(isCustomRange, customFrom, customTo, days)
 
@@ -480,7 +483,7 @@ function MarketingHeader({
               key={d}
               onClick={() => { setDays(d); setCustomFrom(''); setCustomTo('') }}
               className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                !customFrom && days === d ? 'bg-primary/15 text-foreground' : 'text-muted hover:text-foreground'
+                !customFrom && !customTo && days === d ? 'bg-primary/15 text-foreground' : 'text-muted hover:text-foreground'
               }`}
             >
               {d}d
@@ -539,7 +542,7 @@ export default function Marketing() {
 
   const fetchAds = useCallback(async () => {
     adsDispatch({ type: 'start' })
-    const params = buildMarketingParams(Boolean(customFrom), customFrom, customTo, days)
+    const params = buildMarketingParams(Boolean(customFrom || customTo), customFrom, customTo, days)
 
     try {
       const data: any = await invokeApi(`/meta/ads?${params}`)
