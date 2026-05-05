@@ -28,6 +28,14 @@ export function CardTitle({ children, className = '', ...props }: Readonly<CardP
   )
 }
 
+export function CardDescription({ children, className = '', ...props }: Readonly<CardProps>) {
+  return (
+    <p className={`card-description-panel ${className}`} {...props}>
+      {children}
+    </p>
+  )
+}
+
 export function CardContent({ children, className = '', ...props }: Readonly<CardProps>) {
   return (
     <div className={`card-content-panel ${className}`} {...props}>
