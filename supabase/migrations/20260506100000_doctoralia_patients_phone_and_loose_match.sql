@@ -1,33 +1,6 @@
 -- Migration: Repopulate doctoralia_patients using patient_phone fallback and schedule matching
 -- This migration extends the existing doctoralia patient population beyond DNI-only rows.
 
--- Ensure the column exists before any reference to it (safe to run on any environment).
-ALTER TABLE public.financial_settlements
-  ADD COLUMN IF NOT EXISTS patient_phone TEXT;
-
--- Backfill patient_phone from patients.phone where available (guarded: only if patients.phone exists).
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1
-    FROM information_schema.columns
-    WHERE table_schema = 'public'
-      AND table_name   = 'patients'
-      AND column_name  = 'phone'
-  ) THEN
-    UPDATE public.financial_settlements fs
-    SET patient_phone = p.phone
-    FROM public.patients p
-    WHERE fs.patient_phone IS NULL
-      AND fs.patient_id = p.id
-      AND p.phone IS NOT NULL;
-  END IF;
-END $$;
-
-CREATE INDEX IF NOT EXISTS financial_settlements_patient_phone_idx
-  ON public.financial_settlements (clinic_id, patient_phone)
-  WHERE patient_phone IS NOT NULL;
-
 DO $$
 BEGIN
   IF EXISTS (
@@ -44,11 +17,11 @@ BEGIN
         match_confidence, match_class
       )
       SELECT
-        COALESCE(NULLIF(fs.patient_dni, ''), 'ph:' || regexp_replace(COALESCE(fs.patient_phone, ''), '\D', '', 'g')) AS doc_patient_id,
+        COALESCE(NULLIF(fs.patient_dni, ''), 'ph:' || regexp_replace(COALESCE(fs.patient_phone, ''), '\\D', '', 'g')) AS doc_patient_id,
         fs.clinic_id,
         UPPER(TRIM(fs.patient_name)) AS full_name,
-        LOWER(REGEXP_REPLACE(extensions.unaccent(TRIM(fs.patient_name)), '\s+', ' ', 'g')) AS name_norm,
-        NULLIF(regexp_replace(COALESCE(fs.patient_phone, ''), '\D', '', 'g'), '') AS phone_primary,
+        LOWER(REGEXP_REPLACE(extensions.unaccent(TRIM(fs.patient_name)), '\\s+', ' ', 'g')) AS name_norm,
+        NULLIF(regexp_replace(COALESCE(fs.patient_phone, ''), '\\D', '', 'g'), '') AS phone_primary,
         MIN(fs.settled_at) AS first_seen_at,
         NULL AS match_confidence,
         NULL AS match_class
@@ -70,7 +43,7 @@ BEGIN
       SET phone_primary = sub.phone_norm
       FROM (
         SELECT fs.patient_dni AS doc_patient_id, fs.clinic_id,
-              MAX(NULLIF(regexp_replace(COALESCE(fs.patient_phone,''), '\D', '', 'g'), '')) AS phone_norm
+              MAX(NULLIF(regexp_replace(COALESCE(fs.patient_phone,''), '\\D', '', 'g'), '')) AS phone_norm
         FROM public.financial_settlements fs
         WHERE fs.patient_dni IS NOT NULL
         GROUP BY fs.patient_dni, fs.clinic_id
@@ -91,7 +64,7 @@ BEGIN
       NULLIF(fs.patient_dni, '') AS doc_patient_id,
       fs.clinic_id,
       UPPER(TRIM(fs.patient_name)) AS full_name,
-      LOWER(REGEXP_REPLACE(extensions.unaccent(TRIM(fs.patient_name)), '\s+', ' ', 'g')) AS name_norm,
+      LOWER(REGEXP_REPLACE(extensions.unaccent(TRIM(fs.patient_name)), '\\s+', ' ', 'g')) AS name_norm,
       NULL AS phone_primary,
       MIN(fs.settled_at) AS first_seen_at,
       NULL AS match_confidence,
