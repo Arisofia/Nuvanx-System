@@ -50,9 +50,18 @@ def classify_tag(customer_info):
     return 'general'
 
 
+def mask_phone(phone):
+    value = str(phone or '')
+    digits = ''.join(ch for ch in value if ch.isdigit())
+    if len(digits) <= 4:
+        return '****'
+    return f'****{digits[-4:]}'
+
+
 def update_crm_record(phone, campaign_name, ad_name, tag):
     """Reemplaza esta función con tu actualización real del CRM o base de datos."""
-    print(f'Sincronizado: {phone} <- {campaign_name} | ad: {ad_name} | tag: {tag}')
+    masked_phone = mask_phone(phone)
+    print(f'Sincronizado: {masked_phone} <- {campaign_name} | ad: {ad_name} | tag: {tag}')
     return True
 
 
