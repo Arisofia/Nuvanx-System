@@ -861,12 +861,29 @@ describe('handlePublicRoutes', () => {
         eq: vi.fn().mockReturnThis(),
       };
       const leadsQuery = {
-        upsert: function () { return this; } as any,
-        select: function () { return this; } as any,
+        upsert: vi.fn(function () { return this; }),
+        select: vi.fn(function () { return this; }),
+        update: vi.fn(function () { return this; }),
+        eq: vi.fn(function () { return this; }),
+        order: vi.fn(function () { return this; }),
+        limit: vi.fn(function () { return this; }),
         maybeSingle: vi.fn().mockResolvedValue({ data: { id: 'lead1' } }),
       };
+      const usersQuery = {
+        select: vi.fn(function () { return this; }),
+        eq: vi.fn(function () { return this; }),
+        single: vi.fn().mockResolvedValue({ data: { clinic_id: 'clinic1' } }),
+      };
+      const whatsappQuery = {
+        insert: vi.fn().mockResolvedValue({ data: [{ id: 'conv1' }] }),
+      };
       const adminClient = {
-        from: vi.fn((table: string) => (table === 'integrations' ? integrationsQuery : leadsQuery)),
+        from: vi.fn((table: string) => {
+          if (table === 'integrations') return integrationsQuery;
+          if (table === 'users') return usersQuery;
+          if (table === 'whatsapp_conversations') return whatsappQuery;
+          return leadsQuery;
+        }),
       };
 
       const createClientMock = vi.spyOn(api.supabaseClientFactory, 'create').mockReturnValue(adminClient as any);
@@ -897,7 +914,7 @@ describe('handlePublicRoutes', () => {
 
       expect(createClientMock).toHaveBeenCalled();
       expect(adminClient.from).toHaveBeenCalledWith('integrations');
-      expect(leadsQuery.upsert).toHaveBeenCalled();
+      expect(leadsQuery.update).toHaveBeenCalled();
       expect(res.status).toBe(200);
       expect(await res.text()).toBe('ok');
     });
@@ -917,13 +934,13 @@ describe('handlePublicRoutes', () => {
         eq: vi.fn().mockReturnThis(),
       };
       const leadsQuery = {
-        upsert: function () { return this; } as any,
-        select: function () { return this; } as any,
-        update: function () { return this; } as any,
-        eq: function () { return this; } as any,
-        order: function () { return this; } as any,
-        limit: function () { return this; } as any,
-        ilike: function () { return this; } as any,
+        upsert: vi.fn(function () { return this; }),
+        select: vi.fn(function () { return this; }),
+        update: vi.fn(function () { return this; }),
+        eq: vi.fn(function () { return this; }),
+        order: vi.fn(function () { return this; }),
+        limit: vi.fn(function () { return this; }),
+        ilike: vi.fn(function () { return this; }),
         maybeSingle: vi.fn().mockResolvedValue({ data: { id: 'lead1', stage: 'lead' } }),
       };
       const whatsappQuery = {
@@ -972,7 +989,7 @@ describe('handlePublicRoutes', () => {
 
       expect(createClientMock).toHaveBeenCalled();
       expect(adminClient.from).toHaveBeenCalledWith('integrations');
-      expect(leadsQuery.upsert).toHaveBeenCalled();
+      expect(leadsQuery.update).toHaveBeenCalled();
       expect(whatsappQuery.insert).toHaveBeenCalledWith(expect.objectContaining({
         clinic_id: 'clinic1',
         direction: 'inbound',
