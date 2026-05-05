@@ -861,8 +861,8 @@ describe('handlePublicRoutes', () => {
         eq: vi.fn().mockReturnThis(),
       };
       const leadsQuery = {
-        upsert: vi.fn().mockReturnThis(),
-        select: vi.fn().mockReturnThis(),
+        upsert: function () { return this; } as any,
+        select: function () { return this; } as any,
         maybeSingle: vi.fn().mockResolvedValue({ data: { id: 'lead1' } }),
       };
       const adminClient = {
@@ -900,6 +900,85 @@ describe('handlePublicRoutes', () => {
       expect(leadsQuery.upsert).toHaveBeenCalled();
       expect(res.status).toBe(200);
       expect(await res.text()).toBe('ok');
+    });
+
+    it('creates a whatsapp_conversation row and updates a matched lead stage when inbound WA message arrives', async () => {
+      const envGet = (globalThis as any).Deno.env.get as ReturnType<typeof vi.fn>;
+      envGet.mockImplementation((key: string) => {
+        if (key === 'META_APP_SECRET') return null;
+        if (key === 'SUPABASE_URL') return 'https://supabase.example.com';
+        if (key === 'SUPABASE_SERVICE_ROLE_KEY') return 'service-key';
+        return null;
+      });
+
+      const integrationsQuery = {
+        data: [{ user_id: 'user1', metadata: { phone_number_id: '123' } }],
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+      };
+      const leadsQuery = {
+        upsert: function () { return this; } as any,
+        select: function () { return this; } as any,
+        update: function () { return this; } as any,
+        eq: function () { return this; } as any,
+        order: function () { return this; } as any,
+        limit: function () { return this; } as any,
+        ilike: function () { return this; } as any,
+        maybeSingle: vi.fn().mockResolvedValue({ data: { id: 'lead1', stage: 'lead' } }),
+      };
+      const whatsappQuery = {
+        insert: vi.fn().mockResolvedValue({ data: [{ id: 'conv1' }] }),
+      };
+      const usersQuery = {
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: { clinic_id: 'clinic1' } }),
+      };
+
+      const adminClient = {
+        from: vi.fn((table: string) => {
+          if (table === 'integrations') return integrationsQuery;
+          if (table === 'leads') return leadsQuery;
+          if (table === 'whatsapp_conversations') return whatsappQuery;
+          if (table === 'users') return usersQuery;
+          return { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), single: vi.fn().mockResolvedValue({ data: null }) };
+        }),
+      };
+      const createClientMock = vi.spyOn(api.supabaseClientFactory, 'create').mockReturnValue(adminClient as any);
+
+      const body = JSON.stringify({
+        entry: [
+          {
+            changes: [
+              {
+                value: {
+                  messaging_product: 'whatsapp',
+                  metadata: { phone_number_id: '123' },
+                  contacts: [{ wa_id: '1234', profile: { name: 'Alice' } }],
+                  messages: [{ id: 'msg1', from: '1234', timestamp: '1690000000', text: { body: 'Hello' } }],
+                },
+              },
+            ],
+          },
+        ],
+      });
+      const req = new Request('https://example.com/webhooks/whatsapp', {
+        method: 'POST',
+        body,
+      });
+      const ctx = makeCtx({ resource: 'webhooks', sub: 'whatsapp', req });
+
+      const res = await handlePublicRoutes(ctx);
+
+      expect(createClientMock).toHaveBeenCalled();
+      expect(adminClient.from).toHaveBeenCalledWith('integrations');
+      expect(leadsQuery.upsert).toHaveBeenCalled();
+      expect(whatsappQuery.insert).toHaveBeenCalledWith(expect.objectContaining({
+        clinic_id: 'clinic1',
+        direction: 'inbound',
+        message_type: 'text',
+      }));
+      expect(res.status).toBe(200);
     });
   });
 
