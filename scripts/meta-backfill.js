@@ -235,7 +235,7 @@ async function resolvePageAccessToken(pageId) {
   }
 
   const page = data?.data?.find?.((item) => String(item.id) === String(pageId));
-  if (!page || !page.access_token) {
+  if (!page?.access_token) {
     throw new Error(`Page access token not found for Page ID ${pageId}`);
   }
   return page.access_token;
@@ -406,14 +406,31 @@ async function ingestMetaLeadsFromForms(db, userId, adAccountId, sinceTs) {
 }
 
 function resolveLeadName(fields, leadgen_id) {
-  const firstName = fields['first_name'] ?? fields['nombre'] ?? fields['nombre1'] ?? '';
-  const lastName = fields['last_name'] ?? fields['apellido'] ?? fields['apellidos'] ?? '';
-  const explicitName = fields['full_name'] ?? fields['nombre_completo'] ?? fields['nombre'] ?? fields['name'] ?? '';
-
+  const explicitName = fields['full_name'] ?? fields['nombre_completo'] ?? fields['nombre'] ?? fields['name'] ?? fields['contact_name'] ?? '';
   if (explicitName) return explicitName;
-  if (firstName && lastName) return `${firstName} ${lastName}`;
-  if (firstName) return firstName;
-  if (lastName) return lastName;
+
+  const firstNameParts = [
+    fields['first_name'],
+    fields['nombre'],
+    fields['nombre1'],
+    fields['nombre2'],
+    fields['given_name'],
+  ].filter(Boolean);
+
+  const lastNameParts = [
+    fields['last_name'],
+    fields['apellido'],
+    fields['apellidos'],
+    fields['apellido1'],
+    fields['apellido2'],
+    fields['family_name'],
+  ].filter(Boolean);
+
+  if (firstNameParts.length > 0 && lastNameParts.length > 0) {
+    return `${firstNameParts.join(' ')} ${lastNameParts.join(' ')}`.trim();
+  }
+  if (firstNameParts.length > 0) return firstNameParts.join(' ').trim();
+  if (lastNameParts.length > 0) return lastNameParts.join(' ').trim();
   return `Lead ${leadgen_id.slice(-6)}`;
 }
 
@@ -432,15 +449,58 @@ function extractMetaLeadCustomerInfo(fieldData) {
   }, {});
 }
 
+function findPhoneCandidate(fields) {
+  const phoneCandidates = [
+    'phone_number', 'telefono', 'phone', 'teléfono', 'número de teléfono', 'numero de telefono',
+    'celular', 'móvil', 'movil', 'mobile', 'whatsapp', 'whatsapp_number', 'whatsapp_phone',
+  ];
+  for (const key of phoneCandidates) {
+    const candidate = fields[key];
+    if (candidate) return candidate;
+  }
+  const loosePhoneKey = /^(phone|phone_number|telefono|tel[eé]fono|número.*tel[eé]fono|numero.*telefono|celular|m[oó]vil|mobile|whatsapp)$/i;
+  for (const [key, value] of Object.entries(fields)) {
+    if (loosePhoneKey.test(key) && value) return value;
+  }
+  return null;
+}
+
+function extractPhoneFromText(text) {
+  const normalized = String(text ?? '');
+  const match = /(\+?\d[\d\-\s().]{6,}\d)/.exec(normalized);
+  if (!match) return null;
+  return match[1].replaceAll(/[^\d+]/g, '');
+}
+
 function classifyMetaLeadTag(fields) {
   const normalized = Object.values(fields).join(' ').toLowerCase();
   return normalized.includes('botox') ? 'neuromodulador/botox' : 'general';
 }
 
+function parseLeadCreatedAt(rawTime) {
+  if (!rawTime) return new Date().toISOString();
+  try {
+    if (typeof rawTime === 'number') {
+      return new Date(rawTime * 1000).toISOString();
+    }
+    if (typeof rawTime === 'string' && /^\d+$/.test(rawTime)) {
+      return new Date(Number(rawTime) * 1000).toISOString();
+    }
+    const d = new Date(rawTime);
+    return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+  } catch {
+    return new Date().toISOString();
+  }
+}
+
 async function processLeadData(db, userId, leadData) {
   const fields = {};
+  const rawFieldData = {};
   for (const f of (leadData.field_data ?? [])) {
-    fields[(f.name ?? '').toLowerCase()] = f.values?.[0] ?? '';
+    const fieldName = String(f.name ?? '').trim();
+    const value = String(f.values?.[0] ?? '').trim();
+    fields[fieldName.toLowerCase()] = value;
+    if (fieldName) rawFieldData[fieldName] = value;
   }
 
   const leadDataFields = extractMetaLeadCustomerInfo(leadData.field_data ?? []);
@@ -449,12 +509,15 @@ async function processLeadData(db, userId, leadData) {
   const leadgen_id = leadData.id;
   const leadName = resolveLeadName(fields, leadgen_id);
   const email = fields['email'] ?? null;
-  const phone = fields['phone_number'] ?? fields['telefono'] ?? fields['phone'] ?? null;
+  const rawPhone = findPhoneCandidate(fields) ?? extractPhoneFromText(JSON.stringify(rawFieldData));
+  const phone = rawPhone ?? null;
   const dni = fields['dni'] ?? fields['nif'] ?? fields['national_id'] ?? null;
 
   const KNOWN_STANDARD = new Set([
     'full_name', 'nombre_completo', 'nombre', 'name', 'first_name', 'last_name',
-    'email', 'phone_number', 'telefono', 'phone', 'dni', 'nif', 'national_id',
+    'email', 'phone_number', 'telefono', 'phone', 'teléfono', 'número de teléfono', 'numero de telefono',
+    'celular', 'móvil', 'movil', 'whatsapp',
+    'dni', 'nif', 'national_id',
   ]);
   const customFields = Object.fromEntries(
     Object.entries(fields).filter(([k]) => !KNOWN_STANDARD.has(k))
@@ -468,22 +531,7 @@ async function processLeadData(db, userId, leadData) {
   const allValues = Object.values(fields).join(' ') + ' ' + (notes ?? '');
   const priority = HIGH_PRIORITY_KEYWORDS.test(allValues) ? 'high' : 'normal';
 
-  let createdAt;
-  try {
-    const rawTime = leadData.created_time;
-    if (!rawTime) {
-      createdAt = new Date().toISOString();
-    } else if (typeof rawTime === 'number') {
-      createdAt = new Date(rawTime * 1000).toISOString();
-    } else if (typeof rawTime === 'string' && /^\d+$/.test(rawTime)) {
-      createdAt = new Date(Number(rawTime) * 1000).toISOString();
-    } else {
-      const d = new Date(rawTime);
-      createdAt = Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
-    }
-  } catch {
-    createdAt = new Date().toISOString();
-  }
+  const createdAt = parseLeadCreatedAt(leadData.created_time);
 
   const { rows: existingLeadRows } = await db.query(
     `SELECT id FROM public.leads WHERE user_id = $1 AND source = 'meta_leadgen' AND external_id = $2 LIMIT 1`,
