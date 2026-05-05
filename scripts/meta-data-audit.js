@@ -3,6 +3,7 @@
 // Reads Meta API (last 90 days) + DB tables and prints a human-readable report.
 
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
+const crypto = require('node:crypto');
 const https = require('https');
 
 const {
@@ -10,6 +11,7 @@ const {
   SUPABASE_SERVICE_ROLE_KEY: SUPABASE_SERVICE_KEY,
   META_ACCESS_TOKEN: META_TOKEN,
   META_AD_ACCOUNT_ID: META_ACCOUNT, // e.g. act_123456
+  META_APP_SECRET,
 } = process.env;
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
@@ -34,7 +36,11 @@ function httpsGet(url) {
 
 function metaUrl(path, params) {
   const base = `https://graph.facebook.com/v21.0${path}`;
-  const qs = new URLSearchParams({ access_token: META_TOKEN, ...params });
+  const extra = {};
+  if (META_APP_SECRET && META_TOKEN) {
+    extra.appsecret_proof = crypto.createHmac('sha256', META_APP_SECRET).update(META_TOKEN).digest('hex');
+  }
+  const qs = new URLSearchParams({ access_token: META_TOKEN, ...extra, ...params });
   return `${base}?${qs}`;
 }
 
@@ -116,12 +122,44 @@ const h2 = (t) => console.log(`\n▶ ${t}`);
   if (!META_TOKEN || !META_ACCOUNT) {
     insightsError = 'META_ACCESS_TOKEN or META_AD_ACCOUNT_ID not set in .env';
     console.log('ERROR:', insightsError);
-  } else {
+  } else if (!META_APP_SECRET) {
     console.log('NOTE: META_APP_SECRET is stored only in Supabase Secrets (not in .env).');
     console.log('      Direct Meta API calls from this script require appsecret_proof.');
     console.log('      Skipping live Meta API call — will use DB fallback data only.');
     console.log('      To get live data, call the production Edge Function (GET /api/meta/insights).');
+    console.log('      Or add META_APP_SECRET to your .env to enable direct calls from this script.');
     insightsError = 'appsecret_proof required but META_APP_SECRET not available locally (see note above)';
+  } else {
+    const url = metaUrl(`/${META_ACCOUNT}/insights`, {
+      fields: 'impressions,clicks,spend,actions',
+      time_range: JSON.stringify({ since: since90, until: today }),
+      time_increment: '1',
+      level: 'account',
+      limit: '500',
+    });
+    try {
+      const result = await httpsGet(url);
+      if (result.status !== 200) {
+        insightsError = `Meta API error (HTTP ${result.status}): ${JSON.stringify(result.body).slice(0, 300)}`;
+        console.log('ERROR:', insightsError);
+      } else {
+        insightsRows = Array.isArray(result.body?.data) ? result.body.data : [];
+        console.log(`  Fetched ${insightsRows.length} daily insight rows from Meta API.`);
+        if (insightsRows.length > 0) {
+          const sumN = (k) => insightsRows.reduce((s, d) => s + Number(d[k] || 0), 0);
+          console.log(`  Spend       : €${sumN('spend').toFixed(2)}`);
+          console.log(`  Impressions : ${Math.round(sumN('impressions')).toLocaleString('es-MX')}`);
+          console.log(`  Clicks      : ${Math.round(sumN('clicks')).toLocaleString('es-MX')}`);
+          console.log('  Daily rows with spend > 0:');
+          for (const d of insightsRows.filter(r => Number(r.spend || 0) > 0).slice(-15)) {
+            console.log(`    ${d.date}  spend=€${Number(d.spend).toFixed(2)}  clicks=${d.clicks}  impr=${d.impressions}`);
+          }
+        }
+      }
+    } catch (e) {
+      insightsError = e.message;
+      console.log('  Meta API request error:', e.message);
+    }
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -131,9 +169,45 @@ const h2 = (t) => console.log(`\n▶ ${t}`);
 
   if (!META_TOKEN || !META_ACCOUNT) {
     console.log('ERROR: credentials not configured — skipping.');
-  } else {
+  } else if (!META_APP_SECRET) {
     console.log('NOTE: Same appsecret_proof constraint applies. Skipping live Meta campaign call.');
+    console.log('      Add META_APP_SECRET to your .env to enable direct calls from this script.');
     console.log('      Use the production Edge Function (GET /api/meta/campaigns) to get live data.');
+  } else {
+    const url = metaUrl(`/${META_ACCOUNT}/campaigns`, {
+      fields: `name,status,objective,insights.time_range(${JSON.stringify({ since: since90, until: today })}){spend,impressions,clicks,actions}`,
+      limit: '100',
+    });
+    try {
+      const result = await httpsGet(url);
+      if (result.status !== 200) {
+        console.log(`  Meta API error (HTTP ${result.status}):`, JSON.stringify(result.body).slice(0, 300));
+      } else {
+        const campaigns = Array.isArray(result.body?.data) ? result.body.data : [];
+        console.log(`  Fetched ${campaigns.length} campaigns from Meta API.`);
+        const withSpend = campaigns.filter(c => Number(c.insights?.data?.[0]?.spend || 0) > 0);
+        console.log(`  Campaigns with spend > 0: ${withSpend.length}`);
+        for (const c of withSpend) {
+          const ins = c.insights?.data?.[0] || {};
+          console.log(`\n    Campaign  : ${c.name}`);
+          console.log(`    ID        : ${c.id}`);
+          console.log(`    Status    : ${c.status}`);
+          console.log(`    Objective : ${c.objective || '—'}`);
+          console.log(`    Spend     : €${Number(ins.spend || 0).toFixed(2)}`);
+          console.log(`    Impress.  : ${Number(ins.impressions || 0).toLocaleString('es-MX')}`);
+          console.log(`    Clicks    : ${Number(ins.clicks || 0).toLocaleString('es-MX')}`);
+        }
+        const noSpend = campaigns.filter(c => Number(c.insights?.data?.[0]?.spend || 0) === 0);
+        if (noSpend.length > 0) {
+          console.log(`\n  Campaigns with zero spend (${noSpend.length}):`);
+          for (const c of noSpend) {
+            console.log(`    - ${c.name}  [${c.status}]`);
+          }
+        }
+      }
+    } catch (e) {
+      console.log('  Meta API request error:', e.message);
+    }
   }
 
   // ══════════════════════════════════════════════════════════════════════════
