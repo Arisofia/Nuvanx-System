@@ -1518,30 +1518,86 @@ async function processWhatsappWebhookMessage(adminClient: any, userId: string, v
   const createdAtMeta = message?.timestamp ? new Date(Number(message.timestamp) * 1000).toISOString() : new Date().toISOString();
   const hashedPhone = await sha256Hex(phone);
 
-  const { data: lead } = await adminClient
+  const { data: existingLead } = await adminClient
     .from('leads')
-    .upsert({
-      user_id:         userId,
-      external_id:     `whatsapp:${phone}`,
-      source:          'whatsapp',
-      stage:           'lead',
-      name:            name || null,
-      phone,
-      notes:           safeSnippet ? `WhatsApp inbound: ${safeSnippet}` : 'WhatsApp inbound message received',
-      telefono_hash:   hashedPhone,
-      email_hash:      null,
-      raw_field_data:  {
-        metadata: value.metadata ?? null,
-        contacts: value.contacts ?? null,
-        messages: value.messages ?? null,
-      },
-      created_at_meta: createdAtMeta,
-      created_at:      createdAtMeta,
-    }, { onConflict: 'user_id,source,external_id', ignoreDuplicates: true })
-    .select('id')
+    .select('id, stage')
+    .eq('user_id', userId)
+    .eq('telefono_hash', hashedPhone)
+    .order('created_at', { ascending: false })
+    .limit(1)
     .maybeSingle();
 
-  return Boolean(lead?.id);
+  let leadId: string | null = existingLead?.id ?? null;
+
+  if (existingLead?.id) {
+    if (String(existingLead.stage ?? 'lead').toLowerCase() === 'lead') {
+      await adminClient
+        .from('leads')
+        .update({ stage: 'whatsapp', first_inbound_at: createdAtMeta })
+        .eq('id', existingLead.id)
+        .eq('user_id', userId);
+    } else {
+      await adminClient
+        .from('leads')
+        .update({ first_inbound_at: createdAtMeta })
+        .eq('id', existingLead.id)
+        .is('first_inbound_at', null);
+    }
+  } else {
+    const { data: lead } = await adminClient
+      .from('leads')
+      .upsert({
+        user_id:         userId,
+        external_id:     `whatsapp:${phone}`,
+        source:          'whatsapp',
+        stage:           'whatsapp',
+        name:            name || null,
+        phone,
+        notes:           safeSnippet ? `WhatsApp inbound: ${safeSnippet}` : 'WhatsApp inbound message received',
+        telefono_hash:   hashedPhone,
+        email_hash:      null,
+        raw_field_data:  {
+          metadata: value.metadata ?? null,
+          contacts: value.contacts ?? null,
+          messages: value.messages ?? null,
+        },
+        created_at_meta: createdAtMeta,
+        first_inbound_at: createdAtMeta,
+        created_at:      createdAtMeta,
+      }, { onConflict: 'user_id,source,external_id', ignoreDuplicates: true })
+      .select('id')
+      .maybeSingle();
+    leadId = lead?.id ?? null;
+    if (!leadId) {
+      const { data: fallbackLead } = await adminClient
+        .from('leads')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('external_id', `whatsapp:${phone}`)
+        .maybeSingle();
+      leadId = fallbackLead?.id ?? null;
+    }
+  }
+
+  const { data: usrRow } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+  const clinicId = usrRow?.clinic_id ?? null;
+  if (clinicId) {
+    await adminClient
+      .from('whatsapp_conversations')
+      .insert({
+        clinic_id:        clinicId,
+        lead_id:          leadId,
+        phone,
+        direction:        'inbound',
+        message_type:     String(message?.type ?? 'text'),
+        message_preview:  safeSnippet || null,
+        sent_at:          createdAtMeta,
+        wa_message_id:    String(message?.id ?? '') || null,
+        conversation_status: 'received',
+      });
+  }
+
+  return Boolean(leadId);
 }
 
 function throwIfError(result: { error?: any } | null | undefined): void {
@@ -2415,7 +2471,7 @@ async function processMetaInsightsGet(adminClient: any, userId: string, url: URL
 }
 
 async function persistMetaDailyInsights(adminClient: any, userId: string, adAccountId: string, accessToken: string, sinceDate: string, untilDate: string): Promise<number> {
-  const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,conversions';
+  const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,actions';
   const insightsRes = await metaFetch(`/${adAccountId}/insights`, {
     fields,
     time_range: JSON.stringify({ since: sinceDate, until: untilDate }),
@@ -2437,7 +2493,7 @@ async function persistMetaDailyInsights(adminClient: any, userId: string, adAcco
     ctr: Number(r.ctr || 0),
     cpc: Number(r.cpc || 0),
     cpm: Number(r.cpm || 0),
-    messaging_conversations: 0,
+    messaging_conversations: actionValue(r.actions, isMessagingConversationAction),
     updated_at: new Date().toISOString(),
   }));
 
@@ -4249,7 +4305,7 @@ async function loadMetaKpis(adminClient: any, userId: string, url: URL, since: s
       metaResult.message = validation.message;
       if (hasCachedMeta) {
         metaResult.spend = Number.parseFloat((cachedMetrics.spend ?? 0).toFixed(2));
-        metaResult.leads = cachedMetrics.conversions ?? 0;
+        metaResult.leads = Math.max(cachedMetrics.conversions ?? 0, metaResult.leads);
         metaResult.impressions = cachedMetrics.impressions ?? 0;
         metaResult.clicks = cachedMetrics.clicks ?? 0;
         metaResult.ctr = metaResult.impressions > 0 ? Number.parseFloat(((metaResult.clicks / metaResult.impressions) * 100).toFixed(2)) : 0;
@@ -4261,7 +4317,7 @@ async function loadMetaKpis(adminClient: any, userId: string, url: URL, since: s
     metaResult.message = e?.message ?? 'Meta API error';
     if (hasCachedMeta) {
       metaResult.spend = Number.parseFloat((cachedMetrics.spend ?? 0).toFixed(2));
-      metaResult.leads = cachedMetrics.conversions ?? 0;
+      metaResult.leads = Math.max(cachedMetrics.conversions ?? 0, metaResult.leads);
       metaResult.impressions = cachedMetrics.impressions ?? 0;
       metaResult.clicks = cachedMetrics.clicks ?? 0;
       metaResult.ctr = metaResult.impressions > 0 ? Number.parseFloat(((metaResult.clicks / metaResult.impressions) * 100).toFixed(2)) : 0;
@@ -4354,6 +4410,12 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
   const verifiedRevenueRounded = Number.parseFloat(verifiedRevenue.toFixed(2));
   const avgTicket = newVerifiedPatients > 0 ? Number.parseFloat((verifiedRevenueRounded / newVerifiedPatients).toFixed(2)) : null;
   const cacDoctoralia = newVerifiedPatients > 0 ? Number.parseFloat((metaResult.spend / newVerifiedPatients).toFixed(2)) : null;
+
+  if ((metaResult.leads ?? 0) === 0 && metaLeads > 0) {
+    metaResult.leads = metaLeads;
+    metaResult.data_source = metaResult.data_source === 'meta_api' ? 'meta_api+crm_leads' : 'crm_leads';
+  }
+
   const metaCpl = metaResult.leads > 0 ? Number.parseFloat((metaResult.spend / metaResult.leads).toFixed(2)) : null;
 
   const {

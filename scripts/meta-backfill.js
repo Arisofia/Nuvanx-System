@@ -472,6 +472,12 @@ function extractPhoneFromText(text) {
   return match[1].replaceAll(/[^\d+]/g, '');
 }
 
+function hashPrivacyValue(value) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (!normalized) return null;
+  return crypto.createHash('sha256').update(normalized).digest('hex');
+}
+
 function classifyMetaLeadTag(fields) {
   const normalized = Object.values(fields).join(' ').toLowerCase();
   return normalized.includes('botox') ? 'neuromodulador/botox' : 'general';
@@ -541,12 +547,17 @@ async function processLeadData(db, userId, leadData) {
     return false;
   }
 
+  const hashedPhone = phone ? hashPrivacyValue(phone) : null;
+  const hashedEmail = email ? hashPrivacyValue(email) : null;
+  const rawFieldDataJson = Object.keys(rawFieldData).length ? JSON.stringify(rawFieldData) : null;
+
   const leadResult = await db.query(`
     INSERT INTO public.leads
       (user_id, external_id, source, name, email, phone, dni, notes, priority,
        stage, campaign_id, campaign_name, adset_id, adset_name, ad_id, ad_name,
-       form_id, form_name, created_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+       form_id, form_name, meta_ad_id, meta_form_id, telefono_hash, email_hash,
+       raw_field_data, created_at_meta, created_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
     RETURNING id
   `, [
     userId,
@@ -567,6 +578,12 @@ async function processLeadData(db, userId, leadData) {
     leadData.ad_name ?? null,
     leadData.form_id ?? null,
     leadData.form_name ?? null,
+    leadData.ad_id ?? null,
+    leadData.form_id ?? null,
+    hashedPhone,
+    hashedEmail,
+    rawFieldDataJson,
+    createdAt,
     createdAt,
   ]);
 
