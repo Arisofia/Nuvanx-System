@@ -69,9 +69,11 @@ runs:
 
         if [ -n "$RESOLVED_DB_PASSWORD" ]; then
           echo "::add-mask::$RESOLVED_DB_PASSWORD"
-          supabase link --project-ref "$INPUT_PROJECT_REF" --password "$RESOLVED_DB_PASSWORD" --yes
+          timeout --signal=TERM --kill-after=15s 120s \
+            supabase link --project-ref "$INPUT_PROJECT_REF" --password "$RESOLVED_DB_PASSWORD" --yes </dev/null
         else
-          supabase link --project-ref "$INPUT_PROJECT_REF" --yes
+          timeout --signal=TERM --kill-after=15s 120s \
+            supabase link --project-ref "$INPUT_PROJECT_REF" --yes </dev/null
         fi
 
         # Pass to outputs for downstream steps in this action

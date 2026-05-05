@@ -34,6 +34,7 @@ jobs:
   advisor:
     name: RLS & security lint
     runs-on: ubuntu-latest
+    timeout-minutes: 8
     permissions:
       contents: read
     env:
@@ -68,14 +69,17 @@ jobs:
           database_url: ${{ env.DATABASE_URL }}
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           command: |
+            set -euo pipefail
             # Build direct session URL (port 5432) — avoids prepared statement conflicts with the pooler.
             # Prefer DATABASE_URL; fall back to constructing from project ref + password.
-            if [ -n "$DATABASE_URL" ]; then
+            if [ -n "${DATABASE_URL:-}" ]; then
               SESSION_URL=$(echo "$DATABASE_URL" | sed 's/:6543\//:5432\//g')
-            elif [ -n "$SUPABASE_DB_PASSWORD" ] && [ -n "$SUPABASE_PROJECT_REF" ]; then
+            elif [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
               SESSION_URL="postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.${SUPABASE_PROJECT_REF}.supabase.co:5432/postgres"
             else
               echo "::error::SUPABASE_DB_PASSWORD and DATABASE_URL are both missing. Cannot run security lint."
               exit 1
             fi
-            supabase db lint --db-url "$SESSION_URL" --level error --fail-on error
+            # Hard timeout so a stuck connection doesn't burn Actions minutes.
+            timeout --signal=TERM --kill-after=30s 240s \
+              supabase db lint --db-url "$SESSION_URL" --level error --fail-on error </dev/null
