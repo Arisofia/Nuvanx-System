@@ -539,6 +539,20 @@ export default function Marketing() {
   const [organicPosts, setOrganicPosts] = useState<Array<any>>([])
   const [organicKeyword, setOrganicKeyword] = useState('')
 
+  // ── Sub-toggle FB / IG (within Organic tab) ──────────────────────────
+  const [organicChannel, setOrganicChannel] = useState<'facebook' | 'instagram'>('facebook')
+
+  // ── Instagram organic data ───────────────────────────────────────────
+  const [igLoading, setIgLoading] = useState(false)
+  const [igError, setIgError] = useState<string | null>(null)
+  const [igSummary, setIgSummary] = useState<{
+    reach: number; follower_count_delta: number; profile_views: number;
+    accounts_engaged: number; total_interactions: number; website_clicks: number; views: number;
+  } | null>(null)
+  const [igDaily, setIgDaily] = useState<Array<{ date: string; reach: number; profile_views: number; accounts_engaged: number; total_interactions: number; views: number }>>([])
+  const [igPosts, setIgPosts] = useState<Array<any>>([])
+  const [igKeyword, setIgKeyword] = useState('')
+
   const state = useMarketingData(days, campaignId, customFrom, customTo)
 
   const since2025 = '2025-01-01'
@@ -597,9 +611,33 @@ export default function Marketing() {
   // Fetch organic on demand + when days change while tab open
   useEffect(() => {
     if (activeTab !== 'organic') return
-    fetchOrganic(organicKeyword)
+    if (organicChannel === 'facebook') fetchOrganic(organicKeyword)
+    else fetchIg(igKeyword)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, days])
+  }, [activeTab, days, organicChannel])
+
+  // ── Fetch Instagram organic insights ──────────────────────────────────
+  const fetchIg = useCallback(async (kw: string = '') => {
+    setIgLoading(true)
+    setIgError(null)
+    try {
+      const dailyParams = new URLSearchParams({ days: String(days) }).toString()
+      const postsParams = new URLSearchParams({ limit: '50', ...(kw ? { keyword: kw } : {}) }).toString()
+      const [dailyRes, postsRes]: any[] = await Promise.all([
+        invokeApi(`/meta/ig/daily?${dailyParams}`),
+        invokeApi(`/meta/ig/posts?${postsParams}`),
+      ])
+      if (!mountedRef.current) return
+      setIgSummary(dailyRes?.summary ?? null)
+      setIgDaily(Array.isArray(dailyRes?.daily) ? dailyRes.daily : [])
+      setIgPosts(Array.isArray(postsRes?.posts) ? postsRes.posts : [])
+    } catch (err: any) {
+      if (!mountedRef.current) return
+      setIgError(err?.message ?? 'Error cargando datos de Instagram.')
+    } finally {
+      if (mountedRef.current) setIgLoading(false)
+    }
+  }, [days])
 
   const { summary, changes, daily, campaigns, currency, accountIds, period, loading, error } = state
 
@@ -947,6 +985,26 @@ export default function Marketing() {
 
       {activeTab === 'organic' && (
         <div className="space-y-4">
+          {/* Sub-toggle: Facebook / Instagram */}
+          <div className="flex gap-2">
+            {([
+              { id: 'facebook', label: 'Facebook Page' },
+              { id: 'instagram', label: 'Instagram' },
+            ] as const).map((c) => (
+              <button
+                key={c.id}
+                onClick={() => setOrganicChannel(c.id)}
+                className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                  organicChannel === c.id
+                    ? 'bg-primary/25 text-foreground'
+                    : 'bg-card/40 text-muted hover:bg-card/60'
+                }`}
+              >{c.label}</button>
+            ))}
+          </div>
+
+          {organicChannel === 'facebook' && (
+          <>
           {organicError && (
             <Card><CardContent className="p-4 text-sm text-red-400">{organicError}</CardContent></Card>
           )}
@@ -1063,6 +1121,131 @@ export default function Marketing() {
               )}
             </CardContent>
           </Card>
+          </>
+          )}
+
+          {organicChannel === 'instagram' && (
+          <>
+          {igError && (
+            <Card><CardContent className="p-4 text-sm text-red-400">{igError}</CardContent></Card>
+          )}
+
+          {/* IG Summary cards */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            {[
+              { label: 'Alcance', value: igSummary?.reach ?? 0 },
+              { label: 'Interacciones', value: igSummary?.total_interactions ?? 0 },
+              { label: 'Visitas perfil', value: igSummary?.profile_views ?? 0 },
+              { label: 'Cuentas activadas', value: igSummary?.accounts_engaged ?? 0 },
+              { label: 'Clicks web', value: igSummary?.website_clicks ?? 0 },
+              { label: 'Δ Seguidores', value: igSummary?.follower_count_delta ?? 0 },
+            ].map((m) => (
+              <Card key={m.label}>
+                <CardContent className="p-3">
+                  <div className="text-xs text-muted">{m.label}</div>
+                  <div className="text-xl font-semibold text-foreground mt-1">
+                    {igLoading ? '…' : Number(m.value).toLocaleString('es-MX')}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* IG daily chart */}
+          <Card>
+            <CardHeader><CardTitle>Tendencia diaria · Instagram</CardTitle></CardHeader>
+            <CardContent style={{ height: 260 }}>
+              {igLoading && <p className="text-sm text-muted">Cargando…</p>}
+              {!igLoading && igDaily.length === 0 && (
+                <p className="text-sm text-muted">Sin datos en el período seleccionado.</p>
+              )}
+              {!igLoading && igDaily.length > 0 && (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={igDaily}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
+                    <XAxis dataKey="date" stroke="#8a8a8a" tick={{ fontSize: 11 }} />
+                    <YAxis stroke="#8a8a8a" tick={{ fontSize: 11 }} />
+                    <Tooltip />
+                    <Legend />
+                    <Area type="monotone" dataKey="reach" name="Alcance" stroke="#9F8A75" fill="#9F8A7544" />
+                    <Area type="monotone" dataKey="total_interactions" name="Interacciones" stroke="#7A7573" fill="#7A757344" />
+                    <Area type="monotone" dataKey="profile_views" name="Visitas perfil" stroke="#C9B498" fill="#C9B49844" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* IG posts table */}
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                <CardTitle className="flex-1">Posts Instagram (top 50)</CardTitle>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Filtrar caption…"
+                    value={igKeyword}
+                    onChange={(e) => setIgKeyword(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') fetchIg(igKeyword) }}
+                    className="bg-card border border-border text-sm text-foreground placeholder-muted rounded-lg px-3 py-1.5 w-56 focus:outline-none focus:border-muted"
+                  />
+                  <button
+                    onClick={() => fetchIg(igKeyword)}
+                    className="px-3 py-1.5 rounded-lg bg-primary/15 text-foreground text-sm hover:bg-primary/25"
+                  >Filtrar</button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 overflow-x-auto">
+              {igLoading && <p className="p-4 text-sm text-muted">Cargando posts…</p>}
+              {!igLoading && igPosts.length === 0 && (
+                <p className="p-4 text-sm text-muted">Sin posts.</p>
+              )}
+              {!igLoading && igPosts.length > 0 && (
+                <table className="w-full text-sm">
+                  <thead className="bg-card/40 text-xs text-muted">
+                    <tr>
+                      <th className="text-left px-3 py-2">Fecha</th>
+                      <th className="text-left px-3 py-2">Caption</th>
+                      <th className="text-left px-3 py-2">Tipo</th>
+                      <th className="text-right px-3 py-2">Alcance</th>
+                      <th className="text-right px-3 py-2">Likes</th>
+                      <th className="text-right px-3 py-2">Coment.</th>
+                      <th className="text-right px-3 py-2">Saves</th>
+                      <th className="text-right px-3 py-2">Views</th>
+                      <th className="text-left px-3 py-2">Link</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {igPosts.map((p) => (
+                      <tr key={p.media_id} className="border-t border-border/50">
+                        <td className="px-3 py-2 whitespace-nowrap text-muted">
+                          {p.timestamp ? new Date(p.timestamp).toISOString().slice(0, 10) : '—'}
+                        </td>
+                        <td className="px-3 py-2 max-w-md truncate" title={p.caption ?? ''}>
+                          {p.caption ?? '—'}
+                        </td>
+                        <td className="px-3 py-2 text-muted">{p.media_product_type ?? p.media_type ?? '—'}</td>
+                        <td className="px-3 py-2 text-right">{Number(p.reach || 0).toLocaleString('es-MX')}</td>
+                        <td className="px-3 py-2 text-right">{Number(p.likes || 0).toLocaleString('es-MX')}</td>
+                        <td className="px-3 py-2 text-right">{Number(p.comments || 0).toLocaleString('es-MX')}</td>
+                        <td className="px-3 py-2 text-right">{Number(p.saved || 0).toLocaleString('es-MX')}</td>
+                        <td className="px-3 py-2 text-right">{Number(p.views || 0).toLocaleString('es-MX')}</td>
+                        <td className="px-3 py-2">
+                          {p.permalink
+                            ? <a href={p.permalink} target="_blank" rel="noopener noreferrer" className="text-primary underline">Ver</a>
+                            : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </CardContent>
+          </Card>
+          </>
+          )}
         </div>
       )}
     </div>

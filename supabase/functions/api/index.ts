@@ -1134,6 +1134,7 @@ export const AUTHENTICATED_ROUTE_HANDLERS = new Map<string, RouteHandler>([
   ['meta|insights|GET', handleMetaInsightsGet],
   ['meta|backfill|POST', handleMetaBackfillPost],
   ['meta|organic|GET', handleMetaOrganicGet],
+  ['meta|ig|GET', handleMetaIgGet],
   ['health|meta|*', handleHealthMeta],
   ['meta|campaigns|GET', handleMetaCampaignsGet],
   ['meta|ads|GET', handleMetaAdsGet],
@@ -2256,6 +2257,76 @@ async function handleMetaOrganicGet(ctx: AuthenticatedRouteContext): Promise<Res
   return sendJson({
     success: true,
     pageId,
+    period: { since: sinceStr, until, days },
+    summary,
+    daily,
+  });
+}
+
+async function handleMetaIgGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
+  const { adminClient, userId, resource, sub, sub2, req, url, sendJson } = ctx;
+  if (resource !== 'meta' || sub !== 'ig' || req.method !== 'GET') return null;
+
+  const { data: integ } = await adminClient
+    .from('integrations')
+    .select('metadata')
+    .eq('user_id', userId)
+    .eq('service', 'meta')
+    .maybeSingle();
+
+  const meta = (integ?.metadata ?? {}) as Record<string, any>;
+  const igId = meta.igBusinessAccountId ?? meta.ig_business_account_id ?? null;
+  if (!igId) {
+    return sendJson({ success: false, message: 'No Instagram Business Account linked to this Meta integration.' }, 400);
+  }
+
+  const days = Math.min(Math.max(Number.parseInt(url.searchParams.get('days') ?? '30', 10) || 30, 1), 365);
+  const today = new Date();
+  const untilDate = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - 1));
+  const sinceDate = new Date(Date.UTC(untilDate.getUTCFullYear(), untilDate.getUTCMonth(), untilDate.getUTCDate() - (days - 1)));
+  const until = untilDate.toISOString().slice(0, 10);
+  const sinceStr = sinceDate.toISOString().slice(0, 10);
+
+  if (sub2 === 'posts') {
+    const keyword = (url.searchParams.get('keyword') ?? '').trim();
+    const limit = Math.min(Math.max(Number.parseInt(url.searchParams.get('limit') ?? '50', 10) || 50, 1), 200);
+    let query = adminClient
+      .from('meta_ig_media_performance')
+      .select('media_id, media_type, media_product_type, caption, permalink, timestamp, reach, views, likes, comments, shares, saved, total_interactions')
+      .eq('user_id', userId)
+      .eq('ig_id', igId)
+      .order('timestamp', { ascending: false })
+      .limit(limit);
+    if (keyword) query = query.ilike('caption', `%${keyword}%`);
+    const { data, error } = await query;
+    if (error) return sendJson({ success: false, message: error.message }, 500);
+    return sendJson({ success: true, igId, count: data?.length ?? 0, posts: data ?? [] });
+  }
+
+  const { data: rows, error } = await adminClient
+    .from('meta_ig_account_daily')
+    .select('date, reach, follower_count_delta, profile_views, accounts_engaged, total_interactions, website_clicks, views')
+    .eq('user_id', userId)
+    .eq('ig_id', igId)
+    .gte('date', sinceStr)
+    .lte('date', until)
+    .order('date', { ascending: true });
+  if (error) return sendJson({ success: false, message: error.message }, 500);
+
+  const daily = rows ?? [];
+  const summary = daily.reduce((acc: any, r: any) => ({
+    reach: acc.reach + Number(r.reach || 0),
+    follower_count_delta: acc.follower_count_delta + Number(r.follower_count_delta || 0),
+    profile_views: acc.profile_views + Number(r.profile_views || 0),
+    accounts_engaged: acc.accounts_engaged + Number(r.accounts_engaged || 0),
+    total_interactions: acc.total_interactions + Number(r.total_interactions || 0),
+    website_clicks: acc.website_clicks + Number(r.website_clicks || 0),
+    views: acc.views + Number(r.views || 0),
+  }), { reach: 0, follower_count_delta: 0, profile_views: 0, accounts_engaged: 0, total_interactions: 0, website_clicks: 0, views: 0 });
+
+  return sendJson({
+    success: true,
+    igId,
     period: { since: sinceStr, until, days },
     summary,
     daily,
