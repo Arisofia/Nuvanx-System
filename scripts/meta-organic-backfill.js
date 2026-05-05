@@ -58,7 +58,7 @@ function normalizePageIds(raw) {
   if (raw === undefined || raw === null) return [];
   return String(raw)
     .split(/[,;\s]+/)
-    .map((s) => s.trim().replace(/^"|"$/g, ''))
+    .map((s) => s.trim().replaceAll(/^"|"$/g, ''))
     .filter((s) => /^\d{6,20}$/.test(s));
 }
 
@@ -165,7 +165,7 @@ async function backfillPageDaily(db, userId, pageId, pageToken, since, until) {
   // Build date → metric → value map.
   const byDate = new Map();
   for (const m of series) {
-    const name = m.name;
+    const { name } = m;
     for (const v of m.values || []) {
       const day = (v.end_time || '').slice(0, 10);
       if (!day) continue;
@@ -207,6 +207,73 @@ async function backfillPageDaily(db, userId, pageId, pageToken, since, until) {
 
 // ─── Post-level lifetime metrics ────────────────────────────────────────────
 
+async function fetchPostsPage(pageId, pageToken, params, nextUrl) {
+  if (nextUrl) {
+    const res = await fetch(nextUrl, { signal: AbortSignal.timeout(30000) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(`[Meta paging] ${data?.error?.message || res.status}`);
+    return data;
+  }
+  return metaFetch(`/${pageId}/posts`, params, pageToken);
+}
+
+async function upsertPost(db, userId, pageId, p) {
+  const insightsByName = new Map();
+  for (const { name, values } of p.insights?.data || []) {
+    insightsByName.set(name, values?.[0]?.value);
+  }
+  const reactionsObj = insightsByName.get('post_reactions_by_type_total') || {};
+  const reactionsTotal = Object.values(reactionsObj).reduce((a, b) => a + Number(b || 0), 0);
+
+  // post_activity_by_action_type returns a map like { share: N, comment: N, like: N }
+  const activityObj = insightsByName.get('post_activity_by_action_type') || {};
+  const comments = Number(activityObj.comment || 0);
+  const shares   = Number(activityObj.share || 0);
+  const engagedUsers = reactionsTotal + comments + shares;
+
+  const attachments = p.attachments?.data || [];
+  const mediaType = attachments[0]?.media_type || '';
+  const isVideo = /video|reel/i.test(mediaType) || p.status_type === 'added_video';
+
+  await db.query(
+    `INSERT INTO public.meta_post_performance
+       (user_id, page_id, post_id, created_time, message, status_type, permalink_url,
+        impressions, reach, engaged_users, reactions, comments, shares,
+        video_views, is_video, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, NOW())
+     ON CONFLICT (user_id, post_id) DO UPDATE SET
+       message       = EXCLUDED.message,
+       status_type   = EXCLUDED.status_type,
+       permalink_url = EXCLUDED.permalink_url,
+       impressions   = EXCLUDED.impressions,
+       reach         = EXCLUDED.reach,
+       engaged_users = EXCLUDED.engaged_users,
+       reactions     = EXCLUDED.reactions,
+       comments      = EXCLUDED.comments,
+       shares        = EXCLUDED.shares,
+       video_views   = EXCLUDED.video_views,
+       is_video      = EXCLUDED.is_video,
+       updated_at    = NOW()`,
+    [
+      userId,
+      pageId,
+      p.id,
+      p.created_time,
+      p.message ?? null,
+      p.status_type ?? null,
+      p.permalink_url ?? null,
+      Number(insightsByName.get('post_impressions_unique') || 0), // impressions (Meta v22: unique-only at post level w/o ads)
+      Number(insightsByName.get('post_impressions_unique') || 0),
+      engagedUsers,
+      reactionsTotal,
+      comments,
+      shares,
+      Number(insightsByName.get('post_video_views') || 0),
+      Boolean(isVideo),
+    ]
+  );
+}
+
 async function backfillPosts(db, userId, pageId, pageToken) {
   // /posts returns timeline (organic) posts. Use lifetime insights metric.
   const fields = [
@@ -224,75 +291,13 @@ async function backfillPosts(db, userId, pageId, pageToken) {
   let firstParams = { fields, limit: String(Math.min(POSTS_LIMIT, 100)) };
 
   while (upserted < POSTS_LIMIT) {
-    let data;
-    if (nextUrl) {
-      // Paginate using full URL from Meta (already includes access token + cursors).
-      const res = await fetch(nextUrl, { signal: AbortSignal.timeout(30000) });
-      data = await res.json();
-      if (!res.ok) throw new Error(`[Meta paging] ${data?.error?.message || res.status}`);
-    } else {
-      data = await metaFetch(`/${pageId}/posts`, firstParams, pageToken);
-    }
+    const data = await fetchPostsPage(pageId, pageToken, firstParams, nextUrl);
     const posts = Array.isArray(data?.data) ? data.data : [];
     if (posts.length === 0) break;
 
     for (const p of posts) {
       if (upserted >= POSTS_LIMIT) break;
-
-      const insightsByName = new Map();
-      for (const ins of p.insights?.data || []) {
-        insightsByName.set(ins.name, ins.values?.[0]?.value);
-      }
-      const reactionsObj = insightsByName.get('post_reactions_by_type_total') || {};
-      const reactionsTotal = Object.values(reactionsObj).reduce((a, b) => a + Number(b || 0), 0);
-
-      // post_activity_by_action_type returns a map like { share: N, comment: N, like: N }
-      const activityObj = insightsByName.get('post_activity_by_action_type') || {};
-      const comments = Number(activityObj.comment || 0);
-      const shares   = Number(activityObj.share || 0);
-      const engagedUsers = reactionsTotal + comments + shares;
-
-      const attachments = p.attachments?.data || [];
-      const mediaType = attachments[0]?.media_type || '';
-      const isVideo = /video|reel/i.test(mediaType) || p.status_type === 'added_video';
-
-      await db.query(
-        `INSERT INTO public.meta_post_performance
-           (user_id, page_id, post_id, created_time, message, status_type, permalink_url,
-            impressions, reach, engaged_users, reactions, comments, shares,
-            video_views, is_video, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, NOW())
-         ON CONFLICT (user_id, post_id) DO UPDATE SET
-           message       = EXCLUDED.message,
-           status_type   = EXCLUDED.status_type,
-           permalink_url = EXCLUDED.permalink_url,
-           impressions   = EXCLUDED.impressions,
-           reach         = EXCLUDED.reach,
-           engaged_users = EXCLUDED.engaged_users,
-           reactions     = EXCLUDED.reactions,
-           comments      = EXCLUDED.comments,
-           shares        = EXCLUDED.shares,
-           video_views   = EXCLUDED.video_views,
-           is_video      = EXCLUDED.is_video,
-           updated_at    = NOW()`,
-        [
-          userId,
-          pageId,
-          p.id,
-          p.created_time,
-          p.message ?? null,
-          p.status_type ?? null,
-          p.permalink_url ?? null,
-          Number(insightsByName.get('post_impressions_unique') || 0), // impressions (Meta v22: unique-only at post level w/o ads)
-          Number(insightsByName.get('post_impressions_unique') || 0),
-          engagedUsers,
-          reactionsTotal,
-          comments,
-          shares,
-          Number(insightsByName.get('post_video_views') || 0),
-          Boolean(isVideo),
-        ]
-      );
+      await upsertPost(db, userId, pageId, p);
       upserted++;
     }
 

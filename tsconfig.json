@@ -14,6 +14,7 @@
       "vitest": ["node_modules/vitest/dist/index.d.ts"],
       "vitest/*": ["node_modules/vitest/dist/*.d.ts"]
     },
+    "types": ["node"],
     "typeRoots": ["node_modules/@types", "node_modules/vitest", "frontend/node_modules/@types"]
   },
   "include": [

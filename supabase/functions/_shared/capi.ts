@@ -5,14 +5,15 @@ export async function sha256Hex(input: string): Promise<string> {
   if (!normalized) return '';
 
   // Prefer Web Crypto if available (browsers, modern Node). Fallback to Node's crypto module when needed.
-  if (typeof crypto !== 'undefined' && typeof (crypto as any).subtle !== 'undefined') {
-    const digest = await (crypto as any).subtle.digest('SHA-256', new TextEncoder().encode(normalized));
+  const webCrypto = (globalThis as any).crypto;
+  if (webCrypto !== undefined && webCrypto.subtle !== undefined) {
+    const digest = await webCrypto.subtle.digest('SHA-256', new TextEncoder().encode(normalized));
     return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
   }
 
   // Fallback for Node environments without Web Crypto (dynamic import to keep ESM compatibility)
   try {
-    const nodeCrypto = await import('crypto');
+    const nodeCrypto = await import('node:crypto');
     return nodeCrypto.createHash('sha256').update(normalized).digest('hex');
   } catch (err) {
     // If neither is available, fail gracefully with empty string

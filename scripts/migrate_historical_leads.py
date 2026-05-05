@@ -35,8 +35,7 @@ def normalize_field_data(field_data):
         key = str(f.get('name') or f.get('field_name') or '').strip()
         if not key:
             continue
-        values = f.get('values') or []
-        if values:
+        if values := f.get('values'):
             customer_info[key] = values[0]
         elif f.get('value') is not None:
             customer_info[key] = f['value']
@@ -76,10 +75,9 @@ def migrate_historical_leads():
         leads = data.get('data', [])
         for lead in leads:
             customer_info = normalize_field_data(lead.get('field_data', []))
-            phone = customer_info.get('phone_number') or customer_info.get('telefono')
             tag = classify_tag(customer_info)
 
-            if phone:
+            if phone := customer_info.get('phone_number') or customer_info.get('telefono'):
                 update_crm_record(phone, lead.get('campaign_name'), lead.get('ad_name'), tag)
                 total_updated += 1
             else:

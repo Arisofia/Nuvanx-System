@@ -1,4 +1,4 @@
-/* eslint-disable */
+/* eslint-disable no-console */
 require('dotenv').config({ path: '../.env' });
 require('dotenv').config({ path: '../.env.local', override: false });
 const { Client } = require('pg');

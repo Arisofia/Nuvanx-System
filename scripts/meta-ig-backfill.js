@@ -157,49 +157,99 @@ async function resolveIgAndPage(db) {
   return { igId, pageId };
 }
 
-// ─── Account daily ───────────────────────────────────────────────────────────
+function addTimeSeriesData(byDate, tsData) {
+  for (const m of tsData?.data || []) {
+    for (const v of m.values || []) {
+      const day = (v.end_time || '').slice(0, 10);
+      if (!day) continue;
+      const row = byDate.get(day) || { day };
+      row[m.name] = Number(v.value || 0);
+      byDate.set(day, row);
+    }
+  }
+}
+
+async function fetchTimeSeriesInsights(igId, igToken, reqSince, reqUntil) {
+  const params = {
+    metric: TIME_SERIES_METRICS.join(','),
+    period: 'day',
+    metric_type: 'time_series',
+    since: reqSince,
+    until: reqUntil,
+  };
+  try {
+    return await metaFetch(`/${igId}/insights`, params, igToken);
+  } catch (err) {
+    if (/follower_count/i.test(err.message)) {
+      return await metaFetch(`/${igId}/insights`, {
+        ...params,
+        metric: TIME_SERIES_METRICS.filter((m) => m !== 'follower_count').join(','),
+      }, igToken);
+    }
+    throw err;
+  }
+}
+
+async function fetchTotalValueInsights(igId, igToken, dayStart, dayEnd) {
+  return await metaFetch(`/${igId}/insights`, {
+    metric: TOTAL_VALUE_METRICS.join(','),
+    period: 'day',
+    metric_type: 'total_value',
+    since: dayStart,
+    until: dayEnd,
+  }, igToken);
+}
+
+function addTotalValueData(byDate, tvData, dayKey) {
+  const row = byDate.get(dayKey) || { day: dayKey };
+  for (const m of tvData?.data || []) {
+    row[m.name] = Number(m.total_value?.value || 0);
+  }
+  byDate.set(dayKey, row);
+}
+
+async function upsertAccountDaily(db, userId, igId, row) {
+  await db.query(
+    `INSERT INTO public.meta_ig_account_daily
+       (user_id, ig_id, date, reach, follower_count_delta, profile_views,
+        accounts_engaged, total_interactions, website_clicks, views, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, NOW())
+     ON CONFLICT (user_id, ig_id, date) DO UPDATE SET
+       reach                = EXCLUDED.reach,
+       follower_count_delta = EXCLUDED.follower_count_delta,
+       profile_views        = EXCLUDED.profile_views,
+       accounts_engaged     = EXCLUDED.accounts_engaged,
+       total_interactions   = EXCLUDED.total_interactions,
+       website_clicks       = EXCLUDED.website_clicks,
+       views                = EXCLUDED.views,
+       updated_at           = NOW()`,
+    [
+      userId, igId, row.day,
+      Number(row.reach || 0),
+      Number(row.follower_count || 0),
+      Number(row.profile_views || 0),
+      Number(row.accounts_engaged || 0),
+      Number(row.total_interactions || 0),
+      Number(row.website_clicks || 0),
+      Number(row.views || 0),
+    ]
+  );
+}
 
 async function backfillAccountDaily(db, userId, igId, igToken, since, until) {
-  // 1. time-series metrics. IG limits: each request ≤30 days; follower_count
-  //    only supports the last 30 days. So we chunk and retry-without-follower_count.
   const byDate = new Map();
   const startMsAll = new Date(since + 'T00:00:00Z').getTime();
   const endMsAll   = new Date(until + 'T00:00:00Z').getTime();
   const chunkMs    = 29 * 24 * 3600 * 1000;
+
   for (let cs = startMsAll; cs <= endMsAll; cs += chunkMs + 24 * 3600 * 1000) {
     const ce = Math.min(cs + chunkMs, endMsAll);
     const reqSince = Math.floor(cs / 1000);
     const reqUntil = Math.floor((ce + 24 * 3600 * 1000 - 1) / 1000);
-    const tryMetrics = async (metrics) => metaFetch(`/${igId}/insights`, {
-      metric: metrics.join(','),
-      period: 'day',
-      metric_type: 'time_series',
-      since: reqSince,
-      until: reqUntil,
-    }, igToken);
-    let tsData;
-    try {
-      tsData = await tryMetrics(TIME_SERIES_METRICS);
-    } catch (err) {
-      if (/follower_count/i.test(err.message)) {
-        tsData = await tryMetrics(TIME_SERIES_METRICS.filter((m) => m !== 'follower_count'));
-      } else {
-        throw err;
-      }
-    }
-    for (const m of tsData?.data || []) {
-      for (const v of m.values || []) {
-        const day = (v.end_time || '').slice(0, 10);
-        if (!day) continue;
-        const row = byDate.get(day) || { day };
-        row[m.name] = Number(v.value || 0);
-        byDate.set(day, row);
-      }
-    }
+    const tsData = await fetchTimeSeriesInsights(igId, igToken, reqSince, reqUntil);
+    addTimeSeriesData(byDate, tsData);
   }
 
-  // 2. total_value metrics — Meta only supports total_value within a single day window
-  //    when queried per metric, so we iterate day-by-day.
   const startMs = new Date(since + 'T00:00:00Z').getTime();
   const endMs   = new Date(until + 'T00:00:00Z').getTime();
   for (let t = startMs; t <= endMs; t += 24 * 3600 * 1000) {
@@ -207,58 +257,86 @@ async function backfillAccountDaily(db, userId, igId, igToken, since, until) {
     const dayEnd   = Math.floor((t + 24 * 3600 * 1000) / 1000);
     const dayKey   = new Date(t).toISOString().slice(0, 10);
     try {
-      const tvData = await metaFetch(`/${igId}/insights`, {
-        metric: TOTAL_VALUE_METRICS.join(','),
-        period: 'day',
-        metric_type: 'total_value',
-        since: dayStart,
-        until: dayEnd,
-      }, igToken);
-      const row = byDate.get(dayKey) || { day: dayKey };
-      for (const m of tvData?.data || []) {
-        row[m.name] = Number(m.total_value?.value || 0);
-      }
-      byDate.set(dayKey, row);
+      const tvData = await fetchTotalValueInsights(igId, igToken, dayStart, dayEnd);
+      addTotalValueData(byDate, tvData, dayKey);
     } catch (err) {
-      // Some days may have no activity; leave zeros.
       console.warn(`[ig-backfill] daily ${dayKey} total_value failed: ${err.message}`);
     }
   }
 
   let count = 0;
-  for (const r of byDate.values()) {
-    await db.query(
-      `INSERT INTO public.meta_ig_account_daily
-         (user_id, ig_id, date, reach, follower_count_delta, profile_views,
-          accounts_engaged, total_interactions, website_clicks, views, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, NOW())
-       ON CONFLICT (user_id, ig_id, date) DO UPDATE SET
-         reach                = EXCLUDED.reach,
-         follower_count_delta = EXCLUDED.follower_count_delta,
-         profile_views        = EXCLUDED.profile_views,
-         accounts_engaged     = EXCLUDED.accounts_engaged,
-         total_interactions   = EXCLUDED.total_interactions,
-         website_clicks       = EXCLUDED.website_clicks,
-         views                = EXCLUDED.views,
-         updated_at           = NOW()`,
-      [
-        userId, igId, r.day,
-        Number(r.reach || 0),
-        Number(r.follower_count || 0),
-        Number(r.profile_views || 0),
-        Number(r.accounts_engaged || 0),
-        Number(r.total_interactions || 0),
-        Number(r.website_clicks || 0),
-        Number(r.views || 0),
-      ]
-    );
+  for (const row of byDate.values()) {
+    await upsertAccountDaily(db, userId, igId, row);
     count++;
   }
+
   console.log(`[ig-backfill] account daily upserted: ${count} days (${since} → ${until})`);
   return count;
 }
 
 // ─── Media lifetime metrics ─────────────────────────────────────────────────
+
+async function fetchMediaInsights(mediaId, igToken) {
+  const insights = {};
+  try {
+    const ins = await metaFetch(`/${mediaId}/insights`, {
+      metric: MEDIA_METRICS.join(','),
+    }, igToken);
+    for (const row of ins?.data || []) {
+      insights[row.name] = Number(row.values?.[0]?.value || 0);
+    }
+    return insights;
+  } catch (err) {
+    console.warn(`[ig-backfill] bulk media insights failed for ${mediaId}: ${err.message}`);
+    for (const metric of MEDIA_METRICS) {
+      try {
+        const ins = await metaFetch(`/${mediaId}/insights`, { metric }, igToken);
+        insights[metric] = Number(ins?.data?.[0]?.values?.[0]?.value || 0);
+      } catch (metricErr) {
+        console.debug(`[ig-backfill] media ${mediaId} metric ${metric} unsupported: ${metricErr.message}`);
+      }
+    }
+    return insights;
+  }
+}
+
+async function upsertMediaPerformance(db, userId, igId, m, insights) {
+  await db.query(
+    `INSERT INTO public.meta_ig_media_performance
+       (user_id, ig_id, media_id, media_type, media_product_type, caption,
+        permalink, timestamp, reach, views, likes, comments, shares,
+        saved, total_interactions, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, NOW())
+     ON CONFLICT (user_id, media_id) DO UPDATE SET
+       media_type         = EXCLUDED.media_type,
+       media_product_type = EXCLUDED.media_product_type,
+       caption            = EXCLUDED.caption,
+       permalink          = EXCLUDED.permalink,
+       reach              = EXCLUDED.reach,
+       views              = EXCLUDED.views,
+       likes              = EXCLUDED.likes,
+       comments           = EXCLUDED.comments,
+       shares             = EXCLUDED.shares,
+       saved              = EXCLUDED.saved,
+       total_interactions = EXCLUDED.total_interactions,
+       updated_at         = NOW()`,
+    [
+      userId, igId, m.id,
+      m.media_type ?? null,
+      m.media_product_type ?? null,
+      m.caption ?? null,
+      m.permalink ?? null,
+      m.timestamp,
+      Number(insights.reach || 0),
+      Number(insights.views || 0),
+      Number(insights.likes || 0),
+      Number(insights.comments || 0),
+      Number(insights.shares || 0),
+      Number(insights.saved || 0),
+      Number(insights.total_interactions || 0),
+    ]
+  );
+}
 
 async function backfillMedia(db, userId, igId, igToken) {
   const fields = 'id,caption,media_type,media_product_type,permalink,timestamp';
@@ -278,61 +356,8 @@ async function backfillMedia(db, userId, igId, igToken) {
     for (const m of items) {
       if (upserted >= MEDIA_LIMIT) break;
 
-      // Per-media insights — some metrics fail by media_product_type, so we
-      // request all and tolerate per-metric errors via best-effort fallback.
-      const insights = {};
-      try {
-        const ins = await metaFetch(`/${m.id}/insights`, {
-          metric: MEDIA_METRICS.join(','),
-        }, igToken);
-        for (const row of ins?.data || []) {
-          insights[row.name] = Number(row.values?.[0]?.value || 0);
-        }
-      } catch (err) {
-        // Fallback: query each metric individually and skip failing ones.
-        for (const metric of MEDIA_METRICS) {
-          try {
-            const ins = await metaFetch(`/${m.id}/insights`, { metric }, igToken);
-            insights[metric] = Number(ins?.data?.[0]?.values?.[0]?.value || 0);
-          } catch { /* unsupported for this media product type */ }
-        }
-      }
-
-      await db.query(
-        `INSERT INTO public.meta_ig_media_performance
-           (user_id, ig_id, media_id, media_type, media_product_type, caption,
-            permalink, timestamp, reach, views, likes, comments, shares,
-            saved, total_interactions, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, NOW())
-         ON CONFLICT (user_id, media_id) DO UPDATE SET
-           media_type         = EXCLUDED.media_type,
-           media_product_type = EXCLUDED.media_product_type,
-           caption            = EXCLUDED.caption,
-           permalink          = EXCLUDED.permalink,
-           reach              = EXCLUDED.reach,
-           views              = EXCLUDED.views,
-           likes              = EXCLUDED.likes,
-           comments           = EXCLUDED.comments,
-           shares             = EXCLUDED.shares,
-           saved              = EXCLUDED.saved,
-           total_interactions = EXCLUDED.total_interactions,
-           updated_at         = NOW()`,
-        [
-          userId, igId, m.id,
-          m.media_type ?? null,
-          m.media_product_type ?? null,
-          m.caption ?? null,
-          m.permalink ?? null,
-          m.timestamp,
-          Number(insights.reach || 0),
-          Number(insights.views || 0),
-          Number(insights.likes || 0),
-          Number(insights.comments || 0),
-          Number(insights.shares || 0),
-          Number(insights.saved || 0),
-          Number(insights.total_interactions || 0),
-        ]
-      );
+      const insights = await fetchMediaInsights(m.id, igToken);
+      await upsertMediaPerformance(db, userId, igId, m, insights);
       upserted++;
     }
 

@@ -48,20 +48,28 @@ export default function Intelligence() {
     { key: 'booked', label: 'Reservados', align: 'right', sortable: true },
     { key: 'closed_won', label: 'Ganados', align: 'right', sortable: true },
     { key: 'reply_rate_pct', label: 'Reply %', align: 'right', sortable: true,
-      format: (v) => v != null ? `${v}%` : null },
+      format: (v) => v === null || v === undefined ? null : `${v}%` },
     { key: 'lead_to_close_rate_pct', label: 'Cierre %', align: 'right', sortable: true,
-      format: (v) => v != null ? `${v}%` : null },
+      format: (v) => v === null || v === undefined ? null : `${v}%` },
     { key: 'verified_revenue_crm', label: 'Revenue', align: 'right', sortable: true,
-      format: (v) => v != null ? Number(v).toLocaleString('es-MX', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 }) : null },
+      format: (v) => v === null || v === undefined ? null : Number(v).toLocaleString('es-MX', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 }) },
     { key: 'avg_reply_delay_min', label: 'Resp. (min)', align: 'right', sortable: true,
-      format: (v) => v != null ? String(v) : null },
+      format: (v) => v === null || v === undefined ? null : String(v) },
   ]
 
   const traceabilityRows = useMemo(
-    () => traceability.map((row: TraceabilityLead) => ({
-      ...row,
-      _stage: (row as any).doctoralia_net != null ? 'Revenue' : (row as any).patient_id ? 'Patient' : 'Lead only',
-    })),
+    () => traceability.map((row: TraceabilityLead) => {
+      let stage = 'Lead only';
+      if ((row as any).doctoralia_net != null) {
+        stage = 'Revenue';
+      } else if ((row as any).patient_id) {
+        stage = 'Patient';
+      }
+      return {
+        ...row,
+        _stage: stage,
+      };
+    }),
     [traceability],
   )
 
@@ -75,15 +83,15 @@ export default function Intelligence() {
     { key: 'patient_dni', label: 'DNI', align: 'left' },
     { key: 'patient_phone', label: 'Teléfono', align: 'left' },
     { key: 'patient_ltv', label: 'LTV', align: 'right',
-      format: (v) => v != null ? Number(v).toLocaleString('es-MX', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 }) : null },
+      format: (v) => v === null || v === undefined ? null : Number(v).toLocaleString('es-MX', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 }) },
     { key: 'first_settlement_at', label: '1ª liquidación', align: 'left',
       format: (v) => v ? new Date(v).toLocaleDateString('es-MX') : null },
     { key: 'settlement_date', label: 'Últ. liquidación', align: 'left',
       format: (v) => v ? new Date(v).toLocaleDateString('es-MX') : null },
     { key: 'match_confidence', label: 'Confianza', align: 'right',
-      format: (v) => v != null ? `${(Number(v) * 100).toFixed(0)}%` : null },
+      format: (v) => v === null || v === undefined ? null : `${(Number(v) * 100).toFixed(0)}%` },
     { key: 'match_class', label: 'Match', align: 'left',
-      format: (v) => v ? String(v).replace(/_/g, ' ') : null },
+      format: (v) => v ? String(v).replaceAll('_', ' ') : null },
   ]
 
   useEffect(() => {
@@ -143,6 +151,102 @@ export default function Intelligence() {
       })
   }, [traceFrom, traceTo, traceSource])
 
+  let attributionContent;
+  if (loading.campaigns) {
+    attributionContent = <p className="text-muted text-sm">Cargando datos de atribución…</p>;
+  } else if (error.campaigns) {
+    attributionContent = <p className="text-sm text-[#D9534F]">{error.campaigns}</p>;
+  } else {
+    attributionContent = (
+      <SortableTable
+        columns={attributionColumns}
+        rows={campaigns as unknown as Record<string, unknown>[]}
+        exportFilename="attribution-campaigns"
+        pageSize={200}
+        emptyMessage="No hay datos de atribución para el período seleccionado."
+      />
+    );
+  }
+
+  let funnelContent;
+  if (loading.funnel) {
+    funnelContent = <p className="text-muted text-sm">Cargando datos del embudo…</p>;
+  } else if (error.funnel) {
+    funnelContent = <p className="text-sm text-[#D9534F]">{error.funnel}</p>;
+  } else if (funnel.length === 0) {
+    funnelContent = <p className="text-muted text-sm">No hay datos del embudo disponibles todavía.</p>;
+  } else {
+    funnelContent = (
+      <div className="space-y-2">
+        {funnel.map((row) => (
+          <div key={row.stage} className="flex justify-between items-center p-3 rounded-lg bg-surface border border-border">
+            <span className="capitalize text-sm text-[#d7c5ae]">{String(row.stage).replaceAll('_', ' ')}</span>
+            <span className="font-bold text-sm">
+              {row.count.toLocaleString()}
+              {row.pct !== null && row.pct !== undefined ? ` (${row.pct}%)` : ''}
+            </span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  let conversationsContent;
+  if (loading.conversations) {
+    conversationsContent = <p className="text-muted text-sm">Cargando conversaciones…</p>;
+  } else if (error.conversations) {
+    conversationsContent = <p className="text-sm text-[#D9534F]">{error.conversations}</p>;
+  } else if (conversations.length === 0) {
+    conversationsContent = <p className="text-muted text-sm">No se encontraron conversaciones.</p>;
+  } else {
+    conversationsContent = (
+      <div className="space-y-3">
+        {conversations.map((conv) => (
+          <div key={conv.id} className="p-3 bg-surface rounded-lg border border-border">
+            <div className="flex justify-between">
+              <p className="text-sm font-medium">{conv.phone ?? conv.id}</p>
+              <span className="text-xs text-muted capitalize">{conv.direction}</span>
+            </div>
+            {conv.message_preview && (
+              <p className="text-xs text-muted mt-1 truncate">{conv.message_preview}</p>
+            )}
+            {conv.sent_at && (
+              <p className="text-xs text-muted mt-1">{new Date(conv.sent_at).toLocaleString()}</p>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  let traceabilityContent;
+  if (loading.traceability) {
+    traceabilityContent = <p className="text-muted text-sm">Cargando trazabilidad…</p>;
+  } else if (error.traceability) {
+    traceabilityContent = <p className="text-sm text-[#D9534F]">{error.traceability}</p>;
+  } else if (traceability.length === 0) {
+    traceabilityContent = (
+      <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
+        <p className="text-[#d7c5ae] font-medium">No hay datos de trazabilidad todavía</p>
+        <p className="text-muted text-sm max-w-md">
+          Cuando el sistema ejecute el matching de Doctoralia (por DNI o nombre/teléfono),
+          cada lead se vinculará a su paciente y a su historial de liquidaciones.
+          Los datos aparecerán aquí automáticamente.
+        </p>
+      </div>
+    );
+  } else {
+    traceabilityContent = (
+      <SortableTable
+        columns={traceabilityColumns}
+        rows={traceabilityRows}
+        exportFilename="traceability-leads"
+        pageSize={200}
+        emptyMessage="No hay datos de trazabilidad todavía."
+      />
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -170,19 +274,7 @@ export default function Intelligence() {
                 sourceValue={attrSource}
                 onSourceChange={setAttrSource}
               />
-              {loading.campaigns ? (
-                <p className="text-muted text-sm">Cargando datos de atribución…</p>
-              ) : error.campaigns ? (
-                <p className="text-sm text-[#D9534F]">{error.campaigns}</p>
-              ) : (
-                <SortableTable
-                  columns={attributionColumns}
-                  rows={campaigns as unknown as Record<string, unknown>[]}
-                  exportFilename="attribution-campaigns"
-                  pageSize={200}
-                  emptyMessage="No hay datos de atribución para el período seleccionado."
-                />
-              )}
+              {attributionContent}
             </CardContent>
           </Card>
         </TabsContent>
@@ -193,25 +285,7 @@ export default function Intelligence() {
               <CardTitle>Embudo de conversión WhatsApp</CardTitle>
             </CardHeader>
             <CardContent>
-              {loading.funnel ? (
-                <p className="text-muted text-sm">Cargando datos del embudo…</p>
-              ) : error.funnel ? (
-                <p className="text-sm text-[#D9534F]">{error.funnel}</p>
-              ) : funnel.length === 0 ? (
-                <p className="text-muted text-sm">No hay datos del embudo disponibles todavía.</p>
-              ) : (
-                <div className="space-y-2">
-                  {funnel.map((row, i) => (
-                    <div key={i} className="flex justify-between items-center p-3 rounded-lg bg-surface border border-border">
-                      <span className="capitalize text-sm text-[#d7c5ae]">{String(row.stage).replace(/_/g, ' ')}</span>
-                      <span className="font-bold text-sm">
-                        {row.count.toLocaleString()}
-                        {row.pct != null ? ` (${row.pct}%)` : ''}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
+              {funnelContent}
             </CardContent>
           </Card>
         </TabsContent>
@@ -222,30 +296,7 @@ export default function Intelligence() {
               <CardTitle>Conversaciones recientes</CardTitle>
             </CardHeader>
             <CardContent>
-              {loading.conversations ? (
-                <p className="text-muted text-sm">Cargando conversaciones…</p>
-              ) : error.conversations ? (
-                <p className="text-sm text-[#D9534F]">{error.conversations}</p>
-              ) : conversations.length === 0 ? (
-                <p className="text-muted text-sm">No se encontraron conversaciones.</p>
-              ) : (
-                <div className="space-y-3">
-                  {conversations.map((conv) => (
-                    <div key={conv.id} className="p-3 bg-surface rounded-lg border border-border">
-                      <div className="flex justify-between">
-                        <p className="text-sm font-medium">{conv.phone ?? conv.id}</p>
-                        <span className="text-xs text-muted capitalize">{conv.direction}</span>
-                      </div>
-                      {conv.message_preview && (
-                        <p className="text-xs text-muted mt-1 truncate">{conv.message_preview}</p>
-                      )}
-                      {conv.sent_at && (
-                        <p className="text-xs text-muted mt-1">{new Date(conv.sent_at).toLocaleString()}</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
+              {conversationsContent}
             </CardContent>
           </Card>
         </TabsContent>
@@ -262,28 +313,7 @@ export default function Intelligence() {
                 sourceValue={traceSource}
                 onSourceChange={setTraceSource}
               />
-              {loading.traceability ? (
-                <p className="text-muted text-sm">Cargando trazabilidad…</p>
-              ) : error.traceability ? (
-                <p className="text-sm text-[#D9534F]">{error.traceability}</p>
-              ) : traceability.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
-                  <p className="text-[#d7c5ae] font-medium">No hay datos de trazabilidad todavía</p>
-                  <p className="text-muted text-sm max-w-md">
-                    Cuando el sistema ejecute el matching de Doctoralia (por DNI o nombre/teléfono),
-                    cada lead se vinculará a su paciente y a su historial de liquidaciones.
-                    Los datos aparecerán aquí automáticamente.
-                  </p>
-                </div>
-              ) : (
-                <SortableTable
-                  columns={traceabilityColumns}
-                  rows={traceabilityRows}
-                  exportFilename="traceability-leads"
-                  pageSize={200}
-                  emptyMessage="No hay datos de trazabilidad todavía."
-                />
-              )}
+              {traceabilityContent}
             </CardContent>
           </Card>
         </TabsContent>

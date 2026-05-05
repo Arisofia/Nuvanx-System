@@ -87,6 +87,12 @@ function buildMetaFailureMessage(campaignsResult: PromiseSettledResult<any>, ins
   return null
 }
 
+function formatDateForLabel(dateString: string) {
+  const [year, month, day] = dateString.split('-')
+  if (!year || !month || !day) return dateString
+  return `${day}/${month}/${year}`
+}
+
 interface DashboardStateOptions {
   metricsData: any
   campaigns: any[]
@@ -472,12 +478,12 @@ function MetricsGrid({ metrics, periodLabel }: MetricsGridProps) {
     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Leads registrados en CRM</CardTitle>
+          <CardTitle className="text-sm font-medium">Conversiones Meta</CardTitle>
           <Users className="h-4 w-4 text-muted" />
         </CardHeader>
         <CardContent>
           <div className="flex items-baseline gap-2">
-            <div className="text-2xl font-bold">{metrics.metaConversions.toLocaleString()}</div>
+            <div className="text-2xl font-bold">{metrics.metaConversions.toLocaleString('es-ES')}</div>
             {metrics.deltas && <MetricDelta value={metrics.deltas.conversions} />}
           </div>
           <p className="text-xs text-muted mt-1">Conversiones Meta · {periodLabel}</p>
@@ -486,12 +492,12 @@ function MetricsGrid({ metrics, periodLabel }: MetricsGridProps) {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Total Leads</CardTitle>
+          <CardTitle className="text-sm font-medium">Leads registrados en CRM</CardTitle>
           <Users className="h-4 w-4 text-muted" />
         </CardHeader>
         <CardContent>
           <div className="flex items-baseline gap-2">
-            <div className="text-2xl font-bold">{metrics.totalLeads.toLocaleString()}</div>
+            <div className="text-2xl font-bold">{metrics.totalLeads.toLocaleString('es-ES')}</div>
             {metrics.deltas && <MetricDelta value={metrics.deltas.leads} />}
           </div>
           <p className="text-xs text-muted mt-1">Leads en BD · {periodLabel}</p>
@@ -504,7 +510,7 @@ function MetricsGrid({ metrics, periodLabel }: MetricsGridProps) {
           <TrendingUp className="h-4 w-4 text-muted" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{metrics.conversionRate}%</div>
+          <div className="text-2xl font-bold">{metrics.conversionRate.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}%</div>
           <p className="text-xs text-muted mt-1">Leads → treatment/closed</p>
           {(metrics.patientConversionRate ?? 0) > 0 && (
             <p className="text-xs text-[#8ee0b8] mt-0.5">
@@ -557,7 +563,7 @@ function FunnelAndSpendSection({
               <span className="text-sm text-muted">Inversión Meta</span>
               <DollarSign className="h-4 w-4 text-primary" />
             </div>
-            <p className="mt-3 text-2xl font-semibold">${metrics.spend.toLocaleString()}</p>
+            <p className="mt-3 text-2xl font-semibold">${metrics.spend.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
             <p className="text-xs text-muted mt-1">Inversión Meta en la ventana seleccionada</p>
           </div>
           <div className="info-card">
@@ -565,7 +571,7 @@ function FunnelAndSpendSection({
               <span className="text-sm text-muted">Leads generados (Meta)</span>
               <Users className="h-4 w-4 text-primary" />
             </div>
-            <p className="mt-3 text-2xl font-semibold">{combined.metaEstimatedLeads.toLocaleString()}</p>
+            <p className="mt-3 text-2xl font-semibold">{combined.metaEstimatedLeads.toLocaleString('es-ES')}</p>
             <p className="text-xs text-muted mt-1">Estimación de leads generados por Meta</p>
           </div>
           <div className="info-card">
@@ -573,7 +579,7 @@ function FunnelAndSpendSection({
               <span className="text-sm text-muted">Leads registrados en CRM</span>
               <Users className="h-4 w-4 text-primary" />
             </div>
-            <p className="mt-3 text-2xl font-semibold">{metrics.totalLeads.toLocaleString()}</p>
+            <p className="mt-3 text-2xl font-semibold">{metrics.totalLeads.toLocaleString('es-ES')}</p>
             <p className="text-xs text-muted mt-1">Leads que ya se han registrado en el CRM</p>
           </div>
           <div className="info-card">
@@ -581,7 +587,7 @@ function FunnelAndSpendSection({
               <span className="text-sm text-muted">Ingresos verificados (Doctoralia)</span>
               <DollarSign className="h-4 w-4 text-primary" />
             </div>
-            <p className="mt-3 text-2xl font-semibold">${combined.verifiedRevenue.toLocaleString()}</p>
+            <p className="mt-3 text-2xl font-semibold">${combined.verifiedRevenue.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
             <p className="text-xs text-muted mt-1">Ingresos oficiales verificados por Doctoralia</p>
           </div>
         </CardContent>
@@ -602,7 +608,7 @@ function FunnelAndSpendSection({
           <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
             <div>
               <p className="text-muted">Inversión Meta</p>
-              <p className="text-lg font-bold">€{funnel.metaSpend.toLocaleString()}</p>
+              <p className="text-lg font-bold">€{funnel.metaSpend.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
             </div>
             <div>
               <p className="text-muted">Leads generados (Meta)</p>
@@ -614,7 +620,7 @@ function FunnelAndSpendSection({
             </div>
             <div>
               <p className="text-muted">Ingresos verificados (Doctoralia)</p>
-              <p className="text-lg font-bold">€{funnel.doctoraliaRevenue.toLocaleString()}</p>
+              <p className="text-lg font-bold">€{funnel.doctoraliaRevenue.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               <p className="text-xs text-muted mt-1">
                 {funnel.doctoraliaPatients > 0
                   ? `CAC Doctoralia: €${funnel.cac.toLocaleString()}`
@@ -674,7 +680,7 @@ function CampaignKpisSection({ metrics, trendData, periodLabel }: CampaignKpisSe
                 <DollarSign className="h-4 w-4 text-primary" />
               </div>
               <div className="flex items-baseline gap-2 mt-3">
-                <p className="text-2xl font-semibold">${metrics.spend.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                <p className="text-2xl font-semibold">${metrics.spend.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 {metrics.deltas && <MetricDelta value={metrics.deltas.spend} inverse />}
               </div>
             </div>
@@ -684,7 +690,7 @@ function CampaignKpisSection({ metrics, trendData, periodLabel }: CampaignKpisSe
                 <DollarSign className="h-4 w-4 text-primary" />
               </div>
               <div className="flex items-baseline gap-2 mt-3">
-                <p className="text-2xl font-semibold">${(metrics.verifiedRevenue ?? 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                <p className="text-2xl font-semibold">${(metrics.verifiedRevenue ?? 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 {metrics.deltas && <MetricDelta value={metrics.deltas.revenue} />}
               </div>
               <p className="text-xs text-muted mt-1">{metrics.settledCount ?? 0} settled · Doctoralia</p>
@@ -695,7 +701,7 @@ function CampaignKpisSection({ metrics, trendData, periodLabel }: CampaignKpisSe
                 <DollarSign className="h-4 w-4 text-accent" />
               </div>
               <div className="flex items-baseline gap-2 mt-3">
-                <p className="text-2xl font-semibold">${(metrics.totalRevenue ?? 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                <p className="text-2xl font-semibold">${(metrics.totalRevenue ?? 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               </div>
               <p className="text-xs text-muted mt-1">{metrics.totalRevenue === 0 ? 'No pipeline revenue yet' : 'Sum of leads.revenue'}</p>
             </div>
@@ -704,7 +710,7 @@ function CampaignKpisSection({ metrics, trendData, periodLabel }: CampaignKpisSe
                 <span className="text-sm text-muted">CPC medio</span>
                 <ArrowUpRight className="h-4 w-4 text-primary" />
               </div>
-              <p className="mt-3 text-2xl font-semibold">${metrics.averageCpc.toFixed(2)}</p>
+              <p className="mt-3 text-2xl font-semibold">${metrics.averageCpc.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               <p className="text-xs text-muted mt-1">Coste medio por clic en Meta</p>
             </div>
             <div className="info-card">
@@ -712,7 +718,7 @@ function CampaignKpisSection({ metrics, trendData, periodLabel }: CampaignKpisSe
                 <span className="text-sm text-muted">Conversiones</span>
                 <Percent className="h-4 w-4 text-primary" />
               </div>
-              <p className="mt-3 text-2xl font-semibold">{metrics.metaConversions.toLocaleString()}</p>
+              <p className="mt-3 text-2xl font-semibold">{metrics.metaConversions.toLocaleString('es-ES')}</p>
             </div>
             <div className="info-card">
               <div className="flex items-center justify-between gap-2">
@@ -721,7 +727,7 @@ function CampaignKpisSection({ metrics, trendData, periodLabel }: CampaignKpisSe
               </div>
               {metrics.spend > 0 && metrics.metaConversions > 0 ? (
                 <p className="mt-3 text-2xl font-semibold text-danger">
-                  ${(metrics.spend / metrics.metaConversions).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ${(metrics.spend / metrics.metaConversions).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
               ) : (
                 <p
@@ -837,7 +843,9 @@ export default function Dashboard() {
   }
 
   const isCustomRange = Boolean(customFrom && customTo)
-  const periodLabel = isCustomRange ? `${customFrom} → ${customTo}` : `últimos ${days} días`
+  const periodLabel = isCustomRange
+    ? `${formatDateForLabel(customFrom)} → ${formatDateForLabel(customTo)}`
+    : `últimos ${days} días`
 
   return (
     <div className="space-y-6">
