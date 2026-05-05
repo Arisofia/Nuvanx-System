@@ -36,12 +36,32 @@ CREATE INDEX IF NOT EXISTS meta_ig_account_daily_date_idx
 
 ALTER TABLE meta_ig_account_daily ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY meta_ig_account_daily_select_own ON meta_ig_account_daily
-  FOR SELECT TO authenticated
-  USING (auth.uid() = user_id AND NOT (auth.jwt() ->> 'is_anonymous')::boolean IS TRUE);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE polname = 'meta_ig_account_daily_select_own'
+      AND polrelid = 'meta_ig_account_daily'::regclass
+  ) THEN
+    CREATE POLICY meta_ig_account_daily_select_own ON meta_ig_account_daily
+      FOR SELECT TO authenticated
+      USING (auth.uid() = user_id AND NOT (auth.jwt() ->> 'is_anonymous')::boolean IS TRUE);
+  END IF;
+END$$;
 
-CREATE POLICY meta_ig_account_daily_service_role ON meta_ig_account_daily
-  FOR ALL TO service_role USING (true) WITH CHECK (true);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE polname = 'meta_ig_account_daily_service_role'
+      AND polrelid = 'meta_ig_account_daily'::regclass
+  ) THEN
+    CREATE POLICY meta_ig_account_daily_service_role ON meta_ig_account_daily
+      FOR ALL TO service_role USING (true) WITH CHECK (true);
+  END IF;
+END$$;
 
 -- ---------------------------------------------------------------------------
 -- Per-media performance (lifetime metrics).
@@ -75,12 +95,32 @@ CREATE INDEX IF NOT EXISTS meta_ig_media_performance_caption_trgm_idx
 
 ALTER TABLE meta_ig_media_performance ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY meta_ig_media_performance_select_own ON meta_ig_media_performance
-  FOR SELECT TO authenticated
-  USING (auth.uid() = user_id AND NOT (auth.jwt() ->> 'is_anonymous')::boolean IS TRUE);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE polname = 'meta_ig_media_performance_select_own'
+      AND polrelid = 'meta_ig_media_performance'::regclass
+  ) THEN
+    CREATE POLICY meta_ig_media_performance_select_own ON meta_ig_media_performance
+      FOR SELECT TO authenticated
+      USING (auth.uid() = user_id AND NOT (auth.jwt() ->> 'is_anonymous')::boolean IS TRUE);
+  END IF;
+END$$;
 
-CREATE POLICY meta_ig_media_performance_service_role ON meta_ig_media_performance
-  FOR ALL TO service_role USING (true) WITH CHECK (true);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE polname = 'meta_ig_media_performance_service_role'
+      AND polrelid = 'meta_ig_media_performance'::regclass
+  ) THEN
+    CREATE POLICY meta_ig_media_performance_service_role ON meta_ig_media_performance
+      FOR ALL TO service_role USING (true) WITH CHECK (true);
+  END IF;
+END$$;
 
 COMMENT ON TABLE meta_ig_account_daily IS
   'Daily account-level Instagram insights. follower_count_delta is the per-day net change in followers (Graph API only exposes deltas, not historical absolute counts).';
