@@ -16,7 +16,7 @@ function requireSupabaseEnv(value: string | null | undefined, name: string): str
 
 declare global {
   interface ObjectConstructor {
-    hasOwn?(o: unknown, p: PropertyKey): boolean;
+    hasOwn(o: unknown, p: PropertyKey): boolean;
   }
 }
 
@@ -2309,11 +2309,11 @@ function buildMetaInsightsLiveResult(successfulAccounts: any[], creds: any, sinc
     period: { since, until, days },
     summary,
     changes: {
-      impressions: percentChange(summary.impressions, Number.parseFloat(prevD.impressions ?? 0)),
-      reach: percentChange(summary.reach, Number.parseFloat(prevD.reach ?? 0)),
-      clicks: percentChange(summary.clicks, Number.parseFloat(prevD.clicks ?? 0)),
-      spend: percentChange(summary.spend, Number.parseFloat(prevD.spend ?? 0)),
-      conversions: percentChange(summary.conversions, Number.parseFloat(prevD.conversions ?? 0)),
+      impressions: percentChange(summary.impressions, prevD.impressions),
+      reach: percentChange(summary.reach, prevD.reach),
+      clicks: percentChange(summary.clicks, prevD.clicks),
+      spend: percentChange(summary.spend, prevD.spend),
+      conversions: percentChange(summary.conversions, prevD.conversions),
     },
     daily: daily.map((d: any) => ({
       date: d.date_start,
