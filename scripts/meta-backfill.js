@@ -135,17 +135,21 @@ function getAction(actions, type) {
   return Number((actions ?? []).find((a) => a.action_type === type)?.value ?? 0);
 }
 
-function toYMD(d) {
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(d.getUTCDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+function isYyyyMmDd(value) {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
-function assertYMD(label, value) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    throw new Error(`${label} must be YYYY-MM-DD, got: ${JSON.stringify(value)}`);
+function parseYyyyMmDd(value, label) {
+  if (!value) return null;
+  if (!isYyyyMmDd(value)) {
+    throw new Error(`[meta-backfill] ${label} must be YYYY-MM-DD; got: ${JSON.stringify(value)}`);
   }
+  return new Date(`${value}T00:00:00Z`);
+}
+
+function toYyyyMmDd(date) {
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  return d.toISOString().slice(0, 10);
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -196,16 +200,17 @@ async function main() {
   const argSince = (argv.find((a) => a.startsWith('--since='))?.split('=')[1] ?? process.env.BACKFILL_SINCE ?? '').trim();
   const argUntil = (argv.find((a) => a.startsWith('--until='))?.split('=')[1] ?? process.env.BACKFILL_UNTIL ?? '').trim();
 
-  const today     = new Date();
+  const untilInput = parseYyyyMmDd(argUntil, 'BACKFILL_UNTIL') ?? parseYyyyMmDd(process.env.BACKFILL_UNTIL, 'BACKFILL_UNTIL');
+  const sinceInput = parseYyyyMmDd(argSince, 'BACKFILL_SINCE') ?? parseYyyyMmDd(process.env.BACKFILL_SINCE, 'BACKFILL_SINCE');
+
+  const today = new Date();
   const yesterday = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - 1));
 
-  const until = argUntil || toYMD(yesterday);
-  assertYMD('BACKFILL_UNTIL', until);
+  const untilDate = untilInput ?? yesterday;
+  const sinceDate = sinceInput ?? new Date(Date.UTC(untilDate.getUTCFullYear(), untilDate.getUTCMonth(), untilDate.getUTCDate() - (BACKFILL_DAYS - 1)));
 
-  const startDate = new Date(`${until}T00:00:00Z`);
-  startDate.setUTCDate(startDate.getUTCDate() - BACKFILL_DAYS);
-  const since = argSince || toYMD(startDate);
-  assertYMD('BACKFILL_SINCE', since);
+  const until = toYyyyMmDd(untilDate);
+  const since = toYyyyMmDd(sinceDate);
 
   console.log(`[meta-backfill] Fetching account-level daily insights: ${since} → ${until}`);
   const maskedAccounts = adAccountIds.map((id) => id.replaceAll(/.(?=.{4})/g, '*')).join(', ');

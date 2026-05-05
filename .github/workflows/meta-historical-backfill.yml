@@ -53,6 +53,21 @@ jobs:
             echo "::error::Missing required secrets: ${MISSING[*]}"
             exit 1
           fi
+      - name: Validate backfill date inputs
+        run: |
+          is_date() { [[ "$1" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; }
+          if [ -n "$BACKFILL_SINCE" ] && ! is_date "$BACKFILL_SINCE" ]; then
+            echo "::error::since must be YYYY-MM-DD (got: $BACKFILL_SINCE)"
+            exit 1
+          fi
+          if [ -n "$BACKFILL_UNTIL" ] && ! is_date "$BACKFILL_UNTIL" ]; then
+            echo "::error::until must be YYYY-MM-DD (got: $BACKFILL_UNTIL)"
+            exit 1
+          fi
+          if [ -n "$BACKFILL_DAYS" ] && ! [[ "$BACKFILL_DAYS" =~ ^[0-9]+$ ]]; then
+            echo "::error::days must be a positive integer (got: $BACKFILL_DAYS)"
+            exit 1
+          fi
       - name: Install pg dependency
         run: npm install --no-save pg
       - name: Run historical backfill
