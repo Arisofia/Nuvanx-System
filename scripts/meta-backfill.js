@@ -85,7 +85,7 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-async function metaFetch(endpoint, params = {}, accessTokenOverride, attempt = 1) {
+async function metaFetch(endpoint, accessTokenOverride, attempt = 1, params = {}) {
   const url = new URL(`${META_GRAPH}${endpoint}`);
   const accessToken = accessTokenOverride || token;
   url.searchParams.set('access_token', accessToken);
@@ -120,7 +120,7 @@ async function metaFetch(endpoint, params = {}, accessTokenOverride, attempt = 1
         const backoffMs = 1000 * Math.pow(2, attempt - 1);
         console.warn(`[meta-backfill] Transient error on attempt ${attempt}, retrying in ${backoffMs}ms: ${msg}`);
         await sleep(backoffMs);
-        return metaFetch(endpoint, params, attempt + 1);
+        return metaFetch(endpoint, accessTokenOverride, attempt + 1, params);
       }
       throw new Error(fullMsg);
     }
@@ -131,7 +131,7 @@ async function metaFetch(endpoint, params = {}, accessTokenOverride, attempt = 1
       const backoffMs = 1000 * Math.pow(2, attempt - 1);
       console.warn(`[meta-backfill] Timeout on attempt ${attempt}, retrying in ${backoffMs}ms`);
       await sleep(backoffMs);
-      return metaFetch(endpoint, params, attempt + 1);
+      return metaFetch(endpoint, accessTokenOverride, attempt + 1, params);
     }
     throw err;
   }
@@ -173,9 +173,12 @@ async function resolveReportUserId(db) {
 
   const params = adAccountIds.flatMap((id) => [id, `%${id}%`]);
   const { rows: intRows } = await db.query(
-    `SELECT user_id FROM public.integrations
+    `SELECT user_id, metadata->>'pageId' AS page_id, metadata->>'page_id' AS page_id_alt
+     FROM public.integrations
      WHERE service = 'meta'
        AND (${conditions})
+     ORDER BY (metadata->>'pageId' IS NOT NULL AND metadata->>'pageId' <> '') DESC,
+              (metadata->>'page_id' IS NOT NULL AND metadata->>'page_id' <> '') DESC
      LIMIT 1`,
     params
   );
@@ -231,7 +234,7 @@ async function resolvePageAccessToken(pageId) {
     throw new Error(`[Meta Error] ${data?.error?.message ?? response.statusText}`);
   }
 
-  const page = (Array.isArray(data?.data) ? data.data : []).find((item) => String(item.id) === String(pageId));
+  const page = data?.data?.find?.((item) => String(item.id) === String(pageId));
   if (!page || !page.access_token) {
     throw new Error(`Page access token not found for Page ID ${pageId}`);
   }
@@ -277,13 +280,18 @@ async function main() {
   for (const adAccountId of adAccountIds) {
     try {
       console.log(`[meta-backfill] Fetching account-level daily insights for ${adAccountId}: ${since} → ${until}`);
-      const data = await metaFetch(`/${adAccountId}/insights`, {
-        fields: 'date_start,impressions,reach,clicks,spend,conversions,ctr,cpc,cpm,actions',
-        time_range: JSON.stringify({ since, until }),
-        time_increment: '1',
-        level: 'account',
-        limit: '1000',
-      });
+      const data = await metaFetch(
+        `/${adAccountId}/insights`,
+        undefined,
+        1,
+        {
+          fields: 'date_start,impressions,reach,clicks,spend,conversions,ctr,cpc,cpm,actions',
+          time_range: JSON.stringify({ since, until }),
+          time_increment: '1',
+          level: 'account',
+          limit: '1000',
+        }
+      );
 
       const rows = Array.isArray(data?.data) ? data.data : [];
       console.log(`[meta-backfill] Received ${rows.length} daily rows from Meta for ${adAccountId}`);
@@ -358,18 +366,28 @@ async function ingestMetaLeadsFromForms(db, userId, adAccountId, sinceTs) {
     return 0;
   }
   const pageToken = await resolvePageAccessToken(pageId);
-  const formsRes = await metaFetch(`/${pageId}/leadgen_forms`, {
-    fields: 'id,name',
-    limit: '50',
-  }, pageToken);
+  const formsRes = await metaFetch(
+    `/${pageId}/leadgen_forms`,
+    pageToken,
+    1,
+    {
+      fields: 'id,name',
+      limit: '50',
+    }
+  );
 
   for (const form of (formsRes?.data ?? [])) {
     try {
-      const leadsRes = await metaFetch(`/${form.id}/leads`, {
-        fields: 'id,field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,campaign_name,adset_id,adset_name,page_id',
-        filtering: JSON.stringify([{ field: 'time_created', operator: 'GREATER_THAN', value: sinceTs }]),
-        limit: '500',
-      }, pageToken);
+      const leadsRes = await metaFetch(
+        `/${form.id}/leads`,
+        pageToken,
+        1,
+        {
+          fields: 'id,field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,campaign_name,adset_id,adset_name,page_id',
+          filtering: JSON.stringify([{ field: 'time_created', operator: 'GREATER_THAN', value: sinceTs }]),
+          limit: '500',
+        }
+      );
 
       for (const leadData of (leadsRes?.data ?? [])) {
         try {
