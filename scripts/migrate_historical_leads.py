@@ -60,8 +60,7 @@ def mask_phone(phone):
 
 def update_crm_record(phone, campaign_name, ad_name, tag):
     """Reemplaza esta función con tu actualización real del CRM o base de datos."""
-    masked_phone = mask_phone(phone)
-    print(f'Sincronizado: {masked_phone} <- {campaign_name} | ad: {ad_name} | tag: {tag}')
+    print(f'Sincronizado lead <- {campaign_name} | ad: {ad_name} | tag: {tag}')
     return True
 
 
