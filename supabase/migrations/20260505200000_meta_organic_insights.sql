@@ -32,35 +32,15 @@ CREATE INDEX IF NOT EXISTS meta_organic_daily_date_idx
 
 ALTER TABLE meta_organic_daily ENABLE ROW LEVEL SECURITY;
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_policies
-    WHERE schemaname = 'public'
-      AND tablename = 'meta_organic_daily'
-      AND policyname = 'meta_organic_daily_select_own'
-  ) THEN
-    CREATE POLICY meta_organic_daily_select_own ON public.meta_organic_daily
-      FOR SELECT TO authenticated
-      USING (auth.uid() = user_id AND NOT (auth.jwt() ->> 'is_anonymous')::boolean IS TRUE);
-  END IF;
-END $$;
+DROP POLICY IF EXISTS meta_organic_daily_select_own ON meta_organic_daily;
+CREATE POLICY meta_organic_daily_select_own ON meta_organic_daily
+  FOR SELECT TO authenticated
+  USING (auth.uid() = user_id AND NOT (auth.jwt() ->> 'is_anonymous')::boolean IS TRUE);
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_policies
-    WHERE schemaname = 'public'
-      AND tablename = 'meta_organic_daily'
-      AND policyname = 'meta_organic_daily_service_role'
-  ) THEN
-    CREATE POLICY meta_organic_daily_service_role ON public.meta_organic_daily
-      FOR ALL TO service_role
-      USING (true) WITH CHECK (true);
-  END IF;
-END $$;
+DROP POLICY IF EXISTS meta_organic_daily_service_role ON meta_organic_daily;
+CREATE POLICY meta_organic_daily_service_role ON meta_organic_daily
+  FOR ALL TO service_role
+  USING (true) WITH CHECK (true);
 
 -- ---------------------------------------------------------------------------
 -- Per-post performance (organic posts on the timeline only; ads-only dark
@@ -96,35 +76,15 @@ CREATE INDEX IF NOT EXISTS meta_post_performance_message_trgm_idx
 
 ALTER TABLE meta_post_performance ENABLE ROW LEVEL SECURITY;
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_policies
-    WHERE schemaname = 'public'
-      AND tablename = 'meta_post_performance'
-      AND policyname = 'meta_post_performance_select_own'
-  ) THEN
-    CREATE POLICY meta_post_performance_select_own ON public.meta_post_performance
-      FOR SELECT TO authenticated
-      USING (auth.uid() = user_id AND NOT (auth.jwt() ->> 'is_anonymous')::boolean IS TRUE);
-  END IF;
-END $$;
+DROP POLICY IF EXISTS meta_post_performance_select_own ON meta_post_performance;
+CREATE POLICY meta_post_performance_select_own ON meta_post_performance
+  FOR SELECT TO authenticated
+  USING (auth.uid() = user_id AND NOT (auth.jwt() ->> 'is_anonymous')::boolean IS TRUE);
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_policies
-    WHERE schemaname = 'public'
-      AND tablename = 'meta_post_performance'
-      AND policyname = 'meta_post_performance_service_role'
-  ) THEN
-    CREATE POLICY meta_post_performance_service_role ON public.meta_post_performance
-      FOR ALL TO service_role
-      USING (true) WITH CHECK (true);
-  END IF;
-END $$;
+DROP POLICY IF EXISTS meta_post_performance_service_role ON meta_post_performance;
+CREATE POLICY meta_post_performance_service_role ON meta_post_performance
+  FOR ALL TO service_role
+  USING (true) WITH CHECK (true);
 
 COMMENT ON TABLE meta_organic_daily IS
   'Daily totals from Meta Page Insights API (organic + paid mixed at page level — Meta deprecated organic-only page metrics in v22). Use meta_post_performance for true organic content attribution.';
