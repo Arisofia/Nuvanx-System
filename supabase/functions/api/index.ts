@@ -2837,7 +2837,19 @@ async function handleMetaIgGet(ctx: AuthenticatedRouteContext): Promise<Response
     .maybeSingle();
 
   const meta = (integ?.metadata ?? {}) as Record<string, any>;
-  const igId = meta.igBusinessAccountId ?? meta.ig_business_account_id ?? null;
+  let igId: string | null = meta.igBusinessAccountId ?? meta.ig_business_account_id ?? null;
+
+  // Fallback: auto-discover ig_id from existing DB data when metadata is missing
+  if (!igId) {
+    const { data: igDiscover } = await adminClient
+      .from('meta_ig_account_daily')
+      .select('ig_id')
+      .eq('user_id', userId)
+      .limit(1)
+      .maybeSingle();
+    igId = igDiscover?.ig_id ?? null;
+  }
+
   if (!igId) {
     return sendJson({ success: false, message: 'No Instagram Business Account linked to this Meta integration.' }, 400);
   }
