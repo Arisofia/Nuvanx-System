@@ -19,6 +19,9 @@ on:
 permissions:
   contents: read
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   backfill:
     name: Back-fill meta_daily_insights
@@ -41,8 +44,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-        env:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       - name: Validate required secrets
         run: |
           MISSING=()
