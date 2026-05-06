@@ -3229,6 +3229,41 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
         return fetchMetaCampaignsFallback(creds, sendJson, new Error('Meta API returned 0 campaigns'), adminClient, userId);
       }
 
+      const metaCampaigns = campaigns.map(mapMetaCampaign);
+      const metaCampaignIds = new Set(metaCampaigns.map((c: any) => String(c.id)));
+
+      // Supplement with DB historical campaigns not present in the Meta response
+      // (e.g. archived/old campaigns that Meta no longer returns)
+      const { data: dbRows } = await adminClient
+        .from('vw_campaign_performance_real')
+        .select('campaign_id, campaign_name, source, total_leads, last_lead_at')
+        .eq('user_id', userId)
+        .order('total_leads', { ascending: false });
+
+      const nowMs = Date.now();
+      const dbOnlyCampaigns = (dbRows ?? [])
+        .filter((row: any) => row.campaign_id && !metaCampaignIds.has(String(row.campaign_id)))
+        .map((row: any) => {
+          const diff = row.last_lead_at ? nowMs - new Date(row.last_lead_at).getTime() : Infinity;
+          const status = diff < 14 * 86_400_000 ? 'ACTIVE' : diff < 60 * 86_400_000 ? 'PAUSED' : 'ARCHIVED';
+          return {
+            id: row.campaign_id,
+            name: row.campaign_name ?? 'Unknown',
+            status,
+            objective: row.source ?? 'LEAD_GENERATION',
+            accountId: creds.adAccountId,
+            dailyBudget: null,
+            lifetimeBudget: null,
+            insights: {
+              impressions: 0, reach: 0, clicks: 0, spend: 0,
+              ctr: 0, cpc: 0, cpm: 0,
+              conversions: Number(row.total_leads ?? 0),
+              cpp: null, actions: [],
+              costPerActionType: null, qualityRanking: null, engagementRateRanking: null,
+            },
+          };
+        });
+
       const result = {
         success: true,
         source: 'live',
@@ -3236,7 +3271,7 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
         accountId: creds.adAccountId,
         accountIds: creds.adAccountIds,
         currency: campCurrency,
-        campaigns: campaigns.map(mapMetaCampaign),
+        campaigns: [...metaCampaigns, ...dbOnlyCampaigns],
       };
       await setMetaCache(adminClient, userId, `meta:campaigns`, result);
       return sendJson(result);
