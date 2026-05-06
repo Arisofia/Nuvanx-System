@@ -840,13 +840,23 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
   }
 
   let rawAccountId = qAccountId;
+  const { data: intg } = await adminClient
+    .from('integrations').select('metadata').eq('user_id', userId).eq('service', 'meta').maybeSingle();
+    
   if (!rawAccountId) {
-    const { data: intg } = await adminClient
-      .from('integrations').select('metadata').eq('user_id', userId).eq('service', 'meta').single();
     rawAccountId = intg?.metadata?.adAccountIds ?? intg?.metadata?.ad_account_ids ?? intg?.metadata?.adAccountId ?? intg?.metadata?.ad_account_id ?? '';
   }
   const adAccountIds = normalizeMetaAccountIds(rawAccountId);
-  return { notConnected: false, accessToken, adAccountIds, adAccountId: adAccountIds[0] ?? '', decryptionError } as const;
+  const metadata = intg?.metadata ?? {};
+  return { 
+    notConnected: false, 
+    accessToken, 
+    adAccountIds, 
+    adAccountId: adAccountIds[0] ?? '', 
+    pageId: metadata.pageId ?? metadata.page_id ?? '',
+    igId: metadata.igBusinessAccountId ?? metadata.ig_business_account_id ?? '',
+    decryptionError 
+  } as const;
 }
 
 function validateMetaCredentialResult(creds: any) {
@@ -2530,6 +2540,213 @@ async function ingestMetaLeadsFromForms(adminClient: any, userId: string, adAcco
   return totalFetched;
 }
 
+async function persistMetaOrganicDailyInsights(adminClient: any, userId: string, pageId: string, accessToken: string, sinceDate: string, untilDate: string): Promise<number> {
+  const PAGE_METRICS = [
+    'page_impressions_unique',
+    'page_post_engagements',
+    'page_video_views',
+    'page_views_total',
+    'page_actions_post_reactions_total',
+  ];
+  
+  const data = await metaFetch(`/${pageId}/insights`, {
+    metric: PAGE_METRICS.join(','),
+    period: 'day',
+    since: sinceDate,
+    until: untilDate,
+  }, accessToken);
+
+  const series = Array.isArray(data?.data) ? data.data : [];
+  const byDate = new Map<string, any>();
+  for (const m of series) {
+    const { name } = m;
+    for (const v of m.values || []) {
+      const day = (v.end_time || '').slice(0, 10);
+      if (!day) continue;
+      const row = byDate.get(day) || { day };
+      row[name] = Number(v.value || 0);
+      byDate.set(day, row);
+    }
+  }
+
+  const dbRows = Array.from(byDate.values()).map(r => ({
+    user_id: userId,
+    page_id: pageId,
+    date: r.day,
+    impressions: Math.round(Number(r.page_impressions_unique || 0)),
+    reach: Math.round(Number(r.page_impressions_unique || 0)),
+    engagements: Math.round(Number(r.page_post_engagements || 0)),
+    video_views: Math.round(Number(r.page_video_views || 0)),
+    page_views: Math.round(Number(r.page_views_total || 0)),
+    reactions: Math.round(Number(r.page_actions_post_reactions_total || 0)),
+    updated_at: new Date().toISOString(),
+  }));
+
+  if (dbRows.length === 0) return 0;
+
+  await adminClient
+    .from('meta_organic_daily')
+    .upsert(dbRows, { onConflict: 'user_id,page_id,date' });
+
+  return dbRows.length;
+}
+
+async function persistMetaPostPerformance(adminClient: any, userId: string, pageId: string, accessToken: string, limit: number): Promise<number> {
+  const fields = [
+    'id',
+    'created_time',
+    'message',
+    'status_type',
+    'permalink_url',
+    'attachments{media_type}',
+    'insights.metric(post_impressions_unique,post_reactions_by_type_total,post_video_views,post_clicks,post_activity_by_action_type)',
+  ].join(',');
+
+  const data = await metaFetch(`/${pageId}/posts`, {
+    fields,
+    limit: String(Math.min(limit, 100)),
+  }, accessToken);
+
+  const posts = Array.isArray(data?.data) ? data.data : [];
+  if (posts.length === 0) return 0;
+
+  const dbRows = posts.map(p => {
+    const insightsByName = new Map();
+    for (const { name, values } of p.insights?.data || []) {
+      insightsByName.set(name, values?.[0]?.value);
+    }
+    const reactionsObj = insightsByName.get('post_reactions_by_type_total') || {};
+    const reactionsTotal = Object.values(reactionsObj).reduce((a: number, b: any) => a + Number(b || 0), 0);
+    const activityObj = insightsByName.get('post_activity_by_action_type') || {};
+    const comments = Number(activityObj.comment || 0);
+    const shares = Number(activityObj.share || 0);
+    const engagedUsers = reactionsTotal + comments + shares;
+
+    const attachments = p.attachments?.data || [];
+    const mediaType = attachments[0]?.media_type || '';
+    const isVideo = /video|reel/i.test(mediaType) || p.status_type === 'added_video';
+
+    return {
+      user_id: userId,
+      page_id: pageId,
+      post_id: p.id,
+      created_time: p.created_time,
+      message: p.message ?? null,
+      status_type: p.status_type ?? null,
+      permalink_url: p.permalink_url ?? null,
+      impressions: Number(insightsByName.get('post_impressions_unique') || 0),
+      reach: Number(insightsByName.get('post_impressions_unique') || 0),
+      engaged_users: engagedUsers,
+      reactions: reactionsTotal,
+      comments: comments,
+      shares: shares,
+      video_views: Number(insightsByName.get('post_video_views') || 0),
+      is_video: Boolean(isVideo),
+      updated_at: new Date().toISOString(),
+    };
+  });
+
+  await adminClient
+    .from('meta_post_performance')
+    .upsert(dbRows, { onConflict: 'user_id,post_id' });
+
+  return dbRows.length;
+}
+
+async function persistMetaIgAccountDailyInsights(adminClient: any, userId: string, igId: string, accessToken: string, sinceDate: string, untilDate: string): Promise<number> {
+  const TIME_SERIES_METRICS = ['reach', 'follower_count'];
+  const byDate = new Map<string, any>();
+
+  const tsData = await metaFetch(`/${igId}/insights`, {
+    metric: TIME_SERIES_METRICS.join(','),
+    period: 'day',
+    metric_type: 'time_series',
+    since: String(Math.floor(new Date(sinceDate).getTime() / 1000)),
+    until: String(Math.floor(new Date(untilDate).getTime() / 1000)),
+  }, accessToken);
+
+  for (const m of tsData?.data || []) {
+    for (const v of m.values || []) {
+      const day = (v.end_time || '').slice(0, 10);
+      if (!day) continue;
+      const row = byDate.get(day) || { day };
+      row[m.name] = Number(v.value || 0);
+      byDate.set(day, row);
+    }
+  }
+
+  const dbRows = Array.from(byDate.values()).map(r => ({
+    user_id: userId,
+    ig_id: igId,
+    date: r.day,
+    reach: Number(r.reach || 0),
+    follower_count_delta: Number(r.follower_count || 0),
+    updated_at: new Date().toISOString(),
+  }));
+
+  if (dbRows.length === 0) return 0;
+
+  await adminClient
+    .from('meta_ig_account_daily')
+    .upsert(dbRows, { onConflict: 'user_id,ig_id,date' });
+
+  return dbRows.length;
+}
+
+async function persistMetaIgMediaPerformance(adminClient: any, userId: string, igId: string, accessToken: string, limit: number): Promise<number> {
+  const MEDIA_METRICS = ['reach', 'likes', 'comments', 'shares', 'saved', 'total_interactions', 'views'];
+  const fields = 'id,caption,media_type,media_product_type,permalink,timestamp';
+
+  const data = await metaFetch(`/${igId}/media`, {
+    fields,
+    limit: String(Math.min(limit, 50)),
+  }, accessToken);
+
+  const items = Array.isArray(data?.data) ? data.data : [];
+  if (items.length === 0) return 0;
+
+  let upserted = 0;
+  for (const m of items) {
+    try {
+      const ins = await metaFetch(`/${m.id}/insights`, {
+        metric: MEDIA_METRICS.join(','),
+      }, accessToken);
+      
+      const insights: Record<string, number> = {};
+      for (const row of ins?.data || []) {
+        insights[row.name] = Number(row.values?.[0]?.value || 0);
+      }
+
+      await adminClient
+        .from('meta_ig_media_performance')
+        .upsert({
+          user_id: userId,
+          ig_id: igId,
+          media_id: m.id,
+          media_type: m.media_type ?? null,
+          media_product_type: m.media_product_type ?? null,
+          caption: m.caption ?? null,
+          permalink: m.permalink ?? null,
+          timestamp: m.timestamp,
+          reach: Number(insights.reach || 0),
+          views: Number(insights.views || 0),
+          likes: Number(insights.likes || 0),
+          comments: Number(insights.comments || 0),
+          shares: Number(insights.shares || 0),
+          saved: Number(insights.saved || 0),
+          total_interactions: Number(insights.total_interactions || 0),
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'user_id,media_id' });
+      
+      upserted++;
+    } catch (e: any) {
+      console.warn(`Failed to fetch insights for IG media ${m.id}:`, e.message);
+    }
+  }
+
+  return upserted;
+}
+
 // ── Meta Organic (Page-level + Post-level) ────────────────────────────────
 async function handleMetaOrganicGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, sub2, req, url, sendJson } = ctx;
@@ -2719,12 +2936,41 @@ async function handleMetaBackfillPost(ctx: AuthenticatedRouteContext): Promise<R
     const backfillResult = {
       success: true,
       accountIds: creds.adAccountIds,
+      pageId: creds.pageId,
+      igId: creds.igId,
       totalLeadsBackfilled: totalFetched,
       dailyInsightsPersisted,
+      organicDailyPersisted: 0,
+      organicPostsPersisted: 0,
+      igAccountDailyPersisted: 0,
+      igMediaPersisted: 0,
       since: sinceDate,
       until: untilDate,
-      message: `Backfill completed (${sinceDate} → ${untilDate}). ${dailyInsightsPersisted} daily insight rows persisted. ${totalFetched} leads ingested.`,
+      message: '',
     };
+
+    // ── Organic Page Backfill ──
+    if (creds.pageId) {
+      try {
+        backfillResult.organicDailyPersisted = await persistMetaOrganicDailyInsights(adminClient, userId, creds.pageId, creds.accessToken, sinceDate, untilDate);
+        backfillResult.organicPostsPersisted = await persistMetaPostPerformance(adminClient, userId, creds.pageId, creds.accessToken, 100);
+      } catch (e: any) {
+        console.warn(`Meta organic backfill failed:`, e?.message ?? e);
+      }
+    }
+
+    // ── IG Business Backfill ──
+    if (creds.igId) {
+      try {
+        backfillResult.igAccountDailyPersisted = await persistMetaIgAccountDailyInsights(adminClient, userId, creds.igId, creds.accessToken, sinceDate, untilDate);
+        backfillResult.igMediaPersisted = await persistMetaIgMediaPerformance(adminClient, userId, creds.igId, creds.accessToken, 100);
+      } catch (e: any) {
+        console.warn(`Meta IG backfill failed:`, e?.message ?? e);
+      }
+    }
+
+    backfillResult.message = `Backfill completed (${sinceDate} → ${untilDate}). Ads: ${dailyInsightsPersisted} rows, ${totalFetched} leads. Organic: ${backfillResult.organicDailyPersisted} daily, ${backfillResult.organicPostsPersisted} posts. IG: ${backfillResult.igAccountDailyPersisted} daily, ${backfillResult.igMediaPersisted} media.`;
+
     await setMetaCache(adminClient, userId, `meta:backfill:${creds.adAccountIds.join(',')}`, backfillResult);
     return sendJson(backfillResult);
   }
@@ -2839,6 +3085,54 @@ async function fetchMetaCampaignsFallback(creds: any, sendJson: any, e: Error, a
       if (result.status !== 'fulfilled') return [];
       return ((result.value?.data ?? []) as any[]).map((campaign: any) => ({ ...campaign, accountId }));
     });
+
+    // If Meta API returned 0 campaigns, build list from DB (vw_campaign_performance_real)
+    if (campaigns.length === 0) {
+      const { data: dbRows } = await adminClient
+        .from('vw_campaign_performance_real')
+        .select('campaign_id, campaign_name, source, total_leads, last_lead_at')
+        .eq('user_id', userId)
+        .order('total_leads', { ascending: false });
+
+      if (dbRows && dbRows.length > 0) {
+        const now = Date.now();
+        const thirtyDaysMs = 30 * 86_400_000;
+        const dbCampaigns = dbRows.map((row: any) => ({
+          id: row.campaign_id ?? `db-${row.campaign_name}`,
+          name: row.campaign_name ?? 'Unknown',
+          status: (row.last_lead_at && (now - new Date(row.last_lead_at).getTime()) < thirtyDaysMs) ? 'ACTIVE' : 'PAUSED',
+          objective: row.source ?? 'LEAD_GENERATION',
+          accountId: creds.adAccountId,
+          dailyBudget: null,
+          lifetimeBudget: null,
+          insights: {
+            impressions: 0,
+            reach: 0,
+            clicks: 0,
+            spend: 0,
+            ctr: 0,
+            cpc: 0,
+            cpm: 0,
+            conversions: Number(row.total_leads ?? 0),
+            cpp: null,
+            actions: [],
+            costPerActionType: null,
+            qualityRanking: null,
+            engagementRateRanking: null,
+          },
+        }));
+        const dbResult = {
+          success: true,
+          source: 'db',
+          cached: false,
+          accountId: creds.adAccountId,
+          accountIds: creds.adAccountIds,
+          campaigns: dbCampaigns,
+          warning: 'Campaign data sourced from CRM — Meta API returned no campaigns.',
+        };
+        return sendJson(dbResult);
+      }
+    }
 
     const fallbackResult = {
       success: true,
