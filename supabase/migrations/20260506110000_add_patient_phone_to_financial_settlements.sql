@@ -40,12 +40,12 @@ INSERT INTO public.doctoralia_patients (
 SELECT
   COALESCE(
     NULLIF(fs.patient_dni, ''),
-    'ph:' || NULLIF(regexp_replace(COALESCE(fs.patient_phone, ''), '\D', '', 'g'), '')
+    'ph:' || public.normalize_phone(fs.patient_phone)
   ) AS doc_patient_id,
   fs.clinic_id,
   UPPER(TRIM(fs.patient_name)) AS full_name,
   LOWER(REGEXP_REPLACE(extensions.unaccent(TRIM(fs.patient_name)), '\s+', ' ', 'g')) AS name_norm,
-  NULLIF(regexp_replace(COALESCE(fs.patient_phone, ''), '\D', '', 'g'), '') AS phone_primary,
+  public.normalize_phone(fs.patient_phone) AS phone_primary,
   MIN(fs.settled_at) AS first_seen_at,
   NULL AS match_confidence,
   NULL AS match_class
@@ -55,7 +55,7 @@ WHERE fs.cancelled_at IS NULL
   AND fs.amount_net    > 0
   AND COALESCE(
         NULLIF(fs.patient_dni, ''),
-        NULLIF(regexp_replace(COALESCE(fs.patient_phone, ''), '\D', '', 'g'), '')
+        public.normalize_phone(fs.patient_phone)
       ) IS NOT NULL
 GROUP BY fs.clinic_id, fs.patient_dni, fs.patient_phone, fs.patient_name
 ON CONFLICT (doc_patient_id, clinic_id) DO UPDATE
@@ -71,7 +71,7 @@ FROM (
   SELECT
     NULLIF(fs.patient_dni, '') AS doc_patient_id,
     fs.clinic_id,
-    MAX(normalize_phone(fs.patient_phone)) AS phone_norm
+    MAX(public.normalize_phone(fs.patient_phone)) AS phone_norm
   FROM public.financial_settlements fs
   WHERE NULLIF(fs.patient_dni, '') IS NOT NULL
   GROUP BY fs.patient_dni, fs.clinic_id
