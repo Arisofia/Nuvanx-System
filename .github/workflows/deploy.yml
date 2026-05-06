@@ -1,5 +1,4 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
-###############################################################################
 # Deploy Supabase - sequential pipeline on main
 #
 # Order: supabase-migrate -> supabase-functions
@@ -14,7 +13,6 @@
 #   SUPABASE_PROJECT_REF         - Supabase project ref used by supabase link
 #   SUPABASE_DB_PASSWORD         - DB password for supabase db push
 #   DATABASE_URL                 - Optional fallback DB URL to derive SUPABASE_DB_PASSWORD
-###############################################################################
 
 name: Deploy Supabase
 
