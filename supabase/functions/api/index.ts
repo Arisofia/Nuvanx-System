@@ -3723,7 +3723,7 @@ function calculateFinancialMetrics(rows: any[]) {
   const settled = rows.filter((r: any) => !r.cancelled_at);
   const cancelledCount = operationsCount - settled.length;
   const totalNet = settled.reduce((s: number, r: any) => s + Number(r.amount_net), 0);
-  const totalGross = settled.reduce((s: number, r: any) => s + Number(r.amount_gross ?? r.amount_net), 0);
+  const totalGross = settled.reduce((s: number, r: any) => s + (Number(r.amount_gross) || Number(r.amount_net)), 0);
   const totalDiscount = settled.reduce((s: number, r: any) => s + Number(r.amount_discount), 0);
   const avgTicket = settled.length ? totalNet / settled.length : 0;
   
