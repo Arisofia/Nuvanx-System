@@ -4006,7 +4006,13 @@ async function handleTraceabilityFunnel(ctx: AuthenticatedRouteContext): Promise
   const { adminClient, resource, sub, sendJson } = ctx;
   if (resource === 'traceability' && sub === 'funnel') {
     const { data: rows } = await adminClient.from('vw_whatsapp_conversion_real').select('*');
-    return sendJson({ success: true, funnel: rows || [] });
+    // The view uses column names "cohort" and "lead_count"; normalise to the
+    // shape the frontend FunnelRow type expects: { stage, count }.
+    const funnel = (rows || []).map((r: Record<string, unknown>) => ({
+      stage: (r.cohort ?? r.stage) as string,
+      count: Number(r.lead_count ?? r.count ?? 0),
+    }));
+    return sendJson({ success: true, funnel });
   }
   return null;
 }

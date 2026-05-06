@@ -182,7 +182,7 @@ export default function Intelligence() {
           <div key={row.stage} className="flex justify-between items-center p-3 rounded-lg bg-surface border border-border">
             <span className="capitalize text-sm text-[#d7c5ae]">{String(row.stage).replaceAll('_', ' ')}</span>
             <span className="font-bold text-sm">
-              {row.count.toLocaleString()}
+              {(row.count ?? 0).toLocaleString()}
               {row.pct !== null && row.pct !== undefined ? ` (${row.pct}%)` : ''}
             </span>
           </div>
