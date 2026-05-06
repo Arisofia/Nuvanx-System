@@ -130,6 +130,9 @@ export interface FinancialSummary {
 export interface MonthlyTrend {
   month: string
   net: number
+  gross?: number
+  discount?: number
+  count?: number
 }
 
 export interface TemplateMixRow {

@@ -3783,14 +3783,26 @@ async function processFinancialsSummary(adminClient: any, userId: string, url: U
     pct: Math.round((v.net / (totalNet || 1)) * 1000) / 10,
   })).sort((a, b) => b.net - a.net);
 
-  const monthMap: Record<string, number> = {};
+  const monthMap: Record<string, { net: number; gross: number; discount: number; count: number }> = {};
   for (const r of settled) {
-    const m = r.settled_at?.slice(7);
-    if (m) monthMap[m] = (monthMap[m] || 0) + Number(r.amount_net);
+    const m = r.settled_at?.slice(0, 7);
+    if (m) {
+      if (!monthMap[m]) monthMap[m] = { net: 0, gross: 0, discount: 0, count: 0 };
+      monthMap[m].net += Number(r.amount_net);
+      monthMap[m].gross += Number(r.amount_gross) || Number(r.amount_net);
+      monthMap[m].discount += Number(r.amount_discount);
+      monthMap[m].count++;
+    }
   }
   const monthly = Object.entries(monthMap)
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([month, net]) => ({ month, net: Math.round(net * 100) / 100 }));
+    .map(([month, v]) => ({
+      month,
+      net: Math.round(v.net * 100) / 100,
+      gross: Math.round(v.gross * 100) / 100,
+      discount: Math.round(v.discount * 100) / 100,
+      count: v.count,
+    }));
 
   return sendJson({
     success: true,
