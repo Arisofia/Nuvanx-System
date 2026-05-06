@@ -10,10 +10,10 @@ import type { CampaignRow, MarketingState } from '../types'
 import { ExportButton } from '../components/reports/ExportButton'
 
 const fmt = (n: number, decimals = 2) =>
-  n.toLocaleString('es-MX', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+  n.toLocaleString('es-ES', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
 
 const fmtCurrency = (n: number, currency = 'EUR') =>
-  n.toLocaleString('es-MX', { style: 'currency', currency, minimumFractionDigits: 2 })
+  n.toLocaleString('es-ES', { style: 'currency', currency, minimumFractionDigits: 2 })
 
 const formatTooltipValue = (value: any, name: string, currency: string) => {
   if (name.includes('%')) {
@@ -164,13 +164,13 @@ function CampaignTable({ campaigns, filteredCampaigns, currency, summary }: Read
                 {c.insights ? fmtCurrency(c.insights.spend, currency) : '—'}
               </td>
               <td className="px-3 py-3 text-right text-foreground">
-                {c.insights ? c.insights.impressions.toLocaleString('es-MX') : '—'}
+                {c.insights ? c.insights.impressions.toLocaleString('es-ES') : '—'}
               </td>
               <td className="px-3 py-3 text-right text-foreground">
-                {c.insights ? c.insights.reach.toLocaleString('es-MX') : '—'}
+                {c.insights ? c.insights.reach.toLocaleString('es-ES') : '—'}
               </td>
               <td className="px-3 py-3 text-right text-foreground">
-                {c.insights ? c.insights.clicks.toLocaleString('es-MX') : '—'}
+                {c.insights ? c.insights.clicks.toLocaleString('es-ES') : '—'}
               </td>
               <td className="px-3 py-3 text-right text-foreground">
                 {c.insights ? `${fmt(c.insights.ctr)}%` : '—'}
@@ -182,7 +182,7 @@ function CampaignTable({ campaigns, filteredCampaigns, currency, summary }: Read
                 {c.insights ? fmtCurrency(c.insights.cpm, currency) : '—'}
               </td>
               <td className="px-3 py-3 text-right text-[#28A745]">
-                {c.insights ? c.insights.conversions.toLocaleString('es-MX') : '—'}
+                {c.insights ? c.insights.conversions.toLocaleString('es-ES') : '—'}
               </td>
               <td className="px-3 py-3 text-right text-[#B08B5A]">
                 {c.insights?.cpp == null ? '—' : fmtCurrency(c.insights.cpp, currency)}
@@ -205,19 +205,19 @@ function CampaignTable({ campaigns, filteredCampaigns, currency, summary }: Read
                 {fmtCurrency(summary?.spend ?? 0, currency)}
               </td>
               <td className="px-3 py-3 text-right">
-                {(summary?.impressions ?? 0).toLocaleString('es-MX')}
+                {(summary?.impressions ?? 0).toLocaleString('es-ES')}
               </td>
               <td className="px-3 py-3 text-right">
-                {(summary?.reach ?? 0).toLocaleString('es-MX')}
+                {(summary?.reach ?? 0).toLocaleString('es-ES')}
               </td>
               <td className="px-3 py-3 text-right text-foreground">
-                {(summary?.clicks ?? 0).toLocaleString('es-MX')}
+                {(summary?.clicks ?? 0).toLocaleString('es-ES')}
               </td>
               <td className="px-3 py-3 text-right">{fmt(summary?.ctr ?? 0)}%</td>
               <td className="px-3 py-3 text-right text-[#C49A6C]">{fmtCurrency(summary?.cpc ?? 0, currency)}</td>
               <td className="px-3 py-3 text-right">{fmtCurrency(summary?.cpm ?? 0, currency)}</td>
               <td className="px-3 py-3 text-right text-[#28A745]">
-                {(summary?.conversions ?? 0).toLocaleString('es-MX')}
+                {(summary?.conversions ?? 0).toLocaleString('es-ES')}
               </td>
               <td className="px-3 py-3 text-right text-[#B08B5A]">
                 {summary?.cpp ? fmtCurrency(summary.cpp, currency) : '—'}
@@ -345,10 +345,10 @@ function AdsTable({ adsState, currency }: Readonly<{ adsState: any; currency: st
                 {ad.insights ? fmtCurrency(ad.insights.spend, currency) : '—'}
               </td>
               <td className="px-3 py-3 text-right text-foreground">
-                {ad.insights ? ad.insights.impressions.toLocaleString('es-MX') : '—'}
+                {ad.insights ? ad.insights.impressions.toLocaleString('es-ES') : '—'}
               </td>
               <td className="px-3 py-3 text-right text-foreground">
-                {ad.insights ? ad.insights.clicks.toLocaleString('es-MX') : '—'}
+                {ad.insights ? ad.insights.clicks.toLocaleString('es-ES') : '—'}
               </td>
               <td className="px-3 py-3 text-right text-foreground">
                 {ad.insights ? `${fmt(ad.insights.ctr)}%` : '—'}
@@ -360,7 +360,7 @@ function AdsTable({ adsState, currency }: Readonly<{ adsState: any; currency: st
                 {ad.insights ? fmtCurrency(ad.insights.cpm, currency) : '—'}
               </td>
               <td className="px-3 py-3 text-right text-[#28A745]">
-                {ad.insights ? ad.insights.conversions.toLocaleString('es-MX') : '—'}
+                {ad.insights ? ad.insights.conversions.toLocaleString('es-ES') : '—'}
               </td>
               <td className="px-3 py-3 text-right text-[#B08B5A]">
                 {ad.insights?.cpp == null ? '—' : fmtCurrency(ad.insights.cpp, currency)}
@@ -718,15 +718,15 @@ export default function Marketing() {
         />
         <StatCard
           label="Impresiones"
-          value={loading ? '…' : (summary?.impressions ?? 0).toLocaleString('es-MX')}
-          sub={`Alcance: ${(summary?.reach ?? 0).toLocaleString('es-MX')}`}
+          value={loading ? '…' : (summary?.impressions ?? 0).toLocaleString('es-ES')}
+          sub={`Alcance: ${(summary?.reach ?? 0).toLocaleString('es-ES')}`}
           icon={<Eye className="w-4 h-4 text-sky-400" />}
           color="text-sky-400"
           delta={changes?.impressions}
         />
         <StatCard
           label="Clics"
-          value={loading ? '…' : (summary?.clicks ?? 0).toLocaleString('es-MX')}
+          value={loading ? '…' : (summary?.clicks ?? 0).toLocaleString('es-ES')}
           sub={`CTR: ${fmt(summary?.ctr ?? 0)}%`}
           icon={<MousePointerClick className="w-4 h-4 text-violet-400" />}
           color="text-violet-400"
@@ -760,7 +760,7 @@ export default function Marketing() {
         />
         <StatCard
           label="Alcance"
-          value={loading ? '…' : (summary?.reach ?? 0).toLocaleString('es-MX')}
+          value={loading ? '…' : (summary?.reach ?? 0).toLocaleString('es-ES')}
           sub={`CPP: ${summary?.cpp ? fmtCurrency(summary.cpp, currency) : '—'}`}
           icon={<TrendingDown className="w-4 h-4 text-orange-400" />}
           delta={changes?.reach}
@@ -1023,7 +1023,7 @@ export default function Marketing() {
                 <CardContent className="p-3">
                   <div className="text-xs text-muted">{m.label}</div>
                   <div className="text-xl font-semibold text-foreground mt-1">
-                    {organicLoading ? '…' : Number(m.value).toLocaleString('es-MX')}
+                    {organicLoading ? '…' : Number(m.value).toLocaleString('es-ES')}
                   </div>
                 </CardContent>
               </Card>
@@ -1105,10 +1105,10 @@ export default function Marketing() {
                           {p.message ?? '—'}
                         </td>
                         <td className="px-3 py-2 text-muted">{p.is_video ? 'Video' : (p.status_type ?? '—')}</td>
-                        <td className="px-3 py-2 text-right">{Number(p.reach || 0).toLocaleString('es-MX')}</td>
-                        <td className="px-3 py-2 text-right">{Number(p.engaged_users || 0).toLocaleString('es-MX')}</td>
-                        <td className="px-3 py-2 text-right">{Number(p.reactions || 0).toLocaleString('es-MX')}</td>
-                        <td className="px-3 py-2 text-right">{Number(p.video_views || 0).toLocaleString('es-MX')}</td>
+                        <td className="px-3 py-2 text-right">{Number(p.reach || 0).toLocaleString('es-ES')}</td>
+                        <td className="px-3 py-2 text-right">{Number(p.engaged_users || 0).toLocaleString('es-ES')}</td>
+                        <td className="px-3 py-2 text-right">{Number(p.reactions || 0).toLocaleString('es-ES')}</td>
+                        <td className="px-3 py-2 text-right">{Number(p.video_views || 0).toLocaleString('es-ES')}</td>
                         <td className="px-3 py-2">
                           {p.permalink_url
                             ? <a href={p.permalink_url} target="_blank" rel="noopener noreferrer" className="text-primary underline">Ver</a>
@@ -1144,7 +1144,7 @@ export default function Marketing() {
                 <CardContent className="p-3">
                   <div className="text-xs text-muted">{m.label}</div>
                   <div className="text-xl font-semibold text-foreground mt-1">
-                    {igLoading ? '…' : Number(m.value).toLocaleString('es-MX')}
+                    {igLoading ? '…' : Number(m.value).toLocaleString('es-ES')}
                   </div>
                 </CardContent>
               </Card>
@@ -1227,11 +1227,11 @@ export default function Marketing() {
                           {p.caption ?? '—'}
                         </td>
                         <td className="px-3 py-2 text-muted">{p.media_product_type ?? p.media_type ?? '—'}</td>
-                        <td className="px-3 py-2 text-right">{Number(p.reach || 0).toLocaleString('es-MX')}</td>
-                        <td className="px-3 py-2 text-right">{Number(p.likes || 0).toLocaleString('es-MX')}</td>
-                        <td className="px-3 py-2 text-right">{Number(p.comments || 0).toLocaleString('es-MX')}</td>
-                        <td className="px-3 py-2 text-right">{Number(p.saved || 0).toLocaleString('es-MX')}</td>
-                        <td className="px-3 py-2 text-right">{Number(p.views || 0).toLocaleString('es-MX')}</td>
+                        <td className="px-3 py-2 text-right">{Number(p.reach || 0).toLocaleString('es-ES')}</td>
+                        <td className="px-3 py-2 text-right">{Number(p.likes || 0).toLocaleString('es-ES')}</td>
+                        <td className="px-3 py-2 text-right">{Number(p.comments || 0).toLocaleString('es-ES')}</td>
+                        <td className="px-3 py-2 text-right">{Number(p.saved || 0).toLocaleString('es-ES')}</td>
+                        <td className="px-3 py-2 text-right">{Number(p.views || 0).toLocaleString('es-ES')}</td>
                         <td className="px-3 py-2">
                           {p.permalink
                             ? <a href={p.permalink} target="_blank" rel="noopener noreferrer" className="text-primary underline">Ver</a>

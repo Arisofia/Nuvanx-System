@@ -176,7 +176,7 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
                 <div>
                   <p className="text-xs text-muted mb-1">Estimated Revenue</p>
                   <p className="text-emerald-500 font-bold text-lg">
-                    €{lead.revenue ? Number(lead.revenue).toLocaleString() : '0.00'}
+                    {lead.revenue ? `€${Number(lead.revenue).toLocaleString()}` : '0 €'}
                   </p>
                 </div>
               )}

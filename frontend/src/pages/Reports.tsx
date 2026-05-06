@@ -206,11 +206,11 @@ export default function Reports() {
     { key: 'leads_count', label: 'Leads', align: 'right', sortable: true },
     { key: 'patients_count', label: 'Pacientes', align: 'right', sortable: true },
     { key: 'net_revenue', label: 'Revenue neto', align: 'right', sortable: true,
-      format: (v) => v == null ? null : Number(v).toLocaleString('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }) },
+      format: (v) => v == null ? null : Number(v).toLocaleString('es-ES', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 }) },
     { key: 'spend', label: 'Spend Meta', align: 'right', sortable: true,
-      format: (v) => v == null ? null : Number(v).toLocaleString('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }) },
+      format: (v) => v == null ? null : Number(v).toLocaleString('es-ES', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 }) },
     { key: 'cac', label: 'CAC', align: 'right', sortable: true,
-      format: (v) => v == null ? null : Number(v).toLocaleString('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }) },
+      format: (v) => v == null ? null : Number(v).toLocaleString('es-ES', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 }) },
   ]
 
   return (

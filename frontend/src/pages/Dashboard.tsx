@@ -32,7 +32,7 @@ interface RealFunnel {
   doctoraliaRevenue: number
   doctoraliaPatients: number
   cac: number
-  cacConfidence: number
+  cacConfidence: number | string
 }
 
 interface DashboardQuality {
@@ -674,8 +674,8 @@ function FunnelAndSpendSection({
                     : 'CAC Doctoralia: n/a (sin pacientes verificados)'}
                 </p>
                 {funnel.doctoraliaPatients > 0 && (
-                  <p className={`text-[10px] font-medium ${funnel.cacConfidence > 0.7 ? 'text-green-400' : 'text-amber-400'}`}>
-                    Confianza: {Math.round(funnel.cacConfidence * 100)}%
+                  <p className={`text-[10px] font-medium ${funnel.cacConfidence === 'high' || Number(funnel.cacConfidence) > 0.7 ? 'text-green-400' : 'text-amber-400'}`}>
+                    Confianza: {typeof funnel.cacConfidence === 'string' ? funnel.cacConfidence : `${Math.round(Number(funnel.cacConfidence) * 100)}%`}
                   </p>
                 )}
               </div>

@@ -67,7 +67,7 @@ export default function Financials() {
   }, [presetDays, fromDate, toDate])
 
   const fmt = (n: number) =>
-    n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 })
+    n.toLocaleString('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
 
   const monthlyColumns: ColDef[] = [
     { key: 'month', label: 'Month', align: 'left' },
