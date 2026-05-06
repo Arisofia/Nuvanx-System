@@ -41,7 +41,7 @@ SELECT
   p.dni                       AS patient_dni,
   p.phone                     AS patient_phone,
   p.last_visit                AS patient_last_visit,
-  p.ltv                       AS patient_ltv,
+  NULL::numeric               AS patient_ltv,
 
   dp.doc_patient_id,
   dp.match_confidence,
