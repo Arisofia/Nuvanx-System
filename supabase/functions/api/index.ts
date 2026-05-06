@@ -4450,17 +4450,28 @@ async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<
         .limit(limit)
     );
 
-    // COUNT query runs in parallel — returns real total ignoring the row limit
+    // COUNT queries run in parallel — real totals independent of row limit
     const countQ = applyFilters(
       adminClient
         .from('vw_lead_traceability')
         .select('lead_id', { count: 'exact', head: true })
     );
+    const matchedCountQ = applyFilters(
+      adminClient
+        .from('vw_lead_traceability')
+        .select('lead_id', { count: 'exact', head: true })
+        .or('doc_patient_id.not.is.null,doctoralia_template_name.not.is.null,patient_id.not.is.null')
+    );
 
-    const [{ data: rows, error }, { count }] = await Promise.all([dataQ, countQ]);
+    const [{ data: rows, error }, { count }, { count: matchedCount }] = await Promise.all([dataQ, countQ, matchedCountQ]);
     if (error) throw error;
 
-    return sendJson({ success: true, leads: rows || [], total: count ?? (rows || []).length });
+    return sendJson({
+      success: true,
+      leads: rows || [],
+      total: count ?? (rows || []).length,
+      matchedTotal: matchedCount ?? null,
+    });
   }
   return null;
 }

@@ -40,6 +40,7 @@ const MATCH_LABELS: Record<string, string> = {
 export default function Traceability() {
   const [rows, setRows] = useState<TraceRow[]>([])
   const [total, setTotal] = useState(0)
+  const [matchedTotal, setMatchedTotal] = useState<number | null>(null)
   const [campaigns, setCampaigns] = useState<any[]>([])
   const [funnel, setFunnel] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -67,6 +68,7 @@ export default function Traceability() {
         if (!isActive) return
         setRows(leadsData?.leads ?? [])
         setTotal(leadsData?.total ?? 0)
+        setMatchedTotal(leadsData?.matchedTotal ?? null)
         setCampaigns(campaignsData?.campaigns ?? [])
         setFunnel(funnelData?.funnel ?? [])
       } catch (err: any) {
@@ -95,7 +97,7 @@ export default function Traceability() {
     )
   })
 
-  const matchedCount = rows.filter((r) => r.patient_id || r.doc_patient_id || r.doctoralia_template_name).length
+  const matchedCount = matchedTotal !== null ? matchedTotal : rows.filter((r) => r.patient_id || r.doc_patient_id || r.doctoralia_template_name).length
   const withRevenueCount = rows.filter((r) => r.doctoralia_net && r.doctoralia_net > 0).length
   const totalRevenue = rows.reduce((s, r) => s + (r.doctoralia_net ?? 0), 0)
 
