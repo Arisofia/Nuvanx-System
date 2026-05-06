@@ -4442,6 +4442,7 @@ async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<
         .from('vw_lead_traceability')
         .select(
           'lead_id,lead_name,source,campaign_name,lead_created_at,' +
+          'phone_normalized,' +
           'patient_id,patient_name,patient_dni,patient_phone,patient_last_visit,patient_ltv,' +
           'doc_patient_id,match_confidence,match_class,' +
           'settlement_date,first_settlement_at,doctoralia_net,doctoralia_template_name'

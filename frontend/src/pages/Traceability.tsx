@@ -19,6 +19,7 @@ interface TraceRow {
   patient_phone: string | null
   patient_last_visit: string | null
   patient_ltv: number | null
+  phone_normalized: string | null
   doc_patient_id: string | null
   match_confidence: number | null
   match_class: string | null
@@ -108,8 +109,9 @@ export default function Traceability() {
     if (r.doc_patient_id) {
       return <p className="text-muted text-[10px]">ID: {r.doc_patient_id}</p>
     }
-    if (r.doctoralia_template_name) {
-      return <p className="text-muted text-[10px] truncate max-w-[160px]">Cruzado por teléfono</p>
+    if (r.doctoralia_template_name && !r.doc_patient_id) {
+      const label = r.phone_normalized ? 'Cruzado por teléfono' : 'Cruzado por nombre'
+      return <p className="text-muted text-[10px] truncate max-w-[160px]">{label}</p>
     }
     return <span className="text-muted">—</span>
   }
@@ -266,7 +268,11 @@ export default function Traceability() {
                               {matched ? (
                                 <div className="flex items-center gap-1 text-green-400">
                                   <CheckCircle2 className="h-3 w-3 shrink-0" />
-                                  <span>{r.match_class ? (MATCH_LABELS[r.match_class] ?? r.match_class) : 'Cruzado'}</span>
+                                  <span>{r.match_class
+                                    ? (MATCH_LABELS[r.match_class] ?? r.match_class)
+                                    : r.doctoralia_template_name && !r.doc_patient_id
+                                      ? (r.phone_normalized ? 'Por teléfono' : 'Por nombre')
+                                      : 'Cruzado'}</span>
                                   {r.match_confidence != null && (
                                     <span className="text-muted">({Math.round(r.match_confidence * 100)}%)</span>
                                   )}
