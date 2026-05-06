@@ -395,7 +395,7 @@ async function main() {
       [igId, userId]
     );
 
-    console.log(`[ig-backfill] window: ${since} → ${until} (${BACKFILL_DAYS}d) | ig=${igId} | page=${pageId} | user=${userId}`);
+    console.log(`[ig-backfill] window: ${since} → ${until} (${BACKFILL_DAYS}d) | ig=${igId} | page=${pageId} | user=[redacted]`);
 
     await backfillAccountDaily(db, userId, igId, pageToken, since, until);
     await backfillMedia(db, userId, igId, pageToken);
