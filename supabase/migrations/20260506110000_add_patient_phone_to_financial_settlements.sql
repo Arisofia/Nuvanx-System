@@ -71,7 +71,7 @@ FROM (
   SELECT
     NULLIF(fs.patient_dni, '') AS doc_patient_id,
     fs.clinic_id,
-    MAX(NULLIF(regexp_replace(COALESCE(fs.patient_phone, ''), '\D', '', 'g'), '')) AS phone_norm
+    MAX(normalize_phone(fs.patient_phone)) AS phone_norm
   FROM public.financial_settlements fs
   WHERE NULLIF(fs.patient_dni, '') IS NOT NULL
   GROUP BY fs.patient_dni, fs.clinic_id
