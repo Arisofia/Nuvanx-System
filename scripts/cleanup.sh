@@ -1,26 +1,45 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
-echo "==> Limpiando artefactos de despliegues anteriores..."
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
 
-# 1. Borrar directorios típicos de build
-rm -rf dist build out .next .nuxt .angular .parcel-cache
-rm -rf target bin obj
+echo "==> Limpiando artefactos de Nuvanx-System..."
 
-# 2. Borrar dependencias instaladas
-rm -rf node_modules vendor .venv venv env
+# ── 1. Build outputs ──────────────────────────────────────────────────────────
+rm -rf frontend/dist
+rm -rf frontend/.vite
+rm -rf frontend/storybook-static
 
-# 3. Limpiar caches frecuentes
-rm -rf .cache .turbo .gradle .m2
+# ── 2. node_modules (raíz + subproyectos) ────────────────────────────────────
+rm -rf node_modules
+rm -rf backend/node_modules
+rm -rf frontend/node_modules
 
-# 4. Borrar logs
-find . -name "*.log" -type f -delete
+# ── 3. Test & coverage outputs ───────────────────────────────────────────────
+rm -rf frontend/test-results
+rm -rf frontend/playwright-report
+rm -rf frontend/coverage
+rm -rf backend/coverage
 
-# 5. Opcional: reset duro del repositorio (¡CUIDADO!)
-# Descomenta estas líneas sólo si quieres volver el repo al último commit
-# y perder cualquier cambio local no commiteado.
-# echo "==> Haciendo git clean + reset (esto borra archivos no trackeados y cambios locales)"
-# git clean -fdx
-# git reset --hard HEAD
+# ── 4. Reports generados por scripts ─────────────────────────────────────────
+rm -rf reports
 
-echo "==> Limpieza completa. Proyecto listo para correr desde 0."
+# ── 5. Caches ─────────────────────────────────────────────────────────────────
+rm -rf .cache
+rm -rf frontend/.cache
+rm -rf .turbo
+rm -rf .vercel/cache
+
+# ── 6. Logs ───────────────────────────────────────────────────────────────────
+find . -name "*.log" -not -path "./.git/*" -type f -delete
+
+# ── 7. Supabase local DB data (opcional) ──────────────────────────────────────
+# rm -rf supabase/.branches
+# rm -rf supabase/data
+
+echo ""
+echo "✓  Limpieza completa."
+echo "   Para reinstalar dependencias: npm run install:all"
+echo "   Para levantar el frontend:    npm run dev:frontend"
+echo "   Para levantar el backend:     npm run dev:backend"
