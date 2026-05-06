@@ -95,7 +95,7 @@ export default function Traceability() {
     )
   })
 
-  const matchedCount = rows.filter((r) => r.patient_id || r.doc_patient_id).length
+  const matchedCount = rows.filter((r) => r.patient_id || r.doc_patient_id || r.doctoralia_template_name).length
   const withRevenueCount = rows.filter((r) => r.doctoralia_net && r.doctoralia_net > 0).length
   const totalRevenue = rows.reduce((s, r) => s + (r.doctoralia_net ?? 0), 0)
 
@@ -105,6 +105,9 @@ export default function Traceability() {
     }
     if (r.doc_patient_id) {
       return <p className="text-muted text-[10px]">ID: {r.doc_patient_id}</p>
+    }
+    if (r.doctoralia_template_name) {
+      return <p className="text-muted text-[10px] truncate max-w-[160px]">Cruzado por teléfono</p>
     }
     return <span className="text-muted">—</span>
   }
@@ -233,7 +236,7 @@ export default function Traceability() {
                     </thead>
                     <tbody>
                       {filtered.map((r) => {
-                        const matched = Boolean(r.patient_id || r.doc_patient_id)
+                        const matched = Boolean(r.patient_id || r.doc_patient_id || r.doctoralia_template_name)
                         const hasRevenue = r.doctoralia_net && r.doctoralia_net > 0
                         return (
                           <tr key={r.lead_id} className="border-b border-border/50 hover:bg-surface/50 transition-colors">
