@@ -1,6 +1,7 @@
 {
   "imports": {
     "supabase": "https://esm.sh/@supabase/supabase-js@2.42.0",
-    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.42.0"
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.42.0",
+    "vitest": "npm:vitest@^4.1.5"
   }
 }
