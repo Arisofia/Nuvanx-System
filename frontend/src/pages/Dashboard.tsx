@@ -780,7 +780,7 @@ function CampaignKpisSection({ metrics, trendData, periodLabel }: CampaignKpisSe
               </div>
               {metrics.spend > 0 && metrics.metaConversions > 0 ? (
                 <p className="mt-3 text-2xl font-semibold text-danger">
-                  ${(metrics.spend / metrics.metaConversions).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  €{(metrics.spend / metrics.metaConversions).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
               ) : (
                 <p
