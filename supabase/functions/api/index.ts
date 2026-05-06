@@ -3201,6 +3201,12 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
   
       const campaigns = successfulAccounts.flatMap((acct: any) => ((acct.data?.data ?? []) as any[])
         .map((campaign) => ({ ...campaign, accountId: acct.accountId })));
+
+      // If Meta live returned 0 campaigns, delegate to DB fallback immediately
+      if (campaigns.length === 0) {
+        return fetchMetaCampaignsFallback(creds, sendJson, new Error('Meta API returned 0 campaigns'), adminClient, userId);
+      }
+
       const result = {
         success: true,
         source: 'live',
