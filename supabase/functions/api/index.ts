@@ -4426,28 +4426,41 @@ async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<
     const source = url.searchParams.get('source') ?? '';
     const campaignName = url.searchParams.get('campaign_name') ?? '';
 
-    let query = adminClient
-      .from('vw_lead_traceability')
-      .select(
-        'lead_id,lead_name,source,campaign_name,lead_created_at,' +
-        'patient_id,patient_name,patient_dni,patient_phone,patient_last_visit,patient_ltv,' +
-        'doc_patient_id,match_confidence,match_class,' +
-        'settlement_date,first_settlement_at,doctoralia_net,doctoralia_template_name'
-      )
-      .eq('lead_user_id', userId)
-      .order('lead_created_at', { ascending: false })
-      .limit(limit);
+    // Apply shared filters to a base query builder
+    const applyFilters = (q: any) => {
+      q = q.eq('lead_user_id', userId);
+      if (matchedOnly) q = q.not('patient_id', 'is', null);
+      if (from) q = q.gte('lead_created_at', from);
+      if (to)   q = q.lte('lead_created_at', to + 'T23:59:59Z');
+      if (source) q = q.eq('source', source);
+      if (campaignName) q = q.ilike('campaign_name', `%${campaignName}%`);
+      return q;
+    };
 
-    if (matchedOnly) query = query.not('patient_id', 'is', null);
-    if (from) query = query.gte('lead_created_at', from);
-    if (to)   query = query.lte('lead_created_at', to + 'T23:59:59Z');
-    if (source) query = query.eq('source', source);
-    if (campaignName) query = query.ilike('campaign_name', `%${campaignName}%`);
+    const dataQ = applyFilters(
+      adminClient
+        .from('vw_lead_traceability')
+        .select(
+          'lead_id,lead_name,source,campaign_name,lead_created_at,' +
+          'patient_id,patient_name,patient_dni,patient_phone,patient_last_visit,patient_ltv,' +
+          'doc_patient_id,match_confidence,match_class,' +
+          'settlement_date,first_settlement_at,doctoralia_net,doctoralia_template_name'
+        )
+        .order('lead_created_at', { ascending: false })
+        .limit(limit)
+    );
 
-    const { data: rows, error } = await query;
+    // COUNT query runs in parallel — returns real total ignoring the row limit
+    const countQ = applyFilters(
+      adminClient
+        .from('vw_lead_traceability')
+        .select('lead_id', { count: 'exact', head: true })
+    );
+
+    const [{ data: rows, error }, { count }] = await Promise.all([dataQ, countQ]);
     if (error) throw error;
 
-    return sendJson({ success: true, leads: rows || [], total: (rows || []).length });
+    return sendJson({ success: true, leads: rows || [], total: count ?? (rows || []).length });
   }
   return null;
 }

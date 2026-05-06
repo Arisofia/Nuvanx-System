@@ -39,6 +39,7 @@ const MATCH_LABELS: Record<string, string> = {
 
 export default function Traceability() {
   const [rows, setRows] = useState<TraceRow[]>([])
+  const [total, setTotal] = useState(0)
   const [campaigns, setCampaigns] = useState<any[]>([])
   const [funnel, setFunnel] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -65,6 +66,7 @@ export default function Traceability() {
 
         if (!isActive) return
         setRows(leadsData?.leads ?? [])
+        setTotal(leadsData?.total ?? 0)
         setCampaigns(campaignsData?.campaigns ?? [])
         setFunnel(funnelData?.funnel ?? [])
       } catch (err: any) {
@@ -136,7 +138,7 @@ export default function Traceability() {
         <Card>
           <CardContent className="pt-4">
             <p className="text-xs text-muted uppercase tracking-wide">Total leads</p>
-            <p className="text-2xl font-bold mt-1">{rows.length}</p>
+            <p className="text-2xl font-bold mt-1">{total > 0 ? total : rows.length}</p>
           </CardContent>
         </Card>
         <Card>
