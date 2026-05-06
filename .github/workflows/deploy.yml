@@ -84,16 +84,25 @@ jobs:
             exit_code=$?
             echo "$output"
             if [ $exit_code -ne 0 ]; then
-              ghosts=$(echo "$output" | grep -oE 'supabase migration repair --status reverted [0-9]+' | grep -oE '[0-9]+$')
+              # Case 1: ghost / reverted migrations
+              ghosts=$(echo "$output" | grep -oE 'supabase migration repair --status reverted [0-9]+' | grep -oE '[0-9]+$' || true)
               if [ -n "$ghosts" ]; then
                 for version in $ghosts; do
                   echo "::warning::Repairing ghost migration $version"
                   supabase migration repair --status reverted "$version" --db-url "$SESSION_URL"
                 done
                 supabase db push --include-all --db-url "$SESSION_URL"
-              else
-                exit $exit_code
+                exit $?
               fi
+              # Case 2: version already recorded in schema_migrations (duplicate key)
+              dup_version=$(echo "$output" | grep -oE 'Key \(version\)=\([0-9]+\) already exists' | grep -oE '[0-9]+' || true)
+              if [ -n "$dup_version" ]; then
+                echo "::warning::Migration $dup_version already recorded in schema_migrations. Marking as applied and retrying."
+                supabase migration repair --status applied "$dup_version" --db-url "$SESSION_URL"
+                supabase db push --include-all --db-url "$SESSION_URL"
+                exit $?
+              fi
+              exit $exit_code
             fi
 
   # 2. Supabase Edge Functions
