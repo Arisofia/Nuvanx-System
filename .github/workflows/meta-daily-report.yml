@@ -50,10 +50,18 @@ jobs:
           fi
       - name: Install pg dependency
         run: npm install --no-save pg
-      - name: Backfill Meta daily insights (last 90 days)
+      - name: Backfill Meta daily insights (ads, last 90 days)
         env:
           BACKFILL_DAYS: 90
         run: node scripts/meta-backfill.js
+      - name: Backfill Meta organic insights (Page, last 90 days)
+        env:
+          BACKFILL_DAYS: 90
+        run: node scripts/meta-organic-backfill.js
+      - name: Backfill Instagram insights (IG, last 90 days)
+        env:
+          BACKFILL_DAYS: 90
+        run: node scripts/meta-ig-backfill.js
       - name: Run Meta daily report
         run: node scripts/meta-daily-report.js
       - name: Upload report artifact
