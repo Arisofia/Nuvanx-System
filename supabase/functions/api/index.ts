@@ -1190,6 +1190,7 @@ async function handleRequest(req: Request): Promise<Response> {
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const nuvanxServiceKey = Deno.env.get('NUVANX_SUPABASE_SERVICE_ROLE_KEY');
   const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
 
   // This function is deployed with  so Supabase will not reject
@@ -1216,11 +1217,16 @@ async function handleRequest(req: Request): Promise<Response> {
   // Centralized auth guard: this checks the incoming Supabase user JWT once for all
   // non-public API routes in api/index.ts.
   const authUser = await verifySupabaseUser(adminClient, token, anonKey);
-  if (!authUser) {
+  const isServiceRole = token === serviceKey || (!!nuvanxServiceKey && token === nuvanxServiceKey);
+  
+  if (!authUser && !isServiceRole) {
     return sendJson({ success: false, message: 'Unauthorized' }, 401);
   }
 
-  const userId = authUser.id;
+  const userId = authUser ? authUser.id : (req.headers.get('x-user-id') || '');
+  if (isServiceRole && !userId) {
+    return sendJson({ success: false, message: 'Missing x-user-id header for service role request' }, 400);
+  }
 
   return await handleAuthenticatedRoutes({
     adminClient,
@@ -3096,11 +3102,13 @@ async function fetchMetaCampaignsFallback(creds: any, sendJson: any, e: Error, a
 
       if (dbRows && dbRows.length > 0) {
         const now = Date.now();
-        const thirtyDaysMs = 30 * 86_400_000;
-        const dbCampaigns = dbRows.map((row: any) => ({
+        const dbCampaigns = dbRows.map((row: any) => {
+          const diff = row.last_lead_at ? now - new Date(row.last_lead_at).getTime() : Infinity;
+          const status = diff < 14 * 86_400_000 ? 'ACTIVE' : diff < 60 * 86_400_000 ? 'PAUSED' : 'ARCHIVED';
+          return {
           id: row.campaign_id ?? `db-${row.campaign_name}`,
           name: row.campaign_name ?? 'Unknown',
-          status: (row.last_lead_at && (now - new Date(row.last_lead_at).getTime()) < thirtyDaysMs) ? 'ACTIVE' : 'PAUSED',
+          status,
           objective: row.source ?? 'LEAD_GENERATION',
           accountId: creds.adAccountId,
           dailyBudget: null,
@@ -3120,7 +3128,8 @@ async function fetchMetaCampaignsFallback(creds: any, sendJson: any, e: Error, a
             qualityRanking: null,
             engagementRateRanking: null,
           },
-        }));
+          };
+        });
         const dbResult = {
           success: true,
           source: 'db',
@@ -3129,6 +3138,7 @@ async function fetchMetaCampaignsFallback(creds: any, sendJson: any, e: Error, a
           accountIds: creds.adAccountIds,
           campaigns: dbCampaigns,
           warning: 'Campaign data sourced from CRM — Meta API returned no campaigns.',
+          dataNote: 'Status inferred from last CRM lead: ACTIVE (<14d), PAUSED (14-60d), ARCHIVED (>60d).',
         };
         return sendJson(dbResult);
       }
@@ -3257,7 +3267,7 @@ function mapMetaAd(ad: any) {
   };
 }
 
-async function fetchMetaAdsFallback(creds: any, sendJson: any, e: Error) {
+async function fetchMetaAdsFallback(creds: any, sendJson: any, e: Error, adminClient?: any, userId?: string) {
   try {
     const fallbackResults = await Promise.allSettled(creds.adAccountIds.map(async (accountId: string) => {
       return await metaFetch(`/${accountId}/ads`, {
@@ -3272,6 +3282,49 @@ async function fetchMetaAdsFallback(creds: any, sendJson: any, e: Error) {
       if (result.status !== 'fulfilled') return [];
       return ((result.value?.data ?? []) as any[]).map((ad: any) => ({ ...ad, accountId }));
     });
+
+    // If Meta API returned 0 ads, build list from leads.ad_id / ad_name
+    if (ads.length === 0 && adminClient && userId) {
+      const { data: adLeads } = await adminClient
+        .from('leads')
+        .select('ad_id, ad_name, campaign_id, campaign_name, created_at')
+        .eq('user_id', userId)
+        .not('ad_id', 'is', null)
+        .order('created_at', { ascending: false });
+
+      if (adLeads && adLeads.length > 0) {
+        const now = Date.now();
+        const adMap: Record<string, { name: string; campaignId: string | null; campaignName: string | null; count: number; lastAt: string }> = {};
+        for (const row of adLeads as any[]) {
+          if (!row.ad_id) continue;
+          if (!adMap[row.ad_id]) {
+            adMap[row.ad_id] = { name: row.ad_name ?? `Ad ${row.ad_id}`, campaignId: row.campaign_id ?? null, campaignName: row.campaign_name ?? null, count: 0, lastAt: row.created_at };
+          }
+          adMap[row.ad_id].count++;
+        }
+        const dbAds = Object.entries(adMap).map(([adId, v]) => {
+          const diff = v.lastAt ? now - new Date(v.lastAt).getTime() : Infinity;
+          const status = diff < 14 * 86_400_000 ? 'ACTIVE' : diff < 60 * 86_400_000 ? 'PAUSED' : 'ARCHIVED';
+          return {
+            id: adId,
+            name: v.name,
+            status,
+            accountId: creds.adAccountId,
+            adsetId: null,
+            adsetName: null,
+            campaignId: v.campaignId,
+            campaignName: v.campaignName,
+            insights: {
+              impressions: 0, reach: 0, clicks: 0, spend: 0, ctr: 0, cpc: 0, cpm: 0,
+              conversions: v.count, cpp: null, actions: [], costPerActionType: null,
+              qualityRanking: null, engagementRateRanking: null,
+            },
+          };
+        });
+        return sendJson({ success: true, source: 'db', cached: false, accountId: creds.adAccountId, accountIds: creds.adAccountIds, currency: 'EUR', ads: dbAds, warning: 'Ad data sourced from CRM — Meta API returned no ads.' });
+      }
+    }
+
     return sendJson({ success: true, accountId: creds.adAccountId, accountIds: creds.adAccountIds, currency: 'EUR', ads: ads.map(mapMetaAd), warning: 'Insights no disponibles.' });
   } catch (fallbackErr: any) {
     return sendJson({ success: false, metaApiError: true, message: fallbackErr?.message ?? e?.message ?? 'Meta API error' }, 502);
@@ -3322,9 +3375,14 @@ async function handleMetaAdsGet(ctx: AuthenticatedRouteContext): Promise<Respons
       const ads = successfulAccounts.flatMap((acct: any) => ((acct.adsData?.data ?? []) as any[])
         .map((ad: any) => ({ ...ad, accountId: acct.accountId })));
 
+      // If Meta live returned 0 ads, delegate to DB fallback immediately
+      if (ads.length === 0) {
+        return fetchMetaAdsFallback(creds, sendJson, new Error('Meta API returned 0 ads'), adminClient, userId);
+      }
+
       return sendJson({ success: true, accountId: creds.adAccountId, accountIds: creds.adAccountIds, currency, ads: ads.map(mapMetaAd) });
     } catch (e: any) {
-      return fetchMetaAdsFallback(creds, sendJson, e);
+      return fetchMetaAdsFallback(creds, sendJson, e, adminClient, userId);
     }
   }
   return null;
