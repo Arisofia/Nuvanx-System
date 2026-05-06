@@ -3279,7 +3279,10 @@ function mapMetaAd(ad: any) {
   };
 }
 
-async function fetchMetaAdsFallback(creds: any, sendJson: any, e: Error, adminClient?: any, userId?: string) {
+async function fetchMetaAdsFallback(creds: any, sendJson: any, e: Error, adminClient?: any, userId?: string, adsFrom?: string, adsTo?: string, adsDays?: number) {
+  // Compute the time_range string to use for ad-level insights fetch
+  const insightsSince = adsFrom || new Date(Date.now() - (adsDays ?? 30) * 86_400_000).toISOString().slice(0, 10);
+  const insightsUntil = adsTo || new Date().toISOString().slice(0, 10);
   try {
     const fallbackResults = await Promise.allSettled(creds.adAccountIds.map(async (accountId: string) => {
       return await metaFetch(`/${accountId}/ads`, {
@@ -3296,7 +3299,40 @@ async function fetchMetaAdsFallback(creds: any, sendJson: any, e: Error, adminCl
     });
 
     // If Meta API returned 0 ads, build list from leads.ad_id / ad_name
+    // and enrich spend/impressions/clicks from /{accountId}/insights?level=ad
     if (ads.length === 0 && adminClient && userId) {
+      // ── Fetch ad-level insights from Meta (same endpoint that works for account-level) ──
+      const insightsMap: Record<string, { spend: number; impressions: number; reach: number; clicks: number; ctr: number; cpc: number; cpm: number; conversions: number; cpp: number | null }> = {};
+      for (const accountId of creds.adAccountIds) {
+        try {
+          const insRes = await metaFetch(`/${accountId}/insights`, {
+            fields: 'ad_id,ad_name,spend,impressions,reach,clicks,ctr,cpc,cpm,conversions,actions',
+            level: 'ad',
+            time_range: JSON.stringify({ since: insightsSince, until: insightsUntil }),
+            time_increment: 'all',
+            limit: '500',
+          }, creds.accessToken);
+          for (const row of (insRes?.data ?? []) as any[]) {
+            if (!row.ad_id) continue;
+            const spend = Number(row.spend || 0);
+            const conversions = actionValue(row.actions, (t: string) => t.includes('lead') || t.includes('conversion') || t.includes('complete_registration'));
+            insightsMap[row.ad_id] = {
+              spend,
+              impressions: Math.round(Number(row.impressions || 0)),
+              reach: Math.round(Number(row.reach || 0)),
+              clicks: Math.round(Number(row.clicks || 0)),
+              ctr: Number(row.ctr || 0),
+              cpc: Number(row.cpc || 0),
+              cpm: Number(row.cpm || 0),
+              conversions,
+              cpp: conversions > 0 ? Number.parseFloat((spend / conversions).toFixed(2)) : null,
+            };
+          }
+        } catch (insErr: any) {
+          console.warn(`Ad-level insights fetch failed for ${accountId}:`, insErr?.message ?? insErr);
+        }
+      }
+
       const { data: adLeads } = await adminClient
         .from('leads')
         .select('ad_id, ad_name, campaign_id, campaign_name, created_at')
@@ -3304,19 +3340,29 @@ async function fetchMetaAdsFallback(creds: any, sendJson: any, e: Error, adminCl
         .not('ad_id', 'is', null)
         .order('created_at', { ascending: false });
 
-      if (adLeads && adLeads.length > 0) {
-        const now = Date.now();
-        const adMap: Record<string, { name: string; campaignId: string | null; campaignName: string | null; count: number; lastAt: string }> = {};
-        for (const row of adLeads as any[]) {
-          if (!row.ad_id) continue;
-          if (!adMap[row.ad_id]) {
-            adMap[row.ad_id] = { name: row.ad_name ?? `Ad ${row.ad_id}`, campaignId: row.campaign_id ?? null, campaignName: row.campaign_name ?? null, count: 0, lastAt: row.created_at };
-          }
-          adMap[row.ad_id].count++;
+      // Collect all ad IDs: from CRM leads + from Meta insights (ads with spend but 0 leads)
+      const adMap: Record<string, { name: string; campaignId: string | null; campaignName: string | null; count: number; lastAt: string }> = {};
+      for (const row of (adLeads ?? []) as any[]) {
+        if (!row.ad_id) continue;
+        if (!adMap[row.ad_id]) {
+          adMap[row.ad_id] = { name: row.ad_name ?? `Ad ${row.ad_id}`, campaignId: row.campaign_id ?? null, campaignName: row.campaign_name ?? null, count: 0, lastAt: row.created_at };
         }
+        adMap[row.ad_id].count++;
+      }
+      // Add Meta-insights-only ads (spend but no CRM lead captured)
+      for (const [adId, ins] of Object.entries(insightsMap)) {
+        if (!adMap[adId]) {
+          adMap[adId] = { name: `Ad ${adId}`, campaignId: null, campaignName: null, count: ins.conversions, lastAt: new Date().toISOString() };
+        }
+      }
+
+      if (Object.keys(adMap).length > 0) {
+        const now = Date.now();
         const dbAds = Object.entries(adMap).map(([adId, v]) => {
           const diff = v.lastAt ? now - new Date(v.lastAt).getTime() : Infinity;
           const status = diff < 14 * 86_400_000 ? 'ACTIVE' : diff < 60 * 86_400_000 ? 'PAUSED' : 'ARCHIVED';
+          const ins = insightsMap[adId];
+          const crmConversions = v.count;
           return {
             id: adId,
             name: v.name,
@@ -3327,13 +3373,35 @@ async function fetchMetaAdsFallback(creds: any, sendJson: any, e: Error, adminCl
             campaignId: v.campaignId,
             campaignName: v.campaignName,
             insights: {
-              impressions: 0, reach: 0, clicks: 0, spend: 0, ctr: 0, cpc: 0, cpm: 0,
-              conversions: v.count, cpp: null, actions: [], costPerActionType: null,
-              qualityRanking: null, engagementRateRanking: null,
+              impressions: ins?.impressions ?? 0,
+              reach: ins?.reach ?? 0,
+              clicks: ins?.clicks ?? 0,
+              spend: ins?.spend ?? 0,
+              ctr: ins?.ctr ?? 0,
+              cpc: ins?.cpc ?? 0,
+              cpm: ins?.cpm ?? 0,
+              conversions: ins ? Math.max(ins.conversions, crmConversions) : crmConversions,
+              cpp: ins?.cpp ?? null,
+              actions: [],
+              costPerActionType: null,
+              qualityRanking: null,
+              engagementRateRanking: null,
             },
           };
         });
-        return sendJson({ success: true, source: 'db', cached: false, accountId: creds.adAccountId, accountIds: creds.adAccountIds, currency: 'EUR', ads: dbAds, warning: 'Ad data sourced from CRM — Meta API returned no ads.' });
+        const hasRealInsights = Object.keys(insightsMap).length > 0;
+        return sendJson({
+          success: true,
+          source: hasRealInsights ? 'live+db' : 'db',
+          cached: false,
+          accountId: creds.adAccountId,
+          accountIds: creds.adAccountIds,
+          currency: 'EUR',
+          ads: dbAds,
+          warning: hasRealInsights
+            ? 'Spend/impressions sourced from Meta Insights API; conversions from CRM.'
+            : 'Ad data sourced from CRM — Meta API returned no ads or insights.',
+        });
       }
     }
 
@@ -3389,12 +3457,12 @@ async function handleMetaAdsGet(ctx: AuthenticatedRouteContext): Promise<Respons
 
       // If Meta live returned 0 ads, delegate to DB fallback immediately
       if (ads.length === 0) {
-        return fetchMetaAdsFallback(creds, sendJson, new Error('Meta API returned 0 ads'), adminClient, userId);
+        return fetchMetaAdsFallback(creds, sendJson, new Error('Meta API returned 0 ads'), adminClient, userId, adsFrom, adsTo, adsDays);
       }
 
       return sendJson({ success: true, accountId: creds.adAccountId, accountIds: creds.adAccountIds, currency, ads: ads.map(mapMetaAd) });
     } catch (e: any) {
-      return fetchMetaAdsFallback(creds, sendJson, e, adminClient, userId);
+      return fetchMetaAdsFallback(creds, sendJson, e, adminClient, userId, adsFrom, adsTo, adsDays);
     }
   }
   return null;
