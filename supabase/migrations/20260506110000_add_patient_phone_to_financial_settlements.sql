@@ -17,11 +17,12 @@ BEGIN
       AND column_name  = 'phone'
   ) THEN
     UPDATE public.financial_settlements fs
-    SET patient_phone = p.phone
+    SET patient_phone = NULLIF(public.normalize_phone(p.phone), '')
     FROM public.patients p
     WHERE fs.patient_phone IS NULL
       AND fs.patient_id    = p.id
-      AND p.phone IS NOT NULL;
+      AND p.phone IS NOT NULL
+      AND NULLIF(public.normalize_phone(p.phone), '') IS NOT NULL;
   END IF;
 END $$;
 
