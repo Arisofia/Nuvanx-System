@@ -856,23 +856,25 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
     decryptionError = err?.message ?? 'Failed to decrypt Meta credential';
   }
 
-  let rawAccountId = qAccountId;
   const { data: intg } = await adminClient
     .from('integrations').select('metadata').eq('user_id', userId).eq('service', 'meta').maybeSingle();
-    
-  if (!rawAccountId) {
-    rawAccountId = intg?.metadata?.adAccountIds ?? intg?.metadata?.ad_account_ids ?? intg?.metadata?.adAccountId ?? intg?.metadata?.ad_account_id ?? '';
-  }
-  const adAccountIds = normalizeMetaAccountIds(rawAccountId);
+
   const metadata = intg?.metadata ?? {};
-  return { 
-    notConnected: false, 
-    accessToken, 
-    adAccountIds, 
-    adAccountId: adAccountIds[0] ?? '', 
+  const metadataRawAccountIds = metadata.adAccountIds ?? metadata.ad_account_ids ?? metadata.adAccountId ?? metadata.ad_account_id ?? '';
+  const metadataAccountIds = normalizeMetaAccountIds(metadataRawAccountIds);
+  const qAccountIds = normalizeMetaAccountIds(qAccountId);
+
+  const adAccountIds = qAccountIds.length > 0
+    ? Array.from(new Set([...metadataAccountIds, ...qAccountIds]))
+    : metadataAccountIds;
+  return {
+    notConnected: false,
+    accessToken,
+    adAccountIds,
+    adAccountId: adAccountIds[0] ?? '',
     pageId: metadata.pageId ?? metadata.page_id ?? '',
     igId: metadata.igBusinessAccountId ?? metadata.ig_business_account_id ?? '',
-    decryptionError 
+    decryptionError,
   } as const;
 }
 
@@ -3811,6 +3813,17 @@ async function handleIntegrationsConnectPost(ctx: AuthenticatedRouteContext): Pr
       }
     }
     metadata = normalizeIntegrationMetadata(service, metadata);
+
+    if (service === 'meta') {
+      const accountIds = normalizeMetaAccountIds(metadata?.adAccountIds ?? metadata?.ad_account_ids ?? metadata?.adAccountId ?? metadata?.ad_account_id ?? '');
+      if (accountIds.length === 0) {
+        return sendJson({ success: false, message: 'Meta integration requires one or more valid ad account IDs.' }, 400);
+      }
+      metadata.adAccountIds = accountIds;
+      metadata.ad_account_ids = accountIds;
+      metadata.adAccountId = accountIds.join(',');
+      metadata.ad_account_id = accountIds.join(',');
+    }
   
     await ensurePublicUserRow(adminClient, authUser);
     const encryptedKey = await encryptCred(String(reqToken).trim());

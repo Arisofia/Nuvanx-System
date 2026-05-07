@@ -8,6 +8,7 @@
  *     --service=meta \
  *     --token=<META_ACCESS_TOKEN> \
  *     --ad-account-id=<AD_ACCOUNT_ID> \
+ *     [--ad-account-ids=<AD_ACCOUNT_ID_1,AD_ACCOUNT_ID_2>] \
  *     [--page-id=<PAGE_ID>]
  *
  *   node scripts/connect-integration.js --service=openai --token=<OPENAI_KEY>
@@ -63,11 +64,12 @@ function parseArgs(argv) {
 
 const args = parseArgs(process.argv);
 
-const service       = (args.service ?? '').trim();
-const integToken    = (args.token ?? process.env.META_ACCESS_TOKEN ?? '').trim();
-const adAccountId   = (args['ad-account-id'] ?? process.env.META_AD_ACCOUNT_ID ?? '').trim();
-const pageId        = (args['page-id'] ?? process.env.META_PAGE_ID ?? '').trim();
-const phoneNumberId = (args['phone-number-id'] ?? '').trim();
+const service           = (args.service ?? '').trim();
+const integToken        = (args.token ?? process.env.META_ACCESS_TOKEN ?? '').trim();
+const adAccountId       = (args['ad-account-id'] ?? process.env.META_AD_ACCOUNT_ID ?? '').trim();
+const adAccountIds      = (args['ad-account-ids'] ?? process.env.META_AD_ACCOUNT_IDS ?? '').trim();
+const pageId            = (args['page-id'] ?? process.env.META_PAGE_ID ?? '').trim();
+const phoneNumberId     = (args['phone-number-id'] ?? '').trim();
 
 const email         = (args.email ?? process.env.SUPABASE_EMAIL ?? '').trim();
 const password      = (args.password ?? process.env.SUPABASE_PASSWORD ?? '').trim();
@@ -90,8 +92,8 @@ if (!integToken) {
   console.error('ERROR: --token is required (API key / access token for the service).');
   process.exit(1);
 }
-if (service === 'meta' && !adAccountId) {
-  console.error('ERROR: --ad-account-id is required for Meta.');
+if (service === 'meta' && !adAccountId && !adAccountIds) {
+  console.error('ERROR: --ad-account-id or --ad-account-ids is required for Meta.');
   process.exit(1);
 }
 if (service === 'whatsapp' && !phoneNumberId) {
@@ -163,8 +165,25 @@ async function main() {
   // 2. Build metadata payload
   const metadata = {};
   if (service === 'meta') {
-    metadata.adAccountId = adAccountId;
-    metadata.ad_account_id = adAccountId;
+    const allAccountIds = String(adAccountIds || adAccountId)
+      .split(/[,;\s]+/)
+      .map((id) => id.trim())
+      .filter(Boolean);
+    const normalizedMetaIds = Array.from(new Set(allAccountIds.map((id) => {
+      const cleaned = id.toLowerCase().startsWith('act_') ? id.slice(4) : id;
+      const digits = String(cleaned).replace(/\D/g, '');
+      return digits ? `act_${digits}` : '';
+    }).filter(Boolean)));
+
+    if (normalizedMetaIds.length === 0) {
+      console.error('ERROR: --ad-account-id or --ad-account-ids must contain at least one valid Meta Ad Account ID.');
+      process.exit(1);
+    }
+
+    metadata.adAccountIds = normalizedMetaIds;
+    metadata.ad_account_ids = normalizedMetaIds;
+    metadata.adAccountId = normalizedMetaIds.join(',');
+    metadata.ad_account_id = normalizedMetaIds.join(',');
     if (pageId) { metadata.pageId = pageId; metadata.page_id = pageId; }
   }
   if (service === 'whatsapp') {
@@ -191,9 +210,13 @@ async function main() {
 
   // 4. Test connection
   console.log(`\n[3/3] Testing ${service} connection…`);
+  const testPayload = { service };
+  if (service === 'meta' && adAccountId && !adAccountIds) {
+    testPayload.adAccountId = adAccountId;
+  }
   const testRes = await post(
     `${apiBase}/api/integrations/test`,
-    { service, adAccountId: service === 'meta' ? adAccountId : undefined },
+    testPayload,
     {
       Authorization: `Bearer ${jwt}`,
       apikey: supabaseAnon,
