@@ -2428,7 +2428,7 @@ async function handleDashboardMetaTrends(ctx: AuthenticatedRouteContext): Promis
         for (const accountId of failedAccountIds) {
           const rows = rowsByAccount[accountId] || [];
           if (rows.length === 0) continue;
-          successfulAccounts.push({ accountId, data: { data: mapMetaDailyRowsToInsightsPayload(rows) }, fallbackSource: 'meta_daily_insights' });
+          successfulAccounts.push({ accountId, data: { data: mapMetaDailyRowsToInsightsPayload(rows) } });
           dbFallbackAccounts += 1;
         }
       }
@@ -2814,7 +2814,6 @@ async function processMetaInsightsGet(adminClient: any, userId: string, url: URL
           current: { data: mapMetaDailyRowsToInsightsPayload(rows) },
           previous: { data: [] },
           currency: 'EUR',
-          fallbackSource: 'meta_daily_insights',
         });
         dbFallbackAccounts += 1;
       }
