@@ -5214,38 +5214,112 @@ function applyCachedMetaMetrics(metaResult: any, cachedMetrics: any) {
   metaResult.data_source = 'meta_daily_insights';
 }
 
+function sumCachedRowsForAccount(cachedRows: any[], accountId: string) {
+  const rows = cachedRows.filter((r: any) => r.ad_account_id === accountId);
+  return {
+    spend: rows.reduce((s: number, r: any) => s + Number(r.spend ?? 0), 0),
+    conversions: rows.reduce((s: number, r: any) => s + Number(r.conversions ?? 0), 0),
+    impressions: rows.reduce((s: number, r: any) => s + Number(r.impressions ?? 0), 0),
+    clicks: rows.reduce((s: number, r: any) => s + Number(r.clicks ?? 0), 0),
+    rows: rows.length,
+  };
+}
+
+function sumLiveAccountRows(account: any) {
+  const rows: any[] = Array.isArray(account?.data) ? account.data : [];
+  return {
+    spend: rows.reduce((s: number, row: any) => s + parseMetaMetric(row.spend), 0),
+    conversions: rows.reduce((s: number, row: any) => s + parseMetaMetric(row.conversions), 0),
+    impressions: rows.reduce((s: number, row: any) => s + parseMetaMetric(row.impressions), 0),
+    clicks: rows.reduce((s: number, row: any) => s + parseMetaMetric(row.clicks), 0),
+  };
+}
+
 async function loadMetaKpis(adminClient: any, userId: string, url: URL, since: string, until: string, hasCachedMeta: boolean, cachedMetrics: any) {
-  const metaResult = { spend: 0, leads: 0, impressions: 0, clicks: 0, ctr: 0, cpc: 0, live: false, message: '', data_source: 'none' } as any;
+  const cachedRows: any[] = Array.isArray(cachedMetrics?.rows) ? cachedMetrics.rows : [];
+  const metaResult = {
+    spend: 0, leads: 0, impressions: 0, clicks: 0, ctr: 0, cpc: 0,
+    live: false, message: '', data_source: 'none',
+    per_account: [] as any[],
+  } as any;
   try {
     const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
     const validation = validateMetaCredentialResult(creds);
     metaResult.accountIds = creds.adAccountIds;
     metaResult.accountId = creds.adAccountId;
-    if (validation.ok) {
-      const accountResults = await Promise.allSettled(creds.adAccountIds.map(async (accountId: string) => {
-        return await metaFetch(`/${accountId}/insights`, {
-          fields: 'date_start,spend,impressions,clicks,ctr,cpc,conversions',
-          time_range: JSON.stringify({ since, until }),
-          time_increment: '1',
-          limit: '1000',
-        }, creds.accessToken);
-      }));
 
-      const successfulAccounts = accountResults
-        .filter(isFulfilled)
-        .map((result) => result.value);
-
-      const insightRows = successfulAccounts.flatMap((acct: any) => Array.isArray(acct?.data) ? acct.data : []);
-      metaResult.spend = Number.parseFloat(insightRows.reduce((sum: number, row: any) => sum + parseMetaMetric(row.spend), 0).toFixed(2));
-      metaResult.leads = insightRows.reduce((sum: number, row: any) => sum + parseMetaMetric(row.conversions), 0);
-      metaResult.impressions = insightRows.reduce((sum: number, row: any) => sum + parseMetaMetric(row.impressions), 0);
-      metaResult.clicks = insightRows.reduce((sum: number, row: any) => sum + parseMetaMetric(row.clicks), 0);
-      calculateMetaRates(metaResult);
-      metaResult.live = successfulAccounts.length > 0;
-      metaResult.data_source = successfulAccounts.length > 0 ? 'meta_api' : 'meta_api_failed';
-    } else {
+    if (!validation.ok) {
       metaResult.message = validation.message;
       if (hasCachedMeta) applyCachedMetaMetrics(metaResult, cachedMetrics);
+      return metaResult;
+    }
+
+    const accountResults = await Promise.allSettled(creds.adAccountIds.map(async (accountId: string) => {
+      const live = await metaFetch(`/${accountId}/insights`, {
+        fields: 'date_start,spend,impressions,clicks,ctr,cpc,conversions',
+        time_range: JSON.stringify({ since, until }),
+        time_increment: '1',
+        limit: '1000',
+      }, creds.accessToken);
+      return { accountId, live };
+    }));
+
+    let liveCount = 0;
+    let cacheCount = 0;
+    const failureMessages: string[] = [];
+
+    creds.adAccountIds.forEach((accountId: string, idx: number) => {
+      const settled = accountResults[idx];
+      let source: 'meta_api' | 'meta_daily_insights' | 'none' = 'none';
+      let totals = { spend: 0, conversions: 0, impressions: 0, clicks: 0 };
+
+      if (settled.status === 'fulfilled') {
+        totals = sumLiveAccountRows(settled.value?.live);
+        source = 'meta_api';
+        liveCount += 1;
+      } else {
+        const { reason } = settled;
+        const reasonMsg = reason?.message ?? String(reason ?? 'unknown error');
+        failureMessages.push(`${accountId}: ${reasonMsg}`);
+        const cachedTotals = sumCachedRowsForAccount(cachedRows, accountId);
+        if (cachedTotals.rows > 0) {
+          totals = {
+            spend: cachedTotals.spend,
+            conversions: cachedTotals.conversions,
+            impressions: cachedTotals.impressions,
+            clicks: cachedTotals.clicks,
+          };
+          source = 'meta_daily_insights';
+          cacheCount += 1;
+        }
+      }
+
+      metaResult.spend += totals.spend;
+      metaResult.leads += totals.conversions;
+      metaResult.impressions += totals.impressions;
+      metaResult.clicks += totals.clicks;
+      metaResult.per_account.push({
+        accountId,
+        spend: Number.parseFloat(totals.spend.toFixed(2)),
+        leads: totals.conversions,
+        data_source: source,
+      });
+    });
+
+    metaResult.spend = Number.parseFloat(metaResult.spend.toFixed(2));
+    calculateMetaRates(metaResult);
+    metaResult.live = liveCount > 0;
+    if (liveCount > 0 && cacheCount === 0) {
+      metaResult.data_source = 'meta_api';
+    } else if (liveCount > 0 && cacheCount > 0) {
+      metaResult.data_source = 'meta_api+meta_daily_insights';
+    } else if (cacheCount > 0) {
+      metaResult.data_source = 'meta_daily_insights';
+    } else {
+      metaResult.data_source = 'meta_api_failed';
+    }
+    if (failureMessages.length > 0) {
+      metaResult.message = `Meta live partial: ${failureMessages.join('; ')}`;
     }
   } catch (e: any) {
     metaResult.message = e?.message ?? 'Meta API error';
@@ -5303,7 +5377,7 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
     adminClient.from('leads').select('id', { count: 'exact', head: true }).eq('user_id', userId).in('source', metaSources).gte('created_at', since).lte('created_at', until),
     adminClient.from('leads').select('stage').eq('user_id', userId).gte('created_at', since).lte('created_at', until),
     adminClient.from('financial_settlements').select('id, patient_id, dni_hash, amount_net, cancelled_at, settled_at, source_system').eq('clinic_id', clinicId).eq('source_system', 'doctoralia').is('cancelled_at', null).gt('amount_net', 0).order('settled_at', { ascending: true }),
-    adminClient.from('meta_daily_insights').select('date, spend, impressions, clicks, conversions, ctr, cpc').eq('user_id', userId).gte('date', since).lte('date', until),
+    adminClient.from('meta_daily_insights').select('date, ad_account_id, spend, impressions, clicks, conversions, ctr, cpc').eq('user_id', userId).gte('date', since).lte('date', until),
   ]);
 
   if (leadCountRes.error) throw leadCountRes.error;
@@ -5330,6 +5404,7 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
     conversions: cachedInsights.reduce((s: number, r: any) => s + Number(r.conversions ?? 0), 0),
     impressions: cachedInsights.reduce((s: number, r: any) => s + Number(r.impressions ?? 0), 0),
     clicks: cachedInsights.reduce((s: number, r: any) => s + Number(r.clicks ?? 0), 0),
+    rows: cachedInsights,
   };
 
   const metaResult = await fetchMetaKpis(adminClient, userId, url, since, until, hasCachedMeta, cachedMetrics);

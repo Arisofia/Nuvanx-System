@@ -20,8 +20,8 @@ import { FunnelChart } from '../components/dashboard/FunnelChart'
 interface CombinedMetrics {
   metaEstimatedLeads: number
   verifiedRevenue: number
-  metaCpl: number
-  revenuePerLead: number
+  metaCpl: number | null
+  revenuePerLead: number | null
 }
 
 interface RealFunnel {
@@ -46,8 +46,8 @@ interface DashboardQuality {
 const EMPTY_COMBINED_METRICS: CombinedMetrics = {
   metaEstimatedLeads: 0,
   verifiedRevenue: 0,
-  metaCpl: 0,
-  revenuePerLead: 0,
+  metaCpl: null,
+  revenuePerLead: null,
 }
 
 const EMPTY_FUNNEL: RealFunnel = {
@@ -146,10 +146,10 @@ function buildDashboardState(options: DashboardStateOptions) {
     combined: {
       metaEstimatedLeads: Number(kpisResponse?.meta?.leads ?? insightsResponse?.summary?.conversions ?? 0),
       verifiedRevenue: Number(kpisResponse?.doctoralia?.verifiedRevenue ?? Number(metricsData.verifiedRevenue ?? 0)),
-      metaCpl: Number(kpisResponse?.meta?.cpl ?? 0),
+      metaCpl: kpisResponse?.meta?.cpl == null ? null : Number(kpisResponse.meta.cpl),
       revenuePerLead: kpisResponse?.doctoralia?.newVerifiedPatients > 0
         ? Number.parseFloat(((kpisResponse?.doctoralia?.verifiedRevenue ?? 0) / kpisResponse.doctoralia.newVerifiedPatients).toFixed(2))
-        : 0,
+        : null,
     },
     funnel: {
       metaSpend: Number(kpisResponse?.meta?.spend ?? spend),
