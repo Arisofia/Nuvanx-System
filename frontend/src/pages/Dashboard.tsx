@@ -115,11 +115,39 @@ interface DashboardStateOptions {
   spendDelta: number
 }
 
+function hasFiniteMetric(value: unknown) {
+  return Number.isFinite(Number(value))
+}
+
+function hasCanonicalInsightsSpend(insightsResponse: any, campaigns: any[]) {
+  if (insightsResponse?.summary?.spend != null) return true
+  if (Array.isArray(insightsResponse?.daily)) return true
+  return campaigns.some((campaign: any) => campaign?.insights?.spend != null)
+}
+
+function calculateRatio(numerator: number, denominator: number) {
+  return denominator > 0 ? Number.parseFloat((numerator / denominator).toFixed(2)) : null
+}
+
+function hasMultiAccountKpis(kpisResponse: any) {
+  return Array.isArray(kpisResponse?.meta?.accountIds) && kpisResponse.meta.accountIds.length > 1
+}
+
 function buildDashboardState(options: DashboardStateOptions) {
   const {
     metricsData, campaigns, insightsResponse, kpisResponse,
     spend, avgCpcRaw, metaConversions, spendDelta,
   } = options
+
+  const rawKpisMetaSpend = kpisResponse?.meta?.spend
+  const canonicalMetaSpend = hasFiniteMetric(rawKpisMetaSpend) && (hasMultiAccountKpis(kpisResponse) || !hasCanonicalInsightsSpend(insightsResponse, campaigns))
+    ? Number(rawKpisMetaSpend)
+    : spend
+  const canonicalMetaLeads = Number(kpisResponse?.meta?.leads ?? metaConversions)
+  const doctoraliaPatients = Number(kpisResponse?.doctoralia?.newVerifiedPatients ?? 0)
+  const doctoraliaVerifiedRevenue = Number(kpisResponse?.doctoralia?.verifiedRevenue ?? Number(metricsData.verifiedRevenue ?? 0))
+  const metaCpl = calculateRatio(canonicalMetaSpend, canonicalMetaLeads)
+  const cacDoctoralia = calculateRatio(canonicalMetaSpend, doctoraliaPatients)
 
   return {
     metrics: {
@@ -131,9 +159,9 @@ function buildDashboardState(options: DashboardStateOptions) {
       totalRevenue: Number(metricsData.totalRevenue ?? 0),
       settledCount: Number(metricsData.settledCount ?? 0),
       activeCampaigns: campaigns.filter((c: any) => c.status === 'ACTIVE').length,
-      spend,
+      spend: canonicalMetaSpend,
       averageCpc: Number.isFinite(avgCpcRaw) ? Number.parseFloat(avgCpcRaw.toFixed(2)) : 0,
-      metaConversions: Number(kpisResponse?.meta?.leads ?? metaConversions),
+      metaConversions: canonicalMetaLeads,
       deltas: {
         leads: metricsData.deltas?.leads ?? 0,
         revenue: metricsData.deltas?.revenue ?? 0,
@@ -146,20 +174,20 @@ function buildDashboardState(options: DashboardStateOptions) {
       metaError: null,
     },
     combined: {
-      metaEstimatedLeads: Number(kpisResponse?.meta?.leads ?? insightsResponse?.summary?.conversions ?? 0),
-      verifiedRevenue: Number(kpisResponse?.doctoralia?.verifiedRevenue ?? Number(metricsData.verifiedRevenue ?? 0)),
-      metaCpl: kpisResponse?.meta?.cpl == null ? null : Number(kpisResponse.meta.cpl),
+      metaEstimatedLeads: canonicalMetaLeads,
+      verifiedRevenue: doctoraliaVerifiedRevenue,
+      metaCpl,
       revenuePerLead: kpisResponse?.doctoralia?.newVerifiedPatients > 0
         ? Number.parseFloat(((kpisResponse?.doctoralia?.verifiedRevenue ?? 0) / kpisResponse.doctoralia.newVerifiedPatients).toFixed(2))
         : null,
     },
     funnel: {
-      metaSpend: Number(kpisResponse?.meta?.spend ?? spend),
-      metaLeads: Number(kpisResponse?.meta?.leads ?? metaConversions),
+      metaSpend: canonicalMetaSpend,
+      metaLeads: canonicalMetaLeads,
       crmLeads: Number(kpisResponse?.crm?.totalLeads ?? Number(metricsData.totalLeads ?? 0)),
-      doctoraliaRevenue: Number(kpisResponse?.doctoralia?.verifiedRevenue ?? Number(metricsData.verifiedRevenue ?? 0)),
-      doctoraliaPatients: Number(kpisResponse?.doctoralia?.newVerifiedPatients ?? 0),
-      cac: Number(kpisResponse?.doctoralia?.cacDoctoralia ?? 0),
+      doctoraliaRevenue: doctoraliaVerifiedRevenue,
+      doctoraliaPatients,
+      cac: cacDoctoralia ?? 0,
       cacConfidence: kpisResponse?.doctoralia?.cac_confidence ?? 0,
     },
     quality: {
