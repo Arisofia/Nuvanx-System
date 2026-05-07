@@ -16,7 +16,6 @@ import type { DashboardMetrics, MetaTrendPoint, ActivityEvent } from '../types'
 
 import { MetricDelta } from '../components/dashboard/MetricDelta'
 import { FunnelChart } from '../components/dashboard/FunnelChart'
-import { AgentStatusCard } from '../components/dashboard/AgentStatusCard'
 
 interface CombinedMetrics {
   metaEstimatedLeads: number

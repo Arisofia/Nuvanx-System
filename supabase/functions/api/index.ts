@@ -3796,6 +3796,30 @@ function normalizeIntegrationMetadata(service: string, metadata: any) {
   return metadata;
 }
 
+function validateAndNormalizeMetadata(service: string, inputMetadata: any) {
+  let metadata = inputMetadata ?? {};
+  if (service === 'whatsapp') {
+    const normalized = normalizePhoneNumberId(metadata?.phoneNumberId ?? metadata?.phone_number_id ?? '');
+    if (!normalized) return { ok: false, message: 'phoneNumberId is required for WhatsApp' };
+    metadata = { ...metadata, phoneNumberId: normalized, phone_number_id: normalized };
+  }
+  if (service === 'meta') {
+    const accountIds = normalizeMetaAccountIds(metadata?.adAccountIds ?? metadata?.ad_account_ids ?? metadata?.adAccountId ?? metadata?.ad_account_id ?? '');
+    if (accountIds.length === 0) return { ok: false, message: 'Meta integration requires one or more valid ad account IDs.' };
+    const normalizedPageId = String(metadata?.pageId ?? metadata?.page_id ?? '').replaceAll(/\D/g, '');
+    metadata = {
+      ...metadata,
+      adAccountIds: accountIds,
+      ad_account_ids: accountIds,
+      adAccountId: accountIds.join(','),
+      ad_account_id: accountIds.join(','),
+      pageId: normalizedPageId,
+      page_id: normalizedPageId,
+    };
+  }
+  return { ok: true, metadata };
+}
+
 async function handleIntegrationsConnectPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, authUser, resource, sub, req, sendJson } = ctx;
   if (resource === 'integrations' && sub === 'connect' && req.method === 'POST') {
@@ -3805,51 +3829,22 @@ async function handleIntegrationsConnectPost(ctx: AuthenticatedRouteContext): Pr
     const reqToken = body.token;
     if (!reqToken) return sendJson({ success: false, message: 'token is required' }, 400);
   
-    let metadata = body.metadata ?? {};
-    if (service === 'whatsapp') {
-      const normalized = normalizePhoneNumberId(metadata?.phoneNumberId ?? metadata?.phone_number_id ?? '');
-      if (!normalized) {
-        return sendJson({ success: false, message: 'phoneNumberId is required for WhatsApp' }, 400);
-      }
-    }
-    metadata = normalizeIntegrationMetadata(service, metadata);
-
-    if (service === 'meta') {
-      const accountIds = normalizeMetaAccountIds(metadata?.adAccountIds ?? metadata?.ad_account_ids ?? metadata?.adAccountId ?? metadata?.ad_account_id ?? '');
-      if (accountIds.length === 0) {
-        return sendJson({ success: false, message: 'Meta integration requires one or more valid ad account IDs.' }, 400);
-      }
-      metadata.adAccountIds = accountIds;
-      metadata.ad_account_ids = accountIds;
-      metadata.adAccountId = accountIds.join(',');
-      metadata.ad_account_id = accountIds.join(',');
-    }
+    const validation = validateAndNormalizeMetadata(service, body.metadata);
+    if (!validation.ok) return sendJson({ success: false, message: validation.message }, 400);
+    const metadata = validation.metadata;
   
     await ensurePublicUserRow(adminClient, authUser);
     const encryptedKey = await encryptCred(String(reqToken).trim());
   
     const { error: credErr } = await adminClient
       .from('credentials')
-      .upsert(
-        {
-          user_id: userId,
-          service,
-          encrypted_key: encryptedKey,
-        },
-        { onConflict: 'user_id,service' },
-      );
+      .upsert({ user_id: userId, service, encrypted_key: encryptedKey }, { onConflict: 'user_id,service' });
     if (credErr) throw credErr;
   
     const { error: intErr } = await adminClient
       .from('integrations')
       .upsert(
-        {
-          user_id: userId,
-          service,
-          status: 'connected',
-          metadata,
-          updated_at: new Date().toISOString(),
-        },
+        { user_id: userId, service, status: 'connected', metadata, updated_at: new Date().toISOString() },
         { onConflict: 'user_id,service' },
       );
     if (intErr) throw intErr;

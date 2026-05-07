@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useLocation } from 'wouter'
-import { Menu, X, LogOut, Home, Activity, Users, Megaphone, DollarSign, BarChart2, Plug, Sparkles, FileBarChart2, GitMerge } from 'lucide-react'
+import { Menu, LogOut, Home, Activity, Users, Megaphone, DollarSign, BarChart2, Plug, Sparkles, FileBarChart2, GitMerge } from 'lucide-react'
 import { Button } from './ui/button'
 import logo from '../assets/logo.png'
 
@@ -28,7 +28,7 @@ export default function Layout({ children }: Readonly<{ children: React.ReactNod
         <div className="p-8 flex flex-col items-center">
           <div className="flex items-center justify-between w-full mb-6">
             <Button variant="ghost" size="sm" className="hover:bg-primary/5 rounded-full h-8 w-8 p-0" onClick={() => setSidebarOpen(!sidebarOpen)}>
-              {sidebarOpen ? <Menu className="w-4 h-4 text-muted" /> : <Menu className="w-4 h-4 text-muted" />}
+              <Menu className="w-4 h-4 text-muted" />
             </Button>
           </div>
           

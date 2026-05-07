@@ -95,13 +95,10 @@ export default function Integrations() {
 
   const extractAdAccountIds = (raw: unknown) => {
     if (Array.isArray(raw)) {
-      return raw.map((value) => String(value).trim()).filter(Boolean)
+      return normalizeMetaAdAccountIds(raw.join(' '))
     }
     if (typeof raw === 'string' || typeof raw === 'number') {
-      return String(raw)
-        .split(/[\s,;]+/)
-        .map((value) => value.trim())
-        .filter(Boolean)
+      return normalizeMetaAdAccountIds(String(raw))
     }
     return []
   }
@@ -118,8 +115,16 @@ export default function Integrations() {
     const metadata: Record<string, unknown> = {}
     if (form.service === 'meta') {
       const adAccountIds = normalizeMetaAdAccountIds(form.adAccountId)
+      const rawValues = String(form.adAccountId)
+        .split(/[\s,;]+/)
+        .map((value) => value.trim())
+        .filter(Boolean)
       if (adAccountIds.length === 0) {
         setSaveError('Ingrese al menos un ID de cuenta publicitaria válido (act_1234567890 o 1234567890).');
+        return
+      }
+      if (rawValues.length > 1 && adAccountIds.length < rawValues.length) {
+        setSaveError('Verifica que todas las cuentas publicitarias sean IDs válidas. Debes separar varias IDs con comas o espacios, por ejemplo: act_1234567890, act_0987654321.');
         return
       }
       metadata.adAccountIds = adAccountIds
@@ -264,7 +269,7 @@ export default function Integrations() {
                       onChange={handleFieldChange}
                       className="mt-1"
                     />
-                    <p className="text-xs text-muted mt-1">Puedes añadir varios IDs separados por comas para incorporar datos de varias cuentas.</p>
+                    <p className="text-xs text-muted mt-1">Puedes añadir varios IDs separados por comas o espacios. Si tienes más de una cuenta Meta, ingrésalas todas para que el dashboard muestre el gasto combinado.</p>
                   </div>
                   <div>
                     <label htmlFor="pageId-input" className="text-sm font-medium">ID de la Página <span className="text-red-500">*</span></label>
