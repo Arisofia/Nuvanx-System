@@ -4927,7 +4927,7 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
   const avgTicket = newVerifiedPatients > 0 ? Number.parseFloat((verifiedRevenueRounded / newVerifiedPatients).toFixed(2)) : null;
   const cacDoctoralia = newVerifiedPatients > 0 ? Number.parseFloat((metaResult.spend / newVerifiedPatients).toFixed(2)) : null;
 
-  if ((metaResult.leads ?? 0) === 0 && metaLeads > 0) {
+  if (metaLeads > (metaResult.leads ?? 0)) {
     metaResult.leads = metaLeads;
     metaResult.data_source = metaResult.data_source === 'meta_api' ? 'meta_api+crm_leads' : 'crm_leads';
   }

@@ -52,6 +52,14 @@ jobs:
           fi
       - name: Install pg dependency
         run: npm install --no-save pg
+      - name: Verify Meta token can access ad account
+        run: |
+          set -euo pipefail
+          RAW="${META_AD_ACCOUNT_ID}"
+          ID="${RAW#act_}"
+          echo "Checking Meta access to act_${ID}..."
+          curl -fsS "https://graph.facebook.com/v22.0/act_${ID}?fields=account_id,name&access_token=${META_ACCESS_TOKEN}" >/dev/null
+          echo "Meta access OK"
       - name: Backfill Meta daily insights (ads, last 90 days)
         env:
           BACKFILL_DAYS: 90

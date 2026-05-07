@@ -8,9 +8,11 @@ env:
 # upserts them into the financial_settlements table.
 #
 # Required GitHub secrets:
-#   GOOGLE_ADS_SERVICE_ACCOUNT  - Service account credentials (base64-encoded JSON OR raw JSON;
-#                                  must have Sheets read scope, and the spreadsheet must be shared
-#                                  with the client_email in that service account)
+#   GOOGLE_ADS_SERVICE_ACCOUNT  - Service account credentials (raw JSON OR base64-encoded JSON);
+#                                  must be a valid Google service account in a project with
+#                                  Google Sheets API enabled.
+#                                  The target spreadsheet must be shared with the service
+#                                  account's client_email as at least Viewer.
 #   DOCTORALIA_SHEET_ID         - Spreadsheet ID from the Google Sheets URL
 #   DOCTORALIA_DRIVE_FILE_ID    - Alias for DOCTORALIA_SHEET_ID
 #   DATABASE_URL                - Direct Postgres connection string (Supabase)

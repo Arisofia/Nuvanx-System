@@ -383,7 +383,7 @@ async function ingestMetaLeadsFromForms(db, userId, adAccountId, sinceTs) {
         pageToken,
         1,
         {
-          fields: 'id,field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,campaign_name,adset_id,adset_name,page_id',
+          fields: 'id,field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,campaign_name,adset_id,adset_name,page_id,platform,is_organic,asset_url,image_url,video_url',
           filtering: JSON.stringify([{ field: 'time_created', operator: 'GREATER_THAN', value: sinceTs }]),
           limit: '500',
         }
@@ -515,9 +515,24 @@ async function processLeadData(db, userId, leadData) {
   const leadgen_id = leadData.id;
   const leadName = resolveLeadName(fields, leadgen_id);
   const email = fields['email'] ?? null;
-  const rawPhone = findPhoneCandidate(fields) ?? extractPhoneFromText(JSON.stringify(rawFieldData));
-  const phone = rawPhone ?? null;
+  const phone = fields['phone_number'] ?? fields['telefono'] ?? fields['phone'] ?? null;
   const dni = fields['dni'] ?? fields['nif'] ?? fields['national_id'] ?? null;
+  const firstName = fields['first_name'] ?? fields['nombre'] ?? fields['nombre1'] ?? null;
+  const lastName = fields['last_name'] ?? fields['apellido'] ?? fields['apellidos'] ?? null;
+  const city = fields['city'] ?? fields['ciudad'] ?? null;
+  const state = fields['state'] ?? fields['provincia'] ?? fields['region'] ?? null;
+  const zipCode = fields['zip_code'] ?? fields['postal_code'] ?? fields['zip'] ?? fields['cp'] ?? null;
+  const gender = fields['gender'] ?? fields['sexo'] ?? null;
+
+  const metaPlatform = leadData.platform ?? leadData.meta_platform ?? null;
+  const metaAdId = leadData.ad_id ?? null;
+  const explicitOrganic = leadData.is_organic === true || String(leadData.is_organic).toLowerCase() === 'true';
+  const explicitPaid = leadData.is_organic === false || String(leadData.is_organic).toLowerCase() === 'false';
+  const inferredOrganic = !explicitPaid && !metaAdId && !leadData.campaign_id && !leadData.adset_id;
+  const isOrganic = explicitOrganic || inferredOrganic;
+  const metaAdName = leadData.ad_name ?? null;
+  const metaFormId = leadData.form_id ?? null;
+  const assetUrl = leadData.asset_url ?? leadData.image_url ?? leadData.video_url ?? null;
 
   const KNOWN_STANDARD = new Set([
     'full_name', 'nombre_completo', 'nombre', 'name', 'first_name', 'last_name',
@@ -553,11 +568,13 @@ async function processLeadData(db, userId, leadData) {
 
   const leadResult = await db.query(`
     INSERT INTO public.leads
-      (user_id, external_id, source, name, email, phone, dni, notes, priority,
-       stage, campaign_id, campaign_name, adset_id, adset_name, ad_id, ad_name,
-       form_id, form_name, meta_ad_id, meta_form_id, telefono_hash, email_hash,
-       raw_field_data, created_at_meta, created_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
+      (user_id, external_id, source, name, email, phone, dni,
+       first_name, last_name, city, state, zip_code, gender,
+       notes, priority, stage, campaign_id, campaign_name, adset_id, adset_name,
+       ad_id, ad_name, form_id, form_name, meta_ad_id, meta_ad_name, meta_form_id,
+       meta_platform, is_organic, created_at_meta, asset_url, telefono_hash, email_hash,
+       raw_field_data, created_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)
     RETURNING id
   `, [
     userId,
@@ -567,6 +584,12 @@ async function processLeadData(db, userId, leadData) {
     email,
     phone,
     dni || null,
+    firstName,
+    lastName,
+    city,
+    state,
+    zipCode,
+    gender,
     notes || null,
     priority,
     'lead',
@@ -578,12 +601,16 @@ async function processLeadData(db, userId, leadData) {
     leadData.ad_name ?? null,
     leadData.form_id ?? null,
     leadData.form_name ?? null,
-    leadData.ad_id ?? null,
-    leadData.form_id ?? null,
+    metaAdId,
+    metaAdName,
+    metaFormId,
+    metaPlatform,
+    isOrganic,
+    createdAt,
+    assetUrl,
     hashedPhone,
     hashedEmail,
     rawFieldDataJson,
-    createdAt,
     createdAt,
   ]);
 
@@ -617,6 +644,10 @@ async function processLeadData(db, userId, leadData) {
 }
 
 main().catch((err) => {
-  console.error('[meta-backfill] Fatal:', err.message);
+  const msg = err?.message ?? String(err);
+  console.error('[meta-backfill] Fatal:', msg);
+  if (String(msg).includes('(#200)') || String(msg).includes('ads_management') || String(msg).includes('ads_read') || String(msg).includes('permission')) {
+    console.error('[meta-backfill] This is usually a Meta permission error: ensure META_ACCESS_TOKEN has ads_read/ads_management and access to META_AD_ACCOUNT_ID.');
+  }
   process.exit(1);
 });
