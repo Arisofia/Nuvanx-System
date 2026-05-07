@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Textarea } from '../components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
-import { Sparkles, BarChart2, Lightbulb, History, Copy, Check } from 'lucide-react'
+import { Sparkles, BarChart2, Lightbulb, History, Copy, Check, RefreshCw } from 'lucide-react'
 import { invokeApi } from '../lib/supabaseClient'
 import { TemplateGallery } from '../components/ai/TemplateGallery'
 
@@ -14,7 +14,9 @@ export default function AI() {
   const [loading, setLoading] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [analysisError, setAnalysisError] = useState<string | null>(null)
   const [analysisResult, setAnalysisResult] = useState<string | null>(null)
+  const [analysisEmpty, setAnalysisEmpty] = useState<string | null>(null)
 
   // Suggestions tab
   const [suggestions, setSuggestions] = useState<string[]>([])
@@ -46,16 +48,21 @@ export default function AI() {
 
   const handleAnalyze = async () => {
     setAnalyzing(true)
-    setError(null)
-    setAnalysisResult(null)
+    setAnalysisError(null)
+    setAnalysisEmpty(null)
     try {
-      const campaigns: any = await invokeApi('/meta/campaigns')
-      const campaignData = JSON.stringify(campaigns?.campaigns ?? [], null, 2)
-      const data: any = await invokeApi('/ai/analyze-campaign', { method: 'POST', body: { campaignData } })
+      // Backend agent auto-fetches a CRM-side snapshot when no payload is sent,
+      // so the panel can render on mount without the client gathering data first.
+      const data: any = await invokeApi('/ai/analyze-campaign', { method: 'POST', body: {} })
       if (!data?.success) throw new Error(data?.message || 'Analysis failed')
-      setAnalysisResult(data.content ?? data.result ?? data.analysis ?? '')
+      if (data?.empty) {
+        setAnalysisResult(null)
+        setAnalysisEmpty(data?.message ?? 'Aún no hay datos suficientes para analizar.')
+      } else {
+        setAnalysisResult(data.content ?? data.result ?? data.analysis ?? '')
+      }
     } catch (err: any) {
-      setError(err?.message || 'Campaign analysis failed.')
+      setAnalysisError(err?.message || 'Campaign analysis failed.')
     } finally {
       setAnalyzing(false)
     }
@@ -95,6 +102,14 @@ export default function AI() {
       setOutputsLoading(false)
     }
   }
+
+  // Auto-load every panel on mount so the UI is "connected by default" and
+  // only surfaces errors when a specific agent fails.
+  useEffect(() => {
+    handleAnalyze()
+    handleFetchSuggestions()
+    handleFetchOutputs()
+  }, [])
 
   const outputTypes = ['all', ...Array.from(new Set(outputs.map((o) => o.agent_type).filter(Boolean)))]
   const filteredOutputs = typeFilter === 'all' ? outputs : outputs.filter((o) => o.agent_type === typeFilter)
@@ -154,13 +169,46 @@ export default function AI() {
                 </Card>
               )}
 
-              {analysisResult !== null && (
+              {analysisError && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Análisis de campaña</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-[#D9534F]">{analysisError}</p>
+                  </CardContent>
+                </Card>
+              )}
+
+              {!analysisError && analysisEmpty && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Análisis de campaña</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted">{analysisEmpty}</p>
+                  </CardContent>
+                </Card>
+              )}
+
+              {!analysisError && !analysisEmpty && analysisResult !== null && (
                 <Card>
                   <CardHeader>
                     <CardTitle>Análisis de campaña</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <pre className="whitespace-pre-wrap text-sm text-[#d7c5ae] leading-relaxed">{analysisResult}</pre>
+                  </CardContent>
+                </Card>
+              )}
+
+              {!analysisError && !analysisEmpty && analysisResult === null && analyzing && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Análisis de campaña</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted">El agente está analizando tus campañas…</p>
                   </CardContent>
                 </Card>
               )}
@@ -177,14 +225,22 @@ export default function AI() {
               </Card>
 
               <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Análisis de campaña</CardTitle>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0">
+                  <CardTitle className="text-base flex items-center gap-2"><BarChart2 className="w-4 h-4" />Agente de análisis</CardTitle>
+                  <button
+                    type="button"
+                    onClick={handleAnalyze}
+                    disabled={analyzing}
+                    title="Refrescar análisis"
+                    className="text-muted hover:text-foreground transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${analyzing ? 'animate-spin' : ''}`} />
+                  </button>
                 </CardHeader>
                 <CardContent>
-                  <Button variant="outline" className="w-full gap-2" onClick={handleAnalyze} disabled={analyzing}>
-                    <BarChart2 className="w-4 h-4" />
-                    {analyzing ? 'Analizando...' : 'Analizar rendimiento'}
-                  </Button>
+                  <p className="text-xs text-muted">
+                    Conectado por defecto. El agente analiza tus campañas con memoria de análisis previos.
+                  </p>
                 </CardContent>
               </Card>
             </div>
@@ -196,17 +252,25 @@ export default function AI() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
               <CardTitle>Sugerencias de IA</CardTitle>
-              <Button onClick={handleFetchSuggestions} disabled={suggestionsLoading} size="sm" className="gap-2">
-                <Lightbulb className="w-4 h-4" />
-                {suggestionsLoading ? 'Cargando...' : 'Obtener sugerencias'}
-              </Button>
+              <button
+                type="button"
+                onClick={handleFetchSuggestions}
+                disabled={suggestionsLoading}
+                title="Refrescar sugerencias"
+                className="text-muted hover:text-foreground transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 ${suggestionsLoading ? 'animate-spin' : ''}`} />
+              </button>
             </CardHeader>
             <CardContent>
               {suggestionsError && (
-                <p className="text-sm text-red-500 mb-4">{suggestionsError}</p>
+                <p className="text-sm text-[#D9534F] mb-4">{suggestionsError}</p>
               )}
               {suggestions.length === 0 && !suggestionsLoading && !suggestionsError && (
-                <p className="text-muted text-sm py-4 text-center">Haz clic en "Obtener sugerencias" para recibir insights basados en tus leads.</p>
+                <p className="text-muted text-sm py-4 text-center">Aún no hay sugerencias. El agente las generará cuando tengas leads en el CRM.</p>
+              )}
+              {suggestions.length === 0 && suggestionsLoading && (
+                <p className="text-muted text-sm py-4 text-center">El agente está preparando sugerencias…</p>
               )}
               <div className="space-y-3">
                 {suggestions.map((s) => (
@@ -244,17 +308,20 @@ export default function AI() {
                   </select>
                 )}
                 <Button onClick={handleFetchOutputs} disabled={outputsLoading} size="sm" variant="outline" className="gap-2">
-                  <History className="w-4 h-4" />
-                  {outputsLoading ? 'Cargando...' : 'Cargar historial'}
+                  <RefreshCw className={`w-4 h-4 ${outputsLoading ? 'animate-spin' : ''}`} />
+                  {outputsLoading ? 'Cargando...' : 'Refrescar'}
                 </Button>
               </div>
             </CardHeader>
             <CardContent>
               {outputsError && (
-                <p className="text-sm text-red-500 mb-4">{outputsError}</p>
+                <p className="text-sm text-[#D9534F] mb-4">{outputsError}</p>
               )}
               {filteredOutputs.length === 0 && !outputsLoading && !outputsError && (
-                <p className="text-muted text-sm py-4 text-center">No hay historial todavía. Haz clic en "Cargar historial" para ver resultados previos.</p>
+                <p className="text-muted text-sm py-4 text-center">Aún no hay historial. Cuando los agentes generen resultados aparecerán aquí automáticamente.</p>
+              )}
+              {filteredOutputs.length === 0 && outputsLoading && (
+                <p className="text-muted text-sm py-4 text-center">Cargando historial…</p>
               )}
               <div className="space-y-3">
                 {filteredOutputs.map((o) => {

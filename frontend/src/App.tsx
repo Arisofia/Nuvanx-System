@@ -8,6 +8,7 @@ import { AuthProvider, AuthContext } from './contexts/AuthContext'
 import Layout from './components/Layout'
 import NotFound from './pages/NotFound'
 import Login from './pages/Login'
+import { useMetaPageView } from './lib/metaPixel'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Live = lazy(() => import('./pages/Live'))
@@ -33,6 +34,9 @@ function Router() {
   const [location, setLocation] = useLocation()
   const auth = useContext(AuthContext)
   const isAuthPage = location === '/login'
+
+  // Fire Meta Pixel PageView on every route change.
+  useMetaPageView()
 
   // Redirect to login once auth state is resolved and user is not logged in.
   useEffect(() => {
