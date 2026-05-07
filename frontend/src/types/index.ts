@@ -60,6 +60,7 @@ export interface CampaignRow {
   name: string
   status: string
   objective: string
+  accountId?: string | null
   dailyBudget: number | null
   lifetimeBudget: number | null
   source: string

@@ -16,6 +16,8 @@ import type { DashboardMetrics, MetaTrendPoint, ActivityEvent } from '../types'
 
 import { MetricDelta } from '../components/dashboard/MetricDelta'
 import { FunnelChart } from '../components/dashboard/FunnelChart'
+import { MetaAccountsInline } from '../components/MetaAccountsNotice'
+import { resolveMetaAccountIds } from '../config/metaAccounts'
 
 interface CombinedMetrics {
   metaEstimatedLeads: number
@@ -390,11 +392,11 @@ function DashboardHeader({
             <DataModeBadge overallMode={dataMode as any} />
           </div>
           <p className={`${controlTextClass} text-xs tracking-wide`}>Control de Rendimiento Médico</p>
-          {metaAccountIds.length > 0 && (
-            <p className={`${controlTextClass} text-[10px] tracking-wide`}>
-              Cuentas Meta: {metaAccountIds.join(', ')}
-            </p>
-          )}
+          <MetaAccountsInline
+            accountIds={metaAccountIds}
+            context="Dashboard consolidado de inversión, campañas y leads atribuidos."
+            className="max-w-2xl bg-white/60"
+          />
         </div>
 
         <div className="flex items-center gap-3">
@@ -1037,7 +1039,7 @@ export default function Dashboard() {
         setCustomFrom={setCustomFrom}
         customTo={customTo}
         setCustomTo={setCustomTo}
-        metaAccountIds={quality?.metaAccountIds ?? []}
+        metaAccountIds={resolveMetaAccountIds(quality?.metaAccountIds ?? [])}
       />
 
       <AlertSection error={metrics.error} metaError={metrics.metaError} />

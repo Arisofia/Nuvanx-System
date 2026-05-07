@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { AlertCircle, CheckCircle2, Search, Activity, XCircle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { invokeApi } from '../lib/supabaseClient'
+import { MetaAccountsInline } from '../components/MetaAccountsNotice'
+import { formatMetaAccountIds } from '../config/metaAccounts'
 
 function EmptyState({ message }: Readonly<{ message: string }>) {
   return <p className="text-muted text-sm py-8 text-center">{message}</p>
@@ -72,6 +74,7 @@ export default function LeadAudit() {
         <div className="space-y-2">
           <h1 className="text-5xl font-serif font-bold tracking-tight text-[#2C2825]">Lead Audit</h1>
           <p className="text-[#5C5550] text-xs uppercase tracking-[0.4em] font-bold">Auditoría de Trazabilidad Meta & Doctoralia</p>
+          <MetaAccountsInline context="Lead Audit cruza leads, campañas y formularios asociados a estas cuentas Meta." className="mt-4 max-w-2xl" />
         </div>
       </div>
 
@@ -200,6 +203,7 @@ export default function LeadAudit() {
                   <tr className="border-b border-border/10 text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.15em]">
                     <th className="px-5 py-4 font-bold">Lead / Fuente</th>
                     <th className="px-5 py-4 font-bold">Campaña / Form</th>
+                    <th className="px-5 py-4 font-bold">Cuenta Meta</th>
                     <th className="px-5 py-4 font-bold">Fecha Lead</th>
                     <th className="px-5 py-4 font-bold">Teléfono Lead</th>
                     <th className="px-5 py-4 font-bold">Cruce / Confianza</th>
@@ -219,6 +223,9 @@ export default function LeadAudit() {
                       <td className="px-5 py-5 max-w-[200px]">
                         <p className="text-xs font-semibold text-[#2C2825] truncate" title={row.campaign_name}>{row.campaign_name ?? '—'}</p>
                         <p className="text-[10px] text-[#5C5550] font-medium mt-1 truncate" title={row.form_name}>{row.form_name ?? '—'}</p>
+                      </td>
+                      <td className="px-5 py-5 text-[10px] font-bold text-[#5C5550] whitespace-nowrap">
+                        {row.ad_account_id ?? row.account_id ?? formatMetaAccountIds()}
                       </td>
                       <td className="px-5 py-5 text-xs text-[#5C5550] font-bold whitespace-nowrap">
                         {row.lead_created_at ? new Date(row.lead_created_at).toLocaleDateString('es-ES') : '—'}

@@ -6,6 +6,7 @@ import type { FunnelRow, CampaignPerformance as Campaign, Conversation, Traceabi
 import { FilterBar } from '../components/ui/FilterBar'
 import { SortableTable } from '../components/ui/SortableTable'
 import type { ColDef } from '../components/ui/SortableTable'
+import { MetaAccountsInline } from '../components/MetaAccountsNotice'
 
 export default function Intelligence() {
   const [funnel, setFunnel] = useState<FunnelRow[]>([])
@@ -252,6 +253,7 @@ export default function Intelligence() {
       <div>
         <h1 className="text-3xl font-serif font-bold text-foreground">Inteligencia</h1>
         <p className="text-muted mt-1">Atribución de campañas, embudo WhatsApp y registro de conversaciones</p>
+        <MetaAccountsInline context="Inteligencia de campañas, conversaciones y trazabilidad asociada a estas cuentas Meta." className="mt-4 max-w-2xl" />
       </div>
 
       <Tabs defaultValue="attribution" className="w-full">

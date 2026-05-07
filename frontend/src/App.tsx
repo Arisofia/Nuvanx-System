@@ -6,6 +6,7 @@ import ErrorBoundary from './components/ErrorBoundary'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, AuthContext } from './contexts/AuthContext'
 import Layout from './components/Layout'
+import MetaAccountsNotice from './components/MetaAccountsNotice'
 import NotFound from './pages/NotFound'
 import Login from './pages/Login'
 import { useMetaPageView } from './lib/metaPixel'
@@ -131,6 +132,7 @@ export default function App() {
           <Toaster />
           <AuthProvider>
             <Router />
+            <MetaAccountsNotice />
           </AuthProvider>
         </TooltipProvider>
       </ThemeProvider>

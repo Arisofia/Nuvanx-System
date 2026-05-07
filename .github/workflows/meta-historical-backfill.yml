@@ -42,7 +42,7 @@ jobs:
       BACKFILL_UNTIL:      ${{ github.event.inputs.until }}
 
     steps:
-      - uses: actions/checkout@v4 # v4
+      - uses: actions/checkout@v5 # v5
       - uses: actions/setup-node@v5 # v5
         with:
           node-version: '24'
