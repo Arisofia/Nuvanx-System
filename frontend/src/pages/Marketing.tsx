@@ -265,7 +265,7 @@ const buildMarketingParams = (isCustomRange: boolean, customFrom: string, custom
 
 const filterCampaign = (c: CampaignRow, campaignId: string, statusFilter: string, search: string) => {
   if (campaignId !== 'ALL' && c.id !== campaignId) return false
-  if (statusFilter !== 'ALL' && c.status !== statusFilter) return false
+  if (statusFilter !== 'ALL' && (c.status ?? '').toUpperCase() !== statusFilter) return false
   if (search && !c.name.toLowerCase().includes(search.toLowerCase())) return false
   return true
 }
@@ -963,9 +963,22 @@ export default function Marketing() {
             <p className="p-4 text-sm text-muted">Cargando campañas…</p>
           )}
           {!loading && filteredCampaigns.length === 0 && (
-            <p className="p-4 text-sm text-muted">
-              {campaigns.length === 0 ? 'No hay campañas disponibles.' : 'Ninguna campaña coincide con los filtros.'}
-            </p>
+            <div className="p-4 flex items-center gap-3">
+              <p className="text-sm text-muted">
+                {campaigns.length === 0
+                  ? 'No hay campañas disponibles para el período seleccionado.'
+                  : `Ninguna campaña coincide con los filtros actuales${statusFilter !== 'ALL' ? ` (estado: ${STATUS_LABELS[statusFilter as keyof typeof STATUS_LABELS] ?? statusFilter})` : ''}.`}
+              </p>
+              {campaigns.length > 0 && (statusFilter !== 'ALL' || search || campaignId !== 'ALL') && (
+                <button
+                  type="button"
+                  onClick={() => { setStatusFilter('ALL'); setSearch(''); setCampaignId('ALL') }}
+                  className="shrink-0 text-xs text-primary underline underline-offset-2 hover:text-primary/80"
+                >
+                  Mostrar todas
+                </button>
+              )}
+            </div>
           )}
           {!loading && filteredCampaigns.length > 0 && (
             <CampaignTable

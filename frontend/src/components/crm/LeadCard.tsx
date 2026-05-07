@@ -44,7 +44,22 @@ export function LeadCard({ lead, onClick }: Readonly<LeadCardProps>) {
       <Card className="bg-card border-border hover:border-primary/40 transition-colors mb-3 active:cursor-grabbing">
         <CardContent className="p-4">
           <div className="flex flex-col gap-1">
-            <span className="font-serif font-bold text-foreground truncate">{lead.name}</span>
+            <span className="font-semibold text-foreground truncate">{lead.name}</span>
+            {lead.status === 'appointment' && lead.appointment_date && (
+              <span className="text-[10px] text-[#E0A020] font-medium">
+                📅 {new Date(lead.appointment_date).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}
+              </span>
+            )}
+            {lead.status === 'treatment' && lead.treatment_name && (
+              <span className="text-[10px] text-[#B08B5A] font-medium truncate">
+                💉 {lead.treatment_name}
+              </span>
+            )}
+            {lead.status === 'closed' && (
+              <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-bold uppercase tracking-wider">
+                ✓ Cerrado
+              </span>
+            )}
             <div className="flex items-center justify-between mt-2">
               <span className="text-[10px] uppercase tracking-wider text-muted font-medium">
                 {lead.source}

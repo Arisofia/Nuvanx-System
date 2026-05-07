@@ -24,6 +24,8 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
     dni: '',
     notes: '',
     revenue: '',
+    appointment_date: '',
+    treatment_name: '',
   })
 
   useEffect(() => {
@@ -35,6 +37,8 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
         dni: lead.dni ?? '',
         notes: lead.notes ?? '',
         revenue: lead.revenue == null ? '' : String(lead.revenue),
+        appointment_date: lead.appointment_date ?? '',
+        treatment_name: lead.treatment_name ?? '',
       })
     }
     setIsEditing(false)
@@ -53,6 +57,8 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
       dni: form.dni || undefined,
       notes: form.notes || undefined,
       revenue: form.revenue === '' ? undefined : Number(form.revenue),
+      appointment_date: form.appointment_date || undefined,
+      treatment_name: form.treatment_name || undefined,
     }
     const result = await onUpdate(lead.id, updates)
     setSaving(false)
@@ -183,9 +189,51 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
             </div>
           </section>
 
+          {(lead.status === 'appointment' || lead.status === 'treatment' || lead.status === 'closed' || isEditing) && (
+            <section>
+              <h3 className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Pipeline</h3>
+              <div className="grid gap-4 bg-background/50 rounded-xl p-4 border border-[#2d2218]/50">
+                {isEditing ? (
+                  <>
+                    {input('Appointment Date', 'appointment_date', 'date')}
+                    {input('Treatment / Procedure', 'treatment_name', 'text', 'e.g. Endolift, Combo…')}
+                  </>
+                ) : (
+                  <>
+                    {lead.status === 'appointment' && (
+                      <div>
+                        <p className="text-xs text-muted mb-1">Appointment Date</p>
+                        <p className="text-[#E0A020] font-medium">
+                          {lead.appointment_date
+                            ? new Date(lead.appointment_date).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+                            : '—'}
+                        </p>
+                      </div>
+                    )}
+                    {lead.status === 'treatment' && (
+                      <div>
+                        <p className="text-xs text-muted mb-1">Treatment / Procedure</p>
+                        <p className="text-[#B08B5A] font-medium">{lead.treatment_name || '—'}</p>
+                      </div>
+                    )}
+                    {lead.status === 'closed' && (
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/20">
+                          ✓ Cerrado
+                        </span>
+                        {lead.treatment_name && (
+                          <span className="text-xs text-muted">{lead.treatment_name}</span>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </section>
+          )}
+
           <section>
-            <h3 className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Notes</h3>
-            <div className="bg-background/50 rounded-xl p-4 border border-[#2d2218]/50 min-h-[100px]">
+            <h3 className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Notes</h3>            <div className="bg-background/50 rounded-xl p-4 border border-[#2d2218]/50 min-h-[100px]">
               {isEditing ? (
                 <textarea
                   value={form.notes}

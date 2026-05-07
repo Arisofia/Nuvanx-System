@@ -26,6 +26,8 @@ export function useLeads() {
               dni: item.dni,
               notes: item.notes,
               revenue: item.revenue,
+              appointment_date: item.appointment_date,
+              treatment_name: item.treatment_name,
               created_at: item.created_at,
               updated_at: item.updated_at,
             }))

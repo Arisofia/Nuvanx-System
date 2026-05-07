@@ -164,6 +164,8 @@ export interface Lead {
   dni?: string
   notes?: string
   revenue?: number
+  appointment_date?: string
+  treatment_name?: string
   created_at?: string
   updated_at?: string
 }

@@ -878,6 +878,13 @@ function classifyMetaLeadTag(fields: Record<string, string>): string {
   return normalized.includes('botox') ? 'neuromodulador/botox' : 'general';
 }
 
+/**
+ * Classify a meta_leadgen lead into a CRM pipeline stage based on
+ * keywords in form answers, notes, form_name and ad_name.
+ *
+ * Returns: { stage, treatmentName }
+ *   stage ∈ 'lead' | 'appointment' | 'treatment' | 'closed'
+ */
 export async function processLeadData(adminClient: any, userId: string, leadData: any) {
   const { fields, rawFieldData } = parseMetaLeadFields(leadData.field_data ?? []);
   const leadDataFields = extractMetaLeadCustomerInfo(leadData.field_data ?? []);
@@ -931,6 +938,8 @@ export async function processLeadData(adminClient: any, userId: string, leadData
       notes:           notes || null,
       priority,
       stage:           'lead',
+      appointment_date: null,
+      treatment_name:  null,
       campaign_id:     leadData.campaign_id ?? null,
       campaign_name:   leadData.campaign_name ?? null,
       adset_id:        leadData.adset_id    ?? null,
@@ -2195,7 +2204,7 @@ async function handleLeadsPatch(ctx: AuthenticatedRouteContext): Promise<Respons
     const body = await req.json();
     
     // Only allow updating specific fields
-    const allowedFields = ['stage', 'name', 'phone', 'dni', 'notes', 'revenue'];
+    const allowedFields = ['stage', 'name', 'phone', 'dni', 'notes', 'revenue', 'appointment_date', 'treatment_name'];
     const updateData: Record<string, any> = {};
     for (const field of allowedFields) {
       if (hasOwn(body, field)) {
@@ -3313,7 +3322,7 @@ function mapMetaCampaign(c: any) {
   return {
     id: c.id,
     name: c.name,
-    status: c.status,
+    status: String(c.status ?? '').toUpperCase() || 'UNKNOWN',
     objective: c.objective?.replaceAll('_', ' ') ?? '',
     accountId: c.accountId ?? null,
     dailyBudget: c.daily_budget ? Number.parseFloat(c.daily_budget) / 100 : null,
