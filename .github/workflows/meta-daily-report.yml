@@ -34,8 +34,8 @@ jobs:
       GOOGLE_ADS_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_CUSTOMER_ID }}
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
       - name: Validate required secrets
@@ -67,7 +67,7 @@ jobs:
       - name: Run Meta daily report
         run: node scripts/meta-daily-report.js
       - name: Upload report artifact
-        uses: actions/upload-artifact@v4.6.0
+        uses: actions/upload-artifact@v7
         with:
           name: daily-ads-unified-report
           path: reports/
