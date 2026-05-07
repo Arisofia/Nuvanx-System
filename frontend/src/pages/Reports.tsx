@@ -247,17 +247,17 @@ export default function Reports() {
               )}
             </CardHeader>
             <CardContent>
-              {docError && <ErrorState message={docError} />}
-              {docLoading && !docError && <EmptyState message="Loading…" />}
-              {!docLoading && !docError && (docData?.templateSummary.length ?? 0) === 0 && (
-                <EmptyState message="No settlement data available yet." />
-              )}
-              {!docLoading && !docError && (docData?.templateSummary.length ?? 0) > 0 && (
+              {(() => {
+                if (docError) return <ErrorState message={docError} />
+                if (docLoading) return <EmptyState message="Loading…" />
+                if ((docData?.templateSummary.length ?? 0) === 0)
+                  return <EmptyState message="No settlement data available yet." />
+                return (
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <TableHead cols={['Template', 'Ops', 'Net Revenue', 'Avg Ticket', 'Share %', 'Cancel %']} />
                     <tbody>
-                      {docData.templateSummary.map((r) => (
+                      {docData?.templateSummary.map((r) => (
                         <TableRow
                           key={r.template_name}
                           cells={[
@@ -273,7 +273,8 @@ export default function Reports() {
                     </tbody>
                   </table>
                 </div>
-              )}
+                )
+              })()}
             </CardContent>
           </Card>
           {/* Monthly detail table */}
@@ -326,12 +327,12 @@ export default function Reports() {
               <ExportButton data={filteredCampaigns} filename="campaign-performance" disabled={campLoading} />
             </CardHeader>
             <CardContent>
-              {campError && <ErrorState message={campError} />}
-              {campLoading && !campError && <EmptyState message="Loading…" />}
-              {!campLoading && !campError && filteredCampaigns.length === 0 && (
-                <EmptyState message="No campaign data available yet." />
-              )}
-              {!campLoading && !campError && filteredCampaigns.length > 0 && (
+              {(() => {
+                if (campError) return <ErrorState message={campError} />
+                if (campLoading) return <EmptyState message="Loading…" />
+                if (filteredCampaigns.length === 0)
+                  return <EmptyState message="No campaign data available yet." />
+                return (
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <TableHead cols={['Campaign', 'Leads', 'Contacted', 'Replied', 'Booked', 'Closed', '% Cita', '% No-show', 'Rev. CRM', 'Reply delay (min)']} />
@@ -356,7 +357,8 @@ export default function Reports() {
                     </tbody>
                   </table>
                 </div>
-              )}
+                )
+              })()}
             </CardContent>
           </Card>
         </TabsContent>
@@ -372,12 +374,12 @@ export default function Reports() {
               <ExportButton data={filteredSources} filename="source-comparison" disabled={srcLoading} />
             </CardHeader>
             <CardContent>
-              {srcError && <ErrorState message={srcError} />}
-              {srcLoading && !srcError && <EmptyState message="Loading…" />}
-              {!srcLoading && !srcError && filteredSources.length === 0 && (
-                <EmptyState message="No source comparison data available yet." />
-              )}
-              {!srcLoading && !srcError && filteredSources.length > 0 && (
+              {(() => {
+                if (srcError) return <ErrorState message={srcError} />
+                if (srcLoading) return <EmptyState message="Loading…" />
+                if (filteredSources.length === 0)
+                  return <EmptyState message="No source comparison data available yet." />
+                return (
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <TableHead cols={['Source', 'Leads', 'Contacted', 'Reply %', 'Booking %', 'Close %', 'Avg Reply (min)', 'Verified Revenue']} />
@@ -400,7 +402,8 @@ export default function Reports() {
                     </tbody>
                   </table>
                 </div>
-              )}
+                )
+              })()}
             </CardContent>
           </Card>
         </TabsContent>
@@ -413,12 +416,12 @@ export default function Reports() {
               <ExportButton data={cohorts} filename="whatsapp-conversion" disabled={waLoading} />
             </CardHeader>
             <CardContent>
-              {waError && <ErrorState message={waError} />}
-              {waLoading && !waError && <EmptyState message="Loading…" />}
-              {!waLoading && !waError && cohorts.length === 0 && (
-                <EmptyState message="No WhatsApp cohort data available yet." />
-              )}
-              {!waLoading && !waError && cohorts.length > 0 && (
+              {(() => {
+                if (waError) return <ErrorState message={waError} />
+                if (waLoading) return <EmptyState message="Loading…" />
+                if (cohorts.length === 0)
+                  return <EmptyState message="No WhatsApp cohort data available yet." />
+                return (
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <TableHead cols={['Cohort', 'Leads', 'Est. Revenue', 'Verified Revenue', 'Avg Reply (min)']} />
@@ -441,7 +444,8 @@ export default function Reports() {
                     </tbody>
                   </table>
                 </div>
-              )}
+                )
+              })()}
             </CardContent>
           </Card>
         </TabsContent>
@@ -454,12 +458,12 @@ export default function Reports() {
               <ExportButton data={doctors} filename="doctor-performance" disabled={docPerfLoading} />
             </CardHeader>
             <CardContent>
-              {docPerfError && <ErrorState message={docPerfError} />}
-              {docPerfLoading && !docPerfError && <EmptyState message="Loading…" />}
-              {!docPerfLoading && !docPerfError && doctors.length === 0 && (
-                <EmptyState message="No doctor performance data available yet." />
-              )}
-              {!docPerfLoading && !docPerfError && doctors.length > 0 && (
+              {(() => {
+                if (docPerfError) return <ErrorState message={docPerfError} />
+                if (docPerfLoading) return <EmptyState message="Loading…" />
+                if (doctors.length === 0)
+                  return <EmptyState message="No doctor performance data available yet." />
+                return (
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <TableHead cols={['Doctor', 'Specialty', 'Appointments', 'Attended', 'No-show', 'Attended %', 'No-show %', 'Verified Revenue']} />
@@ -485,7 +489,8 @@ export default function Reports() {
                     </tbody>
                   </table>
                 </div>
-              )}
+                )
+              })()}
             </CardContent>
           </Card>
         </TabsContent>
