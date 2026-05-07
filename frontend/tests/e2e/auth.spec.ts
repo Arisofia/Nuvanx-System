@@ -1,8 +1,12 @@
-import { test, expect } from '@playwright/test';
+import { existsSync } from 'node:fs';
+import { test, expect, chromium } from '@playwright/test';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 
+const hasChromiumBrowser = existsSync(chromium.executablePath());
+
 test.describe('Authentication', () => {
+  test.skip(!hasChromiumBrowser, `Playwright Chromium is not installed at ${chromium.executablePath()}`);
   test('should show error with invalid credentials', async ({ page }) => {
     const loginPage = new LoginPage(page);
     await loginPage.goto();

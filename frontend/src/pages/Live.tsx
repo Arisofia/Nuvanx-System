@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Activity, CalendarDays, ChevronLeft, ChevronRight, Tag, User, CheckCircle2, XCircle, Clock, Stethoscope, MapPin } from 'lucide-react'
 import { supabase, invokeApi } from '../lib/supabaseClient'
 import type { LiveEvent } from '../types'
+import { MetaAccountsInline } from '../components/MetaAccountsNotice'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -207,6 +208,7 @@ export default function Live() {
       <div>
         <h1 className="text-3xl font-serif font-bold text-foreground">Panel en vivo</h1>
         <p className="text-muted mt-1">Agenda Doctoralia del día y flujo en tiempo real</p>
+        <MetaAccountsInline context="Las citas con campaña Meta se auditan contra estas cuentas." className="mt-4 max-w-2xl" />
       </div>
 
       {/* ── AGENDA ─────────────────────────────────────────────────────────── */}

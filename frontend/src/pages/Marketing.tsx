@@ -8,6 +8,8 @@ import { TrendingUp, TrendingDown, Eye, MousePointerClick, DollarSign, Target, M
 import { invokeApi } from '../lib/supabaseClient'
 import type { CampaignRow, MarketingState } from '../types'
 import { ExportButton } from '../components/reports/ExportButton'
+import { MetaAccountsInline } from '../components/MetaAccountsNotice'
+import { formatMetaAccountIds, resolveMetaAccountIds } from '../config/metaAccounts'
 
 const fmt = (n: number, decimals = 2) =>
   n.toLocaleString('es-ES', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
@@ -109,15 +111,17 @@ interface CampaignTableProps {
   filteredCampaigns: CampaignRow[];
   currency: string;
   summary: MarketingState['summary'];
+  accountIds: string[];
 }
 
-function CampaignTable({ campaigns, filteredCampaigns, currency, summary }: Readonly<CampaignTableProps>) {
+function CampaignTable({ campaigns, filteredCampaigns, currency, summary, accountIds }: Readonly<CampaignTableProps>) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-border text-xs text-muted uppercase tracking-wide">
             <th className="text-left px-4 py-3">Campaña</th>
+            <th className="text-left px-3 py-3">Cuenta Meta</th>
             <th className="text-center px-3 py-3">Estado</th>
             <th className="text-center px-3 py-3">Objetivo</th>
             <th className="text-right px-3 py-3">Presupuesto</th>
@@ -138,6 +142,9 @@ function CampaignTable({ campaigns, filteredCampaigns, currency, summary }: Read
             <tr key={c.id} className="hover:bg-card/40 transition-colors">
               <td className="px-4 py-3 font-medium max-w-[200px]">
                 <span title={c.name} className="truncate block">{c.name}</span>
+              </td>
+              <td className="px-3 py-3 text-xs font-semibold text-[#5C5550] whitespace-nowrap">
+                {c.accountId ?? formatMetaAccountIds(accountIds)}
               </td>
               <td className="px-3 py-3 text-center">
                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
@@ -200,7 +207,7 @@ function CampaignTable({ campaigns, filteredCampaigns, currency, summary }: Read
           <tfoot>
             <tr className="border-t-2 border-border bg-surface text-xs font-semibold text-foreground">
               <td className="px-4 py-3 text-muted uppercase tracking-wide">Total cuenta</td>
-              <td colSpan={3} />
+              <td colSpan={4} />
               <td className="px-3 py-3 text-right text-[#28A745]">
                 {fmtCurrency(summary?.spend ?? 0, currency)}
               </td>
@@ -243,6 +250,7 @@ const mapCampaignRow = (c: any): CampaignRow => ({
   dailyBudget: c.dailyBudget ?? null,
   lifetimeBudget: c.lifetimeBudget ?? null,
   source: 'Meta',
+  accountId: c.accountId ?? null,
   insights: c.insights ?? null,
 })
 
@@ -293,7 +301,7 @@ const mapCampaignToChart = (c: CampaignRow) => ({
   CPC: Number((c.insights?.cpc ?? 0).toFixed(3)),
 })
 
-function AdsTable({ adsState, currency }: Readonly<{ adsState: any; currency: string }>) {
+function AdsTable({ adsState, currency, accountIds }: Readonly<{ adsState: any; currency: string; accountIds: string[] }>) {
   if (adsState.loading) {
     return <p className="p-4 text-sm text-muted animate-pulse">Cargando anuncios…</p>
   }
@@ -319,6 +327,7 @@ function AdsTable({ adsState, currency }: Readonly<{ adsState: any; currency: st
           <tr className="border-b border-border text-xs text-muted uppercase tracking-wide">
             <th className="text-left px-4 py-3">Anuncio</th>
             <th className="text-left px-3 py-3">Campaña</th>
+            <th className="text-left px-3 py-3">Cuenta Meta</th>
             <th className="text-center px-3 py-3">Estado</th>
             <th className="text-right px-3 py-3">Gasto</th>
             <th className="text-right px-3 py-3">Impresiones</th>
@@ -339,6 +348,9 @@ function AdsTable({ adsState, currency }: Readonly<{ adsState: any; currency: st
               </td>
               <td className="px-3 py-3 text-muted text-xs max-w-[160px]">
                 <span title={ad.campaignName ?? ''} className="truncate block">{ad.campaignName ?? '—'}</span>
+              </td>
+              <td className="px-3 py-3 text-xs font-semibold text-[#5C5550] whitespace-nowrap">
+                {ad.accountId ?? formatMetaAccountIds(accountIds)}
               </td>
               <td className="px-3 py-3 text-center">
                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
@@ -457,10 +469,7 @@ function MarketingHeader({
   customFrom: string; setCustomFrom: (s: string) => void; customTo: string; setCustomTo: (s: string) => void;
   since2025: string;
 }>) {
-  const accountCountSuffix = accountIds.length > 1 ? 's' : ''
-  const accountLabel = accountIds.length > 0
-    ? ` · Cuenta${accountCountSuffix}: ${accountIds.join(', ')}`
-    : ''
+  const resolvedAccountIds = resolveMetaAccountIds(accountIds)
 
   return (
     <div className="flex flex-col sm:flex-row sm:items-end gap-4">
@@ -468,9 +477,13 @@ function MarketingHeader({
         <h1 className="text-3xl font-serif font-bold text-foreground">Marketing · Meta Ads</h1>
         <p className="text-muted mt-1 text-sm">
           Período: {loading ? '…' : periodLabel}
-          {accountLabel}
           · Moneda: {loading ? '…' : currency}
         </p>
+        <MetaAccountsInline
+          accountIds={resolvedAccountIds}
+          context="Marketing muestra campañas, anuncios y leads de estas cuentas."
+          className="mt-3 max-w-2xl"
+        />
       </div>
       <div className="flex items-center gap-2">
         {campaigns.length > 0 && (
@@ -648,6 +661,7 @@ export default function Marketing() {
   }, [days])
 
   const { summary, changes, daily, campaigns, currency, accountIds, period, loading, error } = state
+  const resolvedAccountIds = resolveMetaAccountIds(accountIds)
 
   const effectiveCampaignId = useMemo(() => {
     if (campaignId === 'ALL') return 'ALL'
@@ -679,7 +693,7 @@ export default function Marketing() {
       <MarketingHeader
         loading={loading}
         periodLabel={periodLabel}
-        accountIds={accountIds}
+        accountIds={resolvedAccountIds}
         currency={currency}
         campaigns={campaigns}
         campaignId={effectiveCampaignId}
@@ -986,6 +1000,7 @@ export default function Marketing() {
               filteredCampaigns={filteredCampaigns}
               currency={currency}
               summary={summary}
+              accountIds={resolvedAccountIds}
             />
           )}
         </CardContent>
@@ -996,10 +1011,13 @@ export default function Marketing() {
       {activeTab === 'ads' && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex-1">Detalle por anuncio</CardTitle>
+            <div className="flex flex-col gap-3">
+              <CardTitle className="flex-1">Detalle por anuncio</CardTitle>
+              <MetaAccountsInline accountIds={resolvedAccountIds} context="Desglose por anuncio de las cuentas Meta conectadas." />
+            </div>
           </CardHeader>
           <CardContent className="p-0">
-            <AdsTable adsState={adsState} currency={currency} />
+            <AdsTable adsState={adsState} currency={currency} accountIds={resolvedAccountIds} />
           </CardContent>
         </Card>
       )}
@@ -1007,6 +1025,7 @@ export default function Marketing() {
       {activeTab === 'organic' && (
         <div className="space-y-4">
           {/* Sub-toggle: Facebook / Instagram */}
+          <MetaAccountsInline accountIds={resolvedAccountIds} context="Orgánico Meta conectado al mismo ecosistema de campañas y leads." />
           <div className="flex gap-2">
             {([
               { id: 'facebook', label: 'Facebook Page' },

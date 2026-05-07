@@ -7,6 +7,8 @@ import { ExportButton } from '../components/reports/ExportButton'
 import { FilterBar } from '../components/ui/FilterBar'
 import { SortableTable } from '../components/ui/SortableTable'
 import type { ColDef } from '../components/ui/SortableTable'
+import { MetaAccountsInline } from '../components/MetaAccountsNotice'
+import { formatMetaAccountIds } from '../config/metaAccounts'
 
 function EmptyState({ message }: Readonly<{ message: string }>) {
   return <p className="text-muted text-sm py-8 text-center">{message}</p>
@@ -247,6 +249,7 @@ export default function Reports() {
         <div className="space-y-2">
           <h1 className="text-5xl font-serif font-bold tracking-tight text-[#2C2825]">Reportes</h1>
           <p className="text-[#5C5550] text-xs uppercase tracking-[0.4em] font-bold">Inteligencia y Operación de Negocio</p>
+          <MetaAccountsInline context="Reportes de campañas, ROI y leads vinculados a estas cuentas Meta." className="mt-4 max-w-2xl" />
         </div>
       </div>
 
@@ -362,6 +365,7 @@ export default function Reports() {
                       <tr className="border-b border-border/10 text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.15em]">
                         <th className="px-5 py-4 font-bold">Lead / Fuente</th>
                         <th className="px-5 py-4 font-bold">Campaña / Form</th>
+                        <th className="px-5 py-4 font-bold">Cuenta Meta</th>
                         <th className="px-5 py-4 text-center font-bold">Creado</th>
                         <th className="px-5 py-4 font-bold">Tel. Lead</th>
                         <th className="px-5 py-4 text-center font-bold">Cruce</th>
@@ -380,6 +384,9 @@ export default function Reports() {
                           <td className="px-5 py-5 max-w-[200px]">
                             <p className="text-xs font-semibold text-[#2C2825] truncate" title={row.campaign_name}>{row.campaign_name ?? '—'}</p>
                             <p className="text-[10px] text-[#5C5550] font-medium mt-1 truncate" title={row.form_name}>{row.form_name ?? '—'}</p>
+                          </td>
+                          <td className="px-5 py-5 text-[10px] font-bold text-[#5C5550] whitespace-nowrap">
+                            {row.ad_account_id ?? row.account_id ?? formatMetaAccountIds()}
                           </td>
                           <td className="px-5 py-5 text-xs text-center font-bold text-[#5C5550]">
                             {row.lead_created_at ? new Date(row.lead_created_at).toLocaleDateString('es-ES') : '—'}
@@ -549,13 +556,14 @@ export default function Reports() {
                 return (
                 <div className="overflow-x-auto">
                   <table className="w-full">
-                    <TableHead cols={['Campaign', 'Leads', 'Contacted', 'Replied', 'Booked', 'Closed', '% Cita', '% No-show', 'Rev. CRM', 'Reply delay (min)']} />
+                    <TableHead cols={['Campaign', 'Cuenta Meta', 'Leads', 'Contacted', 'Replied', 'Booked', 'Closed', '% Cita', '% No-show', 'Rev. CRM', 'Reply delay (min)']} />
                     <tbody>
                       {filteredCampaigns.map((r) => (
                         <TableRow
                           key={r.campaign_name}
                           cells={[
                             r.campaign_name,
+                            r.ad_account_id ?? r.account_id ?? formatMetaAccountIds(),
                             r.total_leads,
                             r.contacted,
                             r.replied,

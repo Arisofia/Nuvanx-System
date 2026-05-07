@@ -15,7 +15,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4 # v4
+      - uses: actions/checkout@v5 # v5
 
       - name: Fail on merge conflict markers in .github
         run: |
@@ -52,7 +52,7 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v4 # v4
+      - uses: actions/checkout@v5 # v5
 
       - name: Use Node.js
         uses: actions/setup-node@v5 # v5
@@ -78,7 +78,7 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v4 # v4
+      - uses: actions/checkout@v5 # v5
 
       - name: Use Node.js
         uses: actions/setup-node@v5 # v5
@@ -105,7 +105,7 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v4 # v4
+      - uses: actions/checkout@v5 # v5
 
       - name: Use Node.js
         uses: actions/setup-node@v5 # v5
@@ -154,7 +154,7 @@ jobs:
         working-directory: backend
 
     steps:
-      - uses: actions/checkout@v4 # v4
+      - uses: actions/checkout@v5 # v5
 
       - name: Use Node.js
         uses: actions/setup-node@v5 # v5
@@ -187,10 +187,10 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
     steps:
-      - uses: actions/checkout@v4 # v4
+      - uses: actions/checkout@v5 # v5
 
       - name: Setup Deno
-        uses: denoland/setup-deno@v1
+        uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
 

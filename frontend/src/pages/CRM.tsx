@@ -5,6 +5,7 @@ import { useLeads } from '../hooks/useLeads'
 import { KanbanBoard } from '../components/crm/KanbanBoard'
 import { LeadDetailSheet } from '../components/crm/LeadDetailSheet'
 import type { Lead, LeadStage } from '../types'
+import { MetaAccountsInline } from '../components/MetaAccountsNotice'
 
 const ALL_STAGES = ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'] as const
 
@@ -68,6 +69,7 @@ export default function CRM() {
         <div>
           <h1 className="text-3xl font-serif font-bold text-foreground">CRM</h1>
           <p className="text-muted mt-1">Pipeline de leads — etapas, DNI, motivo de pérdida</p>
+          <MetaAccountsInline context="Los leads de Meta Ads se trazan contra estas cuentas antes de entrar al CRM." className="mt-4 max-w-2xl" />
         </div>
       </div>
 
