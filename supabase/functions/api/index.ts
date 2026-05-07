@@ -2683,7 +2683,7 @@ async function persistMetaPostPerformance(adminClient: any, userId: string, page
       insightsByName.set(name, values?.[0]?.value);
     }
     const reactionsObj = insightsByName.get('post_reactions_by_type_total') || {};
-    const reactionsTotal = Object.values(reactionsObj as any).reduce((a: number, b: any) => a + Number(b || 0), 0);
+    const reactionsTotal = Number(Object.values(reactionsObj).reduce((a: number, b: any) => a + Number(b || 0), 0));
     const activityObj = insightsByName.get('post_activity_by_action_type') || {};
     const comments = Number(activityObj.comment || 0);
     const shares = Number(activityObj.share || 0);
@@ -2968,92 +2968,110 @@ async function handleMetaIgGet(ctx: AuthenticatedRouteContext): Promise<Response
   });
 }
 
+function parseMetaBackfillDates(url: URL) {
+  const days = Math.min(Math.max(Number.parseInt(url.searchParams.get('days') ?? '7', 10) || 7, 1), 500);
+  const fromParam = url.searchParams.get('from');
+  const sinceDate = fromParam || new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+  const untilDate = new Date().toISOString().slice(0, 10);
+  const sinceTs = Math.floor(new Date(sinceDate).getTime() / 1000);
+  return { sinceDate, untilDate, sinceTs };
+}
+
+async function performMetaAdsBackfill(
+  adminClient: any,
+  userId: string,
+  accessToken: string,
+  adAccountIds: readonly string[],
+  sinceDate: string,
+  untilDate: string,
+  sinceTs: number,
+) {
+  let dailyInsightsPersisted = 0;
+  let totalFetched = 0;
+  for (const accountId of adAccountIds) {
+    try {
+      dailyInsightsPersisted += await persistMetaDailyInsights(adminClient, userId, accountId, accessToken, sinceDate, untilDate);
+    } catch (e: any) {
+      console.warn(`Meta backfill insights persist failed for ${accountId}:`, e?.message ?? e);
+    }
+    try {
+      totalFetched += await ingestMetaLeadsFromForms(adminClient, userId, accountId, accessToken, sinceTs);
+    } catch (e: any) {
+      console.error(`Backfill lead ingestion failed for ${accountId}:`, e?.message ?? e);
+    }
+  }
+  return { dailyInsightsPersisted, totalFetched };
+}
+
+async function performMetaSocialBackfill(
+  adminClient: any,
+  userId: string,
+  creds: any,
+  sinceDate: string,
+  untilDate: string,
+  result: any,
+) {
+  if (creds.pageId) {
+    try {
+      result.organicDailyPersisted = await persistMetaOrganicDailyInsights(adminClient, userId, creds.pageId, creds.accessToken, sinceDate, untilDate);
+      result.organicPostsPersisted = await persistMetaPostPerformance(adminClient, userId, creds.pageId, creds.accessToken, 100);
+    } catch (e: any) {
+      console.warn(`Meta organic backfill failed:`, e?.message ?? e);
+    }
+  }
+  if (creds.igId) {
+    try {
+      result.igAccountDailyPersisted = await persistMetaIgAccountDailyInsights(adminClient, userId, creds.igId, creds.accessToken, sinceDate, untilDate);
+      result.igMediaPersisted = await persistMetaIgMediaPerformance(adminClient, userId, creds.igId, creds.accessToken, 100);
+    } catch (e: any) {
+      console.warn(`Meta IG backfill failed:`, e?.message ?? e);
+    }
+  }
+}
+
 async function handleMetaBackfillPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
-  if (resource === 'meta' && sub === 'backfill' && req.method === 'POST') {
-    const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
-    const validation = validateMetaCredentialResult(creds);
-    if (!validation.ok) {
-      return sendJson({ success: false, message: validation.message }, validation.statusCode);
-    }
+  if (resource !== 'meta' || sub !== 'backfill' || req.method !== 'POST') return null;
 
-    const days = Math.min(Math.max(Number.parseInt(url.searchParams.get('days') ?? '7', 10) || 7, 1), 500);
-    const fromParam = url.searchParams.get('from');
-    const sinceDate = fromParam || new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
-    const untilDate = new Date().toISOString().slice(0, 10);
-    const sinceTs = Math.floor(new Date(sinceDate).getTime() / 1000);
-
-    let dailyInsightsPersisted = 0;
-    let totalFetched = 0;
-    for (const accountId of creds.adAccountIds) {
-      try {
-        dailyInsightsPersisted += await persistMetaDailyInsights(
-          adminClient,
-          userId,
-          accountId,
-          creds.accessToken,
-          sinceDate,
-          untilDate,
-        );
-      } catch (e: any) {
-        console.warn(`Meta backfill insights persist failed for ${accountId}:`, e?.message ?? e);
-      }
-
-      try {
-        totalFetched += await ingestMetaLeadsFromForms(
-          adminClient,
-          userId,
-          accountId,
-          creds.accessToken,
-          sinceTs,
-        );
-      } catch (e: any) {
-        console.error(`Backfill lead ingestion failed for ${accountId}:`, e?.message ?? e);
-      }
-    }
-
-    const backfillResult = {
-      success: true,
-      accountIds: creds.adAccountIds,
-      pageId: creds.pageId,
-      igId: creds.igId,
-      totalLeadsBackfilled: totalFetched,
-      dailyInsightsPersisted,
-      organicDailyPersisted: 0,
-      organicPostsPersisted: 0,
-      igAccountDailyPersisted: 0,
-      igMediaPersisted: 0,
-      since: sinceDate,
-      until: untilDate,
-      message: '',
-    };
-
-    // ── Organic Page Backfill ──
-    if (creds.pageId) {
-      try {
-        backfillResult.organicDailyPersisted = await persistMetaOrganicDailyInsights(adminClient, userId, creds.pageId, creds.accessToken, sinceDate, untilDate);
-        backfillResult.organicPostsPersisted = await persistMetaPostPerformance(adminClient, userId, creds.pageId, creds.accessToken, 100);
-      } catch (e: any) {
-        console.warn(`Meta organic backfill failed:`, e?.message ?? e);
-      }
-    }
-
-    // ── IG Business Backfill ──
-    if (creds.igId) {
-      try {
-        backfillResult.igAccountDailyPersisted = await persistMetaIgAccountDailyInsights(adminClient, userId, creds.igId, creds.accessToken, sinceDate, untilDate);
-        backfillResult.igMediaPersisted = await persistMetaIgMediaPerformance(adminClient, userId, creds.igId, creds.accessToken, 100);
-      } catch (e: any) {
-        console.warn(`Meta IG backfill failed:`, e?.message ?? e);
-      }
-    }
-
-    backfillResult.message = `Backfill completed (${sinceDate} → ${untilDate}). Ads: ${dailyInsightsPersisted} rows, ${totalFetched} leads. Organic: ${backfillResult.organicDailyPersisted} daily, ${backfillResult.organicPostsPersisted} posts. IG: ${backfillResult.igAccountDailyPersisted} daily, ${backfillResult.igMediaPersisted} media.`;
-
-    await setMetaCache(adminClient, userId, `meta:backfill:${creds.adAccountIds.join(',')}`, backfillResult);
-    return sendJson(backfillResult);
+  const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
+  const validation = validateMetaCredentialResult(creds);
+  if (!validation.ok) {
+    return sendJson({ success: false, message: validation.message }, validation.statusCode);
   }
-  return null;
+
+  const { sinceDate, untilDate, sinceTs } = parseMetaBackfillDates(url);
+  const { dailyInsightsPersisted, totalFetched } = await performMetaAdsBackfill(
+    adminClient,
+    userId,
+    creds.accessToken,
+    creds.adAccountIds,
+    sinceDate,
+    untilDate,
+    sinceTs,
+  );
+
+  const backfillResult: any = {
+    success: true,
+    accountIds: creds.adAccountIds,
+    pageId: creds.pageId,
+    igId: creds.igId,
+    totalLeadsBackfilled: totalFetched,
+    dailyInsightsPersisted,
+    organicDailyPersisted: 0,
+    organicPostsPersisted: 0,
+    igAccountDailyPersisted: 0,
+    igMediaPersisted: 0,
+    since: sinceDate,
+    until: untilDate,
+    message: '',
+  };
+
+  await performMetaSocialBackfill(adminClient, userId, creds, sinceDate, untilDate, backfillResult);
+
+  backfillResult.message = `Backfill completed (${sinceDate} → ${untilDate}). Ads: ${dailyInsightsPersisted} rows, ${totalFetched} leads. Organic: ${backfillResult.organicDailyPersisted} daily, ${backfillResult.organicPostsPersisted} posts. IG: ${backfillResult.igAccountDailyPersisted} daily, ${backfillResult.igMediaPersisted} media.`;
+
+  await setMetaCache(adminClient, userId, `meta:backfill:${creds.adAccountIds.join(',')}`, backfillResult);
+  return sendJson(backfillResult);
 }
 
 async function handleHealthMeta(ctx: AuthenticatedRouteContext): Promise<Response | null> {
@@ -3130,6 +3148,14 @@ function mapMetaCampaign(c: any) {
  * Falls back to the full 90-day window when no period params are supplied or
  * when `days` is not a finite number.
  */
+function inferStatusFromLastLead(lastLeadAt: string | null | undefined, nowMs: number): string {
+  if (!lastLeadAt) return 'ARCHIVED';
+  const diff = nowMs - new Date(lastLeadAt).getTime();
+  if (diff < 14 * 86_400_000) return 'ACTIVE';
+  if (diff < 60 * 86_400_000) return 'PAUSED';
+  return 'ARCHIVED';
+}
+
 export function buildCampaignsTimeRange(
   campFrom: string,
   campTo: string,
@@ -3149,12 +3175,47 @@ export function buildCampaignsTimeRange(
   return JSON.stringify({ since, until });
 }
 
+async function fetchDbCampaigns(adminClient: any, userId: string, adAccountId: string) {
+  const { data: dbRows } = await adminClient
+    .from('vw_campaign_performance_real')
+    .select('campaign_id, campaign_name, source, total_leads, last_lead_at')
+    .eq('user_id', userId)
+    .order('total_leads', { ascending: false });
+
+  if (!dbRows || dbRows.length === 0) return [];
+
+  const now = Date.now();
+  return dbRows.map((row: any) => ({
+    id: row.campaign_id ?? `db-${row.campaign_name}`,
+    name: row.campaign_name ?? 'Unknown',
+    status: inferStatusFromLastLead(row.last_lead_at, now),
+    objective: row.source ?? 'LEAD_GENERATION',
+    accountId: adAccountId,
+    dailyBudget: null,
+    lifetimeBudget: null,
+    insights: {
+      impressions: 0,
+      reach: 0,
+      clicks: 0,
+      spend: 0,
+      ctr: 0,
+      cpc: 0,
+      cpm: 0,
+      conversions: Number(row.total_leads ?? 0),
+      cpp: null,
+      actions: [],
+      costPerActionType: null,
+      qualityRanking: null,
+      engagementRateRanking: null,
+    },
+  }));
+}
+
 async function fetchMetaCampaignsFallback(creds: any, sendJson: any, e: Error, adminClient: any, userId: string) {
   try {
     const fallbackResults = await Promise.allSettled(creds.adAccountIds.map(async (accountId: string) => {
-      return await metaFetch(`/${accountId}/campaigns`, {
+      return await metaFetchAll(`/${accountId}/campaigns`, {
         fields: 'id,name,status,objective,daily_budget,lifetime_budget',
-        effective_status: '["ACTIVE","PAUSED","DELETED","ARCHIVED","IN_PROCESS","WITH_ISSUES"]',
         limit: '500',
       }, creds.accessToken);
     }));
@@ -3162,47 +3223,13 @@ async function fetchMetaCampaignsFallback(creds: any, sendJson: any, e: Error, a
     const campaigns = creds.adAccountIds.flatMap((accountId: string, index: number) => {
       const result = fallbackResults[index];
       if (result.status !== 'fulfilled') return [];
-      return ((result.value?.data ?? []) as any[]).map((campaign: any) => ({ ...campaign, accountId }));
+      return ((result.value ?? []) as any[]).map((campaign: any) => ({ ...campaign, accountId }));
     });
 
     // If Meta API returned 0 campaigns, build list from DB (vw_campaign_performance_real)
     if (campaigns.length === 0) {
-      const { data: dbRows } = await adminClient
-        .from('vw_campaign_performance_real')
-        .select('campaign_id, campaign_name, source, total_leads, last_lead_at')
-        .eq('user_id', userId)
-        .order('total_leads', { ascending: false });
-
-      if (dbRows && dbRows.length > 0) {
-        const now = Date.now();
-        const dbCampaigns = dbRows.map((row: any) => {
-          const diff = row.last_lead_at ? now - new Date(row.last_lead_at).getTime() : Infinity;
-          const status = diff < 14 * 86_400_000 ? 'ACTIVE' : diff < 60 * 86_400_000 ? 'PAUSED' : 'ARCHIVED';
-          return {
-          id: row.campaign_id ?? `db-${row.campaign_name}`,
-          name: row.campaign_name ?? 'Unknown',
-          status,
-          objective: row.source ?? 'LEAD_GENERATION',
-          accountId: creds.adAccountId,
-          dailyBudget: null,
-          lifetimeBudget: null,
-          insights: {
-            impressions: 0,
-            reach: 0,
-            clicks: 0,
-            spend: 0,
-            ctr: 0,
-            cpc: 0,
-            cpm: 0,
-            conversions: Number(row.total_leads ?? 0),
-            cpp: null,
-            actions: [],
-            costPerActionType: null,
-            qualityRanking: null,
-            engagementRateRanking: null,
-          },
-          };
-        });
+      const dbCampaigns = await fetchDbCampaigns(adminClient, userId, creds.adAccountId);
+      if (dbCampaigns.length > 0) {
         const dbResult = {
           success: true,
           source: 'db',
@@ -3245,9 +3272,8 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
     }
     const campFrom = url.searchParams.get('from') ?? '';
     const campTo   = url.searchParams.get('to')   ?? '';
-    const campDays = Number.parseInt(url.searchParams.get('days') ?? '30', 10) || 30;
 
-    const datePreset = getMetaDatePreset(campDays);
+    const datePreset = campFrom && campTo ? null : 'lifetime';
     const insightsDateParam = campFrom && campTo
       ? `time_range(${JSON.stringify({ since: campFrom, until: campTo })})`
       : `date_preset(${datePreset})`;
@@ -3261,15 +3287,14 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
 
     try {
       const accountResults = await Promise.allSettled(creds.adAccountIds.map(async (accountId: string) => {
-        const [data, account] = await Promise.all([
-          metaFetch(`/${accountId}/campaigns`, {
+        const [campaigns, account] = await Promise.all([
+          metaFetchAll(`/${accountId}/campaigns`, {
             fields: `id,name,status,objective,daily_budget,lifetime_budget,insights.${insightsDateParam}{impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,actions,cost_per_action_type,quality_ranking,engagement_rate_ranking}`,
-            effective_status: '["ACTIVE","PAUSED","DELETED","ARCHIVED","IN_PROCESS","WITH_ISSUES"]',
             limit: '500',
           }, creds.accessToken),
           metaFetch(`/${accountId}`, { fields: 'currency' }, creds.accessToken),
         ]);
-        return { accountId, data, currency: account?.currency ?? 'EUR' };
+        return { accountId, campaigns, currency: account?.currency ?? 'EUR' };
       }));
 
       const successfulAccounts = accountResults
@@ -3295,35 +3320,8 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
 
       // Supplement with DB historical campaigns not present in the Meta response
       // (e.g. archived/old campaigns that Meta no longer returns)
-      const { data: dbRows } = await adminClient
-        .from('vw_campaign_performance_real')
-        .select('campaign_id, campaign_name, source, total_leads, last_lead_at')
-        .eq('user_id', userId)
-        .order('total_leads', { ascending: false });
-
-      const nowMs = Date.now();
-      const dbOnlyCampaigns = (dbRows ?? [])
-        .filter((row: any) => row.campaign_id && !metaCampaignIds.has(String(row.campaign_id)))
-        .map((row: any) => {
-          const diff = row.last_lead_at ? nowMs - new Date(row.last_lead_at).getTime() : Infinity;
-          const status = diff < 14 * 86_400_000 ? 'ACTIVE' : diff < 60 * 86_400_000 ? 'PAUSED' : 'ARCHIVED';
-          return {
-            id: row.campaign_id,
-            name: row.campaign_name ?? 'Unknown',
-            status,
-            objective: row.source ?? 'LEAD_GENERATION',
-            accountId: creds.adAccountId,
-            dailyBudget: null,
-            lifetimeBudget: null,
-            insights: {
-              impressions: 0, reach: 0, clicks: 0, spend: 0,
-              ctr: 0, cpc: 0, cpm: 0,
-              conversions: Number(row.total_leads ?? 0),
-              cpp: null, actions: [],
-              costPerActionType: null, qualityRanking: null, engagementRateRanking: null,
-            },
-          };
-        });
+      const dbCampaigns = await fetchDbCampaigns(adminClient, userId, creds.adAccountId);
+      const dbOnlyCampaigns = dbCampaigns.filter((c: any) => !metaCampaignIds.has(String(c.id)));
 
       const result = {
         success: true,
@@ -3375,15 +3373,68 @@ function mapMetaAd(ad: any) {
   };
 }
 
-async function fetchMetaAdsFallback(creds: any, sendJson: any, e: Error, adminClient?: any, userId?: string, adsFrom?: string, adsTo?: string, adsDays?: number) {
+async function fetchAdInsightsFromMeta(creds: any, insightsSince: string, insightsUntil: string) {
+  const insightsMap: Record<string, any> = {};
+  for (const accountId of creds.adAccountIds) {
+    try {
+      const insRes = await metaFetch(`/${accountId}/insights`, {
+        fields: 'ad_id,ad_name,spend,impressions,reach,clicks,ctr,cpc,cpm,conversions,actions',
+        level: 'ad',
+        time_range: JSON.stringify({ since: insightsSince, until: insightsUntil }),
+        time_increment: 'all',
+        limit: '500',
+      }, creds.accessToken);
+      for (const row of (insRes?.data ?? []) as any[]) {
+        if (!row.ad_id) continue;
+        const spend = Number(row.spend || 0);
+        const conversions = actionValue(row.actions, (t: string) => t.includes('lead') || t.includes('conversion') || t.includes('complete_registration'));
+        insightsMap[row.ad_id] = {
+          spend,
+          impressions: Math.round(Number(row.impressions || 0)),
+          reach: Math.round(Number(row.reach || 0)),
+          clicks: Math.round(Number(row.clicks || 0)),
+          ctr: Number(row.ctr || 0),
+          cpc: Number(row.cpc || 0),
+          cpm: Number(row.cpm || 0),
+          conversions,
+          cpp: conversions > 0 ? Number.parseFloat((spend / conversions).toFixed(2)) : null,
+        };
+      }
+    } catch (insErr: any) {
+      console.warn(`Ad-level insights fetch failed for ${accountId}:`, insErr?.message ?? insErr);
+    }
+  }
+  return insightsMap;
+}
+
+async function fetchAdDataFromCrm(adminClient: any, userId: string) {
+  const { data: adLeads } = await adminClient
+    .from('leads')
+    .select('ad_id, ad_name, campaign_id, campaign_name, created_at')
+    .eq('user_id', userId)
+    .not('ad_id', 'is', null)
+    .order('created_at', { ascending: false });
+  return adLeads ?? [];
+}
+
+async function fetchMetaAdsFallback(params: {
+  creds: any;
+  sendJson: any;
+  e: Error;
+  adminClient?: any;
+  userId?: string;
+  adsFrom?: string;
+  adsTo?: string;
+  adsDays?: number;
+}) {
+  const { creds, sendJson, e, adminClient, userId, adsFrom, adsTo, adsDays } = params;
   // Compute the time_range string to use for ad-level insights fetch
   const insightsSince = adsFrom || new Date(Date.now() - (adsDays ?? 30) * 86_400_000).toISOString().slice(0, 10);
   const insightsUntil = adsTo || new Date().toISOString().slice(0, 10);
   try {
     const fallbackResults = await Promise.allSettled(creds.adAccountIds.map(async (accountId: string) => {
-      return await metaFetch(`/${accountId}/ads`, {
+      return await metaFetchAll(`/${accountId}/ads`, {
         fields: 'id,name,status,adset_id,adset{name},campaign_id,campaign{name}',
-        effective_status: '["ACTIVE","PAUSED","DELETED","ARCHIVED","IN_PROCESS","WITH_ISSUES"]',
         limit: '500',
       }, creds.accessToken);
     }));
@@ -3391,54 +3442,18 @@ async function fetchMetaAdsFallback(creds: any, sendJson: any, e: Error, adminCl
     const ads = creds.adAccountIds.flatMap((accountId: string, index: number) => {
       const result = fallbackResults[index];
       if (result.status !== 'fulfilled') return [];
-      return ((result.value?.data ?? []) as any[]).map((ad: any) => ({ ...ad, accountId }));
+      return ((result.value ?? []) as any[]).map((ad: any) => ({ ...ad, accountId }));
     });
 
     // If Meta API returned 0 ads, build list from leads.ad_id / ad_name
     // and enrich spend/impressions/clicks from /{accountId}/insights?level=ad
     if (ads.length === 0 && adminClient && userId) {
-      // ── Fetch ad-level insights from Meta (same endpoint that works for account-level) ──
-      const insightsMap: Record<string, { spend: number; impressions: number; reach: number; clicks: number; ctr: number; cpc: number; cpm: number; conversions: number; cpp: number | null }> = {};
-      for (const accountId of creds.adAccountIds) {
-        try {
-          const insRes = await metaFetch(`/${accountId}/insights`, {
-            fields: 'ad_id,ad_name,spend,impressions,reach,clicks,ctr,cpc,cpm,conversions,actions',
-            level: 'ad',
-            time_range: JSON.stringify({ since: insightsSince, until: insightsUntil }),
-            time_increment: 'all',
-            limit: '500',
-          }, creds.accessToken);
-          for (const row of (insRes?.data ?? []) as any[]) {
-            if (!row.ad_id) continue;
-            const spend = Number(row.spend || 0);
-            const conversions = actionValue(row.actions, (t: string) => t.includes('lead') || t.includes('conversion') || t.includes('complete_registration'));
-            insightsMap[row.ad_id] = {
-              spend,
-              impressions: Math.round(Number(row.impressions || 0)),
-              reach: Math.round(Number(row.reach || 0)),
-              clicks: Math.round(Number(row.clicks || 0)),
-              ctr: Number(row.ctr || 0),
-              cpc: Number(row.cpc || 0),
-              cpm: Number(row.cpm || 0),
-              conversions,
-              cpp: conversions > 0 ? Number.parseFloat((spend / conversions).toFixed(2)) : null,
-            };
-          }
-        } catch (insErr: any) {
-          console.warn(`Ad-level insights fetch failed for ${accountId}:`, insErr?.message ?? insErr);
-        }
-      }
-
-      const { data: adLeads } = await adminClient
-        .from('leads')
-        .select('ad_id, ad_name, campaign_id, campaign_name, created_at')
-        .eq('user_id', userId)
-        .not('ad_id', 'is', null)
-        .order('created_at', { ascending: false });
+      const insightsMap = await fetchAdInsightsFromMeta(creds, insightsSince, insightsUntil);
+      const adLeads = await fetchAdDataFromCrm(adminClient, userId);
 
       // Collect all ad IDs: from CRM leads + from Meta insights (ads with spend but 0 leads)
       const adMap: Record<string, { name: string; campaignId: string | null; campaignName: string | null; count: number; lastAt: string }> = {};
-      for (const row of (adLeads ?? []) as any[]) {
+      for (const row of adLeads as any[]) {
         if (!row.ad_id) continue;
         if (!adMap[row.ad_id]) {
           adMap[row.ad_id] = { name: row.ad_name ?? `Ad ${row.ad_id}`, campaignId: row.campaign_id ?? null, campaignName: row.campaign_name ?? null, count: 0, lastAt: row.created_at };
@@ -3448,15 +3463,14 @@ async function fetchMetaAdsFallback(creds: any, sendJson: any, e: Error, adminCl
       // Add Meta-insights-only ads (spend but no CRM lead captured)
       for (const [adId, ins] of Object.entries(insightsMap)) {
         if (!adMap[adId]) {
-          adMap[adId] = { name: `Ad ${adId}`, campaignId: null, campaignName: null, count: ins.conversions, lastAt: new Date().toISOString() };
+          adMap[adId] = { name: `Ad ${adId}`, campaignId: null, campaignName: null, count: (ins as any).conversions, lastAt: new Date().toISOString() };
         }
       }
 
       if (Object.keys(adMap).length > 0) {
         const now = Date.now();
         const dbAds = Object.entries(adMap).map(([adId, v]) => {
-          const diff = v.lastAt ? now - new Date(v.lastAt).getTime() : Infinity;
-          const status = diff < 14 * 86_400_000 ? 'ACTIVE' : diff < 60 * 86_400_000 ? 'PAUSED' : 'ARCHIVED';
+          const status = inferStatusFromLastLead(v.lastAt, now);
           const ins = insightsMap[adId];
           const crmConversions = v.count;
           return {
@@ -3507,6 +3521,19 @@ async function fetchMetaAdsFallback(creds: any, sendJson: any, e: Error, adminCl
   }
 }
 
+async function fetchAdsFromAccounts(adAccountIds: string[], insightsDateParam: string, accessToken: string) {
+  return await Promise.allSettled(adAccountIds.map(async (accountId: string) => {
+    const [ads, acctData] = await Promise.all([
+      metaFetchAll(`/${accountId}/ads`, {
+        fields: `id,name,status,adset_id,adset{name},campaign_id,campaign{name},insights.${insightsDateParam}{impressions,reach,clicks,spend,ctr,cpc,cpm,actions,cost_per_action_type,quality_ranking,engagement_rate_ranking}`,
+        limit: '500',
+      }, accessToken),
+      metaFetch(`/${accountId}`, { fields: 'currency' }, accessToken),
+    ]);
+    return { accountId, ads, currency: acctData?.currency ?? 'EUR' };
+  }));
+}
+
 async function handleMetaAdsGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'meta' && sub === 'ads' && req.method === 'GET') {
@@ -3520,24 +3547,14 @@ async function handleMetaAdsGet(ctx: AuthenticatedRouteContext): Promise<Respons
     const adsFrom = url.searchParams.get('from') ?? '';
     const adsTo   = url.searchParams.get('to')   ?? '';
     const adsDays = Number.parseInt(url.searchParams.get('days') ?? '30', 10) || 30;
-    const datePreset = getMetaDatePreset(adsDays);
+    const datePreset = adsFrom && adsTo ? null : 'lifetime';
 
     const insightsDateParam = adsFrom && adsTo
       ? `time_range(${JSON.stringify({ since: adsFrom, until: adsTo })})`
       : `date_preset(${datePreset})`;
 
     try {
-      const accountResults = await Promise.allSettled(creds.adAccountIds.map(async (accountId: string) => {
-        const [adsData, acctData] = await Promise.all([
-          metaFetch(`/${accountId}/ads`, {
-            fields: `id,name,status,adset_id,adset{name},campaign_id,campaign{name},insights.${insightsDateParam}{impressions,reach,clicks,spend,ctr,cpc,cpm,actions,cost_per_action_type,quality_ranking,engagement_rate_ranking}`,
-            effective_status: '["ACTIVE","PAUSED","DELETED","ARCHIVED","IN_PROCESS","WITH_ISSUES"]',
-            limit: '500',
-          }, creds.accessToken),
-          metaFetch(`/${accountId}`, { fields: 'currency' }, creds.accessToken),
-        ]);
-        return { accountId, adsData, currency: acctData?.currency ?? 'EUR' };
-      }));
+      const accountResults = await fetchAdsFromAccounts(creds.adAccountIds, insightsDateParam, creds.accessToken);
 
       const successfulAccounts = accountResults
         .filter(isFulfilled)
@@ -3548,17 +3565,17 @@ async function handleMetaAdsGet(ctx: AuthenticatedRouteContext): Promise<Respons
       }
 
       const currency: string = successfulAccounts.find((acct: any) => acct.currency)?.currency ?? 'EUR';
-      const ads = successfulAccounts.flatMap((acct: any) => ((acct.adsData ?? []) as any[])
+      const ads = successfulAccounts.flatMap((acct: any) => ((acct.ads ?? []) as any[])
         .map((ad: any) => ({ ...ad, accountId: acct.accountId })));
 
       // If Meta live returned 0 ads, delegate to DB fallback immediately
       if (ads.length === 0) {
-        return fetchMetaAdsFallback(creds, sendJson, new Error('Meta API returned 0 ads'), adminClient, userId, adsFrom, adsTo, adsDays);
+        return fetchMetaAdsFallback({ creds, sendJson, e: new Error('Meta API returned 0 ads'), adminClient, userId, adsFrom, adsTo, adsDays });
       }
 
       return sendJson({ success: true, accountId: creds.adAccountId, accountIds: creds.adAccountIds, currency, ads: ads.map(mapMetaAd) });
     } catch (e: any) {
-      return fetchMetaAdsFallback(creds, sendJson, e, adminClient, userId, adsFrom, adsTo, adsDays);
+      return fetchMetaAdsFallback({ creds, sendJson, e, adminClient, userId, adsFrom, adsTo, adsDays });
     }
   }
   return null;
@@ -4412,6 +4429,24 @@ async function handleFinancialsPatients(ctx: AuthenticatedRouteContext): Promise
   return null;
 }
 
+async function fetchLeadCampaignMap(adminClient: any, userId: string, leadIds: string[]) {
+  const leadCampaignMap: Map<string, string> = new Map();
+  if (leadIds.length === 0) return leadCampaignMap;
+
+  const [leadRows, traceRows] = await Promise.all([
+    adminClient.from('leads').select('id,source,stage').eq('user_id', userId).in('id', leadIds),
+    adminClient.from('vw_lead_traceability').select('lead_id,campaign_name,source').eq('lead_user_id', userId).in('lead_id', leadIds)
+  ]);
+
+  for (const t of (traceRows.data ?? [])) {
+    if (t.campaign_name) leadCampaignMap.set(t.lead_id, t.campaign_name);
+  }
+  for (const l of (leadRows.data ?? [])) {
+    if (!leadCampaignMap.has(l.id) && l.source) leadCampaignMap.set(l.id, l.source);
+  }
+  return leadCampaignMap;
+}
+
 async function resolveMetaCampaignAttribution(adminClient: any, userId: string, clinicId: string, docIds: string[]) {
   const patientMap: Map<string, any> = new Map();
   if (docIds.length === 0) return patientMap;
@@ -4424,21 +4459,7 @@ async function resolveMetaCampaignAttribution(adminClient: any, userId: string, 
 
   if (dpRows && dpRows.length > 0) {
     const leadIds = [...new Set((dpRows as any[]).map((d: any) => d.lead_id).filter(Boolean))];
-    let leadCampaignMap: Map<string, string> = new Map();
-
-    if (leadIds.length > 0) {
-      const [leadRows, traceRows] = await Promise.all([
-        adminClient.from('leads').select('id,source,stage').eq('user_id', userId).in('id', leadIds),
-        adminClient.from('vw_lead_traceability').select('lead_id,campaign_name,source').eq('lead_user_id', userId).in('lead_id', leadIds)
-      ]);
-
-      for (const t of (traceRows.data ?? [])) {
-        if (t.campaign_name) leadCampaignMap.set(t.lead_id, t.campaign_name);
-      }
-      for (const l of (leadRows.data ?? [])) {
-        if (!leadCampaignMap.has(l.id) && l.source) leadCampaignMap.set(l.id, l.source);
-      }
-    }
+    const leadCampaignMap = await fetchLeadCampaignMap(adminClient, userId, leadIds);
 
     for (const dp of (dpRows as any[])) {
       patientMap.set(dp.doc_patient_id, {
@@ -4914,15 +4935,17 @@ function determineKpiDataQuality(metaResult: any, crmLeads: number, settlementsC
   const doctoraliaSettlementsReal = settlementsCount > 0;
   const doctoraliaMatchingReal = newVerifiedPatients > 0;
 
-  const overallMode = metaSpendReal && leadsReal && doctoraliaSettlementsReal
-    ? 'full_real'
-    : (metaSpendReal || leadsReal || doctoraliaSettlementsReal)
-      ? 'partial_demo'
-      : 'full_demo';
+  let overallMode = 'full_demo';
+  if (metaSpendReal && leadsReal && doctoraliaSettlementsReal) {
+    overallMode = 'full_real';
+  } else if (metaSpendReal || leadsReal || doctoraliaSettlementsReal) {
+    overallMode = 'partial_demo';
+  }
 
-  const cacConfidence = doctoraliaMatchingReal
-    ? (metaSpendReal ? 'high' : 'medium')
-    : 'low';
+  let cacConfidence = 'low';
+  if (doctoraliaMatchingReal) {
+    cacConfidence = metaSpendReal ? 'high' : 'medium';
+  }
 
   return {
     metaSpendReal,
