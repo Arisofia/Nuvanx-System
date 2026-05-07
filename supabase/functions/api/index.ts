@@ -1838,6 +1838,8 @@ async function processWhatsappWebhookMessage(adminClient: any, userId: string, v
   if (!phone) return false;
 
   const normalizedPhone = normalizePhoneForMeta(phone);
+  if (!normalizedPhone) return false;
+
   const name = String(contact?.profile?.name ?? contact?.name ?? '').trim() || phone;
   const text = String(message?.text?.body ?? message?.body ?? '').trim();
   const snippet = text || `${String(message?.type ?? 'whatsapp')} message`;
@@ -2886,7 +2888,7 @@ async function persistMetaPostPerformance(adminClient: any, userId: string, page
   const posts = Array.isArray(data?.data) ? data.data : [];
   if (posts.length === 0) return 0;
 
-  const dbRows = posts.map(p => {
+  const dbRows = posts.map((p: any) => {
     const insightsByName = new Map();
     const insightsData = p?.insights?.data ?? [];
     for (const { name, values } of insightsData) {
@@ -5160,7 +5162,10 @@ async function processWhatsappConversionPost(adminClient: any, userId: string, r
     let leadStageUpdated = false;
 
     if (clinicId && phone) {
-      matchedPatientId = await matchPatientByPhone(adminClient, clinicId, normalizePhoneForMeta(phone));
+      const normalizedPhone = normalizePhoneForMeta(phone);
+      matchedPatientId = normalizedPhone
+        ? await matchPatientByPhone(adminClient, clinicId, normalizedPhone)
+        : null;
     }
 
     const { matchedLead, leadMatchMethod } = await findWhatsappConversionLead(adminClient, userId, phone, email);
