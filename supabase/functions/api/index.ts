@@ -7,21 +7,15 @@ import { normalizePhoneForMeta } from '../_shared/phone.ts';
 export { createClient } from '@supabase/supabase-js';
 
 function requireSupabaseEnv(value: string | null | undefined, name: string): string {
-  const normalized = value?.trim() ?? '';
+  const normalized = typeof value === 'string' ? value.trim() : '';
   if (!normalized) {
     throw new Error(`${name} is required. Refusing to create a Supabase client with empty credentials.`);
   }
   return normalized;
 }
 
-declare global {
-  interface ObjectConstructor {
-    hasOwn(o: unknown, p: PropertyKey): boolean;
-  }
-}
-
 function hasOwn(obj: unknown, key: PropertyKey): boolean {
-  return Boolean(Object.hasOwn?.(obj, key));
+  return typeof obj === 'object' && obj !== null && Object.prototype.hasOwnProperty.call(obj, key);
 }
 
 export const supabaseClientFactory = {
@@ -37,8 +31,15 @@ export function createSupabaseClient(url: string | null, key: string | null, opt
   return supabaseClientFactory.create(url, key, options);
 }
 
-const rawFrontendUrl = Deno.env.get('FRONTEND_URL')?.trim() || '';
-const IS_DEVELOPMENT = (Deno.env.get('DENO_ENV') ?? Deno.env.get('NODE_ENV') ?? '').toLowerCase() !== 'production';
+const rawFrontendUrl = (() => {
+  const raw = Deno.env.get('FRONTEND_URL');
+  return typeof raw === 'string' ? raw.trim() : '';
+})();
+const IS_DEVELOPMENT = (() => {
+  const denoEnv = Deno.env.get('DENO_ENV');
+  const nodeEnv = Deno.env.get('NODE_ENV');
+  return (denoEnv ?? nodeEnv ?? '').toLowerCase() !== 'production';
+})();
 
 export function normalizeFrontendUrl(url: string): string | null {
   if (!url) return null;
@@ -173,8 +174,10 @@ export async function metaFetch(path: string, params: Record<string, string>, to
   const r = await fetch(url.toString(), { signal: AbortSignal.timeout(20_000) });
   const { data: d, text } = await parseJsonOrText(r);
   if (!r.ok) {
-    const e = d?.error ?? {};
-    const metaErrorMessage = e.message ?? d?.message ?? (text?.trim() ? text : `Meta API ${r.status}`);
+    const e = d && typeof d === 'object' ? d.error ?? {} : {};
+    const errorMessageFromD = d && typeof d === 'object' ? d.message : undefined;
+    const textValue = typeof text === 'string' ? text : '';
+    const metaErrorMessage = e.message ?? errorMessageFromD ?? (textValue.trim() ? textValue : `Meta API ${r.status}`);
     const msg = `${metaErrorMessage} (code=${e.code ?? '?'}, sub=${e.error_subcode ?? '?'}, type=${e.type ?? '?'})`;
     throw new Error(msg);
   }
@@ -534,11 +537,15 @@ async function callGemini(prompt: string, apiKey: string): Promise<string> {
       );
       const { data, text } = await parseJsonOrText(r);
       if (!r.ok) {
-        const msg = data?.error?.message ?? data?.message ?? text ?? `Gemini ${r.status}`;
+        const msg = data && data.error && data.error.message ? data.error.message : data && data.message ? data.message : text ?? `Gemini ${r.status}`;
         errors.push(`${model}: ${msg}`);
         continue;
       }
-      const output = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      const candidates = data && data.candidates ? data.candidates : undefined;
+      const candidate = candidates && candidates[0] ? candidates[0] : undefined;
+      const output = candidate && candidate.content && candidate.content.parts && candidate.content.parts[0]
+        ? candidate.content.parts[0].text
+        : undefined;
       if (output && typeof output === 'string' && output.trim()) {
         return output;
       }
@@ -582,7 +589,9 @@ async function callOpenAI(prompt: string, apiKey: string): Promise<string> {
 }
 
 function extractOpenAIOutput(data: any): string | null {
-  const output = data?.choices?.[0]?.message?.content;
+  const choices = data && data.choices ? data.choices : undefined;
+  const choice = choices && choices[0] ? choices[0] : undefined;
+  const output = choice && choice.message ? choice.message.content : undefined;
   return typeof output === 'string' && output.trim() ? output : null;
 }
 
@@ -605,9 +614,11 @@ function parseMetaLeadFields(fieldData: any[]): { fields: Record<string, string>
   const rawFieldData: Record<string, string> = {};
 
   for (const item of (fieldData ?? [])) {
-    const fieldName = String(item?.name ?? '').trim();
+    const fieldName = String(item && item.name ? item.name : '').trim();
     if (!fieldName) continue;
-    const value = String(item?.values?.[0] ?? item?.value ?? '').trim();
+    const value = String(
+      item && item.values && item.values[0] !== undefined ? item.values[0] : item && item.value !== undefined ? item.value : ''
+    ).trim();
     fields[fieldName.toLowerCase()] = value;
     rawFieldData[fieldName] = value;
   }
@@ -1015,7 +1026,8 @@ function isValidEncryptionKey(value: string | null | undefined): boolean {
 }
 
 function requireRuntimeSecret(name: string): string {
-  const value = Deno.env.get(name)?.trim() ?? '';
+  const rawValue = Deno.env.get(name);
+  const value = typeof rawValue === 'string' ? rawValue.trim() : '';
   if (!value) {
     throw new Error(`${name} is required. Refusing to run with missing Supabase runtime configuration.`);
   }
@@ -1121,7 +1133,10 @@ async function googleAdsSearch(customerId: string, devToken: string, accessToken
   });
   const d = await r.json();
   if (!r.ok) {
-    const msg = d.error?.details?.[0]?.errors?.[0]?.message ?? d.error?.message ?? `Google Ads ${r.status}`;
+    const details = d && d.error && d.error.details ? d.error.details : undefined;
+    const firstDetail = details && details[0] ? details[0] : undefined;
+    const firstError = firstDetail && firstDetail.errors ? firstDetail.errors[0] : undefined;
+    const msg = firstError && firstError.message ? firstError.message : d && d.error && d.error.message ? d.error.message : `Google Ads ${r.status}`;
     throw new Error(msg);
   }
   const { results } = d;
@@ -2649,8 +2664,10 @@ async function persistMetaPostPerformance(adminClient: any, userId: string, page
 
   const dbRows = posts.map(p => {
     const insightsByName = new Map();
-    for (const { name, values } of p.insights?.data || []) {
-      insightsByName.set(name, values?.[0]?.value);
+    const insightsData = p && p.insights ? p.insights.data : undefined;
+    for (const { name, values } of insightsData || []) {
+      const firstValue = values && values[0] ? values[0].value : undefined;
+      insightsByName.set(name, firstValue);
     }
     const reactionsObj = insightsByName.get('post_reactions_by_type_total') || {};
     const reactionsTotal = Number(Object.values(reactionsObj).reduce((a: number, b: any) => a + Number(b || 0), 0));
@@ -2748,8 +2765,9 @@ async function persistMetaIgMediaPerformance(adminClient: any, userId: string, i
       }, accessToken);
       
       const insights: Record<string, number> = {};
-      for (const row of ins?.data || []) {
-        insights[row.name] = Number(row.values?.[0]?.value || 0);
+      const insData = ins && ins.data ? ins.data : [];
+      for (const row of insData) {
+        insights[row.name] = Number(row.values && row.values[0] ? row.values[0].value : 0);
       }
 
       await adminClient.from('meta_ig_media_performance')
@@ -3074,8 +3092,8 @@ function isFulfilled<T>(result: PromiseSettledResult<T>): result is PromiseFulfi
 }
 
 function mapMetaCampaign(c: any) {
-  const ins = c.insights?.data?.[0];
-  const conversions = parseMetaMetric(ins?.conversions);
+  const ins = c && c.insights && c.insights.data ? c.insights.data[0] : undefined;
+  const conversions = parseMetaMetric(ins && ins.conversions);
   const cpp: number | null = conversions > 0 ? Number.parseFloat((Number.parseFloat(ins?.spend || 0) / conversions).toFixed(2)) : null;
   return {
     id: c.id,
@@ -3310,7 +3328,7 @@ async function getMetaCampaignsLiveResult(
 }
 
 function mapMetaAd(ad: any) {
-  const ins = ad.insights?.data?.[0];
+  const ins = ad && ad.insights && ad.insights.data ? ad.insights.data[0] : undefined;
   const conversions = ins ? actionValue(ins.actions, (t: string) => t.includes('lead') || t.includes('conversion') || t.includes('complete_registration')) : 0;
   const spend = parseMetaMetric(ins?.spend);
   const cpp = conversions > 0 ? Number.parseFloat((spend / conversions).toFixed(2)) : null;
@@ -3965,8 +3983,12 @@ async function handleAiStatus(ctx: AuthenticatedRouteContext): Promise<Response 
   const { adminClient, userId, resource, sub, sendJson } = ctx;
   if (resource === 'ai' && sub === 'status') {
     const { data: cred } = await adminClient.from('credentials').select('service').eq('user_id', userId).in('service', ['openai', 'gemini']);
-    const hasAi = (cred ?? []).length > 0;
-    return sendJson({ success: true, available: hasAi, provider: hasAi ? cred?.[0]?.service ?? null : null });
+    const hasAi = cred && Array.isArray(cred) ? cred.length > 0 : false;
+    return sendJson({
+      success: true,
+      available: hasAi,
+      provider: hasAi && cred && cred[0] ? cred[0].service : null,
+    });
   }
   return null;
 }
@@ -4118,7 +4140,11 @@ async function handleAiOutputsGet(ctx: AuthenticatedRouteContext): Promise<Respo
 
 function aggregateGoogleAdsInsights(daily: any[], prevData: any[]) {
   const micros2eur = (m: number) => Number.parseFloat((m / 1_000_000).toFixed(2));
-  const sumF = (rows: any[], field: string) => rows.reduce((s, r) => s + (Number(r.metrics?.[field] ?? 0)), 0);
+  const sumF = (rows: any[], field: string) => rows.reduce((s, r) => {
+    const metrics = r && r.metrics ? r.metrics : undefined;
+    const value = metrics && Object.prototype.hasOwnProperty.call(metrics, field) ? metrics[field] : undefined;
+    return s + Number(value == null ? 0 : value);
+  }, 0);
 
   const currImp = Math.round(sumF(daily, 'impressions'));
   const currClicks = Math.round(sumF(daily, 'clicks'));
