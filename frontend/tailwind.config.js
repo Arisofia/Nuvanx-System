@@ -4,15 +4,15 @@ export default {
   theme: {
     extend: {
       colors: {
-        background: '#F6F1EC',
-        surface: '#FFF9F3',
+        background: '#FAF7F2',
+        surface: '#FFFFFF',
         card: '#FFFFFF',
-        border: '#E6E2DE',
-        foreground: '#2E2A28',
-        muted: '#7A7573',
-        primary: '#C49A6C',
+        border: '#E5D5C5',
+        foreground: '#2C2825',
+        muted: '#8E8680',
+        primary: '#B08B5A',
         'primary-foreground': '#FFFFFF',
-        secondary: '#B08B5A',
+        secondary: '#C9B08E',
         accent: '#D4B37D',
         'accent-hover': '#B08B5A',
         brand: {

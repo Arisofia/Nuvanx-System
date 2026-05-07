@@ -1,19 +1,19 @@
 import { useState } from 'react'
 import { Link, useLocation } from 'wouter'
-import { Menu, X, LogOut, Home, Activity, Users, Megaphone, DollarSign, BarChart2, BookOpen, Plug, Sparkles, FileBarChart2, GitMerge } from 'lucide-react'
+import { Menu, X, LogOut, Home, Activity, Users, Megaphone, DollarSign, BarChart2, Plug, Sparkles, FileBarChart2, GitMerge } from 'lucide-react'
 import { Button } from './ui/button'
+import logo from '../assets/logo.png'
 
 const navItems = [
   { label: 'Dashboard', href: '/dashboard', icon: Home },
+  { label: 'Trazabilidad', href: '/traceability', icon: GitMerge },
+  { label: 'Reportes', href: '/reports', icon: FileBarChart2 },
+  { label: 'Lead Audit', href: '/reports/lead-audit', icon: GitMerge },
   { label: 'Live', href: '/live', icon: Activity },
   { label: 'CRM', href: '/crm', icon: Users },
   { label: 'Marketing', href: '/marketing', icon: Megaphone },
-  { label: 'Cruces Doctoralia', href: '/traceability', icon: GitMerge },
   { label: 'Financials', href: '/financials', icon: DollarSign },
   { label: 'Intelligence', href: '/intelligence', icon: BarChart2 },
-  { label: 'Playbooks', href: '/playbooks', icon: BookOpen },
-  { label: 'Guía Endolift', href: '/sales-playbook', icon: BookOpen },
-  { label: 'Reports', href: '/reports', icon: FileBarChart2 },
   { label: 'Integrations', href: '/integrations', icon: Plug },
   { label: 'AI', href: '/ai', icon: Sparkles },
 ]
@@ -23,40 +23,56 @@ export default function Layout({ children }: Readonly<{ children: React.ReactNod
   const [location] = useLocation()
 
   return (
-    <div className="flex h-screen bg-background text-foreground">
-      <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-card border-r border-border transition-all duration-300 flex flex-col`}>
-        <div className="p-4 border-b border-border flex items-center justify-between">
-          {sidebarOpen && <h2 className="font-bold text-lg">Nuvanx</h2>}
-          <Button variant="ghost" size="sm" onClick={() => setSidebarOpen(!sidebarOpen)}>
-            {sidebarOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
-          </Button>
+    <div className="flex h-screen bg-[#FAF7F2] text-foreground font-sans">
+      <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-white border-r border-border/60 transition-all duration-300 flex flex-col shadow-[4px_0_24px_rgba(0,0,0,0.02)]`}>
+        <div className="p-8 border-b border-border/40 flex flex-col items-center">
+          <div className="flex items-center justify-between w-full mb-4">
+            <Button variant="ghost" size="sm" className="hover:bg-primary/5 rounded-full h-8 w-8 p-0" onClick={() => setSidebarOpen(!sidebarOpen)}>
+              {sidebarOpen ? <X className="w-4 h-4 text-muted" /> : <Menu className="w-4 h-4 text-muted" />}
+            </Button>
+          </div>
+          
+          {sidebarOpen ? (
+            <div className="flex flex-col items-center text-center">
+              <img src={logo} alt="Nuvanx Logo" className="h-20 w-auto mb-4" />
+              <h2 className="font-serif text-xl tracking-widest uppercase text-primary/80">Nuvanx</h2>
+              <p className="text-[10px] uppercase tracking-[0.2em] text-muted mt-1 font-bold">Medicina Estética</p>
+              <div className="h-[1px] w-8 bg-primary/20 mt-4" />
+            </div>
+          ) : (
+            <img src={logo} alt="Logo" className="h-8 w-auto" />
+          )}
         </div>
 
-        <nav className="flex-1 overflow-y-auto p-4 space-y-2">
+        <nav className="flex-1 overflow-y-auto py-6 px-4 space-y-1">
           {navItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
-                location === item.href ? 'bg-primary text-primary-foreground' : 'text-foreground hover:bg-muted'
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 group ${
+                location === item.href 
+                  ? 'bg-primary/10 text-primary shadow-sm' 
+                  : 'text-muted hover:text-primary hover:bg-primary/5'
               }`}
             >
-              <item.icon className="w-5 h-5" />
-              {sidebarOpen && <span className="text-sm">{item.label}</span>}
+              <item.icon className={`w-5 h-5 transition-transform duration-300 group-hover:scale-110 ${
+                location === item.href ? 'text-primary' : 'text-muted/60'
+              }`} />
+              {sidebarOpen && <span className="text-sm font-medium tracking-wide">{item.label}</span>}
             </Link>
           ))}
         </nav>
 
-        <div className="p-4 border-t border-border">
-          <Button variant="outline" size="sm" className="w-full gap-2">
+        <div className="p-6 border-t border-border/40">
+          <Button variant="ghost" size="sm" className="w-full gap-3 justify-start px-4 py-6 rounded-xl hover:bg-red-50 hover:text-red-500 transition-colors text-muted">
             <LogOut className="w-4 h-4" />
-            {sidebarOpen && 'Logout'}
+            {sidebarOpen && <span className="text-sm font-medium">Cerrar Sesión</span>}
           </Button>
         </div>
       </aside>
 
-      <main className="flex-1 overflow-auto bg-background text-foreground">
-        <div className="p-8">{children}</div>
+      <main className="flex-1 overflow-auto bg-transparent">
+        <div className="max-w-[1600px] mx-auto p-10">{children}</div>
       </main>
     </div>
   )

@@ -70,67 +70,146 @@ body {
   }
 
   .btn-primary {
-    @apply text-primary-foreground;
-    background-color: var(--color-accent);
+    @apply text-white shadow-[0_10px_20px_rgba(176,139,90,0.2)] hover:shadow-[0_15px_40px_rgba(176,139,90,0.4)] active:scale-95 transition-all duration-700 relative overflow-hidden border border-white/20;
+    background: linear-gradient(135deg, #84643B 0%, #D4B37D 50%, #84643B 100%);
+    background-size: 200% auto;
+  }
+
+  .btn-primary:hover {
+    background-position: right center;
+  }
+
+  .btn-primary::after {
+    content: "";
+    @apply absolute inset-0 opacity-0 transition-opacity duration-700 pointer-events-none;
+    background: linear-gradient(120deg, transparent 30%, rgba(255, 255, 255, 0.4) 50%, transparent 70%);
+    transform: translateX(-100%);
+  }
+
+  .btn-primary:hover::after {
+    @apply opacity-100;
+    animation: metallic-shimmer 1.5s infinite;
   }
 
   .btn-secondary {
-    @apply border rounded-lg text-foreground;
-    background-color: var(--color-bg-card);
-    border-color: var(--color-border);
+    @apply border-2 rounded-2xl text-primary font-bold hover:bg-primary/5 transition-all duration-500 relative overflow-hidden;
+    background: rgba(255, 255, 255, 0.4);
+    backdrop-filter: blur(5px);
+    border-color: rgba(176, 139, 90, 0.3);
+  }
+
+  .btn-secondary:hover {
+    @apply shadow-[0_10px_20px_rgba(176,139,90,0.1)];
+    border-color: rgba(176, 139, 90, 0.6);
   }
 
   .btn-ghost {
-    @apply text-muted;
+    @apply text-muted hover:text-primary hover:bg-primary/5 transition-all duration-500 rounded-xl;
     background-color: transparent;
   }
 
   .btn-sm {
-    @apply px-3 py-2 text-sm;
+    @apply px-4 py-2 text-xs uppercase tracking-widest font-bold;
   }
 
   .btn-md {
-    @apply px-4 py-2 text-sm;
+    @apply px-6 py-3 text-sm font-bold;
   }
 
   .btn-lg {
-    @apply px-5 py-3 text-base;
+    @apply px-8 py-4 text-base font-bold;
   }
 
   .input-field,
   .field-input,
   .field-select {
-    @apply w-full rounded-lg border px-3 py-2 text-foreground outline-none;
-    background-color: var(--color-bg-card);
-    border-color: var(--color-border);
-    color: var(--color-text-primary);
+    @apply w-full rounded-2xl border px-5 py-3 text-foreground outline-none transition-all duration-300 bg-white/50 backdrop-blur-sm;
+    border-color: rgba(229, 213, 197, 0.6);
   }
 
   .input-field:focus,
   .field-input:focus,
   .field-select:focus {
-    border-color: var(--color-accent);
-    box-shadow: 0 0 0 4px rgba(196, 154, 108, 0.15);
+    @apply bg-white shadow-xl shadow-primary/5;
+    border-color: var(--accent-gold);
+    box-shadow: 0 0 0 4px rgba(176, 139, 90, 0.08);
   }
 
   .card-panel {
-    @apply rounded-2xl border shadow-sm;
-    border-color: var(--color-border);
-    background-color: var(--color-bg-card);
+    @apply rounded-[2.5rem] border shadow-[0_8px_40px_rgba(176,139,90,0.03)] transition-all duration-700 relative overflow-hidden;
+    border-color: rgba(229, 213, 197, 0.3);
+    background: linear-gradient(165deg, rgba(255, 255, 255, 0.95) 0%, rgba(250, 249, 248, 0.9) 100%);
+    backdrop-filter: blur(10px);
+  }
+
+  .card-panel::before {
+    content: "";
+    @apply absolute inset-0 opacity-0 transition-opacity duration-700 pointer-events-none;
+    background: linear-gradient(120deg, transparent 30%, rgba(255, 255, 255, 0.6) 50%, transparent 70%);
+    transform: translateX(-100%);
+  }
+
+  .card-panel:hover::before {
+    @apply opacity-100;
+    animation: metallic-shimmer 2s infinite;
+  }
+
+  @keyframes metallic-shimmer {
+    100% { transform: translateX(100%); }
+  }
+
+  .card-panel:hover {
+    @apply shadow-[0_30px_60px_rgba(176,139,90,0.08)] -translate-y-2;
+    border-color: rgba(176, 139, 90, 0.4);
   }
 
   .card-header-panel {
-    @apply border-b p-4;
-    border-color: var(--color-border);
+    @apply border-b px-8 py-6;
+    border-color: rgba(229, 213, 197, 0.3);
   }
 
   .card-title-panel {
-    @apply text-lg font-semibold font-serif tracking-tight;
-    color: var(--color-text-primary);
+    @apply text-2xl font-bold font-serif tracking-[0.05em] text-premium-gradient;
+  }
+
+  .card-description-panel {
+    @apply text-sm text-muted font-medium tracking-[0.02em] leading-relaxed;
   }
 
   .card-content-panel {
-    @apply p-4;
+    @apply p-10;
+  }
+
+  .diamond-separator {
+    @apply flex items-center justify-center w-full my-10 opacity-60;
+  }
+
+  .diamond-separator::before,
+  .diamond-separator::after {
+    content: "";
+    @apply flex-1 h-[1.5px];
+    background: linear-gradient(to right, transparent, rgba(176,139,90,0.5), transparent);
+  }
+
+  .diamond-separator-icon {
+    @apply w-2.5 h-2.5 rotate-45 border border-primary/50 mx-6 shadow-[0_0_15px_rgba(176,139,90,0.4)];
+    background: linear-gradient(135deg, var(--accent-gold), var(--accent-gold-light));
+    animation: pulse-glow 3s infinite;
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 5px rgba(176,139,90,0.2); }
+    50% { box-shadow: 0 0 15px rgba(176,139,90,0.5); }
+  }
+
+  .text-premium-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-[#84643B] via-[#B08B5A] to-[#84643B];
+    background-size: 200% auto;
+    animation: shine 4s linear infinite;
+  }
+
+  @keyframes shine {
+    to { background-position: 200% center; }
   }
 
   .badge {

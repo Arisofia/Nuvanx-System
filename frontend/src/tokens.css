@@ -1,14 +1,16 @@
 :root{
-  /* Colores */
-  --bg-champagne: #F6F1EC;
-  --bg-marfil: #FFF9F3;
-  --accent-gold: #C49A6C;
-  --text-dark: #2E2A28;
-  --text-muted: #7A7573;
+  /* Colores Premium */
+  --bg-champagne: #FAF7F2;
+  --bg-marfil: #FFFFFF;
+  --accent-gold: #B08B5A;
+  --accent-gold-light: #C9B08E;
+  --text-dark: #2C2825;
+  --text-muted: #8E8680;
   --whatsapp: #25D366;
   --danger: #D9534F;
   --success: #28A745;
   --surface: #FFFFFF;
+  --border-gold: #E5D5C5;
 
   /* Sombras y radios */
   --shadow-soft: 0 6px 18px rgba(46,42,40,0.06);

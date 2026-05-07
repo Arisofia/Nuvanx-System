@@ -375,53 +375,70 @@ function DashboardHeader({
   setCustomTo,
 }: DashboardHeaderProps) {
   return (
-    <div className="flex flex-col sm:flex-row sm:items-end gap-4">
-      <div className="flex-1">
-        <div className="flex items-center gap-3">
-          <h1 className="text-3xl font-serif font-bold">Dashboard</h1>
+    <div className="flex flex-col items-center text-center space-y-6 mb-12">
+      <div className="space-y-2">
+        <div className="flex items-center justify-center gap-4">
+          <h1 className="text-5xl font-serif font-bold tracking-tight text-primary">Dashboard</h1>
           <DataModeBadge overallMode={dataMode as any} />
         </div>
-        <p className="text-muted mt-1">Control centre — Meta KPIs, agent status, adaptive plan</p>
+        <p className="text-muted text-sm uppercase tracking-[0.3em] font-bold">Control de Rendimiento Médico</p>
       </div>
-      <div className="flex flex-col sm:flex-row items-center gap-2">
-        {sourcesList.length > 0 && (
-          <select
-            value={sourceFilter}
-            onChange={(e) => setSourceFilter(e.target.value)}
-            className="field-select"
-          >
-            <option value="ALL">All Sources</option>
-            {sourcesList.map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
-        )}
-        {campaignsList.length > 0 && (
-          <select
-            value={campaignId}
-            onChange={(e) => setCampaignId(e.target.value)}
-            className="field-select"
-          >
-            <option value="ALL">All Campaigns</option>
-            {campaignsList.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-        )}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="pill-group">
+
+      <div className="diamond-separator">
+        <div className="diamond-separator-icon" />
+      </div>
+
+      <div className="w-full flex flex-col md:flex-row items-center justify-between gap-6 bg-white/40 backdrop-blur-md p-6 rounded-[2rem] border border-border/40 shadow-sm">
+        <div className="flex flex-wrap items-center justify-center gap-4">
+          <div className="flex items-center gap-1 bg-white/80 p-1.5 rounded-2xl border border-border/60 shadow-inner">
             {([7, 14, 30, 90] as const).map((d) => (
               <button
                 type="button"
                 key={d}
                 onClick={() => { setDays(d); setCustomFrom(''); setCustomTo('') }}
-                className={`pill-button ${!customFrom && days === d ? 'selected' : ''}`}
+                className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all ${
+                  !customFrom && days === d 
+                    ? 'bg-primary text-white shadow-md' 
+                    : 'text-muted hover:text-primary hover:bg-primary/5'
+                }`}
               >
                 {d}d
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-1 text-xs text-muted print:hidden">
+
+          {(sourcesList.length > 0 || campaignsList.length > 0) && (
+            <div className="flex items-center gap-2 bg-white/80 p-1.5 rounded-2xl border border-border/60 shadow-inner">
+              {sourcesList.length > 0 && (
+                <select
+                  value={sourceFilter}
+                  onChange={(e) => setSourceFilter(e.target.value)}
+                  className="bg-transparent border-none focus:ring-0 text-[10px] font-bold uppercase tracking-wider px-4 py-2 cursor-pointer border-r border-border/40"
+                >
+                  <option value="ALL">Todas las fuentes</option>
+                  {sourcesList.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              )}
+              {campaignsList.length > 0 && (
+                <select
+                  value={campaignId}
+                  onChange={(e) => setCampaignId(e.target.value)}
+                  className="bg-transparent border-none focus:ring-0 text-[10px] font-bold uppercase tracking-wider px-4 py-2 cursor-pointer"
+                >
+                  <option value="ALL">Todas las campañas</option>
+                  {campaignsList.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 bg-white/80 p-2 rounded-2xl border border-border/60 shadow-inner">
             <input
               type="date"
               value={customFrom}
@@ -429,14 +446,14 @@ function DashboardHeader({
                 setCustomFrom(e.target.value);
                 setCustomTo((prev) => prev || new Date().toISOString().slice(0, 10))
               }}
-              className="field-input w-32"
+              className="bg-transparent border-none focus:ring-0 text-[10px] font-bold uppercase w-28 text-center"
             />
-            <span className="text-muted">→</span>
+            <span className="text-muted text-xs">→</span>
             <input
               type="date"
               value={customTo}
               onChange={(e) => setCustomTo(e.target.value)}
-              className="field-input w-32"
+              className="bg-transparent border-none focus:ring-0 text-[10px] font-bold uppercase w-28 text-center"
             />
           </div>
         </div>
@@ -498,64 +515,87 @@ function MetricsGrid({ metrics, periodLabel, quality }: MetricsGridProps) {
   const renderIsReal = (isReal: boolean | undefined) => {
     if (isReal === undefined) return null;
     return (
-      <span className={`text-[10px] px-1 rounded border ${isReal ? 'text-green-400 border-green-400/30 bg-green-400/5' : 'text-amber-400 border-amber-400/30 bg-amber-400/5'}`}>
+      <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold uppercase tracking-widest ${isReal ? 'text-green-600 border-green-600/20 bg-green-500/5' : 'text-amber-600 border-amber-600/20 bg-amber-500/5'}`}>
         {isReal ? 'Real' : 'Parcial'}
       </span>
     );
   };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <div className="flex flex-col">
-            <CardTitle className="text-sm font-medium">Leads Meta</CardTitle>
+    <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+      <Card className="hover:shadow-xl transition-all duration-500 group">
+        <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+          <div className="flex flex-col gap-2">
+            <CardTitle className="text-xs font-bold text-muted uppercase tracking-[0.2em]">Leads Meta</CardTitle>
             {renderIsReal(quality?.metaIsReal)}
           </div>
-          <Users className="h-4 w-4 text-muted" />
+          <div className="bg-primary/5 p-3 rounded-2xl group-hover:bg-primary/10 transition-colors duration-500">
+            <Users className="h-5 w-5 text-primary" />
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="flex items-baseline gap-2">
-            <div className="text-2xl font-bold">{metrics.metaConversions.toLocaleString('es-ES')}</div>
+          <div className="flex items-baseline gap-3 mt-4">
+            <div className="text-4xl font-serif font-bold tracking-tight text-primary">
+              {metrics.metaConversions.toLocaleString('es-ES')}
+            </div>
             {metrics.deltas && <MetricDelta value={metrics.deltas.conversions} />}
           </div>
-          <p className="text-xs text-muted mt-1">Leads Meta · {periodLabel}</p>
+          <div className="flex flex-col gap-1 mt-4">
+            <p className="text-[10px] text-muted font-bold uppercase tracking-wider italic opacity-60">Leads generados</p>
+            <p className="text-[10px] text-primary/40 font-bold uppercase tracking-widest">{periodLabel}</p>
+          </div>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <div className="flex flex-col">
-            <CardTitle className="text-sm font-medium">Leads registrados en CRM</CardTitle>
+      <Card className="hover:shadow-xl transition-all duration-500 group">
+        <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+          <div className="flex flex-col gap-2">
+            <CardTitle className="text-xs font-bold text-muted uppercase tracking-[0.2em]">Leads CRM</CardTitle>
             {renderIsReal(quality?.crmIsReal)}
           </div>
-          <Users className="h-4 w-4 text-muted" />
+          <div className="bg-primary/5 p-3 rounded-2xl group-hover:bg-primary/10 transition-colors duration-500">
+            <Target className="h-5 w-5 text-primary" />
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="flex items-baseline gap-2">
-            <div className="text-2xl font-bold">{metrics.totalLeads.toLocaleString('es-ES')}</div>
+          <div className="flex items-baseline gap-3 mt-4">
+            <div className="text-4xl font-serif font-bold tracking-tight text-primary">
+              {metrics.totalLeads.toLocaleString('es-ES')}
+            </div>
             {metrics.deltas && <MetricDelta value={metrics.deltas.leads} />}
           </div>
-          <p className="text-xs text-muted mt-1">Leads en BD · {periodLabel}</p>
+          <div className="flex flex-col gap-1 mt-4">
+            <p className="text-[10px] text-muted font-bold uppercase tracking-wider italic opacity-60">Registrados en BD</p>
+            <p className="text-[10px] text-primary/40 font-bold uppercase tracking-widest">{periodLabel}</p>
+          </div>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <div className="flex flex-col">
-            <CardTitle className="text-sm font-medium">Tasa de conversión Meta</CardTitle>
+      <Card className="hover:shadow-xl transition-all duration-500 group">
+        <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+          <div className="flex flex-col gap-2">
+            <CardTitle className="text-xs font-bold text-muted uppercase tracking-[0.2em]">Tasa de Cierre</CardTitle>
             {renderIsReal(quality?.doctoraliaIsReal)}
           </div>
-          <TrendingUp className="h-4 w-4 text-muted" />
+          <div className="bg-primary/5 p-3 rounded-2xl group-hover:bg-primary/10 transition-colors duration-500">
+            <TrendingUp className="h-5 w-5 text-primary" />
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{metrics.conversionRate.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}%</div>
-          <p className="text-xs text-muted mt-1">Leads → treatment/closed</p>
-          {(metrics.patientConversionRate ?? 0) > 0 && (
-            <p className="text-xs text-[#8ee0b8] mt-0.5">
-              {metrics.patientConversionRate}% → paciente confirmado ({metrics.patientMatches})
-            </p>
-          )}
+          <div className="text-4xl font-serif font-bold tracking-tight text-primary mt-4">
+            {metrics.conversionRate.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}%
+          </div>
+          <div className="flex flex-col gap-1 mt-4">
+            <p className="text-[10px] text-muted font-bold uppercase tracking-wider italic opacity-60">Leads → tratamiento/venta</p>
+            {(metrics.patientConversionRate ?? 0) > 0 && (
+              <div className="flex items-center gap-1.5 mt-2 bg-green-500/5 px-2 py-1 rounded-full border border-green-500/10 w-fit">
+                <div className="w-1 h-1 rounded-full bg-green-500 animate-pulse" />
+                <p className="text-[9px] font-bold text-green-600 uppercase tracking-tighter">
+                  {metrics.patientConversionRate}% pacientes confirmados
+                </p>
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -584,57 +624,74 @@ function FunnelAndSpendSection({
   quality,
 }: FunnelAndSpendSectionProps) {
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>Lead Funnel</CardTitle>
+    <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+      <Card className="hover:shadow-xl transition-all duration-500">
+        <CardHeader className="flex flex-row items-center justify-between border-b border-border/30 pb-6">
+          <CardTitle className="flex items-center gap-3 font-serif text-2xl">
+            <TrendingUp className="h-6 w-6 text-primary" />
+            Lead Funnel
+          </CardTitle>
+          <div className="flex flex-col items-end">
+            <p className="text-[10px] text-muted font-bold uppercase tracking-widest italic opacity-60">Distribución por etapa</p>
+            <p className="text-[10px] text-primary/40 font-bold uppercase tracking-widest">{periodLabel}</p>
+          </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-10">
           <FunnelChart data={funnelData} />
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle>Meta Spend ({periodLabel})</CardTitle>
+      <Card className="hover:shadow-xl transition-all duration-500">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-6 border-b border-border/30">
+          <CardTitle className="flex items-center gap-3 font-serif text-2xl">
+            <DollarSign className="h-6 w-6 text-primary" />
+            Meta Spend
+          </CardTitle>
           {quality?.metaDataSource && (
-            <span className="text-[10px] text-muted-foreground uppercase bg-surface px-1.5 py-0.5 rounded border border-border">
-              Source: {quality.metaDataSource.replace('_', ' ')}
+            <span className="text-[10px] font-bold text-primary/60 uppercase bg-primary/5 px-3 py-1.5 rounded-full border border-primary/10 tracking-[0.1em]">
+              Fuente: {quality.metaDataSource.replace('_', ' ')}
             </span>
           )}
         </CardHeader>
-        <CardContent className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          <div className="info-card">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-sm text-muted">Inversión Meta</span>
-              <DollarSign className="h-4 w-4 text-primary" />
+        <CardContent className="pt-8 grid grid-cols-1 sm:grid-cols-2 gap-6">
+          <div className="bg-white/50 backdrop-blur-sm p-6 rounded-3xl border border-border/40 hover:border-primary/30 transition-all duration-500 hover:shadow-lg hover:shadow-primary/5 group">
+            <div className="flex items-center justify-between gap-2 mb-4">
+              <span className="text-[10px] font-bold text-muted uppercase tracking-[0.2em] group-hover:text-primary transition-colors">Inversión Meta</span>
+              <DollarSign className="h-4 w-4 text-primary opacity-40 group-hover:opacity-100 transition-opacity" />
             </div>
-            <p className="mt-3 text-2xl font-semibold">€{metrics.spend.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-            <p className="text-xs text-muted mt-1">Inversión Meta en la ventana seleccionada</p>
+            <p className="text-4xl font-serif font-bold tracking-tight text-primary">€{metrics.spend.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+            <div className="h-[1px] w-8 bg-primary/20 my-4" />
+            <p className="text-[10px] text-muted font-medium italic opacity-60">Total invertido en {periodLabel}</p>
           </div>
-          <div className="info-card">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-sm text-muted">Leads generados (Meta)</span>
-              <Users className="h-4 w-4 text-primary" />
+          
+          <div className="bg-white/50 backdrop-blur-sm p-6 rounded-3xl border border-border/40 hover:border-primary/30 transition-all duration-500 hover:shadow-lg hover:shadow-primary/5 group">
+            <div className="flex items-center justify-between gap-2 mb-4">
+              <span className="text-[10px] font-bold text-muted uppercase tracking-[0.2em] group-hover:text-primary transition-colors">Leads Atribuidos</span>
+              <Users className="h-4 w-4 text-primary opacity-40 group-hover:opacity-100 transition-opacity" />
             </div>
-            <p className="mt-3 text-2xl font-semibold">{combined.metaEstimatedLeads.toLocaleString('es-ES')}</p>
-            <p className="text-xs text-muted mt-1">Estimación de leads generados por Meta</p>
+            <p className="text-4xl font-serif font-bold tracking-tight text-primary">{combined.metaEstimatedLeads.toLocaleString('es-ES')}</p>
+            <div className="h-[1px] w-8 bg-primary/20 my-4" />
+            <p className="text-[10px] text-muted font-medium italic opacity-60">Meta Leads atribuidos</p>
           </div>
-          <div className="info-card">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-sm text-muted">Leads registrados en CRM</span>
-              <Users className="h-4 w-4 text-primary" />
+
+          <div className="bg-white/50 backdrop-blur-sm p-6 rounded-3xl border border-border/40 hover:border-primary/30 transition-all duration-500 hover:shadow-lg hover:shadow-primary/5 group">
+            <div className="flex items-center justify-between gap-2 mb-4">
+              <span className="text-[10px] font-bold text-muted uppercase tracking-[0.2em] group-hover:text-primary transition-colors">Leads Registrados</span>
+              <Target className="h-4 w-4 text-primary opacity-40 group-hover:opacity-100 transition-opacity" />
             </div>
-            <p className="mt-3 text-2xl font-semibold">{metrics.totalLeads.toLocaleString('es-ES')}</p>
-            <p className="text-xs text-muted mt-1">Leads que ya se han registrado en el CRM</p>
+            <p className="text-4xl font-serif font-bold tracking-tight text-primary">{metrics.totalLeads.toLocaleString('es-ES')}</p>
+            <div className="h-[1px] w-8 bg-primary/20 my-4" />
+            <p className="text-[10px] text-muted font-medium italic opacity-60">Total leads en CRM</p>
           </div>
-          <div className="info-card">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-sm text-muted">Ingresos verificados (Doctoralia)</span>
-              <DollarSign className="h-4 w-4 text-primary" />
+
+          <div className="bg-white/50 backdrop-blur-sm p-6 rounded-3xl border border-border/40 hover:border-primary/30 transition-all duration-500 hover:shadow-lg hover:shadow-primary/5 group">
+            <div className="flex items-center justify-between gap-2 mb-4">
+              <span className="text-[10px] font-bold text-muted uppercase tracking-[0.2em] group-hover:text-primary transition-colors">Rev. Verificado</span>
+              <DollarSign className="h-4 w-4 text-primary opacity-40 group-hover:opacity-100 transition-opacity" />
             </div>
-            <p className="mt-3 text-2xl font-semibold">€{combined.verifiedRevenue.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-            <p className="text-xs text-muted mt-1">Ingresos oficiales verificados por Doctoralia</p>
+            <p className="text-4xl font-serif font-bold tracking-tight text-primary">€{combined.verifiedRevenue.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+            <div className="h-[1px] w-8 bg-primary/20 my-4" />
+            <p className="text-[10px] text-muted font-medium italic opacity-60">Confirmado Doctoralia</p>
           </div>
         </CardContent>
       </Card>
@@ -721,74 +778,82 @@ function CampaignKpisSection({ metrics, trendData, periodLabel }: CampaignKpisSe
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>KPIs de campañas Meta</CardTitle>
+      <Card className="hover:shadow-md transition-shadow">
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="font-serif">KPIs de campañas Meta</CardTitle>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold text-muted uppercase bg-surface px-2 py-1 rounded-full border border-border tracking-wider">
+              Periodo: {periodLabel}
+            </span>
+          </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-            <div className="info-card">
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+            <div className="bg-surface p-4 rounded-2xl border border-border/50">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-sm text-muted">Inversión</span>
-                <DollarSign className="h-4 w-4 text-primary" />
+                <span className="text-[10px] font-bold text-muted uppercase tracking-wider">Inversión</span>
+                <DollarSign className="h-3 w-3 text-primary" />
               </div>
-              <div className="flex items-baseline gap-2 mt-3">
-                <p className="text-2xl font-semibold">€{metrics.spend.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              <div className="flex items-baseline gap-1 mt-2">
+                <p className="text-xl font-bold tracking-tight">€{metrics.spend.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
                 {metrics.deltas && <MetricDelta value={metrics.deltas.spend} inverse />}
               </div>
             </div>
-            <div className="info-card">
+
+            <div className="bg-surface p-4 rounded-2xl border border-border/50">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-sm text-muted">Revenue (Settled)</span>
-                <DollarSign className="h-4 w-4 text-primary" />
+                <span className="text-[10px] font-bold text-muted uppercase tracking-wider">Revenue</span>
+                <DollarSign className="h-3 w-3 text-primary" />
               </div>
-              <div className="flex items-baseline gap-2 mt-3">
-                <p className="text-2xl font-semibold">€{(metrics.verifiedRevenue ?? 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              <div className="flex items-baseline gap-1 mt-2">
+                <p className="text-xl font-bold tracking-tight">€{(metrics.verifiedRevenue ?? 0).toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
                 {metrics.deltas && <MetricDelta value={metrics.deltas.revenue} />}
               </div>
-              <p className="text-xs text-muted mt-1">{metrics.settledCount ?? 0} settled · Doctoralia</p>
+              <p className="text-[10px] text-muted font-medium mt-1">{metrics.settledCount ?? 0} liquidados</p>
             </div>
-            <div className="info-card">
+
+            <div className="bg-surface p-4 rounded-2xl border border-border/50">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-sm text-muted">Pipeline (Est.)</span>
-                <DollarSign className="h-4 w-4 text-accent" />
+                <span className="text-[10px] font-bold text-muted uppercase tracking-wider">Pipeline</span>
+                <Target className="h-3 w-3 text-accent" />
               </div>
-              <div className="flex items-baseline gap-2 mt-3">
-                <p className="text-2xl font-semibold">€{(metrics.totalRevenue ?? 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              <div className="flex items-baseline gap-1 mt-2">
+                <p className="text-xl font-bold tracking-tight">€{(metrics.totalRevenue ?? 0).toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
               </div>
-              <p className="text-xs text-muted mt-1">{metrics.totalRevenue === 0 ? 'No pipeline revenue yet' : 'Sum of leads.revenue'}</p>
+              <p className="text-[10px] text-muted font-medium mt-1">Est. leads.revenue</p>
             </div>
-            <div className="info-card">
+
+            <div className="bg-surface p-4 rounded-2xl border border-border/50">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-sm text-muted">CPC medio</span>
-                <ArrowUpRight className="h-4 w-4 text-primary" />
+                <span className="text-[10px] font-bold text-muted uppercase tracking-wider">CPC medio</span>
+                <ArrowUpRight className="h-3 w-3 text-primary" />
               </div>
-              <p className="mt-3 text-2xl font-semibold">€{metrics.averageCpc.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-              <p className="text-xs text-muted mt-1">Coste medio por clic en Meta</p>
+              <p className="mt-2 text-xl font-bold tracking-tight">€{metrics.averageCpc.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              <p className="text-[10px] text-muted font-medium mt-1">Coste por clic</p>
             </div>
-            <div className="info-card">
+
+            <div className="bg-surface p-4 rounded-2xl border border-border/50">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-sm text-muted">Conversiones</span>
-                <Percent className="h-4 w-4 text-primary" />
+                <span className="text-[10px] font-bold text-muted uppercase tracking-wider">Conversiones</span>
+                <Percent className="h-3 w-3 text-primary" />
               </div>
-              <p className="mt-3 text-2xl font-semibold">{metrics.metaConversions.toLocaleString('es-ES')}</p>
+              <p className="mt-2 text-xl font-bold tracking-tight">{metrics.metaConversions.toLocaleString('es-ES')}</p>
+              <p className="text-[10px] text-muted font-medium mt-1">Leads atribuidos</p>
             </div>
-            <div className="info-card">
+
+            <div className="bg-surface p-4 rounded-2xl border border-border/50">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-sm text-muted">CAC (Meta)</span>
-                <Target className="h-4 w-4 text-danger" />
+                <span className="text-[10px] font-bold text-muted uppercase tracking-wider">CAC (Meta)</span>
+                <Target className="h-3 w-3 text-danger" />
               </div>
               {metrics.spend > 0 && metrics.metaConversions > 0 ? (
-                <p className="mt-3 text-2xl font-semibold text-danger">
-                  €{(metrics.spend / metrics.metaConversions).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                <p className="mt-2 text-xl font-bold tracking-tight text-danger">
+                  €{(metrics.spend / metrics.metaConversions).toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
                 </p>
               ) : (
-                <p
-                  className="mt-3 text-2xl font-semibold text-muted"
-                  title={metrics.metaConversions === 0 ? 'No conversions recorded in this period' : 'No spend data'}
-                >—</p>
+                <p className="mt-2 text-xl font-bold tracking-tight text-muted">—</p>
               )}
-              <p className="text-xs text-muted mt-1">spend ÷ conversions</p>
+              <p className="text-[10px] text-muted font-medium mt-1">spend ÷ leads</p>
             </div>
           </div>
         </CardContent>

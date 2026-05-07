@@ -3211,7 +3211,14 @@ async function fetchDbCampaigns(adminClient: any, userId: string, adAccountId: s
   }));
 }
 
-async function fetchMetaCampaignsFallback(creds: any, sendJson: any, e: Error, adminClient: any, userId: string) {
+async function fetchMetaCampaignsFallback(params: {
+  creds: any;
+  sendJson: any;
+  e: Error;
+  adminClient: any;
+  userId: string;
+}) {
+  const { creds, sendJson, e, adminClient, userId } = params;
   try {
     const fallbackResults = await Promise.allSettled(creds.adAccountIds.map(async (accountId: string) => {
       return await metaFetchAll(`/${accountId}/campaigns`, {
@@ -3262,83 +3269,83 @@ async function fetchMetaCampaignsFallback(creds: any, sendJson: any, e: Error, a
 
 async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
-  if (resource === 'meta' && sub === 'campaigns' && req.method === 'GET') {
-    const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
-    const validation = validateMetaCredentialResult(creds);
-    if (!validation.ok) {
-      const payload: any = { success: false, message: validation.message };
-      if (validation.statusCode === 400) payload.notConnected = creds.notConnected || !creds.adAccountId;
-      return sendJson(payload, validation.statusCode);
-    }
-    const campFrom = url.searchParams.get('from') ?? '';
-    const campTo   = url.searchParams.get('to')   ?? '';
+  if (resource !== 'meta' || sub !== 'campaigns' || req.method !== 'GET') return null;
 
-    const datePreset = campFrom && campTo ? null : 'lifetime';
-    const insightsDateParam = campFrom && campTo
-      ? `time_range(${JSON.stringify({ since: campFrom, until: campTo })})`
-      : `date_preset(${datePreset})`;
-
-    // NOTE: We intentionally do NOT pass `time_range` to the /campaigns listing
-    // endpoint. Combined with `effective_status` it filters out campaigns whose
-    // delivery falls outside the window (frequently yielding 0 results even
-    // when paused/archived campaigns exist). The `insights.{date_param}`
-    // subfield already scopes the per-campaign metrics to the requested period.
-    // (`buildCampaignsTimeRange` is still exported for tests and future use.)
-
-    try {
-      const accountResults = await Promise.allSettled(creds.adAccountIds.map(async (accountId: string) => {
-        const [campaigns, account] = await Promise.all([
-          metaFetchAll(`/${accountId}/campaigns`, {
-            fields: `id,name,status,objective,daily_budget,lifetime_budget,insights.${insightsDateParam}{impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,actions,cost_per_action_type,quality_ranking,engagement_rate_ranking}`,
-            limit: '500',
-          }, creds.accessToken),
-          metaFetch(`/${accountId}`, { fields: 'currency' }, creds.accessToken),
-        ]);
-        return { accountId, campaigns, currency: account?.currency ?? 'EUR' };
-      }));
-
-      const successfulAccounts = accountResults
-        .filter(isFulfilled)
-        .map((result) => result.value);
-
-      if (successfulAccounts.length === 0) {
-        throw (accountResults.find((result) => result.status === 'rejected') as PromiseRejectedResult)?.reason ?? new Error('Meta API error');
-      }
-
-      const campCurrency: string = successfulAccounts.find((acct: any) => acct.currency)?.currency ?? 'EUR';
-  
-      const campaigns = successfulAccounts.flatMap((acct: any) => ((acct.campaigns ?? []) as any[])
-        .map((campaign) => ({ ...campaign, accountId: acct.accountId })));
-
-      // If Meta live returned 0 campaigns, delegate to DB fallback immediately
-      if (campaigns.length === 0) {
-        return fetchMetaCampaignsFallback(creds, sendJson, new Error('Meta API returned 0 campaigns'), adminClient, userId);
-      }
-
-      const metaCampaigns = campaigns.map(mapMetaCampaign);
-      const metaCampaignIds = new Set(metaCampaigns.map((c: any) => String(c.id)));
-
-      // Supplement with DB historical campaigns not present in the Meta response
-      // (e.g. archived/old campaigns that Meta no longer returns)
-      const dbCampaigns = await fetchDbCampaigns(adminClient, userId, creds.adAccountId);
-      const dbOnlyCampaigns = dbCampaigns.filter((c: any) => !metaCampaignIds.has(String(c.id)));
-
-      const result = {
-        success: true,
-        source: 'live',
-        cached: false,
-        accountId: creds.adAccountId,
-        accountIds: creds.adAccountIds,
-        currency: campCurrency,
-        campaigns: [...metaCampaigns, ...dbOnlyCampaigns],
-      };
-      await setMetaCache(adminClient, userId, `meta:campaigns`, result);
-      return sendJson(result);
-    } catch (e: any) {
-      return fetchMetaCampaignsFallback(creds, sendJson, e, adminClient, userId);
-    }
+  const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
+  const validation = validateMetaCredentialResult(creds);
+  if (!validation.ok) {
+    const payload: any = { success: false, message: validation.message };
+    if (validation.statusCode === 400) payload.notConnected = creds.notConnected || !creds.adAccountId;
+    return sendJson(payload, validation.statusCode);
   }
-  return null;
+
+  const campFrom = url.searchParams.get('from') ?? '';
+  const campTo = url.searchParams.get('to') ?? '';
+  return getMetaCampaignsLiveResult(creds, adminClient, userId, sendJson, campFrom, campTo);
+}
+
+async function getMetaCampaignsLiveResult(
+  creds: any,
+  adminClient: any,
+  userId: string,
+  sendJson: any,
+  campFrom: string,
+  campTo: string,
+): Promise<Response> {
+  const datePreset = campFrom && campTo ? null : 'lifetime';
+  const insightsDateParam = campFrom && campTo
+    ? `time_range(${JSON.stringify({ since: campFrom, until: campTo })})`
+    : `date_preset(${datePreset})`;
+
+  try {
+    const accountResults = await Promise.allSettled(creds.adAccountIds.map(async (accountId: string) => {
+      const [campaigns, account] = await Promise.all([
+        metaFetchAll(`/${accountId}/campaigns`, {
+          fields: `id,name,status,objective,daily_budget,lifetime_budget,insights.${insightsDateParam}{impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,actions,cost_per_action_type,quality_ranking,engagement_rate_ranking}`,
+          limit: '500',
+        }, creds.accessToken),
+        metaFetch(`/${accountId}`, { fields: 'currency' }, creds.accessToken),
+      ]);
+      return { accountId, campaigns, currency: account?.currency ?? 'EUR' };
+    }));
+
+    const successfulAccounts = accountResults
+      .filter(isFulfilled)
+      .map((result) => result.value);
+
+    if (successfulAccounts.length === 0) {
+      throw (accountResults.find((result) => result.status === 'rejected') as PromiseRejectedResult)?.reason ?? new Error('Meta API error');
+    }
+
+    const campCurrency: string = successfulAccounts.find((acct: any) => acct.currency)?.currency ?? 'EUR';
+
+    const campaigns = successfulAccounts.flatMap((acct: any) => ((acct.campaigns ?? []) as any[])
+      .map((campaign) => ({ ...campaign, accountId: acct.accountId })));
+
+    if (campaigns.length === 0) {
+      return fetchMetaCampaignsFallback({ creds, sendJson, e: new Error('Meta API returned 0 campaigns'), adminClient, userId });
+    }
+
+    const metaCampaigns = campaigns.map(mapMetaCampaign);
+    const metaCampaignIds = new Set(metaCampaigns.map((c: any) => String(c.id)));
+
+    const dbCampaigns = await fetchDbCampaigns(adminClient, userId);
+    const dbOnlyCampaigns = dbCampaigns.filter((c: any) => !metaCampaignIds.has(String(c.id)));
+
+    const result = {
+      success: true,
+      source: 'live',
+      cached: false,
+      accountId: creds.adAccountId,
+      accountIds: creds.adAccountIds,
+      currency: campCurrency,
+      campaigns: [...metaCampaigns, ...dbOnlyCampaigns],
+    };
+    await setMetaCache(adminClient, userId, `meta:campaigns`, result);
+    return sendJson(result);
+  } catch (e: any) {
+    return fetchMetaCampaignsFallback({ creds, sendJson, e, adminClient, userId });
+  }
 }
 
 function mapMetaAd(ad: any) {
@@ -3450,22 +3457,8 @@ async function fetchMetaAdsFallback(params: {
     if (ads.length === 0 && adminClient && userId) {
       const insightsMap = await fetchAdInsightsFromMeta(creds, insightsSince, insightsUntil);
       const adLeads = await fetchAdDataFromCrm(adminClient, userId);
-
-      // Collect all ad IDs: from CRM leads + from Meta insights (ads with spend but 0 leads)
-      const adMap: Record<string, { name: string; campaignId: string | null; campaignName: string | null; count: number; lastAt: string }> = {};
-      for (const row of adLeads as any[]) {
-        if (!row.ad_id) continue;
-        if (!adMap[row.ad_id]) {
-          adMap[row.ad_id] = { name: row.ad_name ?? `Ad ${row.ad_id}`, campaignId: row.campaign_id ?? null, campaignName: row.campaign_name ?? null, count: 0, lastAt: row.created_at };
-        }
-        adMap[row.ad_id].count++;
-      }
-      // Add Meta-insights-only ads (spend but no CRM lead captured)
-      for (const [adId, ins] of Object.entries(insightsMap)) {
-        if (!adMap[adId]) {
-          adMap[adId] = { name: `Ad ${adId}`, campaignId: null, campaignName: null, count: (ins as any).conversions, lastAt: new Date().toISOString() };
-        }
-      }
+      const adMap = buildAdMapFromCrm(adLeads);
+      addInsightsOnlyAdsToMap(adMap, insightsMap);
 
       if (Object.keys(adMap).length > 0) {
         const now = Date.now();
@@ -3521,6 +3514,38 @@ async function fetchMetaAdsFallback(params: {
   }
 }
 
+function buildAdMapFromCrm(adLeads: any[]) {
+  const adMap: Record<string, { name: string; campaignId: string | null; campaignName: string | null; count: number; lastAt: string }> = {};
+  for (const row of adLeads as any[]) {
+    if (!row.ad_id) continue;
+    if (!adMap[row.ad_id]) {
+      adMap[row.ad_id] = {
+        name: row.ad_name ?? `Ad ${row.ad_id}`,
+        campaignId: row.campaign_id ?? null,
+        campaignName: row.campaign_name ?? null,
+        count: 0,
+        lastAt: row.created_at,
+      };
+    }
+    adMap[row.ad_id].count++;
+  }
+  return adMap;
+}
+
+function addInsightsOnlyAdsToMap(adMap: Record<string, { name: string; campaignId: string | null; campaignName: string | null; count: number; lastAt: string }>, insightsMap: Record<string, any>) {
+  for (const [adId, ins] of Object.entries(insightsMap)) {
+    if (!adMap[adId]) {
+      adMap[adId] = {
+        name: `Ad ${adId}`,
+        campaignId: null,
+        campaignName: null,
+        count: ins?.conversions ?? 0,
+        lastAt: new Date().toISOString(),
+      };
+    }
+  }
+}
+
 async function fetchAdsFromAccounts(adAccountIds: readonly string[], insightsDateParam: string, accessToken: string) {
   return await Promise.allSettled(adAccountIds.map(async (accountId: string) => {
     const [ads, acctData] = await Promise.all([
@@ -3536,49 +3561,59 @@ async function fetchAdsFromAccounts(adAccountIds: readonly string[], insightsDat
 
 async function handleMetaAdsGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
-  if (resource === 'meta' && sub === 'ads' && req.method === 'GET') {
-    const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
-    const validation = validateMetaCredentialResult(creds);
-    if (!validation.ok) {
-      const payload: any = { success: false, message: validation.message };
-      if (validation.statusCode === 400) payload.notConnected = creds.notConnected || !creds.adAccountId;
-      return sendJson(payload, validation.statusCode);
-    }
-    const adsFrom = url.searchParams.get('from') ?? '';
-    const adsTo   = url.searchParams.get('to')   ?? '';
-    const adsDays = Number.parseInt(url.searchParams.get('days') ?? '30', 10) || 30;
-    const datePreset = adsFrom && adsTo ? null : 'lifetime';
+  if (resource !== 'meta' || sub !== 'ads' || req.method !== 'GET') return null;
 
-    const insightsDateParam = adsFrom && adsTo
-      ? `time_range(${JSON.stringify({ since: adsFrom, until: adsTo })})`
-      : `date_preset(${datePreset})`;
-
-    try {
-      const accountResults = await fetchAdsFromAccounts(creds.adAccountIds, insightsDateParam, creds.accessToken);
-
-      const successfulAccounts = accountResults
-        .filter(isFulfilled)
-        .map((result) => result.value);
-
-      if (successfulAccounts.length === 0) {
-        throw (accountResults.find((result) => result.status === 'rejected') as PromiseRejectedResult)?.reason ?? new Error('Meta API error');
-      }
-
-      const currency: string = successfulAccounts.find((acct: any) => acct.currency)?.currency ?? 'EUR';
-      const ads = successfulAccounts.flatMap((acct: any) => ((acct.ads ?? []) as any[])
-        .map((ad: any) => ({ ...ad, accountId: acct.accountId })));
-
-      // If Meta live returned 0 ads, delegate to DB fallback immediately
-      if (ads.length === 0) {
-        return fetchMetaAdsFallback({ creds, sendJson, e: new Error('Meta API returned 0 ads'), adminClient, userId, adsFrom, adsTo, adsDays });
-      }
-
-      return sendJson({ success: true, accountId: creds.adAccountId, accountIds: creds.adAccountIds, currency, ads: ads.map(mapMetaAd) });
-    } catch (e: any) {
-      return fetchMetaAdsFallback({ creds, sendJson, e, adminClient, userId, adsFrom, adsTo, adsDays });
-    }
+  const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
+  const validation = validateMetaCredentialResult(creds);
+  if (!validation.ok) {
+    const payload: any = { success: false, message: validation.message };
+    if (validation.statusCode === 400) payload.notConnected = creds.notConnected || !creds.adAccountId;
+    return sendJson(payload, validation.statusCode);
   }
-  return null;
+
+  const adsFrom = url.searchParams.get('from') ?? '';
+  const adsTo = url.searchParams.get('to') ?? '';
+  const adsDays = Number.parseInt(url.searchParams.get('days') ?? '30', 10) || 30;
+  return getMetaAdsLiveResult(creds, sendJson, adminClient, userId, adsFrom, adsTo, adsDays);
+}
+
+async function getMetaAdsLiveResult(
+  creds: any,
+  sendJson: any,
+  adminClient: any,
+  userId: string,
+  adsFrom: string,
+  adsTo: string,
+  adsDays: number,
+): Promise<Response> {
+  const datePreset = adsFrom && adsTo ? null : 'lifetime';
+  const insightsDateParam = adsFrom && adsTo
+    ? `time_range(${JSON.stringify({ since: adsFrom, until: adsTo })})`
+    : `date_preset(${datePreset})`;
+
+  try {
+    const accountResults = await fetchAdsFromAccounts(creds.adAccountIds, insightsDateParam, creds.accessToken);
+
+    const successfulAccounts = accountResults
+      .filter(isFulfilled)
+      .map((result) => result.value);
+
+    if (successfulAccounts.length === 0) {
+      throw (accountResults.find((result) => result.status === 'rejected') as PromiseRejectedResult)?.reason ?? new Error('Meta API error');
+    }
+
+    const currency: string = successfulAccounts.find((acct: any) => acct.currency)?.currency ?? 'EUR';
+    const ads = successfulAccounts.flatMap((acct: any) => ((acct.ads ?? []) as any[])
+      .map((ad: any) => ({ ...ad, accountId: acct.accountId })));
+
+    if (ads.length === 0) {
+      return fetchMetaAdsFallback({ creds, sendJson, e: new Error('Meta API returned 0 ads'), adminClient, userId, adsFrom, adsTo, adsDays });
+    }
+
+    return sendJson({ success: true, accountId: creds.adAccountId, accountIds: creds.adAccountIds, currency, ads: ads.map(mapMetaAd) });
+  } catch (e: any) {
+    return fetchMetaAdsFallback({ creds, sendJson, e, adminClient, userId, adsFrom, adsTo, adsDays });
+  }
 }
 
 async function handleAiAnalyzePost(ctx: AuthenticatedRouteContext): Promise<Response | null> {

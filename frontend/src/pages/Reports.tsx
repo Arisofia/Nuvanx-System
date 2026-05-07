@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
-import { AlertCircle, FileBarChart2, TrendingUp, Users, MessageCircle, Stethoscope, BarChart3 } from 'lucide-react'
+import { AlertCircle, FileBarChart2, TrendingUp, Users, MessageCircle, Stethoscope, BarChart3, CheckCircle2, XCircle } from 'lucide-react'
 import { invokeApi } from '../lib/supabaseClient'
 import { ExportButton } from '../components/reports/ExportButton'
 import { FilterBar } from '../components/ui/FilterBar'
@@ -249,115 +249,180 @@ export default function Reports() {
       </div>
 
       <Tabs defaultValue="doctoralia" className="w-full">
-        <TabsList className="flex-wrap h-auto">
-          <TabsTrigger value="doctoralia" className="gap-2"><FileBarChart2 className="w-4 h-4" />Doctoralia</TabsTrigger>
-          <TabsTrigger value="campaigns" className="gap-2"><TrendingUp className="w-4 h-4" />Campaigns</TabsTrigger>
-          <TabsTrigger value="sources" className="gap-2"><Users className="w-4 h-4" />Sources</TabsTrigger>
-          <TabsTrigger value="whatsapp" className="gap-2"><MessageCircle className="w-4 h-4" />WhatsApp</TabsTrigger>
-          <TabsTrigger value="lead-audit" className="gap-2"><FileBarChart2 className="w-4 h-4" />Lead Audit</TabsTrigger>
-          <TabsTrigger value="doctors" className="gap-2"><Stethoscope className="w-4 h-4" />Doctors</TabsTrigger>
-          <TabsTrigger value="campaign-roi" className="gap-2"><BarChart3 className="w-4 h-4" />Campaign ROI</TabsTrigger>
+        <TabsList className="flex flex-wrap h-auto gap-2 bg-transparent p-0 mb-6">
+          {[
+            { value: 'doctoralia', label: 'Doctoralia', icon: FileBarChart2 },
+            { value: 'campaigns', label: 'Campaigns', icon: TrendingUp },
+            { value: 'sources', label: 'Sources', icon: Users },
+            { value: 'whatsapp', label: 'WhatsApp', icon: MessageCircle },
+            { value: 'lead-audit', label: 'Lead Audit', icon: FileBarChart2 },
+            { value: 'doctors', label: 'Doctors', icon: Stethoscope },
+            { value: 'campaign-roi', label: 'Campaign ROI', icon: BarChart3 },
+          ].map((tab) => (
+            <TabsTrigger
+              key={tab.value}
+              value={tab.value}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border bg-surface text-muted data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary transition-all font-bold text-xs shadow-sm hover:text-foreground"
+            >
+              <tab.icon className="w-4 h-4" />
+              {tab.label}
+            </TabsTrigger>
+          ))}
         </TabsList>
 
-        <TabsContent value="lead-audit" className="mt-4 space-y-4">
-          <Card>
-            <CardHeader className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <TabsContent value="lead-audit" className="mt-0 space-y-6">
+          <Card className="hover:shadow-md transition-shadow">
+            <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between border-b border-border/50 pb-6">
               <div>
-                <CardTitle>Lead Audit</CardTitle>
-                <p className="text-sm text-muted">Filtra y revisa la trazabilidad de leads contra Doctoralia.</p>
+                <CardTitle className="font-serif text-xl flex items-center gap-2">
+                  <FileBarChart2 className="h-5 w-5 text-primary" />
+                  Lead Audit
+                </CardTitle>
+                <p className="text-xs text-muted font-medium mt-1">Filtra y revisa la trazabilidad de leads contra Doctoralia.</p>
               </div>
               <div className="flex flex-col gap-3 sm:flex-row">
-                <label className="flex items-center gap-2 text-sm">
+                <label className="flex items-center gap-3 bg-surface/50 px-4 py-2 rounded-xl border border-border cursor-pointer hover:bg-surface transition-colors">
                   <input
                     type="checkbox"
+                    className="w-4 h-4 rounded border-border text-primary focus:ring-primary transition-all"
                     checked={leadAuditMatchedOnly}
                     onChange={(event) => setLeadAuditMatchedOnly(event.target.checked)}
                   />
-                  Solo cruzados
+                  <span className="text-xs font-bold text-foreground">Solo cruzados</span>
                 </label>
               </div>
             </CardHeader>
-            <CardContent className="grid gap-4 lg:grid-cols-4">
-              <label className="flex flex-col gap-2 text-sm">
-                Campaña
+            <CardContent className="pt-6 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+              <div className="space-y-2">
+                <label htmlFor="lead-audit-campaign-name" className="text-[10px] font-bold text-muted uppercase tracking-wider">Campaña</label>
                 <input
+                  id="lead-audit-campaign-name"
                   type="text"
                   value={leadAuditCampaignName}
                   onChange={(event) => setLeadAuditCampaignName(event.target.value)}
-                  className="input-field"
+                  className="w-full px-4 py-2 bg-surface border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all placeholder:text-muted/50"
                   placeholder="campaign_name"
                 />
-              </label>
-              <label className="flex flex-col gap-2 text-sm">
-                Teléfono
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="lead-audit-phone" className="text-[10px] font-bold text-muted uppercase tracking-wider">Teléfono</label>
                 <input
+                  id="lead-audit-phone"
                   type="text"
                   value={leadAuditPhone}
                   onChange={(event) => setLeadAuditPhone(event.target.value)}
-                  className="input-field"
+                  className="w-full px-4 py-2 bg-surface border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all placeholder:text-muted/50"
                   placeholder="phone"
                 />
-              </label>
-              <label className="flex flex-col gap-2 text-sm">
-                Desde
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="lead-audit-from" className="text-[10px] font-bold text-muted uppercase tracking-wider">Desde</label>
                 <input
+                  id="lead-audit-from"
                   type="date"
                   value={leadAuditFrom}
                   onChange={(event) => setLeadAuditFrom(event.target.value)}
-                  className="input-field"
+                  className="w-full px-4 py-2 bg-surface border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                 />
-              </label>
-              <label className="flex flex-col gap-2 text-sm">
-                Hasta
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="lead-audit-to" className="text-[10px] font-bold text-muted uppercase tracking-wider">Hasta</label>
                 <input
+                  id="lead-audit-to"
                   type="date"
                   value={leadAuditTo}
                   onChange={(event) => setLeadAuditTo(event.target.value)}
-                  className="input-field"
+                  className="w-full px-4 py-2 bg-surface border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                 />
-              </label>
+              </div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Resultados Lead Audit</CardTitle>
+          <Card className="hover:shadow-md transition-shadow">
+            <CardHeader className="border-b border-border/50 pb-6">
+              <CardTitle className="font-serif text-xl">Resultados Lead Audit</CardTitle>
             </CardHeader>
-            <CardContent>
-              {leadAuditLoading && <p className="text-sm text-muted">Cargando auditoría de leads…</p>}
+            <CardContent className="pt-6">
+              {leadAuditLoading && (
+                <div className="py-20 flex flex-col items-center justify-center gap-3">
+                  <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+                  <p className="text-sm text-muted font-bold uppercase tracking-widest italic">Analizando trazabilidad…</p>
+                </div>
+              )}
               {leadAuditError && <ErrorState message={leadAuditError} />}
               {!leadAuditLoading && !leadAuditError && leadAuditRows.length === 0 && (
                 <EmptyState message="No se encontraron leads con los filtros aplicados." />
               )}
               {!leadAuditLoading && !leadAuditError && leadAuditRows.length > 0 && (
                 <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <TableHead cols={[
-                      'lead_name', 'source', 'campaign_name', 'ad_name', 'form_name', 'lead_created_at',
-                      'phone_normalized', 'match_class', 'match_confidence', 'patient_name', 'patient_phone',
-                      'settlement_date', 'first_settlement_at', 'phoneCrossMatch',
-                    ]} />
-                    <tbody>
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="border-b border-border text-[10px] font-bold text-muted uppercase tracking-wider">
+                        <th className="px-4 py-3">Lead / Fuente</th>
+                        <th className="px-4 py-3">Campaña / Form</th>
+                        <th className="px-4 py-3 text-center">Creado</th>
+                        <th className="px-4 py-3">Tel. Lead</th>
+                        <th className="px-4 py-3 text-center">Cruce</th>
+                        <th className="px-4 py-3">Paciente / Tel.</th>
+                        <th className="px-4 py-3">Settlement / Fecha</th>
+                        <th className="px-4 py-3 text-center">Match tel.</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/30">
                       {leadAuditRows.map((row) => (
-                        <TableRow
-                          key={row.lead_id}
-                          cells={[
-                            row.lead_name,
-                            row.source,
-                            row.campaign_name,
-                            row.ad_name,
-                            row.form_name,
-                            row.lead_created_at,
-                            row.phone_normalized,
-                            row.match_class,
-                            row.match_confidence,
-                            row.patient_name,
-                            row.patient_phone,
-                            row.settlement_date,
-                            row.first_settlement_at,
-                            row.phoneCrossMatch ? '✅' : '❌',
-                          ]}
-                        />
+                        <tr key={row.lead_id} className="group hover:bg-surface transition-colors">
+                          <td className="px-4 py-4">
+                            <p className="font-bold text-foreground text-sm">{row.lead_name ?? '—'}</p>
+                            <p className="text-[10px] font-bold text-primary uppercase mt-1">{row.source ?? '—'}</p>
+                          </td>
+                          <td className="px-4 py-4 max-w-[200px]">
+                            <p className="text-xs font-medium text-foreground truncate" title={row.campaign_name}>{row.campaign_name ?? '—'}</p>
+                            <p className="text-[10px] text-muted font-medium mt-1 truncate" title={row.form_name}>{row.form_name ?? '—'}</p>
+                          </td>
+                          <td className="px-4 py-4 text-xs text-center font-medium text-muted">
+                            {row.lead_created_at ? new Date(row.lead_created_at).toLocaleDateString('es-ES') : '—'}
+                          </td>
+                          <td className="px-4 py-4 text-xs font-bold text-foreground font-mono">
+                            {row.phone_normalized ?? '—'}
+                          </td>
+                          <td className="px-4 py-4 text-center">
+                            {row.match_class ? (
+                              <div className="flex flex-col items-center gap-1">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-500/10 text-green-500 border border-green-500/20 w-fit">
+                                  {row.match_class}
+                                </span>
+                                {row.match_confidence != null && (
+                                  <p className="text-[10px] text-muted font-bold tracking-tighter">{Math.round(row.match_confidence * 100)}%</p>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-muted/10 text-muted border border-muted/20 w-fit">
+                                —
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-4">
+                            <p className="text-xs font-bold text-foreground">{row.patient_name ?? '—'}</p>
+                            <p className="text-[10px] text-muted font-mono mt-1">{row.patient_phone ?? '—'}</p>
+                          </td>
+                          <td className="px-4 py-4">
+                            <p className="text-xs font-bold text-primary">{row.settlement_date ? `€${row.doctoralia_net?.toLocaleString('es-ES') ?? '—'}` : '—'}</p>
+                            <p className="text-[10px] text-muted font-medium mt-1">
+                              {row.first_settlement_at ? new Date(row.first_settlement_at).toLocaleDateString('es-ES') : '—'}
+                            </p>
+                          </td>
+                          <td className="px-4 py-4 text-center">
+                            {row.phoneCrossMatch ? (
+                              <div className="bg-green-500/10 p-1.5 rounded-lg inline-block border border-green-500/20">
+                                <CheckCircle2 className="w-4 h-4 text-green-500" />
+                              </div>
+                            ) : (
+                              <div className="bg-muted/10 p-1.5 rounded-lg inline-block border border-muted/20">
+                                <XCircle className="w-4 h-4 text-muted/40" />
+                              </div>
+                            )}
+                          </td>
+                        </tr>
                       ))}
                     </tbody>
                   </table>
