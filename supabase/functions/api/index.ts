@@ -2808,12 +2808,11 @@ async function processMetaInsightsGet(adminClient: any, userId: string, url: URL
       const rowsByAccount = groupRowsByAccount(fallbackRows);
       for (const accountId of failedAccountIds) {
         const rows = rowsByAccount[accountId] || [];
-        if (rows.length === 0) continue;
         successfulAccounts.push({
           accountId,
           current: { data: mapMetaDailyRowsToInsightsPayload(rows) },
           previous: { data: [] },
-          currency: 'EUR',
+          fallbackSource: 'meta_daily_insights',
         });
         dbFallbackAccounts += 1;
       }
