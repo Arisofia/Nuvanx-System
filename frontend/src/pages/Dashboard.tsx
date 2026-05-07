@@ -377,6 +377,10 @@ function DashboardHeader({
   setCustomTo,
   metaAccountIds,
 }: DashboardHeaderProps) {
+  const controlTextClass = 'text-[#5C5550] font-bold uppercase'
+  const selectClass = 'bg-transparent border-none focus:ring-0 text-[10px] font-bold uppercase tracking-wider px-4 py-2 cursor-pointer'
+  const dateInputClass = 'bg-transparent border-none focus:ring-0 text-[10px] font-bold uppercase w-28 text-center'
+
   return (
     <div className="flex flex-col space-y-8 mb-12">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
@@ -385,9 +389,9 @@ function DashboardHeader({
             <h1 className="text-5xl font-serif font-bold tracking-tight text-[#2C2825]">Dashboard</h1>
             <DataModeBadge overallMode={dataMode as any} />
           </div>
-          <p className="text-[#5C5550] text-xs uppercase tracking-[0.4em] font-bold">Control de Rendimiento Médico</p>
+          <p className={`${controlTextClass} text-xs tracking-wide`}>Control de Rendimiento Médico</p>
           {metaAccountIds.length > 0 && (
-            <p className="text-[#5C5550] text-[10px] uppercase tracking-[0.3em] font-bold">
+            <p className={`${controlTextClass} text-[10px] tracking-wide`}>
               Cuentas Meta: {metaAccountIds.join(', ')}
             </p>
           )}
@@ -400,9 +404,9 @@ function DashboardHeader({
                 type="button"
                 key={d}
                 onClick={() => { setDays(d); setCustomFrom(''); setCustomTo('') }}
-                className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all ${
-                  !customFrom && days === d 
-                    ? 'bg-primary text-white shadow-md' 
+                className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase transition-all ${
+                  !customFrom && days === d
+                    ? 'bg-primary text-white shadow-md'
                     : 'text-[#8E8680] hover:text-primary hover:bg-primary/5'
                 }`}
               >
@@ -421,7 +425,7 @@ function DashboardHeader({
                 <select
                   value={sourceFilter}
                   onChange={(e) => setSourceFilter(e.target.value)}
-                  className="bg-transparent border-none focus:ring-0 text-[10px] font-bold uppercase tracking-wider px-4 py-2 cursor-pointer border-r border-border/40"
+                  className={selectClass + ' border-r border-border/40'}
                 >
                   <option value="ALL">Todas las fuentes</option>
                   {sourcesList.map((s) => (
@@ -433,7 +437,7 @@ function DashboardHeader({
                 <select
                   value={campaignId}
                   onChange={(e) => setCampaignId(e.target.value)}
-                  className="bg-transparent border-none focus:ring-0 text-[10px] font-bold uppercase tracking-wider px-4 py-2 cursor-pointer"
+                  className={selectClass}
                 >
                   <option value="ALL">Todas las campañas</option>
                   {campaignsList.map((c) => (
@@ -450,17 +454,17 @@ function DashboardHeader({
             type="date"
             value={customFrom}
             onChange={(e) => {
-              setCustomFrom(e.target.value);
+              setCustomFrom(e.target.value)
               setCustomTo((prev) => prev || new Date().toISOString().slice(0, 10))
             }}
-            className="bg-transparent border-none focus:ring-0 text-[10px] font-bold uppercase w-28 text-center"
+            className={dateInputClass}
           />
           <span className="text-[#8E8680] text-xs">→</span>
           <input
             type="date"
             value={customTo}
             onChange={(e) => setCustomTo(e.target.value)}
-            className="bg-transparent border-none focus:ring-0 text-[10px] font-bold uppercase w-28 text-center"
+            className={dateInputClass}
           />
         </div>
       </div>

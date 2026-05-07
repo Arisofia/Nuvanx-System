@@ -3829,9 +3829,8 @@ async function handleIntegrationsConnectPost(ctx: AuthenticatedRouteContext): Pr
     const reqToken = body.token;
     if (!reqToken) return sendJson({ success: false, message: 'token is required' }, 400);
   
-    const validation = validateAndNormalizeMetadata(service, body.metadata);
-    if (!validation.ok) return sendJson({ success: false, message: validation.message }, 400);
-    const metadata = validation.metadata;
+    const { ok, message, metadata } = validateAndNormalizeMetadata(service, body.metadata);
+    if (!ok) return sendJson({ success: false, message }, 400);
   
     await ensurePublicUserRow(adminClient, authUser);
     const encryptedKey = await encryptCred(String(reqToken).trim());
