@@ -65,6 +65,37 @@ export DATABASE_URL=postgresql://user:password@host:port/dbname
 export CLINIC_ID=...
 ```
 
+Para actualizar el token de Meta en los `.env` locales detectados, usa:
+
+```bash
+npm run update:meta-token
+```
+
+Si quieres propagar el token también a GitHub, Supabase y Vercel desde el mismo script, ejecuta:
+
+```bash
+META_ACCESS_TOKEN_NEW=REPLACE_ME node scripts/set-meta-token.js --github --supabase --vercel
+```
+
+El script actualizará `META_ACCESS_TOKEN` en los archivos `.env` detectados sin modificar otras variables.
+
+Si prefieres hacerlo manualmente, sincroniza los entornos remotos así:
+
+- Supabase:
+  ```bash
+  supabase secrets set META_ACCESS_TOKEN="..."
+  npm run supabase:functions:deploy:api
+  ```
+- GitHub Actions:
+  ```bash
+  gh secret set META_ACCESS_TOKEN --body "..."
+  ```
+- Vercel:
+  ```bash
+  vercel env add META_ACCESS_TOKEN production --value "..." --yes
+  ```
+  Nota: este comando requiere que el directorio esté vinculado a un proyecto de Vercel (`vercel link`).
+
 `META_ACCESS_TOKEN`, `META_AD_ACCOUNT_ID`, `DATABASE_URL` y `CLINIC_ID` son requeridos por `scripts/meta-daily-report.js` y `scripts/meta-weekly-report.js`.
 
 ## Testing
