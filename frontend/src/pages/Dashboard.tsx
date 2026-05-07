@@ -696,6 +696,22 @@ function FunnelAndSpendSection({
 
           <div className="bg-[#FAF7F2]/60 p-6 rounded-3xl border border-border/40 hover:border-primary/30 transition-all duration-500 hover:shadow-lg hover:shadow-primary/5 group">
             <div className="flex items-center justify-between gap-2 mb-4">
+              <span className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em] group-hover:text-primary transition-colors">CPL Meta</span>
+              <Target className="h-4 w-4 text-primary opacity-40 group-hover:opacity-100 transition-opacity" />
+            </div>
+            <p className="text-4xl font-serif font-bold tracking-tight text-[#2C2825]">
+              {combined.metaCpl == null
+                ? <span className="text-[#8E8680]">n/a</span>
+                : `€${combined.metaCpl.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            </p>
+            <div className="h-[1px] w-8 bg-primary/20 my-4" />
+            <p className="text-[10px] text-[#8E8680] font-medium italic opacity-60">
+              {combined.metaCpl == null ? 'Sin leads atribuidos en el periodo' : 'Coste por lead atribuido'}
+            </p>
+          </div>
+
+          <div className="bg-[#FAF7F2]/60 p-6 rounded-3xl border border-border/40 hover:border-primary/30 transition-all duration-500 hover:shadow-lg hover:shadow-primary/5 group">
+            <div className="flex items-center justify-between gap-2 mb-4">
               <span className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em] group-hover:text-primary transition-colors">Leads Registrados</span>
               <Target className="h-4 w-4 text-primary opacity-40 group-hover:opacity-100 transition-opacity" />
             </div>
@@ -712,6 +728,22 @@ function FunnelAndSpendSection({
             <p className="text-4xl font-serif font-bold tracking-tight text-[#2C2825]">€{combined.verifiedRevenue.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
             <div className="h-[1px] w-8 bg-primary/20 my-4" />
             <p className="text-[10px] text-[#8E8680] font-medium italic opacity-60">Confirmado Doctoralia</p>
+          </div>
+
+          <div className="bg-[#FAF7F2]/60 p-6 rounded-3xl border border-border/40 hover:border-primary/30 transition-all duration-500 hover:shadow-lg hover:shadow-primary/5 group">
+            <div className="flex items-center justify-between gap-2 mb-4">
+              <span className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em] group-hover:text-primary transition-colors">Revenue / Lead</span>
+              <ArrowUpRight className="h-4 w-4 text-primary opacity-40 group-hover:opacity-100 transition-opacity" />
+            </div>
+            <p className="text-4xl font-serif font-bold tracking-tight text-[#2C2825]">
+              {combined.revenuePerLead == null
+                ? <span className="text-[#8E8680]">n/a</span>
+                : `€${combined.revenuePerLead.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            </p>
+            <div className="h-[1px] w-8 bg-primary/20 my-4" />
+            <p className="text-[10px] text-[#8E8680] font-medium italic opacity-60">
+              {combined.revenuePerLead == null ? 'Sin pacientes verificados' : 'Ingreso por paciente Doctoralia'}
+            </p>
           </div>
         </CardContent>
       </Card>
