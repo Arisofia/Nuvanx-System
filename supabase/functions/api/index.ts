@@ -908,12 +908,14 @@ export async function processLeadData(adminClient: any, userId: string, leadData
   const notes = buildMetaLeadNotes(fields, tag);
   const priority = buildMetaLeadPriority(fields, notes);
 
-  // Upsert lead — idempotent via partial unique index (user_id, source, external_id)
+  // Upsert lead — idempotent via partial unique index (clinic_id, source, external_id)
   const createdAt = parseMetaLeadCreatedAt(leadData.created_time);
+  const clinicIdForLead = await resolveClinicId(adminClient, userId);
 
   const { data: lead } = await adminClient.from('leads')
     .upsert({
       user_id:         userId,
+      clinic_id:       clinicIdForLead,
       external_id:     leadgen_id,
       source:          'meta_leadgen',
       name:            leadName,
@@ -949,7 +951,7 @@ export async function processLeadData(adminClient: any, userId: string, leadData
       raw_field_data:    Object.keys(rawFieldData).length ? rawFieldData : null,
       lead_quality_score: null,
       created_at:        createdAt,
-    }, { onConflict: 'user_id,source,external_id', ignoreDuplicates: true })
+    }, { onConflict: 'clinic_id,source,external_id', ignoreDuplicates: true })
     .select('id')
     .maybeSingle();
 
@@ -1752,20 +1754,24 @@ async function ensureWhatsappLead(
     createdAtMeta,
     value,
   } = params;
-  const { data: existingLead } = await adminClient.from('leads')
+  const clinicIdForLead = await resolveClinicId(adminClient, userId);
+
+  let existingLeadQuery = adminClient.from('leads')
     .select('id, stage')
-    .eq('user_id', userId)
     .or(`telefono_hash.eq.${hashedPhone},phone_normalized.eq.${normalizedPhone}`)
+    .is('deleted_at', null)
     .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
+  existingLeadQuery = clinicIdForLead
+    ? existingLeadQuery.eq('clinic_id', clinicIdForLead)
+    : existingLeadQuery.eq('user_id', userId);
+  const { data: existingLead } = await existingLeadQuery.maybeSingle();
 
   if (existingLead?.id) {
     if (String(existingLead.stage ?? 'lead').toLowerCase() === 'lead') {
       await adminClient.from('leads')
         .update({ stage: 'whatsapp', first_inbound_at: createdAtMeta })
-        .eq('id', existingLead.id)
-        .eq('user_id', userId);
+        .eq('id', existingLead.id);
     } else {
       await adminClient.from('leads')
         .update({ first_inbound_at: createdAtMeta })
@@ -1778,6 +1784,7 @@ async function ensureWhatsappLead(
   const { data: lead } = await adminClient.from('leads')
     .upsert({
       user_id:         userId,
+      clinic_id:       clinicIdForLead,
       external_id:     `whatsapp:${phone}`,
       source:          'whatsapp',
       stage:           'whatsapp',
@@ -1794,17 +1801,20 @@ async function ensureWhatsappLead(
       created_at_meta: createdAtMeta,
       first_inbound_at: createdAtMeta,
       created_at:      createdAtMeta,
-    }, { onConflict: 'user_id,source,external_id', ignoreDuplicates: true })
+    }, { onConflict: 'clinic_id,source,external_id', ignoreDuplicates: true })
     .select('id')
     .maybeSingle();
 
   if (lead?.id) return lead.id;
 
-  const { data: fallbackLead } = await adminClient.from('leads')
+  let fallbackQuery = adminClient.from('leads')
     .select('id')
-    .eq('user_id', userId)
     .eq('external_id', `whatsapp:${phone}`)
-    .maybeSingle();
+    .is('deleted_at', null);
+  fallbackQuery = clinicIdForLead
+    ? fallbackQuery.eq('clinic_id', clinicIdForLead)
+    : fallbackQuery.eq('user_id', userId);
+  const { data: fallbackLead } = await fallbackQuery.maybeSingle();
 
   return fallbackLead?.id ?? null;
 }
@@ -2090,11 +2100,13 @@ async function handleLeadsGet(ctx: AuthenticatedRouteContext): Promise<Response 
     const source = url.searchParams.get('source');
     const stage = url.searchParams.get('stage');
 
+    const clinicId = await resolveClinicId(adminClient, userId);
     let query = adminClient
       .from('leads')
       .select('*')
-      .eq('user_id', userId)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false });
+    query = clinicId ? query.eq('clinic_id', clinicId) : query.eq('user_id', userId);
 
     if (source) query = query.eq('source', source);
     if (stage) query = query.eq('stage', stage);
@@ -2110,10 +2122,10 @@ async function handleLeadsDelete(ctx: AuthenticatedRouteContext): Promise<Respon
   const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource === 'leads' && req.method === 'DELETE' && sub !== '') {
     const leadId = sub;
-    const { error } = await adminClient.from('leads')
-      .delete()
-      .eq('id', leadId)
-      .eq('user_id', userId);
+    const clinicId = await resolveClinicId(adminClient, userId);
+    let deleteQuery = adminClient.from('leads').delete().eq('id', leadId);
+    deleteQuery = clinicId ? deleteQuery.eq('clinic_id', clinicId) : deleteQuery.eq('user_id', userId);
+    const { error } = await deleteQuery;
 
     if (error) throw error;
     return sendJson({ success: true, message: 'Lead deleted' });
@@ -2122,8 +2134,10 @@ async function handleLeadsDelete(ctx: AuthenticatedRouteContext): Promise<Respon
 }
 
 async function upsertLeadIdempotent(adminClient: any, userId: string, payload: any, source: string, externalId: string): Promise<any> {
+  const clinicId = payload?.clinic_id ?? await resolveClinicId(adminClient, userId);
+  const enrichedPayload = { ...payload, clinic_id: clinicId };
   const { data, error } = await adminClient.from('leads')
-    .upsert(payload, { onConflict: 'user_id,source,external_id', ignoreDuplicates: true })
+    .upsert(enrichedPayload, { onConflict: 'clinic_id,source,external_id', ignoreDuplicates: true })
     .select()
     .maybeSingle();
   if (error) throw error;
@@ -2132,14 +2146,17 @@ async function upsertLeadIdempotent(adminClient: any, userId: string, payload: a
     return { data, deduplicated: false, status: 201 };
   }
 
-  const { data: existing, error: existingErr } = await adminClient.from('leads')
+  let existingQuery = adminClient.from('leads')
     .select('*')
-    .eq('user_id', userId)
     .eq('source', source)
     .eq('external_id', externalId)
+    .is('deleted_at', null)
     .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
+  existingQuery = clinicId
+    ? existingQuery.eq('clinic_id', clinicId)
+    : existingQuery.eq('user_id', userId);
+  const { data: existing, error: existingErr } = await existingQuery.maybeSingle();
   if (existingErr) throw existingErr;
 
   return { data: existing, deduplicated: true, status: 200 };
@@ -2149,7 +2166,8 @@ async function handleLeadsPost(ctx: AuthenticatedRouteContext): Promise<Response
   const { adminClient, userId, resource, req, sendJson } = ctx;
   if (resource === 'leads' && req.method === 'POST') {
     const body = await req.json();
-    const payload = { ...body, user_id: userId };
+    const clinicId = await resolveClinicId(adminClient, userId);
+    const payload = { ...body, user_id: userId, clinic_id: body?.clinic_id ?? clinicId };
     const source = String(payload?.source ?? '').trim();
     const externalId = String(payload?.external_id ?? '').trim();
 
@@ -2191,6 +2209,7 @@ async function handleLeadsPatch(ctx: AuthenticatedRouteContext): Promise<Respons
       .update(updateData)
       .eq('id', leadId)
       .eq('user_id', userId)
+      .is('deleted_at', null)
       .select()
       .maybeSingle();
 
@@ -2275,9 +2294,9 @@ function aggregateDashboardResults(leads: any[], prevLeads: any[], settlements: 
 }
 
 function buildDashboardLeadsQuery(adminClient: any, userId: string, clinicId: string | null, since: string | null, until: string | null, sourceFilter: string) {
-  let q = adminClient.from('leads').select('stage, revenue, source, created_at, converted_patient_id');
+  let q = adminClient.from('leads').select('stage, revenue, source, created_at, converted_patient_id').is('deleted_at', null);
   if (clinicId) {
-    q = q.or(`user_id.eq.${userId},clinic_id.eq.${clinicId}`);
+    q = q.eq('clinic_id', clinicId);
   } else {
     q = q.eq('user_id', userId);
   }
@@ -2334,9 +2353,9 @@ async function handleDashboardLeadFlow(ctx: AuthenticatedRouteContext): Promise<
   const { adminClient, userId, resource, sub, sendJson } = ctx;
   if (resource === 'dashboard' && sub === 'lead-flow') {
     const clinicId = await resolveClinicId(adminClient, userId);
-    let query = adminClient.from('leads').select('stage, created_at');
+    let query = adminClient.from('leads').select('stage, created_at').is('deleted_at', null);
     if (clinicId) {
-      query = query.or(`user_id.eq.${userId},clinic_id.eq.${clinicId}`);
+      query = query.eq('clinic_id', clinicId);
     } else {
       query = query.eq('user_id', userId);
     }
@@ -2606,13 +2625,15 @@ async function fetchMetaInsightsFallbackFromDb(params: {
   e: Error;
 }) {
   const { adminClient, userId, creds, since, until, days, sendJson, e } = params;
-  const { data: dbRows, error: dbErr } = await adminClient.from('meta_daily_insights')
+  const clinicId = await resolveClinicId(adminClient, userId);
+  let dbQuery = adminClient.from('meta_daily_insights')
     .select('date,impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,messaging_conversations')
-    .eq('user_id', userId)
     .in('ad_account_id', creds.adAccountIds)
     .gte('date', since)
     .lte('date', until)
     .order('date', { ascending: true });
+  dbQuery = clinicId ? dbQuery.eq('clinic_id', clinicId) : dbQuery.eq('user_id', userId);
+  const { data: dbRows, error: dbErr } = await dbQuery;
 
   if (!dbErr && Array.isArray(dbRows) && dbRows.length > 0) {
     const sumN = (arr: any[], k: string) => arr.reduce((s: number, d: any) => s + Number(d[k] || 0), 0);
@@ -2725,6 +2746,7 @@ async function processMetaInsightsGet(adminClient: any, userId: string, url: URL
 }
 
 async function persistMetaDailyInsights(adminClient: any, userId: string, adAccountId: string, accessToken: string, sinceDate: string, untilDate: string): Promise<number> {
+  const clinicId = await resolveClinicId(adminClient, userId);
   const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,actions';
   const insightsRes = await metaFetch(`/${adAccountId}/insights`, {
     fields,
@@ -2737,6 +2759,7 @@ async function persistMetaDailyInsights(adminClient: any, userId: string, adAcco
 
   const dbRows = insightsDailyRows.map((r: any) => ({
     user_id: userId,
+    clinic_id: clinicId,
     ad_account_id: adAccountId,
     date: r.date_start,
     impressions: Math.round(Number(r.impressions || 0)),
@@ -2752,7 +2775,7 @@ async function persistMetaDailyInsights(adminClient: any, userId: string, adAcco
   }));
 
   await adminClient.from('meta_daily_insights')
-    .upsert(dbRows, { onConflict: 'user_id,ad_account_id,date' });
+    .upsert(dbRows, { onConflict: 'clinic_id,ad_account_id,date' });
   return insightsDailyRows.length;
 }
 
@@ -5373,11 +5396,11 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
 
   const metaSources = ['meta_leadgen', 'meta_lead_gen', 'facebook_leadgen'];
   const [leadCountRes, leadMetaCountRes, leadsByStageRes, settlementsRes, metaDailyInsightsRes] = await Promise.all([
-    adminClient.from('leads').select('id', { count: 'exact', head: true }).eq('user_id', userId).gte('created_at', since).lte('created_at', until),
-    adminClient.from('leads').select('id', { count: 'exact', head: true }).eq('user_id', userId).in('source', metaSources).gte('created_at', since).lte('created_at', until),
-    adminClient.from('leads').select('stage').eq('user_id', userId).gte('created_at', since).lte('created_at', until),
+    adminClient.from('leads').select('id', { count: 'exact', head: true }).eq('clinic_id', clinicId).is('deleted_at', null).gte('created_at', since).lte('created_at', until),
+    adminClient.from('leads').select('id', { count: 'exact', head: true }).eq('clinic_id', clinicId).is('deleted_at', null).in('source', metaSources).gte('created_at', since).lte('created_at', until),
+    adminClient.from('leads').select('stage').eq('clinic_id', clinicId).is('deleted_at', null).gte('created_at', since).lte('created_at', until),
     adminClient.from('financial_settlements').select('id, patient_id, dni_hash, amount_net, cancelled_at, settled_at, source_system').eq('clinic_id', clinicId).eq('source_system', 'doctoralia').is('cancelled_at', null).gt('amount_net', 0).order('settled_at', { ascending: true }),
-    adminClient.from('meta_daily_insights').select('date, ad_account_id, spend, impressions, clicks, conversions, ctr, cpc').eq('user_id', userId).gte('date', since).lte('date', until),
+    adminClient.from('meta_daily_insights').select('date, ad_account_id, spend, impressions, clicks, conversions, ctr, cpc').eq('clinic_id', clinicId).gte('date', since).lte('date', until),
   ]);
 
   if (leadCountRes.error) throw leadCountRes.error;

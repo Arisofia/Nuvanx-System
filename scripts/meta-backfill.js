@@ -554,10 +554,16 @@ async function processLeadData(db, userId, leadData) {
 
   const createdAt = parseLeadCreatedAt(leadData.created_time);
 
-  const { rows: existingLeadRows } = await db.query(
-    `SELECT id FROM public.leads WHERE user_id = $1 AND source = 'meta_leadgen' AND external_id = $2 LIMIT 1`,
-    [userId, leadgen_id]
+  const { rows: clinicRows } = await db.query(
+    `SELECT clinic_id FROM public.users WHERE id = $1 LIMIT 1`,
+    [userId],
   );
+  const clinicId = clinicRows[0]?.clinic_id ?? null;
+
+  const dedupQuery = clinicId
+    ? { sql: `SELECT id FROM public.leads WHERE clinic_id = $1 AND source = 'meta_leadgen' AND external_id = $2 AND deleted_at IS NULL LIMIT 1`, args: [clinicId, leadgen_id] }
+    : { sql: `SELECT id FROM public.leads WHERE user_id = $1 AND source = 'meta_leadgen' AND external_id = $2 LIMIT 1`, args: [userId, leadgen_id] };
+  const { rows: existingLeadRows } = await db.query(dedupQuery.sql, dedupQuery.args);
   if (existingLeadRows.length > 0) {
     return false;
   }
@@ -568,16 +574,17 @@ async function processLeadData(db, userId, leadData) {
 
   const leadResult = await db.query(`
     INSERT INTO public.leads
-      (user_id, external_id, source, name, email, phone, dni,
+      (user_id, clinic_id, external_id, source, name, email, phone, dni,
        first_name, last_name, city, state, zip_code, gender,
        notes, priority, stage, campaign_id, campaign_name, adset_id, adset_name,
        ad_id, ad_name, form_id, form_name, meta_ad_id, meta_ad_name, meta_form_id,
        meta_platform, is_organic, created_at_meta, asset_url, telefono_hash, email_hash,
        raw_field_data, created_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36)
     RETURNING id
   `, [
     userId,
+    clinicId,
     leadgen_id,
     'meta_leadgen',
     leadName,

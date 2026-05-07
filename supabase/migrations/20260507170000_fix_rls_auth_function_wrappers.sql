@@ -18,8 +18,8 @@ BEGIN
     SELECT schemaname, tablename, policyname, cmd, qual, with_check
     FROM pg_policies
     WHERE
-      (qual ~ 'auth\\.uid\\(\\)' OR qual ~ 'auth\\.jwt\\(\\)' OR qual ~ 'current_setting\\(')
-      OR (with_check ~ 'auth\\.uid\\(\\)' OR with_check ~ 'auth\\.jwt\\(\\)' OR with_check ~ 'current_setting\\(')
+      (qual LIKE '%auth.uid()%' OR qual LIKE '%auth.jwt()%' OR qual LIKE '%current_setting(%')
+      OR (with_check LIKE '%auth.uid()%' OR with_check LIKE '%auth.jwt()%' OR with_check LIKE '%current_setting(%')
   LOOP
     old_qual := COALESCE(pol.qual, '');
     old_check := COALESCE(pol.with_check, '');

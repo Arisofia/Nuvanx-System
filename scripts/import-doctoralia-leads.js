@@ -6,7 +6,7 @@
  * Doctoralia, so the Dashboard shows real Total Leads / Conversion Rate.
  *
  * Each settlement maps to a CLOSED lead (the patient paid and was treated).
- * The upsert key is (user_id, source, external_id) so the script is safe
+ * The upsert key is (clinic_id, source, external_id) so the script is safe
  * to re-run at any time — it will never create duplicates.
  *
  * REQUIRED ENV:
@@ -95,6 +95,7 @@ async function main() {
     const patient = s.patients ?? {};
     return {
       user_id:              USER_ID,
+      clinic_id:            CLINIC_ID,
       source:               'doctoralia',
       stage:                'closed',
       external_id:          s.id,                         // settlement id — dedup key
@@ -133,7 +134,7 @@ async function main() {
     const batch = leadRows.slice(i, i + BATCH);
     const { error } = await supabase
       .from('leads')
-      .upsert(batch, { onConflict: 'user_id,source,external_id' });
+      .upsert(batch, { onConflict: 'clinic_id,source,external_id' });
     if (error) {
       console.error(`Batch ${i / BATCH + 1} failed:`, error.message);
     } else {
