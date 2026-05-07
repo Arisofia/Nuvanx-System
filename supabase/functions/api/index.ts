@@ -181,6 +181,23 @@ export async function metaFetch(path: string, params: Record<string, string>, to
   return d;
 }
 
+async function metaFetchAll(path: string, params: Record<string, string>, token: string) {
+  const allData: any[] = [];
+  let nextParams: Record<string, string> = { ...params };
+
+  while (true) {
+    const response = await metaFetch(path, nextParams, token);
+    if (!Array.isArray(response?.data)) break;
+    allData.push(...response.data);
+
+    const after = response?.paging?.cursors?.after;
+    if (!after) break;
+    nextParams = { ...params, after };
+  }
+
+  return allData;
+}
+
 function shouldRetryInsightFilterError(message: string) {
   const normalized = message.toLowerCase();
   return (
@@ -1415,11 +1432,13 @@ async function handleMetaWebhookPost(ctx: PublicRouteContext): Promise<Response 
     auth: { persistSession: false },
   });
 
+  const tasks: Promise<void>[] = [];
   for (const entry of (payload.entry ?? [])) {
     for (const change of (entry.changes ?? [])) {
-      await processMetaLeadChange(adminClient, change);
+      tasks.push(processMetaLeadChange(adminClient, change));
     }
   }
+  await Promise.allSettled(tasks);
 
   return new Response('ok', { status: 200 });
 }
@@ -1475,11 +1494,13 @@ async function handleWhatsappWebhookPost(ctx: PublicRouteContext): Promise<Respo
     auth: { persistSession: false },
   });
 
+  const waTasks: Promise<void>[] = [];
   for (const entry of (payload.entry ?? [])) {
     for (const change of (entry.changes ?? [])) {
-      await processWhatsappWebhookChange(adminClient, change);
+      waTasks.push(processWhatsappWebhookChange(adminClient, change));
     }
   }
+  await Promise.allSettled(waTasks);
 
   return new Response('ok', { status: 200 });
 }
@@ -1518,6 +1539,92 @@ async function processWhatsappWebhookChange(adminClient: any, change: any): Prom
   await processWhatsappWebhookMessage(adminClient, matchingIntegration.user_id, value);
 }
 
+interface WhatsappLeadParams {
+  phone: string;
+  normalizedPhone: string;
+  hashedPhone: string;
+  name: string;
+  safeSnippet: string;
+  createdAtMeta: string;
+  value: any;
+}
+
+async function ensureWhatsappLead(
+  adminClient: any,
+  userId: string,
+  params: WhatsappLeadParams,
+): Promise<string | null> {
+  const {
+    phone,
+    normalizedPhone,
+    hashedPhone,
+    name,
+    safeSnippet,
+    createdAtMeta,
+    value,
+  } = params;
+  const { data: existingLead } = await adminClient
+    .from('leads')
+    .select('id, stage')
+    .eq('user_id', userId)
+    .or(`telefono_hash.eq.${hashedPhone},phone_normalized.eq.${normalizedPhone}`)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existingLead?.id) {
+    if (String(existingLead.stage ?? 'lead').toLowerCase() === 'lead') {
+      await adminClient
+        .from('leads')
+        .update({ stage: 'whatsapp', first_inbound_at: createdAtMeta })
+        .eq('id', existingLead.id)
+        .eq('user_id', userId);
+    } else {
+      await adminClient
+        .from('leads')
+        .update({ first_inbound_at: createdAtMeta })
+        .eq('id', existingLead.id)
+        .is('first_inbound_at', null);
+    }
+    return existingLead.id;
+  }
+
+  const { data: lead } = await adminClient
+    .from('leads')
+    .upsert({
+      user_id:         userId,
+      external_id:     `whatsapp:${phone}`,
+      source:          'whatsapp',
+      stage:           'whatsapp',
+      name:            name || null,
+      phone,
+      notes:           safeSnippet ? `WhatsApp inbound: ${safeSnippet}` : 'WhatsApp inbound message received',
+      telefono_hash:   hashedPhone,
+      email_hash:      null,
+      raw_field_data:  {
+        metadata: value.metadata ?? null,
+        contacts: value.contacts ?? null,
+        messages: value.messages ?? null,
+      },
+      created_at_meta: createdAtMeta,
+      first_inbound_at: createdAtMeta,
+      created_at:      createdAtMeta,
+    }, { onConflict: 'user_id,source,external_id', ignoreDuplicates: true })
+    .select('id')
+    .maybeSingle();
+
+  if (lead?.id) return lead.id;
+
+  const { data: fallbackLead } = await adminClient
+    .from('leads')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('external_id', `whatsapp:${phone}`)
+    .maybeSingle();
+
+  return fallbackLead?.id ?? null;
+}
+
 async function processWhatsappWebhookMessage(adminClient: any, userId: string, value: any): Promise<boolean> {
   const messages = Array.isArray(value.messages) ? value.messages : [];
   if (!messages.length) return false;
@@ -1535,66 +1642,19 @@ async function processWhatsappWebhookMessage(adminClient: any, userId: string, v
   const createdAtMeta = message?.timestamp ? new Date(Number(message.timestamp) * 1000).toISOString() : new Date().toISOString();
   const hashedPhone = await sha256Hex(phone);
 
-  const { data: existingLead } = await adminClient
-    .from('leads')
-    .select('id, stage')
-    .eq('user_id', userId)
-    .or(`telefono_hash.eq.${hashedPhone},phone_normalized.eq.${normalizedPhone}`)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  let leadId: string | null = existingLead?.id ?? null;
-
-  if (existingLead?.id) {
-    if (String(existingLead.stage ?? 'lead').toLowerCase() === 'lead') {
-      await adminClient
-        .from('leads')
-        .update({ stage: 'whatsapp', first_inbound_at: createdAtMeta })
-        .eq('id', existingLead.id)
-        .eq('user_id', userId);
-    } else {
-      await adminClient
-        .from('leads')
-        .update({ first_inbound_at: createdAtMeta })
-        .eq('id', existingLead.id)
-        .is('first_inbound_at', null);
-    }
-  } else {
-    const { data: lead } = await adminClient
-      .from('leads')
-      .upsert({
-        user_id:         userId,
-        external_id:     `whatsapp:${phone}`,
-        source:          'whatsapp',
-        stage:           'whatsapp',
-        name:            name || null,
-        phone,
-        notes:           safeSnippet ? `WhatsApp inbound: ${safeSnippet}` : 'WhatsApp inbound message received',
-        telefono_hash:   hashedPhone,
-        email_hash:      null,
-        raw_field_data:  {
-          metadata: value.metadata ?? null,
-          contacts: value.contacts ?? null,
-          messages: value.messages ?? null,
-        },
-        created_at_meta: createdAtMeta,
-        first_inbound_at: createdAtMeta,
-        created_at:      createdAtMeta,
-      }, { onConflict: 'user_id,source,external_id', ignoreDuplicates: true })
-      .select('id')
-      .maybeSingle();
-    leadId = lead?.id ?? null;
-    if (!leadId) {
-      const { data: fallbackLead } = await adminClient
-        .from('leads')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('external_id', `whatsapp:${phone}`)
-        .maybeSingle();
-      leadId = fallbackLead?.id ?? null;
-    }
-  }
+  const leadId = await ensureWhatsappLead(
+    adminClient,
+    userId,
+    {
+      phone,
+      normalizedPhone,
+      hashedPhone,
+      name,
+      safeSnippet,
+      createdAtMeta,
+      value,
+    },
+  );
 
   const { data: usrRow } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
   const clinicId = usrRow?.clinic_id ?? null;
@@ -1965,7 +2025,7 @@ async function handleLeadsPatch(ctx: AuthenticatedRouteContext): Promise<Respons
 }
 
 function getDashboardPeriods(url: URL) {
-  const days = Number.parseInt(url.searchParams.get('days') ?? '0');
+  const days = Number.parseInt(url.searchParams.get('days') ?? '0', 10) || 0;
   const fromParam = url.searchParams.get('from') ?? '';
   const toParam = url.searchParams.get('to') ?? '';
 
@@ -2124,7 +2184,7 @@ async function handleDashboardMetaTrends(ctx: AuthenticatedRouteContext): Promis
       return sendJson({ success: false, message: validation.message }, validation.statusCode);
     }
     try {
-      const trendDays = Number.parseInt(url.searchParams.get('days') ?? '30');
+      const trendDays = Number.parseInt(url.searchParams.get('days') ?? '30', 10) || 30;
       const fromParam = url.searchParams.get('from');
       const toParam = url.searchParams.get('to');
       const campaignId = url.searchParams.get('campaign_id');
@@ -2217,7 +2277,7 @@ async function handleDashboardMetaTrends(ctx: AuthenticatedRouteContext): Promis
 }
 
 function getMetaInsightsTimePeriods(url: URL) {
-  const requestedDays = Number.parseInt(url.searchParams.get('days') ?? '30');
+  const requestedDays = Number.parseInt(url.searchParams.get('days') ?? '30', 10) || 30;
   const fromParam = url.searchParams.get('from');
   const toParam = url.searchParams.get('to');
 
@@ -2506,7 +2566,15 @@ async function persistMetaDailyInsights(adminClient: any, userId: string, adAcco
     reach: Math.round(Number(r.reach || 0)),
     clicks: Math.round(Number(r.clicks || 0)),
     spend: Number(r.spend || 0),
-      conversions: Math.round(Number(r.conversions ?? actionValue(r.actions, (t: string) => t.includes('lead') || t.includes('conversion') || t.includes('complete_registration')) ?? 0)),
+    conversions: Math.round(Number(r.conversions ?? actionValue(r.actions, (t: string) => t.includes('lead') || t.includes('conversion') || t.includes('complete_registration')) ?? 0)),
+    ctr: Number(r.ctr || 0),
+    cpc: Number(r.cpc || 0),
+    cpm: Number(r.cpm || 0),
+    messaging_conversations: actionValue(r.actions, isMessagingConversationAction),
+    updated_at: new Date().toISOString(),
+  }));
+
+  await adminClient
     .from('meta_daily_insights')
     .upsert(dbRows, { onConflict: 'user_id,ad_account_id,date' });
   return insightsDailyRows.length;
@@ -2615,7 +2683,7 @@ async function persistMetaPostPerformance(adminClient: any, userId: string, page
       insightsByName.set(name, values?.[0]?.value);
     }
     const reactionsObj = insightsByName.get('post_reactions_by_type_total') || {};
-    const reactionsTotal = Object.values(reactionsObj).reduce((a: number, b: any) => a + Number(b || 0), 0);
+    const reactionsTotal = Object.values(reactionsObj as any).reduce((a: number, b: any) => a + Number(b || 0), 0);
     const activityObj = insightsByName.get('post_activity_by_action_type') || {};
     const comments = Number(activityObj.comment || 0);
     const shares = Number(activityObj.share || 0);
@@ -2909,7 +2977,7 @@ async function handleMetaBackfillPost(ctx: AuthenticatedRouteContext): Promise<R
       return sendJson({ success: false, message: validation.message }, validation.statusCode);
     }
 
-    const days = Math.min(Math.max(Number.parseInt(url.searchParams.get('days') ?? '7'), 1), 500);
+    const days = Math.min(Math.max(Number.parseInt(url.searchParams.get('days') ?? '7', 10) || 7, 1), 500);
     const fromParam = url.searchParams.get('from');
     const sinceDate = fromParam || new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
     const untilDate = new Date().toISOString().slice(0, 10);
@@ -3177,7 +3245,7 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
     }
     const campFrom = url.searchParams.get('from') ?? '';
     const campTo   = url.searchParams.get('to')   ?? '';
-    const campDays = Number.parseInt(url.searchParams.get('days') ?? '30');
+    const campDays = Number.parseInt(url.searchParams.get('days') ?? '30', 10) || 30;
 
     const datePreset = getMetaDatePreset(campDays);
     const insightsDateParam = campFrom && campTo
@@ -3214,7 +3282,7 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
 
       const campCurrency: string = successfulAccounts.find((acct: any) => acct.currency)?.currency ?? 'EUR';
   
-      const campaigns = successfulAccounts.flatMap((acct: any) => ((acct.data?.data ?? []) as any[])
+      const campaigns = successfulAccounts.flatMap((acct: any) => ((acct.campaigns ?? []) as any[])
         .map((campaign) => ({ ...campaign, accountId: acct.accountId })));
 
       // If Meta live returned 0 campaigns, delegate to DB fallback immediately
@@ -3451,7 +3519,7 @@ async function handleMetaAdsGet(ctx: AuthenticatedRouteContext): Promise<Respons
     }
     const adsFrom = url.searchParams.get('from') ?? '';
     const adsTo   = url.searchParams.get('to')   ?? '';
-    const adsDays = Number.parseInt(url.searchParams.get('days') ?? '30');
+    const adsDays = Number.parseInt(url.searchParams.get('days') ?? '30', 10) || 30;
     const datePreset = getMetaDatePreset(adsDays);
 
     const insightsDateParam = adsFrom && adsTo
@@ -3480,7 +3548,7 @@ async function handleMetaAdsGet(ctx: AuthenticatedRouteContext): Promise<Respons
       }
 
       const currency: string = successfulAccounts.find((acct: any) => acct.currency)?.currency ?? 'EUR';
-      const ads = successfulAccounts.flatMap((acct: any) => ((acct.adsData?.data ?? []) as any[])
+      const ads = successfulAccounts.flatMap((acct: any) => ((acct.adsData ?? []) as any[])
         .map((ad: any) => ({ ...ad, accountId: acct.accountId })));
 
       // If Meta live returned 0 ads, delegate to DB fallback immediately
@@ -4077,7 +4145,7 @@ async function handleGoogleAdsInsightsGet(ctx: AuthenticatedRouteContext): Promi
     if (g.notConnected) return sendJson({ success: false, notConnected: true, message: 'Google Ads not connected. Add your developer token in Integrations.' });
     const { customerId, devToken, serviceAccount } = g;
     if (!customerId) return sendJson({ success: false, noAccountId: true, message: 'Google Ads Customer ID not configured.' });
-    const days = Math.min(Math.max(Number.parseInt(url.searchParams.get('days') ?? '30', 10), 1), 90);
+    const days = Math.min(Math.max(Number.parseInt(url.searchParams.get('days') ?? '30', 10) || 30, 1), 90);
     const since = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
     const until = new Date().toISOString().slice(0, 10);
     const prevSince = new Date(Date.now() - days * 2 * 86_400_000).toISOString().slice(0, 10);
@@ -4506,9 +4574,12 @@ async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<
 }
 
 async function handleTraceabilityFunnel(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, resource, sub, sendJson } = ctx;
+  const { adminClient, userId, resource, sub, sendJson } = ctx;
   if (resource === 'traceability' && sub === 'funnel') {
-    const { data: rows } = await adminClient.from('vw_whatsapp_conversion_real').select('*');
+    const { data: rows } = await adminClient
+      .from('vw_whatsapp_conversion_real')
+      .select('*')
+      .eq('user_id', userId);
     // The view uses column names "cohort" and "lead_count"; normalise to the
     // shape the frontend FunnelRow type expects: { stage, count }.
     const funnel = (rows || []).map((r: Record<string, unknown>) => ({
@@ -4726,7 +4797,7 @@ async function processWhatsappConversionPost(adminClient: any, userId: string, r
 }
 
 function getKpiDateRange(url: URL) {
-  const days = Math.min(Math.max(Number.parseInt(url.searchParams.get('days') ?? '30', 10), 1), 90);
+  const days = Math.min(Math.max(Number.parseInt(url.searchParams.get('days') ?? '30', 10) || 30, 1), 90);
   const fromParam = url.searchParams.get('from') ?? '';
   const toParam = url.searchParams.get('to') ?? '';
   const since = fromParam || new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
@@ -5103,13 +5174,14 @@ async function handleReportsCampaignPerformanceGet(ctx: AuthenticatedRouteContex
 }
 
 async function handleReportsSourceComparisonGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, resource, sub, req, url, sendJson } = ctx;
+  const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'reports' && sub === 'source-comparison' && req.method === 'GET') {
     const from = url.searchParams.get('from') ?? '';
     const to   = url.searchParams.get('to')   ?? '';
     let query = adminClient
       .from('vw_source_comparison')
       .select('*')
+      .eq('user_id', userId)
       .order('total_leads', { ascending: false });
     if (from) query = query.gte('first_lead_at', from);
     if (to)   query = query.lte('last_lead_at', to);
@@ -5120,11 +5192,12 @@ async function handleReportsSourceComparisonGet(ctx: AuthenticatedRouteContext):
 }
 
 async function handleReportsWhatsappConversionGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, resource, sub, req, sendJson } = ctx;
+  const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource === 'reports' && sub === 'whatsapp-conversion' && req.method === 'GET') {
     const { data: rows } = await adminClient
       .from('vw_whatsapp_conversion_real')
-      .select('*');
+      .select('*')
+      .eq('user_id', userId);
     return sendJson({ success: true, cohorts: rows || [] });
   }
   return null;
@@ -5174,11 +5247,15 @@ async function handleReportsLeadAuditGet(ctx: AuthenticatedRouteContext): Promis
 }
 
 async function handleReportsDoctorPerformanceGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, resource, sub, req, sendJson } = ctx;
+  const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource === 'reports' && sub === 'doctor-performance' && req.method === 'GET') {
+    const clinicId = await resolveClinicId(adminClient, userId);
+    if (!clinicId) return sendJson({ success: false, message: 'Clinic not configured.' }, 400);
+
     const { data: rows } = await adminClient
       .from('vw_doctor_performance_real')
       .select('*')
+      .eq('clinic_id', clinicId)
       .order('total_appointments', { ascending: false });
     return sendJson({ success: true, doctors: rows || [] });
   }

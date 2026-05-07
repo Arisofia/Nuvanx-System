@@ -223,7 +223,7 @@ async function upsertPost(db, userId, pageId, p) {
     insightsByName.set(name, values?.[0]?.value);
   }
   const reactionsObj = insightsByName.get('post_reactions_by_type_total') || {};
-  const reactionsTotal = Object.values(reactionsObj).reduce((a, b) => a + Number(b || 0), 0);
+  const reactionsTotal = Number(Object.values(reactionsObj).reduce((a, b) => a + Number(b || 0), 0));
 
   // post_activity_by_action_type returns a map like { share: N, comment: N, like: N }
   const activityObj = insightsByName.get('post_activity_by_action_type') || {};
