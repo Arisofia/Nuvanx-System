@@ -846,7 +846,7 @@ async function resolveClinicMetadata(adminClient: any, userId: string) {
 async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: string) {
   const { data: credRow } = await adminClient
     .from('credentials').select('encrypted_key').eq('user_id', userId).eq('service', 'meta').single();
-  if (!credRow) return { notConnected: true, accessToken: '', adAccountIds: [], adAccountId: '', decryptionError: '' } as const;
+  if (!credRow) return { notConnected: true, accessToken: '', adAccountIds: [] as string[], adAccountId: '', decryptionError: '' };
 
   let accessToken = '';
   let decryptionError = '';
@@ -3521,7 +3521,7 @@ async function fetchMetaAdsFallback(params: {
   }
 }
 
-async function fetchAdsFromAccounts(adAccountIds: string[], insightsDateParam: string, accessToken: string) {
+async function fetchAdsFromAccounts(adAccountIds: readonly string[], insightsDateParam: string, accessToken: string) {
   return await Promise.allSettled(adAccountIds.map(async (accountId: string) => {
     const [ads, acctData] = await Promise.all([
       metaFetchAll(`/${accountId}/ads`, {
@@ -4874,6 +4874,20 @@ async function fetchMetaKpis(adminClient: any, userId: string, url: URL, since: 
   return await loadMetaKpis(adminClient, userId, url, since, until, hasCachedMeta, cachedMetrics);
 }
 
+function calculateMetaRates(metrics: any) {
+  metrics.ctr = metrics.impressions > 0 ? Number.parseFloat(((metrics.clicks / metrics.impressions) * 100).toFixed(2)) : 0;
+  metrics.cpc = metrics.clicks > 0 ? Number.parseFloat((metrics.spend / metrics.clicks).toFixed(2)) : 0;
+}
+
+function applyCachedMetaMetrics(metaResult: any, cachedMetrics: any) {
+  metaResult.spend = Number.parseFloat((cachedMetrics.spend ?? 0).toFixed(2));
+  metaResult.leads = Math.max(cachedMetrics.conversions ?? 0, metaResult.leads);
+  metaResult.impressions = cachedMetrics.impressions ?? 0;
+  metaResult.clicks = cachedMetrics.clicks ?? 0;
+  calculateMetaRates(metaResult);
+  metaResult.data_source = 'meta_daily_insights';
+}
+
 async function loadMetaKpis(adminClient: any, userId: string, url: URL, since: string, until: string, hasCachedMeta: boolean, cachedMetrics: any) {
   const metaResult = { spend: 0, leads: 0, impressions: 0, clicks: 0, ctr: 0, cpc: 0, live: false, message: '', data_source: 'none' } as any;
   try {
@@ -4898,33 +4912,16 @@ async function loadMetaKpis(adminClient: any, userId: string, url: URL, since: s
       metaResult.leads = insightRows.reduce((sum: number, row: any) => sum + parseMetaMetric(row.conversions), 0);
       metaResult.impressions = insightRows.reduce((sum: number, row: any) => sum + parseMetaMetric(row.impressions), 0);
       metaResult.clicks = insightRows.reduce((sum: number, row: any) => sum + parseMetaMetric(row.clicks), 0);
-      metaResult.ctr = metaResult.impressions > 0 ? Number.parseFloat(((metaResult.clicks / metaResult.impressions) * 100).toFixed(2)) : 0;
-      metaResult.cpc = metaResult.clicks > 0 ? Number.parseFloat((metaResult.spend / metaResult.clicks).toFixed(2)) : 0;
+      calculateMetaRates(metaResult);
       metaResult.live = successfulAccounts.length > 0;
       metaResult.data_source = successfulAccounts.length > 0 ? 'meta_api' : 'meta_api_failed';
     } else {
       metaResult.message = validation.message;
-      if (hasCachedMeta) {
-        metaResult.spend = Number.parseFloat((cachedMetrics.spend ?? 0).toFixed(2));
-        metaResult.leads = Math.max(cachedMetrics.conversions ?? 0, metaResult.leads);
-        metaResult.impressions = cachedMetrics.impressions ?? 0;
-        metaResult.clicks = cachedMetrics.clicks ?? 0;
-        metaResult.ctr = metaResult.impressions > 0 ? Number.parseFloat(((metaResult.clicks / metaResult.impressions) * 100).toFixed(2)) : 0;
-        metaResult.cpc = metaResult.clicks > 0 ? Number.parseFloat((metaResult.spend / metaResult.clicks).toFixed(2)) : 0;
-        metaResult.data_source = 'meta_daily_insights';
-      }
+      if (hasCachedMeta) applyCachedMetaMetrics(metaResult, cachedMetrics);
     }
   } catch (e: any) {
     metaResult.message = e?.message ?? 'Meta API error';
-    if (hasCachedMeta) {
-      metaResult.spend = Number.parseFloat((cachedMetrics.spend ?? 0).toFixed(2));
-      metaResult.leads = Math.max(cachedMetrics.conversions ?? 0, metaResult.leads);
-      metaResult.impressions = cachedMetrics.impressions ?? 0;
-      metaResult.clicks = cachedMetrics.clicks ?? 0;
-      metaResult.ctr = metaResult.impressions > 0 ? Number.parseFloat(((metaResult.clicks / metaResult.impressions) * 100).toFixed(2)) : 0;
-      metaResult.cpc = metaResult.clicks > 0 ? Number.parseFloat((metaResult.spend / metaResult.clicks).toFixed(2)) : 0;
-      metaResult.data_source = 'meta_daily_insights';
-    }
+    if (hasCachedMeta) applyCachedMetaMetrics(metaResult, cachedMetrics);
   }
   return metaResult;
 }
