@@ -3,7 +3,7 @@
 declare const Deno: any;
 
 import { createClient } from '@supabase/supabase-js';
-import { normalizePhoneForMeta } from '../_shared/phone.ts';
+import { getPhoneNormalizationFailureReason, normalizePhoneForMeta } from '../_shared/phone.ts';
 export { createClient } from '@supabase/supabase-js';
 
 function requireSupabaseEnv(value: string | null | undefined, name: string): string {
@@ -15,7 +15,7 @@ function requireSupabaseEnv(value: string | null | undefined, name: string): str
 }
 
 function hasOwn(obj: unknown, key: PropertyKey): boolean {
-  return typeof obj === 'object' && obj !== null && Object.hasOwn(obj, key);
+  return typeof obj === 'object' && obj !== null && Object.prototype.hasOwnProperty.call(obj, key);
 }
 
 export const supabaseClientFactory = {
@@ -312,26 +312,122 @@ async function metaPost(path: string, body: any, token: string) {
   return data;
 }
 
-async function trackMetaWhatsappConversion(accessToken: string, phone: string | null | undefined, email?: string | null) {
-  const normalizedPhone = normalizePhoneForMeta(phone ?? '');
-  const userData: Record<string, string[]> = {};
-  if (normalizedPhone) userData.ph = [normalizedPhone];
-  if (email) userData.em = [email.trim().toLowerCase()];
-  if (!userData.ph?.length && !userData.em?.length) {
-    throw new Error('Phone or email is required to track WhatsApp conversion.');
-  }
+async function trackMetaWhatsappConversion(
+  accessToken: string,
+  phone: string | null | undefined,
+  email?: string | null,
+  options: { eventId?: string; testEventCode?: string } = {},
+) {
+  return await trackMetaCapiEvent(accessToken, {
+    eventName: 'Contact',
+    eventId: options.eventId,
+    actionSource: 'system_generated',
+    userData: { ph: phone ?? null, em: email ?? null },
+    customData: { source: 'whatsapp_crm_nuvanx' },
+    testEventCode: options.testEventCode,
+  });
+}
 
+interface MetaCapiUserData {
+  ph?: string | null;
+  em?: string | null;
+  fn?: string | null;
+  ln?: string | null;
+  ct?: string | null;
+  st?: string | null;
+  zp?: string | null;
+  country?: string | null;
+}
+
+interface MetaCapiEventInput {
+  eventName: string;
+  eventId?: string;
+  eventTime?: number;
+  eventSourceUrl?: string;
+  actionSource?: string;
+  userData: MetaCapiUserData;
+  customData?: Record<string, unknown>;
+  testEventCode?: string;
+}
+
+/**
+ * Generic Meta Conversions API (CAPI) sender. Hashes PII before transport and
+ * supports `event_id` for client/server deduplication and `test_event_code`
+ * for verification in Events Manager → Test Events.
+ */
+async function trackMetaCapiEvent(accessToken: string, input: MetaCapiEventInput) {
+  const userData: Record<string, string[]> = {};
+  const phone = input.userData.ph ? normalizePhoneForMeta(input.userData.ph) : '';
+  if (phone) userData.ph = [phone];
+  if (input.userData.em) userData.em = [String(input.userData.em).trim().toLowerCase()];
+  if (input.userData.fn) userData.fn = [String(input.userData.fn).trim().toLowerCase()];
+  if (input.userData.ln) userData.ln = [String(input.userData.ln).trim().toLowerCase()];
+  if (input.userData.ct) userData.ct = [String(input.userData.ct).trim().toLowerCase()];
+  if (input.userData.st) userData.st = [String(input.userData.st).trim().toLowerCase()];
+  if (input.userData.zp) userData.zp = [String(input.userData.zp).trim().toLowerCase()];
+  if (input.userData.country) userData.country = [String(input.userData.country).trim().toLowerCase()];
+  if (Object.keys(userData).length === 0) {
+    throw new Error('At least one user_data field is required for CAPI events.');
+  }
   const hashedUserData = await hashMetaUserData(userData);
-  const payload = {
-    data: [{
-      event_name: 'Contact',
-      event_time: Math.floor(Date.now() / 1000),
-      user_data: hashedUserData,
-      custom_data: { source: 'whatsapp_crm_nuvanx' },
-    }],
+
+  const event: Record<string, unknown> = {
+    event_name: input.eventName,
+    event_time: input.eventTime ?? Math.floor(Date.now() / 1000),
+    action_source: input.actionSource ?? 'system_generated',
+    user_data: hashedUserData,
   };
+  if (input.eventId) event.event_id = input.eventId;
+  if (input.eventSourceUrl) event.event_source_url = input.eventSourceUrl;
+  if (input.customData) event.custom_data = input.customData;
+
+  const payload: Record<string, unknown> = { data: [event] };
+  const testCode = input.testEventCode ?? Deno.env.get('META_TEST_EVENT_CODE') ?? '';
+  if (testCode) payload.test_event_code = testCode;
 
   return await metaPost(`/${DEFAULT_META_PIXEL_ID}/events`, payload, accessToken);
+}
+
+/**
+ * Fire a Meta Conversions API `Lead` event. Use a stable `eventId` (e.g. the
+ * Meta `leadgen_id`) to dedupe against any client-side pixel emission of the
+ * same conversion.
+ */
+async function trackMetaLeadConversion(
+  accessToken: string,
+  input: {
+    eventId: string;
+    phone?: string | null;
+    email?: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
+    city?: string | null;
+    state?: string | null;
+    zipCode?: string | null;
+    customData?: Record<string, unknown>;
+    eventSourceUrl?: string;
+    eventTime?: number;
+    testEventCode?: string;
+  },
+) {
+  return await trackMetaCapiEvent(accessToken, {
+    eventName: 'Lead',
+    eventId: input.eventId,
+    eventTime: input.eventTime,
+    eventSourceUrl: input.eventSourceUrl,
+    actionSource: 'system_generated',
+    userData: {
+      ph: input.phone ?? null,
+      em: input.email ?? null,
+      fn: input.firstName ?? null,
+      ln: input.lastName ?? null,
+      ct: input.city ?? null,
+      st: input.state ?? null,
+      zp: input.zipCode ?? null,
+    },
+    customData: input.customData,
+    testEventCode: input.testEventCode,
+  });
 }
 
 export function parseMetaMetric(raw: unknown): number {
@@ -400,6 +496,58 @@ async function persistAgentOutput(adminClient: any, userId: string, agentType: s
     .single();
   if (error) throw error;
   return data?.id ?? null;
+}
+
+/**
+ * Continuous-learning helper: load the last `limit` outputs of a given
+ * agent_type for the user (or their clinic) so the next prompt can reference
+ * them as memory. Always tolerant — returns [] on any error.
+ */
+async function fetchPriorAgentOutputs(
+  adminClient: any,
+  userId: string,
+  agentType: string,
+  limit = 5,
+): Promise<Array<{ created_at: string; output_text: string }>> {
+  try {
+    const clinicId = await resolveClinicId(adminClient, userId);
+    let query = adminClient
+      .from('agent_outputs')
+      .select('created_at, output_text')
+      .eq('agent_type', agentType)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (clinicId) {
+      query = query.or(`user_id.eq.${userId},clinic_id.eq.${clinicId}`);
+    } else {
+      query = query.eq('user_id', userId);
+    }
+    const { data, error } = await query;
+    if (error) return [];
+    return (data ?? []).filter((row: any) => row?.output_text);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Format prior outputs as a markdown "memory" section to append to a prompt.
+ * Each prior output is truncated so the combined context stays bounded.
+ */
+function buildPriorContextSection(prior: Array<{ created_at: string; output_text: string }>): string {
+  if (!prior.length) return '';
+  const PER_OUTPUT_CHAR_LIMIT = 1200;
+  const items = prior.map((row) => {
+    const date = row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : '';
+    const body = String(row.output_text || '').slice(0, PER_OUTPUT_CHAR_LIMIT);
+    return `### ${date}\n${body}`;
+  });
+  return [
+    '',
+    '## Memoria de análisis previos (aprendizaje continuo)',
+    'Considera tendencias respecto a estos análisis anteriores y evita repetir recomendaciones ya emitidas si el problema sigue igual — propon nuevos ángulos.',
+    ...items,
+  ].join('\n');
 }
 
 async function linkAgentOutputToPlaybookExecution(adminClient: any, userId: string, playbookExecutionId: string, agentOutputId: string) {
@@ -1397,6 +1545,49 @@ async function processMetaLeadChange(adminClient: any, change: any): Promise<voi
   }
 
   await publicRouteHelpers.processLeadData(adminClient, webhookUserId, leadData);
+  await fireMetaLeadCapi(accessToken, leadgen_id, leadData);
+}
+
+/**
+ * Fire CAPI Lead with the Meta leadgen_id as event_id (dedupes against any
+ * client-side `Lead` pixel emission). Errors are logged and swallowed so they
+ * don't cause Meta to retry the webhook.
+ */
+async function fireMetaLeadCapi(accessToken: string, leadgenId: string, leadData: any): Promise<void> {
+  try {
+    const fields: Record<string, string> = {};
+    for (const fd of leadData?.field_data ?? []) {
+      const name = String(fd?.name ?? '').toLowerCase();
+      const value = Array.isArray(fd?.values) ? String(fd.values[0] ?? '') : '';
+      if (name && value) fields[name] = value;
+    }
+    const phone = fields['phone_number'] ?? fields['telefono'] ?? fields['phone'] ?? null;
+    const email = fields['email'] ?? null;
+    if (!phone && !email) return;
+
+    const eventTime = leadData?.created_time
+      ? Math.floor(new Date(leadData.created_time).getTime() / 1000)
+      : undefined;
+    await trackMetaLeadConversion(accessToken, {
+      eventId: String(leadgenId),
+      phone,
+      email,
+      firstName: fields['first_name'] ?? fields['nombre'] ?? null,
+      lastName: fields['last_name'] ?? fields['apellidos'] ?? null,
+      city: fields['city'] ?? fields['ciudad'] ?? null,
+      state: fields['state'] ?? fields['provincia'] ?? null,
+      zipCode: fields['zip_code'] ?? fields['postal_code'] ?? fields['cp'] ?? null,
+      eventTime,
+      customData: {
+        source: 'meta_leadgen_webhook',
+        form_id: leadData?.form_id ?? null,
+        campaign_id: leadData?.campaign_id ?? null,
+        ad_id: leadData?.ad_id ?? null,
+      },
+    });
+  } catch (capiErr) {
+    console.error('[meta-capi] Lead event failed', capiErr);
+  }
 }
 
 async function handleMetaWebhookPost(ctx: PublicRouteContext): Promise<Response | null> {
@@ -4027,72 +4218,205 @@ async function handleAiGeneratePost(ctx: AuthenticatedRouteContext): Promise<Res
   return null;
 }
 
+async function autoFetchCampaignDataForAi(adminClient: any, userId: string): Promise<string> {
+  try {
+    const dbCampaigns = await fetchDbCampaigns(adminClient, userId, '');
+    if (dbCampaigns.length > 0) return JSON.stringify(dbCampaigns.slice(0, 25), null, 2);
+  } catch (snapshotErr) {
+    console.error('[ai.analyze-campaign] snapshot fetch failed', snapshotErr);
+  }
+  return '';
+}
+
+function buildAnalyzeCampaignPrompt(clinic: { name: string; specialty: string; city: string }, campaignData: string, prior: Array<{ created_at: string; output_text: string }>): string {
+  return [
+    `Eres el "Agente de Análisis de Campañas" de ${clinic.name}, una clínica ${clinic.specialty} premium en ${clinic.city}.`,
+    'Tu objetivo es analizar TODAS las variables disponibles (gasto, leads, CPL, CTR, conversiones, fuente, estado, antigüedad del último lead) y producir recomendaciones específicas, medibles y orientadas a reducir CPL y aumentar conversión.',
+    'No inventes datos: cita exclusivamente los números del dataset.',
+    '',
+    '## Datos de campañas (snapshot actual)',
+    campaignData,
+    buildPriorContextSection(prior),
+    '',
+    'Responde EXACTAMENTE con este formato markdown en español:',
+    '## Resumen de rendimiento',
+    '[2-3 líneas con el estado general y la diferencia respecto al análisis previo si existe]',
+    '',
+    '## ✅ Fortalezas',
+    '• [dato concreto con números]',
+    '• [dato concreto con números]',
+    '• [dato concreto con números]',
+    '',
+    '## ⚠️ Áreas de mejora',
+    '• [oportunidad + recomendación concreta]',
+    '• [oportunidad + recomendación concreta]',
+    '• [oportunidad + recomendación concreta]',
+    '',
+    '## 🚀 Acciones esta semana',
+    '1. [acción específica y medible]',
+    '2. [acción específica y medible]',
+    '3. [acción específica y medible]',
+    '',
+    '## 🚨 Alertas',
+    '[KPIs preocupantes o tendencias negativas a vigilar]',
+  ].join('\n');
+}
+
 async function handleAiAnalyzeCampaignPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, sendJson } = ctx;
-  if (resource === 'ai' && sub === 'analyze-campaign' && req.method === 'POST') {
-    const body = await req.json();
-    const campaignData = String(body?.campaignData ?? '').trim();
-    const provider = String(body?.provider ?? '').trim();
-    const playbookExecutionId = String(body?.playbookExecutionId ?? '').trim();
-    if (!campaignData) return sendJson({ success: false, message: 'campaignData is required' }, 400);
-  
-    const clinic = await resolveClinicMetadata(adminClient, userId);
-    const prompt = [
-      `You are a performance marketer for ${clinic.name}, a premium ${clinic.specialty} clinic in ${clinic.city}.`,
-      'Analyze the campaign data and provide actionable recommendations to improve conversion and reduce CPL.',
-      '',
-      campaignData,
-    ].join('\n');
-  
-    try {
-      const { text, provider: usedProvider, providerErrors } = await runAiPrompt(adminClient, userId, prompt, provider);
-      const outputId = await persistAgentOutput(adminClient, userId, 'ai.analyze-campaign', { analysis: text }, {
-        providerRequested: provider || null,
-        providerUsed: usedProvider,
-        providerErrors,
-        source: 'api.ai.analyze-campaign',
-        playbookExecutionId: playbookExecutionId || null,
-      });
-  
-      if (playbookExecutionId && outputId) {
-        await linkAgentOutputToPlaybookExecution(adminClient, userId, playbookExecutionId, outputId);
-      }
-      return sendJson({ success: true, analysis: text, provider: usedProvider, outputId });
-    } catch (err: any) {
-      console.error('AI request error:', err);
-      return sendJson({ success: false, code: 'AI_REQUEST_FAILED', message: 'AI request failed. Please try again.' }, 502);
-    }
+  if (resource !== 'ai' || sub !== 'analyze-campaign' || req.method !== 'POST') return null;
+
+  const body = await req.json().catch(() => ({}));
+  let campaignData = String(body?.campaignData ?? '').trim();
+  const provider = String(body?.provider ?? '').trim();
+  const playbookExecutionId = String(body?.playbookExecutionId ?? '').trim();
+
+  if (!campaignData) campaignData = await autoFetchCampaignDataForAi(adminClient, userId);
+  if (!campaignData) {
+    return sendJson({
+      success: true,
+      analysis: null,
+      empty: true,
+      message: 'Aún no hay datos de campañas para analizar. Conecta Meta Ads o importa leads para que el agente pueda trabajar.',
+    });
   }
-  return null;
+
+  const clinic = await resolveClinicMetadata(adminClient, userId);
+  const prior = await fetchPriorAgentOutputs(adminClient, userId, 'ai.analyze-campaign', 5);
+  const prompt = buildAnalyzeCampaignPrompt(clinic, campaignData, prior);
+
+  try {
+    const { text, provider: usedProvider, providerErrors } = await runAiPrompt(adminClient, userId, prompt, provider || 'gemini');
+    const outputId = await persistAgentOutput(adminClient, userId, 'ai.analyze-campaign', { analysis: text }, {
+      providerRequested: provider || null,
+      providerUsed: usedProvider,
+      providerErrors,
+      priorOutputsUsed: prior.length,
+      source: 'api.ai.analyze-campaign',
+      playbookExecutionId: playbookExecutionId || null,
+    });
+
+    if (playbookExecutionId && outputId) {
+      await linkAgentOutputToPlaybookExecution(adminClient, userId, playbookExecutionId, outputId);
+    }
+    return sendJson({ success: true, analysis: text, provider: usedProvider, outputId });
+  } catch (err: any) {
+    console.error('AI request error:', err);
+    const message = err?.message?.includes('No AI integration')
+      ? err.message
+      : 'AI request failed. Please try again.';
+    return sendJson({ success: false, code: 'AI_REQUEST_FAILED', message }, 502);
+  }
 }
 
 async function handleAiSuggestionsPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource === 'ai' && sub === 'suggestions' && req.method === 'POST') {
-    const { data: leads } = await adminClient.from('leads').select('stage, source, revenue').eq('user_id', userId);
-    const total = (leads ?? []).length;
-    const suggestions = total === 0
+    const { data: leads } = await adminClient.from('leads').select('stage, source, revenue, created_at').eq('user_id', userId);
+    const leadList = leads ?? [];
+    const total = leadList.length;
+    const byStage: Record<string, number> = {};
+    const bySource: Record<string, number> = {};
+    let pipelineValue = 0;
+    for (const l of leadList as any[]) {
+      const stage = String(l?.stage ?? 'unknown');
+      const source = String(l?.source ?? 'unknown');
+      byStage[stage] = (byStage[stage] ?? 0) + 1;
+      bySource[source] = (bySource[source] ?? 0) + 1;
+      pipelineValue += Number(l?.revenue || 0);
+    }
+    const snapshot = { total, byStage, bySource, pipelineValue };
+
+    const ruleBased = total === 0
       ? [
-          'Add your first lead to get AI-powered insights',
-          'Connect Meta Ads to start tracking ad performance',
-          'Set up WhatsApp integration to automate follow-ups',
+          'Añade tu primer lead para activar los insights del agente.',
+          'Conecta Meta Ads para empezar a medir el rendimiento publicitario.',
+          'Configura WhatsApp para automatizar el primer contacto.',
         ]
       : [
-          `You have ${total} leads — focus on moving ${(leads ?? []).filter((l: any) => l.stage === 'whatsapp').length} WhatsApp leads to appointment`,
-          `${(leads ?? []).filter((l: any) => l.stage === 'appointment').length} appointments pending — send follow-up reminders`,
-          `Total pipeline value: €${(leads ?? []).reduce((s: number, l: any) => s + Number(l.revenue || 0), 0).toLocaleString()}`,
+          `Tienes ${total} leads — prioriza mover los ${byStage['whatsapp'] ?? 0} de WhatsApp a cita.`,
+          `Hay ${byStage['appointment'] ?? 0} citas pendientes — envía recordatorios de seguimiento.`,
+          `Pipeline total: €${pipelineValue.toLocaleString('es-ES')}.`,
         ];
-  
+
+    let suggestions: string[] = ruleBased;
+    let providerUsed: string | null = null;
+    let providerErrors: string[] = [];
+
+    if (total > 0) {
+      const clinic = await resolveClinicMetadata(adminClient, userId).catch(() => ({ name: 'la clínica', specialty: 'estética', city: '' }));
+      const prior = await fetchPriorAgentOutputs(adminClient, userId, 'ai.suggestions', 5);
+      const prompt = [
+        `Eres el "Agente de Sugerencias Operativas" de ${clinic.name} (${clinic.specialty}, ${clinic.city}).`,
+        'Tu objetivo: emitir 3-5 sugerencias accionables HOY basadas en TODAS las variables del CRM. Cada sugerencia es una sola frase, empieza con un verbo en imperativo y cita números reales.',
+        'No repitas literalmente sugerencias de la memoria si la situación no ha cambiado — propón nuevos ángulos.',
+        '',
+        '## Snapshot CRM',
+        JSON.stringify(snapshot, null, 2),
+        buildPriorContextSection(prior),
+        '',
+        'Responde SOLO con un array JSON de strings. Ejemplo:',
+        '["Llama a los 3 leads de WhatsApp con más de 24h sin respuesta", "..."]',
+      ].join('\n');
+
+      try {
+        const aiResult = await runAiPrompt(adminClient, userId, prompt, 'gemini');
+        providerUsed = aiResult.provider;
+        providerErrors = aiResult.providerErrors;
+        const parsed = parseAiSuggestionsList(aiResult.text);
+        if (parsed.length > 0) suggestions = parsed;
+      } catch (aiErr: any) {
+        providerErrors = aiErr?.providerErrors ?? [aiErr?.message ?? 'unknown'];
+        // Fall back to rule-based suggestions silently — panel still works.
+      }
+    }
+
     const outputId = await persistAgentOutput(adminClient, userId, 'ai.suggestions', {
       suggestions,
       totalLeads: total,
     }, {
       source: 'api.ai.suggestions',
+      providerUsed,
+      providerErrors,
+      snapshot,
     });
-  
-    return sendJson({ success: true, suggestions, outputId });
+
+    return sendJson({ success: true, suggestions, outputId, provider: providerUsed });
   }
   return null;
+}
+
+/** Best-effort parse of an AI response into a list of suggestion strings. */
+function parseAiSuggestionsList(text: string): string[] {
+  const trimmed = String(text || '').trim();
+  if (!trimmed) return [];
+  // Try strict JSON first.
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) {
+      return parsed.map((s: any) => String(s ?? '').trim()).filter(Boolean);
+    }
+  } catch {
+    // ignore
+  }
+  // Try to locate a JSON array inside the response.
+  const match = /\[[\s\S]*\]/.exec(trimmed);
+  if (match) {
+    try {
+      const parsed = JSON.parse(match[0]);
+      if (Array.isArray(parsed)) {
+        return parsed.map((s: any) => String(s ?? '').trim()).filter(Boolean);
+      }
+    } catch {
+      // ignore
+    }
+  }
+  // Last resort: bullet/line splitting.
+  return trimmed
+    .split(/\r?\n+/)
+    .map((line) => line.replace(/^\s*(?:[-•*\d.)\]]+\s*)+/, '').trim())
+    .filter((line) => line.length > 0)
+    .slice(0, 6);
 }
 
 async function handleAiOutputsGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
@@ -5228,6 +5552,46 @@ async function handleReportsWhatsappConversionGet(ctx: AuthenticatedRouteContext
   return null;
 }
 
+function buildLeadAuditQuery(
+  adminClient: any,
+  userId: string,
+  limit: number,
+  matchedOnly: boolean,
+  from: string,
+  to: string,
+  campaignName: string,
+  normalizedPhone: string | null,
+) {
+  let query = adminClient
+    .from('vw_lead_traceability')
+    .select(
+      'lead_id,lead_name,source,campaign_name,ad_name,form_name,lead_created_at,' +
+      'phone_normalized,patient_id,patient_name,patient_dni,patient_phone,match_confidence,match_class,settlement_date,first_settlement_at,doctoralia_net,doc_patient_id'
+    )
+    .eq('lead_user_id', userId)
+    .order('lead_created_at', { ascending: false })
+    .limit(limit);
+
+  if (matchedOnly) query = query.not('patient_id', 'is', null);
+  if (from) query = query.gte('lead_created_at', from);
+  if (to) query = query.lte('lead_created_at', to + 'T23:59:59Z');
+  if (campaignName) query = query.ilike('campaign_name', `%${campaignName}%`);
+  if (normalizedPhone) query = query.eq('phone_normalized', normalizedPhone);
+
+  return query;
+}
+
+function normalizeLeadAuditRow(row: any) {
+  const normalizedPatientPhone = normalizePhoneForMeta(row.patient_phone);
+  const phoneCrossMatch = Boolean(
+    row.phone_normalized && normalizedPatientPhone && row.phone_normalized === normalizedPatientPhone,
+  );
+  return {
+    ...row,
+    phoneCrossMatch,
+  };
+}
+
 async function handleReportsLeadAuditGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'reports' && sub === 'lead-audit' && req.method === 'GET') {
@@ -5238,39 +5602,31 @@ async function handleReportsLeadAuditGet(ctx: AuthenticatedRouteContext): Promis
     const campaignName = url.searchParams.get('campaign_name') ?? '';
     const phone = url.searchParams.get('phone') ?? '';
 
-    let query = adminClient
-      .from('vw_lead_traceability')
-      .select(
-        'lead_id,lead_name,source,campaign_name,ad_name,form_name,lead_created_at,' +
-        'phone_normalized,patient_id,patient_name,patient_dni,patient_phone,match_confidence,match_class,settlement_date,first_settlement_at,doctoralia_net,doc_patient_id'
-      )
-      .eq('lead_user_id', userId)
-      .order('lead_created_at', { ascending: false })
-      .limit(limit);
+    const normalizedPhone = phone ? normalizePhoneForMeta(phone) : null;
+    if (phone && normalizedPhone === null) {
+      const failureReason = getPhoneNormalizationFailureReason(phone);
+      const message = failureReason === 'missing-default-country-code'
+        ? 'Phone filter could not be normalized because DEFAULT_PHONE_COUNTRY_CODE is not configured. Use an international phone number or set DEFAULT_PHONE_COUNTRY_CODE.'
+        : 'Phone filter could not be normalized because the phone number format is invalid. Provide a valid phone number.';
+      return sendJson({ success: false, message }, 400);
+    }
 
     try {
-      if (matchedOnly) query = query.not('patient_id', 'is', null);
-      if (from) query = query.gte('lead_created_at', from);
-      if (to) query = query.lte('lead_created_at', to + 'T23:59:59Z');
-      if (campaignName) query = query.ilike('campaign_name', `%${campaignName}%`);
-      if (phone) query = query.eq('phone_normalized', normalizePhoneForMeta(phone));
+      const query = buildLeadAuditQuery(
+        adminClient,
+        userId,
+        limit,
+        matchedOnly,
+        from,
+        to,
+        campaignName,
+        normalizedPhone,
+      );
 
       const { data: rows, error } = await query;
       if (error) throw error;
 
-      const audited = (rows || []).map((row: any) => {
-        let phoneCrossMatch = false;
-        try {
-          const normalizedPatientPhone = normalizePhoneForMeta(row.patient_phone);
-          phoneCrossMatch = Boolean(row.phone_normalized && normalizedPatientPhone && row.phone_normalized === normalizedPatientPhone);
-        } catch (e) {
-          console.warn('Phone normalization failed in Lead Audit:', e);
-        }
-        return {
-          ...row,
-          phoneCrossMatch,
-        };
-      });
+      const audited = (rows || []).map(normalizeLeadAuditRow);
 
       return sendJson({ success: true, leads: audited, total: audited.length });
     } catch (err: any) {
