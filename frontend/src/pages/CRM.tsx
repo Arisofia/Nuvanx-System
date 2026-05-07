@@ -180,12 +180,12 @@ export default function CRM() {
                         onClick={() => handleLeadClick(lead)}
                       >
                         <div className="flex items-center justify-between gap-3">
-                          <p className="font-medium text-foreground">{lead.name}</p>
-                          <span className="text-xs uppercase px-2 py-0.5 rounded bg-surface text-muted border border-border">
+                          <p className="font-serif font-bold text-foreground">{lead.name}</p>
+                          <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-surface text-muted border border-border font-medium">
                             {lead.status}
                           </span>
                         </div>
-                        <p className="text-xs text-muted mt-1">Origen: {lead.source}</p>
+                        <p className="text-[10px] uppercase tracking-wider text-muted mt-1">Origen: {lead.source}</p>
                       </button>
                     ))}
                   </div>

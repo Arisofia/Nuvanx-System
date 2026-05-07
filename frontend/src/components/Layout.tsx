@@ -25,40 +25,39 @@ export default function Layout({ children }: Readonly<{ children: React.ReactNod
   return (
     <div className="flex h-screen bg-[#FAF7F2] text-foreground font-sans">
       <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-white border-r border-border/60 transition-all duration-300 flex flex-col shadow-[4px_0_24px_rgba(0,0,0,0.02)]`}>
-        <div className="p-8 border-b border-border/40 flex flex-col items-center">
-          <div className="flex items-center justify-between w-full mb-4">
+        <div className="p-8 flex flex-col items-center">
+          <div className="flex items-center justify-between w-full mb-6">
             <Button variant="ghost" size="sm" className="hover:bg-primary/5 rounded-full h-8 w-8 p-0" onClick={() => setSidebarOpen(!sidebarOpen)}>
-              {sidebarOpen ? <X className="w-4 h-4 text-muted" /> : <Menu className="w-4 h-4 text-muted" />}
+              {sidebarOpen ? <Menu className="w-4 h-4 text-muted" /> : <Menu className="w-4 h-4 text-muted" />}
             </Button>
           </div>
           
           {sidebarOpen ? (
             <div className="flex flex-col items-center text-center">
-              <img src={logo} alt="Nuvanx Logo" className="h-20 w-auto mb-4" />
-              <h2 className="font-serif text-xl tracking-widest uppercase text-primary/80">Nuvanx</h2>
-              <p className="text-[10px] uppercase tracking-[0.2em] text-muted mt-1 font-bold">Medicina Estética</p>
-              <div className="h-[1px] w-8 bg-primary/20 mt-4" />
+              <img src={logo} alt="Nuvanx Logo" className="h-16 w-auto mb-4" />
+              <p className="text-[10px] uppercase tracking-[0.3em] text-primary font-bold">Control Centre</p>
+              <div className="h-[1px] w-6 bg-primary/20 mt-4" />
             </div>
           ) : (
             <img src={logo} alt="Logo" className="h-8 w-auto" />
           )}
         </div>
 
-        <nav className="flex-1 overflow-y-auto py-6 px-4 space-y-1">
+        <nav className="flex-1 overflow-y-auto py-4 px-4 space-y-1">
           {navItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 group ${
+              className={`flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-300 group ${
                 location === item.href 
-                  ? 'bg-primary/10 text-primary shadow-sm' 
-                  : 'text-muted hover:text-primary hover:bg-primary/5'
+                  ? 'bg-primary/10 text-primary font-semibold shadow-sm' 
+                  : 'text-[#5C5550] hover:text-primary hover:bg-primary/5'
               }`}
             >
-              <item.icon className={`w-5 h-5 transition-transform duration-300 group-hover:scale-110 ${
-                location === item.href ? 'text-primary' : 'text-muted/60'
+              <item.icon className={`w-4 h-4 transition-transform duration-300 group-hover:scale-110 ${
+                location === item.href ? 'text-primary' : 'text-[#8E8680]/70'
               }`} />
-              {sidebarOpen && <span className="text-sm font-medium tracking-wide">{item.label}</span>}
+              {sidebarOpen && <span className="text-sm tracking-wide">{item.label}</span>}
             </Link>
           ))}
         </nav>

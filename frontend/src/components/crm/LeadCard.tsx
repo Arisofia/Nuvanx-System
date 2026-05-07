@@ -44,9 +44,9 @@ export function LeadCard({ lead, onClick }: Readonly<LeadCardProps>) {
       <Card className="bg-card border-border hover:border-primary/40 transition-colors mb-3 active:cursor-grabbing">
         <CardContent className="p-4">
           <div className="flex flex-col gap-1">
-            <span className="font-semibold text-foreground truncate">{lead.name}</span>
+            <span className="font-serif font-bold text-foreground truncate">{lead.name}</span>
             <div className="flex items-center justify-between mt-2">
-              <span className="text-[10px] uppercase tracking-wider text-muted font-bold">
+              <span className="text-[10px] uppercase tracking-wider text-muted font-medium">
                 {lead.source}
               </span>
               {lead.revenue ? (

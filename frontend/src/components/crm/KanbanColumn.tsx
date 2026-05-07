@@ -4,10 +4,10 @@ import { LeadCard } from './LeadCard'
 import type { Lead, LeadStage } from '../../types'
 
 interface KanbanColumnProps {
-  id: LeadStage
-  title: string
-  leads: Lead[]
-  onLeadClick: (lead: Lead) => void
+  readonly id: LeadStage
+  readonly title: string
+  readonly leads: Lead[]
+  readonly onLeadClick: (lead: Lead) => void
 }
 
 export function KanbanColumn({ id, title, leads, onLeadClick }: KanbanColumnProps) {
@@ -18,8 +18,8 @@ export function KanbanColumn({ id, title, leads, onLeadClick }: KanbanColumnProp
   return (
     <div className="flex flex-col min-w-[280px] w-full bg-surface/50 rounded-xl border border-[#2d2218]/50 p-3 h-full min-h-[500px]">
       <div className="flex items-center justify-between mb-4 px-2">
-        <h3 className="text-sm font-bold text-muted uppercase tracking-widest">
-          {title} <span className="ml-2 text-xs font-normal text-muted">({leads.length})</span>
+        <h3 className="text-sm font-bold font-serif text-muted uppercase tracking-widest">
+          {title} <span className="ml-2 text-xs font-normal font-sans text-muted">({leads.length})</span>
         </h3>
       </div>
 
