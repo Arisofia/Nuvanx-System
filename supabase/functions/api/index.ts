@@ -15,7 +15,7 @@ function requireSupabaseEnv(value: string | null | undefined, name: string): str
 }
 
 function hasOwn(obj: unknown, key: PropertyKey): boolean {
-  return typeof obj === 'object' && obj !== null && Object.prototype.hasOwnProperty.call(obj, key);
+  return typeof obj === 'object' && obj !== null && Object.hasOwn(obj, key);
 }
 
 export const supabaseClientFactory = {
@@ -537,24 +537,26 @@ async function callGemini(prompt: string, apiKey: string): Promise<string> {
       );
       const { data, text } = await parseJsonOrText(r);
       if (!r.ok) {
-        const msg = data && data.error && data.error.message ? data.error.message : data && data.message ? data.message : text ?? `Gemini ${r.status}`;
-        errors.push(`${model}: ${msg}`);
+        errors.push(getGeminiErrorMessage(model, data, text, r.status));
         continue;
       }
-      const candidates = data && data.candidates ? data.candidates : undefined;
-      const candidate = candidates && candidates[0] ? candidates[0] : undefined;
-      const output = candidate && candidate.content && candidate.content.parts && candidate.content.parts[0]
-        ? candidate.content.parts[0].text
-        : undefined;
-      if (output && typeof output === 'string' && output.trim()) {
-        return output;
-      }
+      const output = getGeminiOutput(data);
+      if (output) return output;
       errors.push(`${model}: response missing generated text`);
     } catch (fetchErr: any) {
       errors.push(`${model}: fetch failed - ${fetchErr.message}`);
     }
   }
   throw new Error(`Gemini error: ${errors.join(' | ')}`);
+}
+
+function getGeminiErrorMessage(model: string, data: any, text: string, status: number): string {
+  const message = data?.error?.message ?? data?.message ?? text ?? `Gemini ${status}`;
+  return `${model}: ${message}`;
+}
+
+function getGeminiOutput(data: any): string | undefined {
+  return data?.candidates?.[0]?.content?.parts?.[0]?.text;
 }
 
 async function callOpenAI(prompt: string, apiKey: string): Promise<string> {
@@ -589,9 +591,7 @@ async function callOpenAI(prompt: string, apiKey: string): Promise<string> {
 }
 
 function extractOpenAIOutput(data: any): string | null {
-  const choices = data && data.choices ? data.choices : undefined;
-  const choice = choices && choices[0] ? choices[0] : undefined;
-  const output = choice && choice.message ? choice.message.content : undefined;
+  const output = data?.choices?.[0]?.message?.content;
   return typeof output === 'string' && output.trim() ? output : null;
 }
 
@@ -614,11 +614,9 @@ function parseMetaLeadFields(fieldData: any[]): { fields: Record<string, string>
   const rawFieldData: Record<string, string> = {};
 
   for (const item of (fieldData ?? [])) {
-    const fieldName = String(item && item.name ? item.name : '').trim();
+    const fieldName = String(item?.name ?? '').trim();
     if (!fieldName) continue;
-    const value = String(
-      item && item.values && item.values[0] !== undefined ? item.values[0] : item && item.value !== undefined ? item.value : ''
-    ).trim();
+    const value = String(item?.values?.[0] ?? item?.value ?? '').trim();
     fields[fieldName.toLowerCase()] = value;
     rawFieldData[fieldName] = value;
   }
@@ -1133,14 +1131,15 @@ async function googleAdsSearch(customerId: string, devToken: string, accessToken
   });
   const d = await r.json();
   if (!r.ok) {
-    const details = d && d.error && d.error.details ? d.error.details : undefined;
-    const firstDetail = details && details[0] ? details[0] : undefined;
-    const firstError = firstDetail && firstDetail.errors ? firstDetail.errors[0] : undefined;
-    const msg = firstError && firstError.message ? firstError.message : d && d.error && d.error.message ? d.error.message : `Google Ads ${r.status}`;
-    throw new Error(msg);
+    throw new Error(getGoogleAdsErrorMessage(d, r.status));
   }
   const { results } = d;
   return Array.isArray(results) ? results : [];
+}
+
+function getGoogleAdsErrorMessage(d: any, status: number): string {
+  const firstError = d?.error?.details?.[0]?.errors?.[0];
+  return firstError?.message ?? d?.error?.message ?? `Google Ads ${status}`;
 }
 
 type GoogleAdsCreds =
@@ -2664,9 +2663,9 @@ async function persistMetaPostPerformance(adminClient: any, userId: string, page
 
   const dbRows = posts.map(p => {
     const insightsByName = new Map();
-    const insightsData = p && p.insights ? p.insights.data : undefined;
-    for (const { name, values } of insightsData || []) {
-      const firstValue = values && values[0] ? values[0].value : undefined;
+    const insightsData = p?.insights?.data ?? [];
+    for (const { name, values } of insightsData) {
+      const firstValue = values?.[0]?.value;
       insightsByName.set(name, firstValue);
     }
     const reactionsObj = insightsByName.get('post_reactions_by_type_total') || {};
@@ -2765,9 +2764,9 @@ async function persistMetaIgMediaPerformance(adminClient: any, userId: string, i
       }, accessToken);
       
       const insights: Record<string, number> = {};
-      const insData = ins && ins.data ? ins.data : [];
+      const insData = ins?.data ?? [];
       for (const row of insData) {
-        insights[row.name] = Number(row.values && row.values[0] ? row.values[0].value : 0);
+        insights[row.name] = Number(row.values?.[0]?.value ?? 0);
       }
 
       await adminClient.from('meta_ig_media_performance')
@@ -3092,9 +3091,9 @@ function isFulfilled<T>(result: PromiseSettledResult<T>): result is PromiseFulfi
 }
 
 function mapMetaCampaign(c: any) {
-  const ins = c && c.insights && c.insights.data ? c.insights.data[0] : undefined;
-  const conversions = parseMetaMetric(ins && ins.conversions);
-  const cpp: number | null = conversions > 0 ? Number.parseFloat((Number.parseFloat(ins?.spend || 0) / conversions).toFixed(2)) : null;
+  const ins = c?.insights?.data?.[0];
+  const conversions = parseMetaMetric(ins?.conversions);
+  const cpp: number | null = conversions > 0 ? Number.parseFloat((Number.parseFloat(ins?.spend ?? 0) / conversions).toFixed(2)) : null;
   return {
     id: c.id,
     name: c.name,
@@ -3328,7 +3327,7 @@ async function getMetaCampaignsLiveResult(
 }
 
 function mapMetaAd(ad: any) {
-  const ins = ad && ad.insights && ad.insights.data ? ad.insights.data[0] : undefined;
+  const ins = ad?.insights?.data?.[0];
   const conversions = ins ? actionValue(ins.actions, (t: string) => t.includes('lead') || t.includes('conversion') || t.includes('complete_registration')) : 0;
   const spend = parseMetaMetric(ins?.spend);
   const cpp = conversions > 0 ? Number.parseFloat((spend / conversions).toFixed(2)) : null;
@@ -3983,11 +3982,11 @@ async function handleAiStatus(ctx: AuthenticatedRouteContext): Promise<Response 
   const { adminClient, userId, resource, sub, sendJson } = ctx;
   if (resource === 'ai' && sub === 'status') {
     const { data: cred } = await adminClient.from('credentials').select('service').eq('user_id', userId).in('service', ['openai', 'gemini']);
-    const hasAi = cred && Array.isArray(cred) ? cred.length > 0 : false;
+    const hasAi = Array.isArray(cred) && cred.length > 0;
     return sendJson({
       success: true,
       available: hasAi,
-      provider: hasAi && cred && cred[0] ? cred[0].service : null,
+      provider: hasAi ? cred?.[0]?.service ?? null : null,
     });
   }
   return null;
@@ -4141,9 +4140,8 @@ async function handleAiOutputsGet(ctx: AuthenticatedRouteContext): Promise<Respo
 function aggregateGoogleAdsInsights(daily: any[], prevData: any[]) {
   const micros2eur = (m: number) => Number.parseFloat((m / 1_000_000).toFixed(2));
   const sumF = (rows: any[], field: string) => rows.reduce((s, r) => {
-    const metrics = r && r.metrics ? r.metrics : undefined;
-    const value = metrics && Object.prototype.hasOwnProperty.call(metrics, field) ? metrics[field] : undefined;
-    return s + Number(value == null ? 0 : value);
+    const value = r?.metrics?.[field];
+    return s + Number(value ?? 0);
   }, 0);
 
   const currImp = Math.round(sumF(daily, 'impressions'));
@@ -5244,31 +5242,41 @@ async function handleReportsLeadAuditGet(ctx: AuthenticatedRouteContext): Promis
       .from('vw_lead_traceability')
       .select(
         'lead_id,lead_name,source,campaign_name,ad_name,form_name,lead_created_at,' +
-        'phone_normalized,patient_id,patient_name,patient_dni,patient_phone,match_confidence,match_class,settlement_date,first_settlement_at'
+        'phone_normalized,patient_id,patient_name,patient_dni,patient_phone,match_confidence,match_class,settlement_date,first_settlement_at,doctoralia_net,doc_patient_id'
       )
       .eq('lead_user_id', userId)
       .order('lead_created_at', { ascending: false })
       .limit(limit);
 
-    if (matchedOnly) query = query.not('patient_id', 'is', null);
-    if (from) query = query.gte('lead_created_at', from);
-    if (to) query = query.lte('lead_created_at', to + 'T23:59:59Z');
-    if (campaignName) query = query.ilike('campaign_name', `%${campaignName}%`);
-    if (phone) query = query.eq('phone_normalized', normalizePhoneForMeta(phone));
+    try {
+      if (matchedOnly) query = query.not('patient_id', 'is', null);
+      if (from) query = query.gte('lead_created_at', from);
+      if (to) query = query.lte('lead_created_at', to + 'T23:59:59Z');
+      if (campaignName) query = query.ilike('campaign_name', `%${campaignName}%`);
+      if (phone) query = query.eq('phone_normalized', normalizePhoneForMeta(phone));
 
-    const { data: rows, error } = await query;
-    if (error) throw error;
+      const { data: rows, error } = await query;
+      if (error) throw error;
 
-    const audited = (rows || []).map((row: any) => {
-      const normalizedPatientPhone = normalizePhoneForMeta(row.patient_phone);
-      const phoneCrossMatch = Boolean(row.phone_normalized && normalizedPatientPhone && row.phone_normalized === normalizedPatientPhone);
-      return {
-        ...row,
-        phoneCrossMatch,
-      };
-    });
+      const audited = (rows || []).map((row: any) => {
+        let phoneCrossMatch = false;
+        try {
+          const normalizedPatientPhone = normalizePhoneForMeta(row.patient_phone);
+          phoneCrossMatch = Boolean(row.phone_normalized && normalizedPatientPhone && row.phone_normalized === normalizedPatientPhone);
+        } catch (e) {
+          console.warn('Phone normalization failed in Lead Audit:', e);
+        }
+        return {
+          ...row,
+          phoneCrossMatch,
+        };
+      });
 
-    return sendJson({ success: true, leads: audited, total: audited.length });
+      return sendJson({ success: true, leads: audited, total: audited.length });
+    } catch (err: any) {
+      console.error('Lead Audit Error:', err);
+      return sendJson({ success: false, message: err.message || 'Error fetching lead audit data' }, 500);
+    }
   }
   return null;
 }
