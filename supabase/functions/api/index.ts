@@ -15,7 +15,7 @@ function requireSupabaseEnv(value: string | null | undefined, name: string): str
 }
 
 function hasOwn(obj: unknown, key: PropertyKey): boolean {
-  return typeof obj === 'object' && obj !== null && Object.prototype.hasOwnProperty.call(obj, key);
+  return typeof obj === 'object' && obj !== null && Object.hasOwn(obj, key);
 }
 
 export const supabaseClientFactory = {
@@ -1262,7 +1262,7 @@ async function getGoogleAccessToken(serviceAccount: any): Promise<string> {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`,
   });
-  const tokenData = await tokenRes.json();
+  const tokenData = await tokenRes.json() as Record<string, any>;
   if (!tokenRes.ok) throw new Error(tokenData.error_description ?? `Google OAuth: ${tokenData.error}`);
   return tokenData.access_token;
 }
@@ -1279,7 +1279,7 @@ async function googleAdsSearch(customerId: string, devToken: string, accessToken
     body: JSON.stringify({ query }),
     signal: AbortSignal.timeout(20_000),
   });
-  const d = await r.json();
+  const d = await r.json() as Record<string, any>;
   if (!r.ok) {
     throw new Error(getGoogleAdsErrorMessage(d, r.status));
   }
@@ -2165,11 +2165,13 @@ async function upsertLeadIdempotent(adminClient: any, userId: string, payload: a
 async function handleLeadsPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, req, sendJson } = ctx;
   if (resource === 'leads' && req.method === 'POST') {
-    const body = await req.json();
+    const rawBody = await req.json();
+    const body = (rawBody && typeof rawBody === 'object') ? rawBody : {};
     const clinicId = await resolveClinicId(adminClient, userId);
-    const payload = { ...body, user_id: userId, clinic_id: body?.clinic_id ?? clinicId };
-    const source = String(payload?.source ?? '').trim();
-    const externalId = String(payload?.external_id ?? '').trim();
+    const payload = { ...body, user_id: userId, clinic_id: (body as any)?.clinic_id ?? clinicId };
+    const payloadObj = payload as Record<string, any>;
+    const source = String(payloadObj?.source ?? '').trim();
+    const externalId = String(payloadObj?.external_id ?? '').trim();
 
     if (source && externalId) {
       const { data, deduplicated, status } = await upsertLeadIdempotent(adminClient, userId, payload, source, externalId);
@@ -3810,7 +3812,8 @@ async function getMetaAdsLiveResult(
 async function handleAiAnalyzePost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource === 'ai' && sub === 'analyze' && req.method === 'POST') {
-    const body = await req.json();
+    const rawBody = await req.json();
+    const body = (rawBody && typeof rawBody === 'object') ? rawBody as Record<string, any> : {};
     const { data, context = '' } = body;
 
     if (context.length > 10000 || JSON.stringify(data).length > 50000) {
@@ -3904,7 +3907,8 @@ async function handleAiAnalyzePost(ctx: AuthenticatedRouteContext): Promise<Resp
 async function handleIntegrationsPatch(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource === 'integrations' && req.method === 'PATCH' && sub === '') {
-    const body = await req.json().catch(() => ({}));
+    const rawBody = await req.json().catch(() => ({}));
+    const body = (rawBody && typeof rawBody === 'object') ? rawBody as Record<string, any> : {};
     const service = String(body.service ?? '').trim();
     if (!service) return sendJson({ success: false, message: 'service is required' }, 400);
     const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -4008,22 +4012,23 @@ function validateAndNormalizeMetadata(service: string, inputMetadata: any) {
 async function handleIntegrationsConnectPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, authUser, resource, sub, req, sendJson } = ctx;
   if (resource === 'integrations' && sub === 'connect' && req.method === 'POST') {
-    const body = await req.json();
+    const rawBody = await req.json();
+    const body = (rawBody && typeof rawBody === 'object') ? rawBody as Record<string, any> : {};
     const service = String(body.service ?? '').trim();
     if (!service) return sendJson({ success: false, message: 'service is required' }, 400);
     const reqToken = body.token;
     if (!reqToken) return sendJson({ success: false, message: 'token is required' }, 400);
-  
+
     const { ok, message, metadata } = validateAndNormalizeMetadata(service, body.metadata);
     if (!ok) return sendJson({ success: false, message }, 400);
-  
+
     await ensurePublicUserRow(adminClient, authUser);
     const encryptedKey = await encryptCred(String(reqToken).trim());
-  
+
     const { error: credErr } = await adminClient.from('credentials')
       .upsert({ user_id: userId, service, encrypted_key: encryptedKey }, { onConflict: 'user_id,service' });
     if (credErr) throw credErr;
-  
+
     const { error: intErr } = await adminClient.from('integrations')
       .upsert(
         { user_id: userId, service, status: 'connected', metadata, updated_at: new Date().toISOString() },
@@ -4038,7 +4043,8 @@ async function handleIntegrationsConnectPost(ctx: AuthenticatedRouteContext): Pr
 async function handleIntegrationsTestPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource === 'integrations' && sub === 'test' && req.method === 'POST') {
-    const body = await req.json().catch(() => ({}));
+    const rawBody = await req.json().catch(() => ({}));
+    const body = (rawBody && typeof rawBody === 'object') ? rawBody as Record<string, any> : {};
     const service = String(body.service ?? '').trim();
   
     if (service === 'meta') {
@@ -4128,7 +4134,8 @@ async function logPlaybookExecution(adminClient: any, userId: string, playbookId
 async function handlePlaybooksRunPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, sub2, req, sendJson } = ctx;
   if (resource === 'playbooks' && sub2 === 'run' && req.method === 'POST') {
-    const body = await req.json().catch(() => ({}));
+    const rawBody = await req.json().catch(() => ({}));
+    const body = (rawBody && typeof rawBody === 'object') ? rawBody as Record<string, any> : {};
     const preferredProvider = String(body?.provider ?? '').trim();
     const { data: pb, error: pbErr } = await adminClient.from('playbooks').select('id, title, status, run_count').eq('slug', sub).single();
     if (pbErr || !pb) return sendJson({ success: false, message: `Playbook '${sub}' not found` }, 404);
@@ -4209,7 +4216,8 @@ async function handleAiStatus(ctx: AuthenticatedRouteContext): Promise<Response 
 async function handleAiGeneratePost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource === 'ai' && sub === 'generate' && req.method === 'POST') {
-    const body = await req.json();
+    const rawBody = await req.json();
+    const body = (rawBody && typeof rawBody === 'object') ? rawBody as Record<string, any> : {};
     const prompt = String(body?.prompt ?? '').trim();
     const provider = String(body?.provider ?? '').trim();
     const contentType = String(body?.contentType ?? '').trim();
@@ -4289,7 +4297,8 @@ async function handleAiAnalyzeCampaignPost(ctx: AuthenticatedRouteContext): Prom
   const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource !== 'ai' || sub !== 'analyze-campaign' || req.method !== 'POST') return null;
 
-  const body = await req.json().catch(() => ({}));
+  const rawBody = await req.json().catch(() => ({}));
+  const body = (rawBody && typeof rawBody === 'object') ? rawBody as Record<string, any> : {};
   let campaignData = String(body?.campaignData ?? '').trim();
   const provider = String(body?.provider ?? '').trim();
   const playbookExecutionId = String(body?.playbookExecutionId ?? '').trim();
@@ -5655,8 +5664,7 @@ function buildLeadAuditQuery(
   userId: string,
   limit: number,
   matchedOnly: boolean,
-  from: string,
-  to: string,
+  dateRange: { from?: string; to?: string },
   campaignName: string,
   normalizedPhone: string | null,
 ) {
@@ -5671,8 +5679,8 @@ function buildLeadAuditQuery(
     .limit(limit);
 
   if (matchedOnly) query = query.not('patient_id', 'is', null);
-  if (from) query = query.gte('lead_created_at', from);
-  if (to) query = query.lte('lead_created_at', to + 'T23:59:59Z');
+  if (dateRange?.from) query = query.gte('lead_created_at', dateRange.from);
+  if (dateRange?.to) query = query.lte('lead_created_at', dateRange.to + 'T23:59:59Z');
   if (campaignName) query = query.ilike('campaign_name', `%${campaignName}%`);
   if (normalizedPhone) query = query.eq('phone_normalized', normalizedPhone);
 
@@ -5715,8 +5723,7 @@ async function handleReportsLeadAuditGet(ctx: AuthenticatedRouteContext): Promis
         userId,
         limit,
         matchedOnly,
-        from,
-        to,
+        { from, to },
         campaignName,
         normalizedPhone,
       );
