@@ -382,8 +382,7 @@ async function persistAgentOutput(adminClient: any, userId: string, agentType: s
   const inputContext = metadata && typeof metadata.context === 'string'
     ? metadata.context
     : '';
-  const { data, error } = await adminClient
-    .from('agent_outputs')
+  const { data, error } = await adminClient.from('agent_outputs')
     .insert({
       user_id: userId,
       clinic_id: clinicId,
@@ -402,8 +401,7 @@ async function persistAgentOutput(adminClient: any, userId: string, agentType: s
 
 async function linkAgentOutputToPlaybookExecution(adminClient: any, userId: string, playbookExecutionId: string, agentOutputId: string) {
   if (!playbookExecutionId || !agentOutputId) return;
-  const { data: current, error: getErr } = await adminClient
-    .from('playbook_executions')
+  const { data: current, error: getErr } = await adminClient.from('playbook_executions')
     .select('id, metadata')
     .eq('id', playbookExecutionId)
     .eq('user_id', userId)
@@ -414,8 +412,7 @@ async function linkAgentOutputToPlaybookExecution(adminClient: any, userId: stri
       ? { ...current.metadata, agent_output_id: agentOutputId }
       : { agent_output_id: agentOutputId };
 
-  await adminClient
-    .from('playbook_executions')
+  await adminClient.from('playbook_executions')
     .update({ agent_output_id: agentOutputId, metadata: nextMetadata })
     .eq('id', playbookExecutionId)
     .eq('user_id', userId);
@@ -476,8 +473,7 @@ async function runAiPrompt(
   prompt: string,
   preferredProvider = '',
 ): Promise<{ text: string; provider: 'gemini' | 'openai'; providerErrors: string[] }> {
-  const { data: creds } = await adminClient
-    .from('credentials').select('service, encrypted_key').eq('user_id', userId).in('service', ['gemini', 'openai']);
+  const { data: creds } = await adminClient.from('credentials').select('service, encrypted_key').eq('user_id', userId).in('service', ['gemini', 'openai']);
   const geminiCred = (creds ?? []).find((c: any) => c.service === 'gemini');
   const openaiCred = (creds ?? []).find((c: any) => c.service === 'openai');
 
@@ -758,8 +754,7 @@ export async function processLeadData(adminClient: any, userId: string, leadData
   // Upsert lead — idempotent via partial unique index (user_id, source, external_id)
   const createdAt = parseMetaLeadCreatedAt(leadData.created_time);
 
-  const { data: lead } = await adminClient
-    .from('leads')
+  const { data: lead } = await adminClient.from('leads')
     .upsert({
       user_id:         userId,
       external_id:     leadgen_id,
@@ -803,8 +798,7 @@ export async function processLeadData(adminClient: any, userId: string, leadData
 
   // Record attribution details
   if (lead?.id) {
-    await adminClient
-      .from('meta_attribution')
+    await adminClient.from('meta_attribution')
       .upsert({
         lead_id:       lead.id,
         leadgen_id,
@@ -844,8 +838,7 @@ async function resolveClinicMetadata(adminClient: any, userId: string) {
 
 // ── Meta credential resolver ──────────────────────────────────────────────────
 async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: string) {
-  const { data: credRow } = await adminClient
-    .from('credentials').select('encrypted_key').eq('user_id', userId).eq('service', 'meta').single();
+  const { data: credRow } = await adminClient.from('credentials').select('encrypted_key').eq('user_id', userId).eq('service', 'meta').single();
   if (!credRow) return { notConnected: true, accessToken: '', adAccountIds: [] as string[], adAccountId: '', decryptionError: '' };
 
   let accessToken = '';
@@ -856,8 +849,7 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
     decryptionError = err?.message ?? 'Failed to decrypt Meta credential';
   }
 
-  const { data: intg } = await adminClient
-    .from('integrations').select('metadata').eq('user_id', userId).eq('service', 'meta').maybeSingle();
+  const { data: intg } = await adminClient.from('integrations').select('metadata').eq('user_id', userId).eq('service', 'meta').maybeSingle();
 
   const metadata = intg?.metadata ?? {};
   const metadataRawAccountIds = metadata.adAccountIds ?? metadata.ad_account_ids ?? metadata.adAccountId ?? metadata.ad_account_id ?? '';
@@ -966,8 +958,7 @@ function percentChange(c: number, p: number): number {
 }
 
 async function getMetaCache(adminClient: any, userId: string, cacheId: string) {
-  const { data } = await adminClient
-    .from('meta_cache')
+  const { data } = await adminClient.from('meta_cache')
     .select('data, updated_at')
     .eq('user_id', userId)
     .eq('id', cacheId)
@@ -976,8 +967,7 @@ async function getMetaCache(adminClient: any, userId: string, cacheId: string) {
 }
 
 async function setMetaCache(adminClient: any, userId: string, cacheId: string, data: any) {
-  await adminClient
-    .from('meta_cache')
+  await adminClient.from('meta_cache')
     .upsert(
       { id: cacheId, user_id: userId, data, updated_at: new Date().toISOString() },
       { onConflict: 'user_id,id' },
@@ -993,8 +983,7 @@ function requireMetaAccountId(raw: unknown): string {
 }
 
 async function updateIntegrationStatus(adminClient: any, userId: string, service: string, status: string, message: string | null = null) {
-  await adminClient
-    .from('integrations')
+  await adminClient.from('integrations')
     .update({ status, last_error: message, updated_at: new Date().toISOString() })
     .eq('user_id', userId)
     .eq('service', service);
@@ -1003,8 +992,7 @@ async function updateIntegrationStatus(adminClient: any, userId: string, service
 async function ensurePublicUserRow(adminClient: any, user: any) {
   if (!user?.id) return;
 
-  const { data: existingUser, error: existingError } = await adminClient
-    .from('users')
+  const { data: existingUser, error: existingError } = await adminClient.from('users')
     .select('id')
     .eq('id', user.id)
     .maybeSingle();
@@ -1012,8 +1000,7 @@ async function ensurePublicUserRow(adminClient: any, user: any) {
   if (existingUser) return;
 
   const userName = user.user_metadata?.name ?? user.raw_user_meta_data?.name ?? user.email ?? '';
-  const { error: insertError } = await adminClient
-    .from('users')
+  const { error: insertError } = await adminClient.from('users')
     .insert({
       id: user.id,
       email: user.email ?? '',
@@ -1152,15 +1139,13 @@ async function resolveGoogleAdsCreds(adminClient: any, userId: string, qCustomer
   let serviceAccount: any;
   try { serviceAccount = JSON.parse(saRaw); } catch { return { notConnected: false, noServiceAccount: true } as const; }
 
-  const { data: credRow } = await adminClient
-    .from('credentials').select('encrypted_key').eq('user_id', userId).eq('service', 'google_ads').single();
+  const { data: credRow } = await adminClient.from('credentials').select('encrypted_key').eq('user_id', userId).eq('service', 'google_ads').single();
   if (!credRow) return { notConnected: true, noServiceAccount: false } as const;
   const devToken = await decryptCred(credRow.encrypted_key);
 
   let customerId = qCustomerId;
   if (!customerId) {
-    const { data: intg } = await adminClient
-      .from('integrations').select('metadata').eq('user_id', userId).eq('service', 'google_ads').single();
+    const { data: intg } = await adminClient.from('integrations').select('metadata').eq('user_id', userId).eq('service', 'google_ads').single();
     customerId = intg?.metadata?.customerId ?? intg?.metadata?.customer_id ?? '';
   }
   return { notConnected: false, noServiceAccount: false, devToken, customerId, serviceAccount } as const;
@@ -1353,8 +1338,7 @@ async function processMetaLeadChange(adminClient: any, change: any): Promise<voi
   const { leadgen_id, page_id } = val;
   if (!leadgen_id) return;
 
-  const { data: intgs } = await adminClient
-    .from('integrations')
+  const { data: intgs } = await adminClient.from('integrations')
     .select('user_id, metadata')
     .eq('service', 'meta')
     .eq('status', 'connected');
@@ -1375,8 +1359,7 @@ async function processMetaLeadChange(adminClient: any, change: any): Promise<voi
   if (matchingIntg == null) return;
 
   const webhookUserId = matchingIntg.user_id;
-  const { data: credRow } = await adminClient
-    .from('credentials')
+  const { data: credRow } = await adminClient.from('credentials')
     .select('encrypted_key')
     .eq('user_id', webhookUserId)
     .eq('service', 'meta')
@@ -1512,8 +1495,7 @@ async function processWhatsappWebhookChange(adminClient: any, change: any): Prom
   if (String(value?.messaging_product ?? '').toLowerCase() !== 'whatsapp') return;
   if (!Array.isArray(value?.messages)) return;
 
-  const { data: integrations } = await adminClient
-    .from('integrations')
+  const { data: integrations } = await adminClient.from('integrations')
     .select('user_id, metadata')
     .eq('service', 'whatsapp')
     .eq('status', 'connected');
@@ -1565,8 +1547,7 @@ async function ensureWhatsappLead(
     createdAtMeta,
     value,
   } = params;
-  const { data: existingLead } = await adminClient
-    .from('leads')
+  const { data: existingLead } = await adminClient.from('leads')
     .select('id, stage')
     .eq('user_id', userId)
     .or(`telefono_hash.eq.${hashedPhone},phone_normalized.eq.${normalizedPhone}`)
@@ -1576,14 +1557,12 @@ async function ensureWhatsappLead(
 
   if (existingLead?.id) {
     if (String(existingLead.stage ?? 'lead').toLowerCase() === 'lead') {
-      await adminClient
-        .from('leads')
+      await adminClient.from('leads')
         .update({ stage: 'whatsapp', first_inbound_at: createdAtMeta })
         .eq('id', existingLead.id)
         .eq('user_id', userId);
     } else {
-      await adminClient
-        .from('leads')
+      await adminClient.from('leads')
         .update({ first_inbound_at: createdAtMeta })
         .eq('id', existingLead.id)
         .is('first_inbound_at', null);
@@ -1591,8 +1570,7 @@ async function ensureWhatsappLead(
     return existingLead.id;
   }
 
-  const { data: lead } = await adminClient
-    .from('leads')
+  const { data: lead } = await adminClient.from('leads')
     .upsert({
       user_id:         userId,
       external_id:     `whatsapp:${phone}`,
@@ -1617,8 +1595,7 @@ async function ensureWhatsappLead(
 
   if (lead?.id) return lead.id;
 
-  const { data: fallbackLead } = await adminClient
-    .from('leads')
+  const { data: fallbackLead } = await adminClient.from('leads')
     .select('id')
     .eq('user_id', userId)
     .eq('external_id', `whatsapp:${phone}`)
@@ -1661,8 +1638,7 @@ async function processWhatsappWebhookMessage(adminClient: any, userId: string, v
   const { data: usrRow } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
   const clinicId = usrRow?.clinic_id ?? null;
   if (clinicId) {
-    await adminClient
-      .from('whatsapp_conversations')
+    await adminClient.from('whatsapp_conversations')
       .insert({
         clinic_id:        clinicId,
         lead_id:          leadId,
@@ -1929,8 +1905,7 @@ async function handleLeadsDelete(ctx: AuthenticatedRouteContext): Promise<Respon
   const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource === 'leads' && req.method === 'DELETE' && sub !== '') {
     const leadId = sub;
-    const { error } = await adminClient
-      .from('leads')
+    const { error } = await adminClient.from('leads')
       .delete()
       .eq('id', leadId)
       .eq('user_id', userId);
@@ -1942,8 +1917,7 @@ async function handleLeadsDelete(ctx: AuthenticatedRouteContext): Promise<Respon
 }
 
 async function upsertLeadIdempotent(adminClient: any, userId: string, payload: any, source: string, externalId: string): Promise<any> {
-  const { data, error } = await adminClient
-    .from('leads')
+  const { data, error } = await adminClient.from('leads')
     .upsert(payload, { onConflict: 'user_id,source,external_id', ignoreDuplicates: true })
     .select()
     .maybeSingle();
@@ -1953,8 +1927,7 @@ async function upsertLeadIdempotent(adminClient: any, userId: string, payload: a
     return { data, deduplicated: false, status: 201 };
   }
 
-  const { data: existing, error: existingErr } = await adminClient
-    .from('leads')
+  const { data: existing, error: existingErr } = await adminClient.from('leads')
     .select('*')
     .eq('user_id', userId)
     .eq('source', source)
@@ -1980,8 +1953,7 @@ async function handleLeadsPost(ctx: AuthenticatedRouteContext): Promise<Response
       return sendJson({ success: true, lead: data, deduplicated }, status);
     }
 
-    const { data, error } = await adminClient
-      .from('leads')
+    const { data, error } = await adminClient.from('leads')
       .insert(payload)
       .select()
       .single();
@@ -2010,8 +1982,7 @@ async function handleLeadsPatch(ctx: AuthenticatedRouteContext): Promise<Respons
       return sendJson({ success: false, message: 'No valid fields provided for update' }, 400);
     }
 
-    const { data, error } = await adminClient
-      .from('leads')
+    const { data, error } = await adminClient.from('leads')
       .update(updateData)
       .eq('id', leadId)
       .eq('user_id', userId)
@@ -2430,8 +2401,7 @@ async function fetchMetaInsightsFallbackFromDb(params: {
   e: Error;
 }) {
   const { adminClient, userId, creds, since, until, days, sendJson, e } = params;
-  const { data: dbRows, error: dbErr } = await adminClient
-    .from('meta_daily_insights')
+  const { data: dbRows, error: dbErr } = await adminClient.from('meta_daily_insights')
     .select('date,impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,messaging_conversations')
     .eq('user_id', userId)
     .in('ad_account_id', creds.adAccountIds)
@@ -2576,8 +2546,7 @@ async function persistMetaDailyInsights(adminClient: any, userId: string, adAcco
     updated_at: new Date().toISOString(),
   }));
 
-  await adminClient
-    .from('meta_daily_insights')
+  await adminClient.from('meta_daily_insights')
     .upsert(dbRows, { onConflict: 'user_id,ad_account_id,date' });
   return insightsDailyRows.length;
 }
@@ -2653,8 +2622,7 @@ async function persistMetaOrganicDailyInsights(adminClient: any, userId: string,
 
   if (dbRows.length === 0) return 0;
 
-  await adminClient
-    .from('meta_organic_daily')
+  await adminClient.from('meta_organic_daily')
     .upsert(dbRows, { onConflict: 'user_id,page_id,date' });
 
   return dbRows.length;
@@ -2715,8 +2683,7 @@ async function persistMetaPostPerformance(adminClient: any, userId: string, page
     };
   });
 
-  await adminClient
-    .from('meta_post_performance')
+  await adminClient.from('meta_post_performance')
     .upsert(dbRows, { onConflict: 'user_id,post_id' });
 
   return dbRows.length;
@@ -2755,8 +2722,7 @@ async function persistMetaIgAccountDailyInsights(adminClient: any, userId: strin
 
   if (dbRows.length === 0) return 0;
 
-  await adminClient
-    .from('meta_ig_account_daily')
+  await adminClient.from('meta_ig_account_daily')
     .upsert(dbRows, { onConflict: 'user_id,ig_id,date' });
 
   return dbRows.length;
@@ -2786,8 +2752,7 @@ async function persistMetaIgMediaPerformance(adminClient: any, userId: string, i
         insights[row.name] = Number(row.values?.[0]?.value || 0);
       }
 
-      await adminClient
-        .from('meta_ig_media_performance')
+      await adminClient.from('meta_ig_media_performance')
         .upsert({
           user_id: userId,
           ig_id: igId,
@@ -2822,8 +2787,7 @@ async function handleMetaOrganicGet(ctx: AuthenticatedRouteContext): Promise<Res
   if (resource !== 'meta' || sub !== 'organic' || req.method !== 'GET') return null;
 
   // Resolve pageId from integrations.metadata
-  const { data: integ } = await adminClient
-    .from('integrations')
+  const { data: integ } = await adminClient.from('integrations')
     .select('metadata')
     .eq('user_id', userId)
     .eq('service', 'meta')
@@ -2859,8 +2823,7 @@ async function handleMetaOrganicGet(ctx: AuthenticatedRouteContext): Promise<Res
   }
 
   // Default: daily series + summary
-  const { data: rows, error } = await adminClient
-    .from('meta_organic_daily')
+  const { data: rows, error } = await adminClient.from('meta_organic_daily')
     .select('date, impressions, reach, engagements, video_views, page_views, reactions')
     .eq('user_id', userId)
     .eq('page_id', pageId)
@@ -2892,8 +2855,7 @@ async function handleMetaIgGet(ctx: AuthenticatedRouteContext): Promise<Response
   const { adminClient, userId, resource, sub, sub2, req, url, sendJson } = ctx;
   if (resource !== 'meta' || sub !== 'ig' || req.method !== 'GET') return null;
 
-  const { data: integ } = await adminClient
-    .from('integrations')
+  const { data: integ } = await adminClient.from('integrations')
     .select('metadata')
     .eq('user_id', userId)
     .eq('service', 'meta')
@@ -2904,8 +2866,7 @@ async function handleMetaIgGet(ctx: AuthenticatedRouteContext): Promise<Response
 
   // Fallback: auto-discover ig_id from existing DB data when metadata is missing
   if (!igId) {
-    const { data: igDiscover } = await adminClient
-      .from('meta_ig_account_daily')
+    const { data: igDiscover } = await adminClient.from('meta_ig_account_daily')
       .select('ig_id')
       .eq('user_id', userId)
       .limit(1)
@@ -2940,8 +2901,7 @@ async function handleMetaIgGet(ctx: AuthenticatedRouteContext): Promise<Response
     return sendJson({ success: true, igId, count: data?.length ?? 0, posts: data ?? [] });
   }
 
-  const { data: rows, error } = await adminClient
-    .from('meta_ig_account_daily')
+  const { data: rows, error } = await adminClient.from('meta_ig_account_daily')
     .select('date, reach, follower_count_delta, profile_views, accounts_engaged, total_interactions, website_clicks, views')
     .eq('user_id', userId)
     .eq('ig_id', igId)
@@ -3178,8 +3138,7 @@ export function buildCampaignsTimeRange(
 }
 
 async function fetchDbCampaigns(adminClient: any, userId: string, adAccountId: string) {
-  const { data: dbRows } = await adminClient
-    .from('vw_campaign_performance_real')
+  const { data: dbRows } = await adminClient.from('vw_campaign_performance_real')
     .select('campaign_id, campaign_name, source, total_leads, last_lead_at')
     .eq('user_id', userId)
     .order('total_leads', { ascending: false });
@@ -3417,8 +3376,7 @@ async function fetchAdInsightsFromMeta(creds: any, insightsSince: string, insigh
 }
 
 async function fetchAdDataFromCrm(adminClient: any, userId: string) {
-  const { data: adLeads } = await adminClient
-    .from('leads')
+  const { data: adLeads } = await adminClient.from('leads')
     .select('ad_id, ad_name, campaign_id, campaign_name, created_at')
     .eq('user_id', userId)
     .not('ad_id', 'is', null)
@@ -3662,8 +3620,7 @@ async function handleAiAnalyzePost(ctx: AuthenticatedRouteContext): Promise<Resp
     ].filter((l) => l !== undefined).join('\n');
 
     // Rate limit simple: máx 20 llamadas por hora por usuario
-    const { data: recentCalls, error: rlError } = await adminClient
-      .from('api_call_log')
+    const { data: recentCalls, error: rlError } = await adminClient.from('api_call_log')
       .select('id')
       .eq('user_id', userId)
       .eq('endpoint', 'ai/analyze')
@@ -3722,8 +3679,7 @@ async function handleIntegrationsPatch(ctx: AuthenticatedRouteContext): Promise<
     const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
     if (body.metadata !== undefined) updates.metadata = body.metadata;
     if (body.status !== undefined) updates.status = body.status;
-    const { error } = await adminClient
-      .from('integrations')
+    const { error } = await adminClient.from('integrations')
       .update(updates)
       .eq('user_id', userId)
       .eq('service', service);
@@ -3736,8 +3692,7 @@ async function handleIntegrationsPatch(ctx: AuthenticatedRouteContext): Promise<
 async function handleIntegrationsValidateAllGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource === 'integrations' && req.method === 'GET' && sub === 'validate-all') {
-    const { data, error } = await adminClient
-      .from('integrations')
+    const { data, error } = await adminClient.from('integrations')
       .select('id, service, status, last_sync, last_error, metadata')
       .eq('user_id', userId)
       .order('service');
@@ -3757,8 +3712,7 @@ async function handleIntegrationsValidateAllGet(ctx: AuthenticatedRouteContext):
 async function handleIntegrationsGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource === 'integrations' && req.method === 'GET' && sub === '') {
-    const { data, error } = await adminClient
-      .from('integrations')
+    const { data, error } = await adminClient.from('integrations')
       .select('id, service, status, last_sync, last_error, metadata')
       .eq('user_id', userId)
       .order('service');
@@ -3835,13 +3789,11 @@ async function handleIntegrationsConnectPost(ctx: AuthenticatedRouteContext): Pr
     await ensurePublicUserRow(adminClient, authUser);
     const encryptedKey = await encryptCred(String(reqToken).trim());
   
-    const { error: credErr } = await adminClient
-      .from('credentials')
+    const { error: credErr } = await adminClient.from('credentials')
       .upsert({ user_id: userId, service, encrypted_key: encryptedKey }, { onConflict: 'user_id,service' });
     if (credErr) throw credErr;
   
-    const { error: intErr } = await adminClient
-      .from('integrations')
+    const { error: intErr } = await adminClient.from('integrations')
       .upsert(
         { user_id: userId, service, status: 'connected', metadata, updated_at: new Date().toISOString() },
         { onConflict: 'user_id,service' },
@@ -3875,8 +3827,7 @@ async function handleIntegrationsTestPost(ctx: AuthenticatedRouteContext): Promi
       }
     }
   
-    const { data: cred } = await adminClient
-      .from('credentials').select('service').eq('user_id', userId).eq('service', service).single();
+    const { data: cred } = await adminClient.from('credentials').select('service').eq('user_id', userId).eq('service', service).single();
     const status = cred ? 'connected' : 'error';
     return sendJson({ success: !!cred, service, status, metadata: {} });
   }
@@ -3886,8 +3837,7 @@ async function handleIntegrationsTestPost(ctx: AuthenticatedRouteContext): Promi
 async function handlePlaybooksGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, resource, sub, req, sendJson } = ctx;
   if (resource === 'playbooks' && req.method === 'GET' && sub === '') {
-    const { data, error } = await adminClient
-      .from('playbooks')
+    const { data, error } = await adminClient.from('playbooks')
       .select(`
         id, slug, title, description, category, status, steps,
         run_count, last_run_at, created_at
@@ -3924,8 +3874,7 @@ function getPlaybookStrategyPrompt(pbTitle: string, clinic: any) {
 }
 
 async function logPlaybookExecution(adminClient: any, userId: string, playbookId: string, agentOutputId: string | null, status: string = 'success') {
-  const { data: exec, error: execErr } = await adminClient
-    .from('playbook_executions')
+  const { data: exec, error: execErr } = await adminClient.from('playbook_executions')
     .insert({
       playbook_id: playbookId,
       user_id: userId,
@@ -3950,8 +3899,7 @@ async function handlePlaybooksRunPost(ctx: AuthenticatedRouteContext): Promise<R
   if (resource === 'playbooks' && sub2 === 'run' && req.method === 'POST') {
     const body = await req.json().catch(() => ({}));
     const preferredProvider = String(body?.provider ?? '').trim();
-    const { data: pb, error: pbErr } = await adminClient
-      .from('playbooks').select('id, title, status, run_count').eq('slug', sub).single();
+    const { data: pb, error: pbErr } = await adminClient.from('playbooks').select('id, title, status, run_count').eq('slug', sub).single();
     if (pbErr || !pb) return sendJson({ success: false, message: `Playbook '${sub}' not found` }, 404);
     if (pb.status === 'archived') return sendJson({ success: false, message: 'Playbook is archived' }, 400);
   
@@ -4016,8 +3964,7 @@ async function handlePlaybooksRunPost(ctx: AuthenticatedRouteContext): Promise<R
 async function handleAiStatus(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, sendJson } = ctx;
   if (resource === 'ai' && sub === 'status') {
-    const { data: cred } = await adminClient
-      .from('credentials').select('service').eq('user_id', userId).in('service', ['openai', 'gemini']);
+    const { data: cred } = await adminClient.from('credentials').select('service').eq('user_id', userId).in('service', ['openai', 'gemini']);
     const hasAi = (cred ?? []).length > 0;
     return sendJson({ success: true, available: hasAi, provider: hasAi ? cred?.[0]?.service ?? null : null });
   }
@@ -4149,8 +4096,7 @@ async function handleAiOutputsGet(ctx: AuthenticatedRouteContext): Promise<Respo
     const outputIds = (data ?? []).map((r: any) => r.id).filter(Boolean);
     let executionByOutputId: Record<string, string> = {};
     if (outputIds.length > 0) {
-      const { data: execRows } = await adminClient
-        .from('playbook_executions')
+      const { data: execRows } = await adminClient.from('playbook_executions')
         .select('id, agent_output_id')
         .eq('user_id', userId)
         .in('agent_output_id', outputIds);
@@ -4427,8 +4373,7 @@ async function handleFinancialsSettlements(ctx: AuthenticatedRouteContext): Prom
     const clinicId = usr?.clinic_id;
     if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
   
-    const { data: rows } = await adminClient
-      .from('financial_settlements')
+    const { data: rows } = await adminClient.from('financial_settlements')
       .select('id, template_name, amount_gross, amount_discount, amount_net, settled_at, intake_at, cancelled_at')
       .eq('clinic_id', clinicId)
       .order('settled_at', { ascending: false })
@@ -4453,8 +4398,7 @@ async function handleFinancialsPatients(ctx: AuthenticatedRouteContext): Promise
     const clinicId = usr?.clinic_id;
     if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
   
-    const { data: rows } = await adminClient
-      .from('patients')
+    const { data: rows } = await adminClient.from('patients')
       .select('id, dni, name, email, phone, total_ltv, last_visit, created_at')
       .eq('clinic_id', clinicId)
       .order('total_ltv', { ascending: false });
@@ -4493,8 +4437,7 @@ async function resolveMetaCampaignAttribution(adminClient: any, userId: string, 
   const patientMap: Map<string, any> = new Map();
   if (docIds.length === 0) return patientMap;
 
-  const { data: dpRows } = await adminClient
-    .from('doctoralia_patients')
+  const { data: dpRows } = await adminClient.from('doctoralia_patients')
     .select('doc_patient_id,lead_id,match_class,match_confidence')
     .eq('clinic_id', clinicId)
     .in('doc_patient_id', docIds);
@@ -4525,8 +4468,7 @@ async function handleAgendaDoctoraliaGet(ctx: AuthenticatedRouteContext): Promis
 
     // Fetch appointments from doctoralia_raw for the given date, joined with
     // doctoralia_patients to get the Meta campaign attribution.
-    const { data: rows, error } = await adminClient
-      .from('doctoralia_raw')
+    const { data: rows, error } = await adminClient.from('doctoralia_raw')
       .select(
         'raw_hash,paciente_id,paciente_nombre,patient_name,hora,hora_inicio,estado,' +
         'asunto,procedimiento_nombre,treatment,agenda,sala_box,procedencia,' +
@@ -4639,8 +4581,7 @@ async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<
 async function handleTraceabilityFunnel(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, sendJson } = ctx;
   if (resource === 'traceability' && sub === 'funnel') {
-    const { data: rows } = await adminClient
-      .from('vw_whatsapp_conversion_real')
+    const { data: rows } = await adminClient.from('vw_whatsapp_conversion_real')
       .select('*')
       .eq('user_id', userId);
     // The view uses column names "cohort" and "lead_count"; normalise to the
@@ -4701,8 +4642,7 @@ async function handleFigmaEvents(ctx: AuthenticatedRouteContext): Promise<Respon
   const { adminClient, resource, sub, url, sendJson } = ctx;
   if (resource === 'figma' && sub === 'events') {
     const limit = Math.min(Number.parseInt(url.searchParams.get('limit') || '20', 10), 50);
-    const { data: rows } = await adminClient
-      .from('figma_sync_log')
+    const { data: rows } = await adminClient.from('figma_sync_log')
       .select('id, file_key, status, message, components_synced, tokens_synced, created_at')
       .order('created_at', { ascending: false })
       .limit(limit);
@@ -4731,8 +4671,7 @@ async function handleWhatsappSend(ctx: AuthenticatedRouteContext): Promise<Respo
 
 async function matchPatientByPhone(adminClient: any, clinicId: string, normalizedPhone: string) {
   if (!normalizedPhone) return null;
-  const { data: patient } = await adminClient
-    .from('patients')
+  const { data: patient } = await adminClient.from('patients')
     .select('id')
     .eq('clinic_id', clinicId)
     .eq('phone_normalized', normalizedPhone)
@@ -4742,8 +4681,7 @@ async function matchPatientByPhone(adminClient: any, clinicId: string, normalize
 
 async function matchLeadByPhone(adminClient: any, userId: string, normalizedPhone: string) {
   if (!normalizedPhone) return null;
-  const { data: lead } = await adminClient
-    .from('leads')
+  const { data: lead } = await adminClient.from('leads')
     .select('id, stage, phone_normalized')
     .eq('user_id', userId)
     .eq('phone_normalized', normalizedPhone)
@@ -4756,8 +4694,7 @@ async function matchLeadByPhone(adminClient: any, userId: string, normalizedPhon
 async function matchLeadByEmail(adminClient: any, userId: string, email: string) {
   if (!email) return null;
   const normalizedEmail = String(email).trim();
-  const { data: lead } = await adminClient
-    .from('leads')
+  const { data: lead } = await adminClient.from('leads')
     .select('id, stage, email')
     .eq('user_id', userId)
     .ilike('email', normalizedEmail)
@@ -4789,8 +4726,7 @@ async function updateLeadStageToWhatsapp(adminClient: any, userId: string, match
   const currentStage = String(matchedLead.stage ?? 'lead').toLowerCase();
   if (currentStage !== 'lead') return false;
 
-  const { error } = await adminClient
-    .from('leads')
+  const { error } = await adminClient.from('leads')
     .update({ stage: 'whatsapp', first_inbound_at: new Date().toISOString() })
     .eq('id', matchedLead.id)
     .eq('user_id', userId);
@@ -5260,8 +5196,7 @@ async function handleReportsSourceComparisonGet(ctx: AuthenticatedRouteContext):
 async function handleReportsWhatsappConversionGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource === 'reports' && sub === 'whatsapp-conversion' && req.method === 'GET') {
-    const { data: rows } = await adminClient
-      .from('vw_whatsapp_conversion_real')
+    const { data: rows } = await adminClient.from('vw_whatsapp_conversion_real')
       .select('*')
       .eq('user_id', userId);
     return sendJson({ success: true, cohorts: rows || [] });
@@ -5318,8 +5253,7 @@ async function handleReportsDoctorPerformanceGet(ctx: AuthenticatedRouteContext)
     const clinicId = await resolveClinicId(adminClient, userId);
     if (!clinicId) return sendJson({ success: false, message: 'Clinic not configured.' }, 400);
 
-    const { data: rows } = await adminClient
-      .from('vw_doctor_performance_real')
+    const { data: rows } = await adminClient.from('vw_doctor_performance_real')
       .select('*')
       .eq('clinic_id', clinicId)
       .order('total_appointments', { ascending: false });

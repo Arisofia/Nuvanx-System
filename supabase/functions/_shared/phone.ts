@@ -17,12 +17,16 @@ export function normalizePhoneToE164(input: string | null | undefined, countryCo
   if (digits.length < 8 || digits.length > 15) return '';
 
   const nodeProcess = (globalThis as any).process;
-  const fallbackCountryCode = (
-    countryCode
-      ?? (globalThis as any).Deno?.env?.get?.('DEFAULT_PHONE_COUNTRY_CODE')
-      ?? nodeProcess?.env?.DEFAULT_PHONE_COUNTRY_CODE
-      ?? ''
-  ).toString().replaceAll(/\D/g, '');
+  const denoEnv = (globalThis as any).Deno && (globalThis as any).Deno.env;
+  const denoDefault = denoEnv && typeof denoEnv.get === 'function'
+    ? denoEnv.get('DEFAULT_PHONE_COUNTRY_CODE')
+    : undefined;
+  const nodeDefault = nodeProcess && nodeProcess.env
+    ? nodeProcess.env.DEFAULT_PHONE_COUNTRY_CODE
+    : undefined;
+  const fallbackCountryCode = String(
+    countryCode ?? denoDefault ?? nodeDefault ?? ''
+  ).replaceAll(/\D/g, '');
 
   if (!fallbackCountryCode) {
     throw new Error('DEFAULT_PHONE_COUNTRY_CODE environment variable is not set. Phone normalization cannot proceed.');
