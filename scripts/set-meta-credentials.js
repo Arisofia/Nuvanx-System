@@ -16,7 +16,7 @@
  */
 
 const { Client } = require('pg');
-const { webcrypto } = require('crypto');
+const { webcrypto } = require('node:crypto');
 
 const { DATABASE_URL, ENCRYPTION_KEY, META_ACCESS_TOKEN_NEW, REPORT_USER_ID } = process.env;
 
