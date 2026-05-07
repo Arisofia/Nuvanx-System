@@ -42,8 +42,8 @@ jobs:
       BACKFILL_UNTIL:      ${{ github.event.inputs.until }}
 
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-node@v6.4.0
         with:
           node-version: '24'
       - name: Validate required secrets
