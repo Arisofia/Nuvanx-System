@@ -1527,6 +1527,7 @@ async function processWhatsappWebhookMessage(adminClient: any, userId: string, v
   const phone = String(contact?.wa_id ?? message?.from ?? '').trim();
   if (!phone) return false;
 
+  const normalizedPhone = normalizePhoneForMeta(phone);
   const name = String(contact?.profile?.name ?? contact?.name ?? '').trim() || phone;
   const text = String(message?.text?.body ?? message?.body ?? '').trim();
   const snippet = text || `${String(message?.type ?? 'whatsapp')} message`;
@@ -1538,7 +1539,7 @@ async function processWhatsappWebhookMessage(adminClient: any, userId: string, v
     .from('leads')
     .select('id, stage')
     .eq('user_id', userId)
-    .eq('telefono_hash', hashedPhone)
+    .or(`telefono_hash.eq.${hashedPhone},phone_normalized.eq.${normalizedPhone}`)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -2505,15 +2506,7 @@ async function persistMetaDailyInsights(adminClient: any, userId: string, adAcco
     reach: Math.round(Number(r.reach || 0)),
     clicks: Math.round(Number(r.clicks || 0)),
     spend: Number(r.spend || 0),
-    conversions: Math.round(Number(r.conversions || 0)),
-    ctr: Number(r.ctr || 0),
-    cpc: Number(r.cpc || 0),
-    cpm: Number(r.cpm || 0),
-    messaging_conversations: actionValue(r.actions, isMessagingConversationAction),
-    updated_at: new Date().toISOString(),
-  }));
-
-  await adminClient
+      conversions: Math.round(Number(r.conversions ?? actionValue(r.actions, (t: string) => t.includes('lead') || t.includes('conversion') || t.includes('complete_registration')) ?? 0)),
     .from('meta_daily_insights')
     .upsert(dbRows, { onConflict: 'user_id,ad_account_id,date' });
   return insightsDailyRows.length;

@@ -15,8 +15,14 @@ BEGIN
                    THEN 'closed' ELSE l.stage END
   FROM public.doctoralia_patients dp
   LEFT JOIN public.patients p
-    ON p.dni = dp.doc_patient_id
-   AND p.clinic_id = dp.clinic_id
+    ON p.clinic_id = dp.clinic_id
+   AND (
+      p.dni = dp.doc_patient_id
+      OR (
+        dp.doc_patient_id LIKE 'ph:%'
+        AND p.phone_normalized = dp.phone_primary
+      )
+   )
   LEFT JOIN LATERAL (
     SELECT SUM(fs.amount_net) AS total_net
     FROM public.financial_settlements fs
