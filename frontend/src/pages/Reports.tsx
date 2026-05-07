@@ -96,6 +96,16 @@ export default function Reports() {
   const [roiTo, setRoiTo] = useState<string>('')
   const [roiSource, setRoiSource] = useState<string>('')
 
+  // Lead Audit
+  const [leadAuditRows, setLeadAuditRows] = useState<any[]>([])
+  const [leadAuditLoading, setLeadAuditLoading] = useState(true)
+  const [leadAuditError, setLeadAuditError] = useState<string | null>(null)
+  const [leadAuditMatchedOnly, setLeadAuditMatchedOnly] = useState(false)
+  const [leadAuditFrom, setLeadAuditFrom] = useState<string>('')
+  const [leadAuditTo, setLeadAuditTo] = useState<string>('')
+  const [leadAuditCampaignName, setLeadAuditCampaignName] = useState<string>('')
+  const [leadAuditPhone, setLeadAuditPhone] = useState<string>('')
+
   // Doctoralia fetch — re-runs on date filter change
   useEffect(() => {
     const params: string[] = []
@@ -177,6 +187,24 @@ export default function Reports() {
     return () => { cancelled = true }
   }, [roiFrom, roiTo, roiSource])
 
+  useEffect(() => {
+    const params: string[] = []
+    if (leadAuditMatchedOnly) params.push('matched=true')
+    if (leadAuditFrom) params.push(`from=${leadAuditFrom}`)
+    if (leadAuditTo) params.push(`to=${leadAuditTo}`)
+    if (leadAuditCampaignName) params.push(`campaign_name=${encodeURIComponent(leadAuditCampaignName)}`)
+    if (leadAuditPhone) params.push(`phone=${encodeURIComponent(leadAuditPhone)}`)
+    const qs = params.length ? `?${params.join('&')}` : ''
+    let cancelled = false
+    setLeadAuditLoading(true)
+    setLeadAuditError(null)
+    invokeApi(`/reports/lead-audit${qs}`)
+      .then((d: any) => { if (!cancelled) { setLeadAuditRows(d?.leads ?? []); setLeadAuditError(null) } })
+      .catch((e: any) => { if (!cancelled) setLeadAuditError(e?.message || 'Failed to load lead audit.') })
+      .finally(() => { if (!cancelled) setLeadAuditLoading(false) })
+    return () => { cancelled = true }
+  }, [leadAuditMatchedOnly, leadAuditFrom, leadAuditTo, leadAuditCampaignName, leadAuditPhone])
+
   // Local date filters for campaign/source (front-end only)
   const filteredCampaigns = useMemo(() => {
     return campaigns.filter((r) => {
@@ -226,9 +254,118 @@ export default function Reports() {
           <TabsTrigger value="campaigns" className="gap-2"><TrendingUp className="w-4 h-4" />Campaigns</TabsTrigger>
           <TabsTrigger value="sources" className="gap-2"><Users className="w-4 h-4" />Sources</TabsTrigger>
           <TabsTrigger value="whatsapp" className="gap-2"><MessageCircle className="w-4 h-4" />WhatsApp</TabsTrigger>
+          <TabsTrigger value="lead-audit" className="gap-2"><FileBarChart2 className="w-4 h-4" />Lead Audit</TabsTrigger>
           <TabsTrigger value="doctors" className="gap-2"><Stethoscope className="w-4 h-4" />Doctors</TabsTrigger>
           <TabsTrigger value="campaign-roi" className="gap-2"><BarChart3 className="w-4 h-4" />Campaign ROI</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="lead-audit" className="mt-4 space-y-4">
+          <Card>
+            <CardHeader className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+              <div>
+                <CardTitle>Lead Audit</CardTitle>
+                <p className="text-sm text-muted">Filtra y revisa la trazabilidad de leads contra Doctoralia.</p>
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={leadAuditMatchedOnly}
+                    onChange={(event) => setLeadAuditMatchedOnly(event.target.checked)}
+                  />
+                  Solo cruzados
+                </label>
+              </div>
+            </CardHeader>
+            <CardContent className="grid gap-4 lg:grid-cols-4">
+              <label className="flex flex-col gap-2 text-sm">
+                Campaña
+                <input
+                  type="text"
+                  value={leadAuditCampaignName}
+                  onChange={(event) => setLeadAuditCampaignName(event.target.value)}
+                  className="input-field"
+                  placeholder="campaign_name"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-sm">
+                Teléfono
+                <input
+                  type="text"
+                  value={leadAuditPhone}
+                  onChange={(event) => setLeadAuditPhone(event.target.value)}
+                  className="input-field"
+                  placeholder="phone"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-sm">
+                Desde
+                <input
+                  type="date"
+                  value={leadAuditFrom}
+                  onChange={(event) => setLeadAuditFrom(event.target.value)}
+                  className="input-field"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-sm">
+                Hasta
+                <input
+                  type="date"
+                  value={leadAuditTo}
+                  onChange={(event) => setLeadAuditTo(event.target.value)}
+                  className="input-field"
+                />
+              </label>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Resultados Lead Audit</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {leadAuditLoading && <p className="text-sm text-muted">Cargando auditoría de leads…</p>}
+              {leadAuditError && <ErrorState message={leadAuditError} />}
+              {!leadAuditLoading && !leadAuditError && leadAuditRows.length === 0 && (
+                <EmptyState message="No se encontraron leads con los filtros aplicados." />
+              )}
+              {!leadAuditLoading && !leadAuditError && leadAuditRows.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <TableHead cols={[
+                      'lead_name', 'source', 'campaign_name', 'ad_name', 'form_name', 'lead_created_at',
+                      'phone_normalized', 'match_class', 'match_confidence', 'patient_name', 'patient_phone',
+                      'settlement_date', 'first_settlement_at', 'phoneCrossMatch',
+                    ]} />
+                    <tbody>
+                      {leadAuditRows.map((row) => (
+                        <TableRow
+                          key={row.lead_id}
+                          cells={[
+                            row.lead_name,
+                            row.source,
+                            row.campaign_name,
+                            row.ad_name,
+                            row.form_name,
+                            row.lead_created_at,
+                            row.phone_normalized,
+                            row.match_class,
+                            row.match_confidence,
+                            row.patient_name,
+                            row.patient_phone,
+                            row.settlement_date,
+                            row.first_settlement_at,
+                            row.phoneCrossMatch ? '✅' : '❌',
+                          ]}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* ── Doctoralia Financials ── */}
         <TabsContent value="doctoralia" className="mt-4 space-y-4">

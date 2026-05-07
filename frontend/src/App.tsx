@@ -21,6 +21,7 @@ const SalesPlaybook = lazy(() => import('./pages/SalesPlaybook'))
 const Integrations = lazy(() => import('./pages/Integrations'))
 const AiPage = lazy(() => import('./pages/AI'))
 const Reports = lazy(() => import('./pages/Reports'))
+const LeadAudit = lazy(() => import('./pages/LeadAudit'))
 
 const PageLoader = () => (
   <div className="min-h-screen bg-background flex items-center justify-center">
@@ -96,6 +97,9 @@ function Router() {
     }
     if (location === '/reports') {
       return <Reports />
+    }
+    if (location === '/lead-audit') {
+      return <LeadAudit />
     }
     return <NotFound />
   })()

@@ -157,5 +157,6 @@ If neither Supabase key is set, the frontend will warn and disable Supabase feat
 - [SECURITY.md](SECURITY.md) — Security posture and production readiness
 - [docs/agents-and-integrations-architecture.md](docs/agents-and-integrations-architecture.md) — Architecture and agent roadmap
 - [docs/production-validation-checklist.md](docs/production-validation-checklist.md) — Production secrets and runtime verification checklist
+- [docs/setup-clean.md](docs/setup-clean.md) — Clean bootstrap / zero-to-production setup guide
 
 
