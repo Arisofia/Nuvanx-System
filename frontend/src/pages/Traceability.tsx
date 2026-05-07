@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { GitMerge, Search, CheckCircle2, XCircle, TrendingUp, MessageCircle } from 'lucide-react'
 import { invokeApi } from '../lib/supabaseClient'
 import { SortableTable, type ColDef } from '../components/ui/SortableTable'
+import logo from '../assets/logo.png'
 
 interface TraceRow {
   lead_id: string
@@ -134,10 +135,19 @@ export default function Traceability() {
   ]
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-4xl font-serif font-bold text-foreground tracking-tight">Trazabilidad Avanzada</h1>
-        <p className="text-muted text-lg mt-2 font-medium">Trazabilidad de leads Meta → pacientes Doctoralia → ingresos verificados</p>
+    <div className="space-y-12">
+      <div className="flex flex-col items-center text-center space-y-6 mb-12">
+        <div className="flex flex-col items-center space-y-4">
+          <img src={logo} alt="Nuvanx Logo" className="h-20 w-auto" />
+          <div className="space-y-2">
+            <h1 className="text-5xl font-serif font-bold tracking-tight text-primary">Trazabilidad</h1>
+            <p className="text-muted text-sm uppercase tracking-[0.3em] font-bold">Auditoría y Conversión Real</p>
+          </div>
+        </div>
+        
+        <div className="diamond-separator">
+          <div className="diamond-separator-icon" />
+        </div>
       </div>
 
       {/* KPI bar */}

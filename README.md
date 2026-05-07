@@ -109,8 +109,8 @@ npm --prefix frontend run test:ci
 ## CI/CD
 
 - GitHub Actions CI: backend tests + frontend lint/build on every push to `main`
-- Deploy: frontend → Vercel (auto), Edge Function → Supabase (manual: `npx supabase functions deploy api `)
-- No Railway, no Render.
+- Deploy: frontend → Vercel (auto), Edge Function → Supabase (manual: `npx supabase functions deploy api`)
+- No Railway or Render deployments are used.
 
 ## Project maturity
 
@@ -142,7 +142,7 @@ For Vercel production deploys, configure these environment variables in the fron
 - `VITE_API_BASE_URL` / `VITE_API_URL` — optional overrides for the API host; leave empty to use Vercel rewrite paths (`/api/*`)
 - `VITE_SENTRY_DSN` — optional Sentry DSN for client error reporting
 
-Use `.env.example` and `frontend/.env.example` as templates only; no valores reales deben guardarse en el repositorio.
+Use `.env.example` and `frontend/.env.example` only as templates; do not commit real credentials to version control.
 
 If neither Supabase key is set, the frontend will warn and disable Supabase features.
 

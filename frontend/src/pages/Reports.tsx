@@ -7,6 +7,7 @@ import { ExportButton } from '../components/reports/ExportButton'
 import { FilterBar } from '../components/ui/FilterBar'
 import { SortableTable } from '../components/ui/SortableTable'
 import type { ColDef } from '../components/ui/SortableTable'
+import logo from '../assets/logo.png'
 
 function EmptyState({ message }: Readonly<{ message: string }>) {
   return <p className="text-muted text-sm py-8 text-center">{message}</p>
@@ -242,10 +243,19 @@ export default function Reports() {
   ]
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-serif font-bold text-foreground">Reports</h1>
-        <p className="text-muted mt-1">Doctoralia financials, campaign attribution, source comparison, WhatsApp funnel, doctor performance</p>
+    <div className="space-y-12">
+      <div className="flex flex-col items-center text-center space-y-6 mb-12">
+        <div className="flex flex-col items-center space-y-4">
+          <img src={logo} alt="Nuvanx Logo" className="h-20 w-auto" />
+          <div className="space-y-2">
+            <h1 className="text-5xl font-serif font-bold tracking-tight text-primary">Reportes</h1>
+            <p className="text-muted text-sm uppercase tracking-[0.3em] font-bold">Inteligencia y Operación de Negocio</p>
+          </div>
+        </div>
+        
+        <div className="diamond-separator">
+          <div className="diamond-separator-icon" />
+        </div>
       </div>
 
       <Tabs defaultValue="doctoralia" className="w-full">

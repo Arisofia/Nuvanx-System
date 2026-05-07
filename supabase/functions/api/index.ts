@@ -3329,7 +3329,7 @@ async function getMetaCampaignsLiveResult(
     const metaCampaigns = campaigns.map(mapMetaCampaign);
     const metaCampaignIds = new Set(metaCampaigns.map((c: any) => String(c.id)));
 
-    const dbCampaigns = await fetchDbCampaigns(adminClient, userId);
+    const dbCampaigns = await fetchDbCampaigns(adminClient, userId, creds.adAccountId);
     const dbOnlyCampaigns = dbCampaigns.filter((c: any) => !metaCampaignIds.has(String(c.id)));
 
     const result = {
@@ -3516,7 +3516,7 @@ async function fetchMetaAdsFallback(params: {
 
 function buildAdMapFromCrm(adLeads: any[]) {
   const adMap: Record<string, { name: string; campaignId: string | null; campaignName: string | null; count: number; lastAt: string }> = {};
-  for (const row of adLeads as any[]) {
+  for (const row of adLeads) {
     if (!row.ad_id) continue;
     if (!adMap[row.ad_id]) {
       adMap[row.ad_id] = {

@@ -13,6 +13,7 @@ import {
 } from 'recharts'
 import { invokeApi, supabase, supabaseKey, supabaseUrl } from '../lib/supabaseClient'
 import type { DashboardMetrics, MetaTrendPoint, ActivityEvent } from '../types'
+import logo from '../assets/logo.png'
 
 import { MetricDelta } from '../components/dashboard/MetricDelta'
 import { FunnelChart } from '../components/dashboard/FunnelChart'
@@ -376,12 +377,15 @@ function DashboardHeader({
 }: DashboardHeaderProps) {
   return (
     <div className="flex flex-col items-center text-center space-y-6 mb-12">
-      <div className="space-y-2">
-        <div className="flex items-center justify-center gap-4">
-          <h1 className="text-5xl font-serif font-bold tracking-tight text-primary">Dashboard</h1>
-          <DataModeBadge overallMode={dataMode as any} />
+      <div className="flex flex-col items-center space-y-4">
+        <img src={logo} alt="Nuvanx Logo" className="h-20 w-auto" />
+        <div className="space-y-2">
+          <div className="flex items-center justify-center gap-4">
+            <h1 className="text-5xl font-serif font-bold tracking-tight text-primary">Dashboard</h1>
+            <DataModeBadge overallMode={dataMode as any} />
+          </div>
+          <p className="text-muted text-sm uppercase tracking-[0.3em] font-bold">Control de Rendimiento Médico</p>
         </div>
-        <p className="text-muted text-sm uppercase tracking-[0.3em] font-bold">Control de Rendimiento Médico</p>
       </div>
 
       <div className="diamond-separator">
