@@ -4928,6 +4928,8 @@ async function loadMetaKpis(adminClient: any, userId: string, url: URL, since: s
   try {
     const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
     const validation = validateMetaCredentialResult(creds);
+    metaResult.accountIds = creds.adAccountIds;
+    metaResult.accountId = creds.adAccountId;
     if (validation.ok) {
       const accountResults = await Promise.allSettled(creds.adAccountIds.map(async (accountId: string) => {
         return await metaFetch(`/${accountId}/insights`, {
@@ -5066,6 +5068,8 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
     success: true,
     period,
     meta: {
+      accountId: metaResult.accountId,
+      accountIds: metaResult.accountIds ?? [],
       spend: metaResult.spend,
       leads: metaResult.leads,
       cpl: metaCpl,

@@ -4,7 +4,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { GitMerge, Search, CheckCircle2, XCircle, TrendingUp, MessageCircle } from 'lucide-react'
 import { invokeApi } from '../lib/supabaseClient'
 import { SortableTable, type ColDef } from '../components/ui/SortableTable'
-import logo from '../assets/logo.png'
 
 interface TraceRow {
   lead_id: string
@@ -135,51 +134,44 @@ export default function Traceability() {
   ]
 
   return (
-    <div className="space-y-12">
-      <div className="flex flex-col items-center text-center space-y-6 mb-12">
-        <div className="flex flex-col items-center space-y-4">
-          <img src={logo} alt="Nuvanx Logo" className="h-20 w-auto" />
-          <div className="space-y-2">
-            <h1 className="text-5xl font-serif font-bold tracking-tight text-primary">Trazabilidad</h1>
-            <p className="text-muted text-sm uppercase tracking-[0.3em] font-bold">Auditoría y Conversión Real</p>
-          </div>
-        </div>
-        
-        <div className="diamond-separator">
-          <div className="diamond-separator-icon" />
+    <div className="space-y-10">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8">
+        <div className="space-y-2">
+          <h1 className="text-5xl font-serif font-bold tracking-tight text-[#2C2825]">Trazabilidad</h1>
+          <p className="text-[#5C5550] text-xs uppercase tracking-[0.4em] font-bold">Auditoría y Conversión Real</p>
         </div>
       </div>
 
       {/* KPI bar */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-        <Card className="hover:shadow-md transition-shadow">
-          <CardContent className="pt-6">
-            <p className="text-[10px] font-bold text-muted uppercase tracking-wider">Total leads</p>
-            <p className="text-3xl font-bold mt-2 tracking-tight">{total > 0 ? total : rows.length}</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <Card className="hover:shadow-xl transition-all duration-500 border-none shadow-sm bg-white">
+          <CardContent className="pt-8">
+            <p className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em]">Total leads</p>
+            <p className="text-4xl font-serif font-bold mt-4 tracking-tight text-[#2C2825]">{total > 0 ? total : rows.length}</p>
           </CardContent>
         </Card>
-        <Card className="hover:shadow-md transition-shadow">
-          <CardContent className="pt-6">
-            <p className="text-[10px] font-bold text-muted uppercase tracking-wider">Cruzados Doctoralia</p>
-            <div className="flex items-center gap-2 mt-2">
-              <p className="text-3xl font-bold tracking-tight text-green-500">{matchedCount}</p>
-              <CheckCircle2 className="h-5 w-5 text-green-500/50" />
+        <Card className="hover:shadow-xl transition-all duration-500 border-none shadow-sm bg-white">
+          <CardContent className="pt-8">
+            <p className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em]">Cruzados Doctoralia</p>
+            <div className="flex items-center gap-3 mt-4">
+              <p className="text-4xl font-serif font-bold tracking-tight text-green-600">{matchedCount}</p>
+              <CheckCircle2 className="h-5 w-5 text-green-600/30" />
             </div>
           </CardContent>
         </Card>
-        <Card className="hover:shadow-md transition-shadow">
-          <CardContent className="pt-6">
-            <p className="text-[10px] font-bold text-muted uppercase tracking-wider">Ventas Verificadas</p>
-            <div className="flex items-center gap-2 mt-2">
-              <p className="text-3xl font-bold tracking-tight text-primary">{withRevenueCount}</p>
-              <TrendingUp className="h-5 w-5 text-primary/50" />
+        <Card className="hover:shadow-xl transition-all duration-500 border-none shadow-sm bg-white">
+          <CardContent className="pt-8">
+            <p className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em]">Ventas Verificadas</p>
+            <div className="flex items-center gap-3 mt-4">
+              <p className="text-4xl font-serif font-bold tracking-tight text-primary">{withRevenueCount}</p>
+              <TrendingUp className="h-5 w-5 text-primary/30" />
             </div>
           </CardContent>
         </Card>
-        <Card className="hover:shadow-md transition-shadow">
-          <CardContent className="pt-6">
-            <p className="text-[10px] font-bold text-muted uppercase tracking-wider">Ingresos Totales</p>
-            <p className="text-3xl font-bold mt-2 tracking-tight text-primary">
+        <Card className="hover:shadow-xl transition-all duration-500 border-none shadow-sm bg-white">
+          <CardContent className="pt-8">
+            <p className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em]">Ingresos Totales</p>
+            <p className="text-4xl font-serif font-bold mt-4 tracking-tight text-primary">
               {totalRevenue > 0 ? `€${totalRevenue.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : '—'}
             </p>
           </CardContent>

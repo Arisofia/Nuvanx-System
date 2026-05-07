@@ -13,7 +13,6 @@ import {
 } from 'recharts'
 import { invokeApi, supabase, supabaseKey, supabaseUrl } from '../lib/supabaseClient'
 import type { DashboardMetrics, MetaTrendPoint, ActivityEvent } from '../types'
-import logo from '../assets/logo.png'
 
 import { MetricDelta } from '../components/dashboard/MetricDelta'
 import { FunnelChart } from '../components/dashboard/FunnelChart'
@@ -42,6 +41,7 @@ interface DashboardQuality {
   metaIsReal: boolean
   crmIsReal: boolean
   doctoraliaIsReal: boolean
+  metaAccountIds?: string[]
 }
 
 const EMPTY_COMBINED_METRICS: CombinedMetrics = {
@@ -167,6 +167,7 @@ function buildDashboardState(options: DashboardStateOptions) {
       metaIsReal: kpisResponse?.meta?.is_real,
       crmIsReal: kpisResponse?.crm?.is_real,
       doctoraliaIsReal: kpisResponse?.doctoralia?.is_real,
+      metaAccountIds: Array.isArray(kpisResponse?.meta?.accountIds) ? kpisResponse.meta.accountIds : [],
     }
   }
 }
@@ -358,6 +359,7 @@ interface DashboardHeaderProps {
   readonly setCustomFrom: (v: string) => void
   readonly customTo: string
   readonly setCustomTo: (v: string | ((prev: string) => string)) => void
+  readonly metaAccountIds: string[]
 }
 
 function DashboardHeader({
@@ -374,27 +376,26 @@ function DashboardHeader({
   setCustomFrom,
   customTo,
   setCustomTo,
+  metaAccountIds,
 }: DashboardHeaderProps) {
   return (
-    <div className="flex flex-col items-center text-center space-y-6 mb-12">
-      <div className="flex flex-col items-center space-y-4">
-        <img src={logo} alt="Nuvanx Logo" className="h-20 w-auto" />
+    <div className="flex flex-col space-y-8 mb-12">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div className="space-y-2">
-          <div className="flex items-center justify-center gap-4">
-            <h1 className="text-5xl font-serif font-bold tracking-tight text-primary">Dashboard</h1>
+          <div className="flex items-center gap-4">
+            <h1 className="text-5xl font-serif font-bold tracking-tight text-[#2C2825]">Dashboard</h1>
             <DataModeBadge overallMode={dataMode as any} />
           </div>
-          <p className="text-muted text-sm uppercase tracking-[0.3em] font-bold">Control de Rendimiento Médico</p>
+          <p className="text-[#5C5550] text-xs uppercase tracking-[0.4em] font-bold">Control de Rendimiento Médico</p>
+          {metaAccountIds.length > 0 && (
+            <p className="text-[#5C5550] text-[10px] uppercase tracking-[0.3em] font-bold">
+              Cuentas Meta: {metaAccountIds.join(', ')}
+            </p>
+          )}
         </div>
-      </div>
 
-      <div className="diamond-separator">
-        <div className="diamond-separator-icon" />
-      </div>
-
-      <div className="w-full flex flex-col md:flex-row items-center justify-between gap-6 bg-white/40 backdrop-blur-md p-6 rounded-[2rem] border border-border/40 shadow-sm">
-        <div className="flex flex-wrap items-center justify-center gap-4">
-          <div className="flex items-center gap-1 bg-white/80 p-1.5 rounded-2xl border border-border/60 shadow-inner">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 bg-white/60 backdrop-blur-md p-1.5 rounded-2xl border border-border/40 shadow-sm">
             {([7, 14, 30, 90] as const).map((d) => (
               <button
                 type="button"
@@ -403,14 +404,18 @@ function DashboardHeader({
                 className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all ${
                   !customFrom && days === d 
                     ? 'bg-primary text-white shadow-md' 
-                    : 'text-muted hover:text-primary hover:bg-primary/5'
+                    : 'text-[#8E8680] hover:text-primary hover:bg-primary/5'
                 }`}
               >
                 {d}d
               </button>
             ))}
           </div>
+        </div>
+      </div>
 
+      <div className="w-full flex flex-col lg:flex-row items-center justify-between gap-6 bg-white/40 backdrop-blur-md p-6 rounded-[2rem] border border-border/40 shadow-sm">
+        <div className="flex flex-wrap items-center gap-4">
           {(sourcesList.length > 0 || campaignsList.length > 0) && (
             <div className="flex items-center gap-2 bg-white/80 p-1.5 rounded-2xl border border-border/60 shadow-inner">
               {sourcesList.length > 0 && (
@@ -441,25 +446,23 @@ function DashboardHeader({
           )}
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 bg-white/80 p-2 rounded-2xl border border-border/60 shadow-inner">
-            <input
-              type="date"
-              value={customFrom}
-              onChange={(e) => {
-                setCustomFrom(e.target.value);
-                setCustomTo((prev) => prev || new Date().toISOString().slice(0, 10))
-              }}
-              className="bg-transparent border-none focus:ring-0 text-[10px] font-bold uppercase w-28 text-center"
-            />
-            <span className="text-muted text-xs">→</span>
-            <input
-              type="date"
-              value={customTo}
-              onChange={(e) => setCustomTo(e.target.value)}
-              className="bg-transparent border-none focus:ring-0 text-[10px] font-bold uppercase w-28 text-center"
-            />
-          </div>
+        <div className="flex items-center gap-2 bg-white/80 p-2 rounded-2xl border border-border/60 shadow-inner">
+          <input
+            type="date"
+            value={customFrom}
+            onChange={(e) => {
+              setCustomFrom(e.target.value);
+              setCustomTo((prev) => prev || new Date().toISOString().slice(0, 10))
+            }}
+            className="bg-transparent border-none focus:ring-0 text-[10px] font-bold uppercase w-28 text-center"
+          />
+          <span className="text-[#8E8680] text-xs">→</span>
+          <input
+            type="date"
+            value={customTo}
+            onChange={(e) => setCustomTo(e.target.value)}
+            className="bg-transparent border-none focus:ring-0 text-[10px] font-bold uppercase w-28 text-center"
+          />
         </div>
       </div>
     </div>
@@ -511,26 +514,25 @@ function AlertSection({ error, metaError }: AlertSectionProps) {
 
 interface MetricsGridProps {
   readonly metrics: DashboardMetrics
-  readonly periodLabel: string
   readonly quality: DashboardQuality | null
 }
 
-function MetricsGrid({ metrics, periodLabel, quality }: MetricsGridProps) {
+function MetricsGrid({ metrics, quality }: MetricsGridProps) {
   const renderIsReal = (isReal: boolean | undefined) => {
     if (isReal === undefined) return null;
     return (
-      <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold uppercase tracking-widest ${isReal ? 'text-green-600 border-green-600/20 bg-green-500/5' : 'text-amber-600 border-amber-600/20 bg-amber-500/5'}`}>
+      <span className={`text-[9px] px-2 py-0.5 rounded-full border font-bold uppercase tracking-widest ${isReal ? 'text-green-600 border-green-600/20 bg-green-500/5' : 'text-amber-600 border-amber-600/20 bg-amber-500/5'}`}>
         {isReal ? 'Real' : 'Parcial'}
       </span>
     );
   };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-      <Card className="hover:shadow-xl transition-all duration-500 group">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <Card className="hover:shadow-xl transition-all duration-500 group border-none shadow-sm bg-white">
         <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
           <div className="flex flex-col gap-2">
-            <CardTitle className="text-xs font-bold text-muted uppercase tracking-[0.2em]">Leads Meta</CardTitle>
+            <CardTitle className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em]">Meta Performance</CardTitle>
             {renderIsReal(quality?.metaIsReal)}
           </div>
           <div className="bg-primary/5 p-3 rounded-2xl group-hover:bg-primary/10 transition-colors duration-500">
@@ -539,22 +541,21 @@ function MetricsGrid({ metrics, periodLabel, quality }: MetricsGridProps) {
         </CardHeader>
         <CardContent>
           <div className="flex items-baseline gap-3 mt-4">
-            <div className="text-4xl font-serif font-bold tracking-tight text-primary">
+            <div className="text-4xl font-serif font-bold tracking-tight text-[#2C2825]">
               {metrics.metaConversions.toLocaleString('es-ES')}
             </div>
             {metrics.deltas && <MetricDelta value={metrics.deltas.conversions} />}
           </div>
-          <div className="flex flex-col gap-1 mt-4">
-            <p className="text-[10px] text-muted font-bold uppercase tracking-wider italic opacity-60">Leads generados</p>
-            <p className="text-[10px] text-primary/40 font-bold uppercase tracking-widest">{periodLabel}</p>
+          <div className="mt-4">
+            <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-wider italic">Leads Atribuidos</p>
           </div>
         </CardContent>
       </Card>
 
-      <Card className="hover:shadow-xl transition-all duration-500 group">
+      <Card className="hover:shadow-xl transition-all duration-500 group border-none shadow-sm bg-white">
         <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
           <div className="flex flex-col gap-2">
-            <CardTitle className="text-xs font-bold text-muted uppercase tracking-[0.2em]">Leads CRM</CardTitle>
+            <CardTitle className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em]">CRM Pipeline</CardTitle>
             {renderIsReal(quality?.crmIsReal)}
           </div>
           <div className="bg-primary/5 p-3 rounded-2xl group-hover:bg-primary/10 transition-colors duration-500">
@@ -563,22 +564,44 @@ function MetricsGrid({ metrics, periodLabel, quality }: MetricsGridProps) {
         </CardHeader>
         <CardContent>
           <div className="flex items-baseline gap-3 mt-4">
-            <div className="text-4xl font-serif font-bold tracking-tight text-primary">
+            <div className="text-4xl font-serif font-bold tracking-tight text-[#2C2825]">
               {metrics.totalLeads.toLocaleString('es-ES')}
             </div>
             {metrics.deltas && <MetricDelta value={metrics.deltas.leads} />}
           </div>
-          <div className="flex flex-col gap-1 mt-4">
-            <p className="text-[10px] text-muted font-bold uppercase tracking-wider italic opacity-60">Registrados en BD</p>
-            <p className="text-[10px] text-primary/40 font-bold uppercase tracking-widest">{periodLabel}</p>
+          <div className="mt-4">
+            <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-wider italic">Leads en BD</p>
           </div>
         </CardContent>
       </Card>
 
-      <Card className="hover:shadow-xl transition-all duration-500 group">
+      <Card className="hover:shadow-xl transition-all duration-500 group border-none shadow-sm bg-white">
         <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
           <div className="flex flex-col gap-2">
-            <CardTitle className="text-xs font-bold text-muted uppercase tracking-[0.2em]">Tasa de Cierre</CardTitle>
+            <CardTitle className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em]">Ingresos Reales</CardTitle>
+            {renderIsReal(quality?.doctoraliaIsReal)}
+          </div>
+          <div className="bg-primary/5 p-3 rounded-2xl group-hover:bg-primary/10 transition-colors duration-500">
+            <DollarSign className="h-5 w-5 text-primary" />
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-baseline gap-3 mt-4">
+            <div className="text-4xl font-serif font-bold tracking-tight text-[#2C2825]">
+              €{metrics.verifiedRevenue.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            </div>
+            {metrics.deltas && <MetricDelta value={metrics.deltas.revenue} />}
+          </div>
+          <div className="mt-4">
+            <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-wider italic">Doctoralia Verificado</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="hover:shadow-xl transition-all duration-500 group border-none shadow-sm bg-white">
+        <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+          <div className="flex flex-col gap-2">
+            <CardTitle className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em]">Tasa de Cierre</CardTitle>
             {renderIsReal(quality?.doctoraliaIsReal)}
           </div>
           <div className="bg-primary/5 p-3 rounded-2xl group-hover:bg-primary/10 transition-colors duration-500">
@@ -586,24 +609,14 @@ function MetricsGrid({ metrics, periodLabel, quality }: MetricsGridProps) {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="text-4xl font-serif font-bold tracking-tight text-primary mt-4">
-            {metrics.conversionRate.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}%
+          <div className="text-4xl font-serif font-bold tracking-tight text-[#2C2825] mt-4">
+            {metrics.conversionRate.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}%
           </div>
-          <div className="flex flex-col gap-1 mt-4">
-            <p className="text-[10px] text-muted font-bold uppercase tracking-wider italic opacity-60">Leads → tratamiento/venta</p>
-            {(metrics.patientConversionRate ?? 0) > 0 && (
-              <div className="flex items-center gap-1.5 mt-2 bg-green-500/5 px-2 py-1 rounded-full border border-green-500/10 w-fit">
-                <div className="w-1 h-1 rounded-full bg-green-500 animate-pulse" />
-                <p className="text-[9px] font-bold text-green-600 uppercase tracking-tighter">
-                  {metrics.patientConversionRate}% pacientes confirmados
-                </p>
-              </div>
-            )}
+          <div className="mt-4">
+            <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-wider italic">Lead → Venta</p>
           </div>
         </CardContent>
       </Card>
-
-      <AgentStatusCard />
     </div>
   )
 }
@@ -629,15 +642,15 @@ function FunnelAndSpendSection({
 }: FunnelAndSpendSectionProps) {
   return (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-      <Card className="hover:shadow-xl transition-all duration-500">
-        <CardHeader className="flex flex-row items-center justify-between border-b border-border/30 pb-6">
-          <CardTitle className="flex items-center gap-3 font-serif text-2xl">
+      <Card className="hover:shadow-xl transition-all duration-500 border-none shadow-md bg-white overflow-hidden relative">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -mr-16 -mt-16 blur-3xl" />
+        <CardHeader className="flex flex-row items-center justify-between border-b border-border/10 pb-6 relative">
+          <CardTitle className="flex items-center gap-3 font-serif text-2xl text-[#2C2825]">
             <TrendingUp className="h-6 w-6 text-primary" />
             Lead Funnel
           </CardTitle>
           <div className="flex flex-col items-end">
-            <p className="text-[10px] text-muted font-bold uppercase tracking-widest italic opacity-60">Distribución por etapa</p>
-            <p className="text-[10px] text-primary/40 font-bold uppercase tracking-widest">{periodLabel}</p>
+            <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest italic opacity-60">Distribución por etapa</p>
           </div>
         </CardHeader>
         <CardContent className="pt-10">
@@ -645,57 +658,57 @@ function FunnelAndSpendSection({
         </CardContent>
       </Card>
 
-      <Card className="hover:shadow-xl transition-all duration-500">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-6 border-b border-border/30">
-          <CardTitle className="flex items-center gap-3 font-serif text-2xl">
+      <Card className="hover:shadow-xl transition-all duration-500 border-none shadow-md bg-white overflow-hidden relative">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-6 border-b border-border/10">
+          <CardTitle className="flex items-center gap-3 font-serif text-2xl text-[#2C2825]">
             <DollarSign className="h-6 w-6 text-primary" />
-            Meta Spend
+            Meta Analytics
           </CardTitle>
           {quality?.metaDataSource && (
-            <span className="text-[10px] font-bold text-primary/60 uppercase bg-primary/5 px-3 py-1.5 rounded-full border border-primary/10 tracking-[0.1em]">
-              Fuente: {quality.metaDataSource.replace('_', ' ')}
+            <span className="text-[9px] font-bold text-primary/60 uppercase bg-primary/5 px-3 py-1.5 rounded-full border border-primary/10 tracking-[0.2em]">
+              {quality.metaDataSource.replace('_', ' ')}
             </span>
           )}
         </CardHeader>
         <CardContent className="pt-8 grid grid-cols-1 sm:grid-cols-2 gap-6">
-          <div className="bg-white/50 backdrop-blur-sm p-6 rounded-3xl border border-border/40 hover:border-primary/30 transition-all duration-500 hover:shadow-lg hover:shadow-primary/5 group">
+          <div className="bg-[#FAF7F2]/60 p-6 rounded-3xl border border-border/40 hover:border-primary/30 transition-all duration-500 hover:shadow-lg hover:shadow-primary/5 group">
             <div className="flex items-center justify-between gap-2 mb-4">
-              <span className="text-[10px] font-bold text-muted uppercase tracking-[0.2em] group-hover:text-primary transition-colors">Inversión Meta</span>
+              <span className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em] group-hover:text-primary transition-colors">Inversión Meta</span>
               <DollarSign className="h-4 w-4 text-primary opacity-40 group-hover:opacity-100 transition-opacity" />
             </div>
-            <p className="text-4xl font-serif font-bold tracking-tight text-primary">€{metrics.spend.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+            <p className="text-4xl font-serif font-bold tracking-tight text-[#2C2825]">€{metrics.spend.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
             <div className="h-[1px] w-8 bg-primary/20 my-4" />
-            <p className="text-[10px] text-muted font-medium italic opacity-60">Total invertido en {periodLabel}</p>
+            <p className="text-[10px] text-[#8E8680] font-medium italic opacity-60">{periodLabel}</p>
           </div>
           
-          <div className="bg-white/50 backdrop-blur-sm p-6 rounded-3xl border border-border/40 hover:border-primary/30 transition-all duration-500 hover:shadow-lg hover:shadow-primary/5 group">
+          <div className="bg-[#FAF7F2]/60 p-6 rounded-3xl border border-border/40 hover:border-primary/30 transition-all duration-500 hover:shadow-lg hover:shadow-primary/5 group">
             <div className="flex items-center justify-between gap-2 mb-4">
-              <span className="text-[10px] font-bold text-muted uppercase tracking-[0.2em] group-hover:text-primary transition-colors">Leads Atribuidos</span>
+              <span className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em] group-hover:text-primary transition-colors">Leads Atribuidos</span>
               <Users className="h-4 w-4 text-primary opacity-40 group-hover:opacity-100 transition-opacity" />
             </div>
-            <p className="text-4xl font-serif font-bold tracking-tight text-primary">{combined.metaEstimatedLeads.toLocaleString('es-ES')}</p>
+            <p className="text-4xl font-serif font-bold tracking-tight text-[#2C2825]">{combined.metaEstimatedLeads.toLocaleString('es-ES')}</p>
             <div className="h-[1px] w-8 bg-primary/20 my-4" />
-            <p className="text-[10px] text-muted font-medium italic opacity-60">Meta Leads atribuidos</p>
+            <p className="text-[10px] text-[#8E8680] font-medium italic opacity-60">Meta Leads atribuidos</p>
           </div>
 
-          <div className="bg-white/50 backdrop-blur-sm p-6 rounded-3xl border border-border/40 hover:border-primary/30 transition-all duration-500 hover:shadow-lg hover:shadow-primary/5 group">
+          <div className="bg-[#FAF7F2]/60 p-6 rounded-3xl border border-border/40 hover:border-primary/30 transition-all duration-500 hover:shadow-lg hover:shadow-primary/5 group">
             <div className="flex items-center justify-between gap-2 mb-4">
-              <span className="text-[10px] font-bold text-muted uppercase tracking-[0.2em] group-hover:text-primary transition-colors">Leads Registrados</span>
+              <span className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em] group-hover:text-primary transition-colors">Leads Registrados</span>
               <Target className="h-4 w-4 text-primary opacity-40 group-hover:opacity-100 transition-opacity" />
             </div>
-            <p className="text-4xl font-serif font-bold tracking-tight text-primary">{metrics.totalLeads.toLocaleString('es-ES')}</p>
+            <p className="text-4xl font-serif font-bold tracking-tight text-[#2C2825]">{metrics.totalLeads.toLocaleString('es-ES')}</p>
             <div className="h-[1px] w-8 bg-primary/20 my-4" />
-            <p className="text-[10px] text-muted font-medium italic opacity-60">Total leads en CRM</p>
+            <p className="text-[10px] text-[#8E8680] font-medium italic opacity-60">Total leads en CRM</p>
           </div>
 
-          <div className="bg-white/50 backdrop-blur-sm p-6 rounded-3xl border border-border/40 hover:border-primary/30 transition-all duration-500 hover:shadow-lg hover:shadow-primary/5 group">
+          <div className="bg-[#FAF7F2]/60 p-6 rounded-3xl border border-border/40 hover:border-primary/30 transition-all duration-500 hover:shadow-lg hover:shadow-primary/5 group">
             <div className="flex items-center justify-between gap-2 mb-4">
-              <span className="text-[10px] font-bold text-muted uppercase tracking-[0.2em] group-hover:text-primary transition-colors">Rev. Verificado</span>
+              <span className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em] group-hover:text-primary transition-colors">Rev. Verificado</span>
               <DollarSign className="h-4 w-4 text-primary opacity-40 group-hover:opacity-100 transition-opacity" />
             </div>
-            <p className="text-4xl font-serif font-bold tracking-tight text-primary">€{combined.verifiedRevenue.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+            <p className="text-4xl font-serif font-bold tracking-tight text-[#2C2825]">€{combined.verifiedRevenue.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
             <div className="h-[1px] w-8 bg-primary/20 my-4" />
-            <p className="text-[10px] text-muted font-medium italic opacity-60">Confirmado Doctoralia</p>
+            <p className="text-[10px] text-[#8E8680] font-medium italic opacity-60">Confirmado Doctoralia</p>
           </div>
         </CardContent>
       </Card>
@@ -872,19 +885,22 @@ interface ActivitySectionProps {
 
 function ActivitySection({ activity }: ActivitySectionProps) {
   return (
-    <Card>
+    <Card className="border-none shadow-md bg-white">
       <CardHeader>
-        <CardTitle>Actividad reciente</CardTitle>
+        <CardTitle className="font-serif text-xl text-[#2C2825]">Actividad en Tiempo Real</CardTitle>
       </CardHeader>
       <CardContent>
         {activity.length === 0 ? (
-          <p className="text-muted text-sm">Waiting for new lead events via Supabase Realtime…</p>
+          <p className="text-[#8E8680] text-sm italic">Esperando eventos de leads vía Supabase Realtime…</p>
         ) : (
-          <div className="space-y-3 max-h-64 overflow-y-auto">
+          <div className="space-y-3 max-h-64 overflow-y-auto pr-2">
             {activity.map((ev) => (
-              <div key={`${ev.ts}-${ev.label}`} className="p-3 bg-surface rounded-lg border border-border">
-                <p className="text-sm font-medium">{ev.label}</p>
-                <p className="text-xs text-muted mt-1">{ev.detail} • {new Date(ev.ts).toLocaleTimeString()}</p>
+              <div key={`${ev.ts}-${ev.label}`} className="p-4 bg-[#FAF7F2]/40 rounded-2xl border border-border/30 flex items-center justify-between group hover:border-primary/30 transition-colors">
+                <div className="space-y-1">
+                  <p className="text-sm font-bold text-[#2C2825]">{ev.label}</p>
+                  <p className="text-xs text-[#5C5550]">{ev.detail}</p>
+                </div>
+                <p className="text-[10px] font-bold text-primary uppercase tracking-widest">{new Date(ev.ts).toLocaleTimeString()}</p>
               </div>
             ))}
           </div>
@@ -986,11 +1002,12 @@ export default function Dashboard() {
         setCustomFrom={setCustomFrom}
         customTo={customTo}
         setCustomTo={setCustomTo}
+        metaAccountIds={quality?.metaAccountIds ?? []}
       />
 
       <AlertSection error={metrics.error} metaError={metrics.metaError} />
 
-      <MetricsGrid metrics={metrics} periodLabel={periodLabel} quality={quality} />
+      <MetricsGrid metrics={metrics} quality={quality} />
 
       <FunnelAndSpendSection
         funnelData={funnelData}
