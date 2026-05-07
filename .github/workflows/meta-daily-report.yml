@@ -76,17 +76,17 @@ jobs:
   # Trigger independent sync workflow
   doctoralia-sync:
     needs: report
-    uses: Arisofia/Nuvanx-System/.github/workflows/sync-doctoralia.yml@main
+    uses: ./.github/workflows/sync-doctoralia.yml
     secrets: inherit
 
   # Trigger independent security workflow
   supabase-security:
     needs: doctoralia-sync
-    uses: Arisofia/Nuvanx-System/.github/workflows/supabase-security.yml@main
+    uses: ./.github/workflows/supabase-security.yml
     secrets: inherit
 
   # Trigger independent E2E workflow
   production-e2e:
     needs: supabase-security
-    uses: Arisofia/Nuvanx-System/.github/workflows/e2e-only.yml@main
+    uses: ./.github/workflows/e2e-only.yml
     secrets: inherit
