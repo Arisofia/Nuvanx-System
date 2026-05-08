@@ -2416,9 +2416,23 @@ async function handleDashboardMetaTrends(ctx: AuthenticatedRouteContext): Promis
         return { accountId, data };
       }));
 
-      const successfulAccounts = accountResults
+      const successfulAccounts: any[] = accountResults
         .filter(isFulfilled)
         .map((result) => result.value);
+      const failedAccountIds = creds.adAccountIds.filter((_: string, idx: number) => accountResults[idx].status === 'rejected');
+      let dbFallbackAccounts = 0;
+
+      if (!campaignId && failedAccountIds.length > 0) {
+        const fallbackRows = await fetchMetaDailyInsightRows(adminClient, userId, failedAccountIds, since, until);
+        const rowsByAccount = groupRowsByAccount(fallbackRows);
+        for (const accountId of failedAccountIds) {
+          const rows = rowsByAccount[accountId] || [];
+          if (rows.length === 0) continue;
+          successfulAccounts.push({ accountId, data: { data: mapMetaDailyRowsToInsightsPayload(rows) } });
+          dbFallbackAccounts += 1;
+        }
+      }
+
       if (successfulAccounts.length === 0) {
         throw (accountResults.find((result) => result.status === 'rejected') as PromiseRejectedResult)?.reason ?? new Error('Meta API error');
       }
@@ -2445,10 +2459,11 @@ async function handleDashboardMetaTrends(ctx: AuthenticatedRouteContext): Promis
       const thisWeek = agg(last7);
       const prevWeek = agg(prev7);
   
-      const result = {
+      const result: any = {
         success: true,
-        source: 'live',
+        source: dbFallbackAccounts > 0 ? (dbFallbackAccounts === successfulAccounts.length ? 'db' : 'live+db') : 'live',
         cached: false,
+        degraded: dbFallbackAccounts > 0,
         accountId: creds.adAccountId,
         accountIds: creds.adAccountIds,
         trends,
@@ -2463,11 +2478,18 @@ async function handleDashboardMetaTrends(ctx: AuthenticatedRouteContext): Promis
         },
       };
   
-      // Cache successful response
-      await setMetaCache(adminClient, userId, 'dashboard:meta-trends', result);
+      const cacheKey = buildMetaCacheKey('dashboard:meta-trends', creds.adAccountIds, since, until, campaignId);
+      await setMetaCache(adminClient, userId, cacheKey, result);
       return sendJson(result);
     } catch (e: any) {
-      const cached = await getMetaCache(adminClient, userId, 'dashboard:meta-trends');
+      const trendDays = Number.parseInt(url.searchParams.get('days') ?? '30', 10) || 30;
+      const fromParam = url.searchParams.get('from');
+      const toParam = url.searchParams.get('to');
+      const campaignId = url.searchParams.get('campaign_id');
+      const since = fromParam || new Date(Date.now() - trendDays * 86_400_000).toISOString().slice(0, 10);
+      const until = toParam || new Date().toISOString().slice(0, 10);
+      const cacheKey = buildMetaCacheKey('dashboard:meta-trends', creds.adAccountIds, since, until, campaignId);
+      const cached = await getMetaCache(adminClient, userId, cacheKey);
       if (cached) {
         return sendJson({
           ...cached.data,
@@ -2572,6 +2594,53 @@ function calculateMetaInsightsSummary(daily: any[]) {
   const cpm = curr.impressions > 0 ? Number.parseFloat((curr.spend / curr.impressions * 1000).toFixed(2)) : 0;
   const cpp = curr.conversions > 0 ? Number.parseFloat((curr.spend / curr.conversions).toFixed(2)) : 0;
   return { ...curr, ctr, cpc, cpm, cpp };
+}
+
+function buildMetaCacheKey(prefix: string, accountIds: readonly string[], since: string, until: string, campaignId?: string | null) {
+  const accountsKey = [...new Set(accountIds)].sort().join(',') || 'none';
+  return `${prefix}:${since}:${until}:${campaignId || 'all'}:${accountsKey}`;
+}
+
+async function fetchMetaDailyInsightRows(adminClient: any, userId: string, accountIds: readonly string[], since: string, until: string) {
+  if (accountIds.length === 0) return [];
+  const clinicId = await resolveClinicId(adminClient, userId);
+  let query = adminClient.from('meta_daily_insights')
+    .select('date,ad_account_id,impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,messaging_conversations')
+    .in('ad_account_id', accountIds)
+    .gte('date', since)
+    .lte('date', until)
+    .order('date', { ascending: true });
+  query = clinicId ? query.eq('clinic_id', clinicId) : query.eq('user_id', userId);
+
+  const { data, error } = await query;
+  if (error || !Array.isArray(data)) return [];
+  return data;
+}
+
+function mapMetaDailyRowsToInsightsPayload(rows: any[]): any[] {
+  return rows.map((row: any) => ({
+    date_start: row.date,
+    impressions: Number(row.impressions ?? 0),
+    reach: Number(row.reach ?? 0),
+    clicks: Number(row.clicks ?? 0),
+    spend: Number(row.spend ?? 0),
+    ctr: Number(row.ctr ?? 0),
+    cpc: Number(row.cpc ?? 0),
+    cpm: Number(row.cpm ?? 0),
+    conversions: Number(row.conversions ?? 0),
+    messaging_conversations: Number(row.messaging_conversations ?? 0),
+    actions: [],
+  }));
+}
+
+function groupRowsByAccount(rows: any[]): Record<string, any[]> {
+  return rows.reduce((grouped: Record<string, any[]>, row: any) => {
+    const accountId = row.ad_account_id;
+    if (!accountId) return grouped;
+    grouped[accountId] = grouped[accountId] || [];
+    grouped[accountId].push(row);
+    return grouped;
+  }, {});
 }
 
 function buildMetaInsightsLiveResult(successfulAccounts: any[], creds: any, since: string, until: string, days: number) {
@@ -2728,19 +2797,44 @@ async function processMetaInsightsGet(adminClient: any, userId: string, url: URL
       return { accountId, current, previous, currency: account?.currency ?? 'EUR' };
     }));
 
-    const successfulAccounts = accountResults
+    const successfulAccounts: any[] = accountResults
       .filter(isFulfilled)
       .map((result) => result.value);
+    const failedAccountIds = creds.adAccountIds.filter((_: string, idx: number) => accountResults[idx].status === 'rejected');
+    let dbFallbackAccounts = 0;
+
+    if (!campaignId && failedAccountIds.length > 0) {
+      const fallbackRows = await fetchMetaDailyInsightRows(adminClient, userId, failedAccountIds, since, until);
+      const rowsByAccount = groupRowsByAccount(fallbackRows);
+      for (const accountId of failedAccountIds) {
+        const rows = rowsByAccount[accountId] || [];
+        if (rows.length === 0) continue;
+        successfulAccounts.push({
+          accountId,
+          current: { data: mapMetaDailyRowsToInsightsPayload(rows) },
+          previous: { data: [] },
+          currency: 'EUR',
+        });
+        dbFallbackAccounts += 1;
+      }
+    }
 
     if (successfulAccounts.length === 0) {
       throw (accountResults.find((result) => result.status === 'rejected') as PromiseRejectedResult)?.reason ?? new Error('Meta API error');
     }
 
-    const result = buildMetaInsightsLiveResult(successfulAccounts, creds, since, until, days);
-    await setMetaCache(adminClient, userId, `meta:insights:${days}`, result);
+    const result: any = buildMetaInsightsLiveResult(successfulAccounts, creds, since, until, days);
+    if (dbFallbackAccounts > 0) {
+      result.source = dbFallbackAccounts === successfulAccounts.length ? 'db' : 'live+db';
+      result.degraded = true;
+      result.message = `Included cached Meta daily insights for ${dbFallbackAccounts} account${dbFallbackAccounts === 1 ? '' : 's'} unavailable via live Meta API.`;
+    }
+    const cacheKey = buildMetaCacheKey('meta:insights', creds.adAccountIds, since, until, campaignId);
+    await setMetaCache(adminClient, userId, cacheKey, result);
     return sendJson(result);
   } catch (e: any) {
-    const cached = await getMetaCache(adminClient, userId, `meta:insights:${days}`);
+    const cacheKey = buildMetaCacheKey('meta:insights', creds.adAccountIds, since, until, campaignId);
+    const cached = await getMetaCache(adminClient, userId, cacheKey);
     if (cached) {
       return sendJson({
         ...cached.data,
@@ -4908,6 +5002,89 @@ async function handleAgendaDoctoraliaGet(ctx: AuthenticatedRouteContext): Promis
   return null;
 }
 
+function isTraceabilityMatched(row: any) {
+  return Boolean(row?.patient_id || row?.doc_patient_id || row?.doctoralia_template_name);
+}
+
+function isTraceabilityClosed(row: any) {
+  return Number(row?.doctoralia_net ?? 0) > 0;
+}
+
+function buildTraceabilitySummary(rows: any[]): any {
+  return rows.reduce((summary: any, row: any) => {
+    const revenue = Number(row.doctoralia_net ?? 0);
+    summary.totalLeads += 1;
+    if (isTraceabilityMatched(row)) summary.matchedTotal += 1;
+    if (revenue > 0) {
+      summary.verifiedSales += 1;
+      summary.totalRevenue += revenue;
+    }
+    return summary;
+  }, { totalLeads: 0, matchedTotal: 0, verifiedSales: 0, totalRevenue: 0 });
+}
+
+function buildTraceabilityCampaigns(rows: any[]): any[] {
+  const campaigns = new Map<string, any>();
+  for (const row of rows) {
+    const campaignName = row.campaign_name || row.source || 'Sin campaña';
+    const source = row.source || 'unknown';
+    const key = `${source}::${campaignName}`;
+    const current = campaigns.get(key) ?? {
+      campaign_name: campaignName,
+      source,
+      total_leads: 0,
+      booked: 0,
+      closed: 0,
+      lead_to_close_rate_pct: 0,
+      verified_revenue_crm: 0,
+      first_lead_at: row.lead_created_at ?? null,
+      last_lead_at: row.lead_created_at ?? null,
+    };
+
+    current.total_leads += 1;
+    if (isTraceabilityMatched(row)) current.booked += 1;
+    if (isTraceabilityClosed(row)) current.closed += 1;
+    current.verified_revenue_crm += Number(row.doctoralia_net ?? 0);
+    if (row.lead_created_at && (!current.first_lead_at || row.lead_created_at < current.first_lead_at)) current.first_lead_at = row.lead_created_at;
+    if (row.lead_created_at && (!current.last_lead_at || row.lead_created_at > current.last_lead_at)) current.last_lead_at = row.lead_created_at;
+    campaigns.set(key, current);
+  }
+
+  return Array.from(campaigns.values())
+    .map((campaign: any) => ({
+      ...campaign,
+      lead_to_close_rate_pct: campaign.total_leads > 0
+        ? Number.parseFloat(((campaign.closed / campaign.total_leads) * 100).toFixed(1))
+        : 0,
+      verified_revenue_crm: Number.parseFloat(campaign.verified_revenue_crm.toFixed(2)),
+    }))
+    .sort((a: any, b: any) => b.total_leads - a.total_leads);
+}
+
+async function fetchTraceabilityRowsForAggregation(adminClient: any, userId: string, url: URL): Promise<any[]> {
+  const from = url.searchParams.get('from') ?? '';
+  const to = url.searchParams.get('to') ?? '';
+  const source = url.searchParams.get('source') ?? '';
+  const campaignName = url.searchParams.get('campaign_name') ?? '';
+  const matchedOnly = url.searchParams.get('matched') === 'true';
+
+  let query = adminClient
+    .from('vw_lead_traceability')
+    .select('lead_id,source,campaign_name,lead_created_at,patient_id,doc_patient_id,doctoralia_template_name,doctoralia_net')
+    .eq('lead_user_id', userId)
+    .order('lead_created_at', { ascending: false })
+    .range(0, 9999);
+  if (from) query = query.gte('lead_created_at', from);
+  if (to) query = query.lte('lead_created_at', `${to}T23:59:59Z`);
+  if (source) query = query.eq('source', source);
+  if (campaignName) query = query.ilike('campaign_name', `%${campaignName}%`);
+  if (matchedOnly) query = query.or('doc_patient_id.not.is.null,doctoralia_template_name.not.is.null,patient_id.not.is.null');
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+}
+
 async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, url, sendJson } = ctx;
   if (resource === 'traceability' && sub === 'leads') {
@@ -4921,7 +5098,7 @@ async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<
     // Apply shared filters to a base query builder
     const applyFilters = (q: any) => {
       q = q.eq('lead_user_id', userId);
-      if (matchedOnly) q = q.not('patient_id', 'is', null);
+      if (matchedOnly) q = q.or('doc_patient_id.not.is.null,doctoralia_template_name.not.is.null,patient_id.not.is.null');
       if (from) q = q.gte('lead_created_at', from);
       if (to)   q = q.lte('lead_created_at', to + 'T23:59:59Z');
       if (source) q = q.eq('source', source);
@@ -4956,14 +5133,25 @@ async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<
         .or('doc_patient_id.not.is.null,doctoralia_template_name.not.is.null,patient_id.not.is.null')
     );
 
-    const [{ data: rows, error }, { count }, { count: matchedCount }] = await Promise.all([dataQ, countQ, matchedCountQ]);
+    const [{ data: rows, error }, { count }, { count: matchedCount }, summaryRows] = await Promise.all([
+      dataQ,
+      countQ,
+      matchedCountQ,
+      fetchTraceabilityRowsForAggregation(adminClient, userId, url),
+    ]);
     if (error) throw error;
+
+    const summary = buildTraceabilitySummary(summaryRows);
 
     return sendJson({
       success: true,
       leads: rows || [],
-      total: count ?? (rows || []).length,
-      matchedTotal: matchedCount ?? null,
+      total: count ?? summary.totalLeads,
+      matchedTotal: matchedCount ?? summary.matchedTotal,
+      summary: {
+        ...summary,
+        totalRevenue: Number.parseFloat(summary.totalRevenue.toFixed(2)),
+      },
     });
   }
   return null;
@@ -4989,19 +5177,12 @@ async function handleTraceabilityFunnel(ctx: AuthenticatedRouteContext): Promise
 async function handleTraceabilityCampaigns(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, url, sendJson } = ctx;
   if (resource === 'traceability' && sub === 'campaigns') {
-    const from   = url.searchParams.get('from')   ?? '';
-    const to     = url.searchParams.get('to')     ?? '';
-    const source = url.searchParams.get('source') ?? '';
-    let query = adminClient
-      .from('vw_campaign_performance_real')
-      .select('*')
-      .eq('user_id', userId)
-      .order('total_leads', { ascending: false });
-    if (from)   query = query.gte('first_lead_at', from);
-    if (to)     query = query.lte('last_lead_at', to);
-    if (source) query = query.eq('source', source);
-    const { data: rows } = await query;
-    return sendJson({ success: true, campaigns: rows || [] });
+    const rows = await fetchTraceabilityRowsForAggregation(adminClient, userId, url);
+    return sendJson({
+      success: true,
+      campaigns: buildTraceabilityCampaigns(rows),
+      summary: buildTraceabilitySummary(rows),
+    });
   }
   return null;
 }
