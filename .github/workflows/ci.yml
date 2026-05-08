@@ -212,3 +212,14 @@ jobs:
 
       - name: Type-check Edge Function
         run: deno check --config supabase/functions/deno.json supabase/functions/api/index.ts
+
+      - name: Validate MCP function
+        run: |
+          echo "Validating supabase/functions/mcp/index.ts..."
+          if [ -f supabase/functions/mcp/index.ts ]; then
+            echo "MCP file exists ✓"
+          else
+            echo "ERROR: supabase/functions/mcp/index.ts not found"
+            exit 1
+          fi
+          echo "MCP validation passed"
