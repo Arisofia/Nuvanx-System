@@ -5,6 +5,13 @@ import { GitMerge, Search, CheckCircle2, XCircle, TrendingUp, MessageCircle } fr
 import { invokeApi } from '../lib/supabaseClient'
 import { SortableTable, type ColDef } from '../components/ui/SortableTable'
 
+interface TraceabilitySummary {
+  totalLeads: number
+  matchedTotal: number
+  verifiedSales: number
+  totalRevenue: number
+}
+
 interface TraceRow {
   lead_id: string
   lead_name: string | null
@@ -30,6 +37,13 @@ interface TraceRow {
   settlement_date: string | null
 }
 
+const EMPTY_TRACEABILITY_SUMMARY: TraceabilitySummary = {
+  totalLeads: 0,
+  matchedTotal: 0,
+  verifiedSales: 0,
+  totalRevenue: 0,
+}
+
 const MATCH_LABELS: Record<string, string> = {
   exact_phone: 'Teléfono exacto',
   exact_dni: 'DNI exacto',
@@ -42,6 +56,7 @@ export default function Traceability() {
   const [rows, setRows] = useState<TraceRow[]>([])
   const [total, setTotal] = useState(0)
   const [matchedTotal, setMatchedTotal] = useState<number | null>(null)
+  const [summary, setSummary] = useState<TraceabilitySummary>(EMPTY_TRACEABILITY_SUMMARY)
   const [campaigns, setCampaigns] = useState<any[]>([])
   const [funnel, setFunnel] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -62,7 +77,7 @@ export default function Traceability() {
         
         const [leadsData, campaignsData, funnelData] = await Promise.all([
           invokeApi(`/traceability/leads?${params}`),
-          invokeApi('/traceability/campaigns'),
+          invokeApi(`/traceability/campaigns?${params}`),
           invokeApi('/traceability/funnel')
         ])
 
@@ -70,6 +85,7 @@ export default function Traceability() {
         setRows(leadsData?.leads ?? [])
         setTotal(leadsData?.total ?? 0)
         setMatchedTotal(leadsData?.matchedTotal ?? null)
+        setSummary({ ...EMPTY_TRACEABILITY_SUMMARY, ...(leadsData?.summary ?? {}) })
         setCampaigns(campaignsData?.campaigns ?? [])
         setFunnel(funnelData?.funnel ?? [])
       } catch (err: any) {
@@ -98,9 +114,9 @@ export default function Traceability() {
     )
   })
 
-  const matchedCount = matchedTotal ?? rows.filter((r) => r.patient_id || r.doc_patient_id || r.doctoralia_template_name).length
-  const withRevenueCount = rows.filter((r) => r.doctoralia_net && r.doctoralia_net > 0).length
-  const totalRevenue = rows.reduce((s, r) => s + (r.doctoralia_net ?? 0), 0)
+  const matchedCount = matchedTotal ?? summary.matchedTotal ?? rows.filter((r) => r.patient_id || r.doc_patient_id || r.doctoralia_template_name).length
+  const withRevenueCount = summary.verifiedSales || rows.filter((r) => r.doctoralia_net && r.doctoralia_net > 0).length
+  const totalRevenue = summary.totalRevenue || rows.reduce((s, r) => s + (r.doctoralia_net ?? 0), 0)
 
   const renderPatientInfo = (r: any) => {
     if (r.patient_name) {
@@ -120,10 +136,10 @@ export default function Traceability() {
     { key: 'campaign_name', label: 'Campaña' },
     { key: 'source', label: 'Fuente' },
     { key: 'total_leads', label: 'Leads', align: 'right', sortable: true },
-    { key: 'booked', label: 'Citas', align: 'right', sortable: true },
+    { key: 'booked', label: 'Cruzados', align: 'right', sortable: true },
     { key: 'closed', label: 'Ventas', align: 'right', sortable: true },
     { key: 'lead_to_close_rate_pct', label: '% Conv.', align: 'right', sortable: true, format: (v) => `${v}%` },
-    { key: 'verified_revenue_crm', label: 'Rev. CRM', align: 'right', sortable: true, format: (v) => `€${Number(v).toLocaleString('es-ES')}` },
+    { key: 'verified_revenue_crm', label: 'Rev. Doctoralia', align: 'right', sortable: true, format: (v) => `€${Number(v).toLocaleString('es-ES')}` },
   ]
 
   const funnelColumns: ColDef[] = [
