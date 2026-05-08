@@ -1006,6 +1006,30 @@ export default function Dashboard() {
   )
 
   useEffect(() => {
+    async function fetchInitialActivity() {
+      try {
+        const { data: leads } = await supabase
+          .from('leads')
+          .select('id, source, stage, created_at')
+          .is('deleted_at', null)
+          .order('created_at', { ascending: false })
+          .limit(20)
+
+        if (leads) {
+          setActivity(leads.map((r: any) => ({
+            id: String(r.id),
+            label: 'Recent activity',
+            detail: r.source ? `Lead from ${r.source} (${r.stage})` : `Lead in ${r.stage}`,
+            ts: r.created_at ?? new Date().toISOString(),
+          })))
+        }
+      } catch (err) {
+        console.error('Failed to fetch initial activity:', err)
+      }
+    }
+
+    fetchInitialActivity()
+
     const channel = supabase
       .channel('dashboard-lead-feed')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads' }, (payload) => {
