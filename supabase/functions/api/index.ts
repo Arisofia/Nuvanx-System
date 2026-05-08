@@ -2239,18 +2239,38 @@ function getDashboardPeriods(url: URL) {
   const fromParam = url.searchParams.get('from') ?? '';
   const toParam = url.searchParams.get('to') ?? '';
 
-  const since = fromParam || (days > 0
-    ? new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10)
-    : null);
-  const until = toParam || null;
-
+  let since: string | null = null;
+  let until: string | null = null;
   let prevSince: string | null = null;
-  let prevUntil: string | null = since;
-  if (days > 0) {
+  let prevUntil: string | null = null;
+
+  if (fromParam && toParam) {
+    // Fechas personalizadas (el caso que fallaba)
+    since = fromParam;
+    until = toParam;
+
+    const fromDate = new Date(fromParam);
+    const toDate = new Date(toParam);
+    const durationMs = toDate.getTime() - fromDate.getTime();
+
+    prevSince = new Date(fromDate.getTime() - durationMs).toISOString().slice(0, 10);
+    prevUntil = new Date(fromDate.getTime() - 1).toISOString().slice(0, 10);
+  } else if (days > 0) {
+    // Botones fijos (7d, 14d, 30d, 90d)
     const nowTs = Date.now();
-    const currentSinceTs = since ? new Date(since).getTime() : nowTs - days * 86_400_000;
+    const currentSinceTs = nowTs - days * 86_400_000;
+    since = new Date(currentSinceTs).toISOString().slice(0, 10);
+    until = new Date(nowTs).toISOString().slice(0, 10);
+
     prevSince = new Date(currentSinceTs - days * 86_400_000).toISOString().slice(0, 10);
-    prevUntil = new Date(currentSinceTs).toISOString().slice(0, 10);
+    prevUntil = new Date(currentSinceTs - 1).toISOString().slice(0, 10);
+  } else {
+    // Default: últimos 30 días
+    const nowTs = Date.now();
+    since = new Date(nowTs - 30 * 86_400_000).toISOString().slice(0, 10);
+    until = new Date(nowTs).toISOString().slice(0, 10);
+    prevSince = new Date(nowTs - 60 * 86_400_000).toISOString().slice(0, 10);
+    prevUntil = new Date(nowTs - 30 * 86_400_000 - 1).toISOString().slice(0, 10);
   }
 
   return { since, until, prevSince, prevUntil, days };
