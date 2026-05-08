@@ -2276,7 +2276,7 @@ function getDashboardPeriods(url: URL) {
   return { since, until, prevSince, prevUntil, days };
 }
 
-function aggregateDashboardResults(leads: any[], prevLeads: any[], settlements: any[], prevSettlements: any[], integrations: any[]) {
+function aggregateDashboardResults(leads: any[], prevLeads: any[], settlements: any[], prevSettlements: any[], integrations: any[], metaData: any[] = [], prevMetaData: any[] = []) {
   // === NUVANX GUARANTEE (08-05-2026) ===
   // Doctoralia = CRM/Pacientes → nunca cuenta como fuente de leads de adquisición
   const filteredLeads = leads.filter((l: any) =>
@@ -2292,6 +2292,11 @@ function aggregateDashboardResults(leads: any[], prevLeads: any[], settlements: 
   const verifiedRevenue = settlements.reduce((s: number, r: any) => s + Number(r.amount_net), 0);
   const prevVerifiedRevenue = prevSettlements.reduce((s: number, r: any) => s + Number(r.amount_net), 0);
   const settledCount = settlements.length;
+
+  const totalSpend = metaData.reduce((s: number, r: any) => s + Number(r.spend || 0), 0);
+  const prevTotalSpend = prevMetaData.reduce((s: number, r: any) => s + Number(r.spend || 0), 0);
+  const totalMetaConversions = metaData.reduce((s: number, r: any) => s + Number(r.conversions || 0), 0);
+  const totalMetaClicks = metaData.reduce((s: number, r: any) => s + Number(r.clicks || 0), 0);
 
   const conversions = filteredLeads.filter((l: any) => l.stage === 'treatment' || l.stage === 'closed').length;
   const prevConversions = filteredPrevLeads.filter((l: any) => l.stage === 'treatment' || l.stage === 'closed').length;
@@ -2311,6 +2316,7 @@ function aggregateDashboardResults(leads: any[], prevLeads: any[], settlements: 
     revenue: calculateDelta(verifiedRevenue, prevVerifiedRevenue),
     conversions: calculateDelta(conversions, prevConversions),
     patientMatches: calculateDelta(patientMatches, prevPatientMatches),
+    spend: calculateDelta(totalSpend, prevTotalSpend),
   };
 
   const stages = ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'];
@@ -2329,6 +2335,9 @@ function aggregateDashboardResults(leads: any[], prevLeads: any[], settlements: 
     settledCount,
     conversions, conversionRate,
     patientMatches, patientConversionRate,
+    spend: Number.parseFloat(totalSpend.toFixed(2)),
+    averageCpc: totalMetaClicks > 0 ? Number.parseFloat((totalSpend / totalMetaClicks).toFixed(2)) : 0,
+    metaConversions: totalMetaConversions,
     byStage, bySource,
     connectedIntegrations, totalIntegrations: integrations.length,
     deltas,
@@ -2373,12 +2382,20 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
     const settlementsQuery = buildDashboardSettlementsQuery(adminClient, clinicId, since, until);
     const prevSettlementsQuery = buildDashboardSettlementsQuery(adminClient, clinicId, prevSince, prevUntil);
 
-    const [leadsRes, prevLeadsRes, intRes, settlementsRes, prevSettlementsRes] = await Promise.all([
+    const metaQuery = adminClient.from('meta_daily_insights').select('spend, conversions, impressions, clicks').gte('date', since).lte('date', until);
+    if (clinicId) metaQuery.eq('clinic_id', clinicId);
+
+    const prevMetaQuery = adminClient.from('meta_daily_insights').select('spend, conversions, impressions, clicks').gte('date', prevSince).lte('date', prevUntil);
+    if (clinicId) prevMetaQuery.eq('clinic_id', clinicId);
+
+    const [leadsRes, prevLeadsRes, intRes, settlementsRes, prevSettlementsRes, metaRes, prevMetaRes] = await Promise.all([
       leadsQuery,
       prevLeadsQuery,
       adminClient.from('integrations').select('service, status').eq('user_id', userId),
       clinicId ? settlementsQuery : Promise.resolve({ data: [], error: null }),
       clinicId ? prevSettlementsQuery : Promise.resolve({ data: [], error: null }),
+      metaQuery,
+      prevMetaQuery,
     ]);
     if (leadsRes.error) throw leadsRes.error;
 
@@ -2387,8 +2404,10 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
     const integrations = intRes.data ?? [];
     const settlements = (settlementsRes.data ?? []).filter((r: any) => !r.cancelled_at);
     const prevSettlements = (prevSettlementsRes.data ?? []).filter((r: any) => !r.cancelled_at);
+    const metaData = metaRes.data ?? [];
+    const prevMetaData = prevMetaRes.data ?? [];
 
-    const metrics = aggregateDashboardResults(leads, prevLeads, settlements, prevSettlements, integrations);
+    const metrics = aggregateDashboardResults(leads, prevLeads, settlements, prevSettlements, integrations, metaData, prevMetaData);
     
     // === DEBUG TEMPORAL (08-05-2026) ===
     console.log('[DEBUG] Métricas calculadas:', {
