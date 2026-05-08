@@ -378,7 +378,7 @@ function useDashboardData(
 
     fetchMetrics()
     return () => { active = false }
-  }, [days, customFrom, customTo, campaignId, sourceFilter, campaignsCount, sourcesCount])
+  }, [days, customFrom, customTo, campaignId, sourceFilter, campaignsCount, sourcesCount, isProd])
 
   return {
     metrics,
