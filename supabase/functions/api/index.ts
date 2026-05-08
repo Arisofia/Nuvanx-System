@@ -2385,6 +2385,18 @@ async function handleDashboardLeadFlow(ctx: AuthenticatedRouteContext): Promise<
   return null;
 }
 
+function getDashboardMetaTrendContext(url: URL, accountIds: readonly string[]) {
+  const trendDays = Number.parseInt(url.searchParams.get('days') ?? '30', 10) || 30;
+  const fromParam = url.searchParams.get('from');
+  const toParam = url.searchParams.get('to');
+  const campaignId = url.searchParams.get('campaign_id');
+  const since = fromParam || new Date(Date.now() - trendDays * 86_400_000).toISOString().slice(0, 10);
+  const until = toParam || new Date().toISOString().slice(0, 10);
+  const cacheKey = buildMetaCacheKey('dashboard:meta-trends', accountIds, since, until, campaignId);
+
+  return { since, until, campaignId, cacheKey };
+}
+
 async function handleDashboardMetaTrends(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, url, sendJson } = ctx;
   if (resource === 'dashboard' && sub === 'meta-trends') {
@@ -2393,15 +2405,9 @@ async function handleDashboardMetaTrends(ctx: AuthenticatedRouteContext): Promis
     if (!validation.ok) {
       return sendJson({ success: false, message: validation.message }, validation.statusCode);
     }
+    const { since, until, campaignId, cacheKey } = getDashboardMetaTrendContext(url, creds.adAccountIds);
+
     try {
-      const trendDays = Number.parseInt(url.searchParams.get('days') ?? '30', 10) || 30;
-      const fromParam = url.searchParams.get('from');
-      const toParam = url.searchParams.get('to');
-      const campaignId = url.searchParams.get('campaign_id');
-
-      const since = fromParam || new Date(Date.now() - trendDays * 86_400_000).toISOString().slice(0, 10);
-      const until = toParam || new Date().toISOString().slice(0, 10);
-
       const params = buildMetaInsightsParams(
         campaignId
           ? 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,actions,cost_per_action_type,quality_ranking,engagement_rate_ranking,campaign_id'
@@ -2416,7 +2422,7 @@ async function handleDashboardMetaTrends(ctx: AuthenticatedRouteContext): Promis
         return { accountId, data };
       }));
 
-      const successfulAccounts = accountResults
+      const successfulAccounts: any[] = accountResults
         .filter(isFulfilled)
         .map((result) => result.value);
       const failedAccountIds = creds.adAccountIds.filter((_: string, idx: number) => accountResults[idx].status === 'rejected');
@@ -2459,7 +2465,7 @@ async function handleDashboardMetaTrends(ctx: AuthenticatedRouteContext): Promis
       const thisWeek = agg(last7);
       const prevWeek = agg(prev7);
   
-      const result = {
+      const result: any = {
         success: true,
         source: dbFallbackAccounts > 0 ? (dbFallbackAccounts === successfulAccounts.length ? 'db' : 'live+db') : 'live',
         cached: false,
@@ -2477,18 +2483,10 @@ async function handleDashboardMetaTrends(ctx: AuthenticatedRouteContext): Promis
           spend: pct(thisWeek.spend, prevWeek.spend),
         },
       };
-  
-      const cacheKey = buildMetaCacheKey('dashboard:meta-trends', creds.adAccountIds, since, until, campaignId);
+
       await setMetaCache(adminClient, userId, cacheKey, result);
       return sendJson(result);
     } catch (e: any) {
-      const trendDays = Number.parseInt(url.searchParams.get('days') ?? '30', 10) || 30;
-      const fromParam = url.searchParams.get('from');
-      const toParam = url.searchParams.get('to');
-      const campaignId = url.searchParams.get('campaign_id');
-      const since = fromParam || new Date(Date.now() - trendDays * 86_400_000).toISOString().slice(0, 10);
-      const until = toParam || new Date().toISOString().slice(0, 10);
-      const cacheKey = buildMetaCacheKey('dashboard:meta-trends', creds.adAccountIds, since, until, campaignId);
       const cached = await getMetaCache(adminClient, userId, cacheKey);
       if (cached) {
         return sendJson({
@@ -2596,12 +2594,12 @@ function calculateMetaInsightsSummary(daily: any[]) {
   return { ...curr, ctr, cpc, cpm, cpp };
 }
 
-function buildMetaCacheKey(prefix: string, accountIds: string[], since: string, until: string, campaignId?: string | null) {
+function buildMetaCacheKey(prefix: string, accountIds: readonly string[], since: string, until: string, campaignId?: string | null) {
   const accountsKey = [...new Set(accountIds)].sort().join(',') || 'none';
   return `${prefix}:${since}:${until}:${campaignId || 'all'}:${accountsKey}`;
 }
 
-async function fetchMetaDailyInsightRows(adminClient: any, userId: string, accountIds: string[], since: string, until: string) {
+async function fetchMetaDailyInsightRows(adminClient: any, userId: string, accountIds: readonly string[], since: string, until: string) {
   if (accountIds.length === 0) return [];
   const clinicId = await resolveClinicId(adminClient, userId);
   let query = adminClient.from('meta_daily_insights')
@@ -2617,7 +2615,7 @@ async function fetchMetaDailyInsightRows(adminClient: any, userId: string, accou
   return data;
 }
 
-function mapMetaDailyRowsToInsightsPayload(rows: any[]) {
+function mapMetaDailyRowsToInsightsPayload(rows: any[]): any[] {
   return rows.map((row: any) => ({
     date_start: row.date,
     impressions: Number(row.impressions ?? 0),
@@ -2633,7 +2631,7 @@ function mapMetaDailyRowsToInsightsPayload(rows: any[]) {
   }));
 }
 
-function groupRowsByAccount(rows: any[]) {
+function groupRowsByAccount(rows: any[]): Record<string, any[]> {
   return rows.reduce((grouped: Record<string, any[]>, row: any) => {
     const accountId = row.ad_account_id;
     if (!accountId) return grouped;
@@ -2797,7 +2795,7 @@ async function processMetaInsightsGet(adminClient: any, userId: string, url: URL
       return { accountId, current, previous, currency: account?.currency ?? 'EUR' };
     }));
 
-    const successfulAccounts = accountResults
+    const successfulAccounts: any[] = accountResults
       .filter(isFulfilled)
       .map((result) => result.value);
     const failedAccountIds = creds.adAccountIds.filter((_: string, idx: number) => accountResults[idx].status === 'rejected');
@@ -2808,12 +2806,14 @@ async function processMetaInsightsGet(adminClient: any, userId: string, url: URL
       const rowsByAccount = groupRowsByAccount(fallbackRows);
       for (const accountId of failedAccountIds) {
         const rows = rowsByAccount[accountId] || [];
-        successfulAccounts.push({
-          accountId,
-          current: { data: mapMetaDailyRowsToInsightsPayload(rows) },
-          previous: { data: [] },
-        });
-        dbFallbackAccounts += 1;
+      if (rows.length === 0) continue;
+      successfulAccounts.push({
+        accountId,
+        current: { data: mapMetaDailyRowsToInsightsPayload(rows) },
+        previous: { data: [] },
+        currency: 'EUR',
+      });
+      dbFallbackAccounts += 1;
       }
     }
 
@@ -5000,15 +5000,18 @@ async function handleAgendaDoctoraliaGet(ctx: AuthenticatedRouteContext): Promis
   return null;
 }
 
+const TRACEABILITY_MATCH_FIELDS = ['patient_id', 'doc_patient_id', 'doctoralia_template_name'] as const;
+const TRACEABILITY_MATCH_OR = TRACEABILITY_MATCH_FIELDS.map((field) => `${field}.not.is.null`).join(',');
+
 function isTraceabilityMatched(row: any) {
-  return Boolean(row?.patient_id || row?.doc_patient_id || row?.doctoralia_template_name);
+  return TRACEABILITY_MATCH_FIELDS.some((field) => Boolean(row?.[field]));
 }
 
 function isTraceabilityClosed(row: any) {
   return Number(row?.doctoralia_net ?? 0) > 0;
 }
 
-function buildTraceabilitySummary(rows: any[]) {
+function buildTraceabilitySummary(rows: any[]): any {
   return rows.reduce((summary: any, row: any) => {
     const revenue = Number(row.doctoralia_net ?? 0);
     summary.totalLeads += 1;
@@ -5021,7 +5024,7 @@ function buildTraceabilitySummary(rows: any[]) {
   }, { totalLeads: 0, matchedTotal: 0, verifiedSales: 0, totalRevenue: 0 });
 }
 
-function buildTraceabilityCampaigns(rows: any[]) {
+function buildTraceabilityCampaigns(rows: any[]): any[] {
   const campaigns = new Map<string, any>();
   for (const row of rows) {
     const campaignName = row.campaign_name || row.source || 'Sin campaña';
@@ -5059,52 +5062,53 @@ function buildTraceabilityCampaigns(rows: any[]) {
     .sort((a: any, b: any) => b.total_leads - a.total_leads);
 }
 
-async function fetchTraceabilityRowsForAggregation(adminClient: any, userId: string, url: URL) {
+function applyTraceabilityFilters(query: any, userId: string, url: URL, options: { includeMatchedOnly?: boolean } = {}) {
   const from = url.searchParams.get('from') ?? '';
   const to = url.searchParams.get('to') ?? '';
   const source = url.searchParams.get('source') ?? '';
   const campaignName = url.searchParams.get('campaign_name') ?? '';
-  const matchedOnly = url.searchParams.get('matched') === 'true';
+  const matchedOnly = options.includeMatchedOnly && url.searchParams.get('matched') === 'true';
 
-  let query = adminClient
-    .from('vw_lead_traceability')
-    .select('lead_id,source,campaign_name,lead_created_at,patient_id,doc_patient_id,doctoralia_template_name,doctoralia_net')
-    .eq('lead_user_id', userId)
-    .order('lead_created_at', { ascending: false })
-    .range(0, 9999);
-  if (from) query = query.gte('lead_created_at', from);
-  if (to) query = query.lte('lead_created_at', `${to}T23:59:59Z`);
-  if (source) query = query.eq('source', source);
-  if (campaignName) query = query.ilike('campaign_name', `%${campaignName}%`);
-  if (matchedOnly) query = query.or('doc_patient_id.not.is.null,doctoralia_template_name.not.is.null,patient_id.not.is.null');
+  let filtered = query.eq('lead_user_id', userId);
+  if (from) filtered = filtered.gte('lead_created_at', from);
+  if (to) filtered = filtered.lte('lead_created_at', `${to}T23:59:59Z`);
+  if (source) filtered = filtered.eq('source', source);
+  if (campaignName) filtered = filtered.ilike('campaign_name', `%${campaignName}%`);
+  if (matchedOnly) filtered = filtered.or(TRACEABILITY_MATCH_OR);
+  return filtered;
+}
 
-  const { data, error } = await query;
-  if (error) throw error;
-  return data || [];
+async function fetchTraceabilityRowsForAggregation(adminClient: any, userId: string, url: URL): Promise<any[]> {
+  const pageSize = 1000;
+  const rows: any[] = [];
+
+  for (let fromIdx = 0; ; fromIdx += pageSize) {
+    const toIdx = fromIdx + pageSize - 1;
+    const query = applyTraceabilityFilters(
+      adminClient
+        .from('vw_lead_traceability')
+        .select('lead_id,source,campaign_name,lead_created_at,patient_id,doc_patient_id,doctoralia_template_name,doctoralia_net')
+        .order('lead_created_at', { ascending: false }),
+      userId,
+      url,
+      { includeMatchedOnly: true },
+    ).range(fromIdx, toIdx);
+
+    const { data, error } = await query;
+    if (error) throw error;
+    const page = data || [];
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+
+  return rows;
 }
 
 async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, url, sendJson } = ctx;
   if (resource === 'traceability' && sub === 'leads') {
     const limit = Math.min(Math.max(Number.parseInt(url.searchParams.get('limit') ?? '250'), 1), 500);
-    const matchedOnly = url.searchParams.get('matched') === 'true';
-    const from = url.searchParams.get('from') ?? '';
-    const to   = url.searchParams.get('to')   ?? '';
-    const source = url.searchParams.get('source') ?? '';
-    const campaignName = url.searchParams.get('campaign_name') ?? '';
-
-    // Apply shared filters to a base query builder
-    const applyFilters = (q: any) => {
-      q = q.eq('lead_user_id', userId);
-      if (matchedOnly) q = q.or('doc_patient_id.not.is.null,doctoralia_template_name.not.is.null,patient_id.not.is.null');
-      if (from) q = q.gte('lead_created_at', from);
-      if (to)   q = q.lte('lead_created_at', to + 'T23:59:59Z');
-      if (source) q = q.eq('source', source);
-      if (campaignName) q = q.ilike('campaign_name', `%${campaignName}%`);
-      return q;
-    };
-
-    const dataQ = applyFilters(
+    const dataQ = applyTraceabilityFilters(
       adminClient
         .from('vw_lead_traceability')
         .select(
@@ -5115,20 +5119,29 @@ async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<
           'settlement_date,first_settlement_at,doctoralia_net,doctoralia_template_name'
         )
         .order('lead_created_at', { ascending: false })
-        .limit(limit)
+        .limit(limit),
+      userId,
+      url,
+      { includeMatchedOnly: true },
     );
 
     // COUNT queries run in parallel — real totals independent of row limit
-    const countQ = applyFilters(
+    const countQ = applyTraceabilityFilters(
       adminClient
         .from('vw_lead_traceability')
-        .select('lead_id', { count: 'exact', head: true })
+        .select('lead_id', { count: 'exact', head: true }),
+      userId,
+      url,
+      { includeMatchedOnly: true },
     );
-    const matchedCountQ = applyFilters(
+    const matchedCountQ = applyTraceabilityFilters(
       adminClient
         .from('vw_lead_traceability')
         .select('lead_id', { count: 'exact', head: true })
-        .or('doc_patient_id.not.is.null,doctoralia_template_name.not.is.null,patient_id.not.is.null')
+        .or(TRACEABILITY_MATCH_OR),
+      userId,
+      url,
+      { includeMatchedOnly: false },
     );
 
     const [{ data: rows, error }, { count }, { count: matchedCount }, summaryRows] = await Promise.all([
