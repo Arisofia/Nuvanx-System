@@ -9,7 +9,9 @@ Nuvanx-System es una plataforma de inteligencia empresarial (BI) y automatizaci�
 ## Architecture
 
 - **Frontend**: React 19 + Vite → deployed to **Vercel**
-- **Backend**: Supabase Edge Functions (primary API) + Express server (webhooks, credential vault)
+- **Production backend API**: Supabase Edge Function at `supabase/functions/api/index.ts`
+- **MCP backend**: Supabase Edge Function at `supabase/functions/mcp/index.ts`
+- **Legacy Node backend**: `backend/src/server.js` is a local legacy/placeholder server, not the production backend
 - **Database**: Supabase (`ssvvuuysgxyqvmovrlvk` — nuvanx-prod)
 - **Figma sync**: Secondary Supabase project (`zpowfbeftxexzidlxndy`)
 
@@ -157,6 +159,7 @@ If neither Supabase key is set, the frontend will warn and disable Supabase feat
 - [SECURITY.md](SECURITY.md) — Security posture and production readiness
 - [docs/agents-and-integrations-architecture.md](docs/agents-and-integrations-architecture.md) — Architecture and agent roadmap
 - [docs/production-validation-checklist.md](docs/production-validation-checklist.md) — Production secrets and runtime verification checklist
+- [docs/MCP.md](docs/MCP.md) — MCP server URL, tools, Grok connector setup, and security notes
 - [docs/setup-clean.md](docs/setup-clean.md) — Clean bootstrap / zero-to-production setup guide
 
 

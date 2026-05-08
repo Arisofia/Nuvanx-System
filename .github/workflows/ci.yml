@@ -206,7 +206,12 @@ jobs:
             exit 1
           fi
           deno cache --config supabase/functions/deno.json supabase/functions/api/index.ts
+          deno cache --config supabase/functions/deno.json supabase/functions/mcp/index.ts
 
+      - name: Type-check Edge Function
+        run: |
+          deno check --config supabase/functions/deno.json supabase/functions/api/index.ts
+          deno check --config supabase/functions/deno.json supabase/functions/mcp/index.ts
       - name: Type-check API Function
         run: deno check --config supabase/functions/deno.json supabase/functions/api/index.ts
 

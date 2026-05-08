@@ -117,13 +117,19 @@ jobs:
     steps:
       - uses: actions/checkout@v5 # v5
 
-      - name: Deploy Edge Functions
+      - name: Deploy API Edge Function
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
           supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
           command: supabase functions deploy api --use-api
 
+      - name: Deploy MCP Edge Function
+        uses: ./.github/actions/supabase-link-run
+        with:
+          project_ref: ${{ env.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          command: supabase functions deploy mcp --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --no-verify-jwt
       - name: Deploy MCP function
         run: |
           echo "Deploying MCP function..."
