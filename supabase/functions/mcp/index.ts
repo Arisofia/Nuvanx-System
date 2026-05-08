@@ -64,9 +64,10 @@ function getBearerToken(request: Request): string {
 }
 
 function isAuthorized(request: Request): boolean {
+  const providedKey = request.headers.get('x-api-key')?.trim() || getBearerToken(request)
   const expectedApiKey = Deno.env.get('MCP_API_KEY')?.trim()
-  if (!expectedApiKey) return true
-  return getBearerToken(request) === expectedApiKey
+  if (!expectedApiKey) return false
+  return providedKey === expectedApiKey
 }
 
 mcp.tool('get_dashboard_metrics', {
@@ -283,10 +284,18 @@ mcpApp.get('/health', (c) => c.json({
 }))
 
 mcpApp.all('/mcp', async (c) => {
-  if (!isAuthorized(c.req.raw)) {
-    return c.json({ error: 'Unauthorized' }, 401)
+  // === API KEY AUTHENTICATION ===
+  const providedKey = c.req.header('x-api-key') ||
+                      c.req.header('authorization')?.replace(/^Bearer\s+/i, '')
+  const expectedKey = Deno.env.get('MCP_API_KEY')
+
+  if (!expectedKey || providedKey !== expectedKey) {
+    console.warn('[MCP] Unauthorized request')
+    return c.json({ error: 'Unauthorized - Invalid or missing API Key' }, 401)
   }
-  return await httpHandler(c.req.raw)
+
+  const response = await httpHandler(c.req.raw)
+  return response
 })
 
 app.route('/mcp', mcpApp)

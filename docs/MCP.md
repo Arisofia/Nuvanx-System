@@ -34,6 +34,30 @@ https://ssvvuuysgxyqvmovrlvk.supabase.co/functions/v1/mcp
 - No modifica RLS ni migraciones.
 - Para desarrollo local: `supabase functions serve mcp --no-verify-jwt`
 
+## Autenticación (desde 08-05-2026)
+
+**Tipo**: API Key (header `x-api-key`)
+
+**Cómo usarlo en Grok**:
+- Ve a **grok.com/connectors** → edita el conector `Nuvanx MCP`
+- En **Advanced / Headers** (si aparece) añade:
+  - Header: `x-api-key`
+  - Valor: `TU_MCP_API_KEY_AQUI`
+- Si Grok no tiene campo de headers, usa el campo **API Key** o **Bearer Token** con el mismo valor.
+
+**Ejemplo de header**:
+
+```
+x-api-key: tu_clave_secreta_aqui
+```
+
+**Importante**: Nunca compartas esta clave. Si la comprometes, cámbiala con:
+
+```bash
+supabase secrets set MCP_API_KEY=nueva_clave
+supabase functions deploy mcp --no-verify-jwt
+```
+
 ## Próximos pasos
 
 - Añadir autenticación (API Key o JWT)
