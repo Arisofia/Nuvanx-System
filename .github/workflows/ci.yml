@@ -169,6 +169,7 @@ jobs:
           # Use repository secrets for CI test credentials to avoid hardcoding sensitive values.
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+          MCP_API_KEY: ${{ secrets.MCP_API_KEY }}
           DEFAULT_PHONE_COUNTRY_CODE: '34'
 
   # ─── Edge Function: type-check ─────────────────────────────────────────────
