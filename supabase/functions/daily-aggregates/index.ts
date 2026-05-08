@@ -1,78 +1,85 @@
-import { createClient } from '@supabase/supabase-js'
+// supabase/functions/daily-aggregates/index.ts
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-  { auth: { persistSession: false } }
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 )
 
 Deno.serve(async (req) => {
-  // Authorization check
-  const authHeader = req.headers.get('Authorization')
-  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-  
-  if (authHeader !== `Bearer ${serviceRoleKey}`) {
-    console.error('[daily-aggregates] Unauthorized access attempt')
-    return new Response('Unauthorized', { status: 401 })
+  console.log('[daily-aggregates] Iniciando tareas diarias...')
+
+  const today = new Date().toISOString().slice(0, 10)
+  const fourteenDaysAgo = new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10)
+
+  // ============================================
+  // TAREA 1: Leads en riesgo (>14 días en "Nuevo")
+  // ============================================
+  const { data: riskLeads } = await supabase
+    .from('leads')
+    .select('id, name, phone, clinic_id, created_at, stage')
+    .eq('stage', 'Nuevo')
+    .lt('created_at', fourteenDaysAgo)
+    .neq('source', 'doctoralia')
+    .order('created_at', { ascending: true })
+    .limit(100)
+
+  if (riskLeads && riskLeads.length > 0) {
+    console.log(`[daily-aggregates] ⚠️ ${riskLeads.length} leads en riesgo (>14 días en Nuevo)`)
+    // Aquí podrías insertar en una tabla de alertas si existe
   }
 
-  console.log('[daily-aggregates] Starting daily batch...')
+  // ============================================
+  // TAREA 2: Ranking semanal de campañas (top 5)
+  // ============================================
+  const { data: campaignRanking } = await supabase
+    .from('financial_settlements')
+    .select('campaign_name, amount_net')
+    .gte('settled_at', new Date(Date.now() - 7 * 86400000).toISOString())
+    .neq('source_system', 'doctoralia') // solo campañas de marketing
 
-  try {
-    // 1. Detect leads at risk (>14 days in 'lead' stage)
-    const fourteenDaysAgo = new Date()
-    fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14)
-    
-    const { data: atRiskLeads, error: atRiskError } = await supabase
-      .from('leads')
-      .select('id, name, created_at, user_id')
-      .eq('stage', 'lead')
-      .lt('created_at', fourteenDaysAgo.toISOString())
-      .limit(100)
+  let processedRanking: any[] = []
+  if (campaignRanking) {
+    const revenueByCampaign = campaignRanking.reduce((acc: Record<string, number>, curr: any) => {
+      const name = curr.campaign_name || 'Sin nombre'
+      acc[name] = (acc[name] || 0) + Number(curr.amount_net || 0)
+      return acc
+    }, {})
 
-    if (atRiskError) throw atRiskError
-    console.log(`[daily-aggregates] Found ${atRiskLeads?.length || 0} leads at risk (>14 days in 'lead' stage)`)
-
-    // 2. Recalculate/Log Campaign Rankings (Top 5 by lead count)
-    // Using a simplified query approach since get_campaign_roi requires a user_id
-    const { data: rankings, error: rankingsError } = await supabase
-      .from('leads')
-      .select('source, id')
-      .not('source', 'is', null)
-
-    let topCampaigns: Record<string, number> = {}
-    if (!rankingsError && rankings) {
-      rankings.forEach(lead => {
-        topCampaigns[lead.source] = (topCampaigns[lead.source] || 0) + 1
-      })
-    }
-    
-    const sortedRankings = Object.entries(topCampaigns)
-      .sort(([, a], [, b]) => b - a)
+    processedRanking = Object.entries(revenueByCampaign)
+      .map(([campaign_name, revenue]) => ({ campaign_name, revenue }))
+      .sort((a, b) => (b.revenue as number) - (a.revenue as number))
       .slice(0, 5)
 
-    console.log('[daily-aggregates] Top 5 Campaigns by lead count:', sortedRankings)
-    
-    console.log('[daily-aggregates] Completed successfully')
-    return new Response(JSON.stringify({ 
-      status: 'success', 
-      tasks: {
-        at_risk_leads_count: atRiskLeads?.length || 0,
-        top_campaigns: sortedRankings
-      },
-      timestamp: new Date().toISOString()
-    }), {
-      headers: { 'Content-Type': 'application/json' },
-      status: 200
-    })
-  } catch (error) {
-    console.error('[daily-aggregates] Error:', error)
-    return new Response(JSON.stringify({ 
-      status: 'error', 
-      error: error.message 
-    }), {
-      headers: { 'Content-Type': 'application/json' },
-      status: 500
-    })
+    console.log('[daily-aggregates] Top 5 campañas esta semana:', processedRanking)
   }
+
+  // ============================================
+  // TAREA 3: Resumen diario Doctoralia (revenue verificado)
+  // ============================================
+  const { data: settlementsToday } = await supabase
+    .from('financial_settlements')
+    .select('amount_net')
+    .eq('source_system', 'doctoralia')
+    .gte('settled_at', today)
+
+  const doctoraliaSummary = {
+    total_revenue: settlementsToday?.reduce((sum, s) => sum + Number(s.amount_net || 0), 0) || 0,
+    total_patients: settlementsToday?.length || 0
+  }
+
+  console.log('[daily-aggregates] Revenue Doctoralia hoy:', doctoraliaSummary)
+
+  console.log('[daily-aggregates] ✅ Tareas diarias completadas')
+  return new Response(JSON.stringify({
+    success: true,
+    tasks: {
+      riskLeadsCount: riskLeads?.length || 0,
+      topCampaigns: processedRanking,
+      doctoraliaSummary
+    }
+  }), { 
+    status: 200,
+    headers: { 'Content-Type': 'application/json' }
+  })
 })
