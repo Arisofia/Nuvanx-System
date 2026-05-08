@@ -2812,7 +2812,6 @@ async function processMetaInsightsGet(adminClient: any, userId: string, url: URL
           accountId,
           current: { data: mapMetaDailyRowsToInsightsPayload(rows) },
           previous: { data: [] },
-          fallbackSource: 'meta_daily_insights',
         });
         dbFallbackAccounts += 1;
       }
