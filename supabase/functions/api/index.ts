@@ -2364,6 +2364,9 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
 
     const { since, until, prevSince, prevUntil } = getDashboardPeriods(url);
 
+    // === DEBUG TEMPORAL (08-05-2026) ===
+    console.log('[DEBUG] Períodos calculados:', { since, until, prevSince, prevUntil });
+
     const leadsQuery = buildDashboardLeadsQuery(adminClient, userId, clinicId, since, until, sourceFilter);
     const prevLeadsQuery = buildDashboardLeadsQuery(adminClient, userId, clinicId, prevSince, prevUntil, sourceFilter);
 
@@ -2386,6 +2389,14 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
     const prevSettlements = (prevSettlementsRes.data ?? []).filter((r: any) => !r.cancelled_at);
 
     const metrics = aggregateDashboardResults(leads, prevLeads, settlements, prevSettlements, integrations);
+    
+    // === DEBUG TEMPORAL (08-05-2026) ===
+    console.log('[DEBUG] Métricas calculadas:', {
+      leads: leads.length,
+      prevLeads: prevLeads.length,
+      deltas: metrics.deltas
+    });
+
     return sendJson({ success: true, metrics });
   }
   return null;
