@@ -2483,7 +2483,7 @@ async function handleDashboardMetaTrends(ctx: AuthenticatedRouteContext): Promis
           spend: pct(thisWeek.spend, prevWeek.spend),
         },
       };
-  
+
       await setMetaCache(adminClient, userId, cacheKey, result);
       return sendJson(result);
     } catch (e: any) {
@@ -2806,14 +2806,14 @@ async function processMetaInsightsGet(adminClient: any, userId: string, url: URL
       const rowsByAccount = groupRowsByAccount(fallbackRows);
       for (const accountId of failedAccountIds) {
         const rows = rowsByAccount[accountId] || [];
-        if (rows.length === 0) continue;
-        successfulAccounts.push({
-          accountId,
-          current: { data: mapMetaDailyRowsToInsightsPayload(rows) },
-          previous: { data: [] },
-          currency: 'EUR',
-        });
-        dbFallbackAccounts += 1;
+      if (rows.length === 0) continue;
+      successfulAccounts.push({
+        accountId,
+        current: { data: mapMetaDailyRowsToInsightsPayload(rows) },
+        previous: { data: [] },
+        currency: 'EUR',
+      });
+      dbFallbackAccounts += 1;
       }
     }
 
