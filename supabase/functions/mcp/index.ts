@@ -2,13 +2,18 @@ import { createClient } from '@supabase/supabase-js'
 import { Hono } from 'hono'
 import { McpServer, StreamableHttpTransport } from 'mcp-lite'
 import { z } from 'zod'
+import { zodToJsonSchema } from 'zod-to-json-schema'
 
 const app = new Hono()
 
 const mcp = new McpServer({
   name: 'nuvanx-mcp',
   version: '1.0.0',
-  schemaAdapter: (schema) => z.toJSONSchema(schema as z.ZodType),
+  schemaAdapter: (schema) =>
+    zodToJsonSchema(schema as z.ZodType, {
+      target: 'jsonSchema7',
+      $refStrategy: 'none',
+    }),
 })
 
 function requireEnv(name: string): string {
@@ -32,9 +37,9 @@ function jsonContent(value: unknown) {
   }
 }
 
-function errorContent(message: string) {
+function errorContent(userMessage: string) {
   return {
-    content: [{ type: 'text' as const, text: `Error: ${message}` }],
+    content: [{ type: 'text' as const, text: `Error: ${userMessage}` }],
     isError: true,
   }
 }
@@ -49,9 +54,13 @@ function escapeIlikeTerm(rawQuery: string): string {
 
 function getBearerToken(request: Request): string {
   const authorization = request.headers.get('authorization') ?? ''
-  return authorization.toLowerCase().startsWith('bearer ')
-    ? authorization.slice(7).trim()
-    : ''
+  const prefix = authorization.slice(0, 7)
+
+  if (prefix.toLowerCase() === 'bearer ') {
+    return authorization.slice(7).trim()
+  }
+
+  return authorization.trim()
 }
 
 function isAuthorized(request: Request): boolean {
@@ -106,7 +115,10 @@ mcp.tool('get_dashboard_metrics', {
     ])
 
     const firstError = leadsRes.error ?? settlementsRes.error ?? integrationsRes.error ?? metaRes.error
-    if (firstError) return errorContent(firstError.message)
+    if (firstError) {
+      console.error('[get_dashboard_metrics] Supabase error', firstError)
+      return errorContent('Database error while fetching dashboard metrics')
+    }
 
     const leads = leadsRes.data ?? []
     const settlements = settlementsRes.data ?? []
@@ -188,7 +200,10 @@ mcp.tool('get_leads', {
     if (date_to) query = query.lte('created_at', date_to)
 
     const { data, error } = await query.limit(limit)
-    if (error) return errorContent(error.message)
+    if (error) {
+      console.error('[get_leads] Supabase error', error)
+      return errorContent('Database error while fetching leads')
+    }
     return jsonContent(data)
   },
 })
@@ -214,7 +229,10 @@ mcp.tool('get_meta_campaign_insights', {
     if (date_to) query = query.lte('date', date_to)
 
     const { data, error } = await query.limit(limit)
-    if (error) return errorContent(error.message)
+    if (error) {
+      console.error('[get_meta_campaign_insights] Supabase error', error)
+      return errorContent('Database error while fetching Meta campaign insights')
+    }
     return jsonContent(data)
   },
 })
@@ -240,7 +258,10 @@ mcp.tool('search_leads', {
     if (clinic_id) sqlQuery = sqlQuery.eq('clinic_id', clinic_id)
 
     const { data, error } = await sqlQuery.limit(limit)
-    if (error) return errorContent(error.message)
+    if (error) {
+      console.error('[search_leads] Supabase error', error)
+      return errorContent('Database error while searching leads')
+    }
     return jsonContent(data)
   },
 })
