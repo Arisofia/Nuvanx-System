@@ -24,7 +24,8 @@
     "integration:connect": "node scripts/connect-integration.js",
     "setup:production": "bash scripts/setup-production.sh",
     "cleanup": "bash scripts/cleanup.sh",
-    "install:all": "npm install && npm --prefix frontend install"
+    "install:all": "npm install && npm --prefix frontend install",
+    "doctoralia:match:phone": "node scripts/match-doctoralia-phone.js"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.2",
