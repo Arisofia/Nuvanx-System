@@ -252,6 +252,26 @@ export interface TraceabilityLead {
 
 // ── Live ──────────────────────────────────────────────────────────────────────
 
+export interface DoctoraliaAppointment {
+  raw_hash: string
+  paciente_nombre: string | null
+  hora: string | null
+  estado: string | null
+  asunto: string | null
+  agenda: string | null
+  sala_box: string | null
+  procedencia: string | null
+  importe: number | null
+  confirmada: boolean
+  timestamp_cita: string | null
+  doc_patient_id: string | null
+  // Campaign attribution
+  lead_id: string | null
+  campaign_name: string | null
+  match_class: string | null
+  match_confidence: number | null
+}
+
 export interface LiveEvent {
   id: string
   type: string
