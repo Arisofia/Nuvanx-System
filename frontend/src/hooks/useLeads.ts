@@ -7,12 +7,14 @@ export function useLeads() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const loadLeads = useCallback(async () => {
+  const loadLeads = useCallback(async (activeFlag?: { active: boolean }) => {
     setLoading(true)
     setError(null)
     try {
       const response = await invokeApi('/leads')
       const data = response.leads
+
+      if (activeFlag && !activeFlag.active) return
 
       setLeads(
         Array.isArray(data)
@@ -34,11 +36,14 @@ export function useLeads() {
           : [],
       )
     } catch (err: any) {
+      if (activeFlag && !activeFlag.active) return
       console.warn('CRM API call failed:', err)
       setError(err?.message || 'Unable to load leads from API.')
       setLeads([])
     } finally {
-      setLoading(false)
+      if (!activeFlag || activeFlag.active) {
+        setLoading(false)
+      }
     }
   }, [])
 
@@ -92,7 +97,9 @@ export function useLeads() {
   }
 
   useEffect(() => {
-    loadLeads()
+    const activeFlag = { active: true }
+    loadLeads(activeFlag)
+    return () => { activeFlag.active = false }
   }, [loadLeads])
 
   return { leads, loading, error, refreshLeads: loadLeads, updateLead, deleteLead }

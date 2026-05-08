@@ -225,6 +225,7 @@ function useDashboardData(
   const [combined, setCombined] = useState<CombinedMetrics>(EMPTY_COMBINED_METRICS)
   const [funnel, setFunnel] = useState<RealFunnel | null>(null)
   const [quality, setQuality] = useState<any>(null)
+  const isProd = import.meta.env.PROD
   const [isFunnelDemo, setIsFunnelDemo] = useState<boolean>(false)
   const [dataMode, setDataMode] = useState<string | undefined>(undefined)
   const [trendData, setTrendData] = useState<MetaTrendPoint[]>([])
@@ -232,6 +233,7 @@ function useDashboardData(
   const [campaignsList, setCampaignsList] = useState<{ id: string, name: string }[]>([])
 
   useEffect(() => {
+    let active = true
     const buildParams = () => {
       const isCustomRange = Boolean(customFrom && customTo)
       const { baseParams, campaignsPath } = buildDashboardPaths(isCustomRange, customFrom, customTo, days)
@@ -250,6 +252,7 @@ function useDashboardData(
       funnelResult: any,
       kpisResult: any
     ) => {
+      if (!active) return
       if (metricsResult.status === 'rejected') throw metricsResult.reason
       
       const kpisResponse = kpisResult.status === 'fulfilled' ? kpisResult.value : null
@@ -276,7 +279,16 @@ function useDashboardData(
       const { spend, avgCpcRaw, metaConversions } = resolveInsightsTotals(insightsSummary, campaigns)
       const spendDelta = insightsResponse?.changes?.spend ?? 0
 
-      if (kpisResponse?.success !== true) {
+      console.log('[DashboardDebug]', {
+        totalLeads: metricsData.totalLeads,
+        campaigns: campaigns.length,
+        kpisSuccess: kpisResponse?.success,
+        dataMode: kpisResponse?.data_quality?.overall_mode,
+        metaConversions,
+        hasKpis: !!kpisResponse
+      })
+
+      if (kpisResponse && kpisResponse.success !== true && !metricsData.totalLeads && !campaigns.length) {
         setIsFunnelDemo(false)
         setTrendData(defaultTrend)
         setCombined(EMPTY_COMBINED_METRICS)
@@ -284,13 +296,17 @@ function useDashboardData(
         setMetrics((prev) => ({
           ...prev,
           loading: false,
-          error: 'No real KPI data available. Conecta Meta y Doctoralia para ver datos reales.',
+          error: kpisResponse.message || 'No real KPI data available. Conecta Meta y Doctoralia para ver datos reales.',
           metaError: null,
         }))
         return
       }
 
-      setIsFunnelDemo((kpisResponse?.doctoralia?.newVerifiedPatients ?? 0) === 0)
+      // Solo marcamos modo demo visual en entornos no productivos
+      setIsFunnelDemo(
+        !isProd &&
+        (kpisResponse?.doctoralia?.newVerifiedPatients ?? 0) === 0,
+      )
       setDataMode(kpisResponse?.data_quality?.overall_mode as string | undefined)
       setTrendData(
         Array.isArray(metaTrendsResponse?.trends)
@@ -329,6 +345,8 @@ function useDashboardData(
       }
 
       const { data: { session } } = await supabase.auth.getSession()
+      if (!active) return
+
       if (!session?.access_token) {
         setMetrics((prev) => ({ ...prev, loading: false }))
         return
@@ -347,6 +365,7 @@ function useDashboardData(
 
         processResults(metricsResult, metaTrendsResult, campaignsResult, insightsResult, funnelResult, kpisResult)
       } catch (err: any) {
+        if (!active) return
         console.error('Dashboard fetch failed:', err)
         setMetrics((prev) => ({
           ...prev,
@@ -358,6 +377,7 @@ function useDashboardData(
     }
 
     fetchMetrics()
+    return () => { active = false }
   }, [days, customFrom, customTo, campaignId, sourceFilter, campaignsCount, sourcesCount])
 
   return {
@@ -1001,21 +1021,27 @@ export default function Dashboard() {
     customTo,
     campaignId,
     sourceFilter,
-    0, // Will be updated by state in a real scenario if needed
-    0, // Will be updated by state in a real scenario if needed
+    campaignsList.length,
+    sourcesList.length,
   )
 
+  const filtersRef = useRef({ campaignId, sourceFilter })
   useEffect(() => {
+    filtersRef.current = { campaignId, sourceFilter }
+  }, [campaignId, sourceFilter])
+
+  useEffect(() => {
+    let active = true
     async function fetchInitialActivity() {
       try {
         const { data: leads } = await supabase
           .from('leads')
-          .select('id, source, stage, created_at')
+          .select('id, source, stage, created_at, campaign_id')
           .is('deleted_at', null)
           .order('created_at', { ascending: false })
           .limit(20)
 
-        if (leads) {
+        if (active && leads) {
           setActivity(leads.map((r: any) => ({
             id: String(r.id),
             label: 'Recent activity',
@@ -1034,25 +1060,42 @@ export default function Dashboard() {
       .channel('dashboard-lead-feed')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads' }, (payload) => {
         const r = payload.new as any
-        setActivity((prev) => [{
-          id: String(r.id ?? Math.random()),
-          label: 'New lead received',
-          detail: r.source ? `From ${r.source}` : 'New entry in pipeline',
-          ts: r.created_at ?? new Date().toISOString(),
-        }, ...prev].slice(0, 20))
+        const { campaignId: cId, sourceFilter: sF } = filtersRef.current
+        
+        const matchesCampaign = cId === 'ALL' || String(r.campaign_id) === String(cId)
+        const matchesSource = sF === 'ALL' || String(r.source).toLowerCase() === String(sF).toLowerCase()
+
+        if (matchesCampaign && matchesSource) {
+          setActivity((prev) => [{
+            id: String(r.id ?? `new-${Date.now()}`),
+            label: 'New lead received',
+            detail: r.source ? `From ${r.source}` : 'New entry in pipeline',
+            ts: r.created_at ?? new Date().toISOString(),
+          }, ...prev].slice(0, 20))
+        }
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'leads' }, (payload) => {
         const r = payload.new as any
-        setActivity((prev) => [{
-          id: String(r.id ?? Math.random()) + '-upd',
-          label: 'Lead updated',
-          detail: r.stage ? `Stage: ${r.stage}` : 'Record updated',
-          ts: r.updated_at ?? new Date().toISOString(),
-        }, ...prev].slice(0, 20))
+        const { campaignId: cId, sourceFilter: sF } = filtersRef.current
+        
+        const matchesCampaign = cId === 'ALL' || String(r.campaign_id) === String(cId)
+        const matchesSource = sF === 'ALL' || String(r.source).toLowerCase() === String(sF).toLowerCase()
+
+        if (matchesCampaign && matchesSource) {
+          setActivity((prev) => [{
+            id: String(r.id ?? `upd-${Date.now()}`) + '-upd',
+            label: 'Lead updated',
+            detail: r.stage ? `Stage: ${r.stage}` : 'Record updated',
+            ts: r.updated_at ?? new Date().toISOString(),
+          }, ...prev].slice(0, 20))
+        }
       })
       .subscribe()
     channelRef.current = channel
-    return () => { supabase.removeChannel(channel) }
+    return () => { 
+      active = false
+      supabase.removeChannel(channel) 
+    }
   }, [])
 
   if (metrics.loading) {

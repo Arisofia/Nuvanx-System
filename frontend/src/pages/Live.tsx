@@ -127,6 +127,7 @@ export default function Live() {
 
   // ── Live feed: preload recent Doctoralia events ────────────────────────────
   useEffect(() => {
+    let active = true
     const load = async () => {
       const results: LiveEvent[] = []
       const { data: rawRows } = await supabase
@@ -134,10 +135,13 @@ export default function Live() {
         .select('raw_hash, paciente_nombre, patient_name, estado, agenda, importe_numerico, timestamp_cita, fecha')
         .order('timestamp_cita', { ascending: false })
         .limit(30)
+      
+      if (!active) return
+
       if (rawRows) {
         for (const r of rawRows) {
           results.push({
-            id: String(r.raw_hash ?? Math.random()),
+            id: String(r.raw_hash ?? `preload-${Math.random()}`),
             type: 'DOCTORALIA',
             label: r.paciente_nombre ?? r.patient_name ?? 'Paciente Doctoralia',
             detail: [r.agenda, r.estado, r.importe_numerico != null ? `€${Number(r.importe_numerico).toLocaleString('es-ES', { minimumFractionDigits: 0 })}` : ''].filter(Boolean).join(' · '),
@@ -149,9 +153,15 @@ export default function Live() {
       setEvents(results.slice(0, 50))
     }
     load()
+    return () => { active = false }
   }, [])
 
   // ── Live feed: realtime subscription on doctoralia_raw ────────────────────
+  const selectedDateRef = useRef(selectedDate)
+  useEffect(() => {
+    selectedDateRef.current = selectedDate
+  }, [selectedDate])
+
   useEffect(() => {
     const channel = supabase
       .channel('live-doctoralia-feed')
@@ -167,7 +177,7 @@ export default function Live() {
         setEvents((prev) => [ev, ...prev].slice(0, 50))
         // Refresh agenda if the appointment is on the selected day
         const apptDay = (r.fecha ?? '').slice(0, 10)
-        if (apptDay === selectedDate) {
+        if (apptDay === selectedDateRef.current) {
           setAppointments((prev) => [{
             raw_hash: r.raw_hash,
             paciente_nombre: r.paciente_nombre ?? r.patient_name ?? null,
@@ -192,7 +202,7 @@ export default function Live() {
 
     channelRef.current = channel
     return () => { supabase.removeChannel(channel) }
-  }, [selectedDate])
+  }, [])
 
   // ── Date navigation ────────────────────────────────────────────────────────
   const shiftDay = (delta: number) => {
