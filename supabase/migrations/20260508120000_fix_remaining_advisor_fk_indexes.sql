@@ -64,7 +64,7 @@ BEGIN
         AND tbl.relname = fk_target.table_name
         AND idx.indisvalid
         AND idx.indpred IS NULL
-        AND idx.indkey[0] = column_attnum
+        AND idx.indkey[1] = column_attnum
     ) THEN
       RAISE NOTICE 'Skipping %.%: covering index already exists', fk_target.table_name, fk_target.column_name;
       CONTINUE;

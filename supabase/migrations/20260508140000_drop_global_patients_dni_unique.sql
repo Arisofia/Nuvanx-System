@@ -9,6 +9,7 @@
 DO $$
 DECLARE
   dni_attnum SMALLINT;
+  duplicate_dni RECORD;
   global_constraint RECORD;
   global_index RECORD;
 BEGIN
@@ -36,9 +37,24 @@ BEGIN
       AND table_name = 'patients'
       AND column_name = 'clinic_id'
   ) THEN
-    CREATE UNIQUE INDEX IF NOT EXISTS patients_clinic_dni_uq
-      ON public.patients (clinic_id, dni)
-      WHERE dni IS NOT NULL;
+    SELECT clinic_id, dni, COUNT(*) AS duplicate_count
+      INTO duplicate_dni
+    FROM public.patients
+    WHERE dni IS NOT NULL
+    GROUP BY clinic_id, dni
+    HAVING COUNT(*) > 1
+    LIMIT 1;
+
+    IF duplicate_dni IS NULL THEN
+      CREATE UNIQUE INDEX IF NOT EXISTS patients_clinic_dni_uq
+        ON public.patients (clinic_id, dni)
+        WHERE dni IS NOT NULL;
+    ELSE
+      RAISE NOTICE 'Skipping patients_clinic_dni_uq: duplicate DNI % exists in clinic % (% rows)',
+        duplicate_dni.dni,
+        duplicate_dni.clinic_id,
+        duplicate_dni.duplicate_count;
+    END IF;
   ELSE
     RAISE NOTICE 'Skipping clinic-scoped patients DNI unique index: public.patients.clinic_id does not exist';
   END IF;
@@ -63,7 +79,7 @@ BEGIN
       AND idx.indisunique
       AND idx.indpred IS NULL
       AND idx.indnkeyatts = 1
-      AND idx.indkey[0] = dni_attnum
+      AND idx.indkey[1] = dni_attnum
       AND NOT EXISTS (
         SELECT 1
         FROM pg_constraint con
