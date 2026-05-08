@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Daily Health Check
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: '0 4 * * *'  # 4am UTC (6am Madrid)
+
+jobs:
+  health-check:
+    name: Health Check — Production Endpoints
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      - name: Run Health Check
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          MCP_API_KEY: ${{ secrets.MCP_API_KEY }}
+        run: |
+          if [ -z "$VITE_SUPABASE_URL" ]; then
+            echo "::error::SUPABASE_URL secret is missing"
+            exit 1
+          fi
+          if [ -z "$MCP_API_KEY" ]; then
+            echo "::warning::MCP_API_KEY secret is missing. Some endpoints might fail."
+          fi
+          deno run --allow-net --allow-env scripts/health-check-nuvanx.ts

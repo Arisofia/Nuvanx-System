@@ -58,6 +58,28 @@ supabase secrets set MCP_API_KEY=nueva_clave
 supabase functions deploy mcp --no-verify-jwt
 ```
 
+## Health Check & Automatización (desde 08-05-2026)
+
+El sistema ahora cuenta con monitoreo y tareas automáticas diarias.
+
+### Health Check (Estado del sistema)
+
+Puedes verificar la salud de los servicios críticos (incluyendo este MCP) ejecutando:
+
+```bash
+deno run --allow-net --allow-env scripts/health-check-nuvanx.ts
+```
+
+### Automatización Diaria
+
+Se ha implementado una Edge Function (`daily-aggregates`) que se ejecuta automáticamente mediante un Cron Job a las 03:00 UTC. Esta función realiza:
+- **Detección de Leads en riesgo**: Identifica leads que llevan más de 14 días en etapa "Nuevo".
+- **Rankings de Campañas**: Recalcula los rankings de las mejores campañas por volumen de leads.
+
+### GitHub Actions
+
+Existe un workflow automatizado en `.github/workflows/daily-health-check.yml` que ejecuta el health check completo todos los días a las 04:00 UTC.
+
 ## Próximos pasos
 
 - Añadir autenticación (API Key o JWT)

@@ -185,6 +185,7 @@ Endpoints a probar después de desplegar:
 - `GET /api/dashboard/metrics`
 - `GET /api/dashboard/meta-trends`
 - `GET /api/traceability/leads`
+- `GET /functions/v1/daily-aggregates` (requiere Service Role Key)
 
 SQL de verificación:
 
@@ -193,6 +194,13 @@ SELECT COUNT(*) FROM public.leads;
 SELECT COUNT(*) FROM public.meta_daily_insights;
 SELECT COUNT(*) FROM public.doctoralia_patients;
 SELECT COUNT(*) FROM public.financial_settlements;
+```
+
+Scripts de verificación de salud:
+
+```bash
+# Ejecutar health check completo (Deno)
+deno run --allow-net --allow-env scripts/health-check-nuvanx.ts
 ```
 
 ## 6. Comandos de arranque
@@ -272,3 +280,33 @@ Valores que deben existir en GitHub Actions / Vercel según los workflows actual
 - No usar archivos `.env` con credenciales de producción en el repositorio.
 - Si se actualiza el token de Meta, hacerlo siempre con el script de tokens y la clave de cifrado correcta.
 - Si se añaden nuevas integraciones, documentar el `service` y `metadata` esperado en `integrations`.
+
+## 10. Automatización y Cron Jobs
+
+Para mantener los datos actualizados, se recomienda programar las siguientes tareas en el entorno de producción.
+
+### 10.1 Daily Aggregates (ROI, Rankings, Backfill)
+
+Esta tarea recalcula métricas pesadas y sincroniza datos históricos de Doctoralia. Se ejecuta mediante una Edge Function.
+
+**Edge Function:** `daily-aggregates`
+
+**Programación recomendada (pg_cron en Supabase):**
+
+```sql
+-- Ejecutar todos los días a las 03:00 UTC
+SELECT cron.schedule(
+  'daily-nuvanx-aggregates',
+  '0 3 * * *',
+  $$
+    SELECT net.http_post(
+      url := 'https://ssvvuuysgxyqvmovrlvk.supabase.co/functions/v1/daily-aggregates',
+      headers := '{"Content-Type": "application/json", "Authorization": "Bearer ' || current_setting('app.settings.service_role_key') || '"}'
+    );
+  $$
+);
+```
+
+### 10.2 Health Check Automatizado
+
+Se puede integrar el script `scripts/health-check-nuvanx.ts` en un workflow de GitHub Actions o en un cron diario para monitorizar la disponibilidad de los servicios críticos.

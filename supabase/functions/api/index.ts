@@ -2257,8 +2257,14 @@ function getDashboardPeriods(url: URL) {
 }
 
 function aggregateDashboardResults(leads: any[], prevLeads: any[], settlements: any[], prevSettlements: any[], integrations: any[]) {
-  const filteredLeads = leads.filter(l => String(l.source).toLowerCase() !== 'doctoralia');
-  const filteredPrevLeads = prevLeads.filter(l => String(l.source).toLowerCase() !== 'doctoralia');
+  // === NUVANX GUARANTEE (08-05-2026) ===
+  // Doctoralia = CRM/Pacientes → nunca cuenta como fuente de leads de adquisición
+  const filteredLeads = leads.filter((l: any) =>
+    !l.source || l.source.toLowerCase() !== 'doctoralia'
+  );
+  const filteredPrevLeads = prevLeads.filter((l: any) =>
+    !l.source || l.source.toLowerCase() !== 'doctoralia'
+  );
 
   const totalLeads = filteredLeads.length;
   const prevTotalLeads = filteredPrevLeads.length;
@@ -4450,7 +4456,11 @@ async function handleAiAnalyzeCampaignPost(ctx: AuthenticatedRouteContext): Prom
 async function handleAiSuggestionsPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource === 'ai' && sub === 'suggestions' && req.method === 'POST') {
-    const { data: leads } = await adminClient.from('leads').select('stage, source, revenue, created_at').eq('user_id', userId);
+    const { data: leads } = await adminClient
+      .from('leads')
+      .select('stage, source, revenue, created_at')
+      .eq('user_id', userId)
+      .neq('source', 'doctoralia'); // NUVANX: Doctoralia nunca es fuente de leads
     const leadList = leads ?? [];
     const total = leadList.length;
     const byStage: Record<string, number> = {};
