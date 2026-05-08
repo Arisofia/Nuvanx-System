@@ -111,7 +111,6 @@ export default function Live() {
   useEffect(() => {
     let active = true
     const load = async () => {
-      const results: LiveEvent[] = []
       const { data: rawRows } = await supabase
         .from('doctoralia_raw')
         .select('raw_hash, paciente_nombre, patient_name, estado, agenda, importe_numerico, timestamp_cita, fecha')

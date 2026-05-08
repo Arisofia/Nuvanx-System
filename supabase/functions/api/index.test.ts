@@ -890,6 +890,7 @@ describe('handlePublicRoutes', () => {
         if (key === 'META_APP_SECRET') return null;
         if (key === 'SUPABASE_URL') return 'https://supabase.example.com';
         if (key === 'SUPABASE_SERVICE_ROLE_KEY') return 'service-key';
+        if (key === 'DEFAULT_PHONE_COUNTRY_CODE') return '34';
         return null;
       });
 
@@ -903,6 +904,8 @@ describe('handlePublicRoutes', () => {
         select: vi.fn(function () { return this; }),
         update: vi.fn(function () { return this; }),
         eq: vi.fn(function () { return this; }),
+        or: vi.fn(function () { return this; }),
+        is: vi.fn(function () { return this; }),
         order: vi.fn(function () { return this; }),
         limit: vi.fn(function () { return this; }),
         maybeSingle: vi.fn().mockResolvedValue({ data: { id: 'lead1' } }),
@@ -934,8 +937,8 @@ describe('handlePublicRoutes', () => {
                 value: {
                   messaging_product: 'whatsapp',
                   metadata: { phone_number_id: '123' },
-                  contacts: [{ wa_id: '1234', profile: { name: 'Alice' } }],
-                  messages: [{ id: 'msg1', from: '1234', timestamp: '1690000000', text: { body: 'Hello' } }],
+                  contacts: [{ wa_id: '34612345678', profile: { name: 'Alice' } }],
+                  messages: [{ id: 'msg1', from: '34612345678', timestamp: '1690000000', text: { body: 'Hello' } }],
                 },
               },
             ],
@@ -963,6 +966,7 @@ describe('handlePublicRoutes', () => {
         if (key === 'META_APP_SECRET') return null;
         if (key === 'SUPABASE_URL') return 'https://supabase.example.com';
         if (key === 'SUPABASE_SERVICE_ROLE_KEY') return 'service-key';
+        if (key === 'DEFAULT_PHONE_COUNTRY_CODE') return '34';
         return null;
       });
 
@@ -976,6 +980,8 @@ describe('handlePublicRoutes', () => {
         select: vi.fn(function () { return this; }),
         update: vi.fn(function () { return this; }),
         eq: vi.fn(function () { return this; }),
+        or: vi.fn(function () { return this; }),
+        is: vi.fn(function () { return this; }),
         order: vi.fn(function () { return this; }),
         limit: vi.fn(function () { return this; }),
         ilike: vi.fn(function () { return this; }),
@@ -1009,8 +1015,8 @@ describe('handlePublicRoutes', () => {
                 value: {
                   messaging_product: 'whatsapp',
                   metadata: { phone_number_id: '123' },
-                  contacts: [{ wa_id: '1234', profile: { name: 'Alice' } }],
-                  messages: [{ id: 'msg1', from: '1234', timestamp: '1690000000', text: { body: 'Hello' } }],
+                  contacts: [{ wa_id: '34612345678', profile: { name: 'Alice' } }],
+                  messages: [{ id: 'msg1', from: '34612345678', timestamp: '1690000000', text: { body: 'Hello' } }],
                 },
               },
             ],
