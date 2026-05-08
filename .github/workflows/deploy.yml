@@ -130,3 +130,10 @@ jobs:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
           supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
           command: supabase functions deploy mcp --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --no-verify-jwt
+      - name: Deploy MCP function
+        run: |
+          echo "Deploying MCP function..."
+          supabase functions deploy mcp --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --no-verify-jwt
+          echo "MCP function deployed successfully ✓"
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}

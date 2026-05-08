@@ -1,12 +1,22 @@
 import { TrendingDown, TrendingUp } from 'lucide-react'
 
 interface MetricDeltaProps {
-  readonly value: number
+  readonly value: number | null
   readonly inverse?: boolean
 }
 
 export function MetricDelta({ value, inverse = false }: MetricDeltaProps) {
-  if (value === 0) return null
+  if (value === null || !Number.isFinite(value)) {
+    return <span className="text-[10px] font-bold text-[#8E8680]">–</span>
+  }
+
+  if (value === 0) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#8E8680]/10 text-[#8E8680] border border-[#8E8680]/20">
+        0%
+      </span>
+    )
+  }
 
   const isPositive = value > 0
   const isGood = inverse ? !isPositive : isPositive

@@ -50,7 +50,10 @@ export async function invokeApi(path: string, options?: { method?: string; body?
     data = {}
   }
   if (!res.ok) {
-    throw new Error(data?.message || 'Function invocation failed')
+    const errorData = data || { message: `Error ${res.status}: ${res.statusText}` }
+    const error = new Error(errorData.message || 'Function invocation failed')
+    ;(error as any).status = res.status
+    throw error
   }
   return data
 }

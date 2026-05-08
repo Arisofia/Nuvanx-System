@@ -56,6 +56,8 @@ AS $$
     LEFT JOIN vw_doctoralia_lead_traceability_unified u
       ON u.lead_id = t.lead_id
     WHERE t.lead_user_id = p_user_id
+      -- Garantía Nuvanx: Doctoralia es CRM/Pacientes, no fuente de leads de captación
+      AND (t.source IS NULL OR LOWER(t.source) != 'doctoralia')
       AND (p_from = '' OR t.lead_created_at >= p_from::timestamptz)
       AND (p_to   = '' OR t.lead_created_at <= (p_to || 'T23:59:59Z')::timestamptz)
       AND (p_source = '' OR t.source = p_source)

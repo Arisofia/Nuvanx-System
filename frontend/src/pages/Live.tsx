@@ -2,30 +2,10 @@ import { useEffect, useRef, useState, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Activity, CalendarDays, ChevronLeft, ChevronRight, Tag, User, CheckCircle2, XCircle, Clock, Stethoscope, MapPin } from 'lucide-react'
 import { supabase, invokeApi } from '../lib/supabaseClient'
-import type { LiveEvent } from '../types'
+import type { LiveEvent, DoctoraliaAppointment } from '../types'
 import { MetaAccountsInline } from '../components/MetaAccountsNotice'
-
-// ── Types ──────────────────────────────────────────────────────────────────────
-
-interface DoctoraliaAppointment {
-  raw_hash: string
-  paciente_nombre: string | null
-  hora: string | null
-  estado: string | null
-  asunto: string | null
-  agenda: string | null
-  sala_box: string | null
-  procedencia: string | null
-  importe: number | null
-  confirmada: boolean
-  timestamp_cita: string | null
-  doc_patient_id: string | null
-  // Campaign attribution
-  lead_id: string | null
-  campaign_name: string | null
-  match_class: string | null
-  match_confidence: number | null
-}
+import { transformDoctoraliaAppointment, transformLiveEvent } from '../lib/transformers'
+import { logger } from '../lib/utils'
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
 
@@ -100,7 +80,9 @@ export default function Live() {
         setAppointments(data?.appointments ?? [])
       } catch (err: any) {
         if (!active) return
-        setAgendaError(err?.message ?? 'Error cargando agenda.')
+        logger.error('Live.Agenda', err)
+        const msg = err?.status === 401 ? 'Sesión expirada.' : (err?.message || 'Error cargando agenda.')
+        setAgendaError(msg)
       } finally {
         if (active) setAgendaLoading(false)
       }
@@ -127,72 +109,49 @@ export default function Live() {
 
   // ── Live feed: preload recent Doctoralia events ────────────────────────────
   useEffect(() => {
+    let active = true
     const load = async () => {
-      const results: LiveEvent[] = []
       const { data: rawRows } = await supabase
         .from('doctoralia_raw')
         .select('raw_hash, paciente_nombre, patient_name, estado, agenda, importe_numerico, timestamp_cita, fecha')
         .order('timestamp_cita', { ascending: false })
         .limit(30)
+      
+      if (!active) return
+
       if (rawRows) {
-        for (const r of rawRows) {
-          results.push({
-            id: String(r.raw_hash ?? Math.random()),
-            type: 'DOCTORALIA',
-            label: r.paciente_nombre ?? r.patient_name ?? 'Paciente Doctoralia',
-            detail: [r.agenda, r.estado, r.importe_numerico != null ? `€${Number(r.importe_numerico).toLocaleString('es-ES', { minimumFractionDigits: 0 })}` : ''].filter(Boolean).join(' · '),
-            ts: r.timestamp_cita ?? (r.fecha ? r.fecha + 'T09:00:00Z' : new Date().toISOString()),
-          })
-        }
+        setEvents(rawRows.map(r => transformLiveEvent('DOCTORALIA', r)))
       }
-      results.sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime())
-      setEvents(results.slice(0, 50))
     }
     load()
+    return () => { active = false }
   }, [])
 
   // ── Live feed: realtime subscription on doctoralia_raw ────────────────────
+  const selectedDateRef = useRef(selectedDate)
+  useEffect(() => {
+    selectedDateRef.current = selectedDate
+  }, [selectedDate])
+
   useEffect(() => {
     const channel = supabase
       .channel('live-doctoralia-feed')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'doctoralia_raw' }, (payload) => {
         const r = payload.new as any
-        const ev: LiveEvent = {
-          id: String(r.raw_hash ?? Math.random()),
-          type: 'DOCTORALIA',
-          label: r.paciente_nombre ?? r.patient_name ?? 'Nuevo paciente Doctoralia',
-          detail: [r.agenda, r.estado].filter(Boolean).join(' · '),
-          ts: r.timestamp_cita ?? r.fecha ?? new Date().toISOString(),
-        }
+        const ev = transformLiveEvent('DOCTORALIA', r)
         setEvents((prev) => [ev, ...prev].slice(0, 50))
         // Refresh agenda if the appointment is on the selected day
         const apptDay = (r.fecha ?? '').slice(0, 10)
-        if (apptDay === selectedDate) {
-          setAppointments((prev) => [{
-            raw_hash: r.raw_hash,
-            paciente_nombre: r.paciente_nombre ?? r.patient_name ?? null,
-            hora: r.hora_inicio ?? r.hora ?? null,
-            estado: r.estado ?? null,
-            asunto: r.procedimiento_nombre ?? r.treatment ?? r.asunto ?? null,
-            agenda: r.agenda ?? null,
-            sala_box: r.sala_box ?? null,
-            procedencia: r.procedencia ?? null,
-            importe: r.importe_numerico ?? null,
-            confirmada: r.confirmada ?? false,
-            timestamp_cita: r.timestamp_cita ?? null,
-            doc_patient_id: r.doc_patient_id ?? null,
-            lead_id: null,
-            campaign_name: null,
-            match_class: null,
-            match_confidence: null,
-          }, ...prev])
+        if (apptDay === selectedDateRef.current) {
+          const newAppt = transformDoctoraliaAppointment(r)
+          setAppointments((prev) => [newAppt, ...prev].sort((a, b) => (a.hora || '00:00').localeCompare(b.hora || '00:00')))
         }
       })
       .subscribe((status) => setConnected(status === 'SUBSCRIBED'))
 
     channelRef.current = channel
     return () => { supabase.removeChannel(channel) }
-  }, [selectedDate])
+  }, [])
 
   // ── Date navigation ────────────────────────────────────────────────────────
   const shiftDay = (delta: number) => {

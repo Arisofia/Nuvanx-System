@@ -19,7 +19,7 @@ export function normalizePhoneToE164(input: string | null | undefined, countryCo
   const countryCodeRaw = countryCode ?? (globalThis as any).Deno?.env?.get('DEFAULT_PHONE_COUNTRY_CODE') ?? (globalThis as any).process?.env?.DEFAULT_PHONE_COUNTRY_CODE;
   const fallbackCountryCode = String(countryCodeRaw ?? '').replaceAll(/\D/g, '');
 
-  if (!fallbackCountryCode) return '';
+  if (!fallbackCountryCode) throw new Error('DEFAULT_PHONE_COUNTRY_CODE environment variable is not set');
   if (digits.length <= 12 && !digits.startsWith(fallbackCountryCode)) {
     return `+${fallbackCountryCode}${digits}`;
   }

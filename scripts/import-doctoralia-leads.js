@@ -1,29 +1,16 @@
 #!/usr/bin/env node
 /**
- * import-doctoralia-leads.js
+ * ⚠️ WARNING — NUVANX DOCTORALIA IMPORT (08-05-2026)
  *
- * Backfills the `leads` table with one row per financial settlement from
- * Doctoralia, so the Dashboard shows real Total Leads / Conversion Rate.
+ * REGLA ESTRICTA DEL PROYECTO:
+ * Doctoralia NO es fuente de leads de adquisición.
+ * Este script inserta filas con source = 'doctoralia' SOLO para backfill histórico.
  *
- * Each settlement maps to a CLOSED lead (the patient paid and was treated).
- * The upsert key is (clinic_id, source, external_id) so the script is safe
- * to re-run at any time — it will never create duplicates.
- *
- * REQUIRED ENV:
- *   SUPABASE_URL              — e.g. https://ssvvuuysgxyqvmovrlvk.supabase.co
- *   SUPABASE_SERVICE_ROLE_KEY — service-role secret
- *   CLINIC_ID                 — UUID of the clinic
- *   USER_ID                   — Supabase auth user UUID (owner of the leads)
- *
- * OPTIONAL:
- *   DRY_RUN=1      — preview rows without writing to DB
- *   LOAD_LOCAL_DOTENV=1 — load .env from repo root (local dev only)
- *
- * USAGE:
- *   CLINIC_ID=<uuid> USER_ID=<uuid> \
- *   SUPABASE_URL=https://ssvvuuysgxyqvmovrlvk.supabase.co \
- *   SUPABASE_SERVICE_ROLE_KEY=<key> \
- *   node scripts/import-doctoralia-leads.js
+ * → Solo usar en entornos de desarrollo o backfill controlado.
+ * → En producción, Doctoralia solo alimenta:
+ *     - public.doctoralia_raw
+ *     - public.financial_settlements (source_system = 'doctoralia')
+ *     - Pacientes verificados y revenue real.
  */
 
 'use strict';

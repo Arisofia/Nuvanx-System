@@ -64,9 +64,10 @@ function getBearerToken(request: Request): string {
 }
 
 function isAuthorized(request: Request): boolean {
+  const providedKey = request.headers.get('x-api-key')?.trim() || getBearerToken(request)
   const expectedApiKey = Deno.env.get('MCP_API_KEY')?.trim()
-  if (!expectedApiKey) return true
-  return getBearerToken(request) === expectedApiKey
+  if (!expectedApiKey) return false
+  return providedKey === expectedApiKey
 }
 
 mcp.tool('get_dashboard_metrics', {
@@ -266,6 +267,105 @@ mcp.tool('search_leads', {
   },
 })
 
+// ==================== NUEVAS TOOLS (08-05-2026) ====================
+
+// 7. Leads en riesgo (>14 días en "Nuevo")
+mcp.tool('get_risk_leads', {
+  description: 'Obtiene leads que llevan más de 14 días en etapa "Nuevo" (riesgo de pérdida)',
+  inputSchema: z.object({
+    clinic_id: z.string().uuid().optional(),
+    limit: LimitSchema,
+  }),
+  handler: async ({ clinic_id, limit }) => {
+    let query = supabase
+      .from('leads')
+      .select('id, name, phone, email, stage, created_at, clinic_id')
+      .eq('stage', 'Nuevo')
+      .lt('created_at', new Date(Date.now() - 14 * 86400000).toISOString())
+      .neq('source', 'doctoralia')
+      .order('created_at', { ascending: true })
+
+    if (clinic_id) query = query.eq('clinic_id', clinic_id)
+
+    const { data, error } = await query.limit(limit)
+    if (error) {
+      console.error('[get_risk_leads] Supabase error', error)
+      return errorContent('Database error while fetching risk leads')
+    }
+
+    return jsonContent(data)
+  },
+})
+
+// 8. Top campañas por revenue (últimos 7 días)
+mcp.tool('get_top_campaigns', {
+  description: 'Top 5 campañas por revenue verificado en los últimos 7 días',
+  inputSchema: z.object({
+    clinic_id: z.string().uuid().optional(),
+  }),
+  handler: async ({ clinic_id }) => {
+    let query = supabase
+      .from('financial_settlements')
+      .select('campaign_name, amount_net')
+      .gte('settled_at', new Date(Date.now() - 7 * 86400000).toISOString())
+      .eq('source_system', 'doctoralia') // solo revenue real
+
+    if (clinic_id) query = query.eq('clinic_id', clinic_id)
+
+    const { data, error } = await query
+    if (error) {
+      console.error('[get_top_campaigns] Supabase error', error)
+      return errorContent('Database error while fetching top campaigns')
+    }
+
+    const revenueByCampaign = (data || []).reduce((acc: Record<string, number>, curr: any) => {
+      const name = curr.campaign_name || 'Sin nombre'
+      acc[name] = (acc[name] || 0) + Number(curr.amount_net || 0)
+      return acc
+    }, {})
+
+    const processedRanking = Object.entries(revenueByCampaign)
+      .map(([campaign_name, revenue]) => ({ campaign_name, revenue }))
+      .sort((a, b) => (b.revenue as number) - (a.revenue as number))
+      .slice(0, 5)
+
+    return jsonContent(processedRanking)
+  },
+})
+
+// 9. Leads por etapa
+mcp.tool('get_leads_by_stage', {
+  description: 'Conteo de leads por etapa (funnel)',
+  inputSchema: z.object({
+    clinic_id: z.string().uuid().optional(),
+    date_from: DateSchema.optional(),
+  }),
+  handler: async ({ clinic_id, date_from }) => {
+    let query = supabase
+      .from('leads')
+      .select('stage')
+      .is('deleted_at', null)
+      .neq('source', 'doctoralia')
+
+    if (clinic_id) query = query.eq('clinic_id', clinic_id)
+    if (date_from) query = query.gte('created_at', date_from)
+
+    const { data, error } = await query
+    if (error) {
+      console.error('[get_leads_by_stage] Supabase error', error)
+      return errorContent('Database error while fetching leads by stage')
+    }
+
+    const counts = (data || []).reduce((acc: any, row: any) => {
+      const stage = row.stage || 'lead'
+      acc[stage] = (acc[stage] || 0) + 1
+      return acc
+    }, {})
+
+    return jsonContent(counts)
+  },
+})
+
 const transport = new StreamableHttpTransport()
 const httpHandler = transport.bind(mcp)
 const mcpApp = new Hono()
@@ -283,10 +383,18 @@ mcpApp.get('/health', (c) => c.json({
 }))
 
 mcpApp.all('/mcp', async (c) => {
-  if (!isAuthorized(c.req.raw)) {
-    return c.json({ error: 'Unauthorized' }, 401)
+  // === API KEY AUTHENTICATION ===
+  const providedKey = c.req.header('x-api-key') ||
+                      c.req.header('authorization')?.replace(/^Bearer\s+/i, '')
+  const expectedKey = Deno.env.get('MCP_API_KEY')
+
+  if (!expectedKey || providedKey !== expectedKey) {
+    console.warn('[MCP] Unauthorized request')
+    return c.json({ error: 'Unauthorized - Invalid or missing API Key' }, 401)
   }
-  return await httpHandler(c.req.raw)
+
+  const response = await httpHandler(c.req.raw)
+  return response
 })
 
 app.route('/mcp', mcpApp)

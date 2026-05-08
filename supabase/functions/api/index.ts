@@ -2239,41 +2239,75 @@ function getDashboardPeriods(url: URL) {
   const fromParam = url.searchParams.get('from') ?? '';
   const toParam = url.searchParams.get('to') ?? '';
 
-  const since = fromParam || (days > 0
-    ? new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10)
-    : null);
-  const until = toParam || null;
-
+  let since: string | null = null;
+  let until: string | null = null;
   let prevSince: string | null = null;
-  let prevUntil: string | null = since;
-  if (days > 0) {
+  let prevUntil: string | null = null;
+
+  if (fromParam && toParam) {
+    // Fechas personalizadas (el caso que fallaba)
+    since = fromParam;
+    until = toParam;
+
+    const fromDate = new Date(fromParam);
+    const toDate = new Date(toParam);
+    const durationMs = toDate.getTime() - fromDate.getTime();
+
+    prevSince = new Date(fromDate.getTime() - durationMs).toISOString().slice(0, 10);
+    prevUntil = new Date(fromDate.getTime() - 1).toISOString().slice(0, 10);
+  } else if (days > 0) {
+    // Botones fijos (7d, 14d, 30d, 90d)
     const nowTs = Date.now();
-    const currentSinceTs = since ? new Date(since).getTime() : nowTs - days * 86_400_000;
+    const currentSinceTs = nowTs - days * 86_400_000;
+    since = new Date(currentSinceTs).toISOString().slice(0, 10);
+    until = new Date(nowTs).toISOString().slice(0, 10);
+
     prevSince = new Date(currentSinceTs - days * 86_400_000).toISOString().slice(0, 10);
-    prevUntil = new Date(currentSinceTs).toISOString().slice(0, 10);
+    prevUntil = new Date(currentSinceTs - 1).toISOString().slice(0, 10);
+  } else {
+    // Default: últimos 30 días
+    const nowTs = Date.now();
+    since = new Date(nowTs - 30 * 86_400_000).toISOString().slice(0, 10);
+    until = new Date(nowTs).toISOString().slice(0, 10);
+    prevSince = new Date(nowTs - 60 * 86_400_000).toISOString().slice(0, 10);
+    prevUntil = new Date(nowTs - 30 * 86_400_000 - 1).toISOString().slice(0, 10);
   }
 
   return { since, until, prevSince, prevUntil, days };
 }
 
-function aggregateDashboardResults(leads: any[], prevLeads: any[], settlements: any[], prevSettlements: any[], integrations: any[]) {
-  const totalLeads = leads.length;
-  const prevTotalLeads = prevLeads.length;
-  const totalRevenue = leads.reduce((s: number, l: any) => s + Number(l.revenue || 0), 0);
+function aggregateDashboardResults(leads: any[], prevLeads: any[], settlements: any[], prevSettlements: any[], integrations: any[], metaData: any[] = [], prevMetaData: any[] = []) {
+  // === NUVANX GUARANTEE (08-05-2026) ===
+  // Doctoralia = CRM/Pacientes → nunca cuenta como fuente de leads de adquisición
+  const filteredLeads = leads.filter((l: any) =>
+    !l.source || l.source.toLowerCase() !== 'doctoralia'
+  );
+  const filteredPrevLeads = prevLeads.filter((l: any) =>
+    !l.source || l.source.toLowerCase() !== 'doctoralia'
+  );
+
+  const totalLeads = filteredLeads.length;
+  const prevTotalLeads = filteredPrevLeads.length;
+  const totalRevenue = filteredLeads.reduce((s: number, l: any) => s + Number(l.revenue || 0), 0);
   const verifiedRevenue = settlements.reduce((s: number, r: any) => s + Number(r.amount_net), 0);
   const prevVerifiedRevenue = prevSettlements.reduce((s: number, r: any) => s + Number(r.amount_net), 0);
   const settledCount = settlements.length;
 
-  const conversions = leads.filter((l: any) => l.stage === 'treatment' || l.stage === 'closed').length;
-  const prevConversions = prevLeads.filter((l: any) => l.stage === 'treatment' || l.stage === 'closed').length;
-  const patientMatches = leads.filter((l: any) => l.converted_patient_id != null).length;
-  const prevPatientMatches = prevLeads.filter((l: any) => l.converted_patient_id != null).length;
+  const totalSpend = metaData.reduce((s: number, r: any) => s + Number(r.spend || 0), 0);
+  const prevTotalSpend = prevMetaData.reduce((s: number, r: any) => s + Number(r.spend || 0), 0);
+  const totalMetaConversions = metaData.reduce((s: number, r: any) => s + Number(r.conversions || 0), 0);
+  const totalMetaClicks = metaData.reduce((s: number, r: any) => s + Number(r.clicks || 0), 0);
+
+  const conversions = filteredLeads.filter((l: any) => l.stage === 'treatment' || l.stage === 'closed').length;
+  const prevConversions = filteredPrevLeads.filter((l: any) => l.stage === 'treatment' || l.stage === 'closed').length;
+  const patientMatches = filteredLeads.filter((l: any) => l.converted_patient_id != null).length;
+  const prevPatientMatches = filteredPrevLeads.filter((l: any) => l.converted_patient_id != null).length;
 
   const conversionRate = totalLeads > 0 ? Number.parseFloat(((conversions / totalLeads) * 100).toFixed(1)) : 0;
   const patientConversionRate = totalLeads > 0 ? Number.parseFloat(((patientMatches / totalLeads) * 100).toFixed(1)) : 0;
 
   const calculateDelta = (curr: number, prev: number) => {
-    if (prev === 0) return curr > 0 ? 100 : 0;
+    if (prev <= 0) return null;
     return Number.parseFloat((((curr - prev) / prev) * 100).toFixed(1));
   };
 
@@ -2282,13 +2316,14 @@ function aggregateDashboardResults(leads: any[], prevLeads: any[], settlements: 
     revenue: calculateDelta(verifiedRevenue, prevVerifiedRevenue),
     conversions: calculateDelta(conversions, prevConversions),
     patientMatches: calculateDelta(patientMatches, prevPatientMatches),
+    spend: calculateDelta(totalSpend, prevTotalSpend),
   };
 
   const stages = ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'];
   const byStage: Record<string, number> = {};
-  for (const s of stages) byStage[s] = leads.filter((l: any) => l.stage === s).length;
+  for (const s of stages) byStage[s] = filteredLeads.filter((l: any) => l.stage === s).length;
   const bySource: Record<string, number> = {};
-  for (const l of leads) {
+  for (const l of filteredLeads) {
     const sourceKey = String(l.source ?? 'unknown');
     bySource[sourceKey] = (bySource[sourceKey] || 0) + 1;
   }
@@ -2300,6 +2335,9 @@ function aggregateDashboardResults(leads: any[], prevLeads: any[], settlements: 
     settledCount,
     conversions, conversionRate,
     patientMatches, patientConversionRate,
+    spend: Number.parseFloat(totalSpend.toFixed(2)),
+    averageCpc: totalMetaClicks > 0 ? Number.parseFloat((totalSpend / totalMetaClicks).toFixed(2)) : 0,
+    metaConversions: totalMetaConversions,
     byStage, bySource,
     connectedIntegrations, totalIntegrations: integrations.length,
     deltas,
@@ -2320,7 +2358,13 @@ function buildDashboardLeadsQuery(adminClient: any, userId: string, clinicId: st
 }
 
 function buildDashboardSettlementsQuery(adminClient: any, clinicId: string | null, since: string | null, until: string | null) {
-  let q = adminClient.from('financial_settlements').select('amount_net, cancelled_at, settled_at, template_name').eq('clinic_id', clinicId);
+  let q = adminClient
+    .from('financial_settlements')
+    .select('amount_net, cancelled_at, settled_at, template_name, source_system')
+    .eq('clinic_id', clinicId)
+    .eq('source_system', 'doctoralia')
+    .is('cancelled_at', null)
+    .gt('amount_net', 0);
   if (since) q = q.gte('settled_at', since);
   if (until) q = q.lte('settled_at', until);
   return q;
@@ -2335,18 +2379,29 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
 
     const { since, until, prevSince, prevUntil } = getDashboardPeriods(url);
 
+    // === DEBUG TEMPORAL (08-05-2026) ===
+    console.log('[DEBUG] Períodos calculados:', { since, until, prevSince, prevUntil });
+
     const leadsQuery = buildDashboardLeadsQuery(adminClient, userId, clinicId, since, until, sourceFilter);
     const prevLeadsQuery = buildDashboardLeadsQuery(adminClient, userId, clinicId, prevSince, prevUntil, sourceFilter);
 
     const settlementsQuery = buildDashboardSettlementsQuery(adminClient, clinicId, since, until);
     const prevSettlementsQuery = buildDashboardSettlementsQuery(adminClient, clinicId, prevSince, prevUntil);
 
-    const [leadsRes, prevLeadsRes, intRes, settlementsRes, prevSettlementsRes] = await Promise.all([
+    const metaQuery = adminClient.from('meta_daily_insights').select('spend, conversions, impressions, clicks').gte('date', since).lte('date', until);
+    if (clinicId) metaQuery.eq('clinic_id', clinicId);
+
+    const prevMetaQuery = adminClient.from('meta_daily_insights').select('spend, conversions, impressions, clicks').gte('date', prevSince).lte('date', prevUntil);
+    if (clinicId) prevMetaQuery.eq('clinic_id', clinicId);
+
+    const [leadsRes, prevLeadsRes, intRes, settlementsRes, prevSettlementsRes, metaRes, prevMetaRes] = await Promise.all([
       leadsQuery,
       prevLeadsQuery,
       adminClient.from('integrations').select('service, status').eq('user_id', userId),
       clinicId ? settlementsQuery : Promise.resolve({ data: [], error: null }),
       clinicId ? prevSettlementsQuery : Promise.resolve({ data: [], error: null }),
+      metaQuery,
+      prevMetaQuery,
     ]);
     if (leadsRes.error) throw leadsRes.error;
 
@@ -2355,8 +2410,18 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
     const integrations = intRes.data ?? [];
     const settlements = (settlementsRes.data ?? []).filter((r: any) => !r.cancelled_at);
     const prevSettlements = (prevSettlementsRes.data ?? []).filter((r: any) => !r.cancelled_at);
+    const metaData = metaRes.data ?? [];
+    const prevMetaData = prevMetaRes.data ?? [];
 
-    const metrics = aggregateDashboardResults(leads, prevLeads, settlements, prevSettlements, integrations);
+    const metrics = aggregateDashboardResults(leads, prevLeads, settlements, prevSettlements, integrations, metaData, prevMetaData);
+    
+    // === DEBUG TEMPORAL (08-05-2026) ===
+    console.log('[DEBUG] Métricas calculadas:', {
+      leads: leads.length,
+      prevLeads: prevLeads.length,
+      deltas: metrics.deltas
+    });
+
     return sendJson({ success: true, metrics });
   }
   return null;
@@ -2366,7 +2431,7 @@ async function handleDashboardLeadFlow(ctx: AuthenticatedRouteContext): Promise<
   const { adminClient, userId, resource, sub, sendJson } = ctx;
   if (resource === 'dashboard' && sub === 'lead-flow') {
     const clinicId = await resolveClinicId(adminClient, userId);
-    let query = adminClient.from('leads').select('stage, created_at').is('deleted_at', null);
+    let query = adminClient.from('leads').select('stage, created_at').is('deleted_at', null).neq('source', 'doctoralia');
     if (clinicId) {
       query = query.eq('clinic_id', clinicId);
     } else {
@@ -4447,7 +4512,11 @@ async function handleAiAnalyzeCampaignPost(ctx: AuthenticatedRouteContext): Prom
 async function handleAiSuggestionsPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource === 'ai' && sub === 'suggestions' && req.method === 'POST') {
-    const { data: leads } = await adminClient.from('leads').select('stage, source, revenue, created_at').eq('user_id', userId);
+    const { data: leads } = await adminClient
+      .from('leads')
+      .select('stage, source, revenue, created_at')
+      .eq('user_id', userId)
+      .neq('source', 'doctoralia'); // NUVANX: Doctoralia nunca es fuente de leads
     const leadList = leads ?? [];
     const total = leadList.length;
     const byStage: Record<string, number> = {};
@@ -5417,21 +5486,48 @@ function identifyUniquePatients(settlements: any[]) {
   return { patientFirstSettlement, firstSettlementRows };
 }
 
-function calculateVerifiedRevenueInRange(patientFirstSettlement: Record<string, string>, firstSettlementRows: Record<string, any[]>, since: string, until: string) {
+export function calculateVerifiedRevenueInRange(patientFirstSettlement: Record<string, string>, settlements: any[], since: string, until: string) {
   const windowStart = new Date(`${since}T00:00:00Z`);
   const windowEnd = new Date(`${until}T23:59:59Z`);
   const verifiedPatientIds = new Set<string>();
-  let verifiedRevenue = 0;
+
+  const settlementsInRange = settlements.filter((row: any) => {
+    const settledAt = row.settled_at ? new Date(row.settled_at) : null;
+    return settledAt !== null
+      && settledAt >= windowStart
+      && settledAt <= windowEnd
+      && !row.cancelled_at
+      && Number(row.amount_net ?? 0) > 0
+      && String(row.source_system ?? '').toLowerCase() === 'doctoralia';
+  });
+
+  const verifiedRevenue = settlementsInRange.reduce((sum: number, row: any) => sum + Number(row.amount_net ?? 0), 0);
+
   for (const patientId of Object.keys(patientFirstSettlement)) {
     const firstDate = new Date(patientFirstSettlement[patientId]);
     if (firstDate >= windowStart && firstDate <= windowEnd) {
       verifiedPatientIds.add(patientId);
-      for (const row of firstSettlementRows[patientId] || []) {
-        verifiedRevenue += Number(row.amount_net ?? 0);
-      }
     }
   }
-  return { verifiedPatientIds, verifiedRevenue };
+
+  const settlementsAttributed = settlementsInRange.filter((row: any) => String(row.patient_id ?? row.dni_hash ?? '').trim()).length;
+  const settlementsUnattributed = settlementsInRange.length - settlementsAttributed;
+  const attributionStatus = settlementsInRange.length === 0
+    ? 'none'
+    : settlementsAttributed === 0
+      ? 'low_attribution'
+      : settlementsUnattributed > 0
+        ? 'partial'
+        : 'complete';
+
+  return {
+    verifiedPatientIds,
+    verifiedRevenue,
+    settlementsInRange,
+    settlementsAttributed,
+    settlementsUnattributed,
+    attributionStatus,
+  };
 }
 
 async function fetchMetaKpis(adminClient: any, userId: string, url: URL, since: string, until: string, hasCachedMeta: boolean, cachedMetrics: any) {
@@ -5611,9 +5707,9 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
 
   const metaSources = ['meta_leadgen', 'meta_lead_gen', 'facebook_leadgen'];
   const [leadCountRes, leadMetaCountRes, leadsByStageRes, settlementsRes, metaDailyInsightsRes] = await Promise.all([
-    adminClient.from('leads').select('id', { count: 'exact', head: true }).eq('clinic_id', clinicId).is('deleted_at', null).gte('created_at', since).lte('created_at', until),
+    adminClient.from('leads').select('id', { count: 'exact', head: true }).eq('clinic_id', clinicId).is('deleted_at', null).neq('source', 'doctoralia').gte('created_at', since).lte('created_at', until),
     adminClient.from('leads').select('id', { count: 'exact', head: true }).eq('clinic_id', clinicId).is('deleted_at', null).in('source', metaSources).gte('created_at', since).lte('created_at', until),
-    adminClient.from('leads').select('stage').eq('clinic_id', clinicId).is('deleted_at', null).gte('created_at', since).lte('created_at', until),
+    adminClient.from('leads').select('stage').eq('clinic_id', clinicId).is('deleted_at', null).neq('source', 'doctoralia').gte('created_at', since).lte('created_at', until),
     adminClient.from('financial_settlements').select('id, patient_id, dni_hash, amount_net, cancelled_at, settled_at, source_system').eq('clinic_id', clinicId).eq('source_system', 'doctoralia').is('cancelled_at', null).gt('amount_net', 0).order('settled_at', { ascending: true }),
     adminClient.from('meta_daily_insights').select('date, ad_account_id, spend, impressions, clicks, conversions, ctr, cpc').eq('clinic_id', clinicId).gte('date', since).lte('date', until),
   ]);
@@ -5634,8 +5730,15 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
   const hasCachedMeta = cachedInsights.length > 0;
   const settlements = (settlementsRes.data ?? []).filter((r: any) => r.settled_at && Number(r.amount_net) > 0);
 
-  const { patientFirstSettlement, firstSettlementRows } = identifyUniquePatients(settlements);
-  const { verifiedPatientIds, verifiedRevenue } = calculateVerifiedRevenueInRange(patientFirstSettlement, firstSettlementRows, since, until);
+  const { patientFirstSettlement } = identifyUniquePatients(settlements);
+  const {
+    verifiedPatientIds,
+    verifiedRevenue,
+    settlementsInRange,
+    settlementsAttributed,
+    settlementsUnattributed,
+    attributionStatus,
+  } = calculateVerifiedRevenueInRange(patientFirstSettlement, settlements, since, until);
 
   const cachedMetrics = {
     spend: cachedInsights.reduce((s: number, r: any) => s + Number(r.spend ?? 0), 0),
@@ -5666,7 +5769,7 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
     doctoraliaMatchingReal,
     overallMode,
     cacConfidence
-  } = determineKpiDataQuality(metaResult, crmLeads, settlements.length, newVerifiedPatients);
+  } = determineKpiDataQuality(metaResult, crmLeads, settlementsInRange.length, newVerifiedPatients);
 
   return sendJson({
     success: true,
@@ -5694,9 +5797,12 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
       is_real: leadsReal,
     },
     doctoralia: {
-      total_settlements: settlements.length,
+      total_settlements: settlementsInRange.length,
       newVerifiedPatients,
       verifiedRevenue: verifiedRevenueRounded,
+      settlements_attributed: settlementsAttributed,
+      settlements_unattributed: settlementsUnattributed,
+      attribution_status: attributionStatus,
       avgTicket,
       cacDoctoralia,
       cac_formula: 'meta_spend / new_verified_patients',
