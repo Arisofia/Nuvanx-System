@@ -142,17 +142,13 @@ jobs:
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
-  # ─── Backend: tests (includes CAPI parity contract) ───────────────────────
-  backend-tests:
+  # ─── Shared & Functions: tests ──────────────────────────────────────────────
+  shared-functions-test:
     needs: yaml-safety
-    name: Backend — Jest
+    name: Shared & Functions — Vitest
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    defaults:
-      run:
-        working-directory: backend
-
     steps:
       - uses: actions/checkout@v5 # v5
 
@@ -161,12 +157,12 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-          cache-dependency-path: backend/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci --include=dev
 
-      - name: Run backend tests
+      - name: Run shared and functions tests
         run: npm test
         env:
           NODE_ENV: test
@@ -210,10 +206,18 @@ jobs:
           fi
           deno cache --config supabase/functions/deno.json supabase/functions/api/index.ts
 
-      - name: Type-check Edge Function
+      - name: Type-check API Function
         run: deno check --config supabase/functions/deno.json supabase/functions/api/index.ts
 
-      - name: Validate MCP function
+      - name: Type-check MCP Function
+        run: |
+          if [ -f supabase/functions/mcp/deno.json ]; then
+            deno check --config supabase/functions/mcp/deno.json supabase/functions/mcp/index.ts
+          else
+            echo "::warning::supabase/functions/mcp/deno.json not found; skipping MCP type-check."
+          fi
+
+      - name: Validate MCP function existence
         run: |
           echo "Validating supabase/functions/mcp/index.ts..."
           if [ -f supabase/functions/mcp/index.ts ]; then
