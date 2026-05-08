@@ -64,46 +64,30 @@ BEGIN
 
   IF to_regprocedure('public.normalize_email(text)') IS NOT NULL THEN
     EXECUTE 'ALTER FUNCTION public.normalize_email(text) SET search_path TO pg_catalog, public';
-    PERFORM
-      CASE
-        WHEN (SELECT prosecdef FROM pg_proc WHERE oid = to_regprocedure('public.normalize_email(text)')) THEN
-          EXECUTE 'ALTER FUNCTION public.normalize_email(text) SECURITY INVOKER';
-        ELSE
-          NULL;
-      END CASE;
+    IF (SELECT prosecdef FROM pg_proc WHERE oid = to_regprocedure('public.normalize_email(text)')) THEN
+      EXECUTE 'ALTER FUNCTION public.normalize_email(text) SECURITY INVOKER';
+    END IF;
   END IF;
 
   IF to_regprocedure('public.patients_normalize_fields()') IS NOT NULL THEN
     EXECUTE 'ALTER FUNCTION public.patients_normalize_fields() SET search_path TO pg_catalog, public';
-    PERFORM
-      CASE
-        WHEN (SELECT prosecdef FROM pg_proc WHERE oid = to_regprocedure('public.patients_normalize_fields()')) THEN
-          EXECUTE 'ALTER FUNCTION public.patients_normalize_fields() SECURITY INVOKER';
-        ELSE
-          NULL;
-      END CASE;
+    IF (SELECT prosecdef FROM pg_proc WHERE oid = to_regprocedure('public.patients_normalize_fields()')) THEN
+      EXECUTE 'ALTER FUNCTION public.patients_normalize_fields() SECURITY INVOKER';
+    END IF;
   END IF;
 
   IF to_regprocedure('public.reconcile_lead_to_patient(uuid)') IS NOT NULL THEN
     EXECUTE 'ALTER FUNCTION public.reconcile_lead_to_patient(uuid) SET search_path TO pg_catalog, public';
-    PERFORM
-      CASE
-        WHEN (SELECT prosecdef FROM pg_proc WHERE oid = to_regprocedure('public.reconcile_lead_to_patient(uuid)')) THEN
-          EXECUTE 'ALTER FUNCTION public.reconcile_lead_to_patient(uuid) SECURITY INVOKER';
-        ELSE
-          NULL;
-      END CASE;
+    IF (SELECT prosecdef FROM pg_proc WHERE oid = to_regprocedure('public.reconcile_lead_to_patient(uuid)')) THEN
+      EXECUTE 'ALTER FUNCTION public.reconcile_lead_to_patient(uuid) SECURITY INVOKER';
+    END IF;
   END IF;
 
   IF to_regprocedure('public.reconcile_patient_leads(uuid)') IS NOT NULL THEN
     EXECUTE 'ALTER FUNCTION public.reconcile_patient_leads(uuid) SET search_path TO pg_catalog, public';
-    PERFORM
-      CASE
-        WHEN (SELECT prosecdef FROM pg_proc WHERE oid = to_regprocedure('public.reconcile_patient_leads(uuid)')) THEN
-          EXECUTE 'ALTER FUNCTION public.reconcile_patient_leads(uuid) SECURITY INVOKER';
-        ELSE
-          NULL;
-      END CASE;
+    IF (SELECT prosecdef FROM pg_proc WHERE oid = to_regprocedure('public.reconcile_patient_leads(uuid)')) THEN
+      EXECUTE 'ALTER FUNCTION public.reconcile_patient_leads(uuid) SECURITY INVOKER';
+    END IF;
   END IF;
 END $$;
 
