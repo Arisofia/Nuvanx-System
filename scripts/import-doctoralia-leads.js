@@ -3,7 +3,11 @@
  * import-doctoralia-leads.js
  *
  * Backfills the `leads` table with one row per financial settlement from
- * Doctoralia, so the Dashboard shows real Total Leads / Conversion Rate.
+ * Doctoralia.
+ * WARNING: This script treats settlements as leads. In Nuvanx strict mode,
+ * Doctoralia should only be used as a CRM/Verification system via 
+ * financial_settlements, not as a lead source. Use with caution as it
+ * will inflate acquisition lead counts if not filtered out.
  *
  * Each settlement maps to a CLOSED lead (the patient paid and was treated).
  * The upsert key is (clinic_id, source, external_id) so the script is safe

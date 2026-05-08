@@ -100,7 +100,8 @@ export default function Live() {
         setAppointments(data?.appointments ?? [])
       } catch (err: any) {
         if (!active) return
-        setAgendaError(err?.message ?? 'Error cargando agenda.')
+        const msg = err?.status === 401 ? 'Sesión expirada.' : (err?.message || 'Error cargando agenda.')
+        setAgendaError(msg)
       } finally {
         if (active) setAgendaLoading(false)
       }
@@ -178,7 +179,7 @@ export default function Live() {
         // Refresh agenda if the appointment is on the selected day
         const apptDay = (r.fecha ?? '').slice(0, 10)
         if (apptDay === selectedDateRef.current) {
-          setAppointments((prev) => [{
+          const newAppt: DoctoraliaAppointment = {
             raw_hash: r.raw_hash,
             paciente_nombre: r.paciente_nombre ?? r.patient_name ?? null,
             hora: r.hora_inicio ?? r.hora ?? null,
@@ -191,11 +192,12 @@ export default function Live() {
             confirmada: r.confirmada ?? false,
             timestamp_cita: r.timestamp_cita ?? null,
             doc_patient_id: r.doc_patient_id ?? null,
-            lead_id: null,
-            campaign_name: null,
-            match_class: null,
-            match_confidence: null,
-          }, ...prev])
+            lead_id: r.lead_id ?? null,
+            campaign_name: r.campaign_name ?? null,
+            match_class: r.match_class ?? null,
+            match_confidence: r.match_confidence ?? null,
+          }
+          setAppointments((prev) => [newAppt, ...prev].sort((a, b) => (a.hora || '00:00').localeCompare(b.hora || '00:00')))
         }
       })
       .subscribe((status) => setConnected(status === 'SUBSCRIBED'))
