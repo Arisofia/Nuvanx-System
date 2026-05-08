@@ -34,7 +34,7 @@ export interface DashboardStateOptions {
   spend: number
   avgCpcRaw: number
   metaConversions: number
-  spendDelta: number
+  spendDelta: number | null
 }
 
 export const EMPTY_COMBINED_METRICS: CombinedMetrics = {
@@ -143,11 +143,11 @@ export function buildDashboardState(options: DashboardStateOptions) {
       averageCpc: Number.isFinite(avgCpcRaw) ? Number.parseFloat(avgCpcRaw.toFixed(2)) : 0,
       metaConversions: canonicalMetaLeads,
       deltas: {
-        leads: metricsData.deltas?.leads ?? 0,
-        revenue: metricsData.deltas?.revenue ?? 0,
-        conversions: metricsData.deltas?.conversions ?? 0,
-        patientMatches: metricsData.deltas?.patientMatches ?? 0,
-        spend: Number(spendDelta),
+        leads: metricsData.deltas?.leads ?? null,
+        revenue: metricsData.deltas?.revenue ?? null,
+        conversions: metricsData.deltas?.conversions ?? null,
+        patientMatches: metricsData.deltas?.patientMatches ?? null,
+        spend: Number.isFinite(Number(spendDelta)) ? Number(spendDelta) : null,
       },
       loading: false,
       error: null,

@@ -18,11 +18,11 @@ export interface DashboardMetrics {
   totalRevenue?: number
   settledCount?: number
   deltas?: {
-    leads: number
-    revenue: number
-    spend: number
-    conversions: number
-    patientMatches?: number
+    leads: number | null
+    revenue: number | null
+    spend: number | null
+    conversions: number | null
+    patientMatches?: number | null
   }
   loading: boolean
   error: string | null

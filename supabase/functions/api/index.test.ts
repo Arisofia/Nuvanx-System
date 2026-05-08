@@ -46,7 +46,45 @@ const {
   extractMetaAccountRawValue,
   actionValue,
   buildCampaignsTimeRange,
+  calculateVerifiedRevenueInRange,
 } = api;
+
+describe('calculateVerifiedRevenueInRange', () => {
+  const patientFirstSettlement = {
+    patient_a: '2026-05-03T10:00:00Z',
+    patient_b: '2026-04-28T10:00:00Z',
+  };
+
+  it('sums all valid in-range Doctoralia settlements while counting only attributed unique patients', () => {
+    const result = calculateVerifiedRevenueInRange(patientFirstSettlement, [
+      { patient_id: 'patient_a', dni_hash: null, amount_net: 100, settled_at: '2026-05-03T10:00:00Z', source_system: 'doctoralia', cancelled_at: null },
+      { patient_id: null, dni_hash: null, amount_net: 200, settled_at: '2026-05-04T10:00:00Z', source_system: 'doctoralia', cancelled_at: null },
+      { patient_id: 'patient_b', dni_hash: null, amount_net: 300, settled_at: '2026-04-28T10:00:00Z', source_system: 'doctoralia', cancelled_at: null },
+      { patient_id: 'patient_c', dni_hash: null, amount_net: 400, settled_at: '2026-05-05T10:00:00Z', source_system: 'doctoralia', cancelled_at: '2026-05-06T10:00:00Z' },
+      { patient_id: 'patient_d', dni_hash: null, amount_net: 500, settled_at: '2026-05-05T10:00:00Z', source_system: 'manual', cancelled_at: null },
+      { patient_id: 'patient_e', dni_hash: null, amount_net: 0, settled_at: '2026-05-05T10:00:00Z', source_system: 'doctoralia', cancelled_at: null },
+    ], '2026-05-01', '2026-05-31');
+
+    expect(result.verifiedRevenue).toBe(300);
+    expect(result.verifiedPatientIds).toEqual(new Set(['patient_a']));
+    expect(result.settlementsInRange).toHaveLength(2);
+    expect(result.settlementsAttributed).toBe(1);
+    expect(result.settlementsUnattributed).toBe(1);
+    expect(result.attributionStatus).toBe('partial');
+  });
+
+  it('marks low attribution when revenue exists but no settlement has patient identifiers', () => {
+    const result = calculateVerifiedRevenueInRange({}, [
+      { patient_id: null, dni_hash: null, amount_net: 125, settled_at: '2026-05-07T10:00:00Z', source_system: 'doctoralia', cancelled_at: null },
+    ], '2026-05-01', '2026-05-31');
+
+    expect(result.verifiedRevenue).toBe(125);
+    expect(result.verifiedPatientIds.size).toBe(0);
+    expect(result.settlementsAttributed).toBe(0);
+    expect(result.settlementsUnattributed).toBe(1);
+    expect(result.attributionStatus).toBe('low_attribution');
+  });
+});
 
 describe('normalizeFrontendUrl', () => {
   it('returns null when url is empty string', () => {
@@ -852,6 +890,7 @@ describe('handlePublicRoutes', () => {
         if (key === 'META_APP_SECRET') return null;
         if (key === 'SUPABASE_URL') return 'https://supabase.example.com';
         if (key === 'SUPABASE_SERVICE_ROLE_KEY') return 'service-key';
+        if (key === 'DEFAULT_PHONE_COUNTRY_CODE') return '34';
         return null;
       });
 
@@ -865,6 +904,8 @@ describe('handlePublicRoutes', () => {
         select: vi.fn(function () { return this; }),
         update: vi.fn(function () { return this; }),
         eq: vi.fn(function () { return this; }),
+        or: vi.fn(function () { return this; }),
+        is: vi.fn(function () { return this; }),
         order: vi.fn(function () { return this; }),
         limit: vi.fn(function () { return this; }),
         maybeSingle: vi.fn().mockResolvedValue({ data: { id: 'lead1' } }),
@@ -896,8 +937,8 @@ describe('handlePublicRoutes', () => {
                 value: {
                   messaging_product: 'whatsapp',
                   metadata: { phone_number_id: '123' },
-                  contacts: [{ wa_id: '1234', profile: { name: 'Alice' } }],
-                  messages: [{ id: 'msg1', from: '1234', timestamp: '1690000000', text: { body: 'Hello' } }],
+                  contacts: [{ wa_id: '34612345678', profile: { name: 'Alice' } }],
+                  messages: [{ id: 'msg1', from: '34612345678', timestamp: '1690000000', text: { body: 'Hello' } }],
                 },
               },
             ],
@@ -925,6 +966,7 @@ describe('handlePublicRoutes', () => {
         if (key === 'META_APP_SECRET') return null;
         if (key === 'SUPABASE_URL') return 'https://supabase.example.com';
         if (key === 'SUPABASE_SERVICE_ROLE_KEY') return 'service-key';
+        if (key === 'DEFAULT_PHONE_COUNTRY_CODE') return '34';
         return null;
       });
 
@@ -938,6 +980,8 @@ describe('handlePublicRoutes', () => {
         select: vi.fn(function () { return this; }),
         update: vi.fn(function () { return this; }),
         eq: vi.fn(function () { return this; }),
+        or: vi.fn(function () { return this; }),
+        is: vi.fn(function () { return this; }),
         order: vi.fn(function () { return this; }),
         limit: vi.fn(function () { return this; }),
         ilike: vi.fn(function () { return this; }),
@@ -971,8 +1015,8 @@ describe('handlePublicRoutes', () => {
                 value: {
                   messaging_product: 'whatsapp',
                   metadata: { phone_number_id: '123' },
-                  contacts: [{ wa_id: '1234', profile: { name: 'Alice' } }],
-                  messages: [{ id: 'msg1', from: '1234', timestamp: '1690000000', text: { body: 'Hello' } }],
+                  contacts: [{ wa_id: '34612345678', profile: { name: 'Alice' } }],
+                  messages: [{ id: 'msg1', from: '34612345678', timestamp: '1690000000', text: { body: 'Hello' } }],
                 },
               },
             ],

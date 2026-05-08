@@ -12,7 +12,7 @@ export async function invokeApi<T = any>(
   functionName: string,
   options: InvokeApiOptions = {}
 ): Promise<{ data: T | null; error: Error | null }> {
-  const { body = {}, headers = {}, timeoutMs = 15000, retries = 1 } = options
+  const { body = {}, headers = {}, retries = 1 } = options
 
   const startTime = Date.now()
   let attempt = 0

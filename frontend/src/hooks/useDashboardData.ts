@@ -91,7 +91,7 @@ export function useDashboardData(
 
       const insightsSummary = insightsResponse?.summary
       const { spend, avgCpcRaw, metaConversions } = resolveInsightsTotals(insightsSummary, campaigns)
-      const spendDelta = insightsResponse?.changes?.spend ?? 0
+      const spendDelta = insightsResponse?.changes?.spend ?? null
 
       logger.info('Dashboard', {
         totalLeads: metricsData.totalLeads,

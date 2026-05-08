@@ -2307,7 +2307,7 @@ function aggregateDashboardResults(leads: any[], prevLeads: any[], settlements: 
   const patientConversionRate = totalLeads > 0 ? Number.parseFloat(((patientMatches / totalLeads) * 100).toFixed(1)) : 0;
 
   const calculateDelta = (curr: number, prev: number) => {
-    if (prev === 0) return curr > 0 ? 100 : 0;
+    if (prev <= 0) return null;
     return Number.parseFloat((((curr - prev) / prev) * 100).toFixed(1));
   };
 
@@ -2358,7 +2358,13 @@ function buildDashboardLeadsQuery(adminClient: any, userId: string, clinicId: st
 }
 
 function buildDashboardSettlementsQuery(adminClient: any, clinicId: string | null, since: string | null, until: string | null) {
-  let q = adminClient.from('financial_settlements').select('amount_net, cancelled_at, settled_at, template_name').eq('clinic_id', clinicId);
+  let q = adminClient
+    .from('financial_settlements')
+    .select('amount_net, cancelled_at, settled_at, template_name, source_system')
+    .eq('clinic_id', clinicId)
+    .eq('source_system', 'doctoralia')
+    .is('cancelled_at', null)
+    .gt('amount_net', 0);
   if (since) q = q.gte('settled_at', since);
   if (until) q = q.lte('settled_at', until);
   return q;
@@ -5480,21 +5486,48 @@ function identifyUniquePatients(settlements: any[]) {
   return { patientFirstSettlement, firstSettlementRows };
 }
 
-function calculateVerifiedRevenueInRange(patientFirstSettlement: Record<string, string>, firstSettlementRows: Record<string, any[]>, since: string, until: string) {
+export function calculateVerifiedRevenueInRange(patientFirstSettlement: Record<string, string>, settlements: any[], since: string, until: string) {
   const windowStart = new Date(`${since}T00:00:00Z`);
   const windowEnd = new Date(`${until}T23:59:59Z`);
   const verifiedPatientIds = new Set<string>();
-  let verifiedRevenue = 0;
+
+  const settlementsInRange = settlements.filter((row: any) => {
+    const settledAt = row.settled_at ? new Date(row.settled_at) : null;
+    return settledAt !== null
+      && settledAt >= windowStart
+      && settledAt <= windowEnd
+      && !row.cancelled_at
+      && Number(row.amount_net ?? 0) > 0
+      && String(row.source_system ?? '').toLowerCase() === 'doctoralia';
+  });
+
+  const verifiedRevenue = settlementsInRange.reduce((sum: number, row: any) => sum + Number(row.amount_net ?? 0), 0);
+
   for (const patientId of Object.keys(patientFirstSettlement)) {
     const firstDate = new Date(patientFirstSettlement[patientId]);
     if (firstDate >= windowStart && firstDate <= windowEnd) {
       verifiedPatientIds.add(patientId);
-      for (const row of firstSettlementRows[patientId] || []) {
-        verifiedRevenue += Number(row.amount_net ?? 0);
-      }
     }
   }
-  return { verifiedPatientIds, verifiedRevenue };
+
+  const settlementsAttributed = settlementsInRange.filter((row: any) => String(row.patient_id ?? row.dni_hash ?? '').trim()).length;
+  const settlementsUnattributed = settlementsInRange.length - settlementsAttributed;
+  const attributionStatus = settlementsInRange.length === 0
+    ? 'none'
+    : settlementsAttributed === 0
+      ? 'low_attribution'
+      : settlementsUnattributed > 0
+        ? 'partial'
+        : 'complete';
+
+  return {
+    verifiedPatientIds,
+    verifiedRevenue,
+    settlementsInRange,
+    settlementsAttributed,
+    settlementsUnattributed,
+    attributionStatus,
+  };
 }
 
 async function fetchMetaKpis(adminClient: any, userId: string, url: URL, since: string, until: string, hasCachedMeta: boolean, cachedMetrics: any) {
@@ -5697,8 +5730,15 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
   const hasCachedMeta = cachedInsights.length > 0;
   const settlements = (settlementsRes.data ?? []).filter((r: any) => r.settled_at && Number(r.amount_net) > 0);
 
-  const { patientFirstSettlement, firstSettlementRows } = identifyUniquePatients(settlements);
-  const { verifiedPatientIds, verifiedRevenue } = calculateVerifiedRevenueInRange(patientFirstSettlement, firstSettlementRows, since, until);
+  const { patientFirstSettlement } = identifyUniquePatients(settlements);
+  const {
+    verifiedPatientIds,
+    verifiedRevenue,
+    settlementsInRange,
+    settlementsAttributed,
+    settlementsUnattributed,
+    attributionStatus,
+  } = calculateVerifiedRevenueInRange(patientFirstSettlement, settlements, since, until);
 
   const cachedMetrics = {
     spend: cachedInsights.reduce((s: number, r: any) => s + Number(r.spend ?? 0), 0),
@@ -5729,7 +5769,7 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
     doctoraliaMatchingReal,
     overallMode,
     cacConfidence
-  } = determineKpiDataQuality(metaResult, crmLeads, settlements.length, newVerifiedPatients);
+  } = determineKpiDataQuality(metaResult, crmLeads, settlementsInRange.length, newVerifiedPatients);
 
   return sendJson({
     success: true,
@@ -5757,9 +5797,12 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
       is_real: leadsReal,
     },
     doctoralia: {
-      total_settlements: settlements.length,
+      total_settlements: settlementsInRange.length,
       newVerifiedPatients,
       verifiedRevenue: verifiedRevenueRounded,
+      settlements_attributed: settlementsAttributed,
+      settlements_unattributed: settlementsUnattributed,
+      attribution_status: attributionStatus,
       avgTicket,
       cacDoctoralia,
       cac_formula: 'meta_spend / new_verified_patients',
