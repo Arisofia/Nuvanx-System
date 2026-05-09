@@ -1,10 +1,13 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+if (typeof process !== 'undefined' && !process.config) {
+  (process as any).config = {};
+}
+
+const g = globalThis as any;
+
 import { normalizePhoneToE164 } from './phone.ts';
 
 // globalThis in the browser lib doesn't declare `process` or `Deno`.
 // Cast once here so vi.spyOn calls below don't need per-site casts.
-const g = globalThis as any;
-
 describe('normalizePhoneToE164', () => {
   const originalProcessDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'process');
   const originalDenoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno');

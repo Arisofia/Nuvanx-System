@@ -1,4 +1,7 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+if (typeof process !== 'undefined' && !process.config) {
+  (process as any).config = {};
+}
+
 import { sha256Hex } from './capi.ts';
 
 describe('sha256Hex', () => {

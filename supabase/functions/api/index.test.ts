@@ -1,4 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+if (typeof process !== 'undefined' && !process.config) {
+  (process as any).config = {};
+}
 
 const originalFetch = globalThis.fetch;
 const originalDenoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno');
@@ -8,7 +10,15 @@ if (!originalDenoDescriptor) {
     configurable: true,
     enumerable: true,
     value: {
-      env: { get: vi.fn().mockReturnValue(undefined) },
+      env: { 
+        get: vi.fn().mockImplementation((key: string) => {
+          if (key === 'SUPABASE_URL') return 'https://test.supabase.co';
+          if (key === 'SUPABASE_SERVICE_ROLE_KEY') return 'test-key';
+          if (key === 'ENCRYPTION_KEY') return '0123456789abcdef0123456789abcdef';
+          if (key === 'FRONTEND_URL') return 'https://test.nuvanx.com';
+          return undefined;
+        }) 
+      },
       serve: vi.fn(),
     },
   });
@@ -20,6 +30,17 @@ if (!originalDenoDescriptor) {
       const base = originalDenoDescriptor.get ? originalDenoDescriptor.get.call(globalThis) : originalDenoDescriptor.value;
       const denoStub = base ? { ...base } : {};
       denoStub.serve = vi.fn();
+      // Ensure we have mocks for runtime config
+      const originalEnvGet = denoStub.env?.get;
+      if (denoStub.env) {
+        denoStub.env.get = vi.fn().mockImplementation((key: string) => {
+          if (key === 'SUPABASE_URL') return 'https://test.supabase.co';
+          if (key === 'SUPABASE_SERVICE_ROLE_KEY') return 'test-key';
+          if (key === 'ENCRYPTION_KEY') return '0123456789abcdef0123456789abcdef';
+          if (key === 'FRONTEND_URL') return 'https://test.nuvanx.com';
+          return originalEnvGet ? originalEnvGet(key) : undefined;
+        });
+      }
       return denoStub;
     },
   });
