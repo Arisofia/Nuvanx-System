@@ -6,6 +6,9 @@ on:
   schedule:
     - cron: '0 4 * * *'  # 4am UTC (6am Madrid)
 
+permissions:
+  contents: read
+
 jobs:
   health-check:
     name: Health Check — Production Endpoints
