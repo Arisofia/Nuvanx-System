@@ -5237,19 +5237,34 @@ async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<
   return null;
 }
 
+function getNullableDateParam(url: URL, name: string): string | null {
+  const value = url.searchParams.get(name)?.trim() ?? '';
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+}
+
 async function handleTraceabilityFunnel(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, userId, resource, sub, sendJson } = ctx;
+  const { adminClient, userId, resource, sub, url, sendJson } = ctx;
   if (resource === 'traceability' && sub === 'funnel') {
-    const { data: rows } = await adminClient.from('vw_whatsapp_conversion_real')
-      .select('*')
-      .eq('user_id', userId);
-    // The view uses column names "cohort" and "lead_count"; normalise to the
-    // shape the frontend FunnelRow type expects: { stage, count }.
-    const funnel = (rows || []).map((r: Record<string, unknown>) => ({
-      stage: (r.cohort ?? r.stage) as string,
-      count: Number(r.lead_count ?? r.count ?? 0),
+    const { data: rows, error } = await adminClient.rpc('get_trazabilidad_funnel', {
+      p_user_id: userId,
+      p_lead_from: getNullableDateParam(url, 'lead_from') ?? getNullableDateParam(url, 'from'),
+      p_lead_to: getNullableDateParam(url, 'lead_to') ?? getNullableDateParam(url, 'to'),
+      p_valoracion_from: getNullableDateParam(url, 'valoracion_from'),
+      p_valoracion_to: getNullableDateParam(url, 'valoracion_to'),
+      p_posterior_from: getNullableDateParam(url, 'posterior_from'),
+      p_posterior_to: getNullableDateParam(url, 'posterior_to'),
+    });
+
+    if (error) {
+      console.error('get_trazabilidad_funnel error:', error);
+      return sendJson({ success: false, code: 'TRAZABILIDAD_FUNNEL_QUERY_ERROR', message: 'Failed to load traceability funnel.' }, 500);
+    }
+
+    const funnel = (rows || []).map((row: Record<string, unknown>) => ({
+      ...row,
+      revenue: Number(row.revenue ?? 0),
     }));
-    return sendJson({ success: true, funnel });
+    return sendJson({ success: true, funnel, rows: funnel, total: funnel.length });
   }
   return null;
 }
