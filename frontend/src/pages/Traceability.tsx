@@ -21,6 +21,9 @@ interface TraceRow {
   ad_name: string | null
   stage: string | null
   lead_created_at: string | null
+  appointment_date: string | null
+  cita_valoracion: string | null
+  cita_posterior: string | null
   patient_id: string | null
   patient_name: string | null
   patient_dni: string | null
@@ -254,7 +257,7 @@ export default function Traceability() {
                       <tr className="border-b border-border/10 text-[#5C5550] uppercase tracking-[0.15em] text-[10px] font-bold">
                         <th className="text-left py-4 pr-4 pl-2 font-bold">Lead</th>
                         <th className="text-left py-4 pr-4 font-bold">Fuente / Campaña</th>
-                        <th className="text-left py-4 pr-4 font-bold">Fecha</th>
+                        <th className="text-left py-4 pr-4 font-bold">Fecha cita</th>
                         <th className="text-left py-4 pr-4 font-bold">Estado Cruce</th>
                         <th className="text-left py-4 pr-4 font-bold">Paciente Doctoralia</th>
                         <th className="text-right py-4 pr-4 font-bold">Ingreso €</th>
@@ -286,9 +289,18 @@ export default function Traceability() {
                               )}
                             </td>
                             <td className="py-5 pr-4 text-[#5C5550] font-bold whitespace-nowrap">
-                              {r.lead_created_at
-                                ? new Date(r.lead_created_at).toLocaleDateString('es-ES')
-                                : '—'}
+                              {r.appointment_date ? (
+                                <div className="flex flex-col gap-1">
+                                  <span>{new Date(r.appointment_date).toLocaleDateString('es-ES')}</span>
+                                  {r.lead_created_at && (
+                                    <span className="text-[9px] text-[#8E8680] font-bold uppercase tracking-wider">
+                                      Lead {new Date(r.lead_created_at).toLocaleDateString('es-ES')}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-[#C9B9A8] font-medium opacity-60">Sin cita</span>
+                              )}
                             </td>
                             <td className="py-5 pr-4">
                               {matched ? (

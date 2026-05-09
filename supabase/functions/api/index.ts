@@ -5173,6 +5173,28 @@ async function fetchTraceabilityRowsForAggregation(adminClient: any, userId: str
   return rows;
 }
 
+type TraceabilityFunnelRpcRow = {
+  lead_id: string;
+  lead_created_at: string | null;
+  cita_valoracion: string | null;
+  cita_posterior: string | null;
+  fuente: string | null;
+  estado: string | null;
+  revenue: string | number | null;
+  conversion_date: string | null;
+};
+
+type TraceabilityFunnelRow = Omit<TraceabilityFunnelRpcRow, 'revenue'> & {
+  revenue: number;
+};
+
+function normalizeTraceabilityFunnelRow(row: TraceabilityFunnelRpcRow): TraceabilityFunnelRow {
+  return {
+    ...row,
+    revenue: Number(row.revenue ?? 0),
+  };
+}
+
 async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, url, sendJson } = ctx;
   if (resource === 'traceability' && sub === 'leads') {
@@ -5213,19 +5235,33 @@ async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<
       { includeMatchedOnly: false },
     );
 
-    const [{ data: rows, error }, { count }, { count: matchedCount }, summaryRows] = await Promise.all([
+    const [{ data: rows, error }, { count }, { count: matchedCount }, summaryRows, funnelResult] = await Promise.all([
       dataQ,
       countQ,
       matchedCountQ,
       fetchTraceabilityRowsForAggregation(adminClient, userId, url),
+      adminClient.rpc('get_trazabilidad_funnel', buildTraceabilityFunnelRpcArgs(userId, url)),
     ]);
     if (error) throw error;
+    if (funnelResult.error) console.error('get_trazabilidad_funnel enrichment error:', funnelResult.error);
+
+    const funnelRows = ((funnelResult.data || []) as TraceabilityFunnelRpcRow[]).map(normalizeTraceabilityFunnelRow);
+    const appointmentByLead = new Map(funnelRows.map((row) => [row.lead_id, row]));
+    const leads = (rows || []).map((row: { lead_id: string }) => {
+      const appointment = appointmentByLead.get(row.lead_id);
+      return {
+        ...row,
+        cita_valoracion: appointment?.cita_valoracion ?? null,
+        cita_posterior: appointment?.cita_posterior ?? null,
+        appointment_date: appointment?.cita_valoracion ?? null,
+      };
+    });
 
     const summary = buildTraceabilitySummary(summaryRows);
 
     return sendJson({
       success: true,
-      leads: rows || [],
+      leads,
       total: count ?? summary.totalLeads,
       matchedTotal: matchedCount ?? summary.matchedTotal,
       summary: {
@@ -5242,29 +5278,33 @@ function getNullableDateParam(url: URL, name: string): string | null {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
 }
 
+function buildTraceabilityFunnelRpcArgs(userId: string, url: URL) {
+  return {
+    p_user_id: userId,
+    p_lead_from: getNullableDateParam(url, 'lead_from') ?? getNullableDateParam(url, 'from'),
+    p_lead_to: getNullableDateParam(url, 'lead_to') ?? getNullableDateParam(url, 'to'),
+    p_valoracion_from: getNullableDateParam(url, 'valoracion_from'),
+    p_valoracion_to: getNullableDateParam(url, 'valoracion_to'),
+    p_posterior_from: getNullableDateParam(url, 'posterior_from'),
+    p_posterior_to: getNullableDateParam(url, 'posterior_to'),
+  };
+}
+
 async function handleTraceabilityFunnel(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, url, sendJson } = ctx;
   if (resource === 'traceability' && sub === 'funnel') {
-    const { data: rows, error } = await adminClient.rpc('get_trazabilidad_funnel', {
-      p_user_id: userId,
-      p_lead_from: getNullableDateParam(url, 'lead_from') ?? getNullableDateParam(url, 'from'),
-      p_lead_to: getNullableDateParam(url, 'lead_to') ?? getNullableDateParam(url, 'to'),
-      p_valoracion_from: getNullableDateParam(url, 'valoracion_from'),
-      p_valoracion_to: getNullableDateParam(url, 'valoracion_to'),
-      p_posterior_from: getNullableDateParam(url, 'posterior_from'),
-      p_posterior_to: getNullableDateParam(url, 'posterior_to'),
-    });
+    const { data: rows, error } = await adminClient.rpc(
+      'get_trazabilidad_funnel',
+      buildTraceabilityFunnelRpcArgs(userId, url),
+    );
 
     if (error) {
       console.error('get_trazabilidad_funnel error:', error);
       return sendJson({ success: false, code: 'TRAZABILIDAD_FUNNEL_QUERY_ERROR', message: 'Failed to load traceability funnel.' }, 500);
     }
 
-    const funnel = (rows || []).map((row: Record<string, unknown>) => ({
-      ...row,
-      revenue: Number(row.revenue ?? 0),
-    }));
-    return sendJson({ success: true, funnel, rows: funnel, total: funnel.length });
+    const funnel = ((rows || []) as TraceabilityFunnelRpcRow[]).map(normalizeTraceabilityFunnelRow);
+    return sendJson({ success: true, funnel, total: funnel.length });
   }
   return null;
 }

@@ -92,13 +92,14 @@ jobs:
                 supabase db push --include-all --db-url "$SESSION_URL"
                 exit $?
               fi
-              # Case 2: version already recorded in schema_migrations (duplicate key)
+              # Duplicate schema_migrations versions indicate local migration history is not aligned
+              # with the remote database. Do not auto-repair and retry here: that can re-run the
+              # same file and fail again. Surface the exact version so the migration filename/history
+              # can be fixed intentionally.
               dup_version=$(echo "$output" | grep -oE 'Key \(version\)=\([0-9]+\) already exists' | grep -oE '[0-9]+' || true)
               if [ -n "$dup_version" ]; then
-                echo "::warning::Migration $dup_version already recorded in schema_migrations. Marking as applied and retrying."
-                supabase migration repair --status applied "$dup_version" --db-url "$SESSION_URL"
-                supabase db push --include-all --db-url "$SESSION_URL"
-                exit $?
+                echo "::error::Migration version $dup_version already exists in supabase_migrations.schema_migrations. Check for duplicate local migration prefixes or a remote history mismatch before retrying."
+                exit $exit_code
               fi
               exit $exit_code
             fi
