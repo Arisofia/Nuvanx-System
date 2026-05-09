@@ -119,3 +119,17 @@ BEGIN
 END $$;
 
 SELECT public.run_doctoralia_name_match();
+
+-- Step 5: Schedule daily Doctoralia name matching.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+    PERFORM cron.unschedule('doctoralia-name-match-daily')
+      WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'doctoralia-name-match-daily');
+    PERFORM cron.schedule(
+      'doctoralia-name-match-daily',
+      '15 3 * * *',
+      $cmd$SELECT public.run_doctoralia_name_match();$cmd$
+    );
+  END IF;
+END $$;
