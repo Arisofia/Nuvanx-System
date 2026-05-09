@@ -49,7 +49,7 @@ AS $$
       COALESCE(
         public.normalize_phone(dr.phone_primary),
         public.normalize_phone(dr.paciente_telefono),
-        public.normalize_phone(dr.phone_normalized)
+        public.normalize_phone(dr.phone_secondary)
       ) AS phone_key,
       dr.fecha AS fecha_cita,
       ROW_NUMBER() OVER (
@@ -57,7 +57,7 @@ AS $$
           COALESCE(
             public.normalize_phone(dr.phone_primary),
             public.normalize_phone(dr.paciente_telefono),
-            public.normalize_phone(dr.phone_normalized)
+            public.normalize_phone(dr.phone_secondary)
           )
         ORDER BY dr.fecha ASC, dr.hora ASC NULLS LAST, dr.created_at ASC NULLS LAST
       ) AS rn,
@@ -68,7 +68,7 @@ AS $$
       AND COALESCE(
         public.normalize_phone(dr.phone_primary),
         public.normalize_phone(dr.paciente_telefono),
-        public.normalize_phone(dr.phone_normalized)
+        public.normalize_phone(dr.phone_secondary)
       ) IS NOT NULL
   ),
   appointments_funnel AS (

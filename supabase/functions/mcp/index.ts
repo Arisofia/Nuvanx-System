@@ -10,7 +10,7 @@ const mcp = new McpServer({
   name: 'nuvanx-mcp',
   version: '1.0.0',
   schemaAdapter: (schema) =>
-    zodToJsonSchema(schema as z.ZodType, {
+    zodToJsonSchema(schema as z.ZodType<any, z.ZodTypeDef, any>, {
       target: 'jsonSchema7',
       $refStrategy: 'none',
     }),
