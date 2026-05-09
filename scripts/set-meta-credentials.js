@@ -75,7 +75,7 @@ async function main() {
     [encrypted, REPORT_USER_ID],
   );
 
-  console.log(`Updated credentials for user ${REPORT_USER_ID}. Rows affected: ${updateRes.rowCount}`);
+  console.log(`Updated credentials for meta service. Rows affected: ${updateRes.rowCount}`);
   await client.end();
 }
 
