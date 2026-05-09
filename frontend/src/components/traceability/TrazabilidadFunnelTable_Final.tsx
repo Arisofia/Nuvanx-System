@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CalendarDays, RefreshCcw } from 'lucide-react'
 import { invokeApi } from '../../lib/supabaseClient'
 import { Button } from '../ui/button'
@@ -24,6 +24,12 @@ export interface TrazabilidadFunnelRow {
   estado: string | null
   revenue: number
   conversion_date: string | null
+}
+
+interface TrazabilidadFunnelResponse {
+  success: boolean
+  funnel: TrazabilidadFunnelRow[]
+  total: number
 }
 
 const EMPTY_FILTERS: FunnelFilters = {
@@ -55,23 +61,22 @@ export default function TrazabilidadFunnelTableFinal() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const loadRows = async (activeFilters = filters) => {
+  const loadRows = useCallback(async (activeFilters: FunnelFilters) => {
     setLoading(true)
     setError(null)
     try {
-      const response = await invokeApi(`/traceability/funnel${buildQuery(activeFilters)}`)
-      setRows(response?.funnel ?? response?.rows ?? [])
-    } catch (err: any) {
-      setError(err?.message ?? 'No se pudo cargar el funnel de trazabilidad.')
+      const response = await invokeApi(`/traceability/funnel${buildQuery(activeFilters)}`) as TrazabilidadFunnelResponse
+      setRows(response.funnel ?? [])
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'No se pudo cargar el funnel de trazabilidad.')
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     loadRows(EMPTY_FILTERS)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [loadRows])
 
   const summary = useMemo(() => {
     const leads = rows.length
@@ -113,7 +118,7 @@ export default function TrazabilidadFunnelTableFinal() {
               Leads de captación → primera cita de valoración → cita posterior → revenue verificado.
             </p>
           </div>
-          <Button onClick={() => loadRows()} disabled={loading} className="gap-2">
+          <Button onClick={() => loadRows(filters)} disabled={loading} className="gap-2">
             <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             Actualizar
           </Button>
@@ -129,7 +134,7 @@ export default function TrazabilidadFunnelTableFinal() {
         </div>
 
         <div className="flex flex-wrap gap-3">
-          <Button onClick={() => loadRows()} disabled={loading}>Aplicar filtros</Button>
+          <Button onClick={() => loadRows(filters)} disabled={loading}>Aplicar filtros</Button>
           <Button variant="outline" onClick={resetFilters} disabled={loading}>Limpiar</Button>
         </div>
       </CardHeader>

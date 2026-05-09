@@ -3,10 +3,24 @@
 -- =============================================================================
 
 DO $$
+DECLARE
+  appointment_relkind "char";
 BEGIN
-  IF to_regclass('public.doctoralia_appointments') IS NULL THEN
+  IF to_regclass('public.doctoralia_raw') IS NULL THEN
+    RAISE NOTICE 'Skipping doctoralia_appointments canonical view refresh: public.doctoralia_raw does not exist';
+    RETURN;
+  END IF;
+
+  SELECT c.relkind
+  INTO appointment_relkind
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'public'
+    AND c.relname = 'doctoralia_appointments';
+
+  IF appointment_relkind IS NULL OR appointment_relkind = 'v' THEN
     EXECUTE $view$
-      CREATE VIEW public.doctoralia_appointments AS
+      CREATE OR REPLACE VIEW public.doctoralia_appointments AS
       SELECT
         dr.id,
         dr.clinic_id,
@@ -43,6 +57,8 @@ BEGIN
       COMMENT ON VIEW public.doctoralia_appointments IS
         'Canonical projection of Produccion Intermediarios appointments. fecha is the appointment/clinic visit date; fecha_creacion is the appointment creation timestamp.'
     $comment$;
+  ELSE
+    RAISE NOTICE 'Keeping existing public.doctoralia_appointments relation because it is relkind %, not a replaceable view', appointment_relkind;
   END IF;
 END $$;
 
@@ -89,44 +105,64 @@ AS $$
   ),
   appointments_ranked AS (
     SELECT
-      da.clinic_id,
-      da.phone_normalized AS phone_key,
+      lb.id AS lead_id,
       da.fecha AS fecha_cita,
       ROW_NUMBER() OVER (
-        PARTITION BY da.clinic_id, da.phone_normalized
+        PARTITION BY lb.id
         ORDER BY da.fecha ASC, da.hora ASC NULLS LAST, da.fecha_creacion ASC NULLS LAST
       ) AS rn,
       da.procedencia,
       da.estado
-    FROM public.doctoralia_appointments da
-    WHERE da.fecha IS NOT NULL
+    FROM lead_base lb
+    JOIN public.doctoralia_appointments da
+      ON da.clinic_id = lb.clinic_id
+     AND da.phone_normalized = lb.phone_normalized
+     AND da.fecha >= lb.created_at::DATE
+    WHERE lb.clinic_id IS NOT NULL
+      AND da.fecha IS NOT NULL
       AND da.phone_normalized IS NOT NULL
   ),
   appointments_funnel AS (
     SELECT
-      clinic_id,
-      phone_key,
+      lead_id,
       MAX(CASE WHEN rn = 1 THEN fecha_cita END) AS cita_valoracion,
       MAX(CASE WHEN rn = 2 THEN fecha_cita END) AS cita_posterior,
       MAX(procedencia) FILTER (WHERE rn IN (1, 2)) AS fuente,
       MAX(estado) FILTER (WHERE rn IN (1, 2)) AS estado
     FROM appointments_ranked
     WHERE rn <= 2
-    GROUP BY clinic_id, phone_key
+    GROUP BY lead_id
   ),
-  settlement_rollup AS (
+  settlement_candidates AS (
     SELECT
       lb.id AS lead_id,
-      SUM(fs.amount_net) AS revenue,
-      MIN(fs.settled_at) AS conversion_date
+      fs.id AS settlement_id,
+      fs.amount_net,
+      fs.settled_at,
+      ROW_NUMBER() OVER (
+        PARTITION BY fs.id
+        ORDER BY lb.created_at DESC, lb.id DESC
+      ) AS attribution_rank
     FROM lead_base lb
     JOIN public.financial_settlements fs
       ON fs.clinic_id = lb.clinic_id
      AND fs.cancelled_at IS NULL
      AND fs.amount_net > 0
+     AND fs.settled_at >= lb.created_at
      AND lower(COALESCE(fs.source_system, '')) = 'doctoralia'
-     AND public.normalize_phone(fs.patient_phone) = lb.phone_normalized
-    GROUP BY lb.id
+     AND COALESCE(
+           NULLIF(public.normalize_phone(fs.patient_phone), ''),
+           NULLIF(public.normalize_phone((regexp_match(fs.template_name, '\[([0-9]{9,15})\]'))[1]), '')
+         ) = lb.phone_normalized
+  ),
+  settlement_rollup AS (
+    SELECT
+      lead_id,
+      SUM(amount_net) AS revenue,
+      MIN(settled_at) AS conversion_date
+    FROM settlement_candidates
+    WHERE attribution_rank = 1
+    GROUP BY lead_id
   )
   SELECT
     lb.id AS lead_id,
@@ -139,8 +175,7 @@ AS $$
     sr.conversion_date
   FROM lead_base lb
   LEFT JOIN appointments_funnel af
-    ON af.clinic_id = lb.clinic_id
-   AND af.phone_key = lb.phone_normalized
+    ON af.lead_id = lb.id
   LEFT JOIN settlement_rollup sr
     ON sr.lead_id = lb.id
   WHERE (p_valoracion_from IS NULL OR af.cita_valoracion >= p_valoracion_from)
@@ -155,4 +190,4 @@ REVOKE EXECUTE ON FUNCTION public.get_trazabilidad_funnel(UUID, DATE, DATE, DATE
 GRANT EXECUTE ON FUNCTION public.get_trazabilidad_funnel(UUID, DATE, DATE, DATE, DATE, DATE, DATE) TO service_role;
 
 COMMENT ON FUNCTION public.get_trazabilidad_funnel(UUID, DATE, DATE, DATE, DATE, DATE, DATE) IS
-  'Returns the real acquisition lead -> first Doctoralia appointment (doctoralia_appointments.fecha) -> posterior appointment funnel scoped by user, with verified Doctoralia revenue by phone.';
+  'Returns the real acquisition lead -> first Doctoralia appointment (doctoralia_appointments.fecha) -> posterior appointment funnel scoped by user, with verified Doctoralia revenue attributed once to the most recent eligible lead for each settlement.';

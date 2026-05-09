@@ -5173,6 +5173,28 @@ async function fetchTraceabilityRowsForAggregation(adminClient: any, userId: str
   return rows;
 }
 
+type TraceabilityFunnelRpcRow = {
+  lead_id: string;
+  lead_created_at: string | null;
+  cita_valoracion: string | null;
+  cita_posterior: string | null;
+  fuente: string | null;
+  estado: string | null;
+  revenue: string | number | null;
+  conversion_date: string | null;
+};
+
+type TraceabilityFunnelRow = Omit<TraceabilityFunnelRpcRow, 'revenue'> & {
+  revenue: number;
+};
+
+function normalizeTraceabilityFunnelRow(row: TraceabilityFunnelRpcRow): TraceabilityFunnelRow {
+  return {
+    ...row,
+    revenue: Number(row.revenue ?? 0),
+  };
+}
+
 async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, url, sendJson } = ctx;
   if (resource === 'traceability' && sub === 'leads') {
@@ -5223,11 +5245,10 @@ async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<
     if (error) throw error;
     if (funnelResult.error) console.error('get_trazabilidad_funnel enrichment error:', funnelResult.error);
 
-    const appointmentByLead = new Map(
-      (funnelResult.data || []).map((row: Record<string, unknown>) => [row.lead_id, row]),
-    );
-    const leads = (rows || []).map((row: Record<string, unknown>) => {
-      const appointment = appointmentByLead.get(row.lead_id) as Record<string, unknown> | undefined;
+    const funnelRows = ((funnelResult.data || []) as TraceabilityFunnelRpcRow[]).map(normalizeTraceabilityFunnelRow);
+    const appointmentByLead = new Map(funnelRows.map((row) => [row.lead_id, row]));
+    const leads = (rows || []).map((row: { lead_id: string }) => {
+      const appointment = appointmentByLead.get(row.lead_id);
       return {
         ...row,
         cita_valoracion: appointment?.cita_valoracion ?? null,
@@ -5282,11 +5303,8 @@ async function handleTraceabilityFunnel(ctx: AuthenticatedRouteContext): Promise
       return sendJson({ success: false, code: 'TRAZABILIDAD_FUNNEL_QUERY_ERROR', message: 'Failed to load traceability funnel.' }, 500);
     }
 
-    const funnel = (rows || []).map((row: Record<string, unknown>) => ({
-      ...row,
-      revenue: Number(row.revenue ?? 0),
-    }));
-    return sendJson({ success: true, funnel, rows: funnel, total: funnel.length });
+    const funnel = ((rows || []) as TraceabilityFunnelRpcRow[]).map(normalizeTraceabilityFunnelRow);
+    return sendJson({ success: true, funnel, total: funnel.length });
   }
   return null;
 }
