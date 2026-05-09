@@ -31,54 +31,91 @@ CREATE INDEX IF NOT EXISTS financial_settlements_patient_phone_idx
   ON public.financial_settlements (clinic_id, patient_phone)
   WHERE patient_phone IS NOT NULL;
 
--- Step 4: Re-populate doctoralia_patients including phone-only rows that were skipped
--- in 20260506100000.  Use correct single-backslash regex inside plain SQL (no EXECUTE wrapper).
-INSERT INTO public.doctoralia_patients (
-  doc_patient_id, clinic_id, full_name, name_norm, phone_primary, first_seen_at,
-  match_confidence, match_class
-)
-SELECT
-  COALESCE(
-    NULLIF(fs.patient_dni, ''),
-    'ph:' || public.normalize_phone(fs.patient_phone)
-  ) AS doc_patient_id,
-  fs.clinic_id,
-  UPPER(TRIM(fs.patient_name)) AS full_name,
-  LOWER(REGEXP_REPLACE(extensions.unaccent(TRIM(fs.patient_name)), '\s+', ' ', 'g')) AS name_norm,
-  public.normalize_phone(fs.patient_phone) AS phone_primary,
-  MIN(fs.settled_at) AS first_seen_at,
-  NULL AS match_confidence,
-  NULL AS match_class
-FROM public.financial_settlements fs
-WHERE fs.cancelled_at IS NULL
-  AND fs.patient_name  IS NOT NULL
-  AND fs.amount_net    > 0
-  AND COALESCE(
-        NULLIF(fs.patient_dni, ''),
-        public.normalize_phone(fs.patient_phone)
-      ) IS NOT NULL
-GROUP BY fs.clinic_id, fs.patient_dni, fs.patient_phone, fs.patient_name
-ON CONFLICT (doc_patient_id, clinic_id) DO UPDATE
-SET full_name     = EXCLUDED.full_name,
-    name_norm     = EXCLUDED.name_norm,
-    phone_primary = COALESCE(EXCLUDED.phone_primary, public.doctoralia_patients.phone_primary),
-    first_seen_at = LEAST(public.doctoralia_patients.first_seen_at, EXCLUDED.first_seen_at);
+-- Step 4: Re-populate doctoralia_patients when the required identity columns are present.
+DO $$
+DECLARE
+  has_patient_dni BOOLEAN;
+  has_patient_name BOOLEAN;
+  doc_id_expr TEXT;
+  identity_predicate TEXT;
+  group_by_expr TEXT;
+BEGIN
+  IF to_regclass('public.doctoralia_patients') IS NULL THEN
+    RAISE NOTICE 'Skipping Doctoralia patient phone population: public.doctoralia_patients does not exist';
+    RETURN;
+  END IF;
 
--- Step 5: Fill phone_primary for existing DNI rows that have phone data in the settlements.
-UPDATE public.doctoralia_patients dp
-SET phone_primary = sub.phone_norm
-FROM (
-  SELECT
-    NULLIF(fs.patient_dni, '') AS doc_patient_id,
-    fs.clinic_id,
-    MAX(public.normalize_phone(fs.patient_phone)) AS phone_norm
-  FROM public.financial_settlements fs
-  WHERE NULLIF(fs.patient_dni, '') IS NOT NULL
-  GROUP BY fs.patient_dni, fs.clinic_id
-) sub
-WHERE dp.phone_primary   IS NULL
-  AND dp.doc_patient_id   = sub.doc_patient_id
-  AND dp.clinic_id        = sub.clinic_id
-  AND sub.phone_norm      IS NOT NULL;
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'financial_settlements' AND column_name = 'patient_dni'
+  ) INTO has_patient_dni;
+
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'financial_settlements' AND column_name = 'patient_name'
+  ) INTO has_patient_name;
+
+  IF NOT has_patient_name THEN
+    RAISE NOTICE 'Skipping Doctoralia patient phone population: public.financial_settlements.patient_name does not exist';
+    RETURN;
+  END IF;
+
+  IF has_patient_dni THEN
+    doc_id_expr := 'COALESCE(NULLIF(fs.patient_dni, ''''), ''ph:'' || public.normalize_phone(fs.patient_phone))';
+    identity_predicate := 'COALESCE(NULLIF(fs.patient_dni, ''''), public.normalize_phone(fs.patient_phone)) IS NOT NULL';
+    group_by_expr := 'fs.clinic_id, fs.patient_dni, fs.patient_phone, fs.patient_name';
+  ELSE
+    doc_id_expr := '''ph:'' || public.normalize_phone(fs.patient_phone)';
+    identity_predicate := 'public.normalize_phone(fs.patient_phone) IS NOT NULL';
+    group_by_expr := 'fs.clinic_id, fs.patient_phone, fs.patient_name';
+  END IF;
+
+  EXECUTE format($SQL$
+    INSERT INTO public.doctoralia_patients (
+      doc_patient_id, clinic_id, full_name, name_norm, phone_primary, first_seen_at,
+      match_confidence, match_class
+    )
+    SELECT
+      %s AS doc_patient_id,
+      fs.clinic_id,
+      UPPER(TRIM(fs.patient_name)) AS full_name,
+      LOWER(REGEXP_REPLACE(extensions.unaccent(TRIM(fs.patient_name)), '\s+', ' ', 'g')) AS name_norm,
+      public.normalize_phone(fs.patient_phone) AS phone_primary,
+      MIN(fs.settled_at) AS first_seen_at,
+      NULL AS match_confidence,
+      NULL AS match_class
+    FROM public.financial_settlements fs
+    WHERE fs.cancelled_at IS NULL
+      AND fs.patient_name  IS NOT NULL
+      AND fs.amount_net    > 0
+      AND %s
+    GROUP BY %s
+    ON CONFLICT (doc_patient_id, clinic_id) DO UPDATE
+    SET full_name     = EXCLUDED.full_name,
+        name_norm     = EXCLUDED.name_norm,
+        phone_primary = COALESCE(EXCLUDED.phone_primary, public.doctoralia_patients.phone_primary),
+        first_seen_at = LEAST(public.doctoralia_patients.first_seen_at, EXCLUDED.first_seen_at)
+  $SQL$, doc_id_expr, identity_predicate, group_by_expr);
+
+  IF has_patient_dni THEN
+    EXECUTE $SQL$
+      UPDATE public.doctoralia_patients dp
+      SET phone_primary = sub.phone_norm
+      FROM (
+        SELECT
+          NULLIF(fs.patient_dni, '') AS doc_patient_id,
+          fs.clinic_id,
+          MAX(public.normalize_phone(fs.patient_phone)) AS phone_norm
+        FROM public.financial_settlements fs
+        WHERE NULLIF(fs.patient_dni, '') IS NOT NULL
+        GROUP BY fs.patient_dni, fs.clinic_id
+      ) sub
+      WHERE dp.phone_primary   IS NULL
+        AND dp.doc_patient_id   = sub.doc_patient_id
+        AND dp.clinic_id        = sub.clinic_id
+        AND sub.phone_norm      IS NOT NULL
+    $SQL$;
+  END IF;
+END $$;
 
 SELECT public.run_doctoralia_name_match();

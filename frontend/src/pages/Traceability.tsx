@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { GitMerge, Search, CheckCircle2, XCircle, TrendingUp, MessageCircle } from 'lucide-react'
 import { invokeApi } from '../lib/supabaseClient'
 import { SortableTable, type ColDef } from '../components/ui/SortableTable'
+import TrazabilidadFunnelTableFinal from '../components/traceability/TrazabilidadFunnelTable_Final'
 
 interface TraceabilitySummary {
   totalLeads: number
@@ -20,6 +21,9 @@ interface TraceRow {
   ad_name: string | null
   stage: string | null
   lead_created_at: string | null
+  appointment_date: string | null
+  cita_valoracion: string | null
+  cita_posterior: string | null
   patient_id: string | null
   patient_name: string | null
   patient_dni: string | null
@@ -58,7 +62,6 @@ export default function Traceability() {
   const [matchedTotal, setMatchedTotal] = useState<number | null>(null)
   const [summary, setSummary] = useState<TraceabilitySummary>(EMPTY_TRACEABILITY_SUMMARY)
   const [campaigns, setCampaigns] = useState<any[]>([])
-  const [funnel, setFunnel] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [matchedOnly, setMatchedOnly] = useState(false)
@@ -75,10 +78,9 @@ export default function Traceability() {
         const params = new URLSearchParams({ limit: '500' })
         if (matchedOnly) params.set('matched', 'true')
         
-        const [leadsData, campaignsData, funnelData] = await Promise.all([
+        const [leadsData, campaignsData] = await Promise.all([
           invokeApi(`/traceability/leads?${params}`),
           invokeApi(`/traceability/campaigns?${params}`),
-          invokeApi('/traceability/funnel')
         ])
 
         if (!isActive) return
@@ -87,7 +89,6 @@ export default function Traceability() {
         setMatchedTotal(leadsData?.matchedTotal ?? null)
         setSummary({ ...EMPTY_TRACEABILITY_SUMMARY, ...(leadsData?.summary ?? {}) })
         setCampaigns(campaignsData?.campaigns ?? [])
-        setFunnel(funnelData?.funnel ?? [])
       } catch (err: any) {
         if (!isActive) return
         setError(err?.message ?? 'Error cargando datos de trazabilidad.')
@@ -142,13 +143,6 @@ export default function Traceability() {
     { key: 'verified_revenue_crm', label: 'Rev. Doctoralia', align: 'right', sortable: true, format: (v) => `€${Number(v).toLocaleString('es-ES')}` },
   ]
 
-  const funnelColumns: ColDef[] = [
-    { key: 'cohort', label: 'Cohorte' },
-    { key: 'lead_count', label: 'Leads', align: 'right', sortable: true },
-    { key: 'avg_reply_delay_min', label: 'Retraso medio (min)', align: 'right', sortable: true },
-    { key: 'verified_revenue_crm', label: 'Rev. CRM', align: 'right', sortable: true, format: (v) => `€${Number(v).toLocaleString('es-ES')}` },
-  ]
-
   return (
     <div className="space-y-10">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8">
@@ -198,7 +192,7 @@ export default function Traceability() {
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="leads" className="gap-2"><GitMerge className="h-4 w-4" />Cruces Doctoralia</TabsTrigger>
           <TabsTrigger value="campaigns" className="gap-2"><TrendingUp className="h-4 w-4" />Rendimiento Real Campañas</TabsTrigger>
-          <TabsTrigger value="funnel" className="gap-2"><MessageCircle className="h-4 w-4" />Embudo WhatsApp</TabsTrigger>
+          <TabsTrigger value="funnel" className="gap-2"><MessageCircle className="h-4 w-4" />Funnel Real</TabsTrigger>
         </TabsList>
 
         <TabsContent value="leads" className="mt-4">
@@ -263,7 +257,7 @@ export default function Traceability() {
                       <tr className="border-b border-border/10 text-[#5C5550] uppercase tracking-[0.15em] text-[10px] font-bold">
                         <th className="text-left py-4 pr-4 pl-2 font-bold">Lead</th>
                         <th className="text-left py-4 pr-4 font-bold">Fuente / Campaña</th>
-                        <th className="text-left py-4 pr-4 font-bold">Fecha</th>
+                        <th className="text-left py-4 pr-4 font-bold">Fecha cita</th>
                         <th className="text-left py-4 pr-4 font-bold">Estado Cruce</th>
                         <th className="text-left py-4 pr-4 font-bold">Paciente Doctoralia</th>
                         <th className="text-right py-4 pr-4 font-bold">Ingreso €</th>
@@ -295,9 +289,18 @@ export default function Traceability() {
                               )}
                             </td>
                             <td className="py-5 pr-4 text-[#5C5550] font-bold whitespace-nowrap">
-                              {r.lead_created_at
-                                ? new Date(r.lead_created_at).toLocaleDateString('es-ES')
-                                : '—'}
+                              {r.appointment_date ? (
+                                <div className="flex flex-col gap-1">
+                                  <span>{new Date(r.appointment_date).toLocaleDateString('es-ES')}</span>
+                                  {r.lead_created_at && (
+                                    <span className="text-[9px] text-[#8E8680] font-bold uppercase tracking-wider">
+                                      Lead {new Date(r.lead_created_at).toLocaleDateString('es-ES')}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-[#C9B9A8] font-medium opacity-60">Sin cita</span>
+                              )}
                             </td>
                             <td className="py-5 pr-4">
                               {matched ? (
@@ -380,20 +383,7 @@ export default function Traceability() {
         </TabsContent>
 
         <TabsContent value="funnel" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Embudo Real WhatsApp</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <SortableTable
-                columns={funnelColumns}
-                rows={funnel}
-                loading={loading}
-                emptyMessage="No hay datos del embudo de WhatsApp todavía."
-                exportFilename="embudo-whatsapp-real"
-              />
-            </CardContent>
-          </Card>
+          <TrazabilidadFunnelTableFinal />
         </TabsContent>
       </Tabs>
     </div>
