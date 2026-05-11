@@ -1,9 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
 name: Sync Doctoralia Financials
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 # Reads individual settlement rows from Google Sheets (Doctoralia export) and
 # upserts them into the financial_settlements table.
 #
@@ -40,10 +37,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5 # v5
+        uses: actions/checkout@v6 # v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v5 # v5
+        uses: actions/setup-node@v6 # v6
         with:
           node-version: '22'
 

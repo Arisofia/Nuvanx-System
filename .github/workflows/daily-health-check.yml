@@ -14,20 +14,20 @@ jobs:
     name: Health Check — Production Endpoints
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       
       - name: Setup Deno
-        uses: denoland/setup-deno@v1
+        uses: denoland/setup-deno@v2
         with:
-          deno-version: v1.x
+          deno-version: v2.x
 
       - name: Run Health Check
         env:
-          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || secrets.SUPABASE_URL }}
           MCP_API_KEY: ${{ secrets.MCP_API_KEY }}
         run: |
           if [ -z "$VITE_SUPABASE_URL" ]; then
-            echo "::error::SUPABASE_URL secret is missing"
+            echo "::error::VITE_SUPABASE_URL or SUPABASE_URL secret is missing"
             exit 1
           fi
           if [ -z "$MCP_API_KEY" ]; then

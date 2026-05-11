@@ -1,9 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
 name: CI
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 on:
   pull_request:
     branches: [main]
@@ -15,7 +12,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v5 # v5
+      - uses: actions/checkout@v6 # v6
 
       - name: Fail on merge conflict markers in .github
         run: |
@@ -52,10 +49,10 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v5 # v5
+      - uses: actions/checkout@v6 # v6
 
       - name: Use Node.js
-        uses: actions/setup-node@v5 # v5
+        uses: actions/setup-node@v6 # v6
         with:
           node-version: '22'
           cache: 'npm'
@@ -78,10 +75,10 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v5 # v5
+      - uses: actions/checkout@v6 # v6
 
       - name: Use Node.js
-        uses: actions/setup-node@v5 # v5
+        uses: actions/setup-node@v6 # v6
         with:
           node-version: '22'
           cache: 'npm'
@@ -105,10 +102,10 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v5 # v5
+      - uses: actions/checkout@v6 # v6
 
       - name: Use Node.js
-        uses: actions/setup-node@v5 # v5
+        uses: actions/setup-node@v6 # v6
         with:
           node-version: '22'
           cache: 'npm'
@@ -150,10 +147,10 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v5 # v5
+      - uses: actions/checkout@v6 # v6
 
       - name: Use Node.js
-        uses: actions/setup-node@v5 # v5
+        uses: actions/setup-node@v6 # v6
         with:
           node-version: '22'
           cache: 'npm'
@@ -184,7 +181,7 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
     steps:
-      - uses: actions/checkout@v5 # v5
+      - uses: actions/checkout@v6 # v6
 
       - name: Setup Deno
         uses: denoland/setup-deno@v2
@@ -208,19 +205,17 @@ jobs:
           deno cache --config supabase/functions/deno.json supabase/functions/api/index.ts
           deno cache --config supabase/functions/deno.json supabase/functions/mcp/index.ts
 
-      - name: Type-check Edge Function
+      - name: Type-check Edge Functions
         run: |
+          echo "Checking API function..."
           deno check --config supabase/functions/deno.json supabase/functions/api/index.ts
-          deno check --config supabase/functions/deno.json supabase/functions/mcp/index.ts
-      - name: Type-check API Function
-        run: deno check --config supabase/functions/deno.json supabase/functions/api/index.ts
-
-      - name: Type-check MCP Function
-        run: |
+          
           if [ -f supabase/functions/mcp/deno.json ]; then
+            echo "Checking MCP function with local config..."
             deno check --config supabase/functions/mcp/deno.json supabase/functions/mcp/index.ts
           else
-            echo "::warning::supabase/functions/mcp/deno.json not found; skipping MCP type-check."
+            echo "Checking MCP function with shared config..."
+            deno check --config supabase/functions/deno.json supabase/functions/mcp/index.ts
           fi
 
       - name: Validate MCP function existence

@@ -25,9 +25,6 @@ concurrency:
   group: deploy-supabase-production
   cancel-in-progress: false
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   # 1. Supabase DB migrations
   supabase-migrate:
@@ -43,7 +40,7 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
     steps:
-      - uses: actions/checkout@v5 # v5
+      - uses: actions/checkout@v6 # v6
 
       - name: Validate Supabase deployment secrets
         id: validate
@@ -116,7 +113,7 @@ jobs:
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
     steps:
-      - uses: actions/checkout@v5 # v5
+      - uses: actions/checkout@v6 # v6
 
       - name: Deploy API Edge Function
         uses: ./.github/actions/supabase-link-run
@@ -131,10 +128,3 @@ jobs:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
           supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
           command: supabase functions deploy mcp --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --no-verify-jwt
-      - name: Deploy MCP function
-        run: |
-          echo "Deploying MCP function..."
-          supabase functions deploy mcp --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --no-verify-jwt
-          echo "MCP function deployed successfully ✓"
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}

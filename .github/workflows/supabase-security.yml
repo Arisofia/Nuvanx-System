@@ -1,9 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
 name: Supabase Security Check
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 # Fails the CI if any table is missing RLS or has a dangerous policy.
 # Runs on every push and pull_request to main.
 #
@@ -50,7 +47,7 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
     steps:
-      - uses: actions/checkout@v5 # v5
+      - uses: actions/checkout@v6 # v6
 
       - name: Validate Supabase security secrets
         id: validate
