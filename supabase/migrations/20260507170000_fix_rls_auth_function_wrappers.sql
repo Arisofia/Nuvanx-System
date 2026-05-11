@@ -1,6 +1,6 @@
 -- =============================================================================
 -- RLS performance hardening
--- - Wrap auth.uid()/auth.jwt()/current_setting() calls in SELECT inside policy
+-- - Wrap auth.uid()/auth.jwt() calls in SELECT inside policy
 --   expressions to avoid auth_rls_initplan performance warnings.
 -- - Remove legacy duplicate SELECT policies that can trigger multiple permissive
 --   policy warnings.
@@ -18,31 +18,26 @@ BEGIN
     SELECT schemaname, tablename, policyname, cmd, qual, with_check
     FROM pg_policies
     WHERE
-      (qual LIKE '%auth.uid()%' OR qual LIKE '%auth.jwt()%' OR qual LIKE '%current_setting(%')
-      OR (with_check LIKE '%auth.uid()%' OR with_check LIKE '%auth.jwt()%' OR with_check LIKE '%current_setting(%')
+      (qual LIKE '%auth.uid()%' OR qual LIKE '%auth.jwt()%')
+      OR (with_check LIKE '%auth.uid()%' OR with_check LIKE '%auth.jwt()%')
   LOOP
     old_qual := COALESCE(pol.qual, '');
     old_check := COALESCE(pol.with_check, '');
 
     new_qual := replace(old_qual, '(SELECT auth.uid())', '__AUTH_UID__');
     new_qual := replace(new_qual, '(SELECT auth.jwt())', '__AUTH_JWT__');
-    new_qual := replace(new_qual, '(SELECT current_setting(', '__CURRENT_SETTING__');
 
     new_check := replace(old_check, '(SELECT auth.uid())', '__AUTH_UID__');
     new_check := replace(new_check, '(SELECT auth.jwt())', '__AUTH_JWT__');
-    new_check := replace(new_check, '(SELECT current_setting(', '__CURRENT_SETTING__');
 
     new_qual := replace(new_qual, 'auth.uid()', '(SELECT auth.uid())');
     new_qual := replace(new_qual, 'auth.jwt()', '(SELECT auth.jwt())');
-    new_qual := replace(new_qual, 'current_setting(', '(SELECT current_setting(');
 
     new_check := replace(new_check, 'auth.uid()', '(SELECT auth.uid())');
     new_check := replace(new_check, 'auth.jwt()', '(SELECT auth.jwt())');
-    new_check := replace(new_check, 'current_setting(', '(SELECT current_setting(');
 
     new_qual := replace(new_qual, '__AUTH_UID__', '(SELECT auth.uid())');
     new_qual := replace(new_qual, '__AUTH_JWT__', '(SELECT auth.jwt())');
-    new_qual := replace(new_qual, '__CURRENT_SETTING__', '(SELECT current_setting(');
 
     IF new_qual <> old_qual AND pol.cmd IN ('SELECT', 'UPDATE', 'DELETE', 'ALL') THEN
       EXECUTE format(

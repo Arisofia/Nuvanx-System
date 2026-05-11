@@ -68,7 +68,18 @@ const {
   actionValue,
   buildCampaignsTimeRange,
   calculateVerifiedRevenueInRange,
+  isDedicatedServiceRoleBypass,
 } = api;
+
+
+describe('isDedicatedServiceRoleBypass', () => {
+  it('accepts only the dedicated internal service role bypass token', () => {
+    expect(isDedicatedServiceRoleBypass('internal-key', 'internal-key')).toBe(true);
+    expect(isDedicatedServiceRoleBypass('supabase-service-key', 'internal-key')).toBe(false);
+    expect(isDedicatedServiceRoleBypass('supabase-service-key', '')).toBe(false);
+    expect(isDedicatedServiceRoleBypass('', 'internal-key')).toBe(false);
+  });
+});
 
 describe('calculateVerifiedRevenueInRange', () => {
   const patientFirstSettlement = {
@@ -791,7 +802,7 @@ describe('handlePublicRoutes', () => {
       const res = await handlePublicRoutes(ctx);
 
       expect(res.status).toBe(503);
-      expect(await res.text()).toBe('Verify token not configured');
+      expect(await res.text()).toBe('WhatsApp verify token not configured');
     });
 
     it('returns 200 with challenge when mode=subscribe and verify token matches expected', async () => {
@@ -817,7 +828,7 @@ describe('handlePublicRoutes', () => {
       expect(await res.text()).toBe('abc123');
     });
 
-    it('falls back to META webhook verify token when WHATSAPP token is not set', async () => {
+    it('does not fall back to META verify token when WHATSAPP token is not set', async () => {
       const envGet = (globalThis as any).Deno.env.get as ReturnType<typeof vi.fn>;
       envGet.mockImplementation((key: string) => (key === 'META_WEBHOOK_VERIFY_TOKEN' ? 'fallback-token' : null));
 
@@ -833,8 +844,8 @@ describe('handlePublicRoutes', () => {
 
       const res = await handlePublicRoutes(ctx);
 
-      expect(res.status).toBe(200);
-      expect(await res.text()).toBe('abc123');
+      expect(res.status).toBe(503);
+      expect(await res.text()).toBe('WhatsApp verify token not configured');
     });
 
     it('returns 403 when mode/verify token combination is incorrect', async () => {
@@ -1086,14 +1097,20 @@ describe('handlePublicRoutes', () => {
       expect(payload.required).toEqual({
         ENCRYPTION_KEY: false,
         SUPABASE_SERVICE_ROLE_KEY: false,
+        NUVANX_SUPABASE_SERVICE_ROLE_KEY: false,
+      });
+      expect(payload.recommended).toEqual({
+        WHATSAPP_WEBHOOK_VERIFY_TOKEN: false,
       });
     });
 
-    it('returns success=true and status=ok when both secrets are present (happy path)', async () => {
+    it('returns success=true and status=ok when required secrets are present (happy path)', async () => {
       const envGet = (globalThis as any).Deno.env.get as ReturnType<typeof vi.fn>;
       envGet.mockImplementation((key: string) => {
         if (key === 'ENCRYPTION_KEY') return 'some-key';
         if (key === 'SUPABASE_SERVICE_ROLE_KEY') return 'service-key';
+        if (key === 'NUVANX_SUPABASE_SERVICE_ROLE_KEY') return 'internal-service-key';
+        if (key === 'WHATSAPP_WEBHOOK_VERIFY_TOKEN') return 'whatsapp-token';
         return null;
       });
       const sendJson = vi.fn((body: any) => new Response(JSON.stringify(body), { status: 200 }));
@@ -1109,6 +1126,10 @@ describe('handlePublicRoutes', () => {
       expect(payload.required).toEqual({
         ENCRYPTION_KEY: true,
         SUPABASE_SERVICE_ROLE_KEY: true,
+        NUVANX_SUPABASE_SERVICE_ROLE_KEY: true,
+      });
+      expect(payload.recommended).toEqual({
+        WHATSAPP_WEBHOOK_VERIFY_TOKEN: true,
       });
     });
   });
