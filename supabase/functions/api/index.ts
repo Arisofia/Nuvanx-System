@@ -2345,7 +2345,7 @@ function aggregateDashboardResults(leads: any[], prevLeads: any[], settlements: 
 }
 
 function buildDashboardLeadsQuery(adminClient: any, userId: string, clinicId: string | null, since: string | null, until: string | null, sourceFilter: string) {
-  let q = adminClient.from('leads').select('stage, revenue, source, created_at, converted_patient_id').is('deleted_at', null);
+  let q = adminClient.from('leads').select('stage, revenue, source, created_at, converted_patient_id').is('deleted_at', null).neq('source', 'doctoralia');
   if (clinicId) {
     q = q.eq('clinic_id', clinicId);
   } else {
