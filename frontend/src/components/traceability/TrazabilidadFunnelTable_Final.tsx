@@ -17,6 +17,7 @@ type FunnelFilters = {
 
 export interface TrazabilidadFunnelRow {
   lead_id: string
+  lead_name: string | null
   lead_created_at: string | null
   cita_valoracion: string | null
   cita_posterior: string | null
@@ -87,6 +88,7 @@ export default function TrazabilidadFunnelTableFinal() {
   }, [rows])
 
   const columns: ColDef[] = [
+    { key: 'lead_name', label: 'Lead', sortable: true, format: (value) => value || '—' },
     { key: 'lead_created_at', label: 'Fecha lead', sortable: true, format: formatDate },
     { key: 'cita_valoracion', label: 'Cita valoración', sortable: true, format: formatDate },
     { key: 'cita_posterior', label: 'Cita posterior', sortable: true, format: formatDate },
