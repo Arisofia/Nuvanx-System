@@ -113,6 +113,7 @@ DATABASE_URL=... ENCRYPTION_KEY=... REPORT_USER_ID=... META_ACCESS_TOKEN_NEW=...
 - `doctoralia_patients` debe repoblarse si es necesario, preferiblemente usando DNI/hashes, o fallback de teléfono solo si no hay otra opción.
 - `run_doctoralia_name_match()` debe existir como función ejecutable en el esquema y opcionalmente programarse con PG cron si se usa.
 - `reconcile_doctoralia_matches_to_leads()` debe existir y ser verificable.
+- Para desbloquear CAC Doctoralia en producción, ejecutar primero `npm run ingest:doctoralia` con credenciales de Supabase/Doctoralia y después `npm run doctoralia:match:phone` si se necesita fallback telefónico.
 
 ## 4. Variables de entorno
 
@@ -131,6 +132,8 @@ Variables mínimas locales:
 - `META_APP_SECRET`
 - `META_PIXEL_ID`
 - `FRONTEND_URL`
+- `NUVANX_SUPABASE_SERVICE_ROLE_KEY`
+- `WHATSAPP_WEBHOOK_VERIFY_TOKEN`
 
 La app frontend usa el proxy Vercel y `invokeApi('/...')`, por lo que no depende de `VITE_API_URL`.
 
@@ -145,15 +148,43 @@ Secrets obligatorios:
 - `META_APP_SECRET`
 - `META_PIXEL_ID`
 - `META_ACCESS_TOKEN`
+- `NUVANX_SUPABASE_SERVICE_ROLE_KEY` — dedicated internal API bypass token for cron/backfill/sync jobs; do not reuse `SUPABASE_SERVICE_ROLE_KEY` as an HTTP bearer token.
+- `WHATSAPP_WEBHOOK_VERIFY_TOKEN` — required for `/webhooks/whatsapp` verification; it is intentionally separate from `META_WEBHOOK_VERIFY_TOKEN`.
+
+Recommended when WhatsApp or Meta webhook ingestion is enabled:
+
+- `META_WEBHOOK_VERIFY_TOKEN`
+- `WHATSAPP_ACCESS_TOKEN`
+- `WHATSAPP_PHONE_NUMBER_ID`
 
 Instrucciones:
 
 ```bash
 supabase secrets set META_ACCESS_TOKEN="..."
+supabase secrets set NUVANX_SUPABASE_SERVICE_ROLE_KEY="$(openssl rand -hex 32)"
+supabase secrets set WHATSAPP_WEBHOOK_VERIFY_TOKEN="..."
 npm run supabase:functions:deploy:api
 ```
 
-### 4.3 Frontend / Vercel
+### 4.3 Production data unblock sequence
+
+Run these steps after deploying the Edge Function and secrets so dashboards do not remain at zero/null because of missing operational data:
+
+```bash
+# Fill Meta daily insights and attempt Lead Ads ingestion.
+curl -X POST "https://ssvvuuysgxyqvmovrlvk.supabase.co/functions/v1/api/meta/backfill?days=90" \
+  -H "Authorization: Bearer $NUVANX_SUPABASE_SERVICE_ROLE_KEY" \
+  -H "x-user-id: $REPORT_USER_ID"
+
+# Ingest and normalize Doctoralia data, then run phone fallback matching if required.
+npm run ingest:doctoralia
+npm run doctoralia:match:phone
+
+# Verify mandatory secrets after deployment.
+curl "https://ssvvuuysgxyqvmovrlvk.supabase.co/functions/v1/api/health/secrets"
+```
+
+### 4.4 Frontend / Vercel
 
 Variables necesarias:
 
@@ -163,7 +194,7 @@ Variables necesarias:
 
 El frontend usa `fetch('/api/...')` vía Vercel rewrite, no debe usar rutas antiguas directas.
 
-### 4.4 GitHub Actions
+### 4.5 GitHub Actions
 
 Secrets necesarios por workflow:
 
@@ -173,6 +204,8 @@ Secrets necesarios por workflow:
 - `SUPABASE_ACCESS_TOKEN`
 - `SUPABASE_PROJECT_REF`
 - `SUPABASE_DB_PASSWORD`
+- `NUVANX_SUPABASE_SERVICE_ROLE_KEY`
+- `WHATSAPP_WEBHOOK_VERIFY_TOKEN`
 - `GOOGLE_ADS_SERVICE_ACCOUNT`
 
 ## 5. Verificación

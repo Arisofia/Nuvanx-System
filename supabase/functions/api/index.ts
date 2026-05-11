@@ -15,7 +15,13 @@ function requireSupabaseEnv(value: string | null | undefined, name: string): str
 }
 
 function hasOwn(obj: unknown, key: PropertyKey): boolean {
-  return typeof obj === 'object' && obj !== null && Object.hasOwn(obj, key);
+  return typeof obj === 'object' && obj !== null && Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+export function isDedicatedServiceRoleBypass(token: string, dedicatedServiceKey: string | null | undefined): boolean {
+  const normalizedToken = typeof token === 'string' ? token.trim() : '';
+  const normalizedDedicatedKey = typeof dedicatedServiceKey === 'string' ? dedicatedServiceKey.trim() : '';
+  return Boolean(normalizedToken && normalizedDedicatedKey && normalizedToken === normalizedDedicatedKey);
 }
 
 export const supabaseClientFactory = {
@@ -1394,7 +1400,7 @@ async function handleRequest(req: Request): Promise<Response> {
   // Centralized auth guard: this checks the incoming Supabase user JWT once for all
   // non-public API routes in api/index.ts.
   const authUser = await verifySupabaseUser(adminClient, token, anonKey);
-  const isServiceRole = token === serviceKey || (!!nuvanxServiceKey && token === nuvanxServiceKey);
+  const isServiceRole = isDedicatedServiceRoleBypass(token, nuvanxServiceKey);
   
   if (!authUser && !isServiceRole) {
     return sendJson({ success: false, message: 'Unauthorized' }, 401);
@@ -1656,8 +1662,8 @@ function handleWhatsappWebhookGet(ctx: PublicRouteContext): Response | null {
   const mode = url.searchParams.get('hub.mode');
   const challenge = url.searchParams.get('hub.challenge');
   const verifyToken = url.searchParams.get('hub.verify_token');
-  const expected = String(Deno.env.get('WHATSAPP_WEBHOOK_VERIFY_TOKEN') ?? Deno.env.get('META_WEBHOOK_VERIFY_TOKEN') ?? Deno.env.get('META_VERIFY_TOKEN') ?? '');
-  if (!expected) return new Response('Verify token not configured', { status: 503 });
+  const expected = String(Deno.env.get('WHATSAPP_WEBHOOK_VERIFY_TOKEN') ?? '').trim();
+  if (!expected) return new Response('WhatsApp verify token not configured', { status: 503 });
   if (mode === 'subscribe' && verifyToken === expected) {
     return new Response(challenge ?? '', { status: 200, headers: { 'Content-Type': 'text/plain' } });
   }
@@ -1896,7 +1902,9 @@ function handleHealthRoutes(ctx: PublicRouteContext): Response | null {
     const encryptionKeyRaw = String(Deno.env.get('ENCRYPTION_KEY') ?? '');
     const hasEncryptionKey = Boolean(encryptionKeyRaw.trim());
     const hasServiceKey = Boolean(String(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '').trim());
-    const ok = hasEncryptionKey && hasServiceKey;
+    const hasDedicatedBypassKey = Boolean(String(Deno.env.get('NUVANX_SUPABASE_SERVICE_ROLE_KEY') ?? '').trim());
+    const hasWhatsappVerifyToken = Boolean(String(Deno.env.get('WHATSAPP_WEBHOOK_VERIFY_TOKEN') ?? '').trim());
+    const ok = hasEncryptionKey && hasServiceKey && hasDedicatedBypassKey;
 
     return sendJson({
       success: ok,
@@ -1904,6 +1912,10 @@ function handleHealthRoutes(ctx: PublicRouteContext): Response | null {
       required: {
         ENCRYPTION_KEY: hasEncryptionKey,
         SUPABASE_SERVICE_ROLE_KEY: hasServiceKey,
+        NUVANX_SUPABASE_SERVICE_ROLE_KEY: hasDedicatedBypassKey,
+      },
+      recommended: {
+        WHATSAPP_WEBHOOK_VERIFY_TOKEN: hasWhatsappVerifyToken,
       },
     });
   }
@@ -5175,6 +5187,7 @@ async function fetchTraceabilityRowsForAggregation(adminClient: any, userId: str
 
 type TraceabilityFunnelRpcRow = {
   lead_id: string;
+  lead_name: string | null;
   lead_created_at: string | null;
   cita_valoracion: string | null;
   cita_posterior: string | null;
@@ -5246,18 +5259,24 @@ async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<
     if (funnelResult.error) console.error('get_trazabilidad_funnel enrichment error:', funnelResult.error);
 
     const funnelRows = ((funnelResult.data || []) as TraceabilityFunnelRpcRow[]).map(normalizeTraceabilityFunnelRow);
+    const hasFunnelRevenue = !funnelResult.error;
     const appointmentByLead = new Map(funnelRows.map((row) => [row.lead_id, row]));
-    const leads = (rows || []).map((row: { lead_id: string }) => {
+    const leads = (rows || []).map((row: { lead_id: string; doctoralia_net?: number | string | null; settlement_date?: string | null }) => {
       const appointment = appointmentByLead.get(row.lead_id);
+      const revenue = Number(appointment?.revenue ?? 0);
       return {
         ...row,
         cita_valoracion: appointment?.cita_valoracion ?? null,
         cita_posterior: appointment?.cita_posterior ?? null,
         appointment_date: appointment?.cita_valoracion ?? null,
+        doctoralia_net: revenue > 0 ? revenue : row.doctoralia_net,
+        settlement_date: appointment?.conversion_date ?? row.settlement_date ?? null,
       };
     });
 
     const summary = buildTraceabilitySummary(summaryRows);
+    const funnelRevenue = funnelRows.reduce((sum, row) => sum + Number(row.revenue || 0), 0);
+    const funnelVerifiedSales = funnelRows.filter((row) => Number(row.revenue || 0) > 0).length;
 
     return sendJson({
       success: true,
@@ -5266,7 +5285,8 @@ async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<
       matchedTotal: matchedCount ?? summary.matchedTotal,
       summary: {
         ...summary,
-        totalRevenue: Number.parseFloat(summary.totalRevenue.toFixed(2)),
+        verifiedSales: hasFunnelRevenue ? funnelVerifiedSales : summary.verifiedSales,
+        totalRevenue: Number.parseFloat((hasFunnelRevenue ? funnelRevenue : summary.totalRevenue).toFixed(2)),
       },
     });
   }

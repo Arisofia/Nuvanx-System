@@ -21,6 +21,7 @@ function normalizeSafePath(filePath, baseDir = ROOT) {
 
 const requiredSecretKeys = [
   'SUPABASE_ACCESS_TOKEN',
+  'NUVANX_SUPABASE_SERVICE_ROLE_KEY',
   'META_ACCESS_TOKEN',
   'META_AD_ACCOUNT_ID',
   'META_CAPI_VERSION',
@@ -40,6 +41,7 @@ const requiredSecretKeys = [
   'GEMINI_API_KEY',
   'WHATSAPP_ACCESS_TOKEN',
   'WHATSAPP_PHONE_NUMBER_ID',
+  'WHATSAPP_WEBHOOK_VERIFY_TOKEN',
 ];
 
 const frontendKeys = [
@@ -265,8 +267,8 @@ function setGithubSecrets(vars) {
   }
 
   let uploaded = 0;
-  const githubKeys = [...requiredSecretKeys,
-    'SUPABASE_ACCESS_TOKEN',
+  const githubKeys = [
+    ...requiredSecretKeys,
     'VITE_SUPABASE_URL',
     'VITE_SUPABASE_PUBLISHABLE_KEY',
     'VITE_SUPABASE_ANON_KEY',
