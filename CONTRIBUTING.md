@@ -43,19 +43,16 @@ Tipos comunes:
 
 ## Pruebas
 
-### Backend
+### Supabase / Backend
 
 ```bash
-cd backend && npm test
+npm test
 ```
 ### Frontend
 
 ```bash
-npm --prefix frontend run test:ci
+cd frontend && npm run test:ci
 ```
-### Frontend
-
-Si se agregan tests de frontend, use el script correspondiente en `frontend/package.json`.
 
 ## Revisión de código
 
@@ -71,16 +68,10 @@ Si se agregan tests de frontend, use el script correspondiente en `frontend/pack
 npm run install:all
 ```
 
-2. Inicie el backend:
+2. Inicie el frontend:
 
 ```bash
-npm --prefix backend run dev
+cd frontend && npm run dev
 ```
 
-3. Inicie el frontend:
-
-```bash
-npm --prefix frontend run dev
-```
-
-4. Configure variables de entorno: revise `.env.example` y `.github/workflows`.
+3. Configure variables de entorno: revise `.env.example` y `.github/workflows`.

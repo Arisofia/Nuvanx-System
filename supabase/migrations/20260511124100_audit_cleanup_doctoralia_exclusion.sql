@@ -6,7 +6,7 @@
 -- =============================================================================
 
 -- 1. Harden get_trazabilidad_funnel
--- Updated with simplified logic while maintaining API compatibility (p_user_id)
+-- FINAL VERSION with real revenue logic (Option 2)
 CREATE OR REPLACE FUNCTION public.get_trazabilidad_funnel(
   p_user_id UUID DEFAULT auth.uid(),
   p_lead_from DATE DEFAULT NULL,
@@ -30,13 +30,29 @@ LANGUAGE sql
 STABLE
 SECURITY DEFINER
 AS $$
-  WITH appointments_ranked AS (
+  WITH lead_base AS (
+    SELECT
+      l.id,
+      l.created_at,
+      l.source,
+      l.stage,
+      l.phone_normalized,
+      COALESCE(l.clinic_id, u.clinic_id) AS clinic_id
+    FROM public.leads l
+    LEFT JOIN public.users u ON u.id = l.user_id
+    WHERE (l.user_id = p_user_id OR p_user_id IS NULL)
+      AND l.deleted_at IS NULL
+      AND (l.source IS NULL OR lower(btrim(l.source)) <> 'doctoralia')
+      AND (p_lead_from IS NULL OR l.created_at::DATE >= p_lead_from)
+      AND (p_lead_to IS NULL OR l.created_at::DATE <= p_lead_to)
+  ),
+  appointments_ranked AS (
     SELECT
       normalize_phone(dr.phone_primary) AS phone_key,
       dr.fecha AS fecha_cita,
       ROW_NUMBER() OVER (
         PARTITION BY normalize_phone(dr.phone_primary)
-        ORDER BY dr.fecha
+        ORDER BY dr.fecha ASC
       ) AS rn,
       dr.procedencia,
       dr.estado
@@ -54,20 +70,36 @@ AS $$
     FROM appointments_ranked
     GROUP BY phone_key
   ),
-  lead_base AS (
+  settlement_candidates AS (
     SELECT
-      l.id,
-      l.created_at,
-      l.source,
-      l.stage,
-      l.phone_normalized,
-      NULL::numeric AS amount_net,
-      NULL::timestamptz AS settled_at
-    FROM public.leads l
-    WHERE l.deleted_at IS NULL
-      AND (l.source IS NULL OR lower(btrim(l.source)) <> 'doctoralia')
-      AND (p_lead_from IS NULL OR l.created_at::date >= p_lead_from)
-      AND (p_lead_to IS NULL OR l.created_at::date <= p_lead_to)
+      lb.id AS lead_id,
+      fs.id AS settlement_id,
+      fs.amount_net,
+      fs.settled_at,
+      ROW_NUMBER() OVER (
+        PARTITION BY fs.id
+        ORDER BY lb.created_at DESC, lb.id DESC
+      ) AS attribution_rank
+    FROM lead_base lb
+    JOIN public.financial_settlements fs
+      ON fs.clinic_id = lb.clinic_id
+     AND fs.cancelled_at IS NULL
+     AND fs.amount_net > 0
+     AND fs.settled_at >= lb.created_at
+     AND (
+           lb.phone_normalized = fs.patient_phone
+           OR 
+           lb.phone_normalized = (regexp_match(fs.template_name, '\[([0-9]{9,15})\]'))[1]
+         )
+  ),
+  settlement_rollup AS (
+    SELECT
+      lead_id,
+      SUM(amount_net) AS revenue,
+      MIN(settled_at) AS conversion_date
+    FROM settlement_candidates
+    WHERE attribution_rank = 1
+    GROUP BY lead_id
   )
   SELECT
     lb.id,
@@ -76,11 +108,13 @@ AS $$
     af.cita_posterior,
     COALESCE(af.fuente, lb.source) AS fuente,
     COALESCE(af.estado, lb.stage) AS estado,
-    lb.amount_net AS revenue,
-    lb.settled_at AS conversion_date
+    COALESCE(sr.revenue, 0)::NUMERIC AS revenue,
+    sr.conversion_date
   FROM lead_base lb
   LEFT JOIN appointments_funnel af
     ON af.phone_key = lb.phone_normalized
+  LEFT JOIN settlement_rollup sr
+    ON sr.lead_id = lb.id
   WHERE
     (p_valoracion_from IS NULL OR af.cita_valoracion >= p_valoracion_from)
     AND (p_valoracion_to IS NULL OR af.cita_valoracion <= p_valoracion_to)
@@ -94,6 +128,7 @@ REVOKE EXECUTE ON FUNCTION public.get_trazabilidad_funnel(UUID, DATE, DATE, DATE
 GRANT EXECUTE ON FUNCTION public.get_trazabilidad_funnel(UUID, DATE, DATE, DATE, DATE, DATE, DATE) TO service_role;
 
 -- 2. Update vw_lead_traceability to exclude Doctoralia leads
+DROP VIEW IF EXISTS public.vw_lead_traceability;
 CREATE OR REPLACE VIEW public.vw_lead_traceability AS
 SELECT
   l.id                    AS lead_id,
@@ -210,6 +245,7 @@ WHERE l.deleted_at IS NULL
 ALTER VIEW public.vw_lead_traceability SET (security_invoker = true);
 
 -- 3. Update vw_campaign_performance_real to exclude Doctoralia leads
+DROP VIEW IF EXISTS public.vw_campaign_performance_real;
 CREATE OR REPLACE VIEW public.vw_campaign_performance_real AS
 SELECT
   l.user_id,
@@ -254,6 +290,7 @@ GROUP BY l.user_id, u.clinic_id, l.campaign_name, l.campaign_id, l.source;
 ALTER VIEW public.vw_campaign_performance_real SET (security_invoker = true);
 
 -- 4. Update vw_whatsapp_conversion_real to exclude Doctoralia leads
+DROP VIEW IF EXISTS public.vw_whatsapp_conversion_real;
 CREATE OR REPLACE VIEW public.vw_whatsapp_conversion_real AS
 SELECT
   user_id,
@@ -279,3 +316,34 @@ WHERE deleted_at IS NULL
 GROUP BY 1, 2, 3;
 
 ALTER VIEW public.vw_whatsapp_conversion_real SET (security_invoker = true);
+
+-- 5. Update vw_doctor_performance_real to exclude Doctoralia leads
+DROP VIEW IF EXISTS public.vw_doctor_performance_real;
+CREATE OR REPLACE VIEW public.vw_doctor_performance_real AS
+SELECT
+  d.id                  AS doctor_id,
+  d.name                AS doctor_name,
+  d.specialty,
+  d.is_active,
+  COUNT(a.id)           AS total_appointments,
+  COUNT(a.id) FILTER (WHERE a.status = 'showed')    AS attended_count,
+  COUNT(a.id) FILTER (WHERE a.status = 'no_show')   AS no_show_count,
+  COUNT(a.id) FILTER (WHERE a.status = 'cancelled') AS cancelled_count,
+  COUNT(a.id) FILTER (WHERE a.status = 'confirmed') AS confirmed_count,
+  ROUND(
+    100.0 * COUNT(a.id) FILTER (WHERE a.status = 'showed') / NULLIF(COUNT(a.id), 0), 1
+  ) AS attended_rate_pct,
+  ROUND(
+    100.0 * COUNT(a.id) FILTER (WHERE a.status = 'no_show') / NULLIF(COUNT(a.id), 0), 1
+  ) AS no_show_rate_pct,
+  ROUND(COALESCE(SUM(l.revenue), 0), 2)          AS estimated_revenue,
+  ROUND(COALESCE(SUM(l.verified_revenue), 0), 2) AS verified_revenue_crm
+FROM doctors d
+LEFT JOIN appointments a ON a.doctor_id = d.id
+LEFT JOIN patients p ON p.id = a.patient_id
+LEFT JOIN leads l ON l.converted_patient_id = p.id 
+  AND l.deleted_at IS NULL 
+  AND (l.source IS NULL OR lower(btrim(l.source)) <> 'doctoralia')
+GROUP BY d.id, d.name, d.specialty, d.is_active;
+
+ALTER VIEW public.vw_doctor_performance_real SET (security_invoker = true);

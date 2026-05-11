@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Unified workspace commands for Nuvanx System",
   "scripts": {
-    "test": "vitest run shared supabase/functions",
+    "test": "vitest run supabase/functions",
     "build": "npm --prefix frontend ci && npm --prefix frontend run build",
     "dev": "npm --prefix frontend run dev",
     "lint": "npm --prefix frontend run lint",

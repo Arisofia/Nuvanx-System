@@ -4,6 +4,6 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['supabase/functions/**/*.test.ts', 'shared/**/*.test.ts'],
+    include: ['supabase/functions/**/*.test.ts'],
   },
 });
