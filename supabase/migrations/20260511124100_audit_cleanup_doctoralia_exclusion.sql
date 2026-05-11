@@ -19,6 +19,7 @@ CREATE OR REPLACE FUNCTION public.get_trazabilidad_funnel(
 RETURNS TABLE (
   lead_id UUID,
   lead_created_at TIMESTAMPTZ,
+  lead_name TEXT,
   cita_valoracion DATE,
   cita_posterior DATE,
   fuente TEXT,
@@ -29,11 +30,13 @@ RETURNS TABLE (
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
+SET search_path = public
 AS $$
   WITH lead_base AS (
     SELECT
       l.id,
       l.created_at,
+      l.name,
       l.source,
       l.stage,
       l.phone_normalized,
@@ -48,27 +51,33 @@ AS $$
   ),
   appointments_ranked AS (
     SELECT
-      normalize_phone(dr.phone_primary) AS phone_key,
-      dr.fecha AS fecha_cita,
+      lb.id AS lead_id,
+      da.fecha AS fecha_cita,
       ROW_NUMBER() OVER (
-        PARTITION BY normalize_phone(dr.phone_primary)
-        ORDER BY dr.fecha ASC
+        PARTITION BY lb.id
+        ORDER BY da.fecha ASC, da.hora ASC NULLS LAST, da.fecha_creacion ASC NULLS LAST
       ) AS rn,
-      dr.procedencia,
-      dr.estado
-    FROM public.doctoralia_raw dr
-    WHERE dr.phone_primary IS NOT NULL
-      AND dr.fecha IS NOT NULL
+      da.procedencia,
+      da.estado
+    FROM lead_base lb
+    JOIN public.doctoralia_appointments da
+      ON da.clinic_id = lb.clinic_id
+     AND da.phone_normalized = lb.phone_normalized
+     AND da.fecha >= lb.created_at::DATE
+    WHERE lb.clinic_id IS NOT NULL
+      AND da.fecha IS NOT NULL
+      AND da.phone_normalized IS NOT NULL
   ),
   appointments_funnel AS (
     SELECT
-      phone_key,
+      lead_id,
       MAX(CASE WHEN rn = 1 THEN fecha_cita END) AS cita_valoracion,
       MAX(CASE WHEN rn = 2 THEN fecha_cita END) AS cita_posterior,
-      MAX(procedencia) FILTER (WHERE rn IN (1,2)) AS fuente,
-      MAX(estado) FILTER (WHERE rn IN (1,2)) AS estado
+      MAX(procedencia) FILTER (WHERE rn IN (1, 2)) AS fuente,
+      MAX(estado) FILTER (WHERE rn IN (1, 2)) AS estado
     FROM appointments_ranked
-    GROUP BY phone_key
+    WHERE rn <= 2
+    GROUP BY lead_id
   ),
   settlement_candidates AS (
     SELECT
@@ -104,6 +113,7 @@ AS $$
   SELECT
     lb.id,
     lb.created_at,
+    lb.name,
     af.cita_valoracion,
     af.cita_posterior,
     COALESCE(af.fuente, lb.source) AS fuente,
@@ -112,7 +122,7 @@ AS $$
     sr.conversion_date
   FROM lead_base lb
   LEFT JOIN appointments_funnel af
-    ON af.phone_key = lb.phone_normalized
+    ON af.lead_id = lb.id
   LEFT JOIN settlement_rollup sr
     ON sr.lead_id = lb.id
   WHERE
