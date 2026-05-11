@@ -9,7 +9,6 @@ echo "==> Limpiando artefactos de Nuvanx-System..."
 # ── 1. Build outputs ──────────────────────────────────────────────────────────
 rm -rf frontend/dist
 rm -rf frontend/.vite
-rm -rf frontend/storybook-static
 
 # ── 2. node_modules (raíz + subproyectos) ────────────────────────────────────
 rm -rf node_modules

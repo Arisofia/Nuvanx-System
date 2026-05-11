@@ -12,7 +12,7 @@ BEGIN;
 
 -- 1. Reusable Spanish phone normalizer.
 --    Output format: local digits only, e.g. +34 612 345 678 -> 612345678.
-CREATE OR REPLACE FUNCTION public.normalize_phone(p_phone TEXT)
+CREATE OR REPLACE FUNCTION public.normalize_phone(raw_phone TEXT)
 RETURNS TEXT
 LANGUAGE plpgsql
 IMMUTABLE
@@ -21,11 +21,11 @@ AS $$
 DECLARE
   cleaned TEXT;
 BEGIN
-  IF p_phone IS NULL OR btrim(p_phone) = '' THEN
+  IF raw_phone IS NULL OR btrim(raw_phone) = '' THEN
     RETURN NULL;
   END IF;
 
-  cleaned := regexp_replace(p_phone, '[^0-9]', '', 'g');
+  cleaned := regexp_replace(raw_phone, '[^0-9]', '', 'g');
 
   IF cleaned = '' THEN
     RETURN NULL;

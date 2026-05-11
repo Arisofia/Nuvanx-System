@@ -42,11 +42,11 @@ export default function Dashboard() {
 
   if (metrics.loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
+      <div className="flex items-center justify-center min-h-[60vh]" role="status" aria-live="polite">
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
           <p className="text-sm font-bold text-[#8E8680] uppercase tracking-widest animate-pulse">
-            Sincronizando Nuvanx...
+            Sincronizando Nuvanx…
           </p>
         </div>
       </div>
@@ -54,7 +54,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-12 pb-24">
+    <main className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-12 pb-24" aria-labelledby="dashboard-title">
       <DashboardHeader
         dataMode={dataMode}
         sourceFilter={sourceFilter}
@@ -95,6 +95,6 @@ export default function Dashboard() {
           <TrendSection trendData={trendData} formatDate={formatDateForLabel} />
         </>
       )}
-    </div>
+    </main>
   )
 }
