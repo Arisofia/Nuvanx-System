@@ -30,7 +30,74 @@ type DashboardCacheEntry<T> = {
   value?: T
 }
 
-const dashboardRequestCache = new Map<string, DashboardCacheEntry<any>>()
+const DASHBOARD_CACHE_MAX_ENTRIES = 100
+
+class BoundedDashboardRequestCache<K, V> {
+  private readonly map = new Map<K, V>()
+  private readonly maxEntries: number
+
+  constructor(maxEntries: number) {
+    this.maxEntries = maxEntries
+  }
+
+  private evictIfNeeded(newKey: K) {
+    if (this.map.size < this.maxEntries) return
+    if (this.map.has(newKey)) return
+
+    const firstKey = this.map.keys().next()
+    if (!firstKey.done) {
+      this.map.delete(firstKey.value)
+    }
+  }
+
+  set(key: K, value: V): this {
+    this.evictIfNeeded(key)
+    this.map.set(key, value)
+    return this
+  }
+
+  get(key: K): V | undefined {
+    return this.map.get(key)
+  }
+
+  delete(key: K): boolean {
+    return this.map.delete(key)
+  }
+
+  clear(): void {
+    this.map.clear()
+  }
+
+  has(key: K): boolean {
+    return this.map.has(key)
+  }
+
+  get size(): number {
+    return this.map.size
+  }
+
+  [Symbol.iterator](): IterableIterator<[K, V]> {
+    return this.map[Symbol.iterator]()
+  }
+
+  entries(): IterableIterator<[K, V]> {
+    return this.map.entries()
+  }
+
+  keys(): IterableIterator<K> {
+    return this.map.keys()
+  }
+
+  values(): IterableIterator<V> {
+    return this.map.values()
+  }
+
+  forEach(callback: (value: V, key: K, map: Map<K, V>) => void, thisArg?: any): void {
+    this.map.forEach(callback, thisArg)
+  }
+}
+
+const dashboardRequestCache = new BoundedDashboardRequestCache<string, DashboardCacheEntry<any>>(DASHBOARD_CACHE_MAX_ENTRIES)
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string) {
   let timeout: ReturnType<typeof setTimeout> | undefined
