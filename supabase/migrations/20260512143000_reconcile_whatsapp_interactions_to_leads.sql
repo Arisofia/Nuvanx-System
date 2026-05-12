@@ -12,7 +12,7 @@
 CREATE OR REPLACE FUNCTION public.reconcile_whatsapp_interactions_to_leads(p_user_id UUID)
 RETURNS INTEGER
 LANGUAGE plpgsql
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = ''
 AS $$
 DECLARE
