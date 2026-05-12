@@ -15,7 +15,7 @@
 --      Added LEFT JOIN users to provide u.clinic_id for scoping phone-based joins.
 -- =============================================================================
 
-DROP VIEW IF EXISTS public.vw_lead_traceability;
+DROP VIEW IF EXISTS public.vw_lead_traceability CASCADE;
 
 CREATE OR REPLACE VIEW public.vw_lead_traceability AS
 SELECT

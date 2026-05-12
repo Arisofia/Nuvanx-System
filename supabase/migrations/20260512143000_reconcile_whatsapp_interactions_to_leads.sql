@@ -77,4 +77,5 @@ BEGIN
 END;
 $$;
 
+REVOKE ALL ON FUNCTION public.reconcile_whatsapp_interactions_to_leads(UUID) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.reconcile_whatsapp_interactions_to_leads(UUID) TO service_role;

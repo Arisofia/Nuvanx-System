@@ -155,7 +155,7 @@ export async function decryptCred(encoded: string): Promise<string> {
 }
 
 // ── Meta Graph API ────────────────────────────────────────────────────────────
-export const META_GRAPH = 'https://graph.facebook.com/v21.0';
+export const META_GRAPH = 'https://graph.facebook.com/v22.0';
 
 async function computeAppsecretProof(accessToken: string, appSecret: string): Promise<string> {
   const key = await crypto.subtle.importKey(

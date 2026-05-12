@@ -6,7 +6,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { Client } = require('pg');
 
-const META_GRAPH = 'https://graph.facebook.com/v21.0';
+const META_GRAPH = 'https://graph.facebook.com/v22.0';
 const GOOGLE_ADS_API = 'https://googleads.googleapis.com/v17';
 
 function formatDateUTC(date) {
