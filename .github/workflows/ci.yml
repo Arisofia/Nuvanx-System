@@ -174,13 +174,15 @@ jobs:
           if [ ${#MISSING[@]} -gt 0 ]; then
             echo "::warning::E2E smoke tests skipped — missing secrets: ${MISSING[*]}."
             echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
         env:
           E2E_EMAIL: ${{ secrets.E2E_EMAIL || '' }}
           E2E_PASSWORD: ${{ secrets.E2E_PASSWORD || '' }}
 
       - name: Run Playwright smoke tests
-        if: steps.check-e2e-secrets.outputs.skip != 'true'
+        if: steps.check-e2e-secrets.outputs.skip == 'false'
         run: npm run test:e2e
         env:
           E2E_EMAIL: ${{ secrets.E2E_EMAIL || '' }}
