@@ -3,8 +3,29 @@
 declare const Deno: any;
 
 import { createClient } from '@supabase/supabase-js';
+import {
+  ALLOWED_CORS_ORIGINS,
+  DEFAULT_CORS_HEADERS,
+  ENCRYPTION_KEY,
+  IS_DEVELOPMENT,
+  META_APP_SECRET,
+  NORMALIZED_FRONTEND_URL,
+  NUVANX_SUPABASE_SERVICE_ROLE_KEY,
+  SUPABASE_ANON_KEY,
+  SUPABASE_SERVICE_ROLE_KEY,
+  SUPABASE_URL,
+  buildCorsHeaders,
+  requireRuntimeSecret,
+} from '../_shared/config.ts';
 import { getPhoneNormalizationFailureReason, normalizePhoneForMeta } from '../_shared/phone.ts';
 export { createClient } from '@supabase/supabase-js';
+export {
+  ALLOWED_CORS_ORIGINS,
+  DEFAULT_CORS_HEADERS,
+  DEFAULT_CORS_ORIGIN,
+  buildCorsHeaders,
+  normalizeFrontendUrl,
+} from '../_shared/config.ts';
 
 function requireSupabaseEnv(value: string | null | undefined, name: string): string {
   const normalized = typeof value === 'string' ? value.trim() : '';
@@ -37,66 +58,6 @@ export function createSupabaseClient(url: string | null, key: string | null, opt
   return supabaseClientFactory.create(url, key, options);
 }
 
-const rawFrontendUrl = (() => {
-  const raw = Deno.env.get('FRONTEND_URL');
-  return typeof raw === 'string' ? raw.trim() : '';
-})();
-const IS_DEVELOPMENT = (() => {
-  const denoEnv = Deno.env.get('DENO_ENV');
-  const nodeEnv = Deno.env.get('NODE_ENV');
-  return (denoEnv ?? nodeEnv ?? '').toLowerCase() !== 'production';
-})();
-
-export function normalizeFrontendUrl(url: string): string | null {
-  if (!url) return null;
-  if (url === '*' || url.toLowerCase() === 'null') return null;
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== 'https:') return null;
-    return parsed.toString().replace(/\/$/, '');
-  } catch {
-    return null;
-  }
-}
-
-const normalizedFrontendUrl = normalizeFrontendUrl(rawFrontendUrl);
-
-if (!IS_DEVELOPMENT && !normalizedFrontendUrl) {
-  console.warn('FRONTEND_URL is not set or is not a valid HTTPS URL. CORS will use the production Vercel URL as fallback.');
-}
-
-// Hard-coded production Vercel URL as a CORS safety-net in case FRONTEND_URL secret is misconfigured.
-const PRODUCTION_FALLBACK_URL = 'https://frontend-arisofias-projects-c2217452.vercel.app';
-const FRONTEND_URL = normalizedFrontendUrl ?? (IS_DEVELOPMENT ? 'http://localhost:5173' : PRODUCTION_FALLBACK_URL);
-export const DEFAULT_CORS_ORIGIN = IS_DEVELOPMENT
-  ? 'http://localhost:5173'
-  : FRONTEND_URL;
-
-export const ALLOWED_CORS_ORIGINS = new Set([
-  DEFAULT_CORS_ORIGIN,
-  // Always include the production Vercel URL regardless of NODE_ENV so that
-  // POST requests from the browser (which send Origin) are never rejected in production.
-  PRODUCTION_FALLBACK_URL,
-  'https://nuvanx.com',
-  'https://www.nuvanx.com',
-]);
-
-export const DEFAULT_CORS_HEADERS = {
-  'Access-Control-Allow-Origin': DEFAULT_CORS_ORIGIN,
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-};
-
-export function buildCorsHeaders(origin: string | null) {
-  const allowedOrigin = origin && ALLOWED_CORS_ORIGINS.has(origin)
-    ? origin
-    : DEFAULT_CORS_ORIGIN;
-  return {
-    ...DEFAULT_CORS_HEADERS,
-    'Access-Control-Allow-Origin': allowedOrigin,
-  };
-}
-
 // ── Web Crypto helpers (PBKDF2 + AES-256-GCM — mirrors backend encryption) ───
 export function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
   const buf = new ArrayBuffer(hex.length >>> 1);
@@ -110,7 +71,7 @@ export function bytesToHex(bytes: Uint8Array): string {
 }
 
 async function encryptCred(raw: string): Promise<string> {
-  const masterKey = Deno.env.get('ENCRYPTION_KEY');
+  const masterKey = ENCRYPTION_KEY;
   if (!masterKey) throw new Error('ENCRYPTION_KEY not set in Edge Function secrets');
   const salt = new Uint8Array(new ArrayBuffer(32));
   crypto.getRandomValues(salt);
@@ -136,7 +97,7 @@ async function encryptCred(raw: string): Promise<string> {
 }
 
 export async function decryptCred(encoded: string): Promise<string> {
-  const masterKey = Deno.env.get('ENCRYPTION_KEY');
+  const masterKey = ENCRYPTION_KEY;
   if (!masterKey) throw new Error('ENCRYPTION_KEY not set in Edge Function secrets');
   const parts = encoded.split(':');
   if (parts.length !== 4) throw new Error('malformed ciphertext');
@@ -173,7 +134,7 @@ export async function metaFetch(path: string, params: Record<string, string>, to
   const url = new URL(`${META_GRAPH}${path}`);
   url.searchParams.set('access_token', token);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  const appSecret = Deno.env.get('META_APP_SECRET');
+  const appSecret = META_APP_SECRET;
   if (appSecret) {
     url.searchParams.set('appsecret_proof', await computeAppsecretProof(token, appSecret));
   }
@@ -297,7 +258,7 @@ async function hashMetaUserData(userData: Record<string, string[]>): Promise<Rec
 async function metaPost(path: string, body: any, token: string) {
   const url = new URL(`${META_GRAPH}${path}`);
   url.searchParams.set('access_token', token);
-  const appSecret = Deno.env.get('META_APP_SECRET');
+  const appSecret = META_APP_SECRET;
   if (appSecret) {
     url.searchParams.set('appsecret_proof', await computeAppsecretProof(token, appSecret));
   }
@@ -1188,24 +1149,16 @@ function isValidEncryptionKey(value: string | null | undefined): boolean {
   return typeof value === 'string' && value.trim().length >= 32;
 }
 
-function requireRuntimeSecret(name: string): string {
-  const rawValue = Deno.env.get(name);
-  const value = typeof rawValue === 'string' ? rawValue.trim() : '';
-  if (!value) {
-    throw new Error(`${name} is required. Refusing to run with missing Supabase runtime configuration.`);
-  }
-  return value;
-}
-
 function validateSupabaseRuntimeConfig() {
   requireRuntimeSecret('SUPABASE_URL');
   requireRuntimeSecret('SUPABASE_SERVICE_ROLE_KEY');
+  requireRuntimeSecret('SUPABASE_ANON_KEY');
 
-  if (!isValidEncryptionKey(Deno.env.get('ENCRYPTION_KEY'))) {
+  if (!isValidEncryptionKey(ENCRYPTION_KEY)) {
     throw new Error('ENCRYPTION_KEY is required and must be at least 32 characters.');
   }
 
-  if (!IS_DEVELOPMENT && !normalizedFrontendUrl) {
+  if (!IS_DEVELOPMENT && !NORMALIZED_FRONTEND_URL) {
     console.warn('FRONTEND_URL secret is missing or invalid; using hard-coded production fallback for CORS.');
   }
 }
@@ -1371,10 +1324,10 @@ async function handleRequest(req: Request): Promise<Response> {
   const sub = parts[1] ?? '';
   const sub2 = parts[2] ?? '';
 
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  const nuvanxServiceKey = Deno.env.get('NUVANX_SUPABASE_SERVICE_ROLE_KEY');
-  const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+  const supabaseUrl = requireSupabaseEnv(SUPABASE_URL, 'SUPABASE_URL');
+  const serviceKey = requireSupabaseEnv(SUPABASE_SERVICE_ROLE_KEY, 'SUPABASE_SERVICE_ROLE_KEY');
+  const nuvanxServiceKey = NUVANX_SUPABASE_SERVICE_ROLE_KEY;
+  const anonKey = requireSupabaseEnv(SUPABASE_ANON_KEY, 'SUPABASE_ANON_KEY');
 
   // This function is deployed with  so Supabase will not reject
   // requests before this handler runs. Every non-public route must therefore
@@ -1609,7 +1562,7 @@ async function fireMetaLeadCapi(accessToken: string, leadgenId: string, leadData
 
 async function handleMetaWebhookPost(ctx: PublicRouteContext): Promise<Response | null> {
   const { req } = ctx;
-  const appSecret = Deno.env.get('META_APP_SECRET');
+  const appSecret = META_APP_SECRET;
   const rawBody = await req.text();
 
   if (!appSecret && !IS_DEVELOPMENT) {
@@ -1635,7 +1588,7 @@ async function handleMetaWebhookPost(ctx: PublicRouteContext): Promise<Response 
   }
   if (payload.object !== 'page') return new Response('ok', { status: 200 });
 
-  const adminClient = supabaseClientFactory.create(Deno.env.get('SUPABASE_URL') ?? null, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? null, {
+  const adminClient = supabaseClientFactory.create(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false },
   });
 
@@ -1672,7 +1625,7 @@ function handleWhatsappWebhookGet(ctx: PublicRouteContext): Response | null {
 
 async function handleWhatsappWebhookPost(ctx: PublicRouteContext): Promise<Response | null> {
   const { req } = ctx;
-  const appSecret = Deno.env.get('META_APP_SECRET');
+  const appSecret = META_APP_SECRET;
   const rawBody = await req.text();
 
   if (!appSecret && !IS_DEVELOPMENT) {
@@ -1697,7 +1650,7 @@ async function handleWhatsappWebhookPost(ctx: PublicRouteContext): Promise<Respo
     return new Response('ok', { status: 200 });
   }
 
-  const adminClient = supabaseClientFactory.create(Deno.env.get('SUPABASE_URL') ?? null, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? null, {
+  const adminClient = supabaseClientFactory.create(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false },
   });
 
@@ -1899,10 +1852,10 @@ function handleHealthRoutes(ctx: PublicRouteContext): Response | null {
   const { resource, sub, sendJson } = ctx;
 
   if (resource === 'health' && sub === 'secrets') {
-    const encryptionKeyRaw = String(Deno.env.get('ENCRYPTION_KEY') ?? '');
+    const encryptionKeyRaw = ENCRYPTION_KEY;
     const hasEncryptionKey = Boolean(encryptionKeyRaw.trim());
-    const hasServiceKey = Boolean(String(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '').trim());
-    const hasDedicatedBypassKey = Boolean(String(Deno.env.get('NUVANX_SUPABASE_SERVICE_ROLE_KEY') ?? '').trim());
+    const hasServiceKey = Boolean(SUPABASE_SERVICE_ROLE_KEY);
+    const hasDedicatedBypassKey = Boolean(NUVANX_SUPABASE_SERVICE_ROLE_KEY);
     const hasWhatsappVerifyToken = Boolean(String(Deno.env.get('WHATSAPP_WEBHOOK_VERIFY_TOKEN') ?? '').trim());
     const ok = hasEncryptionKey && hasServiceKey && hasDedicatedBypassKey;
 
@@ -2156,6 +2109,8 @@ async function handleLeadsGet(ctx: AuthenticatedRouteContext): Promise<Response 
     const reconcile = url.searchParams.get('reconcile') === 'true';
 
     if (reconcile) await runLeadPipelineReconciliation(adminClient, userId);
+
+    await runLeadPipelineReconciliation(adminClient, userId);
 
     const clinicId = await resolveClinicId(adminClient, userId);
     let query = adminClient

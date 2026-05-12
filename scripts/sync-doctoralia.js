@@ -72,10 +72,6 @@ function normalizeField(value) {
   return value?.toString().trim() ?? '';
 }
 
-function getPrimaryPhoneFromSubject(value) {
-  return extractPhonesFromSubject(value)[0] ?? null;
-}
-
 function deriveRawId(row, useHashId, cols) {
   if (!useHashId) {
     return normalizeField(row[cols.colId]);

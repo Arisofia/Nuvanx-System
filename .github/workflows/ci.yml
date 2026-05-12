@@ -14,10 +14,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6 # v6
 
-      - name: Fail on merge conflict markers in .github
+      - name: Fail on merge conflict markers in CI-critical config
         run: |
-          if grep -R -nE "^(<<<<<<<|=======|>>>>>>>)" .github; then
-            echo "::error::Merge conflict markers detected in .github YAML files."
+          if grep -R -nE "^(<<<<<<<|=======|>>>>>>>)" .github supabase/config.toml; then
+            echo "::error::Merge conflict markers detected in CI-critical config files."
             exit 1
           fi
 
@@ -36,6 +36,38 @@ jobs:
             puts "OK #{f}"
           end
           RUBY
+
+      - name: Validate Supabase config function blocks
+        run: |
+          python3 - <<'PY'
+          import tomllib
+          from pathlib import Path
+
+          config = tomllib.loads(Path('supabase/config.toml').read_text())
+          functions = config.get('functions', {})
+          expected = {
+              'api': 'functions/deno.json',
+              'mcp': 'functions/mcp/deno.json',
+              'daily-aggregates': 'functions/deno.json',
+          }
+          invalid_keys = {'s3_access_key', 's3_host', 's3_region', 's3_secret_key'}
+
+          for function_name, import_map in expected.items():
+              block = functions.get(function_name)
+              if not isinstance(block, dict):
+                  raise SystemExit(f'missing [functions.{function_name}] block')
+              if block.get('import_map') != import_map:
+                  raise SystemExit(f'[functions.{function_name}] import_map must be {import_map}')
+              if block.get('verify_jwt') is not False:
+                  raise SystemExit(f'[functions.{function_name}] verify_jwt must be false')
+              leaked_keys = invalid_keys.intersection(block)
+              if leaked_keys:
+                  raise SystemExit(
+                      f'[functions.{function_name}] has invalid S3 keys: {sorted(leaked_keys)}'
+                  )
+
+          print('OK supabase/config.toml function blocks')
+          PY
 
   # ─── Frontend: lint ──────────────────────────────────────────────────────
   frontend-lint:
