@@ -2117,11 +2117,22 @@ async function handleProductionAuditGet(ctx: AuthenticatedRouteContext): Promise
   return null;
 }
 
+async function reconcileWhatsappInteractionsForUser(adminClient: any, userId: string): Promise<void> {
+  try {
+    const { error } = await adminClient.rpc('reconcile_whatsapp_interactions_to_leads', { p_user_id: userId });
+    if (error) console.warn('reconcile_whatsapp_interactions_to_leads warning:', error);
+  } catch (error) {
+    console.warn('reconcile_whatsapp_interactions_to_leads skipped:', error);
+  }
+}
+
 async function handleLeadsGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'leads' && req.method === 'GET' && sub === '') {
     const source = url.searchParams.get('source');
     const stage = url.searchParams.get('stage');
+
+    await reconcileWhatsappInteractionsForUser(adminClient, userId);
 
     const clinicId = await resolveClinicId(adminClient, userId);
     let query = adminClient
