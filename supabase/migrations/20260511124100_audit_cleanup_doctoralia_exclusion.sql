@@ -7,6 +7,8 @@
 
 -- 1. Harden get_trazabilidad_funnel
 -- FINAL VERSION with real revenue logic (Option 2)
+DROP FUNCTION IF EXISTS public.get_trazabilidad_funnel(UUID, DATE, DATE, DATE, DATE, DATE, DATE);
+
 CREATE OR REPLACE FUNCTION public.get_trazabilidad_funnel(
   p_user_id UUID DEFAULT auth.uid(),
   p_lead_from DATE DEFAULT NULL,
