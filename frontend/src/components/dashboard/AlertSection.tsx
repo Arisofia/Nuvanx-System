@@ -11,7 +11,7 @@ export function AlertSection({ error, metaError }: AlertSectionProps) {
   return (
     <>
       {error && (
-        <div className="alert-card alert-error">
+        <div className="alert-card alert-error" role="alert">
           <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
           <div>
             <p className="font-medium">Error de conexión</p>
@@ -21,7 +21,7 @@ export function AlertSection({ error, metaError }: AlertSectionProps) {
       )}
 
       {metaError && !error && (
-        <div className="alert-card alert-warning">
+        <div className="alert-card alert-warning" role="alert">
           <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
           <div>
             <p className="font-medium">Error de Meta API</p>

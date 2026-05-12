@@ -4,7 +4,6 @@ import type { DashboardMetrics, MetaTrendPoint } from '../types'
 import {
   type CombinedMetrics,
   type RealFunnel,
-  type DashboardQuality,
   EMPTY_COMBINED_METRICS,
   EMPTY_FUNNEL,
   buildDashboardPaths,
@@ -12,9 +11,144 @@ import {
   buildMetaFailureMessage,
   buildDashboardState
 } from '../lib/dashboard-helpers'
+import {
+  DASHBOARD_CACHE_TTL_MS,
+  DASHBOARD_REQUEST_RETRIES,
+  DASHBOARD_REQUEST_TIMEOUT_MS,
+  buildDashboardCacheKey,
+  getUserFacingDashboardError,
+  isCacheEntryFresh,
+  validateDashboardBundle,
+} from '../lib/dashboard-validation'
 import { logger, isProdEnv } from '../lib/utils'
 
 const defaultTrend: MetaTrendPoint[] = []
+
+type DashboardCacheEntry<T> = {
+  createdAt: number
+  promise?: Promise<T>
+  value?: T
+}
+
+const DASHBOARD_CACHE_MAX_ENTRIES = 100
+
+class BoundedDashboardRequestCache<K, V> {
+  private readonly map = new Map<K, V>()
+  private readonly maxEntries: number
+
+  constructor(maxEntries: number) {
+    this.maxEntries = maxEntries
+  }
+
+  private evictIfNeeded(newKey: K) {
+    if (this.map.size < this.maxEntries) return
+    if (this.map.has(newKey)) return
+
+    const firstKey = this.map.keys().next()
+    if (!firstKey.done) {
+      this.map.delete(firstKey.value)
+    }
+  }
+
+  set(key: K, value: V): this {
+    this.evictIfNeeded(key)
+    this.map.set(key, value)
+    return this
+  }
+
+  get(key: K): V | undefined {
+    return this.map.get(key)
+  }
+
+  delete(key: K): boolean {
+    return this.map.delete(key)
+  }
+
+  clear(): void {
+    this.map.clear()
+  }
+
+  has(key: K): boolean {
+    return this.map.has(key)
+  }
+
+  get size(): number {
+    return this.map.size
+  }
+
+  [Symbol.iterator](): IterableIterator<[K, V]> {
+    return this.map[Symbol.iterator]()
+  }
+
+  entries(): IterableIterator<[K, V]> {
+    return this.map.entries()
+  }
+
+  keys(): IterableIterator<K> {
+    return this.map.keys()
+  }
+
+  values(): IterableIterator<V> {
+    return this.map.values()
+  }
+
+  forEach(callback: (value: V, key: K, map: Map<K, V>) => void, thisArg?: any): void {
+    this.map.forEach(callback, thisArg)
+  }
+}
+
+const dashboardRequestCache = new BoundedDashboardRequestCache<string, DashboardCacheEntry<any>>(DASHBOARD_CACHE_MAX_ENTRIES)
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string) {
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs)
+  })
+  return Promise.race([promise, timeoutPromise]).finally(() => { if (timeout) clearTimeout(timeout) })
+}
+
+async function invokeDashboardResource<T>(path: string, retries = DASHBOARD_REQUEST_RETRIES): Promise<T> {
+  let lastError: unknown
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      return await withTimeout(invokeApi(path), DASHBOARD_REQUEST_TIMEOUT_MS, path) as T
+    } catch (error) {
+      lastError = error
+      if (attempt < retries) {
+        await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)))
+      }
+    }
+  }
+  throw lastError
+}
+
+function getCachedDashboardResource<T>(path: string, cacheNamespace: string): Promise<T> {
+  const key = `${cacheNamespace}:${buildDashboardCacheKey(path)}`
+  const cached = dashboardRequestCache.get(key)
+  if (cached?.value !== undefined && isCacheEntryFresh(cached.createdAt, DASHBOARD_CACHE_TTL_MS)) {
+    return Promise.resolve(cached.value as T)
+  }
+  if (cached?.promise && isCacheEntryFresh(cached.createdAt, DASHBOARD_CACHE_TTL_MS)) {
+    return cached.promise as Promise<T>
+  }
+
+  const promise = invokeDashboardResource<T>(path)
+    .then((value) => {
+      dashboardRequestCache.set(key, { createdAt: Date.now(), value })
+      return value
+    })
+    .catch((error) => {
+      dashboardRequestCache.delete(key)
+      throw error
+    })
+
+  dashboardRequestCache.set(key, { createdAt: Date.now(), promise })
+  return promise
+}
+
+export function clearDashboardDataCache() {
+  dashboardRequestCache.clear()
+}
 
 export function useDashboardData(
   days: number,
@@ -25,7 +159,7 @@ export function useDashboardData(
   campaignsCount: number,
   sourcesCount: number,
 ) {
-  const [funnelData, setFunnelData] = useState<any[]>([])
+  const [funnelData, setFunnelData] = useState<Array<Record<string, unknown>>>([])
   const [metrics, setMetrics] = useState<DashboardMetrics>({
     totalLeads: 0,
     conversionRate: 0,
@@ -42,7 +176,7 @@ export function useDashboardData(
   const [quality, setQuality] = useState<any>(null)
   const [isFunnelDemo, setIsFunnelDemo] = useState<boolean>(false)
   const [dataMode, setDataMode] = useState<string | undefined>(undefined)
-  const [trendData, setTrendData] = useState<MetaTrendPoint[]>([])
+  const [trendData, setTrendData] = useState(defaultTrend)
   const [sourcesList, setSourcesList] = useState<string[]>([])
   const [campaignsList, setCampaignsList] = useState<{ id: string, name: string }[]>([])
 
@@ -51,42 +185,58 @@ export function useDashboardData(
     const buildParams = () => {
       const isCustomRange = Boolean(customFrom && customTo)
       const { baseParams, campaignsPath } = buildDashboardPaths(isCustomRange, customFrom, customTo, days)
-      const campaignParam = campaignId === 'ALL' ? '' : `&campaign_id=${campaignId}`
-      const sourceParam = sourceFilter === 'ALL' ? '' : `&source=${sourceFilter}`
+      const campaignParam = campaignId === 'ALL' ? '' : `&campaign_id=${encodeURIComponent(campaignId)}`
+      const sourceParam = sourceFilter === 'ALL' ? '' : `&source=${encodeURIComponent(sourceFilter)}`
       const queryParams = `${baseParams}${campaignParam}`
       const dashboardParams = `${queryParams}${sourceParam}`
       return { queryParams, dashboardParams, campaignsPath }
     }
 
     const processResults = (
-      metricsResult: any,
-      metaTrendsResult: any,
-      campaignsResult: any,
-      insightsResult: any,
-      funnelResult: any,
-      kpisResult: any
+      metricsResult: PromiseSettledResult<any>,
+      metaTrendsResult: PromiseSettledResult<any>,
+      campaignsResult: PromiseSettledResult<any>,
+      insightsResult: PromiseSettledResult<any>,
+      funnelResult: PromiseSettledResult<any>,
+      kpisResult: PromiseSettledResult<any>
     ) => {
       if (!active) return
       if (metricsResult.status === 'rejected') throw metricsResult.reason
-      
+
       const kpisResponse = kpisResult.status === 'fulfilled' ? kpisResult.value : null
-      const metricsData = metricsResult.value?.metrics ?? {}
-      if (metricsData.bySource && Object.keys(metricsData.bySource).length > 0 && sourcesCount === 0) {
-        setSourcesList(Object.keys(metricsData.bySource))
-      }
-
-      if (funnelResult.status === 'fulfilled') {
-        setFunnelData(funnelResult.value.funnel || [])
-      }
-
       const campaignsResponse = campaignsResult.status === 'fulfilled' ? campaignsResult.value : null
       const metaTrendsResponse = metaTrendsResult.status === 'fulfilled' ? metaTrendsResult.value : null
       const insightsResponse = insightsResult.status === 'fulfilled' ? insightsResult.value : null
+      const funnelResponse = funnelResult.status === 'fulfilled' ? funnelResult.value : null
+
+      const validation = validateDashboardBundle({
+        metricsResponse: metricsResult.value,
+        campaignsResponse,
+        metaTrendsResponse,
+        funnelResponse,
+        kpisResponse,
+      })
+
+      if (!validation.valid) {
+        logger.warn('Dashboard validation', validation.errors)
+      }
+
+      const { metricsData, campaigns, trendData: safeTrendData, funnelRows } = validation.data
+      const bySource = metricsData.bySource && typeof metricsData.bySource === 'object' && !Array.isArray(metricsData.bySource)
+        ? metricsData.bySource as Record<string, unknown>
+        : {}
+      if (Object.keys(bySource).length > 0 && sourcesCount === 0) {
+        setSourcesList(Object.keys(bySource))
+      }
+
+      setFunnelData(funnelRows)
 
       const metaFailureMessage = buildMetaFailureMessage(campaignsResult, insightsResult)
-      const campaigns = Array.isArray(campaignsResponse?.campaigns) ? campaignsResponse.campaigns : []
       if (campaigns.length > 0 && campaignsCount === 0) {
-        setCampaignsList(campaigns.map((c: any) => ({ id: c.id, name: c.name })))
+        setCampaignsList(campaigns.map((campaign) => ({
+          id: String(campaign.id ?? ''),
+          name: String(campaign.name ?? 'Campaña sin nombre'),
+        })).filter((campaign) => campaign.id))
       }
 
       const insightsSummary = insightsResponse?.summary
@@ -99,7 +249,8 @@ export function useDashboardData(
         kpisSuccess: kpisResponse?.success,
         dataMode: kpisResponse?.data_quality?.overall_mode,
         metaConversions,
-        hasKpis: !!kpisResponse
+        hasKpis: Boolean(kpisResponse),
+        validationErrors: validation.errors.length,
       })
 
       if (kpisResponse && kpisResponse.success !== true && !metricsData.totalLeads && !campaigns.length) {
@@ -110,7 +261,7 @@ export function useDashboardData(
         setMetrics((prev) => ({
           ...prev,
           loading: false,
-          error: kpisResponse.message || 'No real KPI data available. Conecta Meta y Doctoralia para ver datos reales.',
+          error: kpisResponse.message || 'No hay KPIs reales disponibles. Conecta Meta y Doctoralia para ver datos reales.',
           metaError: null,
         }))
         return
@@ -121,14 +272,7 @@ export function useDashboardData(
         (kpisResponse?.doctoralia?.newVerifiedPatients ?? 0) === 0,
       )
       setDataMode(kpisResponse?.data_quality?.overall_mode as string | undefined)
-      setTrendData(
-        Array.isArray(metaTrendsResponse?.trends)
-          ? metaTrendsResponse.trends.map((item: any) => ({
-              week: item.date_start ?? item.date ?? '–',
-              value: Number(item.spend ?? 0),
-            }))
-          : [],
-      )
+      setTrendData(safeTrendData)
 
       const { metrics: metricsPayload, combined: combinedPayload, funnel: funnelPayload, quality: qualityPayload } = buildDashboardState({
         metricsData,
@@ -148,11 +292,13 @@ export function useDashboardData(
     }
 
     const fetchMetrics = async () => {
+      setMetrics((prev) => ({ ...prev, loading: true, error: null }))
+
       if (!supabaseUrl || !supabaseKey) {
         setMetrics((prev) => ({
           ...prev,
           loading: false,
-          error: 'Supabase environment variables are not configured.',
+          error: 'Faltan variables de entorno de Supabase. Configura VITE_SUPABASE_URL y VITE_SUPABASE_PUBLISHABLE_KEY.',
         }))
         return
       }
@@ -167,13 +313,14 @@ export function useDashboardData(
 
       try {
         const { queryParams, dashboardParams, campaignsPath } = buildParams()
+        const cacheNamespace = session.user?.id ?? 'anonymous'
         const [metricsResult, metaTrendsResult, campaignsResult, insightsResult, funnelResult, kpisResult] = await Promise.allSettled([
-          invokeApi(`/dashboard/metrics${dashboardParams}`),
-          invokeApi(`/dashboard/meta-trends${queryParams}`),
-          invokeApi(`/meta/campaigns${campaignsPath}`),
-          invokeApi(`/meta/insights${queryParams}`),
-          invokeApi('/dashboard/lead-flow'),
-          invokeApi(`/kpis${dashboardParams}`),
+          getCachedDashboardResource(`/dashboard/metrics${dashboardParams}`, cacheNamespace),
+          getCachedDashboardResource(`/dashboard/meta-trends${queryParams}`, cacheNamespace),
+          getCachedDashboardResource(`/meta/campaigns${campaignsPath}`, cacheNamespace),
+          getCachedDashboardResource(`/meta/insights${queryParams}`, cacheNamespace),
+          getCachedDashboardResource('/dashboard/lead-flow', cacheNamespace),
+          getCachedDashboardResource(`/kpis${dashboardParams}`, cacheNamespace),
         ])
 
         processResults(metricsResult, metaTrendsResult, campaignsResult, insightsResult, funnelResult, kpisResult)
@@ -183,7 +330,7 @@ export function useDashboardData(
         setMetrics((prev) => ({
           ...prev,
           loading: false,
-          error: err?.message || 'Unable to load dashboard metrics',
+          error: getUserFacingDashboardError(err),
           metaError: null,
         }))
       }

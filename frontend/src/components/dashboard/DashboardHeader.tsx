@@ -43,10 +43,10 @@ export function DashboardHeader({
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div className="space-y-2">
           <div className="flex items-center gap-4">
-            <h1 className="text-5xl font-serif font-bold tracking-tight text-[#2C2825]">Dashboard</h1>
+            <h1 id="dashboard-title" className="text-5xl font-serif font-bold tracking-tight text-[#2C2825]">Dashboard</h1>
             <DataModeBadge overallMode={dataMode as any} />
           </div>
-          <p className={`${controlTextClass} text-xs tracking-wide`}>Control de Rendimiento Médico</p>
+          <p className={`${controlTextClass} text-xs tracking-wide`}>Control de rendimiento médico</p>
           <MetaAccountsInline
             accountIds={metaAccountIds}
             context="Dashboard consolidado de inversión, campañas y leads atribuidos."
