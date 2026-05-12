@@ -400,6 +400,10 @@ verify_jwt = false
 [functions.mcp]
 import_map = "functions/mcp/deno.json"
 verify_jwt = false
+
+[functions.daily-aggregates]
+import_map = "functions/deno.json"
+verify_jwt = false
 # Configures S3 bucket URL, eg. <bucket_name>.s3-<region>.amazonaws.com
 s3_host = "env(S3_HOST)"
 # Configures S3 bucket region, eg. us-east-1
