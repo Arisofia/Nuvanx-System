@@ -1,0 +1,11 @@
+frontend:
+  - frontend/**/*
+backend:
+  - supabase/**/*
+  - scripts/**/*
+docs:
+  - "**/*.md"
+  - docs/**/*
+ci:
+  - .github/workflows/**/*
+  - .github/actions/**/*
