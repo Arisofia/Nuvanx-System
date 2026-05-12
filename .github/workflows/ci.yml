@@ -271,8 +271,21 @@ jobs:
             echo "::error::supabase/functions/deno.json not found; skipping deno cache step."
             exit 1
           fi
+          echo "Caching API function..."
           deno cache --config supabase/functions/deno.json supabase/functions/api/index.ts
-          deno cache --config supabase/functions/deno.json supabase/functions/mcp/index.ts
+          
+          if [ -f supabase/functions/mcp/deno.json ]; then
+            echo "Caching MCP function with local config..."
+            deno cache --config supabase/functions/mcp/deno.json supabase/functions/mcp/index.ts
+          else
+            echo "Caching MCP function with shared config..."
+            deno cache --config supabase/functions/deno.json supabase/functions/mcp/index.ts
+          fi
+
+          if [ -f supabase/functions/daily-aggregates/index.ts ]; then
+            echo "Caching daily-aggregates function..."
+            deno cache --config supabase/functions/deno.json supabase/functions/daily-aggregates/index.ts
+          fi
 
       - name: Type-check Edge Functions
         run: |
@@ -285,6 +298,11 @@ jobs:
           else
             echo "Checking MCP function with shared config..."
             deno check --config supabase/functions/deno.json supabase/functions/mcp/index.ts
+          fi
+
+          if [ -f supabase/functions/daily-aggregates/index.ts ]; then
+            echo "Checking daily-aggregates function..."
+            deno check --config supabase/functions/deno.json supabase/functions/daily-aggregates/index.ts
           fi
 
       - name: Validate MCP function existence

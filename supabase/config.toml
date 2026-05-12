@@ -409,6 +409,18 @@ orioledb_version = ""
 # disabled above. Configure S3 credentials in Supabase project secrets if this
 # experimental engine is enabled in the future.
 
+[functions.api]
+import_map = "functions/deno.json"
+verify_jwt = false
+
+[functions.mcp]
+import_map = "functions/mcp/deno.json"
+verify_jwt = false
+
+[functions.daily-aggregates]
+import_map = "functions/deno.json"
+verify_jwt = false
+
 # [experimental.pgdelta]
 # When enabled, pg-delta becomes the active engine for supported schema flows.
 # enabled = false

@@ -2070,20 +2070,35 @@ async function handleProductionAuditGet(ctx: AuthenticatedRouteContext): Promise
   return null;
 }
 
+/**
+ * Runs lead pipeline reconciliation RPCs.
+ *
+ * These calls can touch leads-related tables and should stay out of normal hot
+ * read paths. GET /leads and GET /reports/lead-audit only run this when the
+ * caller explicitly requests `?reconcile=true`; scheduled/background jobs should
+ * remain the default way to keep reconciliation state fresh.
+ */
 async function runLeadPipelineReconciliation(adminClient: any, userId: string): Promise<void> {
   const reconciliationCalls = [
     { fn: 'reconcile_whatsapp_interactions_to_leads', params: { p_user_id: userId } },
     { fn: 'reconcile_doctoralia_subjects_to_leads', params: { p_user_id: userId } },
   ];
 
-  for (const call of reconciliationCalls) {
-    try {
-      const { error } = await adminClient.rpc(call.fn, call.params);
-      if (error) console.warn(`${call.fn} warning:`, error);
-    } catch (error) {
-      console.warn(`${call.fn} skipped:`, error);
+  const results = await Promise.allSettled(
+    reconciliationCalls.map((call) => adminClient.rpc(call.fn, call.params)),
+  );
+
+  results.forEach((result, index) => {
+    const { fn } = reconciliationCalls[index];
+
+    if (result.status === 'rejected') {
+      console.warn(`${fn} skipped during lead reconciliation:`, result.reason);
+      return;
     }
-  }
+
+    const { error } = result.value ?? {};
+    if (error) console.warn(`${fn} warning during lead reconciliation:`, error);
+  });
 }
 
 async function handleLeadsGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
@@ -2091,6 +2106,9 @@ async function handleLeadsGet(ctx: AuthenticatedRouteContext): Promise<Response 
   if (resource === 'leads' && req.method === 'GET' && sub === '') {
     const source = url.searchParams.get('source');
     const stage = url.searchParams.get('stage');
+    const reconcile = url.searchParams.get('reconcile') === 'true';
+
+    if (reconcile) await runLeadPipelineReconciliation(adminClient, userId);
 
     await runLeadPipelineReconciliation(adminClient, userId);
 
@@ -2107,7 +2125,7 @@ async function handleLeadsGet(ctx: AuthenticatedRouteContext): Promise<Response 
 
     const { data, error } = await query;
     if (error) throw error;
-    return sendJson({ success: true, leads: data, total: data.length });
+    return sendJson({ success: true, leads: data, total: data.length, reconciled: reconcile });
   }
   return null;
 }
@@ -6074,6 +6092,7 @@ async function handleReportsLeadAuditGet(ctx: AuthenticatedRouteContext): Promis
     const to = url.searchParams.get('to') ?? '';
     const campaignName = url.searchParams.get('campaign_name') ?? '';
     const phone = url.searchParams.get('phone') ?? '';
+    const reconcile = url.searchParams.get('reconcile') === 'true';
 
     const normalizedPhone = phone ? normalizePhoneForMeta(phone) : null;
     if (phone && normalizedPhone === null) {
@@ -6085,7 +6104,7 @@ async function handleReportsLeadAuditGet(ctx: AuthenticatedRouteContext): Promis
     }
 
     try {
-      await runLeadPipelineReconciliation(adminClient, userId);
+      if (reconcile) await runLeadPipelineReconciliation(adminClient, userId);
 
       const query = buildLeadAuditQuery(
         adminClient,
@@ -6102,7 +6121,7 @@ async function handleReportsLeadAuditGet(ctx: AuthenticatedRouteContext): Promis
 
       const audited = (rows || []).map(normalizeLeadAuditRow);
 
-      return sendJson({ success: true, leads: audited, total: audited.length });
+      return sendJson({ success: true, leads: audited, total: audited.length, reconciled: reconcile });
     } catch (err: any) {
       console.error('Lead Audit Error:', err);
       return sendJson({ success: false, message: err.message || 'Error fetching lead audit data' }, 500);

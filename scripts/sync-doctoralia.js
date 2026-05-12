@@ -36,6 +36,7 @@
 const { google }  = require('googleapis');
 const { Client }  = require('pg');
 const { createHash } = require('node:crypto');
+const { extractPhonesFromSubject, normalizePhoneForMatching } = require('./lib/phone-normalization');
 
 const {
   GOOGLE_SA_JSON: SA_JSON,
@@ -69,40 +70,6 @@ function norm(str) {
 
 function normalizeField(value) {
   return value?.toString().trim() ?? '';
-}
-
-function normalizePhoneForMatching(value) {
-  const digits = normalizeField(value).replace(/[^0-9]/g, '');
-  if (!digits) return null;
-  let normalized = digits;
-  if (normalized.startsWith('0034') && normalized.length > 9) {
-    normalized = normalized.slice(4);
-  } else if (normalized.startsWith('34') && normalized.length > 9) {
-    normalized = normalized.slice(2);
-  }
-  return normalized.length >= 7 ? normalized : null;
-}
-
-function extractPhonesFromSubject(value) {
-  const subject = normalizeField(value);
-  if (!subject) return [];
-
-  const bracketMatches = [...subject.matchAll(/\[([^\]]+)\]/g)].map((match) => match[1]);
-  const sources = bracketMatches.length > 0 ? bracketMatches : [subject];
-  const phones = [];
-
-  for (const source of sources) {
-    for (const token of source.split(/[^0-9+]+/)) {
-      const normalized = normalizePhoneForMatching(token);
-      if (normalized && !phones.includes(normalized)) phones.push(normalized);
-    }
-  }
-
-  return phones;
-}
-
-function getPrimaryPhoneFromSubject(value) {
-  return extractPhonesFromSubject(value)[0] ?? null;
 }
 
 function deriveRawId(row, useHashId, cols) {
