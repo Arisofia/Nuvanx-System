@@ -2117,12 +2117,19 @@ async function handleProductionAuditGet(ctx: AuthenticatedRouteContext): Promise
   return null;
 }
 
-async function reconcileWhatsappInteractionsForUser(adminClient: any, userId: string): Promise<void> {
-  try {
-    const { error } = await adminClient.rpc('reconcile_whatsapp_interactions_to_leads', { p_user_id: userId });
-    if (error) console.warn('reconcile_whatsapp_interactions_to_leads warning:', error);
-  } catch (error) {
-    console.warn('reconcile_whatsapp_interactions_to_leads skipped:', error);
+async function runLeadPipelineReconciliation(adminClient: any, userId: string): Promise<void> {
+  const reconciliationCalls = [
+    { fn: 'reconcile_whatsapp_interactions_to_leads', params: { p_user_id: userId } },
+    { fn: 'reconcile_doctoralia_subjects_to_leads', params: { p_user_id: userId } },
+  ];
+
+  for (const call of reconciliationCalls) {
+    try {
+      const { error } = await adminClient.rpc(call.fn, call.params);
+      if (error) console.warn(`${call.fn} warning:`, error);
+    } catch (error) {
+      console.warn(`${call.fn} skipped:`, error);
+    }
   }
 }
 
@@ -2132,7 +2139,7 @@ async function handleLeadsGet(ctx: AuthenticatedRouteContext): Promise<Response 
     const source = url.searchParams.get('source');
     const stage = url.searchParams.get('stage');
 
-    await reconcileWhatsappInteractionsForUser(adminClient, userId);
+    await runLeadPipelineReconciliation(adminClient, userId);
 
     const clinicId = await resolveClinicId(adminClient, userId);
     let query = adminClient

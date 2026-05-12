@@ -18,6 +18,8 @@
  * Expected sheet columns (case-insensitive, accent-insensitive, partial match):
  *   id / operacion / operation / num         → id (PRIMARY KEY)
  *   plantilla / template / plantilladescr    → template_name
+ *     also parses bracketed phones in Asunto, e.g. [657174670 - 657174670]
+ *     into patient_phone / phone_normalized
  *   id plantilla / template_id / cod         → template_id
  *   ingreso / inicio / intake / alta / desde → intake_at
  *   liquidaci / settled / liq                → settled_at
@@ -67,6 +69,40 @@ function norm(str) {
 
 function normalizeField(value) {
   return value?.toString().trim() ?? '';
+}
+
+function normalizePhoneForMatching(value) {
+  const digits = normalizeField(value).replace(/[^0-9]/g, '');
+  if (!digits) return null;
+  let normalized = digits;
+  if (normalized.startsWith('0034') && normalized.length > 9) {
+    normalized = normalized.slice(4);
+  } else if (normalized.startsWith('34') && normalized.length > 9) {
+    normalized = normalized.slice(2);
+  }
+  return normalized.length >= 7 ? normalized : null;
+}
+
+function extractPhonesFromSubject(value) {
+  const subject = normalizeField(value);
+  if (!subject) return [];
+
+  const bracketMatches = [...subject.matchAll(/\[([^\]]+)\]/g)].map((match) => match[1]);
+  const sources = bracketMatches.length > 0 ? bracketMatches : [subject];
+  const phones = [];
+
+  for (const source of sources) {
+    for (const token of source.split(/[^0-9+]+/)) {
+      const normalized = normalizePhoneForMatching(token);
+      if (normalized && !phones.includes(normalized)) phones.push(normalized);
+    }
+  }
+
+  return phones;
+}
+
+function getPrimaryPhoneFromSubject(value) {
+  return extractPhonesFromSubject(value)[0] ?? null;
 }
 
 function deriveRawId(row, useHashId, cols) {
@@ -464,6 +500,7 @@ async function upsertDoctoraliaRow(row, i, params) {
   const roomId    = getOptionalTextValue(row, cols.colRoom, hasColRoom);
   const agenda    = getOptionalTextValue(row, cols.colAgenda, hasColAgenda);
   const tmplName  = getOptionalTextValue(row, cols.colTemplate, hasColTemplate);
+  const patientPhone = getPrimaryPhoneFromSubject(tmplName);
   const tmplId    = getOptionalTextValue(row, cols.colTemplateId, hasColTemplateId);
   const intermed  = getOptionalTextValue(row, cols.colIntermediary, hasColIntermediary);
 
@@ -474,8 +511,8 @@ async function upsertDoctoraliaRow(row, i, params) {
           payment_method, template_name, template_id,
           settled_at, intake_at, cancelled_at, intermediary_name,
           status_original, status_type, room_id, lead_source, agenda_name,
-          source_system)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,'doctoralia')
+          patient_phone, phone_normalized, source_system)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$18,'doctoralia')
        ON CONFLICT (id) DO UPDATE SET
          amount_gross      = EXCLUDED.amount_gross,
          amount_discount   = EXCLUDED.amount_discount,
@@ -492,6 +529,8 @@ async function upsertDoctoraliaRow(row, i, params) {
          room_id           = EXCLUDED.room_id,
          lead_source       = EXCLUDED.lead_source,
          agenda_name       = EXCLUDED.agenda_name,
+         patient_phone     = COALESCE(EXCLUDED.patient_phone, financial_settlements.patient_phone),
+         phone_normalized  = COALESCE(EXCLUDED.phone_normalized, financial_settlements.phone_normalized),
          source_system     = 'doctoralia'`,
       [
         rawId, CLINIC_ID, finalAmountGross, finalAmountDisc, finalAmountNet,
@@ -505,6 +544,7 @@ async function upsertDoctoraliaRow(row, i, params) {
         roomId,
         leadSource,
         agenda,
+        patientPhone,
       ]
     );
     return true;
@@ -517,6 +557,9 @@ async function upsertDoctoraliaRow(row, i, params) {
 module.exports = {
   norm,
   normalizeField,
+  normalizePhoneForMatching,
+  extractPhonesFromSubject,
+  getPrimaryPhoneFromSubject,
   deriveRawId,
   isCancelledStatus,
   findCol,
