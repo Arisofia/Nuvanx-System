@@ -162,11 +162,29 @@ jobs:
       - name: Install dependencies
         run: npm ci --include=dev --ignore-scripts
 
+      - name: Install Playwright browsers
+        run: npm exec playwright install --with-deps
+
+      - name: Validate E2E secrets
+        id: check-e2e-secrets
+        run: |
+          MISSING=()
+          [ -z "$E2E_EMAIL" ] && MISSING+=("E2E_EMAIL")
+          [ -z "$E2E_PASSWORD" ] && MISSING+=("E2E_PASSWORD")
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::warning::E2E smoke tests skipped — missing secrets: ${MISSING[*]}."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          E2E_EMAIL: ${{ secrets.E2E_EMAIL || '' }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD || '' }}
+
       - name: Run Playwright smoke tests
+        if: steps.check-e2e-secrets.outputs.skip != 'true'
         run: npm run test:e2e
         env:
-          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
-          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+          E2E_EMAIL: ${{ secrets.E2E_EMAIL || '' }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD || '' }}
 
   # ─── Shared & Functions: tests ──────────────────────────────────────────────
   shared-functions-test:
