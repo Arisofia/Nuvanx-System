@@ -1,11 +1,19 @@
 frontend:
-  - frontend/**/*
+  - changed-files:
+      - any-glob-to-any-file:
+          - frontend/**/*
 backend:
-  - supabase/**/*
-  - scripts/**/*
+  - changed-files:
+      - any-glob-to-any-file:
+          - supabase/**/*
+          - scripts/**/*
 docs:
-  - "**/*.md"
-  - docs/**/*
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/*.md'
+          - docs/**/*
 ci:
-  - .github/workflows/**/*
-  - .github/actions/**/*
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/workflows/**/*
+          - .github/actions/**/*

@@ -64,7 +64,7 @@ export default function LeadAudit() {
   }, [matchedOnly, from, to, campaignName, phone])
 
   const matchedCount = useMemo(
-    () => rows.filter((row) => row.patient_id != null).length,
+    () => rows.filter((row) => row.doctoraliaMatched || row.phoneCrossMatch || row.patient_id != null || row.doc_patient_id != null || row.doctoralia_template_name).length,
     [rows],
   )
 
@@ -264,7 +264,7 @@ export default function LeadAudit() {
                         )}
                       </td>
                       <td className="px-5 py-5 text-center">
-                        {row.phoneCrossMatch || row.doc_patient_id ? (
+                        {row.doctoraliaMatched || row.phoneCrossMatch || row.doc_patient_id || row.doctoralia_template_name ? (
                           <div className="bg-green-600/5 p-1.5 rounded-xl inline-block border border-green-600/20">
                             <CheckCircle2 className="w-4 h-4 text-green-600" />
                           </div>
