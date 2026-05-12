@@ -72,6 +72,8 @@ CREATE TABLE IF NOT EXISTS doctoralia_lead_matches (
   created_at          TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE SCHEMA IF NOT EXISTS extensions;
+
 CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS unaccent WITH SCHEMA extensions;
 

@@ -48,7 +48,7 @@ ALTER TABLE public.whatsapp_conversations
 --    (used by GET /api/traceability/funnel)
 -- ─────────────────────────────────────────────────────────────────────────────
 
-DROP VIEW IF EXISTS public.v_whatsapp_funnel;
+DROP VIEW IF EXISTS public.v_whatsapp_funnel CASCADE;
 
 CREATE OR REPLACE VIEW public.v_whatsapp_funnel AS
 SELECT
@@ -81,7 +81,7 @@ GROUP BY source;
 --    (used by GET /api/traceability/campaigns)
 -- ─────────────────────────────────────────────────────────────────────────────
 
-DROP VIEW IF EXISTS public.v_campaign_roi;
+DROP VIEW IF EXISTS public.v_campaign_roi CASCADE;
 
 CREATE OR REPLACE VIEW public.v_campaign_roi AS
 SELECT
@@ -114,7 +114,7 @@ GROUP BY campaign_name, campaign_id, source;
 --    (used by GET /api/reports/source-comparison)
 -- ─────────────────────────────────────────────────────────────────────────────
 
-DROP VIEW IF EXISTS public.vw_source_comparison;
+DROP VIEW IF EXISTS public.vw_source_comparison CASCADE;
 
 CREATE OR REPLACE VIEW public.vw_source_comparison AS
 SELECT

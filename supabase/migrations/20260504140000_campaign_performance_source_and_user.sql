@@ -2,7 +2,7 @@
 -- This allows per-user isolation and source-level attribution in the Attribution tab.
 
 -- Drop previous version to avoid column rename/reorder errors on deploy
-DROP VIEW IF EXISTS public.vw_campaign_performance_real;
+DROP VIEW IF EXISTS public.vw_campaign_performance_real CASCADE;
 
 CREATE OR REPLACE VIEW public.vw_campaign_performance_real AS
 SELECT

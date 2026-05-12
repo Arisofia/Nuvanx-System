@@ -35,7 +35,7 @@ function httpsGet(url) {
 }
 
 function metaUrl(path, params) {
-  const base = `https://graph.facebook.com/v21.0${path}`;
+  const base = `https://graph.facebook.com/v22.0${path}`;
   const extra = {};
   if (META_APP_SECRET && META_TOKEN) {
     extra.appsecret_proof = crypto.createHmac('sha256', META_APP_SECRET).update(META_TOKEN).digest('hex');
