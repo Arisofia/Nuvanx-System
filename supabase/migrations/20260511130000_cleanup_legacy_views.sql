@@ -8,13 +8,13 @@
 -- =============================================================================
 
 -- 1. Drop strictly legacy views (superseded by vw_*_real or unified logic)
-DROP VIEW IF EXISTS public.v_campaign_roi;
-DROP VIEW IF EXISTS public.v_whatsapp_funnel;
+DROP VIEW IF EXISTS public.v_campaign_roi CASCADE;
+DROP VIEW IF EXISTS public.v_whatsapp_funnel CASCADE;
 
 -- 2. Drop intermediate/unused views
-DROP VIEW IF EXISTS public.vw_doctoralia_lead_traceability_unified;
-DROP VIEW IF EXISTS public.vw_doctoralia_trazabilidad_360;
-DROP VIEW IF EXISTS public.vw_doctoralia_patient_ltv;
+DROP VIEW IF EXISTS public.vw_doctoralia_lead_traceability_unified CASCADE;
+DROP VIEW IF EXISTS public.vw_doctoralia_trazabilidad_360 CASCADE;
+DROP VIEW IF EXISTS public.vw_doctoralia_patient_ltv CASCADE;
 
 -- 3. Re-verify security_invoker on all active views
 -- (Just in case they were reset or created without it)
