@@ -16,8 +16,8 @@ SECURITY INVOKER
 SET search_path = ''
 AS $$
 DECLARE
-  r                    RECORD;
-  l                    RECORD;
+  patient_row          RECORD;
+  lead_row             RECORD;
   sim                  NUMERIC;
   ph_match             BOOLEAN;
   best_lid             UUID;
@@ -31,7 +31,7 @@ DECLARE
   last_token_match     BOOLEAN;
   rank_score           NUMERIC;
 BEGIN
-  FOR r IN
+  FOR patient_row IN
     SELECT *, regexp_split_to_array(name_norm, ' ') AS name_tokens
     FROM public.doctoralia_patients
   LOOP
@@ -41,23 +41,23 @@ BEGIN
     best_last_token_match := FALSE;
     best_lead_token_count := 0;
 
-    FOR l IN
+    FOR lead_row IN
       SELECT ld.id,
              lower(extensions.unaccent(regexp_replace(COALESCE(ld.name, ''), '\s+', ' ', 'g'))) AS normalized_name,
              regexp_replace(COALESCE(ld.phone, ''), '\D', '', 'g') AS normalized_phone,
              regexp_split_to_array(lower(extensions.unaccent(regexp_replace(COALESCE(ld.name, ''), '\s+', ' ', 'g'))), ' ') AS lead_tokens
       FROM public.leads ld
       JOIN public.users u ON u.id = ld.user_id
-      WHERE u.clinic_id = r.clinic_id
+      WHERE u.clinic_id = patient_row.clinic_id
     LOOP
-      lead_tokens := l.lead_tokens;
+      lead_tokens := lead_row.lead_tokens;
       lead_token_count := COALESCE(array_length(lead_tokens, 1), 0);
-      sim := extensions.similarity(r.name_norm, l.normalized_name);
-      ph_match := r.phone_primary IS NOT NULL
-                  AND l.normalized_phone IS NOT NULL
-                  AND right(l.normalized_phone, 9) = r.phone_primary;
-      first_token_match := lead_token_count >= 1 AND lead_tokens[1] = ANY (r.name_tokens);
-      last_token_match := lead_token_count >= 1 AND lead_tokens[lead_token_count] = ANY (r.name_tokens);
+      sim := extensions.similarity(patient_row.name_norm, lead_row.normalized_name);
+      ph_match := patient_row.phone_primary IS NOT NULL
+                  AND lead_row.normalized_phone IS NOT NULL
+                  AND right(lead_row.normalized_phone, 9) = patient_row.phone_primary;
+      first_token_match := lead_token_count >= 1 AND lead_tokens[1] = ANY (patient_row.name_tokens);
+      last_token_match := lead_token_count >= 1 AND lead_tokens[lead_token_count] = ANY (patient_row.name_tokens);
 
       rank_score := sim
                     + CASE WHEN last_token_match THEN 0.18 ELSE 0 END
@@ -68,7 +68,7 @@ BEGIN
       IF best_lid IS NULL OR rank_score > best_score OR (rank_score = best_score AND ph_match) THEN
         best_score := rank_score;
         best_confidence := sim;
-        best_lid := l.id;
+        best_lid := lead_row.id;
         best_last_token_match := last_token_match;
         best_lead_token_count := lead_token_count;
       END IF;
@@ -87,7 +87,7 @@ BEGIN
               WHEN best_confidence >= 0.92 THEN 'high_confidence'
               ELSE 'possible_match'
             END
-      WHERE doc_patient_id = r.doc_patient_id AND clinic_id = r.clinic_id;
+      WHERE doc_patient_id = patient_row.doc_patient_id AND clinic_id = patient_row.clinic_id;
     END IF;
   END LOOP;
 END;
