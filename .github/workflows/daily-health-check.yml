@@ -25,12 +25,20 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || secrets.SUPABASE_URL }}
           MCP_API_KEY: ${{ secrets.MCP_API_KEY }}
+          NUVANX_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
+          REPORT_USER_ID: ${{ secrets.REPORT_USER_ID }}
         run: |
           if [ -z "$VITE_SUPABASE_URL" ]; then
             echo "::error::VITE_SUPABASE_URL or SUPABASE_URL secret is missing"
             exit 1
           fi
           if [ -z "$MCP_API_KEY" ]; then
-            echo "::warning::MCP_API_KEY secret is missing. Some endpoints might fail."
+            echo "::warning::MCP_API_KEY secret is missing. MCP health check may fail."
+          fi
+          if [ -z "$NUVANX_SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "::warning::NUVANX_SUPABASE_SERVICE_ROLE_KEY secret is missing. API route health checks may fail."
+          fi
+          if [ -z "$REPORT_USER_ID" ]; then
+            echo "::warning::REPORT_USER_ID secret is missing. x-user-id header will not be sent for service role auth."
           fi
           deno run --allow-net --allow-env scripts/health-check-nuvanx.ts

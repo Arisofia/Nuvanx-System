@@ -32,14 +32,22 @@ END $$;
 DO $$
 BEGIN
   IF to_regclass('cron.job') IS NOT NULL THEN
-    EXECUTE 'REVOKE ALL ON TABLE cron.job FROM PUBLIC, anon';
-    EXECUTE 'DROP POLICY IF EXISTS cron_job_policy ON cron.job';
-    EXECUTE 'CREATE POLICY cron_job_policy ON cron.job FOR ALL TO authenticated USING (true) WITH CHECK (true)';
+    BEGIN
+      EXECUTE 'REVOKE ALL ON TABLE cron.job FROM PUBLIC, anon';
+      EXECUTE 'DROP POLICY IF EXISTS cron_job_policy ON cron.job';
+      EXECUTE 'CREATE POLICY cron_job_policy ON cron.job FOR ALL TO authenticated USING (true) WITH CHECK (true)';
+    EXCEPTION WHEN insufficient_privilege THEN
+      RAISE NOTICE 'Skipping cron.job policy hardening because user % lacks permission to modify cron.job', current_user;
+    END;
   END IF;
 
   IF to_regclass('cron.job_run_details') IS NOT NULL THEN
-    EXECUTE 'REVOKE ALL ON TABLE cron.job_run_details FROM PUBLIC, anon';
-    EXECUTE 'DROP POLICY IF EXISTS cron_job_run_details_policy ON cron.job_run_details';
-    EXECUTE 'CREATE POLICY cron_job_run_details_policy ON cron.job_run_details FOR SELECT TO authenticated USING (true)';
+    BEGIN
+      EXECUTE 'REVOKE ALL ON TABLE cron.job_run_details FROM PUBLIC, anon';
+      EXECUTE 'DROP POLICY IF EXISTS cron_job_run_details_policy ON cron.job_run_details';
+      EXECUTE 'CREATE POLICY cron_job_run_details_policy ON cron.job_run_details FOR SELECT TO authenticated USING (true)';
+    EXCEPTION WHEN insufficient_privilege THEN
+      RAISE NOTICE 'Skipping cron.job_run_details policy hardening because user % lacks permission to modify cron.job_run_details', current_user;
+    END;
   END IF;
 END $$;
