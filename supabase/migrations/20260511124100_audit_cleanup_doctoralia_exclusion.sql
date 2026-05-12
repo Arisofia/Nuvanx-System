@@ -140,7 +140,7 @@ REVOKE EXECUTE ON FUNCTION public.get_trazabilidad_funnel(UUID, DATE, DATE, DATE
 GRANT EXECUTE ON FUNCTION public.get_trazabilidad_funnel(UUID, DATE, DATE, DATE, DATE, DATE, DATE) TO service_role;
 
 -- 2. Update vw_lead_traceability to exclude Doctoralia leads
-DROP VIEW IF EXISTS public.vw_lead_traceability;
+DROP VIEW IF EXISTS public.vw_lead_traceability CASCADE;
 CREATE OR REPLACE VIEW public.vw_lead_traceability AS
 SELECT
   l.id                    AS lead_id,
@@ -257,7 +257,7 @@ WHERE l.deleted_at IS NULL
 ALTER VIEW public.vw_lead_traceability SET (security_invoker = true);
 
 -- 3. Update vw_campaign_performance_real to exclude Doctoralia leads
-DROP VIEW IF EXISTS public.vw_campaign_performance_real;
+DROP VIEW IF EXISTS public.vw_campaign_performance_real CASCADE;
 CREATE OR REPLACE VIEW public.vw_campaign_performance_real AS
 SELECT
   l.user_id,
@@ -302,7 +302,7 @@ GROUP BY l.user_id, u.clinic_id, l.campaign_name, l.campaign_id, l.source;
 ALTER VIEW public.vw_campaign_performance_real SET (security_invoker = true);
 
 -- 4. Update vw_whatsapp_conversion_real to exclude Doctoralia leads
-DROP VIEW IF EXISTS public.vw_whatsapp_conversion_real;
+DROP VIEW IF EXISTS public.vw_whatsapp_conversion_real CASCADE;
 CREATE OR REPLACE VIEW public.vw_whatsapp_conversion_real AS
 SELECT
   user_id,
@@ -330,7 +330,7 @@ GROUP BY 1, 2, 3;
 ALTER VIEW public.vw_whatsapp_conversion_real SET (security_invoker = true);
 
 -- 5. Update vw_doctor_performance_real to exclude Doctoralia leads
-DROP VIEW IF EXISTS public.vw_doctor_performance_real;
+DROP VIEW IF EXISTS public.vw_doctor_performance_real CASCADE;
 CREATE OR REPLACE VIEW public.vw_doctor_performance_real AS
 SELECT
   d.id                  AS doctor_id,

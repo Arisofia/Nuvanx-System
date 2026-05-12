@@ -155,7 +155,7 @@ export async function decryptCred(encoded: string): Promise<string> {
 }
 
 // ── Meta Graph API ────────────────────────────────────────────────────────────
-export const META_GRAPH = 'https://graph.facebook.com/v21.0';
+export const META_GRAPH = 'https://graph.facebook.com/v22.0';
 
 async function computeAppsecretProof(accessToken: string, appSecret: string): Promise<string> {
   const key = await crypto.subtle.importKey(
@@ -2117,11 +2117,29 @@ async function handleProductionAuditGet(ctx: AuthenticatedRouteContext): Promise
   return null;
 }
 
+async function runLeadPipelineReconciliation(adminClient: any, userId: string): Promise<void> {
+  const reconciliationCalls = [
+    { fn: 'reconcile_whatsapp_interactions_to_leads', params: { p_user_id: userId } },
+    { fn: 'reconcile_doctoralia_subjects_to_leads', params: { p_user_id: userId } },
+  ];
+
+  for (const call of reconciliationCalls) {
+    try {
+      const { error } = await adminClient.rpc(call.fn, call.params);
+      if (error) console.warn(`${call.fn} warning:`, error);
+    } catch (error) {
+      console.warn(`${call.fn} skipped:`, error);
+    }
+  }
+}
+
 async function handleLeadsGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'leads' && req.method === 'GET' && sub === '') {
     const source = url.searchParams.get('source');
     const stage = url.searchParams.get('stage');
+
+    await runLeadPipelineReconciliation(adminClient, userId);
 
     const clinicId = await resolveClinicId(adminClient, userId);
     let query = adminClient
@@ -6059,13 +6077,13 @@ function buildLeadAuditQuery(
     .from('vw_lead_traceability')
     .select(
       'lead_id,lead_name,source,campaign_name,ad_name,form_name,lead_created_at,' +
-      'phone_normalized,patient_id,patient_name,patient_dni,patient_phone,match_confidence,match_class,settlement_date,first_settlement_at,doctoralia_net,doc_patient_id'
+      'phone_normalized,patient_id,patient_name,patient_dni,patient_phone,match_confidence,match_class,settlement_id,settlement_date,first_settlement_at,doctoralia_net,doctoralia_template_name,doc_patient_id'
     )
     .eq('lead_user_id', userId)
     .order('lead_created_at', { ascending: false })
     .limit(limit);
 
-  if (matchedOnly) query = query.not('patient_id', 'is', null);
+  if (matchedOnly) query = query.or('patient_id.not.is.null,doc_patient_id.not.is.null,settlement_id.not.is.null,doctoralia_template_name.not.is.null');
   if (dateRange?.from) query = query.gte('lead_created_at', dateRange.from);
   if (dateRange?.to) query = query.lte('lead_created_at', dateRange.to + 'T23:59:59Z');
   if (campaignName) query = query.ilike('campaign_name', `%${campaignName}%`);
@@ -6079,16 +6097,25 @@ function normalizeLeadAuditRow(row: any) {
   const phoneCrossMatch = Boolean(
     row.phone_normalized && normalizedPatientPhone && row.phone_normalized === normalizedPatientPhone,
   );
+  const doctoraliaMatched = Boolean(
+    row.patient_id
+    || row.doc_patient_id
+    || row.settlement_id
+    || row.doctoralia_template_name
+    || phoneCrossMatch,
+  );
+
   return {
     ...row,
     phoneCrossMatch,
+    doctoraliaMatched,
   };
 }
 
 async function handleReportsLeadAuditGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'reports' && sub === 'lead-audit' && req.method === 'GET') {
-    const limit = Math.min(Math.max(Number.parseInt(url.searchParams.get('limit') ?? '250', 10), 1), 1000);
+    const limit = Math.min(Math.max(Number.parseInt(url.searchParams.get('limit') ?? '1000', 10), 1), 1000);
     const matchedOnly = url.searchParams.get('matched') === 'true';
     const from = url.searchParams.get('from') ?? '';
     const to = url.searchParams.get('to') ?? '';
@@ -6105,6 +6132,8 @@ async function handleReportsLeadAuditGet(ctx: AuthenticatedRouteContext): Promis
     }
 
     try {
+      await runLeadPipelineReconciliation(adminClient, userId);
+
       const query = buildLeadAuditQuery(
         adminClient,
         userId,

@@ -20,7 +20,7 @@
 --      We DROP the view first to ensure the new types are accepted.
 -- =============================================================================
 
-DROP VIEW IF EXISTS public.vw_lead_traceability;
+DROP VIEW IF EXISTS public.vw_lead_traceability CASCADE;
 
 CREATE OR REPLACE VIEW public.vw_lead_traceability AS
 SELECT
