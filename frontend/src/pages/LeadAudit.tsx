@@ -18,6 +18,10 @@ function ErrorState({ message }: Readonly<{ message: string }>) {
   )
 }
 
+function isDoctoraliaMatched(row: any) {
+  return row.doctoraliaMatched === true
+}
+
 export default function LeadAudit() {
   const [rows, setRows] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -64,7 +68,7 @@ export default function LeadAudit() {
   }, [matchedOnly, from, to, campaignName, phone])
 
   const matchedCount = useMemo(
-    () => rows.filter((row) => row.doctoraliaMatched || row.phoneCrossMatch || row.patient_id != null || row.doc_patient_id != null || row.doctoralia_template_name).length,
+    () => rows.filter(isDoctoraliaMatched).length,
     [rows],
   )
 
@@ -264,7 +268,7 @@ export default function LeadAudit() {
                         )}
                       </td>
                       <td className="px-5 py-5 text-center">
-                        {row.doctoraliaMatched || row.phoneCrossMatch || row.doc_patient_id || row.doctoralia_template_name ? (
+                        {isDoctoraliaMatched(row) ? (
                           <div className="bg-green-600/5 p-1.5 rounded-xl inline-block border border-green-600/20">
                             <CheckCircle2 className="w-4 h-4 text-green-600" />
                           </div>

@@ -392,6 +392,10 @@ backend = "postgres"
 [experimental]
 # Configures Postgres storage engine to use OrioleDB (S3)
 orioledb_version = ""
+# S3-backed OrioleDB options intentionally omitted: current Supabase CLI
+# versions reject deprecated s3_* keys during config parsing, and OrioleDB is
+# disabled above. Configure S3 credentials in Supabase project secrets if this
+# experimental engine is enabled in the future.
 
 [functions.api]
 import_map = "functions/deno.json"
