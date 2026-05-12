@@ -9,6 +9,16 @@ ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS phone_normalized TEXT;
 ALTER TABLE public.financial_settlements ADD COLUMN IF NOT EXISTS phone_normalized TEXT;
 ALTER TABLE public.financial_settlements ADD COLUMN IF NOT EXISTS patient_phone TEXT;
 
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables 
+    WHERE table_schema = 'public' AND table_name = 'doctoralia_patients'
+  ) THEN
+    ALTER TABLE public.doctoralia_patients ADD COLUMN IF NOT EXISTS phone_normalized TEXT;
+  END IF;
+END $$;
+
 -- 1. Reusable Spanish phone normalizer (if missing)
 CREATE OR REPLACE FUNCTION public.normalize_phone(raw_phone TEXT)
 RETURNS TEXT
@@ -56,6 +66,19 @@ SET phone_normalized = public.normalize_phone(patient_phone)
 WHERE patient_phone IS NOT NULL
   AND phone_normalized IS NULL;
 
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables 
+    WHERE table_schema = 'public' AND table_name = 'doctoralia_patients'
+  ) THEN
+    UPDATE public.doctoralia_patients
+    SET phone_normalized = public.normalize_phone(COALESCE(phone_primary, phone_secondary))
+    WHERE (phone_primary IS NOT NULL OR phone_secondary IS NOT NULL)
+      AND phone_normalized IS NULL;
+  END IF;
+END $$;
+
 -- 3. Redefine the matching function with Revenue Traceability
 CREATE OR REPLACE FUNCTION public.match_leads_to_doctoralia_by_phone()
 RETURNS INTEGER
@@ -66,22 +89,55 @@ DECLARE
   updated_count INTEGER;
 BEGIN
   -- First pass: Link leads to patients based on phone
+  -- We match leads to doctoralia_patients via phone, and we assume patients table 
+  -- has a link to doctoralia_patients (or we create it by matching doctoralia_patients to patients)
+  
+  -- Step 1: Ensure patients are linked to doctoralia_patients if not already
+  -- This is often done by doc_patient_id matching DNI
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'doctoralia_patients'
+  ) THEN
+    EXECUTE $sql$
+      UPDATE public.patients p
+      SET phone_normalized = dp.phone_normalized
+      FROM public.doctoralia_patients dp
+      WHERE p.dni = dp.doc_patient_id
+        AND p.phone_normalized IS NULL
+        AND dp.phone_normalized IS NOT NULL;
+    $sql$;
+  END IF;
+
+  -- Step 2: Link leads to patients via phone_normalized
   WITH linked_leads AS (
     UPDATE public.leads l
-    SET converted_patient_id = fs.patient_id,
+    SET converted_patient_id = p.id,
         updated_at = NOW()
-    FROM public.financial_settlements fs
+    FROM public.patients p
     WHERE l.phone_normalized IS NOT NULL
       AND l.converted_patient_id IS NULL
-      AND fs.phone_normalized IS NOT NULL
-      AND fs.source_system = 'doctoralia'
-      AND fs.patient_id IS NOT NULL
-      AND l.phone_normalized = fs.phone_normalized
-      -- Do not match leads that are already marked as doctoralia (they are usually patient records already)
+      AND p.phone_normalized IS NOT NULL
+      AND l.phone_normalized = p.phone_normalized
       AND (l.source IS NULL OR l.source != 'doctoralia')
     RETURNING l.id
   )
   SELECT COUNT(*) INTO updated_count FROM linked_leads;
+
+  -- Step 3: Link settlements to patients
+  -- We use the fact that settlement ID starts with or contains doc_patient_id
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'doctoralia_patients'
+  ) THEN
+    EXECUTE $sql$
+      UPDATE public.financial_settlements fs
+      SET patient_id = p.id
+      FROM public.doctoralia_patients dp
+      JOIN public.patients p ON p.dni = dp.doc_patient_id
+      WHERE fs.patient_id IS NULL
+        AND fs.id LIKE dp.doc_patient_id || '%';
+    $sql$;
+  END IF;
 
   -- Second pass: Update verified_revenue for all linked leads
   -- This ensures that even previously linked leads get their revenue updated

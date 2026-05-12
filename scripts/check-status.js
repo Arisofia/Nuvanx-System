@@ -42,14 +42,36 @@ async function check() {
 
     const { data: dpPatients, error: dpError } = await supabase
       .from('doctoralia_patients')
-      .select('id, phone_primary, phone_normalized')
+      .select('doc_patient_id, phone_primary, phone_normalized')
       .limit(10);
-    
+
     if (dpError) {
-       console.log('doctoralia_patients error:', dpError.message);
-    } else {
-       console.log('Sample Doctoralia Patients:', dpPatients);
+      console.log('doctoralia_patients error:', dpError.message);
     }
+
+    const { count: rawWithPhone } = await supabase
+      .from('doctoralia_raw')
+      .select('*', { count: 'exact', head: true })
+      .not('phone_primary', 'is', null);
+    
+    console.log('doctoralia_raw rows with phone_primary:', rawWithPhone);
+
+    const patientIds = Array.isArray(dpPatients)
+      ? dpPatients.map(p => p.doc_patient_id).filter(Boolean)
+      : [];
+
+    let patientMatches = [];
+    if (patientIds.length > 0) {
+      const result = await supabase
+        .from('patients')
+        .select('id, dni')
+        .in('dni', patientIds);
+      patientMatches = result.data;
+    } else {
+      console.log('No Doctoralia patient IDs available for patient matching.');
+    }
+    
+    console.log('Patients matching Doctoralia Patient IDs (DNI):', patientMatches);
 
     const { count: withPatient } = await supabase
       .from('financial_settlements')
