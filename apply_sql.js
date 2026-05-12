@@ -1,26 +1,56 @@
-const { Client } = require('pg');
-const fs = require('fs');
-const path = require('path');
+#!/usr/bin/env node
+'use strict';
 
-const connectionString = 'postgresql://postgres.ssvvuuysgxyqvmovrlvk:n5SNU4AYoEmuJ6RXiVqMchLCxOWlwfeB@aws-1-eu-central-1.pooler.supabase.com:6543/postgres';
+const fs = require('node:fs');
+const path = require('node:path');
+const { Client } = require('pg');
+
+const connectionString = process.env.DATABASE_URL;
+const migrationArg = process.argv[2];
+
+function resolveSqlFile(arg) {
+  if (!arg) {
+    throw new Error('Usage: DATABASE_URL=<postgres-url> node apply_sql.js <path-to-sql-file>');
+  }
+
+  const resolved = path.resolve(process.cwd(), arg);
+  const migrationsRoot = path.resolve(process.cwd(), 'supabase', 'migrations');
+  const relative = path.relative(migrationsRoot, resolved);
+
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error('Refusing to execute SQL outside supabase/migrations. Use a tracked migration file.');
+  }
+
+  if (!resolved.endsWith('.sql')) {
+    throw new Error('Only .sql migration files are supported.');
+  }
+
+  if (!fs.existsSync(resolved)) {
+    throw new Error(`SQL file not found: ${arg}`);
+  }
+
+  return resolved;
+}
 
 async function main() {
-  const client = new Client({
-    connectionString: connectionString,
-  });
+  if (!connectionString) {
+    throw new Error('DATABASE_URL is required. Store it in GitHub Secrets or a local .env file, never in source code.');
+  }
+
+  const sqlFile = resolveSqlFile(migrationArg);
+  const sql = fs.readFileSync(sqlFile, 'utf8');
+  const client = new Client({ connectionString });
 
   try {
     await client.connect();
-    console.log('Connected to database');
-    const sql = fs.readFileSync(path.join(__dirname, 'supabase', 'migrations', '20260511124100_audit_cleanup_doctoralia_exclusion.sql'), 'utf8');
     await client.query(sql);
-    console.log('SQL executed successfully');
-  } catch (err) {
-    console.error('Error executing SQL:', err);
-    process.exit(1);
+    console.log(`Applied SQL migration: ${path.relative(process.cwd(), sqlFile)}`);
   } finally {
     await client.end();
   }
 }
 
-main();
+main().catch((error) => {
+  console.error(error.message || error);
+  process.exit(1);
+});
