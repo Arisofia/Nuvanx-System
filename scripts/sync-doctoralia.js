@@ -428,6 +428,21 @@ async function main() {
       else skipped++;
     }
 
+    console.log(`[sync-doctoralia] Upsert complete: ${upserted} rows updated, ${skipped} skipped.`);
+
+    // ── 5. Reconcile subjects to leads ──────────────────────────────────────
+    console.log('[sync-doctoralia] Starting lead reconciliation...');
+    const userRes = await db.query('SELECT id FROM public.users WHERE clinic_id = $1 LIMIT 1', [CLINIC_ID]);
+    const userId = userRes.rows[0]?.id;
+
+    if (!userId) {
+      console.warn('[sync-doctoralia] No user found for this clinic. Skipping lead reconciliation.');
+    } else {
+      const reconcileRes = await db.query('SELECT public.reconcile_doctoralia_subjects_to_leads($1) as count', [userId]);
+      const count = reconcileRes.rows[0]?.count || 0;
+      console.log(`[sync-doctoralia] Reconciliation done: ${count} leads advanced.`);
+    }
+
   } finally {
     try {
       await db.end();
@@ -436,7 +451,6 @@ async function main() {
       console.warn('[sync-doctoralia] Error closing DB connection:', e?.message || e);
     }
   }
-  console.log(`[sync-doctoralia] Done — ${upserted} rows upserted, ${skipped} skipped (blank/undated).`);
 }
 
 async function upsertDoctoraliaRow(row, i, params) {
