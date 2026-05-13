@@ -32,6 +32,7 @@ jobs:
     environment:
       name: production
     env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       META_ACCESS_TOKEN:   ${{ secrets.META_ACCESS_TOKEN }}
       META_AD_ACCOUNT_ID:  ${{ secrets.META_AD_ACCOUNT_ID }}
       META_APP_SECRET:     ${{ secrets.META_APP_SECRET }}
@@ -45,7 +46,7 @@ jobs:
       - uses: actions/checkout@v6 # v6
       - uses: actions/setup-node@v6 # v6
         with:
-          node-version: '22'
+          node-version: '24'
       - name: Validate required secrets
         run: |
           MISSING=()
