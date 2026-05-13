@@ -110,7 +110,7 @@ async function main() {
   }
 
   console.log(
-    `[verify-meta-access] Checking Meta access to ${adAccountId} with appsecret_proof enabled...`,
+    '[verify-meta-access] Checking Meta access with appsecret_proof enabled...',
   );
   const account = await fetchAccount({ adAccountId, token, appSecret });
   console.log(
