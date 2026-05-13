@@ -276,13 +276,13 @@ async function metaFetch(endpoint, params, token, attempt = 1) {
         msg.includes('user logged out') ||
         msg.includes('session is invalid') ||
         msg.includes('Invalid OAuth access token') ||
-        msg.includes('token has expired')
+        msg.includes('token has expired') ||
+        (code === 200 && (msg.includes('permission') || msg.includes('ads_read') || msg.includes('ads_management')))
       ) {
         throw new Error(
-          `META_ACCESS_TOKEN is a user-session token that has been invalidated. ` +
-          `Use a Meta System User access token instead: ` +
-          `Business Settings → Users → System Users → generate a token with ads_read / ads_management scopes. ` +
-          `Update the META_ACCESS_TOKEN secret in GitHub → Settings → Secrets → Actions. ` +
+          `META_ACCESS_TOKEN may be invalid or missing permissions. ` +
+          `Ensure you are using a Meta System User access token with ads_read and ads_management scopes, ` +
+          `and that it has access to the target Ad Account. ` +
           `Original error: ${fullErrorMsg}`,
         );
       }
