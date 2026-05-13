@@ -65,41 +65,95 @@ jobs:
           database_url: ${{ env.DATABASE_URL }}
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           command: |
+            set -uo pipefail
+
             # Build direct session URL (port 5432) — avoids prepared statement conflicts with the pooler.
             # Prefer DATABASE_URL; fall back to constructing from project ref + password.
-            if [ -n "$DATABASE_URL" ]; then
+            if [ -n "${DATABASE_URL:-}" ]; then
               SESSION_URL=$(echo "$DATABASE_URL" | sed 's/:6543\//:5432\//')
-            elif [ -n "$SUPABASE_DB_PASSWORD" ] && [ -n "$SUPABASE_PROJECT_REF" ]; then
+            elif [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
               SESSION_URL="postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.${SUPABASE_PROJECT_REF}.supabase.co:5432/postgres"
             else
               echo "::error::Cannot connect to database. Set DATABASE_URL or both SUPABASE_DB_PASSWORD and SUPABASE_PROJECT_REF."
               exit 1
             fi
-            output=$(supabase db push --include-all --db-url "$SESSION_URL" 2>&1)
-            exit_code=$?
-            echo "$output"
-            if [ $exit_code -ne 0 ]; then
-              # Case 1: ghost / reverted migrations
+            echo "::add-mask::$SESSION_URL"
+
+            is_deterministic_migration_error() {
+              local output="$1"
+              local pattern='syntax error|permission denied|not a valid migration|SQLSTATE 42P01|relation .* does not exist|column .* does not exist|function .* does not exist|type .* does not exist|invalid input syntax|duplicate key value violates unique constraint|violates (foreign key|not-null|check) constraint|checksum|failed to parse|error parsing'
+              echo "$output" | grep -Eiq "$pattern"
+            }
+
+            run_db_push_once() {
+              local output exit_code ghosts dup_version
+              DB_PUSH_RETRYABLE=true
+
+              output=$(supabase db push --include-all --db-url "$SESSION_URL" --debug 2>&1)
+              exit_code=$?
+              echo "$output"
+
+              if [ "$exit_code" -eq 0 ]; then
+                return 0
+              fi
+
+              # Case 1: ghost / reverted migrations.
               ghosts=$(echo "$output" | grep "supabase migration repair --status reverted" | sed 's/.*reverted //' || true)
               if [ -n "$ghosts" ]; then
                 for version in $ghosts; do
                   echo "::warning::Repairing ghost migration $version"
-                  supabase migration repair --status reverted "$version" --db-url "$SESSION_URL"
+                  supabase migration repair --status reverted "$version" --db-url "$SESSION_URL" --debug
                 done
-                supabase db push --include-all --db-url "$SESSION_URL"
-                exit $?
+                supabase db push --include-all --db-url "$SESSION_URL" --debug
+                return $?
               fi
+
               # Duplicate schema_migrations versions indicate local migration history is not aligned
-              # with the remote database. Do not auto-repair and retry here: that can re-run the
-              # same file and fail again. Surface the exact version so the migration filename/history
-              # can be fixed intentionally.
+              # with the remote database. Do not auto-repair or retry: that can re-run the same file
+              # and fail again. Surface the exact version so migration filename/history can be fixed.
               dup_version=$(echo "$output" | grep -oE 'Key \(version\)=\([0-9]+\) already exists' | grep -oE '[0-9]+' || true)
               if [ -n "$dup_version" ]; then
                 echo "::error::Migration version $dup_version already exists in supabase_migrations.schema_migrations. Check for duplicate local migration prefixes or a remote history mismatch before retrying."
-                exit $exit_code
+                DB_PUSH_RETRYABLE=false
+                return "$exit_code"
               fi
-              exit $exit_code
-            fi
+
+              if is_deterministic_migration_error "$output"; then
+                echo "::error::Non-transient Supabase migration error detected. Not retrying; fix the SQL/CLI error shown above."
+                DB_PUSH_RETRYABLE=false
+                return "$exit_code"
+              fi
+
+              return "$exit_code"
+            }
+
+            run_with_retry() {
+              local max_attempts=3
+              local delay_seconds=10
+              local attempt=1
+
+              while true; do
+                echo "Running Supabase migrations (attempt $attempt/$max_attempts)..."
+                if run_db_push_once; then
+                  return 0
+                fi
+
+                if [ "${DB_PUSH_RETRYABLE:-true}" = "false" ]; then
+                  return 1
+                fi
+
+                if [ "$attempt" -ge "$max_attempts" ]; then
+                  echo "::error::Supabase migrations failed after $max_attempts attempts. Review the --debug output above for the failing endpoint or SQL error."
+                  return 1
+                fi
+
+                attempt=$((attempt + 1))
+                echo "::warning::Supabase migrations failed, retrying in ${delay_seconds}s in case this was a transient upstream/proxy error."
+                sleep "$delay_seconds"
+              done
+            }
+
+            run_with_retry
 
   # 2. Supabase Edge Functions
   supabase-functions:
