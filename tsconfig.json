@@ -1,30 +1,17 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-      "lib": ["ES2022"],
     "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "allowImportingTsExtensions": true,
-    "allowJs": true,
+    "moduleResolution": "Node",
+    "strict": true,
+    "esModuleInterop": true,
     "skipLibCheck": true,
-    "strict": false,
-    "noEmit": true,
-    "baseUrl": ".",
-    "ignoreDeprecations": "6.0",
-    "paths": {
-      "vitest": ["node_modules/vitest/dist/index.d.ts"],
-      "vitest/*": ["node_modules/vitest/dist/*.d.ts"]
-    },
-    "types": ["node"],
-    "typeRoots": ["node_modules/@types", "node_modules/vitest", "frontend/node_modules/@types"]
+    "forceConsistentCasingInFileNames": true,
+    "lib": ["ES2022", "DOM"]
   },
   "include": [
-    "shared/**/*.ts",
-    "supabase/functions/**/*.ts"
+    "supabase/functions/**/*",
+    "frontend/src/**/*"
   ],
-  "exclude": [
-    "frontend",
-    "backend",
-    "**/node_modules"
-  ]
+  "exclude": ["node_modules", "frontend/dist"]
 }
