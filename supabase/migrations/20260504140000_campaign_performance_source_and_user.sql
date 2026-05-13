@@ -38,7 +38,7 @@ SELECT
   ROUND(AVG(l.reply_delay_minutes), 1)             AS avg_reply_delay_min,
   MIN(l.created_at)                                AS first_lead_at,
   MAX(l.created_at)                                AS last_lead_at
-FROM leads l
+FROM public.leads l
 GROUP BY l.user_id, l.source, l.campaign_name, l.campaign_id;
 
 -- Preserve permissions

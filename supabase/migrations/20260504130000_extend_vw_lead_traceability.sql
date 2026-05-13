@@ -7,7 +7,7 @@
 -- All existing columns are preserved in their original order.
 -- =============================================================================
 
-CREATE OR REPLACE VIEW vw_lead_traceability AS
+CREATE OR REPLACE VIEW public.vw_lead_traceability AS
 SELECT
   -- ── lead (existing columns, unchanged order) ──────────────────────────────
   l.id                    AS lead_id,
@@ -60,16 +60,16 @@ SELECT
   -- ── NEW: first (oldest) non-cancelled settlement date ────────────────────
   fs_first.settled_at     AS first_settlement_at
 
-FROM leads l
+FROM public.leads l
 
-LEFT JOIN patients p
+LEFT JOIN public.patients p
   ON  (p.dni_hash = l.dni_hash AND l.dni_hash IS NOT NULL)
   OR   p.id = l.converted_patient_id
 
 -- Best Doctoralia patient match for this lead (highest confidence, LIMIT 1)
 LEFT JOIN LATERAL (
   SELECT doc_patient_id, match_confidence, match_class
-  FROM   doctoralia_patients sub_dp
+  FROM   public.doctoralia_patients sub_dp
   WHERE  sub_dp.lead_id = l.id
   ORDER  BY sub_dp.match_confidence DESC NULLS LAST
   LIMIT  1
@@ -79,7 +79,7 @@ LEFT JOIN LATERAL (
 LEFT JOIN LATERAL (
   SELECT id, template_id, template_name, amount_net, amount_gross,
          settled_at, intake_at, source_system
-  FROM   financial_settlements sub_fs
+  FROM   public.financial_settlements sub_fs
   WHERE  sub_fs.patient_id = p.id
     AND  sub_fs.cancelled_at IS NULL
   ORDER  BY sub_fs.settled_at DESC
@@ -89,9 +89,11 @@ LEFT JOIN LATERAL (
 -- Oldest non-cancelled settlement (for first_settlement_at)
 LEFT JOIN LATERAL (
   SELECT settled_at
-  FROM   financial_settlements sub_fs2
+  FROM   public.financial_settlements sub_fs2
   WHERE  sub_fs2.patient_id = p.id
     AND  sub_fs2.cancelled_at IS NULL
   ORDER  BY sub_fs2.settled_at ASC
   LIMIT  1
 ) fs_first ON TRUE;
+
+ALTER VIEW public.vw_lead_traceability SET (security_invoker = true);

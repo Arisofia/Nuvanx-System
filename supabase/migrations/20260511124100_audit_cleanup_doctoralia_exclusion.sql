@@ -99,7 +99,7 @@ AS $$
      AND fs.settled_at >= lb.created_at
      AND (
            lb.phone_normalized = fs.patient_phone
-           OR 
+           OR
            lb.phone_normalized = (regexp_match(fs.template_name, '\[([0-9]{9,15})\]'))[1]
          )
   ),
@@ -293,7 +293,7 @@ SELECT
   ROUND(AVG(l.reply_delay_minutes), 1) AS avg_reply_delay_min,
   MIN(l.created_at)                    AS first_lead_at,
   MAX(l.created_at)                    AS last_lead_at
-FROM leads l
+FROM public.leads l
 LEFT JOIN users u ON u.id = l.user_id
 WHERE l.deleted_at IS NULL
   AND (l.source IS NULL OR lower(btrim(l.source)) <> 'doctoralia')
@@ -322,7 +322,7 @@ SELECT
   ROUND(COALESCE(SUM(revenue), 0), 2)              AS estimated_revenue,
   ROUND(COALESCE(SUM(verified_revenue), 0), 2)     AS verified_revenue_crm,
   ROUND(AVG(reply_delay_minutes), 1)               AS avg_reply_delay_min
-FROM leads
+FROM public.leads
 WHERE deleted_at IS NULL
   AND (source IS NULL OR lower(btrim(source)) <> 'doctoralia')
 GROUP BY 1, 2, 3;
@@ -353,8 +353,8 @@ SELECT
 FROM doctors d
 LEFT JOIN appointments a ON a.doctor_id = d.id
 LEFT JOIN patients p ON p.id = a.patient_id
-LEFT JOIN leads l ON l.converted_patient_id = p.id 
-  AND l.deleted_at IS NULL 
+LEFT JOIN public.leads l ON l.converted_patient_id = p.id
+  AND l.deleted_at IS NULL
   AND (l.source IS NULL OR lower(btrim(l.source)) <> 'doctoralia')
 GROUP BY d.id, d.name, d.specialty, d.is_active;
 

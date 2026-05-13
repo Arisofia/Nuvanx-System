@@ -10,7 +10,7 @@
 --
 -- Rollback strategy:
 --   - For leads, run:
---       UPDATE leads SET deleted_at = NULL, merged_into_lead_id = NULL
+--       UPDATE public.leads SET deleted_at = NULL, merged_into_lead_id = NULL
 --       WHERE deleted_at >= '<migration_run_ts>';
 --     and re-create the old user-scoped indexes from prior migrations.
 --   - For insights tables, hard-deleted rows can be re-fetched via
@@ -22,7 +22,7 @@ BEGIN;
 -- ---------------------------------------------------------------------------
 -- 0. Safety: ensure clinic_id is populated on leads (idempotent backfill).
 -- ---------------------------------------------------------------------------
-UPDATE leads SET clinic_id = u.clinic_id
+UPDATE public.leads SET clinic_id = u.clinic_id
 FROM users u
 WHERE leads.user_id = u.id
   AND leads.clinic_id IS NULL
@@ -31,11 +31,11 @@ WHERE leads.user_id = u.id
 -- ---------------------------------------------------------------------------
 -- 1. Soft-delete columns on leads.
 -- ---------------------------------------------------------------------------
-ALTER TABLE leads
-  ADD COLUMN IF NOT EXISTS merged_into_lead_id UUID REFERENCES leads(id) ON DELETE SET NULL,
+ALTER TABLE public.leads
+  ADD COLUMN IF NOT EXISTS merged_into_lead_id UUID REFERENCES public.leads(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
-CREATE INDEX IF NOT EXISTS leads_merged_into_idx ON leads(merged_into_lead_id)
+CREATE INDEX IF NOT EXISTS leads_merged_into_idx ON public.leads(merged_into_lead_id)
   WHERE merged_into_lead_id IS NOT NULL;
 
 -- ---------------------------------------------------------------------------
@@ -67,12 +67,12 @@ WITH ranked AS (
       PARTITION BY clinic_id, source, external_id
       ORDER BY created_at ASC NULLS LAST, id ASC
     ) AS keeper_id
-  FROM leads
+  FROM public.leads
   WHERE clinic_id IS NOT NULL
     AND external_id IS NOT NULL
     AND deleted_at IS NULL
 )
-UPDATE leads l
+UPDATE public.leads l
 SET merged_into_lead_id = r.keeper_id,
     deleted_at = NOW()
 FROM ranked r
@@ -95,12 +95,12 @@ WITH ranked AS (
       PARTITION BY clinic_id, phone
       ORDER BY created_at ASC NULLS LAST, id ASC
     ) AS keeper_id
-  FROM leads
+  FROM public.leads
   WHERE clinic_id IS NOT NULL
     AND phone IS NOT NULL AND phone <> ''
     AND deleted_at IS NULL
 )
-UPDATE leads l
+UPDATE public.leads l
 SET merged_into_lead_id = COALESCE(l.merged_into_lead_id, r.keeper_id),
     deleted_at = NOW()
 FROM ranked r
@@ -121,12 +121,12 @@ WITH ranked AS (
       PARTITION BY clinic_id, email
       ORDER BY created_at ASC NULLS LAST, id ASC
     ) AS keeper_id
-  FROM leads
+  FROM public.leads
   WHERE clinic_id IS NOT NULL
     AND email IS NOT NULL AND email <> ''
     AND deleted_at IS NULL
 )
-UPDATE leads l
+UPDATE public.leads l
 SET merged_into_lead_id = COALESCE(l.merged_into_lead_id, r.keeper_id),
     deleted_at = NOW()
 FROM ranked r
@@ -180,7 +180,7 @@ WHERE mdi.user_id = u.id
   AND u.clinic_id IS NOT NULL;
 
 -- Hard-delete duplicate rows: keep the row owned by the clinic keeper user.
-DELETE FROM meta_daily_insights mdi
+DELETE FROM public.meta_daily_insights mdi
 USING clinic_keepers k
 WHERE mdi.clinic_id = k.clinic_id
   AND mdi.user_id <> k.keeper_user_id;
@@ -191,7 +191,7 @@ ALTER TABLE meta_daily_insights
 
 -- For rows still without a clinic_id (orphans), keep them but excluded from
 -- the new PK by deleting them — they cannot be queried under the new model.
-DELETE FROM meta_daily_insights WHERE clinic_id IS NULL;
+DELETE FROM public.meta_daily_insights WHERE clinic_id IS NULL;
 
 ALTER TABLE meta_daily_insights
   ALTER COLUMN clinic_id SET NOT NULL,
