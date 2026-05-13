@@ -11,7 +11,7 @@ DROP POLICY IF EXISTS leads_select_clinic ON public.leads;
 CREATE POLICY leads_select_clinic ON public.leads
   FOR SELECT TO authenticated
   USING (
-    ((SELECT auth.jwt()) ->> 'is_anonymous') IS DISTINCT FROM 'true'
+    (SELECT auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true'
     AND clinic_id = (SELECT public.current_clinic_id())
   );
 
@@ -20,7 +20,7 @@ DROP POLICY IF EXISTS integrations_select_clinic ON public.integrations;
 CREATE POLICY integrations_select_clinic ON public.integrations
   FOR SELECT TO authenticated
   USING (
-    ((SELECT auth.jwt()) ->> 'is_anonymous') IS DISTINCT FROM 'true'
+    (SELECT auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true'
     AND clinic_id = (SELECT public.current_clinic_id())
   );
 
@@ -29,7 +29,7 @@ DROP POLICY IF EXISTS credentials_select_clinic ON public.credentials;
 CREATE POLICY credentials_select_clinic ON public.credentials
   FOR SELECT TO authenticated
   USING (
-    ((SELECT auth.jwt()) ->> 'is_anonymous') IS DISTINCT FROM 'true'
+    (SELECT auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true'
     AND clinic_id = (SELECT public.current_clinic_id())
   );
 
@@ -38,7 +38,7 @@ DROP POLICY IF EXISTS api_call_log_select_own ON public.api_call_log;
 CREATE POLICY api_call_log_select_own ON public.api_call_log
   FOR SELECT TO authenticated
   USING (
-    ((SELECT auth.jwt()) ->> 'is_anonymous') IS DISTINCT FROM 'true'
+    (SELECT auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true'
     AND (SELECT auth.uid()) = user_id
   );
 
@@ -62,7 +62,7 @@ BEGIN
         'CREATE POLICY %I_select_clinic ON public.%I'
         ' FOR SELECT TO authenticated'
         ' USING ('
-        '   ((SELECT auth.jwt()) ->> ''is_anonymous'') IS DISTINCT FROM ''true'''
+        '   (SELECT auth.jwt() ->> ''is_anonymous'') IS DISTINCT FROM ''true'''
         '   AND clinic_id = (SELECT public.current_clinic_id())'
         ' )',
         t, t
