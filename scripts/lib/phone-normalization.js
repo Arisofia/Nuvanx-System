@@ -46,7 +46,13 @@ function extractPhonesFromSubject(value) {
   return phones;
 }
 
+function getPrimaryPhoneFromSubject(value) {
+  const phones = extractPhonesFromSubject(value);
+  return phones.length > 0 ? phones[0] : null;
+}
+
 module.exports = {
   normalizePhoneForMatching,
   extractPhonesFromSubject,
+  getPrimaryPhoneFromSubject,
 };

@@ -36,7 +36,7 @@
 const { google }  = require('googleapis');
 const { Client }  = require('pg');
 const { createHash } = require('node:crypto');
-const { extractPhonesFromSubject, normalizePhoneForMatching } = require('./lib/phone-normalization');
+const { extractPhonesFromSubject, normalizePhoneForMatching, getPrimaryPhoneFromSubject } = require('./lib/phone-normalization');
 
 const {
   GOOGLE_SA_JSON: SA_JSON,
@@ -238,6 +238,9 @@ function buildHeaderConfig(headers) {
   const colPayment      = findCol(headers, 'metodo pago', 'metodo de pago', 'pago', 'payment', 'forma pago', 'procedencia');
   const colIntermediary = findCol(headers, 'intermediario', 'mediador', 'financiera', 'entidad', 'agenda');
   const colStatus       = findCol(headers, 'estado', 'status', 'situacion');
+  const colOrigin       = findCol(headers, 'procedencia', 'origen', 'source', 'origin');
+  const colAgenda       = findCol(headers, 'agenda', 'calendario', 'doctor');
+  const colRoom         = findCol(headers, 'sala', 'habitacion', 'room', 'box');
 
   const hasColId           = colId !== -1;
   const hasColTemplate     = colTemplate !== -1;
@@ -250,6 +253,9 @@ function buildHeaderConfig(headers) {
   const hasColPayment      = colPayment !== -1;
   const hasColIntermediary = colIntermediary !== -1;
   const hasColStatus       = colStatus !== -1;
+  const hasColOrigin       = colOrigin !== -1;
+  const hasColAgenda       = colAgenda !== -1;
+  const hasColRoom         = colRoom !== -1;
 
   return {
     colId,
@@ -265,6 +271,9 @@ function buildHeaderConfig(headers) {
     colPayment,
     colIntermediary,
     colStatus,
+    colOrigin,
+    colAgenda,
+    colRoom,
     hasColId,
     hasColTemplate,
     hasColTemplateId,
@@ -276,6 +285,9 @@ function buildHeaderConfig(headers) {
     hasColPayment,
     hasColIntermediary,
     hasColStatus,
+    hasColOrigin,
+    hasColAgenda,
+    hasColRoom,
     useHashId: !hasColId,
     colSettledEff: hasColSettled ? colSettled : colFecha,
   };
