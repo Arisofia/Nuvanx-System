@@ -12,9 +12,7 @@
 
 -- Remove the legacy public RPC overload flagged by the advisor. The Edge
 -- Function uses the 7-argument service-role RPC with p_user_id.
-DROP FUNCTION IF EXISTS public.get_trazabilidad_funnel(
-  DATE, DATE, DATE, DATE, DATE, DATE
-);
+DROP FUNCTION IF EXISTS public.get_trazabilidad_funnel(DATE, DATE, DATE, DATE, DATE, DATE);
 
 -- Keep the active service-role RPC hardened and deterministic.
 DO $$
@@ -37,7 +35,7 @@ BEGIN
     IF to_regclass('cron.job') IS NOT NULL THEN
       EXECUTE 'REVOKE ALL ON TABLE cron.job FROM PUBLIC, anon';
       EXECUTE 'DROP POLICY IF EXISTS cron_job_policy ON cron.job';
-      EXECUTE 'CREATE POLICY cron_job_policy ON cron.job FOR ALL TO authenticated USING (true) WITH CHECK (true)';
+      EXECUTE 'CREATE POLICY cron_job_policy ON cron.job FOR ALL TO service_role USING (true) WITH CHECK (true)';
     END IF;
   EXCEPTION WHEN insufficient_privilege THEN
     RAISE NOTICE 'Skipping cron.job hardening due to insufficient privileges (likely hosted Supabase)';
@@ -47,7 +45,7 @@ BEGIN
     IF to_regclass('cron.job_run_details') IS NOT NULL THEN
       EXECUTE 'REVOKE ALL ON TABLE cron.job_run_details FROM PUBLIC, anon';
       EXECUTE 'DROP POLICY IF EXISTS cron_job_run_details_policy ON cron.job_run_details';
-      EXECUTE 'CREATE POLICY cron_job_run_details_policy ON cron.job_run_details FOR SELECT TO authenticated USING (true)';
+      EXECUTE 'CREATE POLICY cron_job_run_details_policy ON cron.job_run_details FOR SELECT TO service_role USING (true)';
     END IF;
   EXCEPTION WHEN insufficient_privilege THEN
     RAISE NOTICE 'Skipping cron.job_run_details hardening due to insufficient privileges (likely hosted Supabase)';
