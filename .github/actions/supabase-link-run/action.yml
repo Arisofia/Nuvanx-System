@@ -76,6 +76,7 @@ runs:
         # which makes failed runs easier to diagnose from debug logs.
         printf 'resolved_db_password=%s\n' "$RESOLVED_DB_PASSWORD" >> "$GITHUB_OUTPUT"
 
+        # Retry the link operation for transient Supabase CLI/upstream failures.
         run_link_once() {
           if [ -n "$RESOLVED_DB_PASSWORD" ]; then
             timeout --signal=TERM --kill-after=15s 120s \
