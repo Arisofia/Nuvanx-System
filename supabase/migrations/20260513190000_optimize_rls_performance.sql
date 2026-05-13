@@ -6,41 +6,58 @@
 
 -- 1. Update existing policies with the optimized (SELECT ...) pattern.
 
--- leads
-DROP POLICY IF EXISTS leads_select_clinic ON public.leads;
-CREATE POLICY leads_select_clinic ON public.leads
-  FOR SELECT TO authenticated
-  USING (
-    (SELECT auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true'
-    AND clinic_id = (SELECT public.current_clinic_id())
-  );
-
--- integrations
-DROP POLICY IF EXISTS integrations_select_clinic ON public.integrations;
-CREATE POLICY integrations_select_clinic ON public.integrations
-  FOR SELECT TO authenticated
-  USING (
-    (SELECT auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true'
-    AND clinic_id = (SELECT public.current_clinic_id())
-  );
-
--- credentials
-DROP POLICY IF EXISTS credentials_select_clinic ON public.credentials;
-CREATE POLICY credentials_select_clinic ON public.credentials
-  FOR SELECT TO authenticated
-  USING (
-    (SELECT auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true'
-    AND clinic_id = (SELECT public.current_clinic_id())
-  );
+DO $$
+DECLARE
+  t TEXT;
+  core_tables TEXT[] := ARRAY['leads', 'integrations', 'credentials'];
+BEGIN
+  FOREACH t IN ARRAY core_tables LOOP
+    IF to_regclass(format('public.%I', t)) IS NOT NULL
+       AND EXISTS (
+         SELECT 1
+         FROM information_schema.columns c
+         WHERE c.table_schema = 'public'
+           AND c.table_name = t
+           AND c.column_name = 'clinic_id'
+       ) THEN
+      EXECUTE format('DROP POLICY IF EXISTS %I_select_clinic ON public.%I', t, t);
+      EXECUTE format(
+        'CREATE POLICY %I_select_clinic ON public.%I'
+        ' FOR SELECT TO authenticated'
+        ' USING ('
+        '   (SELECT auth.jwt() ->> ''is_anonymous'') IS DISTINCT FROM ''true'''
+        '   AND clinic_id = (SELECT public.current_clinic_id())'
+        ' )',
+        t, t
+      );
+    ELSE
+      RAISE NOTICE 'Skipping optimized %_select_clinic policy: table or clinic_id column does not exist', t;
+    END IF;
+  END LOOP;
+END $$;
 
 -- api_call_log
-DROP POLICY IF EXISTS api_call_log_select_own ON public.api_call_log;
-CREATE POLICY api_call_log_select_own ON public.api_call_log
-  FOR SELECT TO authenticated
-  USING (
-    (SELECT auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true'
-    AND (SELECT auth.uid()) = user_id
-  );
+DO $$
+BEGIN
+  IF to_regclass('public.api_call_log') IS NOT NULL
+     AND EXISTS (
+       SELECT 1
+       FROM information_schema.columns c
+       WHERE c.table_schema = 'public'
+         AND c.table_name = 'api_call_log'
+         AND c.column_name = 'user_id'
+     ) THEN
+    DROP POLICY IF EXISTS api_call_log_select_own ON public.api_call_log;
+    CREATE POLICY api_call_log_select_own ON public.api_call_log
+      FOR SELECT TO authenticated
+      USING (
+        (SELECT auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true'
+        AND (SELECT auth.uid()) = user_id
+      );
+  ELSE
+    RAISE NOTICE 'Skipping optimized api_call_log_select_own policy: table or user_id column does not exist';
+  END IF;
+END $$;
 
 -- Loop for standard clinic-scoped tables
 DO $$
@@ -53,10 +70,14 @@ DECLARE
   ];
 BEGIN
   FOREACH t IN ARRAY tables LOOP
-    IF EXISTS (
-      SELECT 1 FROM information_schema.tables
-      WHERE table_schema = 'public' AND table_name = t
-    ) THEN
+    IF to_regclass(format('public.%I', t)) IS NOT NULL
+       AND EXISTS (
+         SELECT 1
+         FROM information_schema.columns c
+         WHERE c.table_schema = 'public'
+           AND c.table_name = t
+           AND c.column_name = 'clinic_id'
+       ) THEN
       EXECUTE format('DROP POLICY IF EXISTS %I_select_clinic ON public.%I', t, t);
       EXECUTE format(
         'CREATE POLICY %I_select_clinic ON public.%I'
@@ -67,6 +88,8 @@ BEGIN
         ' )',
         t, t
       );
+    ELSE
+      RAISE NOTICE 'Skipping optimized %_select_clinic policy: table or clinic_id column does not exist', t;
     END IF;
   END LOOP;
 END $$;

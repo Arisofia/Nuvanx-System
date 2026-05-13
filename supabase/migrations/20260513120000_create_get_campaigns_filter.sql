@@ -11,6 +11,7 @@ RETURNS TABLE (
 )
 LANGUAGE sql
 SECURITY DEFINER
+SET search_path = public, pg_catalog
 AS $$
   SELECT 
     campaign_id,
