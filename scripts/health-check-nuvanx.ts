@@ -9,9 +9,11 @@
  */
 
 const DEFAULT_SUPABASE_URL = 'https://ssvvuuysgxyqvmovrlvk.supabase.co';
-const SUPABASE_URL = (
-  Deno.env.get('VITE_SUPABASE_URL') || Deno.env.get('SUPABASE_URL') || DEFAULT_SUPABASE_URL
-).replace(/\/$/, '');
+const rawSupabaseUrl =
+  Deno.env.get('VITE_SUPABASE_URL') ||
+  Deno.env.get('SUPABASE_URL') ||
+  DEFAULT_SUPABASE_URL;
+const SUPABASE_URL = rawSupabaseUrl.trim().replace(/\/$/, '');
 const MCP_API_KEY = Deno.env.get('MCP_API_KEY')?.trim();
 const API_AUTH_TOKEN = Deno.env.get('HEALTH_CHECK_API_AUTH_TOKEN')?.trim();
 const DEFAULT_TIMEOUT_MS = 10_000;
