@@ -6,6 +6,7 @@
  *
  * Required env vars:
  *   GOOGLE_SA_JSON        — Service account JSON (GOOGLE_ADS_SERVICE_ACCOUNT secret)
+ *   GOOGLE_SA_JSON_FILE   — Path to service account JSON file (preferred in CI)
  *   DOCTORALIA_SHEET_ID   — Spreadsheet ID (e.g. 1GAJoASGdjsKB7bTtC5hXPFkWbB7S4fVXhKD_cZoDwPw)
  *   DOCTORALIA_DRIVE_FILE_ID — Alias for DOCTORALIA_SHEET_ID
  *   DATABASE_URL          — Postgres connection string
@@ -14,6 +15,7 @@
  * Optional:
  *   SHEET_RANGE           — A1 notation range (default: 'A1:Z5000')
  *   SHEET_NAME            — Tab name (default: first sheet)
+ *   DOCTORALIA_SYNC_PERMISSION_MODE — 'fail' or 'warn' for Google Sheets 403 errors
  *
  * Expected sheet columns (case-insensitive, accent-insensitive, partial match):
  *   id / operacion / operation / num         → id (PRIMARY KEY)
@@ -40,20 +42,23 @@ const { extractPhonesFromSubject, normalizePhoneForMatching, getPrimaryPhoneFrom
 
 const {
   GOOGLE_SA_JSON: SA_JSON,
+  GOOGLE_SA_JSON_FILE,
   DOCTORALIA_SHEET_ID,
   DOCTORALIA_DRIVE_FILE_ID,
   DATABASE_URL,
   CLINIC_ID,
   SHEET_RANGE = 'A1:Z5000',
   SHEET_NAME,
+  DOCTORALIA_SYNC_PERMISSION_MODE = 'fail',
 } = process.env;
 
 const SHEET_ID = DOCTORALIA_SHEET_ID || DOCTORALIA_DRIVE_FILE_ID;
+const ALLOW_PERMISSION_SKIP = DOCTORALIA_SYNC_PERMISSION_MODE.toLowerCase() === 'warn';
 
 // ─── Validation ───────────────────────────────────────────────────────────────
-if (!SA_JSON || !SHEET_ID || !DATABASE_URL || !CLINIC_ID) {
+if ((!SA_JSON && !GOOGLE_SA_JSON_FILE) || !SHEET_ID || !DATABASE_URL || !CLINIC_ID) {
   console.error('[sync-doctoralia] Missing required env vars.');
-  console.error('  Required: GOOGLE_SA_JSON, DOCTORALIA_SHEET_ID or DOCTORALIA_DRIVE_FILE_ID, DATABASE_URL, CLINIC_ID');
+  console.error('  Required: GOOGLE_SA_JSON or GOOGLE_SA_JSON_FILE, DOCTORALIA_SHEET_ID or DOCTORALIA_DRIVE_FILE_ID, DATABASE_URL, CLINIC_ID');
   process.exit(1);
 }
 
@@ -70,6 +75,33 @@ function norm(str) {
 
 function normalizeField(value) {
   return value?.toString().trim() ?? '';
+}
+
+function getServiceAccountEmail(sa) {
+  return normalizeField(sa?.client_email) || 'unknown-service-account';
+}
+
+function isGooglePermissionError(err) {
+  const code = Number(err?.code || err?.response?.status || 0);
+  const message = String(err?.message || '').toLowerCase();
+  return code === 403
+    || message.includes('does not have permission')
+    || message.includes('the caller does not have permission')
+    || message.includes('insufficient permissions');
+}
+
+function formatPermissionGuidance(sa) {
+  const email = getServiceAccountEmail(sa);
+  return [
+    'Google Sheets permission denied for the Doctoralia source spreadsheet.',
+    `Share the spreadsheet with service account ${email} as Viewer, or update GOOGLE_ADS_SERVICE_ACCOUNT/DOCTORALIA_SHEET_ID to matching credentials and file ID.`,
+    'No financial_settlements rows were modified.',
+  ].join(' ');
+}
+
+function loadServiceAccountJson() {
+  if (SA_JSON) return SA_JSON;
+  return require('node:fs').readFileSync(GOOGLE_SA_JSON_FILE, 'utf8');
 }
 
 function deriveRawId(row, useHashId, cols) {
@@ -354,9 +386,9 @@ async function main() {
   // ── 1. Auth with Google service account ──────────────────────────────────
   let sa;
   try {
-    sa = JSON.parse(SA_JSON);
+    sa = JSON.parse(loadServiceAccountJson());
   } catch {
-    console.error('[sync-doctoralia] GOOGLE_SA_JSON is not valid JSON.');
+    console.error('[sync-doctoralia] Google service account JSON is not valid.');
     process.exit(1);
   }
 
@@ -371,10 +403,23 @@ async function main() {
   // Avoid logging sensitive values in plain text.
   console.log('[sync-doctoralia] Fetching spreadsheet (id hidden), range masked.');
 
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: SHEET_ID,
-    range,
-  });
+  let res;
+  try {
+    res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range,
+    });
+  } catch (err) {
+    if (isGooglePermissionError(err)) {
+      const guidance = formatPermissionGuidance(sa);
+      if (ALLOW_PERMISSION_SKIP) {
+        console.warn(`::warning::[sync-doctoralia] ${guidance}`);
+        return;
+      }
+      throw new Error(guidance);
+    }
+    throw err;
+  }
 
   const rows = res.data.values ?? [];
   if (rows.length < 2) {
@@ -553,6 +598,10 @@ module.exports = {
   normalizePhoneForMatching,
   extractPhonesFromSubject,
   getPrimaryPhoneFromSubject,
+  getServiceAccountEmail,
+  isGooglePermissionError,
+  formatPermissionGuidance,
+  loadServiceAccountJson,
   deriveRawId,
   isCancelledStatus,
   findCol,

@@ -14,8 +14,28 @@ const SUPABASE_URL = (
 ).replace(/\/$/, '');
 const MCP_API_KEY = Deno.env.get('MCP_API_KEY')?.trim();
 const API_AUTH_TOKEN = Deno.env.get('HEALTH_CHECK_API_AUTH_TOKEN')?.trim();
+<<<<<<< resolve-conflicts-62
+
+const DEFAULT_TIMEOUT_MS = 10_000;
+const TIMEOUT_MS = (() => {
+  const raw = Deno.env.get('HEALTH_CHECK_TIMEOUT_MS');
+  if (!raw) return DEFAULT_TIMEOUT_MS;
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    console.warn(
+      `Invalid HEALTH_CHECK_TIMEOUT_MS value "${raw}", using default ${DEFAULT_TIMEOUT_MS}ms instead.`,
+    );
+    return DEFAULT_TIMEOUT_MS;
+  }
+
+  return parsed;
+})();
+
+=======
 const TIMEOUT_MS = Number(Deno.env.get('HEALTH_CHECK_TIMEOUT_MS') || 10_000);
 
+>>>>>>> main
 type Endpoint = {
   name: string;
   url: string;

@@ -25,6 +25,10 @@ BEGIN
   END IF;
 END $$;
 
+-- pg_cron can recreate default policies as PUBLIC on hosted projects. Recreate
+-- them without anon/PUBLIC so the advisor no longer flags anonymous access.
+-- NOTE: This may fail on hosted Supabase where the 'postgres' role does not own
+-- the 'cron' schema. We wrap in exception blocks to allow migration to pass.
 -- pg_cron is owned by Supabase-managed roles on hosted projects. The migration
 -- runner cannot reliably change grants or RLS policies on cron.job or
 -- cron.job_run_details on all platforms. On some hosted environments, this
