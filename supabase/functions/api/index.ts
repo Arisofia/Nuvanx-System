@@ -37,6 +37,12 @@ export function isDedicatedServiceRoleBypass(token: string, dedicatedServiceKey:
   return Boolean(normalizedToken && normalizedDedicatedKey && normalizedToken === normalizedDedicatedKey);
 }
 
+export function createAdminClient() {
+  return supabaseClientFactory.create(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false },
+  });
+}
+
 // ── Supabase Client Factory ──────────────────────────────────────────────────
 
 export const supabaseClientFactory = {
@@ -1285,103 +1291,83 @@ async function verifySupabaseUser(adminClient: any, token: string, anonKey: stri
 }
 
 async function handleRequest(req: Request): Promise<Response> {
-  const requestOrigin = req.headers.get('Origin');
-  const corsHeaders = buildCorsHeaders(requestOrigin);
-  const originIsRejectable = requestOrigin && !ALLOWED_CORS_ORIGINS.has(requestOrigin);
-  if (req.method === 'OPTIONS') {
-    if (originIsRejectable) return new Response('Forbidden', { status: 403 });
-    return new Response('ok', { headers: corsHeaders });
-  }
-  if (originIsRejectable) return new Response('Forbidden', { status: 403, headers: corsHeaders });
-
-  const sendJson = (data: unknown, status = 200, extraHeaders: Record<string, string> = {}) => {
-    return json(data, status, { ...corsHeaders, ...extraHeaders });
-  };
-
   const url = new URL(req.url);
-  // Support both direct Supabase Function URLs and rewrite paths.
-  // Direct path: /functions/v1/api/<resource>/...
-  // Rewrite path: /api/<resource>/...
   const rawParts = url.pathname.split('/').filter(Boolean);
   const parts = [...rawParts];
-  if (parts[0] === 'functions' && parts[1] === 'v1') {
-    parts.splice(0, 2);
-  }
-  if (parts[0] === 'api') {
-    parts.splice(0, 1);
-  }
-  // parts[0] = resource, parts[1] = sub, parts[2] = sub2
+  if (parts[0] === 'functions' && parts[1] === 'v1') parts.splice(0, 2);
+  if (parts[0] === 'api') parts.splice(0, 1);
+  
   const resource = parts[0] ?? '';
   const sub = parts[1] ?? '';
   const sub2 = parts[2] ?? '';
 
-  const supabaseUrl = requireSupabaseEnv(SUPABASE_URL, 'SUPABASE_URL');
-  const serviceKey = requireSupabaseEnv(SUPABASE_SERVICE_ROLE_KEY, 'SUPABASE_SERVICE_ROLE_KEY');
-  const nuvanxServiceKey = NUVANX_SUPABASE_SERVICE_ROLE_KEY;
-  const anonKey = requireSupabaseEnv(SUPABASE_ANON_KEY, 'SUPABASE_ANON_KEY');
+  const requestOrigin = req.headers.get('Origin');
+  const corsHeaders = buildCorsHeaders(requestOrigin);
+  
+  // Preflight
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
 
-  // This function is deployed with  so Supabase will not reject
-  // requests before this handler runs. Every non-public route must therefore
-  // enforce JWT validation here. Only health checks and Meta webhook handshake
-  // routes are intentionally public.
-  // Note: the Edge Function uses SUPABASE_SERVICE_ROLE_KEY for server-side
-  // credential vault access and RLS bypass where needed. The `credentials` table
-  // is not expected to be accessible via an authenticated client-side SELECT
-  // policy in this architecture.
-  // Auth — verify Supabase JWT
-  const authHeader = req.headers.get('Authorization') ?? '';
-  const token = authHeader.replace('Bearer ', '');
+  const sendJson = (data: unknown, status = 200, extraHeaders: Record<string, string> = {}) => {
+    return new Response(JSON.stringify(data), {
+      status,
+      headers: { ...corsHeaders, ...extraHeaders, 'Content-Type': 'application/json' },
+    });
+  };
 
-  const adminClient = supabaseClientFactory.create(supabaseUrl, serviceKey, {
-    auth: { persistSession: false },
-  });
+  const token = (req.headers.get('Authorization') ?? '').replace('Bearer ', '');
+  const userIdHeader = req.headers.get('x-user-id') || '';
+  const adminClient = createAdminClient();
 
-  // ── PUBLIC routes — no JWT required ──────────────────────────────────────
+  // 1. Rutas públicas (webhooks + health)
   const publicResponse = await handlePublicRoutes({ req, url, resource, sub, sendJson });
   if (publicResponse) return publicResponse;
 
-  // ── All other routes require a valid JWT ──────────────────────────────────
-  // Centralized auth guard: this checks the incoming Supabase user JWT once for all
-  // non-public API routes in api/index.ts.
+  // 2. Auth Verification
+  const anonKey = requireSupabaseEnv(SUPABASE_ANON_KEY, 'SUPABASE_ANON_KEY');
   const authUser = await verifySupabaseUser(adminClient, token, anonKey);
-  const isServiceRole = isDedicatedServiceRoleBypass(token, nuvanxServiceKey);
-  
-  // MCP_API_KEY bypass for health checks and internal tool access
-  const providedApiKey = req.headers.get('x-api-key')?.trim();
-  const isApiKeyValid = MCP_API_KEY && providedApiKey === MCP_API_KEY;
+  const isServiceRole = isDedicatedServiceRoleBypass(token, NUVANX_SUPABASE_SERVICE_ROLE_KEY);
+  const isApiKeyValid = MCP_API_KEY && req.headers.get('x-api-key') === MCP_API_KEY;
 
   if (!authUser && !isServiceRole && !isApiKeyValid) {
     return sendJson({ success: false, message: 'Unauthorized' }, 401);
   }
 
-  // Determine user context. API key/Service role requests must provide x-user-id or x-clinic-id 
-  // if they access user-specific resources, or rely on defaults.
-  let userId = authUser ? authUser.id : (req.headers.get('x-user-id') || '');
-  
-  // For health-checks or automated scripts, we might not have a userId. 
-  // If we have an API Key but no user, we might want to resolve a default user for a "demo" clinic
+  let userId = authUser ? authUser.id : userIdHeader;
   if (!userId && isApiKeyValid) {
-    // Attempt to find a demo user or just use a placeholder if the route allows it
     const { data: demoUser } = await adminClient.from('users').select('id').eq('email', 'demo@nuvanx.com').maybeSingle();
     if (demoUser) userId = demoUser.id;
   }
 
   if ((isServiceRole || isApiKeyValid) && !userId && resource !== 'health') {
-    return sendJson({ success: false, message: 'Missing x-user-id header or valid user context' }, 400);
+    return sendJson({ success: false, message: 'Missing user context' }, 400);
   }
 
-  return await handleAuthenticatedRoutes({
-    adminClient,
-    userId,
-    authUser,
-    resource,
-    sub,
-    sub2,
-    req,
-    url,
-    sendJson,
-    token,
-  });
+  const ctx: AuthenticatedRouteContext = {
+    adminClient, userId, authUser, resource, sub, sub2, req, url, sendJson, token
+  };
+
+  // 3. Rutas Críticas (Llamadas directas para robustez)
+  if (resource === 'kpis') {
+    const res = await handleKpisGet(ctx);
+    if (res) return res;
+  }
+  if (resource === 'dashboard' && sub === 'metrics') {
+    const res = await handleDashboardMetrics(ctx);
+    if (res) return res;
+  }
+  if (resource === 'dashboard' && sub === 'campaigns-filter') {
+    const res = await handleCampaignsFilter(ctx);
+    if (res) return res;
+  }
+  if (resource === 'traceability' && sub === 'funnel') {
+    const res = await handleTrazabilidadFunnel(ctx);
+    if (res) return res;
+  }
+
+  // 4. Enrutamiento General (Fallback al Mapa de Handlers)
+  return await handleAuthenticatedRoutes(ctx);
 }
 
 type RouteHandler = (ctx: AuthenticatedRouteContext) => Promise<Response | null>;
@@ -2372,6 +2358,9 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
     const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
     const clinicId = usr?.clinic_id;
     if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
+
+    // Reconciliar leads antes de calcular métricas
+    await runLeadPipelineReconciliation(adminClient, userId);
 
     const [leadsRes, metaRes, settlementsRes] = await Promise.all([
       adminClient.from('leads')
@@ -5814,12 +5803,65 @@ async function handleKpisGet(ctx: AuthenticatedRouteContext): Promise<Response |
   return null;
 }
 
+async function runLeadPipelineReconciliation(adminClient: any, userId: string) {
+  console.log(`[Reconciliation] Starting for user ${userId}`);
+
+  const { data: clinic } = await adminClient
+    .from('users')
+    .select('clinic_id')
+    .eq('id', userId)
+    .single();
+
+  if (!clinic?.clinic_id) return;
+
+  // Solo leads de adquisición (excluye Doctoralia)
+  const { data: leads } = await adminClient
+    .from('leads')
+    .select('id, phone_normalized, converted_patient_id')
+    .eq('clinic_id', clinic.clinic_id)
+    .is('deleted_at', null)
+    .neq('source', 'doctoralia')
+    .is('converted_patient_id', null);   // solo los que aún no tienen match
+
+  if (!leads || leads.length === 0) {
+    console.log('[Reconciliation] No leads pending matching');
+    return;
+  }
+
+  let updated = 0;
+  for (const lead of leads) {
+    if (!lead.phone_normalized) continue;
+
+    const { data: match } = await adminClient
+      .from('financial_settlements')
+      .select('patient_id')
+      .eq('clinic_id', clinic.clinic_id)
+      .eq('patient_phone_normalized', lead.phone_normalized)  // clave correcta
+      .limit(1)
+      .single();
+
+    if (match?.patient_id) {
+      await adminClient
+        .from('leads')
+        .update({ converted_patient_id: match.patient_id })
+        .eq('id', lead.id);
+
+      updated++;
+    }
+  }
+
+  console.log(`[Reconciliation] Completed: ${updated} leads matched`);
+}
+
 async function processKpisGet(adminClient: any, userId: string, url: URL, sendJson: any): Promise<Response> {
   const { since, until, period } = getKpiDateRange(url);
 
   const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
   const clinicId = usr?.clinic_id;
   if (!clinicId) return sendJson({ success: false, message: 'No clinic configured' }, 400);
+
+  // Reconciliar leads antes de calcular KPIs
+  await runLeadPipelineReconciliation(adminClient, userId);
 
   const metaSources = ['meta_leadgen', 'meta_lead_gen', 'facebook_leadgen'];
 
