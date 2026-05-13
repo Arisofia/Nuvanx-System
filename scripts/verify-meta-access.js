@@ -23,6 +23,17 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function maskIdentifier(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return 'unknown';
+  if (raw.length <= 4) return '****';
+  return `${'*'.repeat(raw.length - 4)}${raw.slice(-4)}`;
+}
+
+function redactText(value) {
+  return value ? '[REDACTED]' : 'Unnamed account';
+}
+
 function getMetaError(data, status) {
   const err = data?.error || {};
   const code = err.code || 'unknown';
@@ -114,7 +125,7 @@ async function main() {
   );
   const account = await fetchAccount({ adAccountId, token, appSecret });
   console.log(
-    `[verify-meta-access] Meta access OK: ${account.name || 'Unnamed account'} (${account.account_id || adAccountId})`,
+    `[verify-meta-access] Meta access OK: ${redactText(account.name)} (${maskIdentifier(account.account_id || adAccountId)})`,
   );
 }
 
