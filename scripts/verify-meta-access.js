@@ -76,7 +76,21 @@ async function fetchAccount({ adAccountId, token, appSecret, attempt = 1 }) {
     });
 
     const text = await response.text();
-    const data = text ? JSON.parse(text) : {};
+    let data;
+
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch (error) {
+        console.warn(
+          '[verify-meta-access] Received non-JSON response body from Meta; falling back to raw text.',
+          error,
+        );
+        data = { rawBody: text };
+      }
+    } else {
+      data = {};
+    }
 
     if (!response.ok) {
       if (attempt < MAX_ATTEMPTS && isTransient(response.status, data)) {
