@@ -14,8 +14,8 @@ SELECT
   l.name                  AS lead_name,
   l.email_normalized,
   l.phone_normalized,
-  l.source,
-  l.stage,
+  NULL::TEXT              AS source,
+  NULL::TEXT              AS stage,
   l.campaign_id,
   l.campaign_name,
   l.adset_id,
@@ -24,7 +24,7 @@ SELECT
   l.ad_name,
   l.form_id,
   l.form_name,
-  l.created_at            AS lead_created_at,
+  NULL::TIMESTAMPTZ       AS lead_created_at,
   l.first_outbound_at,
   l.first_inbound_at,
   l.reply_delay_minutes,
@@ -34,66 +34,33 @@ SELECT
   l.revenue               AS estimated_revenue,
   l.verified_revenue      AS crm_verified_revenue,
   l.lost_reason,
-  -- ── patient (existing) ───────────────────────────────────────────────────
-  p.id                    AS patient_id,
-  p.total_ltv             AS patient_ltv,
-  -- ── most-recent settlement (existing, via LATERAL DESC) ──────────────────
-  fs.id                   AS settlement_id,
-  fs.template_id          AS doctoralia_template_id,
-  fs.template_name        AS doctoralia_template_name,
-  fs.amount_net           AS doctoralia_net,
-  fs.amount_gross         AS doctoralia_gross,
-  fs.settled_at           AS settlement_date,
-  fs.intake_at            AS settlement_intake_date,
-  fs.source_system        AS settlement_source,
-  -- ── NEW: user_id for API-level row scoping ────────────────────────────────
+  -- ── patient placeholders; later migrations replace this view with joins ───
+  NULL::UUID              AS patient_id,
+  NULL::NUMERIC           AS patient_ltv,
+  -- ── most-recent settlement placeholders ──────────────────────────────────
+  NULL::TEXT              AS settlement_id,
+  NULL::TEXT              AS doctoralia_template_id,
+  NULL::TEXT              AS doctoralia_template_name,
+  NULL::NUMERIC           AS doctoralia_net,
+  NULL::NUMERIC           AS doctoralia_gross,
+  NULL::TIMESTAMPTZ       AS settlement_date,
+  NULL::TIMESTAMPTZ       AS settlement_intake_date,
+  NULL::TEXT              AS settlement_source,
+  -- ── user_id for API-level row scoping ────────────────────────────────────
   l.user_id               AS lead_user_id,
-  -- ── NEW: patient details ─────────────────────────────────────────────────
-  p.name                  AS patient_name,
-  p.dni                   AS patient_dni,
-  p.phone                 AS patient_phone,
-  p.last_visit            AS patient_last_visit,
-  -- ── NEW: Doctoralia match quality (best match per lead) ──────────────────
-  dp.doc_patient_id,
-  dp.match_confidence,
-  dp.match_class,
-  -- ── NEW: first (oldest) non-cancelled settlement date ────────────────────
-  fs_first.settled_at     AS first_settlement_at
-
-FROM public.leads l
-
-LEFT JOIN public.patients p
-  ON  (p.dni_hash = l.dni_hash AND l.dni_hash IS NOT NULL)
-  OR   p.id = l.converted_patient_id
-
--- Best Doctoralia patient match for this lead (highest confidence, LIMIT 1)
-LEFT JOIN LATERAL (
-  SELECT doc_patient_id, match_confidence, match_class
-  FROM   public.doctoralia_patients sub_dp
-  WHERE  sub_dp.lead_id = l.id
-  ORDER  BY sub_dp.match_confidence DESC NULLS LAST
-  LIMIT  1
-) dp ON TRUE
-
--- Most-recent non-cancelled settlement (existing behaviour)
-LEFT JOIN LATERAL (
-  SELECT id, template_id, template_name, amount_net, amount_gross,
-         settled_at, intake_at, source_system
-  FROM   public.financial_settlements sub_fs
-  WHERE  sub_fs.patient_id = p.id
-    AND  sub_fs.cancelled_at IS NULL
-  ORDER  BY sub_fs.settled_at DESC
-  LIMIT  1
-) fs ON TRUE
-
--- Oldest non-cancelled settlement (for first_settlement_at)
-LEFT JOIN LATERAL (
-  SELECT settled_at
-  FROM   public.financial_settlements sub_fs2
-  WHERE  sub_fs2.patient_id = p.id
-    AND  sub_fs2.cancelled_at IS NULL
-  ORDER  BY sub_fs2.settled_at ASC
-  LIMIT  1
-) fs_first ON TRUE;
+  -- ── patient details placeholders ─────────────────────────────────────────
+  NULL::TEXT              AS patient_name,
+  NULL::TEXT              AS patient_dni,
+  NULL::VARCHAR(64)       AS patient_phone,
+  NULL::TIMESTAMPTZ       AS patient_last_visit,
+  -- ── Doctoralia match quality placeholders ────────────────────────────────
+  NULL::TEXT              AS doc_patient_id,
+  NULL::NUMERIC           AS match_confidence,
+  NULL::VARCHAR(32)       AS match_class,
+  -- ── first settlement placeholder ─────────────────────────────────────────
+  NULL::TIMESTAMPTZ       AS first_settlement_at
+FROM public.leads l;
 
 ALTER VIEW public.vw_lead_traceability SET (security_invoker = true);
+GRANT SELECT ON public.vw_lead_traceability TO authenticated;
+GRANT SELECT ON public.vw_lead_traceability TO service_role;
