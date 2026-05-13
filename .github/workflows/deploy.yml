@@ -80,7 +80,7 @@ jobs:
             echo "$output"
             if [ $exit_code -ne 0 ]; then
               # Case 1: ghost / reverted migrations
-              ghosts=$(echo "$output" | grep -oE 'supabase migration repair --status reverted [0-9]+' | grep -oE '[0-9]+$' || true)
+              ghosts=$(echo "$output" | grep "supabase migration repair --status reverted" | sed 's/.*reverted //' || true)
               if [ -n "$ghosts" ]; then
                 for version in $ghosts; do
                   echo "::warning::Repairing ghost migration $version"
