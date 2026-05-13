@@ -4,8 +4,7 @@
 -- optimization and avoid per-row re-evaluation.
 -- =============================================================================
 
--- 1. Helper function for consistent UID subquery (optional but good for clarity)
--- 2. Update existing policies with the optimized (SELECT ...) pattern.
+-- 1. Update existing policies with the optimized (SELECT ...) pattern.
 
 -- leads
 DROP POLICY IF EXISTS leads_select_clinic ON public.leads;
@@ -62,8 +61,10 @@ BEGIN
       EXECUTE format(
         'CREATE POLICY %I_select_clinic ON public.%I'
         ' FOR SELECT TO authenticated'
-        ' USING (((SELECT auth.jwt()) ->> ''is_anonymous'') IS DISTINCT FROM ''true'''
-        '        AND clinic_id = (SELECT public.current_clinic_id()))',
+        ' USING ('
+        '   ((SELECT auth.jwt()) ->> ''is_anonymous'') IS DISTINCT FROM ''true'''
+        '   AND clinic_id = (SELECT public.current_clinic_id())'
+        ' )',
         t, t
       );
     END IF;
