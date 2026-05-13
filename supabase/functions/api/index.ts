@@ -8,6 +8,7 @@ import {
   DEFAULT_CORS_HEADERS,
   ENCRYPTION_KEY,
   IS_DEVELOPMENT,
+  MCP_API_KEY,
   META_APP_SECRET,
   NORMALIZED_FRONTEND_URL,
   NUVANX_SUPABASE_SERVICE_ROLE_KEY,
@@ -1355,13 +1356,28 @@ async function handleRequest(req: Request): Promise<Response> {
   const authUser = await verifySupabaseUser(adminClient, token, anonKey);
   const isServiceRole = isDedicatedServiceRoleBypass(token, nuvanxServiceKey);
   
-  if (!authUser && !isServiceRole) {
+  // MCP_API_KEY bypass for health checks and internal tool access
+  const providedApiKey = req.headers.get('x-api-key')?.trim();
+  const isApiKeyValid = MCP_API_KEY && providedApiKey === MCP_API_KEY;
+
+  if (!authUser && !isServiceRole && !isApiKeyValid) {
     return sendJson({ success: false, message: 'Unauthorized' }, 401);
   }
 
-  const userId = authUser ? authUser.id : (req.headers.get('x-user-id') || '');
-  if (isServiceRole && !userId) {
-    return sendJson({ success: false, message: 'Missing x-user-id header for service role request' }, 400);
+  // Determine user context. API key/Service role requests must provide x-user-id or x-clinic-id 
+  // if they access user-specific resources, or rely on defaults.
+  let userId = authUser ? authUser.id : (req.headers.get('x-user-id') || '');
+  
+  // For health-checks or automated scripts, we might not have a userId. 
+  // If we have an API Key but no user, we might want to resolve a default user for a "demo" clinic
+  if (!userId && isApiKeyValid) {
+    // Attempt to find a demo user or just use a placeholder if the route allows it
+    const { data: demoUser } = await adminClient.from('users').select('id').eq('email', 'demo@nuvanx.com').maybeSingle();
+    if (demoUser) userId = demoUser.id;
+  }
+
+  if ((isServiceRole || isApiKeyValid) && !userId && resource !== 'health') {
+    return sendJson({ success: false, message: 'Missing x-user-id header or valid user context' }, 400);
   }
 
   return await handleAuthenticatedRoutes({
