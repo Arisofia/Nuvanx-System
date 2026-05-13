@@ -1,6 +1,7 @@
 -- Phone normalization coverage checks for Lead Audit / Doctoralia matching.
 -- Run these statements directly in the Supabase SQL editor and copy only the
 -- numeric outputs: total records and records with usable phone_normalized.
+-- For the full production release checklist, use docs/sql/production-traceability-validation.sql.
 
 -- Leads: cobertura de phone_normalized
 SELECT
