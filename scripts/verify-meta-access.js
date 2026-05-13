@@ -23,6 +23,13 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function maskForLog(value) {
+  const s = String(value || '');
+  if (!s) return 'unknown';
+  if (s.length <= 4) return '***';
+  return `${s.slice(0, 2)}***${s.slice(-2)}`;
+}
+
 function getMetaError(data, status) {
   const err = data?.error || {};
   const code = err.code || 'unknown';
@@ -122,7 +129,7 @@ async function main() {
   );
   const account = await fetchAccount({ adAccountId, token, appSecret });
   console.log(
-    `[verify-meta-access] Meta access OK: ${account.name || 'Unnamed account'} (${account.account_id || adAccountId})`,
+    `[verify-meta-access] Meta access OK: ${maskForLog(account.name || 'Unnamed account')} (${maskForLog(account.account_id || adAccountId)})`,
   );
 }
 
