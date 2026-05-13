@@ -3,9 +3,14 @@
 
 const crypto = require('node:crypto');
 
+function parsePositiveInt(raw, fallback) {
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
 const META_GRAPH = 'https://graph.facebook.com/v22.0';
-const REQUEST_TIMEOUT_MS = Number(process.env.META_VERIFY_TIMEOUT_MS || 30_000);
-const MAX_ATTEMPTS = Number(process.env.META_VERIFY_ATTEMPTS || 3);
+const REQUEST_TIMEOUT_MS = parsePositiveInt(process.env.META_VERIFY_TIMEOUT_MS, 30_000);
+const MAX_ATTEMPTS = parsePositiveInt(process.env.META_VERIFY_ATTEMPTS, 3);
 
 function normalizeAdAccountId(raw) {
   const value = String(raw || '').trim();
