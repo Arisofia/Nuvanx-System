@@ -4,7 +4,7 @@
 -- Fixes:
 --   - get_trazabilidad_funnel legacy 6-arg SECURITY DEFINER overload
 --   - get_trazabilidad_funnel mutable search_path warning
---   - pg_cron policies that include anon/PUBLIC after extension reloads
+--   - documents hosted pg_cron policy ownership limitations
 --
 -- Note: auth_leaked_password_protection is a hosted Auth setting and cannot be
 -- changed via SQL migrations. It must be enabled in the Supabase dashboard.
@@ -29,17 +29,27 @@ END $$;
 
 -- pg_cron can recreate default policies as PUBLIC on hosted projects. Recreate
 -- them without anon/PUBLIC so the advisor no longer flags anonymous access.
+-- NOTE: This may fail on hosted Supabase where the 'postgres' role does not own
+-- the 'cron' schema. We wrap in exception blocks to allow migration to pass.
 DO $$
 BEGIN
-  IF to_regclass('cron.job') IS NOT NULL THEN
-    EXECUTE 'REVOKE ALL ON TABLE cron.job FROM PUBLIC, anon';
-    EXECUTE 'DROP POLICY IF EXISTS cron_job_policy ON cron.job';
-    EXECUTE 'CREATE POLICY cron_job_policy ON cron.job FOR ALL TO authenticated USING (true) WITH CHECK (true)';
-  END IF;
+  BEGIN
+    IF to_regclass('cron.job') IS NOT NULL THEN
+      EXECUTE 'REVOKE ALL ON TABLE cron.job FROM PUBLIC, anon';
+      EXECUTE 'DROP POLICY IF EXISTS cron_job_policy ON cron.job';
+      EXECUTE 'CREATE POLICY cron_job_policy ON cron.job FOR ALL TO authenticated USING (true) WITH CHECK (true)';
+    END IF;
+  EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'Skipping cron.job hardening due to insufficient privileges (likely hosted Supabase)';
+  END;
 
-  IF to_regclass('cron.job_run_details') IS NOT NULL THEN
-    EXECUTE 'REVOKE ALL ON TABLE cron.job_run_details FROM PUBLIC, anon';
-    EXECUTE 'DROP POLICY IF EXISTS cron_job_run_details_policy ON cron.job_run_details';
-    EXECUTE 'CREATE POLICY cron_job_run_details_policy ON cron.job_run_details FOR SELECT TO authenticated USING (true)';
-  END IF;
+  BEGIN
+    IF to_regclass('cron.job_run_details') IS NOT NULL THEN
+      EXECUTE 'REVOKE ALL ON TABLE cron.job_run_details FROM PUBLIC, anon';
+      EXECUTE 'DROP POLICY IF EXISTS cron_job_run_details_policy ON cron.job_run_details';
+      EXECUTE 'CREATE POLICY cron_job_run_details_policy ON cron.job_run_details FOR SELECT TO authenticated USING (true)';
+    END IF;
+  EXCEPTION WHEN insufficient_privilege THEN
+    RAISE NOTICE 'Skipping cron.job_run_details hardening due to insufficient privileges (likely hosted Supabase)';
+  END;
 END $$;
