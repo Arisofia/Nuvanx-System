@@ -404,7 +404,16 @@ async function main() {
         console.warn(`::warning::[sync-doctoralia] ${guidance}`);
         return;
       }
-      throw new Error(guidance);
+
+      const guidanceError = new Error(`${guidance}\nOriginal error: ${err.message}`);
+
+      if (err && typeof err === 'object') {
+        if ('code' in err) guidanceError.code = err.code;
+        if ('response' in err) guidanceError.response = err.response;
+        if ('errors' in err) guidanceError.errors = err.errors;
+      }
+
+      throw guidanceError;
     }
     throw err;
   }
