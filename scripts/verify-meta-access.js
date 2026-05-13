@@ -41,6 +41,14 @@ function isTransient(status, data) {
     || message.includes('rate limit');
 }
 
+function redactAdAccountIdForLog(adAccountId) {
+  const normalized = String(adAccountId || '');
+  const digits = normalized.replace(/^act_/i, '');
+  if (!digits) return 'act_[redacted]';
+  const suffix = digits.slice(-4);
+  return `act_***${suffix}`;
+}
+
 async function fetchAccount({ adAccountId, token, appSecret, attempt = 1 }) {
   const url = new URL(`${META_GRAPH}/${adAccountId}`);
   url.searchParams.set('fields', 'account_id,name,account_status,currency');
@@ -110,7 +118,7 @@ async function main() {
   }
 
   console.log(
-    `[verify-meta-access] Checking Meta access to ${adAccountId} with appsecret_proof enabled...`,
+    `[verify-meta-access] Checking Meta access to ${redactAdAccountIdForLog(adAccountId)} with appsecret_proof enabled...`,
   );
   const account = await fetchAccount({ adAccountId, token, appSecret });
   console.log(
