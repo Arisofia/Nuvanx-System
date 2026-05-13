@@ -29,6 +29,14 @@ END $$;
 -- them without anon/PUBLIC so the advisor no longer flags anonymous access.
 -- NOTE: This may fail on hosted Supabase where the 'postgres' role does not own
 -- the 'cron' schema. We wrap in exception blocks to allow migration to pass.
+-- pg_cron is owned by Supabase-managed roles on hosted projects. The migration
+-- runner cannot reliably change grants or RLS policies on cron.job or
+-- cron.job_run_details on all platforms. On some hosted environments, this
+-- blocks deployment with SQLSTATE 42501 (must be owner of relation job).
+--
+-- We attempt to recreate them without anon/PUBLIC so the advisor no longer
+-- flags anonymous access, but wrap in an exception block to allow the
+-- migration to pass if privileges are restricted.
 DO $$
 BEGIN
   BEGIN

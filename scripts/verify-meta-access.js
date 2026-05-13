@@ -23,6 +23,7 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+<<<<<<< resolve-conflicts-62
 function maskIdentifier(value) {
   const raw = String(value || '').trim();
   if (!raw) return 'unknown';
@@ -32,6 +33,13 @@ function maskIdentifier(value) {
 
 function redactText(value) {
   return value ? '[REDACTED]' : 'Unnamed account';
+=======
+function maskForLog(value) {
+  const s = String(value || '');
+  if (!s) return 'unknown';
+  if (s.length <= 4) return '***';
+  return `${s.slice(0, 2)}***${s.slice(-2)}`;
+>>>>>>> main
 }
 
 function getMetaError(data, status) {
@@ -52,6 +60,17 @@ function isTransient(status, data) {
     || message.includes('rate limit');
 }
 
+<<<<<<< resolve-conflicts-62
+=======
+function redactAdAccountIdForLog(adAccountId) {
+  const normalized = String(adAccountId || '');
+  const digits = normalized.replace(/^act_/i, '');
+  if (!digits) return 'act_[redacted]';
+  const suffix = digits.slice(-4);
+  return `act_***${suffix}`;
+}
+
+>>>>>>> main
 async function fetchAccount({ adAccountId, token, appSecret, attempt = 1 }) {
   const url = new URL(`${META_GRAPH}/${adAccountId}`);
   url.searchParams.set('fields', 'account_id,name,account_status,currency');
@@ -72,7 +91,25 @@ async function fetchAccount({ adAccountId, token, appSecret, attempt = 1 }) {
     });
 
     const text = await response.text();
+<<<<<<< resolve-conflicts-62
     const data = text ? JSON.parse(text) : {};
+=======
+    let data;
+
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch (error) {
+        console.warn(
+          '[verify-meta-access] Received non-JSON response body from Meta; falling back to raw text.',
+          error,
+        );
+        data = { rawBody: text };
+      }
+    } else {
+      data = {};
+    }
+>>>>>>> main
 
     if (!response.ok) {
       if (attempt < MAX_ATTEMPTS && isTransient(response.status, data)) {
@@ -121,9 +158,15 @@ async function main() {
   }
 
   console.log(
+<<<<<<< resolve-conflicts-62
     '[verify-meta-access] Checking Meta access with appsecret_proof enabled...',
   );
   const account = await fetchAccount({ adAccountId, token, appSecret });
+=======
+    `[verify-meta-access] Checking Meta access to ${redactAdAccountIdForLog(adAccountId)} with appsecret_proof enabled...`,
+  );
+  await fetchAccount({ adAccountId, token, appSecret });
+>>>>>>> main
   console.log('[verify-meta-access] Meta access OK.');
 }
 
