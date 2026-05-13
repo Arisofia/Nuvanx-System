@@ -141,10 +141,8 @@ async function main() {
   console.log(
     `[verify-meta-access] Checking Meta access to ${redactAdAccountIdForLog(adAccountId)} with appsecret_proof enabled...`,
   );
-  const account = await fetchAccount({ adAccountId, token, appSecret });
-  console.log(
-    `[verify-meta-access] Meta access OK: ${maskForLog(account.name || 'Unnamed account')} (${maskForLog(account.account_id || adAccountId)})`,
-  );
+  await fetchAccount({ adAccountId, token, appSecret });
+  console.log('[verify-meta-access] Meta access OK.');
 }
 
 main().catch((err) => {
