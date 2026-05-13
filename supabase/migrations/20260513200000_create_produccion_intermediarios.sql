@@ -27,6 +27,12 @@ BEGIN
       procedencia TEXT,
       importe NUMERIC(12, 2) DEFAULT 0.00,
 
+      -- Integration and marketing aliases used by dashboards/RPC filters.
+      campaign_id TEXT,
+      agenda_name TEXT,
+      room_id TEXT,
+      lead_source TEXT,
+
       -- Derived identity field for deterministic matching against leads/patients.
       phone_normalized TEXT,
 
@@ -65,6 +71,14 @@ CREATE INDEX IF NOT EXISTS idx_produccion_intermediarios_procedencia
 CREATE INDEX IF NOT EXISTS idx_produccion_intermediarios_phone_normalized
   ON public.produccion_intermediarios (phone_normalized)
   WHERE phone_normalized IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_produccion_intermediarios_campaign_id
+  ON public.produccion_intermediarios (campaign_id)
+  WHERE campaign_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_produccion_intermediarios_lead_source
+  ON public.produccion_intermediarios (lead_source)
+  WHERE lead_source IS NOT NULL;
 
 CREATE OR REPLACE FUNCTION public.extract_produccion_intermediarios_phone(p_asunto TEXT)
 RETURNS TEXT
