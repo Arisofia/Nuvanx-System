@@ -1,3 +1,4 @@
+/// <reference lib="deno.ns" />
 // supabase/functions/daily-aggregates/index.ts
 import { createClient } from '@supabase/supabase-js'
 import { ENCRYPTION_KEY, META_APP_SECRET, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from '../_shared/config.ts'
@@ -5,11 +6,19 @@ import { ENCRYPTION_KEY, META_APP_SECRET, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_UR
 const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!)
 
 // ── Encryption Helpers ──────────────────────────────────────────────────────
-function hexToBytes(hex: string): Uint8Array {
+function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
   const buf = new ArrayBuffer(hex.length >>> 1);
   const arr = new Uint8Array(buf);
   for (let i = 0; i < hex.length; i += 2) arr[i >>> 1] = Number.parseInt(hex.slice(i, i + 2), 16);
   return arr;
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+}
+
+function encodeBufferSource(value: string): ArrayBuffer {
+  return toArrayBuffer(new TextEncoder().encode(value));
 }
 
 async function decryptCred(encoded: string): Promise<string> {
@@ -22,12 +31,12 @@ async function decryptCred(encoded: string): Promise<string> {
   const tag = hexToBytes(tagH), ct = hexToBytes(ctH);
   const combined = new Uint8Array(ct.length + tag.length);
   combined.set(ct); combined.set(tag, ct.length);
-  const km = await crypto.subtle.importKey('raw', new TextEncoder().encode(masterKey), 'PBKDF2', false, ['deriveKey']);
+  const km = await crypto.subtle.importKey('raw', encodeBufferSource(masterKey), 'PBKDF2', false, ['deriveKey']);
   const aesKey = await crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt, iterations: 100_000, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt: toArrayBuffer(salt), iterations: 100_000, hash: 'SHA-256' },
     km, { name: 'AES-GCM', length: 256 }, false, ['decrypt'],
   );
-  return new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, aesKey, combined));
+  return new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: toArrayBuffer(iv) }, aesKey, toArrayBuffer(combined)));
 }
 
 // ── Meta Fetch Helpers ──────────────────────────────────────────────────────
@@ -38,8 +47,8 @@ function bytesToHex(bytes: Uint8Array): string {
 }
 
 async function computeAppsecretProof(accessToken: string, appSecret: string): Promise<string> {
-  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(appSecret), 'HMAC', false, ['sign']);
-  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(accessToken)));
+  const key = await crypto.subtle.importKey('raw', encodeBufferSource(appSecret), 'HMAC', false, ['sign']);
+  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, encodeBufferSource(accessToken)));
   return bytesToHex(sig);
 }
 
@@ -120,8 +129,13 @@ async function fetchAllClinicsMetaInsights(days: number) {
   return { rowsInserted: totalRows };
 }
 
-Deno.serve(async (req) => {
-  const body = await req.json().catch(() => ({}));
+type DailyAggregatesRequest = {
+  action?: string;
+  days?: number;
+};
+
+Deno.serve(async (req: Request) => {
+  const body = (await req.json().catch((): DailyAggregatesRequest => ({}))) as DailyAggregatesRequest;
   const { action, days = 2 } = body;
 
   if (action === 'fetch_meta_insights') {

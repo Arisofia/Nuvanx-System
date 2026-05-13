@@ -50,40 +50,83 @@ END;
 $$;
 
 -- 2. Update RLS policies
--- Guard: ensure clinic_id columns exist on core tables (idempotent, safe to re-run)
--- These were added in 20260417100200 but the guard here protects against migration history divergence.
-ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS clinic_id UUID REFERENCES public.clinics(id) ON DELETE SET NULL;
-ALTER TABLE public.integrations ADD COLUMN IF NOT EXISTS clinic_id UUID REFERENCES public.clinics(id) ON DELETE SET NULL;
-ALTER TABLE public.credentials ADD COLUMN IF NOT EXISTS clinic_id UUID REFERENCES public.clinics(id) ON DELETE SET NULL;
+-- Guard: ensure clinic_id columns exist on core tables when those tables exist.
+-- These were added in 20260417100200, but preview/drifted environments can run
+-- this migration before every CRM table has been created.
+DO $$
+DECLARE
+  t TEXT;
+  core_tables TEXT[] := ARRAY['leads', 'integrations', 'credentials'];
+  has_clinics BOOLEAN := to_regclass('public.clinics') IS NOT NULL;
+BEGIN
+  FOREACH t IN ARRAY core_tables LOOP
+    IF to_regclass(format('public.%I', t)) IS NULL THEN
+      RAISE NOTICE 'Skipping %.clinic_id guard: public.% does not exist', t, t;
+      CONTINUE;
+    END IF;
 
--- We drop and recreate policies that relied on direct JWT claim reading.
+    IF has_clinics THEN
+      EXECUTE format(
+        'ALTER TABLE public.%I ADD COLUMN IF NOT EXISTS clinic_id UUID REFERENCES public.clinics(id) ON DELETE SET NULL',
+        t
+      );
+    ELSE
+      EXECUTE format('ALTER TABLE public.%I ADD COLUMN IF NOT EXISTS clinic_id UUID', t);
+      RAISE NOTICE 'Added %.clinic_id without FK because public.clinics does not exist in this environment', t;
+    END IF;
+  END LOOP;
+END $$;
 
--- leads
-DROP POLICY IF EXISTS leads_select_clinic ON public.leads;
-CREATE POLICY leads_select_clinic ON public.leads
-  FOR SELECT TO authenticated
-  USING (clinic_id = public.current_clinic_id());
+-- We drop and recreate policies that relied on direct JWT claim reading. Each
+-- policy is guarded so the migration remains safe in partial preview databases.
+DO $$
+DECLARE
+  t TEXT;
+  core_tables TEXT[] := ARRAY['leads', 'integrations', 'credentials'];
+BEGIN
+  FOREACH t IN ARRAY core_tables LOOP
+    IF to_regclass(format('public.%I', t)) IS NULL THEN
+      RAISE NOTICE 'Skipping %_select_clinic policy: public.% does not exist', t, t;
+      CONTINUE;
+    END IF;
 
--- integrations
-DROP POLICY IF EXISTS integrations_select_clinic ON public.integrations;
-CREATE POLICY integrations_select_clinic ON public.integrations
-  FOR SELECT TO authenticated
-  USING (clinic_id = public.current_clinic_id());
+    IF NOT EXISTS (
+      SELECT 1
+      FROM information_schema.columns c
+      WHERE c.table_schema = 'public'
+        AND c.table_name = t
+        AND c.column_name = 'clinic_id'
+    ) THEN
+      RAISE NOTICE 'Skipping %_select_clinic policy: public.%.clinic_id does not exist', t, t;
+      CONTINUE;
+    END IF;
 
--- credentials
-DROP POLICY IF EXISTS credentials_select_clinic ON public.credentials;
-CREATE POLICY credentials_select_clinic ON public.credentials
-  FOR SELECT TO authenticated
-  USING (clinic_id = public.current_clinic_id());
+    EXECUTE format('DROP POLICY IF EXISTS %I_select_clinic ON public.%I', t, t);
+    EXECUTE format(
+      'CREATE POLICY %I_select_clinic ON public.%I FOR SELECT TO authenticated USING (clinic_id = public.current_clinic_id())',
+      t,
+      t
+    );
+  END LOOP;
+END $$;
 
 -- doctoralia_patients
 DO $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'doctoralia_patients') THEN
+  IF to_regclass('public.doctoralia_patients') IS NOT NULL
+     AND EXISTS (
+       SELECT 1
+       FROM information_schema.columns c
+       WHERE c.table_schema = 'public'
+         AND c.table_name = 'doctoralia_patients'
+         AND c.column_name = 'clinic_id'
+     ) THEN
     DROP POLICY IF EXISTS doctoralia_patients_select_clinic ON public.doctoralia_patients;
     CREATE POLICY doctoralia_patients_select_clinic ON public.doctoralia_patients
       FOR SELECT TO authenticated
       USING (clinic_id = public.current_clinic_id());
+  ELSE
+    RAISE NOTICE 'Skipping doctoralia_patients_select_clinic policy: table or clinic_id column does not exist';
   END IF;
 END $$;
 
@@ -94,20 +137,42 @@ DECLARE
   tables TEXT[] := ARRAY['patients', 'doctors', 'treatment_types', 'appointments', 'financial_settlements', 'whatsapp_conversations'];
 BEGIN
   FOREACH t IN ARRAY tables LOOP
-    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = t) THEN
+    IF to_regclass(format('public.%I', t)) IS NOT NULL
+       AND EXISTS (
+         SELECT 1
+         FROM information_schema.columns c
+         WHERE c.table_schema = 'public'
+           AND c.table_name = t
+           AND c.column_name = 'clinic_id'
+       ) THEN
       EXECUTE format('DROP POLICY IF EXISTS %I_select_clinic ON public.%I', t, t);
       EXECUTE format('CREATE POLICY %I_select_clinic ON public.%I FOR SELECT TO authenticated USING (clinic_id = public.current_clinic_id())', t, t);
+    ELSE
+      RAISE NOTICE 'Skipping %_select_clinic policy: table or clinic_id column does not exist', t;
     END IF;
   END LOOP;
 END $$;
 
 -- 3. api_call_log table for rate limiting
-CREATE TABLE IF NOT EXISTS public.api_call_log (
-  id         UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id    UUID         NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
-  endpoint   VARCHAR(128) NOT NULL,
-  created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-);
+DO $$
+BEGIN
+  IF to_regclass('public.users') IS NOT NULL THEN
+    CREATE TABLE IF NOT EXISTS public.api_call_log (
+      id         UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id    UUID         NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+      endpoint   VARCHAR(128) NOT NULL,
+      created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    );
+  ELSE
+    CREATE TABLE IF NOT EXISTS public.api_call_log (
+      id         UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id    UUID         NOT NULL,
+      endpoint   VARCHAR(128) NOT NULL,
+      created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    );
+    RAISE NOTICE 'Created public.api_call_log without user FK because public.users does not exist in this environment';
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS api_call_log_user_endpoint_idx ON public.api_call_log(user_id, endpoint, created_at DESC);
 

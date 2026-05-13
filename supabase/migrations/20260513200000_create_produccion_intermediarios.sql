@@ -47,6 +47,54 @@ ALTER TABLE public.produccion_intermediarios
   ADD COLUMN IF NOT EXISTS phone_normalized TEXT,
   ADD COLUMN IF NOT EXISTS inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+-- Create or skip table in a single path: if the table doesn't exist, create it
+-- with all columns; if it does exist, ensure columns are added (but do not duplicate
+-- the CREATE statement to avoid schema drift).
+DO $$
+BEGIN
+  IF to_regclass('public.produccion_intermediarios') IS NULL THEN
+    CREATE TABLE public.produccion_intermediarios (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+      -- Spreadsheet columns A-K.
+      estado TEXT,
+      fecha DATE,
+      hora TEXT,
+      fecha_creacion DATE,
+      hora_creacion TIME,
+      asunto TEXT,
+      agenda TEXT,
+      sala_box TEXT,
+      confirmada BOOLEAN DEFAULT FALSE,
+      procedencia TEXT,
+      importe NUMERIC(12, 2) DEFAULT 0.00,
+
+      -- Derived identity field for deterministic matching against leads/patients.
+      phone_normalized TEXT,
+
+      -- Operational metadata.
+      inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  ELSE
+    -- Table exists; ensure all columns are added (idempotent, handles evolution).
+    ALTER TABLE public.produccion_intermediarios
+      ADD COLUMN IF NOT EXISTS estado TEXT,
+      ADD COLUMN IF NOT EXISTS fecha DATE,
+      ADD COLUMN IF NOT EXISTS hora TEXT,
+      ADD COLUMN IF NOT EXISTS fecha_creacion DATE,
+      ADD COLUMN IF NOT EXISTS hora_creacion TIME,
+      ADD COLUMN IF NOT EXISTS asunto TEXT,
+      ADD COLUMN IF NOT EXISTS agenda TEXT,
+      ADD COLUMN IF NOT EXISTS sala_box TEXT,
+      ADD COLUMN IF NOT EXISTS confirmada BOOLEAN DEFAULT FALSE,
+      ADD COLUMN IF NOT EXISTS procedencia TEXT,
+      ADD COLUMN IF NOT EXISTS importe NUMERIC(12, 2) DEFAULT 0.00,
+      ADD COLUMN IF NOT EXISTS phone_normalized TEXT,
+      ADD COLUMN IF NOT EXISTS inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+  END IF;
+END $$;
 
 COMMENT ON TABLE public.produccion_intermediarios IS
   'Doctoralia Produccion Intermediarios spreadsheet staging table. Preserves columns A-K and normalizes phone from asunto for attribution matching.';
