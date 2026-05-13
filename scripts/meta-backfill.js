@@ -264,7 +264,7 @@ async function main() {
   const maskedAccounts = adAccountIds.map((id) => id.replaceAll(/.(?=.{4})/g, '*')).join(', ');
   console.log(`[meta-backfill] Ad Accounts: ${maskedAccounts}`);
 
-  const db = new Client({ connectionString: databaseUrl });
+  const db = new Client({ connectionString: databaseUrl, ssl: { rejectUnauthorized: false } });
   await db.connect();
   let reportUserId;
   try {

@@ -230,7 +230,7 @@ async function maybeLoadDbSignals({ databaseUrl, clinicId, sinceIso, untilExclus
     return { available: false, rows: [] };
   }
 
-  const db = new Client({ connectionString: databaseUrl });
+  const db = new Client({ connectionString: databaseUrl, ssl: { rejectUnauthorized: false } });
   await db.connect();
 
   try {
@@ -262,7 +262,7 @@ async function maybeLoadDbSignals({ databaseUrl, clinicId, sinceIso, untilExclus
 async function maybePersistOutput({ databaseUrl, reportUserId, clinicId, markdown, metadata }) {
   if (!databaseUrl || !reportUserId) return null;
 
-  const db = new Client({ connectionString: databaseUrl });
+  const db = new Client({ connectionString: databaseUrl, ssl: { rejectUnauthorized: false } });
   await db.connect();
 
   try {

@@ -396,7 +396,7 @@ async function main() {
   if (config.useHashId) console.log('[sync-doctoralia] Using hash-based ID (appointment-export format).');
 
   // ── 3. Connect to Postgres ────────────────────────────────────────────────
-  const db = new Client({ connectionString: DATABASE_URL });
+  const db = new Client({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
   let upserted = 0;
   let skipped = 0;
   try {

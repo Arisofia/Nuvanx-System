@@ -67,7 +67,7 @@ async function main() {
   }
 
   const encrypted = await encryptCred(META_ACCESS_TOKEN_NEW, ENCRYPTION_KEY);
-  const client = new Client({ connectionString: DATABASE_URL });
+  const client = new Client({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
   await client.connect();
 
   const updateRes = await client.query(

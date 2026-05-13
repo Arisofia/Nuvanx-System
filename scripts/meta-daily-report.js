@@ -331,7 +331,7 @@ async function maybeLoadDbSignals({ databaseUrl, clinicId, sinceIso, untilExclus
   }
 
   const { Client } = require('pg');
-  const db = new Client({ connectionString: databaseUrl });
+  const db = new Client({ connectionString: databaseUrl, ssl: { rejectUnauthorized: false } });
   await db.connect();
 
   try {
@@ -395,7 +395,7 @@ async function persistMetaDailyInsights({ databaseUrl, reportUserId, adAccountId
   }));
 
   const { Client } = require('pg');
-  const db = new Client({ connectionString: databaseUrl });
+  const db = new Client({ connectionString: databaseUrl, ssl: { rejectUnauthorized: false } });
   await db.connect();
   try {
     for (const r of upsertRows) {
@@ -428,7 +428,7 @@ async function maybePersistOutput({ databaseUrl, reportUserId, clinicId, markdow
   if (!databaseUrl || !reportUserId) return null;
 
   const { Client } = require('pg');
-  const db = new Client({ connectionString: databaseUrl });
+  const db = new Client({ connectionString: databaseUrl, ssl: { rejectUnauthorized: false } });
   await db.connect();
 
   try {
