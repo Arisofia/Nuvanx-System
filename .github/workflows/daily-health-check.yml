@@ -25,12 +25,16 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || secrets.SUPABASE_URL }}
           MCP_API_KEY: ${{ secrets.MCP_API_KEY }}
+          HEALTH_CHECK_API_AUTH_TOKEN: ${{ secrets.HEALTH_CHECK_API_AUTH_TOKEN }}
         run: |
           if [ -z "$VITE_SUPABASE_URL" ]; then
             echo "::error::VITE_SUPABASE_URL or SUPABASE_URL secret is missing"
             exit 1
           fi
           if [ -z "$MCP_API_KEY" ]; then
-            echo "::warning::MCP_API_KEY secret is missing. Some endpoints might fail."
+            echo "MCP_API_KEY secret is not configured; the script will only check the public MCP health endpoint."
+          fi
+          if [ -z "$HEALTH_CHECK_API_AUTH_TOKEN" ]; then
+            echo "HEALTH_CHECK_API_AUTH_TOKEN secret is not configured; protected API endpoints must return 401."
           fi
           deno run --allow-net --allow-env scripts/health-check-nuvanx.ts
