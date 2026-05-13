@@ -4,7 +4,7 @@
 -- Fixes:
 --   - get_trazabilidad_funnel legacy 6-arg SECURITY DEFINER overload
 --   - get_trazabilidad_funnel mutable search_path warning
---   - pg_cron policies that include anon/PUBLIC after extension reloads
+--   - documents hosted pg_cron policy ownership limitations
 --
 -- Note: auth_leaked_password_protection is a hosted Auth setting and cannot be
 -- changed via SQL migrations. It must be enabled in the Supabase dashboard.
@@ -25,10 +25,14 @@ BEGIN
   END IF;
 END $$;
 
--- pg_cron can recreate default policies as PUBLIC on hosted projects. Recreate
--- them without anon/PUBLIC so the advisor no longer flags anonymous access.
--- NOTE: This may fail on hosted Supabase where the 'postgres' role does not own
--- the 'cron' schema. We wrap in an exception block to allow migration to pass.
+-- pg_cron is owned by Supabase-managed roles on hosted projects. The migration
+-- runner cannot reliably change grants or RLS policies on cron.job or
+-- cron.job_run_details on all platforms. On some hosted environments, this
+-- blocks deployment with SQLSTATE 42501 (must be owner of relation job).
+--
+-- We attempt to recreate them without anon/PUBLIC so the advisor no longer
+-- flags anonymous access, but wrap in an exception block to allow the
+-- migration to pass if privileges are restricted.
 DO $$
 BEGIN
   BEGIN
