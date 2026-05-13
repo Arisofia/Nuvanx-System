@@ -20,6 +20,7 @@ export const SUPABASE_URL = getEnv('SUPABASE_URL');
 export const SUPABASE_SERVICE_ROLE_KEY = getEnv('SUPABASE_SERVICE_ROLE_KEY');
 export const SUPABASE_ANON_KEY = getEnv('SUPABASE_ANON_KEY');
 export const NUVANX_SUPABASE_SERVICE_ROLE_KEY = getEnv('NUVANX_SUPABASE_SERVICE_ROLE_KEY');
+export const MCP_API_KEY = getEnv('MCP_API_KEY');
 export const ENCRYPTION_KEY = getEnv('ENCRYPTION_KEY');
 export const META_APP_SECRET = getEnv('META_APP_SECRET');
 

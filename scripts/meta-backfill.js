@@ -110,6 +110,21 @@ async function metaFetch(endpoint, accessTokenOverride, attempt = 1, params = {}
       const subcode = error.error_subcode ?? 'unknown';
       const fullMsg = `[Meta Error] Code: ${code}, Subcode: ${subcode}, Message: ${msg}`;
 
+      if (
+        msg.includes('user logged out') ||
+        msg.includes('session is invalid') ||
+        msg.includes('Invalid OAuth access token') ||
+        msg.includes('token has expired') ||
+        (code === 200 && (msg.includes('permission') || msg.includes('ads_read') || msg.includes('ads_management')))
+      ) {
+        throw new Error(
+          `META_ACCESS_TOKEN may be invalid or missing permissions. ` +
+          `Ensure you are using a Meta System User access token with ads_read and ads_management scopes, ` +
+          `and that it has access to the target Ad Account. ` +
+          `Original error: ${fullMsg}`
+        );
+      }
+
       const isTransient =
         [429, 500, 502, 503, 504].includes(response.status) ||
         String(msg).toLowerCase().includes('throttl') ||
@@ -264,7 +279,7 @@ async function main() {
   const maskedAccounts = adAccountIds.map((id) => id.replaceAll(/.(?=.{4})/g, '*')).join(', ');
   console.log(`[meta-backfill] Ad Accounts: ${maskedAccounts}`);
 
-  const db = new Client({ connectionString: databaseUrl });
+  const db = new Client({ connectionString: databaseUrl, ssl: { rejectUnauthorized: false } });
   await db.connect();
   let reportUserId;
   try {

@@ -38,7 +38,7 @@
 const { google }  = require('googleapis');
 const { Client }  = require('pg');
 const { createHash } = require('node:crypto');
-const { extractPhonesFromSubject, normalizePhoneForMatching } = require('./lib/phone-normalization');
+const { extractPhonesFromSubject, normalizePhoneForMatching, getPrimaryPhoneFromSubject } = require('./lib/phone-normalization');
 
 const {
   GOOGLE_SA_JSON: SA_JSON,
@@ -270,6 +270,9 @@ function buildHeaderConfig(headers) {
   const colPayment      = findCol(headers, 'metodo pago', 'metodo de pago', 'pago', 'payment', 'forma pago', 'procedencia');
   const colIntermediary = findCol(headers, 'intermediario', 'mediador', 'financiera', 'entidad', 'agenda');
   const colStatus       = findCol(headers, 'estado', 'status', 'situacion');
+  const colOrigin       = findCol(headers, 'procedencia', 'origen', 'source', 'origin');
+  const colAgenda       = findCol(headers, 'agenda', 'calendario', 'doctor');
+  const colRoom         = findCol(headers, 'sala', 'habitacion', 'room', 'box');
 
   const hasColId           = colId !== -1;
   const hasColTemplate     = colTemplate !== -1;
@@ -282,6 +285,9 @@ function buildHeaderConfig(headers) {
   const hasColPayment      = colPayment !== -1;
   const hasColIntermediary = colIntermediary !== -1;
   const hasColStatus       = colStatus !== -1;
+  const hasColOrigin       = colOrigin !== -1;
+  const hasColAgenda       = colAgenda !== -1;
+  const hasColRoom         = colRoom !== -1;
 
   return {
     colId,
@@ -297,6 +303,9 @@ function buildHeaderConfig(headers) {
     colPayment,
     colIntermediary,
     colStatus,
+    colOrigin,
+    colAgenda,
+    colRoom,
     hasColId,
     hasColTemplate,
     hasColTemplateId,
@@ -308,6 +317,9 @@ function buildHeaderConfig(headers) {
     hasColPayment,
     hasColIntermediary,
     hasColStatus,
+    hasColOrigin,
+    hasColAgenda,
+    hasColRoom,
     useHashId: !hasColId,
     colSettledEff: hasColSettled ? colSettled : colFecha,
   };
@@ -429,7 +441,7 @@ async function main() {
   if (config.useHashId) console.log('[sync-doctoralia] Using hash-based ID (appointment-export format).');
 
   // ── 3. Connect to Postgres ────────────────────────────────────────────────
-  const db = new Client({ connectionString: DATABASE_URL });
+  const db = new Client({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
   let upserted = 0;
   let skipped = 0;
   try {
@@ -461,6 +473,21 @@ async function main() {
       else skipped++;
     }
 
+    console.log(`[sync-doctoralia] Upsert complete: ${upserted} rows updated, ${skipped} skipped.`);
+
+    // ── 5. Reconcile subjects to leads ──────────────────────────────────────
+    console.log('[sync-doctoralia] Starting lead reconciliation...');
+    const userRes = await db.query('SELECT id FROM public.users WHERE clinic_id = $1 LIMIT 1', [CLINIC_ID]);
+    const userId = userRes.rows[0]?.id;
+
+    if (!userId) {
+      console.warn('[sync-doctoralia] No user found for this clinic. Skipping lead reconciliation.');
+    } else {
+      const reconcileRes = await db.query('SELECT public.reconcile_doctoralia_subjects_to_leads($1) as count', [userId]);
+      const count = reconcileRes.rows[0]?.count || 0;
+      console.log(`[sync-doctoralia] Reconciliation done: ${count} leads advanced.`);
+    }
+
   } finally {
     try {
       await db.end();
@@ -469,7 +496,6 @@ async function main() {
       console.warn('[sync-doctoralia] Error closing DB connection:', e?.message || e);
     }
   }
-  console.log(`[sync-doctoralia] Done — ${upserted} rows upserted, ${skipped} skipped (blank/undated).`);
 }
 
 async function upsertDoctoraliaRow(row, i, params) {

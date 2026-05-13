@@ -116,6 +116,11 @@ for (const ep of endpoints) {
         `✅ ${ep.name.padEnd(20)}: OK (${res.status}, ${ep.healthyStatusLabel}) [${duration}ms]`,
       );
     } else {
+      // If MCP_API_KEY is missing and we get a 401, it's expected but we'll mark as warning
+      if (res.status === 401 && !MCP_API_KEY) {
+        console.warn(`⚠️ ${ep.name.padEnd(20)}: SKIPPED (401 - Missing MCP_API_KEY) [${duration}ms]`);
+        continue;
+      }
       failed++;
       const text = await res.text();
       console.error(`❌ ${ep.name.padEnd(20)}: FAILED (${res.status}) [${duration}ms]`);
