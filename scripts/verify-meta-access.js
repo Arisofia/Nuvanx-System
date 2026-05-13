@@ -124,9 +124,7 @@ async function main() {
     '[verify-meta-access] Checking Meta access with appsecret_proof enabled...',
   );
   const account = await fetchAccount({ adAccountId, token, appSecret });
-  console.log(
-    `[verify-meta-access] Meta access OK: ${redactText(account.name)} (${maskIdentifier(account.account_id || adAccountId)})`,
-  );
+  console.log('[verify-meta-access] Meta access OK.');
 }
 
 main().catch((err) => {
