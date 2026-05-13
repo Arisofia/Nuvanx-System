@@ -5237,18 +5237,28 @@ async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<
       { includeMatchedOnly: false },
     );
 
-    const [{ data: rows, error }, { count }, { count: matchedCount }, summaryRows, funnelResult] = await Promise.all([
+    const [{ data: rows, error }, { count }, { count: matchedCount }, summaryRows] = await Promise.all([
       dataQ,
       countQ,
       matchedCountQ,
       fetchTraceabilityRowsForAggregation(adminClient, userId, url),
-      adminClient.rpc('get_trazabilidad_funnel', buildTraceabilityFunnelRpcArgs(userId, url)),
     ]);
     if (error) throw error;
-    if (funnelResult.error) console.error('get_trazabilidad_funnel enrichment error:', funnelResult.error);
 
-    const funnelRows = ((funnelResult.data || []) as TraceabilityFunnelRpcRow[]).map(normalizeTraceabilityFunnelRow);
-    const hasFunnelRevenue = !funnelResult.error;
+    let funnelRows: TraceabilityFunnelRow[] = [];
+    let hasFunnelRevenue = false;
+    try {
+      const funnelResult = await adminClient.rpc('get_trazabilidad_funnel', buildTraceabilityFunnelRpcArgs(userId, url));
+      if (funnelResult.error) {
+        console.error('get_trazabilidad_funnel enrichment error:', funnelResult.error);
+      } else {
+        funnelRows = ((funnelResult.data || []) as TraceabilityFunnelRpcRow[]).map(normalizeTraceabilityFunnelRow);
+        hasFunnelRevenue = true;
+      }
+    } catch (funnelError) {
+      console.error('get_trazabilidad_funnel enrichment exception:', funnelError);
+    }
+
     const appointmentByLead = new Map(funnelRows.map((row) => [row.lead_id, row]));
     const leads = (rows || []).map((row: { lead_id: string; doctoralia_net?: number | string | null; settlement_date?: string | null }) => {
       const appointment = appointmentByLead.get(row.lead_id);
@@ -5302,18 +5312,27 @@ function buildTraceabilityFunnelRpcArgs(userId: string, url: URL) {
 async function handleTraceabilityFunnel(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, url, sendJson } = ctx;
   if (resource === 'traceability' && sub === 'funnel') {
-    const { data: rows, error } = await adminClient.rpc(
-      'get_trazabilidad_funnel',
-      buildTraceabilityFunnelRpcArgs(userId, url),
-    );
+    let funnel: TraceabilityFunnelRow[] = [];
+    let warning: string | null = null;
 
-    if (error) {
-      console.error('get_trazabilidad_funnel error:', error);
-      return sendJson({ success: false, code: 'TRAZABILIDAD_FUNNEL_QUERY_ERROR', message: 'Failed to load traceability funnel.' }, 500);
+    try {
+      const { data: rows, error } = await adminClient.rpc(
+        'get_trazabilidad_funnel',
+        buildTraceabilityFunnelRpcArgs(userId, url),
+      );
+
+      if (error) {
+        console.error('get_trazabilidad_funnel error:', error);
+        warning = 'El funnel de trazabilidad no está disponible temporalmente.';
+      } else {
+        funnel = ((rows || []) as TraceabilityFunnelRpcRow[]).map(normalizeTraceabilityFunnelRow);
+      }
+    } catch (err: any) {
+      console.error('get_trazabilidad_funnel exception:', err);
+      warning = 'El funnel de trazabilidad no está disponible temporalmente.';
     }
 
-    const funnel = ((rows || []) as TraceabilityFunnelRpcRow[]).map(normalizeTraceabilityFunnelRow);
-    return sendJson({ success: true, funnel, total: funnel.length });
+    return sendJson({ success: true, funnel, total: funnel.length, warning });
   }
   return null;
 }
