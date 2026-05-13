@@ -1,4 +1,3 @@
-// Nuvanx API Edge Function — v44
 /** @ts-ignore: Deno global is provided by Supabase Edge Runtime */
 declare const Deno: any;
 
@@ -19,20 +18,12 @@ import {
   requireRuntimeSecret,
 } from '../_shared/config.ts';
 import { getPhoneNormalizationFailureReason, normalizePhoneForMeta } from '../_shared/phone.ts';
-export { createClient } from '@supabase/supabase-js';
-export {
-  ALLOWED_CORS_ORIGINS,
-  DEFAULT_CORS_HEADERS,
-  DEFAULT_CORS_ORIGIN,
-  buildCorsHeaders,
-  normalizeFrontendUrl,
-} from '../_shared/config.ts';
+
+// ── Core Helpers ─────────────────────────────────────────────────────────────
 
 function requireSupabaseEnv(value: string | null | undefined, name: string): string {
   const normalized = typeof value === 'string' ? value.trim() : '';
-  if (!normalized) {
-    throw new Error(`${name} is required. Refusing to create a Supabase client with empty credentials.`);
-  }
+  if (!normalized) throw new Error(`${name} is required.`);
   return normalized;
 }
 
@@ -46,8 +37,10 @@ export function isDedicatedServiceRoleBypass(token: string, dedicatedServiceKey:
   return Boolean(normalizedToken && normalizedDedicatedKey && normalizedToken === normalizedDedicatedKey);
 }
 
+// ── Supabase Client Factory ──────────────────────────────────────────────────
+
 export const supabaseClientFactory = {
-  create(url: string | null, key: string | null, options: any) {
+  create(url: string | null, key: string | null, options: any = {}) {
     return createClient(
       requireSupabaseEnv(url, 'SUPABASE_URL'),
       requireSupabaseEnv(key, 'SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY'),
@@ -55,9 +48,6 @@ export const supabaseClientFactory = {
     );
   },
 };
-export function createSupabaseClient(url: string | null, key: string | null, options: any) {
-  return supabaseClientFactory.create(url, key, options);
-}
 
 // ── Web Crypto helpers (PBKDF2 + AES-256-GCM — mirrors backend encryption) ───
 export function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
@@ -1342,7 +1332,7 @@ async function handleRequest(req: Request): Promise<Response> {
   const authHeader = req.headers.get('Authorization') ?? '';
   const token = authHeader.replace('Bearer ', '');
 
-  const adminClient = createClient(supabaseUrl, serviceKey, {
+  const adminClient = supabaseClientFactory.create(supabaseUrl, serviceKey, {
     auth: { persistSession: false },
   });
 
@@ -1864,28 +1854,22 @@ function pushWarning(condition: boolean, message: string, warnings: string[]): v
   if (condition) warnings.push(message);
 }
 
-function handleHealthRoutes(ctx: PublicRouteContext): Response | null {
+function handleHealthRoutes(ctx: any): Response | null {
   const { resource, sub, sendJson } = ctx;
 
   if (resource === 'health' && sub === 'secrets') {
-    const encryptionKeyRaw = ENCRYPTION_KEY;
-    const hasEncryptionKey = Boolean(encryptionKeyRaw.trim());
+    const hasEncryptionKey = Boolean(ENCRYPTION_KEY?.trim());
     const hasServiceKey = Boolean(SUPABASE_SERVICE_ROLE_KEY);
     const hasDedicatedBypassKey = Boolean(NUVANX_SUPABASE_SERVICE_ROLE_KEY);
-    const hasWhatsappVerifyToken = Boolean(String(Deno.env.get('WHATSAPP_WEBHOOK_VERIFY_TOKEN') ?? '').trim());
+    const hasWhatsappVerifyToken = Boolean(Deno.env.get('WHATSAPP_WEBHOOK_VERIFY_TOKEN')?.trim());
+
     const ok = hasEncryptionKey && hasServiceKey && hasDedicatedBypassKey;
 
     return sendJson({
       success: ok,
       status: ok ? 'ok' : 'missing',
-      required: {
-        ENCRYPTION_KEY: hasEncryptionKey,
-        SUPABASE_SERVICE_ROLE_KEY: hasServiceKey,
-        NUVANX_SUPABASE_SERVICE_ROLE_KEY: hasDedicatedBypassKey,
-      },
-      recommended: {
-        WHATSAPP_WEBHOOK_VERIFY_TOKEN: hasWhatsappVerifyToken,
-      },
+      required: { ENCRYPTION_KEY: hasEncryptionKey, SUPABASE_SERVICE_ROLE_KEY: hasServiceKey, NUVANX_SUPABASE_SERVICE_ROLE_KEY: hasDedicatedBypassKey },
+      recommended: { WHATSAPP_WEBHOOK_VERIFY_TOKEN: hasWhatsappVerifyToken },
     });
   }
 
@@ -1896,20 +1880,12 @@ function handleHealthRoutes(ctx: PublicRouteContext): Response | null {
   return null;
 }
 
-export async function handlePublicRoutes(ctx: PublicRouteContext): Promise<Response | null> {
+async function handlePublicRoutes(ctx: any): Promise<Response | null> {
   const { resource, sub } = ctx;
 
-  if (resource === 'webhooks' && sub === 'meta') {
-    return await handleMetaWebhook(ctx);
-  }
-
-  if (resource === 'webhooks' && sub === 'whatsapp') {
-    return await handleWhatsappWebhook(ctx);
-  }
-
-  if (resource === 'health') {
-    return handleHealthRoutes(ctx);
-  }
+  if (resource === 'webhooks' && sub === 'meta') return await handleMetaWebhook(ctx);
+  if (resource === 'webhooks' && sub === 'whatsapp') return await handleWhatsappWebhook(ctx);
+  if (resource === 'health') return handleHealthRoutes(ctx);
 
   return null;
 }
@@ -5572,7 +5548,7 @@ function identifyUniquePatients(settlements: any[]) {
   const patientFirstSettlement: Record<string, string> = {};
   const firstSettlementRows: Record<string, any[]> = {};
   for (const row of settlements) {
-    const patientId = String(row.patient_id ?? row.dni_hash ?? '').trim();
+    const patientId = String(row.patient_id ?? row.phone_normalized ?? row.dni_hash ?? '').trim();
     if (!patientId) continue;
     const settledAt = String(row.settled_at);
     if (!patientFirstSettlement[patientId] || new Date(settledAt) < new Date(patientFirstSettlement[patientId])) {
@@ -5809,7 +5785,7 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
     adminClient.from('leads').select('id', { count: 'exact', head: true }).eq('clinic_id', clinicId).is('deleted_at', null).neq('source', 'doctoralia').gte('created_at', since).lte('created_at', until),
     adminClient.from('leads').select('id', { count: 'exact', head: true }).eq('clinic_id', clinicId).is('deleted_at', null).in('source', metaSources).gte('created_at', since).lte('created_at', until),
     adminClient.from('leads').select('stage').eq('clinic_id', clinicId).is('deleted_at', null).neq('source', 'doctoralia').gte('created_at', since).lte('created_at', until),
-    adminClient.from('financial_settlements').select('id, patient_id, dni_hash, amount_net, cancelled_at, settled_at, source_system').eq('clinic_id', clinicId).eq('source_system', 'doctoralia').is('cancelled_at', null).gt('amount_net', 0).order('settled_at', { ascending: true }),
+    adminClient.from('financial_settlements').select('id, patient_id, dni_hash, phone_normalized, amount_net, cancelled_at, settled_at, source_system').eq('clinic_id', clinicId).eq('source_system', 'doctoralia').is('cancelled_at', null).gt('amount_net', 0).order('settled_at', { ascending: true }),
     adminClient.from('meta_daily_insights').select('date, ad_account_id, spend, impressions, clicks, conversions, ctr, cpc').eq('clinic_id', clinicId).gte('date', since).lte('date', until),
   ]);
 
@@ -6220,11 +6196,11 @@ async function handleLeadsReconcilePost(ctx: AuthenticatedRouteContext): Promise
 Deno.serve(async (req: Request) => {
   try {
     return await handleRequest(req);
-  } catch (topLevelErr: any) {
-    console.error('Unhandled top-level error in handleRequest:', topLevelErr);
+  } catch (err: any) {
+    console.error('Top-level error in Edge Function:', err);
     return new Response(
-      JSON.stringify({ success: false, code: 'UNHANDLED_ERROR', message: 'An unexpected server error occurred.' }),
-      { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } },
+      JSON.stringify({ success: false, message: 'Internal server error' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
 });
