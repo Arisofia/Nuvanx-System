@@ -2057,27 +2057,58 @@ async function handleProductionAuditGet(ctx: AuthenticatedRouteContext): Promise
  * caller explicitly requests `?reconcile=true`; scheduled/background jobs should
  * remain the default way to keep reconciliation state fresh.
  */
-async function runLeadPipelineReconciliation(adminClient: any, userId: string): Promise<void> {
-  const reconciliationCalls = [
-    { fn: 'reconcile_whatsapp_interactions_to_leads', params: { p_user_id: userId } },
-    { fn: 'reconcile_doctoralia_subjects_to_leads', params: { p_user_id: userId } },
-  ];
+async function runLeadPipelineReconciliation(adminClient: any, userId: string) {
+  console.log(`[Reconciliation] Iniciando para user ${userId}`);
 
-  const results = await Promise.allSettled(
-    reconciliationCalls.map((call) => adminClient.rpc(call.fn, call.params)),
-  );
+  const { data: clinic } = await adminClient
+    .from('users').select('clinic_id').eq('id', userId).single();
 
-  results.forEach((result, index) => {
-    const { fn } = reconciliationCalls[index];
+  if (!clinic?.clinic_id) return;
 
-    if (result.status === 'rejected') {
-      console.warn(`${fn} skipped during lead reconciliation:`, result.reason);
-      return;
+  let updated = 0;
+
+  // 1. Matching por teléfono (CORREGIDO)
+  const { data: leads } = await adminClient
+    .from('leads')
+    .select('id, phone_normalized')
+    .eq('clinic_id', clinic.clinic_id)
+    .is('deleted_at', null)
+    .neq('source', 'doctoralia')
+    .is('converted_patient_id', null);
+
+  for (const lead of (leads || [])) {
+    if (!lead.phone_normalized) continue;
+
+    const { data: match } = await adminClient
+      .from('financial_settlements')
+      .select('patient_id')
+      .eq('clinic_id', clinic.clinic_id)
+      .eq('patient_phone', lead.phone_normalized)   // ← Columna correcta
+      .limit(1)
+      .single();
+
+    if (match?.patient_id) {
+      await adminClient
+        .from('leads')
+        .update({ converted_patient_id: match.patient_id })
+        .eq('id', lead.id);
+      updated++;
     }
+  }
 
-    const { error } = result.value ?? {};
-    if (error) console.warn(`${fn} warning during lead reconciliation:`, error);
-  });
+  // 2. Reconciliación por asuntos Doctoralia
+  try {
+    const { data: subjectUpdated } = await adminClient.rpc('reconcile_doctoralia_subjects_to_leads', { p_user_id: userId });
+    if (subjectUpdated > 0) console.log(`[Reconciliation] Doctoralia subjects: ${subjectUpdated} leads avanzados`);
+  } catch (e) { console.warn('[Reconciliation] Doctoralia subjects RPC failed', e); }
+
+  // 3. Reconciliación WhatsApp
+  try {
+    const { data: waUpdated } = await adminClient.rpc('reconcile_whatsapp_interactions_to_leads', { p_user_id: userId });
+    if (waUpdated > 0) console.log(`[Reconciliation] WhatsApp: ${waUpdated} leads avanzados`);
+  } catch (e) { console.warn('[Reconciliation] WhatsApp RPC failed', e); }
+
+  console.log(`[Reconciliation] Finalizado: ${updated} matches por teléfono`);
 }
 
 async function handleLeadsGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
@@ -5801,80 +5832,6 @@ async function handleKpisGet(ctx: AuthenticatedRouteContext): Promise<Response |
     return await processKpisGet(adminClient, userId, url, sendJson);
   }
   return null;
-}
-
-async function runLeadPipelineReconciliation(adminClient: any, userId: string) {
-  console.log(`[Reconciliation] Starting for user ${userId}`);
-
-  const { data: clinic } = await adminClient
-    .from('users')
-    .select('clinic_id')
-    .eq('id', userId)
-    .single();
-
-  if (!clinic?.clinic_id) return;
-
-  // Solo leads de adquisición (excluye Doctoralia)
-  const { data: leads } = await adminClient
-    .from('leads')
-    .select('id, phone_normalized, converted_patient_id')
-    .eq('clinic_id', clinic.clinic_id)
-    .is('deleted_at', null)
-    .neq('source', 'doctoralia')
-    .is('converted_patient_id', null);   // solo los que aún no tienen match
-
-  if (!leads || leads.length === 0) {
-    console.log('[Reconciliation] No leads pending matching');
-    return;
-  }
-
-  let updated = 0;
-  for (const lead of leads) {
-    if (!lead.phone_normalized) continue;
-
-    const { data: match } = await adminClient
-      .from('financial_settlements')
-      .select('patient_id')
-      .eq('clinic_id', clinic.clinic_id)
-      .eq('patient_phone', lead.phone_normalized)  // clave corregida: patient_phone es la columna real
-      .limit(1)
-      .single();
-
-    if (match?.patient_id) {
-      await adminClient
-        .from('leads')
-        .update({ converted_patient_id: match.patient_id })
-        .eq('id', lead.id);
-
-      updated++;
-    }
-  }
-
-  // 2. Reconciliar por Asunto (avanza etapas lead -> appointment -> treatment)
-  try {
-    const { data: subjectUpdated } = await adminClient.rpc('reconcile_doctoralia_subjects_to_leads', {
-      p_user_id: userId
-    });
-    if (subjectUpdated > 0) {
-      console.log(`[Reconciliation] Subjects updated: ${subjectUpdated} leads advanced`);
-    }
-  } catch (rpcErr) {
-    console.warn('[Reconciliation] RPC reconcile_doctoralia_subjects_to_leads failed:', rpcErr);
-  }
-
-  // 3. Reconciliar WhatsApp (avanza etapa lead -> whatsapp)
-  try {
-    const { data: waUpdated } = await adminClient.rpc('reconcile_whatsapp_interactions_to_leads', {
-      p_user_id: userId
-    });
-    if (waUpdated > 0) {
-      console.log(`[Reconciliation] WhatsApp updated: ${waUpdated} leads advanced`);
-    }
-  } catch (rpcErr) {
-    console.warn('[Reconciliation] RPC reconcile_whatsapp_interactions_to_leads failed:', rpcErr);
-  }
-
-  console.log(`[Reconciliation] Completed: ${updated} leads matched by phone`);
 }
 
 async function processKpisGet(adminClient: any, userId: string, url: URL, sendJson: any): Promise<Response> {
