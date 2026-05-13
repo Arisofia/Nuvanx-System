@@ -2120,8 +2120,6 @@ async function handleLeadsGet(ctx: AuthenticatedRouteContext): Promise<Response 
 
     if (reconcile) await runLeadPipelineReconciliation(adminClient, userId);
 
-    await runLeadPipelineReconciliation(adminClient, userId);
-
     const clinicId = await resolveClinicId(adminClient, userId);
     let query = adminClient
       .from('leads')

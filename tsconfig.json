@@ -3,17 +3,21 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "NodeNext",
-    "allowImportingTsExtensions": true,
-    "noEmit": true,
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "lib": ["ES2022", "DOM"]
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "ignoreDeprecations": ["6.0"]
   },
   "include": [
-    "supabase/functions/**/*",
-    "frontend/src/**/*"
+    "supabase/functions/**/*.ts",
+    "scripts/**/*.ts",
+    "frontend/src/**/*.ts",
+    "frontend/src/**/*.tsx"
   ],
   "exclude": ["node_modules", "frontend/dist"]
 }
