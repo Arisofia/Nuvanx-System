@@ -30,7 +30,7 @@ AS $$
       t.lead_id,
       COALESCE(t.patient_id, u.lead_converted_patient_id) AS patient_id,
       COALESCE(u.importe_numerico, t.doctoralia_net, 0) AS net_revenue
-    FROM vw_lead_traceability t
+    FROM public.vw_lead_traceability t
     LEFT JOIN vw_doctoralia_lead_traceability_unified u
       ON u.lead_id = t.lead_id
     WHERE t.lead_user_id = p_user_id
@@ -53,7 +53,7 @@ AS $$
     SELECT
       TO_CHAR(DATE_TRUNC('month', m.date::date), 'YYYY-MM') AS month,
       ROUND(SUM(m.spend), 2) AS total_spend
-    FROM meta_daily_insights m
+    FROM public.meta_daily_insights m
     WHERE m.user_id = p_user_id
       AND (p_from = '' OR m.date >= p_from::date)
       AND (p_to   = '' OR m.date <= p_to::date)

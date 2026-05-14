@@ -27,6 +27,12 @@ BEGIN
       procedencia TEXT,
       importe NUMERIC(12, 2) DEFAULT 0.00,
 
+      -- Integration and marketing aliases used by dashboards/RPC filters.
+      campaign_id TEXT,
+      agenda_name TEXT,
+      room_id TEXT,
+      lead_source TEXT,
+
       -- Derived identity field for deterministic matching against leads/patients.
       phone_normalized TEXT,
 
@@ -34,8 +40,6 @@ BEGIN
       inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
-  ELSE
-    -- Table exists; ensure all columns are added (idempotent evolution).
     ALTER TABLE public.produccion_intermediarios
       ADD COLUMN IF NOT EXISTS estado TEXT,
       ADD COLUMN IF NOT EXISTS fecha DATE,
@@ -48,6 +52,10 @@ BEGIN
       ADD COLUMN IF NOT EXISTS confirmada BOOLEAN DEFAULT FALSE,
       ADD COLUMN IF NOT EXISTS procedencia TEXT,
       ADD COLUMN IF NOT EXISTS importe NUMERIC(12, 2) DEFAULT 0.00,
+      ADD COLUMN IF NOT EXISTS campaign_id TEXT,
+      ADD COLUMN IF NOT EXISTS agenda_name TEXT,
+      ADD COLUMN IF NOT EXISTS room_id TEXT,
+      ADD COLUMN IF NOT EXISTS lead_source TEXT,
       ADD COLUMN IF NOT EXISTS phone_normalized TEXT,
       ADD COLUMN IF NOT EXISTS inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
@@ -82,6 +90,14 @@ CREATE INDEX IF NOT EXISTS idx_produccion_intermediarios_procedencia
 CREATE INDEX IF NOT EXISTS idx_produccion_intermediarios_phone_normalized
   ON public.produccion_intermediarios (phone_normalized)
   WHERE phone_normalized IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_produccion_intermediarios_campaign_id
+  ON public.produccion_intermediarios (campaign_id)
+  WHERE campaign_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_produccion_intermediarios_lead_source
+  ON public.produccion_intermediarios (lead_source)
+  WHERE lead_source IS NOT NULL;
 
 CREATE OR REPLACE FUNCTION public.extract_produccion_intermediarios_phone(p_asunto TEXT)
 RETURNS TEXT
@@ -163,7 +179,11 @@ CREATE TRIGGER tr_touch_produccion_intermediarios_updated_at
 
 ALTER TABLE public.produccion_intermediarios ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Permitir lectura a usuarios autenticados" ON public.produccion_intermediarios;
+DROP POLICY IF EXISTS "Permitir lectura solo a authenticated" ON public.produccion_intermediarios;
+DROP POLICY IF EXISTS produccion_intermediarios_authenticated_select ON public.produccion_intermediarios;
 DROP POLICY IF EXISTS produccion_intermediarios_service_role_all ON public.produccion_intermediarios;
+
 CREATE POLICY produccion_intermediarios_service_role_all
   ON public.produccion_intermediarios
   FOR ALL
@@ -171,6 +191,16 @@ CREATE POLICY produccion_intermediarios_service_role_all
   USING (TRUE)
   WITH CHECK (TRUE);
 
+CREATE POLICY produccion_intermediarios_authenticated_select
+  ON public.produccion_intermediarios
+  FOR SELECT
+  TO authenticated
+  USING (
+    (SELECT auth.role()) = 'authenticated'
+    AND (SELECT auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true'
+  );
+
+GRANT SELECT ON public.produccion_intermediarios TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.produccion_intermediarios TO service_role;
 
 COMMIT;

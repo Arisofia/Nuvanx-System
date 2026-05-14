@@ -41,49 +41,68 @@ END $$;
 --    (phase3 migration recreated these without the guard)
 -- ---------------------------------------------------------------------------
 
--- leads
-DROP POLICY IF EXISTS leads_select_clinic ON public.leads;
-CREATE POLICY leads_select_clinic ON public.leads
-  FOR SELECT TO authenticated
-  USING (
-    (auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true'
-    AND clinic_id = public.current_clinic_id()
-  );
-
--- integrations
-DROP POLICY IF EXISTS integrations_select_clinic ON public.integrations;
-CREATE POLICY integrations_select_clinic ON public.integrations
-  FOR SELECT TO authenticated
-  USING (
-    (auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true'
-    AND clinic_id = public.current_clinic_id()
-  );
-
--- credentials
-DROP POLICY IF EXISTS credentials_select_clinic ON public.credentials;
-CREATE POLICY credentials_select_clinic ON public.credentials
-  FOR SELECT TO authenticated
-  USING (
-    (auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true'
-    AND clinic_id = public.current_clinic_id()
-  );
+DO $$
+DECLARE
+  t TEXT;
+  core_tables TEXT[] := ARRAY['leads', 'integrations', 'credentials'];
+BEGIN
+  FOREACH t IN ARRAY core_tables LOOP
+    IF to_regclass(format('public.%I', t)) IS NOT NULL
+       AND EXISTS (
+         SELECT 1
+         FROM information_schema.columns c
+         WHERE c.table_schema = 'public'
+           AND c.table_name = t
+           AND c.column_name = 'clinic_id'
+       ) THEN
+      EXECUTE format('DROP POLICY IF EXISTS %I_select_clinic ON public.%I', t, t);
+      EXECUTE format(
+        'CREATE POLICY %I_select_clinic ON public.%I'
+        ' FOR SELECT TO authenticated'
+        ' USING ((auth.jwt() ->> ''is_anonymous'') IS DISTINCT FROM ''true'''
+        '        AND clinic_id = public.current_clinic_id())',
+        t, t
+      );
+    ELSE
+      RAISE NOTICE 'Skipping %_select_clinic anonymous guard: table or clinic_id column does not exist', t;
+    END IF;
+  END LOOP;
+END $$;
 
 -- api_call_log (user-scoped rather than clinic-scoped)
-DROP POLICY IF EXISTS api_call_log_select_own ON public.api_call_log;
-CREATE POLICY api_call_log_select_own ON public.api_call_log
-  FOR SELECT TO authenticated
-  USING (
-    (auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true'
-    AND auth.uid() = user_id
-  );
+DO $$
+BEGIN
+  IF to_regclass('public.api_call_log') IS NOT NULL
+     AND EXISTS (
+       SELECT 1
+       FROM information_schema.columns c
+       WHERE c.table_schema = 'public'
+         AND c.table_name = 'api_call_log'
+         AND c.column_name = 'user_id'
+     ) THEN
+    DROP POLICY IF EXISTS api_call_log_select_own ON public.api_call_log;
+    CREATE POLICY api_call_log_select_own ON public.api_call_log
+      FOR SELECT TO authenticated
+      USING (
+        (auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true'
+        AND auth.uid() = user_id
+      );
+  ELSE
+    RAISE NOTICE 'Skipping api_call_log_select_own anonymous guard: table or user_id column does not exist';
+  END IF;
+END $$;
 
 -- doctoralia_patients (table may not exist in all environments)
 DO $$
 BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.tables
-    WHERE table_schema = 'public' AND table_name = 'doctoralia_patients'
-  ) THEN
+  IF to_regclass('public.doctoralia_patients') IS NOT NULL
+     AND EXISTS (
+       SELECT 1
+       FROM information_schema.columns c
+       WHERE c.table_schema = 'public'
+         AND c.table_name = 'doctoralia_patients'
+         AND c.column_name = 'clinic_id'
+     ) THEN
     DROP POLICY IF EXISTS doctoralia_patients_select_clinic ON public.doctoralia_patients;
     CREATE POLICY doctoralia_patients_select_clinic ON public.doctoralia_patients
       FOR SELECT TO authenticated
@@ -91,6 +110,8 @@ BEGIN
         (auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true'
         AND clinic_id = public.current_clinic_id()
       );
+  ELSE
+    RAISE NOTICE 'Skipping doctoralia_patients_select_clinic anonymous guard: table or clinic_id column does not exist';
   END IF;
 END $$;
 
@@ -104,10 +125,14 @@ DECLARE
   ];
 BEGIN
   FOREACH t IN ARRAY tables LOOP
-    IF EXISTS (
-      SELECT 1 FROM information_schema.tables
-      WHERE table_schema = 'public' AND table_name = t
-    ) THEN
+    IF to_regclass(format('public.%I', t)) IS NOT NULL
+       AND EXISTS (
+         SELECT 1
+         FROM information_schema.columns c
+         WHERE c.table_schema = 'public'
+           AND c.table_name = t
+           AND c.column_name = 'clinic_id'
+       ) THEN
       EXECUTE format('DROP POLICY IF EXISTS %I_select_clinic ON public.%I', t, t);
       EXECUTE format(
         'CREATE POLICY %I_select_clinic ON public.%I'
@@ -116,6 +141,8 @@ BEGIN
         '        AND clinic_id = public.current_clinic_id())',
         t, t
       );
+    ELSE
+      RAISE NOTICE 'Skipping %_select_clinic anonymous guard: table or clinic_id column does not exist', t;
     END IF;
   END LOOP;
 END $$;

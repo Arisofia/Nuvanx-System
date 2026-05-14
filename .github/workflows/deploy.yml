@@ -79,8 +79,15 @@ jobs:
             fi
             echo "::add-mask::$SESSION_URL"
 
+            is_deterministic_migration_error() {
+              local output="$1"
+              local pattern='syntax error|permission denied|not a valid migration|SQLSTATE 42P01|relation .* does not exist|column .* does not exist|function .* does not exist|type .* does not exist|invalid input syntax|duplicate key value violates unique constraint|violates (foreign key|not-null|check) constraint|checksum|failed to parse|error parsing'
+              echo "$output" | grep -Eiq "$pattern"
+            }
+
             run_db_push_once() {
               local output exit_code ghosts dup_version
+              DB_PUSH_RETRYABLE=true
 
               output=$(supabase db push --include-all --db-url "$SESSION_URL" --debug 2>&1)
               exit_code=$?
@@ -107,6 +114,13 @@ jobs:
               dup_version=$(echo "$output" | grep -oE 'Key \(version\)=\([0-9]+\) already exists' | grep -oE '[0-9]+' || true)
               if [ -n "$dup_version" ]; then
                 echo "::error::Migration version $dup_version already exists in supabase_migrations.schema_migrations. Check for duplicate local migration prefixes or a remote history mismatch before retrying."
+                DB_PUSH_RETRYABLE=false
+                return "$exit_code"
+              fi
+
+              if is_deterministic_migration_error "$output"; then
+                echo "::error::Non-transient Supabase migration error detected. Not retrying; fix the SQL/CLI error shown above."
+                DB_PUSH_RETRYABLE=false
                 return "$exit_code"
               fi
 
@@ -122,6 +136,10 @@ jobs:
                 echo "Running Supabase migrations (attempt $attempt/$max_attempts)..."
                 if run_db_push_once; then
                   return 0
+                fi
+
+                if [ "${DB_PUSH_RETRYABLE:-true}" = "false" ]; then
+                  return 1
                 fi
 
                 if [ "$attempt" -ge "$max_attempts" ]; then

@@ -76,13 +76,10 @@ runs:
         # which makes failed runs easier to diagnose from debug logs.
         printf 'resolved_db_password=%s\n' "$RESOLVED_DB_PASSWORD" >> "$GITHUB_OUTPUT"
 
-        is_deterministic_failure() {
+        is_deterministic_link_error() {
           local output="$1"
-          # Fail fast on deterministic/structural errors; do not retry these.
-          if echo "$output" | grep -qE "(permission denied|invalid token|not authorized|invalid project|authentication failed)"; then
-            return 0
-          fi
-          return 1
+          local pattern='invalid access token|invalid token|not authorized|unauthorized|forbidden|permission denied|project ref.*not found|project.*not found|invalid project ref|database password.*incorrect|password authentication failed'
+          echo "$output" | grep -Eiq "$pattern"
         }
 
         run_link_once() {
@@ -108,8 +105,8 @@ runs:
               echo "$output"
 
               # Short-circuit if this is a deterministic failure.
-              if is_deterministic_failure "$output"; then
-                echo "::error::Deterministic auth/permission failure detected. Not retrying."
+              if is_deterministic_link_error "$output"; then
+                echo "::error::Non-transient Supabase link error detected. Not retrying; fix credentials/project configuration shown above."
                 return "$exit_code"
               fi
 

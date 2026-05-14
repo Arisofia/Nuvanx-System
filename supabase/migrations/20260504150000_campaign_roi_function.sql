@@ -39,7 +39,7 @@ AS $$
       t.lead_id,
       t.patient_id,
       t.doctoralia_net
-    FROM vw_lead_traceability t
+    FROM public.vw_lead_traceability t
     WHERE t.lead_user_id = p_user_id
       AND (p_from = '' OR t.lead_created_at >= p_from::timestamptz)
       AND (p_to   = '' OR t.lead_created_at <= (p_to || 'T23:59:59Z')::timestamptz)
@@ -61,7 +61,7 @@ AS $$
     SELECT
       TO_CHAR(DATE_TRUNC('month', m.date::date), 'YYYY-MM') AS month,
       ROUND(SUM(m.spend), 2) AS total_spend
-    FROM meta_daily_insights m
+    FROM public.meta_daily_insights m
     WHERE m.user_id = p_user_id
       AND (p_from = '' OR m.date >= p_from::date)
       AND (p_to   = '' OR m.date <= p_to::date)
