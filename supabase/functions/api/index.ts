@@ -454,7 +454,6 @@ async function persistAgentOutput(adminClient: any, userId: string, agentType: s
       output,
       metadata,
       input_context: inputContext,
-      output_data: output ?? {},
     })
     .select('id')
     .single();
