@@ -8,7 +8,7 @@ on:
 jobs:
   yaml-safety:
     name: YAML — conflict & parse guard
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -40,7 +40,14 @@ jobs:
       - name: Validate Supabase config function blocks
         run: |
           python3 - <<'PY'
-          import tomllib
+          import sys
+          try:
+              import tomllib
+          except ImportError:
+              # Fallback for Python < 3.11 if somehow still running on older version
+              import subprocess
+              subprocess.check_call([sys.executable, "-m", "pip", "install", "tomli"])
+              import tomli as tomllib
           from pathlib import Path
 
           config = tomllib.loads(Path('supabase/config.toml').read_text())
