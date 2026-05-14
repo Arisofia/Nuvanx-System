@@ -6,7 +6,7 @@ import { ENCRYPTION_KEY, META_APP_SECRET, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_UR
 const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!)
 
 // ── Encryption Helpers ──────────────────────────────────────────────────────
-function hexToBytes(hex: string): Uint8Array {
+function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
   const buf = new ArrayBuffer(hex.length >>> 1);
   const arr = new Uint8Array(buf);
   for (let i = 0; i < hex.length; i += 2) arr[i >>> 1] = Number.parseInt(hex.slice(i, i + 2), 16);

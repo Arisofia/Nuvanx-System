@@ -114,6 +114,7 @@ export async function decryptCred(encoded: string): Promise<string> {
 
 // ── Meta Graph API ────────────────────────────────────────────────────────────
 export const META_GRAPH = 'https://graph.facebook.com/v22.0';
+const LEAD_TRACEABILITY_VIEW = 'vw_lead_traceability';
 
 async function computeAppsecretProof(accessToken: string, appSecret: string): Promise<string> {
   const key = await crypto.subtle.importKey(
@@ -5026,7 +5027,7 @@ async function fetchLeadCampaignMap(adminClient: any, userId: string, leadIds: s
 
   const [leadRows, traceRows] = await Promise.all([
     adminClient.from('leads').select('id,source,stage').eq('user_id', userId).in('id', leadIds),
-    adminClient.from('vw_lead_traceability').select('lead_id,campaign_name,source').eq('lead_user_id', userId).in('lead_id', leadIds)
+    adminClient.from(LEAD_TRACEABILITY_VIEW).select('lead_id,campaign_name,source').eq('lead_user_id', userId).in('lead_id', leadIds)
   ]);
 
   for (const t of (traceRows.data ?? [])) {
@@ -5208,7 +5209,7 @@ async function fetchTraceabilityRowsForAggregation(adminClient: any, userId: str
     const toIdx = fromIdx + pageSize - 1;
     const query = applyTraceabilityFilters(
       adminClient
-        .from('vw_lead_traceability')
+        .from(LEAD_TRACEABILITY_VIEW)
         .select('lead_id,source,campaign_name,lead_created_at,patient_id,doc_patient_id,doctoralia_template_name,doctoralia_net')
         .order('lead_created_at', { ascending: false }),
       userId,
@@ -5255,7 +5256,7 @@ async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<
     const limit = Math.min(Math.max(Number.parseInt(url.searchParams.get('limit') ?? '250'), 1), 500);
     const dataQ = applyTraceabilityFilters(
       adminClient
-        .from('vw_lead_traceability')
+        .from(LEAD_TRACEABILITY_VIEW)
         .select(
           'lead_id,lead_name,source,campaign_name,lead_created_at,' +
           'phone_normalized,' +
@@ -5273,7 +5274,7 @@ async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<
     // COUNT queries run in parallel — real totals independent of row limit
     const countQ = applyTraceabilityFilters(
       adminClient
-        .from('vw_lead_traceability')
+        .from(LEAD_TRACEABILITY_VIEW)
         .select('lead_id', { count: 'exact', head: true }),
       userId,
       url,
@@ -5281,7 +5282,7 @@ async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<
     );
     const matchedCountQ = applyTraceabilityFilters(
       adminClient
-        .from('vw_lead_traceability')
+        .from(LEAD_TRACEABILITY_VIEW)
         .select('lead_id', { count: 'exact', head: true })
         .or(TRACEABILITY_MATCH_OR),
       userId,
@@ -6092,7 +6093,7 @@ function buildLeadAuditQuery(
   normalizedPhone: string | null,
 ) {
   let query = adminClient
-    .from('vw_lead_traceability')
+    .from(LEAD_TRACEABILITY_VIEW)
     .select(
       'lead_id,lead_name,source,campaign_name,ad_name,form_name,lead_created_at,' +
       'phone_normalized,patient_id,patient_name,patient_dni,patient_phone,match_confidence,match_class,settlement_id,settlement_date,first_settlement_at,doctoralia_net,doctoralia_template_name,doc_patient_id'

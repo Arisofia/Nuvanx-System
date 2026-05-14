@@ -30,22 +30,17 @@ function maskForLog(value) {
   return `${s.slice(0, 2)}***${s.slice(-2)}`;
 }
 
-function getMetaError(data, status) {
-  const err = data?.error || {};
-  const code = err.code || 'unknown';
-  const subcode = err.error_subcode || 'unknown';
-  const message = err.message || `Meta API ${status}`;
-  const traceId = err.fbtrace_id || 'unknown';
-  return `[Meta Error] status=${status} code=${code} subcode=${subcode} trace_id=${traceId} message=${message}`;
-}
-
-function isTransient(status, data) {
-  const message = String(data?.error?.message || '').toLowerCase();
-  const code = Number(data?.error?.code || 0);
-  return [408, 425, 429, 500, 502, 503, 504].includes(status)
-    || [4, 17, 613, 800].includes(code)
-    || message.includes('throttl')
-    || message.includes('rate limit');
+function parseMetaResponseBody(text) {
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    console.warn(
+      '[verify-meta-access] Received non-JSON response body from Meta; falling back to raw text.',
+      error,
+    );
+    return { rawBody: text };
+  }
 }
 
 function redactAdAccountIdForLog(adAccountId) {
@@ -75,22 +70,7 @@ async function fetchAccount({ adAccountId, token, appSecret, attempt = 1 }) {
       signal: controller.signal,
     });
 
-    const text = await response.text();
-    let data;
-
-    if (text) {
-      try {
-        data = JSON.parse(text);
-      } catch (error) {
-        console.warn(
-          '[verify-meta-access] Received non-JSON response body from Meta; falling back to raw text.',
-          error,
-        );
-        data = { rawBody: text };
-      }
-    } else {
-      data = {};
-    }
+    const data = parseMetaResponseBody(await response.text());
 
     if (!response.ok) {
       if (attempt < MAX_ATTEMPTS && isTransient(response.status, data)) {
