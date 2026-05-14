@@ -67,42 +67,9 @@ runs:
           RESOLVED_DB_PASSWORD=$(python3 -c 'from urllib.parse import urlparse; import os; print(urlparse(os.environ.get("INPUT_DATABASE_URL", "")).password or "")')
         fi
 
-        run_link_once() {
-          if [ -n "$RESOLVED_DB_PASSWORD" ]; then
-            timeout --signal=TERM --kill-after=15s 120s \
-              supabase link --project-ref "$INPUT_PROJECT_REF" --password "$RESOLVED_DB_PASSWORD" --yes </dev/null
-          else
-            timeout --signal=TERM --kill-after=15s 120s \
-              supabase link --project-ref "$INPUT_PROJECT_REF" --yes </dev/null
-          fi
-        }
-
-        run_link_with_retry() {
-          local max_attempts=3
-          local delay_seconds=10
-          local attempt=1
-
-          while true; do
-            echo "Linking Supabase project (attempt $attempt/$max_attempts)..."
-            if run_link_once; then
-              return 0
-            fi
-
-            if [ "$attempt" -ge "$max_attempts" ]; then
-              echo "::error::Supabase project link failed after $max_attempts attempts."
-              return 1
-            fi
-
-            attempt=$((attempt + 1))
-            echo "::warning::Supabase project link failed, retrying in ${delay_seconds}s in case this was a transient upstream/proxy error."
-            sleep "$delay_seconds"
-          done
-        }
-
         if [ -n "$RESOLVED_DB_PASSWORD" ]; then
           echo "::add-mask::$RESOLVED_DB_PASSWORD"
         fi
-        run_link_with_retry
 
         # Always publish the resolved password output before linking. If the link
         # step fails, GitHub still records whether credential resolution worked,
