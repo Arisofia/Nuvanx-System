@@ -110,6 +110,21 @@ async function metaFetch(endpoint, accessTokenOverride, attempt = 1, params = {}
       const subcode = error.error_subcode ?? 'unknown';
       const fullMsg = `[Meta Error] Code: ${code}, Subcode: ${subcode}, Message: ${msg}`;
 
+      if (
+        msg.includes('user logged out') ||
+        msg.includes('session is invalid') ||
+        msg.includes('Invalid OAuth access token') ||
+        msg.includes('token has expired') ||
+        (code === 200 && (msg.includes('permission') || msg.includes('ads_read') || msg.includes('ads_management')))
+      ) {
+        throw new Error(
+          `META_ACCESS_TOKEN may be invalid or missing permissions. ` +
+          `Ensure you are using a Meta System User access token with ads_read and ads_management scopes, ` +
+          `and that it has access to the target Ad Account. ` +
+          `Original error: ${fullMsg}`
+        );
+      }
+
       const isTransient =
         [429, 500, 502, 503, 504].includes(response.status) ||
         String(msg).toLowerCase().includes('throttl') ||
@@ -264,7 +279,7 @@ async function main() {
   const maskedAccounts = adAccountIds.map((id) => id.replaceAll(/.(?=.{4})/g, '*')).join(', ');
   console.log(`[meta-backfill] Ad Accounts: ${maskedAccounts}`);
 
-  const db = new Client({ connectionString: databaseUrl });
+  const db = new Client({ connectionString: databaseUrl, ssl: { rejectUnauthorized: false } });
   await db.connect();
   let reportUserId;
   try {
@@ -577,10 +592,10 @@ async function processLeadData(db, userId, leadData) {
       (user_id, clinic_id, external_id, source, name, email, phone, dni,
        first_name, last_name, city, state, zip_code, gender,
        notes, priority, stage, campaign_id, campaign_name, adset_id, adset_name,
-       ad_id, ad_name, form_id, form_name, meta_ad_id, meta_ad_name, meta_form_id,
+       meta_ad_id, meta_ad_name, meta_form_id,
        meta_platform, is_organic, created_at_meta, asset_url, telefono_hash, email_hash,
        raw_field_data, created_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32)
     RETURNING id
   `, [
     userId,
@@ -604,10 +619,6 @@ async function processLeadData(db, userId, leadData) {
     leadData.campaign_name ?? null,
     leadData.adset_id ?? null,
     leadData.adset_name ?? null,
-    leadData.ad_id ?? null,
-    leadData.ad_name ?? null,
-    leadData.form_id ?? null,
-    leadData.form_name ?? null,
     metaAdId,
     metaAdName,
     metaFormId,

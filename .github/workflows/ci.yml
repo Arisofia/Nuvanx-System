@@ -12,7 +12,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6 # v6
+      - uses: actions/checkout@v4 # v4
 
       - name: Fail on merge conflict markers in CI-critical config
         run: |
@@ -88,10 +88,10 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v6 # v6
+      - uses: actions/checkout@v4 # v4
 
       - name: Use Node.js
-        uses: actions/setup-node@v6 # v6
+        uses: actions/setup-node@v4 # v4
         with:
           node-version: '22'
           cache: 'npm'
@@ -114,10 +114,10 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v6 # v6
+      - uses: actions/checkout@v4 # v4
 
       - name: Use Node.js
-        uses: actions/setup-node@v6 # v6
+        uses: actions/setup-node@v4 # v4
         with:
           node-version: '22'
           cache: 'npm'
@@ -141,10 +141,10 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v6 # v6
+      - uses: actions/checkout@v4 # v4
 
       - name: Use Node.js
-        uses: actions/setup-node@v6 # v6
+        uses: actions/setup-node@v4 # v4
         with:
           node-version: '22'
           cache: 'npm'
@@ -189,10 +189,10 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v6 # v6
+      - uses: actions/checkout@v4 # v4
 
       - name: Use Node.js
-        uses: actions/setup-node@v6 # v6
+        uses: actions/setup-node@v4 # v4
         with:
           node-version: '22'
           cache: 'npm'
@@ -217,15 +217,15 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
         env:
-          E2E_EMAIL: ${{ secrets.E2E_EMAIL || '' }}
-          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD || '' }}
+          E2E_EMAIL: ${{ secrets['E2E_EMAIL'] || '' }}
+          E2E_PASSWORD: ${{ secrets['E2E_PASSWORD'] || '' }}
 
       - name: Run Playwright smoke tests
         if: steps.check-e2e-secrets.outputs.skip == 'false'
         run: npm run test:e2e
         env:
-          E2E_EMAIL: ${{ secrets.E2E_EMAIL || '' }}
-          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD || '' }}
+          E2E_EMAIL: ${{ secrets['E2E_EMAIL'] || '' }}
+          E2E_PASSWORD: ${{ secrets['E2E_PASSWORD'] || '' }}
 
   # ─── Shared & Functions: tests ──────────────────────────────────────────────
   shared-functions-test:
@@ -235,10 +235,10 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6 # v6
+      - uses: actions/checkout@v4 # v4
 
       - name: Use Node.js
-        uses: actions/setup-node@v6 # v6
+        uses: actions/setup-node@v4 # v4
         with:
           node-version: '22'
           cache: 'npm'
@@ -254,7 +254,7 @@ jobs:
           # Use repository secrets for CI test credentials to avoid hardcoding sensitive values.
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
-          MCP_API_KEY: ${{ secrets.MCP_API_KEY }}
+          MCP_API_KEY: ${{ secrets['MCP_API_KEY'] }}
           DEFAULT_PHONE_COUNTRY_CODE: '34'
 
   # ─── Edge Function: type-check ─────────────────────────────────────────────
@@ -265,7 +265,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6 # v6
+      - uses: actions/checkout@v4 # v4
 
       - name: Setup Deno
         uses: denoland/setup-deno@667a34cdef165d8d2b2e98dde39547c9daac7282 # v2

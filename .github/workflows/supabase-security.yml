@@ -37,8 +37,6 @@ jobs:
     name: RLS & security lint
     runs-on: ubuntu-latest
     timeout-minutes: 8
-    # When triggered by Deploy Supabase finishing, only run if the deploy succeeded.
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     permissions:
       contents: read
     env:
@@ -47,7 +45,13 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
     steps:
-      - uses: actions/checkout@v6 # v6
+      - uses: actions/checkout@v4 # v4
+
+      - name: Report upstream Deploy Supabase result
+        if: github.event_name == 'workflow_run'
+        run: |
+          echo "Deploy Supabase completed with conclusion: ${{ github.event.workflow_run.conclusion }}"
+          echo "Security lint will still run against the current linked remote database."
 
       - name: Validate Supabase security secrets
         id: validate

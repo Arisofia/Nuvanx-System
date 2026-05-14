@@ -1,4 +1,3 @@
-// Nuvanx API Edge Function — v44
 /** @ts-ignore: Deno global is provided by Supabase Edge Runtime */
 declare const Deno: any;
 
@@ -8,6 +7,7 @@ import {
   DEFAULT_CORS_HEADERS,
   ENCRYPTION_KEY,
   IS_DEVELOPMENT,
+  MCP_API_KEY,
   META_APP_SECRET,
   NORMALIZED_FRONTEND_URL,
   NUVANX_SUPABASE_SERVICE_ROLE_KEY,
@@ -18,20 +18,12 @@ import {
   requireRuntimeSecret,
 } from '../_shared/config.ts';
 import { getPhoneNormalizationFailureReason, normalizePhoneForMeta } from '../_shared/phone.ts';
-export { createClient } from '@supabase/supabase-js';
-export {
-  ALLOWED_CORS_ORIGINS,
-  DEFAULT_CORS_HEADERS,
-  DEFAULT_CORS_ORIGIN,
-  buildCorsHeaders,
-  normalizeFrontendUrl,
-} from '../_shared/config.ts';
+
+// ── Core Helpers ─────────────────────────────────────────────────────────────
 
 function requireSupabaseEnv(value: string | null | undefined, name: string): string {
   const normalized = typeof value === 'string' ? value.trim() : '';
-  if (!normalized) {
-    throw new Error(`${name} is required. Refusing to create a Supabase client with empty credentials.`);
-  }
+  if (!normalized) throw new Error(`${name} is required.`);
   return normalized;
 }
 
@@ -45,8 +37,16 @@ export function isDedicatedServiceRoleBypass(token: string, dedicatedServiceKey:
   return Boolean(normalizedToken && normalizedDedicatedKey && normalizedToken === normalizedDedicatedKey);
 }
 
+export function createAdminClient() {
+  return supabaseClientFactory.create(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false },
+  });
+}
+
+// ── Supabase Client Factory ──────────────────────────────────────────────────
+
 export const supabaseClientFactory = {
-  create(url: string | null, key: string | null, options: any) {
+  create(url: string | null, key: string | null, options: any = {}) {
     return createClient(
       requireSupabaseEnv(url, 'SUPABASE_URL'),
       requireSupabaseEnv(key, 'SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY'),
@@ -54,9 +54,6 @@ export const supabaseClientFactory = {
     );
   },
 };
-export function createSupabaseClient(url: string | null, key: string | null, options: any) {
-  return supabaseClientFactory.create(url, key, options);
-}
 
 // ── Web Crypto helpers (PBKDF2 + AES-256-GCM — mirrors backend encryption) ───
 export function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
@@ -117,6 +114,7 @@ export async function decryptCred(encoded: string): Promise<string> {
 
 // ── Meta Graph API ────────────────────────────────────────────────────────────
 export const META_GRAPH = 'https://graph.facebook.com/v22.0';
+const LEAD_TRACEABILITY_VIEW = 'vw_lead_traceability';
 
 async function computeAppsecretProof(accessToken: string, appSecret: string): Promise<string> {
   const key = await crypto.subtle.importKey(
@@ -457,7 +455,6 @@ async function persistAgentOutput(adminClient: any, userId: string, agentType: s
       output,
       metadata,
       input_context: inputContext,
-      output_data: output ?? {},
     })
     .select('id')
     .single();
@@ -1294,88 +1291,83 @@ async function verifySupabaseUser(adminClient: any, token: string, anonKey: stri
 }
 
 async function handleRequest(req: Request): Promise<Response> {
-  const requestOrigin = req.headers.get('Origin');
-  const corsHeaders = buildCorsHeaders(requestOrigin);
-  const originIsRejectable = requestOrigin && !ALLOWED_CORS_ORIGINS.has(requestOrigin);
-  if (req.method === 'OPTIONS') {
-    if (originIsRejectable) return new Response('Forbidden', { status: 403 });
-    return new Response('ok', { headers: corsHeaders });
-  }
-  if (originIsRejectable) return new Response('Forbidden', { status: 403, headers: corsHeaders });
-
-  const sendJson = (data: unknown, status = 200, extraHeaders: Record<string, string> = {}) => {
-    return json(data, status, { ...corsHeaders, ...extraHeaders });
-  };
-
   const url = new URL(req.url);
-  // Support both direct Supabase Function URLs and rewrite paths.
-  // Direct path: /functions/v1/api/<resource>/...
-  // Rewrite path: /api/<resource>/...
   const rawParts = url.pathname.split('/').filter(Boolean);
   const parts = [...rawParts];
-  if (parts[0] === 'functions' && parts[1] === 'v1') {
-    parts.splice(0, 2);
-  }
-  if (parts[0] === 'api') {
-    parts.splice(0, 1);
-  }
-  // parts[0] = resource, parts[1] = sub, parts[2] = sub2
+  if (parts[0] === 'functions' && parts[1] === 'v1') parts.splice(0, 2);
+  if (parts[0] === 'api') parts.splice(0, 1);
+  
   const resource = parts[0] ?? '';
   const sub = parts[1] ?? '';
   const sub2 = parts[2] ?? '';
 
-  const supabaseUrl = requireSupabaseEnv(SUPABASE_URL, 'SUPABASE_URL');
-  const serviceKey = requireSupabaseEnv(SUPABASE_SERVICE_ROLE_KEY, 'SUPABASE_SERVICE_ROLE_KEY');
-  const nuvanxServiceKey = NUVANX_SUPABASE_SERVICE_ROLE_KEY;
-  const anonKey = requireSupabaseEnv(SUPABASE_ANON_KEY, 'SUPABASE_ANON_KEY');
+  const requestOrigin = req.headers.get('Origin');
+  const corsHeaders = buildCorsHeaders(requestOrigin);
+  
+  // Preflight
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
 
-  // This function is deployed with  so Supabase will not reject
-  // requests before this handler runs. Every non-public route must therefore
-  // enforce JWT validation here. Only health checks and Meta webhook handshake
-  // routes are intentionally public.
-  // Note: the Edge Function uses SUPABASE_SERVICE_ROLE_KEY for server-side
-  // credential vault access and RLS bypass where needed. The `credentials` table
-  // is not expected to be accessible via an authenticated client-side SELECT
-  // policy in this architecture.
-  // Auth — verify Supabase JWT
-  const authHeader = req.headers.get('Authorization') ?? '';
-  const token = authHeader.replace('Bearer ', '');
+  const sendJson = (data: unknown, status = 200, extraHeaders: Record<string, string> = {}) => {
+    return new Response(JSON.stringify(data), {
+      status,
+      headers: { ...corsHeaders, ...extraHeaders, 'Content-Type': 'application/json' },
+    });
+  };
 
-  const adminClient = createClient(supabaseUrl, serviceKey, {
-    auth: { persistSession: false },
-  });
+  const token = (req.headers.get('Authorization') ?? '').replace('Bearer ', '');
+  const userIdHeader = req.headers.get('x-user-id') || '';
+  const adminClient = createAdminClient();
 
-  // ── PUBLIC routes — no JWT required ──────────────────────────────────────
+  // 1. Rutas públicas (webhooks + health)
   const publicResponse = await handlePublicRoutes({ req, url, resource, sub, sendJson });
   if (publicResponse) return publicResponse;
 
-  // ── All other routes require a valid JWT ──────────────────────────────────
-  // Centralized auth guard: this checks the incoming Supabase user JWT once for all
-  // non-public API routes in api/index.ts.
+  // 2. Auth Verification
+  const anonKey = requireSupabaseEnv(SUPABASE_ANON_KEY, 'SUPABASE_ANON_KEY');
   const authUser = await verifySupabaseUser(adminClient, token, anonKey);
-  const isServiceRole = isDedicatedServiceRoleBypass(token, nuvanxServiceKey);
-  
-  if (!authUser && !isServiceRole) {
+  const isServiceRole = isDedicatedServiceRoleBypass(token, NUVANX_SUPABASE_SERVICE_ROLE_KEY);
+  const isApiKeyValid = MCP_API_KEY && req.headers.get('x-api-key') === MCP_API_KEY;
+
+  if (!authUser && !isServiceRole && !isApiKeyValid) {
     return sendJson({ success: false, message: 'Unauthorized' }, 401);
   }
 
-  const userId = authUser ? authUser.id : (req.headers.get('x-user-id') || '');
-  if (isServiceRole && !userId) {
-    return sendJson({ success: false, message: 'Missing x-user-id header for service role request' }, 400);
+  let userId = authUser ? authUser.id : userIdHeader;
+  if (!userId && isApiKeyValid) {
+    const { data: demoUser } = await adminClient.from('users').select('id').eq('email', 'demo@nuvanx.com').maybeSingle();
+    if (demoUser) userId = demoUser.id;
   }
 
-  return await handleAuthenticatedRoutes({
-    adminClient,
-    userId,
-    authUser,
-    resource,
-    sub,
-    sub2,
-    req,
-    url,
-    sendJson,
-    token,
-  });
+  if ((isServiceRole || isApiKeyValid) && !userId && resource !== 'health') {
+    return sendJson({ success: false, message: 'Missing user context' }, 400);
+  }
+
+  const ctx: AuthenticatedRouteContext = {
+    adminClient, userId, authUser, resource, sub, sub2, req, url, sendJson, token
+  };
+
+  // 3. Rutas Críticas (Llamadas directas para robustez)
+  if (resource === 'kpis') {
+    const res = await handleKpisGet(ctx);
+    if (res) return res;
+  }
+  if (resource === 'dashboard' && sub === 'metrics') {
+    const res = await handleDashboardMetrics(ctx);
+    if (res) return res;
+  }
+  if (resource === 'dashboard' && sub === 'campaigns-filter') {
+    const res = await handleCampaignsFilter(ctx);
+    if (res) return res;
+  }
+  if (resource === 'traceability' && sub === 'funnel') {
+    const res = await handleTrazabilidadFunnel(ctx);
+    if (res) return res;
+  }
+
+  // 4. Enrutamiento General (Fallback al Mapa de Handlers)
+  return await handleAuthenticatedRoutes(ctx);
 }
 
 type RouteHandler = (ctx: AuthenticatedRouteContext) => Promise<Response | null>;
@@ -1389,6 +1381,7 @@ export const AUTHENTICATED_ROUTE_HANDLERS = new Map<string, RouteHandler>([
   ['leads||PATCH', handleLeadsPatch],
   ['leads||DELETE', handleLeadsDelete],
   ['dashboard|metrics|*', handleDashboardMetrics],
+  ['dashboard|campaigns-filter|*', handleCampaignsFilter],
   ['dashboard|lead-flow|*', handleDashboardLeadFlow],
   ['dashboard|meta-trends|*', handleDashboardMetaTrends],
   ['meta|insights|GET', handleMetaInsightsGet],
@@ -1417,7 +1410,7 @@ export const AUTHENTICATED_ROUTE_HANDLERS = new Map<string, RouteHandler>([
   ['financials|settlements|*', handleFinancialsSettlements],
   ['financials|patients|*', handleFinancialsPatients],
   ['traceability|leads|*', handleTraceabilityLeads],
-  ['traceability|funnel|*', handleTraceabilityFunnel],
+  ['traceability|funnel|*', handleTrazabilidadFunnel],
   ['traceability|campaigns|*', handleTraceabilityCampaigns],
   ['conversations||*', handleConversations],
   ['figma-events||*', handleFigmaEvents],
@@ -1429,6 +1422,7 @@ export const AUTHENTICATED_ROUTE_HANDLERS = new Map<string, RouteHandler>([
   ['reports|source-comparison|GET', handleReportsSourceComparisonGet],
   ['reports|whatsapp-conversion|GET', handleReportsWhatsappConversionGet],
   ['reports|lead-audit|GET', handleReportsLeadAuditGet],
+  ['reports|phone-coverage|GET', handleReportsPhoneCoverageGet],
   ['reports|doctor-performance|GET', handleReportsDoctorPerformanceGet],
   ['reports|campaign-roi|GET', handleReportsCampaignRoiGet],
   ['leads|reconcile|POST', handleLeadsReconcilePost],
@@ -1848,28 +1842,22 @@ function pushWarning(condition: boolean, message: string, warnings: string[]): v
   if (condition) warnings.push(message);
 }
 
-function handleHealthRoutes(ctx: PublicRouteContext): Response | null {
+function handleHealthRoutes(ctx: any): Response | null {
   const { resource, sub, sendJson } = ctx;
 
   if (resource === 'health' && sub === 'secrets') {
-    const encryptionKeyRaw = ENCRYPTION_KEY;
-    const hasEncryptionKey = Boolean(encryptionKeyRaw.trim());
+    const hasEncryptionKey = Boolean(ENCRYPTION_KEY?.trim());
     const hasServiceKey = Boolean(SUPABASE_SERVICE_ROLE_KEY);
     const hasDedicatedBypassKey = Boolean(NUVANX_SUPABASE_SERVICE_ROLE_KEY);
-    const hasWhatsappVerifyToken = Boolean(String(Deno.env.get('WHATSAPP_WEBHOOK_VERIFY_TOKEN') ?? '').trim());
+    const hasWhatsappVerifyToken = Boolean(Deno.env.get('WHATSAPP_WEBHOOK_VERIFY_TOKEN')?.trim());
+
     const ok = hasEncryptionKey && hasServiceKey && hasDedicatedBypassKey;
 
     return sendJson({
       success: ok,
       status: ok ? 'ok' : 'missing',
-      required: {
-        ENCRYPTION_KEY: hasEncryptionKey,
-        SUPABASE_SERVICE_ROLE_KEY: hasServiceKey,
-        NUVANX_SUPABASE_SERVICE_ROLE_KEY: hasDedicatedBypassKey,
-      },
-      recommended: {
-        WHATSAPP_WEBHOOK_VERIFY_TOKEN: hasWhatsappVerifyToken,
-      },
+      required: { ENCRYPTION_KEY: hasEncryptionKey, SUPABASE_SERVICE_ROLE_KEY: hasServiceKey, NUVANX_SUPABASE_SERVICE_ROLE_KEY: hasDedicatedBypassKey },
+      recommended: { WHATSAPP_WEBHOOK_VERIFY_TOKEN: hasWhatsappVerifyToken },
     });
   }
 
@@ -1880,20 +1868,12 @@ function handleHealthRoutes(ctx: PublicRouteContext): Response | null {
   return null;
 }
 
-export async function handlePublicRoutes(ctx: PublicRouteContext): Promise<Response | null> {
+async function handlePublicRoutes(ctx: any): Promise<Response | null> {
   const { resource, sub } = ctx;
 
-  if (resource === 'webhooks' && sub === 'meta') {
-    return await handleMetaWebhook(ctx);
-  }
-
-  if (resource === 'webhooks' && sub === 'whatsapp') {
-    return await handleWhatsappWebhook(ctx);
-  }
-
-  if (resource === 'health') {
-    return handleHealthRoutes(ctx);
-  }
+  if (resource === 'webhooks' && sub === 'meta') return await handleMetaWebhook(ctx);
+  if (resource === 'webhooks' && sub === 'whatsapp') return await handleWhatsappWebhook(ctx);
+  if (resource === 'health') return handleHealthRoutes(ctx);
 
   return null;
 }
@@ -2078,27 +2058,58 @@ async function handleProductionAuditGet(ctx: AuthenticatedRouteContext): Promise
  * caller explicitly requests `?reconcile=true`; scheduled/background jobs should
  * remain the default way to keep reconciliation state fresh.
  */
-async function runLeadPipelineReconciliation(adminClient: any, userId: string): Promise<void> {
-  const reconciliationCalls = [
-    { fn: 'reconcile_whatsapp_interactions_to_leads', params: { p_user_id: userId } },
-    { fn: 'reconcile_doctoralia_subjects_to_leads', params: { p_user_id: userId } },
-  ];
+async function runLeadPipelineReconciliation(adminClient: any, userId: string) {
+  console.log(`[Reconciliation] Iniciando para user ${userId}`);
 
-  const results = await Promise.allSettled(
-    reconciliationCalls.map((call) => adminClient.rpc(call.fn, call.params)),
-  );
+  const { data: clinic } = await adminClient
+    .from('users').select('clinic_id').eq('id', userId).single();
 
-  results.forEach((result, index) => {
-    const { fn } = reconciliationCalls[index];
+  if (!clinic?.clinic_id) return;
 
-    if (result.status === 'rejected') {
-      console.warn(`${fn} skipped during lead reconciliation:`, result.reason);
-      return;
+  let updated = 0;
+
+  // 1. Matching por teléfono (CORREGIDO)
+  const { data: leads } = await adminClient
+    .from('leads')
+    .select('id, phone_normalized')
+    .eq('clinic_id', clinic.clinic_id)
+    .is('deleted_at', null)
+    .neq('source', 'doctoralia')
+    .is('converted_patient_id', null);
+
+  for (const lead of (leads || [])) {
+    if (!lead.phone_normalized) continue;
+
+    const { data: match } = await adminClient
+      .from('financial_settlements')
+      .select('patient_id')
+      .eq('clinic_id', clinic.clinic_id)
+      .eq('patient_phone', lead.phone_normalized)   // ← Columna correcta
+      .limit(1)
+      .single();
+
+    if (match?.patient_id) {
+      await adminClient
+        .from('leads')
+        .update({ converted_patient_id: match.patient_id })
+        .eq('id', lead.id);
+      updated++;
     }
+  }
 
-    const { error } = result.value ?? {};
-    if (error) console.warn(`${fn} warning during lead reconciliation:`, error);
-  });
+  // 2. Reconciliación por asuntos Doctoralia
+  try {
+    const { data: subjectUpdated } = await adminClient.rpc('reconcile_doctoralia_subjects_to_leads', { p_user_id: userId });
+    if (subjectUpdated > 0) console.log(`[Reconciliation] Doctoralia subjects: ${subjectUpdated} leads avanzados`);
+  } catch (e) { console.warn('[Reconciliation] Doctoralia subjects RPC failed', e); }
+
+  // 3. Reconciliación WhatsApp
+  try {
+    const { data: waUpdated } = await adminClient.rpc('reconcile_whatsapp_interactions_to_leads', { p_user_id: userId });
+    if (waUpdated > 0) console.log(`[Reconciliation] WhatsApp: ${waUpdated} leads avanzados`);
+  } catch (e) { console.warn('[Reconciliation] WhatsApp RPC failed', e); }
+
+  console.log(`[Reconciliation] Finalizado: ${updated} matches por teléfono`);
 }
 
 async function handleLeadsGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
@@ -2109,8 +2120,6 @@ async function handleLeadsGet(ctx: AuthenticatedRouteContext): Promise<Response 
     const reconcile = url.searchParams.get('reconcile') === 'true';
 
     if (reconcile) await runLeadPipelineReconciliation(adminClient, userId);
-
-    await runLeadPipelineReconciliation(adminClient, userId);
 
     const clinicId = await resolveClinicId(adminClient, userId);
     let query = adminClient
@@ -2374,56 +2383,100 @@ function buildDashboardSettlementsQuery(adminClient: any, clinicId: string | nul
 async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, url, sendJson } = ctx;
   if (resource === 'dashboard' && sub === 'metrics') {
+    const { since, until } = getKpiDateRange(url);
+
     const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
     const clinicId = usr?.clinic_id;
-    const sourceFilter = url.searchParams.get('source') ?? '';
+    if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
 
-    const { since, until, prevSince, prevUntil } = getDashboardPeriods(url);
+    // Reconciliar leads antes de calcular métricas
+    await runLeadPipelineReconciliation(adminClient, userId);
 
-    // === DEBUG TEMPORAL (08-05-2026) ===
-    console.log('[DEBUG] Períodos calculados:', { since, until, prevSince, prevUntil });
+    const [leadsRes, metaRes, settlementsRes] = await Promise.all([
+      adminClient.from('leads')
+        .select('id, stage, created_at, source, converted_patient_id')
+        .eq('clinic_id', clinicId)
+        .is('deleted_at', null)
+        .neq('source', 'doctoralia')
+        .gte('created_at', since)
+        .lte('created_at', until),
 
-    const leadsQuery = buildDashboardLeadsQuery(adminClient, userId, clinicId, since, until, sourceFilter);
-    const prevLeadsQuery = buildDashboardLeadsQuery(adminClient, userId, clinicId, prevSince, prevUntil, sourceFilter);
+      adminClient.from('meta_daily_insights')
+        .select('spend, impressions, clicks, date')
+        .eq('clinic_id', clinicId)
+        .gte('date', since)
+        .lte('date', until),
 
-    const settlementsQuery = buildDashboardSettlementsQuery(adminClient, clinicId, since, until);
-    const prevSettlementsQuery = buildDashboardSettlementsQuery(adminClient, clinicId, prevSince, prevUntil);
-
-    const metaQuery = adminClient.from('meta_daily_insights').select('spend, conversions, impressions, clicks').gte('date', since).lte('date', until);
-    if (clinicId) metaQuery.eq('clinic_id', clinicId);
-
-    const prevMetaQuery = adminClient.from('meta_daily_insights').select('spend, conversions, impressions, clicks').gte('date', prevSince).lte('date', prevUntil);
-    if (clinicId) prevMetaQuery.eq('clinic_id', clinicId);
-
-    const [leadsRes, prevLeadsRes, intRes, settlementsRes, prevSettlementsRes, metaRes, prevMetaRes] = await Promise.all([
-      leadsQuery,
-      prevLeadsQuery,
-      adminClient.from('integrations').select('service, status').eq('user_id', userId),
-      clinicId ? settlementsQuery : Promise.resolve({ data: [], error: null }),
-      clinicId ? prevSettlementsQuery : Promise.resolve({ data: [], error: null }),
-      metaQuery,
-      prevMetaQuery,
+      adminClient.from('financial_settlements')
+        .select('amount_net, patient_id, settled_at')
+        .eq('clinic_id', clinicId)
+        .eq('source_system', 'doctoralia')
+        .is('cancelled_at', null)
+        .gt('amount_net', 0)
+        .gte('settled_at', since)
+        .lte('settled_at', until)
     ]);
-    if (leadsRes.error) throw leadsRes.error;
 
     const leads = leadsRes.data ?? [];
-    const prevLeads = prevLeadsRes.data ?? [];
-    const integrations = intRes.data ?? [];
-    const settlements = (settlementsRes.data ?? []).filter((r: any) => !r.cancelled_at);
-    const prevSettlements = (prevSettlementsRes.data ?? []).filter((r: any) => !r.cancelled_at);
-    const metaData = metaRes.data ?? [];
-    const prevMetaData = prevMetaRes.data ?? [];
+    const metaInsights = metaRes.data ?? [];
+    const settlements = settlementsRes.data ?? [];
 
-    const metrics = aggregateDashboardResults(leads, prevLeads, settlements, prevSettlements, integrations, metaData, prevMetaData);
-    
-    // === DEBUG TEMPORAL (08-05-2026) ===
-    console.log('[DEBUG] Métricas calculadas:', {
-      leads: leads.length,
-      prevLeads: prevLeads.length,
-      deltas: metrics.deltas
+    const totalLeads = leads.length;
+    const metaLeads = leads.filter((l: any) => ['meta_leadgen', 'meta_lead_gen', 'facebook_leadgen'].includes(l.source || '')).length;
+    const convertedLeads = leads.filter((l: any) => l.converted_patient_id != null).length;
+
+    const totalSpend = metaInsights.reduce((sum: number, r: any) => sum + Number(r.spend ?? 0), 0);
+    const verifiedRevenue = settlements.reduce((sum: number, r: any) => sum + Number(r.amount_net), 0);
+    const uniquePatients = new Set(settlements.map((s: any) => s.patient_id).filter(Boolean)).size;
+
+    return sendJson({
+      success: true,
+      date_range: { since, until },
+      leads: {
+        total: totalLeads,
+        meta: metaLeads,
+        converted: convertedLeads,
+        conversion_rate: totalLeads > 0 ? Number(((convertedLeads / totalLeads) * 100).toFixed(2)) : 0
+      },
+      meta: {
+        spend: Number(totalSpend.toFixed(2)),
+        cpl: metaLeads > 0 ? Number((totalSpend / metaLeads).toFixed(2)) : 0
+      },
+      doctoralia: {
+        verified_patients: uniquePatients,
+        verified_revenue: Number(verifiedRevenue.toFixed(2)),
+        cac: uniquePatients > 0 ? Number((totalSpend / uniquePatients).toFixed(2)) : 0
+      },
+      summary: {
+        roi: verifiedRevenue > 0 && totalSpend > 0 
+          ? Number(((verifiedRevenue - totalSpend) / totalSpend * 100).toFixed(2)) 
+          : 0
+      }
+    });
+  }
+  return null;
+}
+
+async function handleCampaignsFilter(ctx: AuthenticatedRouteContext): Promise<Response | null> {
+  const { adminClient, resource, sub, url, sendJson } = ctx;
+  if (resource === 'dashboard' && sub === 'campaigns-filter') {
+    const since = url.searchParams.get('since') || null;
+    const until = url.searchParams.get('until') || null;
+
+    const { data } = await adminClient.rpc('get_campaigns_filter', {
+      p_since: since,
+      p_until: until
     });
 
-    return sendJson({ success: true, metrics });
+    return sendJson({
+      success: true,
+      campaigns: (data ?? []).map((c: any) => ({
+        campaign_id: c.campaign_id,
+        campaign_name: c.campaign_name || 'Sin nombre',
+        records: c.registros ?? 0,
+        spend: Number((c.spend ?? 0).toFixed(2))
+      }))
+    });
   }
   return null;
 }
@@ -4974,7 +5027,7 @@ async function fetchLeadCampaignMap(adminClient: any, userId: string, leadIds: s
 
   const [leadRows, traceRows] = await Promise.all([
     adminClient.from('leads').select('id,source,stage').eq('user_id', userId).in('id', leadIds),
-    adminClient.from('vw_lead_traceability').select('lead_id,campaign_name,source').eq('lead_user_id', userId).in('lead_id', leadIds)
+    adminClient.from(LEAD_TRACEABILITY_VIEW).select('lead_id,campaign_name,source').eq('lead_user_id', userId).in('lead_id', leadIds)
   ]);
 
   for (const t of (traceRows.data ?? [])) {
@@ -5156,7 +5209,7 @@ async function fetchTraceabilityRowsForAggregation(adminClient: any, userId: str
     const toIdx = fromIdx + pageSize - 1;
     const query = applyTraceabilityFilters(
       adminClient
-        .from('vw_lead_traceability')
+        .from(LEAD_TRACEABILITY_VIEW)
         .select('lead_id,source,campaign_name,lead_created_at,patient_id,doc_patient_id,doctoralia_template_name,doctoralia_net')
         .order('lead_created_at', { ascending: false }),
       userId,
@@ -5203,7 +5256,7 @@ async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<
     const limit = Math.min(Math.max(Number.parseInt(url.searchParams.get('limit') ?? '250'), 1), 500);
     const dataQ = applyTraceabilityFilters(
       adminClient
-        .from('vw_lead_traceability')
+        .from(LEAD_TRACEABILITY_VIEW)
         .select(
           'lead_id,lead_name,source,campaign_name,lead_created_at,' +
           'phone_normalized,' +
@@ -5221,7 +5274,7 @@ async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<
     // COUNT queries run in parallel — real totals independent of row limit
     const countQ = applyTraceabilityFilters(
       adminClient
-        .from('vw_lead_traceability')
+        .from(LEAD_TRACEABILITY_VIEW)
         .select('lead_id', { count: 'exact', head: true }),
       userId,
       url,
@@ -5229,7 +5282,7 @@ async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<
     );
     const matchedCountQ = applyTraceabilityFilters(
       adminClient
-        .from('vw_lead_traceability')
+        .from(LEAD_TRACEABILITY_VIEW)
         .select('lead_id', { count: 'exact', head: true })
         .or(TRACEABILITY_MATCH_OR),
       userId,
@@ -5237,18 +5290,28 @@ async function handleTraceabilityLeads(ctx: AuthenticatedRouteContext): Promise<
       { includeMatchedOnly: false },
     );
 
-    const [{ data: rows, error }, { count }, { count: matchedCount }, summaryRows, funnelResult] = await Promise.all([
+    const [{ data: rows, error }, { count }, { count: matchedCount }, summaryRows] = await Promise.all([
       dataQ,
       countQ,
       matchedCountQ,
       fetchTraceabilityRowsForAggregation(adminClient, userId, url),
-      adminClient.rpc('get_trazabilidad_funnel', buildTraceabilityFunnelRpcArgs(userId, url)),
     ]);
     if (error) throw error;
-    if (funnelResult.error) console.error('get_trazabilidad_funnel enrichment error:', funnelResult.error);
 
-    const funnelRows = ((funnelResult.data || []) as TraceabilityFunnelRpcRow[]).map(normalizeTraceabilityFunnelRow);
-    const hasFunnelRevenue = !funnelResult.error;
+    let funnelRows: TraceabilityFunnelRow[] = [];
+    let hasFunnelRevenue = false;
+    try {
+      const funnelResult = await adminClient.rpc('get_trazabilidad_funnel', buildTraceabilityFunnelRpcArgs(userId, url));
+      if (funnelResult.error) {
+        console.error('get_trazabilidad_funnel enrichment error:', funnelResult.error);
+      } else {
+        funnelRows = ((funnelResult.data || []) as TraceabilityFunnelRpcRow[]).map(normalizeTraceabilityFunnelRow);
+        hasFunnelRevenue = true;
+      }
+    } catch (funnelError) {
+      console.error('get_trazabilidad_funnel enrichment exception:', funnelError);
+    }
+
     const appointmentByLead = new Map(funnelRows.map((row) => [row.lead_id, row]));
     const leads = (rows || []).map((row: { lead_id: string; doctoralia_net?: number | string | null; settlement_date?: string | null }) => {
       const appointment = appointmentByLead.get(row.lead_id);
@@ -5299,23 +5362,31 @@ function buildTraceabilityFunnelRpcArgs(userId: string, url: URL) {
   };
 }
 
-async function handleTraceabilityFunnel(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, userId, resource, sub, url, sendJson } = ctx;
-  if (resource === 'traceability' && sub === 'funnel') {
-    const { data: rows, error } = await adminClient.rpc(
-      'get_trazabilidad_funnel',
-      buildTraceabilityFunnelRpcArgs(userId, url),
-    );
+async function handleTrazabilidadFunnel(ctx: AuthenticatedRouteContext): Promise<Response> {
+  const { adminClient, userId, url, sendJson } = ctx;
 
-    if (error) {
-      console.error('get_trazabilidad_funnel error:', error);
-      return sendJson({ success: false, code: 'TRAZABILIDAD_FUNNEL_QUERY_ERROR', message: 'Failed to load traceability funnel.' }, 500);
-    }
+  const params = {
+    p_user_id: userId,
+    p_lead_from: url.searchParams.get('lead_from'),
+    p_lead_to: url.searchParams.get('lead_to'),
+    p_valoracion_from: url.searchParams.get('valoracion_from'),
+    p_valoracion_to: url.searchParams.get('valoracion_to'),
+    p_posterior_from: url.searchParams.get('posterior_from'),
+    p_posterior_to: url.searchParams.get('posterior_to')
+  };
 
-    const funnel = ((rows || []) as TraceabilityFunnelRpcRow[]).map(normalizeTraceabilityFunnelRow);
-    return sendJson({ success: true, funnel, total: funnel.length });
+  const { data, error } = await adminClient.rpc('get_trazabilidad_funnel', params);
+
+  if (error) {
+    console.error('Error en get_trazabilidad_funnel:', error);
+    return sendJson({ success: false, error: error.message }, 500);
   }
-  return null;
+
+  return sendJson({
+    success: true,
+    total: (data ?? []).length,
+    records: data ?? []
+  });
 }
 
 async function handleTraceabilityCampaigns(ctx: AuthenticatedRouteContext): Promise<Response | null> {
@@ -5537,7 +5608,7 @@ function identifyUniquePatients(settlements: any[]) {
   const patientFirstSettlement: Record<string, string> = {};
   const firstSettlementRows: Record<string, any[]> = {};
   for (const row of settlements) {
-    const patientId = String(row.patient_id ?? row.dni_hash ?? '').trim();
+    const patientId = String(row.patient_id ?? row.phone_normalized ?? row.dni_hash ?? '').trim();
     if (!patientId) continue;
     const settledAt = String(row.settled_at);
     if (!patientFirstSettlement[patientId] || new Date(settledAt) < new Date(patientFirstSettlement[patientId])) {
@@ -5767,120 +5838,97 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
 
   const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
   const clinicId = usr?.clinic_id;
-  if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
+  if (!clinicId) return sendJson({ success: false, message: 'No clinic configured' }, 400);
+
+  // Reconciliar leads antes de calcular KPIs
+  await runLeadPipelineReconciliation(adminClient, userId);
 
   const metaSources = ['meta_leadgen', 'meta_lead_gen', 'facebook_leadgen'];
-  const [leadCountRes, leadMetaCountRes, leadsByStageRes, settlementsRes, metaDailyInsightsRes] = await Promise.all([
-    adminClient.from('leads').select('id', { count: 'exact', head: true }).eq('clinic_id', clinicId).is('deleted_at', null).neq('source', 'doctoralia').gte('created_at', since).lte('created_at', until),
-    adminClient.from('leads').select('id', { count: 'exact', head: true }).eq('clinic_id', clinicId).is('deleted_at', null).in('source', metaSources).gte('created_at', since).lte('created_at', until),
-    adminClient.from('leads').select('stage').eq('clinic_id', clinicId).is('deleted_at', null).neq('source', 'doctoralia').gte('created_at', since).lte('created_at', until),
-    adminClient.from('financial_settlements').select('id, patient_id, dni_hash, amount_net, cancelled_at, settled_at, source_system').eq('clinic_id', clinicId).eq('source_system', 'doctoralia').is('cancelled_at', null).gt('amount_net', 0).order('settled_at', { ascending: true }),
-    adminClient.from('meta_daily_insights').select('date, ad_account_id, spend, impressions, clicks, conversions, ctr, cpc').eq('clinic_id', clinicId).gte('date', since).lte('date', until),
-  ]);
 
-  if (leadCountRes.error) throw leadCountRes.error;
-  if (leadMetaCountRes.error) throw leadMetaCountRes.error;
-  if (settlementsRes.error) throw settlementsRes.error;
+  const [leadCountRes, leadMetaCountRes, leadsByStageRes, settlementsRes, metaDailyInsightsRes] = await Promise.all([
+    adminClient.from('leads')
+      .select('id', { count: 'exact', head: true })
+      .eq('clinic_id', clinicId)
+      .is('deleted_at', null)
+      .neq('source', 'doctoralia')
+      .gte('created_at', since)
+      .lte('created_at', until),
+
+    adminClient.from('leads')
+      .select('id', { count: 'exact', head: true })
+      .eq('clinic_id', clinicId)
+      .is('deleted_at', null)
+      .in('source', metaSources)
+      .gte('created_at', since)
+      .lte('created_at', until),
+
+    adminClient.from('leads')
+      .select('stage')
+      .eq('clinic_id', clinicId)
+      .is('deleted_at', null)
+      .neq('source', 'doctoralia')
+      .gte('created_at', since)
+      .lte('created_at', until),
+
+    adminClient.from('financial_settlements')
+      .select('id, patient_id, amount_net, settled_at, cancelled_at')
+      .eq('clinic_id', clinicId)
+      .eq('source_system', 'doctoralia')
+      .is('cancelled_at', null)
+      .gt('amount_net', 0)
+      .gte('settled_at', since)
+      .lte('settled_at', until),
+
+    adminClient.from('meta_daily_insights')
+      .select('spend, impressions, clicks, conversions')
+      .eq('clinic_id', clinicId)
+      .gte('date', since)
+      .lte('date', until),
+  ]);
 
   const crmLeads = leadCountRes.count ?? 0;
   const metaLeads = leadMetaCountRes.count ?? 0;
   const byStage = processLeadsByStage(leadsByStageRes.data ?? []);
+  const settlements = (settlementsRes.data ?? []).filter((r: any) => Number(r.amount_net) > 0);
+  const metaInsights = metaDailyInsightsRes.data ?? [];
 
-  const conversionRateLeadToAppointment = (byStage['lead'] + byStage['whatsapp']) > 0
-    ? Number.parseFloat(((byStage['appointment'] / (byStage['lead'] + byStage['whatsapp'])) * 100).toFixed(1))
-    : 0;
+  // Revenue verificado real
+  const verifiedRevenue = settlements.reduce((sum: number, r: any) => sum + Number(r.amount_net), 0);
+  const newVerifiedPatients = new Set(settlements.map((r: any) => r.patient_id).filter(Boolean)).size;
 
-  const cachedInsights = metaDailyInsightsRes.data ?? [];
-  const hasCachedMeta = cachedInsights.length > 0;
-  const settlements = (settlementsRes.data ?? []).filter((r: any) => r.settled_at && Number(r.amount_net) > 0);
+  const metaSpend = metaInsights.reduce((sum: number, r: any) => sum + Number(r.spend ?? 0), 0);
+  const metaCpl = metaLeads > 0 ? Number((metaSpend / metaLeads).toFixed(2)) : 0;
 
-  const { patientFirstSettlement } = identifyUniquePatients(settlements);
-  const {
-    verifiedPatientIds,
-    verifiedRevenue,
-    settlementsInRange,
-    settlementsAttributed,
-    settlementsUnattributed,
-    attributionStatus,
-  } = calculateVerifiedRevenueInRange(patientFirstSettlement, settlements, since, until);
-
-  const cachedMetrics = {
-    spend: cachedInsights.reduce((s: number, r: any) => s + Number(r.spend ?? 0), 0),
-    conversions: cachedInsights.reduce((s: number, r: any) => s + Number(r.conversions ?? 0), 0),
-    impressions: cachedInsights.reduce((s: number, r: any) => s + Number(r.impressions ?? 0), 0),
-    clicks: cachedInsights.reduce((s: number, r: any) => s + Number(r.clicks ?? 0), 0),
-    rows: cachedInsights,
-  };
-
-  const metaResult = await fetchMetaKpis(adminClient, userId, url, since, until, hasCachedMeta, cachedMetrics);
-
-  const newVerifiedPatients = verifiedPatientIds.size;
-  const verifiedRevenueRounded = Number.parseFloat(verifiedRevenue.toFixed(2));
-  const avgTicket = newVerifiedPatients > 0 ? Number.parseFloat((verifiedRevenueRounded / newVerifiedPatients).toFixed(2)) : null;
-  const cacDoctoralia = newVerifiedPatients > 0 ? Number.parseFloat((metaResult.spend / newVerifiedPatients).toFixed(2)) : null;
-
-  if (metaLeads > (metaResult.leads ?? 0)) {
-    metaResult.leads = metaLeads;
-    metaResult.data_source = metaResult.data_source === 'meta_api' ? 'meta_api+crm_leads' : 'crm_leads';
-  }
-
-  const metaCpl = metaResult.leads > 0 ? Number.parseFloat((metaResult.spend / metaResult.leads).toFixed(2)) : null;
-
-  const {
-    metaSpendReal,
-    leadsReal,
-    doctoraliaSettlementsReal,
-    doctoraliaMatchingReal,
-    overallMode,
-    cacConfidence
-  } = determineKpiDataQuality(metaResult, crmLeads, settlementsInRange.length, newVerifiedPatients);
+  const cacDoctoralia = newVerifiedPatients > 0 ? Number((metaSpend / newVerifiedPatients).toFixed(2)) : 0;
 
   return sendJson({
     success: true,
     period,
     meta: {
-      accountId: metaResult.accountId,
-      accountIds: metaResult.accountIds ?? [],
-      spend: metaResult.spend,
-      leads: metaResult.leads,
+      spend: Number(metaSpend.toFixed(2)),
+      leads: metaLeads,
       cpl: metaCpl,
-      impressions: metaResult.impressions,
-      clicks: metaResult.clicks,
-      ctr: metaResult.ctr,
-      cpc: metaResult.cpc,
-      live: metaResult.live,
-      message: metaResult.message,
-      data_source: metaResult.data_source,
-      is_real: metaSpendReal,
+      is_real: metaSpend > 0,
     },
     crm: {
       totalLeads: crmLeads,
       metaLeads,
       by_stage: byStage,
-      conversion_rate_lead_to_appointment: conversionRateLeadToAppointment,
-      is_real: leadsReal,
+      is_real: crmLeads > 0,
     },
     doctoralia: {
-      total_settlements: settlementsInRange.length,
+      total_settlements: settlements.length,
       newVerifiedPatients,
-      verifiedRevenue: verifiedRevenueRounded,
-      settlements_attributed: settlementsAttributed,
-      settlements_unattributed: settlementsUnattributed,
-      attribution_status: attributionStatus,
-      avgTicket,
+      verifiedRevenue: Number(verifiedRevenue.toFixed(2)),
+      avgTicket: newVerifiedPatients > 0 ? Number((verifiedRevenue / newVerifiedPatients).toFixed(2)) : 0,
       cacDoctoralia,
-      cac_formula: 'meta_spend / new_verified_patients',
-      cac_confidence: cacConfidence,
-      is_real: doctoraliaSettlementsReal,
-      data_source: 'financial_settlements',
+      is_real: newVerifiedPatients > 0,
     },
     data_quality: {
-      leads_real: leadsReal,
-      meta_spend_real: metaSpendReal,
-      doctoralia_settlements_real: doctoraliaSettlementsReal,
-      doctoralia_matching_real: doctoraliaMatchingReal,
-      overall_mode: overallMode,
-    },
+      leads_real: crmLeads > 0,
+      meta_spend_real: metaSpend > 0,
+      doctoralia_real: newVerifiedPatients > 0,
+    }
   });
 }
 
@@ -6045,7 +6093,7 @@ function buildLeadAuditQuery(
   normalizedPhone: string | null,
 ) {
   let query = adminClient
-    .from('vw_lead_traceability')
+    .from(LEAD_TRACEABILITY_VIEW)
     .select(
       'lead_id,lead_name,source,campaign_name,ad_name,form_name,lead_created_at,' +
       'phone_normalized,patient_id,patient_name,patient_dni,patient_phone,match_confidence,match_class,settlement_id,settlement_date,first_settlement_at,doctoralia_net,doctoralia_template_name,doc_patient_id'
@@ -6130,6 +6178,27 @@ async function handleReportsLeadAuditGet(ctx: AuthenticatedRouteContext): Promis
   return null;
 }
 
+
+async function handleReportsPhoneCoverageGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
+  const { adminClient, userId, resource, sub, req, sendJson } = ctx;
+  if (resource === 'reports' && sub === 'phone-coverage' && req.method === 'GET') {
+    const clinicId = await resolveClinicId(adminClient, userId);
+    if (!clinicId) return sendJson({ success: false, message: 'Clinic not configured.' }, 400);
+
+    const { data: coverage, error } = await adminClient.rpc('get_phone_normalization_coverage', {
+      p_clinic_id: clinicId,
+    });
+
+    if (error) {
+      console.error('get_phone_normalization_coverage error:', error);
+      return sendJson({ success: false, code: 'PHONE_COVERAGE_QUERY_ERROR', message: 'Failed to load phone normalization coverage.' }, 500);
+    }
+
+    return sendJson({ success: true, coverage: coverage || [] });
+  }
+  return null;
+}
+
 async function handleReportsDoctorPerformanceGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource === 'reports' && sub === 'doctor-performance' && req.method === 'GET') {
@@ -6185,11 +6254,11 @@ async function handleLeadsReconcilePost(ctx: AuthenticatedRouteContext): Promise
 Deno.serve(async (req: Request) => {
   try {
     return await handleRequest(req);
-  } catch (topLevelErr: any) {
-    console.error('Unhandled top-level error in handleRequest:', topLevelErr);
+  } catch (err: any) {
+    console.error('Top-level error in Edge Function:', err);
     return new Response(
-      JSON.stringify({ success: false, code: 'UNHANDLED_ERROR', message: 'An unexpected server error occurred.' }),
-      { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } },
+      JSON.stringify({ success: false, message: 'Internal server error' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
 });

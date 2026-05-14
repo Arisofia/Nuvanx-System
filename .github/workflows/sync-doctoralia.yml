@@ -37,10 +37,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6 # v6
+        uses: actions/checkout@v4 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6 # v6
+        uses: actions/setup-node@v4 # v4
         with:
           node-version: '22'
 
@@ -65,11 +65,10 @@ jobs:
             echo "GOOGLE_ADS_SERVICE_ACCOUNT format: raw JSON"
             # Mask the raw JSON to avoid accidental leakage in logs
             echo "::add-mask::$GOOGLE_ADS_SERVICE_ACCOUNT"
-            {
-              echo "GOOGLE_SA_JSON<<EOF_GITHUB_ACTION"
-              echo "$GOOGLE_ADS_SERVICE_ACCOUNT"
-              echo "EOF_GITHUB_ACTION"
-            } >> "$GITHUB_ENV"
+            SA_FILE="$RUNNER_TEMP/google-service-account.json"
+            printf '%s' "$GOOGLE_ADS_SERVICE_ACCOUNT" > "$SA_FILE"
+            chmod 600 "$SA_FILE"
+            echo "GOOGLE_SA_JSON_FILE=$SA_FILE" >> "$GITHUB_ENV"
           else
             DECODED="$(echo "$GOOGLE_ADS_SERVICE_ACCOUNT" | base64 -d 2>/dev/null)" || true
             echo "$DECODED" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null || {
@@ -79,11 +78,10 @@ jobs:
             echo "GOOGLE_ADS_SERVICE_ACCOUNT format: base64 JSON"
             # Mask the decoded JSON to avoid accidental leakage in logs
             echo "::add-mask::$DECODED"
-            {
-              echo "GOOGLE_SA_JSON<<EOF_GITHUB_ACTION"
-              echo "$DECODED"
-              echo "EOF_GITHUB_ACTION"
-            } >> "$GITHUB_ENV"
+            SA_FILE="$RUNNER_TEMP/google-service-account.json"
+            printf '%s' "$DECODED" > "$SA_FILE"
+            chmod 600 "$SA_FILE"
+            echo "GOOGLE_SA_JSON_FILE=$SA_FILE" >> "$GITHUB_ENV"
           fi
 
           echo "All required secrets present and valid."
@@ -94,10 +92,11 @@ jobs:
       - name: Run Doctoralia to DB sync
         run: node scripts/sync-doctoralia.js
         env:
-          GOOGLE_SA_JSON:           ${{ env.GOOGLE_SA_JSON }}
+          GOOGLE_SA_JSON_FILE:      ${{ env.GOOGLE_SA_JSON_FILE }}
           DOCTORALIA_SHEET_ID:      ${{ env.DOCTORALIA_SHEET_ID }}
           DOCTORALIA_DRIVE_FILE_ID: ${{ env.DOCTORALIA_DRIVE_FILE_ID }}
           DATABASE_URL:             ${{ env.DATABASE_URL }}
           CLINIC_ID:                ${{ env.CLINIC_ID }}
           SHEET_RANGE:              A1:Z5000
+          DOCTORALIA_SYNC_PERMISSION_MODE: warn
           # SHEET_NAME: Sheet1   # Uncomment and set if data is on a specific tab

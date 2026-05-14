@@ -6,6 +6,7 @@
  *
  * Required env vars:
  *   GOOGLE_SA_JSON        — Service account JSON (GOOGLE_ADS_SERVICE_ACCOUNT secret)
+ *   GOOGLE_SA_JSON_FILE   — Path to service account JSON file (preferred in CI)
  *   DOCTORALIA_SHEET_ID   — Spreadsheet ID (e.g. 1GAJoASGdjsKB7bTtC5hXPFkWbB7S4fVXhKD_cZoDwPw)
  *   DOCTORALIA_DRIVE_FILE_ID — Alias for DOCTORALIA_SHEET_ID
  *   DATABASE_URL          — Postgres connection string
@@ -14,6 +15,7 @@
  * Optional:
  *   SHEET_RANGE           — A1 notation range (default: 'A1:Z5000')
  *   SHEET_NAME            — Tab name (default: first sheet)
+ *   DOCTORALIA_SYNC_PERMISSION_MODE — 'fail' or 'warn' for Google Sheets 403 errors
  *
  * Expected sheet columns (case-insensitive, accent-insensitive, partial match):
  *   id / operacion / operation / num         → id (PRIMARY KEY)
@@ -36,24 +38,27 @@
 const { google }  = require('googleapis');
 const { Client }  = require('pg');
 const { createHash } = require('node:crypto');
-const { extractPhonesFromSubject, normalizePhoneForMatching } = require('./lib/phone-normalization');
+const { extractPhonesFromSubject, normalizePhoneForMatching, getPrimaryPhoneFromSubject } = require('./lib/phone-normalization');
 
 const {
   GOOGLE_SA_JSON: SA_JSON,
+  GOOGLE_SA_JSON_FILE,
   DOCTORALIA_SHEET_ID,
   DOCTORALIA_DRIVE_FILE_ID,
   DATABASE_URL,
   CLINIC_ID,
   SHEET_RANGE = 'A1:Z5000',
   SHEET_NAME,
+  DOCTORALIA_SYNC_PERMISSION_MODE = 'fail',
 } = process.env;
 
 const SHEET_ID = DOCTORALIA_SHEET_ID || DOCTORALIA_DRIVE_FILE_ID;
+const ALLOW_PERMISSION_SKIP = DOCTORALIA_SYNC_PERMISSION_MODE.toLowerCase() === 'warn';
 
 // ─── Validation ───────────────────────────────────────────────────────────────
-if (!SA_JSON || !SHEET_ID || !DATABASE_URL || !CLINIC_ID) {
+if ((!SA_JSON && !GOOGLE_SA_JSON_FILE) || !SHEET_ID || !DATABASE_URL || !CLINIC_ID) {
   console.error('[sync-doctoralia] Missing required env vars.');
-  console.error('  Required: GOOGLE_SA_JSON, DOCTORALIA_SHEET_ID or DOCTORALIA_DRIVE_FILE_ID, DATABASE_URL, CLINIC_ID');
+  console.error('  Required: GOOGLE_SA_JSON or GOOGLE_SA_JSON_FILE, DOCTORALIA_SHEET_ID or DOCTORALIA_DRIVE_FILE_ID, DATABASE_URL, CLINIC_ID');
   process.exit(1);
 }
 
@@ -70,6 +75,33 @@ function norm(str) {
 
 function normalizeField(value) {
   return value?.toString().trim() ?? '';
+}
+
+function getServiceAccountEmail(sa) {
+  return normalizeField(sa?.client_email) || 'unknown-service-account';
+}
+
+function isGooglePermissionError(err) {
+  const code = Number(err?.code || err?.response?.status || 0);
+  const message = String(err?.message || '').toLowerCase();
+  return code === 403
+    || message.includes('does not have permission')
+    || message.includes('the caller does not have permission')
+    || message.includes('insufficient permissions');
+}
+
+function formatPermissionGuidance(sa) {
+  const email = getServiceAccountEmail(sa);
+  return [
+    'Google Sheets permission denied for the Doctoralia source spreadsheet.',
+    `Share the spreadsheet with service account ${email} as Viewer, or update GOOGLE_ADS_SERVICE_ACCOUNT/DOCTORALIA_SHEET_ID to matching credentials and file ID.`,
+    'No financial_settlements rows were modified.',
+  ].join(' ');
+}
+
+function loadServiceAccountJson() {
+  if (SA_JSON) return SA_JSON;
+  return require('node:fs').readFileSync(GOOGLE_SA_JSON_FILE, 'utf8');
 }
 
 function deriveRawId(row, useHashId, cols) {
@@ -238,6 +270,9 @@ function buildHeaderConfig(headers) {
   const colPayment      = findCol(headers, 'metodo pago', 'metodo de pago', 'pago', 'payment', 'forma pago', 'procedencia');
   const colIntermediary = findCol(headers, 'intermediario', 'mediador', 'financiera', 'entidad', 'agenda');
   const colStatus       = findCol(headers, 'estado', 'status', 'situacion');
+  const colOrigin       = findCol(headers, 'procedencia', 'origen', 'source', 'origin');
+  const colAgenda       = findCol(headers, 'agenda', 'calendario', 'doctor');
+  const colRoom         = findCol(headers, 'sala', 'habitacion', 'room', 'box');
 
   const hasColId           = colId !== -1;
   const hasColTemplate     = colTemplate !== -1;
@@ -250,6 +285,9 @@ function buildHeaderConfig(headers) {
   const hasColPayment      = colPayment !== -1;
   const hasColIntermediary = colIntermediary !== -1;
   const hasColStatus       = colStatus !== -1;
+  const hasColOrigin       = colOrigin !== -1;
+  const hasColAgenda       = colAgenda !== -1;
+  const hasColRoom         = colRoom !== -1;
 
   return {
     colId,
@@ -265,6 +303,9 @@ function buildHeaderConfig(headers) {
     colPayment,
     colIntermediary,
     colStatus,
+    colOrigin,
+    colAgenda,
+    colRoom,
     hasColId,
     hasColTemplate,
     hasColTemplateId,
@@ -276,6 +317,9 @@ function buildHeaderConfig(headers) {
     hasColPayment,
     hasColIntermediary,
     hasColStatus,
+    hasColOrigin,
+    hasColAgenda,
+    hasColRoom,
     useHashId: !hasColId,
     colSettledEff: hasColSettled ? colSettled : colFecha,
   };
@@ -342,9 +386,9 @@ async function main() {
   // ── 1. Auth with Google service account ──────────────────────────────────
   let sa;
   try {
-    sa = JSON.parse(SA_JSON);
+    sa = JSON.parse(loadServiceAccountJson());
   } catch {
-    console.error('[sync-doctoralia] GOOGLE_SA_JSON is not valid JSON.');
+    console.error('[sync-doctoralia] Google service account JSON is not valid.');
     process.exit(1);
   }
 
@@ -359,10 +403,23 @@ async function main() {
   // Avoid logging sensitive values in plain text.
   console.log('[sync-doctoralia] Fetching spreadsheet (id hidden), range masked.');
 
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: SHEET_ID,
-    range,
-  });
+  let res;
+  try {
+    res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range,
+    });
+  } catch (err) {
+    if (isGooglePermissionError(err)) {
+      const guidance = formatPermissionGuidance(sa);
+      if (ALLOW_PERMISSION_SKIP) {
+        console.warn(`::warning::[sync-doctoralia] ${guidance}`);
+        return;
+      }
+      throw new Error(guidance);
+    }
+    throw err;
+  }
 
   const rows = res.data.values ?? [];
   if (rows.length < 2) {
@@ -384,7 +441,7 @@ async function main() {
   if (config.useHashId) console.log('[sync-doctoralia] Using hash-based ID (appointment-export format).');
 
   // ── 3. Connect to Postgres ────────────────────────────────────────────────
-  const db = new Client({ connectionString: DATABASE_URL });
+  const db = new Client({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
   let upserted = 0;
   let skipped = 0;
   try {
@@ -416,6 +473,21 @@ async function main() {
       else skipped++;
     }
 
+    console.log(`[sync-doctoralia] Upsert complete: ${upserted} rows updated, ${skipped} skipped.`);
+
+    // ── 5. Reconcile subjects to leads ──────────────────────────────────────
+    console.log('[sync-doctoralia] Starting lead reconciliation...');
+    const userRes = await db.query('SELECT id FROM public.users WHERE clinic_id = $1 LIMIT 1', [CLINIC_ID]);
+    const userId = userRes.rows[0]?.id;
+
+    if (!userId) {
+      console.warn('[sync-doctoralia] No user found for this clinic. Skipping lead reconciliation.');
+    } else {
+      const reconcileRes = await db.query('SELECT public.reconcile_doctoralia_subjects_to_leads($1) as count', [userId]);
+      const count = reconcileRes.rows[0]?.count || 0;
+      console.log(`[sync-doctoralia] Reconciliation done: ${count} leads advanced.`);
+    }
+
   } finally {
     try {
       await db.end();
@@ -424,7 +496,6 @@ async function main() {
       console.warn('[sync-doctoralia] Error closing DB connection:', e?.message || e);
     }
   }
-  console.log(`[sync-doctoralia] Done — ${upserted} rows upserted, ${skipped} skipped (blank/undated).`);
 }
 
 async function upsertDoctoraliaRow(row, i, params) {
@@ -527,6 +598,10 @@ module.exports = {
   normalizePhoneForMatching,
   extractPhonesFromSubject,
   getPrimaryPhoneFromSubject,
+  getServiceAccountEmail,
+  isGooglePermissionError,
+  formatPermissionGuidance,
+  loadServiceAccountJson,
   deriveRawId,
   isCancelledStatus,
   findCol,
