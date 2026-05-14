@@ -12,7 +12,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6 # v6
+      - uses: actions/checkout@v4 # v4
 
       - name: Fail on merge conflict markers in CI-critical config
         run: |
@@ -81,10 +81,10 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v6 # v6
+      - uses: actions/checkout@v4 # v4
 
       - name: Use Node.js
-        uses: actions/setup-node@v6 # v6
+        uses: actions/setup-node@v4 # v4
         with:
           node-version: '22'
           cache: 'npm'
@@ -107,10 +107,10 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v6 # v6
+      - uses: actions/checkout@v4 # v4
 
       - name: Use Node.js
-        uses: actions/setup-node@v6 # v6
+        uses: actions/setup-node@v4 # v4
         with:
           node-version: '22'
           cache: 'npm'
@@ -134,10 +134,10 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v6 # v6
+      - uses: actions/checkout@v4 # v4
 
       - name: Use Node.js
-        uses: actions/setup-node@v6 # v6
+        uses: actions/setup-node@v4 # v4
         with:
           node-version: '22'
           cache: 'npm'
@@ -182,10 +182,10 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v6 # v6
+      - uses: actions/checkout@v4 # v4
 
       - name: Use Node.js
-        uses: actions/setup-node@v6 # v6
+        uses: actions/setup-node@v4 # v4
         with:
           node-version: '22'
           cache: 'npm'
@@ -228,10 +228,10 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6 # v6
+      - uses: actions/checkout@v4 # v4
 
       - name: Use Node.js
-        uses: actions/setup-node@v6 # v6
+        uses: actions/setup-node@v4 # v4
         with:
           node-version: '22'
           cache: 'npm'
@@ -258,7 +258,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6 # v6
+      - uses: actions/checkout@v4 # v4
 
       - name: Setup Deno
         uses: denoland/setup-deno@v2

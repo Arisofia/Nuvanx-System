@@ -45,7 +45,7 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
     steps:
-      - uses: actions/checkout@v6 # v6
+      - uses: actions/checkout@v4 # v4
 
       - name: Report upstream Deploy Supabase result
         if: github.event_name == 'workflow_run'

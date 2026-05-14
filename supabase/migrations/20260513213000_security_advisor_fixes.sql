@@ -1,16 +1,13 @@
 -- =============================================================================
--- Final preview security advisor fix
+-- Security advisor cleanup for Supabase preview environments
 --
--- Forward-only cleanup for warnings still reported by Supabase Preview:
--- - mutable function search_path on legacy helper/RPC functions
--- - anonymous-access advisor warning on produccion_intermediarios read policy
--- - anonymous-access advisor warning on pg_cron extension policies
---
--- Note: auth_leaked_password_protection is a Supabase Auth dashboard setting and
--- cannot be enabled through SQL migrations.
+-- Consolidates search_path lockdown, RLS enforcement for produccion_intermediarios,
+-- and pg_cron extension policy drift removal.
 -- =============================================================================
 
--- 1. Lock down search_path for every existing overload of the flagged functions.
+BEGIN;
+
+-- 1. Lock down mutable function search_path warnings across matching overloads.
 DO $$
 DECLARE
   fn RECORD;
@@ -30,22 +27,16 @@ BEGIN
   END LOOP;
 END $$;
 
--- 2. Make produccion_intermediarios access explicit: service_role can manage all
--- rows, and non-anonymous authenticated users can read. Anonymous sessions that
--- carry the authenticated role remain excluded by the is_anonymous claim guard.
+-- 2. Ensure produccion_intermediarios RLS is active and policies are clean.
 DO $$
 BEGIN
   IF to_regclass('public.produccion_intermediarios') IS NOT NULL THEN
     ALTER TABLE public.produccion_intermediarios ENABLE ROW LEVEL SECURITY;
 
-    DROP POLICY IF EXISTS "Permitir lectura a usuarios autenticados"
-      ON public.produccion_intermediarios;
-    DROP POLICY IF EXISTS "Permitir lectura solo a authenticated"
-      ON public.produccion_intermediarios;
-    DROP POLICY IF EXISTS produccion_intermediarios_authenticated_select
-      ON public.produccion_intermediarios;
-    DROP POLICY IF EXISTS produccion_intermediarios_service_role_all
-      ON public.produccion_intermediarios;
+    DROP POLICY IF EXISTS "Permitir lectura a usuarios autenticados" ON public.produccion_intermediarios;
+    DROP POLICY IF EXISTS "Permitir lectura solo a authenticated" ON public.produccion_intermediarios;
+    DROP POLICY IF EXISTS produccion_intermediarios_authenticated_select ON public.produccion_intermediarios;
+    DROP POLICY IF EXISTS produccion_intermediarios_service_role_all ON public.produccion_intermediarios;
 
     CREATE POLICY produccion_intermediarios_service_role_all
       ON public.produccion_intermediarios
@@ -65,8 +56,7 @@ BEGIN
   END IF;
 END $$;
 
--- 3. Remove pg_cron policy drift that includes anon/public, then recreate explicit
--- service_role-only policies when the extension tables are present.
+-- 3. Remove pg_cron policy drift and recreate explicit service_role policies.
 DO $$
 BEGIN
   IF to_regclass('cron.job') IS NOT NULL THEN
@@ -90,3 +80,5 @@ BEGIN
       USING (TRUE);
   END IF;
 END $$;
+
+COMMIT;
