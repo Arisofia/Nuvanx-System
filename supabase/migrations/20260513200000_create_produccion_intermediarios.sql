@@ -40,6 +40,25 @@ BEGIN
       inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE public.produccion_intermediarios
+      ADD COLUMN IF NOT EXISTS estado TEXT,
+      ADD COLUMN IF NOT EXISTS fecha DATE,
+      ADD COLUMN IF NOT EXISTS hora TEXT,
+      ADD COLUMN IF NOT EXISTS fecha_creacion DATE,
+      ADD COLUMN IF NOT EXISTS hora_creacion TIME,
+      ADD COLUMN IF NOT EXISTS asunto TEXT,
+      ADD COLUMN IF NOT EXISTS agenda TEXT,
+      ADD COLUMN IF NOT EXISTS sala_box TEXT,
+      ADD COLUMN IF NOT EXISTS confirmada BOOLEAN DEFAULT FALSE,
+      ADD COLUMN IF NOT EXISTS procedencia TEXT,
+      ADD COLUMN IF NOT EXISTS importe NUMERIC(12, 2) DEFAULT 0.00,
+      ADD COLUMN IF NOT EXISTS campaign_id TEXT,
+      ADD COLUMN IF NOT EXISTS agenda_name TEXT,
+      ADD COLUMN IF NOT EXISTS room_id TEXT,
+      ADD COLUMN IF NOT EXISTS lead_source TEXT,
+      ADD COLUMN IF NOT EXISTS phone_normalized TEXT,
+      ADD COLUMN IF NOT EXISTS inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
   END IF;
 END $$;
 
@@ -164,12 +183,14 @@ DROP POLICY IF EXISTS "Permitir lectura a usuarios autenticados" ON public.produ
 DROP POLICY IF EXISTS "Permitir lectura solo a authenticated" ON public.produccion_intermediarios;
 DROP POLICY IF EXISTS produccion_intermediarios_authenticated_select ON public.produccion_intermediarios;
 DROP POLICY IF EXISTS produccion_intermediarios_service_role_all ON public.produccion_intermediarios;
+
 CREATE POLICY produccion_intermediarios_service_role_all
   ON public.produccion_intermediarios
   FOR ALL
   TO service_role
   USING (TRUE)
   WITH CHECK (TRUE);
+
 CREATE POLICY produccion_intermediarios_authenticated_select
   ON public.produccion_intermediarios
   FOR SELECT
