@@ -76,7 +76,12 @@ runs:
         # which makes failed runs easier to diagnose from debug logs.
         printf 'resolved_db_password=%s\n' "$RESOLVED_DB_PASSWORD" >> "$GITHUB_OUTPUT"
 
-        # Retry the link operation for transient Supabase CLI/upstream failures.
+        is_deterministic_link_error() {
+          local output="$1"
+          local pattern='invalid access token|invalid token|not authorized|unauthorized|forbidden|permission denied|project ref.*not found|project.*not found|invalid project ref|database password.*incorrect|password authentication failed'
+          echo "$output" | grep -Eiq "$pattern"
+        }
+
         run_link_once() {
           if [ -n "$RESOLVED_DB_PASSWORD" ]; then
             timeout --signal=TERM --kill-after=15s 120s \
@@ -87,41 +92,38 @@ runs:
           fi
         }
 
-        is_deterministic_link_error() {
-          local output="$1"
-          local pattern='invalid access token|invalid token|not authorized|unauthorized|forbidden|permission denied|project ref.*not found|project.*not found|invalid project ref|database password.*incorrect|password authentication failed'
-          echo "$output" | grep -Eiq "$pattern"
-        }
-
         run_link_with_retry() {
           local max_attempts=3
           local delay_seconds=10
           local attempt=1
-          local output exit_code
 
           while true; do
             echo "Linking Supabase project (attempt $attempt/$max_attempts)..."
-            if output=$(run_link_once 2>&1); then
+            local output
+            output=$(run_link_once 2>&1) || {
+              local exit_code=$?
               echo "$output"
-              echo "Supabase project linked successfully."
-              return 0
-            fi
-            exit_code=$?
+
+              # Short-circuit if this is a deterministic failure.
+              if is_deterministic_link_error "$output"; then
+                echo "::error::Non-transient Supabase link error detected. Not retrying; fix credentials/project configuration shown above."
+                return "$exit_code"
+              fi
+
+              if [ "$attempt" -ge "$max_attempts" ]; then
+                echo "::error::Supabase project link failed after $max_attempts attempts. Check the link step output above for the upstream/proxy error returned by Supabase CLI."
+                return 1
+              fi
+
+              attempt=$((attempt + 1))
+              echo "::warning::Supabase project link failed, retrying in ${delay_seconds}s in case this was a transient upstream/proxy error."
+              sleep "$delay_seconds"
+              continue
+            }
+
             echo "$output"
-
-            if is_deterministic_link_error "$output"; then
-              echo "::error::Non-transient Supabase link error detected. Not retrying; fix credentials/project configuration shown above."
-              return "$exit_code"
-            fi
-
-            if [ "$attempt" -ge "$max_attempts" ]; then
-              echo "::error::Supabase project link failed after $max_attempts attempts. Check the link step output above for the upstream/proxy error returned by Supabase CLI."
-              return 1
-            fi
-
-            attempt=$((attempt + 1))
-            echo "::warning::Supabase project link failed, retrying in ${delay_seconds}s in case this was a transient upstream/proxy error."
-            sleep "$delay_seconds"
+            echo "Supabase project linked successfully."
+            return 0
           done
         }
 

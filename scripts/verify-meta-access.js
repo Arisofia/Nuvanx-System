@@ -23,28 +23,11 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function redactAdAccountIdForLog(adAccountId) {
-  const normalized = String(adAccountId || '').replace(/^act_/i, '');
-  if (!normalized) return 'act_[redacted]';
-  return `act_***${normalized.slice(-4)}`;
-}
-
-function getMetaError(data, status) {
-  const err = data?.error || {};
-  const code = err.code || 'unknown';
-  const subcode = err.error_subcode || 'unknown';
-  const message = err.message || `Meta API ${status}`;
-  const traceId = err.fbtrace_id || 'unknown';
-  return `[Meta Error] status=${status} code=${code} subcode=${subcode} trace_id=${traceId} message=${message}`;
-}
-
-function isTransient(status, data) {
-  const message = String(data?.error?.message || '').toLowerCase();
-  const code = Number(data?.error?.code || 0);
-  return [408, 425, 429, 500, 502, 503, 504].includes(status)
-    || [4, 17, 613, 800].includes(code)
-    || message.includes('throttl')
-    || message.includes('rate limit');
+function maskForLog(value) {
+  const s = String(value || '');
+  if (!s) return 'unknown';
+  if (s.length <= 4) return '***';
+  return `${s.slice(0, 2)}***${s.slice(-2)}`;
 }
 
 function parseMetaResponseBody(text) {
@@ -58,6 +41,14 @@ function parseMetaResponseBody(text) {
     );
     return { rawBody: text };
   }
+}
+
+function redactAdAccountIdForLog(adAccountId) {
+  const normalized = String(adAccountId || '');
+  const digits = normalized.replace(/^act_/i, '');
+  if (!digits) return 'act_[redacted]';
+  const suffix = digits.slice(-4);
+  return `act_***${suffix}`;
 }
 
 async function fetchAccount({ adAccountId, token, appSecret, attempt = 1 }) {

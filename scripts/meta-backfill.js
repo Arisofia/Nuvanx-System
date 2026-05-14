@@ -592,10 +592,10 @@ async function processLeadData(db, userId, leadData) {
       (user_id, clinic_id, external_id, source, name, email, phone, dni,
        first_name, last_name, city, state, zip_code, gender,
        notes, priority, stage, campaign_id, campaign_name, adset_id, adset_name,
-       ad_id, ad_name, form_id, form_name, meta_ad_id, meta_ad_name, meta_form_id,
+       meta_ad_id, meta_ad_name, meta_form_id,
        meta_platform, is_organic, created_at_meta, asset_url, telefono_hash, email_hash,
        raw_field_data, created_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32)
     RETURNING id
   `, [
     userId,
@@ -619,10 +619,6 @@ async function processLeadData(db, userId, leadData) {
     leadData.campaign_name ?? null,
     leadData.adset_id ?? null,
     leadData.adset_name ?? null,
-    leadData.ad_id ?? null,
-    leadData.ad_name ?? null,
-    leadData.form_id ?? null,
-    leadData.form_name ?? null,
     metaAdId,
     metaAdName,
     metaFormId,

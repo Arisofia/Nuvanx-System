@@ -455,7 +455,6 @@ async function persistAgentOutput(adminClient: any, userId: string, agentType: s
       output,
       metadata,
       input_context: inputContext,
-      output_data: output ?? {},
     })
     .select('id')
     .single();
@@ -1423,6 +1422,7 @@ export const AUTHENTICATED_ROUTE_HANDLERS = new Map<string, RouteHandler>([
   ['reports|source-comparison|GET', handleReportsSourceComparisonGet],
   ['reports|whatsapp-conversion|GET', handleReportsWhatsappConversionGet],
   ['reports|lead-audit|GET', handleReportsLeadAuditGet],
+  ['reports|phone-coverage|GET', handleReportsPhoneCoverageGet],
   ['reports|doctor-performance|GET', handleReportsDoctorPerformanceGet],
   ['reports|campaign-roi|GET', handleReportsCampaignRoiGet],
   ['leads|reconcile|POST', handleLeadsReconcilePost],
@@ -6174,6 +6174,27 @@ async function handleReportsLeadAuditGet(ctx: AuthenticatedRouteContext): Promis
       console.error('Lead Audit Error:', err);
       return sendJson({ success: false, message: err.message || 'Error fetching lead audit data' }, 500);
     }
+  }
+  return null;
+}
+
+
+async function handleReportsPhoneCoverageGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
+  const { adminClient, userId, resource, sub, req, sendJson } = ctx;
+  if (resource === 'reports' && sub === 'phone-coverage' && req.method === 'GET') {
+    const clinicId = await resolveClinicId(adminClient, userId);
+    if (!clinicId) return sendJson({ success: false, message: 'Clinic not configured.' }, 400);
+
+    const { data: coverage, error } = await adminClient.rpc('get_phone_normalization_coverage', {
+      p_clinic_id: clinicId,
+    });
+
+    if (error) {
+      console.error('get_phone_normalization_coverage error:', error);
+      return sendJson({ success: false, code: 'PHONE_COVERAGE_QUERY_ERROR', message: 'Failed to load phone normalization coverage.' }, 500);
+    }
+
+    return sendJson({ success: true, coverage: coverage || [] });
   }
   return null;
 }

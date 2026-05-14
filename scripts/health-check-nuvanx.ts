@@ -14,6 +14,7 @@ const SUPABASE_URL = (
 ).replace(/\/$/, '');
 const MCP_API_KEY = Deno.env.get('MCP_API_KEY')?.trim();
 const API_AUTH_TOKEN = Deno.env.get('HEALTH_CHECK_API_AUTH_TOKEN')?.trim();
+
 const DEFAULT_TIMEOUT_MS = 10_000;
 const TIMEOUT_MS = (() => {
   const raw = Deno.env.get('HEALTH_CHECK_TIMEOUT_MS');

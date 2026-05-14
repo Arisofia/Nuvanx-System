@@ -31,8 +31,8 @@ jobs:
       GOOGLE_ADS_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_CUSTOMER_ID }}
 
     steps:
-      - uses: actions/checkout@v6 # v6
-      - uses: actions/setup-node@v6 # v6
+      - uses: actions/checkout@v4 # v4
+      - uses: actions/setup-node@v4 # v4
         with:
           node-version: '22'
       - name: Validate required secrets

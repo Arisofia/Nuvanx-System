@@ -186,12 +186,14 @@ DROP POLICY IF EXISTS "Permitir lectura a usuarios autenticados" ON public.produ
 DROP POLICY IF EXISTS "Permitir lectura solo a authenticated" ON public.produccion_intermediarios;
 DROP POLICY IF EXISTS produccion_intermediarios_authenticated_select ON public.produccion_intermediarios;
 DROP POLICY IF EXISTS produccion_intermediarios_service_role_all ON public.produccion_intermediarios;
+
 CREATE POLICY produccion_intermediarios_service_role_all
   ON public.produccion_intermediarios
   FOR ALL
   TO service_role
   USING (TRUE)
   WITH CHECK (TRUE);
+
 CREATE POLICY produccion_intermediarios_authenticated_select
   ON public.produccion_intermediarios
   FOR SELECT
