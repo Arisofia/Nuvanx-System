@@ -1,13 +1,8 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["ES2022", "DOM", "WebWorker"],
-    "module": "ESNext",
-    "moduleResolution": "Node",
+    "lib": ["deno.window", "deno.ns"],
     "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "types": ["@supabase/supabase-js"]
+    "skipLibCheck": true
   },
   "imports": {
     "@supabase/supabase-js": "npm:@supabase/supabase-js@2"
