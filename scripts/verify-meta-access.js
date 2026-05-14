@@ -51,6 +51,25 @@ function redactAdAccountIdForLog(adAccountId) {
   return `act_***${suffix}`;
 }
 
+function isTransient(status, data) {
+  const error = data?.error ?? {};
+  const msg = String(error.message || '').toLowerCase();
+  const code = Number(error.code || 0);
+
+  return [429, 500, 502, 503, 504].includes(status)
+    || msg.includes('throttl')
+    || msg.includes('rate limit')
+    || [4, 17, 613, 800].includes(code);
+}
+
+function getMetaError(data, status) {
+  const error = data?.error ?? {};
+  const msg = error.message ?? `Meta API ${status}`;
+  const code = error.code ?? 'unknown';
+  const subcode = error.error_subcode ?? 'unknown';
+  return `[Meta Error] Code: ${code}, Subcode: ${subcode}, Message: ${msg}`;
+}
+
 async function fetchAccount({ adAccountId, token, appSecret, attempt = 1 }) {
   const url = new URL(`${META_GRAPH}/${adAccountId}`);
   url.searchParams.set('fields', 'account_id,name,account_status,currency');
