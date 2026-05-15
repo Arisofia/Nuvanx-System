@@ -3,51 +3,64 @@ const { createClient } = require('@supabase/supabase-js')
 const supabaseUrl = process.env.VITE_SUPABASE_URL
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-async function godModeMatch() {
+function normalize(phone) {
+  if (!phone) return null
+  const digits = String(phone).replace(/\D/g, '')
+  return digits.length >= 9 ? digits.slice(-9) : null
+}
+
+async function definitiveMatch() {
   const supabase = createClient(supabaseUrl, supabaseKey)
   
-  console.log('--- GOD MODE MATCHING (SIN RESTRICCIONES) ---')
+  console.log('--- DEFINITIVE MATCHING (9-DIGITS IN MEMORY) ---')
 
-  // 1. Obtener TODOS los leads y settlements con teléfono (ignorando clínicas por ahora)
-  const { data: leads } = await supabase.from('leads').select('id, phone_normalized, clinic_id').not('phone_normalized', 'is', null)
-  const { data: setts } = await supabase.from('financial_settlements').select('phone_normalized, amount_net, intake_at, settled_at, clinic_id').not('phone_normalized', 'is', null)
+  const { data: leads } = await supabase.from('leads').select('id, phone, clinic_id')
+  const { data: setts } = await supabase.from('financial_settlements').select('id, patient_phone, template_name, amount_net, intake_at, settled_at, clinic_id')
 
-  console.log(`Cargados ${leads?.length} leads y ${setts?.length} settlements.`)
+  console.log(`Leads totales: ${leads?.length}`)
+  console.log(`Settlements totales: ${setts?.length}`)
 
+  // 1. Extraer y normalizar teléfonos de settlements
   const revByPhone = {}
   setts?.forEach(s => {
-    const p = s.phone_normalized
-    if (!revByPhone[p]) revByPhone[p] = { total: 0, date: s.intake_at || s.settled_at, clinic_id: s.clinic_id }
-    revByPhone[p].total += (s.amount_net || 0)
+    // Intentar sacar del campo dedicated o del template_name
+    let rawPhone = s.patient_phone
+    if (!rawPhone || rawPhone.length < 9) {
+      const match = s.template_name?.match(/(\d{9})/g)
+      if (match) rawPhone = match[0]
+    }
+
+    const norm = normalize(rawPhone)
+    if (norm) {
+      if (!revByPhone[norm]) revByPhone[norm] = { total: 0, date: s.intake_at || s.settled_at, clinic_id: s.clinic_id }
+      revByPhone[norm].total += (s.amount_net || 0)
+    }
   })
 
-  let count = 0
+  // 2. Cruzar con Leads
+  let matchCount = 0
   for (const l of (leads || [])) {
-    const m = revByPhone[l.phone_normalized]
-    if (m && m.total > 0) {
-      console.log(`MATCH ENCONTRADO: Lead ${l.id} | Tel ${l.phone_normalized} | Rev €${m.total}`)
+    const norm = normalize(l.phone)
+    if (norm && revByPhone[norm] && revByPhone[norm].total > 0) {
+      const m = revByPhone[norm]
+      console.log(`MATCH! Lead ${l.id} | Tel ${norm} | Revenue €${m.total}`)
       
       const updateData = {
         verified_revenue: m.total,
         appointment_date: m.date,
         status: 'convertido',
-        stage: 'convertido'
+        stage: 'convertido',
+        phone_normalized: norm
       }
       
-      // Si el lead no tiene clínica, le ponemos la del settlement
-      if (!l.clinic_id && m.clinic_id) {
-        updateData.clinic_id = m.clinic_id
-      } else if (!l.clinic_id && !m.clinic_id) {
-        // Si ninguno tiene, usamos la del env
-        updateData.clinic_id = process.env.CLINIC_ID
-      }
-
+      if (!l.clinic_id && m.clinic_id) updateData.clinic_id = m.clinic_id
+      
       await supabase.from('leads').update(updateData).eq('id', l.id)
-      count++
+      matchCount++
     }
   }
 
-  console.log(`¡GOD MODE COMPLETADO! ${count} leads vinculados.`)
+  console.log(`VINCULACIÓN FINALIZADA: ${matchCount} leads vinculados.`)
 }
 
-godModeMatch()
+definitiveMatch()
