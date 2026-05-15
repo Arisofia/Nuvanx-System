@@ -39,20 +39,36 @@ async function checkResults() {
     console.log(`- Pacientes registrados: ${totalPatients}`)
 
     // Ver si las liquidaciones tienen teléfono
-    const { data: phoneStats } = await supabase
+    const { data: settlements } = await supabase
       .from('financial_settlements')
       .select('patient_phone')
       .eq('clinic_id', clinicId)
       .not('patient_phone', 'is', null)
-      .limit(1)
     
-    const { count: settlementsWithPhone } = await supabase
-      .from('financial_settlements')
-      .select('*', { count: 'exact', head: true })
+    const { data: leadsAll } = await supabase
+      .from('leads')
+      .select('phone')
       .eq('clinic_id', clinicId)
-      .not('patient_phone', 'is', null)
-    
-    console.log(`- Liquidaciones con teléfono: ${settlementsWithPhone}`)
+      .not('phone', 'is', null)
+
+    const leadPhones = (leadsAll || []).map(l => l.phone.replace(/[^0-9]/g, '').slice(-9))
+    const settPhones = (settlements || []).map(s => s.patient_phone.replace(/[^0-9]/g, '').slice(-9))
+
+    console.log(`- Total 9-digit Leads: ${leadPhones.length}`)
+    console.log(`- Total 9-digit Settlements: ${settPhones.length}`)
+
+    const intersection = leadPhones.filter(p => settPhones.includes(p))
+    console.log(`- Intersección Real (JS side): ${intersection.length} coincidencias exactas de 9 dígitos.`)
+
+    if (intersection.length > 0) {
+      console.log(`¡HAY INTERSECCIÓN! Ejemplo de teléfono coincidente: ${intersection[0]}`)
+    } else {
+      console.log(`No hay intersección de 9 dígitos. Probando con 8 dígitos...`)
+      const lead8 = leadPhones.map(p => p.slice(-8))
+      const sett8 = settPhones.map(p => p.slice(-8))
+      const intersection8 = lead8.filter(p => sett8.includes(p))
+      console.log(`- Intersección 8-dígitos: ${intersection8.length}`)
+    }
 
     // Ver un ejemplo de teléfono de lead y uno de liquidación (anonimizado los últimos dígitos si es necesario, pero aquí solo para diagnóstico interno)
     const { data: leadExample } = await supabase.from('leads').select('phone').eq('clinic_id', clinicId).not('phone', 'is', null).limit(1)
