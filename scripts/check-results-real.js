@@ -54,30 +54,40 @@ async function checkResults() {
     const leadPhones = (leadsAll || []).map(l => l.phone.replace(/[^0-9]/g, '').slice(-9))
     const settPhones = (settlements || []).map(s => s.patient_phone.replace(/[^0-9]/g, '').slice(-9))
 
-    console.log(`- Total 9-digit Leads: ${leadPhones.length}`)
-    console.log(`- Total 9-digit Settlements: ${settPhones.length}`)
+    // Estadísticas de Leads sin teléfono aparente
+    const { data: leadsNoPhone } = await supabase
+      .from('leads')
+      .select('id, name, phone, dni, email, notes')
+      .eq('clinic_id', clinicId)
+      .is('phone_normalized', null)
+      .limit(10)
+    
+    console.log(`- Leads sin teléfono normalizado: ${totalLeads - leadPhones.length}`)
+    console.log('Muestra de leads sin teléfono (para ver si está en otro campo):')
+    leadsNoPhone?.forEach(l => {
+      console.log(`  * Name: ${l.name} | Phone: ${l.phone} | DNI: ${l.dni} | Email: ${l.email} | Notes: ${l.notes?.substring(0, 30)}`)
+    })
 
-    const intersection = leadPhones.filter(p => settPhones.includes(p))
-    console.log(`- Intersección Real (JS side): ${intersection.length} coincidencias exactas de 9 dígitos.`)
+    // Buscar teléfonos en el campo NAME o DNI de los leads
+    const { data: leadsWithHiddenPhone } = await supabase
+      .from('leads')
+      .select('id, name, dni, phone')
+      .eq('clinic_id', clinicId)
+    
+    let foundInFields = 0
+    leadsWithHiddenPhone?.forEach(l => {
+      const combined = `${l.name} ${l.dni} ${l.phone}`
+      const matches = combined.match(/[679][0-9]{8}/g)
+      if (matches && !l.phone_normalized) foundInFields++
+    })
+    console.log(`- Leads con potencial teléfono oculto en otros campos: ${foundInFields}`)
 
-    if (intersection.length > 0) {
-      console.log(`¡HAY INTERSECCIÓN! Teléfonos coincidentes: ${intersection.join(', ')}`)
-      
-      const { data: matchedLeads } = await supabase
-        .from('leads')
-        .select('name, phone')
-        .eq('clinic_id', clinicId)
-        .in('phone_normalized', intersection)
-      
-      console.log('Leads identificados para el match:')
-      matchedLeads.forEach(ml => console.log(`- ${ml.name} (${ml.phone})`))
-    } else {
-      console.log(`No hay intersección de 9 dígitos. Probando con 8 dígitos...`)
-      const lead8 = leadPhones.map(p => p.slice(-8))
-      const sett8 = settPhones.map(p => p.slice(-8))
-      const intersection8 = lead8.filter(p => sett8.includes(p))
-      console.log(`- Intersección 8-dígitos: ${intersection8.length}`)
-    }
+    // Ver formatos de nombres en ambos lados para fuzzy matching
+    const { data: leadNames } = await supabase.from('leads').select('name').eq('clinic_id', clinicId).limit(5)
+    const { data: settNamesSample } = await supabase.from('financial_settlements').select('template_name').eq('clinic_id', clinicId).limit(5)
+    
+    console.log('Formatos de Nombres (Leads):', leadNames?.map(n => n.name).join(' | '))
+    console.log('Formatos de Asuntos (Doctoralia):', settNamesSample?.map(n => n.template_name).join(' | '))
 
     // Ver un ejemplo de teléfono de lead y uno de liquidación (anonimizado los últimos dígitos si es necesario, pero aquí solo para diagnóstico interno)
     const { data: leadExample } = await supabase.from('leads').select('phone').eq('clinic_id', clinicId).not('phone', 'is', null).limit(1)
