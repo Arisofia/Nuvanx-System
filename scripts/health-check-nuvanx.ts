@@ -1,23 +1,37 @@
 /**
- * Nuvanx System Health Check Script (Deno)
+ * Nuvanx System Health Check Script
  *
  * Verifies that critical production Edge Functions are reachable and that
  * protected API routes keep enforcing authentication when no health-check user
  * token is configured.
  *
- * Usage: deno run --allow-net --allow-env scripts/health-check-nuvanx.ts
+ * Supports both Deno and Node.js (via tsx/ts-node).
+ * Usage (Deno): deno run --allow-net --allow-env scripts/health-check-nuvanx.ts
+ * Usage (Node): npx tsx scripts/health-check-nuvanx.ts
  */
+
+const getEnv = (name: string): string | undefined => {
+  return (globalThis as any).Deno?.env?.get(name) ?? (globalThis as any).process?.env?.[name];
+};
+
+const exit = (code: number) => {
+  if ((globalThis as any).Deno) {
+    (globalThis as any).Deno.exit(code);
+  } else {
+    (globalThis as any).process.exit(code);
+  }
+};
 
 const DEFAULT_SUPABASE_URL = 'https://ssvvuuysgxyqvmovrlvk.supabase.co';
 const SUPABASE_URL = (
-  Deno.env.get('VITE_SUPABASE_URL') || Deno.env.get('SUPABASE_URL') || DEFAULT_SUPABASE_URL
+  getEnv('VITE_SUPABASE_URL') || getEnv('SUPABASE_URL') || DEFAULT_SUPABASE_URL
 ).replace(/\/$/, '');
-const MCP_API_KEY = Deno.env.get('MCP_API_KEY')?.trim();
-const API_AUTH_TOKEN = Deno.env.get('HEALTH_CHECK_API_AUTH_TOKEN')?.trim();
+const MCP_API_KEY = getEnv('MCP_API_KEY')?.trim();
+const API_AUTH_TOKEN = getEnv('HEALTH_CHECK_API_AUTH_TOKEN')?.trim();
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const TIMEOUT_MS = (() => {
-  const raw = Deno.env.get('HEALTH_CHECK_TIMEOUT_MS');
+  const raw = getEnv('HEALTH_CHECK_TIMEOUT_MS');
   if (!raw) return DEFAULT_TIMEOUT_MS;
 
   const parsed = Number(raw);
@@ -141,5 +155,5 @@ console.log(
 );
 
 if (failed > 0) {
-  Deno.exit(1);
+  exit(1);
 }

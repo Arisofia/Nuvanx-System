@@ -32,6 +32,6 @@
   "devDependencies": {
     "@types/node": "^25.6.0",
     "tweetsodium": "^0.0.4",
-    "vitest": "^4.1.5"
+    "vitest": "^3.0.0"
   }
 }
