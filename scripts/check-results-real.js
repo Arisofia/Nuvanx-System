@@ -61,7 +61,16 @@ async function checkResults() {
     console.log(`- Intersección Real (JS side): ${intersection.length} coincidencias exactas de 9 dígitos.`)
 
     if (intersection.length > 0) {
-      console.log(`¡HAY INTERSECCIÓN! Ejemplo de teléfono coincidente: ${intersection[0]}`)
+      console.log(`¡HAY INTERSECCIÓN! Teléfonos coincidentes: ${intersection.join(', ')}`)
+      
+      const { data: matchedLeads } = await supabase
+        .from('leads')
+        .select('name, phone')
+        .eq('clinic_id', clinicId)
+        .in('phone_normalized', intersection)
+      
+      console.log('Leads identificados para el match:')
+      matchedLeads.forEach(ml => console.log(`- ${ml.name} (${ml.phone})`))
     } else {
       console.log(`No hay intersección de 9 dígitos. Probando con 8 dígitos...`)
       const lead8 = leadPhones.map(p => p.slice(-8))
