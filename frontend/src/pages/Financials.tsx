@@ -110,9 +110,9 @@ export default function Financials() {
   ]
 
   const liquidationLabel =
-    state.summary && state.summary.avgLiquidationDays > 0
+    state.summary && state.summary.avgLiquidationDays != null
       ? `${state.summary.avgLiquidationDays}d`
-      : '—'
+      : '0d'
 
   return (
     <div className="space-y-6">
@@ -168,7 +168,7 @@ export default function Financials() {
             <CardTitle className="text-sm font-medium">Ingresos verificados (Neto)</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{state.summary ? fmt(state.summary.totalNet) : '—'}</div>
+            <div className="text-2xl font-bold">{state.summary ? fmt(state.summary.totalNet) : '0 €'}</div>
             <p className="text-xs text-muted mt-1">
               {state.summary
                 ? `${state.summary.settledCount} liquidados · ${state.summary.cancelledCount} cancelados`
@@ -182,7 +182,7 @@ export default function Financials() {
             <CardTitle className="text-sm font-medium">Ingresos brutos</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{state.summary ? fmt(state.summary.totalGross) : '—'}</div>
+            <div className="text-2xl font-bold">{state.summary ? fmt(state.summary.totalGross) : '0 €'}</div>
             <p className="text-xs text-muted mt-1">Antes de descuentos</p>
           </CardContent>
         </Card>
@@ -192,7 +192,7 @@ export default function Financials() {
             <CardTitle className="text-sm font-medium">Operaciones</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{state.summary ? state.summary.operationsCount : '—'}</div>
+            <div className="text-2xl font-bold">{state.summary ? state.summary.operationsCount : '0'}</div>
             <p className="text-xs text-muted mt-1">Cantidad total de liquidaciones</p>
           </CardContent>
         </Card>
@@ -202,7 +202,7 @@ export default function Financials() {
             <CardTitle className="text-sm font-medium">Ticket promedio</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{state.summary ? fmt(state.summary.avgTicket) : '—'}</div>
+            <div className="text-2xl font-bold">{state.summary ? fmt(state.summary.avgTicket) : '0 €'}</div>
             <p className="text-xs text-muted mt-1">Por transacción liquidada</p>
           </CardContent>
         </Card>
@@ -212,7 +212,7 @@ export default function Financials() {
             <CardTitle className="text-sm font-medium">Tasa de descuento</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{state.summary ? `${state.summary.discountRate}%` : '—'}</div>
+            <div className="text-2xl font-bold">{state.summary ? `${state.summary.discountRate}%` : '0%'}</div>
             <p className="text-xs text-muted mt-1">Descuento aplicado sobre ingresos brutos</p>
           </CardContent>
         </Card>
@@ -222,7 +222,7 @@ export default function Financials() {
             <CardTitle className="text-sm font-medium">Tasa de cancelación</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{state.summary ? `${state.summary.cancellationRate}%` : '—'}</div>
+            <div className="text-2xl font-bold">{state.summary ? `${state.summary.cancellationRate}%` : '0%'}</div>
             <p className="text-xs text-muted mt-1">Porcentaje de liquidaciones canceladas</p>
           </CardContent>
         </Card>

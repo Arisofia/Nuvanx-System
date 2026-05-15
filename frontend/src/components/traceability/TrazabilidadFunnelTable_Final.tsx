@@ -19,7 +19,6 @@ export interface TrazabilidadFunnelRow {
   lead_id: string
   lead_name: string | null
   lead_created_at: string | null
-  lead_name: string | null
   cita_valoracion: string | null
   cita_posterior: string | null
   fuente: string | null

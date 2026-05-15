@@ -5385,7 +5385,7 @@ async function handleTrazabilidadFunnel(ctx: AuthenticatedRouteContext): Promise
   return sendJson({
     success: true,
     total: (data ?? []).length,
-    records: data ?? []
+    funnel: data ?? []
   });
 }
 

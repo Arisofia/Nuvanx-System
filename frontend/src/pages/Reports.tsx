@@ -50,11 +50,11 @@ function TableRow({ cells }: Readonly<{ cells: (string | number | null | undefin
 }
 
 function pct(n: number | null | undefined) {
-  return n == null ? '—' : `${n}%`
+  return n == null ? '0%' : `${n}%`
 }
 function curr(n: number | null | undefined) {
   return n == null
-    ? '—'
+    ? '0 €'
     : n.toLocaleString('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
 }
 
@@ -415,7 +415,7 @@ export default function Reports() {
                             <p className="text-[10px] text-[#5C5550] font-mono mt-1">{row.patient_phone ?? '—'}</p>
                           </td>
                           <td className="px-5 py-5">
-                            <p className="text-xs font-serif font-bold text-primary tracking-tight">{row.settlement_date ? `€${row.doctoralia_net?.toLocaleString('es-ES') ?? '—'}` : '—'}</p>
+                            <p className="text-xs font-serif font-bold text-primary tracking-tight">{row.settlement_date ? `€${row.doctoralia_net?.toLocaleString('es-ES') ?? '0'}` : '0'}</p>
                             <p className="text-[10px] text-[#8E8680] font-bold mt-1 uppercase tracking-wider">
                               {row.first_settlement_at ? new Date(row.first_settlement_at).toLocaleDateString('es-ES') : '—'}
                             </p>
@@ -520,7 +520,7 @@ export default function Reports() {
                           cells={[
                             r.settled_month,
                             r.operations_count,
-                            r.cancellation_count ?? '—',
+                            r.cancellation_count ?? 0,
                             curr(r.total_gross),
                             curr(r.total_net),
                             curr(r.avg_ticket_net),
@@ -572,7 +572,7 @@ export default function Reports() {
                             pct(r.replied_to_booked_pct),
                             pct(r.no_show_rate_pct),
                             curr(r.verified_revenue_crm),
-                            r.avg_reply_delay_min ?? '—',
+                            r.avg_reply_delay_min ?? 0,
                           ]}
                         />
                       ))}
@@ -616,7 +616,7 @@ export default function Reports() {
                             pct(r.reply_rate_pct),
                             pct(r.replied_to_booked_pct),
                             pct(r.lead_to_close_rate_pct),
-                            r.avg_reply_delay_min ?? '—',
+                            r.avg_reply_delay_min ?? 0,
                             curr(r.verified_revenue_crm),
                           ]}
                         />
@@ -658,7 +658,7 @@ export default function Reports() {
                               r.lead_count,
                               curr(r.estimated_revenue),
                               curr(r.verified_revenue_crm),
-                              r.avg_reply_delay_min ?? '—',
+                              r.avg_reply_delay_min ?? 0,
                             ]}
                           />
                         )
