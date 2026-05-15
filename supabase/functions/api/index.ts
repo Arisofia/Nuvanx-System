@@ -2457,11 +2457,15 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
   return null;
 }
 
-async function handleCampaignsFilter(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, resource, sub, url, sendJson } = ctx;
   if (resource === 'dashboard' && sub === 'campaigns-filter') {
-    const defaultToDate = new Date().toISOString().slice(0, 10);
-    const defaultFromDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    // Use UTC-based calendar arithmetic for default dates to avoid DST / timezone off-by-one issues.
+    const nowUtc = new Date();
+    const defaultToDate = nowUtc.toISOString().slice(0, 10);
+
+    const fromUtc = new Date(nowUtc);
+    fromUtc.setUTCDate(fromUtc.getUTCDate() - 30);
+    const defaultFromDate = fromUtc.toISOString().slice(0, 10);
+
     const fromDate = url.searchParams.get('from') || url.searchParams.get('since') || defaultFromDate;
     const toDate = url.searchParams.get('to') || url.searchParams.get('until') || defaultToDate;
 
