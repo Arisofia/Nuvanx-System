@@ -12,9 +12,9 @@ function normalize(phone) {
 async function definitiveMatch() {
   const supabase = createClient(supabaseUrl, supabaseKey)
   
-  console.log('--- DEFINITIVE MATCHING (9-DIGITS IN MEMORY) ---')
+  console.log('--- DEFINITIVE MATCHING (9-DIGITS + JSON NOTES) ---')
 
-  const { data: leads } = await supabase.from('leads').select('id, phone, clinic_id')
+  const { data: leads } = await supabase.from('leads').select('id, phone, notes, clinic_id')
   const { data: setts } = await supabase.from('financial_settlements').select('id, patient_phone, template_name, amount_net, intake_at, settled_at, clinic_id')
 
   console.log(`Leads totales: ${leads?.length}`)
@@ -23,7 +23,6 @@ async function definitiveMatch() {
   // 1. Extraer y normalizar teléfonos de settlements
   const revByPhone = {}
   setts?.forEach(s => {
-    // Intentar sacar del campo dedicated o del template_name
     let rawPhone = s.patient_phone
     if (!rawPhone || rawPhone.length < 9) {
       const match = s.template_name?.match(/(\d{9})/g)
@@ -37,30 +36,39 @@ async function definitiveMatch() {
     }
   })
 
-  // 2. Cruzar con Leads
+  // 2. Cruzar con Leads (buscando en phone y en notes)
   let matchCount = 0
   for (const l of (leads || [])) {
-    const norm = normalize(l.phone)
+    let rawLeadPhone = l.phone
+    
+    // Si no hay phone, buscar en notes
+    if (!rawLeadPhone && l.notes) {
+      try {
+        const n = typeof l.notes === 'string' ? JSON.parse(l.notes) : l.notes
+        rawLeadPhone = n.telefono || n.phone || n.phone_number
+      } catch (e) {}
+    }
+
+    const norm = normalize(rawLeadPhone)
     if (norm && revByPhone[norm] && revByPhone[norm].total > 0) {
       const m = revByPhone[norm]
-      console.log(`MATCH! Lead ${l.id} | Tel ${norm} | Revenue €${m.total}`)
+      console.log(`¡¡MATCH!! Lead ${l.id} | Tel ${norm} | Revenue €${m.total}`)
       
       const updateData = {
         verified_revenue: m.total,
         appointment_date: m.date,
         status: 'convertido',
         stage: 'convertido',
+        phone: rawLeadPhone, // Rellenamos la columna phone si estaba vacía
         phone_normalized: norm
       }
-      
-      if (!l.clinic_id && m.clinic_id) updateData.clinic_id = m.clinic_id
       
       await supabase.from('leads').update(updateData).eq('id', l.id)
       matchCount++
     }
   }
 
-  console.log(`VINCULACIÓN FINALIZADA: ${matchCount} leads vinculados.`)
+  console.log(`VINCULACIÓN FINALIZADA: ${matchCount} leads vinculados con ingresos reales.`)
 }
 
 definitiveMatch()
