@@ -61,10 +61,22 @@ async function checkResults() {
     console.log(`- Ejemplo Tel Lead: ${leadExample?.[0]?.phone || 'N/A'}`)
     console.log(`- Ejemplo Tel Sett: ${settExample?.[0]?.patient_phone || 'N/A'}`)
     
-    if (leadExample?.[0]?.phone && settExample?.[0]?.patient_phone) {
-      const l9 = leadExample[0].phone.slice(-9)
-      const s9 = settExample[0].patient_phone.slice(-9)
-      console.log(`- Match 9-dígitos test: Lead(${l9}) vs Sett(${s9})`)
+    // Búsqueda agresiva por nombre para encontrar por qué el teléfono falla
+    const { data: nameMatches } = await supabase.rpc('match_leads_to_doctoralia_by_name', { p_user_id: process.env.WEBHOOK_ADMIN_USER_ID || '00000000-0000-0000-0000-000000000000' })
+    console.log(`Matching por NOMBRE disparado: ${nameMatches} registros vinculados por nombre.`)
+
+    if (nameMatches > 0) {
+      const { data: linkedByName } = await supabase
+        .from('leads')
+        .select('name, phone, converted_patient_id')
+        .eq('clinic_id', clinicId)
+        .not('converted_patient_id', 'is', null)
+        .limit(5)
+      
+      for (const l of linkedByName) {
+        const { data: p } = await supabase.from('patients').select('name, phone, phone_normalized').eq('id', l.converted_patient_id).single()
+        console.log(`- Match por Nombre: Lead(${l.name}, Tel:${l.phone}) vs Paciente(${p.name}, Tel:${p.phone})`)
+      }
     }
   } else {
     console.log(`¡ÉXITO! Se han encontrado ${leads.length} coincidencias reales con ingresos vinculados:`)
