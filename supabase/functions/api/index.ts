@@ -2465,24 +2465,31 @@ async function handleCampaignsFilter(ctx: AuthenticatedRouteContext): Promise<Re
     const fromDate = url.searchParams.get('from') || url.searchParams.get('since') || defaultFromDate;
     const toDate = url.searchParams.get('to') || url.searchParams.get('until') || defaultToDate;
 
-    const { data } = await adminClient.rpc('get_campaigns_filter', {
+    const { data, error } = await adminClient.rpc('get_campaigns_filter', {
       p_from_date: fromDate,
       p_to_date: toDate
     });
 
+    if (error) {
+      return sendJson({ success: false, message: error.message }, 500);
+    }
+
     return sendJson({
       success: true,
+      date_range: { from: fromDate, to: toDate },
       campaigns: (data ?? []).map((c: any) => {
-        const totalImporte = Number(c.total_importe ?? 0);
-        const totalCitas = Number(c.total_citas ?? 0);
+        const totalImporte = Number(c.total_importe ?? c.spend ?? 0);
+        const totalCitas = Number(c.total_citas ?? c.registros ?? 0);
+        const roundedImporte = Number(totalImporte.toFixed(2));
 
         return {
           campaign_id: c.campaign_id,
           campaign_name: c.campaign_id || 'Sin nombre',
           records: totalCitas,
-          spend: Number(totalImporte.toFixed(2)),
+          spend: roundedImporte,
           total_citas: totalCitas,
-          total_importe: Number(totalImporte.toFixed(2))
+          total_importe: roundedImporte,
+          production_amount: roundedImporte
         };
       })
     });
