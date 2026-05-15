@@ -3,14 +3,15 @@ const { createClient } = require('@supabase/supabase-js')
 const supabaseUrl = process.env.VITE_SUPABASE_URL
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
+const COMMON_NAMES = new Set(['maria', 'jose', 'carmen', 'antonio', 'juan', 'ana', 'manuel', 'pilar', 'del', 'los', 'angeles', 'dolores', 'valle'])
+
 function normalizeName(name) {
   if (!name) return ''
   return name.toLowerCase()
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Remove accents
     .replace(/[^a-z0-9]/g, ' ') // Only alphanumeric
     .split(/\s+/)
-    .filter(word => word.length > 2) // Filter short words
-    .sort()
+    .filter(word => word.length > 2)
     .join(' ')
 }
 
@@ -23,14 +24,17 @@ function normalizePhone(phone) {
 async function deepAudit() {
   const supabase = createClient(supabaseUrl, supabaseKey)
   
-  console.log('--- AUDITORÍA PROFUNDA DE COINCIDENCIAS ---')
+  console.log('--- AUDITORÍA PROFUNDA DE COINCIDENCIAS (V2) ---')
 
-  // 1. Obtener leads no convertidos
+  // 1. Forzar refresco de esquema (Reload PostgREST cache)
+  await supabase.rpc('reconcile_doctoralia_subjects_to_leads', { p_user_id: '00000000-0000-0000-0000-000000000000' }).catch(() => {})
+
+  // 2. Obtener leads no convertidos
   const { data: leads } = await supabase.from('leads')
-    .select('id, name, phone, notes, clinic_id')
-    .is('verified_revenue', null)
+    .select('id, name, phone, notes, clinic_id, stage')
+    .filter('verified_revenue', 'is', null)
 
-  // 2. Obtener settlements no atribuidos (o todos para mayor seguridad)
+  // 3. Obtener settlements
   const { data: setts } = await supabase.from('financial_settlements')
     .select('id, patient_name, patient_phone, template_name, amount_net, intake_at, settled_at')
 
@@ -39,47 +43,49 @@ async function deepAudit() {
   const matchesFound = []
 
   for (const l of (leads || [])) {
+    let lRawPhone = l.phone
+    if (!lRawPhone && l.notes) {
+       try {
+         const n = typeof l.notes === 'string' ? JSON.parse(l.notes) : l.notes
+         lRawPhone = n.telefono || n.phone || n.phone_number
+       } catch (e) {}
+    }
+
     const lNameNorm = normalizeName(l.name)
-    const lPhoneNorm = normalizePhone(l.phone)
+    const lPhoneNorm = normalizePhone(lRawPhone)
+    const lWords = lNameNorm.split(' ').filter(w => !COMMON_NAMES.has(w))
     
-    // Buscar en settlements
     for (const s of (setts || [])) {
       let sPhoneNorm = normalizePhone(s.patient_phone)
       if (!sPhoneNorm && s.template_name) {
-        const phoneInSubject = s.template_name.match(/(\d{7,15})/g)
+        const phoneInSubject = s.template_name.match(/(\d{9,15})/g)
         if (phoneInSubject) sPhoneNorm = normalizePhone(phoneInSubject[0])
       }
 
       const sNameNorm = normalizeName(s.patient_name || s.template_name?.split('[')[0])
+      const sWords = sNameNorm.split(' ')
 
       let isMatch = false
       let reason = ''
 
-      // Caso A: Coincidencia de teléfono (9 dígitos) - ya deberían estar, pero por si acaso
+      // Caso A: Coincidencia de teléfono (9 dígitos)
       if (lPhoneNorm && sPhoneNorm && lPhoneNorm.length >= 9 && sPhoneNorm.length >= 9 && lPhoneNorm.slice(-9) === sPhoneNorm.slice(-9)) {
         isMatch = true
         reason = 'Teléfono exacto (9 dígitos)'
       }
       
-      // Caso B: Coincidencia de nombre casi exacta (al menos 2 palabras clave)
-      if (!isMatch && lNameNorm && sNameNorm) {
-        const lWords = lNameNorm.split(' ')
-        const sWords = sNameNorm.split(' ')
+      // Caso B: Coincidencia de nombre (Apellido o nombre poco común)
+      if (!isMatch && lWords.length > 0) {
         const intersection = lWords.filter(w => sWords.includes(w))
-        
-        if (intersection.length >= 2) {
-          isMatch = true
-          reason = `Nombre similar (${intersection.join(', ')})`
-        }
-      }
-
-      // Caso C: Teléfono parcial (8 dígitos) + Primera palabra del nombre
-      if (!isMatch && lPhoneNorm && sPhoneNorm && lPhoneNorm.slice(-8) === sPhoneNorm.slice(-8)) {
-        const firstWordL = lNameNorm.split(' ')[0]
-        const sWords = sNameNorm.split(' ')
-        if (firstWordL && sWords.includes(firstWordL)) {
-          isMatch = true
-          reason = 'Teléfono 8-dígitos + Nombre'
+        if (intersection.length >= 1) {
+          // Si el nombre es muy corto, pedimos más precisión
+          if (lNameNorm.length > 10 && intersection.length >= 1) {
+             isMatch = true
+             reason = `Nombre distintivo (${intersection.join(', ')})`
+          } else if (intersection.length >= 2) {
+             isMatch = true
+             reason = `Nombre y Apellido (${intersection.join(', ')})`
+          }
         }
       }
 
@@ -87,13 +93,14 @@ async function deepAudit() {
         matchesFound.push({
           leadId: l.id,
           leadName: l.name,
-          leadPhone: l.phone,
+          leadPhone: lRawPhone || 'N/A',
           settId: s.id,
           settName: s.patient_name || s.template_name,
           amount: s.amount_net,
-          reason: reason
+          reason: reason,
+          date: s.intake_at || s.settled_at
         })
-        break; // Pasamos al siguiente lead si ya encontramos un match para este
+        break;
       }
     }
   }
@@ -104,10 +111,10 @@ async function deepAudit() {
     console.log(`  Lead: ${m.leadName} (${m.leadPhone})`)
     console.log(`  Sett: ${m.settName} | Importe: €${m.amount}`)
     
-    // Aplicar la actualización directamente
+    // Usamos 'stage' en lugar de 'status'
     const { error } = await supabase.from('leads').update({
       verified_revenue: m.amount,
-      status: 'convertido',
+      appointment_date: m.date,
       stage: 'convertido',
       updated_at: new Date().toISOString()
     }).eq('id', m.leadId)
