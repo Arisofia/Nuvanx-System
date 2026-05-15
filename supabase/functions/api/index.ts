@@ -2066,17 +2066,17 @@ async function runLeadPipelineReconciliation(adminClient: any, userId: string) {
 
   if (!usr?.clinic_id) return;
 
-  // 1. Matching por DNI (Nuevo, más preciso)
-  try {
-    const { data: dniUpdated } = await adminClient.rpc('match_leads_to_doctoralia_by_dni', { p_user_id: userId });
-    if (dniUpdated > 0) console.log(`[Reconciliation] DNI match: ${dniUpdated} leads vinculados`);
-  } catch (e) { console.warn('[Reconciliation] DNI match RPC failed', e); }
-
-  // 2. Matching por teléfono (Batch)
+  // 1. Matching por teléfono (Prioridad Real: Meta vs Doctoralia)
   try {
     const { data: phoneUpdated } = await adminClient.rpc('match_leads_to_doctoralia_by_phone', { p_user_id: userId });
     if (phoneUpdated > 0) console.log(`[Reconciliation] Phone match: ${phoneUpdated} leads vinculados`);
   } catch (e) { console.warn('[Reconciliation] Phone match RPC failed', e); }
+
+  // 2. Matching por DNI (Secondary fallback)
+  try {
+    const { data: dniUpdated } = await adminClient.rpc('match_leads_to_doctoralia_by_dni', { p_user_id: userId });
+    if (dniUpdated > 0) console.log(`[Reconciliation] DNI match: ${dniUpdated} leads vinculados`);
+  } catch (e) { console.warn('[Reconciliation] DNI match RPC failed', e); }
 
   // 3. Matching por Nombre (Fallback)
   try {
