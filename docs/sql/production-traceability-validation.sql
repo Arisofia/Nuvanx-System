@@ -53,3 +53,18 @@ WHERE phone_normalized IS NOT NULL
   AND doc_patient_id IS NULL
 ORDER BY lead_created_at DESC
 LIMIT 25;
+
+-- 8) Doctoralia production source by campaign for the last 30 days.
+SELECT
+  campaign_id,
+  total_citas,
+  total_importe
+FROM public.get_campaigns_filter(current_date - 30, current_date)
+ORDER BY campaign_id;
+
+-- 9) Produccion Intermediarios phone extraction quality.
+SELECT
+  COUNT(*) AS total_produccion_rows,
+  COUNT(*) FILTER (WHERE phone_normalized IS NOT NULL AND phone_normalized <> '') AS produccion_rows_con_phone,
+  COUNT(*) FILTER (WHERE asunto IS NOT NULL AND asunto <> '') AS produccion_rows_con_asunto
+FROM public.produccion_intermediarios;
