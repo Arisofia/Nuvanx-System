@@ -37,6 +37,35 @@ async function checkResults() {
     console.log(`- Leads en base: ${totalLeads}`)
     console.log(`- Liquidaciones (Doctoralia): ${totalSettlements}`)
     console.log(`- Pacientes registrados: ${totalPatients}`)
+
+    // Ver si las liquidaciones tienen teléfono
+    const { data: phoneStats } = await supabase
+      .from('financial_settlements')
+      .select('patient_phone')
+      .eq('clinic_id', clinicId)
+      .not('patient_phone', 'is', null)
+      .limit(1)
+    
+    const { count: settlementsWithPhone } = await supabase
+      .from('financial_settlements')
+      .select('*', { count: 'exact', head: true })
+      .eq('clinic_id', clinicId)
+      .not('patient_phone', 'is', null)
+    
+    console.log(`- Liquidaciones con teléfono: ${settlementsWithPhone}`)
+
+    // Ver un ejemplo de teléfono de lead y uno de liquidación (anonimizado los últimos dígitos si es necesario, pero aquí solo para diagnóstico interno)
+    const { data: leadExample } = await supabase.from('leads').select('phone').eq('clinic_id', clinicId).not('phone', 'is', null).limit(1)
+    const { data: settExample } = await supabase.from('financial_settlements').select('patient_phone').eq('clinic_id', clinicId).not('patient_phone', 'is', null).limit(1)
+    
+    console.log(`- Ejemplo Tel Lead: ${leadExample?.[0]?.phone || 'N/A'}`)
+    console.log(`- Ejemplo Tel Sett: ${settExample?.[0]?.patient_phone || 'N/A'}`)
+    
+    if (leadExample?.[0]?.phone && settExample?.[0]?.patient_phone) {
+      const l9 = leadExample[0].phone.slice(-9)
+      const s9 = settExample[0].patient_phone.slice(-9)
+      console.log(`- Match 9-dígitos test: Lead(${l9}) vs Sett(${s9})`)
+    }
   } else {
     console.log(`¡ÉXITO! Se han encontrado ${leads.length} coincidencias reales con ingresos vinculados:`)
     leads.slice(0, 10).forEach(l => {
