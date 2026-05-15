@@ -2061,55 +2061,42 @@ async function handleProductionAuditGet(ctx: AuthenticatedRouteContext): Promise
 async function runLeadPipelineReconciliation(adminClient: any, userId: string) {
   console.log(`[Reconciliation] Iniciando para user ${userId}`);
 
-  const { data: clinic } = await adminClient
+  const { data: usr } = await adminClient
     .from('users').select('clinic_id').eq('id', userId).single();
 
-  if (!clinic?.clinic_id) return;
+  if (!usr?.clinic_id) return;
 
-  let updated = 0;
+  // 1. Matching por DNI (Nuevo, más preciso)
+  try {
+    const { data: dniUpdated } = await adminClient.rpc('match_leads_to_doctoralia_by_dni', { p_user_id: userId });
+    if (dniUpdated > 0) console.log(`[Reconciliation] DNI match: ${dniUpdated} leads vinculados`);
+  } catch (e) { console.warn('[Reconciliation] DNI match RPC failed', e); }
 
-  // 1. Matching por teléfono (CORREGIDO)
-  const { data: leads } = await adminClient
-    .from('leads')
-    .select('id, phone_normalized')
-    .eq('clinic_id', clinic.clinic_id)
-    .is('deleted_at', null)
-    .neq('source', 'doctoralia')
-    .is('converted_patient_id', null);
+  // 2. Matching por teléfono (Batch)
+  try {
+    const { data: phoneUpdated } = await adminClient.rpc('match_leads_to_doctoralia_by_phone', { p_user_id: userId });
+    if (phoneUpdated > 0) console.log(`[Reconciliation] Phone match: ${phoneUpdated} leads vinculados`);
+  } catch (e) { console.warn('[Reconciliation] Phone match RPC failed', e); }
 
-  for (const lead of (leads || [])) {
-    if (!lead.phone_normalized) continue;
+  // 3. Matching por Nombre (Fallback)
+  try {
+    const { data: nameUpdated } = await adminClient.rpc('match_leads_to_doctoralia_by_name', { p_user_id: userId });
+    if (nameUpdated > 0) console.log(`[Reconciliation] Name match: ${nameUpdated} leads vinculados`);
+  } catch (e) { console.warn('[Reconciliation] Name match RPC failed', e); }
 
-    const { data: match } = await adminClient
-      .from('financial_settlements')
-      .select('patient_id')
-      .eq('clinic_id', clinic.clinic_id)
-      .eq('patient_phone', lead.phone_normalized)   // ← Columna correcta
-      .limit(1)
-      .single();
-
-    if (match?.patient_id) {
-      await adminClient
-        .from('leads')
-        .update({ converted_patient_id: match.patient_id })
-        .eq('id', lead.id);
-      updated++;
-    }
-  }
-
-  // 2. Reconciliación por asuntos Doctoralia
+  // 4. Reconciliación por asuntos Doctoralia (Avance de etapas + Revenue)
   try {
     const { data: subjectUpdated } = await adminClient.rpc('reconcile_doctoralia_subjects_to_leads', { p_user_id: userId });
     if (subjectUpdated > 0) console.log(`[Reconciliation] Doctoralia subjects: ${subjectUpdated} leads avanzados`);
   } catch (e) { console.warn('[Reconciliation] Doctoralia subjects RPC failed', e); }
 
-  // 3. Reconciliación WhatsApp
+  // 5. Reconciliación WhatsApp
   try {
     const { data: waUpdated } = await adminClient.rpc('reconcile_whatsapp_interactions_to_leads', { p_user_id: userId });
     if (waUpdated > 0) console.log(`[Reconciliation] WhatsApp: ${waUpdated} leads avanzados`);
   } catch (e) { console.warn('[Reconciliation] WhatsApp RPC failed', e); }
 
-  console.log(`[Reconciliation] Finalizado: ${updated} matches por teléfono`);
+  console.log(`[Reconciliation] Finalizado para user ${userId}`);
 }
 
 async function handleLeadsGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
@@ -5894,12 +5881,25 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
 
   // Revenue verificado real
   const verifiedRevenue = settlements.reduce((sum: number, r: any) => sum + Number(r.amount_net), 0);
-  const newVerifiedPatients = new Set(settlements.map((r: any) => r.patient_id).filter(Boolean)).size;
+  const totalVerifiedPatients = new Set(settlements.map((r: any) => r.patient_id).filter(Boolean)).size;
+
+  // Calcular pacientes atribuidos (que vienen de un lead verificado)
+  const patientIdsInPeriod = settlements.map((s: any) => s.patient_id).filter(Boolean);
+  let attributedPatients = 0;
+  if (patientIdsInPeriod.length > 0) {
+    const { data: matchedLeads } = await adminClient
+      .from('leads')
+      .select('converted_patient_id')
+      .eq('clinic_id', clinicId)
+      .in('converted_patient_id', patientIdsInPeriod);
+    attributedPatients = new Set(matchedLeads?.map((l: any) => l.converted_patient_id)).size;
+  }
 
   const metaSpend = metaInsights.reduce((sum: number, r: any) => sum + Number(r.spend ?? 0), 0);
   const metaCpl = metaLeads > 0 ? Number((metaSpend / metaLeads).toFixed(2)) : 0;
 
-  const cacDoctoralia = newVerifiedPatients > 0 ? Number((metaSpend / newVerifiedPatients).toFixed(2)) : 0;
+  // El CAC Real se basa en pacientes atribuidos
+  const cacDoctoralia = attributedPatients > 0 ? Number((metaSpend / attributedPatients).toFixed(2)) : 0;
 
   return sendJson({
     success: true,
@@ -5918,16 +5918,17 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
     },
     doctoralia: {
       total_settlements: settlements.length,
-      newVerifiedPatients,
+      newVerifiedPatients: attributedPatients, // Usamos los atribuidos para el KPI principal de ROI
+      totalVerifiedPatients,
       verifiedRevenue: Number(verifiedRevenue.toFixed(2)),
-      avgTicket: newVerifiedPatients > 0 ? Number((verifiedRevenue / newVerifiedPatients).toFixed(2)) : 0,
+      avgTicket: attributedPatients > 0 ? Number((verifiedRevenue / attributedPatients).toFixed(2)) : 0,
       cacDoctoralia,
-      is_real: newVerifiedPatients > 0,
+      is_real: attributedPatients > 0,
     },
     data_quality: {
       leads_real: crmLeads > 0,
       meta_spend_real: metaSpend > 0,
-      doctoralia_real: newVerifiedPatients > 0,
+      doctoralia_real: attributedPatients > 0,
     }
   });
 }

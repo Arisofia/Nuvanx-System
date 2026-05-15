@@ -48,7 +48,7 @@ export function RealROISection({ funnel, combined, isFunnelDemo }: RealROISectio
               </div>
             </div>
             <p className="text-3xl font-serif font-bold text-[#2C2825]">{funnel.doctoraliaPatients}</p>
-            <p className="text-[10px] text-[#8E8680] font-medium italic opacity-60">Cruzados por Teléfono</p>
+            <p className="text-[10px] text-[#8E8680] font-medium italic opacity-60">Cruzados por DNI/Nombre/Tel</p>
           </div>
 
           <div className="space-y-4">
