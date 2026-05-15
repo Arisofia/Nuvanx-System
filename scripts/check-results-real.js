@@ -4,52 +4,60 @@ const supabaseUrl = process.env.VITE_SUPABASE_URL
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 const clinicId = process.env.CLINIC_ID
 
-async function checkResults() {
+async function forceMatch() {
   const supabase = createClient(supabaseUrl, supabaseKey)
   
-  console.log('--- DIAGNÓSTICO FINAL DE ATRIBUCIÓN (9 DÍGITOS) ---')
+  console.log('--- FORZANDO CRUCE DIRECTO DESDE SCRIPT ---')
 
-  // 1. Mostrar estado de los datos
-  const { count: totalLeads } = await supabase.from('leads').select('*', { count: 'exact', head: true }).eq('clinic_id', clinicId)
-  const { count: totalSettlements } = await supabase.from('financial_settlements').select('*', { count: 'exact', head: true }).eq('clinic_id', clinicId)
-  
-  console.log(`- Leads en base: ${totalLeads}`)
-  console.log(`- Settlements (Doctoralia): ${totalSettlements}`)
-
-  // 2. Ejecutar Matching RPC (ahora con la tabla correcta)
-  console.log('Ejecutando matching por teléfono (9 dígitos)...')
-  const { data: matchedRows } = await supabase.rpc('reconcile_doctoralia_subjects_to_leads', { 
-    p_user_id: process.env.WEBHOOK_ADMIN_USER_ID || '00000000-0000-0000-0000-000000000000' 
-  })
-  console.log(`Matching disparado: ${matchedRows} registros actualizados.`)
-
-  // 3. Mostrar Leads con Ingresos
-  const { data: leads, error } = await supabase
+  // 1. Obtener todos los leads con teléfono normalizado
+  const { data: leads } = await supabase
     .from('leads')
-    .select('name, phone, phone_normalized, verified_revenue, stage')
+    .select('id, phone_normalized, clinic_id')
     .eq('clinic_id', clinicId)
-    .not('verified_revenue', 'is', null)
-    .gt('verified_revenue', 0)
+    .not('phone_normalized', 'is', null)
 
-  if (leads && leads.length > 0) {
-    console.log(`¡ÉXITO! Se han vinculado ${leads.length} coincidencias reales:`)
-    leads.forEach(l => {
-      console.log(`- Lead: ${l.name} | Tel: ${l.phone} (Norm: ${l.phone_normalized}) | Revenue: €${l.verified_revenue} | Stage: ${l.stage}`)
-    })
-  } else {
-    console.log('No se encontraron leads con ingresos verificados.')
-    
-    // Ver si hay teléfonos normalizados en ambos lados
-    const { data: lPhones } = await supabase.from('leads').select('phone_normalized').eq('clinic_id', clinicId).not('phone_normalized', 'is', null).limit(5)
-    const { data: sPhones } = await supabase.from('financial_settlements').select('phone_normalized').eq('clinic_id', clinicId).not('phone_normalized', 'is', null).limit(5)
-    
-    console.log('Muestra Teléfonos Normalizados Leads:', lPhones?.map(p => p.phone_normalized))
-    console.log('Muestra Teléfonos Normalizados Settlements:', sPhones?.map(p => p.phone_normalized))
-    
-    // Ver un ejemplo de template_name para confirmar regex
-    const { data: templateSample } = await supabase.from('financial_settlements').select('template_name').eq('clinic_id', clinicId).limit(3)
-    console.log('Muestra Template Names (Settlements):', templateSample?.map(t => t.template_name))
+  // 2. Obtener todos los settlements con teléfono normalizado
+  const { data: settlements } = await supabase
+    .from('financial_settlements')
+    .select('phone_normalized, amount_net, intake_at, settled_at')
+    .eq('clinic_id', clinicId)
+    .not('phone_normalized', 'is', null)
+
+  if (!leads || !settlements) {
+    console.log('Faltan datos para el cruce.')
+    return
   }
+
+  // 3. Agrupar ingresos por teléfono
+  const revenueByPhone = {}
+  settlements.forEach(s => {
+    const phone = s.phone_normalized
+    if (!revenueByPhone[phone]) {
+      revenueByPhone[phone] = { total: 0, firstDate: s.intake_at || s.settled_at }
+    }
+    revenueByPhone[phone].total += (s.amount_net || 0)
+  })
+
+  // 4. Actualizar leads que coincidan
+  let matchCount = 0
+  for (const lead of leads) {
+    const match = revenueByPhone[lead.phone_normalized]
+    if (match && match.total > 0) {
+      console.log(`Vinculando Lead ID ${lead.id} (Tel: ${lead.phone_normalized}) con €${match.total}`)
+      await supabase
+        .from('leads')
+        .update({
+          verified_revenue: match.total,
+          appointment_date: match.firstDate,
+          status: 'convertido',
+          stage: 'convertido'
+        })
+        .eq('id', lead.id)
+      matchCount++
+    }
+  }
+
+  console.log(`PROCESO COMPLETADO: ${matchCount} leads vinculados con éxito.`)
 }
 
-checkResults()
+forceMatch()
