@@ -37,7 +37,7 @@ jobs:
       META_AD_ACCOUNT_ID:  ${{ secrets.META_AD_ACCOUNT_ID }}
       META_APP_SECRET:     ${{ secrets.META_APP_SECRET }}
       DATABASE_URL:        ${{ secrets.DATABASE_URL }}
-      REPORT_USER_ID:      ${{ vars.REPORT_USER_ID || secrets.REPORT_USER_ID }}
+      REPORT_USER_ID:      ${{ secrets.REPORT_USER_ID }}
       BACKFILL_DAYS:       ${{ github.event.inputs.days }}
       BACKFILL_SINCE:      ${{ github.event.inputs.since }}
       BACKFILL_UNTIL:      ${{ github.event.inputs.until }}
