@@ -7,118 +7,75 @@ const clinicId = process.env.CLINIC_ID
 async function checkResults() {
   const supabase = createClient(supabaseUrl, supabaseKey)
   
-  console.log('--- RESULTADOS DE CRUCE (9 DÍGITOS) ---')
-  
-  // Realizar un cruce de prueba manual para ver si hay potenciales
-  const { data: matchedRows } = await supabase.rpc('reconcile_doctoralia_subjects_to_leads', { p_user_id: process.env.WEBHOOK_ADMIN_USER_ID || '00000000-0000-0000-0000-000000000000' })
-  console.log(`Matching disparado: ${matchedRows} registros actualizados en esta pasada.`)
+  console.log('--- REPARACIÓN Y DIAGNÓSTICO AGRESIVO (9 DÍGITOS) ---')
 
-  const { data: leads, error } = await supabase
+  // 1. Intentar extraer teléfonos de 'notes' en LEADS
+  console.log('Reparando leads...')
+  const { data: leadsToRepair } = await supabase
     .from('leads')
-    .select('id, name, phone, phone_normalized, converted_patient_id, verified_revenue, stage')
+    .select('id, notes, phone')
     .eq('clinic_id', clinicId)
-    .not('verified_revenue', 'is', null)
-    .gt('verified_revenue', 0)
+    .is('phone', null)
+    .not('notes', 'is', null)
 
-  if (error) {
-    console.error('Error fetching leads:', error)
-    return
+  let leadRepairedCount = 0
+  for (const lead of (leadsToRepair || [])) {
+    try {
+      const notes = typeof lead.notes === 'string' ? JSON.parse(lead.notes) : lead.notes
+      const phone = notes.telefono || notes.phone || notes.phone_number || notes.phoneNumber
+      if (phone) {
+        await supabase.from('leads').update({ phone: String(phone) }).eq('id', lead.id)
+        leadRepairedCount++
+      }
+    } catch (e) {}
   }
+  console.log(`Leads reparados desde JSON notes: ${leadRepairedCount}`)
 
-  if (!leads || leads.length === 0) {
-    console.log('No se encontraron leads con ingresos verificados aún con 9-dígitos.')
-    
-    // Estadísticas generales para diagnóstico
-    const { count: totalLeads } = await supabase.from('leads').select('*', { count: 'exact', head: true }).eq('clinic_id', clinicId)
-    const { count: totalSettlements } = await supabase.from('financial_settlements').select('*', { count: 'exact', head: true }).eq('clinic_id', clinicId)
-    const { count: totalPatients } = await supabase.from('patients').select('*', { count: 'exact', head: true }).eq('clinic_id', clinicId)
-    
-    console.log(`Diagnóstico:`)
-    console.log(`- Leads en base: ${totalLeads}`)
-    console.log(`- Liquidaciones (Doctoralia): ${totalSettlements}`)
-    console.log(`- Pacientes registrados: ${totalPatients}`)
+  // 2. Extraer teléfonos de 'asunto' en SETTLEMENTS
+  console.log('Reparando doctoralia_settlements...')
+  const { data: settsToRepair } = await supabase
+    .from('doctoralia_settlements')
+    .select('id, asunto, paciente_telefono')
+    .eq('clinic_id', clinicId)
 
-    // Ver si las liquidaciones tienen teléfono
-    const { data: settlements } = await supabase
-      .from('financial_settlements')
-      .select('patient_phone')
-      .eq('clinic_id', clinicId)
-      .not('patient_phone', 'is', null)
-    
-    const { data: leadsAll } = await supabase
-      .from('leads')
-      .select('phone')
-      .eq('clinic_id', clinicId)
-      .not('phone', 'is', null)
-
-    const leadPhones = (leadsAll || []).map(l => l.phone.replace(/[^0-9]/g, '').slice(-9))
-    const settPhones = (settlements || []).map(s => s.patient_phone.replace(/[^0-9]/g, '').slice(-9))
-
-    // Estadísticas de Leads sin teléfono aparente
-    const { data: leadsNoPhone } = await supabase
-      .from('leads')
-      .select('id, name, phone, dni, email, notes')
-      .eq('clinic_id', clinicId)
-      .is('phone_normalized', null)
-      .limit(10)
-    
-    console.log(`- Leads sin teléfono normalizado: ${totalLeads - leadPhones.length}`)
-    console.log('Muestra de leads sin teléfono (para ver si está en otro campo):')
-    leadsNoPhone?.forEach(l => {
-      console.log(`  * Name: ${l.name} | Phone: ${l.phone} | DNI: ${l.dni} | Email: ${l.email} | Notes: ${l.notes?.substring(0, 30)}`)
-    })
-
-    // Buscar teléfonos en el campo NAME o DNI de los leads
-    const { data: leadsWithHiddenPhone } = await supabase
-      .from('leads')
-      .select('id, name, dni, phone')
-      .eq('clinic_id', clinicId)
-    
-    let foundInFields = 0
-    leadsWithHiddenPhone?.forEach(l => {
-      const combined = `${l.name} ${l.dni} ${l.phone}`
-      const matches = combined.match(/[679][0-9]{8}/g)
-      if (matches && !l.phone_normalized) foundInFields++
-    })
-    console.log(`- Leads con potencial teléfono oculto en otros campos: ${foundInFields}`)
-
-    // Ver formatos de nombres en ambos lados para fuzzy matching
-    const { data: leadNames } = await supabase.from('leads').select('name').eq('clinic_id', clinicId).limit(5)
-    const { data: settNamesSample } = await supabase.from('financial_settlements').select('template_name').eq('clinic_id', clinicId).limit(5)
-    
-    console.log('Formatos de Nombres (Leads):', leadNames?.map(n => n.name).join(' | '))
-    console.log('Formatos de Asuntos (Doctoralia):', settNamesSample?.map(n => n.template_name).join(' | '))
-
-    // Ver un ejemplo de teléfono de lead y uno de liquidación (anonimizado los últimos dígitos si es necesario, pero aquí solo para diagnóstico interno)
-    const { data: leadExample } = await supabase.from('leads').select('phone').eq('clinic_id', clinicId).not('phone', 'is', null).limit(1)
-    const { data: settExample } = await supabase.from('financial_settlements').select('patient_phone').eq('clinic_id', clinicId).not('patient_phone', 'is', null).limit(1)
-    
-    console.log(`- Ejemplo Tel Lead: ${leadExample?.[0]?.phone || 'N/A'}`)
-    console.log(`- Ejemplo Tel Sett: ${settExample?.[0]?.patient_phone || 'N/A'}`)
-    
-    // Búsqueda agresiva por nombre para encontrar por qué el teléfono falla
-    const { data: nameMatches } = await supabase.rpc('match_leads_to_doctoralia_by_name', { p_user_id: process.env.WEBHOOK_ADMIN_USER_ID || '00000000-0000-0000-0000-000000000000' })
-    console.log(`Matching por NOMBRE disparado: ${nameMatches} registros vinculados por nombre.`)
-
-    if (nameMatches > 0) {
-      const { data: linkedByName } = await supabase
-        .from('leads')
-        .select('name, phone, converted_patient_id')
-        .eq('clinic_id', clinicId)
-        .not('converted_patient_id', 'is', null)
-        .limit(5)
-      
-      for (const l of linkedByName) {
-        const { data: p } = await supabase.from('patients').select('name, phone, phone_normalized').eq('id', l.converted_patient_id).single()
-        console.log(`- Match por Nombre: Lead(${l.name}, Tel:${l.phone}) vs Paciente(${p.name}, Tel:${p.phone})`)
+  let settRepairedCount = 0
+  for (const sett of (settsToRepair || [])) {
+    if (!sett.paciente_telefono || sett.paciente_telefono.length < 9) {
+      const match = sett.asunto?.match(/(\d{9})/g)
+      if (match) {
+        await supabase.from('doctoralia_settlements').update({ paciente_telefono: match[0] }).eq('id', sett.id)
+        settRepairedCount++
       }
     }
-  } else {
-    console.log(`¡ÉXITO! Se han encontrado ${leads.length} coincidencias reales con ingresos vinculados:`)
-    leads.slice(0, 10).forEach(l => {
-      console.log(`- Lead: ${l.name} | Tel: ${l.phone} | Revenue: €${l.verified_revenue} | Stage: ${l.stage}`)
+  }
+  console.log(`Settlements reparados desde asunto: ${settRepairedCount}`)
+
+  // 3. Ejecutar Matching RPC
+  console.log('Ejecutando matching por teléfono (9 dígitos)...')
+  const { data: matchedCount } = await supabase.rpc('reconcile_by_phone_9_digits', { p_clinic_id: clinicId })
+  console.log(`Matching finalizado: ${matchedCount} vinculaciones realizadas.`)
+
+  // 4. Mostrar Resultados
+  const { data: leadsFinal, error } = await supabase
+    .from('leads')
+    .select('name, phone, external_id, status')
+    .eq('clinic_id', clinicId)
+    .not('external_id', 'is', null)
+
+  if (leadsFinal && leadsFinal.length > 0) {
+    console.log(`¡ÉXITO! Se han vinculado ${leadsFinal.length} leads con registros de Doctoralia:`)
+    leadsFinal.forEach(l => {
+      console.log(`- Lead: ${l.name} | Tel: ${l.phone} | Status: ${l.status}`)
     })
-    if (leads.length > 10) console.log(`... y ${leads.length - 10} más.`)
+  } else {
+    console.log('No se encontraron vinculaciones directas después de la reparación.')
+    
+    // Muestra de datos para entender por qué fallan
+    const { data: lSample } = await supabase.from('leads').select('name, phone').eq('clinic_id', clinicId).not('phone', 'is', null).limit(3)
+    const { data: sSample } = await supabase.from('doctoralia_settlements').select('asunto, paciente_telefono').eq('clinic_id', clinicId).limit(3)
+    
+    console.log('Muestra Leads:', lSample)
+    console.log('Muestra Settlements:', sSample)
   }
 }
 
