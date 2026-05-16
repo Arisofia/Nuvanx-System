@@ -1,5 +1,5 @@
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 
 // Load from .env.tokens.local as primary source for local scripts
 const envPath = path.join(process.cwd(), '.env.tokens.local');
@@ -26,7 +26,95 @@ function normalizeName(name) {
 function normalizePhone(phone) {
   if (!phone) return null
   const digits = String(phone).replace(/\D/g, '')
-  return digits.length >= 9 ? digits.slice(-9) : (digits.length > 0 ? digits : null)
+  if (digits.length >= 9) return digits.slice(-9)
+  return digits.length > 0 ? digits : null
+}
+
+function getLeadPhone(l) {
+  let lRawPhone = l.phone
+  if (!lRawPhone && l.notes) {
+     try {
+       const n = typeof l.notes === 'string' ? JSON.parse(l.notes) : l.notes
+       lRawPhone = n.telefono || n.phone || n.phone_number
+     } catch (e) {
+       // Silently ignore parsing errors in notes
+     }
+  }
+  return lRawPhone
+}
+
+function evaluateMatch(l, s, context) {
+  const { lPhoneNorm, lWords, lNameNorm } = context
+  
+  let sPhoneNorm = normalizePhone(s.patient_phone)
+  if (!sPhoneNorm && s.template_name) {
+    const phoneInSubject = s.template_name.match(/(\d{9,15})/g)
+    if (phoneInSubject) sPhoneNorm = normalizePhone(phoneInSubject[0])
+  }
+
+  const sNameNorm = normalizeName(s.patient_name || s.template_name?.split('[')[0])
+  const sWords = new Set(sNameNorm.split(' '))
+  const intersection = lWords.filter(w => sWords.has(w))
+
+  if (matchPhone(lPhoneNorm, sPhoneNorm)) {
+    return { isMatch: true, reason: 'Teléfono exacto (9 dígitos)' }
+  }
+  
+  const nameResult = matchName(lWords, lNameNorm, intersection);
+  if (nameResult) return nameResult;
+
+  const dateResult = matchDate(l, s, intersection);
+  if (dateResult) return dateResult;
+
+  return { isMatch: false }
+}
+
+function findMatchForLead(l, setts) {
+  const lRawPhone = getLeadPhone(l)
+  const lNameNorm = normalizeName(l.name)
+  const lPhoneNorm = normalizePhone(lRawPhone)
+  const lWords = lNameNorm.split(' ').filter(w => !COMMON_NAMES.has(w))
+  
+  const context = { lRawPhone, lNameNorm, lPhoneNorm, lWords }
+
+  for (const s of (setts || [])) {
+    const result = evaluateMatch(l, s, context)
+    if (result.isMatch) {
+      return {
+        leadId: l.id,
+        leadName: l.name,
+        leadPhone: lRawPhone || 'N/A',
+        settId: s.id,
+        settName: s.patient_name || s.template_name,
+        amount: s.amount_net,
+        reason: result.reason,
+        date: s.intake_at || s.settled_at
+      }
+    }
+  }
+  return null
+}
+
+async function processMatches(matchesFound, supabase) {
+  console.log(`\nSE ENCONTRARON ${matchesFound.length} POTENCIALES COINCIDENCIAS NUEVAS:`)
+  for (const m of matchesFound) {
+    console.log(`- [${m.reason}] Lead: ${m.leadName} | Sett: ${m.settName} | €${m.amount}`)
+    
+    const updateData = {
+      verified_revenue: m.amount,
+      appointment_date: m.date,
+      updated_at: new Date().toISOString()
+    }
+    
+    const { error } = await supabase.from('leads').update(updateData).eq('id', m.leadId)
+    
+    if (error) {
+       console.log('  ❌ Error al actualizar:', error.message)
+    } else {
+       console.log('  ✅ Actualizado en DB (Ingresos)')
+       await supabase.from('leads').update({ stage: 'convertido' }).eq('id', m.leadId)
+    }
+  }
 }
 
 async function deepAudit() {
@@ -44,7 +132,8 @@ async function deepAudit() {
   try {
     await supabase.rpc('reconcile_doctoralia_subjects_to_leads', { p_user_id: '00000000-0000-0000-0000-000000000000' })
   } catch (e) {
-    console.log('Aviso: Falló el refresco inicial rpc, continuando...')
+    // Diagnostic S2486: RPC reload failure is non-fatal; continuing with audit
+    console.warn('Aviso: Falló el refresco inicial rpc, continuando...')
   }
 
   // 2. Obtener leads no convertidos
@@ -61,98 +150,11 @@ async function deepAudit() {
   const matchesFound = []
 
   for (const l of (leads || [])) {
-    let lRawPhone = l.phone
-    if (!lRawPhone && l.notes) {
-       try {
-         const n = typeof l.notes === 'string' ? JSON.parse(l.notes) : l.notes
-         lRawPhone = n.telefono || n.phone || n.phone_number
-       } catch (e) {}
-    }
-
-    const lNameNorm = normalizeName(l.name)
-    const lPhoneNorm = normalizePhone(lRawPhone)
-    const lWords = lNameNorm.split(' ').filter(w => !COMMON_NAMES.has(w))
-    
-    for (const s of (setts || [])) {
-      let sPhoneNorm = normalizePhone(s.patient_phone)
-      if (!sPhoneNorm && s.template_name) {
-        const phoneInSubject = s.template_name.match(/(\d{9,15})/g)
-        if (phoneInSubject) sPhoneNorm = normalizePhone(phoneInSubject[0])
-      }
-
-      const sNameNorm = normalizeName(s.patient_name || s.template_name?.split('[')[0])
-      const sWords = sNameNorm.split(' ')
-      const intersection = lWords.filter(w => sWords.includes(w))
-
-      let isMatch = false
-      let reason = ''
-
-      // Caso A: Coincidencia de teléfono (9 dígitos)
-      if (lPhoneNorm && sPhoneNorm && lPhoneNorm.length >= 9 && sPhoneNorm.length >= 9 && lPhoneNorm.slice(-9) === sPhoneNorm.slice(-9)) {
-        isMatch = true
-        reason = 'Teléfono exacto (9 dígitos)'
-      }
-      
-      // Caso B: Coincidencia de nombre (Apellido o nombre poco común)
-      if (!isMatch && lWords.length > 0) {
-        if (intersection.length >= 1) {
-          if (lNameNorm.length > 12 && intersection.length >= 1) {
-             isMatch = true
-             reason = `Nombre distintivo (${intersection.join(', ')})`
-          } else if (intersection.length >= 2) {
-             isMatch = true
-             reason = `Nombre y Apellido (${intersection.join(', ')})`
-          }
-        }
-      }
-
-      // Caso C: Coincidencia por Fecha + Nombre Parcial (para registros sin teléfono)
-      if (!isMatch && l.appointment_date && s.intake_at && intersection.length >= 1) {
-        const lDate = new Date(l.appointment_date).toISOString().split('T')[0];
-        const sDate = new Date(s.intake_at).toISOString().split('T')[0];
-        if (lDate === sDate) {
-          isMatch = true;
-          reason = `Fecha coincidente (${lDate}) + Nombre parcial`;
-        }
-      }
-
-      if (isMatch) {
-        matchesFound.push({
-          leadId: l.id,
-          leadName: l.name,
-          leadPhone: lRawPhone || 'N/A',
-          settId: s.id,
-          settName: s.patient_name || s.template_name,
-          amount: s.amount_net,
-          reason: reason,
-          date: s.intake_at || s.settled_at
-        })
-        break;
-      }
-    }
+    const match = findMatchForLead(l, setts)
+    if (match) matchesFound.push(match)
   }
 
-  console.log(`\nSE ENCONTRARON ${matchesFound.length} POTENCIALES COINCIDENCIAS NUEVAS:`)
-  for (const m of matchesFound) {
-    console.log(`- [${m.reason}] Lead: ${m.leadName} | Sett: ${m.settName} | €${m.amount}`)
-    
-    // Intento de actualización silenciosa (probamos sin 'stage' si falla con él)
-    const updateData = {
-      verified_revenue: m.amount,
-      appointment_date: m.date,
-      updated_at: new Date().toISOString()
-    }
-    
-    const { error } = await supabase.from('leads').update(updateData).eq('id', m.leadId)
-    
-    if (!error) {
-       console.log('  ✅ Actualizado en DB (Ingresos)')
-       // Intentamos avanzar el stage por separado para aislar el error
-       await supabase.from('leads').update({ stage: 'convertido' }).eq('id', m.leadId)
-    } else {
-       console.log('  ❌ Error al actualizar:', error.message)
-    }
-  }
+  await processMatches(matchesFound, supabase)
 }
 
 deepAudit()
