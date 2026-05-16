@@ -57,10 +57,11 @@ function matchName(lWords, lNameNorm, intersection) {
 function matchDate(l, s, intersection) {
   // If we have at least 1 word match and dates are close
   if (intersection.length >= 1) {
-    const lDate = new Date(l.created_at || new Date());
+    const leadDateStr = l.appointment_date || l.created_at;
+    if (!leadDateStr) return null;
+    const lDate = new Date(leadDateStr);
     const sDate = new Date(s.intake_at || s.settled_at);
     const diffDays = Math.abs(sDate - lDate) / (1000 * 60 * 60 * 24);
-    
     if (diffDays <= 30) {
       return { isMatch: true, reason: `Nombre parcial + Fecha próxima (${Math.round(diffDays)} días)` };
     }
@@ -152,6 +153,7 @@ async function deepAudit() {
   const supabase = createClient(supabaseUrl, supabaseKey)
   
   console.log('--- AUDITORÍA PROFUNDA DE COINCIDENCIAS (V3) ---')
+  console.log(`Auditing target: ${supabaseUrl}`);
 
   // 1. Refresco de esquema (Reload PostgREST cache)
   try {

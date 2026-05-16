@@ -120,7 +120,7 @@ async function setSupabaseSecrets(vars, projectRef) {
 
   const payload = requiredSecretKeys
     .filter((k) => vars[k])
-    .filter((k) => !['SUPABASE_ACCESS_TOKEN', 'NUVANX_SUPABASE_SERVICE_ROLE_KEY'].includes(k))
+    .filter((k) => !k.startsWith('SUPABASE_') && k !== 'NUVANX_SUPABASE_SERVICE_ROLE_KEY')
     .map((k) => ({ name: k, value: vars[k] }));
 
   if (payload.length === 0) return { skipped: true, reason: 'no secret values to upload' };
@@ -138,7 +138,10 @@ async function setSupabaseSecrets(vars, projectRef) {
     if (!res.ok) {
       const body = await res.text();
       if (res.status === 403) {
-        return { skipped: true, reason: 'unauthorized or insufficient privileges' };
+        return { skipped: true, reason: 'unauthorized: Check if your token has access to this specific project ref.' };
+      }
+      if (res.status === 404) {
+        return { skipped: true, reason: `Project not found: ${projectRef}. Verify the SUPABASE_PROJECT_REF.` };
       }
       throw new Error(`Supabase (${projectRef}) ${res.status}: ${body}`);
     }
