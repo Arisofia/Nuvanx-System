@@ -2444,25 +2444,45 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
   return null;
 }
 
-async function handleCampaignsFilter(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, resource, sub, url, sendJson } = ctx;
   if (resource === 'dashboard' && sub === 'campaigns-filter') {
-    const since = url.searchParams.get('since') || null;
-    const until = url.searchParams.get('until') || null;
+    // Use UTC-based calendar arithmetic for default dates to avoid DST / timezone off-by-one issues.
+    const nowUtc = new Date();
+    const defaultToDate = nowUtc.toISOString().slice(0, 10);
 
-    const { data } = await adminClient.rpc('get_campaigns_filter', {
-      p_since: since,
-      p_until: until
+    const fromUtc = new Date(nowUtc);
+    fromUtc.setUTCDate(fromUtc.getUTCDate() - 30);
+    const defaultFromDate = fromUtc.toISOString().slice(0, 10);
+
+    const fromDate = url.searchParams.get('from') || url.searchParams.get('since') || defaultFromDate;
+    const toDate = url.searchParams.get('to') || url.searchParams.get('until') || defaultToDate;
+
+    const { data, error } = await adminClient.rpc('get_campaigns_filter', {
+      p_from_date: fromDate,
+      p_to_date: toDate
     });
+
+    if (error) {
+      return sendJson({ success: false, message: error.message }, 500);
+    }
 
     return sendJson({
       success: true,
-      campaigns: (data ?? []).map((c: any) => ({
-        campaign_id: c.campaign_id,
-        campaign_name: c.campaign_name || 'Sin nombre',
-        records: c.registros ?? 0,
-        spend: Number((c.spend ?? 0).toFixed(2))
-      }))
+      date_range: { from: fromDate, to: toDate },
+      campaigns: (data ?? []).map((c: any) => {
+        const totalImporte = Number(c.total_importe ?? c.spend ?? 0);
+        const totalCitas = Number(c.total_citas ?? c.registros ?? 0);
+        const roundedImporte = Number(totalImporte.toFixed(2));
+
+        return {
+          campaign_id: c.campaign_id,
+          campaign_name: c.campaign_id || 'Sin nombre',
+          records: totalCitas,
+          spend: roundedImporte,
+          total_citas: totalCitas,
+          total_importe: roundedImporte,
+          production_amount: roundedImporte
+        };
+      })
     });
   }
   return null;
