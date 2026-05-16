@@ -1,8 +1,15 @@
-require('dotenv').config()
-const { createClient } = require('@supabase/supabase-js')
+const fs = require('fs');
+const path = require('path');
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+// Load from .env.tokens.local as primary source for local scripts
+const envPath = path.join(process.cwd(), '.env.tokens.local');
+if (fs.existsSync(envPath)) {
+  require('dotenv').config({ path: envPath });
+} else {
+  require('dotenv').config();
+}
+
+const { createClient } = require('@supabase/supabase-js')
 
 const COMMON_NAMES = new Set(['maria', 'jose', 'carmen', 'antonio', 'juan', 'ana', 'manuel', 'pilar', 'del', 'los', 'angeles', 'dolores', 'valle'])
 
@@ -23,6 +30,12 @@ function normalizePhone(phone) {
 }
 
 async function deepAudit() {
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error('Supabase credentials missing. Ensure VITE_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are in .env.tokens.local');
+  }
   const supabase = createClient(supabaseUrl, supabaseKey)
   
   console.log('--- AUDITORÍA PROFUNDA DE COINCIDENCIAS (V3) ---')
@@ -68,6 +81,7 @@ async function deepAudit() {
       }
 
       const sNameNorm = normalizeName(s.patient_name || s.template_name?.split('[')[0])
+      const intersection = lWords.filter(w => sWords.includes(w))
       const sWords = sNameNorm.split(' ')
 
       let isMatch = false
@@ -81,7 +95,6 @@ async function deepAudit() {
       
       // Caso B: Coincidencia de nombre (Apellido o nombre poco común)
       if (!isMatch && lWords.length > 0) {
-        const intersection = lWords.filter(w => sWords.includes(w))
         if (intersection.length >= 1) {
           if (lNameNorm.length > 12 && intersection.length >= 1) {
              isMatch = true
