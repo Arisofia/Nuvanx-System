@@ -81,8 +81,8 @@ async function deepAudit() {
       }
 
       const sNameNorm = normalizeName(s.patient_name || s.template_name?.split('[')[0])
-      const intersection = lWords.filter(w => sWords.includes(w))
       const sWords = sNameNorm.split(' ')
+      const intersection = lWords.filter(w => sWords.includes(w))
 
       let isMatch = false
       let reason = ''
