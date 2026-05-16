@@ -229,7 +229,10 @@ async function setVercelSecrets(vars) {
   const teamId = vars.VERCEL_TEAM_ID;
   const projectId = vars.VERCEL_PROJECT_ID;
 
-  if (!token || !projectId) return { skipped: true, reason: 'missing token or project id' };
+  if (!token || !projectId) {
+    console.warn('[sync-platform-secrets] Vercel sync skipped: VERCEL_TOKEN or VERCEL_PROJECT_ID missing.');
+    return { skipped: true, reason: 'missing credentials' };
+  }
 
   let uploaded = 0;
   const queryString = teamId ? `?teamId=${teamId}` : '';

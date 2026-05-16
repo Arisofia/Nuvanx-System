@@ -36,7 +36,7 @@ async function deepAudit() {
 
   // 2. Obtener leads no convertidos
   const { data: leads } = await supabase.from('leads')
-    .select('id, name, phone, notes, clinic_id, stage')
+    .select('id, name, phone, notes, clinic_id, stage, appointment_date')
     .is('verified_revenue', null)
 
   // 3. Obtener settlements
@@ -90,6 +90,16 @@ async function deepAudit() {
              isMatch = true
              reason = `Nombre y Apellido (${intersection.join(', ')})`
           }
+        }
+      }
+
+      // Caso C: Coincidencia por Fecha + Nombre Parcial (para registros sin teléfono)
+      if (!isMatch && l.appointment_date && s.intake_at && intersection.length >= 1) {
+        const lDate = new Date(l.appointment_date).toISOString().split('T')[0];
+        const sDate = new Date(s.intake_at).toISOString().split('T')[0];
+        if (lDate === sDate) {
+          isMatch = true;
+          reason = `Fecha coincidente (${lDate}) + Nombre parcial`;
         }
       }
 
