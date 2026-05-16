@@ -78,7 +78,7 @@ runs:
 
         is_deterministic_link_error() {
           local output="$1"
-          local pattern='invalid access token|invalid token|not authorized|unauthorized|forbidden|permission denied|project ref.*not found|project.*not found|invalid project ref|database password.*incorrect|password authentication failed'
+          local pattern='invalid access token|invalid token|not authorized|unauthorized|forbidden|permission denied|necessary privileges|project ref.*not found|project.*not found|invalid project ref|database password.*incorrect|password authentication failed'
           echo "$output" | grep -Eiq "$pattern"
         }
 

@@ -37,7 +37,7 @@ DECLARE
   v_name TEXT;
 BEGIN
   -- Match everything between "ID. " and the first "["
-  v_name := (regexp_match(p_asunto, '^\d+\.\s+(.+?)\s*\[?'))[1];
+  v_name := (regexp_match(p_asunto, '^\d+\.\s+([^\[]+?)\s*(?:\[|$)'))[1];
   
   -- If there are no brackets, just take everything after the ID
   IF v_name IS NULL THEN
