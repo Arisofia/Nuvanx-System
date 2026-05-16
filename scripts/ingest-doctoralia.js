@@ -398,7 +398,7 @@ function processAllRows(rawRows, sn) {
   const COL = buildHeaderMap(rawRows[0] || []);
   const uploadId    = crypto.randomUUID();
   const ingestedAt  = new Date().toISOString();
-  const rawIngests  = [], apptRows = [], patientMap = {};
+  const rawIngests  = [], apptRows = [], patientMap = {}, intermediariosRows = [];
   let skipped = 0;
 
   for (const row of rawRows.slice(1)) {
@@ -408,14 +408,34 @@ function processAllRows(rawRows, sn) {
 
     rawIngests.push(result.rawIngest);
     apptRows.push(result.apptRow);
+    
+    // Build intermediarios row for the improved schema
+    intermediariosRows.push({
+      estado: result.rawIngest.estado,
+      fecha: result.rawIngest.fecha,
+      hora: result.rawIngest.hora,
+      fecha_creacion: result.rawIngest.fecha_creacion,
+      hora_creacion: result.rawIngest.hora_creacion,
+      asunto: result.rawIngest.asunto,
+      agenda: result.rawIngest.agenda,
+      sala_box: result.rawIngest.sala_box,
+      confirmada: result.rawIngest.confirmada,
+      procedencia: result.rawIngest.procedencia,
+      importe: result.rawIngest.importe_numerico,
+      doc_patient_id: result.rawIngest.doc_patient_id,
+      paciente_nombre: result.rawIngest.paciente_nombre,
+      procedimiento_nombre: result.rawIngest.procedimiento_nombre,
+      phone_normalized: result.rawIngest.phone_primary
+    });
+
     if (result.patientRow && !patientMap[result.patientRow.doc_patient_id]) {
       patientMap[result.patientRow.doc_patient_id] = result.patientRow;
     }
   }
-  return { rawIngests, apptRows, patientRows: Object.values(patientMap), skipped };
+  return { rawIngests, apptRows, patientRows: Object.values(patientMap), intermediariosRows, skipped };
 }
 
-async function uploadToSupabase(rawIngests, apptRows, patientRows) {
+async function uploadToSupabase(rawIngests, apptRows, patientRows, intermediariosRows) {
   const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
   const BATCH = 200;
 
@@ -436,6 +456,15 @@ async function uploadToSupabase(rawIngests, apptRows, patientRows) {
     if (error) console.error('doctoralia_patients:', error.message);
     else console.log(`✓ ${patientRows.length} → doctoralia_patients`);
   }
+
+  if (intermediariosRows.length) {
+    // We upsert into produccion_intermediarios using (asunto, fecha, hora) as a logical unique key if possible, 
+    // but since it has no natural PK other than ID, we just insert or use a composite if defined.
+    // For now, we use a simple insert or upsert if we had a unique constraint.
+    const { error } = await supabase.from('produccion_intermediarios').upsert(intermediariosRows);
+    if (error) console.error('produccion_intermediarios:', error.message);
+    else console.log(`✓ ${intermediariosRows.length} → produccion_intermediarios`);
+  }
 }
 
 async function main() {
@@ -447,11 +476,11 @@ async function main() {
   const { sn, rawRows } = data;
   if (rawRows.length < 2) { console.log('Empty sheet.'); return; }
 
-  const { rawIngests, apptRows, patientRows, skipped } = processAllRows(rawRows, sn);
+  const { rawIngests, apptRows, patientRows, intermediariosRows, skipped } = processAllRows(rawRows, sn);
   const finRows = rawIngests.filter(r => r.importe > 0);
 
   console.log(`Sheet: "${sn}"`);
-  console.log(`\nParsed: ${rawIngests.length} raw | ${apptRows.length} appointments | ${patientRows.length} patients | ${skipped} skipped`);
+  console.log(`\nParsed: ${rawIngests.length} raw | ${apptRows.length} appointments | ${patientRows.length} patients | ${intermediariosRows.length} intermediarios | ${skipped} skipped`);
   console.log(`Revenue: confirmed €${finRows.filter(r => r.estado === 'Realizada').reduce((s,r) => s+r.importe, 0).toFixed(2)} | pipeline €${finRows.filter(r => r.estado === 'Pendiente').reduce((s,r) => s+r.importe, 0).toFixed(2)} | cancelled €${finRows.filter(r => r.estado === 'Anulada').reduce((s,r) => s+r.importe, 0).toFixed(2)}`);
 
   if (DRY_RUN) {
@@ -462,7 +491,7 @@ async function main() {
     return;
   }
 
-  await uploadToSupabase(rawIngests, apptRows, patientRows);
+  await uploadToSupabase(rawIngests, apptRows, patientRows, intermediariosRows);
 
   try { fs.unlinkSync(tmp); } catch (err) { console.warn(`Could not remove temp file ${tmp}:`, err.message); }
   console.log('\nDone. Run: SELECT run_doctoralia_name_match() to link patients → leads.');
