@@ -43,6 +43,31 @@ function getLeadPhone(l) {
   return lRawPhone
 }
 
+function matchPhone(p1, p2) {
+  return p1 && p2 && p1 === p2 && p1.length >= 9;
+}
+
+function matchName(lWords, lNameNorm, intersection) {
+  if (intersection.length >= 2) {
+    return { isMatch: true, reason: `Coincidencia de nombres (${intersection.join(', ')})` };
+  }
+  return null;
+}
+
+function matchDate(l, s, intersection) {
+  // If we have at least 1 word match and dates are close
+  if (intersection.length >= 1) {
+    const lDate = new Date(l.created_at || new Date());
+    const sDate = new Date(s.intake_at || s.settled_at);
+    const diffDays = Math.abs(sDate - lDate) / (1000 * 60 * 60 * 24);
+    
+    if (diffDays <= 30) {
+      return { isMatch: true, reason: `Nombre parcial + Fecha próxima (${Math.round(diffDays)} días)` };
+    }
+  }
+  return null;
+}
+
 function evaluateMatch(l, s, context) {
   const { lPhoneNorm, lWords, lNameNorm } = context
   
@@ -138,7 +163,7 @@ async function deepAudit() {
 
   // 2. Obtener leads no convertidos
   const { data: leads } = await supabase.from('leads')
-    .select('id, name, phone, notes, clinic_id, stage, appointment_date')
+    .select('id, name, phone, notes, clinic_id, stage, appointment_date, created_at')
     .is('verified_revenue', null)
 
   // 3. Obtener settlements
