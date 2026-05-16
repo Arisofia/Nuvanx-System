@@ -3,7 +3,8 @@ const files = [
   '.github/workflows/ci.yml',
   '.github/workflows/meta-daily-report.yml',
   '.github/workflows/meta-historical-backfill.yml',
-  '.github/workflows/daily-health-check.yml'
+  '.github/workflows/daily-health-check.yml',
+  '.github/workflows/sync-doctoralia.yml'
 ];
 
 files.forEach(f => {

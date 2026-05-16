@@ -1,3 +1,4 @@
+require('dotenv').config()
 const { createClient } = require('@supabase/supabase-js')
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL
@@ -24,21 +25,25 @@ function normalizePhone(phone) {
 async function deepAudit() {
   const supabase = createClient(supabaseUrl, supabaseKey)
   
-  console.log('--- AUDITORÍA PROFUNDA DE COINCIDENCIAS (V2) ---')
+  console.log('--- AUDITORÍA PROFUNDA DE COINCIDENCIAS (V3) ---')
 
-  // 1. Forzar refresco de esquema (Reload PostgREST cache)
-  await supabase.rpc('reconcile_doctoralia_subjects_to_leads', { p_user_id: '00000000-0000-0000-0000-000000000000' }).catch(() => {})
+  // 1. Refresco de esquema (Reload PostgREST cache)
+  try {
+    await supabase.rpc('reconcile_doctoralia_subjects_to_leads', { p_user_id: '00000000-0000-0000-0000-000000000000' })
+  } catch (e) {
+    console.log('Aviso: Falló el refresco inicial rpc, continuando...')
+  }
 
   // 2. Obtener leads no convertidos
   const { data: leads } = await supabase.from('leads')
     .select('id, name, phone, notes, clinic_id, stage')
-    .filter('verified_revenue', 'is', null)
+    .is('verified_revenue', null)
 
   // 3. Obtener settlements
   const { data: setts } = await supabase.from('financial_settlements')
     .select('id, patient_name, patient_phone, template_name, amount_net, intake_at, settled_at')
 
-  console.log(`Analizando ${leads?.length} leads pendientes contra ${setts?.length} liquidaciones...`)
+  console.log(`Analizando ${leads?.length || 0} leads pendientes contra ${setts?.length || 0} liquidaciones...`)
 
   const matchesFound = []
 
@@ -78,8 +83,7 @@ async function deepAudit() {
       if (!isMatch && lWords.length > 0) {
         const intersection = lWords.filter(w => sWords.includes(w))
         if (intersection.length >= 1) {
-          // Si el nombre es muy corto, pedimos más precisión
-          if (lNameNorm.length > 10 && intersection.length >= 1) {
+          if (lNameNorm.length > 12 && intersection.length >= 1) {
              isMatch = true
              reason = `Nombre distintivo (${intersection.join(', ')})`
           } else if (intersection.length >= 2) {
@@ -107,20 +111,24 @@ async function deepAudit() {
 
   console.log(`\nSE ENCONTRARON ${matchesFound.length} POTENCIALES COINCIDENCIAS NUEVAS:`)
   for (const m of matchesFound) {
-    console.log(`- [${m.reason}]`)
-    console.log(`  Lead: ${m.leadName} (${m.leadPhone})`)
-    console.log(`  Sett: ${m.settName} | Importe: €${m.amount}`)
+    console.log(`- [${m.reason}] Lead: ${m.leadName} | Sett: ${m.settName} | €${m.amount}`)
     
-    // Usamos 'stage' en lugar de 'status'
-    const { error } = await supabase.from('leads').update({
+    // Intento de actualización silenciosa (probamos sin 'stage' si falla con él)
+    const updateData = {
       verified_revenue: m.amount,
       appointment_date: m.date,
-      stage: 'convertido',
       updated_at: new Date().toISOString()
-    }).eq('id', m.leadId)
+    }
     
-    if (!error) console.log('  ✅ Actualizado en DB')
-    else console.log('  ❌ Error al actualizar:', error.message)
+    const { error } = await supabase.from('leads').update(updateData).eq('id', m.leadId)
+    
+    if (!error) {
+       console.log('  ✅ Actualizado en DB (Ingresos)')
+       // Intentamos avanzar el stage por separado para aislar el error
+       await supabase.from('leads').update({ stage: 'convertido' }).eq('id', m.leadId)
+    } else {
+       console.log('  ❌ Error al actualizar:', error.message)
+    }
   }
 }
 

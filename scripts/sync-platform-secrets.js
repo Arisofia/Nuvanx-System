@@ -120,7 +120,7 @@ async function setSupabaseSecrets(vars, projectRef) {
 
   const payload = requiredSecretKeys
     .filter((k) => vars[k])
-    .filter((k) => !k.startsWith('SUPABASE_'))
+    .filter((k) => !['SUPABASE_ACCESS_TOKEN', 'NUVANX_SUPABASE_SERVICE_ROLE_KEY'].includes(k))
     .map((k) => ({ name: k, value: vars[k] }));
 
   if (payload.length === 0) return { skipped: true, reason: 'no secret values to upload' };
