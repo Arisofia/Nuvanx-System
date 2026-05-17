@@ -8,9 +8,9 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Drop previous version to avoid column rename/reorder errors on deploy
   EXECUTE $sql$
-    DROP VIEW IF EXISTS public.vw_campaign_performance_real CASCADE;
+    -- Drop previous version to avoid column rename/reorder errors on deploy
+    DROP VIEW IF EXISTS public.vw_campaign_performance_real;
 
     CREATE OR REPLACE VIEW public.vw_campaign_performance_real AS
     SELECT
@@ -49,10 +49,7 @@ BEGIN
     FROM public.leads l
     GROUP BY l.user_id, l.campaign_name, l.campaign_id;
 
-    -- Preserve permissions and security_invoker behaviour
-    ALTER VIEW public.vw_campaign_performance_real
-      SET (security_invoker = true);
-
+    -- Preserve permissions
     GRANT SELECT ON public.vw_campaign_performance_real TO service_role;
   $sql$;
 END $$;
