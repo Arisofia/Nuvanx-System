@@ -2460,21 +2460,31 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
 async function handleCampaignsFilter(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, resource, sub, url, sendJson } = ctx;
   if (resource === 'dashboard' && sub === 'campaigns-filter') {
-    const since = url.searchParams.get('since') || null;
-    const until = url.searchParams.get('until') || null;
+    // Use UTC-based calendar arithmetic for default dates to avoid DST / timezone off-by-one issues.
+    const nowUtc = new Date();
+    const defaultToDate = nowUtc.toISOString().slice(0, 10);
+    const fromUtc = new Date(nowUtc);
+    fromUtc.setUTCDate(fromUtc.getUTCDate() - 30);
+    const defaultFromDate = fromUtc.toISOString().slice(0, 10);
+
+    const fromDate = url.searchParams.get('from') || url.searchParams.get('since') || defaultFromDate;
+    const toDate = url.searchParams.get('to') || url.searchParams.get('until') || defaultToDate;
 
     const { data } = await adminClient.rpc('get_campaigns_filter', {
-      p_since: since,
-      p_until: until
+      p_from_date: fromDate,
+      p_to_date: toDate
     });
 
     return sendJson({
       success: true,
       campaigns: (data ?? []).map((c: any) => ({
         campaign_id: c.campaign_id,
-        campaign_name: c.campaign_name || 'Sin nombre',
-        records: c.registros ?? 0,
-        spend: Number((c.spend ?? 0).toFixed(2))
+        // Backward compatibility: using ID as name since production table doesn't have names
+        campaign_name: c.campaign_id || 'Sin nombre',
+        records: c.total_citas ?? 0,
+        spend: Number((c.total_importe ?? 0).toFixed(2)),
+        total_citas: c.total_citas ?? 0,
+        total_importe: c.total_importe ?? 0
       }))
     });
   }

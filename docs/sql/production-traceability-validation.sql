@@ -53,3 +53,16 @@ WHERE phone_normalized IS NOT NULL
   AND doc_patient_id IS NULL
 ORDER BY lead_created_at DESC
 LIMIT 25;
+
+-- 8) Doctoralia campaign aggregation check (30-day window).
+SELECT * FROM public.get_campaigns_filter(
+  (CURRENT_DATE - INTERVAL '30 days')::DATE,
+  CURRENT_DATE
+);
+
+-- 9) Quality check: produccion_intermediarios phone extraction quality.
+SELECT
+  COUNT(*) AS total_rows,
+  COUNT(*) FILTER (WHERE phone_normalized IS NOT NULL AND phone_normalized <> '') AS rows_with_phone,
+  COUNT(*) FILTER (WHERE asunto IS NOT NULL AND asunto <> '') AS rows_with_asunto
+FROM public.produccion_intermediarios;

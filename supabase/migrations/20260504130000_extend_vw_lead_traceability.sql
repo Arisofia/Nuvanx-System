@@ -7,6 +7,14 @@
 -- All existing columns are preserved in their original order.
 -- =============================================================================
 
+DO $$
+BEGIN
+  IF to_regclass('public.leads') IS NULL THEN
+    RAISE NOTICE 'Skipping vw_lead_traceability refresh: public.leads does not exist';
+    RETURN;
+  END IF;
+
+  EXECUTE $sql$
 CREATE OR REPLACE VIEW public.vw_lead_traceability AS
 SELECT
   -- ── lead (existing columns, unchanged order) ──────────────────────────────
@@ -64,3 +72,5 @@ FROM public.leads l;
 ALTER VIEW public.vw_lead_traceability SET (security_invoker = true);
 GRANT SELECT ON public.vw_lead_traceability TO authenticated;
 GRANT SELECT ON public.vw_lead_traceability TO service_role;
+  $sql$;
+END $$;
