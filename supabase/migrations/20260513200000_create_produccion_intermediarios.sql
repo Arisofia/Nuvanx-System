@@ -13,6 +13,7 @@ BEGIN
   IF to_regclass('public.produccion_intermediarios') IS NULL THEN
     CREATE TABLE public.produccion_intermediarios (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      clinic_id UUID REFERENCES public.clinics(id) ON DELETE CASCADE,
 
       -- Spreadsheet columns A-K.
       estado TEXT,
@@ -46,6 +47,7 @@ END $$;
 -- Preview safety: if the table already exists from a partial migration, add
 -- every expected column without rebuilding it.
 ALTER TABLE public.produccion_intermediarios
+  ADD COLUMN IF NOT EXISTS clinic_id UUID REFERENCES public.clinics(id) ON DELETE CASCADE,
   ADD COLUMN IF NOT EXISTS estado TEXT,
   ADD COLUMN IF NOT EXISTS fecha DATE,
   ADD COLUMN IF NOT EXISTS hora TEXT,
@@ -73,6 +75,10 @@ COMMENT ON COLUMN public.produccion_intermediarios.hora IS
 
 COMMENT ON COLUMN public.produccion_intermediarios.phone_normalized IS
   'First Spanish local phone extracted from the first bracketed token in asunto and normalized through public.normalize_phone(TEXT).';
+
+CREATE INDEX IF NOT EXISTS idx_produccion_intermediarios_clinic_id
+  ON public.produccion_intermediarios (clinic_id)
+  WHERE clinic_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_produccion_intermediarios_fecha
   ON public.produccion_intermediarios (fecha)

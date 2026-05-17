@@ -20,7 +20,8 @@
     "supabase:migration:push": "npx --yes supabase db push",
     "supabase:types": "npx --yes supabase gen types typescript --local --schema public > frontend/src/lib/supabase/types.ts",
     "install:all": "npm install && npm --prefix frontend install",
-    "secrets:scan": "node scripts/scan-secrets.js"
+    "secrets:scan": "node scripts/scan-secrets.js",
+    "production:e2e": "node scripts/production-e2e.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.1",
@@ -31,6 +32,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
+    "tsx": "^4.19.2",
     "tweetsodium": "^0.0.4",
     "vitest": "^3.0.0"
   }

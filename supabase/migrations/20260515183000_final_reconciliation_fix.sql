@@ -28,6 +28,23 @@ BEGIN
     AND fs.phone_normalized = l.phone_normalized
     AND l.clinic_id IS NOT NULL;
 
+  -- Also fix any null clinic_ids in leads if they match a settlement's phone
+  -- This "adopts" orphan leads into the correct clinic for attribution
+  UPDATE public.leads l
+  SET clinic_id = fs.clinic_id
+  FROM public.financial_settlements fs
+  WHERE l.clinic_id IS NULL
+    AND l.phone_normalized = fs.phone_normalized
+    AND fs.clinic_id IS NOT NULL;
+
+  -- Fix any null clinic_ids in produccion_intermediarios if they match a lead's phone
+  UPDATE public.produccion_intermediarios pi
+  SET clinic_id = l.clinic_id
+  FROM public.leads l
+  WHERE pi.clinic_id IS NULL
+    AND pi.phone_normalized = l.phone_normalized
+    AND l.clinic_id IS NOT NULL;
+
   -- Now execute the attribution
   WITH matched_revenue AS (
     SELECT 

@@ -1,4 +1,8 @@
 -- Migración: RPC para filtro de campañas (deduplicado + sin Doctoralia)
+-- 1) Eliminar la función existente para permitir el cambio de signature (RETURNS TABLE)
+DROP FUNCTION IF EXISTS public.get_campaigns_filter(date, date);
+
+-- 2) Recrear la función con la nueva definición
 CREATE OR REPLACE FUNCTION public.get_campaigns_filter(
   p_since DATE DEFAULT NULL,
   p_until DATE DEFAULT NULL

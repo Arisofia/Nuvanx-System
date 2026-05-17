@@ -145,10 +145,10 @@ async function processMatches(matchesFound, supabase) {
 
 async function deepAudit() {
   const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NUVANX_SUPABASE_SERVICE_ROLE_KEY;
 
   if (!supabaseUrl || !supabaseKey) {
-    throw new Error('Supabase credentials missing. Ensure VITE_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are in .env.tokens.local');
+    throw new Error('Supabase credentials missing. Ensure VITE_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (or NUVANX_SUPABASE_SERVICE_ROLE_KEY) are set');
   }
   const supabase = createClient(supabaseUrl, supabaseKey)
   
