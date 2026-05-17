@@ -82,9 +82,9 @@ jobs:
             # Build direct session URL (port 5432) — avoids prepared statement conflicts with the pooler.
             # Prefer constructing from project ref + password for direct host; fall back to DATABASE_URL.
             if [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
-              SESSION_URL="postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.${SUPABASE_PROJECT_REF}.supabase.co:5432/postgres"
+              SESSION_URL="postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.${SUPABASE_PROJECT_REF}.supabase.com:5432/postgres"
             elif [ -n "${DATABASE_URL:-}" ]; then
-              SESSION_URL=$(echo "$DATABASE_URL" | sed 's/:6543\//:5432\//g')
+              SESSION_URL=$(echo "$DATABASE_URL" | sed 's/:6543\//:5432\//g' | sed 's/\.co:/.com:/g')
             else
               echo "::error::SUPABASE_DB_PASSWORD and DATABASE_URL are both missing. Cannot run security lint."
               exit 1
