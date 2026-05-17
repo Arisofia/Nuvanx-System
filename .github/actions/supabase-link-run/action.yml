@@ -140,7 +140,10 @@ runs:
         DATABASE_URL: ${{ inputs.database_url }}
         SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
         SUPABASE_PROJECT_REF: ${{ inputs.project_ref }}
-        SUPABASE_DB_PASSWORD: ${{ steps.creds.outputs.resolved_db_password }}
+        SUPABASE_DB_PASSWORD_INPUT: ${{ steps.creds.outputs.resolved_db_password }}
       run: |
         set -euo pipefail
+        if [ -n "$SUPABASE_DB_PASSWORD_INPUT" ]; then
+          export SUPABASE_DB_PASSWORD="$SUPABASE_DB_PASSWORD_INPUT"
+        fi
         /tmp/supabase_command.sh
