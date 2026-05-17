@@ -3,6 +3,10 @@
 -- La implementación canónica corregida se encuentra en la migración:
 -- 20260514090000_align_campaigns_filter_doctoralia_production.sql
 
+<<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 5b30926 (chore: resolve script conflicts and integrate clinic discovery helpers)
 DO $$
 BEGIN
   IF EXISTS (
@@ -16,3 +20,9 @@ BEGIN
     DROP FUNCTION public.get_campaigns_filter(date, date);
   END IF;
 END $$ LANGUAGE plpgsql;
+<<<<<<< HEAD
+=======
+DROP FUNCTION IF EXISTS get_campaigns_filter;
+>>>>>>> 43c7e50 (chore: resolve deploy.yml and get_campaigns_filter conflicts)
+=======
+>>>>>>> 5b30926 (chore: resolve script conflicts and integrate clinic discovery helpers)

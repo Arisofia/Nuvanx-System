@@ -78,8 +78,8 @@ BEGIN
 END;
 $$;
 
--- 2. Run it once for the admin user to apply changes immediately
--- (We use the user_id from the diagnostic log if possible, or just create a task)
--- For now, we leave it as a function to be called by the API.
+-- 3. Security Hardening
+REVOKE ALL ON FUNCTION public.reconcile_doctoralia_subjects_to_leads(UUID) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.reconcile_doctoralia_subjects_to_leads(UUID) TO service_role;
 
 COMMIT;
