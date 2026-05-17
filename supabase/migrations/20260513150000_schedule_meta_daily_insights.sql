@@ -4,13 +4,25 @@
 
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 
--- Recreate the job idempotently. Some Supabase/pg_cron installations can keep a
--- stale named-job row that makes cron.unschedule(jobname) raise
--- "could not find valid entry"; deleting the row first avoids the broken
--- named-unschedule path before cron.schedule registers the canonical job.
+-- Recreate the job idempotently. Some Supabase/pg_cron installations can keep
+-- stale named-job metadata that makes cron.unschedule(jobname), or the implicit
+-- unschedule inside cron.schedule(jobname, ...), raise "could not find valid
+-- entry". Try the public API first, fall back to removing the stale cron.job
+-- row, then schedule the canonical job exactly once.
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+    BEGIN
+      PERFORM cron.unschedule('fetch-meta-daily-insights')
+      WHERE EXISTS (
+        SELECT 1
+        FROM cron.job
+        WHERE jobname = 'fetch-meta-daily-insights'
+      );
+    EXCEPTION WHEN OTHERS THEN
+      RAISE NOTICE 'Ignoring stale pg_cron metadata for fetch-meta-daily-insights: %', SQLERRM;
+    END;
+
     DELETE FROM cron.job
     WHERE jobname = 'fetch-meta-daily-insights';
 
