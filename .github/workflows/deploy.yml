@@ -12,7 +12,7 @@
 #   SUPABASE_ACCESS_TOKEN        - Supabase personal access token
 #   SUPABASE_PROJECT_REF         - Supabase project ref used by supabase link
 #   SUPABASE_DB_PASSWORD         - DB password for supabase db push
-#   DATABASE_URL                 - Optional fallback DB URL to derive SUPABASE_DB_PASSWORD
+#   DATABASE_URL                 - Optional fallback DB URL; use the Supabase .co direct URL or a session pooler URL
 
 name: Deploy Supabase
 
@@ -20,6 +20,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch: {}
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 concurrency:
   group: deploy-supabase-production
@@ -68,12 +71,13 @@ jobs:
           command: |
             set -uo pipefail
 
-            # Build direct session URL (port 5432) — avoids prepared statement conflicts with the pooler.
-            # Prefer constructing from project ref + password for direct host; fall back to DATABASE_URL.
+            # Build the direct Supabase DB URL on the documented .co host (port 5432).
+            # If only DATABASE_URL is provided, normalize legacy direct .com hosts to .co and
+            # convert direct transaction-pooler URLs on port 6543 to direct port 5432.
             if [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
-              SESSION_URL="postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.${SUPABASE_PROJECT_REF}.supabase.com:5432/postgres"
+              SESSION_URL="postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.${SUPABASE_PROJECT_REF}.supabase.co:5432/postgres"
             elif [ -n "${DATABASE_URL:-}" ]; then
-              SESSION_URL=$(echo "$DATABASE_URL" | sed 's/:6543\//:5432\//' | sed 's/\.co:/.com:/')
+              SESSION_URL=$(echo "$DATABASE_URL" | sed -E 's#(db\.[^/@:]+\.supabase)\.com:#\1.co:#' | sed -E 's#(db\.[^/@:]+\.supabase\.co):6543/#\1:5432/#')
             else
               echo "::error::Cannot connect to database. Set DATABASE_URL or both SUPABASE_DB_PASSWORD and SUPABASE_PROJECT_REF."
               exit 1

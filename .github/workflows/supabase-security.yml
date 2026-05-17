@@ -8,7 +8,7 @@ name: Supabase Security Check
 #   SUPABASE_ACCESS_TOKEN   — Supabase personal access token
 #   SUPABASE_PROJECT_REF    — Supabase project ref used by supabase link
 #   SUPABASE_DB_PASSWORD    — optional, recommended for db lint on linked remote
-#   DATABASE_URL            — optional fallback to derive SUPABASE_DB_PASSWORD
+#   DATABASE_URL            — optional fallback; use the Supabase .co direct URL or a session pooler URL
 
 on:
   # On push to main, wait for Deploy Supabase to finish so the lint runs against
@@ -31,6 +31,9 @@ on:
         required: false
       SUPABASE_DB_PASSWORD:
         required: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   advisor:
@@ -79,12 +82,13 @@ jobs:
           skip_link: true
           command: |
             set -euo pipefail
-            # Build direct session URL (port 5432) — avoids prepared statement conflicts with the pooler.
-            # Prefer constructing from project ref + password for direct host; fall back to DATABASE_URL.
+            # Build the direct Supabase DB URL on the documented .co host (port 5432).
+            # If only DATABASE_URL is provided, normalize legacy direct .com hosts to .co and
+            # convert direct transaction-pooler URLs on port 6543 to direct port 5432.
             if [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
-              SESSION_URL="postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.${SUPABASE_PROJECT_REF}.supabase.com:5432/postgres"
+              SESSION_URL="postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.${SUPABASE_PROJECT_REF}.supabase.co:5432/postgres"
             elif [ -n "${DATABASE_URL:-}" ]; then
-              SESSION_URL=$(echo "$DATABASE_URL" | sed 's/:6543\//:5432\//g' | sed 's/\.co:/.com:/g')
+              SESSION_URL=$(echo "$DATABASE_URL" | sed -E 's#(db\.[^/@:]+\.supabase)\.com:#\1.co:#g' | sed -E 's#(db\.[^/@:]+\.supabase\.co):6543/#\1:5432/#g')
             else
               echo "::error::SUPABASE_DB_PASSWORD and DATABASE_URL are both missing. Cannot run security lint."
               exit 1
