@@ -91,8 +91,68 @@ jobs:
             echo "::add-mask::$SESSION_URL"
 
             MIGRATIONS_LOG="${GITHUB_WORKSPACE:-$PWD}/supabase-migrations.log"
+            SANITIZER_SCRIPT="${RUNNER_TEMP:-/tmp}/sanitize-supabase-migration-output.py"
+            # Centralized redaction list for migration diagnostics. Add future
+            # connection strings, API keys, or tokens here before printing or
+            # uploading Supabase CLI output.
+            REDACT_ENV_NAMES=$(cat <<'EOF'
+            SESSION_URL
+            DATABASE_URL
+            SUPABASE_DB_PASSWORD
+            SUPABASE_ACCESS_TOKEN
+            SUPABASE_SERVICE_ROLE_KEY
+            NUVANX_SUPABASE_SERVICE_ROLE_KEY
+            SUPABASE_ANON_KEY
+            VITE_SUPABASE_ANON_KEY
+            POSTGRES_URL
+            POSTGRES_PRISMA_URL
+            POSTGRES_URL_NON_POOLING
+            DIRECT_URL
+            PGDATABASE_URL
+            EOF
+            )
+            export REDACT_ENV_NAMES
             : > "$MIGRATIONS_LOG"
             chmod 600 "$MIGRATIONS_LOG"
+            cat > "$SANITIZER_SCRIPT" <<'PY'
+            import os
+            import re
+            import sys
+
+
+            def redact_environment_values(text: str) -> str:
+                names = re.split(r'[\s,]+', os.environ.get('REDACT_ENV_NAMES', '').strip())
+                for name in names:
+                    value = os.environ.get(name)
+                    if value:
+                        text = text.replace(value, f'<redacted:{name}>')
+                return text
+
+
+            def redact_postgres_passwords(text: str) -> str:
+                return re.sub(
+                    r'(postgres(?:ql)?://[^:/@\s]+:)[^@\s]+(@)',
+                    r'\1<redacted-password>\2',
+                    text,
+                )
+
+
+            def redact_token_like_values(text: str) -> str:
+                token_patterns = [
+                    r'((?:access|refresh|service_role|anon|api)[_-]?token["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+',
+                    r'((?:password|passwd|pwd)["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+',
+                ]
+                for pattern in token_patterns:
+                    text = re.sub(pattern, r'\1<redacted-secret>', text, flags=re.IGNORECASE)
+                return text
+
+
+            content = sys.stdin.read()
+            content = redact_environment_values(content)
+            content = redact_postgres_passwords(content)
+            content = redact_token_like_values(content)
+            sys.stdout.write(content)
+            PY
             {
               echo "### Supabase migration diagnostics"
               echo
@@ -101,7 +161,7 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
 
             sanitize_migration_output() {
-              python3 -c 'import os,re,sys; data=sys.stdin.read(); secrets=[(name, os.environ.get(name)) for name in ("SESSION_URL", "DATABASE_URL", "SUPABASE_DB_PASSWORD", "SUPABASE_ACCESS_TOKEN")]; [globals().__setitem__("data", data.replace(value, f"<redacted:{name}>")) for name, value in secrets if value]; data=re.sub(r"(postgres(?:ql)?://[^:/@\s]+:)[^@\s]+(@)", r"\1<redacted-password>\2", data); sys.stdout.write(data)'
+              python3 "$SANITIZER_SCRIPT"
             }
 
             append_migration_log() {
