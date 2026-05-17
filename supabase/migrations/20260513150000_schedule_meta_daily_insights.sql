@@ -2,34 +2,39 @@
 -- AUTOMATIZACIÓN DIARIA DE META INSIGHTS (pg_cron)
 -- =============================================
 
+-- Habilitar la extensión pg_cron si no existe
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 
--- Recreate the job idempotently. Some Supabase/pg_cron installations can keep
--- stale named-job metadata that makes cron.unschedule(jobname), or the implicit
--- unschedule inside cron.schedule(jobname, ...), raise "could not find valid
--- entry". Try the public API first, fall back to removing the stale cron.job
--- row, then schedule the canonical job exactly once.
+-- Asegurar idempotencia: si existe un job previo con este nombre, eliminarlo primero.
+-- Usar jobid evita el camino de cron.unschedule(jobname), que puede fallar cuando
+-- la metadata nominal del job está obsoleta en Supabase Preview.
 DO $$
+DECLARE
+  target_job RECORD;
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
-    BEGIN
-      PERFORM cron.unschedule('fetch-meta-daily-insights')
-      WHERE EXISTS (
-        SELECT 1
-        FROM cron.job
-        WHERE jobname = 'fetch-meta-daily-insights'
-      );
-    EXCEPTION WHEN OTHERS THEN
-      RAISE NOTICE 'Ignoring stale pg_cron metadata for fetch-meta-daily-insights: %', SQLERRM;
-    END;
+    FOR target_job IN
+      SELECT jobid
+      FROM cron.job
+      WHERE jobname = 'fetch-meta-daily-insights'
+    LOOP
+      BEGIN
+        PERFORM cron.unschedule(target_job.jobid);
+      EXCEPTION WHEN OTHERS THEN
+        RAISE NOTICE 'Ignoring stale pg_cron metadata for fetch-meta-daily-insights jobid %: %',
+          target_job.jobid,
+          SQLERRM;
+      END;
+    END LOOP;
 
     DELETE FROM cron.job
     WHERE jobname = 'fetch-meta-daily-insights';
 
+    -- Nuevo job diario (5:00 AM hora del servidor Supabase)
     PERFORM cron.schedule(
       'fetch-meta-daily-insights',
       '0 5 * * *',        -- Todos los días a las 5:00 AM
-      $cmd$
+      $job$
       SELECT net.http_post(
         url := 'https://ssvvuuysgxyqvmovrlvk.supabase.co/functions/v1/daily-aggregates',
         headers := jsonb_build_object(
@@ -42,7 +47,8 @@ BEGIN
           'days', 2
         )
       );
-      $cmd$
+      $job$
     );
   END IF;
-END $$;
+END;
+$$;
