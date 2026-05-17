@@ -75,8 +75,12 @@ jobs:
             # (IPv4-compatible) instead of the direct IPv6-only database host.
             # Normalize legacy direct .com hosts to .co and convert transaction/pooler
             # port 6543 to session/direct port 5432 for migration-safe sessions.
+            # Assumptions:
+            # - Direct DB hostnames follow Supabase's standard db.<project_ref>.supabase.{com,co} pattern.
+            # - Pooler hostnames follow the standard *.pooler.supabase.com pattern.
+            # - URL shape is postgres[ql]://user:pass@host:port/db; the host has no extra @ or : characters.
             if [ -n "${DATABASE_URL:-}" ]; then
-              SESSION_URL=$(printf '%s' "$DATABASE_URL" | sed -E 's#(db\.[^/@:]+\.supabase)\.com:#\1.co:#' | sed -E 's#(pooler\.supabase\.com):6543/#\1:5432/#' | sed -E 's#(db\.[^/@:]+\.supabase\.co):6543/#\1:5432/#')
+              SESSION_URL=$(printf '%s' "$DATABASE_URL" | sed -E 's#(db\.[^/@:]+\.supabase)\.com:#\1.co:#g' | sed -E 's#(pooler\.supabase\.com):6543/#\1:5432/#g' | sed -E 's#(db\.[^/@:]+\.supabase\.co):6543/#\1:5432/#g')
             elif [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
               echo "::warning::DATABASE_URL is not set; falling back to the direct Supabase DB host. GitHub Actions may need a Supavisor session pooler DATABASE_URL because direct Supabase DB hosts are IPv6-only by default."
               SESSION_URL="postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.${SUPABASE_PROJECT_REF}.supabase.co:5432/postgres"
