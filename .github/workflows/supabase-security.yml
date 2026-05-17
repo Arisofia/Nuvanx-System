@@ -7,8 +7,8 @@ name: Supabase Security Check
 # Required secrets:
 #   SUPABASE_ACCESS_TOKEN   — Supabase personal access token
 #   SUPABASE_PROJECT_REF    — Supabase project ref used by supabase link
-#   SUPABASE_DB_PASSWORD    — optional, recommended for db lint on linked remote
-#   DATABASE_URL            — optional fallback to derive SUPABASE_DB_PASSWORD
+#   SUPABASE_DB_PASSWORD    — optional fallback for direct db lint
+#   DATABASE_URL            — recommended; use the Supavisor session pooler URL on GitHub Actions
 
 on:
   # On push to main, wait for Deploy Supabase to finish so the lint runs against
@@ -31,6 +31,9 @@ on:
         required: false
       SUPABASE_DB_PASSWORD:
         required: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   advisor:
@@ -79,12 +82,19 @@ jobs:
           skip_link: true
           command: |
             set -euo pipefail
-            # Build direct session URL (port 5432) — avoids prepared statement conflicts with the pooler.
-            # Prefer constructing from project ref + password for direct host; fall back to DATABASE_URL.
-            if [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
-              SESSION_URL="postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.${SUPABASE_PROJECT_REF}.supabase.com:5432/postgres"
-            elif [ -n "${DATABASE_URL:-}" ]; then
-              SESSION_URL=$(echo "$DATABASE_URL" | sed 's/:6543\//:5432\//g' | sed 's/\.co:/.com:/g')
+            # Prefer DATABASE_URL so GitHub Actions can use Supavisor session pooler
+            # (IPv4-compatible) instead of the direct IPv6-only database host.
+            # Normalize legacy direct .com hosts to .co and convert transaction/pooler
+            # port 6543 to session/direct port 5432 for lint-safe sessions.
+            # Assumptions:
+            # - Direct DB hostnames follow Supabase's standard db.<project_ref>.supabase.{com,co} pattern.
+            # - Pooler hostnames follow the standard *.pooler.supabase.com pattern.
+            # - URL shape is postgres[ql]://user:pass@host:port/db; the host has no extra @ or : characters.
+            if [ -n "${DATABASE_URL:-}" ]; then
+              SESSION_URL=$(printf '%s' "$DATABASE_URL" | sed -E 's#(db\.[^/@:]+\.supabase)\.com:#\1.co:#g' | sed -E 's#(pooler\.supabase\.com):6543/#\1:5432/#g' | sed -E 's#(db\.[^/@:]+\.supabase\.co):6543/#\1:5432/#g')
+            elif [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
+              echo "::warning::DATABASE_URL is not set; falling back to the direct Supabase DB host. GitHub Actions may need a Supavisor session pooler DATABASE_URL because direct Supabase DB hosts are IPv6-only by default."
+              SESSION_URL="postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.${SUPABASE_PROJECT_REF}.supabase.co:5432/postgres"
             else
               echo "::error::SUPABASE_DB_PASSWORD and DATABASE_URL are both missing. Cannot run security lint."
               exit 1

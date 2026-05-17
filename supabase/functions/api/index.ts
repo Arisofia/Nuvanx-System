@@ -2444,6 +2444,9 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
   return null;
 }
 
+async function handleCampaignsFilter(ctx: AuthenticatedRouteContext): Promise<Response | null> {
+  const { adminClient, resource, sub, url, sendJson } = ctx;
+
   if (resource === 'dashboard' && sub === 'campaigns-filter') {
     // Use UTC-based calendar arithmetic for default dates to avoid DST / timezone off-by-one issues.
     const nowUtc = new Date();
