@@ -644,6 +644,17 @@ function buildMarkdown({
   return `${lines.join('\n')}\n`;
 }
 
+function normalizeAdAccountIds(raw) {
+  if (Array.isArray(raw)) return raw.flatMap((item) => normalizeAdAccountIds(item));
+  if (raw === undefined || raw === null) return [];
+  const value = String(raw).trim();
+  if (!value) return [];
+  return value
+    .split(/[,;\s]+/)
+    .map(normalizeAdAccountId)
+    .filter(Boolean);
+}
+
 async function main() {
   const token = process.env.META_ACCESS_TOKEN;
   const rawAccount = process.env.META_AD_ACCOUNT_ID;
@@ -655,8 +666,8 @@ async function main() {
     throw new Error('META_ACCESS_TOKEN and META_AD_ACCOUNT_ID are required');
   }
 
-  const adAccountId = normalizeAdAccountId(rawAccount);
-  if (!adAccountId) {
+  const adAccountIds = normalizeAdAccountIds(rawAccount);
+  if (adAccountIds.length === 0) {
     throw new Error('META_AD_ACCOUNT_ID has invalid format');
   }
 
@@ -665,42 +676,47 @@ async function main() {
   const utcToday = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
   const { since, until, untilExclusive } = getReportWindow(process.argv.slice(2), utcToday);
 
-  const campaignRows = await fetchAndProcessMetaInsights(adAccountId, since, until, token);
-  const analysis = calculateCampaignAnalysis(campaignRows);
-
-  const dbSignals = await maybeLoadDbSignals({
-    databaseUrl,
-    clinicId,
-    sinceIso: since,
-    untilExclusiveIso: untilExclusive,
-  });
-
-  const recommendations = generateRecommendations(analysis.channels, analysis.landing, analysis.waste, dbSignals);
   const googleAdsCampaigns = await fetchGoogleAdsData(gConfig, since, until);
 
-  const markdown = buildMarkdown({
-    generatedAt: new Date().toISOString(),
-    period: { since, until },
-    account: adAccountId,
-    totals: analysis.totals,
-    channels: analysis.channels,
-    campaigns: { best: analysis.best, waste: analysis.waste },
-    landing: analysis.landing,
-    dbSignals,
-    googleAdsCampaigns,
-    recommendations,
-  });
+  for (const adAccountId of adAccountIds) {
+    console.log(`\n[meta-weekly-report] Generating report for account: ${adAccountId}`);
+    const campaignRows = await fetchAndProcessMetaInsights(adAccountId, since, until, token);
+    const analysis = calculateCampaignAnalysis(campaignRows);
 
-  await saveAndPersistReport({
-    markdown,
-    until,
-    databaseUrl,
-    reportUserId,
-    clinicId,
-    adAccountId,
-    gCustomerId: gConfig.gCustomerId,
-    since,
-  });
+    const dbSignals = await maybeLoadDbSignals({
+      databaseUrl,
+      clinicId,
+      sinceIso: since,
+      untilExclusiveIso: untilExclusive,
+    });
+
+    const recommendations = generateRecommendations(analysis.channels, analysis.landing, analysis.waste, dbSignals);
+
+    const markdown = buildMarkdown({
+      generatedAt: new Date().toISOString(),
+      period: { since, until },
+      account: adAccountId,
+      totals: analysis.totals,
+      channels: analysis.channels,
+      campaigns: { best: analysis.best, waste: analysis.waste },
+      landing: analysis.landing,
+      dbSignals,
+      googleAdsCampaigns,
+      recommendations,
+    });
+
+    await saveAndPersistReport({
+      markdown,
+      until,
+      databaseUrl,
+      reportUserId,
+      clinicId,
+      adAccountId,
+      gCustomerId: gConfig.gCustomerId,
+      since,
+    });
+    console.log(`[meta-weekly-report] Report for ${adAccountId} generated successfully`);
+  }
 }
 
 main().catch((err) => {

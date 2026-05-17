@@ -125,25 +125,38 @@ async function fetchAccount({ adAccountId, token, appSecret, attempt = 1 }) {
   }
 }
 
+function normalizeAdAccountIds(raw) {
+  if (Array.isArray(raw)) return raw.flatMap((item) => normalizeAdAccountIds(item));
+  if (raw === undefined || raw === null) return [];
+  const value = String(raw).trim();
+  if (!value) return [];
+  return value
+    .split(/[,;\s]+/)
+    .map(normalizeAdAccountId)
+    .filter(Boolean);
+}
+
 async function main() {
   const token = process.env.META_ACCESS_TOKEN?.trim();
   const appSecret = process.env.META_APP_SECRET?.trim();
-  const adAccountId = normalizeAdAccountId(process.env.META_AD_ACCOUNT_ID);
+  const adAccountIds = normalizeAdAccountIds(process.env.META_AD_ACCOUNT_ID);
 
   const missing = [];
   if (!token) missing.push('META_ACCESS_TOKEN');
   if (!appSecret) missing.push('META_APP_SECRET');
-  if (!adAccountId) missing.push('META_AD_ACCOUNT_ID');
+  if (adAccountIds.length === 0) missing.push('META_AD_ACCOUNT_ID');
 
   if (missing.length > 0) {
     throw new Error(`Missing or invalid required environment variables: ${missing.join(', ')}`);
   }
 
-  console.log(
-    `[verify-meta-access] Checking Meta access to ${redactAdAccountIdForLog(adAccountId)} with appsecret_proof enabled...`,
-  );
-  await fetchAccount({ adAccountId, token, appSecret });
-  console.log('[verify-meta-access] Meta access OK.');
+  for (const adAccountId of adAccountIds) {
+    console.log(
+      `[verify-meta-access] Checking Meta access to ${redactAdAccountIdForLog(adAccountId)} with appsecret_proof enabled...`,
+    );
+    await fetchAccount({ adAccountId, token, appSecret });
+    console.log(`[verify-meta-access] Meta access OK for ${adAccountId}.`);
+  }
 }
 
 main().catch((err) => {
