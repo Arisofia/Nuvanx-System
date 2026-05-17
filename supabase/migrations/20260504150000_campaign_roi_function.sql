@@ -42,7 +42,7 @@ BEGIN
     STABLE
     SECURITY DEFINER
     SET search_path = public
-    AS $$
+    AS $func$
       WITH trace AS (
         SELECT
           COALESCE(t.campaign_name, 'Organic / Unknown') AS campaign_name,
@@ -102,7 +102,7 @@ BEGIN
       FROM grouped g
       LEFT JOIN meta_spend ms ON ms.month = g.month
       ORDER BY g.month DESC, g.leads_count DESC;
-    $$;
+    $func$;
 
     GRANT EXECUTE ON FUNCTION get_campaign_roi(UUID, TEXT, TEXT, TEXT) TO service_role;
   $sql$;
