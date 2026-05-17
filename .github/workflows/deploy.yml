@@ -11,8 +11,8 @@
 # Required secrets (GitHub -> Settings -> Secrets -> Actions):
 #   SUPABASE_ACCESS_TOKEN        - Supabase personal access token
 #   SUPABASE_PROJECT_REF         - Supabase project ref used by supabase link
-#   SUPABASE_DB_PASSWORD         - DB password for supabase db push
-#   DATABASE_URL                 - Optional fallback DB URL; use the Supabase .co direct URL or a session pooler URL
+#   SUPABASE_DB_PASSWORD         - Optional DB password fallback for direct db push
+#   DATABASE_URL                 - Recommended DB URL; use the Supavisor session pooler URL on GitHub Actions
 
 name: Deploy Supabase
 
@@ -71,13 +71,15 @@ jobs:
           command: |
             set -uo pipefail
 
-            # Build the direct Supabase DB URL on the documented .co host (port 5432).
-            # If only DATABASE_URL is provided, normalize legacy direct .com hosts to .co and
-            # convert direct transaction-pooler URLs on port 6543 to direct port 5432.
-            if [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
+            # Prefer DATABASE_URL so GitHub Actions can use Supavisor session pooler
+            # (IPv4-compatible) instead of the direct IPv6-only database host.
+            # Normalize legacy direct .com hosts to .co and convert transaction/pooler
+            # port 6543 to session/direct port 5432 for migration-safe sessions.
+            if [ -n "${DATABASE_URL:-}" ]; then
+              SESSION_URL=$(printf '%s' "$DATABASE_URL" | sed -E 's#(db\.[^/@:]+\.supabase)\.com:#\1.co:#' | sed -E 's#(pooler\.supabase\.com):6543/#\1:5432/#' | sed -E 's#(db\.[^/@:]+\.supabase\.co):6543/#\1:5432/#')
+            elif [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
+              echo "::warning::DATABASE_URL is not set; falling back to the direct Supabase DB host. GitHub Actions may need a Supavisor session pooler DATABASE_URL because direct Supabase DB hosts are IPv6-only by default."
               SESSION_URL="postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.${SUPABASE_PROJECT_REF}.supabase.co:5432/postgres"
-            elif [ -n "${DATABASE_URL:-}" ]; then
-              SESSION_URL=$(echo "$DATABASE_URL" | sed -E 's#(db\.[^/@:]+\.supabase)\.com:#\1.co:#' | sed -E 's#(db\.[^/@:]+\.supabase\.co):6543/#\1:5432/#')
             else
               echo "::error::Cannot connect to database. Set DATABASE_URL or both SUPABASE_DB_PASSWORD and SUPABASE_PROJECT_REF."
               exit 1
