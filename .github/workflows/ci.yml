@@ -16,10 +16,37 @@ jobs:
 
       - name: Fail on merge conflict markers in CI-critical config
         run: |
-          if grep -R -nE "^(<<<<<<<|=======|>>>>>>>)" .github supabase/config.toml; then
+          if rg --line-number --regexp "^(<<<<<<<|=======|>>>>>>>)" .github supabase/config.toml; then
             echo "::error::Merge conflict markers detected in CI-critical config files."
             exit 1
           fi
+
+      - name: Ensure Supabase migration versions are unique
+        run: |
+          python3 - <<'PY'
+          from collections import defaultdict
+          from pathlib import Path
+
+          migrations_dir = Path('supabase/migrations')
+          versions = defaultdict(list)
+
+          for migration in sorted(migrations_dir.glob('*.sql')):
+              version = migration.name.split('_', 1)[0]
+              versions[version].append(migration.name)
+
+          duplicates = {
+              version: names
+              for version, names in versions.items()
+              if len(names) > 1
+          }
+
+          if duplicates:
+              for version, names in duplicates.items():
+                  print(f'::error::Duplicate Supabase migration version {version}: {", ".join(names)}')
+              raise SystemExit(1)
+
+          print(f'OK {len(versions)} unique Supabase migration versions')
+          PY
 
       - name: Parse workflow and action YAML files
         run: |
