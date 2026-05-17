@@ -91,6 +91,26 @@ jobs:
             echo "::add-mask::$SESSION_URL"
 
             # Retry transient Supabase Preview failures while surfacing deterministic SQL errors.
+            print_migration_failure_summary() {
+              local output="$1"
+              local summary
+              summary=$(printf '%s\n' "$output" | awk '
+                BEGIN { remaining = 0; found = 0 }
+                /ERROR:|SQLSTATE|ErrorResponse|cannot change return type|duplicate key|permission denied|failed to connect|network is unreachable|password authentication failed|relation .* does not exist|column .* does not exist|function .* does not exist|type .* does not exist|invalid input syntax|checksum|failed to parse|error parsing/ {
+                  if (!found) { found = 1; remaining = 40 }
+                }
+                found && remaining > 0 { print; remaining-- }
+              ')
+
+              if [ -n "$summary" ]; then
+                echo "::group::First Supabase migration failure block"
+                printf '%s\n' "$summary"
+                echo "::endgroup::"
+              else
+                echo "::warning::No ERROR, SQLSTATE, ErrorResponse, connection, or known SQL failure marker was found in the Supabase CLI output. Review the full --debug output above."
+              fi
+            }
+
             is_deterministic_migration_error() {
               local output="$1"
               local pattern='syntax error|permission denied|not a valid migration|SQLSTATE 42P01|relation .* does not exist|column .* does not exist|function .* does not exist|type .* does not exist|invalid input syntax|duplicate key value violates unique constraint|violates (foreign key|not-null|check) constraint|checksum|failed to parse|error parsing'
@@ -108,6 +128,8 @@ jobs:
               if [ "$exit_code" -eq 0 ]; then
                 return 0
               fi
+
+              print_migration_failure_summary "$output"
 
               # Case 1: ghost / reverted migrations.
               ghosts=$(echo "$output" | grep "supabase migration repair --status reverted" | sed 's/.*reverted //' || true)
