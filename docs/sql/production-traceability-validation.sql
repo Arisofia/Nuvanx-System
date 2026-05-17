@@ -54,15 +54,17 @@ WHERE phone_normalized IS NOT NULL
 ORDER BY lead_created_at DESC
 LIMIT 25;
 
--- 8) Doctoralia campaign aggregation check (30-day window).
-SELECT * FROM public.get_campaigns_filter(
-  (CURRENT_DATE - INTERVAL '30 days')::DATE,
-  CURRENT_DATE
-);
+-- 8) Doctoralia production source by campaign for the last 30 days.
+SELECT
+  campaign_id,
+  total_citas,
+  total_importe
+FROM public.get_campaigns_filter(current_date - 30, current_date)
+ORDER BY campaign_id;
 
 -- 9) Quality check: produccion_intermediarios phone extraction quality.
 SELECT
-  COUNT(*) AS total_rows,
-  COUNT(*) FILTER (WHERE phone_normalized IS NOT NULL AND phone_normalized <> '') AS rows_with_phone,
-  COUNT(*) FILTER (WHERE asunto IS NOT NULL AND asunto <> '') AS rows_with_asunto
+  COUNT(*) AS total_produccion_rows,
+  COUNT(*) FILTER (WHERE phone_normalized IS NOT NULL AND phone_normalized <> '') AS produccion_rows_con_phone,
+  COUNT(*) FILTER (WHERE asunto IS NOT NULL AND asunto <> '') AS produccion_rows_con_asunto
 FROM public.produccion_intermediarios;

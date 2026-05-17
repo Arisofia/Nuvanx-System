@@ -120,7 +120,7 @@ async function setSupabaseSecrets(vars, projectRef) {
 
   const payload = requiredSecretKeys
     .filter((k) => vars[k])
-    .filter((k) => !k.startsWith('SUPABASE_'))
+    .filter((k) => !k.startsWith('SUPABASE_') && k !== 'NUVANX_SUPABASE_SERVICE_ROLE_KEY')
     .map((k) => ({ name: k, value: vars[k] }));
 
   if (payload.length === 0) return { skipped: true, reason: 'no secret values to upload' };
@@ -138,7 +138,10 @@ async function setSupabaseSecrets(vars, projectRef) {
     if (!res.ok) {
       const body = await res.text();
       if (res.status === 403) {
-        return { skipped: true, reason: 'unauthorized or insufficient privileges' };
+        return { skipped: true, reason: 'unauthorized: Check if your token has access to this specific project ref.' };
+      }
+      if (res.status === 404) {
+        return { skipped: true, reason: `Project not found: ${projectRef}. Verify the SUPABASE_PROJECT_REF.` };
       }
       throw new Error(`Supabase (${projectRef}) ${res.status}: ${body}`);
     }
@@ -226,10 +229,13 @@ async function handleVercelKey(key, value, existingMap, projectId, token, queryS
 
 async function setVercelSecrets(vars) {
   const token = vars.VERCEL_TOKEN;
-  const teamId = vars.VERCEL_TEAM_ID || 'team_R0GOR4jvw1c1gnyBRWYu32O7';
-  const projectId = vars.VERCEL_PROJECT_ID || 'prj_IAOBlV17HeS22KuEfsdkDrGMV9Ze';
+  const teamId = vars.VERCEL_TEAM_ID;
+  const projectId = vars.VERCEL_PROJECT_ID;
 
-  if (!token || !projectId) return { skipped: true, reason: 'missing token or project id' };
+  if (!token || !projectId) {
+    console.warn('[sync-platform-secrets] Vercel sync skipped: VERCEL_TOKEN or VERCEL_PROJECT_ID missing.');
+    return { skipped: true, reason: 'missing credentials' };
+  }
 
   let uploaded = 0;
   const queryString = teamId ? `?teamId=${teamId}` : '';
@@ -298,10 +304,13 @@ async function main() {
 
   const githubResult = setGithubSecrets(vars);
   if (!vars.SUPABASE_PROJECT_REF) {
-    throw new Error('SUPABASE_PROJECT_REF is required and must not fall back to a hardcoded value.');
+    throw new Error('SUPABASE_PROJECT_REF is missing in .env.tokens.local. Please add your Supabase Project Ref (e.g., ssvvuuysgxyqvmovrlvk) to proceed.');
   }
   const supabaseMainResult = await setSupabaseSecrets(vars, vars.SUPABASE_PROJECT_REF);
-  const supabaseFigmaResult = await setSupabaseSecrets(vars, vars.SUPABASE_FIGMA_PROJECT_REF || 'zpowfbeftxexzidlxndy');
+  if (!vars.SUPABASE_FIGMA_PROJECT_REF) {
+    console.warn('[sync-platform-secrets] SUPABASE_FIGMA_PROJECT_REF missing; skipping secondary sync.');
+  }
+  const supabaseFigmaResult = vars.SUPABASE_FIGMA_PROJECT_REF ? await setSupabaseSecrets(vars, vars.SUPABASE_FIGMA_PROJECT_REF) : { skipped: true, reason: 'missing ref' };
   const vercelResult = await setVercelSecrets(vars);
 
   console.log('Secret sync completed.');

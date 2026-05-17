@@ -1,10 +1,15 @@
 const fs = require('fs');
-const files = [
-  '.github/workflows/ci.yml',
-  '.github/workflows/meta-daily-report.yml',
-  '.github/workflows/meta-historical-backfill.yml',
-  '.github/workflows/daily-health-check.yml'
-];
+const path = require('path');
+
+const workflowDir = path.join(__dirname, '.github', 'workflows');
+const files = fs.readdirSync(workflowDir)
+  .filter(f => f.endsWith('.yml') || f.endsWith('.yaml'))
+  .map(f => path.join('.github', 'workflows', f));
+
+if (files.length === 0) {
+  console.error('FAIL: No workflow files found in .github/workflows');
+  process.exit(1);
+}
 
 files.forEach(f => {
   try {

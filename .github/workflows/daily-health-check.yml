@@ -1,10 +1,10 @@
-# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+# # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 name: Daily Health Check
 
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: '0 4 * * *'  # 4am UTC (6am Madrid)
+    - cron: '0 4 * * *'
 
 permissions:
   contents: read
@@ -13,11 +13,13 @@ jobs:
   health-check:
     name: Health Check — Production Endpoints
     runs-on: ubuntu-latest
+    environment:
+      name: production
     steps:
-      - uses: actions/checkout@v4 # v4
-      
+      - uses: actions/checkout@v4
+
       - name: Setup Deno
-        uses: denoland/setup-deno@v2
+        uses: denoland/setup-deno@v1
         with:
           deno-version: v2.x
 

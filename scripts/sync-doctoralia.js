@@ -273,6 +273,7 @@ function buildHeaderConfig(headers) {
   const colOrigin       = findCol(headers, 'procedencia', 'origen', 'source', 'origin');
   const colAgenda       = findCol(headers, 'agenda', 'calendario', 'doctor');
   const colRoom         = findCol(headers, 'sala', 'habitacion', 'room', 'box');
+  const colPhone        = findCol(headers, 'telefono', 'tel', 'movil', 'celular', 'phone', 'contact');
 
   const hasColId           = colId !== -1;
   const hasColTemplate     = colTemplate !== -1;
@@ -288,6 +289,7 @@ function buildHeaderConfig(headers) {
   const hasColOrigin       = colOrigin !== -1;
   const hasColAgenda       = colAgenda !== -1;
   const hasColRoom         = colRoom !== -1;
+  const hasColPhone        = colPhone !== -1;
 
   return {
     colId,
@@ -306,6 +308,7 @@ function buildHeaderConfig(headers) {
     colOrigin,
     colAgenda,
     colRoom,
+    colPhone,
     hasColId,
     hasColTemplate,
     hasColTemplateId,
@@ -320,6 +323,7 @@ function buildHeaderConfig(headers) {
     hasColOrigin,
     hasColAgenda,
     hasColRoom,
+    hasColPhone,
     useHashId: !hasColId,
     colSettledEff: hasColSettled ? colSettled : colFecha,
   };
@@ -468,6 +472,7 @@ async function main() {
         hasColRoom: config.hasColRoom,
         hasColIntermediary: config.hasColIntermediary,
         hasColStatus: config.hasColStatus,
+        hasColPhone: config.hasColPhone,
       });
       if (success) upserted++;
       else skipped++;
@@ -515,6 +520,7 @@ async function upsertDoctoraliaRow(row, i, params) {
     hasColRoom,
     hasColIntermediary,
     hasColStatus,
+    hasColPhone,
   } = params;
 
   const rawId = deriveRawId(row, useHashId, cols);
@@ -538,7 +544,9 @@ async function upsertDoctoraliaRow(row, i, params) {
   const roomId    = getOptionalTextValue(row, cols.colRoom, hasColRoom);
   const agenda    = getOptionalTextValue(row, cols.colAgenda, hasColAgenda);
   const tmplName  = getOptionalTextValue(row, cols.colTemplate, hasColTemplate);
-  const patientPhone = getPrimaryPhoneFromSubject(tmplName);
+  const patientPhone = hasColPhone 
+    ? normalizePhoneForMatching(row[cols.colPhone]) 
+    : getPrimaryPhoneFromSubject(tmplName);
   const tmplId    = getOptionalTextValue(row, cols.colTemplateId, hasColTemplateId);
   const intermed  = getOptionalTextValue(row, cols.colIntermediary, hasColIntermediary);
 

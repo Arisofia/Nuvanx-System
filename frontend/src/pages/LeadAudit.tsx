@@ -258,13 +258,13 @@ export default function LeadAudit() {
                         <p className="text-[10px] text-[#5C5550] font-mono mt-1">{row.patient_phone ?? '—'}</p>
                       </td>
                       <td className="px-5 py-5 text-right">
-                        {row.doctoralia_net > 0 ? (
+                        {row.doctoralia_net != null ? (
                           <div className="space-y-1">
                             <p className="text-xs font-serif font-bold text-primary tracking-tight">€{Number(row.doctoralia_net).toLocaleString('es-ES')}</p>
                             <p className="text-[9px] text-[#8E8680] font-bold uppercase tracking-wider">{row.first_settlement_at ? new Date(row.first_settlement_at).toLocaleDateString('es-ES') : ''}</p>
                           </div>
                         ) : (
-                          <span className="text-[#C9B9A8] font-medium opacity-40">—</span>
+                          <span className="text-[#C9B9A8] font-medium">0 €</span>
                         )}
                       </td>
                       <td className="px-5 py-5 text-center">

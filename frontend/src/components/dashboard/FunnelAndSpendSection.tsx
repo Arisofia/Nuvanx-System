@@ -76,7 +76,7 @@ export function FunnelAndSpendSection({
               <Target className="h-4 w-4 text-primary opacity-40 group-hover:opacity-100 transition-opacity" />
             </div>
             <p className="text-4xl font-serif font-bold tracking-tight text-[#2C2825]">
-              {combined.metaCpl ? `€${combined.metaCpl.toLocaleString('es-ES')}` : '–'}
+              {combined.metaCpl ? `€${combined.metaCpl.toLocaleString('es-ES')}` : '0'}
             </p>
             <div className="h-[1px] w-8 bg-primary/20 my-4" />
             <p className="text-[10px] text-[#8E8680] font-medium italic opacity-60">Coste por Lead</p>

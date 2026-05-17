@@ -60,6 +60,14 @@ npm run dev:frontend  # Vite on http://localhost:5173
 ### Local Meta script credentials
 Para ejecutar los scripts locales de Meta y generar reportes, copia `.env.example` a `.env.local` o exporta estas variables en tu shell:
 
+### Environment Setup Hierarchy
+The system uses the following priority for loading environment variables:
+1. **`.env.tokens.local`**: Primary source for production-ready secrets and platform sync (Git-ignored).
+2. **`.env.local`**: Local frontend overrides.
+3. **`.env`**: General fallbacks.
+
+**Action Required**: If you have a `config.env` file, rename it to `.env.tokens.local` to ensure local scripts can access the vault.
+
 ```bash
 export META_ACCESS_TOKEN=...
 export META_AD_ACCOUNT_ID=act_...
@@ -162,5 +170,3 @@ If neither Supabase key is set, the frontend will warn and disable Supabase feat
 - [docs/MCP.md](docs/MCP.md) — MCP server URL, tools, Grok connector setup, and security notes
 - [docs/lead-reconciliation-validation.md](docs/lead-reconciliation-validation.md) — Manual validation for `?reconcile=true` lead reconciliation and Lead Audit matching semantics
 - [docs/setup-clean.md](docs/setup-clean.md) — Clean bootstrap / zero-to-production setup guide
-
-

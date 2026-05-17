@@ -14,13 +14,11 @@ function normalizePhoneForMatching(value) {
   let cleaned = String(value).trim().replace(/[^0-9]/g, '');
   if (!cleaned) return null;
 
-  if (cleaned.startsWith('0034')) {
-    cleaned = cleaned.slice(4);
-  } else if (cleaned.length > 9 && cleaned.startsWith('34')) {
-    cleaned = cleaned.slice(2);
+  // ROBUST: Always use the last 9 digits for matching Spanish numbers (ignoring prefixes)
+  if (cleaned.length >= 9) {
+    return cleaned.slice(-9);
   }
 
-  cleaned = cleaned.replace(/[^0-9]/g, '');
   return cleaned || null;
 }
 
