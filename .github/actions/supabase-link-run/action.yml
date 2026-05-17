@@ -17,6 +17,10 @@ inputs:
     description: 'Optional database password for Supabase CLI operations'
     required: false
     default: ''
+  skip_link:
+    description: 'Skip the supabase link step'
+    required: false
+    default: 'false'
   command:
     description: 'Shell command to execute after linking (e.g. "supabase db push")'
     required: true
@@ -24,7 +28,7 @@ inputs:
 outputs:
   resolved_db_password:
     description: 'Resolved DB password extracted from inputs or DATABASE_URL'
-    value: ${{ steps.link.outputs.resolved_db_password }}
+    value: ${{ steps.creds.outputs.resolved_db_password }}
 
 runs:
   using: 'composite'
@@ -50,38 +54,38 @@ runs:
           exit 1
         fi
 
-    - name: Link Supabase project
-      id: link
+    - name: Resolve DB credentials
+      id: creds
       shell: bash
       env:
-        INPUT_PROJECT_REF: ${{ inputs.project_ref }}
         INPUT_DATABASE_URL: ${{ inputs.database_url }}
         INPUT_SUPABASE_DB_PASSWORD: ${{ inputs.supabase_db_password }}
-        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
       run: |
         set -euo pipefail
-
         RESOLVED_DB_PASSWORD="$INPUT_SUPABASE_DB_PASSWORD"
         if [ -z "$RESOLVED_DB_PASSWORD" ] && [ -n "$INPUT_DATABASE_URL" ]; then
-          # Extract password from DATABASE_URL
           RESOLVED_DB_PASSWORD=$(python3 -c 'from urllib.parse import urlparse; import os; print(urlparse(os.environ.get("INPUT_DATABASE_URL", "")).password or "")')
         fi
-
         if [ -n "$RESOLVED_DB_PASSWORD" ]; then
           echo "::add-mask::$RESOLVED_DB_PASSWORD"
         fi
-
-        # Always publish the resolved password output before linking. If the link
-        # step fails, GitHub still records whether credential resolution worked,
-        # which makes failed runs easier to diagnose from debug logs.
         printf 'resolved_db_password=%s\n' "$RESOLVED_DB_PASSWORD" >> "$GITHUB_OUTPUT"
 
+    - name: Link Supabase project
+      id: link
+      if: inputs.skip_link != 'true'
+      shell: bash
+      env:
+        INPUT_PROJECT_REF: ${{ inputs.project_ref }}
+        RESOLVED_DB_PASSWORD: ${{ steps.creds.outputs.resolved_db_password }}
+        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
+      run: |
+        set -euo pipefail
         is_deterministic_link_error() {
           local output="$1"
           local pattern='invalid access token|invalid token|not authorized|unauthorized|forbidden|permission denied|necessary privileges|project ref.*not found|project.*not found|invalid project ref|database password.*incorrect|password authentication failed'
           echo "$output" | grep -Eiq "$pattern"
         }
-
         run_link_once() {
           if [ -n "$RESOLVED_DB_PASSWORD" ]; then
             timeout --signal=TERM --kill-after=15s 120s \
@@ -91,42 +95,34 @@ runs:
               supabase link --project-ref "$INPUT_PROJECT_REF" --yes </dev/null
           fi
         }
-
         run_link_with_retry() {
           local max_attempts=3
           local delay_seconds=10
           local attempt=1
-
           while true; do
             echo "Linking Supabase project (attempt $attempt/$max_attempts)..."
             local output
             output=$(run_link_once 2>&1) || {
               local exit_code=$?
               echo "$output"
-
-              # Short-circuit if this is a deterministic failure.
               if is_deterministic_link_error "$output"; then
                 echo "::error::Non-transient Supabase link error detected. Not retrying; fix credentials/project configuration shown above."
                 return "$exit_code"
               fi
-
               if [ "$attempt" -ge "$max_attempts" ]; then
                 echo "::error::Supabase project link failed after $max_attempts attempts. Check the link step output above for the upstream/proxy error returned by Supabase CLI."
                 return 1
               fi
-
               attempt=$((attempt + 1))
               echo "::warning::Supabase project link failed, retrying in ${delay_seconds}s in case this was a transient upstream/proxy error."
               sleep "$delay_seconds"
               continue
             }
-
             echo "$output"
             echo "Supabase project linked successfully."
             return 0
           done
         }
-
         run_link_with_retry
 
     - name: Write command script
@@ -144,7 +140,7 @@ runs:
         DATABASE_URL: ${{ inputs.database_url }}
         SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
         SUPABASE_PROJECT_REF: ${{ inputs.project_ref }}
-        SUPABASE_DB_PASSWORD: ${{ steps.link.outputs.resolved_db_password }}
+        SUPABASE_DB_PASSWORD: ${{ steps.creds.outputs.resolved_db_password }}
       run: |
         set -euo pipefail
         /tmp/supabase_command.sh
