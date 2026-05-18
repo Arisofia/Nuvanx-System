@@ -4,8 +4,13 @@
 
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 
--- Eliminar job anterior si existe
-SELECT cron.unschedule('fetch-meta-daily-insights');
+-- Eliminar job anterior si existe para mantener la migración idempotente.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'fetch-meta-daily-insights') THEN
+    PERFORM cron.unschedule('fetch-meta-daily-insights');
+  END IF;
+END $$;
 
 -- Nuevo job diario (5:00 AM hora del servidor Supabase)
 SELECT cron.schedule(
@@ -27,4 +32,4 @@ SELECT cron.schedule(
     $$
 );
 
-COMMENT ON cron.job 'fetch-meta-daily-insights' IS 'Actualiza meta_daily_insights diariamente desde Meta Ads API';
+-- Job purpose: actualiza meta_daily_insights diariamente desde Meta Ads API.
