@@ -307,11 +307,19 @@ function setGithubSecrets(vars) {
 
     // Use execFileSync directly (no shell) to avoid any shell-injection risk.
     // gh secret set reads the value from --body without shell interpolation.
-    cp.execFileSync('gh', ['secret', 'set', key, '--repo', `${owner}/${repo}`, '--body', value], {
-      stdio: 'pipe',
-      env,
-    });
-    uploaded += 1;
+    try {
+      cp.execFileSync('gh', ['secret', 'set', key, '--repo', `${owner}/${repo}`, '--body', value], {
+        stdio: 'pipe',
+        env,
+      });
+      uploaded += 1;
+    } catch (err) {
+      console.error(`[GITHUB] Failed to set secret ${key}: ${err.message}`);
+      if (err.message.includes('401')) {
+        console.error('Tip: Your GITHUB_TOKEN/GH_TOKEN might be expired or the gh CLI needs re-authentication (gh auth login).');
+      }
+      throw err; // Re-throw to halt the synchronization on fatal auth errors
+    }
   }
 
   return { uploaded };
