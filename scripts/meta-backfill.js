@@ -385,7 +385,7 @@ async function main() {
   if (firstError) throw firstError;
 }
 
-main().catch((err) => {
-  console.error('[meta-backfill] Fatal error:', err.message);
+main().catch((_err) => {
+  console.error('[meta-backfill] Fatal error. Enable secure debug logging for details.');
   process.exit(1);
 });
