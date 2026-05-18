@@ -16,7 +16,7 @@
 -- removed for media; use `views` and `total_interactions` instead.
 -- =============================================================================
 
-CREATE TABLE IF NOT EXISTS meta_ig_account_daily (
+CREATE TABLE IF NOT EXISTS public.meta_ig_account_daily (
   user_id              UUID         NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   ig_id                VARCHAR(64)  NOT NULL,
   date                 DATE         NOT NULL,
@@ -32,23 +32,26 @@ CREATE TABLE IF NOT EXISTS meta_ig_account_daily (
 );
 
 CREATE INDEX IF NOT EXISTS meta_ig_account_daily_date_idx
-  ON meta_ig_account_daily (user_id, ig_id, date DESC);
+  ON public.meta_ig_account_daily (user_id, ig_id, date DESC);
 
-ALTER TABLE meta_ig_account_daily ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.meta_ig_account_daily ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS meta_ig_account_daily_select_own ON meta_ig_account_daily;
-CREATE POLICY meta_ig_account_daily_select_own ON meta_ig_account_daily
+GRANT SELECT ON public.meta_ig_account_daily TO authenticated;
+GRANT ALL ON public.meta_ig_account_daily TO service_role;
+
+DROP POLICY IF EXISTS meta_ig_account_daily_select_own ON public.meta_ig_account_daily;
+CREATE POLICY meta_ig_account_daily_select_own ON public.meta_ig_account_daily
   FOR SELECT TO authenticated
-  USING (auth.uid() = user_id AND NOT (auth.jwt() ->> 'is_anonymous')::boolean IS TRUE);
+  USING (auth.uid() = user_id);
 
-DROP POLICY IF EXISTS meta_ig_account_daily_service_role ON meta_ig_account_daily;
-CREATE POLICY meta_ig_account_daily_service_role ON meta_ig_account_daily
+DROP POLICY IF EXISTS meta_ig_account_daily_service_role ON public.meta_ig_account_daily;
+CREATE POLICY meta_ig_account_daily_service_role ON public.meta_ig_account_daily
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- ---------------------------------------------------------------------------
 -- Per-media performance (lifetime metrics).
 -- ---------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS meta_ig_media_performance (
+CREATE TABLE IF NOT EXISTS public.meta_ig_media_performance (
   user_id            UUID         NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   ig_id              VARCHAR(64)  NOT NULL,
   media_id           VARCHAR(128) NOT NULL,
@@ -69,25 +72,28 @@ CREATE TABLE IF NOT EXISTS meta_ig_media_performance (
 );
 
 CREATE INDEX IF NOT EXISTS meta_ig_media_performance_account_idx
-  ON meta_ig_media_performance (user_id, ig_id, timestamp DESC);
+  ON public.meta_ig_media_performance (user_id, ig_id, timestamp DESC);
 
 CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA extensions;
 CREATE INDEX IF NOT EXISTS meta_ig_media_performance_caption_trgm_idx
-  ON meta_ig_media_performance USING gin (lower(caption) extensions.gin_trgm_ops);
+  ON public.meta_ig_media_performance USING gin (lower(caption) extensions.gin_trgm_ops);
 
-ALTER TABLE meta_ig_media_performance ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.meta_ig_media_performance ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS meta_ig_media_performance_select_own ON meta_ig_media_performance;
-CREATE POLICY meta_ig_media_performance_select_own ON meta_ig_media_performance
+GRANT SELECT ON public.meta_ig_media_performance TO authenticated;
+GRANT ALL ON public.meta_ig_media_performance TO service_role;
+
+DROP POLICY IF EXISTS meta_ig_media_performance_select_own ON public.meta_ig_media_performance;
+CREATE POLICY meta_ig_media_performance_select_own ON public.meta_ig_media_performance
   FOR SELECT TO authenticated
-  USING (auth.uid() = user_id AND NOT (auth.jwt() ->> 'is_anonymous')::boolean IS TRUE);
+  USING (auth.uid() = user_id);
 
-DROP POLICY IF EXISTS meta_ig_media_performance_service_role ON meta_ig_media_performance;
-CREATE POLICY meta_ig_media_performance_service_role ON meta_ig_media_performance
+DROP POLICY IF EXISTS meta_ig_media_performance_service_role ON public.meta_ig_media_performance;
+CREATE POLICY meta_ig_media_performance_service_role ON public.meta_ig_media_performance
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 
-COMMENT ON TABLE meta_ig_account_daily IS
+COMMENT ON TABLE public.meta_ig_account_daily IS
   'Daily account-level Instagram insights. follower_count_delta is the per-day net change in followers (Graph API only exposes deltas, not historical absolute counts).';
 
-COMMENT ON TABLE meta_ig_media_performance IS
+COMMENT ON TABLE public.meta_ig_media_performance IS
   'Per-media lifetime metrics for the IG Business Account. Filter by lower(caption) ILIKE for keyword-based campaign attribution.';
