@@ -1,9 +1,10 @@
 -- =============================================================================
--- Refine campaign ROI calculation to use unified patient traceability and align
--- revenue with patient-attributed Doctoralia data.
+-- Restore the canonical campaign ROI function after traceability view refreshes.
 --
--- Dependency guards keep preview/core-only databases from resolving reporting
--- views before they exist while preserving the historical ROI refinement logic.
+-- Several legacy migrations rebuild vw_lead_traceability or unified Doctoralia
+-- reporting views with DROP VIEW ... CASCADE, which can remove dependent SQL
+-- functions in fresh CI databases. Keep this migration as the latest canonical
+-- get_campaign_roi definition and make it dependency-aware for preview schemas.
 -- =============================================================================
 
 DO $$
@@ -11,7 +12,7 @@ BEGIN
   IF to_regclass('public.vw_lead_traceability') IS NULL
      OR to_regclass('public.vw_doctoralia_lead_traceability_unified') IS NULL
      OR to_regclass('public.meta_daily_insights') IS NULL THEN
-    RAISE NOTICE 'Skipping get_campaign_roi refinement: required reporting relations do not exist yet.';
+    RAISE NOTICE 'Skipping get_campaign_roi restore: required reporting relations do not exist yet.';
     RETURN;
   END IF;
 
