@@ -5,7 +5,7 @@
 --
 -- This migration is now limited to tightening permissions on the function.
 -- The canonical function body and dependency on vw_lead_traceability live in
--- the earlier migration that recreates both the view and function together.
+-- 20260518120000_restore_campaign_roi_after_traceability_views.sql.
 -- =============================================================================
 
 DO $$
