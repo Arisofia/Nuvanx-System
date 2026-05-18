@@ -42,7 +42,9 @@ const requiredSecretKeys = [
   'WHATSAPP_ACCESS_TOKEN',
   'WHATSAPP_PHONE_NUMBER_ID',
   'WHATSAPP_WEBHOOK_VERIFY_TOKEN',
-  'SUPABASE_SERVICE_ROLE_KEY',
+  'SUPABASE_SERVICE_ROLE_KEY', // Included for GitHub/Vercel, filtered for Supabase API
+  'NUVANX_SUPABASE_SERVICE_ROLE_KEY', // Included for GitHub/Vercel, filtered for Supabase API
+  'SUPABASE_ANON_KEY', // Included for GitHub/Vercel, filtered for Supabase API
   'MCP_API_KEY',
   'HEALTH_CHECK_API_AUTH_TOKEN',
 ];
