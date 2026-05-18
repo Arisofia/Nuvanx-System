@@ -4,7 +4,7 @@
 
 BEGIN;
 
-DROP FUNCTION IF EXISTS get_campaigns_filter(DATE, DATE);
+DROP FUNCTION IF EXISTS get_campaigns_filter;
 
 CREATE OR REPLACE FUNCTION get_campaigns_filter(
   p_from_date DATE DEFAULT NULL,
@@ -35,10 +35,10 @@ AS $$
   ORDER BY pi.campaign_id ASC;
 $$;
 
-COMMENT ON FUNCTION get_campaigns_filter(DATE, DATE) IS
+COMMENT ON FUNCTION get_campaigns_filter IS
   'Aggregates Doctoralia production appointments and amount by campaign_id from public.produccion_intermediarios. registros/spend are deprecated compatibility aliases for total_citas/total_importe.';
 
-REVOKE ALL ON FUNCTION get_campaigns_filter(DATE, DATE) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION get_campaigns_filter(DATE, DATE) TO service_role;
+REVOKE ALL ON FUNCTION get_campaigns_filter FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION get_campaigns_filter TO service_role;
 
 COMMIT;
