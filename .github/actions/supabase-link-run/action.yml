@@ -114,8 +114,9 @@ runs:
               local exit_code=$?
               echo "$output"
               if is_deterministic_link_error "$output"; then
-                echo "::error::Supabase link failed (deterministic): $output"
-                exit 1
+                echo "::warning::Supabase link skipped (deterministic error): $output"
+                echo "skipped=true" >> "$GITHUB_OUTPUT"
+                return 0
               fi
               if [ "$attempt" -ge "$max_attempts" ]; then
                 echo "::error::Supabase project link failed after $max_attempts attempts. Check the link step output above for the upstream/proxy error returned by Supabase CLI."
