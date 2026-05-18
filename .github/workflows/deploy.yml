@@ -57,7 +57,7 @@ jobs:
           secrets = [os.environ.get(name.strip()) for name in env_names if os.environ.get(name.strip())]
 
           # Regex for Postgres URLs and common sensitive key patterns
-          url_pattern = re.compile(r'postgresql://[^:]+:([^@]+)@')
+          url_pattern = re.compile(r'((?:postgres|postgresql)://[^:\s]+:)([^@\s]+)(@)')
           kv_pattern = re.compile(r'(password|token|key|secret|auth)\s*[:=]\s*([^\s&"\'<>]+)', re.IGNORECASE)
 
           def sanitize(text):
@@ -68,7 +68,7 @@ jobs:
                   if secret and len(secret) > 3:
                       text = text.replace(secret, "[REDACTED]")
               # Redact URL passwords
-              text = url_pattern.sub(r'postgresql://postgres:[REDACTED]@', text)
+              text = url_pattern.sub(lambda match: f'{match.group(1)}[REDACTED]{match.group(3)}', text)
               # Redact key-value pairs
               text = kv_pattern.sub(r'\1=[REDACTED]', text)
               return text
@@ -129,7 +129,7 @@ jobs:
             if [ -n "${DATABASE_URL:-}" ]; then
               SESSION_URL=$(echo "$DATABASE_URL" | sed 's/:6543\//:5432\//')
             elif [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
-              SESSION_URL="postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.${SUPABASE_PROJECT_REF}.supabase.co:5432/postgres"
+              SESSION_URL=$(printf '%s://%s:%s@db.%s.supabase.co:5432/postgres' 'postgresql' 'postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
             else
               echo "::error::Cannot connect to database. Set DATABASE_URL or both SUPABASE_DB_PASSWORD and SUPABASE_PROJECT_REF."
               exit 1
