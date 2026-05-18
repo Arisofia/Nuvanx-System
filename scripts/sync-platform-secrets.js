@@ -43,6 +43,9 @@ const requiredSecretKeys = [
   'WHATSAPP_ACCESS_TOKEN',
   'WHATSAPP_PHONE_NUMBER_ID',
   'WHATSAPP_WEBHOOK_VERIFY_TOKEN',
+  'SUPABASE_SERVICE_ROLE_KEY', // Included for GitHub/Vercel, filtered for Supabase API
+  'NUVANX_SUPABASE_SERVICE_ROLE_KEY', // Included for GitHub/Vercel, filtered for Supabase API
+  'SUPABASE_ANON_KEY', // Included for GitHub/Vercel, filtered for Supabase API
   'MCP_API_KEY',
   'HEALTH_CHECK_API_AUTH_TOKEN',
 ];
@@ -123,8 +126,7 @@ async function setSupabaseSecrets(vars, projectRef) {
   if (!accessToken || !projectRef) return { skipped: true, reason: 'missing token or project ref' };
 
   const payload = requiredSecretKeys
-    .filter((k) => vars[k])
-    .filter((k) => !k.startsWith('SUPABASE_') && k !== 'NUVANX_SUPABASE_SERVICE_ROLE_KEY')
+    .filter((k) => vars[k] && !k.startsWith('SUPABASE_') && !k.startsWith('NUVANX_SUPABASE_'))
     .map((k) => ({ name: k, value: vars[k] }));
 
   if (payload.length === 0) return { skipped: true, reason: 'no secret values to upload' };
@@ -296,6 +298,11 @@ function setGithubSecrets(vars) {
     'VITE_SUPABASE_ANON_KEY',
     'PRODUCTION_E2E_URL',
     'PRODUCTION_E2E_TOKEN',
+    // Add other secrets that should be synced to GitHub here if not already in requiredSecretKeys
+    'SUPABASE_SERVICE_ROLE_KEY',
+    'NUVANX_SUPABASE_SERVICE_ROLE_KEY',
+    'SUPABASE_ANON_KEY',
+    'VITE_SUPABASE_URL',
   ];
   for (const key of githubKeys) {
     const value = vars[key];
