@@ -47,7 +47,7 @@ This file records the current audit baseline for future Codex sessions. Treat th
 - `meta_cache` and DB fallback can make Meta endpoints appear available while serving stale or degraded data.
 - Doctoralia is documented as ingestion-based, not a live Doctoralia API integration.
 - The frontend build was not confirmed in the audit environment because local dependency installation/build was blocked or incomplete.
-- Production HTTP checks failed from the audit environment due network/proxy restrictions; they must be rerun from an allowed environment.
+- Production HTTP checks failed from the audit environment due to network/proxy restrictions; they must be rerun from an allowed environment.
 
 ## Evidence discipline for future Codex runs
 
