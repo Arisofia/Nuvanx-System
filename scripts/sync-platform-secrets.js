@@ -21,7 +21,6 @@ function normalizeSafePath(filePath, baseDir = ROOT) {
 
 const requiredSecretKeys = [
   'SUPABASE_ACCESS_TOKEN',
-  'NUVANX_SUPABASE_SERVICE_ROLE_KEY',
   'META_ACCESS_TOKEN',
   'META_AD_ACCOUNT_ID',
   'META_APP_SECRET',
@@ -43,6 +42,7 @@ const requiredSecretKeys = [
   'WHATSAPP_ACCESS_TOKEN',
   'WHATSAPP_PHONE_NUMBER_ID',
   'WHATSAPP_WEBHOOK_VERIFY_TOKEN',
+  'SUPABASE_SERVICE_ROLE_KEY',
   'MCP_API_KEY',
   'HEALTH_CHECK_API_AUTH_TOKEN',
 ];
@@ -123,8 +123,7 @@ async function setSupabaseSecrets(vars, projectRef) {
   if (!accessToken || !projectRef) return { skipped: true, reason: 'missing token or project ref' };
 
   const payload = requiredSecretKeys
-    .filter((k) => vars[k])
-    .filter((k) => !k.startsWith('SUPABASE_') && k !== 'NUVANX_SUPABASE_SERVICE_ROLE_KEY')
+    .filter((k) => vars[k] && !k.startsWith('SUPABASE_') && !k.startsWith('NUVANX_SUPABASE_'))
     .map((k) => ({ name: k, value: vars[k] }));
 
   if (payload.length === 0) return { skipped: true, reason: 'no secret values to upload' };
@@ -289,14 +288,14 @@ function setGithubSecrets(vars) {
   }
 
   let uploaded = 0;
-  const githubKeys = [
+  const githubKeys = Array.from(new Set([
     ...requiredSecretKeys,
     'VITE_SUPABASE_URL',
     'VITE_SUPABASE_PUBLISHABLE_KEY',
     'VITE_SUPABASE_ANON_KEY',
     'PRODUCTION_E2E_URL',
     'PRODUCTION_E2E_TOKEN',
-  ];
+  ]));
   for (const key of githubKeys) {
     const value = vars[key];
     if (!value || !safeName(key)) continue;

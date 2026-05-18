@@ -115,6 +115,11 @@ BEGIN
       REVOKE ALL ON FUNCTION public.get_campaign_roi(uuid,text,text,text) FROM PUBLIC, anon, authenticated;
       GRANT EXECUTE ON FUNCTION public.get_campaign_roi(uuid,text,text,text) TO service_role;
     END IF;
+
+    IF to_regprocedure('public.reconcile_doctoralia_subjects_to_leads(uuid)') IS NOT NULL THEN
+      REVOKE ALL ON FUNCTION public.reconcile_doctoralia_subjects_to_leads(uuid) FROM PUBLIC, anon, authenticated;
+      GRANT EXECUTE ON FUNCTION public.reconcile_doctoralia_subjects_to_leads(uuid) TO service_role;
+    END IF;
   END IF;
 END $$;
 

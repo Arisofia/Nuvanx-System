@@ -24,16 +24,16 @@
     "production:e2e": "node scripts/production-e2e.js"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.105.1",
-    "dotenv": "^16.4.5",
+    "@supabase/supabase-js": "^2.105.4",
+    "dotenv": "^17.4.2",
     "googleapis": "^171.4.0",
-    "pg": "^8.11.3",
+    "pg": "^8.21.0",
     "xlsx-populate": "^1.21.0"
   },
   "devDependencies": {
-    "@types/node": "^25.6.0",
+    "@types/node": "^25.8.0",
     "tsx": "^4.22.1",
-    "tweetsodium": "^0.0.4",
-    "vitest": "^3.0.0"
+    "tweetsodium": "^0.0.6",
+    "vitest": "^4.1.6"
   }
 }

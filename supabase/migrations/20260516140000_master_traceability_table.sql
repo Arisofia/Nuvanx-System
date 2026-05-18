@@ -16,7 +16,7 @@ CREATE OR REPLACE FUNCTION public.extract_produccion_intermediarios_doc_patient_
 RETURNS TEXT
 LANGUAGE plpgsql
 IMMUTABLE
-SET search_path = ''
+SET search_path = 'public', 'pg_catalog'
 AS $$
 BEGIN
   -- Match digits at the start of the string followed by a dot
@@ -31,13 +31,13 @@ CREATE OR REPLACE FUNCTION public.extract_produccion_intermediarios_name(p_asunt
 RETURNS TEXT
 LANGUAGE plpgsql
 IMMUTABLE
-SET search_path = ''
+SET search_path = 'public', 'pg_catalog'
 AS $$
 DECLARE
   v_name TEXT;
 BEGIN
   -- Match everything between "ID. " and the first "["
-  v_name := (regexp_match(p_asunto, '^\d+\.\s+([^\[]+?)\s*(?:\[|$)'))[1];
+  v_name := (regexp_match(p_asunto, '^\d+\.\s+([^\[\n]+?)\s*(?:\[|$)'))[1];
   
   -- If there are no brackets, just take everything after the ID
   IF v_name IS NULL THEN
@@ -55,17 +55,20 @@ CREATE OR REPLACE FUNCTION public.extract_produccion_intermediarios_treatment(p_
 RETURNS TEXT
 LANGUAGE plpgsql
 IMMUTABLE
-SET search_path = ''
+SET search_path = 'public', 'pg_catalog'
 AS $$
 BEGIN
   -- Match content of the LAST parentheses in the string
   -- Regex: find '(' followed by any non-')' followed by ')' at the end, allowing for trailing spaces
-  RETURN btrim((regexp_match(p_asunto, '\(([^)]+)\)\s*$'))[1]);
+  RETURN btrim((regexp_match(p_asunto, '\(([^)]+)\)\s*(\[.*\])?\s*$'))[1]);
 EXCEPTION WHEN OTHERS THEN
   -- Fallback: if no trailing parens, check for any parens
   RETURN btrim((regexp_match(p_asunto, '\(([^)]+)\)'))[1]);
 END;
 $$;
+
+-- 1.1 Add Index for view performance
+CREATE INDEX IF NOT EXISTS idx_produccion_intermediarios_phone_normalized ON public.produccion_intermediarios (phone_normalized);
 
 -- 2. Create the Master Traceability View (No Mock Data)
 -- This view performs the actual phone-based match between Meta and Drive data.
@@ -127,7 +130,7 @@ COMMENT ON VIEW public.master_pacientes_trazabilidad IS
 CREATE OR REPLACE FUNCTION public.fn_extract_and_normalize_produccion_phone()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-SET search_path = ''
+SET search_path = 'public', 'pg_catalog'
 AS $$
 BEGIN
   -- Phone normalization (already handles brackets and 9-digit local)
@@ -141,5 +144,18 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+-- 4. Security Hardening
+REVOKE ALL ON FUNCTION public.extract_produccion_intermediarios_doc_patient_id(TEXT) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.extract_produccion_intermediarios_name(TEXT) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.extract_produccion_intermediarios_treatment(TEXT) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_extract_and_normalize_produccion_phone() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON TABLE public.master_pacientes_trazabilidad FROM PUBLIC, anon, authenticated;
+
+GRANT EXECUTE ON FUNCTION public.extract_produccion_intermediarios_doc_patient_id(TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION public.extract_produccion_intermediarios_name(TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION public.extract_produccion_intermediarios_treatment(TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION public.fn_extract_and_normalize_produccion_phone() TO service_role;
+GRANT SELECT ON public.master_pacientes_trazabilidad TO service_role;
 
 COMMIT;

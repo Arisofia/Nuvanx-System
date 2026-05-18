@@ -12,7 +12,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4 # v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Fail on merge conflict markers in CI-critical config
         run: |
@@ -108,10 +108,10 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v4 # v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Use Node.js
-        uses: actions/setup-node@v4 # v4
+        uses: actions/setup-node@1d112162235d9ef29889d90d33029e5206b03331 # v4.2.0
         with:
           node-version: '22'
           cache: 'npm'
@@ -134,10 +134,10 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v4 # v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Use Node.js
-        uses: actions/setup-node@v4 # v4
+        uses: actions/setup-node@1d112162235d9ef29889d90d33029e5206b03331 # v4.2.0
         with:
           node-version: '22'
           cache: 'npm'
@@ -161,10 +161,10 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v4 # v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Use Node.js
-        uses: actions/setup-node@v4 # v4
+        uses: actions/setup-node@1d112162235d9ef29889d90d33029e5206b03331 # v4.2.0
         with:
           node-version: '22'
           cache: 'npm'
@@ -209,10 +209,10 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v4 # v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Use Node.js
-        uses: actions/setup-node@v4 # v4
+        uses: actions/setup-node@1d112162235d9ef29889d90d33029e5206b03331 # v4.2.0
         with:
           node-version: '22'
           cache: 'npm'
@@ -255,10 +255,10 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4 # v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Use Node.js
-        uses: actions/setup-node@v4 # v4
+        uses: actions/setup-node@1d112162235d9ef29889d90d33029e5206b03331 # v4.2.0
         with:
           node-version: '22'
           cache: 'npm'
@@ -285,10 +285,10 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4 # v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Deno
-        uses: denoland/setup-deno@v2
+        uses: denoland/setup-deno@905f99276d47b59e51c1cc8f36248d61794270bc # v2.0.2
         with:
           deno-version: v2.x
 
@@ -300,7 +300,7 @@ jobs:
           fi
           echo "Caching API function..."
           deno cache --config supabase/functions/deno.json supabase/functions/api/index.ts
-          
+
           if [ -f supabase/functions/mcp/deno.json ]; then
             echo "Caching MCP function with local config..."
             deno cache --config supabase/functions/mcp/deno.json supabase/functions/mcp/index.ts
@@ -318,7 +318,7 @@ jobs:
         run: |
           echo "Checking API function..."
           deno check --config supabase/functions/deno.json supabase/functions/api/index.ts
-          
+
           if [ -f supabase/functions/mcp/deno.json ]; then
             echo "Checking MCP function with local config..."
             deno check --config supabase/functions/mcp/deno.json supabase/functions/mcp/index.ts

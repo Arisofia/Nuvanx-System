@@ -37,10 +37,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4 # v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4 # v4
+        uses: actions/setup-node@1d112162235d9ef29889d90d33029e5206b03331 # v4.2.0
         with:
           node-version: '22'
 

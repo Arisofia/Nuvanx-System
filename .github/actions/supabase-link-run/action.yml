@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://json.schemastore.org/github-action.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-action.json
 name: 'Supabase Link and Run'
 description: 'Composite action that links a Supabase project and runs a command using the Supabase CLI.'
 
@@ -37,7 +37,7 @@ runs:
   using: 'composite'
   steps:
     - name: Setup Supabase CLI
-      uses: supabase/setup-cli@v2
+      uses: supabase/setup-cli@530230325d7c57099719cf621495e8e24446c63b # v1.2.0
       with:
         version: latest
 

@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
 # Deploy Supabase - sequential pipeline on main
 #
 # Order: supabase-migrate -> supabase-functions
@@ -42,7 +42,7 @@ jobs:
       MIGRATIONS_LOG: supabase-migrations.log
       REDACT_ENV_NAMES: "SUPABASE_ACCESS_TOKEN,SUPABASE_DB_PASSWORD,DATABASE_URL,SESSION_URL"
     steps:
-      - uses: actions/checkout@v4 # v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Initialize migration log and sanitizer
         run: |
@@ -58,7 +58,7 @@ jobs:
           
           # Regex for Postgres URLs and common sensitive key patterns
           url_pattern = re.compile(r'postgresql://[^:]+:([^@]+)@')
-          kv_pattern = re.compile(r'(password|token|key|secret)=([^\s&]+)', re.IGNORECASE)
+          kv_pattern = re.compile(r'(password|token|key|secret|auth)\s*[:=]\s*([^\s&"\'<>]+)', re.IGNORECASE)
 
           def sanitize(text):
               if not text: return text
@@ -136,37 +136,9 @@ jobs:
             echo "::add-mask::$SESSION_URL"
 
             # Retry transient Supabase Preview failures while surfacing deterministic SQL errors.
-            print_migration_failure_summary() {
-              local output="$1"
-              local summary sanitized_summary
-              summary=$(printf '%s\n' "$output" | awk '
-                BEGIN { remaining = 0; found = 0 }
-                /ERROR:|SQLSTATE|ErrorResponse|cannot change return type|duplicate key|permission denied|failed to connect|network is unreachable|password authentication failed|could not find valid entry for job|relation .* does not exist|column .* does not exist|function .* does not exist|type .* does not exist|invalid input syntax|checksum|failed to parse|error parsing/ {
-                  if (!found) { found = 1; remaining = 40 }
-                }
-                found && remaining > 0 { print; remaining-- }
-              ')
-
-              if [ -n "$summary" ]; then
-                sanitized_summary=$(printf '%s\n' "$summary" | sanitize_log)
-                echo "::group::First Supabase migration failure block"
-                printf '%s\n' "$sanitized_summary"
-                echo "::endgroup::"
-                {
-                  echo
-                  echo "#### First Supabase migration failure block"
-                  echo '```text'
-                  printf '%s\n' "$sanitized_summary"
-                  echo '```'
-                } >> "$GITHUB_STEP_SUMMARY"
-              else
-                echo "::warning::No ERROR, SQLSTATE, ErrorResponse, connection, or known SQL failure marker was found in the Supabase CLI output. Review the full --debug output above or download supabase-migration-logs artifact."
-              fi
-            }
-
             is_deterministic_migration_error() {
               local output="$1"
-              local pattern='syntax error|permission denied|not a valid migration|SQLSTATE (42P01|42703|42P07|23505)|could not find valid entry for job|relation .* does not exist|column .* does not exist|function .* does not exist|type .* does not exist|invalid input syntax|duplicate key value violates unique constraint|violates (foreign key|not-null|check) constraint|checksum|failed to parse|error parsing|Unexpected HTTP response: 404'
+              local pattern='syntax error|permission denied|not a valid migration|SQLSTATE (42P01|42703|42P07|23505|42P01)|could not find valid entry for job|relation .* does not exist|column .* does not exist|function .* does not exist|type .* does not exist|invalid input syntax|duplicate key value violates unique constraint|violates (foreign key|not-null|check) constraint|checksum|failed to parse|error parsing|Unexpected HTTP response: 404|relation "public\..*" does not exist'
               echo "$output" | grep -Eiq "$pattern"
             }
 
@@ -186,17 +158,10 @@ jobs:
               if [ -n "$ghosts" ]; then
                 for version in $ghosts; do
                   echo "Repairing ghost migration $version" | log_and_print "Repair Action"
-                  supabase migration repair --status reverted "$version" --db-url "$SESSION_URL" --debug 2>&1 | log_and_print "Repair Output" || {
-                    exit_code=$?
-                    echo "::error::Migration repair failed for version $version."
-                    return "$exit_code"
-                  }
+                  supabase migration repair --status reverted "$version" --db-url "$SESSION_URL" --debug 2>&1 | log_and_print "Repair Output"
                 done
-                output=$(supabase db push --include-all --db-url "$SESSION_URL" --debug 2>&1 | log_and_print "Post-Repair Push")
-                exit_code=$?
-                if [ "$exit_code" -eq 0 ]; then
-                   return 0
-                fi
+                supabase db push --include-all --db-url "$SESSION_URL" --debug 2>&1 | log_and_print "Post-Repair Push"
+                return $?
               fi
 
               # Duplicate schema_migrations versions indicate local migration history is not aligned
@@ -226,7 +191,6 @@ jobs:
 
               while true; do
                 echo "Running Supabase migrations (attempt $attempt/$max_attempts)..."
-                echo "Running Supabase migrations (attempt $attempt/$max_attempts)..." | tee -a "$MIGRATIONS_LOG" > /dev/null
                 if run_db_push_once; then
                   return 0
                 fi
@@ -248,12 +212,12 @@ jobs:
 
             run_with_retry
 
-      - name: Upload Supabase migration log
+      - name: Upload migration logs
         if: always() && steps.validate.outputs.skip_supabase != 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@65c86da06ee3960840217bd57253d4039de5d396 # v4.6.0
         with:
-          name: supabase-migrations-log
-          path: supabase-migrations.log
+          name: supabase-migration-logs
+          path: ${{ env.MIGRATIONS_LOG }}
           retention-days: 14
           if-no-files-found: warn
 
@@ -269,7 +233,7 @@ jobs:
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
     steps:
-      - uses: actions/checkout@v4 # v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Deploy API Edge Function
         uses: ./.github/actions/supabase-link-run
