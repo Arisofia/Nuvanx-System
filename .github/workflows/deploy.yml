@@ -50,30 +50,30 @@ jobs:
           chmod 600 "$MIGRATIONS_LOG"
           
           # Create Python sanitizer script (streaming line-by-line)
-          cat << 'EOF' > sanitize_logs.py
-import sys, re, os
+          cat << 'EOF' | sed 's/^          //' > sanitize_logs.py
+          import sys, re, os
 
-env_names = os.environ.get('REDACT_ENV_NAMES', '').split(',')
-secrets = [os.environ.get(name.strip()) for name in env_names if os.environ.get(name.strip())]
+          env_names = os.environ.get('REDACT_ENV_NAMES', '').split(',')
+          secrets = [os.environ.get(name.strip()) for name in env_names if os.environ.get(name.strip())]
 
-# Regex for Postgres URLs and common sensitive key patterns
-url_pattern = re.compile(r'postgresql://[^:]+:([^@]+)@')
-kv_pattern = re.compile(r'(password|token|key|secret|auth)\s*[:=]\s*([^\s&"\'<>]+)', re.IGNORECASE)
+          # Regex for Postgres URLs and common sensitive key patterns
+          url_pattern = re.compile(r'postgresql://[^:]+:([^@]+)@')
+          kv_pattern = re.compile(r'(password|token|key|secret|auth)\s*[:=]\s*([^\s&"\'<>]+)', re.IGNORECASE)
 
-def sanitize(text):
-    if not text: return text
-    # Redact known env values
-    for secret in secrets:
-        if len(secret) > 5:
-            text = text.replace(secret, "[REDACTED_SECRET]")
-    # Redact URL passwords
-    text = url_pattern.sub(r'postgresql://postgres:[REDACTED_PASSWORD]@', text)
-    # Redact key-value pairs
-    text = kv_pattern.sub(r'\1=[REDACTED_KV]', text)
-    return text
+          def sanitize(text):
+              if not text: return text
+              # Redact known env values
+              for secret in secrets:
+                  if len(secret) > 5:
+                      text = text.replace(secret, "[REDACTED_SECRET]")
+              # Redact URL passwords
+              text = url_pattern.sub(r'postgresql://postgres:[REDACTED_PASSWORD]@', text)
+              # Redact key-value pairs
+              text = kv_pattern.sub(r'\1=[REDACTED_KV]', text)
+              return text
 
-for line in sys.stdin:
-    sys.stdout.write(sanitize(line))
+          for line in sys.stdin:
+              sys.stdout.write(sanitize(line))
           EOF
 
       - name: Validate Supabase deployment secrets
@@ -135,17 +135,18 @@ for line in sys.stdin:
             fi
             echo "::add-mask::$SESSION_URL"
 
+            # Helper to surface migration errors without scrolling through debug noise.
             print_migration_failure_summary() {
               local output="$1"
               echo "--- Migration Failure Summary ---"
-              echo "$output" | grep -Ei "error|failed|fatal" | head -n 20
+              echo "$output" | grep -Ei "error|failed|fatal" | head -n 20 || true
               echo "--------------------------------"
             }
 
             # Retry transient Supabase Preview failures while surfacing deterministic SQL errors.
             is_deterministic_migration_error() {
               local output="$1"
-              local pattern='syntax error|permission denied|not a valid migration|SQLSTATE (42P01|42703|42P07|23505|42P01)|could not find valid entry for job|relation .* does not exist|column .* does not exist|function .* does not exist|type .* does not exist|invalid input syntax|duplicate key value violates unique constraint|violates (foreign key|not-null|check) constraint|checksum|failed to parse|error parsing|Unexpected HTTP response: 404|relation "public\..*" does not exist'
+              local pattern='syntax error|permission denied|not a valid migration|SQLSTATE (42P01|42703|42P07|23505)|could not find valid entry for job|relation .* does not exist|column .* does not exist|function .* does not exist|type .* does not exist|invalid input syntax|duplicate key value violates unique constraint|violates (foreign key|not-null|check) constraint|checksum|failed to parse|error parsing|Unexpected HTTP response: 404|relation "public\..*" does not exist'
               echo "$output" | grep -Eiq "$pattern"
             }
 

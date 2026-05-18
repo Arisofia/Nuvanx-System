@@ -61,10 +61,7 @@ BEGIN
       SUM(COALESCE(fs.amount_net, 0)) AS total_rev,
       MIN(COALESCE(fs.intake_at, fs.settled_at)) AS first_ev
     FROM public.leads l
-    JOIN public.financial_settlements fs ON (
-      -- The magical 9-digit match proven by diagnostic
-      public.normalize_phone_9digits(l.phone) = public.normalize_phone_9digits(fs.patient_phone)
-    )
+    JOIN public.financial_settlements fs ON l.phone_normalized = fs.phone_normalized
     WHERE l.clinic_id = v_clinic_id
       AND fs.clinic_id = v_clinic_id
       AND l.phone IS NOT NULL

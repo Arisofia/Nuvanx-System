@@ -104,15 +104,22 @@ BEGIN
     FROM scoped_leads sl
     JOIN settlement_base sb ON sb.clinic_id = sl.clinic_id
     JOIN patient_lookup pl ON pl.patient_id = sb.patient_id
-    WHERE (
-      -- Match by Phone (Last 9 digits)
-      RIGHT(regexp_replace(sb.patient_phone_norm, '[^0-9]', '', 'g'), 9) = RIGHT(regexp_replace(sl.phone_normalized, '[^0-9]', '', 'g'), 9)
-      OR RIGHT(regexp_replace(sb.stored_phone_norm, '[^0-9]', '', 'g'), 9) = RIGHT(regexp_replace(sl.phone_normalized, '[^0-9]', '', 'g'), 9)
-      OR RIGHT(regexp_replace(pl.phone_normalized, '[^0-9]', '', 'g'), 9) = RIGHT(regexp_replace(sl.phone_normalized, '[^0-9]', '', 'g'), 9)
-      -- Match by DNI
-      OR (sl.dni IS NOT NULL AND pl.dni IS NOT NULL AND sl.dni = pl.dni)
-      -- Match by Normalized Name (fallback)
-      OR (sl.lead_name_norm IS NOT NULL AND pl.patient_name_norm IS NOT NULL AND sl.lead_name_norm = pl.patient_name_norm)
+    WHERE EXISTS (
+      -- Strategy 1: Match by Phone (Last 9 digits). Subqueries in EXISTS allow 
+      -- the Postgres planner to short-circuit as soon as a match is found.
+      SELECT 1 WHERE RIGHT(regexp_replace(sb.patient_phone_norm, '[^0-9]', '', 'g'), 9) = RIGHT(regexp_replace(sl.phone_normalized, '[^0-9]', '', 'g'), 9)
+      UNION ALL
+      SELECT 1 WHERE RIGHT(regexp_replace(sb.stored_phone_norm, '[^0-9]', '', 'g'), 9) = RIGHT(regexp_replace(sl.phone_normalized, '[^0-9]', '', 'g'), 9)
+      UNION ALL
+      SELECT 1 WHERE RIGHT(regexp_replace(pl.phone_normalized, '[^0-9]', '', 'g'), 9) = RIGHT(regexp_replace(sl.phone_normalized, '[^0-9]', '', 'g'), 9)
+      
+      UNION ALL
+      -- Strategy 2: Match by DNI
+      SELECT 1 WHERE (sl.dni IS NOT NULL AND pl.dni IS NOT NULL AND sl.dni = pl.dni)
+      
+      UNION ALL
+      -- Strategy 3: Match by Normalized Name (fallback)
+      SELECT 1 WHERE (sl.lead_name_norm IS NOT NULL AND pl.patient_name_norm IS NOT NULL AND sl.lead_name_norm = pl.patient_name_norm)
     )
   ),
   first_appointment AS (
