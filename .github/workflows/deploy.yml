@@ -33,7 +33,7 @@ jobs:
     permissions:
       contents: read
     outputs:
-      skip_supabase: ${{ steps.validate.outputs.skip_supabase }}
+      skip_supabase: ${{ steps.validate.outputs.skip_supabase || steps.migrate.outputs.skipped }}
     env:
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -101,6 +101,7 @@ jobs:
           fi
 
       - name: Supabase DB migrations
+        id: migrate
         if: steps.validate.outputs.skip_supabase != 'true'
         uses: ./.github/actions/supabase-link-run
         with:
@@ -174,6 +175,7 @@ jobs:
 
               if is_deterministic_migration_error "$output"; then
                 echo "::error::Non-transient Supabase migration error detected. Not retrying; fix the SQL/CLI error shown above."
+                print_migration_failure_summary "$output"
                 DB_PUSH_RETRYABLE=false
                 return "$exit_code"
               fi
