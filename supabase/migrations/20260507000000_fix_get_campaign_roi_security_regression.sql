@@ -20,10 +20,10 @@
 -- =============================================================================
 
 -- Step 1: drop the SECURITY DEFINER overload
-DROP FUNCTION IF EXISTS public.get_campaign_roi(uuid, text, text, text);
+DROP FUNCTION IF EXISTS get_campaign_roi(uuid, text, text, text);
 
 -- Step 2: re-create as SECURITY INVOKER so RLS on underlying tables is respected
-CREATE FUNCTION public.get_campaign_roi(
+CREATE FUNCTION get_campaign_roi(
   p_user_id UUID,
   p_from     TEXT DEFAULT '',
   p_to       TEXT DEFAULT '',
@@ -107,8 +107,8 @@ AS $$
 $$;
 
 -- Step 3: revoke from PUBLIC, anon, authenticated — service_role only
-REVOKE ALL   ON FUNCTION public.get_campaign_roi(uuid, text, text, text) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION public.get_campaign_roi(uuid, text, text, text) FROM anon, authenticated;
+REVOKE ALL   ON FUNCTION get_campaign_roi(uuid, text, text, text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION get_campaign_roi(uuid, text, text, text) FROM anon, authenticated;
 
 -- Step 4: grant only to service_role (called exclusively by the Edge Function)
-GRANT  EXECUTE ON FUNCTION public.get_campaign_roi(uuid, text, text, text) TO service_role;
+GRANT  EXECUTE ON FUNCTION get_campaign_roi(uuid, text, text, text) TO service_role;

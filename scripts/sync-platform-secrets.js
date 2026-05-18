@@ -24,6 +24,7 @@ const requiredSecretKeys = [
   'NUVANX_SUPABASE_SERVICE_ROLE_KEY',
   'META_ACCESS_TOKEN',
   'META_AD_ACCOUNT_ID',
+  'META_APP_SECRET',
   'META_CAPI_VERSION',
   'ACTION_SOURCE',
   'DEFAULT_PHONE_COUNTRY_CODE',
@@ -42,6 +43,8 @@ const requiredSecretKeys = [
   'WHATSAPP_ACCESS_TOKEN',
   'WHATSAPP_PHONE_NUMBER_ID',
   'WHATSAPP_WEBHOOK_VERIFY_TOKEN',
+  'MCP_API_KEY',
+  'HEALTH_CHECK_API_AUTH_TOKEN',
 ];
 
 const frontendKeys = [
@@ -115,6 +118,7 @@ function writeFrontendEnv(vars) {
 }
 
 async function setSupabaseSecrets(vars, projectRef) {
+  console.log(`[PHASE] Syncing secrets to Supabase project: ${projectRef}`);
   const accessToken = vars.SUPABASE_ACCESS_TOKEN;
   if (!accessToken || !projectRef) return { skipped: true, reason: 'missing token or project ref' };
 
@@ -137,6 +141,9 @@ async function setSupabaseSecrets(vars, projectRef) {
 
     if (!res.ok) {
       const body = await res.text();
+      if (res.status === 400) {
+        return { skipped: true, reason: `Bad Request (400): Likely an invalid secret name or reserved prefix. Body: ${body}` };
+      }
       if (res.status === 403) {
         return { skipped: true, reason: 'unauthorized: Check if your token has access to this specific project ref.' };
       }
@@ -232,6 +239,7 @@ async function setVercelSecrets(vars) {
   const teamId = vars.VERCEL_TEAM_ID;
   const projectId = vars.VERCEL_PROJECT_ID;
 
+  console.log(`[PHASE] Syncing environment variables to Vercel project: ${projectId}`);
   if (!token || !projectId) {
     console.warn('[sync-platform-secrets] Vercel sync skipped: VERCEL_TOKEN or VERCEL_PROJECT_ID missing.');
     return { skipped: true, reason: 'missing credentials' };
@@ -241,25 +249,33 @@ async function setVercelSecrets(vars) {
   const queryString = teamId ? `?teamId=${teamId}` : '';
   const listUrl = `https://api.vercel.com/v10/projects/${projectId}/env${queryString}`;
 
-  const existingResp = await vercelFetch(listUrl, 'GET', token);
-  const existingJson = await existingResp.json();
-  const existingMap = new Map();
-  for (const env of existingJson.envs || []) {
-    existingMap.set(env.key, [...(existingMap.get(env.key) || []), env]);
-  }
+  try {
+    const existingResp = await vercelFetch(listUrl, 'GET', token);
+    const existingJson = await existingResp.json();
+    const existingMap = new Map();
+    for (const env of existingJson.envs || []) {
+      existingMap.set(env.key, [...(existingMap.get(env.key) || []), env]);
+    }
 
-  const requiredTargets = ['production', 'preview', 'development'];
-  for (const key of frontendKeys) {
-    const value = vars[key];
-    if (!value) continue;
-    await handleVercelKey(key, value, existingMap, projectId, token, queryString, requiredTargets);
-    uploaded += 1;
-  }
+    const requiredTargets = ['production', 'preview', 'development'];
+    for (const key of frontendKeys) {
+      const value = vars[key];
+      if (!value) continue;
+      await handleVercelKey(key, value, existingMap, projectId, token, queryString, requiredTargets);
+      uploaded += 1;
+    }
 
-  return { uploaded };
+    return { uploaded };
+  } catch (error) {
+    if (error.message.includes('403')) {
+      return { skipped: true, reason: 'Vercel token is invalid or unauthorized for this project/team.' };
+    }
+    throw error;
+  }
 }
 
 function setGithubSecrets(vars) {
+  console.log('[PHASE] Syncing secrets to GitHub Actions...');
   const owner = vars.GITHUB_OWNER || 'Arisofia';
   const repo = vars.GITHUB_REPO || 'Nuvanx-System';
   const token = vars.GH_TOKEN || vars.GITHUB_TOKEN;
@@ -298,8 +314,14 @@ function setGithubSecrets(vars) {
 }
 
 async function main() {
+  console.log('[PHASE] Starting Platform Secret Synchronization');
+  
   const vars = mergeSources();
+  if (Object.keys(vars).length === 0) {
+    throw new Error('No secrets found in local .env files or environment. Aborting sync.');
+  }
 
+  console.log('[STEP] Updating local frontend .env.local...');
   const frontendEnvPath = writeFrontendEnv(vars);
 
   const githubResult = setGithubSecrets(vars);

@@ -78,6 +78,7 @@ const envFiles = [
 ];
 
 function updateLocalFiles(token) {
+  console.log('[PHASE] Updating local environment files...');
   let updated = 0;
   for (const relativePath of envFiles) {
     const envPath = path.resolve(process.cwd(), relativePath);
@@ -100,17 +101,17 @@ function updateLocalFiles(token) {
 }
 
 function setGithubSecret(token) {
-  console.log('Propagando META_ACCESS_TOKEN a GitHub Actions...');
+  console.log('[PHASE] Propagating META_ACCESS_TOKEN to GitHub Actions...');
   execFileSync('gh', ['secret', 'set', 'META_ACCESS_TOKEN', '--body', token], { stdio: 'inherit' });
 }
 
 function setSupabaseSecret(token) {
-  console.log('Propagando META_ACCESS_TOKEN a Supabase...');
+  console.log('[PHASE] Propagating META_ACCESS_TOKEN to Supabase Edge Functions...');
   execFileSync('supabase', ['secrets', 'set', `META_ACCESS_TOKEN=${token}`], { stdio: 'inherit' });
 }
 
 function setVercelEnv(token) {
-  console.log('Propagando META_ACCESS_TOKEN a Vercel (producción)...');
+  console.log('[PHASE] Propagating META_ACCESS_TOKEN to Vercel (production)...');
   try {
     execFileSync('vercel', ['env', 'update', 'META_ACCESS_TOKEN', 'production', '--value', token, '--yes'], { stdio: 'inherit' });
     return;

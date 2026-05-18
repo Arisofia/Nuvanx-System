@@ -14,10 +14,10 @@ WHERE source = 'meta_leadgen'
   AND stage IN ('treatment', 'appointment', 'closed');
 
 -- 2) Remove the obsolete SQL classifier helper.
-DROP FUNCTION IF EXISTS public.classify_meta_lead_stage(jsonb, text, text, text);
+DROP FUNCTION IF EXISTS classify_meta_lead_stage(jsonb, text, text, text);
 
 -- 3) Replace reconcile_doctoralia_matches_to_leads() with last-contact logic.
-CREATE OR REPLACE FUNCTION public.reconcile_doctoralia_matches_to_leads()
+CREATE OR REPLACE FUNCTION reconcile_doctoralia_matches_to_leads()
 RETURNS void
 LANGUAGE plpgsql
 SECURITY INVOKER
@@ -85,4 +85,4 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.reconcile_doctoralia_matches_to_leads() TO service_role;
+GRANT EXECUTE ON FUNCTION reconcile_doctoralia_matches_to_leads() TO service_role;

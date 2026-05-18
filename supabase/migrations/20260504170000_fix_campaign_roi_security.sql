@@ -2,7 +2,7 @@
 -- Fix Supabase advisor findings:
 --   anon_security_definer_function_executable
 --   authenticated_security_definer_function_executable
--- on public.get_campaign_roi(uuid, text, text, text).
+-- on get_campaign_roi(uuid, text, text, text).
 --
 -- Changes:
 --   1. Recreate the function as SECURITY INVOKER so it runs under the caller's
@@ -14,10 +14,10 @@
 -- =============================================================================
 
 -- Step 1: drop old SECURITY DEFINER overload
-DROP FUNCTION IF EXISTS public.get_campaign_roi(uuid, text, text, text);
+DROP FUNCTION IF EXISTS get_campaign_roi(uuid, text, text, text);
 
 -- Step 2: recreate as SECURITY INVOKER
-CREATE OR REPLACE FUNCTION public.get_campaign_roi(
+CREATE OR REPLACE FUNCTION get_campaign_roi(
   p_user_id UUID,
   p_from     TEXT DEFAULT '',
   p_to       TEXT DEFAULT '',
@@ -97,6 +97,6 @@ AS $$
 $$;
 
 -- Step 3: restrict access — service_role only; no public/anon/authenticated
-REVOKE ALL ON FUNCTION public.get_campaign_roi(uuid, text, text, text) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION public.get_campaign_roi(uuid, text, text, text) FROM anon, authenticated;
-GRANT  EXECUTE ON FUNCTION public.get_campaign_roi(uuid, text, text, text) TO service_role;
+REVOKE ALL ON FUNCTION get_campaign_roi(uuid, text, text, text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION get_campaign_roi(uuid, text, text, text) FROM anon, authenticated;
+GRANT  EXECUTE ON FUNCTION get_campaign_roi(uuid, text, text, text) TO service_role;
