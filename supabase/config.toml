@@ -407,3 +407,15 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 # declarative_schema_path = "./database"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
+
+[functions.api]
+verify_jwt = false
+import_map = "functions/deno.json"
+
+[functions.mcp]
+verify_jwt = false
+import_map = "functions/mcp/deno.json"
+
+[functions.daily-aggregates]
+verify_jwt = false
+import_map = "functions/deno.json"

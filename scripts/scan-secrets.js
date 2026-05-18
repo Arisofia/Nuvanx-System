@@ -33,6 +33,7 @@ for (const file of tracked) {
     for (const pattern of patterns) {
       if (pattern.re.test(line)) {
         if (pattern.name === 'Private key block' && line.includes('replaceAll(')) continue;
+        if (pattern.name.includes('Postgres') && line.includes('[REDACTED_PASSWORD]')) continue;
         findings.push({ file, line: index + 1, pattern: pattern.name });
       }
     }
