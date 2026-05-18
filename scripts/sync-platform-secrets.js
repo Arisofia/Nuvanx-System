@@ -23,6 +23,7 @@ const requiredSecretKeys = [
   'SUPABASE_ACCESS_TOKEN',
   'META_ACCESS_TOKEN',
   'META_AD_ACCOUNT_ID',
+  'SUPABASE_PROJECT_REF',
   'META_APP_SECRET',
   'META_CAPI_VERSION',
   'ACTION_SOURCE',
@@ -281,7 +282,6 @@ function setGithubSecrets(vars) {
   const repo = vars.GITHUB_REPO || 'Nuvanx-System';
   const token = vars.GH_TOKEN || vars.GITHUB_TOKEN;
 
-  if (!token) return { skipped: true, reason: 'missing github token' };
   if (!hasGhCli()) return { skipped: true, reason: 'gh CLI not installed' };
 
   const safeName = (value) => /^[A-Za-z0-9._-]+$/.test(value);
@@ -301,7 +301,10 @@ function setGithubSecrets(vars) {
   for (const key of githubKeys) {
     const value = vars[key];
     if (!value || !safeName(key)) continue;
-    const env = { ...process.env, GH_TOKEN: token };
+
+    const env = { ...process.env };
+    if (token) env.GH_TOKEN = token;
+
     // Use execFileSync directly (no shell) to avoid any shell-injection risk.
     // gh secret set reads the value from --body without shell interpolation.
     cp.execFileSync('gh', ['secret', 'set', key, '--repo', `${owner}/${repo}`, '--body', value], {
