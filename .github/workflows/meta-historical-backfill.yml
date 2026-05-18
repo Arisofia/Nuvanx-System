@@ -49,6 +49,7 @@ jobs:
           node-version: '24'
       - name: Validate required secrets
         run: |
+          echo "PHASE: Validating secrets for Meta Backfill"
           MISSING=()
           [ -z "$META_ACCESS_TOKEN" ]  && MISSING+=("META_ACCESS_TOKEN")
           [ -z "$META_AD_ACCOUNT_ID" ] && MISSING+=("META_AD_ACCOUNT_ID")

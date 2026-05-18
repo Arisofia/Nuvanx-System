@@ -241,22 +241,29 @@ async function setVercelSecrets(vars) {
   const queryString = teamId ? `?teamId=${teamId}` : '';
   const listUrl = `https://api.vercel.com/v10/projects/${projectId}/env${queryString}`;
 
-  const existingResp = await vercelFetch(listUrl, 'GET', token);
-  const existingJson = await existingResp.json();
-  const existingMap = new Map();
-  for (const env of existingJson.envs || []) {
-    existingMap.set(env.key, [...(existingMap.get(env.key) || []), env]);
-  }
+  try {
+    const existingResp = await vercelFetch(listUrl, 'GET', token);
+    const existingJson = await existingResp.json();
+    const existingMap = new Map();
+    for (const env of existingJson.envs || []) {
+      existingMap.set(env.key, [...(existingMap.get(env.key) || []), env]);
+    }
 
-  const requiredTargets = ['production', 'preview', 'development'];
-  for (const key of frontendKeys) {
-    const value = vars[key];
-    if (!value) continue;
-    await handleVercelKey(key, value, existingMap, projectId, token, queryString, requiredTargets);
-    uploaded += 1;
-  }
+    const requiredTargets = ['production', 'preview', 'development'];
+    for (const key of frontendKeys) {
+      const value = vars[key];
+      if (!value) continue;
+      await handleVercelKey(key, value, existingMap, projectId, token, queryString, requiredTargets);
+      uploaded += 1;
+    }
 
-  return { uploaded };
+    return { uploaded };
+  } catch (error) {
+    if (error.message.includes('403')) {
+      return { skipped: true, reason: 'Vercel token is invalid or unauthorized for this project/team.' };
+    }
+    throw error;
+  }
 }
 
 function setGithubSecrets(vars) {

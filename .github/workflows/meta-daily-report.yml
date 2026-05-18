@@ -37,6 +37,7 @@ jobs:
           node-version: '22'
       - name: Validate required secrets
         run: |
+          echo "PHASE: Validating secrets for Daily Unified Automation"
           MISSING=()
           [ -z "$META_ACCESS_TOKEN" ] && MISSING+=("META_ACCESS_TOKEN")
           [ -z "$META_AD_ACCOUNT_ID" ] && MISSING+=("META_AD_ACCOUNT_ID")
