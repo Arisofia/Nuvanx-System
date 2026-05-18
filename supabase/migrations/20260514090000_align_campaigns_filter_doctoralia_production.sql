@@ -4,7 +4,7 @@
 
 BEGIN;
 
-DROP FUNCTION IF EXISTS get_campaigns_filter;
+DROP FUNCTION IF EXISTS public.get_campaigns_filter(date, date);
 
 CREATE OR REPLACE FUNCTION get_campaigns_filter(
   p_from_date DATE DEFAULT NULL,
