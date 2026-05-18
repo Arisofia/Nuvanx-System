@@ -73,9 +73,10 @@ CREATE INDEX IF NOT EXISTS meta_post_performance_page_idx
   ON public.meta_post_performance (user_id, page_id, created_time DESC);
 
 -- Trigram index over message for keyword search (e.g. 'co2', 'botox', 'endolift').
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE SCHEMA IF NOT EXISTS extensions;
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA extensions;
 CREATE INDEX IF NOT EXISTS meta_post_performance_message_trgm_idx
-  ON public.meta_post_performance USING gin (lower(message) gin_trgm_ops);
+  ON public.meta_post_performance USING gin (lower(message) extensions.gin_trgm_ops);
 
 ALTER TABLE public.meta_post_performance ENABLE ROW LEVEL SECURITY;
 

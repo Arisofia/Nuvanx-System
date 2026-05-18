@@ -21,14 +21,13 @@ BEGIN
     RETURN;
   END IF;
 
-  EXECUTE $sql$
-    CREATE OR REPLACE FUNCTION get_campaign_roi(
-      p_user_id UUID,
-      p_from     TEXT DEFAULT '',
-      p_to       TEXT DEFAULT '',
-      p_source   TEXT DEFAULT ''
-    )
-    RETURNS TABLE (
+  CREATE OR REPLACE FUNCTION public.get_campaign_roi(
+    p_user_id UUID,
+    p_from     TEXT DEFAULT '',
+    p_to       TEXT DEFAULT '',
+    p_source   TEXT DEFAULT ''
+  )
+  RETURNS TABLE (
       campaign_name  TEXT,
       source         TEXT,
       month          TEXT,
@@ -38,11 +37,11 @@ BEGIN
       spend          NUMERIC,
       cac            NUMERIC
     )
-    LANGUAGE sql
-    STABLE
-    SECURITY DEFINER
-    SET search_path = public
-    AS $func$
+  LANGUAGE sql
+  STABLE
+  SECURITY DEFINER
+  SET search_path = ''
+  AS $func$
       WITH trace AS (
         SELECT
           COALESCE(t.campaign_name, 'Organic / Unknown') AS campaign_name,
@@ -102,8 +101,7 @@ BEGIN
       FROM grouped g
       LEFT JOIN meta_spend ms ON ms.month = g.month
       ORDER BY g.month DESC, g.leads_count DESC;
-    $func$;
+  $func$;
 
-    GRANT EXECUTE ON FUNCTION get_campaign_roi(UUID, TEXT, TEXT, TEXT) TO service_role;
-  $sql$;
+  GRANT EXECUTE ON FUNCTION public.get_campaign_roi(UUID, TEXT, TEXT, TEXT) TO service_role;
 END $$;

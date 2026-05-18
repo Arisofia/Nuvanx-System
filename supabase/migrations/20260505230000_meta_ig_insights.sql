@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS public.meta_ig_media_performance (
 CREATE INDEX IF NOT EXISTS meta_ig_media_performance_account_idx
   ON public.meta_ig_media_performance (user_id, ig_id, timestamp DESC);
 
+CREATE SCHEMA IF NOT EXISTS extensions;
 CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA extensions;
 CREATE INDEX IF NOT EXISTS meta_ig_media_performance_caption_trgm_idx
   ON public.meta_ig_media_performance USING gin (lower(caption) extensions.gin_trgm_ops);
