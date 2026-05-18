@@ -21,7 +21,8 @@
     "supabase:types": "npx --yes supabase gen types typescript --local --schema public > frontend/src/lib/supabase/types.ts",
     "install:all": "npm install && npm --prefix frontend install",
     "secrets:scan": "node scripts/scan-secrets.js",
-    "production:e2e": "node scripts/production-e2e.js"
+    "production:e2e": "node scripts/production-e2e.js",
+    "verify:ai-generate": "node scripts/verify-ai-generate.js"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.3",

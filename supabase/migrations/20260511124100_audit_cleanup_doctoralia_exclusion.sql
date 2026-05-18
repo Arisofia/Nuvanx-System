@@ -186,8 +186,8 @@ SELECT
   dp.match_confidence,
   dp.match_class,
   fs_first.settled_at     AS first_settlement_at
-FROM leads l
-LEFT JOIN users u ON u.id = l.user_id
+FROM public.leads l
+LEFT JOIN public.users u ON u.id = l.user_id
 LEFT JOIN patients p
   ON  (p.dni_hash = l.dni_hash AND l.dni_hash IS NOT NULL)
   OR   p.id = l.converted_patient_id
@@ -257,8 +257,8 @@ WHERE l.deleted_at IS NULL
 ALTER VIEW vw_lead_traceability SET (security_invoker = true);
 
 -- 3. Update vw_campaign_performance_real to exclude Doctoralia leads
-DROP VIEW IF EXISTS vw_campaign_performance_real CASCADE;
-CREATE OR REPLACE VIEW vw_campaign_performance_real AS
+DROP VIEW IF EXISTS public.vw_campaign_performance_real CASCADE;
+CREATE OR REPLACE VIEW public.vw_campaign_performance_real AS
 SELECT
   l.user_id,
   u.clinic_id,
@@ -293,13 +293,20 @@ SELECT
   ROUND(AVG(l.reply_delay_minutes), 1) AS avg_reply_delay_min,
   MIN(l.created_at)                    AS first_lead_at,
   MAX(l.created_at)                    AS last_lead_at
-FROM leads l
-LEFT JOIN users u ON u.id = l.user_id
+FROM public.leads l
+LEFT JOIN public.users u ON u.id = l.user_id
 WHERE l.deleted_at IS NULL
   AND (l.source IS NULL OR lower(btrim(l.source)) <> 'doctoralia')
-GROUP BY l.user_id, u.clinic_id, l.campaign_name, l.campaign_id, l.source;
+GROUP BY
+  l.user_id,
+  u.clinic_id,
+  COALESCE(l.campaign_name, 'Organic / Unknown'),
+  l.campaign_id,
+  l.source;
 
-ALTER VIEW vw_campaign_performance_real SET (security_invoker = true);
+ALTER VIEW public.vw_campaign_performance_real SET (security_invoker = true);
+GRANT SELECT ON public.vw_campaign_performance_real TO service_role;
+GRANT SELECT ON public.vw_campaign_performance_real TO authenticated;
 
 -- 4. Update vw_whatsapp_conversion_real to exclude Doctoralia leads
 DROP VIEW IF EXISTS vw_whatsapp_conversion_real CASCADE;

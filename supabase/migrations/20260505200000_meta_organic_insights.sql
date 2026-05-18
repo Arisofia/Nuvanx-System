@@ -13,7 +13,7 @@
 -- Backfill via scripts/meta-organic-backfill.js
 -- =============================================================================
 
-CREATE TABLE IF NOT EXISTS meta_organic_daily (
+CREATE TABLE IF NOT EXISTS public.meta_organic_daily (
   user_id        UUID         NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   page_id        VARCHAR(64)  NOT NULL,
   date           DATE         NOT NULL,
@@ -28,17 +28,20 @@ CREATE TABLE IF NOT EXISTS meta_organic_daily (
 );
 
 CREATE INDEX IF NOT EXISTS meta_organic_daily_date_idx
-  ON meta_organic_daily (user_id, page_id, date DESC);
+  ON public.meta_organic_daily (user_id, page_id, date DESC);
 
-ALTER TABLE meta_organic_daily ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.meta_organic_daily ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS meta_organic_daily_select_own ON meta_organic_daily;
-CREATE POLICY meta_organic_daily_select_own ON meta_organic_daily
+GRANT SELECT ON public.meta_organic_daily TO authenticated;
+GRANT ALL ON public.meta_organic_daily TO service_role;
+
+DROP POLICY IF EXISTS meta_organic_daily_select_own ON public.meta_organic_daily;
+CREATE POLICY meta_organic_daily_select_own ON public.meta_organic_daily
   FOR SELECT TO authenticated
-  USING (auth.uid() = user_id AND NOT (auth.jwt() ->> 'is_anonymous')::boolean IS TRUE);
+  USING (auth.uid() = user_id);
 
-DROP POLICY IF EXISTS meta_organic_daily_service_role ON meta_organic_daily;
-CREATE POLICY meta_organic_daily_service_role ON meta_organic_daily
+DROP POLICY IF EXISTS meta_organic_daily_service_role ON public.meta_organic_daily;
+CREATE POLICY meta_organic_daily_service_role ON public.meta_organic_daily
   FOR ALL TO service_role
   USING (true) WITH CHECK (true);
 
@@ -46,7 +49,7 @@ CREATE POLICY meta_organic_daily_service_role ON meta_organic_daily
 -- Per-post performance (organic posts on the timeline only; ads-only dark
 -- posts are not returned by /{page_id}/posts).
 -- ---------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS meta_post_performance (
+CREATE TABLE IF NOT EXISTS public.meta_post_performance (
   user_id          UUID         NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   page_id          VARCHAR(64)  NOT NULL,
   post_id          VARCHAR(128) NOT NULL,
@@ -67,27 +70,31 @@ CREATE TABLE IF NOT EXISTS meta_post_performance (
 );
 
 CREATE INDEX IF NOT EXISTS meta_post_performance_page_idx
-  ON meta_post_performance (user_id, page_id, created_time DESC);
+  ON public.meta_post_performance (user_id, page_id, created_time DESC);
 
 -- Trigram index over message for keyword search (e.g. 'co2', 'botox', 'endolift').
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE SCHEMA IF NOT EXISTS extensions;
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA extensions;
 CREATE INDEX IF NOT EXISTS meta_post_performance_message_trgm_idx
-  ON meta_post_performance USING gin (lower(message) gin_trgm_ops);
+  ON public.meta_post_performance USING gin (lower(message) extensions.gin_trgm_ops);
 
-ALTER TABLE meta_post_performance ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.meta_post_performance ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS meta_post_performance_select_own ON meta_post_performance;
-CREATE POLICY meta_post_performance_select_own ON meta_post_performance
+GRANT SELECT ON public.meta_post_performance TO authenticated;
+GRANT ALL ON public.meta_post_performance TO service_role;
+
+DROP POLICY IF EXISTS meta_post_performance_select_own ON public.meta_post_performance;
+CREATE POLICY meta_post_performance_select_own ON public.meta_post_performance
   FOR SELECT TO authenticated
-  USING (auth.uid() = user_id AND NOT (auth.jwt() ->> 'is_anonymous')::boolean IS TRUE);
+  USING (auth.uid() = user_id);
 
-DROP POLICY IF EXISTS meta_post_performance_service_role ON meta_post_performance;
-CREATE POLICY meta_post_performance_service_role ON meta_post_performance
+DROP POLICY IF EXISTS meta_post_performance_service_role ON public.meta_post_performance;
+CREATE POLICY meta_post_performance_service_role ON public.meta_post_performance
   FOR ALL TO service_role
   USING (true) WITH CHECK (true);
 
-COMMENT ON TABLE meta_organic_daily IS
+COMMENT ON TABLE public.meta_organic_daily IS
   'Daily totals from Meta Page Insights API (organic + paid mixed at page level — Meta deprecated organic-only page metrics in v22). Use meta_post_performance for true organic content attribution.';
 
-COMMENT ON TABLE meta_post_performance IS
+COMMENT ON TABLE public.meta_post_performance IS
   'Per-post lifetime metrics for organic page posts. Backfilled via /{page_id}/posts. Filter by lower(message) ILIKE for keyword-based campaign attribution.';

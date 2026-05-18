@@ -128,7 +128,7 @@ export default function Integrations() {
         return
       }
       metadata.adAccountIds = adAccountIds
-      metadata.adAccountId = adAccountIds.join(',')
+      metadata.adAccountId = adAccountIds[0]
       metadata.pageId = form.pageId.trim()
     }
     if (form.service === 'whatsapp') {

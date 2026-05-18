@@ -94,7 +94,10 @@ BEGIN
     SET full_name     = EXCLUDED.full_name,
         name_norm     = EXCLUDED.name_norm,
         phone_primary = COALESCE(EXCLUDED.phone_primary, public.doctoralia_patients.phone_primary),
-        first_seen_at = LEAST(public.doctoralia_patients.first_seen_at, EXCLUDED.first_seen_at)
+        first_seen_at = LEAST(
+          COALESCE(public.doctoralia_patients.first_seen_at, EXCLUDED.first_seen_at),
+          COALESCE(EXCLUDED.first_seen_at, public.doctoralia_patients.first_seen_at)
+        )
   $SQL$, doc_id_expr, identity_predicate, group_by_expr);
 
   IF has_patient_dni THEN
