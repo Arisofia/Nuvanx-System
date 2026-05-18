@@ -7,7 +7,12 @@ async function testDB() {
     return;
   }
   for (const password of passwords) {
+<<<<<<< HEAD
     console.log('\n--- Probando conexión a la base de datos ---');
+=======
+    const masked = password.slice(0, 3) + '***';
+    console.log(`\n--- Probando password: ${masked} ---`);
+>>>>>>> 757fa65 (security: redact IDs and passwords in scripts, fix lint errors)
     const client = new Client({
       user: process.env.DB_USER || 'postgres.ssvvuuysgxyqvmovrlvk',
       password: password,

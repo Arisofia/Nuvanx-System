@@ -9,7 +9,7 @@ async function testSupabase() {
   const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
   
   try {
-    const { data, error, count } = await supabase.from('leads').select('*', { count: 'exact', head: true });
+    const { error, count } = await supabase.from('leads').select('*', { count: 'exact', head: true });
     if (error) throw error;
     console.log(`✅ Supabase Connection: OK (Leads count: ${count ?? 0})`);
   } catch (err) {
@@ -33,6 +33,12 @@ async function testMeta() {
 
   const adAccountIds = String(rawAdAccountId || '').split(/[,;\s]+/).map(normalizeId).filter(Boolean);
 
+  const redactId = (id) => {
+    const s = String(id || '');
+    const digits = s.replace(/^act_/i, '');
+    return digits ? `act_***${digits.slice(-4)}` : 'act_[redacted]';
+  };
+
   try {
     let url = `https://graph.facebook.com/v22.0/me?access_token=${token}`;
     if (appSecret) {
@@ -52,9 +58,9 @@ async function testMeta() {
       const adRes = await fetch(adUrl);
       const adJson = await adRes.json();
       if (adJson.error) {
-        console.log(`❌ Meta Ad Account ${adAccountId}: FAILED - ${adJson.error.message}`);
+        console.log(`❌ Meta Ad Account ${redactId(adAccountId)}: FAILED - ${adJson.error.message}`);
       } else {
-        console.log(`✅ Meta Ad Account ${adAccountId}: OK (Name: ${adJson.name}, Status: ${adJson.account_status})`);
+        console.log(`✅ Meta Ad Account ${redactId(adAccountId)}: OK (Name: ${adJson.name}, Status: ${adJson.account_status})`);
       }
     }
   } catch (err) {

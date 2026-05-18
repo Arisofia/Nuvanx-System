@@ -155,7 +155,7 @@ async function main() {
       `[verify-meta-access] Checking Meta access to ${redactAdAccountIdForLog(adAccountId)} with appsecret_proof enabled...`,
     );
     await fetchAccount({ adAccountId, token, appSecret });
-    console.log(`[verify-meta-access] Meta access OK for ${adAccountId}.`);
+    console.log(`[verify-meta-access] Meta access OK for ${redactAdAccountIdForLog(adAccountId)}.`);
   }
 }
 
