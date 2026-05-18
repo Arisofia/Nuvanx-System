@@ -97,7 +97,8 @@ jobs:
           fi
           if [ ${#MISSING[@]} -gt 0 ]; then
             echo "::warning::Supabase deploy skipped — missing secrets: ${MISSING[*]}"
-            echo "skip_supabase=true" | log_and_print "Validation" >> "$GITHUB_OUTPUT"
+            echo "skip_supabase=true" >> "$GITHUB_OUTPUT"
+            echo "skip_supabase=true" | log_and_print "Validation"
           fi
 
       - name: Supabase DB migrations
@@ -165,7 +166,7 @@ jobs:
 
             is_deterministic_migration_error() {
               local output="$1"
-              local pattern='syntax error|permission denied|not a valid migration|SQLSTATE (42P01|42703|42P07|23505)|relation .* does not exist|column .* does not exist|function .* does not exist|type .* does not exist|invalid input syntax|duplicate key value violates unique constraint|violates (foreign key|not-null|check) constraint|checksum|failed to parse|error parsing'
+              local pattern='syntax error|permission denied|not a valid migration|SQLSTATE (42P01|42703|42P07|23505)|could not find valid entry for job|relation .* does not exist|column .* does not exist|function .* does not exist|type .* does not exist|invalid input syntax|duplicate key value violates unique constraint|violates (foreign key|not-null|check) constraint|checksum|failed to parse|error parsing|Unexpected HTTP response: 404'
               echo "$output" | grep -Eiq "$pattern"
             }
 
@@ -284,7 +285,7 @@ jobs:
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
           supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
-          command: supabase functions deploy mcp --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --no-verify-jwt
+          command: supabase functions deploy mcp --project-ref ${{ env.SUPABASE_PROJECT_REF }} --no-verify-jwt
 
       - name: Deploy Daily Aggregates Edge Function
         # --no-verify-jwt is required as this is typically triggered 
