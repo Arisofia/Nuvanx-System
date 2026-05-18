@@ -118,6 +118,7 @@ function writeFrontendEnv(vars) {
 }
 
 async function setSupabaseSecrets(vars, projectRef) {
+  console.log(`[PHASE] Syncing secrets to Supabase project: ${projectRef}`);
   const accessToken = vars.SUPABASE_ACCESS_TOKEN;
   if (!accessToken || !projectRef) return { skipped: true, reason: 'missing token or project ref' };
 
@@ -235,6 +236,7 @@ async function setVercelSecrets(vars) {
   const teamId = vars.VERCEL_TEAM_ID;
   const projectId = vars.VERCEL_PROJECT_ID;
 
+  console.log(`[PHASE] Syncing environment variables to Vercel project: ${projectId}`);
   if (!token || !projectId) {
     console.warn('[sync-platform-secrets] Vercel sync skipped: VERCEL_TOKEN or VERCEL_PROJECT_ID missing.');
     return { skipped: true, reason: 'missing credentials' };
@@ -270,6 +272,7 @@ async function setVercelSecrets(vars) {
 }
 
 function setGithubSecrets(vars) {
+  console.log('[PHASE] Syncing secrets to GitHub Actions...');
   const owner = vars.GITHUB_OWNER || 'Arisofia';
   const repo = vars.GITHUB_REPO || 'Nuvanx-System';
   const token = vars.GH_TOKEN || vars.GITHUB_TOKEN;
@@ -308,8 +311,14 @@ function setGithubSecrets(vars) {
 }
 
 async function main() {
+  console.log('[PHASE] Starting Platform Secret Synchronization');
+  
   const vars = mergeSources();
+  if (Object.keys(vars).length === 0) {
+    throw new Error('No secrets found in local .env files or environment. Aborting sync.');
+  }
 
+  console.log('[STEP] Updating local frontend .env.local...');
   const frontendEnvPath = writeFrontendEnv(vars);
 
   const githubResult = setGithubSecrets(vars);
