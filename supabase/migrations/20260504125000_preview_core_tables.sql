@@ -8,6 +8,17 @@
 -- migrations replace or drop/recreate the real view when the source tables are
 -- available.
 
+-- Preview safety: partial Supabase preview databases used by CI may not carry
+-- the application core schema before historical compatibility migrations run.
+-- Keep a minimal clinics table available so later guarded Doctoralia/Meta
+-- scaffolding can declare clinic_id foreign keys without failing at parse time.
+CREATE TABLE IF NOT EXISTS public.clinics (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 DO $$
 BEGIN
   IF to_regclass('public.vw_lead_traceability') IS NULL THEN
