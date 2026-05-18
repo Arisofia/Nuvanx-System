@@ -141,6 +141,9 @@ async function setSupabaseSecrets(vars, projectRef) {
 
     if (!res.ok) {
       const body = await res.text();
+      if (res.status === 400) {
+        return { skipped: true, reason: `Bad Request (400): Likely an invalid secret name or reserved prefix. Body: ${body}` };
+      }
       if (res.status === 403) {
         return { skipped: true, reason: 'unauthorized: Check if your token has access to this specific project ref.' };
       }

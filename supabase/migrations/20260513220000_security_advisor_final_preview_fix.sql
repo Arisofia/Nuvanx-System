@@ -23,7 +23,8 @@ BEGIN
       AND p.proname IN (
         'fn_set_updated_at',
         'fn_extract_and_normalize_phone',
-        'get_campaigns_filter'
+        'get_campaigns_filter',
+        'get_campaign_roi'
       )
   LOOP
     EXECUTE format('ALTER FUNCTION %s SET search_path = public, pg_catalog', fn.signature);
@@ -92,6 +93,29 @@ BEGIN
   EXCEPTION WHEN insufficient_privilege THEN
     RAISE NOTICE 'Skipping cron.job_run_details hardening due to insufficient privileges';
   END;
+END $$;
+
+-- 4. Guard get_campaign_roi dependency
+-- This addresses the "relation public.vw_lead_traceability does not exist" error
+-- seen in preview builds. If the view is missing, we ensure the function 
+-- search_path is still hardened if the function exists, but we don't attempt
+-- to recreate the logic here.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_class c 
+    JOIN pg_namespace n ON n.oid = c.relnamespace 
+    WHERE n.nspname = 'public' AND c.relname = 'vw_lead_traceability'
+  ) THEN
+    RAISE NOTICE 'Dependency public.vw_lead_traceability is missing. Function public.get_campaign_roi may be in a broken state.';
+  ELSE
+    -- If the view exists, we ensure execute permissions are restricted 
+    -- to service_role to satisfy security advisor.
+    IF to_regprocedure('public.get_campaign_roi(uuid,text,text,text)') IS NOT NULL THEN
+      REVOKE ALL ON FUNCTION public.get_campaign_roi(uuid,text,text,text) FROM PUBLIC, anon, authenticated;
+      GRANT EXECUTE ON FUNCTION public.get_campaign_roi(uuid,text,text,text) TO service_role;
+    END IF;
+  END IF;
 END $$;
 
 -- Note on auth_leaked_password_protection:
