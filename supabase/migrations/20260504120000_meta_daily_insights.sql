@@ -4,7 +4,7 @@
 -- Backfill via POST /meta/backfill?days=500
 -- =============================================================================
 
-CREATE TABLE IF NOT EXISTS meta_daily_insights (
+CREATE TABLE IF NOT EXISTS public.meta_daily_insights (
   user_id                 UUID          NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   ad_account_id           VARCHAR(32)   NOT NULL,
   date                    DATE          NOT NULL,
@@ -22,15 +22,28 @@ CREATE TABLE IF NOT EXISTS meta_daily_insights (
 );
 
 CREATE INDEX IF NOT EXISTS meta_daily_insights_date_idx
-  ON meta_daily_insights (user_id, ad_account_id, date DESC);
+  ON public.meta_daily_insights (user_id, ad_account_id, date DESC);
 
-ALTER TABLE meta_daily_insights ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.meta_daily_insights ENABLE ROW LEVEL SECURITY;
 
--- Authenticated users can read their own rows
-CREATE POLICY meta_daily_insights_select_own ON meta_daily_insights
-  FOR SELECT TO authenticated
-  USING (auth.uid() = user_id AND NOT (auth.jwt() ->> 'is_anonymous')::boolean IS TRUE);
+GRANT SELECT ON public.meta_daily_insights TO authenticated;
+GRANT ALL ON public.meta_daily_insights TO service_role;
 
--- Service role (Edge Function) can do everything
-CREATE POLICY meta_daily_insights_service_role ON meta_daily_insights
-  FOR ALL TO service_role USING (true) WITH CHECK (true);
+-- Authenticated users can read only their own rows.
+DROP POLICY IF EXISTS meta_daily_insights_select_own ON public.meta_daily_insights;
+
+CREATE POLICY meta_daily_insights_select_own
+  ON public.meta_daily_insights
+  FOR SELECT
+  TO authenticated
+  USING (auth.uid() = user_id);
+
+-- Service role (Edge Functions and automation) can persist daily metrics.
+DROP POLICY IF EXISTS meta_daily_insights_service_role ON public.meta_daily_insights;
+
+CREATE POLICY meta_daily_insights_service_role
+  ON public.meta_daily_insights
+  FOR ALL
+  TO service_role
+  USING (true)
+  WITH CHECK (true);
