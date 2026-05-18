@@ -766,8 +766,8 @@ async function main() {
     }
   }
 
-  for (const adAccountId of adAccountIds) {
-    console.log(`\n[meta-daily-report] Generating report for account: ${adAccountId}`);
+  for (const [accountIndex, adAccountId] of adAccountIds.entries()) {
+    console.log(`\n[meta-daily-report] Generating report for account ${accountIndex + 1}/${adAccountIds.length}`);
     const rows = await fetchMetaInsights(adAccountId, since, until, token);
     const campaignRows = buildCampaignRows(rows);
     const totals = calculateTotals(campaignRows);
@@ -824,9 +824,8 @@ async function main() {
       recommendations,
     });
 
-    const accountSuffix = String(adAccountId).slice(-4);
     console.log(
-      `[meta-daily-report] Report generated for account ending ${accountSuffix} (${since} to ${until}), campaigns: ${campaignRows.length}`
+      `[meta-daily-report] Report generated for account ${accountIndex + 1}/${adAccountIds.length} (${since} to ${until}), campaigns: ${campaignRows.length}`
     );
 
     try {
