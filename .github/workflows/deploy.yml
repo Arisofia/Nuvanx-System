@@ -51,6 +51,7 @@ jobs:
           
           # Create Python sanitizer script (streaming line-by-line)
           cat << 'EOF' > sanitize_logs.py
+          cat << 'EOF' | sed 's/^          //' > sanitize_logs.py
           import sys, re, os
 
           env_names = os.environ.get('REDACT_ENV_NAMES', '').split(',')
@@ -135,17 +136,18 @@ jobs:
             fi
             echo "::add-mask::$SESSION_URL"
 
+            # Helper to surface migration errors without scrolling through debug noise.
             print_migration_failure_summary() {
               local output="$1"
               echo "--- Migration Failure Summary ---"
-              echo "$output" | grep -Ei "error|failed|fatal" | head -n 20
+              echo "$output" | grep -Ei "error|failed|fatal" | head -n 20 || true
               echo "--------------------------------"
             }
 
             # Retry transient Supabase Preview failures while surfacing deterministic SQL errors.
             is_deterministic_migration_error() {
               local output="$1"
-              local pattern='syntax error|permission denied|not a valid migration|SQLSTATE (42P01|42703|42P07|23505|42P01)|could not find valid entry for job|relation .* does not exist|column .* does not exist|function .* does not exist|type .* does not exist|invalid input syntax|duplicate key value violates unique constraint|violates (foreign key|not-null|check) constraint|checksum|failed to parse|error parsing|Unexpected HTTP response: 404|relation "public\..*" does not exist'
+              local pattern='syntax error|permission denied|not a valid migration|SQLSTATE (42P01|42703|42P07|23505)|could not find valid entry for job|relation .* does not exist|column .* does not exist|function .* does not exist|type .* does not exist|invalid input syntax|duplicate key value violates unique constraint|violates (foreign key|not-null|check) constraint|checksum|failed to parse|error parsing|Unexpected HTTP response: 404|relation "public\..*" does not exist'
               echo "$output" | grep -Eiq "$pattern"
             }
 
