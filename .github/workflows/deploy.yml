@@ -45,7 +45,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Initialize migration log and sanitizer
-        run: |
+        run: | # This is a shell script, not a Python script.
           touch "$MIGRATIONS_LOG"
           chmod 600 "$MIGRATIONS_LOG"
           

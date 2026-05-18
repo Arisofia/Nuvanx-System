@@ -111,7 +111,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Use Node.js
-        uses: actions/setup-node@1d112162235d9ef29889d90d33029e5206b03331 # v4.2.0
+        uses: actions/setup-node@64edc32c531d450885653a87d03792f98e72780c # v4.0.0
         with:
           node-version: '22'
           cache: 'npm'
@@ -137,7 +137,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Use Node.js
-        uses: actions/setup-node@1d112162235d9ef29889d90d33029e5206b03331 # v4.2.0
+        uses: actions/setup-node@64edc32c531d450885653a87d03792f98e72780c # v4.0.0
         with:
           node-version: '22'
           cache: 'npm'
@@ -164,7 +164,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Use Node.js
-        uses: actions/setup-node@1d112162235d9ef29889d90d33029e5206b03331 # v4.2.0
+        uses: actions/setup-node@64edc32c531d450885653a87d03792f98e72780c # v4.0.0
         with:
           node-version: '22'
           cache: 'npm'
@@ -212,7 +212,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Use Node.js
-        uses: actions/setup-node@1d112162235d9ef29889d90d33029e5206b03331 # v4.2.0
+        uses: actions/setup-node@64edc32c531d450885653a87d03792f98e72780c # v4.0.0
         with:
           node-version: '22'
           cache: 'npm'
@@ -258,7 +258,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Use Node.js
-        uses: actions/setup-node@1d112162235d9ef29889d90d33029e5206b03331 # v4.2.0
+        uses: actions/setup-node@64edc32c531d450885653a87d03792f98e72780c # v4.0.0
         with:
           node-version: '22'
           cache: 'npm'
