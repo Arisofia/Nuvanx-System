@@ -67,7 +67,7 @@ jobs:
                   if len(secret) > 3:
                       text = text.replace(secret, "[REDACTED]")
               # Redact URL passwords
-              text = url_pattern.sub(r'postgresql://postgres:[REDACTED]@', text)
+              text = url_pattern.sub(r'postgresql://postgres:${REDACTED}@', text)
               # Redact key-value pairs
               text = kv_pattern.sub(r'\1=[REDACTED]', text)
               return text
