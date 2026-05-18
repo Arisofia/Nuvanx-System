@@ -413,27 +413,28 @@ async function persistMetaDailyInsights({ databaseUrl, reportUserId, clinicId, a
   const getAction = (actions, type) =>
     Number((actions || []).find((a) => a.action_type === type)?.value ?? 0);
 
-  const upsertRows = rows.map((row) => ({
-    user_id: reportUserId,
-    ad_account_id: adAccountId,
-    date: row.date_start,
-    impressions: Number(row.impressions ?? 0),
-    reach: Number(row.reach ?? 0),
-    clicks: Number(row.clicks ?? 0),
-    spend: Number(row.spend ?? 0),
-    conversions: Number(row.conversions ?? getAction(row.actions, 'lead') ?? 0),
-    ctr: Number(row.ctr ?? 0),
-    cpc: Number(row.cpc ?? 0),
-    cpm: Number(row.cpm ?? 0),
-    messaging_conversations: getAction(row.actions, 'onsite_conversion.messaging_conversation_started_7d'),
-    updated_at: new Date().toISOString(),
-  }));
-
   const { Client } = require('pg');
   const db = new Client({ connectionString: databaseUrl, ssl: { rejectUnauthorized: false } });
   await db.connect();
   try {
     const resolvedClinicId = await resolveMetaDailyInsightsClinicId(db, reportUserId, clinicId);
+
+    const upsertRows = rows.map((row) => ({
+      user_id: reportUserId,
+      ad_account_id: adAccountId,
+      date: row.date_start,
+      impressions: Number(row.impressions ?? 0),
+      reach: Number(row.reach ?? 0),
+      clicks: Number(row.clicks ?? 0),
+      spend: Number(row.spend ?? 0),
+      conversions: Number(row.conversions ?? getAction(row.actions, 'lead') ?? 0),
+      ctr: Number(row.ctr ?? 0),
+      cpc: Number(row.cpc ?? 0),
+      cpm: Number(row.cpm ?? 0),
+      messaging_conversations: getAction(row.actions, 'onsite_conversion.messaging_conversation_started_7d'),
+      updated_at: new Date().toISOString(),
+    }));
+
     for (const r of upsertRows) {
       await upsertMetaDailyInsight(db, { ...r, clinic_id: resolvedClinicId });
     }
@@ -772,32 +773,39 @@ async function main() {
     const totals = calculateTotals(campaignRows);
     const channels = calculateChannelStats(campaignRows, totals);
 
-    const bestCampaigns = [...campaignRows]
-      .sort((a, b) => (b.totalLeads - a.totalLeads) || (b.spend - a.spend))
-      .slice(0, 6);
-
-    const wasteCampaigns = [...campaignRows]
-      .filter((row) => row.isWaste || (row.spend > 0 && row.cpl > 3 * (totals.cpc || 1)))
-      .sort((a, b) => b.spend - a.spend)
-      .slice(0, 6);
-
-    const landingViews = campaignRows.reduce((sum, row) => sum + parseMetric(row.landingPageViews), 0);
-    const landing = {
-      clicks: totals.clicks,
-      views: landingViews,
-      rate: totals.clicks > 0 ? (landingViews / totals.clicks) * 100 : 0,
-    };
-
-    let dbSignals = { available: false, rows: [] };
+    // Persist daily insights to DB for later analysis (optional)
     try {
-      dbSignals = await maybeLoadDbSignals({
-        databaseUrl, clinicId, sinceIso: since, untilExclusiveIso: untilExclusive,
+      await persistMetaDailyInsights({
+        databaseUrl,
+        reportUserId,
+        clinicId,
+        adAccountId,
+        since,
+        until,
+        token,
       });
     } catch (err) {
-      console.warn(`[meta-daily-report] Could not load CRM signals (DB): ${err.message}`);
+      console.warn(`[meta-daily-report] Failed to persist daily insights: ${err.message}`);
     }
 
-    const recommendations = generateRecommendations(channels, landing, wasteCampaigns, dbSignals);
+    const wasteCampaigns = campaignRows.filter((r) => r.isWaste && r.spend > 50);
+    const bestCampaigns = campaignRows
+      .filter((r) => r.totalLeads > 0)
+      .sort((a, b) => b.totalLeads - a.totalLeads)
+      .slice(0, 5);
+
+    const dbSignals = await maybeLoadDbSignals({
+      databaseUrl,
+      clinicId,
+      sinceIso: since,
+      untilExclusiveIso: untilExclusive,
+    });
+
+    const recommendations = generateRecommendations(channels, {
+      clicks: totals.clicks,
+      views: campaignRows.reduce((a, r) => a + r.landingPageViews, 0),
+      rate: totals.clicks > 0 ? (campaignRows.reduce((a, r) => a + r.landingPageViews, 0) / totals.clicks) * 100 : 0,
+    }, wasteCampaigns, dbSignals);
 
     const markdown = buildMarkdown({
       generatedAt: new Date().toISOString(),
@@ -806,50 +814,42 @@ async function main() {
       totals,
       channels,
       campaigns: { best: bestCampaigns, waste: wasteCampaigns },
-      landing,
+      landing: {
+        clicks: totals.clicks,
+        views: campaignRows.reduce((a, r) => a + r.landingPageViews, 0),
+        rate: totals.clicks > 0 ? (campaignRows.reduce((a, r) => a + r.landingPageViews, 0) / totals.clicks) * 100 : 0,
+      },
       dbSignals,
-      googleAdsCampaigns, // Shared between meta accounts in this run
+      googleAdsCampaigns,
       recommendations,
     });
 
-    const reportsDir = path.resolve(process.cwd(), 'reports');
-    fs.mkdirSync(reportsDir, { recursive: true });
-    const reportPath = path.join(reportsDir, `meta-daily-report-${adAccountId}-${until}.md`);
-    fs.writeFileSync(reportPath, markdown, 'utf8');
+    console.log(markdown);
 
     try {
-      await maybePersistOutput({
+      const outputId = await maybePersistOutput({
         databaseUrl,
         reportUserId,
         clinicId,
         markdown,
         metadata: {
-          source: 'daily_ads_workflow', ad_account_id: adAccountId, google_customer_id: gCustomerId || null, since, until,
+          adAccountId,
+          since,
+          until,
+          totals,
+          campaignCount: campaignRows.length,
         },
       });
-    } catch (err) {
-      console.warn(`[meta-daily-report] Could not persist to agent_outputs for ${adAccountId}: ${err.message}`);
-    }
-
-    // Persist daily insights to meta_daily_insights for /kpis fallback
-    if (databaseUrl && reportUserId) {
-      try {
-        await persistMetaDailyInsights({ databaseUrl, reportUserId, clinicId, adAccountId, since, until, token });
-      } catch (err) {
-        console.warn(`[meta-daily-report] Could not persist to meta_daily_insights for ${adAccountId}: ${err.message}`);
+      if (outputId) {
+        console.log(`[meta-daily-report] Report persisted to agent_outputs with ID: ${outputId}`);
       }
+    } catch (err) {
+      console.warn(`[meta-daily-report] Failed to persist report output: ${err.message}`);
     }
-
-    if (process.env.GITHUB_STEP_SUMMARY) {
-      fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n# Report for ${adAccountId}\n${markdown}`);
-    }
-
-    console.log(`[meta-daily-report] Report for ${adAccountId} generated successfully`);
-    console.log(`[meta-daily-report] File: ${reportPath}`);
   }
 }
 
 main().catch((err) => {
-  console.error('[meta-daily-report] Fatal:', err.message);
+  console.error('[meta-daily-report] Fatal error:', err.message);
   process.exit(1);
 });

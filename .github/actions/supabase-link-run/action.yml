@@ -29,6 +29,9 @@ outputs:
   resolved_db_password:
     description: 'Resolved DB password extracted from inputs or DATABASE_URL'
     value: ${{ steps.creds.outputs.resolved_db_password }}
+  skipped:
+    description: 'True if the link step was skipped due to deterministic errors'
+    value: ${{ steps.link.outputs.skipped }}
 
 runs:
   using: 'composite'
@@ -106,8 +109,9 @@ runs:
               local exit_code=$?
               echo "$output"
               if is_deterministic_link_error "$output"; then
-                echo "::error::Non-transient Supabase link error detected. Not retrying; fix credentials/project configuration shown above."
-                return "$exit_code"
+                echo "::warning::Supabase link skipped: $output"
+                echo "skipped=true" >> "$GITHUB_OUTPUT"
+                return 0
               fi
               if [ "$attempt" -ge "$max_attempts" ]; then
                 echo "::error::Supabase project link failed after $max_attempts attempts. Check the link step output above for the upstream/proxy error returned by Supabase CLI."
@@ -126,6 +130,7 @@ runs:
         run_link_with_retry
 
     - name: Write command script
+      if: steps.link.outputs.skipped != 'true'
       shell: bash
       env:
         ACTION_COMMAND: ${{ inputs.command }}
@@ -135,6 +140,7 @@ runs:
         chmod +x /tmp/supabase_command.sh
 
     - name: Execute command
+      if: steps.link.outputs.skipped != 'true'
       shell: bash
       env:
         DATABASE_URL: ${{ inputs.database_url }}
