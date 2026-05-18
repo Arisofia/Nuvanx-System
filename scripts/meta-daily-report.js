@@ -753,6 +753,12 @@ async function main() {
   const utcToday = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
   const { since, until, untilExclusive } = getReportWindow(maybeSince, maybeUntil, days, utcToday);
 
+  const redactId = (id) => {
+    const s = String(id || '');
+    const digits = s.replace(/^act_/i, '');
+    return digits ? `act_***${digits.slice(-4)}` : 'act_[redacted]';
+  };
+
   let googleAdsCampaigns = null;
   if (googleServiceAccount) {
     try {
@@ -810,7 +816,7 @@ async function main() {
     const markdown = buildMarkdown({
       generatedAt: new Date().toISOString(),
       period: { since, until },
-      account: adAccountId,
+      account: redactId(adAccountId),
       totals,
       channels,
       campaigns: { best: bestCampaigns, waste: wasteCampaigns },
@@ -824,9 +830,8 @@ async function main() {
       recommendations,
     });
 
-    console.log(
-      `[meta-daily-report] Report generated for account ${accountIndex + 1}/${adAccountIds.length} (${since} to ${until}), campaigns: ${campaignRows.length}`
-    );
+    console.log(`[meta-daily-report] Report for account ${accountIndex + 1}/${adAccountIds.length} (${redactId(adAccountId)}) generated:`);
+    console.log(markdown);
 
     try {
       const outputId = await maybePersistOutput({
@@ -835,7 +840,7 @@ async function main() {
         clinicId,
         markdown,
         metadata: {
-          adAccountId,
+          adAccountId: redactId(adAccountId),
           since,
           until,
           totals,
@@ -843,6 +848,7 @@ async function main() {
         },
       });
       if (outputId) {
+        console.log(`[meta-daily-report] Report generated for account ${accountIndex + 1}/${adAccountIds.length} (${redactId(adAccountId)}) (${since} to ${until}), campaigns: ${campaignRows.length}`);
         console.log(`[meta-daily-report] Report persisted to agent_outputs with ID: ${outputId}`);
       }
     } catch (err) {

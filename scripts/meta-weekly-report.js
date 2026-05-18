@@ -678,8 +678,14 @@ async function main() {
 
   const googleAdsCampaigns = await fetchGoogleAdsData(gConfig, since, until);
 
-  for (const adAccountId of adAccountIds) {
-    console.log(`\n[meta-weekly-report] Generating report for account: ${adAccountId}`);
+  const redactId = (id) => {
+    const s = String(id || '');
+    const digits = s.replace(/^act_/i, '');
+    return digits ? `act_***${digits.slice(-4)}` : 'act_[redacted]';
+  };
+
+  for (const [accountIndex, adAccountId] of adAccountIds.entries()) {
+    console.log(`\n[meta-weekly-report] Generating report for account ${accountIndex + 1}/${adAccountIds.length} (${redactId(adAccountId)})`);
     const campaignRows = await fetchAndProcessMetaInsights(adAccountId, since, until, token);
     const analysis = calculateCampaignAnalysis(campaignRows);
 
@@ -715,7 +721,7 @@ async function main() {
       gCustomerId: gConfig.gCustomerId,
       since,
     });
-    console.log(`[meta-weekly-report] Report for ${adAccountId} generated successfully`);
+    console.log(`[meta-weekly-report] Report for account ${accountIndex + 1}/${adAccountIds.length} generated successfully`);
   }
 }
 

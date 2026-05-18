@@ -3,7 +3,8 @@ const { Client } = require('pg');
 async function testDB() {
   const passwords = ['Nuvanx2026Prod!', 'rESeQOLZuCTuBQDs', '6tRPQcIrgl3p1Tuu'];
   for (const password of passwords) {
-    console.log(`\n--- Probando password: ${password} ---`);
+    const masked = password.slice(0, 3) + '***';
+    console.log(`\n--- Probando password: ${masked} ---`);
     const client = new Client({
       user: 'postgres.ssvvuuysgxyqvmovrlvk',
       password: password,
