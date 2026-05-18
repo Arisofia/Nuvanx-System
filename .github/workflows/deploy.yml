@@ -50,7 +50,7 @@ jobs:
           chmod 600 "$MIGRATIONS_LOG"
           
           # Create Python sanitizer script (streaming line-by-line)
-          cat << 'EOF' | sed 's/^          //' > sanitize_logs.py
+          cat << 'EOF' > sanitize_logs.py
           import sys, re, os
 
           env_names = os.environ.get('REDACT_ENV_NAMES', '').split(',')

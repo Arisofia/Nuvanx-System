@@ -15,6 +15,8 @@ BEGIN
   END IF;
 
   EXECUTE $sql$
+DROP VIEW IF EXISTS public.vw_lead_traceability;
+
 CREATE OR REPLACE VIEW public.vw_lead_traceability AS
 SELECT
   -- ── lead (existing columns, unchanged order) ──────────────────────────────
