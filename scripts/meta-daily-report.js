@@ -785,7 +785,7 @@ async function main() {
         token,
       });
     } catch (err) {
-      console.warn(`[meta-daily-report] Failed to persist daily insights: ${err.message}`);
+      console.warn('[meta-daily-report] Failed to persist daily insights.');
     }
 
     const wasteCampaigns = campaignRows.filter((r) => r.isWaste && r.spend > 50);
