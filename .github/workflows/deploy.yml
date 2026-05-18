@@ -222,7 +222,7 @@ jobs:
 
       - name: Upload migration logs
         if: always() && steps.validate.outputs.skip_supabase != 'true'
-        uses: actions/upload-artifact@65c86da06ee3960840217bd57253d4039de5d396 # v4.6.0
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
           name: supabase-migration-logs
           path: ${{ env.MIGRATIONS_LOG }}

@@ -37,7 +37,7 @@ runs:
   using: 'composite'
   steps:
     - name: Setup Supabase CLI
-      uses: supabase/setup-cli@530230325d7c57099719cf621495e8e24446c63b # v1.2.0
+      uses: supabase/setup-cli@v2 # v2
       with:
         version: latest
 

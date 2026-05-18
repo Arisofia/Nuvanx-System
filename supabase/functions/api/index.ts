@@ -459,7 +459,9 @@ async function persistAgentOutput(adminClient: any, userId: string, agentType: s
     .select('id')
     .single();
   if (error) throw error;
-  return data?.id ?? null;
+  const outputId = data?.id ?? null;
+  if (!outputId) throw new Error('agent_outputs insert did not return an id');
+  return outputId;
 }
 
 /**
@@ -981,15 +983,20 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
     decryptionError = err?.message ?? 'Failed to decrypt Meta credential';
   }
 
-  const { data: intg } = await adminClient.from('integrations').select('metadata').eq('user_id', userId).eq('service', 'meta').maybeSingle();
+  const { data: integrations } = await adminClient
+    .from('integrations')
+    .select('metadata, status, updated_at')
+    .eq('user_id', userId)
+    .eq('service', 'meta');
 
+  const intg = selectCanonicalMetaIntegration(integrations ?? []);
   const metadata = intg?.metadata ?? {};
   const metadataRawAccountIds = metadata.adAccountIds ?? metadata.ad_account_ids ?? metadata.adAccountId ?? metadata.ad_account_id ?? '';
   const metadataAccountIds = normalizeMetaAccountIds(metadataRawAccountIds);
   const qAccountIds = normalizeMetaAccountIds(qAccountId);
 
   const adAccountIds = qAccountIds.length > 0
-    ? Array.from(new Set([...metadataAccountIds, ...qAccountIds]))
+    ? qAccountIds
     : metadataAccountIds;
   return {
     notConnected: false,
@@ -1000,6 +1007,18 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
     igId: metadata.igBusinessAccountId ?? metadata.ig_business_account_id ?? '',
     decryptionError,
   } as const;
+}
+
+function selectCanonicalMetaIntegration(rows: any[]) {
+  return [...rows].sort((a: any, b: any) => {
+    const aMeta = a?.metadata ?? {};
+    const bMeta = b?.metadata ?? {};
+    const aHasPage = Boolean(String(aMeta.pageId ?? aMeta.page_id ?? '').trim());
+    const bHasPage = Boolean(String(bMeta.pageId ?? bMeta.page_id ?? '').trim());
+    if (aHasPage !== bHasPage) return aHasPage ? -1 : 1;
+    if ((a?.status === 'connected') !== (b?.status === 'connected')) return a?.status === 'connected' ? -1 : 1;
+    return String(b?.updated_at ?? '').localeCompare(String(a?.updated_at ?? ''));
+  })[0] ?? null;
 }
 
 function validateMetaCredentialResult(creds: any) {
@@ -1398,7 +1417,7 @@ export const AUTHENTICATED_ROUTE_HANDLERS = new Map<string, RouteHandler>([
   ['integrations|connect|POST', handleIntegrationsConnectPost],
   ['integrations|test|POST', handleIntegrationsTestPost],
   ['playbooks||GET', handlePlaybooksGet],
-  ['playbooks|run|POST', handlePlaybooksRunPost],
+  ['playbooks|*|*', handlePlaybooksRunPost],
   ['ai|status|*', handleAiStatus],
   ['ai|generate|POST', handleAiGeneratePost],
   ['ai|analyze-campaign|POST', handleAiAnalyzeCampaignPost],
@@ -1409,6 +1428,7 @@ export const AUTHENTICATED_ROUTE_HANDLERS = new Map<string, RouteHandler>([
   ['financials|summary|*', handleFinancialsSummary],
   ['financials|settlements|*', handleFinancialsSettlements],
   ['financials|patients|*', handleFinancialsPatients],
+  ['financials|integrity|GET', handleFinancialsIntegrityGet],
   ['traceability|leads|*', handleTraceabilityLeads],
   ['traceability|funnel|*', handleTrazabilidadFunnel],
   ['traceability|campaigns|*', handleTraceabilityCampaigns],
@@ -4192,14 +4212,14 @@ async function handleIntegrationsGet(ctx: AuthenticatedRouteContext): Promise<Re
 function normalizeIntegrationMetadata(service: string, metadata: any) {
   if (service === 'meta') {
     const accountIds = normalizeMetaAccountIds(metadata?.adAccountIds ?? metadata?.ad_account_ids ?? metadata?.adAccountId ?? metadata?.ad_account_id ?? '');
-    const normalized = accountIds.length > 0 ? accountIds.join(',') : '';
+    const primaryAccountId = accountIds[0] ?? '';
     const normalizedPageId = String(metadata?.pageId ?? metadata?.page_id ?? '').replaceAll(/\D/g, '');
     return {
       ...metadata,
       adAccountIds: accountIds,
       ad_account_ids: accountIds,
-      adAccountId: normalized,
-      ad_account_id: normalized,
+      adAccountId: primaryAccountId,
+      ad_account_id: primaryAccountId,
       pageId: normalizedPageId,
       page_id: normalizedPageId,
     };
@@ -4232,8 +4252,8 @@ function validateAndNormalizeMetadata(service: string, inputMetadata: any) {
       ...metadata,
       adAccountIds: accountIds,
       ad_account_ids: accountIds,
-      adAccountId: accountIds.join(','),
-      ad_account_id: accountIds.join(','),
+      adAccountId: accountIds[0],
+      ad_account_id: accountIds[0],
       pageId: normalizedPageId,
       page_id: normalizedPageId,
     };
@@ -4365,47 +4385,31 @@ async function logPlaybookExecution(adminClient: any, userId: string, playbookId
 
 async function handlePlaybooksRunPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, sub2, req, sendJson } = ctx;
-  if (resource === 'playbooks' && sub2 === 'run' && req.method === 'POST') {
-    const rawBody = await req.json().catch(() => ({}));
-    const body = (rawBody && typeof rawBody === 'object') ? rawBody as Record<string, any> : {};
-    const preferredProvider = String(body?.provider ?? '').trim();
-    const { data: pb, error: pbErr } = await adminClient.from('playbooks').select('id, title, status, run_count').eq('slug', sub).single();
-    if (pbErr || !pb) return sendJson({ success: false, message: `Playbook '${sub}' not found` }, 404);
-    if (pb.status === 'archived') return sendJson({ success: false, message: 'Playbook is archived' }, 400);
-  
-    let generatedMessage = '';
-    let providerUsed: 'gemini' | 'openai' | null = null;
-    let providerErrors: string[] = [];
-    const clinic = await resolveClinicMetadata(adminClient, userId);
-    const strategyPrompt = getPlaybookStrategyPrompt(pb.title, clinic);
-  
-    try {
-      const aiResult = await runAiPrompt(adminClient, userId, strategyPrompt, preferredProvider);
-      generatedMessage = aiResult.text;
-      providerUsed = aiResult.provider;
-      providerErrors = aiResult.providerErrors;
-    } catch (err: any) {
-      const errorId = crypto.randomUUID?.() ?? `pb-${Date.now()}`;
-      console.error('handlePlaybooksRunPost error', { errorId, err, userId });
-      const code = err?.code === 'PERMISSION_DENIED' ? 403 : 500;
+  if (resource !== 'playbooks' || sub2 !== 'run' || req.method !== 'POST') return null;
 
-      return sendJson(
-        {
-          success: false,
-          message: code === 403 ? 'Not allowed to run this playbook' : 'Playbook execution failed',
-          error_id: errorId,
-        },
-        code,
-      );
-    }
-  
+  const rawBody = await req.json().catch(() => ({}));
+  const body = (rawBody && typeof rawBody === 'object') ? rawBody as Record<string, any> : {};
+  const preferredProvider = String(body?.provider ?? '').trim();
+  const { data: pb, error: pbErr } = await adminClient.from('playbooks').select('id, title, status, run_count').eq('slug', sub).single();
+  if (pbErr || !pb) return sendJson({ success: false, message: `Playbook '${sub}' not found` }, 404);
+  if (pb.status === 'archived') return sendJson({ success: false, message: 'Playbook is archived' }, 400);
+
+  const clinic = await resolveClinicMetadata(adminClient, userId);
+  const strategyPrompt = getPlaybookStrategyPrompt(pb.title, clinic);
+
+  try {
+    const { text: generatedMessage, provider: providerUsed, providerErrors } = await runAiPrompt(adminClient, userId, strategyPrompt, preferredProvider);
     const agentOutputId = await persistAgentOutput(
       adminClient,
       userId,
-      'playbook.run',
-      { playbookSlug: sub, playbookTitle: pb.title, status: 'success', generatedMessage },
+      'ai_generation',
+      { content: generatedMessage },
       {
+        prompt: strategyPrompt,
+        contentType: 'playbook_whatsapp_message',
         playbookId: pb.id,
+        playbookSlug: sub,
+        playbookTitle: pb.title,
         source: 'api.playbooks.run',
         providerRequested: preferredProvider || null,
         providerUsed,
@@ -4417,6 +4421,12 @@ async function handlePlaybooksRunPost(ctx: AuthenticatedRouteContext): Promise<R
 
     return sendJson({
       success: true,
+      generatedMessage,
+      result: generatedMessage,
+      content: generatedMessage,
+      provider: providerUsed,
+      outputId: agentOutputId,
+      playbookExecutionId: exec.id,
       execution: {
         id: exec.id,
         playbookSlug: sub,
@@ -4427,8 +4437,14 @@ async function handlePlaybooksRunPost(ctx: AuthenticatedRouteContext): Promise<R
         generatedMessage,
       },
     });
+  } catch (err: any) {
+    const errorId = crypto.randomUUID?.() ?? `pb-${Date.now()}`;
+    console.error('handlePlaybooksRunPost error', { errorId, err, userId });
+    const message = err?.message?.includes('No AI integration')
+      ? err.message
+      : 'Playbook execution failed';
+    return sendJson({ success: false, message, error_id: errorId }, 502);
   }
-  return null;
 }
 
 async function handleAiStatus(ctx: AuthenticatedRouteContext): Promise<Response | null> {
@@ -4471,7 +4487,7 @@ async function handleAiGeneratePost(ctx: AuthenticatedRouteContext): Promise<Res
       if (playbookExecutionId && outputId) {
         await linkAgentOutputToPlaybookExecution(adminClient, userId, playbookExecutionId, outputId);
       }
-      return sendJson({ success: true, content: text, result: text, provider: usedProvider, outputId });
+      return sendJson({ success: true, content: text, result: text, provider: usedProvider, outputId, persisted: Boolean(outputId) });
     } catch (err: any) {
       const message = err?.message ?? 'AI request failed';
       const details = Array.isArray(err.providerErrors) ? err.providerErrors : undefined;
@@ -5013,22 +5029,133 @@ async function handleFinancialsPatients(ctx: AuthenticatedRouteContext): Promise
     const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
     const clinicId = usr?.clinic_id;
     if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
-  
-    const { data: rows } = await adminClient.from('patients')
-      .select('id, dni, name, email, phone, total_ltv, last_visit, created_at')
-      .eq('clinic_id', clinicId)
-      .order('total_ltv', { ascending: false });
-  
+
+    const [{ data: rows, error }, { data: coverage }] = await Promise.all([
+      adminClient
+        .from('vw_financial_patient_production')
+        .select('patient_key, patient_id, patient_name, phone_normalized, registros, total_neto, first_settlement_at, last_settlement_at, match_source')
+        .eq('clinic_id', clinicId)
+        .order('total_neto', { ascending: false })
+        .limit(250),
+      adminClient
+        .from('financial_settlements')
+        .select('patient_name, phone_normalized, patient_phone')
+        .eq('clinic_id', clinicId)
+        .is('cancelled_at', null),
+    ]);
+    if (error) throw error;
+
+    const settlementRows = coverage ?? [];
+    const namedSettlements = settlementRows.filter((r: any) => String(r.patient_name ?? '').trim()).length;
+    const phoneSettlements = settlementRows.filter((r: any) => String(r.phone_normalized ?? r.patient_phone ?? '').trim()).length;
+
     return sendJson({
       success: true,
       patients: rows || [],
       diagnostics: {
-        reason: rows?.length ? 'ok' : 'no_patients',
+        reason: rows?.length ? 'ok' : 'no_financial_patient_matches',
         clinicId,
+        settlements: settlementRows.length,
+        settlementsWithPatientName: namedSettlements,
+        settlementsWithPhone: phoneSettlements,
       },
     });
   }
   return null;
+}
+
+function buildFinancialSettlementIntegrity(rows: any[]) {
+  const activeRows = rows.filter((row) => !row.cancelled_at);
+  const totalNet = activeRows.reduce((sum, row) => sum + Number(row.amount_net || 0), 0);
+  const byPatient = new Map<string, { patient_name: string | null; registros: number; total_neto: number; with_phone: number }>();
+  const byFingerprint = new Map<string, { fingerprint: string; registros: number; total_neto: number; sample_template_name: string | null }>();
+
+  for (const row of activeRows) {
+    const patientName = String(row.patient_name ?? '').trim() || null;
+    const patientKey = patientName ?? '__NULL__';
+    const patientAgg = byPatient.get(patientKey) ?? { patient_name: patientName, registros: 0, total_neto: 0, with_phone: 0 };
+    patientAgg.registros += 1;
+    patientAgg.total_neto += Number(row.amount_net || 0);
+    if (String(row.phone_normalized ?? row.patient_phone ?? '').trim()) patientAgg.with_phone += 1;
+    byPatient.set(patientKey, patientAgg);
+
+    const eventDate = String(row.intake_at ?? row.settled_at ?? '').slice(0, 10);
+    const amount = Number(row.amount_net || 0).toFixed(2);
+    const template = String(row.template_name ?? '').trim().toLowerCase();
+    const fingerprint = [eventDate, amount, template].join('|');
+    if (fingerprint !== '||') {
+      const duplicateAgg = byFingerprint.get(fingerprint) ?? { fingerprint, registros: 0, total_neto: 0, sample_template_name: row.template_name ?? null };
+      duplicateAgg.registros += 1;
+      duplicateAgg.total_neto += Number(row.amount_net || 0);
+      byFingerprint.set(fingerprint, duplicateAgg);
+    }
+  }
+
+  const patientGroups = [...byPatient.values()]
+    .map((group) => ({
+      ...group,
+      total_neto: Number(group.total_neto.toFixed(2)),
+      pct_registros: activeRows.length > 0 ? Number(((group.registros / activeRows.length) * 100).toFixed(2)) : 0,
+      pct_total_neto: totalNet > 0 ? Number(((group.total_neto / totalNet) * 100).toFixed(2)) : 0,
+    }))
+    .sort((a, b) => b.registros - a.registros || b.total_neto - a.total_neto);
+
+  const duplicateFingerprints = [...byFingerprint.values()]
+    .filter((group) => group.registros > 1)
+    .map((group) => ({ ...group, total_neto: Number(group.total_neto.toFixed(2)) }))
+    .sort((a, b) => b.registros - a.registros || b.total_neto - a.total_neto)
+    .slice(0, 25);
+
+  const namedUniquePatients = patientGroups.filter((group) => group.patient_name).length;
+  const nullPatientGroup = patientGroups.find((group) => group.patient_name === null);
+  const topGroup = patientGroups[0] ?? null;
+  const warnings: string[] = [];
+  if (activeRows.length >= 100 && namedUniquePatients <= 10) {
+    warnings.push(`Only ${namedUniquePatients} named patient groups for ${activeRows.length} active settlements.`);
+  }
+  if (nullPatientGroup && nullPatientGroup.pct_registros >= 25) {
+    warnings.push(`${nullPatientGroup.registros} settlements (${nullPatientGroup.pct_registros}%) have NULL patient_name.`);
+  }
+  if (topGroup && topGroup.pct_registros >= 50) {
+    warnings.push(`Top patient group represents ${topGroup.pct_registros}% of active settlements.`);
+  }
+  if (duplicateFingerprints.length > 0) {
+    warnings.push(`${duplicateFingerprints.length} duplicate settlement fingerprints detected.`);
+  }
+
+  return {
+    summary: {
+      total_settlements: rows.length,
+      active_settlements: activeRows.length,
+      named_unique_patients: namedUniquePatients,
+      null_patient_name_settlements: nullPatientGroup?.registros ?? 0,
+      total_neto: Number(totalNet.toFixed(2)),
+      warnings,
+    },
+    patient_groups: patientGroups.slice(0, 50),
+    duplicate_fingerprints: duplicateFingerprints,
+  };
+}
+
+async function handleFinancialsIntegrityGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
+  const { adminClient, userId, resource, sub, req, sendJson } = ctx;
+  if (resource !== 'financials' || sub !== 'integrity' || req.method !== 'GET') return null;
+
+  const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+  const clinicId = usr?.clinic_id;
+  if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
+
+  const { data: rows, error } = await adminClient
+    .from('financial_settlements')
+    .select('id, patient_name, patient_phone, phone_normalized, amount_net, template_name, settled_at, intake_at, cancelled_at')
+    .eq('clinic_id', clinicId);
+  if (error) throw error;
+
+  return sendJson({
+    success: true,
+    clinicId,
+    integrity: buildFinancialSettlementIntegrity(rows ?? []),
+  });
 }
 
 async function fetchLeadCampaignMap(adminClient: any, userId: string, leadIds: string[]) {
