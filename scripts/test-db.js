@@ -1,18 +1,12 @@
 const { Client } = require('pg');
 
 async function testDB() {
-  const passwords = [process.env.SUPABASE_DB_PASSWORD].filter(Boolean);
+  const passwords = [process.env.DB_PASSWORD].filter(Boolean);
   if (passwords.length === 0) {
-    console.log('  ❌ Error: SUPABASE_DB_PASSWORD no configurada en el entorno');
+    console.log('  ❌ Error: DB_PASSWORD environment variable not set');
     return;
   }
   for (const password of passwords) {
-<<<<<<< HEAD
-    console.log('\n--- Probando conexión a la base de datos ---');
-=======
-    const masked = password.slice(0, 3) + '***';
-    console.log(`\n--- Probando password: ${masked} ---`);
->>>>>>> 757fa65 (security: redact IDs and passwords in scripts, fix lint errors)
     const client = new Client({
       user: process.env.DB_USER || 'postgres.ssvvuuysgxyqvmovrlvk',
       password: password,

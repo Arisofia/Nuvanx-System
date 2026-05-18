@@ -21,7 +21,6 @@ function normalizeSafePath(filePath, baseDir = ROOT) {
 
 const requiredSecretKeys = [
   'SUPABASE_ACCESS_TOKEN',
-  'NUVANX_SUPABASE_SERVICE_ROLE_KEY',
   'META_ACCESS_TOKEN',
   'META_AD_ACCOUNT_ID',
   'META_APP_SECRET',
@@ -291,19 +290,14 @@ function setGithubSecrets(vars) {
   }
 
   let uploaded = 0;
-  const githubKeys = [
+  const githubKeys = Array.from(new Set([
     ...requiredSecretKeys,
     'VITE_SUPABASE_URL',
     'VITE_SUPABASE_PUBLISHABLE_KEY',
     'VITE_SUPABASE_ANON_KEY',
     'PRODUCTION_E2E_URL',
     'PRODUCTION_E2E_TOKEN',
-    // Add other secrets that should be synced to GitHub here if not already in requiredSecretKeys
-    'SUPABASE_SERVICE_ROLE_KEY',
-    'NUVANX_SUPABASE_SERVICE_ROLE_KEY',
-    'SUPABASE_ANON_KEY',
-    'VITE_SUPABASE_URL',
-  ];
+  ]));
   for (const key of githubKeys) {
     const value = vars[key];
     if (!value || !safeName(key)) continue;

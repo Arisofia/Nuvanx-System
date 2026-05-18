@@ -6,7 +6,6 @@ dotenv.config();
 const MASTER_KEYS = [
   process.env.ENCRYPTION_KEY,
   Buffer.from(process.env.ENCRYPTION_KEY || '', 'base64').toString('utf8'),
-  'Nuvanx2026Prod!', // Try the DB password as a potential key
   'Nuvanx-System'
 ].filter(k => k && k.length > 0);
 
