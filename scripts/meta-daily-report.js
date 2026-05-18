@@ -824,7 +824,10 @@ async function main() {
       recommendations,
     });
 
-    console.log(markdown);
+    const accountSuffix = String(adAccountId).slice(-4);
+    console.log(
+      `[meta-daily-report] Report generated for account ending ${accountSuffix} (${since} to ${until}), campaigns: ${campaignRows.length}`
+    );
 
     try {
       const outputId = await maybePersistOutput({
