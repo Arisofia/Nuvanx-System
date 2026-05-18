@@ -39,12 +39,56 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      MIGRATIONS_LOG: supabase-migrations.log
+      REDACT_ENV_NAMES: "SUPABASE_ACCESS_TOKEN,SUPABASE_DB_PASSWORD,DATABASE_URL,SESSION_URL"
     steps:
       - uses: actions/checkout@v4 # v4
+
+      - name: Initialize migration log and sanitizer
+        run: |
+          touch "$MIGRATIONS_LOG"
+          chmod 600 "$MIGRATIONS_LOG"
+          
+          # Create Python sanitizer script (streaming line-by-line)
+          cat << 'EOF' > sanitize_logs.py
+          import sys, re, os
+          
+          env_names = os.environ.get('REDACT_ENV_NAMES', '').split(',')
+          secrets = [os.environ.get(name.strip()) for name in env_names if os.environ.get(name.strip())]
+          
+          # Regex for Postgres URLs and common sensitive key patterns
+          url_pattern = re.compile(r'postgresql://[^:]+:([^@]+)@')
+          kv_pattern = re.compile(r'(password|token|key|secret)=([^\s&]+)', re.IGNORECASE)
+
+          def sanitize(text):
+              if not text: return text
+              # Redact known env values
+              for secret in secrets:
+                  if len(secret) > 3:
+                      text = text.replace(secret, "[REDACTED]")
+              # Redact URL passwords
+              text = url_pattern.sub(r'postgresql://postgres:[REDACTED]@', text)
+              # Redact key-value pairs
+              text = kv_pattern.sub(r'\1=[REDACTED]', text)
+              return text
+
+          for line in sys.stdin:
+              sys.stdout.write(sanitize(line))
+          EOF
 
       - name: Validate Supabase deployment secrets
         id: validate
         run: |
+          sanitize_log() {
+            python3 sanitize_logs.py
+          }
+
+          log_and_print() {
+            local label="$1"
+            echo "--- $label ---" | tee -a "$MIGRATIONS_LOG"
+            cat - | sanitize_log | tee -a "$MIGRATIONS_LOG"
+          }
+
           MISSING=()
           [ -z "$SUPABASE_ACCESS_TOKEN" ] && MISSING+=("SUPABASE_ACCESS_TOKEN")
           [ -z "$SUPABASE_PROJECT_REF" ] && MISSING+=("SUPABASE_PROJECT_REF")
@@ -53,7 +97,7 @@ jobs:
           fi
           if [ ${#MISSING[@]} -gt 0 ]; then
             echo "::warning::Supabase deploy skipped — missing secrets: ${MISSING[*]}"
-            echo "skip_supabase=true" >> "$GITHUB_OUTPUT"
+            echo "skip_supabase=true" | log_and_print "Validation" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Supabase DB migrations
@@ -66,6 +110,16 @@ jobs:
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           command: |
             set -uo pipefail
+
+            sanitize_log() {
+              python3 sanitize_logs.py
+            }
+
+            log_and_print() {
+              local label="$1"
+              echo "--- $label ---" | tee -a "$MIGRATIONS_LOG"
+              cat - | sanitize_log | tee -a "$MIGRATIONS_LOG"
+            }
 
             # Build direct session URL (port 5432) — avoids prepared statement conflicts with the pooler.
             # Prefer DATABASE_URL; fall back to constructing from project ref + password.
@@ -89,11 +143,9 @@ jobs:
             run_db_push_once() {
               local output exit_code ghosts dup_version
               DB_PUSH_RETRYABLE=true
-
-              echo "PHASE: Executing Supabase DB Push"
-              output=$(supabase db push --include-all --db-url "$SESSION_URL" --debug 2>&1)
+              
+              output=$(supabase db push --include-all --db-url "$SESSION_URL" --debug 2>&1 | log_and_print "DB Push Attempt")
               exit_code=$?
-              echo "$output"
 
               if [ "$exit_code" -eq 0 ]; then
                 return 0
@@ -103,10 +155,10 @@ jobs:
               ghosts=$(echo "$output" | grep "supabase migration repair --status reverted" | sed 's/.*reverted //' || true)
               if [ -n "$ghosts" ]; then
                 for version in $ghosts; do
-                  echo "::warning::Repairing ghost migration $version"
-                  supabase migration repair --status reverted "$version" --db-url "$SESSION_URL" --debug
+                  echo "Repairing ghost migration $version" | log_and_print "Repair Action"
+                  supabase migration repair --status reverted "$version" --db-url "$SESSION_URL" --debug 2>&1 | log_and_print "Repair Output"
                 done
-                supabase db push --include-all --db-url "$SESSION_URL" --debug
+                supabase db push --include-all --db-url "$SESSION_URL" --debug 2>&1 | log_and_print "Post-Repair Push"
                 return $?
               fi
 
@@ -115,7 +167,7 @@ jobs:
               # and fail again. Surface the exact version so migration filename/history can be fixed.
               dup_version=$(echo "$output" | grep -oE 'Key \(version\)=\([0-9]+\) already exists' | grep -oE '[0-9]+' || true)
               if [ -n "$dup_version" ]; then
-                echo "::error::Migration version $dup_version already exists in supabase_migrations.schema_migrations. Check for duplicate local migration prefixes or a remote history mismatch before retrying."
+                echo "::error::Migration version $dup_version already exists. Conflict detected." | log_and_print "Conflict"
                 DB_PUSH_RETRYABLE=false
                 return "$exit_code"
               fi
@@ -156,6 +208,15 @@ jobs:
             }
 
             run_with_retry
+
+      - name: Upload migration logs
+        if: always() && steps.validate.outputs.skip_supabase != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-migration-logs
+          path: ${{ env.MIGRATIONS_LOG }}
+          retention-days: 14
+          if-no-files-found: warn
 
   # 2. Supabase Edge Functions
   supabase-functions:
