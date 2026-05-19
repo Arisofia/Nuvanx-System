@@ -2,22 +2,22 @@
 -- These fields improve traceability of paid vs organic traffic and support future campaign-level auditing.
 
 ALTER TABLE public.leads
-  ADD COLUMN IF NOT EXISTS first_name        TEXT,
-  ADD COLUMN IF NOT EXISTS last_name         TEXT,
-  ADD COLUMN IF NOT EXISTS city              TEXT,
-  ADD COLUMN IF NOT EXISTS state             TEXT,
-  ADD COLUMN IF NOT EXISTS zip_code          TEXT,
-  ADD COLUMN IF NOT EXISTS gender            TEXT,
-  ADD COLUMN IF NOT EXISTS meta_ad_id        TEXT,
-  ADD COLUMN IF NOT EXISTS meta_ad_name      TEXT,
-  ADD COLUMN IF NOT EXISTS meta_form_id      TEXT,
-  ADD COLUMN IF NOT EXISTS meta_platform     TEXT,
-  ADD COLUMN IF NOT EXISTS is_organic        BOOLEAN NOT NULL DEFAULT FALSE,
-  ADD COLUMN IF NOT EXISTS created_at_meta   TIMESTAMPTZ,
-  ADD COLUMN IF NOT EXISTS asset_url         TEXT,
-  ADD COLUMN IF NOT EXISTS telefono_hash     TEXT,
-  ADD COLUMN IF NOT EXISTS email_hash        TEXT,
-  ADD COLUMN IF NOT EXISTS raw_field_data    JSONB,
+  ADD COLUMN IF NOT EXISTS first_name         TEXT,
+  ADD COLUMN IF NOT EXISTS last_name          TEXT,
+  ADD COLUMN IF NOT EXISTS city               TEXT,
+  ADD COLUMN IF NOT EXISTS state              TEXT,
+  ADD COLUMN IF NOT EXISTS zip_code           TEXT,
+  ADD COLUMN IF NOT EXISTS gender             TEXT,
+  ADD COLUMN IF NOT EXISTS meta_ad_id         TEXT,
+  ADD COLUMN IF NOT EXISTS meta_ad_name       TEXT,
+  ADD COLUMN IF NOT EXISTS meta_form_id       TEXT,
+  ADD COLUMN IF NOT EXISTS meta_platform      TEXT,
+  ADD COLUMN IF NOT EXISTS is_organic         BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS created_at_meta    TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS asset_url          TEXT,
+  ADD COLUMN IF NOT EXISTS telefono_hash      TEXT,
+  ADD COLUMN IF NOT EXISTS email_hash         TEXT,
+  ADD COLUMN IF NOT EXISTS raw_field_data     JSONB,
   ADD COLUMN IF NOT EXISTS lead_quality_score INT;
 
 COMMENT ON COLUMN public.leads.meta_ad_id      IS 'Meta ad ID for asset tracking and ad-level attribution';

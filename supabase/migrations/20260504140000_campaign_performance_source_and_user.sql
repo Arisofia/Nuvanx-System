@@ -20,13 +20,13 @@ BEGIN
       COALESCE(l.campaign_name, 'Organic / Unknown')  AS campaign_name,
       l.campaign_id,
       COUNT(*)                                         AS total_leads,
-      COUNT(*) FILTER (WHERE l.first_outbound_at IS NOT NULL)                            AS contacted,
-      COUNT(*) FILTER (WHERE l.first_inbound_at  IS NOT NULL)                            AS replied,
+      COUNT(*) FILTER (WHERE l.first_outbound_at IS NOT NULL)                             AS contacted,
+      COUNT(*) FILTER (WHERE l.first_inbound_at  IS NOT NULL)                             AS replied,
       COUNT(*) FILTER (WHERE l.appointment_status IN ('scheduled','confirmed','showed'))  AS booked,
-      COUNT(*) FILTER (WHERE l.appointment_status = 'showed')                            AS attended,
-      COUNT(*) FILTER (WHERE l.no_show_flag = TRUE)                                      AS no_shows,
-      0::BIGINT                                         AS closed,
-      COUNT(*) FILTER (WHERE l.verified_revenue > 0)                                     AS closed_won,
+      COUNT(*) FILTER (WHERE l.appointment_status = 'showed')                             AS attended,
+      COUNT(*) FILTER (WHERE l.no_show_flag = TRUE)                                       AS no_shows,
+      0::BIGINT                                                                            AS closed,
+      COUNT(*) FILTER (WHERE l.verified_revenue > 0)                                      AS closed_won,
       ROUND(COALESCE(SUM(l.revenue), 0), 2)            AS estimated_revenue,
       ROUND(COALESCE(SUM(l.verified_revenue), 0), 2)   AS verified_revenue_crm,
       ROUND(
@@ -43,8 +43,8 @@ BEGIN
         NULLIF(COUNT(*) FILTER (WHERE l.appointment_status IS NOT NULL), 0), 1
       ) AS no_show_rate_pct,
       ROUND(AVG(l.reply_delay_minutes), 1)             AS avg_reply_delay_min,
-      NULL::TIMESTAMPTZ                               AS first_lead_at,
-      NULL::TIMESTAMPTZ                               AS last_lead_at
+      NULL::TIMESTAMPTZ                                AS first_lead_at,
+      NULL::TIMESTAMPTZ                                AS last_lead_at
     FROM public.leads l
     GROUP BY l.user_id, l.campaign_name, l.campaign_id;
 
