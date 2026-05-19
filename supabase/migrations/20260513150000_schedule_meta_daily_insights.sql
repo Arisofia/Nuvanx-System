@@ -27,8 +27,9 @@ BEGIN
       END;
     END LOOP;
 
-    DELETE FROM cron.job
-    WHERE jobname = 'fetch-meta-daily-insights';
+    -- No tocar cron.job directamente; depender solo de cron.unschedule/cron.schedule
+    -- DELETE FROM cron.job
+    -- WHERE jobname = 'fetch-meta-daily-insights';
 
     -- Nuevo job diario (5:00 AM hora del servidor Supabase)
     PERFORM cron.schedule(
