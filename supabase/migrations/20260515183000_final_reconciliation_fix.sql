@@ -10,10 +10,11 @@ CREATE OR REPLACE FUNCTION public.reconcile_doctoralia_subjects_to_leads(p_user_
 RETURNS INTEGER
 LANGUAGE plpgsql
 SECURITY DEFINER -- Use DEFINER to bypass RLS and fix data across tables
-SET search_path = ''
+SET search_path = 'public', 'pg_catalog'
 AS $$
 DECLARE
   updated_count INTEGER := 0;
+  v_rows_affected INTEGER;
   v_clinic_id UUID;
 BEGIN
   -- Get clinic_id for the user
@@ -27,6 +28,8 @@ BEGIN
   WHERE fs.clinic_id IS NULL
     AND fs.phone_normalized = l.phone_normalized
     AND l.clinic_id IS NOT NULL;
+  GET DIAGNOSTICS v_rows_affected = ROW_COUNT;
+  updated_count := updated_count + v_rows_affected;
 
   -- Also fix any null clinic_ids in leads if they match a settlement's phone
   -- This "adopts" orphan leads into the correct clinic for attribution
@@ -36,6 +39,8 @@ BEGIN
   WHERE l.clinic_id IS NULL
     AND l.phone_normalized = fs.phone_normalized
     AND fs.clinic_id IS NOT NULL;
+  GET DIAGNOSTICS v_rows_affected = ROW_COUNT;
+  updated_count := updated_count + v_rows_affected;
 
   -- Fix any null clinic_ids in produccion_intermediarios if they match a lead's phone
   UPDATE public.produccion_intermediarios pi
@@ -44,6 +49,8 @@ BEGIN
   WHERE pi.clinic_id IS NULL
     AND pi.phone_normalized = l.phone_normalized
     AND l.clinic_id IS NOT NULL;
+  GET DIAGNOSTICS v_rows_affected = ROW_COUNT;
+  updated_count := updated_count + v_rows_affected;
 
   -- Now execute the attribution
   WITH matched_revenue AS (
@@ -70,16 +77,17 @@ BEGIN
     updated_at = NOW()
   FROM matched_revenue mr
   WHERE l.id = mr.lead_id
-    AND (COALESCE(l.verified_revenue, 0) != mr.total_rev OR l.stage != 'convertido')
+    AND (COALESCE(l.verified_revenue, 0) != mr.total_rev OR (mr.total_rev > 0 AND l.stage != 'convertido'))
   ;
+  GET DIAGNOSTICS v_rows_affected = ROW_COUNT;
+  updated_count := updated_count + v_rows_affected;
 
-  GET DIAGNOSTICS updated_count = ROW_COUNT;
   RETURN updated_count;
 END;
 $$;
 
--- 2. Run it once for the admin user to apply changes immediately
--- (We use the user_id from the diagnostic log if possible, or just create a task)
--- For now, we leave it as a function to be called by the API.
+-- 3. Security Hardening
+REVOKE ALL ON FUNCTION public.reconcile_doctoralia_subjects_to_leads(UUID) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.reconcile_doctoralia_subjects_to_leads(UUID) TO service_role;
 
 COMMIT;

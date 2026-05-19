@@ -9,9 +9,9 @@
 DO $$
 DECLARE
   pol RECORD;
-  old_qual TEXT;
+  old_qual  TEXT;
   old_check TEXT;
-  new_qual TEXT;
+  new_qual  TEXT;
   new_check TEXT;
 BEGIN
   FOR pol IN
@@ -21,23 +21,24 @@ BEGIN
       (qual LIKE '%auth.uid()%' OR qual LIKE '%auth.jwt()%')
       OR (with_check LIKE '%auth.uid()%' OR with_check LIKE '%auth.jwt()%')
   LOOP
-    old_qual := COALESCE(pol.qual, '');
+    old_qual  := COALESCE(pol.qual, '');
     old_check := COALESCE(pol.with_check, '');
 
-    new_qual := replace(old_qual, '(SELECT auth.uid())', '__AUTH_UID__');
-    new_qual := replace(new_qual, '(SELECT auth.jwt())', '__AUTH_JWT__');
-
+    -- Proteger casos donde ya están envueltos en SELECT para no duplicar
+    new_qual  := replace(old_qual,  '(SELECT auth.uid())', '__AUTH_UID__');
+    new_qual  := replace(new_qual,  '(SELECT auth.jwt())', '__AUTH_JWT__');
     new_check := replace(old_check, '(SELECT auth.uid())', '__AUTH_UID__');
     new_check := replace(new_check, '(SELECT auth.jwt())', '__AUTH_JWT__');
 
-    new_qual := replace(new_qual, 'auth.uid()', '(SELECT auth.uid())');
-    new_qual := replace(new_qual, 'auth.jwt()', '(SELECT auth.jwt())');
-
+    -- Envolver llamadas "peladas" en SELECT
+    new_qual  := replace(new_qual,  'auth.uid()', '(SELECT auth.uid())');
+    new_qual  := replace(new_qual,  'auth.jwt()', '(SELECT auth.jwt())');
     new_check := replace(new_check, 'auth.uid()', '(SELECT auth.uid())');
     new_check := replace(new_check, 'auth.jwt()', '(SELECT auth.jwt())');
 
-    new_qual := replace(new_qual, '__AUTH_UID__', '(SELECT auth.uid())');
-    new_qual := replace(new_qual, '__AUTH_JWT__', '(SELECT auth.jwt())');
+    -- Restaurar los marcadores placeholder
+    new_qual  := replace(new_qual,  '__AUTH_UID__', '(SELECT auth.uid())');
+    new_qual  := replace(new_qual,  '__AUTH_JWT__', '(SELECT auth.jwt())');
 
     IF new_qual <> old_qual AND pol.cmd IN ('SELECT', 'UPDATE', 'DELETE', 'ALL') THEN
       EXECUTE format(

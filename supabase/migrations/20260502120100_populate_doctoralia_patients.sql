@@ -38,7 +38,10 @@ BEGIN
     DO UPDATE SET
       full_name        = EXCLUDED.full_name,
       name_norm        = EXCLUDED.name_norm,
-      first_seen_at    = LEAST(doctoralia_patients.first_seen_at, EXCLUDED.first_seen_at),
+      first_seen_at    = LEAST(
+        COALESCE(doctoralia_patients.first_seen_at, EXCLUDED.first_seen_at),
+        COALESCE(EXCLUDED.first_seen_at, doctoralia_patients.first_seen_at)
+      ),
       match_confidence = EXCLUDED.match_confidence,
       match_class      = EXCLUDED.match_class;
   ELSE

@@ -5,7 +5,11 @@
 CREATE OR REPLACE VIEW public.vw_doctoralia_lead_traceability_unified AS
 SELECT
   dr.*,                                    -- datos normalizados de Doctoralia
-  COALESCE(normalize_phone(dr.paciente_telefono), normalize_phone(dr.phone_primary), normalize_phone(dr.phone_secondary)) AS paciente_telefono_normalized,
+  COALESCE(
+    normalize_phone(dr.paciente_telefono),
+    normalize_phone(dr.phone_primary),
+    normalize_phone(dr.phone_secondary)
+  ) AS paciente_telefono_normalized,
   l.id                                      AS lead_id,
   l.external_id                             AS leadgen_id,
   l.name                                    AS lead_full_name,
@@ -30,7 +34,11 @@ SELECT
   l.priority                                AS lead_priority
 FROM public.vw_doctoralia_trazabilidad_360 dr
 LEFT JOIN public.leads l
-  ON normalize_phone(dr.paciente_telefono) = l.phone_normalized
+  ON (
+    normalize_phone(dr.paciente_telefono) = l.phone_normalized
+    OR normalize_phone(dr.phone_primary)  = l.phone_normalized
+    OR normalize_phone(dr.phone_secondary) = l.phone_normalized
+  )
 LEFT JOIN public.meta_attribution m
   ON m.lead_id = l.id;
 

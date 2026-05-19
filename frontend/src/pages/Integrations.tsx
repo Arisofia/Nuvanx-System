@@ -42,7 +42,7 @@ export default function Integrations() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState<ConnectForm>({ service: 'meta', token: '', adAccountId: '', pageId: '', phoneNumberId: '' })
+  const [form, setForm] = useState<ConnectForm>({ service: 'meta', token: '', adAccountId: '', pageId: '', pixelId: '', phoneNumberId: '' })
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [testing, setTesting] = useState<string | null>(null)
@@ -128,8 +128,11 @@ export default function Integrations() {
         return
       }
       metadata.adAccountIds = adAccountIds
-      metadata.adAccountId = adAccountIds.join(',')
+      metadata.adAccountId = adAccountIds[0]
       metadata.pageId = form.pageId.trim()
+      if (form.pixelId?.trim()) {
+        metadata.pixelId = form.pixelId.trim()
+      }
     }
     if (form.service === 'whatsapp') {
       metadata.phoneNumberId = form.phoneNumberId.trim()
@@ -142,7 +145,7 @@ export default function Integrations() {
         body: { service: form.service, token: form.token.trim(), metadata },
       })
       setShowForm(false)
-      setForm({ service: 'meta', token: '', adAccountId: '', pageId: '', phoneNumberId: '' })
+      setForm({ service: 'meta', token: '', adAccountId: '', pageId: '', pixelId: '', phoneNumberId: '' })
       await loadIntegrations()
       if (form.service === 'meta') {
         await handleHealthCheck('meta')
@@ -284,6 +287,19 @@ export default function Integrations() {
                     />
                     <p className="text-xs text-muted mt-1">Este campo es obligatorio para que el webhook de leads de Meta pueda activarse correctamente.</p>
                   </div>
+                  <div>
+                    <label htmlFor="pixelId-input" className="text-sm font-medium">ID del Píxel de Meta</label>
+                    <Input
+                      id="pixelId-input"
+                      type="text"
+                      name="pixelId"
+                      placeholder="ej. 877262375461917"
+                      value={form.pixelId}
+                      onChange={handleFieldChange}
+                      className="mt-1"
+                    />
+                    <p className="text-xs text-muted mt-1">Opcional. Si lo ingresas, los eventos de conversión se enviarán a este Píxel específico.</p>
+                  </div>
                 </>
               )}
 
@@ -333,6 +349,7 @@ export default function Integrations() {
           const rawAdAccountIds = meta.adAccountIds ?? meta.ad_account_ids ?? meta.adAccountId ?? meta.ad_account_id ?? ''
           const adAccountIds = extractAdAccountIds(rawAdAccountIds)
           const pageId = (meta.pageId ?? meta.page_id ?? '') as string
+          const pixelId = (meta.pixelId ?? meta.pixel_id ?? '') as string
 
           return (
             <Card key={integration.id}>
@@ -359,6 +376,9 @@ export default function Integrations() {
                 )}
                 {pageId && (
                   <p className="text-xs text-muted">ID de la Página: <span className="font-mono">{pageId}</span></p>
+                )}
+                {pixelId && (
+                  <p className="text-xs text-muted">ID del Píxel: <span className="font-mono">{pixelId}</span></p>
                 )}
                 {integration.last_error && (
                   <p className="text-xs text-[#D9534F]">Último error: {integration.last_error}</p>

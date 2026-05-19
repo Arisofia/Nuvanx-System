@@ -20,7 +20,8 @@
     "nuvanx-system": "file:..",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "react-hot-toast": "^2.6.0"
+    "react-hot-toast": "^2.6.0",
+    "react-is": "^19.2.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

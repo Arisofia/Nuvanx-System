@@ -11,8 +11,8 @@
 # Required secrets (GitHub -> Settings -> Secrets -> Actions):
 #   SUPABASE_ACCESS_TOKEN        - Supabase personal access token
 #   SUPABASE_PROJECT_REF         - Supabase project ref used by supabase link
-#   SUPABASE_DB_PASSWORD         - Optional DB password fallback for direct db push
-#   DATABASE_URL                 - Recommended DB URL; use the Supavisor session pooler URL on GitHub Actions
+#   SUPABASE_DB_PASSWORD         - DB password for supabase db push
+#   DATABASE_URL                 - Optional fallback DB URL to derive SUPABASE_DB_PASSWORD
 
 name: Deploy Supabase
 
@@ -20,9 +20,6 @@ on:
   push:
     branches: [main]
   workflow_dispatch: {}
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 concurrency:
   group: deploy-supabase-production
@@ -36,18 +33,63 @@ jobs:
     permissions:
       contents: read
     outputs:
-      skip_supabase: ${{ steps.validate.outputs.skip_supabase }}
+      skip_supabase: ${{ steps.validate.outputs.skip_supabase || steps.migrate.outputs.skipped }}
     env:
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      MIGRATIONS_LOG: supabase-migrations.log
+      REDACT_ENV_NAMES: "SUPABASE_ACCESS_TOKEN,SUPABASE_DB_PASSWORD,DATABASE_URL,SESSION_URL"
     steps:
-      - uses: actions/checkout@v4 # v4
+      - uses: actions/checkout@v4
+
+      - name: Initialize migration log and sanitizer
+        run: |
+          touch "$MIGRATIONS_LOG"
+          chmod 600 "$MIGRATIONS_LOG"
+
+          # Create Python sanitizer script (streaming line-by-line)
+          cat << 'EOF' > sanitize_logs.py
+          import sys, re, os
+
+          env_names = os.environ.get('REDACT_ENV_NAMES', '').split(',')
+          secrets = [os.environ.get(name.strip()) for name in env_names if os.environ.get(name.strip())]
+
+          # Regex for Postgres URLs and common sensitive key patterns
+          url_pattern = re.compile(r'((?:postgres|postgresql)://[^:\s]+:)([^@\s]+)(@)')
+          kv_pattern = re.compile(r'(password|token|key|secret|auth)\s*[:=]\s*([^\s&"\'<>]+)', re.IGNORECASE)
+
+          def sanitize(text):
+              if not text:
+                  return text
+              # Redact known env values
+              for secret in secrets:
+                  if secret and len(secret) > 3:
+                      text = text.replace(secret, "[REDACTED]")
+              # Redact URL passwords
+              text = url_pattern.sub(lambda match: f'{match.group(1)}[REDACTED]{match.group(3)}', text)
+              # Redact key-value pairs
+              text = kv_pattern.sub(r'\1=[REDACTED]', text)
+              return text
+
+          for line in sys.stdin:
+              sys.stdout.write(sanitize(line))
+          EOF
 
       - name: Validate Supabase deployment secrets
         id: validate
         run: |
+          sanitize_log() {
+            python3 sanitize_logs.py
+          }
+
+          log_and_print() {
+            local label="$1"
+            echo "--- $label ---" | tee -a "$MIGRATIONS_LOG"
+            cat - | sanitize_log | tee -a "$MIGRATIONS_LOG"
+          }
+
           MISSING=()
           [ -z "$SUPABASE_ACCESS_TOKEN" ] && MISSING+=("SUPABASE_ACCESS_TOKEN")
           [ -z "$SUPABASE_PROJECT_REF" ] && MISSING+=("SUPABASE_PROJECT_REF")
@@ -57,9 +99,11 @@ jobs:
           if [ ${#MISSING[@]} -gt 0 ]; then
             echo "::warning::Supabase deploy skipped — missing secrets: ${MISSING[*]}"
             echo "skip_supabase=true" >> "$GITHUB_OUTPUT"
+            echo "skip_supabase=true" | log_and_print "Validation"
           fi
 
       - name: Supabase DB migrations
+        id: migrate
         if: steps.validate.outputs.skip_supabase != 'true'
         uses: ./.github/actions/supabase-link-run
         with:
@@ -67,112 +111,38 @@ jobs:
           supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
           database_url: ${{ env.DATABASE_URL }}
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
-          skip_link: true
           command: |
             set -uo pipefail
 
-            # Prefer DATABASE_URL so GitHub Actions can use Supavisor session pooler
-            # (IPv4-compatible) instead of the direct IPv6-only database host.
-            # Normalize legacy direct .com hosts to .co and convert transaction/pooler
-            # port 6543 to session/direct port 5432 for migration-safe sessions.
-            # Assumptions:
-            # - Direct DB hostnames follow Supabase's standard db.<project_ref>.supabase.{com,co} pattern.
-            # - Pooler hostnames follow the standard *.pooler.supabase.com pattern.
-            # - URL shape is postgres[ql]://user:pass@host:port/db; the host has no extra @ or : characters.
+            sanitize_log() {
+              python3 sanitize_logs.py
+            }
+
+            log_and_print() {
+              local label="$1"
+              echo "--- $label ---" | tee -a "$MIGRATIONS_LOG"
+              cat - | sanitize_log | tee -a "$MIGRATIONS_LOG"
+            }
+
+            # Build direct session URL (port 5432) — avoids prepared statement conflicts with the pooler.
+            # Prefer DATABASE_URL; fall back to constructing from project ref + password.
             if [ -n "${DATABASE_URL:-}" ]; then
-              SESSION_URL=$(printf '%s' "$DATABASE_URL" | sed -E 's#(db\.[^/@:]+\.supabase)\.com:#\1.co:#g' | sed -E 's#(pooler\.supabase\.com):6543/#\1:5432/#g' | sed -E 's#(db\.[^/@:]+\.supabase\.co):6543/#\1:5432/#g')
+              SESSION_URL=$(echo "$DATABASE_URL" | sed 's/:6543\//:5432\//')
             elif [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
-              echo "::warning::DATABASE_URL is not set; falling back to the direct Supabase DB host. GitHub Actions may need a Supavisor session pooler DATABASE_URL because direct Supabase DB hosts are IPv6-only by default."
-              SESSION_URL="postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.${SUPABASE_PROJECT_REF}.supabase.co:5432/postgres"
+              SESSION_URL=$(printf '%s://%s:%s@db.%s.supabase.co:5432/postgres' 'postgresql' 'postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
             else
               echo "::error::Cannot connect to database. Set DATABASE_URL or both SUPABASE_DB_PASSWORD and SUPABASE_PROJECT_REF."
               exit 1
             fi
             echo "::add-mask::$SESSION_URL"
 
-            MIGRATIONS_LOG="${GITHUB_WORKSPACE:-$PWD}/supabase-migrations.log"
-            SANITIZER_SCRIPT="${RUNNER_TEMP:-/tmp}/sanitize-supabase-migration-output.py"
-            # Centralized redaction list for migration diagnostics. Add future
-            # connection strings, API keys, or tokens here before printing or
-            # uploading Supabase CLI output.
-            REDACT_ENV_NAMES=$(cat <<'EOF'
-            SESSION_URL
-            DATABASE_URL
-            SUPABASE_DB_PASSWORD
-            SUPABASE_ACCESS_TOKEN
-            SUPABASE_SERVICE_ROLE_KEY
-            NUVANX_SUPABASE_SERVICE_ROLE_KEY
-            SUPABASE_ANON_KEY
-            VITE_SUPABASE_ANON_KEY
-            POSTGRES_URL
-            POSTGRES_PRISMA_URL
-            POSTGRES_URL_NON_POOLING
-            DIRECT_URL
-            PGDATABASE_URL
-            EOF
-            )
-            export REDACT_ENV_NAMES
-            : > "$MIGRATIONS_LOG"
-            chmod 600 "$MIGRATIONS_LOG"
-            cat > "$SANITIZER_SCRIPT" <<'PY'
-            import os
-            import re
-            import sys
-
-
-            def redact_environment_values(text: str) -> str:
-                names = re.split(r'[\s,]+', os.environ.get('REDACT_ENV_NAMES', '').strip())
-                for name in names:
-                    value = os.environ.get(name)
-                    if value:
-                        text = text.replace(value, f'<redacted:{name}>')
-                return text
-
-
-            def redact_postgres_passwords(text: str) -> str:
-                return re.sub(
-                    r'(postgres(?:ql)?://[^:/@\s]+:)[^@\s]+(@)',
-                    r'\1<redacted-password>\2',
-                    text,
-                )
-
-
-            def redact_token_like_values(text: str) -> str:
-                token_patterns = [
-                    r'((?:access|refresh|service_role|anon|api)[_-]?token["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+',
-                    r'((?:password|passwd|pwd)["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+',
-                ]
-                for pattern in token_patterns:
-                    text = re.sub(pattern, r'\1<redacted-secret>', text, flags=re.IGNORECASE)
-                return text
-
-
-            content = sys.stdin.read()
-            content = redact_environment_values(content)
-            content = redact_postgres_passwords(content)
-            content = redact_token_like_values(content)
-            sys.stdout.write(content)
-            PY
-            {
-              echo "### Supabase migration diagnostics"
-              echo
-              echo "Sanitized Supabase CLI output is attached as \`supabase-migrations.log\`."
-              echo "Search the artifact for \`Running Supabase migrations (attempt 1/3)...\`, then copy the first \`ERROR:\`, \`SQLSTATE\`, or \`ErrorResponse\` block."
-            } >> "$GITHUB_STEP_SUMMARY"
-
-            sanitize_migration_output() {
-              python3 "$SANITIZER_SCRIPT"
-            }
-
-            append_migration_log() {
-              sanitize_migration_output >> "$MIGRATIONS_LOG"
-            }
-
-            print_migration_output() {
-              sanitize_migration_output | tee -a "$MIGRATIONS_LOG"
-            }
-
             # Retry transient Supabase Preview failures while surfacing deterministic SQL errors.
+            is_deterministic_migration_error() {
+              local output="$1"
+              local pattern='syntax error|permission denied|not a valid migration|SQLSTATE (42P01|42703|42P07|23505)|could not find valid entry for job|relation .* does not exist|column .* does not exist|function .* does not exist|type .* does not exist|invalid input syntax|duplicate key value violates unique constraint|violates (foreign key|not-null|check) constraint|checksum|failed to parse|error parsing|Unexpected HTTP response: 404|relation "public\..*" does not exist'
+              echo "$output" | grep -Eiq "$pattern"
+            }
+
             print_migration_failure_summary() {
               local output="$1"
               local summary sanitized_summary
@@ -185,7 +155,7 @@ jobs:
               ')
 
               if [ -n "$summary" ]; then
-                sanitized_summary=$(printf '%s\n' "$summary" | sanitize_migration_output)
+                sanitized_summary=$(printf '%s\n' "$summary" | sanitize_log)
                 echo "::group::First Supabase migration failure block"
                 printf '%s\n' "$sanitized_summary"
                 echo "::endgroup::"
@@ -197,47 +167,30 @@ jobs:
                   echo '```'
                 } >> "$GITHUB_STEP_SUMMARY"
               else
-                echo "::warning::No ERROR, SQLSTATE, ErrorResponse, connection, or known SQL failure marker was found in the Supabase CLI output. Review the full --debug output above or download supabase-migrations.log."
+                echo "::warning::No ERROR, SQLSTATE, ErrorResponse, connection, or known SQL failure marker was found in the Supabase CLI output. Review the full --debug output above or download supabase-migration-logs artifact."
               fi
-            }
-
-            is_deterministic_migration_error() {
-              local output="$1"
-              local pattern='syntax error|permission denied|not a valid migration|SQLSTATE 42P01|could not find valid entry for job|relation .* does not exist|column .* does not exist|function .* does not exist|type .* does not exist|invalid input syntax|duplicate key value violates unique constraint|violates (foreign key|not-null|check) constraint|checksum|failed to parse|error parsing'
-              echo "$output" | grep -Eiq "$pattern"
             }
 
             run_db_push_once() {
               local output exit_code ghosts dup_version
               DB_PUSH_RETRYABLE=true
 
-              output=$(supabase db push --include-all --db-url "$SESSION_URL" --debug 2>&1)
+              output=$(supabase db push --include-all --db-url "$SESSION_URL" --debug 2>&1 | log_and_print "DB Push Attempt")
               exit_code=$?
-              printf '%s\n' "$output" | print_migration_output
 
               if [ "$exit_code" -eq 0 ]; then
                 return 0
               fi
 
-              print_migration_failure_summary "$output"
-
               # Case 1: ghost / reverted migrations.
               ghosts=$(echo "$output" | grep "supabase migration repair --status reverted" | sed 's/.*reverted //' || true)
               if [ -n "$ghosts" ]; then
                 for version in $ghosts; do
-                  echo "::warning::Repairing ghost migration $version"
-                  printf '%s\n' "Repairing ghost migration $version" | append_migration_log
-                  output=$(supabase migration repair --status reverted "$version" --db-url "$SESSION_URL" --debug 2>&1)
-                  exit_code=$?
-                  printf '%s\n' "$output" | print_migration_output
-                  if [ "$exit_code" -ne 0 ]; then
-                    return "$exit_code"
-                  fi
+                  echo "Repairing ghost migration $version" | log_and_print "Repair Action"
+                  supabase migration repair --status reverted "$version" --db-url "$SESSION_URL" --debug 2>&1 | log_and_print "Repair Output"
                 done
-                output=$(supabase db push --include-all --db-url "$SESSION_URL" --debug 2>&1)
-                exit_code=$?
-                printf '%s\n' "$output" | print_migration_output
-                return "$exit_code"
+                supabase db push --include-all --db-url "$SESSION_URL" --debug 2>&1 | log_and_print "Post-Repair Push"
+                return $?
               fi
 
               # Duplicate schema_migrations versions indicate local migration history is not aligned
@@ -245,13 +198,14 @@ jobs:
               # and fail again. Surface the exact version so migration filename/history can be fixed.
               dup_version=$(echo "$output" | grep -oE 'Key \(version\)=\([0-9]+\) already exists' | grep -oE '[0-9]+' || true)
               if [ -n "$dup_version" ]; then
-                echo "::error::Migration version $dup_version already exists in supabase_migrations.schema_migrations. Check for duplicate local migration prefixes or a remote history mismatch before retrying."
+                echo "::error::Migration version $dup_version already exists. Conflict detected." | log_and_print "Conflict"
                 DB_PUSH_RETRYABLE=false
                 return "$exit_code"
               fi
 
               if is_deterministic_migration_error "$output"; then
                 echo "::error::Non-transient Supabase migration error detected. Not retrying; fix the SQL/CLI error shown above."
+                print_migration_failure_summary "$output"
                 DB_PUSH_RETRYABLE=false
                 return "$exit_code"
               fi
@@ -266,7 +220,6 @@ jobs:
 
               while true; do
                 echo "Running Supabase migrations (attempt $attempt/$max_attempts)..."
-                printf '%s\n' "Running Supabase migrations (attempt $attempt/$max_attempts)..." | append_migration_log
                 if run_db_push_once; then
                   return 0
                 fi
@@ -288,14 +241,14 @@ jobs:
 
             run_with_retry
 
-      - name: Upload Supabase migration log
+      - name: Upload migration logs
         if: always() && steps.validate.outputs.skip_supabase != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: supabase-migrations-log
-          path: supabase-migrations.log
-          if-no-files-found: warn
+          name: supabase-migration-logs
+          path: ${{ env.MIGRATIONS_LOG }}
           retention-days: 14
+          if-no-files-found: warn
 
   # 2. Supabase Edge Functions
   supabase-functions:
@@ -309,28 +262,29 @@ jobs:
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
     steps:
-      - uses: actions/checkout@v4 # v4
+      - uses: actions/checkout@v4
 
       - name: Deploy API Edge Function
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
           supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
-          skip_link: true
-          command: supabase functions deploy api --use-api --project-ref ${{ env.SUPABASE_PROJECT_REF }}
+          command: supabase functions deploy api --use-api
 
       - name: Deploy MCP Edge Function
+        # --no-verify-jwt is used because this function handles its own
+        # internal API key validation or provides a public health check.
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
           supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
-          skip_link: true
           command: supabase functions deploy mcp --project-ref ${{ env.SUPABASE_PROJECT_REF }} --no-verify-jwt
 
       - name: Deploy Daily Aggregates Edge Function
+        # --no-verify-jwt is required as this is typically triggered
+        # by a cron service/webhook that doesn't provide a Supabase User JWT.
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
           supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
-          skip_link: true
-          command: supabase functions deploy daily-aggregates --no-verify-jwt --project-ref ${{ env.SUPABASE_PROJECT_REF }}
+          command: supabase functions deploy daily-aggregates --no-verify-jwt

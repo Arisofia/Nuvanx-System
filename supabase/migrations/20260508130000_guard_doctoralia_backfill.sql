@@ -130,7 +130,7 @@ BEGIN
       name_norm = EXCLUDED.name_norm,
       first_seen_at = LEAST(
         COALESCE(public.doctoralia_patients.first_seen_at, EXCLUDED.first_seen_at),
-        EXCLUDED.first_seen_at
+        COALESCE(EXCLUDED.first_seen_at, public.doctoralia_patients.first_seen_at)
       ),
       match_confidence = GREATEST(
         COALESCE(public.doctoralia_patients.match_confidence, 0),

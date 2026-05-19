@@ -12,7 +12,7 @@ CREATE OR REPLACE FUNCTION public.normalize_phone_9digits(p_phone TEXT)
 RETURNS TEXT
 LANGUAGE plpgsql
 IMMUTABLE
-SET search_path = ''
+SET search_path = 'public', 'pg_catalog'
 AS $$
 DECLARE
   digits TEXT;
@@ -35,12 +35,16 @@ $$;
 UPDATE public.leads SET phone_normalized = public.normalize_phone_9digits(phone) WHERE phone IS NOT NULL;
 UPDATE public.financial_settlements SET phone_normalized = public.normalize_phone_9digits(patient_phone) WHERE patient_phone IS NOT NULL;
 
+-- 2.1 Add Indices for the 9-digit matching (PR #77)
+CREATE INDEX IF NOT EXISTS idx_leads_phone_normalized ON public.leads (phone_normalized);
+CREATE INDEX IF NOT EXISTS idx_financial_settlements_phone_normalized ON public.financial_settlements (phone_normalized);
+
 -- 3. Simplified Reconciliation RPC (The one that found 2 matches in diagnostic)
 CREATE OR REPLACE FUNCTION public.reconcile_doctoralia_subjects_to_leads(p_user_id UUID)
 RETURNS INTEGER
 LANGUAGE plpgsql
 SECURITY INVOKER
-SET search_path = ''
+SET search_path = 'public', 'pg_catalog'
 AS $$
 DECLARE
   updated_count INTEGER := 0;
@@ -57,10 +61,7 @@ BEGIN
       SUM(COALESCE(fs.amount_net, 0)) AS total_rev,
       MIN(COALESCE(fs.intake_at, fs.settled_at)) AS first_ev
     FROM public.leads l
-    JOIN public.financial_settlements fs ON (
-      -- The magical 9-digit match proven by diagnostic
-      public.normalize_phone_9digits(l.phone) = public.normalize_phone_9digits(fs.patient_phone)
-    )
+    JOIN public.financial_settlements fs ON l.phone_normalized = fs.phone_normalized
     WHERE l.clinic_id = v_clinic_id
       AND fs.clinic_id = v_clinic_id
       AND l.phone IS NOT NULL
@@ -80,7 +81,8 @@ BEGIN
   FROM matched_revenue mr
   WHERE l.id = mr.lead_id
     AND (COALESCE(l.verified_revenue, 0) < mr.total_rev OR l.appointment_date IS NULL)
-  RETURNING l.id INTO updated_count;
+  ;
+  GET DIAGNOSTICS updated_count = ROW_COUNT;
 
   RETURN COALESCE(updated_count, 0);
 END;
@@ -91,12 +93,21 @@ CREATE OR REPLACE FUNCTION public.match_leads_to_doctoralia_by_phone(p_user_id U
 RETURNS INTEGER
 LANGUAGE plpgsql
 SECURITY INVOKER
-SET search_path = ''
+SET search_path = 'public', 'pg_catalog'
 AS $$
 BEGIN
   -- We now use the main reconciliation function as it is the most robust
   RETURN public.reconcile_doctoralia_subjects_to_leads(p_user_id);
 END;
 $$;
+
+-- 5. Security Hardening: Revoke from PUBLIC and grant to service_role
+REVOKE ALL ON FUNCTION public.normalize_phone_9digits(TEXT) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.reconcile_doctoralia_subjects_to_leads(UUID) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.match_leads_to_doctoralia_by_phone(UUID) FROM PUBLIC, anon, authenticated;
+
+GRANT EXECUTE ON FUNCTION public.normalize_phone_9digits(TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION public.reconcile_doctoralia_subjects_to_leads(UUID) TO service_role;
+GRANT EXECUTE ON FUNCTION public.match_leads_to_doctoralia_by_phone(UUID) TO service_role;
 
 COMMIT;

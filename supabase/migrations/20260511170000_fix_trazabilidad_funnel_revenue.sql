@@ -11,9 +11,9 @@
 -- Within each priority, the most recent eligible lead before the settlement wins.
 -- =============================================================================
 
-DROP FUNCTION IF EXISTS public.get_trazabilidad_funnel(UUID, DATE, DATE, DATE, DATE, DATE, DATE);
+DROP FUNCTION IF EXISTS get_trazabilidad_funnel(UUID, DATE, DATE, DATE, DATE, DATE, DATE);
 
-CREATE OR REPLACE FUNCTION public.get_trazabilidad_funnel(
+CREATE OR REPLACE FUNCTION get_trazabilidad_funnel(
   p_user_id UUID DEFAULT auth.uid(),
   p_lead_from DATE DEFAULT NULL,
   p_lead_to DATE DEFAULT NULL,
@@ -199,9 +199,9 @@ AS $$
   ORDER BY lb.created_at DESC;
 $$;
 
-REVOKE ALL ON FUNCTION public.get_trazabilidad_funnel(UUID, DATE, DATE, DATE, DATE, DATE, DATE) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION public.get_trazabilidad_funnel(UUID, DATE, DATE, DATE, DATE, DATE, DATE) FROM anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.get_trazabilidad_funnel(UUID, DATE, DATE, DATE, DATE, DATE, DATE) TO service_role;
+REVOKE ALL ON FUNCTION get_trazabilidad_funnel(UUID, DATE, DATE, DATE, DATE, DATE, DATE) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION get_trazabilidad_funnel(UUID, DATE, DATE, DATE, DATE, DATE, DATE) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION get_trazabilidad_funnel(UUID, DATE, DATE, DATE, DATE, DATE, DATE) TO service_role;
 
-COMMENT ON FUNCTION public.get_trazabilidad_funnel(UUID, DATE, DATE, DATE, DATE, DATE, DATE) IS
+COMMENT ON FUNCTION get_trazabilidad_funnel(UUID, DATE, DATE, DATE, DATE, DATE, DATE) IS
   'Returns acquisition lead -> first Doctoralia appointment -> posterior appointment funnel scoped by user, with real Doctoralia revenue attributed once per settlement via patient link, explicit Doctoralia patient match, or normalized phone fallback.';
