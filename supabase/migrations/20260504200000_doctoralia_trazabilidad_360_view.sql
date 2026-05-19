@@ -4,7 +4,6 @@
 CREATE OR REPLACE VIEW public.vw_doctoralia_trazabilidad_360 AS
 SELECT
   clinic_id,
-  raw_hash,
   upload_id,
   source_file_id,
   sheet_name,

@@ -513,7 +513,7 @@ async function resolveClinicId(adminClient: any, userId: string): Promise<string
 async function persistAgentOutput(adminClient: any, userId: string, agentType: string, output: any, metadata?: any) {
   const clinicId = await resolveClinicId(adminClient, userId);
   const outputText = typeof output === 'string'
-    ? output // No change needed, this is a ternary
+    ? output
     : JSON.stringify(output ?? {});
   const inputContext = metadata && typeof metadata.context === 'string'
     ? metadata.context
@@ -1424,7 +1424,7 @@ async function handleRequest(req: Request): Promise<Response> {
   const token = (req.headers.get('Authorization') ?? '').replace('Bearer ', '');
   const userIdHeader = req.headers.get('x-user-id') || '';
   const adminClient = createAdminClient();
-  
+
   // 1. Rutas públicas (webhooks + health)
   const publicResponse = await handlePublicRoutes({ req, url, resource, sub, sendJson });
   if (publicResponse) return publicResponse;
@@ -2028,7 +2028,7 @@ async function handleSupabaseWebhook(ctx: PublicRouteContext): Promise<Response 
         const creds = await resolveMetaCreds(adminClient, userId, '');
         if (!creds.notConnected && !creds.decryptionError && creds.accessToken) {
           // Trigger Meta CAPI
-          await trackMetaLeadConversion(creds.accessToken, { // [CAPI-WEBHOOK]
+          await trackMetaLeadConversion(creds.accessToken, {
             pixelId: creds.pixelId,
             eventId: record.event_id || record.id,
             phone: record.phone,
@@ -2438,7 +2438,7 @@ async function handleLeadsPost(ctx: AuthenticatedRouteContext): Promise<Response
           if (!creds.notConnected && !creds.decryptionError && creds.accessToken) {
             const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || null;
             const ua = req.headers.get('user-agent') || null;
-            
+
             const meta = body._meta || {};
             const fbc = meta.fbc || payloadObj.fbc || null;
             const fbp = meta.fbp || payloadObj.fbp || null;
@@ -4420,7 +4420,7 @@ async function handleAiAnalyzePost(ctx: AuthenticatedRouteContext): Promise<Resp
 async function handleIntegrationsPatch(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource === 'integrations' && req.method === 'PATCH' && sub === '') {
-    const rawBody = await req.json().catch(() => ({})); // No change needed, catch handles potential non-object
+    const rawBody = await req.json().catch(() => ({}));
     const body = (rawBody != null && typeof rawBody === 'object') ? rawBody : {};
     const service = String(body.service ?? '').trim();
     if (!service) return sendJson({ success: false, message: 'service is required' }, 400);
@@ -4528,7 +4528,7 @@ function validateAndNormalizeMetadata(service: string, inputMetadata: any) {
 async function handleIntegrationsConnectPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, authUser, resource, sub, req, sendJson } = ctx;
   if (resource === 'integrations' && sub === 'connect' && req.method === 'POST') {
-    const rawBody = await req.json(); // No change needed, this is a direct call
+    const rawBody = await req.json();
     const body = (rawBody != null && typeof rawBody === 'object') ? rawBody : {};
     const service = String(body.service ?? '').trim();
     if (!service) return sendJson({ success: false, message: 'service is required' }, 400);
@@ -4559,7 +4559,7 @@ async function handleIntegrationsConnectPost(ctx: AuthenticatedRouteContext): Pr
 async function handleIntegrationsTestPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource === 'integrations' && sub === 'test' && req.method === 'POST') {
-    const rawBody = await req.json().catch(() => ({})); // No change needed, catch handles potential non-object
+    const rawBody = await req.json().catch(() => ({}));
     const body = (rawBody && typeof rawBody === 'object') ? rawBody as Record<string, any> : {};
     const service = String(body.service ?? '').trim();
   
@@ -4808,7 +4808,7 @@ function buildAnalyzeCampaignPrompt(clinic: { name: string; specialty: string; c
 async function handleAiAnalyzeCampaignPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource !== 'ai' || sub !== 'analyze-campaign' || req.method !== 'POST') return null;
-  // No change needed, catch handles potential non-object
+
   const rawBody = await req.json().catch(() => ({}));
   const body = (rawBody && typeof rawBody === 'object') ? rawBody as Record<string, any> : {};
   let campaignData = String(body?.campaignData ?? '').trim();
