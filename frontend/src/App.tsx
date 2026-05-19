@@ -9,7 +9,7 @@ import Layout from './components/Layout'
 import MetaAccountsNotice from './components/MetaAccountsNotice'
 import NotFound from './pages/NotFound'
 import Login from './pages/Login'
-import { useMetaPageView } from './lib/metaPixel'
+import { useMetaPageView, useMetaContextCapture } from './lib/metaPixel'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Live = lazy(() => import('./pages/Live'))
@@ -38,6 +38,8 @@ function Router() {
 
   // Fire Meta Pixel PageView on every route change.
   useMetaPageView()
+  // Capture Meta click IDs and browser IDs.
+  useMetaContextCapture()
 
   // Redirect to login once auth state is resolved and user is not logged in.
   useEffect(() => {

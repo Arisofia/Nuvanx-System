@@ -281,13 +281,31 @@ async function trackMetaWhatsappConversion(
   accessToken: string,
   phone: string | null | undefined,
   email?: string | null,
-  options: { eventId?: string; testEventCode?: string } = {},
+  options: { 
+    pixelId?: string;
+    eventId?: string; 
+    testEventCode?: string;
+    fbc?: string | null;
+    fbp?: string | null;
+    ip?: string | null;
+    ua?: string | null;
+    externalId?: string | null;
+  } = {},
 ) {
   return await trackMetaCapiEvent(accessToken, {
+    pixelId: options.pixelId,
     eventName: 'Contact',
     eventId: options.eventId,
     actionSource: 'system_generated',
-    userData: { ph: phone ?? null, em: email ?? null },
+    userData: { 
+      ph: phone ?? null, 
+      em: email ?? null,
+      fbc: options.fbc ?? null,
+      fbp: options.fbp ?? null,
+      client_ip_address: options.ip ?? null,
+      client_user_agent: options.ua ?? null,
+      external_id: options.externalId ?? null,
+    },
     customData: { source: 'whatsapp_crm_nuvanx' },
     testEventCode: options.testEventCode,
   });
@@ -302,9 +320,15 @@ interface MetaCapiUserData {
   st?: string | null;
   zp?: string | null;
   country?: string | null;
+  fbc?: string | null;
+  fbp?: string | null;
+  client_ip_address?: string | null;
+  client_user_agent?: string | null;
+  external_id?: string | null;
 }
 
 interface MetaCapiEventInput {
+  pixelId?: string;
   eventName: string;
   eventId?: string;
   eventTime?: number;
@@ -331,10 +355,22 @@ async function trackMetaCapiEvent(accessToken: string, input: MetaCapiEventInput
   if (input.userData.st) userData.st = [String(input.userData.st).trim().toLowerCase()];
   if (input.userData.zp) userData.zp = [String(input.userData.zp).trim().toLowerCase()];
   if (input.userData.country) userData.country = [String(input.userData.country).trim().toLowerCase()];
-  if (Object.keys(userData).length === 0) {
+
+  if (input.userData.external_id) {
+    userData.external_id = [String(input.userData.external_id).trim().toLowerCase()];
+  }
+
+  const hashedUserData: Record<string, any> = await hashMetaUserData(userData);
+
+  // Add non-hashed high-signal fields if present
+  if (input.userData.fbc) hashedUserData.fbc = input.userData.fbc;
+  if (input.userData.fbp) hashedUserData.fbp = input.userData.fbp;
+  if (input.userData.client_ip_address) hashedUserData.client_ip_address = input.userData.client_ip_address;
+  if (input.userData.client_user_agent) hashedUserData.client_user_agent = input.userData.client_user_agent;
+
+  if (Object.keys(hashedUserData).length === 0) {
     throw new Error('At least one user_data field is required for CAPI events.');
   }
-  const hashedUserData = await hashMetaUserData(userData);
 
   const event: Record<string, unknown> = {
     event_name: input.eventName,
@@ -350,7 +386,8 @@ async function trackMetaCapiEvent(accessToken: string, input: MetaCapiEventInput
   const testCode = input.testEventCode ?? Deno.env.get('META_TEST_EVENT_CODE') ?? '';
   if (testCode) payload.test_event_code = testCode;
 
-  return await metaPost(`/${DEFAULT_META_PIXEL_ID}/events`, payload, accessToken);
+  const pixelId = input.pixelId || DEFAULT_META_PIXEL_ID;
+  return await metaPost(`/${pixelId}/events`, payload, accessToken);
 }
 
 /**
@@ -361,6 +398,7 @@ async function trackMetaCapiEvent(accessToken: string, input: MetaCapiEventInput
 async function trackMetaLeadConversion(
   accessToken: string,
   input: {
+    pixelId?: string;
     eventId: string;
     phone?: string | null;
     email?: string | null;
@@ -369,6 +407,11 @@ async function trackMetaLeadConversion(
     city?: string | null;
     state?: string | null;
     zipCode?: string | null;
+    fbc?: string | null;
+    fbp?: string | null;
+    ip?: string | null;
+    ua?: string | null;
+    externalId?: string | null;
     customData?: Record<string, unknown>;
     eventSourceUrl?: string;
     eventTime?: number;
@@ -376,6 +419,7 @@ async function trackMetaLeadConversion(
   },
 ) {
   return await trackMetaCapiEvent(accessToken, {
+    pixelId: input.pixelId,
     eventName: 'Lead',
     eventId: input.eventId,
     eventTime: input.eventTime,
@@ -389,6 +433,11 @@ async function trackMetaLeadConversion(
       ct: input.city ?? null,
       st: input.state ?? null,
       zp: input.zipCode ?? null,
+      fbc: input.fbc ?? null,
+      fbp: input.fbp ?? null,
+      client_ip_address: input.ip ?? null,
+      client_user_agent: input.ua ?? null,
+      external_id: input.externalId ?? null,
     },
     customData: input.customData,
     testEventCode: input.testEventCode,
@@ -1003,6 +1052,7 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
     accessToken,
     adAccountIds,
     adAccountId: adAccountIds[0] ?? '',
+    pixelId: metadata.pixelId ?? metadata.pixel_id ?? '',
     pageId: metadata.pageId ?? metadata.page_id ?? '',
     igId: metadata.igBusinessAccountId ?? metadata.ig_business_account_id ?? '',
     decryptionError,
@@ -1505,6 +1555,9 @@ async function processMetaLeadChange(adminClient: any, change: any): Promise<voi
   if (matchingIntg == null) return;
 
   const webhookUserId = matchingIntg.user_id;
+  const intgMetadata = matchingIntg.metadata ?? {};
+  const pixelId = intgMetadata.pixelId ?? intgMetadata.pixel_id ?? '';
+
   const { data: credRow } = await adminClient.from('credentials')
     .select('encrypted_key')
     .eq('user_id', webhookUserId)
@@ -1529,7 +1582,7 @@ async function processMetaLeadChange(adminClient: any, change: any): Promise<voi
   }
 
   await publicRouteHelpers.processLeadData(adminClient, webhookUserId, leadData);
-  await fireMetaLeadCapi(accessToken, leadgen_id, leadData);
+  await fireMetaLeadCapi(accessToken, leadgen_id, leadData, pixelId);
 }
 
 /**
@@ -1537,7 +1590,7 @@ async function processMetaLeadChange(adminClient: any, change: any): Promise<voi
  * client-side `Lead` pixel emission). Errors are logged and swallowed so they
  * don't cause Meta to retry the webhook.
  */
-async function fireMetaLeadCapi(accessToken: string, leadgenId: string, leadData: any): Promise<void> {
+async function fireMetaLeadCapi(accessToken: string, leadgenId: string, leadData: any, pixelId?: string): Promise<void> {
   try {
     const fields: Record<string, string> = {};
     for (const fd of leadData?.field_data ?? []) {
@@ -1553,6 +1606,7 @@ async function fireMetaLeadCapi(accessToken: string, leadgenId: string, leadData
       ? Math.floor(new Date(leadData.created_time).getTime() / 1000)
       : undefined;
     await trackMetaLeadConversion(accessToken, {
+      pixelId,
       eventId: String(leadgenId),
       phone,
       email,
@@ -1709,7 +1763,11 @@ async function processWhatsappWebhookChange(adminClient: any, change: any): Prom
   }
 
   if (!matchingIntegration) return;
-  await processWhatsappWebhookMessage(adminClient, matchingIntegration.user_id, value);
+
+  const metadata = matchingIntegration.metadata ?? {};
+  const pixelId = metadata.pixelId || metadata.pixel_id || null;
+
+  await processWhatsappWebhookMessage(adminClient, matchingIntegration.user_id, value, pixelId);
 }
 
 interface WhatsappLeadParams {
@@ -1801,7 +1859,7 @@ async function ensureWhatsappLead(
   return fallbackLead?.id ?? null;
 }
 
-async function processWhatsappWebhookMessage(adminClient: any, userId: string, value: any): Promise<boolean> {
+async function processWhatsappWebhookMessage(adminClient: any, userId: string, value: any, pixelId?: string | null): Promise<boolean> {
   const messages = Array.isArray(value.messages) ? value.messages : [];
   if (!messages.length) return false;
 
@@ -1833,6 +1891,29 @@ async function processWhatsappWebhookMessage(adminClient: any, userId: string, v
       value,
     },
   );
+
+  // Trigger Meta CAPI Contact event
+  (async () => {
+    try {
+      const { data: credRow } = await adminClient.from('credentials')
+        .select('encrypted_key')
+        .eq('user_id', userId)
+        .eq('service', 'meta')
+        .single();
+      
+      if (credRow) {
+        const accessToken = await publicRouteHelpers.decryptCred(credRow.encrypted_key);
+        // For WhatsApp webhooks we don't have IP/UA context, but we have phone
+        await trackMetaWhatsappConversion(accessToken, phone, null, {
+          pixelId: pixelId || undefined,
+          eventId: `wa_${message.id}`,
+          externalId: userId,
+        });
+      }
+    } catch (err) {
+      console.error('[CAPI] WhatsApp webhook tracking failed:', err);
+    }
+  })();
 
   const { data: usrRow } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
   const clinicId = usrRow?.clinic_id ?? null;
@@ -2191,7 +2272,7 @@ async function upsertLeadIdempotent(adminClient: any, userId: string, payload: a
 }
 
 async function handleLeadsPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, userId, resource, req, sendJson } = ctx;
+  const { adminClient, userId, resource, req, url, sendJson } = ctx;
   if (resource === 'leads' && req.method === 'POST') {
     const rawBody = await req.json();
     const body = (rawBody && typeof rawBody === 'object') ? rawBody : {};
@@ -2200,6 +2281,44 @@ async function handleLeadsPost(ctx: AuthenticatedRouteContext): Promise<Response
     const payloadObj = payload as Record<string, any>;
     const source = String(payloadObj?.source ?? '').trim();
     const externalId = String(payloadObj?.external_id ?? '').trim();
+
+    // Trigger Meta CAPI if it looks like a trackable lead
+    const isPublicLead = source && source !== 'manual' && source !== 'doctoralia';
+    if (isPublicLead) {
+      (async () => {
+        try {
+          const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
+          if (!creds.notConnected && !creds.decryptionError && creds.accessToken) {
+            const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || null;
+            const ua = req.headers.get('user-agent') || null;
+            
+            // Extract Meta context from _meta or direct body
+            const meta = body._meta || {};
+            const fbc = meta.fbc || payloadObj.fbc || null;
+            const fbp = meta.fbp || payloadObj.fbp || null;
+
+            await trackMetaLeadConversion(creds.accessToken, {
+              pixelId: creds.pixelId,
+              eventId: payloadObj.event_id || externalId || `lead_${Date.now()}`,
+              phone: payloadObj.phone,
+              email: payloadObj.email,
+              firstName: payloadObj.first_name || payloadObj.name,
+              lastName: payloadObj.last_name,
+              city: payloadObj.city,
+              state: payloadObj.state,
+              zipCode: payloadObj.zip_code,
+              fbc,
+              fbp,
+              ip,
+              ua,
+              externalId: userId,
+            });
+          }
+        } catch (capiErr) {
+          console.error('[CAPI] background lead tracking failed:', capiErr);
+        }
+      })();
+    }
 
     if (source && externalId) {
       const { data, deduplicated, status } = await upsertLeadIdempotent(adminClient, userId, payload, source, externalId);
@@ -4248,6 +4367,7 @@ function validateAndNormalizeMetadata(service: string, inputMetadata: any) {
     const accountIds = normalizeMetaAccountIds(metadata?.adAccountIds ?? metadata?.ad_account_ids ?? metadata?.adAccountId ?? metadata?.ad_account_id ?? '');
     if (accountIds.length === 0) return { ok: false, message: 'Meta integration requires one or more valid ad account IDs.' };
     const normalizedPageId = String(metadata?.pageId ?? metadata?.page_id ?? '').replaceAll(/\D/g, '');
+    const normalizedPixelId = String(metadata?.pixelId ?? metadata?.pixel_id ?? '').replaceAll(/\D/g, '');
     metadata = {
       ...metadata,
       adAccountIds: accountIds,
@@ -4256,6 +4376,8 @@ function validateAndNormalizeMetadata(service: string, inputMetadata: any) {
       ad_account_id: accountIds[0],
       pageId: normalizedPageId,
       page_id: normalizedPageId,
+      pixelId: normalizedPixelId,
+      pixel_id: normalizedPixelId,
     };
   }
   return { ok: true, metadata };
@@ -5676,6 +5798,15 @@ async function processWhatsappConversionPost(adminClient: any, userId: string, r
 
   const phone = String(body.phone ?? '').trim();
   const email = body.email ? String(body.email).trim() : '';
+
+  // Extract Meta context from _meta or direct body
+  const meta = body._meta || {};
+  const fbc = meta.fbc || (body.fbc ? String(body.fbc).trim() : null);
+  const fbp = meta.fbp || (body.fbp ? String(body.fbp).trim() : null);
+
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || null;
+  const ua = req.headers.get('user-agent') || null;
+
   if (!phone && !email) {
     return sendJson({ success: false, message: 'phone or email is required' }, 400);
   }
@@ -5687,7 +5818,14 @@ async function processWhatsappConversionPost(adminClient: any, userId: string, r
   }
 
   try {
-    const result = await trackMetaWhatsappConversion(creds.accessToken, phone || null, email || null);
+    const result = await trackMetaWhatsappConversion(creds.accessToken, phone || null, email || null, {
+      pixelId: creds.pixelId,
+      fbc,
+      fbp,
+      ip,
+      ua,
+      externalId: userId, // Using userId as external_id for deduplication/tracking
+    });
     const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
     const clinicId = usr?.clinic_id;
     let matchedPatientId: string | null = null;

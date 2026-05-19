@@ -93,6 +93,56 @@ export function getActiveMetaPixelId(): string | null {
 }
 
 /**
+ * Capture Meta click ID (fbclid) and browser ID (_fbp) for server-side CAPI.
+ * Call this once on app mount or layout mount.
+ */
+export function useMetaContextCapture(): void {
+  const [location] = useLocation()
+
+  useEffect(() => {
+    if (globalThis.window === undefined) return
+
+    // 1. Capture fbclid from URL
+    const params = new URLSearchParams(window.location.search)
+    const fbclid = params.get('fbclid')
+    if (fbclid) {
+      localStorage.setItem('nvx_fbclid', fbclid)
+      // Also store timestamp of capture to build fbc later
+      localStorage.setItem('nvx_fbclid_ts', String(Date.now()))
+    }
+  }, [location])
+}
+
+/**
+ * Retrieve captured Meta context for inclusion in API payloads.
+ */
+export function getMetaContext(): { fbc: string | null; fbp: string | null } {
+  if (globalThis.window === undefined) return { fbc: null, fbp: null }
+
+  // 1. Build fbc from fbclid and timestamp
+  const fbclid = localStorage.getItem('nvx_fbclid')
+  const ts = localStorage.getItem('nvx_fbclid_ts')
+  let fbc = null
+  if (fbclid) {
+    const timestamp = ts ? Math.floor(Number(ts) / 1000) : Math.floor(Date.now() / 1000)
+    fbc = `fb.1.${timestamp}.${fbclid}`
+  }
+
+  // 2. Read fbp from cookie
+  const fbp = getCookie('_fbp')
+
+  return { fbc, fbp }
+}
+
+function getCookie(name: string): string | null {
+  if (globalThis.document === undefined) return null
+  const value = `; ${document.cookie}`
+  const parts = value.split(`; ${name}=`)
+  if (parts.length === 2) return parts.pop()?.split(';').shift() ?? null
+  return null
+}
+
+/**
  * Hook that fires `PageView` whenever the wouter location changes. The first
  * PageView is already emitted by `initMetaPixel`, so we skip the initial mount
  * to avoid duplicating it.
