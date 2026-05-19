@@ -1,6 +1,5 @@
 -- Migración: RPC para filtro de campañas
--- Esta migración solo elimina la versión antigua/broken de la función.
--- La implementación canónica corregida se encuentra en la migración:
--- 20260514090000_align_campaigns_filter_doctoralia_production.sql
+-- Esta migración solo elimina la versión antigua de la función.
+-- La implementación corregida está en: 20260514090000_align_campaigns_filter_doctoralia_production.sql
 
-DROP FUNCTION IF EXISTS "public"."get_campaigns_filter";
+DROP FUNCTION IF EXISTS public.get_campaigns_filter();
