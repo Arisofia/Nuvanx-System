@@ -56,29 +56,7 @@ BEGIN
   END IF;
 END $$;
 
--- 3. Remove pg_cron policy drift and recreate explicit service_role policies.
-DO $$
-BEGIN
-  IF to_regclass('cron.job') IS NOT NULL THEN
-    ALTER TABLE cron.job ENABLE ROW LEVEL SECURITY;
-    DROP POLICY IF EXISTS cron_job_policy ON cron.job;
-    CREATE POLICY cron_job_policy
-      ON cron.job
-      FOR ALL
-      TO service_role
-      USING (TRUE)
-      WITH CHECK (TRUE);
-  END IF;
-
-  IF to_regclass('cron.job_run_details') IS NOT NULL THEN
-    ALTER TABLE cron.job_run_details ENABLE ROW LEVEL SECURITY;
-    DROP POLICY IF EXISTS cron_job_run_details_policy ON cron.job_run_details;
-    CREATE POLICY cron_job_run_details_policy
-      ON cron.job_run_details
-      FOR SELECT
-      TO service_role
-      USING (TRUE);
-  END IF;
-END $$;
+-- 3. Hosted Supabase does not allow altering pg_cron-owned tables (cron.job*).
+--    Keep this migration focused on public schema hardening only.
 
 COMMIT;

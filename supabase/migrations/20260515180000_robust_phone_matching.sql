@@ -198,4 +198,13 @@ BEGIN
 END;
 $$;
 
+-- 5. Security Hardening
+REVOKE ALL ON FUNCTION public.normalize_phone_robust(TEXT) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.match_leads_to_doctoralia_by_phone(UUID) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.reconcile_doctoralia_subjects_to_leads(UUID) FROM PUBLIC, anon, authenticated;
+
+GRANT EXECUTE ON FUNCTION public.normalize_phone_robust(TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION public.match_leads_to_doctoralia_by_phone(UUID) TO service_role;
+GRANT EXECUTE ON FUNCTION public.reconcile_doctoralia_subjects_to_leads(UUID) TO service_role;
+
 COMMIT;

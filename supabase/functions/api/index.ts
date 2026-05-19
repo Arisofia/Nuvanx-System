@@ -3,7 +3,6 @@ declare const Deno: any;
 
 import { createClient } from '@supabase/supabase-js';
 import {
-  ALLOWED_CORS_ORIGINS,
   DEFAULT_CORS_HEADERS,
   ENCRYPTION_KEY,
   IS_DEVELOPMENT,
@@ -28,7 +27,7 @@ function requireSupabaseEnv(value: string | null | undefined, name: string): str
 }
 
 function hasOwn(obj: unknown, key: PropertyKey): boolean {
-  return typeof obj === 'object' && obj !== null && Object.prototype.hasOwnProperty.call(obj, key);
+  return typeof obj === 'object' && obj !== null && Object.hasOwn(obj, key);
 }
 
 export function isDedicatedServiceRoleBypass(token: string, dedicatedServiceKey: string | null | undefined): boolean {
@@ -139,10 +138,10 @@ export async function metaFetch(path: string, params: Record<string, string>, to
   const r = await fetch(url.toString(), { signal: AbortSignal.timeout(20_000) });
   const { data: d, text } = await parseJsonOrText(r);
   if (!r.ok) {
-    const e = d && typeof d === 'object' ? d.error ?? {} : {};
-    const errorMessageFromD = d && typeof d === 'object' ? d.message : undefined;
+    const e = d?.error ?? {};
+    const errorMessageFromD = d?.message;
     const textValue = typeof text === 'string' ? text : '';
-    const metaErrorMessage = e.message ?? errorMessageFromD ?? (textValue.trim() ? textValue : `Meta API ${r.status}`);
+    const metaErrorMessage = e.message ?? errorMessageFromD ?? (textValue.trim() ? textValue : `Meta API ${r.status}`); // Already uses ??
     const msg = `${metaErrorMessage} (code=${e.code ?? '?'}, sub=${e.error_subcode ?? '?'}, type=${e.type ?? '?'})`;
     throw new Error(msg);
   }
@@ -281,13 +280,31 @@ async function trackMetaWhatsappConversion(
   accessToken: string,
   phone: string | null | undefined,
   email?: string | null,
-  options: { eventId?: string; testEventCode?: string } = {},
+  options: { 
+    pixelId?: string;
+    eventId?: string; 
+    testEventCode?: string;
+    fbc?: string | null;
+    fbp?: string | null;
+    ip?: string | null;
+    ua?: string | null;
+    externalId?: string | null;
+  } = {},
 ) {
   return await trackMetaCapiEvent(accessToken, {
+    pixelId: options.pixelId,
     eventName: 'Contact',
     eventId: options.eventId,
     actionSource: 'system_generated',
-    userData: { ph: phone ?? null, em: email ?? null },
+    userData: { 
+      ph: phone ?? null, 
+      em: email ?? null,
+      fbc: options.fbc ?? null,
+      fbp: options.fbp ?? null,
+      client_ip_address: options.ip ?? null,
+      client_user_agent: options.ua ?? null,
+      external_id: options.externalId ?? null,
+    },
     customData: { source: 'whatsapp_crm_nuvanx' },
     testEventCode: options.testEventCode,
   });
@@ -302,9 +319,15 @@ interface MetaCapiUserData {
   st?: string | null;
   zp?: string | null;
   country?: string | null;
+  fbc?: string | null;
+  fbp?: string | null;
+  client_ip_address?: string | null;
+  client_user_agent?: string | null;
+  external_id?: string | null;
 }
 
 interface MetaCapiEventInput {
+  pixelId?: string;
   eventName: string;
   eventId?: string;
   eventTime?: number;
@@ -331,10 +354,29 @@ async function trackMetaCapiEvent(accessToken: string, input: MetaCapiEventInput
   if (input.userData.st) userData.st = [String(input.userData.st).trim().toLowerCase()];
   if (input.userData.zp) userData.zp = [String(input.userData.zp).trim().toLowerCase()];
   if (input.userData.country) userData.country = [String(input.userData.country).trim().toLowerCase()];
-  if (Object.keys(userData).length === 0) {
+
+  if (input.userData.external_id) {
+    userData.external_id = [String(input.userData.external_id).trim().toLowerCase()];
+  }
+
+  const hashedUserData: Record<string, any> = await hashMetaUserData(userData);
+
+  // Add non-hashed high-signal fields if present
+  if (input.userData.fbc) hashedUserData.fbc = input.userData.fbc;
+  if (input.userData.fbp) hashedUserData.fbp = input.userData.fbp;
+  if (input.userData.client_ip_address) hashedUserData.client_ip_address = input.userData.client_ip_address;
+  if (input.userData.client_user_agent) hashedUserData.client_user_agent = input.userData.client_user_agent;
+
+  // Quality alert for EMQ (Event Match Quality)
+  const criticalParams = ['em', 'ph', 'fbc', 'fbp', 'client_ip_address', 'client_user_agent'];
+  const missing = criticalParams.filter(p => !hashedUserData[p]);
+  if (missing.length > 0) {
+    console.warn(`[CAPI-QUALITY-ALERT] Event ${input.eventName} has low signal (missing: ${missing.join(', ')}). This may affect EMQ score.`);
+  }
+
+  if (Object.keys(hashedUserData).length === 0) {
     throw new Error('At least one user_data field is required for CAPI events.');
   }
-  const hashedUserData = await hashMetaUserData(userData);
 
   const event: Record<string, unknown> = {
     event_name: input.eventName,
@@ -350,7 +392,25 @@ async function trackMetaCapiEvent(accessToken: string, input: MetaCapiEventInput
   const testCode = input.testEventCode ?? Deno.env.get('META_TEST_EVENT_CODE') ?? '';
   if (testCode) payload.test_event_code = testCode;
 
-  return await metaPost(`/${DEFAULT_META_PIXEL_ID}/events`, payload, accessToken);
+  const pixelId = input.pixelId || DEFAULT_META_PIXEL_ID;
+  return await metaPost(`/${pixelId}/events`, payload, accessToken);
+}
+
+async function enviarNotificacionMovil(lead: any) {
+  const mensaje = ` ¡Nuevo Lead de Alto Valor! Cuenta: ${lead.cuenta_id === "9523446201036125" ? "Francisco Antonio" : "Nuvanx"} Paciente: ${lead.nombre || lead.name || 'Nuevo registro'} Teléfono: ${lead.phone} Valor: ${lead.valor || lead.revenue || 0} EUR Procesado en Meta CAPI`;
+  const botToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
+  const chatId = Deno.env.get("TELEGRAM_CHAT_ID");
+  if (!botToken || !chatId) return;
+  
+  try {
+    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: mensaje }),
+    });
+  } catch (err) {
+    console.error('[NOTIFY] Failed to send Telegram notification:', err);
+  }
 }
 
 /**
@@ -361,6 +421,7 @@ async function trackMetaCapiEvent(accessToken: string, input: MetaCapiEventInput
 async function trackMetaLeadConversion(
   accessToken: string,
   input: {
+    pixelId?: string;
     eventId: string;
     phone?: string | null;
     email?: string | null;
@@ -369,6 +430,11 @@ async function trackMetaLeadConversion(
     city?: string | null;
     state?: string | null;
     zipCode?: string | null;
+    fbc?: string | null;
+    fbp?: string | null;
+    ip?: string | null;
+    ua?: string | null;
+    externalId?: string | null;
     customData?: Record<string, unknown>;
     eventSourceUrl?: string;
     eventTime?: number;
@@ -376,6 +442,7 @@ async function trackMetaLeadConversion(
   },
 ) {
   return await trackMetaCapiEvent(accessToken, {
+    pixelId: input.pixelId,
     eventName: 'Lead',
     eventId: input.eventId,
     eventTime: input.eventTime,
@@ -389,6 +456,11 @@ async function trackMetaLeadConversion(
       ct: input.city ?? null,
       st: input.state ?? null,
       zp: input.zipCode ?? null,
+      fbc: input.fbc ?? null,
+      fbp: input.fbp ?? null,
+      client_ip_address: input.ip ?? null,
+      client_user_agent: input.ua ?? null,
+      external_id: input.externalId ?? null,
     },
     customData: input.customData,
     testEventCode: input.testEventCode,
@@ -459,7 +531,9 @@ async function persistAgentOutput(adminClient: any, userId: string, agentType: s
     .select('id')
     .single();
   if (error) throw error;
-  return data?.id ?? null;
+  const outputId = data?.id ?? null;
+  if (!outputId) throw new Error('agent_outputs insert did not return an id');
+  return outputId;
 }
 
 /**
@@ -521,7 +595,7 @@ async function linkAgentOutputToPlaybookExecution(adminClient: any, userId: stri
     .eq('id', playbookExecutionId)
     .eq('user_id', userId)
     .maybeSingle();
-    if (getErr || !current) return;
+    if (getErr || current == null) return;
 
     const nextMetadata = current.metadata
       ? { ...current.metadata, agent_output_id: agentOutputId }
@@ -944,9 +1018,9 @@ export async function processLeadData(adminClient: any, userId: string, leadData
         ad_name:       leadData.ad_name     ?? null,
         form_name:     leadData.form_name   ?? null,
       }, { onConflict: 'leadgen_id' });
-    return true;
+    return lead?.id ?? null;
   }
-  return false;
+  return null;
 }
 
 export const publicRouteHelpers = {
@@ -981,25 +1055,56 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
     decryptionError = err?.message ?? 'Failed to decrypt Meta credential';
   }
 
-  const { data: intg } = await adminClient.from('integrations').select('metadata').eq('user_id', userId).eq('service', 'meta').maybeSingle();
+  const { data: integrations } = await adminClient
+    .from('integrations')
+    .select('metadata, status, updated_at')
+    .eq('user_id', userId)
+    .eq('service', 'meta');
 
+  const intg = selectCanonicalMetaIntegration(integrations ?? []);
   const metadata = intg?.metadata ?? {};
   const metadataRawAccountIds = metadata.adAccountIds ?? metadata.ad_account_ids ?? metadata.adAccountId ?? metadata.ad_account_id ?? '';
   const metadataAccountIds = normalizeMetaAccountIds(metadataRawAccountIds);
   const qAccountIds = normalizeMetaAccountIds(qAccountId);
 
   const adAccountIds = qAccountIds.length > 0
-    ? Array.from(new Set([...metadataAccountIds, ...qAccountIds]))
+    ? qAccountIds
     : metadataAccountIds;
+
+  // Dynamic routing: ensure correct pixel is used for specific ad accounts
+  // as per requirement for Francisco Antonio and Nuvanx separation.
+  let pixelId = metadata.pixelId ?? metadata.pixel_id ?? '';
+  const activeAccountId = adAccountIds[0] ?? '';
+  if (activeAccountId.includes('9523446201036125')) {
+    pixelId = '1405503384615251'; // Francisco Antonio Pixel
+  } else if (activeAccountId.includes('4172099716404860')) {
+    pixelId = '877262375461917'; // Nuvanx Pixel
+  }
+
+  console.log(`[CAPI-ROUTING] Cuenta: ${activeAccountId} -> Usando Píxel: ${pixelId}`);
+
   return {
     notConnected: false,
     accessToken,
     adAccountIds,
-    adAccountId: adAccountIds[0] ?? '',
+    adAccountId: activeAccountId,
+    pixelId,
     pageId: metadata.pageId ?? metadata.page_id ?? '',
     igId: metadata.igBusinessAccountId ?? metadata.ig_business_account_id ?? '',
     decryptionError,
   } as const;
+}
+
+function selectCanonicalMetaIntegration(rows: any[]) {
+  return [...rows].sort((a: any, b: any) => {
+    const aMeta = a?.metadata ?? {};
+    const bMeta = b?.metadata ?? {};
+    const aHasPage = Boolean(String(aMeta.pageId ?? aMeta.page_id ?? '').trim());
+    const bHasPage = Boolean(String(bMeta.pageId ?? bMeta.page_id ?? '').trim());
+    if (aHasPage !== bHasPage) return aHasPage ? -1 : 1;
+    if ((a?.status === 'connected') !== (b?.status === 'connected')) return a?.status === 'connected' ? -1 : 1;
+    return String(b?.updated_at ?? '').localeCompare(String(a?.updated_at ?? ''));
+  })[0] ?? null;
 }
 
 function validateMetaCredentialResult(creds: any) {
@@ -1398,7 +1503,7 @@ export const AUTHENTICATED_ROUTE_HANDLERS = new Map<string, RouteHandler>([
   ['integrations|connect|POST', handleIntegrationsConnectPost],
   ['integrations|test|POST', handleIntegrationsTestPost],
   ['playbooks||GET', handlePlaybooksGet],
-  ['playbooks|run|POST', handlePlaybooksRunPost],
+  ['playbooks|*|*', handlePlaybooksRunPost],
   ['ai|status|*', handleAiStatus],
   ['ai|generate|POST', handleAiGeneratePost],
   ['ai|analyze-campaign|POST', handleAiAnalyzeCampaignPost],
@@ -1409,6 +1514,7 @@ export const AUTHENTICATED_ROUTE_HANDLERS = new Map<string, RouteHandler>([
   ['financials|summary|*', handleFinancialsSummary],
   ['financials|settlements|*', handleFinancialsSettlements],
   ['financials|patients|*', handleFinancialsPatients],
+  ['financials|integrity|GET', handleFinancialsIntegrityGet],
   ['traceability|leads|*', handleTraceabilityLeads],
   ['traceability|funnel|*', handleTrazabilidadFunnel],
   ['traceability|campaigns|*', handleTraceabilityCampaigns],
@@ -1485,6 +1591,9 @@ async function processMetaLeadChange(adminClient: any, change: any): Promise<voi
   if (matchingIntg == null) return;
 
   const webhookUserId = matchingIntg.user_id;
+  const intgMetadata = matchingIntg.metadata ?? {};
+  const pixelId = intgMetadata.pixelId ?? intgMetadata.pixel_id ?? '';
+
   const { data: credRow } = await adminClient.from('credentials')
     .select('encrypted_key')
     .eq('user_id', webhookUserId)
@@ -1508,8 +1617,8 @@ async function processMetaLeadChange(adminClient: any, change: any): Promise<voi
     return;
   }
 
-  await publicRouteHelpers.processLeadData(adminClient, webhookUserId, leadData);
-  await fireMetaLeadCapi(accessToken, leadgen_id, leadData);
+  const leadId = await publicRouteHelpers.processLeadData(adminClient, webhookUserId, leadData);
+  await fireMetaLeadCapi(accessToken, leadgen_id, leadData, pixelId, leadId);
 }
 
 /**
@@ -1517,7 +1626,7 @@ async function processMetaLeadChange(adminClient: any, change: any): Promise<voi
  * client-side `Lead` pixel emission). Errors are logged and swallowed so they
  * don't cause Meta to retry the webhook.
  */
-async function fireMetaLeadCapi(accessToken: string, leadgenId: string, leadData: any): Promise<void> {
+async function fireMetaLeadCapi(accessToken: string, leadgenId: string, leadData: any, pixelId?: string, leadId?: string | null): Promise<void> {
   try {
     const fields: Record<string, string> = {};
     for (const fd of leadData?.field_data ?? []) {
@@ -1533,6 +1642,7 @@ async function fireMetaLeadCapi(accessToken: string, leadgenId: string, leadData
       ? Math.floor(new Date(leadData.created_time).getTime() / 1000)
       : undefined;
     await trackMetaLeadConversion(accessToken, {
+      pixelId,
       eventId: String(leadgenId),
       phone,
       email,
@@ -1542,6 +1652,7 @@ async function fireMetaLeadCapi(accessToken: string, leadgenId: string, leadData
       state: fields['state'] ?? fields['provincia'] ?? null,
       zipCode: fields['zip_code'] ?? fields['postal_code'] ?? fields['cp'] ?? null,
       eventTime,
+      externalId: leadId || leadgenId,
       customData: {
         source: 'meta_leadgen_webhook',
         form_id: leadData?.form_id ?? null,
@@ -1689,7 +1800,11 @@ async function processWhatsappWebhookChange(adminClient: any, change: any): Prom
   }
 
   if (!matchingIntegration) return;
-  await processWhatsappWebhookMessage(adminClient, matchingIntegration.user_id, value);
+
+  const metadata = matchingIntegration.metadata ?? {};
+  const pixelId = metadata.pixelId || metadata.pixel_id || null;
+
+  await processWhatsappWebhookMessage(adminClient, matchingIntegration.user_id, value, pixelId);
 }
 
 interface WhatsappLeadParams {
@@ -1781,7 +1896,7 @@ async function ensureWhatsappLead(
   return fallbackLead?.id ?? null;
 }
 
-async function processWhatsappWebhookMessage(adminClient: any, userId: string, value: any): Promise<boolean> {
+async function processWhatsappWebhookMessage(adminClient: any, userId: string, value: any, pixelId?: string | null): Promise<boolean> {
   const messages = Array.isArray(value.messages) ? value.messages : [];
   if (!messages.length) return false;
 
@@ -1813,6 +1928,29 @@ async function processWhatsappWebhookMessage(adminClient: any, userId: string, v
       value,
     },
   );
+
+  // Trigger Meta CAPI Contact event
+  (async () => {
+    try {
+      const { data: credRow } = await adminClient.from('credentials')
+        .select('encrypted_key')
+        .eq('user_id', userId)
+        .eq('service', 'meta')
+        .single();
+      
+      if (credRow) {
+        const accessToken = await publicRouteHelpers.decryptCred(credRow.encrypted_key);
+        // For WhatsApp webhooks we don't have IP/UA context, but we have phone
+        await trackMetaWhatsappConversion(accessToken, phone, null, {
+          pixelId: pixelId || undefined,
+          eventId: `wa_${message.id}`,
+          externalId: userId,
+        });
+      }
+    } catch (err) {
+      console.error('[CAPI] WhatsApp webhook tracking failed:', err);
+    }
+  })();
 
   const { data: usrRow } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
   const clinicId = usrRow?.clinic_id ?? null;
@@ -1868,11 +2006,65 @@ function handleHealthRoutes(ctx: any): Response | null {
   return null;
 }
 
+async function handleSupabaseWebhook(ctx: PublicRouteContext): Promise<Response | null> {
+  const { req, sendJson } = ctx;
+  let payload: any;
+  try {
+    payload = await req.json();
+  } catch {
+    return sendJson({ success: false, message: 'Invalid JSON' }, 400);
+  }
+  
+  const { type, table, record, schema } = payload;
+
+  if (schema === 'public' && table === 'leads' && type === 'INSERT' && record && !record.enviado_a_meta) {
+    // Process lead in background to avoid timeout
+    (async () => {
+      try {
+        const adminClient = createAdminClient();
+        const userId = record.user_id;
+        if (!userId) return;
+
+        const creds = await resolveMetaCreds(adminClient, userId, '');
+        if (!creds.notConnected && !creds.decryptionError && creds.accessToken) {
+          // Trigger Meta CAPI
+          await trackMetaLeadConversion(creds.accessToken, {
+            pixelId: creds.pixelId,
+            eventId: record.event_id || record.id,
+            phone: record.phone,
+            email: record.email,
+            firstName: record.name,
+            fbc: record.fbc,
+            fbp: record.fbp,
+            ip: record.ip_address,
+            ua: record.user_agent,
+            externalId: record.id,
+          });
+
+          // Send high-value notification
+          const valor = Number(record.revenue || record.valor || 0);
+          if (valor > 100) {
+            await enviarNotificacionMovil({ ...record, valor, cuenta_id: creds.adAccountId });
+          }
+          
+          // Mark as sent
+          await adminClient.from('leads').update({ enviado_a_meta: true }).eq('id', record.id);
+        }
+      } catch (err) {
+        console.error('[CAPI-WEBHOOK] failed to process lead:', err);
+      }
+    })();
+  }
+
+  return sendJson({ success: true });
+}
+
 async function handlePublicRoutes(ctx: any): Promise<Response | null> {
   const { resource, sub } = ctx;
 
   if (resource === 'webhooks' && sub === 'meta') return await handleMetaWebhook(ctx);
   if (resource === 'webhooks' && sub === 'whatsapp') return await handleWhatsappWebhook(ctx);
+  if (resource === 'webhooks' && sub === 'supabase') return await handleSupabaseWebhook(ctx);
   if (resource === 'health') return handleHealthRoutes(ctx);
 
   return null;
@@ -2042,7 +2234,7 @@ async function handleProductionAuditGet(ctx: AuthenticatedRouteContext): Promise
         meta: {
           pageId,
           adAccountId,
-          lastMetaCacheUpdate: latestMetaCache.data?.updated_at ?? null,
+          lastMetaCacheUpdate: latestMetaCache?.data?.updated_at ?? null,
         },
       },
     });
@@ -2171,18 +2363,63 @@ async function upsertLeadIdempotent(adminClient: any, userId: string, payload: a
 }
 
 async function handleLeadsPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, userId, resource, req, sendJson } = ctx;
+  const { adminClient, userId, resource, req, url, sendJson } = ctx;
   if (resource === 'leads' && req.method === 'POST') {
     const rawBody = await req.json();
     const body = (rawBody && typeof rawBody === 'object') ? rawBody : {};
     const clinicId = await resolveClinicId(adminClient, userId);
-    const payload = { ...body, user_id: userId, clinic_id: (body as any)?.clinic_id ?? clinicId };
+    const payload = { ...body, user_id: userId, clinic_id: body?.clinic_id ?? clinicId };
     const payloadObj = payload as Record<string, any>;
     const source = String(payloadObj?.source ?? '').trim();
     const externalId = String(payloadObj?.external_id ?? '').trim();
 
     if (source && externalId) {
       const { data, deduplicated, status } = await upsertLeadIdempotent(adminClient, userId, payload, source, externalId);
+      
+      // Trigger Meta CAPI if it looks like a trackable lead
+      const isPublicLead = source && source !== 'manual' && source !== 'doctoralia';
+      if (isPublicLead && data) {
+        (async () => {
+          try {
+            const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
+            if (!creds.notConnected && !creds.decryptionError && creds.accessToken) {
+              const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || null;
+              const ua = req.headers.get('user-agent') || null;
+              
+              const meta = body._meta || {};
+              const fbc = meta.fbc || payloadObj.fbc || null;
+              const fbp = meta.fbp || payloadObj.fbp || null; // No change needed, already uses nullish coalescing
+              const testEventCode = body.test_event_code || meta.test_event_code || url.searchParams.get('test_event_code') || null;
+
+              await trackMetaLeadConversion(creds.accessToken, {
+                pixelId: creds.pixelId,
+                eventId: payloadObj.event_id || (data as any).id || externalId || `lead_${Date.now()}`,
+                phone: (data as any).phone || payloadObj.phone,
+                email: (data as any).email || payloadObj.email,
+                firstName: (data as any).name || payloadObj.first_name || payloadObj.name,
+                lastName: payloadObj.last_name,
+                fbc,
+                fbp,
+                ip,
+                ua,
+                externalId: (data as any).id || userId,
+                testEventCode,
+              });
+
+              const valor = Number(data?.revenue || data?.valor || payloadObj?.revenue || payloadObj?.valor || 0);
+              if (valor > 100) {
+                await enviarNotificacionMovil({ ...data, valor, cuenta_id: creds.adAccountId });
+              }
+
+              // Mark as sent to prevent double processing via webhook
+              await adminClient.from('leads').update({ enviado_a_meta: true }).eq('id', (data as any).id);
+            }
+          } catch (capiErr) {
+            console.error('[CAPI] background lead tracking failed:', capiErr);
+          }
+        })();
+      }
+
       return sendJson({ success: true, lead: data, deduplicated }, status);
     }
 
@@ -2191,6 +2428,50 @@ async function handleLeadsPost(ctx: AuthenticatedRouteContext): Promise<Response
       .select()
       .single();
     if (error) throw error;
+
+    // Trigger Meta CAPI for new insert
+    const isPublicLead = source && source !== 'manual' && source !== 'doctoralia';
+    if (isPublicLead && data) {
+      (async () => {
+        try {
+          const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
+          if (!creds.notConnected && !creds.decryptionError && creds.accessToken) {
+            const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || null;
+            const ua = req.headers.get('user-agent') || null;
+
+            const meta = body._meta || {};
+            const fbc = meta.fbc || payloadObj.fbc || null;
+            const fbp = meta.fbp || payloadObj.fbp || null;
+            const testEventCode = body.test_event_code || meta.test_event_code || url.searchParams.get('test_event_code') || null;
+
+            await trackMetaLeadConversion(creds.accessToken, {
+              pixelId: creds.pixelId,
+              eventId: payloadObj.event_id || data.id || `lead_${Date.now()}`,
+              phone: data.phone,
+              email: data.email,
+              firstName: data.name,
+              fbc,
+              fbp,
+              ip,
+              ua,
+              externalId: data.id,
+              testEventCode,
+            });
+
+            const valor = Number(data?.revenue || data?.valor || payloadObj?.revenue || payloadObj?.valor || 0);
+            if (valor > 100) {
+              await enviarNotificacionMovil({ ...data, valor, cuenta_id: creds.adAccountId });
+            }
+
+            // Mark as sent to prevent double processing via webhook
+            await adminClient.from('leads').update({ enviado_a_meta: true }).eq('id', data.id);
+          }
+        } catch (capiErr) {
+          console.error('[CAPI] background lead tracking failed:', capiErr);
+        }
+      })();
+    }
+
     return sendJson({ success: true, lead: data, deduplicated: false }, 201);
   }
   return null;
@@ -2576,7 +2857,7 @@ async function handleDashboardMetaTrends(ctx: AuthenticatedRouteContext): Promis
       const sumN = (arr: any[], k: string) => arr.reduce((s: number, d: any) => s + Number.parseFloat(d[k] || 0), 0);
       const avgN = (arr: any[], k: string) => arr.length ? sumN(arr, k) / arr.length : 0;
       const pct = (a: number, b: number) => b > 0 ? Math.round(((a - b) / b) * 100) : 0;
-  
+    // No change needed, already has a comparator.
       const last7 = trends.slice(-7);
       const prev7 = trends.slice(-14, -7);
   
@@ -4140,7 +4421,7 @@ async function handleIntegrationsPatch(ctx: AuthenticatedRouteContext): Promise<
   const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource === 'integrations' && req.method === 'PATCH' && sub === '') {
     const rawBody = await req.json().catch(() => ({}));
-    const body = (rawBody && typeof rawBody === 'object') ? rawBody as Record<string, any> : {};
+    const body = (rawBody != null && typeof rawBody === 'object') ? rawBody : {};
     const service = String(body.service ?? '').trim();
     if (!service) return sendJson({ success: false, message: 'service is required' }, 400);
     const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -4192,14 +4473,14 @@ async function handleIntegrationsGet(ctx: AuthenticatedRouteContext): Promise<Re
 function normalizeIntegrationMetadata(service: string, metadata: any) {
   if (service === 'meta') {
     const accountIds = normalizeMetaAccountIds(metadata?.adAccountIds ?? metadata?.ad_account_ids ?? metadata?.adAccountId ?? metadata?.ad_account_id ?? '');
-    const normalized = accountIds.length > 0 ? accountIds.join(',') : '';
+    const primaryAccountId = accountIds[0] ?? '';
     const normalizedPageId = String(metadata?.pageId ?? metadata?.page_id ?? '').replaceAll(/\D/g, '');
     return {
       ...metadata,
       adAccountIds: accountIds,
       ad_account_ids: accountIds,
-      adAccountId: normalized,
-      ad_account_id: normalized,
+      adAccountId: primaryAccountId,
+      ad_account_id: primaryAccountId,
       pageId: normalizedPageId,
       page_id: normalizedPageId,
     };
@@ -4228,14 +4509,17 @@ function validateAndNormalizeMetadata(service: string, inputMetadata: any) {
     const accountIds = normalizeMetaAccountIds(metadata?.adAccountIds ?? metadata?.ad_account_ids ?? metadata?.adAccountId ?? metadata?.ad_account_id ?? '');
     if (accountIds.length === 0) return { ok: false, message: 'Meta integration requires one or more valid ad account IDs.' };
     const normalizedPageId = String(metadata?.pageId ?? metadata?.page_id ?? '').replaceAll(/\D/g, '');
+    const normalizedPixelId = String(metadata?.pixelId ?? metadata?.pixel_id ?? '').replaceAll(/\D/g, '');
     metadata = {
       ...metadata,
       adAccountIds: accountIds,
       ad_account_ids: accountIds,
-      adAccountId: accountIds.join(','),
-      ad_account_id: accountIds.join(','),
+      adAccountId: accountIds[0],
+      ad_account_id: accountIds[0],
       pageId: normalizedPageId,
       page_id: normalizedPageId,
+      pixelId: normalizedPixelId,
+      pixel_id: normalizedPixelId,
     };
   }
   return { ok: true, metadata };
@@ -4245,7 +4529,7 @@ async function handleIntegrationsConnectPost(ctx: AuthenticatedRouteContext): Pr
   const { adminClient, userId, authUser, resource, sub, req, sendJson } = ctx;
   if (resource === 'integrations' && sub === 'connect' && req.method === 'POST') {
     const rawBody = await req.json();
-    const body = (rawBody && typeof rawBody === 'object') ? rawBody as Record<string, any> : {};
+    const body = (rawBody != null && typeof rawBody === 'object') ? rawBody : {};
     const service = String(body.service ?? '').trim();
     if (!service) return sendJson({ success: false, message: 'service is required' }, 400);
     const reqToken = body.token;
@@ -4365,47 +4649,31 @@ async function logPlaybookExecution(adminClient: any, userId: string, playbookId
 
 async function handlePlaybooksRunPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, sub2, req, sendJson } = ctx;
-  if (resource === 'playbooks' && sub2 === 'run' && req.method === 'POST') {
-    const rawBody = await req.json().catch(() => ({}));
-    const body = (rawBody && typeof rawBody === 'object') ? rawBody as Record<string, any> : {};
-    const preferredProvider = String(body?.provider ?? '').trim();
-    const { data: pb, error: pbErr } = await adminClient.from('playbooks').select('id, title, status, run_count').eq('slug', sub).single();
-    if (pbErr || !pb) return sendJson({ success: false, message: `Playbook '${sub}' not found` }, 404);
-    if (pb.status === 'archived') return sendJson({ success: false, message: 'Playbook is archived' }, 400);
-  
-    let generatedMessage = '';
-    let providerUsed: 'gemini' | 'openai' | null = null;
-    let providerErrors: string[] = [];
-    const clinic = await resolveClinicMetadata(adminClient, userId);
-    const strategyPrompt = getPlaybookStrategyPrompt(pb.title, clinic);
-  
-    try {
-      const aiResult = await runAiPrompt(adminClient, userId, strategyPrompt, preferredProvider);
-      generatedMessage = aiResult.text;
-      providerUsed = aiResult.provider;
-      providerErrors = aiResult.providerErrors;
-    } catch (err: any) {
-      const errorId = crypto.randomUUID?.() ?? `pb-${Date.now()}`;
-      console.error('handlePlaybooksRunPost error', { errorId, err, userId });
-      const code = err?.code === 'PERMISSION_DENIED' ? 403 : 500;
+  if (resource !== 'playbooks' || sub2 !== 'run' || req.method !== 'POST') return null;
 
-      return sendJson(
-        {
-          success: false,
-          message: code === 403 ? 'Not allowed to run this playbook' : 'Playbook execution failed',
-          error_id: errorId,
-        },
-        code,
-      );
-    }
-  
+  const rawBody = await req.json().catch(() => ({}));
+  const body = (rawBody && typeof rawBody === 'object') ? rawBody as Record<string, any> : {};
+  const preferredProvider = String(body?.provider ?? '').trim();
+  const { data: pb, error: pbErr } = await adminClient.from('playbooks').select('id, title, status, run_count').eq('slug', sub).single();
+  if (pbErr || !pb) return sendJson({ success: false, message: `Playbook '${sub}' not found` }, 404);
+  if (pb.status === 'archived') return sendJson({ success: false, message: 'Playbook is archived' }, 400);
+
+  const clinic = await resolveClinicMetadata(adminClient, userId);
+  const strategyPrompt = getPlaybookStrategyPrompt(pb.title, clinic);
+
+  try {
+    const { text: generatedMessage, provider: providerUsed, providerErrors } = await runAiPrompt(adminClient, userId, strategyPrompt, preferredProvider);
     const agentOutputId = await persistAgentOutput(
       adminClient,
       userId,
-      'playbook.run',
-      { playbookSlug: sub, playbookTitle: pb.title, status: 'success', generatedMessage },
+      'ai_generation',
+      { content: generatedMessage },
       {
+        prompt: strategyPrompt,
+        contentType: 'playbook_whatsapp_message',
         playbookId: pb.id,
+        playbookSlug: sub,
+        playbookTitle: pb.title,
         source: 'api.playbooks.run',
         providerRequested: preferredProvider || null,
         providerUsed,
@@ -4417,6 +4685,12 @@ async function handlePlaybooksRunPost(ctx: AuthenticatedRouteContext): Promise<R
 
     return sendJson({
       success: true,
+      generatedMessage,
+      result: generatedMessage,
+      content: generatedMessage,
+      provider: providerUsed,
+      outputId: agentOutputId,
+      playbookExecutionId: exec.id,
       execution: {
         id: exec.id,
         playbookSlug: sub,
@@ -4427,8 +4701,14 @@ async function handlePlaybooksRunPost(ctx: AuthenticatedRouteContext): Promise<R
         generatedMessage,
       },
     });
+  } catch (err: any) {
+    const errorId = crypto.randomUUID?.() ?? `pb-${Date.now()}`;
+    console.error('handlePlaybooksRunPost error', { errorId, err, userId });
+    const message = err?.message?.includes('No AI integration')
+      ? err.message
+      : 'Playbook execution failed';
+    return sendJson({ success: false, message, error_id: errorId }, 502);
   }
-  return null;
 }
 
 async function handleAiStatus(ctx: AuthenticatedRouteContext): Promise<Response | null> {
@@ -4471,7 +4751,7 @@ async function handleAiGeneratePost(ctx: AuthenticatedRouteContext): Promise<Res
       if (playbookExecutionId && outputId) {
         await linkAgentOutputToPlaybookExecution(adminClient, userId, playbookExecutionId, outputId);
       }
-      return sendJson({ success: true, content: text, result: text, provider: usedProvider, outputId });
+      return sendJson({ success: true, content: text, result: text, provider: usedProvider, outputId, persisted: Boolean(outputId) });
     } catch (err: any) {
       const message = err?.message ?? 'AI request failed';
       const details = Array.isArray(err.providerErrors) ? err.providerErrors : undefined;
@@ -5013,22 +5293,133 @@ async function handleFinancialsPatients(ctx: AuthenticatedRouteContext): Promise
     const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
     const clinicId = usr?.clinic_id;
     if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
-  
-    const { data: rows } = await adminClient.from('patients')
-      .select('id, dni, name, email, phone, total_ltv, last_visit, created_at')
-      .eq('clinic_id', clinicId)
-      .order('total_ltv', { ascending: false });
-  
+
+    const [{ data: rows, error }, { data: coverage }] = await Promise.all([
+      adminClient
+        .from('vw_financial_patient_production')
+        .select('patient_key, patient_id, patient_name, phone_normalized, registros, total_neto, first_settlement_at, last_settlement_at, match_source')
+        .eq('clinic_id', clinicId)
+        .order('total_neto', { ascending: false })
+        .limit(250),
+      adminClient
+        .from('financial_settlements')
+        .select('patient_name, phone_normalized, patient_phone')
+        .eq('clinic_id', clinicId)
+        .is('cancelled_at', null),
+    ]);
+    if (error) throw error;
+
+    const settlementRows = coverage ?? [];
+    const namedSettlements = settlementRows.filter((r: any) => String(r.patient_name ?? '').trim()).length;
+    const phoneSettlements = settlementRows.filter((r: any) => String(r.phone_normalized ?? r.patient_phone ?? '').trim()).length;
+
     return sendJson({
       success: true,
       patients: rows || [],
       diagnostics: {
-        reason: rows?.length ? 'ok' : 'no_patients',
+        reason: rows?.length ? 'ok' : 'no_financial_patient_matches',
         clinicId,
+        settlements: settlementRows.length,
+        settlementsWithPatientName: namedSettlements,
+        settlementsWithPhone: phoneSettlements,
       },
     });
   }
   return null;
+}
+
+function buildFinancialSettlementIntegrity(rows: any[]) {
+  const activeRows = rows.filter((row) => !row.cancelled_at);
+  const totalNet = activeRows.reduce((sum, row) => sum + Number(row.amount_net || 0), 0);
+  const byPatient = new Map<string, { patient_name: string | null; registros: number; total_neto: number; with_phone: number }>();
+  const byFingerprint = new Map<string, { fingerprint: string; registros: number; total_neto: number; sample_template_name: string | null }>();
+
+  for (const row of activeRows) {
+    const patientName = String(row.patient_name ?? '').trim() || null;
+    const patientKey = patientName ?? '__NULL__';
+    const patientAgg = byPatient.get(patientKey) ?? { patient_name: patientName, registros: 0, total_neto: 0, with_phone: 0 };
+    patientAgg.registros += 1;
+    patientAgg.total_neto += Number(row.amount_net || 0);
+    if (String(row.phone_normalized ?? row.patient_phone ?? '').trim()) patientAgg.with_phone += 1;
+    byPatient.set(patientKey, patientAgg);
+
+    const eventDate = String(row.intake_at ?? row.settled_at ?? '').slice(0, 10);
+    const amount = Number(row.amount_net || 0).toFixed(2);
+    const template = String(row.template_name ?? '').trim().toLowerCase();
+    const fingerprint = [eventDate, amount, template].join('|');
+    if (fingerprint !== '||') {
+      const duplicateAgg = byFingerprint.get(fingerprint) ?? { fingerprint, registros: 0, total_neto: 0, sample_template_name: row.template_name ?? null };
+      duplicateAgg.registros += 1;
+      duplicateAgg.total_neto += Number(row.amount_net || 0);
+      byFingerprint.set(fingerprint, duplicateAgg);
+    }
+  }
+
+  const patientGroups = [...byPatient.values()]
+    .map((group) => ({
+      ...group,
+      total_neto: Number(group.total_neto.toFixed(2)),
+      pct_registros: activeRows.length > 0 ? Number(((group.registros / activeRows.length) * 100).toFixed(2)) : 0,
+      pct_total_neto: totalNet > 0 ? Number(((group.total_neto / totalNet) * 100).toFixed(2)) : 0,
+    }))
+    .sort((a, b) => b.registros - a.registros || b.total_neto - a.total_neto);
+
+  const duplicateFingerprints = [...byFingerprint.values()]
+    .filter((group) => group.registros > 1)
+    .map((group) => ({ ...group, total_neto: Number(group.total_neto.toFixed(2)) }))
+    .sort((a, b) => b.registros - a.registros || b.total_neto - a.total_neto)
+    .slice(0, 25);
+
+  const namedUniquePatients = patientGroups.filter((group) => group.patient_name).length;
+  const nullPatientGroup = patientGroups.find((group) => group.patient_name === null);
+  const topGroup = patientGroups[0] ?? null;
+  const warnings: string[] = [];
+  if (activeRows.length >= 100 && namedUniquePatients <= 10) {
+    warnings.push(`Only ${namedUniquePatients} named patient groups for ${activeRows.length} active settlements.`);
+  }
+  if (nullPatientGroup && nullPatientGroup.pct_registros >= 25) {
+    warnings.push(`${nullPatientGroup.registros} settlements (${nullPatientGroup.pct_registros}%) have NULL patient_name.`);
+  }
+  if (topGroup && topGroup.pct_registros >= 50) {
+    warnings.push(`Top patient group represents ${topGroup.pct_registros}% of active settlements.`);
+  }
+  if (duplicateFingerprints.length > 0) {
+    warnings.push(`${duplicateFingerprints.length} duplicate settlement fingerprints detected.`);
+  }
+
+  return {
+    summary: {
+      total_settlements: rows.length,
+      active_settlements: activeRows.length,
+      named_unique_patients: namedUniquePatients,
+      null_patient_name_settlements: nullPatientGroup?.registros ?? 0,
+      total_neto: Number(totalNet.toFixed(2)),
+      warnings,
+    },
+    patient_groups: patientGroups.slice(0, 50),
+    duplicate_fingerprints: duplicateFingerprints,
+  };
+}
+
+async function handleFinancialsIntegrityGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
+  const { adminClient, userId, resource, sub, req, sendJson } = ctx;
+  if (resource !== 'financials' || sub !== 'integrity' || req.method !== 'GET') return null;
+
+  const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+  const clinicId = usr?.clinic_id;
+  if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
+
+  const { data: rows, error } = await adminClient
+    .from('financial_settlements')
+    .select('id, patient_name, patient_phone, phone_normalized, amount_net, template_name, settled_at, intake_at, cancelled_at')
+    .eq('clinic_id', clinicId);
+  if (error) throw error;
+
+  return sendJson({
+    success: true,
+    clinicId,
+    integrity: buildFinancialSettlementIntegrity(rows ?? []),
+  });
 }
 
 async function fetchLeadCampaignMap(adminClient: any, userId: string, leadIds: string[]) {
@@ -5549,6 +5940,16 @@ async function processWhatsappConversionPost(adminClient: any, userId: string, r
 
   const phone = String(body.phone ?? '').trim();
   const email = body.email ? String(body.email).trim() : '';
+
+  // Extract Meta context from _meta or direct body
+  const meta = body._meta || {};
+  const fbc = meta.fbc || (body.fbc ? String(body.fbc).trim() : null);
+  const fbp = meta.fbp || (body.fbp ? String(body.fbp).trim() : null);
+  const testEventCode = body.test_event_code || meta.test_event_code || url.searchParams.get('test_event_code') || null;
+
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || null;
+  const ua = req.headers.get('user-agent') || null;
+
   if (!phone && !email) {
     return sendJson({ success: false, message: 'phone or email is required' }, 400);
   }
@@ -5560,7 +5961,6 @@ async function processWhatsappConversionPost(adminClient: any, userId: string, r
   }
 
   try {
-    const result = await trackMetaWhatsappConversion(creds.accessToken, phone || null, email || null);
     const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
     const clinicId = usr?.clinic_id;
     let matchedPatientId: string | null = null;
@@ -5579,6 +5979,18 @@ async function processWhatsappConversionPost(adminClient: any, userId: string, r
       matchedLeadId = matchedLead.id;
       leadStageUpdated = await updateLeadStageToWhatsapp(adminClient, userId, matchedLead);
     }
+
+    // Trigger Meta CAPI Contact event
+    const externalId = matchedPatientId || matchedLeadId || userId;
+    const result = await trackMetaWhatsappConversion(creds.accessToken, phone || null, email || null, {
+      pixelId: creds.pixelId,
+      fbc,
+      fbp,
+      ip,
+      ua,
+      externalId,
+      testEventCode,
+    });
 
     return sendJson({
       success: true,
@@ -6308,5 +6720,3 @@ function json(data: unknown, status = 200, extraHeaders: Record<string, string> 
     headers: { ...DEFAULT_CORS_HEADERS, ...extraHeaders, 'Content-Type': 'application/json' },
   });
 }
-
-

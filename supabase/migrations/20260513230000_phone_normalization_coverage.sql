@@ -109,5 +109,5 @@ $$;
 COMMENT ON FUNCTION public.get_phone_normalization_coverage(UUID) IS
   'Returns COUNT(*)-based coverage of usable phone_normalized values for lead matching diagnostics, optionally scoped by clinic_id when the table supports it.';
 
-GRANT EXECUTE ON FUNCTION public.get_phone_normalization_coverage(UUID) TO authenticated;
+REVOKE ALL ON FUNCTION public.get_phone_normalization_coverage(UUID) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.get_phone_normalization_coverage(UUID) TO service_role;

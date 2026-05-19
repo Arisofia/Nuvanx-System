@@ -14,8 +14,7 @@ BEGIN
     RETURN;
   END IF;
 
-  EXECUTE $sql$
-CREATE OR REPLACE VIEW public.vw_lead_traceability AS
+  CREATE OR REPLACE VIEW public.vw_lead_traceability AS
 SELECT
   -- ── lead (existing columns, unchanged order) ──────────────────────────────
   l.id                    AS lead_id,
@@ -72,5 +71,4 @@ FROM public.leads l;
 ALTER VIEW public.vw_lead_traceability SET (security_invoker = true);
 GRANT SELECT ON public.vw_lead_traceability TO authenticated;
 GRANT SELECT ON public.vw_lead_traceability TO service_role;
-  $sql$;
 END $$;

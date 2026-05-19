@@ -189,6 +189,7 @@ export interface ConnectForm {
   token: string
   adAccountId: string
   pageId: string
+  pixelId?: string
   phoneNumberId: string
 }
 

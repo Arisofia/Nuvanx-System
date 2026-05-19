@@ -1,7 +1,22 @@
--- 20260505000000_refine_campaign_roi_patient_view.sql
--- Refine campaign ROI calculation to use unified patient traceability and to align revenue with patient-attributed Doctoralia data.
+-- =============================================================================
+-- Refine campaign ROI calculation to use unified patient traceability and align
+-- revenue with patient-attributed Doctoralia data.
+--
+-- Dependency guards keep preview/core-only databases from resolving reporting
+-- views before they exist while preserving the historical ROI refinement logic.
+-- =============================================================================
 
-CREATE OR REPLACE FUNCTION get_campaign_roi(
+DO $$
+BEGIN
+  IF to_regclass('public.vw_lead_traceability') IS NULL
+     OR to_regclass('public.vw_doctoralia_lead_traceability_unified') IS NULL
+     OR to_regclass('public.meta_daily_insights') IS NULL THEN
+    RAISE NOTICE 'Skipping get_campaign_roi refinement: required reporting relations do not exist yet.';
+    RETURN;
+  END IF;
+
+  EXECUTE $sql$
+CREATE OR REPLACE FUNCTION public.get_campaign_roi(
   p_user_id UUID,
   p_from     TEXT DEFAULT '',
   p_to       TEXT DEFAULT '',
@@ -19,9 +34,9 @@ RETURNS TABLE (
 )
 LANGUAGE sql
 STABLE
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = public
-AS $$
+AS $func$
   WITH trace AS (
     SELECT
       COALESCE(t.campaign_name, 'Organic / Unknown') AS campaign_name,
@@ -31,7 +46,7 @@ AS $$
       COALESCE(t.patient_id, u.lead_converted_patient_id) AS patient_id,
       COALESCE(u.importe_numerico, t.doctoralia_net, 0) AS net_revenue
     FROM public.vw_lead_traceability t
-    LEFT JOIN vw_doctoralia_lead_traceability_unified u
+    LEFT JOIN public.vw_doctoralia_lead_traceability_unified u
       ON u.lead_id = t.lead_id
     WHERE t.lead_user_id = p_user_id
       AND (p_from = '' OR t.lead_created_at >= p_from::timestamptz)
@@ -80,6 +95,10 @@ AS $$
   FROM grouped g
   LEFT JOIN meta_spend ms ON ms.month = g.month
   ORDER BY g.month DESC, g.leads_count DESC;
-$$;
+$func$;
 
-GRANT EXECUTE ON FUNCTION get_campaign_roi(UUID, TEXT, TEXT, TEXT) TO service_role;
+REVOKE ALL ON FUNCTION public.get_campaign_roi(UUID, TEXT, TEXT, TEXT) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.get_campaign_roi(UUID, TEXT, TEXT, TEXT) FROM anon, authenticated;
+GRANT  EXECUTE ON FUNCTION public.get_campaign_roi(UUID, TEXT, TEXT, TEXT) TO service_role;
+  $sql$;
+END $$;

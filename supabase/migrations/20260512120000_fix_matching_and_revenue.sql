@@ -83,6 +83,7 @@ END $$;
 CREATE OR REPLACE FUNCTION public.match_leads_to_doctoralia_by_phone()
 RETURNS INTEGER
 LANGUAGE plpgsql
+SECURITY INVOKER
 SET search_path = ''
 AS $$
 DECLARE
@@ -163,6 +164,7 @@ $$;
 CREATE OR REPLACE FUNCTION public.match_doctoralia_leads_by_phone()
 RETURNS INTEGER
 LANGUAGE plpgsql
+SECURITY INVOKER
 SET search_path = ''
 AS $$
 BEGIN
@@ -172,5 +174,5 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.match_leads_to_doctoralia_by_phone() TO service_role;
 GRANT EXECUTE ON FUNCTION public.match_doctoralia_leads_by_phone() TO service_role;
-GRANT EXECUTE ON FUNCTION public.match_leads_to_doctoralia_by_phone() TO authenticated;
-GRANT EXECUTE ON FUNCTION public.match_doctoralia_leads_by_phone() TO authenticated;
+REVOKE ALL ON FUNCTION public.match_leads_to_doctoralia_by_phone() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.match_doctoralia_leads_by_phone() FROM PUBLIC, anon, authenticated;

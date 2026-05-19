@@ -7,9 +7,9 @@
 
 -- 1. Harden get_trazabilidad_funnel
 -- FINAL VERSION with real revenue logic (Option 2)
-DROP FUNCTION IF EXISTS public.get_trazabilidad_funnel(UUID, DATE, DATE, DATE, DATE, DATE, DATE);
+DROP FUNCTION IF EXISTS get_trazabilidad_funnel(UUID, DATE, DATE, DATE, DATE, DATE, DATE);
 
-CREATE OR REPLACE FUNCTION public.get_trazabilidad_funnel(
+CREATE OR REPLACE FUNCTION get_trazabilidad_funnel(
   p_user_id UUID DEFAULT auth.uid(),
   p_lead_from DATE DEFAULT NULL,
   p_lead_to DATE DEFAULT NULL,
@@ -43,8 +43,8 @@ AS $$
       l.stage,
       l.phone_normalized,
       COALESCE(l.clinic_id, u.clinic_id) AS clinic_id
-    FROM public.leads l
-    LEFT JOIN public.users u ON u.id = l.user_id
+    FROM leads l
+    LEFT JOIN users u ON u.id = l.user_id
     WHERE (l.user_id = p_user_id OR p_user_id IS NULL)
       AND l.deleted_at IS NULL
       AND (l.source IS NULL OR lower(btrim(l.source)) <> 'doctoralia')
@@ -62,7 +62,7 @@ AS $$
       da.procedencia,
       da.estado
     FROM lead_base lb
-    JOIN public.doctoralia_appointments da
+    JOIN doctoralia_appointments da
       ON da.clinic_id = lb.clinic_id
      AND da.phone_normalized = lb.phone_normalized
      AND da.fecha >= lb.created_at::DATE
@@ -92,7 +92,7 @@ AS $$
         ORDER BY lb.created_at DESC, lb.id DESC
       ) AS attribution_rank
     FROM lead_base lb
-    JOIN public.financial_settlements fs
+    JOIN financial_settlements fs
       ON fs.clinic_id = lb.clinic_id
      AND fs.cancelled_at IS NULL
      AND fs.amount_net > 0
@@ -135,13 +135,13 @@ AS $$
   ORDER BY lb.created_at DESC;
 $$;
 
-REVOKE ALL ON FUNCTION public.get_trazabilidad_funnel(UUID, DATE, DATE, DATE, DATE, DATE, DATE) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION public.get_trazabilidad_funnel(UUID, DATE, DATE, DATE, DATE, DATE, DATE) FROM anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.get_trazabilidad_funnel(UUID, DATE, DATE, DATE, DATE, DATE, DATE) TO service_role;
+REVOKE ALL ON FUNCTION get_trazabilidad_funnel(UUID, DATE, DATE, DATE, DATE, DATE, DATE) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION get_trazabilidad_funnel(UUID, DATE, DATE, DATE, DATE, DATE, DATE) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION get_trazabilidad_funnel(UUID, DATE, DATE, DATE, DATE, DATE, DATE) TO service_role;
 
 -- 2. Update vw_lead_traceability to exclude Doctoralia leads
-DROP VIEW IF EXISTS public.vw_lead_traceability CASCADE;
-CREATE OR REPLACE VIEW public.vw_lead_traceability AS
+DROP VIEW IF EXISTS vw_lead_traceability CASCADE;
+CREATE OR REPLACE VIEW vw_lead_traceability AS
 SELECT
   l.id                    AS lead_id,
   l.name                  AS lead_name,
@@ -188,7 +188,7 @@ SELECT
   fs_first.settled_at     AS first_settlement_at
 FROM public.leads l
 LEFT JOIN public.users u ON u.id = l.user_id
-LEFT JOIN public.patients p
+LEFT JOIN patients p
   ON  (p.dni_hash = l.dni_hash AND l.dni_hash IS NOT NULL)
   OR   p.id = l.converted_patient_id
 LEFT JOIN LATERAL (
@@ -199,7 +199,7 @@ LEFT JOIN LATERAL (
       WHEN sub_dp.lead_id = l.id THEN sub_dp.match_class
       ELSE 'exact_phone'
     END)::VARCHAR(32) AS match_class
-  FROM   public.doctoralia_patients sub_dp
+  FROM   doctoralia_patients sub_dp
   WHERE  (sub_dp.lead_id = l.id)
     OR   (
            u.clinic_id IS NOT NULL
@@ -215,7 +215,7 @@ LEFT JOIN LATERAL (
 LEFT JOIN LATERAL (
   SELECT id, template_id, template_name, amount_net, amount_gross,
          settled_at, intake_at, source_system
-  FROM   public.financial_settlements sub_fs
+  FROM   financial_settlements sub_fs
   WHERE  sub_fs.cancelled_at IS NULL
     AND  (
            (p.id IS NOT NULL AND sub_fs.patient_id = p.id)
@@ -234,7 +234,7 @@ LEFT JOIN LATERAL (
 ) fs ON TRUE
 LEFT JOIN LATERAL (
   SELECT settled_at
-  FROM   public.financial_settlements sub_fs2
+  FROM   financial_settlements sub_fs2
   WHERE  sub_fs2.cancelled_at IS NULL
     AND  (
            (p.id IS NOT NULL AND sub_fs2.patient_id = p.id)
@@ -254,7 +254,7 @@ LEFT JOIN LATERAL (
 WHERE l.deleted_at IS NULL
   AND (l.source IS NULL OR lower(btrim(l.source)) <> 'doctoralia');
 
-ALTER VIEW public.vw_lead_traceability SET (security_invoker = true);
+ALTER VIEW vw_lead_traceability SET (security_invoker = true);
 
 -- 3. Update vw_campaign_performance_real to exclude Doctoralia leads
 DROP VIEW IF EXISTS public.vw_campaign_performance_real CASCADE;
@@ -294,16 +294,23 @@ SELECT
   MIN(l.created_at)                    AS first_lead_at,
   MAX(l.created_at)                    AS last_lead_at
 FROM public.leads l
-LEFT JOIN users u ON u.id = l.user_id
+LEFT JOIN public.users u ON u.id = l.user_id
 WHERE l.deleted_at IS NULL
   AND (l.source IS NULL OR lower(btrim(l.source)) <> 'doctoralia')
-GROUP BY l.user_id, u.clinic_id, l.campaign_name, l.campaign_id, l.source;
+GROUP BY
+  l.user_id,
+  u.clinic_id,
+  COALESCE(l.campaign_name, 'Organic / Unknown'),
+  l.campaign_id,
+  l.source;
 
 ALTER VIEW public.vw_campaign_performance_real SET (security_invoker = true);
+GRANT SELECT ON public.vw_campaign_performance_real TO service_role;
+GRANT SELECT ON public.vw_campaign_performance_real TO authenticated;
 
 -- 4. Update vw_whatsapp_conversion_real to exclude Doctoralia leads
-DROP VIEW IF EXISTS public.vw_whatsapp_conversion_real CASCADE;
-CREATE OR REPLACE VIEW public.vw_whatsapp_conversion_real AS
+DROP VIEW IF EXISTS vw_whatsapp_conversion_real CASCADE;
+CREATE OR REPLACE VIEW vw_whatsapp_conversion_real AS
 SELECT
   user_id,
   clinic_id,
@@ -327,11 +334,11 @@ WHERE deleted_at IS NULL
   AND (source IS NULL OR lower(btrim(source)) <> 'doctoralia')
 GROUP BY 1, 2, 3;
 
-ALTER VIEW public.vw_whatsapp_conversion_real SET (security_invoker = true);
+ALTER VIEW vw_whatsapp_conversion_real SET (security_invoker = true);
 
 -- 5. Update vw_doctor_performance_real to exclude Doctoralia leads
-DROP VIEW IF EXISTS public.vw_doctor_performance_real CASCADE;
-CREATE OR REPLACE VIEW public.vw_doctor_performance_real AS
+DROP VIEW IF EXISTS vw_doctor_performance_real CASCADE;
+CREATE OR REPLACE VIEW vw_doctor_performance_real AS
 SELECT
   d.id                  AS doctor_id,
   d.name                AS doctor_name,
@@ -358,4 +365,4 @@ LEFT JOIN public.leads l ON l.converted_patient_id = p.id
   AND (l.source IS NULL OR lower(btrim(l.source)) <> 'doctoralia')
 GROUP BY d.id, d.name, d.specialty, d.is_active;
 
-ALTER VIEW public.vw_doctor_performance_real SET (security_invoker = true);
+ALTER VIEW vw_doctor_performance_real SET (security_invoker = true);

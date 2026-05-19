@@ -1,9 +1,11 @@
 // frontend/src/lib/invokeApi.ts
 import { supabase } from './supabaseClient'
+import { getMetaContext } from './metaPixel'
 
 interface InvokeApiOptions {
   body?: Record<string, any>
   headers?: Record<string, string>
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   timeoutMs?: number
   retries?: number
 }
@@ -12,7 +14,26 @@ export async function invokeApi<T = any>(
   functionName: string,
   options: InvokeApiOptions = {}
 ): Promise<{ data: T | null; error: Error | null }> {
-  const { body = {}, headers = {}, retries = 1 } = options
+  const { body = {}, headers = {}, retries = 1, method = 'POST' } = options
+
+  /**
+   * Enriquecer el body con contexto de Meta si es una mutación.
+   * Esto permite que CAPI tenga mejores parámetros de matching (EMQ).
+   * El test_event_code se puede pasar en el body desde la UI de pruebas.
+   */
+  let finalBody = body
+  if (['POST', 'PUT', 'PATCH'].includes(method)) {
+    const meta = getMetaContext()
+    finalBody = {
+      ...body,
+      _meta: {
+        ...(body._meta || {}),
+        fbc: meta.fbc,
+        fbp: meta.fbp,
+        user_agent: typeof window !== 'undefined' ? navigator.userAgent : undefined,
+      }
+    }
+  }
 
   const startTime = Date.now()
   let attempt = 0
@@ -20,7 +41,8 @@ export async function invokeApi<T = any>(
   while (attempt <= retries) {
     try {
       const { data, error } = await supabase.functions.invoke(functionName, {
-        body,
+        body: finalBody,
+        method,
         headers: {
           'x-api-key': (import.meta as any).env.VITE_MCP_API_KEY || '',
           ...headers,

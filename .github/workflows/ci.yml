@@ -118,7 +118,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        run: npm ci --include=dev --ignore-scripts
+        run: npm ci --include=dev --ignore-scripts --legacy-peer-deps
 
       - name: Run ESLint
         run: npm run lint
@@ -144,7 +144,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        run: npm ci --include=dev --ignore-scripts
+        run: npm ci --include=dev --ignore-scripts --legacy-peer-deps
 
       - name: Run frontend unit tests
         run: npm run test:ci
@@ -171,7 +171,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        run: npm ci --include=dev --ignore-scripts
+        run: npm ci --include=dev --ignore-scripts --legacy-peer-deps
 
       - name: Prepare frontend env for PR validation
         run: |
@@ -219,7 +219,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        run: npm ci --include=dev --ignore-scripts
+        run: npm ci --include=dev --ignore-scripts --legacy-peer-deps
 
       - name: Install Playwright browsers
         run: npm exec playwright install --with-deps
@@ -265,7 +265,7 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: Install dependencies
-        run: npm ci --include=dev --ignore-scripts
+        run: npm ci --include=dev --ignore-scripts --legacy-peer-deps
 
       - name: Run shared and functions tests
         run: npm test
@@ -288,7 +288,7 @@ jobs:
       - uses: actions/checkout@v4 # v4
 
       - name: Setup Deno
-        uses: denoland/setup-deno@v2
+        uses: denoland/setup-deno@v2 # Pin to latest v2.x
         with:
           deno-version: v2.x
 
@@ -300,7 +300,7 @@ jobs:
           fi
           echo "Caching API function..."
           deno cache --config supabase/functions/deno.json supabase/functions/api/index.ts
-          
+
           if [ -f supabase/functions/mcp/deno.json ]; then
             echo "Caching MCP function with local config..."
             deno cache --config supabase/functions/mcp/deno.json supabase/functions/mcp/index.ts
@@ -318,7 +318,7 @@ jobs:
         run: |
           echo "Checking API function..."
           deno check --config supabase/functions/deno.json supabase/functions/api/index.ts
-          
+
           if [ -f supabase/functions/mcp/deno.json ]; then
             echo "Checking MCP function with local config..."
             deno check --config supabase/functions/mcp/deno.json supabase/functions/mcp/index.ts

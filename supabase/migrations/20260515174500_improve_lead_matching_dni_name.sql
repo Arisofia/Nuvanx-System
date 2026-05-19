@@ -8,6 +8,9 @@
 
 BEGIN;
 
+-- Ensure the unaccent extension is available for name normalization
+CREATE EXTENSION IF NOT EXISTS unaccent WITH SCHEMA extensions;
+
 -- 1. Function to normalize names for fuzzy matching (removes accents, spaces, special chars)
 CREATE OR REPLACE FUNCTION public.normalize_name(p_name TEXT)
 RETURNS TEXT
@@ -99,18 +102,25 @@ BEGIN
         OR sb.subject_norm LIKE '%primera%'
       ) AS is_appointment
     FROM scoped_leads sl
-    CROSS JOIN settlement_base sb
-    LEFT JOIN patient_lookup pl ON pl.patient_id = sb.patient_id
-    WHERE sb.clinic_id = sl.clinic_id
-     AND (
-       -- Match by Phone (Last 9 digits)
-       RIGHT(regexp_replace(sb.patient_phone_norm, '[^0-9]', '', 'g'), 9) = RIGHT(regexp_replace(sl.phone_normalized, '[^0-9]', '', 'g'), 9)
-       OR RIGHT(regexp_replace(sb.stored_phone_norm, '[^0-9]', '', 'g'), 9) = RIGHT(regexp_replace(sl.phone_normalized, '[^0-9]', '', 'g'), 9)
-       -- Match by DNI
-       OR (sl.dni IS NOT NULL AND pl.dni IS NOT NULL AND sl.dni = pl.dni)
-       -- Match by Normalized Name (only if phone is missing or mismatching, as a fallback)
-       OR (sl.lead_name_norm IS NOT NULL AND pl.patient_name_norm IS NOT NULL AND sl.lead_name_norm = pl.patient_name_norm)
-     )
+    JOIN settlement_base sb ON sb.clinic_id = sl.clinic_id
+    JOIN patient_lookup pl ON pl.patient_id = sb.patient_id
+    WHERE EXISTS (
+      -- Strategy 1: Match by Phone (Last 9 digits). Subqueries in EXISTS allow 
+      -- the Postgres planner to short-circuit as soon as a match is found.
+      SELECT 1 WHERE public.normalize_phone_9digits(sb.patient_phone_norm) = public.normalize_phone_9digits(sl.phone_normalized)
+      UNION ALL
+      SELECT 1 WHERE public.normalize_phone_9digits(sb.stored_phone_norm) = public.normalize_phone_9digits(sl.phone_normalized)
+      UNION ALL
+      SELECT 1 WHERE public.normalize_phone_9digits(pl.phone_normalized) = public.normalize_phone_9digits(sl.phone_normalized)
+      
+      UNION ALL
+      -- Strategy 2: Match by DNI
+      SELECT 1 WHERE (sl.dni IS NOT NULL AND pl.dni IS NOT NULL AND sl.dni = pl.dni)
+      
+      UNION ALL
+      -- Strategy 3: Match by Normalized Name (fallback)
+      SELECT 1 WHERE (sl.lead_name_norm IS NOT NULL AND pl.patient_name_norm IS NOT NULL AND sl.lead_name_norm = pl.patient_name_norm)
+    )
   ),
   first_appointment AS (
     SELECT lead_id, MIN(event_at) AS first_appointment_at

@@ -4,7 +4,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { resolveUserClinicId, upsertMetaDailyInsight } = require('./shared/meta-daily-insights');
 
 const META_GRAPH = 'https://graph.facebook.com/v22.0';
 const GOOGLE_ADS_API = 'https://googleads.googleapis.com/v17';
@@ -361,6 +360,92 @@ async function maybeLoadDbSignals({ databaseUrl, clinicId, sinceIso, untilExclus
   }
 }
 
+async function resolveMetaDailyInsightsClinicId(db, reportUserId, clinicId) {
+  if (clinicId) return clinicId;
+
+  const { rows } = await db.query(
+    `SELECT clinic_id FROM public.users WHERE id = $1 LIMIT 1`,
+    [reportUserId],
+  );
+  const resolvedClinicId = rows[0]?.clinic_id ?? null;
+  if (!resolvedClinicId) {
+    throw new Error(`Cannot persist meta_daily_insights: user ${reportUserId} has no clinic_id.`);
+  }
+  return resolvedClinicId;
+}
+
+
+async function ensureMetaDailyInsightsConflictTarget(db) {
+  await db.query(`ALTER TABLE public.meta_daily_insights ADD COLUMN IF NOT EXISTS clinic_id UUID`);
+  await db.query(`
+    UPDATE public.meta_daily_insights mdi
+    SET clinic_id = u.clinic_id
+    FROM public.users u
+    WHERE mdi.user_id = u.id
+      AND mdi.clinic_id IS NULL
+      AND u.clinic_id IS NOT NULL
+  `);
+  await db.query(`
+    WITH ranked AS (
+      SELECT
+        ctid,
+        ROW_NUMBER() OVER (
+          PARTITION BY clinic_id, ad_account_id, date
+          ORDER BY updated_at DESC NULLS LAST, user_id
+        ) AS rn
+      FROM public.meta_daily_insights
+      WHERE clinic_id IS NOT NULL
+    )
+    DELETE FROM public.meta_daily_insights mdi
+    USING ranked r
+    WHERE mdi.ctid = r.ctid
+      AND r.rn > 1
+  `);
+  await db.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS meta_daily_insights_clinic_account_date_uidx
+      ON public.meta_daily_insights (clinic_id, ad_account_id, date)
+  `);
+}
+
+async function upsertMetaDailyInsight(db, row) {
+  const values = [row.user_id, row.clinic_id, row.ad_account_id, row.date, row.impressions, row.reach, row.clicks,
+    row.spend, row.conversions, row.ctr, row.cpc, row.cpm, row.messaging_conversations, row.updated_at];
+
+  const updated = await db.query(`
+    UPDATE public.meta_daily_insights
+    SET user_id                 = $1,
+        impressions             = $5,
+        reach                   = $6,
+        clicks                  = $7,
+        spend                   = $8,
+        conversions             = $9,
+        ctr                     = $10,
+        cpc                     = $11,
+        cpm                     = $12,
+        messaging_conversations = $13,
+        updated_at              = $14
+    WHERE clinic_id = $2
+      AND ad_account_id = $3
+      AND date = $4
+  `, values);
+
+  if (updated.rowCount > 0) return;
+
+  await db.query(`
+    INSERT INTO public.meta_daily_insights
+      (user_id, clinic_id, ad_account_id, date, impressions, reach, clicks, spend,
+       conversions, ctr, cpc, cpm, messaging_conversations, updated_at)
+    SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM public.meta_daily_insights
+      WHERE clinic_id = $2
+        AND ad_account_id = $3
+        AND date = $4
+    )
+  `, values);
+}
+
 async function persistMetaDailyInsights({ databaseUrl, reportUserId, clinicId, adAccountId, since, until, token }) {
   if (!databaseUrl || !reportUserId) return null;
 
@@ -379,27 +464,29 @@ async function persistMetaDailyInsights({ databaseUrl, reportUserId, clinicId, a
   const getAction = (actions, type) =>
     Number((actions || []).find((a) => a.action_type === type)?.value ?? 0);
 
-  const upsertRows = rows.map((row) => ({
-    user_id: reportUserId,
-    ad_account_id: adAccountId,
-    date: row.date_start,
-    impressions: Number(row.impressions ?? 0),
-    reach: Number(row.reach ?? 0),
-    clicks: Number(row.clicks ?? 0),
-    spend: Number(row.spend ?? 0),
-    conversions: Number(row.conversions ?? getAction(row.actions, 'lead') ?? 0),
-    ctr: Number(row.ctr ?? 0),
-    cpc: Number(row.cpc ?? 0),
-    cpm: Number(row.cpm ?? 0),
-    messaging_conversations: getAction(row.actions, 'onsite_conversion.messaging_conversation_started_7d'),
-    updated_at: new Date().toISOString(),
-  }));
-
   const { Client } = require('pg');
   const db = new Client({ connectionString: databaseUrl, ssl: { rejectUnauthorized: false } });
   await db.connect();
   try {
-    const resolvedClinicId = await resolveUserClinicId(db, reportUserId, clinicId);
+    const resolvedClinicId = await resolveMetaDailyInsightsClinicId(db, reportUserId, clinicId);
+    await ensureMetaDailyInsightsConflictTarget(db);
+
+    const upsertRows = rows.map((row) => ({
+      user_id: reportUserId,
+      ad_account_id: adAccountId,
+      date: row.date_start,
+      impressions: Number(row.impressions ?? 0),
+      reach: Number(row.reach ?? 0),
+      clicks: Number(row.clicks ?? 0),
+      spend: Number(row.spend ?? 0),
+      conversions: Number(row.conversions ?? getAction(row.actions, 'lead') ?? 0),
+      ctr: Number(row.ctr ?? 0),
+      cpc: Number(row.cpc ?? 0),
+      cpm: Number(row.cpm ?? 0),
+      messaging_conversations: getAction(row.actions, 'onsite_conversion.messaging_conversation_started_7d'),
+      updated_at: new Date().toISOString(),
+    }));
+
     for (const r of upsertRows) {
       await upsertMetaDailyInsight(db, { ...r, clinic_id: resolvedClinicId });
     }
@@ -718,6 +805,12 @@ async function main() {
   const utcToday = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
   const { since, until, untilExclusive } = getReportWindow(maybeSince, maybeUntil, days, utcToday);
 
+  const redactId = (id) => {
+    const s = String(id || '');
+    const digits = s.replace(/^act_/i, '');
+    return digits ? `act_***${digits.slice(-4)}` : 'act_[redacted]';
+  };
+
   let googleAdsCampaigns = null;
   if (googleServiceAccount) {
     try {
@@ -731,91 +824,92 @@ async function main() {
     }
   }
 
-  for (const adAccountId of adAccountIds) {
-    console.log(`\n[meta-daily-report] Generating report for account: ${adAccountId}`);
+  for (const [accountIndex, adAccountId] of adAccountIds.entries()) {
+    console.log(`\n[meta-daily-report] Generating report for account ${accountIndex + 1}/${adAccountIds.length}`);
     const rows = await fetchMetaInsights(adAccountId, since, until, token);
     const campaignRows = buildCampaignRows(rows);
     const totals = calculateTotals(campaignRows);
     const channels = calculateChannelStats(campaignRows, totals);
 
-    const bestCampaigns = [...campaignRows]
-      .sort((a, b) => (b.totalLeads - a.totalLeads) || (b.spend - a.spend))
-      .slice(0, 6);
-
-    const wasteCampaigns = [...campaignRows]
-      .filter((row) => row.isWaste || (row.spend > 0 && row.cpl > 3 * (totals.cpc || 1)))
-      .sort((a, b) => b.spend - a.spend)
-      .slice(0, 6);
-
-    const landingViews = campaignRows.reduce((sum, row) => sum + parseMetric(row.landingPageViews), 0);
-    const landing = {
-      clicks: totals.clicks,
-      views: landingViews,
-      rate: totals.clicks > 0 ? (landingViews / totals.clicks) * 100 : 0,
-    };
-
-    let dbSignals = { available: false, rows: [] };
+    // Persist daily insights to DB for later analysis (optional)
     try {
-      dbSignals = await maybeLoadDbSignals({
-        databaseUrl, clinicId, sinceIso: since, untilExclusiveIso: untilExclusive,
+      await persistMetaDailyInsights({
+        databaseUrl,
+        reportUserId,
+        clinicId,
+        adAccountId,
+        since,
+        until,
+        token,
       });
     } catch (err) {
-      console.warn(`[meta-daily-report] Could not load CRM signals (DB): ${err.message}`);
+      console.warn('[meta-daily-report] Failed to persist daily insights.');
     }
 
-    const recommendations = generateRecommendations(channels, landing, wasteCampaigns, dbSignals);
+    const wasteCampaigns = campaignRows.filter((r) => r.isWaste && r.spend > 50);
+    const bestCampaigns = campaignRows
+      .filter((r) => r.totalLeads > 0)
+      .sort((a, b) => b.totalLeads - a.totalLeads)
+      .slice(0, 5);
+
+    const dbSignals = await maybeLoadDbSignals({
+      databaseUrl,
+      clinicId,
+      sinceIso: since,
+      untilExclusiveIso: untilExclusive,
+    });
+
+    const recommendations = generateRecommendations(channels, {
+      clicks: totals.clicks,
+      views: campaignRows.reduce((a, r) => a + r.landingPageViews, 0),
+      rate: totals.clicks > 0 ? (campaignRows.reduce((a, r) => a + r.landingPageViews, 0) / totals.clicks) * 100 : 0,
+    }, wasteCampaigns, dbSignals);
 
     const markdown = buildMarkdown({
       generatedAt: new Date().toISOString(),
       period: { since, until },
-      account: adAccountId,
+      account: redactId(adAccountId),
       totals,
       channels,
       campaigns: { best: bestCampaigns, waste: wasteCampaigns },
-      landing,
+      landing: {
+        clicks: totals.clicks,
+        views: campaignRows.reduce((a, r) => a + r.landingPageViews, 0),
+        rate: totals.clicks > 0 ? (campaignRows.reduce((a, r) => a + r.landingPageViews, 0) / totals.clicks) * 100 : 0,
+      },
       dbSignals,
-      googleAdsCampaigns, // Shared between meta accounts in this run
+      googleAdsCampaigns,
       recommendations,
     });
 
-    const reportsDir = path.resolve(process.cwd(), 'reports');
-    fs.mkdirSync(reportsDir, { recursive: true });
-    const reportPath = path.join(reportsDir, `meta-daily-report-${adAccountId}-${until}.md`);
-    fs.writeFileSync(reportPath, markdown, 'utf8');
+    console.log(`[meta-daily-report] Report for account ${accountIndex + 1}/${adAccountIds.length} (${redactId(adAccountId)}) generated:`);
+    console.log(markdown);
 
     try {
-      await maybePersistOutput({
+      const outputId = await maybePersistOutput({
         databaseUrl,
         reportUserId,
         clinicId,
         markdown,
         metadata: {
-          source: 'daily_ads_workflow', ad_account_id: adAccountId, google_customer_id: gCustomerId || null, since, until,
+          adAccountId: redactId(adAccountId),
+          since,
+          until,
+          totals,
+          campaignCount: campaignRows.length,
         },
       });
-    } catch (err) {
-      console.warn(`[meta-daily-report] Could not persist to agent_outputs for ${adAccountId}: ${err.message}`);
-    }
-
-    // Persist daily insights to meta_daily_insights for /kpis fallback
-    if (databaseUrl && reportUserId) {
-      try {
-        await persistMetaDailyInsights({ databaseUrl, reportUserId, clinicId, adAccountId, since, until, token });
-      } catch (err) {
-        console.warn(`[meta-daily-report] Could not persist to meta_daily_insights for ${adAccountId}: ${err.message}`);
+      if (outputId) {
+        console.log(`[meta-daily-report] Report generated for account ${accountIndex + 1}/${adAccountIds.length} (${redactId(adAccountId)}) (${since} to ${until}), campaigns: ${campaignRows.length}`);
+        console.log(`[meta-daily-report] Report persisted to agent_outputs with ID: ${outputId}`);
       }
+    } catch (err) {
+      console.warn(`[meta-daily-report] Failed to persist report output: ${err.message}`);
     }
-
-    if (process.env.GITHUB_STEP_SUMMARY) {
-      fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n# Report for ${adAccountId}\n${markdown}`);
-    }
-
-    console.log(`[meta-daily-report] Report for ${adAccountId} generated successfully`);
-    console.log(`[meta-daily-report] File: ${reportPath}`);
   }
 }
 
 main().catch((err) => {
-  console.error('[meta-daily-report] Fatal:', err.message);
+  console.error('[meta-daily-report] Fatal error:', err.message);
   process.exit(1);
 });

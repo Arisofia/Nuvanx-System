@@ -29,6 +29,9 @@ jobs:
       GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
       GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
       GOOGLE_ADS_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_CUSTOMER_ID }}
+      # This environment variable forces JavaScript actions to run with Node.js 24,
+      # addressing the deprecation warning for Node.js 20.
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - uses: actions/checkout@v4 # v4
@@ -37,6 +40,7 @@ jobs:
           node-version: '22'
       - name: Validate required secrets
         run: |
+          echo "PHASE: Validating secrets for Daily Unified Automation"
           MISSING=()
           [ -z "$META_ACCESS_TOKEN" ] && MISSING+=("META_ACCESS_TOKEN")
           [ -z "$META_AD_ACCOUNT_ID" ] && MISSING+=("META_AD_ACCOUNT_ID")

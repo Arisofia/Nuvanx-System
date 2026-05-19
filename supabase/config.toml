@@ -152,11 +152,13 @@ enabled = true
 # The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
 # in emails.
 site_url = "http://127.0.0.1:3000"
+# The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
+# external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
 additional_redirect_urls = ["https://127.0.0.1:3000"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
-# JWT issuer URL. If not set, defaults to the local API URL (http://127.0.0.1:<port>/auth/v1).
+# JWT issuer URL. If not set, defaults to auth.external_url.
 # jwt_issuer = ""
 # Path to JWT signing key. DO NOT commit your signing keys file to git.
 # signing_keys_path = "./signing_keys.json"
@@ -172,14 +174,11 @@ enable_anonymous_sign_ins = false
 # Allow/disallow testing manual linking of accounts
 enable_manual_linking = false
 # Passwords shorter than this value will be rejected as weak. Minimum 6, recommended 8 or more.
+# Keep secure defaults here; use environment-specific overrides for local-only weaker policies.
 minimum_password_length = 8
 # Passwords that do not meet the following requirements will be rejected as weak. Supported values
 # are: `letters_digits`, `lower_upper_letters_digits`, `lower_upper_letters_digits_symbols`
-password_requirements = "lower_upper_letters_digits"
-# NOTE: Leaked password protection (HaveIBeenPwned.org) requires Supabase Pro plan.
-# Enable via: Dashboard → Authentication → Security → "Prevent use of leaked passwords"
-# Direct link: https://supabase.com/dashboard/project/ssvvuuysgxyqvmovrlvk/auth/security
-# See: https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection
+password_requirements = ""
 
 # Configure passkey sign-ins.
 # [auth.passkey]
@@ -321,7 +320,7 @@ enabled = false
 client_id = ""
 # DO NOT commit your OAuth provider secret to git. Use environment variable substitution instead:
 secret = "env(SUPABASE_AUTH_EXTERNAL_APPLE_SECRET)"
-# Overrides the default auth redirectUrl.
+# Overrides the default auth callback URL derived from auth.external_url.
 redirect_uri = ""
 # Overrides the default auth provider URL. Used to support self-hosted gitlab, single-tenant Azure,
 # or any other third-party OIDC providers.
@@ -392,22 +391,14 @@ backend = "postgres"
 [experimental]
 # Configures Postgres storage engine to use OrioleDB (S3)
 orioledb_version = ""
-# S3-backed OrioleDB options intentionally omitted: current Supabase CLI
-# versions reject deprecated s3_* keys during config parsing, and OrioleDB is
-# disabled above. Configure S3 credentials in Supabase project secrets if this
-# experimental engine is enabled in the future.
-
-[functions.api]
-import_map = "functions/deno.json"
-verify_jwt = false
-
-[functions.mcp]
-import_map = "functions/mcp/deno.json"
-verify_jwt = false
-
-[functions.daily-aggregates]
-import_map = "functions/deno.json"
-verify_jwt = false
+# Configures S3 bucket URL, eg. <bucket_name>.s3-<region>.amazonaws.com
+s3_host = "env(S3_HOST)"
+# Configures S3 bucket region, eg. us-east-1
+s3_region = "env(S3_REGION)"
+# Configures AWS_ACCESS_KEY_ID for S3 bucket
+s3_access_key = "env(S3_ACCESS_KEY)"
+# Configures AWS_SECRET_ACCESS_KEY for S3 bucket
+s3_secret_key = "env(S3_SECRET_KEY)"
 
 # [experimental.pgdelta]
 # When enabled, pg-delta becomes the active engine for supported schema flows.
@@ -416,3 +407,15 @@ verify_jwt = false
 # declarative_schema_path = "./database"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
+
+[functions.api]
+verify_jwt = false
+import_map = "functions/deno.json"
+
+[functions.mcp]
+verify_jwt = false
+import_map = "functions/mcp/deno.json"
+
+[functions.daily-aggregates]
+verify_jwt = false
+import_map = "functions/deno.json"

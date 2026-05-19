@@ -22,6 +22,7 @@ RETURNS TEXT
 LANGUAGE plpgsql
 IMMUTABLE
 SET search_path = ''
+SET search_path = 'public', 'pg_catalog'
 AS $$
 BEGIN
   RETURN (regexp_matches(p_asunto, '^(\d+)\.'))[1];
@@ -36,6 +37,7 @@ RETURNS TEXT
 LANGUAGE plpgsql
 IMMUTABLE
 SET search_path = ''
+SET search_path = 'public', 'pg_catalog'
 AS $$
 BEGIN
   -- Extracts text between the leading "ID. " and the opening bracket "["
@@ -52,6 +54,7 @@ RETURNS TEXT
 LANGUAGE plpgsql
 IMMUTABLE
 SET search_path = ''
+SET search_path = 'public', 'pg_catalog'
 AS $$
 BEGIN
   -- Extracts text inside the last parentheses "(...)"
@@ -66,6 +69,7 @@ CREATE OR REPLACE FUNCTION public.fn_extract_and_normalize_produccion_phone()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SET search_path = ''
+SET search_path = 'public', 'pg_catalog'
 AS $$
 BEGIN
   -- Existing phone extraction
@@ -88,5 +92,16 @@ SET
   paciente_nombre       = public.extract_produccion_intermediarios_name(asunto),
   procedimiento_nombre  = public.extract_produccion_intermediarios_treatment(asunto)
 WHERE asunto IS NOT NULL;
+
+-- 5. Security Hardening
+REVOKE ALL ON FUNCTION public.extract_produccion_intermediarios_doc_patient_id(TEXT) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.extract_produccion_intermediarios_name(TEXT) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.extract_produccion_intermediarios_treatment(TEXT) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_extract_and_normalize_produccion_phone() FROM PUBLIC, anon, authenticated;
+
+GRANT EXECUTE ON FUNCTION public.extract_produccion_intermediarios_doc_patient_id(TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION public.extract_produccion_intermediarios_name(TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION public.extract_produccion_intermediarios_treatment(TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION public.fn_extract_and_normalize_produccion_phone() TO service_role;
 
 COMMIT;

@@ -403,9 +403,11 @@ async function main() {
 
   const sheets = google.sheets({ version: 'v4', auth });
 
-  const range = SHEET_NAME ? `${SHEET_NAME}!${SHEET_RANGE}` : SHEET_RANGE;
+  const range = SHEET_NAME 
+    ? `'${SHEET_NAME.replace(/'/g, "''")}'!${SHEET_RANGE}` 
+    : SHEET_RANGE;
   // Avoid logging sensitive values in plain text.
-  console.log('[sync-doctoralia] Fetching spreadsheet (id hidden), range masked.');
+  console.log(`[sync-doctoralia] Fetching spreadsheet (id: ${SHEET_ID.slice(0, 4)}...${SHEET_ID.slice(-4)}), range: ${range}`);
 
   let res;
   try {
@@ -422,6 +424,8 @@ async function main() {
       }
       throw new Error(guidance);
     }
+    console.error(`[sync-doctoralia] Sheets API Error: ${err.message}`);
+    if (err.errors) console.error('[sync-doctoralia] Details:', JSON.stringify(err.errors, null, 2));
     throw err;
   }
 

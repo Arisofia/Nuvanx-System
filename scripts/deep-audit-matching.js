@@ -164,13 +164,21 @@ async function deepAudit() {
   }
 
   // 2. Obtener leads no convertidos
-  const { data: leads } = await supabase.from('leads')
+  const { data: leads, error: leadsError } = await supabase.from('leads')
     .select('id, name, phone, notes, clinic_id, stage, appointment_date, created_at')
     .is('verified_revenue', null)
 
+  if (leadsError) {
+    console.error('❌ Error fetching leads:', leadsError.message);
+  }
+
   // 3. Obtener settlements
-  const { data: setts } = await supabase.from('financial_settlements')
+  const { data: setts, error: settsError } = await supabase.from('financial_settlements')
     .select('id, patient_name, patient_phone, template_name, amount_net, intake_at, settled_at')
+
+  if (settsError) {
+    console.error('❌ Error fetching settlements:', settsError.message);
+  }
 
   console.log(`Analizando ${leads?.length || 0} leads pendientes contra ${setts?.length || 0} liquidaciones...`)
 

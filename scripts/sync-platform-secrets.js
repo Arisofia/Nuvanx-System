@@ -21,9 +21,10 @@ function normalizeSafePath(filePath, baseDir = ROOT) {
 
 const requiredSecretKeys = [
   'SUPABASE_ACCESS_TOKEN',
-  'NUVANX_SUPABASE_SERVICE_ROLE_KEY',
   'META_ACCESS_TOKEN',
   'META_AD_ACCOUNT_ID',
+  'SUPABASE_PROJECT_REF',
+  'META_APP_SECRET',
   'META_CAPI_VERSION',
   'ACTION_SOURCE',
   'DEFAULT_PHONE_COUNTRY_CODE',
@@ -42,6 +43,11 @@ const requiredSecretKeys = [
   'WHATSAPP_ACCESS_TOKEN',
   'WHATSAPP_PHONE_NUMBER_ID',
   'WHATSAPP_WEBHOOK_VERIFY_TOKEN',
+  'SUPABASE_SERVICE_ROLE_KEY', // Included for GitHub/Vercel, filtered for Supabase API
+  'NUVANX_SUPABASE_SERVICE_ROLE_KEY', // Included for GitHub/Vercel, filtered for Supabase API
+  'SUPABASE_ANON_KEY', // Included for GitHub/Vercel, filtered for Supabase API
+  'MCP_API_KEY',
+  'HEALTH_CHECK_API_AUTH_TOKEN',
 ];
 
 const frontendKeys = [
@@ -115,12 +121,12 @@ function writeFrontendEnv(vars) {
 }
 
 async function setSupabaseSecrets(vars, projectRef) {
+  console.log(`[PHASE] Syncing secrets to Supabase project: ${projectRef}`);
   const accessToken = vars.SUPABASE_ACCESS_TOKEN;
   if (!accessToken || !projectRef) return { skipped: true, reason: 'missing token or project ref' };
 
   const payload = requiredSecretKeys
-    .filter((k) => vars[k])
-    .filter((k) => !k.startsWith('SUPABASE_') && k !== 'NUVANX_SUPABASE_SERVICE_ROLE_KEY')
+    .filter((k) => vars[k] && !k.startsWith('SUPABASE_') && !k.startsWith('NUVANX_SUPABASE_'))
     .map((k) => ({ name: k, value: vars[k] }));
 
   if (payload.length === 0) return { skipped: true, reason: 'no secret values to upload' };
@@ -137,6 +143,9 @@ async function setSupabaseSecrets(vars, projectRef) {
 
     if (!res.ok) {
       const body = await res.text();
+      if (res.status === 400) {
+        return { skipped: true, reason: `Bad Request (400): Likely an invalid secret name or reserved prefix. Body: ${body}` };
+      }
       if (res.status === 403) {
         return { skipped: true, reason: 'unauthorized: Check if your token has access to this specific project ref.' };
       }
@@ -232,6 +241,7 @@ async function setVercelSecrets(vars) {
   const teamId = vars.VERCEL_TEAM_ID;
   const projectId = vars.VERCEL_PROJECT_ID;
 
+  console.log(`[PHASE] Syncing environment variables to Vercel project: ${projectId}`);
   if (!token || !projectId) {
     console.warn('[sync-platform-secrets] Vercel sync skipped: VERCEL_TOKEN or VERCEL_PROJECT_ID missing.');
     return { skipped: true, reason: 'missing credentials' };
@@ -241,30 +251,37 @@ async function setVercelSecrets(vars) {
   const queryString = teamId ? `?teamId=${teamId}` : '';
   const listUrl = `https://api.vercel.com/v10/projects/${projectId}/env${queryString}`;
 
-  const existingResp = await vercelFetch(listUrl, 'GET', token);
-  const existingJson = await existingResp.json();
-  const existingMap = new Map();
-  for (const env of existingJson.envs || []) {
-    existingMap.set(env.key, [...(existingMap.get(env.key) || []), env]);
-  }
+  try {
+    const existingResp = await vercelFetch(listUrl, 'GET', token);
+    const existingJson = await existingResp.json();
+    const existingMap = new Map();
+    for (const env of existingJson.envs || []) {
+      existingMap.set(env.key, [...(existingMap.get(env.key) || []), env]);
+    }
 
-  const requiredTargets = ['production', 'preview', 'development'];
-  for (const key of frontendKeys) {
-    const value = vars[key];
-    if (!value) continue;
-    await handleVercelKey(key, value, existingMap, projectId, token, queryString, requiredTargets);
-    uploaded += 1;
-  }
+    const requiredTargets = ['production', 'preview', 'development'];
+    for (const key of frontendKeys) {
+      const value = vars[key];
+      if (!value) continue;
+      await handleVercelKey(key, value, existingMap, projectId, token, queryString, requiredTargets);
+      uploaded += 1;
+    }
 
-  return { uploaded };
+    return { uploaded };
+  } catch (error) {
+    if (error.message.includes('403')) {
+      return { skipped: true, reason: 'Vercel token is invalid or unauthorized for this project/team.' };
+    }
+    throw error;
+  }
 }
 
 function setGithubSecrets(vars) {
+  console.log('[PHASE] Syncing secrets to GitHub Actions...');
   const owner = vars.GITHUB_OWNER || 'Arisofia';
   const repo = vars.GITHUB_REPO || 'Nuvanx-System';
   const token = vars.GH_TOKEN || vars.GITHUB_TOKEN;
 
-  if (!token) return { skipped: true, reason: 'missing github token' };
   if (!hasGhCli()) return { skipped: true, reason: 'gh CLI not installed' };
 
   const safeName = (value) => /^[A-Za-z0-9._-]+$/.test(value);
@@ -273,33 +290,50 @@ function setGithubSecrets(vars) {
   }
 
   let uploaded = 0;
-  const githubKeys = [
+  const githubKeys = Array.from(new Set([
     ...requiredSecretKeys,
     'VITE_SUPABASE_URL',
     'VITE_SUPABASE_PUBLISHABLE_KEY',
     'VITE_SUPABASE_ANON_KEY',
     'PRODUCTION_E2E_URL',
     'PRODUCTION_E2E_TOKEN',
-  ];
+  ]));
   for (const key of githubKeys) {
     const value = vars[key];
     if (!value || !safeName(key)) continue;
-    const env = { ...process.env, GH_TOKEN: token };
+
+    const env = { ...process.env };
+    if (token) env.GH_TOKEN = token;
+
     // Use execFileSync directly (no shell) to avoid any shell-injection risk.
     // gh secret set reads the value from --body without shell interpolation.
-    cp.execFileSync('gh', ['secret', 'set', key, '--repo', `${owner}/${repo}`, '--body', value], {
-      stdio: 'pipe',
-      env,
-    });
-    uploaded += 1;
+    try {
+      cp.execFileSync('gh', ['secret', 'set', key, '--repo', `${owner}/${repo}`, '--body', value], {
+        stdio: 'pipe',
+        env,
+      });
+      uploaded += 1;
+    } catch (err) {
+      console.error(`[GITHUB] Failed to set secret ${key}: ${err.message}`);
+      if (err.message.includes('401')) {
+        console.error('Tip: Your GITHUB_TOKEN/GH_TOKEN might be expired or the gh CLI needs re-authentication (gh auth login).');
+      }
+      throw err; // Re-throw to halt the synchronization on fatal auth errors
+    }
   }
 
   return { uploaded };
 }
 
 async function main() {
+  console.log('[PHASE] Starting Platform Secret Synchronization');
+  
   const vars = mergeSources();
+  if (Object.keys(vars).length === 0) {
+    throw new Error('No secrets found in local .env files or environment. Aborting sync.');
+  }
 
+  console.log('[STEP] Updating local frontend .env.local...');
   const frontendEnvPath = writeFrontendEnv(vars);
 
   const githubResult = setGithubSecrets(vars);
