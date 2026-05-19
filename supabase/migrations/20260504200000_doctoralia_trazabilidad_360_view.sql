@@ -1,5 +1,6 @@
 -- 20260504200000_doctoralia_trazabilidad_360_view.sql
 -- Vista para exponer los campos normalizados de Doctoralia y habilitar KPIs de trazabilidad 360.
+-- Compatible with preview databases where some legacy columns may not exist.
 
 CREATE OR REPLACE VIEW public.vw_doctoralia_trazabilidad_360 AS
 SELECT
