@@ -5,7 +5,13 @@
 DO $$
 BEGIN
   -- ad_id
-  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'leads' AND column_name = 'ad_id') THEN
+  IF EXISTS (
+    SELECT 1 
+    FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+      AND table_name = 'leads' 
+      AND column_name = 'ad_id'
+  ) THEN
     BEGIN
       ALTER TABLE public.leads DROP COLUMN ad_id;
     EXCEPTION
@@ -15,7 +21,13 @@ BEGIN
   END IF;
 
   -- ad_name
-  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'leads' AND column_name = 'ad_name') THEN
+  IF EXISTS (
+    SELECT 1 
+    FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+      AND table_name = 'leads' 
+      AND column_name = 'ad_name'
+  ) THEN
     BEGIN
       ALTER TABLE public.leads DROP COLUMN ad_name;
     EXCEPTION
@@ -25,7 +37,13 @@ BEGIN
   END IF;
 
   -- form_id
-  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'leads' AND column_name = 'form_id') THEN
+  IF EXISTS (
+    SELECT 1 
+    FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+      AND table_name = 'leads' 
+      AND column_name = 'form_id'
+  ) THEN
     BEGIN
       ALTER TABLE public.leads DROP COLUMN form_id;
     EXCEPTION
@@ -35,7 +53,13 @@ BEGIN
   END IF;
 
   -- form_name
-  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'leads' AND column_name = 'form_name') THEN
+  IF EXISTS (
+    SELECT 1 
+    FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+      AND table_name = 'leads' 
+      AND column_name = 'form_name'
+  ) THEN
     BEGIN
       ALTER TABLE public.leads DROP COLUMN form_name;
     EXCEPTION

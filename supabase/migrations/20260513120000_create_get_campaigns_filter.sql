@@ -7,4 +7,3 @@
 -- La nueva versión se define con parámetros DATE en la migración 20260514090000.
 DROP FUNCTION IF EXISTS public.get_campaigns_filter();
 DROP FUNCTION IF EXISTS public.get_campaigns_filter(date, date);
-DROP FUNCTION IF EXISTS public.get_campaigns_filter(date, date);
