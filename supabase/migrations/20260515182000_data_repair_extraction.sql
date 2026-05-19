@@ -49,7 +49,7 @@ WHERE patient_phone IS NOT NULL AND length(REGEXP_REPLACE(patient_phone, '\D', '
 UPDATE public.leads l
 SET 
   verified_revenue = sub.total_amount,
-  status = 'convertido',
+  appointment_status = 'showed',
   updated_at = NOW()
 FROM (
   SELECT 
