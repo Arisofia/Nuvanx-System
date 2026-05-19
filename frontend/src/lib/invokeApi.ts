@@ -16,7 +16,11 @@ export async function invokeApi<T = any>(
 ): Promise<{ data: T | null; error: Error | null }> {
   const { body = {}, headers = {}, retries = 1, method = 'POST' } = options
 
-  // Enriquecer el body con contexto de Meta si es una mutación
+  /**
+   * Enriquecer el body con contexto de Meta si es una mutación.
+   * Esto permite que CAPI tenga mejores parámetros de matching (EMQ).
+   * El test_event_code se puede pasar en el body desde la UI de pruebas.
+   */
   let finalBody = body
   if (['POST', 'PUT', 'PATCH'].includes(method)) {
     const meta = getMetaContext()
@@ -26,6 +30,7 @@ export async function invokeApi<T = any>(
         ...(body._meta || {}),
         fbc: meta.fbc,
         fbp: meta.fbp,
+        user_agent: typeof window !== 'undefined' ? navigator.userAgent : undefined,
       }
     }
   }

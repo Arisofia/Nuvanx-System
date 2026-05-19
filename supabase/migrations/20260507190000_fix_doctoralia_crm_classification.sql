@@ -53,10 +53,14 @@ BEGIN
     SELECT DISTINCT ON (l2.id)
       l2.id AS lead_id,
       fs.settled_at,
-      TRIM(REGEXP_REPLACE(
-        COALESCE(SUBSTRING(fs.template_name FROM '\]\s*\((.+)\)\s*$'), ''),
-        '\s+', ' ', 'g'
-      )) AS treatment,
+      TRIM(
+        REGEXP_REPLACE(
+          COALESCE(SUBSTRING(fs.template_name FROM '\]\s*\((.+)\)\s*$'), ''),
+          '\s+',
+          ' ',
+          'g'
+        )
+      ) AS treatment,
       CASE
         WHEN COALESCE(SUBSTRING(fs.template_name FROM '\]\s*\((.+)\)\s*$'), '')
              ~* 'valoraci[oó]n|primera\s+visita'
@@ -68,14 +72,21 @@ BEGIN
       END AS classified_stage
     FROM public.leads l2
     JOIN public.financial_settlements fs
-      ON RIGHT(regexp_replace(COALESCE(l2.phone, ''), '[^0-9]', '', 'g'), 9)
-         = (regexp_match(
-              regexp_replace(
-                COALESCE((regexp_match(fs.template_name, '\[([^\]]+)\]'))[1], ''),
-                '[^0-9]', '', 'g'
-              ),
-              '(\d{9})\d*$'
-            ))[1]
+      ON RIGHT(
+           regexp_replace(COALESCE(l2.phone, ''), '[^0-9]', '', 'g'),
+           9
+         ) = (
+           regexp_match(
+             regexp_replace(
+               COALESCE(
+                 (regexp_match(fs.template_name, '\[([^\]]+)\]'))[1],
+                 ''
+               ),
+               '[^0-9]', '', 'g'
+             ),
+             '(\d{9})\d*$'
+           )
+         )[1]
     WHERE l2.source = 'meta_leadgen'
       AND fs.cancelled_at IS NULL
       AND fs.template_name IS NOT NULL

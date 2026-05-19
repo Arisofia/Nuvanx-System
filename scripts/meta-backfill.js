@@ -229,7 +229,6 @@ async function resolveUserClinicId(db, userId) {
   return clinicId;
 }
 
-
 async function ensureMetaDailyInsightsConflictTarget(db) {
   await db.query(`ALTER TABLE public.meta_daily_insights ADD COLUMN IF NOT EXISTS clinic_id UUID`);
   await db.query(`
@@ -263,8 +262,12 @@ async function ensureMetaDailyInsightsConflictTarget(db) {
 }
 
 async function upsertMetaDailyInsight(db, row) {
-  const values = [row.user_id, row.clinic_id, row.ad_account_id, row.date, row.impressions, row.reach, row.clicks,
-    row.spend, row.conversions, row.ctr, row.cpc, row.cpm, row.messaging_conversations, row.updated_at];
+  const values = [
+    row.user_id, row.clinic_id, row.ad_account_id, row.date,
+    row.impressions, row.reach, row.clicks, row.spend,
+    row.conversions, row.ctr, row.cpc, row.cpm,
+    row.messaging_conversations, row.updated_at,
+  ];
 
   const updated = await db.query(`
     UPDATE public.meta_daily_insights
@@ -342,8 +345,6 @@ async function resolvePageAccessToken(pageId) {
 
 async function main() {
   const argv = process.argv.slice(2);
-  // Trim to handle GitHub Actions passing empty-string '' for unset inputs.
-  // Use || (not ??) so that empty strings fall through to the computed default.
   const argSince = (argv.find((a) => a.startsWith('--since='))?.split('=')[1] ?? process.env.BACKFILL_SINCE ?? '').trim();
   const argUntil = (argv.find((a) => a.startsWith('--until='))?.split('=')[1] ?? process.env.BACKFILL_UNTIL ?? '').trim();
 

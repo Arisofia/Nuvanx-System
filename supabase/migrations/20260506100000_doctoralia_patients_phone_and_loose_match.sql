@@ -34,22 +34,40 @@ BEGIN
     best_lead_token_count := 0;
 
     FOR lead_candidate IN
-      SELECT lead_row.id,
-             lower(extensions.unaccent(regexp_replace(COALESCE(lead_row.name, ''), '\s+', ' ', 'g'))) AS normalized_name,
-             regexp_replace(COALESCE(lead_row.phone, ''), '\D', '', 'g') AS normalized_phone,
-             regexp_split_to_array(lower(extensions.unaccent(regexp_replace(COALESCE(lead_row.name, ''), '\s+', ' ', 'g'))), ' ') AS lead_tokens
+      SELECT
+        lead_row.id,
+        lower(
+          extensions.unaccent(
+            regexp_replace(COALESCE(lead_row.name, ''), '\s+', ' ', 'g')
+          )
+        ) AS normalized_name,
+        regexp_replace(COALESCE(lead_row.phone, ''), '\D', '', 'g') AS normalized_phone,
+        regexp_split_to_array(
+          lower(
+            extensions.unaccent(
+              regexp_replace(COALESCE(lead_row.name, ''), '\s+', ' ', 'g')
+            )
+          ),
+          ' '
+        ) AS lead_tokens
       FROM public.leads lead_row
       JOIN public.users app_user ON app_user.id = lead_row.user_id
       WHERE app_user.clinic_id = patient_row.clinic_id
     LOOP
-      candidate_tokens := lead_candidate.lead_tokens;
+      candidate_tokens      := lead_candidate.lead_tokens;
       candidate_token_count := COALESCE(array_length(candidate_tokens, 1), 0);
+
       sim := extensions.similarity(patient_row.name_norm, lead_candidate.normalized_name);
+
       phone_match := patient_row.phone_primary IS NOT NULL
                      AND lead_candidate.normalized_phone IS NOT NULL
                      AND right(lead_candidate.normalized_phone, 9) = patient_row.phone_primary;
-      first_token_match := candidate_token_count >= 1 AND candidate_tokens[1] = ANY (patient_row.name_tokens);
-      last_token_match := candidate_token_count >= 1 AND candidate_tokens[candidate_token_count] = ANY (patient_row.name_tokens);
+
+      first_token_match := candidate_token_count >= 1
+                           AND candidate_tokens[1] = ANY (patient_row.name_tokens);
+
+      last_token_match := candidate_token_count >= 1
+                          AND candidate_tokens[candidate_token_count] = ANY (patient_row.name_tokens);
 
       rank_score := sim
                     + CASE WHEN last_token_match THEN 0.18 ELSE 0 END
@@ -57,10 +75,12 @@ BEGIN
                     + CASE WHEN candidate_token_count >= 2 THEN 0.03 ELSE 0 END
                     + CASE WHEN phone_match THEN 0.10 ELSE 0 END;
 
-      IF best_lead_id IS NULL OR rank_score > best_score OR (rank_score = best_score AND phone_match) THEN
-        best_score := rank_score;
-        best_confidence := sim;
-        best_lead_id := lead_candidate.id;
+      IF best_lead_id IS NULL
+         OR rank_score > best_score
+         OR (rank_score = best_score AND phone_match) THEN
+        best_score            := rank_score;
+        best_confidence       := sim;
+        best_lead_id          := lead_candidate.id;
         best_last_token_match := last_token_match;
         best_lead_token_count := candidate_token_count;
       END IF;
@@ -79,7 +99,8 @@ BEGIN
               WHEN best_confidence >= 0.92 THEN 'high_confidence'
               ELSE 'possible_match'
             END
-      WHERE doc_patient_id = patient_row.doc_patient_id AND clinic_id = patient_row.clinic_id;
+      WHERE doc_patient_id = patient_row.doc_patient_id
+        AND clinic_id      = patient_row.clinic_id;
     END IF;
   END LOOP;
 END;
@@ -87,12 +108,12 @@ $$;
 
 DO $$
 DECLARE
-  has_patient_dni BOOLEAN;
+  has_patient_dni   BOOLEAN;
   has_patient_phone BOOLEAN;
-  has_patient_name BOOLEAN;
-  doc_id_expr TEXT;
+  has_patient_name  BOOLEAN;
+  doc_id_expr       TEXT;
   identity_predicate TEXT;
-  group_by_expr TEXT;
+  group_by_expr     TEXT;
 BEGIN
   IF to_regclass('public.financial_settlements') IS NULL THEN
     RAISE NOTICE 'Skipping Doctoralia patient population: public.financial_settlements does not exist';
@@ -105,18 +126,27 @@ BEGIN
   END IF;
 
   SELECT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'financial_settlements' AND column_name = 'patient_dni'
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name   = 'financial_settlements'
+      AND column_name  = 'patient_dni'
   ) INTO has_patient_dni;
 
   SELECT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'financial_settlements' AND column_name = 'patient_phone'
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name   = 'financial_settlements'
+      AND column_name  = 'patient_phone'
   ) INTO has_patient_phone;
 
   SELECT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'financial_settlements' AND column_name = 'patient_name'
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name   = 'financial_settlements'
+      AND column_name  = 'patient_name'
   ) INTO has_patient_name;
 
   IF NOT has_patient_name THEN
@@ -145,14 +175,27 @@ BEGIN
 
   EXECUTE format($SQL$
     INSERT INTO public.doctoralia_patients (
-      doc_patient_id, clinic_id, full_name, name_norm, phone_primary, first_seen_at,
-      match_confidence, match_class
+      doc_patient_id,
+      clinic_id,
+      full_name,
+      name_norm,
+      phone_primary,
+      first_seen_at,
+      match_confidence,
+      match_class
     )
     SELECT
       %s AS doc_patient_id,
       fs.clinic_id,
       UPPER(TRIM(fs.patient_name)) AS full_name,
-      LOWER(REGEXP_REPLACE(extensions.unaccent(TRIM(fs.patient_name)), '\s+', ' ', 'g')) AS name_norm,
+      LOWER(
+        REGEXP_REPLACE(
+          extensions.unaccent(TRIM(fs.patient_name)),
+          '\s+',
+          ' ',
+          'g'
+        )
+      ) AS name_norm,
       %s AS phone_primary,
       MIN(fs.settled_at) AS first_seen_at,
       NULL AS match_confidence,
@@ -173,9 +216,11 @@ BEGIN
         )
   $SQL$,
     doc_id_expr,
-    CASE WHEN has_patient_phone
-      THEN 'NULLIF(regexp_replace(COALESCE(fs.patient_phone, ''''), ''\D'', '''', ''g''), '''')'
-      ELSE 'NULL'
+    CASE
+      WHEN has_patient_phone THEN
+        'NULLIF(regexp_replace(COALESCE(fs.patient_phone, ''''), ''\D'', '''', ''g''), '''')'
+      ELSE
+        'NULL'
     END,
     identity_predicate,
     group_by_expr
@@ -186,8 +231,15 @@ BEGIN
       UPDATE public.doctoralia_patients dp
       SET phone_primary = sub.phone_norm
       FROM (
-        SELECT fs.patient_dni AS doc_patient_id, fs.clinic_id,
-              MAX(NULLIF(regexp_replace(COALESCE(fs.patient_phone,''), '\D', '', 'g'), '')) AS phone_norm
+        SELECT
+          fs.patient_dni AS doc_patient_id,
+          fs.clinic_id,
+          MAX(
+            NULLIF(
+              regexp_replace(COALESCE(fs.patient_phone, ''), '\D', '', 'g'),
+              ''
+            )
+          ) AS phone_norm
         FROM public.financial_settlements fs
         WHERE fs.patient_dni IS NOT NULL
         GROUP BY fs.patient_dni, fs.clinic_id
@@ -207,6 +259,7 @@ BEGIN
   IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
     PERFORM cron.unschedule('doctoralia-name-match-daily')
       WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'doctoralia-name-match-daily');
+
     PERFORM cron.schedule(
       'doctoralia-name-match-daily',
       '15 3 * * *',
