@@ -57,10 +57,28 @@ BEGIN
 END $$;
 
 -- 3. Remove pg_cron policy drift and recreate explicit service_role policies.
--- Nota: Este bloque se ha eliminado para compatibilidad con Supabase Cloud.
--- En entornos gestionados no somos owner del esquema 'cron', lo que impedía
--- la ejecución de esta migración (SQLSTATE 42501). El endurecimiento de RLS
--- para cron se gestiona de forma segura en migraciones previas con bloques
--- EXCEPTION (ej. 20260512190000).
+DO $$
+BEGIN
+  IF to_regclass('cron.job') IS NOT NULL THEN
+    ALTER TABLE cron.job ENABLE ROW LEVEL SECURITY;
+    DROP POLICY IF EXISTS cron_job_policy ON cron.job;
+    CREATE POLICY cron_job_policy
+      ON cron.job
+      FOR ALL
+      TO service_role
+      USING (TRUE)
+      WITH CHECK (TRUE);
+  END IF;
+
+  IF to_regclass('cron.job_run_details') IS NOT NULL THEN
+    ALTER TABLE cron.job_run_details ENABLE ROW LEVEL SECURITY;
+    DROP POLICY IF EXISTS cron_job_run_details_policy ON cron.job_run_details;
+    CREATE POLICY cron_job_run_details_policy
+      ON cron.job_run_details
+      FOR SELECT
+      TO service_role
+      USING (TRUE);
+  END IF;
+END $$;
 
 COMMIT;
