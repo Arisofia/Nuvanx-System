@@ -4,6 +4,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { resolveUserClinicId, upsertMetaDailyInsight } = require('./shared/meta-daily-insights');
 
 const META_GRAPH = 'https://graph.facebook.com/v22.0';
 const GOOGLE_ADS_API = 'https://googleads.googleapis.com/v17';
@@ -360,41 +361,6 @@ async function maybeLoadDbSignals({ databaseUrl, clinicId, sinceIso, untilExclus
   }
 }
 
-async function resolveMetaDailyInsightsClinicId(db, reportUserId, clinicId) {
-  if (clinicId) return clinicId;
-
-  const { rows } = await db.query(
-    `SELECT clinic_id FROM public.users WHERE id = $1 LIMIT 1`,
-    [reportUserId],
-  );
-  const resolvedClinicId = rows[0]?.clinic_id ?? null;
-  if (!resolvedClinicId) {
-    throw new Error(`Cannot persist meta_daily_insights: user ${reportUserId} has no clinic_id.`);
-  }
-  return resolvedClinicId;
-}
-
-async function upsertMetaDailyInsight(db, row) {
-  await db.query(`
-    INSERT INTO public.meta_daily_insights
-      (user_id, clinic_id, ad_account_id, date, impressions, reach, clicks, spend, conversions, ctr, cpc, cpm, messaging_conversations, updated_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-    ON CONFLICT (clinic_id, ad_account_id, date)
-    DO UPDATE SET
-      user_id                  = EXCLUDED.user_id,
-      impressions              = EXCLUDED.impressions,
-      reach                    = EXCLUDED.reach,
-      clicks                   = EXCLUDED.clicks,
-      spend                    = EXCLUDED.spend,
-      conversions              = EXCLUDED.conversions,
-      ctr                      = EXCLUDED.ctr,
-      cpc                      = EXCLUDED.cpc,
-      cpm                      = EXCLUDED.cpm,
-      messaging_conversations  = EXCLUDED.messaging_conversations,
-      updated_at               = EXCLUDED.updated_at
-  `, [row.user_id, row.clinic_id, row.ad_account_id, row.date, row.impressions, row.reach, row.clicks, row.spend, row.conversions, row.ctr, row.cpc, row.cpm, row.messaging_conversations, row.updated_at]);
-}
-
 async function persistMetaDailyInsights({ databaseUrl, reportUserId, clinicId, adAccountId, since, until, token }) {
   if (!databaseUrl || !reportUserId) return null;
 
@@ -433,7 +399,7 @@ async function persistMetaDailyInsights({ databaseUrl, reportUserId, clinicId, a
   const db = new Client({ connectionString: databaseUrl, ssl: { rejectUnauthorized: false } });
   await db.connect();
   try {
-    const resolvedClinicId = await resolveMetaDailyInsightsClinicId(db, reportUserId, clinicId);
+    const resolvedClinicId = await resolveUserClinicId(db, reportUserId, clinicId);
     for (const r of upsertRows) {
       await upsertMetaDailyInsight(db, { ...r, clinic_id: resolvedClinicId });
     }

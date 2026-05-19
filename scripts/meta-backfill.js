@@ -24,6 +24,7 @@
 
 const { Client } = require('pg');
 const crypto     = require('node:crypto');
+const { resolveUserClinicId, upsertMetaDailyInsight } = require('./shared/meta-daily-insights');
 
 const META_GRAPH = 'https://graph.facebook.com/v22.0';
 
@@ -215,41 +216,6 @@ async function resolveReportUserId(db) {
   throw new Error(
     'Cannot determine REPORT_USER_ID: no Meta integration found in DB and REPORT_USER_ID env var is not set.'
   );
-}
-
-async function resolveUserClinicId(db, userId) {
-  const { rows } = await db.query(
-    `SELECT clinic_id FROM public.users WHERE id = $1 LIMIT 1`,
-    [userId],
-  );
-  const clinicId = rows[0]?.clinic_id ?? null;
-  if (!clinicId) {
-    throw new Error(`Cannot persist meta_daily_insights: user ${userId} has no clinic_id.`);
-  }
-  return clinicId;
-}
-
-async function upsertMetaDailyInsight(db, row) {
-  await db.query(`
-    INSERT INTO public.meta_daily_insights
-      (user_id, clinic_id, ad_account_id, date, impressions, reach, clicks, spend,
-       conversions, ctr, cpc, cpm, messaging_conversations, updated_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-    ON CONFLICT (clinic_id, ad_account_id, date)
-    DO UPDATE SET
-      user_id                  = EXCLUDED.user_id,
-      impressions              = EXCLUDED.impressions,
-      reach                    = EXCLUDED.reach,
-      clicks                   = EXCLUDED.clicks,
-      spend                    = EXCLUDED.spend,
-      conversions              = EXCLUDED.conversions,
-      ctr                      = EXCLUDED.ctr,
-      cpc                      = EXCLUDED.cpc,
-      cpm                      = EXCLUDED.cpm,
-      messaging_conversations  = EXCLUDED.messaging_conversations,
-      updated_at               = EXCLUDED.updated_at
-  `, [row.user_id, row.clinic_id, row.ad_account_id, row.date, row.impressions, row.reach, row.clicks,
-      row.spend, row.conversions, row.ctr, row.cpc, row.cpm, row.messaging_conversations, row.updated_at]);
 }
 
 async function resolveMetaPageId(db, userId) {
