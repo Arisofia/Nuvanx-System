@@ -99,6 +99,22 @@ jobs:
               echo "::error::SUPABASE_DB_PASSWORD and DATABASE_URL are both missing. Cannot run security lint."
               exit 1
             fi
+
+            SESSION_HOST=$(python3 - <<'PY'
+            import os
+            from urllib.parse import urlparse
+
+            url = os.environ.get('SESSION_URL', '')
+            print(urlparse(url).hostname or '')
+            PY
+            )
+            if [ -n "$SESSION_HOST" ]; then
+              echo "Using DB host: $SESSION_HOST"
+              if ! getent hosts "$SESSION_HOST" >/dev/null 2>&1; then
+                echo "::error::Cannot resolve database host '$SESSION_HOST' from this runner. Verify DATABASE_URL points to the current Supabase project connection string and that runner DNS egress is enabled."
+                exit 1
+              fi
+            fi
             # Hard timeout so a stuck connection doesn't burn Actions minutes.
             timeout --signal=TERM --kill-after=30s 240s \
               supabase db lint --db-url "$SESSION_URL" --level error --fail-on error </dev/null
