@@ -40,7 +40,21 @@ ALTER TABLE public.doctoralia_raw
   ADD COLUMN IF NOT EXISTS fecha           DATE,
   ADD COLUMN IF NOT EXISTS fecha_creacion  DATE,
   ADD COLUMN IF NOT EXISTS agenda          VARCHAR(128),
-  ADD COLUMN IF NOT EXISTS treatment       TEXT;
+  ADD COLUMN IF NOT EXISTS treatment       TEXT,
+  -- Backward/preview compatibility for downstream legacy views created in
+  -- 20260504200000_doctoralia_trazabilidad_360_view.sql.
+  ADD COLUMN IF NOT EXISTS raw_hash        TEXT,
+  ADD COLUMN IF NOT EXISTS source_file_id  TEXT,
+  ADD COLUMN IF NOT EXISTS sheet_name      TEXT,
+  ADD COLUMN IF NOT EXISTS hora            TEXT,
+  ADD COLUMN IF NOT EXISTS hora_creacion   TIME,
+  ADD COLUMN IF NOT EXISTS asunto          TEXT,
+  ADD COLUMN IF NOT EXISTS sala_box        TEXT,
+  ADD COLUMN IF NOT EXISTS confirmada      BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS procedencia     TEXT,
+  ADD COLUMN IF NOT EXISTS patient_name_norm TEXT,
+  ADD COLUMN IF NOT EXISTS phone_primary   TEXT,
+  ADD COLUMN IF NOT EXISTS phone_secondary TEXT;
 
 CREATE INDEX IF NOT EXISTS doctoralia_raw_clinic_id_idx
   ON public.doctoralia_raw(clinic_id);
