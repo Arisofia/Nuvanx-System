@@ -595,7 +595,7 @@ async function linkAgentOutputToPlaybookExecution(adminClient: any, userId: stri
     .eq('id', playbookExecutionId)
     .eq('user_id', userId)
     .maybeSingle();
-    if (getErr || current == null) return; // Use nullish check for !current
+    if (getErr || current == null) return;
 
     const nextMetadata = current.metadata
       ? { ...current.metadata, agent_output_id: agentOutputId }
@@ -2028,7 +2028,7 @@ async function handleSupabaseWebhook(ctx: PublicRouteContext): Promise<Response 
         const creds = await resolveMetaCreds(adminClient, userId, '');
         if (!creds.notConnected && !creds.decryptionError && creds.accessToken) {
           // Trigger Meta CAPI
-          await trackMetaLeadConversion(creds.accessToken, {
+          await trackMetaLeadConversion(creds.accessToken, { // [CAPI-WEBHOOK]
             pixelId: creds.pixelId,
             eventId: record.event_id || record.id,
             phone: record.phone,
@@ -2176,7 +2176,7 @@ async function handleProductionAuditGet(ctx: AuthenticatedRouteContext): Promise
     const publicUserDelta = Number(publicUsers.count ?? 0) - Number(authUsers.count ?? 0);
     const nowIso = new Date().toISOString();
   
-    const [futureSettled, futureIntakes] = await Promise.all([ // Line 2562
+    const [futureSettled, futureIntakes] = await Promise.all([
       adminClient.from('financial_settlements').select('id', { count: 'exact', head: true }).gt('settled_at', nowIso),
       adminClient.from('financial_settlements').select('id', { count: 'exact', head: true }).gt('intake_at', nowIso),
     ]);
@@ -2234,7 +2234,7 @@ async function handleProductionAuditGet(ctx: AuthenticatedRouteContext): Promise
         meta: {
           pageId,
           adAccountId,
-          lastMetaCacheUpdate: latestMetaCache?.data?.updated_at ?? null, // Line 2565
+          lastMetaCacheUpdate: latestMetaCache?.data?.updated_at ?? null,
         },
       },
     });
@@ -2441,7 +2441,7 @@ async function handleLeadsPost(ctx: AuthenticatedRouteContext): Promise<Response
             
             const meta = body._meta || {};
             const fbc = meta.fbc || payloadObj.fbc || null;
-            const fbp = meta.fbp || payloadObj.fbp || null; // No change needed, already uses nullish coalescing
+            const fbp = meta.fbp || payloadObj.fbp || null;
             const testEventCode = body.test_event_code || meta.test_event_code || url.searchParams.get('test_event_code') || null;
 
             await trackMetaLeadConversion(creds.accessToken, {
@@ -2857,7 +2857,7 @@ async function handleDashboardMetaTrends(ctx: AuthenticatedRouteContext): Promis
       const sumN = (arr: any[], k: string) => arr.reduce((s: number, d: any) => s + Number.parseFloat(d[k] || 0), 0);
       const avgN = (arr: any[], k: string) => arr.length ? sumN(arr, k) / arr.length : 0;
       const pct = (a: number, b: number) => b > 0 ? Math.round(((a - b) / b) * 100) : 0;
-    // Line 3009: `trends.sort((a, b) => String(a.date_start).localeCompare(String(b.date_start)))` already has a comparator.
+    // No change needed, already has a comparator.
       const last7 = trends.slice(-7);
       const prev7 = trends.slice(-14, -7);
   
@@ -4325,7 +4325,7 @@ async function getMetaAdsLiveResult(
 async function handleAiAnalyzePost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource === 'ai' && sub === 'analyze' && req.method === 'POST') {
-    const rawBody = await req.json(); // No change needed, this is a direct call
+    const rawBody = await req.json();
     const body = (rawBody && typeof rawBody === 'object') ? rawBody as Record<string, any> : {};
     const { data, context = '' } = body;
 
@@ -4420,7 +4420,7 @@ async function handleAiAnalyzePost(ctx: AuthenticatedRouteContext): Promise<Resp
 async function handleIntegrationsPatch(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource === 'integrations' && req.method === 'PATCH' && sub === '') {
-    const rawBody = await req.json().catch(() => ({}));
+    const rawBody = await req.json().catch(() => ({})); // No change needed, catch handles potential non-object
     const body = (rawBody != null && typeof rawBody === 'object') ? rawBody : {};
     const service = String(body.service ?? '').trim();
     if (!service) return sendJson({ success: false, message: 'service is required' }, 400);
@@ -4508,7 +4508,7 @@ function validateAndNormalizeMetadata(service: string, inputMetadata: any) {
   if (service === 'meta') {
     const accountIds = normalizeMetaAccountIds(metadata?.adAccountIds ?? metadata?.ad_account_ids ?? metadata?.adAccountId ?? metadata?.ad_account_id ?? '');
     if (accountIds.length === 0) return { ok: false, message: 'Meta integration requires one or more valid ad account IDs.' };
-    const normalizedPageId = String(metadata?.pageId ?? metadata?.page_id ?? '').replaceAll(/\D/g, ''); // Line 2443
+    const normalizedPageId = String(metadata?.pageId ?? metadata?.page_id ?? '').replaceAll(/\D/g, '');
     const normalizedPixelId = String(metadata?.pixelId ?? metadata?.pixel_id ?? '').replaceAll(/\D/g, '');
     metadata = {
       ...metadata,
@@ -4518,7 +4518,7 @@ function validateAndNormalizeMetadata(service: string, inputMetadata: any) {
       ad_account_id: accountIds[0],
       pageId: normalizedPageId,
       page_id: normalizedPageId,
-      pixelId: normalizedPixelId, // Line 2446
+      pixelId: normalizedPixelId,
       pixel_id: normalizedPixelId,
     };
   }
@@ -4528,7 +4528,7 @@ function validateAndNormalizeMetadata(service: string, inputMetadata: any) {
 async function handleIntegrationsConnectPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, authUser, resource, sub, req, sendJson } = ctx;
   if (resource === 'integrations' && sub === 'connect' && req.method === 'POST') {
-    const rawBody = await req.json();
+    const rawBody = await req.json(); // No change needed, this is a direct call
     const body = (rawBody != null && typeof rawBody === 'object') ? rawBody : {};
     const service = String(body.service ?? '').trim();
     if (!service) return sendJson({ success: false, message: 'service is required' }, 400);
@@ -4559,7 +4559,7 @@ async function handleIntegrationsConnectPost(ctx: AuthenticatedRouteContext): Pr
 async function handleIntegrationsTestPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource === 'integrations' && sub === 'test' && req.method === 'POST') {
-    const rawBody = await req.json().catch(() => ({}));
+    const rawBody = await req.json().catch(() => ({})); // No change needed, catch handles potential non-object
     const body = (rawBody && typeof rawBody === 'object') ? rawBody as Record<string, any> : {};
     const service = String(body.service ?? '').trim();
   
@@ -4728,7 +4728,7 @@ async function handleAiStatus(ctx: AuthenticatedRouteContext): Promise<Response 
 async function handleAiGeneratePost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource === 'ai' && sub === 'generate' && req.method === 'POST') {
-    const rawBody = await req.json(); // No change needed, this is a direct call
+    const rawBody = await req.json();
     const body = (rawBody && typeof rawBody === 'object') ? rawBody as Record<string, any> : {};
     const prompt = String(body?.prompt ?? '').trim();
     const provider = String(body?.provider ?? '').trim();
@@ -4808,7 +4808,7 @@ function buildAnalyzeCampaignPrompt(clinic: { name: string; specialty: string; c
 async function handleAiAnalyzeCampaignPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource !== 'ai' || sub !== 'analyze-campaign' || req.method !== 'POST') return null;
-  
+  // No change needed, catch handles potential non-object
   const rawBody = await req.json().catch(() => ({}));
   const body = (rawBody && typeof rawBody === 'object') ? rawBody as Record<string, any> : {};
   let campaignData = String(body?.campaignData ?? '').trim();
@@ -5925,7 +5925,7 @@ async function updateLeadStageToWhatsapp(adminClient: any, userId: string, match
 async function handleWhatsappConversionPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'whatsapp' && sub === 'conversion' && req.method === 'POST') {
-    return await processWhatsappConversionPost(adminClient, userId, req, url, sendJson); // No change needed, this is a direct call
+    return await processWhatsappConversionPost(adminClient, userId, req, url, sendJson);
   }
   return null;
 }
@@ -5939,7 +5939,7 @@ async function processWhatsappConversionPost(adminClient: any, userId: string, r
   }
 
   const phone = String(body.phone ?? '').trim();
-  const email = body.email ? String(body.email).trim() : ''; // No change needed, this is a ternary
+  const email = body.email ? String(body.email).trim() : '';
 
   // Extract Meta context from _meta or direct body
   const meta = body._meta || {};
