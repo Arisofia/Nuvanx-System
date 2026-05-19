@@ -34,7 +34,7 @@ let activePixelId: string | null = null
 let seenInitialPageView = false
 
 function loadFbqStub(): void {
-  if (globalThis.window === undefined) return
+  if (typeof globalThis.window === 'undefined') return
   if (globalThis.fbq) return
   // Standard Meta Pixel bootstrap — keep behavior identical to the official snippet.
   const n = function (...args: unknown[]) {
@@ -62,7 +62,7 @@ export function initMetaPixel(pixelId: string | undefined | null): void {
   if (initialized) return
   const id = (pixelId ?? '').trim()
   if (!id) return
-  if (globalThis.window === undefined) return
+  if (typeof globalThis.window === 'undefined') return
   loadFbqStub()
   globalThis.fbq?.('init', id)
   globalThis.fbq?.('track', 'PageView')
@@ -80,11 +80,11 @@ export function trackMetaEvent(
   params?: Record<string, unknown>,
   eventId?: string,
 ): void {
-  if (!initialized || globalThis.window === undefined || !globalThis.fbq) return
+  if (!initialized || typeof globalThis.window === 'undefined' || !globalThis.fbq) return
   const opts = eventId ? { eventID: eventId } : undefined
   if (params && opts) globalThis.fbq('track', eventName, params, opts)
   else if (params) globalThis.fbq('track', eventName, params)
-  else if (opts) globalThis.fbq('track', eventName, {}, opts)
+  else if (opts) globalThis.fbq('track', eventName, undefined, opts)
   else globalThis.fbq('track', eventName)
 }
 
@@ -100,7 +100,7 @@ export function useMetaContextCapture(): void {
   const [location] = useLocation()
 
   useEffect(() => {
-    if (globalThis.window === undefined) return
+    if (typeof globalThis.window === 'undefined') return
 
     // 1. Capture fbclid from URL
     const params = new URLSearchParams(window.location.search)
@@ -117,7 +117,7 @@ export function useMetaContextCapture(): void {
  * Retrieve captured Meta context for inclusion in API payloads.
  */
 export function getMetaContext(): { fbc: string | null; fbp: string | null } {
-  if (globalThis.window === undefined) return { fbc: null, fbp: null }
+  if (typeof globalThis.window === 'undefined') return { fbc: null, fbp: null }
 
   // 1. Build fbc from fbclid and timestamp
   const fbclid = localStorage.getItem('nvx_fbclid')
