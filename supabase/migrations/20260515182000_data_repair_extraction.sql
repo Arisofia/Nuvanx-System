@@ -8,10 +8,16 @@ BEGIN;
 -- Some leads have phone in notes but null in phone column
 UPDATE public.leads
 SET phone = COALESCE(
-    notes->>'telefono',
-    notes->>'phone_number',
-    notes->>'phone',
-    phone
+  CASE
+    WHEN notes ~ '^\s*[{[]' THEN 
+      COALESCE(
+        (notes::jsonb)->>'telefono',
+        (notes::jsonb)->>'phone_number',
+        (notes::jsonb)->>'phone'
+      )
+    ELSE NULL
+  END,
+  phone
 )
 WHERE (phone IS NULL OR phone = '') AND notes IS NOT NULL;
 
