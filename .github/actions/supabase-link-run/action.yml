@@ -24,6 +24,10 @@ inputs:
   command:
     description: 'Shell command to execute after linking (e.g. "supabase db push")'
     required: true
+  supabase_cli_version:
+    description: 'Supabase CLI version to use'
+    required: false
+    default: '2.100.1'
 
 outputs:
   resolved_db_password:
@@ -39,7 +43,7 @@ runs:
     - name: Setup Supabase CLI
       uses: supabase/setup-cli@v2 # v2
       with:
-        version: latest
+        version: ${{ inputs.supabase_cli_version }}
 
     - name: Validate required inputs
       shell: bash
