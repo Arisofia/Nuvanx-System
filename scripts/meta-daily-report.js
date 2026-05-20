@@ -890,7 +890,7 @@ async function main() {
     }
 
     console.log(`[meta-daily-report] Report for ${adAccountId} generated successfully`);
-    console.log(`[meta-daily-report] File: ${reportPath}`);
+    console.log('[meta-daily-report] Report file written');
   }
 }
 
