@@ -22,6 +22,14 @@ function normalizeAdAccountId(raw) {
   return digits ? `act_${digits}` : '';
 }
 
+function maskAdAccountId(adAccountId) {
+  const normalized = normalizeAdAccountId(adAccountId);
+  if (!normalized) return 'redacted';
+  const digits = normalized.replace(/^act_/i, '');
+  const tail = digits.slice(-4);
+  return `act_***${tail}`;
+}
+
 function parseMetric(raw) {
   if (raw == null) return 0;
   if (typeof raw === 'number') return Number.isFinite(raw) ? raw : 0;
@@ -809,7 +817,8 @@ async function main() {
   }
 
   for (const adAccountId of adAccountIds) {
-    console.log(`\n[meta-daily-report] Generating report for account: ${adAccountId}`);
+    const maskedAdAccountId = maskAdAccountId(adAccountId);
+    console.log(`\n[meta-daily-report] Generating report for account: ${maskedAdAccountId}`);
     const rows = await fetchMetaInsights(adAccountId, since, until, token);
     const campaignRows = buildCampaignRows(rows);
     const totals = calculateTotals(campaignRows);
@@ -889,7 +898,7 @@ async function main() {
       fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n# Report for ${adAccountId}\n${markdown}`);
     }
 
-    console.log(`[meta-daily-report] Report for ${adAccountId} generated successfully`);
+    console.log(`[meta-daily-report] Report for ${maskedAdAccountId} generated successfully`);
     console.log('[meta-daily-report] Report file written');
   }
 }
