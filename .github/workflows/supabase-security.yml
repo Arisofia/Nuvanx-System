@@ -91,14 +91,41 @@ jobs:
             # - Pooler hostnames follow the standard *.pooler.supabase.com pattern.
             # - URL shape is postgres[ql]://user:pass@host:port/db; the host has no extra @ or : characters.
             if [ -n "${DATABASE_URL:-}" ]; then
-              SESSION_URL=$(printf '%s' "$DATABASE_URL" \
-                | sed -E 's#(db\.[^/@:]+\.supabase)\.com#\1.co#g' \
-                | sed -E 's#^(postgres(ql)?://)[^/@]+@([^/@]+):[0-9]+(/.*)$#\1postgres@'${SUPABASE_PROJECT_REF}'.supabase.co:5432\4#g' \
-                | sed -E 's#(pooler\.supabase\.com):6543/#db.'${SUPABASE_PROJECT_REF}'.supabase.co:5432/#g' \
-                | sed -E 's#(pooler\.supabase\.co):6543/#db.'${SUPABASE_PROJECT_REF}'.supabase.co:5432/#g')
+              SESSION_URL=$(python3 - <<'PY'
+import os
+from urllib.parse import urlparse, urlunparse
+database_url = os.environ["DATABASE_URL"]
+project_ref = os.environ["SUPABASE_PROJECT_REF"]
+u = urlparse(database_url)
+# host puede ser: aws-1-...pooler.supabase.co  o db.<ref>.supabase.co, etc
+host = u.hostname or ""
+# Si es pooler, lo reemplazamos por el host "direct" db.<ref>.supabase.co:5432
+if "pooler.supabase" in host:
+    new_host = f"db.{project_ref}.supabase.co"
+    new_port = 5432
+else:
+    # Si NO es pooler, intentamos usar el direct .co:5432 de forma segura
+    # (esto cubre casos legacy donde venía db.<ref>.supabase.com o puerto distinto)
+    if host.startswith("db.") and project_ref in host:
+        new_host = f"db.{project_ref}.supabase.co"
+        new_port = 5432
+    else:
+        new_host = host
+        new_port = u.port
+# reconstruimos manteniendo user:pass y path/dbname
+auth = ""
+if u.username:
+    auth = u.username
+    if u.password:
+        auth += ":" + u.password
+    auth += "@"
+new_netloc = f"{auth}{new_host}:{new_port}"
+print(u._replace(netloc=new_netloc).geturl())
+PY
+              )
             elif [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
-              echo "::warning::DATABASE_URL is not set; falling back to the direct Supabase DB host. GitHub Actions may need a Supavisor session pooler DATABASE_URL because direct Supabase DB hosts are IPv6-only by default."
-              SESSION_URL=$(printf '%s://%s:%s@db.%s.supabase.co:5432/postgres' 'postgresql' 'postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
+              echo "::warning::DATABASE_URL is not set; falling back to the direct Supabase DB host."
+              SESSION_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
             else
               echo "::error::SUPABASE_DB_PASSWORD and DATABASE_URL are both missing. Cannot run security lint."
               exit 1

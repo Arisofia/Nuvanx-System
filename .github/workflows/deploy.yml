@@ -127,7 +127,33 @@ jobs:
             # Build direct session URL (port 5432) — avoids prepared statement conflicts with the pooler.
             # Prefer DATABASE_URL; fall back to constructing from project ref + password.
             if [ -n "${DATABASE_URL:-}" ]; then
-              SESSION_URL=$(echo "$DATABASE_URL" | sed 's/:6543\//:5432\//')
+              SESSION_URL=$(python3 - <<'PY'
+import os
+from urllib.parse import urlparse
+database_url = os.environ["DATABASE_URL"]
+project_ref = os.environ["SUPABASE_PROJECT_REF"]
+u = urlparse(database_url)
+host = u.hostname or ""
+if "pooler.supabase" in host:
+    new_host = f"db.{project_ref}.supabase.co"
+    new_port = 5432
+else:
+    if host.startswith("db.") and project_ref in host:
+        new_host = f"db.{project_ref}.supabase.co"
+        new_port = 5432
+    else:
+        new_host = host
+        new_port = u.port
+auth = ""
+if u.username:
+    auth = u.username
+    if u.password:
+        auth += ":" + u.password
+    auth += "@"
+new_netloc = f"{auth}{new_host}:{new_port}"
+print(u._replace(netloc=new_netloc).geturl())
+PY
+              )
             elif [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
               SESSION_URL=$(printf '%s://%s:%s@db.%s.supabase.co:5432/postgres' 'postgresql' 'postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
             else
