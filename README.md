@@ -81,6 +81,19 @@ Para actualizar el token de Meta en los `.env` locales detectados, usa:
 npm run update:meta-token
 ```
 
+### Meta Ads Library
+Extractor de anuncios activos (no políticos) para benchmarking y análisis de competencia.
+
+```bash
+# Requiere Python 3 y requests (pip install requests)
+python scripts/meta_ads_library.py --pages "ID_PAGINA_1,ID_PAGINA_2"
+```
+
+Argumentos:
+- `--pages`: IDs de páginas de Meta separadas por comas (Requerido).
+- `--token`: Token de acceso (opcional, usa `META_ACCESS_TOKEN` por defecto).
+- `--countries`: Códigos de país ISO (opcional, default: `ES`).
+
 Si quieres propagar el token también a GitHub, Supabase y Vercel desde el mismo script, ejecuta:
 
 ```bash

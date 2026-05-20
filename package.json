@@ -22,7 +22,8 @@
     "install:all": "npm install && npm --prefix frontend install",
     "secrets:scan": "node scripts/scan-secrets.js",
     "production:e2e": "node scripts/production-e2e.js",
-    "verify:ai-generate": "node scripts/verify-ai-generate.js"
+    "verify:ai-generate": "node scripts/verify-ai-generate.js",
+    "meta:ads:extract": "python scripts/meta_ads_library.py"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.3",
