@@ -55,14 +55,14 @@ async function main() {
 
   console.log(`Accessible ad accounts: ${normalized.length}`);
   if (hasAccess) {
-    console.log(`✅ Meta token has access to ${targetAdAccountId}.`);
+    console.log('✅ Meta token has access to the configured ad account.');
     return;
   }
 
-  const discovered = normalized.map((account) => account.id).join(', ');
   throw new Error(
-    `Token cannot access ${targetAdAccountId}.` +
-      (discovered ? ` Accessible accounts: ${discovered}` : ' No accessible accounts returned by API.')
+    normalized.length
+      ? 'Token cannot access the configured ad account.'
+      : 'Token cannot access the configured ad account. No accessible accounts returned by API.'
   );
 }
 
