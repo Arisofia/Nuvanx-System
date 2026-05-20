@@ -897,7 +897,7 @@ async function main() {
       fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n# Report for ${adAccountId}\n${markdown}`);
     }
 
-    console.log(`[meta-daily-report] Report for ${maskedAdAccountId} generated successfully`);
+    console.log('[meta-daily-report] Report generated successfully');
     console.log('[meta-daily-report] Report file written');
   }
 }
