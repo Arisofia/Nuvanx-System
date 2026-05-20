@@ -152,7 +152,7 @@ jobs:
                   auth += "@"
               new_netloc = f"{auth}{new_host}:{new_port}"
               print(u._replace(netloc=new_netloc).geturl())
-PY
+              PY
               )
             elif [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
               SESSION_URL=$(printf '%s://%s:%s@db.%s.supabase.co:5432/postgres' 'postgresql' 'postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
