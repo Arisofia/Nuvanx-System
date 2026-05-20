@@ -816,9 +816,8 @@ async function main() {
     }
   }
 
-  for (const adAccountId of adAccountIds) {
-    const maskedAdAccountId = maskAdAccountId(adAccountId);
-    console.log(`\n[meta-daily-report] Generating report for account: ${maskedAdAccountId}`);
+  for (const [index, adAccountId] of adAccountIds.entries()) {
+    console.log(`\n[meta-daily-report] Generating report for account ${index + 1}/${adAccountIds.length}`);
     const rows = await fetchMetaInsights(adAccountId, since, until, token);
     const campaignRows = buildCampaignRows(rows);
     const totals = calculateTotals(campaignRows);
