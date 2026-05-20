@@ -98,19 +98,20 @@ jobs:
             project_ref = os.environ["SUPABASE_PROJECT_REF"]
             u = urlparse(database_url)
             host = u.hostname or ""
-            # Si es pooler, cámbialo a host directo IPv4/host resoluble
+            # El host del pooler (*.pooler.supabase.co) es el que tiene IPv4.
+            # Lo mantenemos pero forzamos puerto 5432 para entrar en modo sesión (requerido por lint).
             if "pooler.supabase" in host:
-                new_host = f"db.{project_ref}.supabase.co"
+                new_host = host
                 new_port = 5432
             else:
-                # Si ya viene db.<ref>.supabase.*, igual fuerza puerto 5432 y .co
+                # Si ya es un host directo db.<ref>.supabase.co, intentamos forzar puerto 5432
                 if host.startswith("db.") and project_ref in host:
                     new_host = f"db.{project_ref}.supabase.co"
                     new_port = 5432
                 else:
                     new_host = host
                     new_port = u.port or 5432
-            netloc = u.username
+            netloc = u.username or ""
             if u.password is not None:
                 netloc += ":" + u.password
             netloc += f"@{new_host}:{new_port}"
