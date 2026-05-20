@@ -158,7 +158,47 @@ runs:
         SUPABASE_DB_PASSWORD_INPUT: ${{ steps.creds.outputs.resolved_db_password }}
       run: |
         set -euo pipefail
+
         if [ -n "$SUPABASE_DB_PASSWORD_INPUT" ]; then
           export SUPABASE_DB_PASSWORD="$SUPABASE_DB_PASSWORD_INPUT"
         fi
+
+        if [ -n "${DATABASE_URL:-}" ]; then
+          SESSION_URL=$(python3 - <<'PY'
+import os
+from urllib.parse import urlparse, urlunparse
+
+database_url = os.environ.get("DATABASE_URL", "")
+project_ref = os.environ.get("SUPABASE_PROJECT_REF", "")
+u = urlparse(database_url)
+host = u.hostname or ""
+
+if "pooler.supabase" in host:
+    new_host = f"db.{project_ref}.supabase.co"
+    new_port = 5432
+elif host.startswith("db.") and project_ref in host:
+    new_host = f"db.{project_ref}.supabase.co"
+    new_port = 5432
+else:
+    new_host = host
+    new_port = u.port or 5432
+
+netloc = u.username or ""
+if u.password is not None:
+    netloc += ":" + u.password
+if netloc:
+    netloc += f"@{new_host}:{new_port}"
+else:
+    netloc = f"{new_host}:{new_port}"
+
+new_u = (u.scheme, netloc, u.path, u.params, u.query, u.fragment)
+print(urlunparse(new_u))
+PY
+)
+          export SESSION_URL
+        elif [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
+          SESSION_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
+          export SESSION_URL
+        fi
+
         /tmp/supabase_command.sh
