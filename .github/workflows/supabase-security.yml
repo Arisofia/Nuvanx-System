@@ -92,37 +92,32 @@ jobs:
             # - URL shape is postgres[ql]://user:pass@host:port/db; the host has no extra @ or : characters.
             if [ -n "${DATABASE_URL:-}" ]; then
               SESSION_URL=$(python3 - <<'PY'
-              import os
-              from urllib.parse import urlparse, urlunparse
-              database_url = os.environ["DATABASE_URL"]
-              project_ref = os.environ["SUPABASE_PROJECT_REF"]
-              u = urlparse(database_url)
-              # host puede ser: aws-1-...pooler.supabase.co  o db.<ref>.supabase.co, etc
-              host = u.hostname or ""
-              # Si es pooler, lo reemplazamos por el host "direct" db.<ref>.supabase.co:5432
-              if "pooler.supabase" in host:
-                  new_host = f"db.{project_ref}.supabase.co"
-                  new_port = 5432
-              else:
-                  # Si NO es pooler, intentamos usar el direct .co:5432 de forma segura
-                  # (esto cubre casos legacy donde venía db.<ref>.supabase.com o puerto distinto)
-                  if host.startswith("db.") and project_ref in host:
-                      new_host = f"db.{project_ref}.supabase.co"
-                      new_port = 5432
-                  else:
-                      new_host = host
-                      new_port = u.port
-              # reconstruimos manteniendo user:pass y path/dbname
-              auth = ""
-              if u.username:
-                  auth = u.username
-                  if u.password:
-                      auth += ":" + u.password
-                  auth += "@"
-              new_netloc = f"{auth}{new_host}:{new_port}"
-              print(u._replace(netloc=new_netloc).geturl())
-              PY
-              )
+            import os
+            from urllib.parse import urlparse, urlunparse
+            database_url = os.environ["DATABASE_URL"]
+            project_ref = os.environ["SUPABASE_PROJECT_REF"]
+            u = urlparse(database_url)
+            host = u.hostname or ""
+            # Si es pooler, cámbialo a host directo IPv4/host resoluble
+            if "pooler.supabase" in host:
+                new_host = f"db.{project_ref}.supabase.co"
+                new_port = 5432
+            else:
+                # Si ya viene db.<ref>.supabase.*, igual fuerza puerto 5432 y .co
+                if host.startswith("db.") and project_ref in host:
+                    new_host = f"db.{project_ref}.supabase.co"
+                    new_port = 5432
+                else:
+                    new_host = host
+                    new_port = u.port or 5432
+            netloc = u.username
+            if u.password is not None:
+                netloc += ":" + u.password
+            netloc += f"@{new_host}:{new_port}"
+            new_u = (u.scheme, netloc, u.path, u.params, u.query, u.fragment)
+            print(urlunparse(new_u))
+            PY
+            )
             elif [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
               echo "::warning::DATABASE_URL is not set; falling back to the direct Supabase DB host."
               SESSION_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
@@ -131,21 +126,20 @@ jobs:
               exit 1
             fi
 
-            SESSION_HOST=$(python3 - <<'PY'
+            export SESSION_URL
+            echo "SESSION_URL_HOST=$(python3 - <<'PY'
             import os
             from urllib.parse import urlparse
-
-            url = os.environ.get('SESSION_URL', '')
-            print(urlparse(url).hostname or '')
+            print(urlparse(os.environ["SESSION_URL"]).hostname)
             PY
-            )
-            if [ -n "$SESSION_HOST" ]; then
-              echo "Using DB host: $SESSION_HOST"
-              if ! getent hosts "$SESSION_HOST" >/dev/null 2>&1; then
-                echo "::error::Cannot resolve database host '$SESSION_HOST' from this runner. Verify DATABASE_URL points to the current Supabase project connection string and that runner DNS egress is enabled."
-                exit 1
-              fi
-            fi
+            )"
+            getent hosts "$(python3 - <<'PY'
+            import os
+            from urllib.parse import urlparse
+            print(urlparse(os.environ["SESSION_URL"]).hostname)
+            PY
+            )"
+
             # Hard timeout so a stuck connection doesn't burn Actions minutes.
             timeout --signal=TERM --kill-after=30s 240s \
               supabase db lint --db-url "$SESSION_URL" --level error --fail-on error </dev/null
