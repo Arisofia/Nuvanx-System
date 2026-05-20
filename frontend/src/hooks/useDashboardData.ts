@@ -161,12 +161,12 @@ export function useDashboardData(
 ) {
   const [funnelData, setFunnelData] = useState<Array<Record<string, unknown>>>([])
   const [metrics, setMetrics] = useState<DashboardMetrics>({
-    totalLeads: 0,
-    conversionRate: 0,
-    activeCampaigns: 0,
-    spend: 0,
-    averageCpc: 0,
-    metaConversions: 0,
+    totalLeads: null,
+    conversionRate: null,
+    activeCampaigns: null,
+    spend: null,
+    averageCpc: null,
+    metaConversions: null,
     loading: true,
     error: null,
     metaError: null,

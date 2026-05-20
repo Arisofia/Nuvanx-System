@@ -6265,9 +6265,10 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
   // Reconciliar leads antes de calcular KPIs
   await runLeadPipelineReconciliation(adminClient, userId);
 
-  const metaSources = ['meta_leadgen', 'meta_lead_gen', 'facebook_leadgen'];
+  const metaLeadGenSources = ['meta_leadgen', 'meta_lead_gen', 'facebook_leadgen'];
+  const whatsappSources = ['whatsapp', 'meta_whatsapp', 'facebook_whatsapp'];
 
-  const [leadCountRes, leadMetaCountRes, leadsByStageRes, settlementsRes, metaDailyInsightsRes] = await Promise.all([
+  const [leadCountRes, leadMetaCountRes, leadLeadGenCountRes, leadWhatsappCountRes, leadsByStageRes, settlementsRes, metaDailyInsightsRes] = await Promise.all([
     adminClient.from('leads')
       .select('id', { count: 'exact', head: true })
       .eq('clinic_id', clinicId)
@@ -6280,7 +6281,23 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
       .select('id', { count: 'exact', head: true })
       .eq('clinic_id', clinicId)
       .is('deleted_at', null)
-      .in('source', metaSources)
+      .in('source', [...metaLeadGenSources, ...whatsappSources])
+      .gte('created_at', since)
+      .lte('created_at', until),
+
+    adminClient.from('leads')
+      .select('id', { count: 'exact', head: true })
+      .eq('clinic_id', clinicId)
+      .is('deleted_at', null)
+      .in('source', metaLeadGenSources)
+      .gte('created_at', since)
+      .lte('created_at', until),
+
+    adminClient.from('leads')
+      .select('id', { count: 'exact', head: true })
+      .eq('clinic_id', clinicId)
+      .is('deleted_at', null)
+      .in('source', whatsappSources)
       .gte('created_at', since)
       .lte('created_at', until),
 

@@ -8,13 +8,13 @@ export interface CombinedMetrics {
 }
 
 export interface RealFunnel {
-  metaSpend: number
-  metaLeads: number
-  crmLeads: number
-  doctoraliaRevenue: number
-  doctoraliaPatients: number
-  cac: number
-  cacConfidence: number | string
+  metaSpend: number | null
+  metaLeads: number | null
+  crmLeads: number | null
+  doctoraliaRevenue: number | null
+  doctoraliaPatients: number | null
+  cac: number | null
+  cacConfidence: number | string | null
 }
 
 export interface DashboardQuality {
@@ -131,16 +131,16 @@ export function buildDashboardState(options: DashboardStateOptions) {
 
   return {
     metrics: {
-      totalLeads: Number(metricsData.totalLeads ?? 0),
-      conversionRate: Number(metricsData.conversionRate ?? 0),
-      patientMatches: Number(metricsData.patientMatches ?? 0),
-      patientConversionRate: Number(metricsData.patientConversionRate ?? 0),
-      verifiedRevenue: Number(metricsData.verifiedRevenue ?? 0),
-      totalRevenue: Number(metricsData.totalRevenue ?? 0),
-      settledCount: Number(metricsData.settledCount ?? 0),
+      totalLeads: metricsData.totalLeads != null ? Number(metricsData.totalLeads) : null,
+      conversionRate: metricsData.conversionRate != null ? Number(metricsData.conversionRate) : null,
+      patientMatches: metricsData.patientMatches != null ? Number(metricsData.patientMatches) : null,
+      patientConversionRate: metricsData.patientConversionRate != null ? Number(metricsData.patientConversionRate) : null,
+      verifiedRevenue: metricsData.verifiedRevenue != null ? Number(metricsData.verifiedRevenue) : null,
+      totalRevenue: metricsData.totalRevenue != null ? Number(metricsData.totalRevenue) : null,
+      settledCount: metricsData.settledCount != null ? Number(metricsData.settledCount) : null,
       activeCampaigns: campaigns.filter((c: any) => c.status === 'ACTIVE').length,
       spend: canonicalMetaSpend,
-      averageCpc: Number.isFinite(avgCpcRaw) ? Number.parseFloat(avgCpcRaw.toFixed(2)) : 0,
+      averageCpc: Number.isFinite(avgCpcRaw) ? Number.parseFloat(avgCpcRaw.toFixed(2)) : null,
       metaConversions: canonicalMetaLeads,
       deltas: {
         leads: metricsData.deltas?.leads ?? null,
@@ -164,11 +164,11 @@ export function buildDashboardState(options: DashboardStateOptions) {
     funnel: {
       metaSpend: canonicalMetaSpend,
       metaLeads: canonicalMetaLeads,
-      crmLeads: Number(kpisResponse?.crm?.totalLeads ?? Number(metricsData.totalLeads ?? 0)),
+      crmLeads: kpisResponse?.crm?.totalLeads != null ? Number(kpisResponse.crm.totalLeads) : (metricsData.totalLeads != null ? Number(metricsData.totalLeads) : null),
       doctoraliaRevenue: doctoraliaVerifiedRevenue,
       doctoraliaPatients,
-      cac: cacDoctoralia ?? 0,
-      cacConfidence: kpisResponse?.doctoralia?.cac_confidence ?? 0,
+      cac: cacDoctoralia,
+      cacConfidence: kpisResponse?.doctoralia?.cac_confidence ?? null,
     },
     quality: {
       overallMode: kpisResponse?.data_quality?.overall_mode,
