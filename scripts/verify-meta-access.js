@@ -66,8 +66,8 @@ async function main() {
   );
 }
 
-main().catch((error) => {
+main().catch(() => {
   console.error('❌ Meta access verification failed.');
-  console.error(error instanceof Error ? error.message : String(error));
+  console.error('Reason: request failed. Enable secure debug logging locally if needed.');
   process.exit(1);
 });
