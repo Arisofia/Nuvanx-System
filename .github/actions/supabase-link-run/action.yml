@@ -164,41 +164,46 @@ runs:
         fi
 
         if [ -n "${DATABASE_URL:-}" ]; then
-          SESSION_URL=$(python3 - <<'PY'
-          import os
-          from urllib.parse import urlparse, urlunparse
+          SESSION_URL=$(python3 << 'PYEOF'
+import os
+from urllib.parse import urlparse, urlunparse
 
-          database_url = os.environ.get("DATABASE_URL", "")
-          project_ref = os.environ.get("SUPABASE_PROJECT_REF", "")
-          u = urlparse(database_url)
-          host = u.hostname or ""
+database_url = os.environ.get("DATABASE_URL", "")
+project_ref = os.environ.get("SUPABASE_PROJECT_REF", "")
 
-          if "pooler.supabase" in host:
-              # Intentionally rewrite pooler hosts to the direct db.<project_ref>.supabase.co host
-              # because some CI runners fail DNS resolution for pooler hosts.
-              if not project_ref:
-                  raise SystemExit("SUPABASE_PROJECT_REF is required when DATABASE_URL uses a pooler host.")
-              new_host = f"db.{project_ref}.supabase.co"
-              new_port = 5432
-          elif host.startswith("db.") and project_ref in host:
-              new_host = f"db.{project_ref}.supabase.co"
-              new_port = 5432
-          else:
-              new_host = host
-              new_port = u.port or 5432
+u = urlparse(database_url)
 
-          netloc = u.username or ""
-          if u.password is not None:
-              netloc += ":" + u.password
-          if netloc:
-              netloc += f"@{new_host}:{new_port}"
-          else:
-              netloc = f"{new_host}:{new_port}"
+host = u.hostname or ""
+is_pooler = "pooler.supabase" in host
+is_direct = host.startswith("db.") and (project_ref or "") in host
 
-          new_u = (u.scheme, netloc, u.path, u.params, u.query, u.fragment)
-          print(urlunparse(new_u))
-          PY
-          )
+if is_pooler and not project_ref:
+    raise SystemExit("SUPABASE_PROJECT_REF is required when DATABASE_URL uses a pooler host.")
+
+if is_pooler or is_direct:
+    new_host = f"db.{project_ref}.supabase.co"
+    new_port = 5432
+else:
+    new_host = host
+    new_port = u.port or 5432
+
+username = u.username or ""
+password = u.password
+
+auth = username
+if password is not None:
+    auth = f"{auth}:{password}"
+
+netloc = auth if auth else ""
+if netloc:
+    netloc = f"{netloc}@{new_host}:{new_port}"
+else:
+    netloc = f"{new_host}:{new_port}"
+
+session_url = urlunparse((u.scheme, netloc, u.path, u.params, u.query, u.fragment))
+print(session_url)
+PYEOF
+)
           export SESSION_URL
         elif [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
           SESSION_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")

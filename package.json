@@ -17,6 +17,7 @@
     "supabase:functions:list": "npx --yes supabase functions list",
     "supabase:functions:deploy:api": "npx --yes supabase functions deploy api --no-verify-jwt",
     "supabase:migration:list": "npx --yes supabase migration list",
+    "supabase:functions:deploy:mcp": "npx --yes supabase functions deploy mcp --no-verify-jwt",
     "supabase:migration:push": "npx --yes supabase db push",
     "supabase:types": "npx --yes supabase gen types typescript --local --schema public > frontend/src/lib/supabase/types.ts",
     "install:all": "npm install && npm --prefix frontend install",
@@ -37,6 +38,6 @@
     "@types/node": "^25.8.0",
     "tsx": "^4.22.1",
     "tweetsodium": "^0.0.6",
-    "vitest": "^4.1.6"
+    "vitest": "^3.0.0"
   }
 }

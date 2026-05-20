@@ -6,17 +6,20 @@
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
 export interface DashboardMetrics {
-  totalLeads: number
-  conversionRate: number
-  patientMatches?: number
-  patientConversionRate?: number
-  activeCampaigns: number
-  spend: number
-  averageCpc: number
-  metaConversions: number
-  verifiedRevenue?: number
-  totalRevenue?: number
-  settledCount?: number
+  totalLeads: number | null
+  conversionRate: number | null
+  patientMatches?: number | null
+  patientConversionRate?: number | null
+  activeCampaigns: number | null
+  spend: number | null
+  averageCpc: number | null
+  metaConversions: number | null
+  metaLeadGen?: number | null
+  metaWhatsapp?: number | null
+  metaOther?: number | null
+  verifiedRevenue?: number | null
+  totalRevenue?: number | null
+  settledCount?: number | null
   deltas?: {
     leads: number | null
     revenue: number | null

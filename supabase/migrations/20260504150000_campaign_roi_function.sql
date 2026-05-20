@@ -1,4 +1,3 @@
--- 20260504150000_campaign_roi_function.sql
 -- =============================================================================
 -- Campaign ROI report function
 -- Returns per (campaign_name, source, month) aggregated metrics joining:
@@ -23,11 +22,7 @@ BEGIN
   END IF;
 
   EXECUTE $sql$
-<<<<<<< HEAD
-    CREATE OR REPLACE FUNCTION get_campaign_roi(
-=======
     CREATE OR REPLACE FUNCTION public.get_campaign_roi(
->>>>>>> main
       p_user_id UUID,
       p_from     TEXT DEFAULT '',
       p_to       TEXT DEFAULT '',
@@ -109,12 +104,7 @@ BEGIN
       ORDER BY g.month DESC, g.leads_count DESC;
     $func$;
 
-<<<<<<< HEAD
-    GRANT EXECUTE ON FUNCTION get_campaign_roi(UUID, TEXT, TEXT, TEXT) TO service_role;
-  $sql$;
-END $$;
-=======
     GRANT EXECUTE ON FUNCTION public.get_campaign_roi(UUID, TEXT, TEXT, TEXT) TO service_role;
+    GRANT EXECUTE ON FUNCTION public.get_campaign_roi(UUID, TEXT, TEXT, TEXT) TO authenticated;
   $sql$;
 END $$;
->>>>>>> main

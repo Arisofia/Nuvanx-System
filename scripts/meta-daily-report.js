@@ -8,6 +8,8 @@ const crypto = require('node:crypto');
 const META_GRAPH = 'https://graph.facebook.com/v22.0';
 const GOOGLE_ADS_API = 'https://googleads.googleapis.com/v17';
 
+const token = process.env.META_ACCESS_TOKEN;
+
 function formatDateUTC(date) {
   return date.toISOString().slice(0, 10);
 }
@@ -43,10 +45,6 @@ function actionValue(actions, matcher) {
     if (!matcher(type)) return sum;
     return sum + parseMetric(action?.value);
   }, 0);
-}
-
-function getAction(type, actions = []) {
-  return Number((actions || []).find((a) => a?.action_type === type)?.value || 0);
 }
 
 function getWhatsApp(actions = []) {
@@ -235,9 +233,6 @@ async function metaFetch(endpoint, params, token, attempt = 1) {
   const url = new URL(`${META_GRAPH}${endpoint}`);
   url.searchParams.set('access_token', token);
 
-  // Add appsecret_proof when META_APP_SECRET is configured.
-  // Meta requires this for System User tokens when the app has
-  // "Require App Secret" enabled in Advanced Settings.
   const appSecret = process.env.META_APP_SECRET;
   if (appSecret) {
     const proof = crypto.createHmac('sha256', appSecret).update(token).digest('hex');
@@ -397,9 +392,7 @@ async function ensureMetaDailyInsightsConflictTarget(db) {
       WHERE clinic_id IS NOT NULL
     )
     DELETE FROM public.meta_daily_insights mdi
-    USING ranked r
-    WHERE mdi.ctid = r.ctid
-      AND r.rn > 1
+    WHERE mdi.ctid IN (SELECT ctid FROM ranked WHERE rn > 1)
   `);
   await db.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS meta_daily_insights_clinic_account_date_uidx
@@ -449,7 +442,6 @@ async function upsertMetaDailyInsight(db, row) {
 async function persistMetaDailyInsights({ databaseUrl, reportUserId, clinicId, adAccountId, since, until, token }) {
   if (!databaseUrl || !reportUserId) return null;
 
-  // Fetch account-level daily insights with time_increment=1
   const insights = await metaFetch(`/${adAccountId}/insights`, {
     fields: 'date_start,impressions,reach,clicks,spend,conversions,ctr,cpc,cpm,actions',
     time_range: JSON.stringify({ since, until }),
@@ -461,7 +453,7 @@ async function persistMetaDailyInsights({ databaseUrl, reportUserId, clinicId, a
   const rows = Array.isArray(insights?.data) ? insights.data : [];
   if (rows.length === 0) return null;
 
-  const getAction = (actions, type) =>
+  const getActionLocal = (actions, type) =>
     Number((actions || []).find((a) => a.action_type === type)?.value ?? 0);
 
   const { Client } = require('pg');
@@ -473,22 +465,23 @@ async function persistMetaDailyInsights({ databaseUrl, reportUserId, clinicId, a
 
     const upsertRows = rows.map((row) => ({
       user_id: reportUserId,
+      clinic_id: resolvedClinicId,
       ad_account_id: adAccountId,
       date: row.date_start,
       impressions: Number(row.impressions ?? 0),
       reach: Number(row.reach ?? 0),
       clicks: Number(row.clicks ?? 0),
       spend: Number(row.spend ?? 0),
-      conversions: Number(row.conversions ?? getAction(row.actions, 'lead') ?? 0),
+      conversions: Number(row.conversions ?? getActionLocal(row.actions, 'lead') ?? 0),
       ctr: Number(row.ctr ?? 0),
       cpc: Number(row.cpc ?? 0),
       cpm: Number(row.cpm ?? 0),
-      messaging_conversations: getAction(row.actions, 'onsite_conversion.messaging_conversation_started_7d'),
+      messaging_conversations: getActionLocal(row.actions, 'onsite_conversion.messaging_conversation_started_7d'),
       updated_at: new Date().toISOString(),
     }));
 
     for (const r of upsertRows) {
-      await upsertMetaDailyInsight(db, { ...r, clinic_id: resolvedClinicId });
+      await upsertMetaDailyInsight(db, r);
     }
     console.log(`[meta-daily-report] Persisted ${upsertRows.length} rows to meta_daily_insights`);
     return upsertRows.length;
@@ -686,8 +679,6 @@ async function fetchMetaInsights(adAccountId, since, until, token) {
     }, token);
     return Array.isArray(insights?.data) ? insights.data : [];
   } catch (err) {
-    // Emit a GitHub Actions error annotation so the run is marked as failed,
-    // not just a silent zero-report that looks like a successful run.
     const msg = `Meta API call failed — report would be all zeros. ${err.message}`;
     if (process.env.GITHUB_ACTIONS) {
       process.stdout.write(`::error::${msg}\n`);
@@ -776,7 +767,6 @@ function normalizeAdAccountIds(raw) {
 }
 
 async function main() {
-  const token = process.env.META_ACCESS_TOKEN;
   const rawAccount = process.env.META_AD_ACCOUNT_ID;
   const databaseUrl = process.env.DATABASE_URL || '';
   const clinicId = process.env.CLINIC_ID || '';
@@ -805,12 +795,6 @@ async function main() {
   const utcToday = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
   const { since, until, untilExclusive } = getReportWindow(maybeSince, maybeUntil, days, utcToday);
 
-  const redactId = (id) => {
-    const s = String(id || '');
-    const digits = s.replace(/^act_/i, '');
-    return digits ? `act_***${digits.slice(-4)}` : 'act_[redacted]';
-  };
-
   let googleAdsCampaigns = null;
   if (googleServiceAccount) {
     try {
@@ -824,66 +808,57 @@ async function main() {
     }
   }
 
-  for (const [accountIndex, adAccountId] of adAccountIds.entries()) {
-    console.log(`\n[meta-daily-report] Generating report for account ${accountIndex + 1}/${adAccountIds.length}`);
+  for (const adAccountId of adAccountIds) {
+    console.log(`\n[meta-daily-report] Generating report for account: ${adAccountId}`);
     const rows = await fetchMetaInsights(adAccountId, since, until, token);
     const campaignRows = buildCampaignRows(rows);
     const totals = calculateTotals(campaignRows);
     const channels = calculateChannelStats(campaignRows, totals);
 
-    // Persist daily insights to DB for later analysis (optional)
+    const bestCampaigns = [...campaignRows]
+      .sort((a, b) => (b.totalLeads - a.totalLeads) || (b.spend - a.spend))
+      .slice(0, 6);
+
+    const wasteCampaigns = [...campaignRows]
+      .filter((row) => row.isWaste || (row.spend > 0 && row.cpl > 3 * (totals.cpc || 1)))
+      .sort((a, b) => b.spend - a.spend)
+      .slice(0, 6);
+
+    const landingViews = campaignRows.reduce((sum, row) => sum + parseMetric(row.landingPageViews), 0);
+    const landing = {
+      clicks: totals.clicks,
+      views: landingViews,
+      rate: totals.clicks > 0 ? (landingViews / totals.clicks) * 100 : 0,
+    };
+
+    let dbSignals = { available: false, rows: [] };
     try {
-      await persistMetaDailyInsights({
-        databaseUrl,
-        reportUserId,
-        clinicId,
-        adAccountId,
-        since,
-        until,
-        token,
+      dbSignals = await maybeLoadDbSignals({
+        databaseUrl, clinicId, sinceIso: since, untilExclusiveIso: untilExclusive,
       });
     } catch (err) {
-      console.warn('[meta-daily-report] Failed to persist daily insights.');
+      console.warn(`[meta-daily-report] Could not load CRM signals (DB): ${err.message}`);
     }
 
-    const wasteCampaigns = campaignRows.filter((r) => r.isWaste && r.spend > 50);
-    const bestCampaigns = campaignRows
-      .filter((r) => r.totalLeads > 0)
-      .sort((a, b) => b.totalLeads - a.totalLeads)
-      .slice(0, 5);
-
-    const dbSignals = await maybeLoadDbSignals({
-      databaseUrl,
-      clinicId,
-      sinceIso: since,
-      untilExclusiveIso: untilExclusive,
-    });
-
-    const recommendations = generateRecommendations(channels, {
-      clicks: totals.clicks,
-      views: campaignRows.reduce((a, r) => a + r.landingPageViews, 0),
-      rate: totals.clicks > 0 ? (campaignRows.reduce((a, r) => a + r.landingPageViews, 0) / totals.clicks) * 100 : 0,
-    }, wasteCampaigns, dbSignals);
+    const recommendations = generateRecommendations(channels, landing, wasteCampaigns, dbSignals);
 
     const markdown = buildMarkdown({
       generatedAt: new Date().toISOString(),
       period: { since, until },
-      account: redactId(adAccountId),
+      account: adAccountId,
       totals,
       channels,
       campaigns: { best: bestCampaigns, waste: wasteCampaigns },
-      landing: {
-        clicks: totals.clicks,
-        views: campaignRows.reduce((a, r) => a + r.landingPageViews, 0),
-        rate: totals.clicks > 0 ? (campaignRows.reduce((a, r) => a + r.landingPageViews, 0) / totals.clicks) * 100 : 0,
-      },
+      landing,
       dbSignals,
       googleAdsCampaigns,
       recommendations,
     });
 
-    console.log(`[meta-daily-report] Report for account ${accountIndex + 1}/${adAccountIds.length} (${redactId(adAccountId)}) generated:`);
-    console.log(markdown);
+    const reportsDir = path.resolve(process.cwd(), 'reports');
+    fs.mkdirSync(reportsDir, { recursive: true });
+    const reportPath = path.join(reportsDir, `meta-daily-report-${adAccountId}-${until}.md`);
+    fs.writeFileSync(reportPath, markdown, 'utf8');
 
     try {
       const outputId = await maybePersistOutput({
@@ -892,24 +867,34 @@ async function main() {
         clinicId,
         markdown,
         metadata: {
-          adAccountId: redactId(adAccountId),
-          since,
-          until,
-          totals,
-          campaignCount: campaignRows.length,
+          source: 'daily_ads_workflow', ad_account_id: adAccountId, google_customer_id: gCustomerId || null, since, until,
         },
       });
       if (outputId) {
-        console.log(`[meta-daily-report] Report generated for account ${accountIndex + 1}/${adAccountIds.length} (${redactId(adAccountId)}) (${since} to ${until}), campaigns: ${campaignRows.length}`);
         console.log(`[meta-daily-report] Report persisted to agent_outputs with ID: ${outputId}`);
       }
     } catch (err) {
-      console.warn(`[meta-daily-report] Failed to persist report output: ${err.message}`);
+      console.warn(`[meta-daily-report] Could not persist to agent_outputs for ${adAccountId}: ${err.message}`);
     }
+
+    if (databaseUrl && reportUserId) {
+      try {
+        await persistMetaDailyInsights({ databaseUrl, reportUserId, clinicId, adAccountId, since, until, token });
+      } catch (err) {
+        console.warn(`[meta-daily-report] Could not persist to meta_daily_insights for ${adAccountId}: ${err.message}`);
+      }
+    }
+
+    if (process.env.GITHUB_STEP_SUMMARY) {
+      fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n# Report for ${adAccountId}\n${markdown}`);
+    }
+
+    console.log(`[meta-daily-report] Report for ${adAccountId} generated successfully`);
+    console.log(`[meta-daily-report] File: ${reportPath}`);
   }
 }
 
 main().catch((err) => {
-  console.error('[meta-daily-report] Fatal error:', err.message);
+  console.error('[meta-daily-report] Fatal:', err.message);
   process.exit(1);
 });

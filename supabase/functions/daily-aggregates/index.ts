@@ -77,7 +77,7 @@ async function fetchAllClinicsMetaInsights(days: number) {
   const { data: credentials } = await supabase
     .from('credentials')
     .select('*')
-    .eq('provider', 'meta')
+    .eq('service', 'meta')
     .is('deleted_at', null);
 
   if (!credentials) return { rowsInserted: 0 };
@@ -88,7 +88,7 @@ async function fetchAllClinicsMetaInsights(days: number) {
 
   for (const cred of credentials) {
     try {
-      const accessToken = await decryptCred(cred.access_token);
+      const accessToken = await decryptCred(cred.encrypted_key);
       const adAccountIds = cred.metadata?.ad_account_ids || (cred.metadata?.ad_account_id ? [cred.metadata.ad_account_id] : []);
       
       for (const adAccountId of adAccountIds) {
