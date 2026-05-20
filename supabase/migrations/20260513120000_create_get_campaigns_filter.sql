@@ -1,4 +1,3 @@
--- 20260513120000_create_get_campaigns_filter.sql
 -- Migración: RPC para filtro de campañas
 -- Esta migración elimina la versión antigua/broken de la función.
 -- La implementación canónica se define más adelante en
