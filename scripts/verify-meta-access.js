@@ -2,6 +2,7 @@
 'use strict';
 
 const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v20.0';
+const MIN_NODE_MAJOR = 18;
 
 function normalizeAdAccountId(raw) {
   const value = String(raw || '').trim();
@@ -34,6 +35,11 @@ async function listAccessibleAdAccounts(accessToken) {
 }
 
 async function main() {
+  const nodeMajor = Number.parseInt(process.versions.node.split('.')[0], 10);
+  if (!Number.isInteger(nodeMajor) || nodeMajor < MIN_NODE_MAJOR) {
+    throw new Error(`Node.js ${MIN_NODE_MAJOR}+ is required (current: ${process.versions.node}).`);
+  }
+
   const accessToken = String(process.env.META_ACCESS_TOKEN || '').trim();
   const targetAdAccountId = normalizeAdAccountId(process.env.META_AD_ACCOUNT_ID || '');
 
