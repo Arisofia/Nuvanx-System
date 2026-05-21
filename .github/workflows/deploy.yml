@@ -90,6 +90,22 @@ jobs:
             fi
             echo "::add-mask::$SESSION_URL"
 
+            # Helper functions for migration logging
+            sanitize_migration_output() {
+              sed 's/\x1b\[[0-9;]*m//g'
+            }
+
+            print_migration_output() {
+              local input
+              input=$(cat)
+              printf '%s\n' "$input"
+              printf '%s\n' "$input" | sanitize_migration_output >> supabase-migrations.log
+            }
+
+            append_migration_log() {
+              sanitize_migration_output >> supabase-migrations.log
+            }
+
             # Retry transient Supabase Preview failures while surfacing deterministic SQL errors.
             print_migration_failure_summary() {
               local output="$1"
