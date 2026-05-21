@@ -11,8 +11,8 @@ jobs:
       # addressing the deprecation warning for Node.js 20.
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v4.1.7
+      - uses: actions/setup-node@v4.0.3
         with:
           node-version: '22'
       - run: npm install @supabase/supabase-js

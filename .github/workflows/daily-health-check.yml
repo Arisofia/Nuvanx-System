@@ -13,10 +13,9 @@ jobs:
   health-check:
     name: Health Check — Production Endpoints
     runs-on: ubuntu-latest
-    environment:
-      name: production
+    environment: production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.1.7
 
       - name: Setup Deno
         uses: denoland/setup-deno@11b63cf76cfcafb4e43f97b6cad24d8e8438f62d

@@ -12,7 +12,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4 # v4
+      - uses: actions/checkout@v4.1.7
 
       - name: Fail on merge conflict markers in CI-critical config
         run: |
@@ -108,10 +108,10 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v4 # v4
+      - uses: actions/checkout@v4.1.7
 
       - name: Use Node.js
-        uses: actions/setup-node@v4 # v4
+        uses: actions/setup-node@v4.0.3
         with:
           node-version: '22'
           cache: 'npm'
@@ -134,10 +134,10 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v4 # v4
+      - uses: actions/checkout@v4.1.7
 
       - name: Use Node.js
-        uses: actions/setup-node@v4 # v4
+        uses: actions/setup-node@v4.0.3
         with:
           node-version: '22'
           cache: 'npm'
@@ -161,10 +161,10 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v4 # v4
+      - uses: actions/checkout@v4.1.7
 
       - name: Use Node.js
-        uses: actions/setup-node@v4 # v4
+        uses: actions/setup-node@v4.0.3
         with:
           node-version: '22'
           cache: 'npm'
@@ -209,10 +209,10 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v4 # v4
+      - uses: actions/checkout@v4.1.7
 
       - name: Use Node.js
-        uses: actions/setup-node@v4 # v4
+        uses: actions/setup-node@v4.0.3
         with:
           node-version: '22'
           cache: 'npm'
@@ -255,10 +255,10 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4 # v4
+      - uses: actions/checkout@v4.1.7
 
       - name: Use Node.js
-        uses: actions/setup-node@v4 # v4
+        uses: actions/setup-node@v4.0.3
         with:
           node-version: '22'
           cache: 'npm'
@@ -285,7 +285,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4 # v4
+      - uses: actions/checkout@v4.1.7
 
       - name: Setup Deno
         uses: denoland/setup-deno@v2 # Pin to latest v2.x
