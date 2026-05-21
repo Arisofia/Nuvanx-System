@@ -2374,6 +2374,9 @@ function resolveLeadAdAccountIdFromPayload(payloadObj: Record<string, any>, url:
     meta.ad_account_id ??
     meta.adAccountId ??
     url.searchParams.get('adAccountId') ??
+    url.searchParams.get('ad_account_id') ??
+    url.searchParams.get('account_id') ??
+    url.searchParams.get('accountId') ??
     '';
 
   const normalized = normalizeMetaAccountIds(rawValue);
