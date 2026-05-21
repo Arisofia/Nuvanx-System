@@ -24,6 +24,11 @@
 
 const { Client } = require('pg');
 const crypto     = require('node:crypto');
+const {
+  resolveUserClinicId,
+  upsertMetaDailyInsight,
+  ensureMetaDailyInsightsConflictTarget,
+} = require('./shared/meta-daily-insights');
 
 const META_GRAPH = 'https://graph.facebook.com/v22.0';
 
@@ -286,10 +291,7 @@ async function main() {
   try {
     reportUserId = await resolveReportUserId(db);
     reportClinicId = await resolveUserClinicId(db, reportUserId);
-<<<<<<< HEAD
     await ensureMetaDailyInsightsConflictTarget(db);
-=======
->>>>>>> fix-sql-migration
   } catch (err) {
     await db.end();
     throw err;

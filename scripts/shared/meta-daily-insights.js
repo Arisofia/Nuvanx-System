@@ -47,8 +47,39 @@ async function upsertMetaDailyInsight(db, row) {
       row.spend, row.conversions, row.ctr, row.cpc, row.cpm, row.messaging_conversations, row.updated_at]);
 }
 
+async function ensureMetaDailyInsightsConflictTarget(db) {
+  await db.query(`ALTER TABLE public.meta_daily_insights ADD COLUMN IF NOT EXISTS clinic_id UUID`);
+  await db.query(`
+    UPDATE public.meta_daily_insights mdi
+    SET clinic_id = u.clinic_id
+    FROM public.users u
+    WHERE mdi.user_id = u.id
+      AND mdi.clinic_id IS NULL
+      AND u.clinic_id IS NOT NULL
+  `);
+  await db.query(`
+    WITH ranked AS (
+      SELECT
+        ctid,
+        ROW_NUMBER() OVER (
+          PARTITION BY clinic_id, ad_account_id, date
+          ORDER BY updated_at DESC NULLS LAST, user_id
+        ) AS rn
+      FROM public.meta_daily_insights
+      WHERE clinic_id IS NOT NULL
+    )
+    DELETE FROM public.meta_daily_insights mdi
+    WHERE mdi.ctid IN (SELECT ctid FROM ranked WHERE rn > 1)
+  `);
+  await db.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS meta_daily_insights_clinic_account_date_uidx
+      ON public.meta_daily_insights (clinic_id, ad_account_id, date)
+  `);
+}
+
 module.exports = {
   MissingClinicIdError,
   resolveUserClinicId,
   upsertMetaDailyInsight,
+  ensureMetaDailyInsightsConflictTarget,
 };
