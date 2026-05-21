@@ -29,8 +29,8 @@ jobs:
       PRODUCTION_E2E_TOKEN: ${{ secrets.PRODUCTION_E2E_TOKEN || '' }}
 
     steps:
-      - uses: actions/checkout@v4 # v4
-      - uses: actions/setup-node@v4 # v4
+      - uses: actions/checkout@v4.1.7
+      - uses: actions/setup-node@v4.0.3
         with:
           node-version: '22'
       - name: Install dependencies
