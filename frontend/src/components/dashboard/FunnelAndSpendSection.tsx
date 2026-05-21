@@ -50,6 +50,13 @@ export function FunnelAndSpendSection({
           )}
         </CardHeader>
         <CardContent className="pt-8 grid grid-cols-1 sm:grid-cols-2 gap-6">
+          <div className="sm:col-span-2 rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-3">
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-800">Estado de atribución</p>
+            <p className="mt-1 text-xs text-amber-900">
+              Datos no aptos para decisiones de presupuesto, CAC, CPL ni validación CAPI. Uso permitido solo para monitoreo interno de gasto Meta (Goya) y volumen bruto de leads CRM.
+            </p>
+          </div>
+
           <div className="bg-[#FAF7F2]/60 p-6 rounded-3xl border border-border/40 hover:border-primary/30 transition-all duration-500 hover:shadow-lg hover:shadow-primary/5 group">
             <div className="flex items-center justify-between gap-2 mb-4">
               <span className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em] group-hover:text-primary transition-colors">Inversión Meta</span>
@@ -62,24 +69,24 @@ export function FunnelAndSpendSection({
           
           <div className="bg-[#FAF7F2]/60 p-6 rounded-3xl border border-border/40 hover:border-primary/30 transition-all duration-500 hover:shadow-lg hover:shadow-primary/5 group">
             <div className="flex items-center justify-between gap-2 mb-4">
-              <span className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em] group-hover:text-primary transition-colors">Leads Atribuidos</span>
+              <span className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em] group-hover:text-primary transition-colors">Conversiones Meta</span>
               <Users className="h-4 w-4 text-primary opacity-40 group-hover:opacity-100 transition-opacity" />
             </div>
             <p className="text-4xl font-serif font-bold tracking-tight text-[#2C2825]">{combined.metaEstimatedLeads.toLocaleString('es-ES')}</p>
             <div className="h-[1px] w-8 bg-primary/20 my-4" />
-            <p className="text-[10px] text-[#8E8680] font-medium italic opacity-60">Meta Leads atribuidos</p>
+            <p className="text-[10px] text-[#8E8680] font-medium italic opacity-60">Campo conversions (sin filtro por acción)</p>
           </div>
 
           <div className="bg-[#FAF7F2]/60 p-6 rounded-3xl border border-border/40 hover:border-primary/30 transition-all duration-500 hover:shadow-lg hover:shadow-primary/5 group">
             <div className="flex items-center justify-between gap-2 mb-4">
-              <span className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em] group-hover:text-primary transition-colors">CPL Meta</span>
+              <span className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em] group-hover:text-primary transition-colors">Costo / Conversiones</span>
               <Target className="h-4 w-4 text-primary opacity-40 group-hover:opacity-100 transition-opacity" />
             </div>
             <p className="text-4xl font-serif font-bold tracking-tight text-[#2C2825]">
               {combined.metaCpl ? `€${combined.metaCpl.toLocaleString('es-ES')}` : '0'}
             </p>
             <div className="h-[1px] w-8 bg-primary/20 my-4" />
-            <p className="text-[10px] text-[#8E8680] font-medium italic opacity-60">Coste por Lead</p>
+            <p className="text-[10px] text-[#8E8680] font-medium italic opacity-60">Indicador no utilizable para presupuesto</p>
           </div>
 
           <div className="bg-[#FAF7F2]/60 p-6 rounded-3xl border border-border/40 hover:border-primary/30 transition-all duration-500 hover:shadow-lg hover:shadow-primary/5 group">

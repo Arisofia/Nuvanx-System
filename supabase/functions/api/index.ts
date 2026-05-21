@@ -2362,13 +2362,41 @@ async function upsertLeadIdempotent(adminClient: any, userId: string, payload: a
   return { data: existing, deduplicated: true, status: 200 };
 }
 
+const FALLBACK_META_AD_ACCOUNT_ID = '9523446201036125';
+
+function resolveLeadAdAccountIdFromPayload(payloadObj: Record<string, any>, url: URL): string | null {
+  const meta = (payloadObj._meta && typeof payloadObj._meta === 'object') ? payloadObj._meta : {};
+  const rawValue =
+    payloadObj.ad_account_id ??
+    payloadObj.adAccountId ??
+    payloadObj.account_id ??
+    payloadObj.accountId ??
+    meta.ad_account_id ??
+    meta.adAccountId ??
+    url.searchParams.get('adAccountId') ??
+    url.searchParams.get('ad_account_id') ??
+    url.searchParams.get('account_id') ??
+    url.searchParams.get('accountId') ??
+    '';
+
+  const normalized = normalizeMetaAccountIds(rawValue);
+  if (normalized.length === 0) return null;
+  return normalizeMetaAccountRawValue(normalized[0]);
+}
+
 async function handleLeadsPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, req, url, sendJson } = ctx;
   if (resource === 'leads' && req.method === 'POST') {
     const rawBody = await req.json();
     const body = (rawBody && typeof rawBody === 'object') ? rawBody : {};
     const clinicId = await resolveClinicId(adminClient, userId);
-    const payload = { ...body, user_id: userId, clinic_id: body?.clinic_id ?? clinicId };
+    const requestedAdAccountId = resolveLeadAdAccountIdFromPayload(body as Record<string, any>, url);
+    const payload = {
+      ...body,
+      ad_account_id: requestedAdAccountId ?? FALLBACK_META_AD_ACCOUNT_ID,
+      user_id: userId,
+      clinic_id: body?.clinic_id ?? clinicId,
+    };
     const payloadObj = payload as Record<string, any>;
     const source = String(payloadObj?.source ?? '').trim();
     const externalId = String(payloadObj?.external_id ?? '').trim();
