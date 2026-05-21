@@ -397,7 +397,7 @@ async function trackMetaCapiEvent(accessToken: string, input: MetaCapiEventInput
 }
 
 async function enviarNotificacionMovil(lead: any) {
-  const mensaje = ` ¡Nuevo Lead de Alto Valor! Cuenta: ${lead.cuenta_id === "9523446201036125" ? "Francisco Antonio" : "Nuvanx"} Paciente: ${lead.nombre || lead.name || 'Nuevo registro'} Teléfono: ${lead.phone} Valor: ${lead.valor || lead.revenue || 0} EUR Procesado en Meta CAPI`;
+  const mensaje = ` ¡Nuevo Lead de Alto Valor! Cuenta: ${lead.cuenta_id === "act_9523446201036125" ? "Francisco Antonio" : "Nuvanx"} Paciente: ${lead.nombre || lead.name || 'Nuevo registro'} Teléfono: ${lead.phone} Valor: ${lead.valor || lead.revenue || 0} EUR Procesado en Meta CAPI`;
   const botToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
   const chatId = Deno.env.get("TELEGRAM_CHAT_ID");
   if (!botToken || !chatId) return;

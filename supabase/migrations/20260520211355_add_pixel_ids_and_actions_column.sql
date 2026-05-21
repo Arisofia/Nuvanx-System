@@ -13,7 +13,7 @@ ALTER TABLE meta_daily_insights
   ADD COLUMN IF NOT EXISTS actions JSONB,
   ADD COLUMN IF NOT EXISTS action_values JSONB,
   ADD COLUMN IF NOT EXISTS lead_actions INTEGER GENERATED ALWAYS AS (
-    COALESCE((actions->'"'"'lead'"'"')::int, 0) +
-    COALESCE((actions->'"'"'onsite_conversion.lead_grouped'"'"')::int, 0) +
-    COALESCE((actions->'"'"'contact_total'"'"')::int, 0)
+    COALESCE((actions->'lead')::int, 0) +
+    COALESCE((actions->'onsite_conversion.lead_grouped')::int, 0) +
+    COALESCE((actions->'contact_total')::int, 0)
   ) STORED;

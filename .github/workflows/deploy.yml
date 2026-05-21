@@ -46,7 +46,7 @@ jobs:
       - uses: actions/checkout@v4 # v4
 
       - name: Validate Supabase deployment secrets
-          id: validate
+        id: validate
         run: |
           MISSING=()
           [ -z "$SUPABASE_ACCESS_TOKEN" ] && MISSING+=("SUPABASE_ACCESS_TOKEN")
