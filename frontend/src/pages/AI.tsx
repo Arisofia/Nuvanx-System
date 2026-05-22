@@ -106,9 +106,12 @@ export default function AI() {
   // Auto-load every panel on mount so the UI is "connected by default" and
   // only surfaces errors when a specific agent fails.
   useEffect(() => {
-    handleAnalyze()
-    handleFetchSuggestions()
-    handleFetchOutputs()
+    const timer = setTimeout(() => {
+      void handleAnalyze()
+      void handleFetchSuggestions()
+      void handleFetchOutputs()
+    }, 0)
+    return () => clearTimeout(timer)
   }, [])
 
   const outputTypes = ['all', ...Array.from(new Set(outputs.map((o) => o.agent_type).filter(Boolean)))]
