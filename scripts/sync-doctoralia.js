@@ -179,7 +179,7 @@ function parseDate(val) {
   if (typeof val === 'number' && Number.isFinite(val)) {
     // Google Sheets serial date number (days since 1899-12-30).
     const serialEpochMs = Date.UTC(1899, 11, 30);
-    const parsedSerial = new Date(serialEpochMs + Math.round(val) * 86_400_000);
+    const parsedSerial = new Date(serialEpochMs + Math.floor(val) * 86_400_000);
     return Number.isNaN(parsedSerial.getTime()) ? null : parsedSerial;
   }
   const s = String(val).trim();

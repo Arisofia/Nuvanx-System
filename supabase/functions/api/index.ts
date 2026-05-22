@@ -2173,8 +2173,9 @@ async function handleSupabaseWebhook(ctx: PublicRouteContext): Promise<Response 
 
           const { data: trace, error: traceErr } = await adminClient
             .from('vw_doctoralia_lead_traceability_unified')
-            .select('lead_id, leadgen_id, campaign_id, lead_phone_normalized')
+            .select('lead_id, leadgen_id, campaign_id, lead_phone_normalized, clinic_id')
             .eq('paciente_telefono_normalized', phoneNormalized)
+            .eq('clinic_id', clinicId)
             .limit(1)
             .maybeSingle();
           if (traceErr) {
@@ -2182,8 +2183,13 @@ async function handleSupabaseWebhook(ctx: PublicRouteContext): Promise<Response 
             return;
           }
           if (!trace?.lead_id) {
+            const maskedPhone =
+              typeof phoneNormalized === 'string' && phoneNormalized.length > 4
+                ? `${'*'.repeat(phoneNormalized.length - 4)}${phoneNormalized.slice(-4)}`
+                : phoneNormalized ?? null;
+
             console.warn('[CAPI-PROD] No lead traceability found for phone', {
-              phoneNormalized,
+              phoneMasked: maskedPhone,
               produccionId: record.id ?? null,
             });
             return;
