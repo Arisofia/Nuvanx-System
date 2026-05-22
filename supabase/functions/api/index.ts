@@ -271,6 +271,15 @@ async function metaPost(path: string, body: any, token: string) {
   if (!response.ok) {
     const err = data?.error ?? {};
     const message = err.message ?? data?.message ?? text ?? `Meta API ${response.status}`;
+    console.error('[CAPI] Meta Graph API error', {
+      path,
+      status: response.status,
+      statusText: response.statusText,
+      message,
+      code: err?.code ?? null,
+      type: err?.type ?? null,
+      fbtrace_id: err?.fbtrace_id ?? null,
+    });
     throw new Error(message);
   }
   return data;
@@ -344,6 +353,9 @@ interface MetaCapiEventInput {
  * for verification in Events Manager → Test Events.
  */
 async function trackMetaCapiEvent(accessToken: string, input: MetaCapiEventInput) {
+  if (!accessToken?.trim()) {
+    throw new Error('META_ACCESS_TOKEN is missing or empty.');
+  }
   const userData: Record<string, string[]> = {};
   const phone = input.userData.ph ? normalizePhoneForMeta(input.userData.ph) : '';
   if (phone) userData.ph = [phone];
@@ -393,6 +405,18 @@ async function trackMetaCapiEvent(accessToken: string, input: MetaCapiEventInput
   if (testCode) payload.test_event_code = testCode;
 
   const pixelId = input.pixelId || DEFAULT_META_PIXEL_ID;
+  console.log('[CAPI] Dispatching event', {
+    eventName: input.eventName,
+    eventId: input.eventId ?? null,
+    pixelId,
+    hasPhone: Boolean(userData.ph?.length),
+    hasEmail: Boolean(userData.em?.length),
+    hasFbc: Boolean(hashedUserData.fbc),
+    hasFbp: Boolean(hashedUserData.fbp),
+    hasIp: Boolean(hashedUserData.client_ip_address),
+    hasUa: Boolean(hashedUserData.client_user_agent),
+    testEventCode: testCode ? '[present]' : '[absent]',
+  });
   return await metaPost(`/${pixelId}/events`, payload, accessToken);
 }
 
@@ -2442,6 +2466,13 @@ async function handleLeadsPost(ctx: AuthenticatedRouteContext): Promise<Response
 
               // Mark as sent to prevent double processing via webhook
               await adminClient.from('leads').update({ enviado_a_meta: true }).eq('id', (data as any).id);
+            } else {
+              console.warn('[CAPI] Lead event skipped: missing credentials', {
+                notConnected: creds.notConnected,
+                hasDecryptionError: Boolean(creds.decryptionError),
+                hasAccessToken: Boolean(creds.accessToken),
+                userId,
+              });
             }
           } catch (capiErr) {
             console.error('[CAPI] background lead tracking failed:', capiErr);
@@ -2494,6 +2525,13 @@ async function handleLeadsPost(ctx: AuthenticatedRouteContext): Promise<Response
 
             // Mark as sent to prevent double processing via webhook
             await adminClient.from('leads').update({ enviado_a_meta: true }).eq('id', data.id);
+          } else {
+            console.warn('[CAPI] Lead insert event skipped: missing credentials', {
+              notConnected: creds.notConnected,
+              hasDecryptionError: Boolean(creds.decryptionError),
+              hasAccessToken: Boolean(creds.accessToken),
+              userId,
+            });
           }
         } catch (capiErr) {
           console.error('[CAPI] background lead tracking failed:', capiErr);
