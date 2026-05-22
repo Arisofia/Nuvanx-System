@@ -445,6 +445,7 @@ async function enviarNotificacionMovil(lead: any) {
 async function trackMetaLeadConversion(
   accessToken: string,
   input: {
+    eventName?: string;
     pixelId?: string;
     eventId: string;
     phone?: string | null;
@@ -467,7 +468,7 @@ async function trackMetaLeadConversion(
 ) {
   return await trackMetaCapiEvent(accessToken, {
     pixelId: input.pixelId,
-    eventName: 'Lead',
+    eventName: input.eventName ?? 'Lead',
     eventId: input.eventId,
     eventTime: input.eventTime,
     eventSourceUrl: input.eventSourceUrl,
@@ -494,6 +495,7 @@ async function trackMetaLeadConversion(
 type MetaConversionType = 'lead' | 'contact';
 
 interface MetaConversionInput {
+  eventName?: string;
   pixelId?: string;
   eventId: string;
   phone?: string | null;
@@ -2188,6 +2190,7 @@ async function handleSupabaseWebhook(ctx: PublicRouteContext): Promise<Response 
           }
 
           await trackMetaConversion('lead', creds.accessToken, {
+            eventName: 'Purchase',
             pixelId: creds.pixelId,
             eventId: `prod_${record.id}`,
             phone: trace.lead_phone_normalized ?? phoneNormalized,
