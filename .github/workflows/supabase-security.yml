@@ -93,7 +93,7 @@ jobs:
               exit 1
             fi
 
-            SESSION_URL_HOST=$(python3 -c "import os, urllib.parse as p; print(p.urlparse(os.environ.get('SESSION_URL', '')).hostname or '')")
+            SESSION_URL_HOST=$(python3 -c "import os, urllib.parse as p; u=os.environ.get('SESSION_URL',''); print((p.urlparse(u).hostname or '') if u else '')" 2>/dev/null || true)
             echo "SESSION_URL_HOST=$SESSION_URL_HOST"
             if [ -n "$SESSION_URL_HOST" ]; then
               echo "Checking resolution for $SESSION_URL_HOST..."
@@ -105,5 +105,26 @@ jobs:
 
             # Hard timeout so a stuck connection doesn't burn Actions minutes.
             echo "Running supabase db lint..."
-            timeout --signal=TERM --kill-after=30s 240s \
-              supabase db lint --db-url "$SESSION_URL" --level error --fail-on error </dev/null
+            lint_output=$(timeout --signal=TERM --kill-after=30s 240s \
+              supabase db lint --db-url "$SESSION_URL" --level error --fail-on error </dev/null 2>&1) || {
+              lint_exit=$?
+              echo "$lint_output"
+              if echo "$lint_output" | grep -Eiq 'SQLSTATE 28P01|no such host|NXDOMAIN|Temporary failure in name resolution|server misbehaving' && [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
+                echo "::warning::Pooler DNS/auth failed; retrying lint with direct DB host fallback."
+                DIRECT_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
+                export DIRECT_URL
+                DIRECT_HOST=$(python3 -c "import os, urllib.parse as p; u=os.environ.get('DIRECT_URL',''); print((p.urlparse(u).hostname or '') if u else '')" 2>/dev/null || true)
+                if [ -n "$DIRECT_HOST" ]; then
+                  echo "DIRECT_URL_HOST=$DIRECT_HOST"
+                  getent hosts "$DIRECT_HOST" || {
+                    echo "::warning::Could not resolve $DIRECT_HOST via getent"
+                    nslookup "$DIRECT_HOST" || echo "::warning::Could not resolve $DIRECT_HOST via nslookup"
+                  }
+                fi
+                timeout --signal=TERM --kill-after=30s 240s \
+                  supabase db lint --db-url "$DIRECT_URL" --level error --fail-on error </dev/null
+                exit 0
+              fi
+              exit "$lint_exit"
+            }
+            echo "$lint_output"

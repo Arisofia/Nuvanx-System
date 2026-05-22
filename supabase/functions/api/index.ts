@@ -2382,7 +2382,7 @@ function resolveLeadAdAccountIdFromPayload(payloadObj: Record<string, any>, url:
 
   const normalized = normalizeMetaAccountIds(rawValue);
   if (normalized.length === 0) return null;
-  return normalizeMetaAccountRawValue(normalized[0]);
+  return normalizeMetaAccountIdValue(normalized[0]);
 }
 
 async function handleLeadsPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
