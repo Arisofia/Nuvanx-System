@@ -225,6 +225,7 @@ jobs:
     env:
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
     steps:
       - uses: actions/checkout@v4.1.7
@@ -234,6 +235,7 @@ jobs:
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
           supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ env.DATABASE_URL }}
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           skip_link: true
           command: supabase functions deploy api --use-api --project-ref ${{ env.SUPABASE_PROJECT_REF }}
@@ -243,6 +245,7 @@ jobs:
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
           supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ env.DATABASE_URL }}
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           skip_link: true
           command: supabase functions deploy mcp --project-ref ${{ env.SUPABASE_PROJECT_REF }} --no-verify-jwt
@@ -252,6 +255,7 @@ jobs:
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
           supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ env.DATABASE_URL }}
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           skip_link: true
           command: supabase functions deploy daily-aggregates --no-verify-jwt --project-ref ${{ env.SUPABASE_PROJECT_REF }}
