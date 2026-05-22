@@ -14,7 +14,9 @@ BEGIN
     RETURN;
   END IF;
 
-  CREATE OR REPLACE VIEW public.vw_lead_traceability AS
+  DROP VIEW IF EXISTS public.vw_lead_traceability;
+
+  CREATE VIEW public.vw_lead_traceability AS
 SELECT
   -- ── lead (existing columns, unchanged order) ──────────────────────────────
   l.id                    AS lead_id,

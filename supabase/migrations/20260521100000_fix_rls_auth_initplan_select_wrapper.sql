@@ -1,4 +1,4 @@
-﻿-- fix_rls_auth_initplan_select_wrapper
+-- fix_rls_auth_initplan_select_wrapper
 -- Recreate 13 RLS SELECT policies with proper (select auth.function()) wrapper
 -- to fix auth_rls_initplan lint warnings and CI security check
 
