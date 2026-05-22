@@ -997,6 +997,7 @@ export async function processLeadData(adminClient: any, userId: string, leadData
       email_hash:        hashedEmail,
       raw_field_data:    Object.keys(rawFieldData).length ? rawFieldData : null,
       lead_quality_score: null,
+      ad_account_id:   leadData.account_id ?? leadData.ad_account_id ?? null,
       created_at:        createdAt,
     }, { onConflict: 'clinic_id,source,external_id', ignoreDuplicates: true })
     .select('id')
@@ -2251,7 +2252,7 @@ async function handleProductionAuditGet(ctx: AuthenticatedRouteContext): Promise
  * remain the default way to keep reconciliation state fresh.
  */
 async function runLeadPipelineReconciliation(adminClient: any, userId: string) {
-  console.log(`[Reconciliation] Iniciando para user ${userId}`);
+  // Reconciliation started
 
   const { data: usr } = await adminClient
     .from('users').select('clinic_id').eq('id', userId).single();
@@ -2288,7 +2289,7 @@ async function runLeadPipelineReconciliation(adminClient: any, userId: string) {
     if (waUpdated > 0) console.log(`[Reconciliation] WhatsApp: ${waUpdated} leads avanzados`);
   } catch (e) { console.warn('[Reconciliation] WhatsApp RPC failed', e); }
 
-  console.log(`[Reconciliation] Finalizado para user ${userId}`);
+  // Reconciliation completed
 }
 
 async function handleLeadsGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
