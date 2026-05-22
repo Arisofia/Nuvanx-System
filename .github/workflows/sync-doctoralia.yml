@@ -102,5 +102,5 @@ jobs:
           DATABASE_URL:             ${{ env.DATABASE_URL }}
           CLINIC_ID:                ${{ env.CLINIC_ID }}
           SHEET_RANGE:              A1:Z5000
-          DOCTORALIA_SYNC_PERMISSION_MODE: warn
           # SHEET_NAME: Sheet1   # Uncomment and set if data is on a specific tab
+          DOCTORALIA_SYNC_PERMISSION_MODE: warn
