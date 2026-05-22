@@ -87,6 +87,8 @@ jobs:
                   raise SystemExit(f'[functions.{function_name}] import_map must be {import_map}')
               if block.get('verify_jwt') is not False:
                   raise SystemExit(f'[functions.{function_name}] verify_jwt must be false')
+              
+              # Ensure S3 keys are NOT in the function block (they belong in [experimental])
               leaked_keys = invalid_keys.intersection(block)
               if leaked_keys:
                   raise SystemExit(

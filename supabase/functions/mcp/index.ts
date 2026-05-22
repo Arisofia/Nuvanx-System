@@ -1,3 +1,6 @@
+/** @ts-ignore: Deno global is provided by Supabase Edge Runtime */
+declare const Deno: any;
+
 import { createClient } from '@supabase/supabase-js'
 import { Hono } from 'hono'
 import { McpServer, StreamableHttpTransport } from 'mcp-lite'
@@ -322,7 +325,7 @@ mcp.tool('get_top_campaigns', {
       const name = curr.campaign_name || 'Sin nombre'
       acc[name] = (acc[name] || 0) + Number(curr.amount_net || 0)
       return acc
-    }, {})
+    }, {} as Record<string, number>)
 
     const processedRanking = Object.entries(revenueByCampaign)
       .map(([campaign_name, revenue]) => ({ campaign_name, revenue }))
