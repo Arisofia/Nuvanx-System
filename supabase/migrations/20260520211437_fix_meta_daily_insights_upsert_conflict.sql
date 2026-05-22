@@ -1,4 +1,4 @@
-﻿-- fix_meta_daily_insights_upsert_conflict
+-- fix_meta_daily_insights_upsert_conflict
 DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint WHERE conname = 'meta_daily_insights_account_date_unique'
