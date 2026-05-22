@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Unified workspace commands for Nuvanx System",
   "scripts": {
-    "test": "node scripts/lib/phone-normalization.test.js && if command -v vitest >/dev/null 2>&1; then vitest run supabase/functions --passWithNoTests; else echo 'vitest not installed; skipping supabase/functions tests'; fi",
+    "test": "node scripts/lib/phone-normalization.test.js && vitest run supabase/functions --passWithNoTests",
     "build": "npm --prefix frontend ci --legacy-peer-deps && npm --prefix frontend run build",
     "dev": "npm --prefix frontend run dev",
     "lint": "npm --prefix frontend run lint",
@@ -24,8 +24,11 @@
     "secrets:scan": "node scripts/scan-secrets.js",
     "production:e2e": "node scripts/production-e2e.js",
     "verify:ai-generate": "node scripts/verify-ai-generate.js",
+    "verify:doctoralia-config": "node -e 'const req=[\"DOCTORALIA_SHEET_ID\",\"DATABASE_URL\",\"CLINIC_ID\",\"GOOGLE_ADS_SERVICE_ACCOUNT\",\"SHEET_NAME\"]; console.log(\"Verificando configuración de Doctoralia...\"); req.forEach(v=>process.env[v]?console.log(`✅ ${v} configurada`):console.error(`❌ Falta variable: ${v}`))'",
     "meta:ads:extract": "python scripts/meta_ads_library.py",
-    "ops:meta-capi-checklist": "cat docs/codex/meta-capi-operational-checklist.md"
+    "ops:meta-capi-checklist": "cat docs/codex/meta-capi-operational-checklist.md",
+    "daily:sync": "node scripts/run-daily-sync.js",
+    "meta:token": "node scripts/set-meta-token.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.4",

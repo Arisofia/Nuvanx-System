@@ -1,0 +1,43 @@
+{
+  "version": "5",
+  "specifiers": {
+    "npm:hono@^4.6.14": "4.12.18",
+    "npm:mcp-lite@0.8.2": "0.8.2",
+    "npm:zod-to-json-schema@^3.23.3": "3.25.2_zod@3.25.76",
+    "npm:zod@^3.25.76": "3.25.76"
+  },
+  "npm": {
+    "@standard-schema/spec@1.1.0": {
+      "integrity": "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="
+    },
+    "hono@4.12.18": {
+      "integrity": "sha512-RWzP96k/yv0PQfyXnWjs6zot20TqfpfsNXhOnev8d1InAxubW93L11/oNUc3tQqn2G0bSdAOBpX+2uDFHV7kdQ=="
+    },
+    "mcp-lite@0.8.2": {
+      "integrity": "sha512-v78gCsmOI9cGhUsu8xRZ8NEZ6AOFPaAxm4xarP6Dhro3l9HY6Voo43MNuX+CO5oT8gpRfgJ5bMJLTSCFsp+4Kg==",
+      "dependencies": [
+        "@standard-schema/spec"
+      ]
+    },
+    "zod-to-json-schema@3.25.2_zod@3.25.76": {
+      "integrity": "sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA==",
+      "dependencies": [
+        "zod"
+      ]
+    },
+    "zod@3.25.76": {
+      "integrity": "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="
+    }
+  },
+  "remote": {
+    "https://esm.sh/@supabase/supabase-js@2.42.0": "9aa41b81533203560b902bdf13d45dcb8d0201b0f9b1526929bd6756ba015032"
+  },
+  "workspace": {
+    "dependencies": [
+      "npm:hono@^4.6.14",
+      "npm:mcp-lite@0.8.2",
+      "npm:zod-to-json-schema@^3.23.3",
+      "npm:zod@^3.25.76"
+    ]
+  }
+}

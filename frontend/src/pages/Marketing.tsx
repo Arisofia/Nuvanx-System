@@ -629,14 +629,6 @@ export default function Marketing() {
     }
   }, [days])
 
-  // Fetch organic on demand + when days change while tab open
-  useEffect(() => {
-    if (activeTab !== 'organic') return
-    if (organicChannel === 'facebook') fetchOrganic(organicKeyword)
-    else fetchIg(igKeyword)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, days, organicChannel])
-
   // ── Fetch Instagram organic insights ──────────────────────────────────
   const fetchIg = useCallback(async (kw: string = '') => {
     setIgLoading(true)
@@ -659,6 +651,20 @@ export default function Marketing() {
       if (mountedRef.current) setIgLoading(false)
     }
   }, [days])
+
+  // Fetch organic on demand + when days change while tab open
+  useEffect(() => {
+    if (activeTab !== 'organic') return
+    const timer = setTimeout(() => {
+      if (organicChannel === 'facebook') {
+        void fetchOrganic(organicKeyword)
+      } else {
+        void fetchIg(igKeyword)
+      }
+    }, 0)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, days, organicChannel])
 
   const { summary, changes, daily, campaigns, currency, accountIds, period, loading, error } = state
   const resolvedAccountIds = resolveMetaAccountIds(accountIds)
