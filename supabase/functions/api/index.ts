@@ -20,6 +20,22 @@ import { getPhoneNormalizationFailureReason, normalizePhoneForMeta } from '../_s
 
 // ── Core Helpers ─────────────────────────────────────────────────────────────
 
+/**
+ * Validates that a Supabase-related environment or config value is present and non-empty.
+ *
+ * This helper normalizes string values and throws a descriptive error when a
+ * critical Supabase setting (URL, service role key, anon key) is missing.
+ *
+ * Args:
+ *   value: The raw value to validate, typically read from configuration or environment.
+ *   name: A human-readable name for the setting, used in error messages.
+ *
+ * Returns:
+ *   The trimmed configuration value if it is defined and non-empty.
+ *
+ * Raises:
+ *   Error: If the value is null, undefined, or an empty string after trimming.
+ */
 function requireSupabaseEnv(value: string | null | undefined, name: string): string {
   const normalized = typeof value === 'string' ? value.trim() : '';
   if (!normalized) throw new Error(`${name} is required.`);

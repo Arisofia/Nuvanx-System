@@ -1,3 +1,5 @@
+# PR labeler configuration — keeps labels in sync with code areas
+
 frontend:
   - changed-files:
       - any-glob-to-any-file: 'frontend/**/*'

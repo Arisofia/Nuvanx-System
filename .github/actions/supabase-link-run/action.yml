@@ -81,7 +81,7 @@ runs:
 
     - name: Link Supabase project
       id: link
-      if: inputs.skip_link != 'true'
+      if: ${{ inputs.skip_link != 'true' }}
       shell: bash
       env:
         INPUT_PROJECT_REF: ${{ inputs.project_ref }}
@@ -141,7 +141,10 @@ runs:
         ACTION_COMMAND: ${{ inputs.command }}
       run: |
         set -euo pipefail
-        printf '%s\n' "$ACTION_COMMAND" > /tmp/supabase_command.sh
+        {
+          echo '#!/usr/bin/env bash'
+          printf '%s\n' "$ACTION_COMMAND"
+        } > /tmp/supabase_command.sh
         chmod +x /tmp/supabase_command.sh
 
     - name: Execute command
@@ -172,4 +175,7 @@ runs:
           exit 1
         fi
 
-        /tmp/supabase_command.sh
+        bash /tmp/supabase_command.sh
+
+        # Optional: cleanup temporary script after execution
+        # rm -f /tmp/supabase_command.sh || true

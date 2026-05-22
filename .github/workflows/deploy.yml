@@ -1,19 +1,4 @@
-# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
-# Deploy Supabase - sequential pipeline on main
-#
-# Order: supabase-migrate -> supabase-functions
-#
-# Note:
-#   Lint and Build are performed in ci.yml on PRs.
-#   This workflow focuses on Supabase infrastructure.
-#   Frontend production deploys are handled by Vercel GitHub integration.
-#
-# Required secrets (GitHub -> Settings -> Secrets -> Actions):
-#   SUPABASE_ACCESS_TOKEN        - Supabase personal access token
-#   SUPABASE_PROJECT_REF         - Supabase project ref used by supabase link
-#   SUPABASE_DB_PASSWORD         - Optional DB password fallback for direct db push
-#   DATABASE_URL                 - Recommended DB URL; use the Supavisor session pooler URL on GitHub Actions
-
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
 name: Deploy Supabase
 
 on:
@@ -30,7 +15,6 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # 1. Supabase DB migrations
   supabase-migrate:
     name: Supabase - DB migrations
     runs-on: ubuntu-latest
@@ -41,8 +25,8 @@ jobs:
     env:
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
     steps:
       - uses: actions/checkout@v4.1.7
 
@@ -119,7 +103,7 @@ jobs:
 
             is_deterministic_migration_error() {
               local output="$1"
-              local pattern='syntax error|permission denied|not a valid migration|SQLSTATE 42P01|could not find valid entry for job|relation .* does not exist|column .* does not exist|function .* does not exist|type .* does not exist|invalid input syntax|duplicate key value violates unique constraint|violates (foreign key|not-null|check) constraint|checksum|failed to parse|error parsing'
+              local pattern='syntax error|permission denied|not a valid migration|SQLSTATE 42P01|could not find valid entry for job|relation .* does not exist|column .* does not exist|function .* does not exist|type .* does not exist|invalid input syntax|checksum|failed to parse|error parsing'
               echo "$output" | grep -Eiq "$pattern"
             }
 
@@ -166,6 +150,7 @@ jobs:
                 return "$exit_code"
               fi
 
+              # Correct bash syntax: call function without parentheses around arguments.
               if is_deterministic_migration_error "$output"; then
                 echo "::error::Non-transient Supabase migration error detected. Not retrying; fix the SQL/CLI error shown above."
                 DB_PUSH_RETRYABLE=false
@@ -212,7 +197,6 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  # 2. Supabase Edge Functions
   supabase-functions:
     name: Supabase - Edge Functions
     needs: supabase-migrate
@@ -223,6 +207,8 @@ jobs:
     env:
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
     steps:
       - uses: actions/checkout@v4.1.7
 
@@ -231,14 +217,18 @@ jobs:
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
           supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ env.DATABASE_URL }}
+          supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           skip_link: true
-          command: supabase functions deploy api --use-api --project-ref ${{ env.SUPABASE_PROJECT_REF }}
+          command: supabase functions deploy api --no-verify-jwt --project-ref ${{ env.SUPABASE_PROJECT_REF }}
 
       - name: Deploy MCP Edge Function
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
           supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ env.DATABASE_URL }}
+          supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           skip_link: true
           command: supabase functions deploy mcp --project-ref ${{ env.SUPABASE_PROJECT_REF }} --no-verify-jwt
 
@@ -247,5 +237,7 @@ jobs:
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
           supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ env.DATABASE_URL }}
+          supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           skip_link: true
           command: supabase functions deploy daily-aggregates --no-verify-jwt --project-ref ${{ env.SUPABASE_PROJECT_REF }}
