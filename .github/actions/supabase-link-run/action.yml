@@ -164,7 +164,7 @@ runs:
         fi
 
         if [ -n "${DATABASE_URL:-}" ]; then
-          SESSION_URL=$(python3 -c 'import os, urllib.parse as p; u=p.urlparse(os.environ.get("DATABASE_URL", "")); r=os.environ.get("SUPABASE_PROJECT_REF", ""); h=u.hostname or ""; sb=h and ("pooler.supabase" in h or h.startswith("db.")); h=f"db.{r}.supabase.co" if sb and r else h; prt=5432 if sb else (u.port or 5432); ui=u.netloc.rsplit("@", 1)[0]+"@" if "@" in u.netloc else ""; print(u._replace(netloc=f"{ui}{h}:{prt}").geturl())')
+          SESSION_URL=$(python3 -c 'import os, urllib.parse as p; u=p.urlparse(os.environ.get("DATABASE_URL", "")); r=os.environ.get("SUPABASE_PROJECT_REF", ""); h=u.hostname or ""; h=f"db.{r}.supabase.co" if r and h.startswith("db.") else h; prt=u.port or 5432; ui=u.netloc.rsplit("@", 1)[0]+"@" if "@" in u.netloc else ""; print(u._replace(netloc=f"{ui}{h}:{prt}").geturl())')
           export SESSION_URL
         elif [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
           SESSION_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
