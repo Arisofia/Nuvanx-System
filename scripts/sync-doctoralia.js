@@ -168,14 +168,26 @@ function findCol(headers, ...hints) {
 }
 
 const dmyRegex = /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/;
+const ymdRegex = /^(\d{4})-(\d{1,2})-(\d{1,2})$/;
 
 /**
  * Parse a date string in DD/MM/YYYY, DD-MM-YYYY or ISO 8601 formats.
  * Returns a Date or null.
  */
 function parseDate(val) {
-  if (!val) return null;
+  if (val === undefined || val === null || String(val).trim() === '') return null;
+  if (typeof val === 'number' && Number.isFinite(val)) {
+    // Google Sheets serial date number (days since 1899-12-30).
+    const serialEpochMs = Date.UTC(1899, 11, 30);
+    const parsedSerial = new Date(serialEpochMs + Math.round(val) * 86_400_000);
+    return Number.isNaN(parsedSerial.getTime()) ? null : parsedSerial;
+  }
   const s = String(val).trim();
+  const ymd = ymdRegex.exec(s);
+  if (ymd) {
+    const [, y, m, d] = ymd;
+    return new Date(`${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}T00:00:00Z`);
+  }
   const regex = new RegExp(dmyRegex.source, dmyRegex.flags);
   const dmy = regex.exec(s);
   if (dmy) {
@@ -192,11 +204,22 @@ function parseDate(val) {
  */
 function parseAmount(val) {
   if (val === undefined || val === null || String(val).trim() === '') return null;
+  if (typeof val === 'number' && Number.isFinite(val)) {
+    return Math.round(val * 100) / 100;
+  }
   const raw = String(val).trim();
-  let normalized = raw.replaceAll(/[ €$]/g, '');
+  // Remove regular and non-breaking spaces, currency symbols.
+  let normalized = raw.replaceAll(/[\u00A0\s€$]/g, '');
+  // If both separators exist, infer decimal separator as the right-most one.
   if (normalized.includes(',') && normalized.includes('.')) {
-    normalized = normalized.replaceAll('.', '').replaceAll(',', '.');
-  } else {
+    const lastComma = normalized.lastIndexOf(',');
+    const lastDot = normalized.lastIndexOf('.');
+    if (lastComma > lastDot) {
+      normalized = normalized.replaceAll('.', '').replaceAll(',', '.');
+    } else {
+      normalized = normalized.replaceAll(',', '');
+    }
+  } else if (normalized.includes(',')) {
     normalized = normalized.replaceAll(',', '.');
   }
   if (!/^-?\d+(?:\.\d+)?$/.test(normalized)) return null;
