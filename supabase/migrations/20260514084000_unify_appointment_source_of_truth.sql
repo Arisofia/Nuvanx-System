@@ -37,7 +37,11 @@ BEGIN
         l.priority AS lead_priority
       FROM public.vw_doctoralia_trazabilidad_360 dr
       LEFT JOIN public.leads l
-        ON normalize_phone(dr.paciente_telefono) = l.phone_normalized
+        ON (
+          normalize_phone(dr.paciente_telefono) = l.phone_normalized
+          OR normalize_phone(dr.phone_primary) = l.phone_normalized
+          OR normalize_phone(dr.phone_secondary) = l.phone_normalized
+        )
       LEFT JOIN public.meta_attribution m
         ON m.lead_id = l.id;
     $view$;
@@ -78,7 +82,11 @@ BEGIN
         l.priority AS lead_priority
       FROM public.vw_doctoralia_trazabilidad_360 dr
       LEFT JOIN public.leads l
-        ON normalize_phone(dr.paciente_telefono) = l.phone_normalized;
+        ON (
+          normalize_phone(dr.paciente_telefono) = l.phone_normalized
+          OR normalize_phone(dr.phone_primary) = l.phone_normalized
+          OR normalize_phone(dr.phone_secondary) = l.phone_normalized
+        );
     $view$;
   END IF;
 END $$;

@@ -14,6 +14,7 @@
  */
 import { useEffect } from 'react'
 import { useLocation } from 'wouter'
+import { isBrowser } from './env'
 
 type FbqFn = ((...args: unknown[]) => void) & {
   callMethod?: (...args: unknown[]) => void
@@ -32,7 +33,6 @@ declare global {
 let initialized = false
 let activePixelId: string | null = null
 let seenInitialPageView = false
-const isBrowser = (): boolean => typeof globalThis.window !== 'undefined'
 
 function loadFbqStub(): void {
   if (!isBrowser()) return
