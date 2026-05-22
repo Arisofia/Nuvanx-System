@@ -52,6 +52,15 @@ jobs:
           [ -z "${DOCTORALIA_SHEET_ID:-}" ] && [ -z "${DOCTORALIA_DRIVE_FILE_ID:-}" ] && MISSING+=("DOCTORALIA_SHEET_ID or DOCTORALIA_DRIVE_FILE_ID")
           [ -z "${DATABASE_URL:-}" ]         && MISSING+=("DATABASE_URL")
           [ -z "${CLINIC_ID:-}" ]            && MISSING+=("CLINIC_ID")
+
+          EXPECTED_DOCTORALIA_SHEET_ID="1GAJoASGdjsKB7bTtC5hXPFkWbB7S4fVXhKD_cZoDwPw"
+          SHEET_ID_EFFECTIVE="${DOCTORALIA_SHEET_ID:-${DOCTORALIA_DRIVE_FILE_ID:-}}"
+          if [ -n "${SHEET_ID_EFFECTIVE:-}" ] && [ "$SHEET_ID_EFFECTIVE" != "$EXPECTED_DOCTORALIA_SHEET_ID" ]; then
+            echo "::error::DOCTORALIA_SHEET_ID/DOCTORALIA_DRIVE_FILE_ID does not match the configured production spreadsheet."
+            echo "::error::Expected: $EXPECTED_DOCTORALIA_SHEET_ID"
+            echo "::error::Received: $SHEET_ID_EFFECTIVE"
+            exit 1
+          fi
           if [ ${#MISSING[@]} -gt 0 ]; then
             echo "::error::Missing secrets: ${MISSING[*]}"
             echo "::error::Add them at Settings -> Secrets and variables -> Actions"
