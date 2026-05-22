@@ -491,6 +491,46 @@ async function trackMetaLeadConversion(
   });
 }
 
+type MetaConversionType = 'lead' | 'contact';
+
+interface MetaConversionInput {
+  pixelId?: string;
+  eventId: string;
+  phone?: string | null;
+  email?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zipCode?: string | null;
+  fbc?: string | null;
+  fbp?: string | null;
+  ip?: string | null;
+  ua?: string | null;
+  externalId?: string | null;
+  customData?: Record<string, unknown>;
+  eventSourceUrl?: string;
+  eventTime?: number;
+  testEventCode?: string;
+}
+
+async function trackMetaConversion(type: MetaConversionType, accessToken: string, input: MetaConversionInput) {
+  if (type === 'contact') {
+    return await trackMetaWhatsappConversion(accessToken, input.phone ?? null, input.email ?? null, {
+      pixelId: input.pixelId,
+      eventId: input.eventId,
+      fbc: input.fbc ?? null,
+      fbp: input.fbp ?? null,
+      ip: input.ip ?? null,
+      ua: input.ua ?? null,
+      externalId: input.externalId ?? null,
+      testEventCode: input.testEventCode,
+    });
+  }
+
+  return await trackMetaLeadConversion(accessToken, input);
+}
+
 export function parseMetaMetric(raw: unknown): number {
   if (typeof raw === 'number') return Number.isFinite(raw) ? raw : 0;
   if (typeof raw === 'string') {
@@ -1666,7 +1706,7 @@ async function fireMetaLeadCapi(accessToken: string, leadgenId: string, leadData
     const eventTime = leadData?.created_time
       ? Math.floor(new Date(leadData.created_time).getTime() / 1000)
       : undefined;
-    await trackMetaLeadConversion(accessToken, {
+    await trackMetaConversion('lead', accessToken, {
       pixelId,
       eventId: String(leadgenId),
       phone,
@@ -1966,9 +2006,10 @@ async function processWhatsappWebhookMessage(adminClient: any, userId: string, v
       if (credRow) {
         const accessToken = await publicRouteHelpers.decryptCred(credRow.encrypted_key);
         // For WhatsApp webhooks we don't have IP/UA context, but we have phone
-        await trackMetaWhatsappConversion(accessToken, phone, null, {
+        await trackMetaConversion('contact', accessToken, {
           pixelId: pixelId || undefined,
           eventId: `wa_${message.id}`,
+          phone: phone || null,
           externalId: userId,
         });
       }
@@ -2053,7 +2094,7 @@ async function handleSupabaseWebhook(ctx: PublicRouteContext): Promise<Response 
         const creds = await resolveMetaCreds(adminClient, userId, '');
         if (!creds.notConnected && !creds.decryptionError && creds.accessToken) {
           // Trigger Meta CAPI
-          await trackMetaLeadConversion(creds.accessToken, {
+          await trackMetaConversion('lead', creds.accessToken, {
             pixelId: creds.pixelId,
             eventId: record.event_id || record.id,
             phone: record.phone,
@@ -2444,7 +2485,7 @@ async function handleLeadsPost(ctx: AuthenticatedRouteContext): Promise<Response
               const fbp = meta.fbp || payloadObj.fbp || null; // No change needed, already uses nullish coalescing
               const testEventCode = body.test_event_code || meta.test_event_code || url.searchParams.get('test_event_code') || null;
 
-              await trackMetaLeadConversion(creds.accessToken, {
+              await trackMetaConversion('lead', creds.accessToken, {
                 pixelId: creds.pixelId,
                 eventId: payloadObj.event_id || (data as any).id || externalId || `lead_${Date.now()}`,
                 phone: (data as any).phone || payloadObj.phone,
@@ -2504,7 +2545,7 @@ async function handleLeadsPost(ctx: AuthenticatedRouteContext): Promise<Response
             const fbp = meta.fbp || payloadObj.fbp || null;
             const testEventCode = body.test_event_code || meta.test_event_code || url.searchParams.get('test_event_code') || null;
 
-            await trackMetaLeadConversion(creds.accessToken, {
+            await trackMetaConversion('lead', creds.accessToken, {
               pixelId: creds.pixelId,
               eventId: payloadObj.event_id || data.id || `lead_${Date.now()}`,
               phone: data.phone,
@@ -6049,8 +6090,11 @@ async function processWhatsappConversionPost(adminClient: any, userId: string, r
 
     // Trigger Meta CAPI Contact event
     const externalId = matchedPatientId || matchedLeadId || userId;
-    const result = await trackMetaWhatsappConversion(creds.accessToken, phone || null, email || null, {
+    const result = await trackMetaConversion('contact', creds.accessToken, {
       pixelId: creds.pixelId,
+      eventId: `contact_${matchedLeadId || matchedPatientId || Date.now()}`,
+      phone: phone || null,
+      email: email || null,
       fbc,
       fbp,
       ip,
