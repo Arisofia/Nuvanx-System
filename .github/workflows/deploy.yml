@@ -220,7 +220,7 @@ jobs:
           database_url: ${{ env.DATABASE_URL }}
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           skip_link: true
-          command: supabase functions deploy api --use-api --project-ref ${{ env.SUPABASE_PROJECT_REF }}
+          command: supabase functions deploy api --no-verify-jwt --project-ref ${{ env.SUPABASE_PROJECT_REF }}
 
       - name: Deploy MCP Edge Function
         uses: ./.github/actions/supabase-link-run

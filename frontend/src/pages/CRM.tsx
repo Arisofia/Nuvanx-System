@@ -53,7 +53,7 @@ export default function CRM() {
   const stageStats = useMemo(() => {
     const counts: Record<string, number> = { lead: 0, whatsapp: 0, appointment: 0, treatment: 0, closed: 0 }
     for (const l of leads) {
-      const stage = l.status ?? l.stage ?? ''
+      const stage = l.status ?? ''
       if (stage in counts) counts[stage]++
     }
     return counts
