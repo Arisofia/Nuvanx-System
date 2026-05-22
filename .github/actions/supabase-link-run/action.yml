@@ -164,46 +164,7 @@ runs:
         fi
 
         if [ -n "${DATABASE_URL:-}" ]; then
-          SESSION_URL=$(python3 << 'PYEOF'
-import os
-from urllib.parse import urlparse, urlunparse
-
-database_url = os.environ.get("DATABASE_URL", "")
-project_ref = os.environ.get("SUPABASE_PROJECT_REF", "")
-
-u = urlparse(database_url)
-
-host = u.hostname or ""
-is_pooler = "pooler.supabase" in host
-is_direct = host.startswith("db.") and (project_ref or "") in host
-
-if is_pooler and not project_ref:
-    raise SystemExit("SUPABASE_PROJECT_REF is required when DATABASE_URL uses a pooler host.")
-
-if is_pooler or is_direct:
-    new_host = f"db.{project_ref}.supabase.co"
-    new_port = 5432
-else:
-    new_host = host
-    new_port = u.port or 5432
-
-username = u.username or ""
-password = u.password
-
-auth = username
-if password is not None:
-    auth = f"{auth}:{password}"
-
-netloc = auth if auth else ""
-if netloc:
-    netloc = f"{netloc}@{new_host}:{new_port}"
-else:
-    netloc = f"{new_host}:{new_port}"
-
-session_url = urlunparse((u.scheme, netloc, u.path, u.params, u.query, u.fragment))
-print(session_url)
-PYEOF
-)
+          SESSION_URL=$(python3 -c 'import os; from urllib.parse import urlparse, urlunparse; database_url=os.environ.get("DATABASE_URL", ""); project_ref=os.environ.get("SUPABASE_PROJECT_REF", ""); u=urlparse(database_url); host=u.hostname or ""; is_pooler="pooler.supabase" in host; is_direct=host.startswith("db.") and (project_ref or "") in host;if is_pooler and not project_ref: raise SystemExit("SUPABASE_PROJECT_REF is required when DATABASE_URL uses a pooler host."); new_host=(f"db.{project_ref}.supabase.co" if (is_pooler or is_direct) else host); new_port=(5432 if (is_pooler or is_direct) else (u.port or 5432)); username=u.username or ""; password=u.password; auth=(f"{username}:{password}" if password is not None else username); netloc=(f"{auth}@{new_host}:{new_port}" if auth else f"{new_host}:{new_port}"); print(urlunparse((u.scheme, netloc, u.path, u.params, u.query, u.fragment)))')
           export SESSION_URL
         elif [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
           SESSION_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
