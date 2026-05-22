@@ -23,7 +23,7 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  MCP_API_KEY: ${{ secrets.MCP_API_KEY }}
+  VITE_MCP_API_KEY: ${{ secrets.VITE_MCP_API_KEY }}
 
 concurrency:
   group: deploy-supabase-production

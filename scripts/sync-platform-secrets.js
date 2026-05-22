@@ -59,6 +59,7 @@ const frontendKeys = [
   'VITE_SUPABASE_FIGMA_URL',
   'VITE_SUPABASE_FIGMA_ANON_KEY',
   'VITE_SENTRY_DSN',
+  'VITE_MCP_API_KEY',
 ];
 
 function readEnvFile(filePath) {
@@ -98,6 +99,11 @@ function mergeSources() {
   }
   if (merged.DOCTORALIA_SHEET_ID && !merged.DOCTORALIA_DRIVE_FILE_ID) {
     merged.DOCTORALIA_DRIVE_FILE_ID = merged.DOCTORALIA_SHEET_ID;
+  }
+
+  // Ensure VITE_MCP_API_KEY is populated from MCP_API_KEY if missing.
+  if (merged.MCP_API_KEY && !merged.VITE_MCP_API_KEY) {
+    merged.VITE_MCP_API_KEY = merged.MCP_API_KEY;
   }
 
   return merged;
