@@ -113,6 +113,7 @@ runs:
             output=$(run_link_once 2>&1) || {
               local exit_code=$?
               echo "$output"
+              # Correct bash syntax: func "$arg" (sin paréntesis)
               if is_deterministic_link_error "$output"; then
                 echo "::warning::Supabase link skipped (deterministic error): $output"
                 echo "skipped=true" >> "$GITHUB_OUTPUT"

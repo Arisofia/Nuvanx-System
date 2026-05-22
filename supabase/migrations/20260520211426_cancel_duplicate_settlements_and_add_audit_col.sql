@@ -1,4 +1,4 @@
-﻿-- cancel_duplicate_settlements_and_add_audit_col
+-- cancel_duplicate_settlements_and_add_audit_col
 ALTER TABLE financial_settlements ADD COLUMN IF NOT EXISTS audit_note TEXT;
 
 WITH ranked AS (

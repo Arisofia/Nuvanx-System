@@ -1,4 +1,4 @@
-﻿-- add_pixel_ids_and_actions_column
+-- add_pixel_ids_and_actions_column
 UPDATE integrations
 SET metadata = jsonb_set(
   jsonb_set(

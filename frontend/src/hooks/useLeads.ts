@@ -98,8 +98,13 @@ export function useLeads() {
 
   useEffect(() => {
     const activeFlag = { active: true }
-    loadLeads(activeFlag)
-    return () => { activeFlag.active = false }
+    const timer = setTimeout(() => {
+      void loadLeads(activeFlag)
+    }, 0)
+    return () => {
+      activeFlag.active = false
+      clearTimeout(timer)
+    }
   }, [loadLeads])
 
   return { leads, loading, error, refreshLeads: loadLeads, updateLead, deleteLead }

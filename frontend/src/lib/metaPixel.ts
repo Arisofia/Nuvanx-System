@@ -14,6 +14,7 @@
  */
 import { useEffect } from 'react'
 import { useLocation } from 'wouter'
+import { isBrowser } from './env'
 
 type FbqFn = ((...args: unknown[]) => void) & {
   callMethod?: (...args: unknown[]) => void
@@ -34,7 +35,7 @@ let activePixelId: string | null = null
 let seenInitialPageView = false
 
 function loadFbqStub(): void {
-  if (typeof globalThis.window === 'undefined') return
+  if (!isBrowser()) return
   if (globalThis.fbq) return
   // Standard Meta Pixel bootstrap — keep behavior identical to the official snippet.
   const n = function (...args: unknown[]) {
@@ -62,7 +63,7 @@ export function initMetaPixel(pixelId: string | undefined | null): void {
   if (initialized) return
   const id = (pixelId ?? '').trim()
   if (!id) return
-  if (typeof globalThis.window === 'undefined') return
+  if (!isBrowser()) return
   loadFbqStub()
   globalThis.fbq?.('init', id)
   globalThis.fbq?.('track', 'PageView')
@@ -80,7 +81,7 @@ export function trackMetaEvent(
   params?: Record<string, unknown>,
   eventId?: string,
 ): void {
-  if (!initialized || typeof globalThis.window === 'undefined' || !globalThis.fbq) return
+  if (!initialized || !isBrowser() || !globalThis.fbq) return
   const opts = eventId ? { eventID: eventId } : undefined
   if (params && opts) globalThis.fbq('track', eventName, params, opts)
   else if (params) globalThis.fbq('track', eventName, params)
@@ -100,7 +101,7 @@ export function useMetaContextCapture(): void {
   const [location] = useLocation()
 
   useEffect(() => {
-    if (typeof globalThis.window === 'undefined') return
+    if (!isBrowser()) return
 
     // 1. Capture fbclid from URL
     const params = new URLSearchParams(window.location.search)
@@ -117,7 +118,7 @@ export function useMetaContextCapture(): void {
  * Retrieve captured Meta context for inclusion in API payloads.
  */
 export function getMetaContext(): { fbc: string | null; fbp: string | null } {
-  if (typeof globalThis.window === 'undefined') return { fbc: null, fbp: null }
+  if (!isBrowser()) return { fbc: null, fbp: null }
 
   // 1. Build fbc from fbclid and timestamp
   const fbclid = localStorage.getItem('nvx_fbclid')

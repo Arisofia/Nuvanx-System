@@ -42,7 +42,7 @@ BEGIN
     NEW.phone_normalized := NULL;
   END IF;
 
-  m_trat := regexp_match(NEW.asunto, '\((.*)\)\s*$');
+  m_trat := regexp_match(NEW.asunto, '\(([^)]*)\)\s*$');
   NEW.tratamiento_nombre := CASE WHEN m_trat IS NOT NULL THEN btrim(m_trat[1]) ELSE NULL END;
 
   NEW.doc_patient_id := NEW.doctoralia_id;

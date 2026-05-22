@@ -18,12 +18,13 @@ lerna-debug.log*
 **/build/
 
 # Environment files (NEVER commit — contain secrets)
+# Cubre .env, .env.local, .env.tokens.local, etc. en cualquier subcarpeta.
 **/.env
 **/.env.*
-**/.env.local
-**/.env.*.local
 !**/.env.example
 !**/.env.*.example
+
+# Otros secretos
 .secrets.local
 backend/google-service-account.json
 *service-account*.json
@@ -57,6 +58,8 @@ supabase/.temp/
 **/blob-report/
 **/playwright/.cache/
 
+# Vercel root dir
 .vercel
-.env*.local
+
+# Python cache (scripts/)
 scripts/__pycache__/
