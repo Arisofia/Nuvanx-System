@@ -2183,8 +2183,13 @@ async function handleSupabaseWebhook(ctx: PublicRouteContext): Promise<Response 
             return;
           }
           if (!trace?.lead_id) {
+            const maskedPhone =
+              typeof phoneNormalized === 'string' && phoneNormalized.length > 4
+                ? `${'*'.repeat(phoneNormalized.length - 4)}${phoneNormalized.slice(-4)}`
+                : phoneNormalized ?? null;
+
             console.warn('[CAPI-PROD] No lead traceability found for phone', {
-              phoneNormalized,
+              phoneMasked: maskedPhone,
               produccionId: record.id ?? null,
             });
             return;
