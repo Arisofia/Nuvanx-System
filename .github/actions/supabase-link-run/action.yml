@@ -164,10 +164,13 @@ runs:
         fi
 
         if [ -n "${DATABASE_URL:-}" ]; then
-          SESSION_URL=$(python3 -c 'import os, urllib.parse as p; u=p.urlparse(os.environ.get("DATABASE_URL", "")); r=os.environ.get("SUPABASE_PROJECT_REF", ""); h=u.hostname or ""; h=f"db.{r}.supabase.co" if r and h.startswith("db.") else h; prt=u.port or 6543; ui=u.netloc.rsplit("@", 1)[0]+"@" if "@" in u.netloc else ""; print(u._replace(netloc=f"{ui}{h}:{prt}").geturl())')
+          # Standardize hostname and port. Use .com for poolers, .co for direct.
+          # Default to 6543 for poolers, 5432 for direct.
+          SESSION_URL=$(python3 -c 'import os, urllib.parse as p; u=p.urlparse(os.environ.get("DATABASE_URL", "")); r=os.environ.get("SUPABASE_PROJECT_REF", ""); h=u.hostname or ""; h=h.replace(".supabase.co", ".supabase.com") if "pooler.supabase." in h else h; h=f"db.{r}.supabase.co" if r and h.startswith("db.") else h; is_pooler="pooler.supabase." in h; prt=u.port or (6543 if is_pooler else 5432); ui=u.netloc.rsplit("@", 1)[0]+"@" if "@" in u.netloc else ""; print(u._replace(netloc=f"{ui}{h}:{prt}").geturl())')
           export SESSION_URL
         elif [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
-          SESSION_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:6543/postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
+          # Fallback to direct connection if no DATABASE_URL provided
+          SESSION_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
           export SESSION_URL
         else
           echo "::error::Cannot build SESSION_URL. Provide DATABASE_URL, or SUPABASE_DB_PASSWORD with SUPABASE_PROJECT_REF."

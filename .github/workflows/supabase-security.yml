@@ -96,9 +96,14 @@ jobs:
             SESSION_URL_HOST=$(python3 -c "import os, urllib.parse as p; print(p.urlparse(os.environ.get('SESSION_URL', '')).hostname or '')")
             echo "SESSION_URL_HOST=$SESSION_URL_HOST"
             if [ -n "$SESSION_URL_HOST" ]; then
-              getent hosts "$SESSION_URL_HOST" || echo "::warning::Could not resolve $SESSION_URL_HOST"
+              echo "Checking resolution for $SESSION_URL_HOST..."
+              getent hosts "$SESSION_URL_HOST" || {
+                echo "::warning::Could not resolve $SESSION_URL_HOST via getent"
+                nslookup "$SESSION_URL_HOST" || echo "::warning::Could not resolve $SESSION_URL_HOST via nslookup"
+              }
             fi
 
             # Hard timeout so a stuck connection doesn't burn Actions minutes.
+            echo "Running supabase db lint..."
             timeout --signal=TERM --kill-after=30s 240s \
               supabase db lint --db-url "$SESSION_URL" --level error --fail-on error </dev/null

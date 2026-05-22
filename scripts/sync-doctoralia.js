@@ -51,29 +51,41 @@ const {
   DOCTORALIA_SYNC_PERMISSION_MODE = 'fail',
 } = process.env;
 
-// Ensure we use the Session Pooler port (6543) for Supabase hosts if port is missing or direct (5432).
+// Ensure we use the Session Pooler port (6543) for Supabase poolers if port is missing.
 const DATABASE_URL = (() => {
   const url = process.env.DATABASE_URL;
   if (!url) return undefined;
   try {
     const u = new URL(url);
-    if (u.hostname.endsWith('.supabase.co') && (!u.port || u.port === '5432')) {
-      u.port = '6543';
-      return u.toString();
+    const isPooler = u.hostname.includes('pooler.supabase.');
+    const isDirect = u.hostname.startsWith('db.') && (u.hostname.endsWith('.supabase.co') || u.hostname.endsWith('.supabase.com'));
+
+    // Fix .co -> .com for poolers
+    if (isPooler && u.hostname.endsWith('.supabase.co')) {
+      u.hostname = u.hostname.replace('.supabase.co', '.supabase.com');
     }
+
+    if (isPooler && (!u.port || u.port === '5432')) {
+      u.port = '6543';
+    } else if (isDirect && (!u.port || u.port === '6543')) {
+      u.port = '5432';
+    }
+
+    return u.toString();
   } catch {
-    // Fallback to original if URL is invalid (e.g. missing protocol)
+    // Fallback to original if URL is invalid
   }
   return url;
 })();
 
-const SHEET_ID = DOCTORALIA_SHEET_ID || DOCTORALIA_DRIVE_FILE_ID;
+const SHEET_ID = (DOCTORALIA_SHEET_ID || DOCTORALIA_DRIVE_FILE_ID)?.trim();
 const ALLOW_PERMISSION_SKIP = DOCTORALIA_SYNC_PERMISSION_MODE.toLowerCase() === 'warn';
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 if ((!SA_JSON && !GOOGLE_SA_JSON_FILE) || !SHEET_ID || !DATABASE_URL || !CLINIC_ID) {
   console.error('[sync-doctoralia] Missing required env vars.');
   console.error('  Required: GOOGLE_SA_JSON or GOOGLE_SA_JSON_FILE, DOCTORALIA_SHEET_ID or DOCTORALIA_DRIVE_FILE_ID, DATABASE_URL, CLINIC_ID');
+  if (SHEET_ID === undefined) console.error('  SHEET_ID is undefined');
   process.exit(1);
 }
 
@@ -419,8 +431,8 @@ async function main() {
   const sheets = google.sheets({ version: 'v4', auth });
 
   const range = SHEET_NAME 
-    ? `'${SHEET_NAME.replace(/'/g, "''")}'!${SHEET_RANGE}` 
-    : SHEET_RANGE;
+    ? `'${SHEET_NAME.trim().replace(/'/g, "''")}'!${SHEET_RANGE.trim()}` 
+    : SHEET_RANGE.trim();
   // Avoid logging sensitive values in plain text.
   console.log(`[sync-doctoralia] Fetching spreadsheet (id: ${SHEET_ID.slice(0, 4)}...${SHEET_ID.slice(-4)}), range: ${range}`);
 
@@ -440,7 +452,11 @@ async function main() {
       throw new Error(guidance);
     }
     console.error(`[sync-doctoralia] Sheets API Error: ${err.message}`);
-    if (err.errors) console.error('[sync-doctoralia] Details:', JSON.stringify(err.errors, null, 2));
+    if (err.errors) {
+      console.error('[sync-doctoralia] Details:', JSON.stringify(err.errors, null, 2));
+    } else if (err.response?.data) {
+      console.error('[sync-doctoralia] Response Data:', JSON.stringify(err.response.data, null, 2));
+    }
     throw err;
   }
 
