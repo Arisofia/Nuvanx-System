@@ -45,12 +45,27 @@ const {
   GOOGLE_SA_JSON_FILE,
   DOCTORALIA_SHEET_ID,
   DOCTORALIA_DRIVE_FILE_ID,
-  DATABASE_URL,
   CLINIC_ID,
   SHEET_RANGE = 'A1:Z5000',
   SHEET_NAME,
   DOCTORALIA_SYNC_PERMISSION_MODE = 'fail',
 } = process.env;
+
+// Ensure we use the Session Pooler port (6543) for Supabase hosts if port is missing or direct (5432).
+const DATABASE_URL = (() => {
+  const url = process.env.DATABASE_URL;
+  if (!url) return undefined;
+  try {
+    const u = new URL(url);
+    if (u.hostname.endsWith('.supabase.co') && (!u.port || u.port === '5432')) {
+      u.port = '6543';
+      return u.toString();
+    }
+  } catch {
+    // Fallback to original if URL is invalid (e.g. missing protocol)
+  }
+  return url;
+})();
 
 const SHEET_ID = DOCTORALIA_SHEET_ID || DOCTORALIA_DRIVE_FILE_ID;
 const ALLOW_PERMISSION_SKIP = DOCTORALIA_SYNC_PERMISSION_MODE.toLowerCase() === 'warn';
