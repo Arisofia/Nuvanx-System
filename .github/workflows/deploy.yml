@@ -42,9 +42,7 @@ jobs:
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
     steps:
       - uses: actions/checkout@v4.1.7
 
@@ -121,7 +119,7 @@ jobs:
 
             is_deterministic_migration_error() {
               local output="$1"
-              local pattern='syntax error|permission denied|not a valid migration|SQLSTATE 42P01|could not find valid entry for job|relation .* does not exist|column .* does not exist|function .* does not exist|type .* does not exist|invalid input syntax|duplicate key value violates unique constraint|violates (foreign key|not-null|check) constraint|checksum|failed to parse|error parsing'
+              local pattern='syntax error|permission denied|not a valid migration|SQLSTATE 42P01|could not find valid entry for job|relation .* does not exist|column .* does not exist|function .* does not exist|type .* does not exist|invalid input syntax|checksum|failed to parse|error parsing'
               echo "$output" | grep -Eiq "$pattern"
             }
 
@@ -168,7 +166,7 @@ jobs:
                 return "$exit_code"
               fi
 
-              if is_deterministic_migration_error "$output"; then
+              if is_deterministic_migration_error("$output"); then
                 echo "::error::Non-transient Supabase migration error detected. Not retrying; fix the SQL/CLI error shown above."
                 DB_PUSH_RETRYABLE=false
                 return "$exit_code"
