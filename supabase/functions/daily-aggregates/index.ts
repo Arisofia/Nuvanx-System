@@ -129,6 +129,29 @@ async function fetchAllClinicsMetaInsights(days: number) {
   return { rowsInserted: totalRows };
 }
 
+
+async function handleMetaDailyInsights(req: Request) {
+  try {
+    const payload = await req.json().catch(() => ({} as Record<string, unknown>));
+    const days = typeof payload.days === 'number' && Number.isFinite(payload.days) ? payload.days : 2;
+
+    console.log(`[Daily] Fetching Meta insights for last ${days} days`);
+    const result = await fetchAllClinicsMetaInsights(days);
+
+    return new Response(JSON.stringify({
+      success: true,
+      message: `Meta insights updated: ${result.rowsInserted} rows`,
+      rowsInserted: result.rowsInserted,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  } catch (error) {
+    console.error('Meta Daily Insights error:', error);
+    return new Response(JSON.stringify({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+  }
+}
+
 type DailyAggregatesRequest = {
   action?: string;
   days?: number;
@@ -138,13 +161,8 @@ Deno.serve(async (req: Request) => {
   const body = (await req.json().catch((): DailyAggregatesRequest => ({}))) as DailyAggregatesRequest;
   const { action, days = 2 } = body;
 
-  if (action === 'fetch_meta_insights') {
-    console.log(`[Daily] Fetching Meta insights for last ${days} days`);
-    const result = await fetchAllClinicsMetaInsights(days);
-    return new Response(JSON.stringify({ 
-      success: true, 
-      message: `Meta insights actualizados: ${result.rowsInserted} registros` 
-    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  if (action === 'fetch_meta_insights' || action === 'meta-daily-insights') {
+    return await handleMetaDailyInsights(req);
   }
 
   // Fallback to existing logic if no action is provided (for legacy compatibility)
