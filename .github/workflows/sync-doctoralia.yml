@@ -111,5 +111,5 @@ jobs:
           DATABASE_URL:             ${{ secrets.DATABASE_URL }}
           CLINIC_ID:                ${{ secrets.CLINIC_ID }}
           SHEET_RANGE:              A1:Z5000
-          SHEET_NAME:               "Produccion Intermediarios"
+          SHEET_NAME:               Produccion Intermediarios
           DOCTORALIA_SYNC_PERMISSION_MODE: warn
