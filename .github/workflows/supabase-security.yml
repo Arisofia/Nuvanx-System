@@ -105,5 +105,17 @@ jobs:
 
             # Hard timeout so a stuck connection doesn't burn Actions minutes.
             echo "Running supabase db lint..."
-            timeout --signal=TERM --kill-after=30s 240s \
-              supabase db lint --db-url "$SESSION_URL" --level error --fail-on error </dev/null
+            lint_output=$(timeout --signal=TERM --kill-after=30s 240s \
+              supabase db lint --db-url "$SESSION_URL" --level error --fail-on error </dev/null 2>&1) || {
+              lint_exit=$?
+              echo "$lint_output"
+              if echo "$lint_output" | grep -q 'SQLSTATE 28P01' && [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
+                echo "::warning::Pooler auth failed; retrying lint with direct DB host fallback."
+                DIRECT_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
+                timeout --signal=TERM --kill-after=30s 240s \
+                  supabase db lint --db-url "$DIRECT_URL" --level error --fail-on error </dev/null
+                exit 0
+              fi
+              exit "$lint_exit"
+            }
+            echo "$lint_output"
