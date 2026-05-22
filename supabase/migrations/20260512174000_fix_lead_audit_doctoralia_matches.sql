@@ -12,7 +12,7 @@ CREATE OR REPLACE VIEW public.vw_lead_traceability AS
 SELECT
   l.id                    AS lead_id,
   l.name                  AS lead_name,
-  l.email_normalized,
+  COALESCE(l.email, NULL)::TEXT AS email_normalized,
   l.phone_normalized,
   l.source,
   l.stage,
