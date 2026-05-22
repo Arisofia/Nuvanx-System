@@ -109,9 +109,18 @@ jobs:
               supabase db lint --db-url "$SESSION_URL" --level error --fail-on error </dev/null 2>&1) || {
               lint_exit=$?
               echo "$lint_output"
-              if echo "$lint_output" | grep -q 'SQLSTATE 28P01' && [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
-                echo "::warning::Pooler auth failed; retrying lint with direct DB host fallback."
+              if echo "$lint_output" | grep -Eiq 'SQLSTATE 28P01|no such host|NXDOMAIN|Temporary failure in name resolution|server misbehaving' && [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
+                echo "::warning::Pooler DNS/auth failed; retrying lint with direct DB host fallback."
                 DIRECT_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
+                export DIRECT_URL
+                DIRECT_HOST=$(python3 -c "import os, urllib.parse as p; print(p.urlparse(os.environ.get('DIRECT_URL', '')).hostname or '')")
+                if [ -n "$DIRECT_HOST" ]; then
+                  echo "DIRECT_URL_HOST=$DIRECT_HOST"
+                  getent hosts "$DIRECT_HOST" || {
+                    echo "::warning::Could not resolve $DIRECT_HOST via getent"
+                    nslookup "$DIRECT_HOST" || echo "::warning::Could not resolve $DIRECT_HOST via nslookup"
+                  }
+                fi
                 timeout --signal=TERM --kill-after=30s 240s \
                   supabase db lint --db-url "$DIRECT_URL" --level error --fail-on error </dev/null
                 exit 0
