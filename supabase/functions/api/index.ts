@@ -271,6 +271,15 @@ async function metaPost(path: string, body: any, token: string) {
   if (!response.ok) {
     const err = data?.error ?? {};
     const message = err.message ?? data?.message ?? text ?? `Meta API ${response.status}`;
+    console.error('[CAPI] Meta Graph API error', {
+      path,
+      status: response.status,
+      statusText: response.statusText,
+      message,
+      code: err?.code ?? null,
+      type: err?.type ?? null,
+      fbtrace_id: err?.fbtrace_id ?? null,
+    });
     throw new Error(message);
   }
   return data;
@@ -344,6 +353,9 @@ interface MetaCapiEventInput {
  * for verification in Events Manager → Test Events.
  */
 async function trackMetaCapiEvent(accessToken: string, input: MetaCapiEventInput) {
+  if (!accessToken?.trim()) {
+    throw new Error('META_ACCESS_TOKEN is missing or empty.');
+  }
   const userData: Record<string, string[]> = {};
   const phone = input.userData.ph ? normalizePhoneForMeta(input.userData.ph) : '';
   if (phone) userData.ph = [phone];
@@ -393,6 +405,18 @@ async function trackMetaCapiEvent(accessToken: string, input: MetaCapiEventInput
   if (testCode) payload.test_event_code = testCode;
 
   const pixelId = input.pixelId || DEFAULT_META_PIXEL_ID;
+  console.log('[CAPI] Dispatching event', {
+    eventName: input.eventName,
+    eventId: input.eventId ?? null,
+    pixelId,
+    hasPhone: Boolean(userData.ph?.length),
+    hasEmail: Boolean(userData.em?.length),
+    hasFbc: Boolean(hashedUserData.fbc),
+    hasFbp: Boolean(hashedUserData.fbp),
+    hasIp: Boolean(hashedUserData.client_ip_address),
+    hasUa: Boolean(hashedUserData.client_user_agent),
+    testEventCode: testCode ? '[present]' : '[absent]',
+  });
   return await metaPost(`/${pixelId}/events`, payload, accessToken);
 }
 
@@ -421,6 +445,7 @@ async function enviarNotificacionMovil(lead: any) {
 async function trackMetaLeadConversion(
   accessToken: string,
   input: {
+    eventName?: string;
     pixelId?: string;
     eventId: string;
     phone?: string | null;
@@ -443,7 +468,7 @@ async function trackMetaLeadConversion(
 ) {
   return await trackMetaCapiEvent(accessToken, {
     pixelId: input.pixelId,
-    eventName: 'Lead',
+    eventName: input.eventName ?? 'Lead',
     eventId: input.eventId,
     eventTime: input.eventTime,
     eventSourceUrl: input.eventSourceUrl,
@@ -465,6 +490,47 @@ async function trackMetaLeadConversion(
     customData: input.customData,
     testEventCode: input.testEventCode,
   });
+}
+
+type MetaConversionType = 'lead' | 'contact';
+
+interface MetaConversionInput {
+  eventName?: string;
+  pixelId?: string;
+  eventId: string;
+  phone?: string | null;
+  email?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zipCode?: string | null;
+  fbc?: string | null;
+  fbp?: string | null;
+  ip?: string | null;
+  ua?: string | null;
+  externalId?: string | null;
+  customData?: Record<string, unknown>;
+  eventSourceUrl?: string;
+  eventTime?: number;
+  testEventCode?: string;
+}
+
+async function trackMetaConversion(type: MetaConversionType, accessToken: string, input: MetaConversionInput) {
+  if (type === 'contact') {
+    return await trackMetaWhatsappConversion(accessToken, input.phone ?? null, input.email ?? null, {
+      pixelId: input.pixelId,
+      eventId: input.eventId,
+      fbc: input.fbc ?? null,
+      fbp: input.fbp ?? null,
+      ip: input.ip ?? null,
+      ua: input.ua ?? null,
+      externalId: input.externalId ?? null,
+      testEventCode: input.testEventCode,
+    });
+  }
+
+  return await trackMetaLeadConversion(accessToken, input);
 }
 
 export function parseMetaMetric(raw: unknown): number {
@@ -1642,7 +1708,7 @@ async function fireMetaLeadCapi(accessToken: string, leadgenId: string, leadData
     const eventTime = leadData?.created_time
       ? Math.floor(new Date(leadData.created_time).getTime() / 1000)
       : undefined;
-    await trackMetaLeadConversion(accessToken, {
+    await trackMetaConversion('lead', accessToken, {
       pixelId,
       eventId: String(leadgenId),
       phone,
@@ -1942,9 +2008,10 @@ async function processWhatsappWebhookMessage(adminClient: any, userId: string, v
       if (credRow) {
         const accessToken = await publicRouteHelpers.decryptCred(credRow.encrypted_key);
         // For WhatsApp webhooks we don't have IP/UA context, but we have phone
-        await trackMetaWhatsappConversion(accessToken, phone, null, {
+        await trackMetaConversion('contact', accessToken, {
           pixelId: pixelId || undefined,
           eventId: `wa_${message.id}`,
+          phone: phone || null,
           externalId: userId,
         });
       }
@@ -2029,7 +2096,7 @@ async function handleSupabaseWebhook(ctx: PublicRouteContext): Promise<Response 
         const creds = await resolveMetaCreds(adminClient, userId, '');
         if (!creds.notConnected && !creds.decryptionError && creds.accessToken) {
           // Trigger Meta CAPI
-          await trackMetaLeadConversion(creds.accessToken, {
+          await trackMetaConversion('lead', creds.accessToken, {
             pixelId: creds.pixelId,
             eventId: record.event_id || record.id,
             phone: record.phone,
@@ -2055,6 +2122,100 @@ async function handleSupabaseWebhook(ctx: PublicRouteContext): Promise<Response 
         console.error('[CAPI-WEBHOOK] failed to process lead:', err);
       }
     })();
+  }
+
+  if (schema === 'public' && table === 'produccion_intermediarios' && record) {
+    const estado = String(record.estado ?? '').trim().toLowerCase();
+    if (estado === 'pagada') {
+      (async () => {
+        try {
+          const adminClient = createAdminClient();
+          const clinicId: string | null = record.clinic_id ?? null;
+          const phoneNormalized: string | null = record.phone_normalized ?? null;
+          const importe = Number(record.importe ?? 0);
+          if (!clinicId || !phoneNormalized || !(importe > 0)) {
+            console.warn('[CAPI-PROD] Missing clinic_id / phone_normalized / importe, skipping', {
+              id: record.id ?? null,
+              clinicId,
+              phoneNormalized,
+              importe,
+            });
+            return;
+          }
+
+          const { data: clinicUser, error: clinicUserErr } = await adminClient
+            .from('users')
+            .select('id')
+            .eq('clinic_id', clinicId)
+            .limit(1)
+            .maybeSingle();
+          if (clinicUserErr) {
+            console.error('[CAPI-PROD] Failed to resolve clinic user', clinicUserErr);
+            return;
+          }
+          const userId = clinicUser?.id ?? null;
+          if (!userId) {
+            console.warn('[CAPI-PROD] No user found for clinic_id', { clinicId });
+            return;
+          }
+
+          const creds = await resolveMetaCreds(adminClient, userId, '');
+          if (creds.notConnected || creds.decryptionError || !creds.accessToken) {
+            console.warn('[CAPI-PROD] Meta creds not ready for user', {
+              userId,
+              clinicId,
+              hasDecryptionError: Boolean(creds.decryptionError),
+              hasAccessToken: Boolean(creds.accessToken),
+              notConnected: creds.notConnected,
+            });
+            return;
+          }
+
+          const { data: trace, error: traceErr } = await adminClient
+            .from('vw_doctoralia_lead_traceability_unified')
+            .select('lead_id, leadgen_id, campaign_id, lead_phone_normalized')
+            .eq('paciente_telefono_normalized', phoneNormalized)
+            .limit(1)
+            .maybeSingle();
+          if (traceErr) {
+            console.error('[CAPI-PROD] Traceability query error', traceErr);
+            return;
+          }
+          if (!trace?.lead_id) {
+            console.warn('[CAPI-PROD] No lead traceability found for phone', {
+              phoneNormalized,
+              produccionId: record.id ?? null,
+            });
+            return;
+          }
+
+          await trackMetaConversion('lead', creds.accessToken, {
+            eventName: 'Purchase',
+            pixelId: creds.pixelId,
+            eventId: `prod_${record.id}`,
+            phone: trace.lead_phone_normalized ?? phoneNormalized,
+            externalId: trace.lead_id,
+            customData: {
+              value: importe,
+              currency: 'EUR',
+              source: 'doctoralia_production',
+              produccion_id: record.id ?? null,
+              campaign_id: trace.campaign_id ?? null,
+              leadgen_id: trace.leadgen_id ?? null,
+            },
+          });
+
+          console.log('[CAPI-PROD] Conversion sent', {
+            produccionId: record.id ?? null,
+            leadId: trace.lead_id,
+            importe,
+            pixelId: creds.pixelId,
+          });
+        } catch (err) {
+          console.error('[CAPI-PROD] Failed to process production webhook', err);
+        }
+      })();
+    }
   }
 
   return sendJson({ success: true });
@@ -2420,7 +2581,7 @@ async function handleLeadsPost(ctx: AuthenticatedRouteContext): Promise<Response
               const fbp = meta.fbp || payloadObj.fbp || null; // No change needed, already uses nullish coalescing
               const testEventCode = body.test_event_code || meta.test_event_code || url.searchParams.get('test_event_code') || null;
 
-              await trackMetaLeadConversion(creds.accessToken, {
+              await trackMetaConversion('lead', creds.accessToken, {
                 pixelId: creds.pixelId,
                 eventId: payloadObj.event_id || (data as any).id || externalId || `lead_${Date.now()}`,
                 phone: (data as any).phone || payloadObj.phone,
@@ -2442,6 +2603,13 @@ async function handleLeadsPost(ctx: AuthenticatedRouteContext): Promise<Response
 
               // Mark as sent to prevent double processing via webhook
               await adminClient.from('leads').update({ enviado_a_meta: true }).eq('id', (data as any).id);
+            } else {
+              console.warn('[CAPI] Lead event skipped: missing credentials', {
+                notConnected: creds.notConnected,
+                hasDecryptionError: Boolean(creds.decryptionError),
+                hasAccessToken: Boolean(creds.accessToken),
+                userId,
+              });
             }
           } catch (capiErr) {
             console.error('[CAPI] background lead tracking failed:', capiErr);
@@ -2473,7 +2641,7 @@ async function handleLeadsPost(ctx: AuthenticatedRouteContext): Promise<Response
             const fbp = meta.fbp || payloadObj.fbp || null;
             const testEventCode = body.test_event_code || meta.test_event_code || url.searchParams.get('test_event_code') || null;
 
-            await trackMetaLeadConversion(creds.accessToken, {
+            await trackMetaConversion('lead', creds.accessToken, {
               pixelId: creds.pixelId,
               eventId: payloadObj.event_id || data.id || `lead_${Date.now()}`,
               phone: data.phone,
@@ -2494,6 +2662,13 @@ async function handleLeadsPost(ctx: AuthenticatedRouteContext): Promise<Response
 
             // Mark as sent to prevent double processing via webhook
             await adminClient.from('leads').update({ enviado_a_meta: true }).eq('id', data.id);
+          } else {
+            console.warn('[CAPI] Lead insert event skipped: missing credentials', {
+              notConnected: creds.notConnected,
+              hasDecryptionError: Boolean(creds.decryptionError),
+              hasAccessToken: Boolean(creds.accessToken),
+              userId,
+            });
           }
         } catch (capiErr) {
           console.error('[CAPI] background lead tracking failed:', capiErr);
@@ -6011,8 +6186,11 @@ async function processWhatsappConversionPost(adminClient: any, userId: string, r
 
     // Trigger Meta CAPI Contact event
     const externalId = matchedPatientId || matchedLeadId || userId;
-    const result = await trackMetaWhatsappConversion(creds.accessToken, phone || null, email || null, {
+    const result = await trackMetaConversion('contact', creds.accessToken, {
       pixelId: creds.pixelId,
+      eventId: `contact_${matchedLeadId || matchedPatientId || Date.now()}`,
+      phone: phone || null,
+      email: email || null,
       fbc,
       fbp,
       ip,
@@ -6297,7 +6475,7 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
   const metaLeadGenSources = ['meta_leadgen', 'meta_lead_gen', 'facebook_leadgen'];
   const whatsappSources = ['whatsapp', 'meta_whatsapp', 'facebook_whatsapp'];
 
-  const [leadCountRes, leadMetaCountRes, leadLeadGenCountRes, leadWhatsappCountRes, leadsByStageRes, settlementsRes, metaDailyInsightsRes] = await Promise.all([
+  const [leadCountRes, leadMetaCountRes, leadsByStageRes, settlementsRes, metaDailyInsightsRes] = await Promise.all([
     adminClient.from('leads')
       .select('id', { count: 'exact', head: true })
       .eq('clinic_id', clinicId)
@@ -6311,22 +6489,6 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
       .eq('clinic_id', clinicId)
       .is('deleted_at', null)
       .in('source', [...metaLeadGenSources, ...whatsappSources])
-      .gte('created_at', since)
-      .lte('created_at', until),
-
-    adminClient.from('leads')
-      .select('id', { count: 'exact', head: true })
-      .eq('clinic_id', clinicId)
-      .is('deleted_at', null)
-      .in('source', metaLeadGenSources)
-      .gte('created_at', since)
-      .lte('created_at', until),
-
-    adminClient.from('leads')
-      .select('id', { count: 'exact', head: true })
-      .eq('clinic_id', clinicId)
-      .is('deleted_at', null)
-      .in('source', whatsappSources)
       .gte('created_at', since)
       .lte('created_at', until),
 

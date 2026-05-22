@@ -1,4 +1,4 @@
-﻿-- reconcile_phone_match_and_revenue_attribution
+-- reconcile_phone_match_and_revenue_attribution
 UPDATE doctoralia_patients dp
 SET lead_id = l.id,
     match_confidence = GREATEST(COALESCE(dp.match_confidence, 0), 0.85),
