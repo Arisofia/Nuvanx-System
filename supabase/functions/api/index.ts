@@ -2122,6 +2122,99 @@ async function handleSupabaseWebhook(ctx: PublicRouteContext): Promise<Response 
     })();
   }
 
+  if (schema === 'public' && table === 'produccion_intermediarios' && record) {
+    const estado = String(record.estado ?? '').trim().toLowerCase();
+    if (estado === 'pagada') {
+      (async () => {
+        try {
+          const adminClient = createAdminClient();
+          const clinicId: string | null = record.clinic_id ?? null;
+          const phoneNormalized: string | null = record.phone_normalized ?? null;
+          const importe = Number(record.importe ?? 0);
+          if (!clinicId || !phoneNormalized || !(importe > 0)) {
+            console.warn('[CAPI-PROD] Missing clinic_id / phone_normalized / importe, skipping', {
+              id: record.id ?? null,
+              clinicId,
+              phoneNormalized,
+              importe,
+            });
+            return;
+          }
+
+          const { data: clinicUser, error: clinicUserErr } = await adminClient
+            .from('users')
+            .select('id')
+            .eq('clinic_id', clinicId)
+            .limit(1)
+            .maybeSingle();
+          if (clinicUserErr) {
+            console.error('[CAPI-PROD] Failed to resolve clinic user', clinicUserErr);
+            return;
+          }
+          const userId = clinicUser?.id ?? null;
+          if (!userId) {
+            console.warn('[CAPI-PROD] No user found for clinic_id', { clinicId });
+            return;
+          }
+
+          const creds = await resolveMetaCreds(adminClient, userId, '');
+          if (creds.notConnected || creds.decryptionError || !creds.accessToken) {
+            console.warn('[CAPI-PROD] Meta creds not ready for user', {
+              userId,
+              clinicId,
+              hasDecryptionError: Boolean(creds.decryptionError),
+              hasAccessToken: Boolean(creds.accessToken),
+              notConnected: creds.notConnected,
+            });
+            return;
+          }
+
+          const { data: trace, error: traceErr } = await adminClient
+            .from('vw_doctoralia_lead_traceability_unified')
+            .select('lead_id, leadgen_id, campaign_id, lead_phone_normalized')
+            .eq('paciente_telefono_normalized', phoneNormalized)
+            .limit(1)
+            .maybeSingle();
+          if (traceErr) {
+            console.error('[CAPI-PROD] Traceability query error', traceErr);
+            return;
+          }
+          if (!trace?.lead_id) {
+            console.warn('[CAPI-PROD] No lead traceability found for phone', {
+              phoneNormalized,
+              produccionId: record.id ?? null,
+            });
+            return;
+          }
+
+          await trackMetaConversion('lead', creds.accessToken, {
+            pixelId: creds.pixelId,
+            eventId: `prod_${record.id}`,
+            phone: trace.lead_phone_normalized ?? phoneNormalized,
+            externalId: trace.lead_id,
+            customData: {
+              value: importe,
+              currency: 'EUR',
+              source: 'doctoralia_production',
+              produccion_id: record.id ?? null,
+              campaign_id: trace.campaign_id ?? null,
+              leadgen_id: trace.leadgen_id ?? null,
+            },
+          });
+
+          console.log('[CAPI-PROD] Conversion sent', {
+            produccionId: record.id ?? null,
+            leadId: trace.lead_id,
+            importe,
+            pixelId: creds.pixelId,
+          });
+        } catch (err) {
+          console.error('[CAPI-PROD] Failed to process production webhook', err);
+        }
+      })();
+    }
+  }
+
   return sendJson({ success: true });
 }
 
