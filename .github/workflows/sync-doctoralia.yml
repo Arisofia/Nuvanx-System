@@ -97,10 +97,10 @@ jobs:
         run: node scripts/sync-doctoralia.js
         env:
           GOOGLE_SA_JSON_FILE:      ${{ env.GOOGLE_SA_JSON_FILE }}
-          DOCTORALIA_SHEET_ID:      ${{ env.DOCTORALIA_SHEET_ID }}
-          DOCTORALIA_DRIVE_FILE_ID: ${{ env.DOCTORALIA_DRIVE_FILE_ID }}
-          DATABASE_URL:             ${{ env.DATABASE_URL }}
-          CLINIC_ID:                ${{ env.CLINIC_ID }}
+          DOCTORALIA_SHEET_ID:      ${{ secrets.DOCTORALIA_SHEET_ID }}
+          DOCTORALIA_DRIVE_FILE_ID: ${{ secrets.DOCTORALIA_DRIVE_FILE_ID }}
+          DATABASE_URL:             ${{ secrets.DATABASE_URL }}
+          CLINIC_ID:                ${{ secrets.CLINIC_ID }}
           SHEET_RANGE:              A1:Z5000
-          # SHEET_NAME: Sheet1   # Uncomment and set if data is on a specific tab
+          SHEET_NAME:               "Produccion Intermediarios"
           DOCTORALIA_SYNC_PERMISSION_MODE: warn
