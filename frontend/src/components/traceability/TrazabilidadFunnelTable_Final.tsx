@@ -78,7 +78,10 @@ export default function TrazabilidadFunnelTableFinal() {
   }, [])
 
   useEffect(() => {
-    loadRows(EMPTY_FILTERS)
+    const timer = setTimeout(() => {
+      void loadRows(EMPTY_FILTERS)
+    }, 0)
+    return () => clearTimeout(timer)
   }, [loadRows])
 
   const summary = useMemo(() => {

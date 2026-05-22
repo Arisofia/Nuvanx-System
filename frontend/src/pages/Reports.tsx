@@ -198,13 +198,18 @@ export default function Reports() {
     if (leadAuditPhone) params.push(`phone=${encodeURIComponent(leadAuditPhone)}`)
     const qs = params.length ? `?${params.join('&')}` : ''
     let cancelled = false
-    setLeadAuditLoading(true)
-    setLeadAuditError(null)
-    invokeApi(`/reports/lead-audit${qs}`)
-      .then((d: any) => { if (!cancelled) { setLeadAuditRows(d?.leads ?? []); setLeadAuditError(null) } })
-      .catch((e: any) => { if (!cancelled) setLeadAuditError(e?.message || 'Failed to load lead audit.') })
-      .finally(() => { if (!cancelled) setLeadAuditLoading(false) })
-    return () => { cancelled = true }
+    const timer = setTimeout(() => {
+      setLeadAuditLoading(true)
+      setLeadAuditError(null)
+      invokeApi(`/reports/lead-audit${qs}`)
+        .then((d: any) => { if (!cancelled) { setLeadAuditRows(d?.leads ?? []); setLeadAuditError(null) } })
+        .catch((e: any) => { if (!cancelled) setLeadAuditError(e?.message || 'Failed to load lead audit.') })
+        .finally(() => { if (!cancelled) setLeadAuditLoading(false) })
+    }, 0)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
   }, [leadAuditMatchedOnly, leadAuditFrom, leadAuditTo, leadAuditCampaignName, leadAuditPhone])
 
   // Local date filters for campaign/source (front-end only)

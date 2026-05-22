@@ -42,6 +42,17 @@ Nuvanx-System es una plataforma de inteligencia empresarial (BI) y automatizaci�
 | Doctoralia | Ingestion active | CSV upload → settlements table; no live API |
 | HubSpot | **Purged** | Removed in migration `20260416170000` |
 
+### Doctoralia Integration Configuration
+
+- **Spreadsheet ID**: `1GAJoASGdjsKB7bTtC5hXPFkWbB7S4fVXhKD_cZoDwPw`
+- **Sheet Name**: `Produccion Intermediarios` (gid: `2048254065`)
+- **Column Mapping (0-indexed)**:
+  - `0`: Estado | `1`: Fecha
+  - `5`: Asunto (Source of ID, Name, Phone, and Treatment)
+  - `6`: Agenda
+  - `9`: Procedencia (Lead Source)
+  - `10`: Importe
+
 ## Revenue Truth Model
 
 - `leads.revenue` = **estimated** (entered manually in CRM, never verified)
@@ -80,19 +91,6 @@ Para actualizar el token de Meta en los `.env` locales detectados, usa:
 ```bash
 npm run update:meta-token
 ```
-
-### Meta Ads Library
-Extractor de anuncios activos (no políticos) para benchmarking y análisis de competencia.
-
-```bash
-# Requiere Python 3 y requests (pip install requests)
-python scripts/meta_ads_library.py --pages "ID_PAGINA_1,ID_PAGINA_2"
-```
-
-Argumentos:
-- `--pages`: IDs de páginas de Meta separadas por comas (Requerido).
-- `--token`: Token de acceso (opcional, usa `META_ACCESS_TOKEN` por defecto).
-- `--countries`: Códigos de país ISO (opcional, default: `ES`).
 
 Si quieres propagar el token también a GitHub, Supabase y Vercel desde el mismo script, ejecuta:
 
