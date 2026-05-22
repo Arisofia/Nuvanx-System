@@ -19,7 +19,7 @@ SELECT
   -- ── lead (existing columns, unchanged order) ──────────────────────────────
   l.id                    AS lead_id,
   l.name                  AS lead_name,
-  l.email_normalized,
+  COALESCE(l.email, NULL)::TEXT AS email_normalized,
   l.phone_normalized,
   NULL::TEXT              AS source,
   NULL::TEXT              AS stage,
