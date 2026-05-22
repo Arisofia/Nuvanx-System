@@ -93,7 +93,7 @@ jobs:
               exit 1
             fi
 
-            SESSION_URL_HOST=$(python3 -c "import os, urllib.parse as p; print(p.urlparse(os.environ.get('SESSION_URL', '')).hostname or '')")
+            SESSION_URL_HOST=$(python3 -c "import os, urllib.parse as p; u=os.environ.get('SESSION_URL',''); print((p.urlparse(u).hostname or '') if u else '')" 2>/dev/null || true)
             echo "SESSION_URL_HOST=$SESSION_URL_HOST"
             if [ -n "$SESSION_URL_HOST" ]; then
               echo "Checking resolution for $SESSION_URL_HOST..."
