@@ -103,4 +103,4 @@ jobs:
           CLINIC_ID:                ${{ env.CLINIC_ID }}
           SHEET_RANGE:              A1:Z5000
           DOCTORALIA_SYNC_PERMISSION_MODE: warn
-          # SHEET_NAME: Sheet1   # Uncomment and set if data is on a specific tab
+          SHEET_NAME: Produccion Intermediarios
