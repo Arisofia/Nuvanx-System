@@ -71,12 +71,8 @@ runs:
         set -euo pipefail
         RESOLVED_DB_PASSWORD="$INPUT_SUPABASE_DB_PASSWORD"
         if [ -z "$RESOLVED_DB_PASSWORD" ] && [ -n "$INPUT_DATABASE_URL" ]; then
-          # Try python3 first as it handles URL encoding correctly
-          RESOLVED_DB_PASSWORD=$(python3 -c 'from urllib.parse import urlparse; import os; print(urlparse(os.environ.get("INPUT_DATABASE_URL", "")).password or "")' || echo "")
-          # Fallback to sed if python failed or returned empty
-          if [ -z "$RESOLVED_DB_PASSWORD" ]; then
-            RESOLVED_DB_PASSWORD=$(echo "$INPUT_DATABASE_URL" | sed -n 's|.*://[^:]*:\([^@]*\)@.*|\1|p' || echo "")
-          fi
+          # Extract password from URL defensively without failing on malformed URL variants.
+          RESOLVED_DB_PASSWORD=$(echo "$INPUT_DATABASE_URL" | sed -n 's|.*://[^:]*:\([^@]*\)@.*|\1|p' || echo "")
         fi
         if [ -n "$RESOLVED_DB_PASSWORD" ]; then
           echo "::add-mask::$RESOLVED_DB_PASSWORD"

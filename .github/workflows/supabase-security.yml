@@ -113,7 +113,7 @@ jobs:
                 echo "::warning::Pooler DNS/auth failed; retrying lint with direct DB host fallback."
                 DIRECT_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
                 export DIRECT_URL
-                DIRECT_HOST=$(python3 -c "import os, urllib.parse as p; print(p.urlparse(os.environ.get('DIRECT_URL', '')).hostname or '')")
+                DIRECT_HOST=$(python3 -c "import os, urllib.parse as p; u=os.environ.get('DIRECT_URL',''); print((p.urlparse(u).hostname or '') if u else '')" 2>/dev/null || true)
                 if [ -n "$DIRECT_HOST" ]; then
                   echo "DIRECT_URL_HOST=$DIRECT_HOST"
                   getent hosts "$DIRECT_HOST" || {
