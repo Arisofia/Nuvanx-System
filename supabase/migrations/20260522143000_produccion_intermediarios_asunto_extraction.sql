@@ -2,8 +2,6 @@
 -- Advanced extraction of structured fields from Doctoralia "asunto" in
 -- public.produccion_intermediarios.
 
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-
 ALTER TABLE public.produccion_intermediarios
   ADD COLUMN IF NOT EXISTS paciente_nombre TEXT,
   ADD COLUMN IF NOT EXISTS tratamiento_nombre TEXT,
@@ -14,6 +12,10 @@ RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 DECLARE
+  m_id TEXT[];
+  m_nombre TEXT[];
+  m_phone TEXT[];
+  m_trat TEXT[];
   raw_phone TEXT;
 BEGIN
   IF NEW.asunto IS NULL OR btrim(NEW.asunto) = '' THEN
@@ -21,21 +23,30 @@ BEGIN
     NEW.paciente_nombre := NULL;
     NEW.tratamiento_nombre := NULL;
     NEW.phone_normalized := NULL;
+    NEW.doc_patient_id := NULL;
+    NEW.procedimiento_nombre := NULL;
     RETURN NEW;
   END IF;
 
-  NEW.doctoralia_id := (regexp_match(NEW.asunto, '^\s*([0-9]+)\.'))[1];
-  NEW.paciente_nombre := btrim((regexp_match(NEW.asunto, '\.\s*([^\[]+)'))[1]);
+  m_id := regexp_match(NEW.asunto, '^\s*([0-9]+)\.');
+  NEW.doctoralia_id := CASE WHEN m_id IS NOT NULL THEN m_id[1] ELSE NULL END;
 
-  raw_phone := (regexp_match(NEW.asunto, '\[([^\]]+)\]'))[1];
-  IF raw_phone IS NOT NULL THEN
-    raw_phone := split_part(raw_phone, '-', 1);
-    NEW.phone_normalized := NULLIF(regexp_replace(raw_phone, '[^0-9]', '', 'g'), '');
+  m_nombre := regexp_match(NEW.asunto, '\.\s*([^\[]+)');
+  NEW.paciente_nombre := CASE WHEN m_nombre IS NOT NULL THEN btrim(m_nombre[1]) ELSE NULL END;
+
+  m_phone := regexp_match(NEW.asunto, '\[([^\]]+)\]');
+  IF m_phone IS NOT NULL THEN
+    raw_phone := regexp_replace(split_part(m_phone[1], '-', 1), '[^0-9]', '', 'g');
+    NEW.phone_normalized := NULLIF(public.normalize_phone(raw_phone), '');
   ELSE
     NEW.phone_normalized := NULL;
   END IF;
 
-  NEW.tratamiento_nombre := btrim((regexp_match(NEW.asunto, '\((.*)\)\s*$'))[1]);
+  m_trat := regexp_match(NEW.asunto, '\((.*)\)\s*$');
+  NEW.tratamiento_nombre := CASE WHEN m_trat IS NOT NULL THEN btrim(m_trat[1]) ELSE NULL END;
+
+  NEW.doc_patient_id := NEW.doctoralia_id;
+  NEW.procedimiento_nombre := NEW.tratamiento_nombre;
 
   RETURN NEW;
 END;
@@ -50,21 +61,33 @@ ON public.produccion_intermediarios
 FOR EACH ROW
 EXECUTE FUNCTION public.fn_process_asunto_details();
 
-UPDATE public.produccion_intermediarios
+UPDATE public.produccion_intermediarios t
 SET
-  doctoralia_id = (regexp_match(asunto, '^\s*([0-9]+)\.'))[1],
-  paciente_nombre = btrim((regexp_match(asunto, '\.\s*([^\[]+)'))[1]),
-  phone_normalized = CASE
-    WHEN (regexp_match(asunto, '\[([^\]]+)\]'))[1] IS NULL THEN NULL
-    ELSE NULLIF(
-      regexp_replace(
-        split_part((regexp_match(asunto, '\[([^\]]+)\]'))[1], '-', 1),
-        '[^0-9]',
-        '',
-        'g'
-      ),
-      ''
-    )
-  END,
-  tratamiento_nombre = btrim((regexp_match(asunto, '\((.*)\)\s*$'))[1])
-WHERE asunto IS NOT NULL;
+  doctoralia_id = m.doctoralia_id,
+  paciente_nombre = m.paciente_nombre,
+  phone_normalized = m.phone_normalized,
+  tratamiento_nombre = m.tratamiento_nombre,
+  doc_patient_id = m.doctoralia_id,
+  procedimiento_nombre = m.tratamiento_nombre
+FROM (
+  SELECT
+    id,
+    CASE WHEN m_id IS NOT NULL THEN m_id[1] ELSE NULL END AS doctoralia_id,
+    CASE WHEN m_nombre IS NOT NULL THEN btrim(m_nombre[1]) ELSE NULL END AS paciente_nombre,
+    CASE
+      WHEN m_phone IS NULL THEN NULL
+      ELSE NULLIF(public.normalize_phone(regexp_replace(split_part(m_phone[1], '-', 1), '[^0-9]', '', 'g')), '')
+    END AS phone_normalized,
+    CASE WHEN m_trat IS NOT NULL THEN btrim(m_trat[1]) ELSE NULL END AS tratamiento_nombre
+  FROM (
+    SELECT
+      id,
+      regexp_match(asunto, '^\s*([0-9]+)\.') AS m_id,
+      regexp_match(asunto, '\.\s*([^\[]+)') AS m_nombre,
+      regexp_match(asunto, '\[([^\]]+)\]') AS m_phone,
+      regexp_match(asunto, '\((.*)\)\s*$') AS m_trat
+    FROM public.produccion_intermediarios
+    WHERE asunto IS NOT NULL AND btrim(asunto) <> ''
+  ) x
+) m
+WHERE t.id = m.id;
