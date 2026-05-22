@@ -34,6 +34,7 @@ jobs:
   supabase-migrate:
     name: Supabase - DB migrations
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
     outputs:
@@ -218,6 +219,7 @@ jobs:
     needs: supabase-migrate
     if: needs.supabase-migrate.outputs.skip_supabase != 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
     env:

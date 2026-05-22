@@ -81,7 +81,7 @@ runs:
 
     - name: Link Supabase project
       id: link
-      if: inputs.skip_link != 'true'
+      if: ${{ inputs.skip_link != 'true' }}
       shell: bash
       env:
         INPUT_PROJECT_REF: ${{ inputs.project_ref }}
@@ -176,3 +176,6 @@ runs:
         fi
 
         bash /tmp/supabase_command.sh
+
+        # Optional: cleanup temporary script after execution
+        # rm -f /tmp/supabase_command.sh || true

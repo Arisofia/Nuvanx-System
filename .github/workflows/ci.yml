@@ -5,6 +5,9 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   yaml-safety:
     name: YAML — conflict & parse guard
@@ -155,6 +158,7 @@ jobs:
   frontend:
     name: Frontend — build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: frontend-lint
     permissions:
       contents: read
@@ -206,6 +210,7 @@ jobs:
     needs: frontend
     name: Frontend — Playwright smoke
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
     defaults:
@@ -256,6 +261,7 @@ jobs:
     needs: yaml-safety
     name: Shared & Functions — Vitest
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -309,6 +315,7 @@ jobs:
     needs: yaml-safety
     name: Edge Function — deno check
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
