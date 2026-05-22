@@ -159,26 +159,16 @@ runs:
       run: |
         set -euo pipefail
 
-        if [ -n "${DATABASE_URL:-}" ]; then
-          # Use DATABASE_URL exactly as provided so we do not mutate auth-critical
-          # pooler host/user/port combinations.
-          # Also clear SUPABASE_DB_PASSWORD so the CLI does not override credentials
-          # embedded in DATABASE_URL (common source of SQLSTATE 28P01 in CI).
-          unset SUPABASE_DB_PASSWORD
+        if [ -n "${SUPABASE_DB_PASSWORD_INPUT:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
+          # Prefer direct DB host for CI reliability (avoids pooler DNS edge cases).
+          SESSION_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$SUPABASE_DB_PASSWORD_INPUT" "$SUPABASE_PROJECT_REF")
+          export SESSION_URL
+        elif [ -n "${DATABASE_URL:-}" ]; then
+          # Last resort: use DATABASE_URL as provided (no hostname rewriting).
           SESSION_URL="$DATABASE_URL"
           export SESSION_URL
         else
-          if [ -n "$SUPABASE_DB_PASSWORD_INPUT" ]; then
-            export SUPABASE_DB_PASSWORD="$SUPABASE_DB_PASSWORD_INPUT"
-          fi
-        fi
-
-        if [ -z "${SESSION_URL:-}" ] && [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
-          # Fallback to direct connection if no DATABASE_URL provided
-          SESSION_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
-          export SESSION_URL
-        elif [ -z "${SESSION_URL:-}" ]; then
-          echo "::error::Cannot build SESSION_URL. Provide DATABASE_URL, or SUPABASE_DB_PASSWORD with SUPABASE_PROJECT_REF."
+          echo "::error::Cannot build SESSION_URL. Provide DATABASE_URL, or SUPABASE_DB_PASSWORD + SUPABASE_PROJECT_REF."
           exit 1
         fi
 
