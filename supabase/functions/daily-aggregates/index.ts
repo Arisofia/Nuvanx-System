@@ -3,9 +3,39 @@
 import { createClient } from '@supabase/supabase-js'
 import { ENCRYPTION_KEY, META_APP_SECRET, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from '../_shared/config.ts'
 
-const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!)
+/**
+ * Creates and returns a Supabase admin client bound to the service role key.
+ *
+ * This helper centralizes client construction for the daily-aggregates
+ * function and fails fast when core Supabase configuration is missing.
+ *
+ * Throws if SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY are not set.
+ */
+function createSupabaseAdminClient() {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be configured for daily-aggregates.');
+  }
+  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false },
+  });
+}
+
+const supabase = createSupabaseAdminClient()
 
 // ── Encryption Helpers ──────────────────────────────────────────────────────
+
+/**
+ * Converts a hex-encoded string into a byte array buffer.
+ *
+ * Used to reconstruct binary keying material required by Web Crypto during
+ * PBKDF2 and AES-GCM operations.
+ *
+ * Args:
+ *   hex: A hex string where each pair of characters represents one byte.
+ *
+ * Returns:
+ *   A Uint8Array backed by an ArrayBuffer containing the decoded bytes.
+ */
 function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
   const buf = new ArrayBuffer(hex.length >>> 1);
   const arr = new Uint8Array(buf);
@@ -13,14 +43,55 @@ function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
   return arr;
 }
 
+/**
+ * Converts a Uint8Array view into a minimal ArrayBuffer without extra padding.
+ *
+ * This avoids leaking the underlying backing store when passing slices into
+ * Web Crypto APIs that expect tightly packed ArrayBuffer instances.
+ *
+ * Args:
+ *   bytes: A Uint8Array whose visible window should be converted.
+ *
+ * Returns:
+ *   A new ArrayBuffer containing exactly the visible bytes of the input view.
+ */
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
 
+/**
+ * Encodes a string into an ArrayBuffer using UTF‑8.
+ *
+ * This is a small helper to bridge from string-based secrets into the
+ * BufferSource types required by Web Crypto.
+ *
+ * Args:
+ *   value: The string to encode.
+ *
+ * Returns:
+ *   An ArrayBuffer containing the UTF‑8 encoding of the input string.
+ */
 function encodeBufferSource(value: string): ArrayBuffer {
   return toArrayBuffer(new TextEncoder().encode(value));
 }
 
+/**
+ * Decrypts an encrypted credential string using PBKDF2 + AES‑256‑GCM.
+ *
+ * The ciphertext format is `salt:iv:tag:ciphertext`, each segment hex‑encoded.
+ * This mirrors the encryption scheme used in the api Edge Function so
+ * daily-aggregates can reuse stored API keys without duplicating logic.
+ *
+ * Args:
+ *   encoded: The encrypted credential string in the expected salt/iv/tag/ct format.
+ *
+ * Returns:
+ *   The decrypted plaintext credential string.
+ *
+ * Throws:
+ *   Error: If ENCRYPTION_KEY is missing, the ciphertext is malformed,
+ *   or any Web Crypto operation fails.
+ */
 async function decryptCred(encoded: string): Promise<string> {
   const masterKey = ENCRYPTION_KEY;
   if (!masterKey) throw new Error('ENCRYPTION_KEY not set');

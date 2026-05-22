@@ -453,8 +453,9 @@ async function main() {
 
   const sheets = google.sheets({ version: 'v4', auth });
 
-  const range = SHEET_NAME && SHEET_NAME.trim()
-    ? `'${SHEET_NAME.trim().replace(/'/g, "''")}'!${SHEET_RANGE.trim()}`
+  const normalizedSheetName = SHEET_NAME?.trim().replace(/^['"]+|['"]+$/g, '');
+  const range = normalizedSheetName
+    ? `'${normalizedSheetName.replace(/'/g, "''")}'!${SHEET_RANGE.trim()}`
     : SHEET_RANGE.trim();
   // Avoid logging sensitive values in plain text.
   console.log(`[sync-doctoralia] Fetching spreadsheet (id: ${SHEET_ID.slice(0, 4)}...${SHEET_ID.slice(-4)}), range: ${range}`);

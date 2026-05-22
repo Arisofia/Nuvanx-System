@@ -1,15 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-
-const placeholderPattern = /your_supabase_project_ref|your-public-anon-key|your-anon-key/i
-
-function sanitizeEnv(value: string | undefined) {
-  return value && !placeholderPattern.test(value) ? value : ''
-}
-
-export const supabaseUrl = sanitizeEnv(import.meta.env.VITE_SUPABASE_URL)
-export const supabaseKey =
-  sanitizeEnv(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) ||
-  sanitizeEnv(import.meta.env.VITE_SUPABASE_ANON_KEY)
+import { supabaseKey, supabaseUrl } from './env'
 
 export const supabase = createClient(supabaseUrl || '', supabaseKey || '')
 

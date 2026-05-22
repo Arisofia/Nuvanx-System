@@ -42,6 +42,7 @@ SELECT
   l.no_show_flag,
   l.revenue               AS estimated_revenue,
   l.verified_revenue      AS crm_verified_revenue,
+  NULL::TEXT              AS lost_reason,
   -- ── patient placeholders; later migrations replace this view with joins ───
   NULL::UUID              AS patient_id,
   NULL::NUMERIC           AS patient_ltv,

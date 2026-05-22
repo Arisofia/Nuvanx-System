@@ -28,6 +28,7 @@ jobs:
   sync:
     name: Google Sheets to financial_settlements
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
       DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID }}
