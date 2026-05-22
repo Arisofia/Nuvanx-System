@@ -71,25 +71,6 @@ jobs:
           command: |
             set -uo pipefail
 
-            # Prefer DATABASE_URL so GitHub Actions can use Supavisor session pooler
-            # (IPv4-compatible) instead of the direct IPv6-only database host.
-            # Normalize legacy direct .com hosts to .co and convert transaction/pooler
-            # port 6543 to session/direct port 5432 for migration-safe sessions.
-            # Assumptions:
-            # - Direct DB hostnames follow Supabase's standard db.<project_ref>.supabase.{com,co} pattern.
-            # - Pooler hostnames follow the standard *.pooler.supabase.com pattern.
-            # - URL shape is postgres[ql]://user:pass@host:port/db; the host has no extra @ or : characters.
-            if [ -n "${DATABASE_URL:-}" ]; then
-              SESSION_URL=$(python3 -c 'import os, urllib.parse as p; u=p.urlparse(os.environ.get("DATABASE_URL", "")); r=os.environ.get("SUPABASE_PROJECT_REF", ""); h=u.hostname or ""; sb=h and ("pooler.supabase" in h or h.startswith("db.")); h=f"db.{r}.supabase.co" if sb and r else h; prt=5432 if sb else (u.port or 5432); ui=u.netloc.rsplit("@", 1)[0]+"@" if "@" in u.netloc else ""; print(u._replace(netloc=f"{ui}{h}:{prt}").geturl())')
-            elif [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
-              echo "::warning::DATABASE_URL is not set; falling back to the direct Supabase DB host. GitHub Actions may need a Supavisor session pooler DATABASE_URL because direct Supabase DB hosts are IPv6-only by default."
-              SESSION_URL="postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.${SUPABASE_PROJECT_REF}.supabase.co:5432/postgres"
-            else
-              echo "::error::Cannot connect to database. Set DATABASE_URL or both SUPABASE_DB_PASSWORD and SUPABASE_PROJECT_REF."
-              exit 1
-            fi
-            echo "::add-mask::$SESSION_URL"
-
             # Helper functions for migration logging
             sanitize_migration_output() {
               sed 's/\x1b\[[0-9;]*m//g'
