@@ -141,7 +141,10 @@ runs:
         ACTION_COMMAND: ${{ inputs.command }}
       run: |
         set -euo pipefail
-        printf '%s\n' "$ACTION_COMMAND" > /tmp/supabase_command.sh
+        {
+          echo '#!/usr/bin/env bash'
+          printf '%s\n' "$ACTION_COMMAND"
+        } > /tmp/supabase_command.sh
         chmod +x /tmp/supabase_command.sh
 
     - name: Execute command
@@ -172,4 +175,4 @@ runs:
           exit 1
         fi
 
-        /tmp/supabase_command.sh
+        bash /tmp/supabase_command.sh
