@@ -220,6 +220,7 @@ jobs:
       - uses: actions/checkout@v4.1.7
 
       - name: Deploy API Edge Function
+        id: deploy_api
         continue-on-error: true
         uses: ./.github/actions/supabase-link-run
         with:
@@ -231,6 +232,7 @@ jobs:
           command: supabase functions deploy api --no-verify-jwt --project-ref ${{ env.SUPABASE_PROJECT_REF }}
 
       - name: Deploy MCP Edge Function
+        id: deploy_mcp
         continue-on-error: true
         uses: ./.github/actions/supabase-link-run
         with:
@@ -242,6 +244,7 @@ jobs:
           command: supabase functions deploy mcp --project-ref ${{ env.SUPABASE_PROJECT_REF }} --no-verify-jwt
 
       - name: Deploy Daily Aggregates Edge Function
+        id: deploy_daily
         continue-on-error: true
         uses: ./.github/actions/supabase-link-run
         with:
@@ -251,6 +254,23 @@ jobs:
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           skip_link: true
           command: supabase functions deploy daily-aggregates --no-verify-jwt --project-ref ${{ env.SUPABASE_PROJECT_REF }}
+
+      - name: Summarize Deploys
+        if: always()
+        run: |
+          echo "### 🚀 Resumen de Despliegue de Funciones" >> $GITHUB_STEP_SUMMARY
+          
+          get_status_icon() {
+            if [ "$1" == "success" ]; then echo "✅"; else echo "❌"; fi
+          }
+
+          echo "- **API:** $(get_status_icon ${{ steps.deploy_api.outcome }})" >> $GITHUB_STEP_SUMMARY
+          echo "- **MCP:** $(get_status_icon ${{ steps.deploy_mcp.outcome }})" >> $GITHUB_STEP_SUMMARY
+          echo "- **Daily Aggregates:** $(get_status_icon ${{ steps.deploy_daily.outcome }})" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "${{ steps.deploy_api.outcome }}" == "failure" || "${{ steps.deploy_mcp.outcome }}" == "failure" || "${{ steps.deploy_daily.outcome }}" == "failure" ]]; then
+            echo "::error::Uno o más despliegues de Edge Functions fallaron. Revisa el resumen del paso para más detalles."
+          fi
 
       - name: Summarize Supabase function deploy permissions
         if: always()
