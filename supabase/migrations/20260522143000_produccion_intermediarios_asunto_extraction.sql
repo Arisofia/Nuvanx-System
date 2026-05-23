@@ -85,7 +85,7 @@ FROM (
       regexp_match(asunto, '^\s*([0-9]+)\.') AS m_id,
       regexp_match(asunto, '\.\s*([^\[]+)') AS m_nombre,
       regexp_match(asunto, '\[([^\]]+)\]') AS m_phone,
-      regexp_match(asunto, '\((.*)\)\s*$') AS m_trat
+      regexp_match(asunto, '\(([^)]*)\)\s*$') AS m_trat
     FROM public.produccion_intermediarios
     WHERE asunto IS NOT NULL AND btrim(asunto) <> ''
   ) x
