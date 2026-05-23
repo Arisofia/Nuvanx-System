@@ -56,7 +56,6 @@ jobs:
           command: |
             set -uo pipefail
 
-            # Helper functions for migration logging
             sanitize_migration_output() {
               sed 's/\x1b\[[0-9;]*m//g'
             }
@@ -72,7 +71,6 @@ jobs:
               sanitize_migration_output >> supabase-migrations.log
             }
 
-            # Retry transient Supabase Preview failures while surfacing deterministic SQL errors.
             print_migration_failure_summary() {
               local output="$1"
               local summary sanitized_summary
@@ -121,7 +119,6 @@ jobs:
 
               print_migration_failure_summary "$output"
 
-              # Case 1: ghost / reverted migrations.
               ghosts=$(echo "$output" | grep "supabase migration repair --status reverted" | sed 's/.*reverted //' || true)
               if [ -n "$ghosts" ]; then
                 for version in $ghosts; do
@@ -140,9 +137,6 @@ jobs:
                 return "$exit_code"
               fi
 
-              # Duplicate schema_migrations versions indicate local migration history is not aligned
-              # with the remote database. Do not auto-repair or retry: that can re-run the same file
-              # and fail again. Surface the exact version so migration filename/history can be fixed.
               dup_version=$(echo "$output" | grep -oE 'Key \(version\)=\([0-9]+\) already exists' | grep -oE '[0-9]+' || true)
               if [ -n "$dup_version" ]; then
                 echo "::error::Migration version $dup_version already exists in supabase_migrations.schema_migrations. Check for duplicate local migration prefixes or a remote history mismatch before retrying."
@@ -198,8 +192,8 @@ jobs:
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           skip_link: true
           command: |
-            echo "Listing Supabase migrations for schema public..."
-            supabase migration list --db-url "$SESSION_URL" --schema public --debug
+            echo "Listing Supabase migrations..."
+            supabase migration list --db-url "$SESSION_URL" --debug
 
       - name: Upload Supabase migration log
         if: always() && steps.validate.outputs.skip_supabase != 'true'
@@ -233,8 +227,8 @@ jobs:
           supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
           database_url: ${{ env.DATABASE_URL }}
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
-          skip_link: false
-          command: supabase functions deploy api --no-verify-jwt
+          skip_link: true
+          command: supabase functions deploy api --no-verify-jwt --project-ref ${{ env.SUPABASE_PROJECT_REF }}
 
       - name: Deploy MCP Edge Function
         continue-on-error: true
@@ -244,8 +238,8 @@ jobs:
           supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
           database_url: ${{ env.DATABASE_URL }}
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
-          skip_link: false
-          command: supabase functions deploy mcp --no-verify-jwt
+          skip_link: true
+          command: supabase functions deploy mcp --project-ref ${{ env.SUPABASE_PROJECT_REF }} --no-verify-jwt
 
       - name: Deploy Daily Aggregates Edge Function
         continue-on-error: true
@@ -255,8 +249,8 @@ jobs:
           supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
           database_url: ${{ env.DATABASE_URL }}
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
-          skip_link: false
-          command: supabase functions deploy daily-aggregates --no-verify-jwt
+          skip_link: true
+          command: supabase functions deploy daily-aggregates --no-verify-jwt --project-ref ${{ env.SUPABASE_PROJECT_REF }}
 
       - name: Summarize Supabase function deploy permissions
         if: always()
