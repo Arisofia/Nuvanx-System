@@ -79,16 +79,16 @@ export default function Traceability() {
         if (matchedOnly) params.set('matched', 'true')
         
         const [leadsData, campaignsData] = await Promise.all([
-          invokeApi(`/traceability/leads?${params}`),
-          invokeApi(`/traceability/campaigns?${params}`),
+          invokeApi<any>(`/traceability/leads?${params}`),
+          invokeApi<any>(`/traceability/campaigns?${params}`),
         ])
 
         if (!isActive) return
-        setRows(leadsData?.leads ?? [])
-        setTotal(leadsData?.total ?? 0)
-        setMatchedTotal(leadsData?.matchedTotal ?? null)
-        setSummary({ ...EMPTY_TRACEABILITY_SUMMARY, ...(leadsData?.summary ?? {}) })
-        setCampaigns(campaignsData?.campaigns ?? [])
+        setRows(leadsData?.data?.leads ?? [])
+        setTotal(leadsData?.data?.total ?? 0)
+        setMatchedTotal(leadsData?.data?.matchedTotal ?? null)
+        setSummary({ ...EMPTY_TRACEABILITY_SUMMARY, ...(leadsData?.data?.summary ?? {}) })
+        setCampaigns(campaignsData?.data?.campaigns ?? [])
       } catch (err: any) {
         if (!isActive) return
         setError(err?.message ?? 'Error cargando datos de trazabilidad.')
