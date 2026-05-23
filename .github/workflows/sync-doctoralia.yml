@@ -35,6 +35,7 @@ jobs:
       DOCTORALIA_DRIVE_FILE_ID: ${{ secrets.DOCTORALIA_DRIVE_FILE_ID }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       CLINIC_ID: ${{ secrets.CLINIC_ID }}
+      EXPECTED_SHEET_ID: ${{ vars.EXPECTED_DOCTORALIA_SHEET_ID }}
 
     steps:
       - name: Checkout repository
@@ -54,14 +55,20 @@ jobs:
           [ -z "${DATABASE_URL:-}" ]         && MISSING+=("DATABASE_URL")
           [ -z "${CLINIC_ID:-}" ]            && MISSING+=("CLINIC_ID")
 
-          EXPECTED_DOCTORALIA_SHEET_ID="1GAJoASGdjsKB7bTtC5hXPFkWbB7S4fVXhKD_cZoDwPw"
+          # Conditional Sheet ID validation
           SHEET_ID_EFFECTIVE="${DOCTORALIA_SHEET_ID:-${DOCTORALIA_DRIVE_FILE_ID:-}}"
-          if [ -n "${SHEET_ID_EFFECTIVE:-}" ] && [ "$SHEET_ID_EFFECTIVE" != "$EXPECTED_DOCTORALIA_SHEET_ID" ]; then
-            echo "::error::DOCTORALIA_SHEET_ID/DOCTORALIA_DRIVE_FILE_ID does not match the configured production spreadsheet."
-            echo "::error::Expected: $EXPECTED_DOCTORALIA_SHEET_ID"
-            echo "::error::Received: $SHEET_ID_EFFECTIVE"
-            exit 1
+          if [ -n "${EXPECTED_SHEET_ID:-}" ]; then
+            if [ -n "${SHEET_ID_EFFECTIVE:-}" ] && [ "$SHEET_ID_EFFECTIVE" != "$EXPECTED_SHEET_ID" ]; then
+              echo "::error::DOCTORALIA_SHEET_ID/DOCTORALIA_DRIVE_FILE_ID does not match the configured expected spreadsheet."
+              echo "::error::Expected: $EXPECTED_SHEET_ID"
+              echo "::error::Received: $SHEET_ID_EFFECTIVE"
+              exit 1
+            fi
+            echo "Sheet ID validated successfully against EXPECTED_DOCTORALIA_SHEET_ID."
+          else
+            echo "::warning::EXPECTED_DOCTORALIA_SHEET_ID not set in repository variables. Skipping ID validation (useful for dev/staging)."
           fi
+
           if [ ${#MISSING[@]} -gt 0 ]; then
             echo "::error::Missing secrets: ${MISSING[*]}"
             echo "::error::Add them at Settings -> Secrets and variables -> Actions"
