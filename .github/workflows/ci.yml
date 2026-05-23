@@ -123,7 +123,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        run: npm ci --include=dev --ignore-scripts --legacy-peer-deps
+        run: npm install --include=dev --ignore-scripts --legacy-peer-deps
 
       - name: Run ESLint
         run: npm run lint
@@ -149,7 +149,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        run: npm ci --include=dev --ignore-scripts --legacy-peer-deps
+        run: npm install --include=dev --ignore-scripts --legacy-peer-deps
 
       - name: Run frontend unit tests
         run: npm run test:ci
@@ -177,7 +177,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        run: npm ci --include=dev --ignore-scripts --legacy-peer-deps
+        run: npm install --include=dev --ignore-scripts --legacy-peer-deps
 
       - name: Prepare frontend env for PR validation
         run: |
@@ -228,7 +228,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        run: npm ci --include=dev --ignore-scripts --legacy-peer-deps
+        run: npm install --include=dev --ignore-scripts --legacy-peer-deps
 
       - name: Install Playwright browsers
         run: npm exec playwright install --with-deps
@@ -282,7 +282,7 @@ jobs:
           max_attempts=3
           attempt=1
           while true; do
-            if npm ci --include=dev --ignore-scripts --legacy-peer-deps; then
+            if npm install --include=dev --ignore-scripts --legacy-peer-deps; then
               exit 0
             fi
             if [ "$attempt" -ge "$max_attempts" ]; then
