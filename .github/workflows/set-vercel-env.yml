@@ -50,9 +50,9 @@ jobs:
           set_var "VITE_MCP_API_KEY"              "${VITE_MCP_API_KEY}"
         env:
           VERCEL_TOKEN:                  ${{ secrets.VERCEL_TOKEN }}
-          PROJECT_ID:                    prj_IAOBlV17HeS22KuEfsdkDrGMV9Ze
-          ORG_ID:                        team_R0GOR4jvw1c1gnyBRWYu32O7
+          PROJECT_ID:                    ${{ secrets.VERCEL_PROJECT_ID }}
+          ORG_ID:                        ${{ secrets.VERCEL_ORG_ID }}
           VITE_SUPABASE_URL:             ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY:        ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
-          VITE_MCP_API_KEY:              ${{ secrets.MCP_API_KEY }}
+          VITE_MCP_API_KEY:              ${{ secrets.VITE_MCP_API_KEY }}
