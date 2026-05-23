@@ -58,7 +58,13 @@ export default function Financials() {
         })
       } catch (err: any) {
         if (cancelled) return
-        setState({ summary: null, monthly: [], loading: false, error: err?.message || 'Failed to load financials.' })
+        setState({
+          summary: null,
+          monthly: [],
+          templateMix: [],
+          loading: false,
+          error: err?.message || 'Failed to load financials.',
+        })
       }
     }
 
