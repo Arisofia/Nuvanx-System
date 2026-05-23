@@ -188,6 +188,19 @@ jobs:
 
             run_with_retry
 
+      - name: Debug – list Supabase migrations
+        if: always() && steps.validate.outputs.skip_supabase != 'true'
+        uses: ./.github/actions/supabase-link-run
+        with:
+          project_ref: ${{ env.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ env.DATABASE_URL }}
+          supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
+          skip_link: true
+          command: |
+            echo "Listing Supabase migrations for schema public..."
+            supabase migration list --db-url "$SESSION_URL" --schema public --debug
+
       - name: Upload Supabase migration log
         if: always() && steps.validate.outputs.skip_supabase != 'true'
         uses: actions/upload-artifact@v4
