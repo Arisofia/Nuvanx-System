@@ -348,22 +348,45 @@ jobs:
             deno cache --config supabase/functions/deno.json supabase/functions/daily-aggregates/index.ts
           fi
 
-      - name: Type-check Edge Functions
+      - name: Type-check Edge Functions (with retry)
         run: |
-          echo "Checking API function..."
-          deno check --config supabase/functions/deno.json supabase/functions/api/index.ts
+          set -euo pipefail
+
+          run_deno_check_with_retry() {
+            local label="$1"
+            local max_attempts=3
+            local attempt=1
+            local delay_seconds=10
+            shift
+
+            while true; do
+              echo "Checking ${label} (attempt ${attempt}/${max_attempts})..."
+              if deno check "$@"; then
+                echo "${label} check succeeded."
+                return 0
+              fi
+
+              if [ "$attempt" -ge "$max_attempts" ]; then
+                echo "::error::${label} deno check failed after ${max_attempts} attempts."
+                return 1
+              fi
+
+              echo "::warning::${label} deno check failed (possible transient esm.sh/network issue). Retrying in ${delay_seconds}s..."
+              attempt=$((attempt + 1))
+              sleep "$delay_seconds"
+            done
+          }
+
+          run_deno_check_with_retry "API function" --config supabase/functions/deno.json supabase/functions/api/index.ts
 
           if [ -f supabase/functions/mcp/deno.json ]; then
-            echo "Checking MCP function with local config..."
-            deno check --config supabase/functions/mcp/deno.json supabase/functions/mcp/index.ts
+            run_deno_check_with_retry "MCP function (local config)" --config supabase/functions/mcp/deno.json supabase/functions/mcp/index.ts
           else
-            echo "Checking MCP function with shared config..."
-            deno check --config supabase/functions/deno.json supabase/functions/mcp/index.ts
+            run_deno_check_with_retry "MCP function (shared config)" --config supabase/functions/deno.json supabase/functions/mcp/index.ts
           fi
 
           if [ -f supabase/functions/daily-aggregates/index.ts ]; then
-            echo "Checking daily-aggregates function..."
-            deno check --config supabase/functions/deno.json supabase/functions/daily-aggregates/index.ts
+            run_deno_check_with_retry "daily-aggregates function" --config supabase/functions/deno.json supabase/functions/daily-aggregates/index.ts
           fi
 
       - name: Validate MCP function existence
