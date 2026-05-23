@@ -20,7 +20,6 @@ CREATE TABLE IF NOT EXISTS public.meta_attribution (
 CREATE INDEX IF NOT EXISTS idx_meta_attribution_lead_id
   ON public.meta_attribution (lead_id);
 
-
 CREATE OR REPLACE VIEW public.vw_doctoralia_lead_traceability_unified AS
 SELECT
   dr.*,
