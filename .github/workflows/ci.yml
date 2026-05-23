@@ -70,7 +70,10 @@ jobs:
       - name: Validate Supabase config function blocks
         run: |
           python3 - <<'PY'
-          import tomllib
+          try:
+              import tomllib
+          except ImportError:
+              import tomli as tomllib
           from pathlib import Path
 
           config = tomllib.loads(Path('supabase/config.toml').read_text())
@@ -307,7 +310,7 @@ jobs:
           # Use repository secrets for CI test credentials to avoid hardcoding sensitive values.
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
-          MCP_API_KEY: ${{ secrets.VITE_MCP_API_KEY }}
+          VITE_MCP_API_KEY: ${{ secrets.VITE_MCP_API_KEY }}
           DEFAULT_PHONE_COUNTRY_CODE: '34'
 
   # ─── Edge Function: type-check ─────────────────────────────────────────────
