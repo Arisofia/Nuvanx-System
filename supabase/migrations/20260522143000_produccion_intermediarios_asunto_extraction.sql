@@ -42,7 +42,7 @@ BEGIN
     NEW.phone_normalized := NULL;
   END IF;
 
-  m_trat := regexp_match(NEW.asunto, '\((.*)\)\s*$');
+  m_trat := regexp_match(NEW.asunto, '\(([^)]*)\)\s*$');
   NEW.tratamiento_nombre := CASE WHEN m_trat IS NOT NULL THEN btrim(m_trat[1]) ELSE NULL END;
 
   NEW.doc_patient_id := NEW.doctoralia_id;
@@ -85,7 +85,7 @@ FROM (
       regexp_match(asunto, '^\s*([0-9]+)\.') AS m_id,
       regexp_match(asunto, '\.\s*([^\[]+)') AS m_nombre,
       regexp_match(asunto, '\[([^\]]+)\]') AS m_phone,
-      regexp_match(asunto, '\((.*)\)\s*$') AS m_trat
+      regexp_match(asunto, '\(([^)]*)\)\s*$') AS m_trat
     FROM public.produccion_intermediarios
     WHERE asunto IS NOT NULL AND btrim(asunto) <> ''
   ) x
