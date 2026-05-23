@@ -2,6 +2,23 @@
 -- Vista que une los datos normalizados de Doctoralia con los leads de Meta
 -- y su atribución de campaña, creando la "línea única" del paciente.
 
+-- Ensure Meta attribution table exists before creating the unified traceability view.
+CREATE TABLE IF NOT EXISTS public.meta_attribution (
+  lead_id UUID PRIMARY KEY REFERENCES public.leads(id) ON DELETE CASCADE,
+  campaign_id TEXT,
+  campaign_name TEXT,
+  adset_id TEXT,
+  adset_name TEXT,
+  ad_id TEXT,
+  ad_name TEXT,
+  captured_at TIMESTAMPTZ DEFAULT now(),
+  inserted_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_meta_attribution_lead_id
+  ON public.meta_attribution (lead_id);
+
+
 CREATE OR REPLACE VIEW public.vw_doctoralia_lead_traceability_unified AS
 SELECT
   dr.*,                                    -- datos normalizados de Doctoralia
