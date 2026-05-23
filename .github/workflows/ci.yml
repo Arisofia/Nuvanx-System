@@ -6,7 +6,7 @@ on:
     branches: [main]
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE20: true
 
 jobs:
   yaml-safety:
@@ -70,12 +70,25 @@ jobs:
       - name: Validate Supabase config function blocks
         run: |
           python3 - <<'PY'
-          try:
-              import tomllib
-          except ImportError:
-              import tomli as tomllib
+          import sys
+          import subprocess
           from pathlib import Path
 
+          def get_tomllib():
+              try:
+                  import tomllib
+                  return tomllib
+              except ImportError:
+                  try:
+                      import tomli
+                      return tomli
+                  except ImportError:
+                      print("tomli not found, attempting to install...")
+                      subprocess.check_call([sys.executable, "-m", "pip", "install", "tomli"])
+                      import tomli
+                      return tomli
+
+          tomllib = get_tomllib()
           config = tomllib.loads(Path('supabase/config.toml').read_text())
           functions = config.get('functions', {})
           expected = {

@@ -35,7 +35,7 @@ on:
         required: false
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE20: true
   VITE_MCP_API_KEY: ${{ secrets.VITE_MCP_API_KEY }}
 
 concurrency:
