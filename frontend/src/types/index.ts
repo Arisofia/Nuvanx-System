@@ -194,6 +194,7 @@ export interface ConnectForm {
   pageId: string
   pixelId?: string
   phoneNumberId: string
+  googleAdsCustomerId?: string
 }
 
 // ── Intelligence ──────────────────────────────────────────────────────────────

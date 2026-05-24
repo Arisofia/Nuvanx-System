@@ -42,7 +42,7 @@ export default function Integrations() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState<ConnectForm>({ service: 'meta', token: '', adAccountId: '', pageId: '', pixelId: '', phoneNumberId: '' })
+  const [form, setForm] = useState<ConnectForm>({ service: 'meta', token: '', adAccountId: '', pageId: '', pixelId: '', phoneNumberId: '', googleAdsCustomerId: '' })
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [testing, setTesting] = useState<string | null>(null)
@@ -137,6 +137,10 @@ export default function Integrations() {
     if (form.service === 'whatsapp') {
       metadata.phoneNumberId = form.phoneNumberId.trim()
     }
+    if (form.service === 'google_ads') {
+      if (!form.googleAdsCustomerId?.trim()) { setSaveError('Customer ID is required for Google Ads.'); return }
+      metadata.customerId = form.googleAdsCustomerId.trim()
+    }
 
     setSaving(true)
     try {
@@ -145,7 +149,7 @@ export default function Integrations() {
         body: { service: form.service, token: form.token.trim(), metadata },
       })
       setShowForm(false)
-      setForm({ service: 'meta', token: '', adAccountId: '', pageId: '', pixelId: '', phoneNumberId: '' })
+      setForm({ service: 'meta', token: '', adAccountId: '', pageId: '', pixelId: '', phoneNumberId: '', googleAdsCustomerId: '' })
       await loadIntegrations()
       if (form.service === 'meta') {
         await handleHealthCheck('meta')
@@ -318,6 +322,22 @@ export default function Integrations() {
                 </div>
               )}
 
+              {form.service === 'google_ads' && (
+                <div>
+                  <label htmlFor="googleAdsCustomerId-input" className="text-sm font-medium">Customer ID de Google Ads <span className="text-red-500">*</span></label>
+                  <Input
+                    id="googleAdsCustomerId-input"
+                    type="text"
+                    name="googleAdsCustomerId"
+                    placeholder="ej. 123-456-7890"
+                    value={form.googleAdsCustomerId}
+                    onChange={handleFieldChange}
+                    className="mt-1"
+                  />
+                  <p className="text-xs text-muted mt-1">El ID de cliente de la cuenta de Google Ads que deseas consultar.</p>
+                </div>
+              )}
+
               {saveError && <p className="text-sm text-[#D9534F]">{saveError}</p>}
 
               <div className="flex gap-2 pt-1">
@@ -350,6 +370,7 @@ export default function Integrations() {
           const adAccountIds = extractAdAccountIds(rawAdAccountIds)
           const pageId = (meta.pageId ?? meta.page_id ?? '') as string
           const pixelId = (meta.pixelId ?? meta.pixel_id ?? '') as string
+          const customerId = (meta.customerId ?? meta.customer_id ?? '') as string
 
           return (
             <Card key={integration.id}>
@@ -379,6 +400,9 @@ export default function Integrations() {
                 )}
                 {pixelId && (
                   <p className="text-xs text-muted">ID del Píxel: <span className="font-mono">{pixelId}</span></p>
+                )}
+                {customerId && (
+                  <p className="text-xs text-muted">Customer ID: <span className="font-mono">{customerId}</span></p>
                 )}
                 {integration.last_error && (
                   <p className="text-xs text-[#D9534F]">Último error: {integration.last_error}</p>
