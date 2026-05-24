@@ -36,7 +36,7 @@ jobs:
       DOCTORALIA_DRIVE_FILE_ID: ${{ secrets.DOCTORALIA_DRIVE_FILE_ID }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       CLINIC_ID: ${{ secrets.CLINIC_ID }}
-      EXPECTED_SHEET_ID: ${{ vars.EXPECTED_DOCTORALIA_SHEET_ID || secrets.EXPECTED_DOCTORALIA_SHEET_ID }}
+      EXPECTED_SHEET_ID: ${{ secrets.EXPECTED_DOCTORALIA_SHEET_ID }}
 
     steps:
       - name: Checkout repository
