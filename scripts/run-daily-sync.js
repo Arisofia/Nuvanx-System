@@ -10,7 +10,7 @@ const steps = [
   { name: 'scan-secrets', cmd: 'node scripts/scan-secrets.js', critical: true },
   { name: 'verify-meta-access', cmd: 'node scripts/verify-meta-access.js', critical: true },
   { name: 'sync-doctoralia', cmd: 'node scripts/sync-doctoralia.js', critical: false },
-  { name: 'deploy-daily-aggregates', cmd: 'supabase functions deploy daily-aggregates --no-verify-jwt', critical: true },
+  { name: 'deploy-daily-aggregates', cmd: 'npx --yes supabase functions deploy daily-aggregates --no-verify-jwt --project-ref ' + (process.env.SUPABASE_PROJECT_REF || ''), critical: true },
 ];
 
 console.log('🚀 Starting Nuvanx daily sync orchestrator...');

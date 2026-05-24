@@ -54,6 +54,11 @@ jobs:
           # run-daily-sync.js needs these for sync-doctoralia and supabase deploy
           SUPABASE_ACCESS_TOKEN: ${{ env.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ env.SUPABASE_PROJECT_REF }}
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+          GOOGLE_ADS_SERVICE_ACCOUNT: ${{ env.GOOGLE_ADS_SERVICE_ACCOUNT }}
+          DOCTORALIA_SHEET_ID: ${{ env.DOCTORALIA_SHEET_ID }}
+          CLINIC_ID: ${{ env.CLINIC_ID }}
+          ENCRYPTION_KEY: ${{ env.ENCRYPTION_KEY }}
 
       - name: Fetch Meta Daily Insights
         run: |
