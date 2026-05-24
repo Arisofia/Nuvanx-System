@@ -7,7 +7,7 @@ on:
   workflow_dispatch: {}
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE20: true
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE22: true
   VITE_MCP_API_KEY: ${{ secrets.VITE_MCP_API_KEY }}
 
 concurrency:
@@ -54,7 +54,7 @@ jobs:
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           skip_link: true
           command: |
-            set -uo pipefail
+            set -euo pipefail
 
             sanitize_migration_output() {
               sed 's/\x1b\[[0-9;]*m//g'
