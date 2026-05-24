@@ -18,7 +18,9 @@ export const supabaseKey =
   sanitizeEnv(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) ||
   sanitizeEnv(import.meta.env.VITE_SUPABASE_ANON_KEY)
 
-if (!supabaseUrl || !supabaseKey) {
+export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseKey)
+
+if (!isSupabaseConfigured) {
   console.warn(
     '[env] Supabase is not fully configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY (or VITE_SUPABASE_ANON_KEY).',
   )

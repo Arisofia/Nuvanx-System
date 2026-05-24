@@ -75,9 +75,9 @@ export default function Live() {
       setAgendaLoading(true)
       setAgendaError(null)
       try {
-        const data = await invokeApi(`/agenda/doctoralia?date=${selectedDate}`)
+        const data = await invokeApi<{ appointments?: DoctoraliaAppointment[] }>(`/agenda/doctoralia?date=${selectedDate}`)
         if (!active) return
-        setAppointments(data?.data?.appointments ?? [])
+        setAppointments(data.appointments ?? [])
       } catch (err: any) {
         if (!active) return
         logger.error('Live.Agenda', err)

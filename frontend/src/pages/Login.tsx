@@ -3,7 +3,7 @@ import { useLocation } from 'wouter'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
-import { supabase } from '../lib/supabaseClient'
+import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import logo from '../assets/logo.png'
 
 export default function Login() {
@@ -18,6 +18,11 @@ export default function Login() {
     setMessage('')
     if (!email.trim() || !password.trim()) {
       setMessage('Por favor, ingresa correo y contraseña.')
+      return
+    }
+
+    if (!isSupabaseConfigured) {
+      setMessage('Supabase no está configurado. Revisa las variables públicas de entorno del frontend.')
       return
     }
 

@@ -57,9 +57,15 @@ function Router() {
     )
   }
 
-  // Guard: if auth has resolved and user is not authenticated, render nothing.
+  // Guard: if auth has resolved and user is not authenticated, render the login
+  // view while the route transition completes. Returning null here caused a
+  // blank production screen when the redirect effect did not flush immediately.
   if (!isAuthPage && !auth?.loading && !auth?.isAuthenticated) {
-    return null
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <Login />
+      </Suspense>
+    )
   }
 
   const pageContent = (() => {

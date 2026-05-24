@@ -68,8 +68,8 @@ export default function TrazabilidadFunnelTableFinal() {
     setError(null)
     try {
       const response = await invokeApi<TrazabilidadFunnelResponse>(`/traceability/funnel${buildQuery(activeFilters)}`)
-      setRows(response.data?.funnel ?? [])
-      setError(response.data?.warning ?? null)
+      setRows(response.funnel ?? [])
+      setError(response.warning ?? null)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'No se pudo cargar el funnel de trazabilidad.')
     } finally {

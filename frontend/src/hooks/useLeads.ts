@@ -11,8 +11,8 @@ export function useLeads() {
     setLoading(true)
     setError(null)
     try {
-      const response = await invokeApi('/leads')
-      const data = response.data?.leads
+      const response = await invokeApi<{ leads?: any[] }>('/leads')
+      const data = response.leads
 
       if (activeFlag && !activeFlag.active) return
 
@@ -56,28 +56,28 @@ export function useLeads() {
         delete apiUpdates.status
       }
 
-      const response = await invokeApi(`/leads/${id}`, {
+      const response = await invokeApi<{ success?: boolean; lead?: any; message?: string }>(`/leads/${id}`, {
         method: 'PATCH',
         body: apiUpdates,
       })
 
-      if (response.data?.success) {
-        const updatedLead = response.data?.lead
+      if (response.success) {
+        const updatedLead = response.lead
         setLeads(prev =>
           prev.map(lead =>
             lead.id === id
               ? {
                   ...lead,
                   ...updates,
-                  id: String(updatedLead.id),
-                  status: updatedLead.stage,
+                  id: String(updatedLead?.id ?? id),
+                  status: updatedLead?.stage ?? updates.status ?? lead.status,
                 }
               : lead,
           ),
         )
         return { success: true }
       }
-      return { success: false, error: response.data?.message }
+      return { success: false, error: response.message }
     } catch (err: any) {
       return { success: false, error: err?.message || 'Failed to update lead' }
     }
@@ -85,12 +85,12 @@ export function useLeads() {
 
   const deleteLead = async (id: string) => {
     try {
-      const response = await invokeApi(`/leads/${id}`, { method: 'DELETE' })
-      if (response.data?.success) {
+      const response = await invokeApi<{ success?: boolean; message?: string }>(`/leads/${id}`, { method: 'DELETE' })
+      if (response.success) {
         setLeads(prev => prev.filter(lead => lead.id !== id))
         return { success: true }
       }
-      return { success: false, error: response.data?.message }
+      return { success: false, error: response.message }
     } catch (err: any) {
       return { success: false, error: err?.message || 'Failed to delete lead' }
     }
