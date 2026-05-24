@@ -28,7 +28,7 @@ jobs:
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
     steps:
-      - uses: actions/checkout@v4.1.7
+      - uses: actions/checkout@v4.2.2
 
       - name: Validate Supabase deployment secrets
         id: validate
@@ -219,7 +219,7 @@ jobs:
 
       - name: Upload Supabase migration log
         if: always() && steps.validate.outputs.skip_supabase != 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.3.3
         with:
           name: supabase-migrations-log
           path: supabase-migrations.log
@@ -239,7 +239,7 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4.1.7
+      - uses: actions/checkout@v4.2.2
 
       - name: Deploy API Edge Function
         id: deploy_api

@@ -5,7 +5,7 @@ on:
   workflow_dispatch: {}
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE20: true
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE22: true
 
 jobs:
   set-env:
