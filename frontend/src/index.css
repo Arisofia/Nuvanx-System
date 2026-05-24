@@ -270,6 +270,12 @@ body {
     color: var(--danger);
   }
 
+  .mode-unknown {
+    background-color: rgba(107, 114, 128, 0.12);
+    border-color: rgba(107, 114, 128, 0.28);
+    color: var(--color-text-secondary);
+  }
+
   .delta-positive {
     color: var(--success);
   }

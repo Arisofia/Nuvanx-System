@@ -2873,38 +2873,62 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
   const { adminClient, userId, resource, sub, url, sendJson } = ctx;
   if (resource === 'dashboard' && sub === 'metrics') {
     const { since, until } = getKpiDateRange(url);
+    const untilFullDay = `${until}T23:59:59Z`;
 
-    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+    const { data: usr, error: usrErr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+    if (usrErr) {
+      console.error('[Metrics] Failed to fetch user clinic:', usrErr);
+      return sendJson({ success: false, message: 'Failed to fetch user context' }, 500);
+    }
+    
     const clinicId = usr?.clinic_id;
-    if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
-
+    
     // Reconciliar leads antes de calcular métricas
-    await runLeadPipelineReconciliation(adminClient, userId);
+    try {
+      await runLeadPipelineReconciliation(adminClient, userId);
+    } catch (reconcileErr) {
+      console.warn('[Metrics] Reconciliation failed, proceeding:', reconcileErr);
+    }
+
+    let leadsQ = adminClient.from('leads')
+      .select('id, stage, created_at, source, converted_patient_id')
+      .is('deleted_at', null)
+      .neq('source', 'doctoralia')
+      .gte('created_at', since)
+      .lte('created_at', untilFullDay);
+
+    let metaQ = adminClient.from('meta_daily_insights')
+      .select('spend, impressions, clicks, date')
+      .gte('date', since)
+      .lte('date', until);
+
+    let settlementsQ = adminClient.from('financial_settlements')
+      .select('amount_net, patient_id, settled_at')
+      .eq('source_system', 'doctoralia')
+      .is('cancelled_at', null)
+      .gt('amount_net', 0)
+      .gte('settled_at', since)
+      .lte('settled_at', untilFullDay);
+
+    if (clinicId) {
+      leadsQ = leadsQ.eq('clinic_id', clinicId);
+      metaQ = metaQ.eq('clinic_id', clinicId);
+      settlementsQ = settlementsQ.eq('clinic_id', clinicId);
+    } else {
+      leadsQ = leadsQ.eq('user_id', userId);
+      metaQ = metaQ.eq('user_id', userId);
+      // Settlements doesn't have user_id, so it will likely be empty if clinicId is missing
+    }
 
     const [leadsRes, metaRes, settlementsRes] = await Promise.all([
-      adminClient.from('leads')
-        .select('id, stage, created_at, source, converted_patient_id')
-        .eq('clinic_id', clinicId)
-        .is('deleted_at', null)
-        .neq('source', 'doctoralia')
-        .gte('created_at', since)
-        .lte('created_at', until),
-
-      adminClient.from('meta_daily_insights')
-        .select('spend, impressions, clicks, date')
-        .eq('clinic_id', clinicId)
-        .gte('date', since)
-        .lte('date', until),
-
-      adminClient.from('financial_settlements')
-        .select('amount_net, patient_id, settled_at')
-        .eq('clinic_id', clinicId)
-        .eq('source_system', 'doctoralia')
-        .is('cancelled_at', null)
-        .gt('amount_net', 0)
-        .gte('settled_at', since)
-        .lte('settled_at', until)
+      leadsQ,
+      metaQ,
+      settlementsQ
     ]);
+
+    if (leadsRes.error) console.error('[Metrics] leadsRes error:', leadsRes.error);
+    if (metaRes.error) console.error('[Metrics] metaRes error:', metaRes.error);
+    if (settlementsRes.error) console.error('[Metrics] settlementsRes error:', settlementsRes.error);
 
     const leads = leadsRes.data ?? [];
     const metaInsights = metaRes.data ?? [];
@@ -6481,57 +6505,86 @@ async function handleKpisGet(ctx: AuthenticatedRouteContext): Promise<Response |
 
 async function processKpisGet(adminClient: any, userId: string, url: URL, sendJson: any): Promise<Response> {
   const { since, until, period } = getKpiDateRange(url);
+  // Expand until to include the whole day for timestamptz comparisons
+  const untilFullDay = `${until}T23:59:59Z`;
 
-  const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+  const { data: usr, error: usrErr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+  if (usrErr) {
+    console.error('[KPIs] Failed to fetch user clinic:', usrErr);
+    return sendJson({ success: false, message: 'Failed to fetch user context' }, 500);
+  }
+  
   const clinicId = usr?.clinic_id;
-  if (!clinicId) return sendJson({ success: false, message: 'No clinic configured' }, 400);
 
   // Reconciliar leads antes de calcular KPIs
-  await runLeadPipelineReconciliation(adminClient, userId);
+  try {
+    await runLeadPipelineReconciliation(adminClient, userId);
+  } catch (reconcileErr) {
+    console.warn('[KPIs] Reconciliation failed, proceeding with stale data:', reconcileErr);
+  }
 
   const metaLeadGenSources = ['meta_leadgen', 'meta_lead_gen', 'facebook_leadgen'];
   const whatsappSources = ['whatsapp', 'meta_whatsapp', 'facebook_whatsapp'];
 
+  let leadCountQ = adminClient.from('leads')
+    .select('id', { count: 'exact', head: true })
+    .is('deleted_at', null)
+    .neq('source', 'doctoralia')
+    .gte('created_at', since)
+    .lte('created_at', untilFullDay);
+
+  let leadMetaCountQ = adminClient.from('leads')
+    .select('id', { count: 'exact', head: true })
+    .is('deleted_at', null)
+    .in('source', [...metaLeadGenSources, ...whatsappSources])
+    .gte('created_at', since)
+    .lte('created_at', untilFullDay);
+
+  let leadsByStageQ = adminClient.from('leads')
+    .select('stage')
+    .is('deleted_at', null)
+    .neq('source', 'doctoralia')
+    .gte('created_at', since)
+    .lte('created_at', untilFullDay);
+
+  let settlementsQ = adminClient.from('financial_settlements')
+    .select('id, patient_id, amount_net, settled_at, cancelled_at')
+    .eq('source_system', 'doctoralia')
+    .is('cancelled_at', null)
+    .gt('amount_net', 0)
+    .gte('settled_at', since)
+    .lte('settled_at', untilFullDay);
+
+  let metaDailyInsightsQ = adminClient.from('meta_daily_insights')
+    .select('spend, impressions, clicks, conversions')
+    .gte('date', since)
+    .lte('date', until);
+
+  if (clinicId) {
+    leadCountQ = leadCountQ.eq('clinic_id', clinicId);
+    leadMetaCountQ = leadMetaCountQ.eq('clinic_id', clinicId);
+    leadsByStageQ = leadsByStageQ.eq('clinic_id', clinicId);
+    settlementsQ = settlementsQ.eq('clinic_id', clinicId);
+    metaDailyInsightsQ = metaDailyInsightsQ.eq('clinic_id', clinicId);
+  } else {
+    leadCountQ = leadCountQ.eq('user_id', userId);
+    leadMetaCountQ = leadMetaCountQ.eq('user_id', userId);
+    leadsByStageQ = leadsByStageQ.eq('user_id', userId);
+    metaDailyInsightsQ = metaDailyInsightsQ.eq('user_id', userId);
+  }
+
   const [leadCountRes, leadMetaCountRes, leadsByStageRes, settlementsRes, metaDailyInsightsRes] = await Promise.all([
-    adminClient.from('leads')
-      .select('id', { count: 'exact', head: true })
-      .eq('clinic_id', clinicId)
-      .is('deleted_at', null)
-      .neq('source', 'doctoralia')
-      .gte('created_at', since)
-      .lte('created_at', until),
-
-    adminClient.from('leads')
-      .select('id', { count: 'exact', head: true })
-      .eq('clinic_id', clinicId)
-      .is('deleted_at', null)
-      .in('source', [...metaLeadGenSources, ...whatsappSources])
-      .gte('created_at', since)
-      .lte('created_at', until),
-
-    adminClient.from('leads')
-      .select('stage')
-      .eq('clinic_id', clinicId)
-      .is('deleted_at', null)
-      .neq('source', 'doctoralia')
-      .gte('created_at', since)
-      .lte('created_at', until),
-
-    adminClient.from('financial_settlements')
-      .select('id, patient_id, amount_net, settled_at, cancelled_at')
-      .eq('clinic_id', clinicId)
-      .eq('source_system', 'doctoralia')
-      .is('cancelled_at', null)
-      .gt('amount_net', 0)
-      .gte('settled_at', since)
-      .lte('settled_at', until),
-
-    adminClient.from('meta_daily_insights')
-      .select('spend, impressions, clicks, conversions')
-      .eq('clinic_id', clinicId)
-      .gte('date', since)
-      .lte('date', until),
+    leadCountQ,
+    leadMetaCountQ,
+    leadsByStageQ,
+    settlementsQ,
+    metaDailyInsightsQ,
   ]);
+
+  // Check for critical errors
+  if (leadCountRes.error) console.error('[KPIs] leadCountRes error:', leadCountRes.error);
+  if (settlementsRes.error) console.error('[KPIs] settlementsRes error:', settlementsRes.error);
+  if (metaDailyInsightsRes.error) console.error('[KPIs] metaDailyInsightsRes error:', metaDailyInsightsRes.error);
 
   const crmLeads = leadCountRes.count ?? 0;
   const metaLeads = leadMetaCountRes.count ?? 0;
@@ -6547,12 +6600,17 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
   const patientIdsInPeriod = settlements.map((s: any) => s.patient_id).filter(Boolean);
   let attributedPatients = 0;
   if (patientIdsInPeriod.length > 0) {
-    const { data: matchedLeads } = await adminClient
+    const { data: matchedLeads, error: matchErr } = await adminClient
       .from('leads')
       .select('converted_patient_id')
       .eq('clinic_id', clinicId)
       .in('converted_patient_id', patientIdsInPeriod);
-    attributedPatients = new Set(matchedLeads?.map((l: any) => l.converted_patient_id)).size;
+    
+    if (matchErr) {
+      console.error('[KPIs] Lead matching query failed:', matchErr);
+    } else {
+      attributedPatients = new Set(matchedLeads?.map((l: any) => l.converted_patient_id)).size;
+    }
   }
 
   const metaSpend = metaInsights.reduce((sum: number, r: any) => sum + Number(r.spend ?? 0), 0);
@@ -6561,6 +6619,17 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
   // El CAC Real se basa en pacientes atribuidos
   const cacDoctoralia = attributedPatients > 0 ? Number((metaSpend / attributedPatients).toFixed(2)) : 0;
 
+  const leadsReal = crmLeads > 0;
+  const metaSpendReal = metaSpend > 0;
+  const doctoraliaReal = attributedPatients > 0;
+
+  let overallMode: 'full_real' | 'partial_demo' | 'full_demo' = 'full_real';
+  if (!leadsReal && !metaSpendReal && !doctoraliaReal) {
+    overallMode = 'full_demo';
+  } else if (!leadsReal || !metaSpendReal || !doctoraliaReal) {
+    overallMode = 'partial_demo';
+  }
+
   return sendJson({
     success: true,
     period,
@@ -6568,27 +6637,29 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
       spend: Number(metaSpend.toFixed(2)),
       leads: metaLeads,
       cpl: metaCpl,
-      is_real: metaSpend > 0,
+      is_real: metaSpendReal,
+      data_source: metaSpendReal ? 'meta_api' : 'none',
     },
     crm: {
       totalLeads: crmLeads,
       metaLeads,
       by_stage: byStage,
-      is_real: crmLeads > 0,
+      is_real: leadsReal,
     },
     doctoralia: {
       total_settlements: settlements.length,
-      newVerifiedPatients: attributedPatients, // Usamos los atribuidos para el KPI principal de ROI
+      newVerifiedPatients: attributedPatients, 
       totalVerifiedPatients,
       verifiedRevenue: Number(verifiedRevenue.toFixed(2)),
       avgTicket: attributedPatients > 0 ? Number((verifiedRevenue / attributedPatients).toFixed(2)) : 0,
       cacDoctoralia,
-      is_real: attributedPatients > 0,
+      is_real: doctoraliaReal,
     },
     data_quality: {
-      leads_real: crmLeads > 0,
-      meta_spend_real: metaSpend > 0,
-      doctoralia_real: attributedPatients > 0,
+      leads_real: leadsReal,
+      meta_spend_real: metaSpendReal,
+      doctoralia_real: doctoraliaReal,
+      overall_mode: overallMode,
     }
   });
 }
