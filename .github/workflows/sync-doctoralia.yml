@@ -15,9 +15,10 @@ name: Sync Doctoralia Financials
 #   DATABASE_URL                - Direct Postgres connection string (Supabase)
 #   CLINIC_ID                   - UUID of the clinic owning these settlements
 
+# on:
+#   schedule:
+#     - cron: '0 7 * * *'   # Daily at 07:00 UTC (09:00 Spain, before business hours)
 on:
-  schedule:
-    - cron: '0 7 * * *'   # Daily at 07:00 UTC (09:00 Spain, before business hours)
   workflow_dispatch: {}
   workflow_call: {}
 

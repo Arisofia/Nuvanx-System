@@ -1,0 +1,74 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
+name: Daily Sync Orchestrator
+
+on:
+  schedule:
+    - cron: '0 7 * * *'   # Daily at 07:00 UTC
+  workflow_run:
+    workflows: ["Supabase Security Check"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Days of Meta insights to fetch'
+        required: false
+        default: '2'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE22: true
+
+jobs:
+  daily-sync:
+    name: Run Daily Sync Orchestrator
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL || secrets.VITE_SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
+      DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID }}
+      CLINIC_ID: ${{ secrets.CLINIC_ID }}
+      ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4.1.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install --include=dev --ignore-scripts --legacy-peer-deps
+
+      - name: Run Orchestrator Script
+        run: node scripts/run-daily-sync.js
+        env:
+          # run-daily-sync.js needs these for sync-doctoralia and supabase deploy
+          SUPABASE_ACCESS_TOKEN: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ env.SUPABASE_PROJECT_REF }}
+
+      - name: Fetch Meta Daily Insights
+        run: |
+          DAYS="${{ github.event.inputs.days || '2' }}"
+          echo "Fetching Meta insights for last $DAYS days..."
+          
+          RESPONSE=$(curl -s -X POST "${SUPABASE_URL}/functions/v1/daily-aggregates" \
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"action\": \"fetch_meta_insights\", \"days\": $DAYS}")
+          
+          echo "Response: $RESPONSE"
+          if echo "$RESPONSE" | grep -q '"success":true'; then
+            echo "Meta insights fetched successfully."
+          else
+            echo "::error::Failed to fetch Meta insights."
+            exit 1
+          fi
