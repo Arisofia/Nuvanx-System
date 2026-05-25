@@ -75,10 +75,15 @@ jobs:
           fi
 
           if [ ${#MISSING[@]} -gt 0 ]; then
-            echo "::error::Missing secrets: ${MISSING[*]}"
+            echo "::error::Missing critical secrets: ${MISSING[*]}"
             echo "::error::Add them at Settings -> Secrets and variables -> Actions"
             exit 1
           fi
+
+          # Log presence of optional secrets for debugging
+          [ -n "${GOOGLE_API_KEY:-}" ] && echo "Optional secret GOOGLE_API_KEY is present." || echo "Optional secret GOOGLE_API_KEY is missing."
+          [ -n "${GOOGLE_CLIENT_EMAIL:-}" ] && echo "Optional secret GOOGLE_CLIENT_EMAIL is present." || echo "Optional secret GOOGLE_CLIENT_EMAIL is missing."
+          [ -n "${GOOGLE_PROJECT_ID:-}" ] && echo "Optional secret GOOGLE_PROJECT_ID is present." || echo "Optional secret GOOGLE_PROJECT_ID is missing."
 
           # Accept both formats for GOOGLE_ADS_SERVICE_ACCOUNT:
           #  1) base64(service-account.json)
