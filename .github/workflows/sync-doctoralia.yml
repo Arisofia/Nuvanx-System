@@ -32,6 +32,10 @@ jobs:
     timeout-minutes: 20
     env:
       GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      GOOGLE_PROJECT_ID: ${{ secrets.GOOGLE_PROJECT_ID }}
       DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID }}
       DOCTORALIA_DRIVE_FILE_ID: ${{ secrets.DOCTORALIA_DRIVE_FILE_ID }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -79,7 +83,8 @@ jobs:
           # Accept both formats for GOOGLE_ADS_SERVICE_ACCOUNT:
           #  1) base64(service-account.json)
           #  2) raw JSON object string
-          if echo "$GOOGLE_ADS_SERVICE_ACCOUNT" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
+          #  3) raw private key (passed directly to script)
+          if python3 -c "import os,json; json.loads(os.environ.get('GOOGLE_ADS_SERVICE_ACCOUNT', ''))" 2>/dev/null; then
             echo "GOOGLE_ADS_SERVICE_ACCOUNT format: Detected raw JSON"
             # Mask the raw JSON to avoid accidental leakage in logs
             echo "::add-mask::$GOOGLE_ADS_SERVICE_ACCOUNT"
@@ -88,22 +93,19 @@ jobs:
             chmod 600 "$SA_FILE"
             echo "GOOGLE_SA_JSON_FILE=$SA_FILE" >> "$GITHUB_ENV"
           else
-            DECODED="$(echo "$GOOGLE_ADS_SERVICE_ACCOUNT" | base64 -d 2>/dev/null)" || {
-              echo "::error::GOOGLE_ADS_SERVICE_ACCOUNT is not valid raw JSON and failed Base64 decoding."
-              exit 1
-            }
-            
-            echo "$DECODED" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null || {
-              echo "::error::GOOGLE_ADS_SERVICE_ACCOUNT was Base64 decoded, but the result is not a valid JSON object."
-              exit 1
-            }
-            echo "GOOGLE_ADS_SERVICE_ACCOUNT format: Detected Base64 JSON"
-            # Mask the decoded JSON to avoid accidental leakage in logs
-            echo "::add-mask::$DECODED"
-            SA_FILE="$RUNNER_TEMP/google-service-account.json"
-            printf '%s' "$DECODED" > "$SA_FILE"
-            chmod 600 "$SA_FILE"
-            echo "GOOGLE_SA_JSON_FILE=$SA_FILE" >> "$GITHUB_ENV"
+            # Try base64
+            DECODED="$(echo "$GOOGLE_ADS_SERVICE_ACCOUNT" | base64 -d 2>/dev/null)" || DECODED=""
+            if [ -n "$DECODED" ] && echo "$DECODED" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
+              echo "GOOGLE_ADS_SERVICE_ACCOUNT format: Detected Base64 JSON"
+              echo "::add-mask::$DECODED"
+              SA_FILE="$RUNNER_TEMP/google-service-account.json"
+              printf '%s' "$DECODED" > "$SA_FILE"
+              chmod 600 "$SA_FILE"
+              echo "GOOGLE_SA_JSON_FILE=$SA_FILE" >> "$GITHUB_ENV"
+            else
+              echo "GOOGLE_ADS_SERVICE_ACCOUNT is not valid JSON or Base64 JSON. Passing as-is to script (might be a private key)."
+              # Ensure GOOGLE_SA_JSON_FILE is NOT set so the script uses the env var directly
+            fi
           fi
 
           echo "All required secrets present and valid."
@@ -115,6 +117,11 @@ jobs:
         run: node scripts/sync-doctoralia.js
         env:
           GOOGLE_SA_JSON_FILE: ${{ env.GOOGLE_SA_JSON_FILE }}
+          GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
+          GOOGLE_API_KEY:      ${{ secrets.GOOGLE_API_KEY }}
+          GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
+          GOOGLE_CLIENT_ID:    ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_PROJECT_ID:   ${{ secrets.GOOGLE_PROJECT_ID }}
           EXPECTED_SHEET_ID:   ${{ env.EXPECTED_SHEET_ID }}
           SHEET_RANGE:         A1:Z5000
           SHEET_NAME:          "Produccion Intermediarios"

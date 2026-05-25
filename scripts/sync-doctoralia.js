@@ -43,6 +43,10 @@ const { extractPhonesFromSubject, normalizePhoneForMatching, getPrimaryPhoneFrom
 const {
   GOOGLE_SA_JSON: SA_JSON,
   GOOGLE_SA_JSON_FILE,
+  GOOGLE_ADS_SERVICE_ACCOUNT,
+  GOOGLE_CLIENT_EMAIL,
+  GOOGLE_PROJECT_ID,
+  GOOGLE_PRIVATE_KEY,
   DOCTORALIA_SHEET_ID,
   DOCTORALIA_DRIVE_FILE_ID,
   CLINIC_ID,
@@ -50,6 +54,39 @@ const {
   SHEET_NAME,
   DOCTORALIA_SYNC_PERMISSION_MODE = 'fail',
 } = process.env;
+
+const EFFECTIVE_SA_JSON = SA_JSON || GOOGLE_ADS_SERVICE_ACCOUNT;
+
+function loadServiceAccountJson() {
+  if (EFFECTIVE_SA_JSON) {
+    try {
+      JSON.parse(EFFECTIVE_SA_JSON);
+      return EFFECTIVE_SA_JSON;
+    } catch {
+      // Not a valid JSON, might be a private key or individual values are used
+    }
+  }
+  
+  if (GOOGLE_SA_JSON_FILE && require('node:fs').existsSync(GOOGLE_SA_JSON_FILE)) {
+    return require('node:fs').readFileSync(GOOGLE_SA_JSON_FILE, 'utf8');
+  }
+
+  // If we have individual components, construct the object
+  if (GOOGLE_CLIENT_EMAIL && (GOOGLE_PRIVATE_KEY || EFFECTIVE_SA_JSON)) {
+    const privateKey = GOOGLE_PRIVATE_KEY || EFFECTIVE_SA_JSON;
+    // Basic validation that it looks like a private key
+    if (privateKey.includes('BEGIN PRIVATE KEY')) {
+      return JSON.stringify({
+        type: 'service_account',
+        project_id: GOOGLE_PROJECT_ID || 'unknown',
+        private_key: privateKey.replace(/\\n/g, '\n'),
+        client_email: GOOGLE_CLIENT_EMAIL,
+      });
+    }
+  }
+
+  return EFFECTIVE_SA_JSON;
+}
 
 // Ensure we use the Session Pooler port (6543) for Supabase poolers if port is missing.
 const DATABASE_URL = (() => {
@@ -82,9 +119,9 @@ const SHEET_ID = (DOCTORALIA_SHEET_ID || DOCTORALIA_DRIVE_FILE_ID)?.trim();
 const ALLOW_PERMISSION_SKIP = DOCTORALIA_SYNC_PERMISSION_MODE.toLowerCase() === 'warn';
 
 // ─── Validation ───────────────────────────────────────────────────────────────
-if ((!SA_JSON && !GOOGLE_SA_JSON_FILE) || !SHEET_ID || !DATABASE_URL || !CLINIC_ID) {
+if ((!EFFECTIVE_SA_JSON && !GOOGLE_SA_JSON_FILE) || !SHEET_ID || !DATABASE_URL || !CLINIC_ID) {
   console.error('[sync-doctoralia] Missing required env vars.');
-  console.error('  Required: GOOGLE_SA_JSON or GOOGLE_SA_JSON_FILE, DOCTORALIA_SHEET_ID or DOCTORALIA_DRIVE_FILE_ID, DATABASE_URL, CLINIC_ID');
+  console.error('  Required: GOOGLE_SA_JSON / GOOGLE_ADS_SERVICE_ACCOUNT or GOOGLE_SA_JSON_FILE, DOCTORALIA_SHEET_ID or DOCTORALIA_DRIVE_FILE_ID, DATABASE_URL, CLINIC_ID');
   if (SHEET_ID === undefined) console.error('  SHEET_ID is undefined');
   process.exit(1);
 }
@@ -124,11 +161,6 @@ function formatPermissionGuidance(sa) {
     `Share the spreadsheet with service account ${email} as Viewer, or update GOOGLE_ADS_SERVICE_ACCOUNT/DOCTORALIA_SHEET_ID to matching credentials and file ID.`,
     'No financial_settlements rows were modified.',
   ].join(' ');
-}
-
-function loadServiceAccountJson() {
-  if (SA_JSON) return SA_JSON;
-  return require('node:fs').readFileSync(GOOGLE_SA_JSON_FILE, 'utf8');
 }
 
 function deriveRawId(row, useHashId, cols) {
