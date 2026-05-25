@@ -690,6 +690,19 @@ export default function Marketing() {
       .map(mapCampaignToChart)
   }, [campaigns])
 
+  const getEmptyMessage = () => {
+    if (campaigns.length === 0) {
+      return 'No hay campañas disponibles para el período seleccionado.'
+    }
+    
+    let msg = 'Ninguna campaña coincide con los filtros actuales'
+    if (statusFilter !== 'ALL') {
+      const label = STATUS_LABELS[statusFilter as keyof typeof STATUS_LABELS] ?? statusFilter
+      msg += ` (estado: ${label})`
+    }
+    return `${msg}.`
+  }
+
   const periodLabel = period
     ? `${period.since} → ${period.until} (${period.days} días)`
     : 'últimos 30 días'
@@ -985,9 +998,7 @@ export default function Marketing() {
           {!loading && filteredCampaigns.length === 0 && (
             <div className="p-4 flex items-center gap-3">
               <p className="text-sm text-muted">
-                {campaigns.length === 0
-                  ? 'No hay campañas disponibles para el período seleccionado.'
-                  : `Ninguna campaña coincide con los filtros actuales${statusFilter !== 'ALL' ? ` (estado: ${STATUS_LABELS[statusFilter as keyof typeof STATUS_LABELS] ?? statusFilter})` : ''}.`}
+                {getEmptyMessage()}
               </p>
               {campaigns.length > 0 && (statusFilter !== 'ALL' || search || campaignId !== 'ALL') && (
                 <button
