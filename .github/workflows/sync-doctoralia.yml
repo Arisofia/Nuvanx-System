@@ -55,10 +55,15 @@ jobs:
         run: |
           set -euo pipefail
           MISSING=()
-          [ -z "${GOOGLE_ADS_SERVICE_ACCOUNT:-}" ] && MISSING+=("GOOGLE_ADS_SERVICE_ACCOUNT")
+          # Check for Sheet ID, DB and Clinic
           [ -z "${DOCTORALIA_SHEET_ID:-}" ] && [ -z "${DOCTORALIA_DRIVE_FILE_ID:-}" ] && MISSING+=("DOCTORALIA_SHEET_ID or DOCTORALIA_DRIVE_FILE_ID")
           [ -z "${DATABASE_URL:-}" ]         && MISSING+=("DATABASE_URL")
           [ -z "${CLINIC_ID:-}" ]            && MISSING+=("CLINIC_ID")
+
+          # Check for Auth: Either API Key or Service Account (ADS SA is fallback for backward compat if it happens to be valid)
+          if [ -z "${GOOGLE_API_KEY:-}" ] && [ -z "${GOOGLE_ADS_SERVICE_ACCOUNT:-}" ]; then
+             MISSING+=("GOOGLE_API_KEY or GOOGLE_ADS_SERVICE_ACCOUNT")
+          fi
 
           # Conditional Sheet ID validation
           SHEET_ID_EFFECTIVE="${DOCTORALIA_SHEET_ID:-${DOCTORALIA_DRIVE_FILE_ID:-}}"
@@ -81,39 +86,33 @@ jobs:
           fi
 
           # Log presence of optional secrets for debugging
-          [ -n "${GOOGLE_API_KEY:-}" ] && echo "Optional secret GOOGLE_API_KEY is present." || echo "Optional secret GOOGLE_API_KEY is missing."
-          [ -n "${GOOGLE_CLIENT_EMAIL:-}" ] && echo "Optional secret GOOGLE_CLIENT_EMAIL is present." || echo "Optional secret GOOGLE_CLIENT_EMAIL is missing."
-          [ -n "${GOOGLE_PROJECT_ID:-}" ] && echo "Optional secret GOOGLE_PROJECT_ID is present." || echo "Optional secret GOOGLE_PROJECT_ID is missing."
-
-          # Accept both formats for GOOGLE_ADS_SERVICE_ACCOUNT:
-          #  1) base64(service-account.json)
-          #  2) raw JSON object string
-          #  3) raw private key (passed directly to script)
-          if python3 -c "import os,json; json.loads(os.environ.get('GOOGLE_ADS_SERVICE_ACCOUNT', ''))" 2>/dev/null; then
-            echo "GOOGLE_ADS_SERVICE_ACCOUNT format: Detected raw JSON"
-            # Mask the raw JSON to avoid accidental leakage in logs
-            echo "::add-mask::$GOOGLE_ADS_SERVICE_ACCOUNT"
-            SA_FILE="$RUNNER_TEMP/google-service-account.json"
-            printf '%s' "$GOOGLE_ADS_SERVICE_ACCOUNT" > "$SA_FILE"
-            chmod 600 "$SA_FILE"
-            echo "GOOGLE_SA_JSON_FILE=$SA_FILE" >> "$GITHUB_ENV"
-          else
-            # Try base64
-            DECODED="$(echo "$GOOGLE_ADS_SERVICE_ACCOUNT" | base64 -d 2>/dev/null)" || DECODED=""
-            if [ -n "$DECODED" ] && echo "$DECODED" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
-              echo "GOOGLE_ADS_SERVICE_ACCOUNT format: Detected Base64 JSON"
-              echo "::add-mask::$DECODED"
+          [ -n "${GOOGLE_API_KEY:-}" ] && echo "Auth method: GOOGLE_API_KEY is present." || echo "Auth method: GOOGLE_API_KEY is missing."
+          
+          # Try to decode GOOGLE_ADS_SERVICE_ACCOUNT only if it looks like JSON/Base64
+          if [ -n "${GOOGLE_ADS_SERVICE_ACCOUNT:-}" ]; then
+            if python3 -c "import os,json; json.loads(os.environ.get('GOOGLE_ADS_SERVICE_ACCOUNT', ''))" 2>/dev/null; then
+              echo "GOOGLE_ADS_SERVICE_ACCOUNT format: Detected raw JSON"
+              echo "::add-mask::$GOOGLE_ADS_SERVICE_ACCOUNT"
               SA_FILE="$RUNNER_TEMP/google-service-account.json"
-              printf '%s' "$DECODED" > "$SA_FILE"
+              printf '%s' "$GOOGLE_ADS_SERVICE_ACCOUNT" > "$SA_FILE"
               chmod 600 "$SA_FILE"
               echo "GOOGLE_SA_JSON_FILE=$SA_FILE" >> "$GITHUB_ENV"
             else
-              echo "GOOGLE_ADS_SERVICE_ACCOUNT is not valid JSON or Base64 JSON. Passing as-is to script (might be a private key)."
-              # Ensure GOOGLE_SA_JSON_FILE is NOT set so the script uses the env var directly
+              DECODED="$(echo "$GOOGLE_ADS_SERVICE_ACCOUNT" | base64 -d 2>/dev/null)" || DECODED=""
+              if [ -n "$DECODED" ] && echo "$DECODED" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
+                echo "GOOGLE_ADS_SERVICE_ACCOUNT format: Detected Base64 JSON"
+                echo "::add-mask::$DECODED"
+                SA_FILE="$RUNNER_TEMP/google-service-account.json"
+                printf '%s' "$DECODED" > "$SA_FILE"
+                chmod 600 "$SA_FILE"
+                echo "GOOGLE_SA_JSON_FILE=$SA_FILE" >> "$GITHUB_ENV"
+              else
+                echo "GOOGLE_ADS_SERVICE_ACCOUNT is not a valid JSON/Base64 (used as-is if applicable)."
+              fi
             fi
           fi
 
-          echo "All required secrets present and valid."
+          echo "Preflight complete."
 
       - name: Install sync dependencies
         run: npm install --no-save googleapis pg

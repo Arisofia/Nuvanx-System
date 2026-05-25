@@ -43,7 +43,7 @@ const { extractPhonesFromSubject, normalizePhoneForMatching, getPrimaryPhoneFrom
 const {
   GOOGLE_SA_JSON: SA_JSON,
   GOOGLE_SA_JSON_FILE,
-  GOOGLE_ADS_SERVICE_ACCOUNT,
+  GOOGLE_API_KEY,
   GOOGLE_CLIENT_EMAIL,
   GOOGLE_PROJECT_ID,
   GOOGLE_PRIVATE_KEY,
@@ -55,44 +55,33 @@ const {
   DOCTORALIA_SYNC_PERMISSION_MODE = 'fail',
 } = process.env;
 
-const EFFECTIVE_SA_JSON = SA_JSON || GOOGLE_ADS_SERVICE_ACCOUNT;
-
 function loadServiceAccountJson() {
-  if (EFFECTIVE_SA_JSON) {
+  if (SA_JSON) {
     try {
-      JSON.parse(EFFECTIVE_SA_JSON);
-      console.log('[sync-doctoralia] Detected valid JSON in EFFECTIVE_SA_JSON');
-      return EFFECTIVE_SA_JSON;
+      JSON.parse(SA_JSON);
+      return SA_JSON;
     } catch (e) {
-      console.log(`[sync-doctoralia] EFFECTIVE_SA_JSON is not valid JSON: ${e.message}`);
+      console.log(`[sync-doctoralia] SA_JSON is not valid JSON: ${e.message}`);
     }
   }
   
   if (GOOGLE_SA_JSON_FILE && require('node:fs').existsSync(GOOGLE_SA_JSON_FILE)) {
-    console.log('[sync-doctoralia] Using GOOGLE_SA_JSON_FILE');
     return require('node:fs').readFileSync(GOOGLE_SA_JSON_FILE, 'utf8');
   }
 
-  // If we have individual components, construct the object
-  if (GOOGLE_CLIENT_EMAIL && (GOOGLE_PRIVATE_KEY || EFFECTIVE_SA_JSON)) {
-    const privateKey = GOOGLE_PRIVATE_KEY || EFFECTIVE_SA_JSON;
-    console.log(`[sync-doctoralia] Attempting to construct SA from individual values. Email: ${GOOGLE_CLIENT_EMAIL}, PrivateKey length: ${privateKey?.length}`);
-    // Basic validation that it looks like a private key
-    if (privateKey.includes('BEGIN PRIVATE KEY')) {
-      console.log('[sync-doctoralia] Private key detected. Constructing JSON...');
+  // If we have individual components (Service Account)
+  if (GOOGLE_CLIENT_EMAIL && GOOGLE_PRIVATE_KEY) {
+    if (GOOGLE_PRIVATE_KEY.includes('BEGIN PRIVATE KEY')) {
       return JSON.stringify({
         type: 'service_account',
         project_id: GOOGLE_PROJECT_ID || 'unknown',
-        private_key: privateKey.replace(/\\n/g, '\n'),
+        private_key: GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
         client_email: GOOGLE_CLIENT_EMAIL,
       });
-    } else {
-      console.log('[sync-doctoralia] Private key does not contain "BEGIN PRIVATE KEY"');
     }
   }
 
-  console.log('[sync-doctoralia] Falling back to raw EFFECTIVE_SA_JSON');
-  return EFFECTIVE_SA_JSON;
+  return null;
 }
 
 // Ensure we use the Session Pooler port (6543) for Supabase poolers if port is missing.
@@ -126,9 +115,10 @@ const SHEET_ID = (DOCTORALIA_SHEET_ID || DOCTORALIA_DRIVE_FILE_ID)?.trim();
 const ALLOW_PERMISSION_SKIP = DOCTORALIA_SYNC_PERMISSION_MODE.toLowerCase() === 'warn';
 
 // ─── Validation ───────────────────────────────────────────────────────────────
-if ((!EFFECTIVE_SA_JSON && !GOOGLE_SA_JSON_FILE) || !SHEET_ID || !DATABASE_URL || !CLINIC_ID) {
+const hasAuth = SA_JSON || GOOGLE_SA_JSON_FILE || GOOGLE_API_KEY || (GOOGLE_CLIENT_EMAIL && GOOGLE_PRIVATE_KEY);
+if (!hasAuth || !SHEET_ID || !DATABASE_URL || !CLINIC_ID) {
   console.error('[sync-doctoralia] Missing required env vars.');
-  console.error('  Required: GOOGLE_SA_JSON / GOOGLE_ADS_SERVICE_ACCOUNT or GOOGLE_SA_JSON_FILE, DOCTORALIA_SHEET_ID or DOCTORALIA_DRIVE_FILE_ID, DATABASE_URL, CLINIC_ID');
+  console.error('  Required: Authentication (SA_JSON, GOOGLE_API_KEY, or EMAIL+KEY), DOCTORALIA_SHEET_ID, DATABASE_URL, CLINIC_ID');
   if (SHEET_ID === undefined) console.error('  SHEET_ID is undefined');
   process.exit(1);
 }
@@ -476,20 +466,27 @@ function parseRow(row, config) {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
-  // ── 1. Auth with Google service account ──────────────────────────────────
-  let sa;
-  try {
-    const json = loadServiceAccountJson();
-    sa = JSON.parse(json);
-  } catch (err) {
-    console.error(`[sync-doctoralia] Google service account JSON is not valid: ${err.message}`);
+  // ── 1. Auth with Google ──────────────────────────────────────────────────
+  let auth;
+  const saJson = loadServiceAccountJson();
+  
+  if (saJson) {
+    try {
+      const sa = JSON.parse(saJson);
+      auth = new google.auth.GoogleAuth({
+        credentials: sa,
+        scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+      });
+    } catch (err) {
+      console.error(`[sync-doctoralia] Google service account JSON is not valid: ${err.message}`);
+      process.exit(1);
+    }
+  } else if (GOOGLE_API_KEY) {
+    auth = GOOGLE_API_KEY;
+  } else {
+    console.error('[sync-doctoralia] No valid authentication method provided. Set GOOGLE_SA_JSON or GOOGLE_API_KEY.');
     process.exit(1);
   }
-
-  const auth = new google.auth.GoogleAuth({
-    credentials: sa,
-    scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
-  });
 
   const sheets = google.sheets({ version: 'v4', auth });
 
