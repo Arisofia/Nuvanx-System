@@ -127,7 +127,6 @@ export default function Financials() {
           <h1 className="text-3xl font-serif font-bold text-foreground">Finanzas verificadas</h1>
           <p className="text-muted mt-1">Liquidaciones de Doctoralia, LTV, ingresos verificados</p>
         </div>
-        {/* Period presets */}
         <div className="flex items-center gap-1 bg-card rounded-lg p-1">
           {PRESETS.map((p) => (
             <button
@@ -143,7 +142,6 @@ export default function Financials() {
             </button>
           ))}
         </div>
-        {/* Custom date range */}
         <div className="flex items-center gap-2 text-xs text-muted">
           <input
             type="date"

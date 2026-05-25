@@ -28,6 +28,7 @@ lerna-debug.log*
 .secrets.local
 backend/google-service-account.json
 *service-account*.json
+doctoralia-service-account.json
 
 # Editor / OS
 .idea/
