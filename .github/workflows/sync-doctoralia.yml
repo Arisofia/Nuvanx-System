@@ -62,14 +62,15 @@ jobs:
           [ -z "${DATABASE_URL:-}" ]         && MISSING+=("DATABASE_URL")
           [ -z "${CLINIC_ID:-}" ]            && MISSING+=("CLINIC_ID")
 
-          # Check for Auth: API Key, Service Account JSON (ADS fallback), or individual Email+Key
+          # Check for Auth: API Key, Service Account JSON (Doctoralia or ADS fallback), or individual Email+Key
           HAS_AUTH=0
           if [ -n "${GOOGLE_API_KEY:-}" ]; then HAS_AUTH=1; echo "Auth: API Key detected"; fi
+          if [ -n "${GOOGLE_DOCTORALIA_SERVICE_ACCOUNT:-}" ]; then HAS_AUTH=1; echo "Auth: GOOGLE_DOCTORALIA_SERVICE_ACCOUNT detected"; fi
           if [ -n "${GOOGLE_ADS_SERVICE_ACCOUNT:-}" ]; then HAS_AUTH=1; echo "Auth: GOOGLE_ADS_SERVICE_ACCOUNT (legacy fallback) detected"; fi
           if [ -n "${GOOGLE_CLIENT_EMAIL:-}" ] && [ -n "${GOOGLE_PRIVATE_KEY:-}" ]; then HAS_AUTH=1; echo "Auth: Individual GOOGLE_CLIENT_EMAIL and GOOGLE_PRIVATE_KEY detected"; fi
 
           if [ "$HAS_AUTH" -eq 0 ]; then
-             MISSING+=("Authentication (GOOGLE_API_KEY, GOOGLE_ADS_SERVICE_ACCOUNT, or EMAIL+KEY)")
+             MISSING+=("Authentication (GOOGLE_API_KEY, GOOGLE_DOCTORALIA_SERVICE_ACCOUNT, or EMAIL+KEY)")
           fi
 
           # Conditional Sheet ID validation
@@ -95,26 +96,27 @@ jobs:
           # Log presence of optional secrets for debugging
           [ -n "${GOOGLE_API_KEY:-}" ] && echo "Auth method: GOOGLE_API_KEY is present." || echo "Auth method: GOOGLE_API_KEY is missing."
           
-          # Try to decode GOOGLE_ADS_SERVICE_ACCOUNT only if it looks like JSON/Base64
-          if [ -n "${GOOGLE_ADS_SERVICE_ACCOUNT:-}" ]; then
-            if python3 -c "import os,json; json.loads(os.environ.get('GOOGLE_ADS_SERVICE_ACCOUNT', ''))" 2>/dev/null; then
-              echo "GOOGLE_ADS_SERVICE_ACCOUNT format: Detected raw JSON"
-              echo "::add-mask::$GOOGLE_ADS_SERVICE_ACCOUNT"
+          # Try to decode GOOGLE_DOCTORALIA_SERVICE_ACCOUNT or GOOGLE_ADS_SERVICE_ACCOUNT
+          export SA_JSON_RAW="${GOOGLE_DOCTORALIA_SERVICE_ACCOUNT:-${GOOGLE_ADS_SERVICE_ACCOUNT:-}}"
+          if [ -n "$SA_JSON_RAW" ]; then
+            if python3 -c "import os,json; json.loads(os.environ.get('SA_JSON_RAW', ''))" 2>/dev/null; then
+              echo "SA_JSON_RAW format: Detected raw JSON"
+              echo "::add-mask::$SA_JSON_RAW"
               SA_FILE="$RUNNER_TEMP/google-service-account.json"
-              printf '%s' "$GOOGLE_ADS_SERVICE_ACCOUNT" > "$SA_FILE"
+              printf '%s' "$SA_JSON_RAW" > "$SA_FILE"
               chmod 600 "$SA_FILE"
               echo "GOOGLE_SA_JSON_FILE=$SA_FILE" >> "$GITHUB_ENV"
             else
-              DECODED="$(echo "$GOOGLE_ADS_SERVICE_ACCOUNT" | base64 -d 2>/dev/null)" || DECODED=""
+              DECODED="$(echo "$SA_JSON_RAW" | base64 -d 2>/dev/null)" || DECODED=""
               if [ -n "$DECODED" ] && echo "$DECODED" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
-                echo "GOOGLE_ADS_SERVICE_ACCOUNT format: Detected Base64 JSON"
+                echo "SA_JSON_RAW format: Detected Base64 JSON"
                 echo "::add-mask::$DECODED"
                 SA_FILE="$RUNNER_TEMP/google-service-account.json"
                 printf '%s' "$DECODED" > "$SA_FILE"
                 chmod 600 "$SA_FILE"
                 echo "GOOGLE_SA_JSON_FILE=$SA_FILE" >> "$GITHUB_ENV"
               else
-                echo "GOOGLE_ADS_SERVICE_ACCOUNT is not a valid JSON/Base64 (used as-is if applicable)."
+                echo "SA_JSON_RAW is not a valid JSON/Base64 (used as-is if applicable)."
               fi
             fi
           fi
