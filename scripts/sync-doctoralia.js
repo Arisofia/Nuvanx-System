@@ -61,7 +61,7 @@ function loadServiceAccountJson() {
       JSON.parse(SA_JSON);
       return SA_JSON;
     } catch (e) {
-      console.log(`[sync-doctoralia] SA_JSON is not valid JSON: ${e.message}`);
+      // Not a valid JSON
     }
   }
   
@@ -467,14 +467,14 @@ function parseRow(row, config) {
 
 async function main() {
   // ── 1. Auth with Google ──────────────────────────────────────────────────
-  let auth;
+  let auth, saObject;
   const saJson = loadServiceAccountJson();
   
   if (saJson) {
     try {
-      const sa = JSON.parse(saJson);
+      saObject = JSON.parse(saJson);
       auth = new google.auth.GoogleAuth({
-        credentials: sa,
+        credentials: saObject,
         scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
       });
     } catch (err) {
@@ -505,7 +505,7 @@ async function main() {
     });
   } catch (err) {
     if (isGooglePermissionError(err)) {
-      const guidance = formatPermissionGuidance(sa);
+      const guidance = formatPermissionGuidance(saObject);
       if (ALLOW_PERMISSION_SKIP) {
         console.warn(`::warning::[sync-doctoralia] ${guidance}`);
         return;
