@@ -41,10 +41,11 @@ async function main() {
   }
 
   const accessToken = String(process.env.META_ACCESS_TOKEN || '').trim();
-  const targetAdAccountId = normalizeAdAccountId(process.env.META_AD_ACCOUNT_ID || '');
+  const rawAdAccountIds = String(process.env.META_AD_ACCOUNT_IDS || process.env.META_AD_ACCOUNT_ID || '').trim();
+  const targetAdAccountIds = rawAdAccountIds.split(',').map(id => normalizeAdAccountId(id)).filter(Boolean);
 
-  if (!accessToken || !targetAdAccountId) {
-    throw new Error('META_ACCESS_TOKEN and META_AD_ACCOUNT_ID are required.');
+  if (!accessToken || targetAdAccountIds.length === 0) {
+    throw new Error('META_ACCESS_TOKEN and META_AD_ACCOUNT_IDS (or META_AD_ACCOUNT_ID) are required.');
   }
 
   const accounts = await listAccessibleAdAccounts(accessToken);
@@ -57,18 +58,16 @@ async function main() {
     }))
     .filter((row) => row.id);
 
-  const hasAccess = normalized.some((account) => account.id === targetAdAccountId);
+  const missingAccounts = targetAdAccountIds.filter(id => !normalized.some(acc => acc.id === id));
 
   console.log(`Accessible ad accounts: ${normalized.length}`);
-  if (hasAccess) {
-    console.log('✅ Meta token has access to the configured ad account.');
+  if (missingAccounts.length === 0) {
+    console.log('✅ Meta token has access to all configured ad accounts.');
     return;
   }
 
   throw new Error(
-    normalized.length
-      ? 'Token cannot access the configured ad account.'
-      : 'Token cannot access the configured ad account. No accessible accounts returned by API.'
+    `Token cannot access these configured ad accounts: ${missingAccounts.join(', ')}.`
   );
 }
 
