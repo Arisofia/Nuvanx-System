@@ -61,30 +61,37 @@ function loadServiceAccountJson() {
   if (EFFECTIVE_SA_JSON) {
     try {
       JSON.parse(EFFECTIVE_SA_JSON);
+      console.log('[sync-doctoralia] Detected valid JSON in EFFECTIVE_SA_JSON');
       return EFFECTIVE_SA_JSON;
-    } catch {
-      // Not a valid JSON, might be a private key or individual values are used
+    } catch (e) {
+      console.log(`[sync-doctoralia] EFFECTIVE_SA_JSON is not valid JSON: ${e.message}`);
     }
   }
   
   if (GOOGLE_SA_JSON_FILE && require('node:fs').existsSync(GOOGLE_SA_JSON_FILE)) {
+    console.log('[sync-doctoralia] Using GOOGLE_SA_JSON_FILE');
     return require('node:fs').readFileSync(GOOGLE_SA_JSON_FILE, 'utf8');
   }
 
   // If we have individual components, construct the object
   if (GOOGLE_CLIENT_EMAIL && (GOOGLE_PRIVATE_KEY || EFFECTIVE_SA_JSON)) {
     const privateKey = GOOGLE_PRIVATE_KEY || EFFECTIVE_SA_JSON;
+    console.log(`[sync-doctoralia] Attempting to construct SA from individual values. Email: ${GOOGLE_CLIENT_EMAIL}, PrivateKey length: ${privateKey?.length}`);
     // Basic validation that it looks like a private key
     if (privateKey.includes('BEGIN PRIVATE KEY')) {
+      console.log('[sync-doctoralia] Private key detected. Constructing JSON...');
       return JSON.stringify({
         type: 'service_account',
         project_id: GOOGLE_PROJECT_ID || 'unknown',
         private_key: privateKey.replace(/\\n/g, '\n'),
         client_email: GOOGLE_CLIENT_EMAIL,
       });
+    } else {
+      console.log('[sync-doctoralia] Private key does not contain "BEGIN PRIVATE KEY"');
     }
   }
 
+  console.log('[sync-doctoralia] Falling back to raw EFFECTIVE_SA_JSON');
   return EFFECTIVE_SA_JSON;
 }
 
@@ -472,9 +479,10 @@ async function main() {
   // ── 1. Auth with Google service account ──────────────────────────────────
   let sa;
   try {
-    sa = JSON.parse(loadServiceAccountJson());
-  } catch {
-    console.error('[sync-doctoralia] Google service account JSON is not valid.');
+    const json = loadServiceAccountJson();
+    sa = JSON.parse(json);
+  } catch (err) {
+    console.error(`[sync-doctoralia] Google service account JSON is not valid: ${err.message}`);
     process.exit(1);
   }
 
