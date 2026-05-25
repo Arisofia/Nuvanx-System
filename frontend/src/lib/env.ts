@@ -8,7 +8,7 @@ function sanitizeEnv(value: string | undefined) {
  * Dev-only utility to check if we're in a browser runtime.
  */
 export const isBrowser = (): boolean =>
-  typeof globalThis.window !== 'undefined'
+  globalThis.window !== undefined
 
 /**
  * Supabase URL and key taken from Vite env vars.
