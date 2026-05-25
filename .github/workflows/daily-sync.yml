@@ -34,6 +34,11 @@ jobs:
       DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID }}
       CLINIC_ID: ${{ secrets.CLINIC_ID }}
       ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+      META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+      META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
+      META_AD_ACCOUNT_IDS: ${{ secrets.META_AD_ACCOUNT_IDS }}
+      META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
+      META_GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION || 'v20.0' }}
 
     steps:
       - name: Checkout repository
@@ -59,6 +64,11 @@ jobs:
           DOCTORALIA_SHEET_ID: ${{ env.DOCTORALIA_SHEET_ID }}
           CLINIC_ID: ${{ env.CLINIC_ID }}
           ENCRYPTION_KEY: ${{ env.ENCRYPTION_KEY }}
+          META_ACCESS_TOKEN: ${{ env.META_ACCESS_TOKEN }}
+          META_AD_ACCOUNT_ID: ${{ env.META_AD_ACCOUNT_ID }}
+          META_AD_ACCOUNT_IDS: ${{ env.META_AD_ACCOUNT_IDS }}
+          META_APP_SECRET: ${{ env.META_APP_SECRET }}
+          META_GRAPH_VERSION: ${{ env.META_GRAPH_VERSION }}
 
       - name: Fetch Meta Daily Insights
         run: |
