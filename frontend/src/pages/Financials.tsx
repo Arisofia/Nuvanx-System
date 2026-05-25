@@ -116,7 +116,7 @@ export default function Financials() {
   ]
 
   const liquidationLabel =
-    state.summary && state.summary.avgLiquidationDays != null
+    state.summary?.avgLiquidationDays != null
       ? `${state.summary.avgLiquidationDays}d`
       : '0d'
 
