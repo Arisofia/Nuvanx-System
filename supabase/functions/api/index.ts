@@ -2241,6 +2241,8 @@ async function handleSupabaseWebhook(ctx: PublicRouteContext): Promise<Response 
 async function handlePublicRoutes(ctx: any): Promise<Response | null> {
   const { resource, sub } = ctx;
 
+  const publicLeadResponse = await handlePublicLeadCapiPost(ctx);
+  if (publicLeadResponse) return publicLeadResponse;
   if (resource === 'webhooks' && sub === 'meta') return await handleMetaWebhook(ctx);
   if (resource === 'webhooks' && sub === 'whatsapp') return await handleWhatsappWebhook(ctx);
   if (resource === 'webhooks' && sub === 'supabase') return await handleSupabaseWebhook(ctx);
@@ -2542,6 +2544,211 @@ async function upsertLeadIdempotent(adminClient: any, userId: string, payload: a
 }
 
 const FALLBACK_META_AD_ACCOUNT_ID = '9523446201036125';
+const DEFAULT_LANDING_USER_EMAIL = 'demo@nuvanx.com';
+
+function readPayloadString(payload: Record<string, any>, keys: string[], fallback: string | null = null): string | null {
+  for (const key of keys) {
+    const value = payload[key];
+    if (value !== undefined && value !== null) {
+      const normalized = String(value).trim();
+      if (normalized) return normalized;
+    }
+  }
+  return fallback;
+}
+
+function normalizeLandingLeadSource(rawSource: string | null): string {
+  const source = String(rawSource ?? '').trim().toLowerCase();
+  if (source === 'google' || source === 'googleads' || source === 'google_ads') return 'google_ads';
+  if (source === 'landing' || source === 'landing_page') return 'landing';
+  return source || 'landing';
+}
+
+async function resolvePublicLeadOwner(adminClient: any, payloadObj: Record<string, any>, url: URL): Promise<{ userId: string | null; clinicId: string | null }> {
+  const requestedUserId = readPayloadString(payloadObj, ['user_id', 'userId'], url.searchParams.get('user_id') ?? url.searchParams.get('userId'));
+  if (requestedUserId) {
+    const { data: userById } = await adminClient.from('users').select('id, clinic_id').eq('id', requestedUserId).maybeSingle();
+    if (userById?.id) return { userId: userById.id, clinicId: userById.clinic_id ?? null };
+  }
+
+  const requestedClinicId = readPayloadString(
+    payloadObj,
+    ['clinic_id', 'clinicId', 'clinic', 'clinica', 'clínica'],
+    url.searchParams.get('clinic_id') ?? url.searchParams.get('clinicId') ?? Deno.env.get('CLINIC_ID') ?? null,
+  );
+  if (requestedClinicId) {
+    const { data: userByClinic } = await adminClient
+      .from('users')
+      .select('id, clinic_id')
+      .eq('clinic_id', requestedClinicId)
+      .limit(1)
+      .maybeSingle();
+    if (userByClinic?.id) return { userId: userByClinic.id, clinicId: userByClinic.clinic_id ?? requestedClinicId };
+  }
+
+  const { data: fallbackUser } = await adminClient
+    .from('users')
+    .select('id, clinic_id')
+    .eq('email', DEFAULT_LANDING_USER_EMAIL)
+    .maybeSingle();
+
+  return { userId: fallbackUser?.id ?? null, clinicId: fallbackUser?.clinic_id ?? requestedClinicId ?? null };
+}
+
+function buildExternalLeadPayload(params: {
+  payloadObj: Record<string, any>;
+  url: URL;
+  req: Request;
+  userId: string;
+  clinicId: string | null;
+  requestedAdAccountId: string | null;
+}) {
+  const { payloadObj, url, req, userId, clinicId, requestedAdAccountId } = params;
+  const meta = (payloadObj._meta && typeof payloadObj._meta === 'object') ? payloadObj._meta : {};
+  const email = readPayloadString(payloadObj, ['email']);
+  const phone = readPayloadString(payloadObj, ['phone', 'telefono', 'teléfono']);
+  const firstName = readPayloadString(payloadObj, ['first_name', 'firstName', 'nombre']);
+  const lastName = readPayloadString(payloadObj, ['last_name', 'lastName', 'apellido', 'apellidos']);
+  const name = readPayloadString(payloadObj, ['name', 'nombre_completo', 'full_name'])
+    ?? [firstName, lastName].filter(Boolean).join(' ').trim()
+    ?? null;
+  const zone = readPayloadString(payloadObj, ['zone', 'zona']);
+  const clinicLabel = readPayloadString(payloadObj, ['clinic', 'clinica', 'clínica']);
+  const landingUrl = readPayloadString(payloadObj, ['landing_url', 'landingUrl', 'page_url', 'url'], req.headers.get('referer') ?? url.searchParams.get('landing_url'));
+  const userAgent = readPayloadString(payloadObj, ['user_agent', 'userAgent'], req.headers.get('user-agent'));
+  const source = normalizeLandingLeadSource(readPayloadString(payloadObj, ['source'], url.searchParams.get('source')));
+  const externalId = readPayloadString(payloadObj, ['external_id', 'externalId', 'event_id', 'eventId'])
+    ?? `landing_${crypto.randomUUID()}`;
+
+  return {
+    user_id: userId,
+    clinic_id: payloadObj.clinic_id ?? clinicId,
+    external_id: externalId,
+    source,
+    stage: payloadObj.stage ?? 'lead',
+    name,
+    email,
+    phone,
+    first_name: firstName,
+    last_name: lastName,
+    campaign_id: readPayloadString(payloadObj, ['campaign_id', 'campaignId']),
+    campaign_name: readPayloadString(payloadObj, ['campaign_name', 'campaignName']),
+    adset_id: readPayloadString(payloadObj, ['adset_id', 'adsetId']),
+    adset_name: readPayloadString(payloadObj, ['adset_name', 'adsetName']),
+    ad_id: readPayloadString(payloadObj, ['ad_id', 'adId']),
+    ad_name: readPayloadString(payloadObj, ['ad_name', 'adName']),
+    form_id: readPayloadString(payloadObj, ['form_id', 'formId']),
+    form_name: readPayloadString(payloadObj, ['form_name', 'formName']),
+    ad_account_id: requestedAdAccountId ?? FALLBACK_META_AD_ACCOUNT_ID,
+    fbc: readPayloadString(payloadObj, ['fbc'], meta.fbc ?? null),
+    fbp: readPayloadString(payloadObj, ['fbp'], meta.fbp ?? null),
+    ip_address: req.headers.get('x-forwarded-for')?.split(',')[0].trim() || null,
+    user_agent: userAgent,
+    gclid: readPayloadString(payloadObj, ['gclid'], url.searchParams.get('gclid')),
+    landing_url: landingUrl,
+    utm_source: readPayloadString(payloadObj, ['utm_source', 'utmSource'], url.searchParams.get('utm_source')),
+    utm_campaign: readPayloadString(payloadObj, ['utm_campaign', 'utmCampaign'], url.searchParams.get('utm_campaign')),
+    utm_content: readPayloadString(payloadObj, ['utm_content', 'utmContent'], url.searchParams.get('utm_content')),
+    utm_term: readPayloadString(payloadObj, ['utm_term', 'utmTerm'], url.searchParams.get('utm_term')),
+    raw_field_data: {
+      ...payloadObj,
+      zone,
+      zona: zone,
+      clinic: clinicLabel,
+      clinica: clinicLabel,
+    },
+    created_at: payloadObj.created_at ?? new Date().toISOString(),
+  };
+}
+
+async function fireLeadCapiFromPayload(params: {
+  adminClient: any;
+  userId: string;
+  url: URL;
+  req: Request;
+  body: Record<string, any>;
+  payloadObj: Record<string, any>;
+  data: any;
+  externalId?: string;
+}) {
+  const { adminClient, userId, url, req, body, payloadObj, data, externalId } = params;
+  const source = String(payloadObj?.source ?? '').trim();
+  const isPublicLead = source && source !== 'manual' && source !== 'doctoralia';
+  if (!isPublicLead || !data) return;
+
+  try {
+    const creds = await resolveMetaCreds(adminClient, userId, url.searchParams.get('adAccountId') ?? '');
+    if (!creds.notConnected && !creds.decryptionError && creds.accessToken) {
+      const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || null;
+      const ua = readPayloadString(payloadObj, ['user_agent', 'userAgent'], req.headers.get('user-agent'));
+      const meta = body._meta || {};
+      const fbc = meta.fbc || payloadObj.fbc || null;
+      const fbp = meta.fbp || payloadObj.fbp || null;
+      const testEventCode = body.test_event_code || meta.test_event_code || url.searchParams.get('test_event_code') || null;
+
+      await trackMetaConversion('lead', creds.accessToken, {
+        pixelId: creds.pixelId,
+        eventId: payloadObj.event_id || data.id || externalId || `lead_${Date.now()}`,
+        phone: data.phone || payloadObj.phone,
+        email: data.email || payloadObj.email,
+        firstName: data.first_name || payloadObj.first_name || data.name || payloadObj.name,
+        lastName: data.last_name || payloadObj.last_name,
+        fbc,
+        fbp,
+        ip,
+        ua,
+        externalId: data.id || externalId || userId,
+        eventSourceUrl: payloadObj.landing_url || payloadObj.event_source_url || undefined,
+        testEventCode,
+      });
+
+      const valor = Number(data?.revenue || data?.valor || payloadObj?.revenue || payloadObj?.valor || 0);
+      if (valor > 100) await enviarNotificacionMovil({ ...data, valor, cuenta_id: creds.adAccountId });
+      await adminClient.from('leads').update({ enviado_a_meta: true }).eq('id', data.id);
+    } else {
+      console.warn('[CAPI] Lead event skipped: missing credentials', {
+        notConnected: creds.notConnected,
+        hasDecryptionError: Boolean(creds.decryptionError),
+        hasAccessToken: Boolean(creds.accessToken),
+        userId,
+      });
+    }
+  } catch (capiErr) {
+    console.error('[CAPI] background lead tracking failed:', capiErr);
+  }
+}
+
+async function handlePublicLeadCapiPost(ctx: PublicRouteContext): Promise<Response | null> {
+  const { req, url, resource, sub, sendJson } = ctx;
+  const isLeadCapiRoute =
+    (resource === 'capi' && ['lead', 'leads'].includes(sub))
+    || (resource === 'landing' && ['lead', 'leads'].includes(sub));
+  if (!isLeadCapiRoute || req.method !== 'POST') return null;
+
+  const rawBody = await req.json().catch(() => null);
+  const body = (rawBody && typeof rawBody === 'object') ? rawBody as Record<string, any> : {};
+  const adminClient = createAdminClient();
+  const owner = await resolvePublicLeadOwner(adminClient, body, url);
+  if (!owner.userId) return sendJson({ success: false, message: 'Unable to resolve public lead owner' }, 400);
+
+  const requestedAdAccountId = resolveLeadAdAccountIdFromPayload(body, url);
+  const payload = buildExternalLeadPayload({
+    payloadObj: body,
+    url,
+    req,
+    userId: owner.userId,
+    clinicId: owner.clinicId,
+    requestedAdAccountId,
+  });
+  const payloadObj = payload as Record<string, any>;
+  const source = String(payloadObj.source ?? '').trim();
+  const externalId = String(payloadObj.external_id ?? '').trim();
+
+  const { data, deduplicated, status } = await upsertLeadIdempotent(adminClient, owner.userId, payload, source, externalId);
+  await fireLeadCapiFromPayload({ adminClient, userId: owner.userId, url, req, body, payloadObj, data, externalId });
+
+  return sendJson({ success: true, lead: data, deduplicated }, status);
+}
 
 function resolveLeadAdAccountIdFromPayload(payloadObj: Record<string, any>, url: URL): string | null {
   const meta = (payloadObj._meta && typeof payloadObj._meta === 'object') ? payloadObj._meta : {};
@@ -2570,12 +2777,23 @@ async function handleLeadsPost(ctx: AuthenticatedRouteContext): Promise<Response
     const body = (rawBody && typeof rawBody === 'object') ? rawBody : {};
     const clinicId = await resolveClinicId(adminClient, userId);
     const requestedAdAccountId = resolveLeadAdAccountIdFromPayload(body as Record<string, any>, url);
-    const payload = {
-      ...body,
-      ad_account_id: requestedAdAccountId ?? FALLBACK_META_AD_ACCOUNT_ID,
-      user_id: userId,
-      clinic_id: body?.clinic_id ?? clinicId,
-    };
+    const incomingSource = normalizeLandingLeadSource(readPayloadString(body as Record<string, any>, ['source'], url.searchParams.get('source')));
+    const shouldPersistLandingAttribution = incomingSource === 'landing' || incomingSource === 'google_ads';
+    const payload = shouldPersistLandingAttribution
+      ? buildExternalLeadPayload({
+        payloadObj: body as Record<string, any>,
+        url,
+        req,
+        userId,
+        clinicId: body?.clinic_id ?? clinicId,
+        requestedAdAccountId,
+      })
+      : {
+        ...body,
+        ad_account_id: requestedAdAccountId ?? FALLBACK_META_AD_ACCOUNT_ID,
+        user_id: userId,
+        clinic_id: body?.clinic_id ?? clinicId,
+      };
     const payloadObj = payload as Record<string, any>;
     const source = String(payloadObj?.source ?? '').trim();
     const externalId = String(payloadObj?.external_id ?? '').trim();
