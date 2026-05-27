@@ -4,6 +4,9 @@ name: Sync Doctoralia Financials
 # Reads individual settlement rows from Google Sheets (Doctoralia export) and
 # upserts them into the financial_settlements table.
 #
+# Runs automatically every day at 07:00 UTC via schedule.
+# Can also be triggered manually via workflow_dispatch.
+#
 # Required GitHub secrets:
 #   GOOGLE_ADS_SERVICE_ACCOUNT  - Service account credentials (raw JSON OR base64-encoded JSON);
 #                                  must be a valid Google service account in a project with
@@ -15,10 +18,9 @@ name: Sync Doctoralia Financials
 #   DATABASE_URL                - Direct Postgres connection string (Supabase)
 #   CLINIC_ID                   - UUID of the clinic owning these settlements
 
-# on:
-#   schedule:
-#     - cron: '0 7 * * *'   # Daily at 07:00 UTC (09:00 Spain, before business hours)
 on:
+  schedule:
+    - cron: '0 7 * * *'   # Daily at 07:00 UTC (09:00 Spain, before business hours)
   workflow_dispatch: {}
   workflow_call: {}
 
