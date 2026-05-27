@@ -4278,15 +4278,75 @@ async function handleHealthMeta(ctx: AuthenticatedRouteContext): Promise<Respons
       if (!validation.ok) {
         return sendJson({ status: 'unhealthy', error: validation.message, timestamp: new Date().toISOString() }, 503);
       }
-  
-      // Simple ping to Meta API
+
+      // Basic user info (proves token is valid)
       const me = await metaFetch('/me', { fields: 'id,name' }, creds.accessToken);
+
+      // Now test EACH configured ad account for real permissions (ads_read / ads_management)
+      const accountChecks: Array<{ id: string; status: string; name?: string; error?: string; details?: any }> = [];
+
+      for (const accountId of creds.adAccountIds) {
+        try {
+          // 1. Basic account read (this requires ads_read on the account)
+          const acct = await metaFetch(`/${accountId}`, {
+            fields: 'id,name,account_status,disable_reason,currency,timezone_name'
+          }, creds.accessToken);
+
+          // 2. Very lightweight insights probe (further confirms ads_read on this specific account)
+          let insightsOk = false;
+          let insightsError: string | null = null;
+          try {
+            await metaFetch(`/${accountId}/insights`, {
+              fields: 'spend',
+              date_preset: 'last_7d',
+              level: 'account',
+              limit: '1'
+            }, creds.accessToken);
+            insightsOk = true;
+          } catch (ie: any) {
+            insightsError = String(ie?.message ?? ie);
+          }
+
+          accountChecks.push({
+            id: accountId,
+            status: insightsOk ? 'ok' : 'partial_read_ok',
+            name: acct?.name,
+            error: insightsError,
+            details: {
+              account_status: acct?.account_status,
+              currency: acct?.currency
+            }
+          });
+        } catch (err: any) {
+          const msg = String(err?.message ?? err);
+          const isPermissionError = msg.toLowerCase().includes('permission') ||
+            msg.includes('(#10)') ||
+            msg.toLowerCase().includes('ads_read') ||
+            msg.toLowerCase().includes('ads_management') ||
+            msg.toLowerCase().includes('no tiene');
+
+          accountChecks.push({
+            id: accountId,
+            status: isPermissionError ? 'permission_error' : 'error',
+            error: msg,
+            details: null
+          });
+        }
+      }
+
+      const hasAnyPermissionError = accountChecks.some(c => c.status === 'permission_error');
+      const overallStatus = hasAnyPermissionError ? 'degraded' : 'healthy';
+
       return sendJson({
-        status: 'healthy',
+        status: overallStatus,
         meta_user: me?.name ?? 'Unknown',
         ad_account: creds.adAccountId,
         accountIds: creds.adAccountIds,
-        timestamp: new Date().toISOString()
+        accounts: accountChecks,
+        timestamp: new Date().toISOString(),
+        remediation: hasAnyPermissionError
+          ? 'Una o más cuentas Meta no tienen permisos ads_read / ads_management. Ve a Meta Business Settings → Ad Accounts → Asigna el rol de Administrador (o Analyst con acceso API) al usuario/system user que generó el token. Luego genera un nuevo token largo con los scopes ads_read + ads_management desde la app NUVANX_SYSTEM y guárdalo de nuevo en Integraciones.'
+          : null
       });
     } catch (e: any) {
       return sendJson({ status: 'unhealthy', error: e.message, timestamp: new Date().toISOString() }, 503);
