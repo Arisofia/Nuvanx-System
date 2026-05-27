@@ -16,18 +16,16 @@ const EXPECTED_SECRET = "Doctoralia_Secret_2026_!!";
 
 ## 2. Configurar el Webhook en Supabase Dashboard (paso a paso)
 
-Ve a tu proyecto en Supabase:
+**Estado: ✅ CREADO** (confirmado por el usuario el 27 de mayo de 2026)
 
-1. Ve a **Database** → **Webhooks**
-2. Haz clic en **Create a new hook** (o "Add webhook")
-
-### Configuración:
+### Configuración aplicada:
 
 - **Name**: `Sync_To_Google_Sheets`
 - **Table**: `produccion_intermediarios`
-- **Events**: Selecciona **INSERT** y **UPDATE**
-- **Webhook URL**: Pega aquí la URL completa de tu Google Apps Script (la que terminaba en `/exec`)
-- **Method HTTP**: `POST`
+- **Events**: `INSERT` + `UPDATE`
+- **Webhook URL**: `https://script.google.com/macros/s/AKfycbw9vSRSfyqEbYB0qptAIpj0ElGB-q44JttJrob21qIpVHclEu-0-jjrjxenen0dtHgr/exec`
+- **Header**: `X-Webhook-Secret = Doctoralia_Secret_2026_!!`
+- **Method**: `POST`
 
 ### HTTP Headers (esto es lo que pediste específicamente):
 
@@ -66,17 +64,74 @@ Ve a tu repo → Settings → Secrets and variables → Actions → New reposito
 - `SUPABASE_ACCESS_TOKEN` = tu token
 - `SUPABASE_PROJECT_REF` = `ssvvuuysgxyqvmovrlvk`
 
-## 4. Ejecutar la creación vía CLI (recomendado)
+## 4. Estado Actual
 
-Después de tener `.env.webhooks` configurado con los valores reales:
+**Webhook #2 (Sync_To_Google_Sheets) → ✅ CREADO**
 
-```bash
-cd /Users/MARIA/Nuvanx-System
+Fecha de creación: 27 de mayo de 2026
 
-node -r dotenv/config scripts/setup-supabase-webhooks.js --env-file=.env.webhooks
+---
+
+## 5. Verificación y Pruebas (Próximos Pasos)
+
+Ahora que el webhook está creado, realiza estas validaciones:
+
+### 5.1 Prueba manual desde Supabase Dashboard
+
+1. Ve a **Database → Webhooks**
+2. Busca el webhook `Sync_To_Google_Sheets`
+3. Haz clic en los tres puntos → **Send test**
+4. Elige un evento (`INSERT` o `UPDATE`) y envía un payload de prueba.
+
+### 5.2 Ver logs en Google Apps Script
+
+1. Abre el proyecto de Apps Script.
+2. Ve al menú **Ejecuciones** (icono de reloj a la izquierda).
+3. Deberías ver una ejecución reciente con el payload que enviaste desde Supabase.
+
+### 5.3 Payload de prueba recomendado
+
+Puedes usar este JSON mínimo para probar:
+
+```json
+{
+  "type": "UPDATE",
+  "table": "produccion_intermediarios",
+  "record": {
+    "id": "test-uuid-123",
+    "estado": "Pagada",
+    "fecha": "2026-05-27",
+    "hora": "10:30",
+    "asunto": "Test Webhook - Paciente Ejemplo",
+    "importe": 450,
+    "agenda": "Dra. Prueba",
+    "sala_box": "Box Test"
+  },
+  "old_record": {
+    "estado": "Confirmada"
+  }
+}
 ```
 
-O con exports manuales:
+---
+
+**Siguiente acción recomendada:**
+
+Dime qué quieres hacer ahora:
+
+1. Hacer una prueba real del webhook (te ayudo a generar un payload limpio).
+2. Crear el **Webhook #1** (el de CAPI para eventos Purchase).
+3. Revisar/actualizar el Google Apps Script para manejar mejor los datos que llegan.
+4. Actualizar el diagrama de arquitectura con el estado actual de los dos webhooks.
+
+¿Qué prefieres?
+
+```bash
+# Opción recomendada (carga las variables del archivo pero no usa dotenv dentro del script)
+source .env.webhooks && node scripts/setup-supabase-webhooks.js
+```
+
+O definiendo las variables directamente:
 
 ```bash
 export SUPABASE_ACCESS_TOKEN="sbp_..."

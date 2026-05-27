@@ -108,17 +108,16 @@ node scripts/setup-supabase-webhooks.js
 
 ## 8) Google Apps Script para espejo en tiempo real (Produccion Intermediarios)
 
-Usa el script robusto ubicado en:
-`docs/google-apps-script/webhook-produccion-intermediarios.js`
+**Estado:** ✅ Webhook creado el 27 de mayo de 2026
 
-**Mejoras incluidas vs versión básica:**
-- Manejo de errores con try/catch + logging claro
-- Validación de payload
-- Soporte para header de secreto (`X-Webhook-Secret`)
-- Función de prueba (`testDoPost`)
-- Comentado para no sincronizar `capi_sent` por defecto (puedes activarlo fácilmente)
+- **Nombre del webhook:** `Sync_To_Google_Sheets`
+- **Tabla:** `produccion_intermediarios`
+- **URL:** Google Apps Script (Produccion Intermediarios)
+- **Header de seguridad:** `X-Webhook-Secret = Doctoralia_Secret_2026_!!`
 
-Sigue los pasos del consultor para desplegarlo como Aplicación Web y crear el segundo Database Webhook en Supabase.
+Script robusto: `docs/google-apps-script/webhook-produccion-intermediarios.js`
+
+**Próximo paso:** Verificar que el webhook esté recibiendo eventos correctamente (revisar Ejecuciones en Apps Script).
 
 ---
 
