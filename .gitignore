@@ -29,6 +29,7 @@ lerna-debug.log*
 backend/google-service-account.json
 *service-account*.json
 doctoralia-service-account.json
+cedar-league-465204-j0-a477171afb68.json
 
 # Editor / OS
 .idea/
@@ -67,3 +68,7 @@ supabase/.temp/
 
 # Python cache (scripts/)
 scripts/__pycache__/
+
+# Local secrets file (never commit)
+.env.tokens.local
+.env.local

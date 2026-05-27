@@ -2101,7 +2101,7 @@ function handleHealthRoutes(ctx: any): Response | null {
     });
   }
 
-  if (resource === 'health') {
+  if (resource === 'health' && !sub) {
     return sendJson({ success: true, status: 'ok', timestamp: new Date().toISOString() });
   }
 
@@ -2305,8 +2305,8 @@ export async function handleAuthenticatedRoutes(ctx: AuthenticatedRouteContext):
 }
 
 async function handleHealth(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { resource, sendJson } = ctx;
-  if (resource === 'health') {
+  const { resource, sub, sendJson } = ctx;
+  if (resource === 'health' && !sub) {
     return sendJson({ success: true, status: 'ok', timestamp: new Date().toISOString() });
   }
   return null;
