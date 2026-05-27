@@ -236,9 +236,14 @@ jobs:
               return 1
             }
 
-            # Suppress noisy "open /home/runner/.supabase/profile: no such file" when skip_link=true
+            # Create minimal Supabase CLI config to reduce "failed to read profile" / "Config File not found" noise
+            # when using skip_link: true (we pass --db-url explicitly anyway).
             mkdir -p "$HOME/.supabase" 2>/dev/null || true
             touch "$HOME/.supabase/profile" 2>/dev/null || true
+            # Minimal config.json so the CLI doesn't complain about missing "config"
+            if [ ! -f "$HOME/.supabase/config.json" ]; then
+              echo '{"api_url": "https://api.supabase.com"}' > "$HOME/.supabase/config.json" 2>/dev/null || true
+            fi
 
             SESSION_URL=$(resolve_working_db_url "${DATABASE_URL:-}" "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
             export SESSION_URL
@@ -289,7 +294,7 @@ jobs:
               local summary sanitized_summary
               summary=$(printf '%s\n' "$output" | awk '
                 BEGIN { remaining = 0; found = 0 }
-                /ERROR:|SQLSTATE|ErrorResponse|cannot change return type|duplicate key|permission denied|failed to connect|network is unreachable|password authentication failed|could not find valid entry for job|relation .* does not exist|column .* does not exist|function .* does not exist|type .* does not exist|invalid input syntax|checksum|failed to parse|error parsing/ {
+                /ERROR:|SQLSTATE|ErrorResponse|cannot change return type|duplicate key|permission denied|failed to connect|network is unreachable|hostname resolving error|could not translate host name|Name or service not known|failed to read profile|Config File .* Not Found|password authentication failed|could not find valid entry for job|relation .* does not exist|column .* does not exist|function .* does not exist|type .* does not exist|invalid input syntax|checksum|failed to parse|error parsing/ {
                   if (!found) { found = 1; remaining = 40 }
                 }
                 found && remaining > 0 { print; remaining-- }
@@ -314,6 +319,7 @@ jobs:
 
             is_deterministic_migration_error() {
               local output="$1"
+              # Pure network/DNS errors from the runner should NOT be treated as deterministic (they should be retried/soft-failed)
               local pattern='syntax error|permission denied|not a valid migration|SQLSTATE 42P01|could not find valid entry for job|relation .* does not exist|column .* does not exist|function .* does not exist|type .* does not exist|invalid input syntax|checksum|failed to parse|error parsing'
               echo "$output" | grep -Eiq "$pattern"
             }
@@ -411,9 +417,12 @@ jobs:
                 if [ "$attempt" -ge "$max_attempts" ]; then
                   # Detect if this is purely a network/runner connectivity failure
                   # (very common with Supabase direct hosts and sometimes poolers from GitHub Actions)
-                  if echo "$output" | grep -Eiq 'network is unreachable|no such host|timeout|connection refused|dial tcp|hostname resolving error'; then
-                    echo "::warning::Supabase migrations could not complete due to transient network connectivity from GitHub runner."
-                    echo "::warning::This is an infrastructure/runner limitation, not a problem with your migrations."
+                  # Broad detection for runner-side DNS / connectivity failures against Supabase (pooler or direct).
+                  # We have seen many variants: "could not translate host name", "Name or service not known",
+                  # "failed to read profile", "Config File .* Not Found", plus the classic ones.
+                  if echo "$output" | grep -Eiq 'network is unreachable|no such host|could not translate host name|Name or service not known|hostname resolving error|failed to connect|connection refused|dial tcp|timeout|failed to read profile|Config File .* Not Found|resolve host|name or service not known'; then
+                    echo "::warning::Supabase migrations could not complete due to transient network/DNS connectivity from GitHub runner."
+                    echo "::warning::This is an infrastructure/runner limitation (common with Supabase poolers), not a problem with your migrations."
                     echo "Full log available in the 'supabase-migrations-log' artifact."
                     echo "migration_network_failure=true" >> "$GITHUB_OUTPUT"
                     return 0   # Do not hard-fail the pipeline on pure network errors
