@@ -299,7 +299,7 @@ export function useDashboardData(
         setMetrics((prev) => ({
           ...prev,
           loading: false,
-          error: 'Faltan variables de entorno de Supabase. Configura VITE_SUPABASE_URL y VITE_SUPABASE_PUBLISHABLE_KEY.',
+          error: 'Configuración incompleta: falta VITE_SUPABASE_URL o VITE_SUPABASE_PUBLISHABLE_KEY en las variables de entorno de Vercel. Contacta al administrador del sistema.',
         }))
         return
       }

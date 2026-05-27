@@ -1648,60 +1648,78 @@ function handleMetaWebhookGet(ctx: PublicRouteContext): Response | null {
 }
 
 async function processMetaLeadChange(adminClient: any, change: any): Promise<void> {
-  if (change.field !== 'leadgen') return;
-  const val = change.value ?? {};
-  const { leadgen_id, page_id } = val;
-  if (!leadgen_id) return;
+  if (change.field === 'leadgen') {
+    const val = change.value ?? {};
+    const { leadgen_id, page_id } = val;
+    if (!leadgen_id) return;
 
-  const { data: intgs } = await adminClient.from('integrations')
-    .select('user_id, metadata')
-    .eq('service', 'meta')
-    .eq('status', 'connected');
+    const { data: intgs } = await adminClient.from('integrations')
+      .select('user_id, metadata')
+      .eq('service', 'meta')
+      .eq('status', 'connected');
 
-  const connected = intgs ?? [];
-  let matchingIntg = connected.find((i: any) => {
-    const m = i.metadata ?? {};
-    return m.pageId === page_id || m.page_id === page_id;
-  });
+    const connected = intgs ?? [];
+    let matchingIntg = connected.find((i: any) => {
+      const m = i.metadata ?? {};
+      return m.pageId === page_id || m.page_id === page_id;
+    });
 
-  if (matchingIntg == null) {
-    const noPageIdSet = connected.every((i: any) => !i.metadata?.pageId && !i.metadata?.page_id);
-    if (noPageIdSet && connected.length === 1) {
-      matchingIntg = connected[0];
+    if (matchingIntg == null) {
+      const noPageIdSet = connected.every((i: any) => !i.metadata?.pageId && !i.metadata?.page_id);
+      if (noPageIdSet && connected.length === 1) {
+        matchingIntg = connected[0];
+      }
     }
-  }
 
-  if (matchingIntg == null) return;
+    if (matchingIntg == null) return;
 
-  const webhookUserId = matchingIntg.user_id;
-  const intgMetadata = matchingIntg.metadata ?? {};
-  const pixelId = intgMetadata.pixelId ?? intgMetadata.pixel_id ?? '';
+    const webhookUserId = matchingIntg.user_id;
+    const intgMetadata = matchingIntg.metadata ?? {};
+    const pixelId = intgMetadata.pixelId ?? intgMetadata.pixel_id ?? '';
 
-  const { data: credRow } = await adminClient.from('credentials')
-    .select('encrypted_key')
-    .eq('user_id', webhookUserId)
-    .eq('service', 'meta')
-    .single();
-  if (!credRow) return;
+    const { data: credRow } = await adminClient.from('credentials')
+      .select('encrypted_key')
+      .eq('user_id', webhookUserId)
+      .eq('service', 'meta')
+      .single();
+    if (!credRow) return;
 
-  let accessToken: string;
-  try {
-    accessToken = await publicRouteHelpers.decryptCred(credRow.encrypted_key);
-  } catch {
+    let accessToken: string;
+    try {
+      accessToken = await publicRouteHelpers.decryptCred(credRow.encrypted_key);
+    } catch {
+      return;
+    }
+
+    let leadData: any;
+    try {
+      leadData = await publicRouteHelpers.metaFetch(`/${leadgen_id}`, {
+        fields: 'field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,campaign_name,adset_id,adset_name,page_id,is_organic,platform',
+      }, accessToken);
+    } catch {
+      return;
+    }
+
+    const leadId = await publicRouteHelpers.processLeadData(adminClient, webhookUserId, leadData);
+    await fireMetaLeadCapi(accessToken, leadgen_id, leadData, pixelId, leadId);
     return;
   }
 
-  let leadData: any;
-  try {
-    leadData = await publicRouteHelpers.metaFetch(`/${leadgen_id}`, {
-      fields: 'field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,campaign_name,adset_id,adset_name,page_id,is_organic,platform',
-    }, accessToken);
-  } catch {
+  // Nuevo: capturar messaging_conversation_started (no crear leads automáticamente por riesgo de spam)
+  if (change.field === 'messaging_conversation_started_7d' || change.field === 'messages') {
+    const val = change.value ?? {};
+    const senderId = val.sender?.id ?? val.from?.id;
+    const pageId = val.page_id ?? val.recipient?.id;
+    if (!senderId) return;
+
+    console.info('[meta-webhook] messaging_event', {
+      field: change.field,
+      senderId,
+      pageId,
+      timestamp: new Date().toISOString(),
+    });
     return;
   }
-
-  const leadId = await publicRouteHelpers.processLeadData(adminClient, webhookUserId, leadData);
-  await fireMetaLeadCapi(accessToken, leadgen_id, leadData, pixelId, leadId);
 }
 
 /**
@@ -3534,7 +3552,10 @@ function buildMetaInsightsLiveResult(successfulAccounts: any[], creds: any, sinc
     accountIds: creds.adAccountIds,
     currency,
     period: { since, until, days },
-    summary,
+    summary: {
+      ...summary,
+      conversions_note: 'Campo "conversions" incluye todas las acciones configuradas en el píxel/evento Meta. No está filtrado exclusivamente a lead_gen o messaging. Para métricas de lead puras, usar /kpis que filtra por source en tabla leads.',
+    },
     changes: {
       impressions: percentChange(summary.impressions, prevD.impressions),
       reach: percentChange(summary.reach, prevD.reach),
@@ -3611,7 +3632,10 @@ async function fetchMetaInsightsFallbackFromDb(params: {
       accountIds: creds.adAccountIds,
       currency: 'EUR',
       period: { since, until, days },
-      summary: dbSummary,
+      summary: {
+        ...dbSummary,
+        conversions_note: 'Campo "conversions" incluye todas las acciones configuradas en el píxel/evento Meta. No está filtrado exclusivamente a lead_gen o messaging. Para métricas de lead puras, usar /kpis que filtra por source en tabla leads.',
+      },
       changes: {},
       daily: dbRows.map((r: any) => ({
         date: r.date,
@@ -6788,6 +6812,7 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
     leadCountQ = leadCountQ.eq('user_id', userId);
     leadMetaCountQ = leadMetaCountQ.eq('user_id', userId);
     leadsByStageQ = leadsByStageQ.eq('user_id', userId);
+    settlementsQ = settlementsQ.eq('user_id', userId);
     metaDailyInsightsQ = metaDailyInsightsQ.eq('user_id', userId);
   }
 
@@ -6809,6 +6834,8 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
   const byStage = processLeadsByStage(leadsByStageRes.data ?? []);
   const settlements = (settlementsRes.data ?? []).filter((r: any) => Number(r.amount_net) > 0);
   const metaInsights = metaDailyInsightsRes.data ?? [];
+
+  const accountIdsInPeriod = [...new Set(metaInsights.map((r: any) => r.ad_account_id).filter(Boolean))];
 
   // Revenue verificado real
   const verifiedRevenue = settlements.reduce((sum: number, r: any) => sum + Number(r.amount_net), 0);
@@ -6856,7 +6883,10 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
       leads: metaLeads,
       cpl: metaCpl,
       is_real: metaSpendReal,
-      data_source: metaSpendReal ? 'meta_api' : 'none',
+      data_source: metaSpendReal ? 'meta_daily_insights_db' : 'none',
+      accountIds: accountIdsInPeriod,
+      note: 'Spend aggregated from cached meta_daily_insights table. For live Meta API data use /meta/insights.',
+      leads_sources_filter: ['meta_leadgen', 'meta_lead_gen', 'facebook_leadgen', 'whatsapp', 'meta_whatsapp', 'facebook_whatsapp'],
     },
     crm: {
       totalLeads: crmLeads,
