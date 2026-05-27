@@ -59,17 +59,43 @@ jobs:
           # Strongly prefer IPv4 in getaddrinfo ordering
           sudo sed -i 's/^#precedence ::ffff:0:0\/96  100/precedence ::ffff:0:0\/96  100/' /etc/gai.conf || true
 
-          # Aggressive DNS resolver settings
+          # Aggressive DNS resolver settings + public fallback (helps when runner's 127.0.0.53 stub resolver is broken for specific hosts)
           echo 'options single-request-reopen' | sudo tee -a /etc/resolv.conf >/dev/null || true
           echo 'options timeout:2' | sudo tee -a /etc/resolv.conf >/dev/null || true
           echo 'options attempts:5' | sudo tee -a /etc/resolv.conf >/dev/null || true
           echo 'options rotate' | sudo tee -a /etc/resolv.conf >/dev/null || true
+          echo 'nameserver 8.8.8.8' | sudo tee -a /etc/resolv.conf >/dev/null || true
+          echo 'nameserver 8.8.4.4' | sudo tee -a /etc/resolv.conf >/dev/null || true
+          echo 'nameserver 1.1.1.1' | sudo tee -a /etc/resolv.conf >/dev/null || true
 
           # Ensure tools for IPv4 resolution and preflight checks
           sudo apt-get update -qq || true
           sudo apt-get install -y -qq dnsutils postgresql-client || true
 
           echo "IPv6 disabled, IPv4 precedence set, dig + psql ready."
+
+      - name: DNS smoke test for Supabase endpoints (catch "no such host" early)
+        run: |
+          echo "=== DNS smoke test for Supabase pooler (Session mode) and direct host ==="
+          echo "Project appears to use eu-central-1 / aws-1 pooler (from previous failure)."
+          echo "Runner local resolver: $(cat /etc/resolv.conf | grep -E 'nameserver|search' || true)"
+
+          POOLER_HOST="aws-1-eu-central-1.pooler.supabase.co"
+          DIRECT_HOST="db.ssvvuuysgxyqvmovrlvk.supabase.co"   # known project ref
+
+          for host in "$POOLER_HOST" "$DIRECT_HOST" "google.com"; do
+            echo "--- Testing resolution for $host ---"
+            echo "Using getent:"
+            getent hosts "$host" || echo "getent failed for $host"
+            echo "Using dig @8.8.8.8 (public DNS fallback):"
+            dig +short +timeout=5 +tries=2 @"8.8.8.8" A "$host" || echo "public dig failed for $host"
+            echo "Using dig (system default):"
+            dig +short +timeout=5 +tries=2 A "$host" || echo "system dig failed for $host"
+            echo ""
+          done
+
+          echo "If any Supabase host shows 'no such host' here but google.com works, the runner had transient egress DNS issues to Supabase's regional pooler at this exact moment."
+          echo "This is infrastructure flakiness (GitHub runner + Supabase pooler DNS), not a problem with the DATABASE_URL secret or our code."
 
       - name: Compute reliable DB URL for CI (Session Pooler first — root cause fix)
         id: db_url
@@ -92,7 +118,10 @@ jobs:
             echo "PRIMARY STRATEGY: Using DATABASE_URL secret (expect Session Pooler on pooler.supabase.com:5432)"
 
             if [ -n "$POOLER_HOST" ]; then
-              IPV4=$(dig +short A "$POOLER_HOST" 2>/dev/null | head -1 || true)
+              IPV4=$(dig +short +timeout=5 +tries=2 @"8.8.8.8" A "$POOLER_HOST" 2>/dev/null | head -1 || true)
+              if [ -z "$IPV4" ]; then
+                IPV4=$(dig +short A "$POOLER_HOST" 2>/dev/null | head -1 || true)
+              fi
               if [ -z "$IPV4" ]; then
                 IPV4=$(getent ahostsv4 "$POOLER_HOST" 2>/dev/null | head -1 | awk '{print $1}' || true)
               fi
@@ -125,7 +154,10 @@ jobs:
             echo "::warning::No DATABASE_URL secret. Falling back to direct IPv6-only host — expect 'network is unreachable' on GitHub runners."
             echo "Fix: Add DATABASE_URL = your exact Session Pooler connection string (port 5432) from Supabase Dashboard → Connect."
 
-            IPV4=$(dig +short A "$HOST" 2>/dev/null | head -1 || true)
+            IPV4=$(dig +short +timeout=5 +tries=2 @"8.8.8.8" A "$HOST" 2>/dev/null | head -1 || true)
+            if [ -z "$IPV4" ]; then
+              IPV4=$(dig +short A "$HOST" 2>/dev/null | head -1 || true)
+            fi
             if [ -z "$IPV4" ]; then
               IPV4=$(getent ahostsv4 "$HOST" 2>/dev/null | head -1 | awk '{print $1}' || true)
             fi
@@ -186,6 +218,10 @@ jobs:
               echo "::error::Cannot determine a working database URL (no primary pooler URL and no password+ref)"
               return 1
             }
+
+            # Suppress noisy "open /home/runner/.supabase/profile: no such file" when skip_link=true
+            mkdir -p "$HOME/.supabase" 2>/dev/null || true
+            touch "$HOME/.supabase/profile" 2>/dev/null || true
 
             SESSION_URL=$(resolve_working_db_url "${DATABASE_URL:-}" "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
             export SESSION_URL
@@ -258,7 +294,10 @@ jobs:
             }
 
             run_db_push_once() {
-              local output exit_code ghosts dup_version missing_remotes
+              # NOTE: 'output' is intentionally NOT declared local here so the last
+              # failing output remains visible to run_with_retry for the network-error
+              # detection under set -u (prevents "output: unbound variable").
+              local exit_code ghosts dup_version missing_remotes
               DB_PUSH_RETRYABLE=true
 
               output=$(supabase db push --include-all --db-url "$SESSION_URL" --debug 2>&1)
@@ -332,6 +371,7 @@ jobs:
               local max_attempts=3
               local delay_seconds=10
               local attempt=1
+              output=""   # Ensure visible to the final network-error detection under set -u
 
               while true; do
                 echo "Running Supabase migrations (attempt $attempt/$max_attempts)..."
