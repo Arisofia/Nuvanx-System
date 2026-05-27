@@ -79,3 +79,5 @@ scripts/__pycache__/
 # Local secrets file (never commit)
 .env.tokens.local
 .env.local
+.env.webhooks
+.env.webhooks*
