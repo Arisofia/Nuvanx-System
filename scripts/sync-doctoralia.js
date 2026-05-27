@@ -149,7 +149,12 @@ function normalizeField(value) {
 }
 
 function getServiceAccountEmail(sa) {
-  return normalizeField(sa?.client_email) || 'unknown-service-account';
+  const email = normalizeField(sa?.client_email) || 'unknown-service-account';
+  if (email.includes('@')) {
+    const [user, domain] = email.split('@');
+    return `${user.slice(0, 3)}***@${domain}`;
+  }
+  return email;
 }
 
 function isGooglePermissionError(err) {
@@ -322,15 +327,15 @@ function getAmountValues(row, cols, options, rowIndex) {
   const amountNet = hasColNet ? parseAmount(row[cols.colNet]) : null;
 
   if (hasColGross && amountGross === null) {
-    console.warn(`[sync-doctoralia] Skipping row ${rowIndex + 1} because bruto importe is invalid: ${row[cols.colGross]}`);
+    console.warn(`[sync-doctoralia] Skipping row ${rowIndex + 1} because bruto importe is invalid`);
     return null;
   }
   if (hasColDiscount && amountDisc === null) {
-    console.warn(`[sync-doctoralia] Skipping row ${rowIndex + 1} because descuento importe is invalid: ${row[cols.colDiscount]}`);
+    console.warn(`[sync-doctoralia] Skipping row ${rowIndex + 1} because descuento importe is invalid`);
     return null;
   }
   if (hasColNet && amountNet === null) {
-    console.warn(`[sync-doctoralia] Skipping row ${rowIndex + 1} because neto importe es invalid: ${row[cols.colNet]}`);
+    console.warn(`[sync-doctoralia] Skipping row ${rowIndex + 1} because neto importe is invalid`);
     return null;
   }
 
@@ -529,11 +534,6 @@ async function fetchSheetRows(sheets, saObject) {
       throw new Error(guidance);
     }
     console.error(`[sync-doctoralia] Sheets API Error: ${err.message}`);
-    if (err.errors) {
-      console.error('[sync-doctoralia] Details:', JSON.stringify(err.errors, null, 2));
-    } else if (err.response?.data) {
-      console.error('[sync-doctoralia] Response Data:', JSON.stringify(err.response.data, null, 2));
-    }
     throw err;
   }
 }
@@ -702,7 +702,7 @@ async function upsertDoctoraliaRow(row, i, params) {
     );
     return true;
   } catch (rowError) {
-    console.warn(`[sync-doctoralia] Skipping row ${i + 1} due to DB error: ${rowError.message}`);
+    console.warn(`[sync-doctoralia] Skipping row ${i + 1} due to DB error`);
     return false;
   }
 }
