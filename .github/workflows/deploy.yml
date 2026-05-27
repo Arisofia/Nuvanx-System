@@ -60,17 +60,20 @@ jobs:
             BASE_URL=$(printf 'postgresql://postgres:%s@%s:5432/postgres' \
               "${{ secrets.SUPABASE_DB_PASSWORD }}" "$HOST")
 
-            # Try to get an IPv4 address explicitly (GitHub runners often have broken IPv6)
-            IPV4=$(getent ahostsv4 "$HOST" 2>/dev/null | head -1 | awk '{print $1}' || true)
+            # Robust IPv4 resolution (dig is more reliable than getent on many runners)
+            IPV4=$(dig +short A "$HOST" 2>/dev/null | head -1 || true)
+            if [ -z "$IPV4" ]; then
+              IPV4=$(getent ahostsv4 "$HOST" 2>/dev/null | head -1 | awk '{print $1}' || true)
+            fi
 
             if [ -n "$IPV4" ]; then
-              # Use hostaddr to force IPv4 and avoid IPv6 "network unreachable"
+              # Force IPv4 using hostaddr parameter (best way to bypass IPv6 issues on GitHub runners)
               FINAL_URL="${BASE_URL}?hostaddr=${IPV4}&sslmode=require"
               echo "url=$FINAL_URL" >> "$GITHUB_OUTPUT"
               echo "Using direct database host with forced IPv4 ($IPV4)"
             else
               echo "url=$BASE_URL" >> "$GITHUB_OUTPUT"
-              echo "::warning::Could not resolve IPv4 for direct host, using hostname (may fail on IPv6)"
+              echo "::warning::Could not resolve IPv4 for direct host. Will try hostname (very likely to fail on IPv6)"
             fi
           else
             echo "url=${{ secrets.DATABASE_URL }}" >> "$GITHUB_OUTPUT"
