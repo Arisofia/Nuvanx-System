@@ -79,9 +79,11 @@ jobs:
       - name: Run Orchestrator Script
         run: node scripts/run-daily-sync.js
         env:
-          # run-daily-sync.js needs these for sync-doctoralia and supabase deploy
+          # Critical secrets for sync-doctoralia.js + Supabase operations (CAPI, webhooks, etc.)
           SUPABASE_ACCESS_TOKEN: ${{ env.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ env.SUPABASE_PROJECT_REF }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ env.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_URL: ${{ env.SUPABASE_URL }}
           DATABASE_URL: ${{ env.DATABASE_URL }}
           GOOGLE_ADS_SERVICE_ACCOUNT: ${{ env.GOOGLE_ADS_SERVICE_ACCOUNT }}
           DOCTORALIA_SHEET_ID: ${{ env.DOCTORALIA_SHEET_ID }}
@@ -94,19 +96,37 @@ jobs:
           META_GRAPH_VERSION: ${{ env.META_GRAPH_VERSION }}
 
       - name: Fetch Meta Daily Insights
+        env:
+          SUPABASE_URL: ${{ env.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ env.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           DAYS="${{ github.event.inputs.days || '2' }}"
           echo "Fetching Meta insights for last $DAYS days..."
-          
-          RESPONSE=$(curl -s -X POST "${SUPABASE_URL}/functions/v1/daily-aggregates" \
+
+          # More robust call with timeout and better error handling
+          RESPONSE=$(curl -sS --max-time 120 -X POST "${SUPABASE_URL}/functions/v1/daily-aggregates" \
             -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
             -H "Content-Type: application/json" \
-            -d "{\"action\": \"fetch_meta_insights\", \"days\": $DAYS}")
-          
+            -d "{\"action\": \"fetch_meta_insights\", \"days\": $DAYS}" || echo '{"success":false,"error":"curl_failed"}')
+
           echo "Response: $RESPONSE"
+
           if echo "$RESPONSE" | grep -q '"success":true'; then
-            echo "Meta insights fetched successfully."
+            echo "✅ Meta insights fetched successfully."
           else
             echo "::error::Failed to fetch Meta insights."
+            echo "$RESPONSE"
             exit 1
           fi
+
+      - name: Daily Sync Summary
+        if: always()
+        run: |
+          echo "### 📅 Daily Sync Orchestrator Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Run type:** ${{ github.event_name }}"
+          echo "- **Meta insights days:** ${{ github.event.inputs.days || '2' }}"
+          echo "- **Node version:** 22"
+          echo "- **IPv6 disabled:** Yes (hardened for Supabase)"
+          echo ""
+          echo "See job logs for detailed sync-doctoralia + Meta insights results."
