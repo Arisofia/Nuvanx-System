@@ -148,10 +148,15 @@ graph TD
   - Dynamic pixel routing per ad account (`9523446201036125` vs `4172099716404860`).
   - `handleSupabaseWebhook` for server-side `Purchase` events from paid Doctoralia productions.
 
-### Daily Data Flow (Critical for CAPI Attribution)
-- `scripts/sync-doctoralia.js` (now **critical** in daily orchestrator) → populates `financial_settlements` / `produccion_intermediarios`.
-- Reconciliation RPC (`reconcile_doctoralia_subjects_to_leads`) links paid records back to original Meta leads.
-- This enables accurate `Purchase` events with good matching quality.
+### Daily Data Flow — Fully Automated (Critical for CAPI Attribution)
+- GitHub Actions cron (`daily-sync.yml`) → `scripts/sync-doctoralia.js` (now **critical**) → INSERT/UPDATE into `produccion_intermediarios` with `estado = 'pagada'`.
+- **Automatic trigger**: Supabase Database Webhook (configured in Dashboard) fires on table change → POSTs to Edge Function `/webhooks/supabase`.
+- Inside `handleSupabaseWebhook`:
+  - Checks `capi_sent = false`
+  - Calls `trackMetaConversion` with `eventName: 'Purchase'`
+  - Immediately marks `capi_sent = true` (idempotent, no duplicates)
+- Reconciliation RPC (`reconcile_doctoralia_subjects_to_leads`) links paid records back to original Meta leads for better attribution.
+- This entire chain is designed to run **without any manual intervention**.
 
 ### Monitoring & Quality
 - New protected endpoint: `GET /capi/quality` — provides EMQ signal coverage, recent Purchase events, and pixel routing status.

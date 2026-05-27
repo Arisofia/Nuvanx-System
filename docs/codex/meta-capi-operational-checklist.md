@@ -93,6 +93,30 @@ Use this endpoint (or the daily sync quality logs) for post-deployment validatio
 
 Create or schedule the query from `docs/capi/capi_anomaly_detection_pagada_not_sent.sql` as a recurring check or Supabase scheduled function to surface any "Pagada" rows that never received their CAPI Purchase event.
 
+**Automation tip**: Add a Supabase Scheduled Function or GitHub cron that runs this query daily and posts results to Telegram/Slack if any rows are found.
+
+---
+
+## 8) Full End-to-End Automation Requirements
+
+For the entire flow to trigger **automatically** (no manual steps):
+
+1. **Daily Doctoralia Sync** (already automated via GitHub Actions cron in `daily-sync.yml`).
+2. **Supabase Database Webhook** (must be configured once in Dashboard):
+   - Go to Supabase Dashboard → Database → Webhooks
+   - Create webhook on table `produccion_intermediarios`
+   - Events: `INSERT` + `UPDATE`
+   - Filter (optional): `estado = 'pagada'`
+   - POST to: `https://<project-ref>.supabase.co/functions/v1/api/webhooks/supabase`
+   - Use `service_role` key as Authorization (secret).
+3. **capi_sent guard** (already implemented) ensures idempotency.
+4. **Monitoring**:
+   - Daily sync logs include CAPI quality metrics.
+   - Use `/capi/quality` endpoint regularly.
+   - Anomaly query via the helper script `scripts/check-capi-pending-pagadas.js`.
+
+Once the Database Webhook (step 2) is created, the flow "Doctoralia export → sync → 'pagada' → CAPI Purchase (one time only)" runs 100% automatically.
+
 **Required action:**
 1. Obtain a real authenticated JWT (non-anonymous) for a production user.
 2. Execute one playbook run from `/playbooks` UI **or** via API call:

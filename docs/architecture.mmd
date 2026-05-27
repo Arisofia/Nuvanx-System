@@ -125,10 +125,23 @@ graph TD
   K --> AC
   K --> AD
 
-  %% Monitoring connections (new)
+  %% Full Automatic Flow (no manual intervention)
+  %% Daily cron triggers Doctoralia sync
+  C4 -->|cron + after security check| T
+  T -->|INSERT/UPDATE with estado='pagada'| Q
+
+  %% Automatic trigger via Supabase Database Webhook (recommended) or direct
+  Q -. "ON INSERT/UPDATE (estado = 'pagada')" .-> "Supabase Database Webhook (automatic)" --> K
+
+  %% Inside Edge Function: guard + CAPI
+  K -->|check !capi_sent| "handleSupabaseWebhook" -->|trackMetaConversion Purchase| AA
+  K -->|after success| "UPDATE produccion_intermediarios SET capi_sent = true" --> Q
+
+  %% Monitoring (also automated via logs + endpoint)
   AF --> AG
   T --> AH
   K --> AH
+  C4 -->|daily| "Run anomaly query + /capi/quality" --> AF
 
   %% Security note
   K -. "No more demo@nuvanx.com fallback for API keys" .-> K
