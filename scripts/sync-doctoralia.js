@@ -176,6 +176,15 @@ function formatPermissionGuidance(sa) {
   ].join(' ');
 }
 
+/** Safe version for logging that never includes any service account details */
+function formatPermissionGuidanceForLog() {
+  return [
+    'Google Sheets permission denied for the Doctoralia source spreadsheet.',
+    'Share the spreadsheet with the configured service account (or update GOOGLE_ADS_SERVICE_ACCOUNT / DOCTORALIA_SHEET_ID).',
+    'No financial_settlements rows were modified.',
+  ].join(' ');
+}
+
 function deriveRawId(row, useHashId, cols) {
   if (!useHashId) {
     return normalizeField(row[cols.colId]);
@@ -527,11 +536,14 @@ async function fetchSheetRows(sheets, saObject) {
     return res.data.values ?? [];
   } catch (err) {
     if (isGooglePermissionError(err)) {
-      const guidance = formatPermissionGuidance(saObject);
       if (ALLOW_PERMISSION_SKIP) {
-        console.warn(`::warning::[sync-doctoralia] ${guidance}`);
+        // Use safe version that contains no service account data at all
+        const safeGuidance = formatPermissionGuidanceForLog();
+        console.warn(`::warning::[sync-doctoralia] ${safeGuidance}`);
         return null;
       }
+      // When throwing, we can include the (masked) email for the developer
+      const guidance = formatPermissionGuidance(saObject);
       throw new Error(guidance);
     }
     console.error(`[sync-doctoralia] Sheets API Error: ${err.message}`);
