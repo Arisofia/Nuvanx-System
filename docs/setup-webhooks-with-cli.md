@@ -56,17 +56,19 @@ supabase secrets set SUPABASE_ACCESS_TOKEN="sbp_..." --project-ref ssvvuuysgxyqv
 
 ## Paso 3: Ejecutar el Script de Creación de Webhooks
 
-```bash
-# Con archivo .env (recomendado)
-node -r dotenv/config scripts/setup-supabase-webhooks.js --env-file=.env.webhooks
+Se recomienda usar **exports manuales** o GitHub Secrets (sin depender de archivos .env en tiempo de ejecución):
 
-# O con exports manuales
-SUPABASE_ACCESS_TOKEN=... \
-SUPABASE_PROJECT_REF=ssvvuuysgxyqvmovrlvk \
-SHEETS_WEBHOOK_URL=... \
-SHEETS_WEBHOOK_SECRET=Doctoralia_Secret_2026_!! \
+```bash
+# Opción recomendada: exports directos
+export SUPABASE_ACCESS_TOKEN="sbp_tu_token"
+export SUPABASE_PROJECT_REF="ssvvuuysgxyqvmovrlvk"
+export SHEETS_WEBHOOK_URL="https://script.google.com/..."
+export SHEETS_WEBHOOK_SECRET="Doctoralia_Secret_2026_!!"
+
 node scripts/setup-supabase-webhooks.js
 ```
+
+Para GitHub Actions, simplemente define los secrets en el repositorio. El script los leerá automáticamente desde `process.env`.
 
 El script (versión nativa sin dependencias) creará o actualizará:
 - `Sync_To_Google_Sheets` (Webhook #2 hacia Google Apps Script)

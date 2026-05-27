@@ -1,6 +1,15 @@
 /**
  * scripts/setup-supabase-webhooks.js
  * Versión Robusta: Sin dependencias externas (usa el módulo 'https' nativo de Node.js)
+ *
+ * Uso:
+ *   export SUPABASE_ACCESS_TOKEN=...
+ *   export SUPABASE_PROJECT_REF=...
+ *   export SHEETS_WEBHOOK_URL=...
+ *   export SHEETS_WEBHOOK_SECRET=...
+ *   node scripts/setup-supabase-webhooks.js
+ *
+ * Para GitHub Actions / CI, define estos secretos en Settings → Secrets.
  */
 const https = require('https');
 
@@ -14,9 +23,21 @@ async function setupWebhooks() {
 
   // Validación de variables
 
-  if (!PROJECT_REF || !ACCESS_TOKEN || !WEBHOOK_URL || !WEBHOOK_SECRET) {
-    console.error("❌ Error: Faltan variables de entorno necesarias.");
-    console.log("Asegúrate de haber ejecutado los comandos 'export ...' antes de correr este script.");
+  const missing = [];
+  if (!PROJECT_REF) missing.push('SUPABASE_PROJECT_REF');
+  if (!ACCESS_TOKEN) missing.push('SUPABASE_ACCESS_TOKEN');
+  if (!WEBHOOK_URL) missing.push('SHEETS_WEBHOOK_URL');
+  if (!WEBHOOK_SECRET) missing.push('SHEETS_WEBHOOK_SECRET');
+
+  if (missing.length > 0) {
+    console.error("❌ Error: Faltan las siguientes variables de entorno:");
+    missing.forEach(v => console.error(`   - ${v}`));
+    console.log("\nDebes exportarlas antes de ejecutar el script. Ejemplo:");
+    console.log("  export SUPABASE_ACCESS_TOKEN='sbp_xxx'");
+    console.log("  export SUPABASE_PROJECT_REF='tu_ref'");
+    console.log("  export SHEETS_WEBHOOK_URL='https://script.google.com/...'");
+    console.log("  export SHEETS_WEBHOOK_SECRET='Doctoralia_Secret_2026_!!'");
+    console.log("\nO cárgalas desde tu archivo de secrets y luego ejecuta el script.");
     process.exit(1);
   }
 
