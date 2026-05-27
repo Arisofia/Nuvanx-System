@@ -148,15 +148,36 @@ graph TD
   - Dynamic pixel routing per ad account (`9523446201036125` vs `4172099716404860`).
   - `handleSupabaseWebhook` for server-side `Purchase` events from paid Doctoralia productions.
 
-### Daily Data Flow — Fully Automated (Critical for CAPI Attribution)
-- GitHub Actions cron (`daily-sync.yml`) → `scripts/sync-doctoralia.js` (now **critical**) → INSERT/UPDATE into `produccion_intermediarios` with `estado = 'pagada'`.
-- **Automatic trigger**: Supabase Database Webhook (configured in Dashboard) fires on table change → POSTs to Edge Function `/webhooks/supabase`.
-- Inside `handleSupabaseWebhook`:
-  - Checks `capi_sent = false`
-  - Calls `trackMetaConversion` with `eventName: 'Purchase'`
-  - Immediately marks `capi_sent = true` (idempotent, no duplicates)
-- Reconciliation RPC (`reconcile_doctoralia_subjects_to_leads`) links paid records back to original Meta leads for better attribution.
-- This entire chain is designed to run **without any manual intervention**.
+### Daily Data Flow — Fully Automated & Bidirectional (Critical for CAPI Attribution)
+
+**Full Automatic Bidirectional Flow**
+
+```mermaid
+graph TD
+    A[Cron Diario: GitHub Actions] -- "sync-doctoralia.js" --> B[(Supabase DB: <br/>produccion_intermediarios)]
+    
+    B -- "Trigger: INSERT/UPDATE" --> C{Supabase Webhooks}
+    
+    %% Webhook 1: CAPI
+    C -- "Webhook #1: CAPI Handler" --> D[Edge Function / Server]
+    D --> E[Meta Conversions API]
+    E -- "Evento: Purchase" --> F[Ads Manager: Atribución ROAS]
+    
+    %% Webhook 2: Sheets
+    C -- "Webhook #2: GAS Robust Webhook" --> G[Google Apps Script]
+    G -- "Validar Secreto & Mapear" --> H[Google Sheets: <br/>Produccion Intermediarios]
+    
+    %% Trazabilidad
+    I[(Vistas de Trazabilidad 360)] -- "Enriquecido con fbc/fbp" --> D
+```
+
+- **Webhook #1 (CAPI)**: Supabase → Edge Function → Meta `Purchase` (with `capi_sent` guard + `fbc`/`fbp` from enriched view).
+- **Webhook #2 (Operational Mirror)**: Supabase → Google Apps Script (`docs/google-apps-script/webhook-produccion-intermediarios.js`) → Real-time update of the "Produccion Intermediarios" sheet.
+- Robust version of the script is saved at:
+  `docs/google-apps-script/webhook-produccion-intermediarios.js`
+- **Fully CLI-driven setup**: Use `scripts/setup-supabase-webhooks.js` (Management API) to create both webhooks programmatically.
+
+**Result**: The entire flow (Doctoralia export → Supabase → CAPI Purchase in Meta + live Sheet mirror) runs **100% automatically** after the initial one-time configuration of the two Database Webhooks.
 
 ### Monitoring & Quality
 - New protected endpoint: `GET /capi/quality` — provides EMQ signal coverage, recent Purchase events, and pixel routing status.

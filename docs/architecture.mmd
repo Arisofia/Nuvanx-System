@@ -125,23 +125,19 @@ graph TD
   K --> AC
   K --> AD
 
-  %% Full Automatic Flow (no manual intervention)
-  %% Daily cron triggers Doctoralia sync
-  C4 -->|cron + after security check| T
-  T -->|INSERT/UPDATE with estado='pagada'| Q
-
-  %% Automatic trigger via Supabase Database Webhook (recommended) or direct
-  Q -. "ON INSERT/UPDATE (estado = 'pagada')" .-> "Supabase Database Webhook (automatic)" --> K
-
-  %% Inside Edge Function: guard + CAPI
-  K -->|check !capi_sent| "handleSupabaseWebhook" -->|trackMetaConversion Purchase| AA
-  K -->|after success| "UPDATE produccion_intermediarios SET capi_sent = true" --> Q
-
-  %% Monitoring (also automated via logs + endpoint)
-  AF --> AG
-  T --> AH
-  K --> AH
-  C4 -->|daily| "Run anomaly query + /capi/quality" --> AF
-
-  %% Security note
-  K -. "No more demo@nuvanx.com fallback for API keys" .-> K
+  %% Full Automatic Flow (no manual intervention) - Bidirectional
+  A[Cron Diario: GitHub Actions] -- "sync-doctoralia.js" --> B[(Supabase DB: <br/>produccion_intermediarios)]
+  
+  B -- "Trigger: INSERT/UPDATE" --> C{Supabase Webhooks}
+  
+  %% Webhook 1: CAPI
+  C -- "Webhook #1: CAPI Handler" --> D[Edge Function / Server]
+  D --> E[Meta Conversions API]
+  E -- "Evento: Purchase" --> F[Ads Manager: Atribución ROAS]
+  
+  %% Webhook 2: Sheets
+  C -- "Webhook #2: GAS Robust Webhook" --> G[Google Apps Script]
+  G -- "Validar Secreto & Mapear" --> H[Google Sheets: <br/>Produccion Intermediarios]
+  
+  %% Trazabilidad
+  I[(Vistas de Trazabilidad 360)] -- "Enriquecido con fbc/fbp" --> D

@@ -95,9 +95,34 @@ Create or schedule the query from `docs/capi/capi_anomaly_detection_pagada_not_s
 
 **Automation tip**: Add a Supabase Scheduled Function or GitHub cron that runs this query daily and posts results to Telegram/Slack if any rows are found.
 
+**Recommended CLI method** (fully scriptable):
+```bash
+SHEETS_WEBHOOK_URL="https://script.google.com/..." \
+SHEETS_WEBHOOK_SECRET="tu-clave-secreta" \
+SUPABASE_ACCESS_TOKEN="sbp_xxx" \
+SUPABASE_PROJECT_REF="ssvvuuysgxyqvmovrlvk" \
+node scripts/setup-supabase-webhooks.js
+```
+
 ---
 
-## 8) Full End-to-End Automation Requirements
+## 8) Google Apps Script para espejo en tiempo real (Produccion Intermediarios)
+
+Usa el script robusto ubicado en:
+`docs/google-apps-script/webhook-produccion-intermediarios.js`
+
+**Mejoras incluidas vs versión básica:**
+- Manejo de errores con try/catch + logging claro
+- Validación de payload
+- Soporte para header de secreto (`X-Webhook-Secret`)
+- Función de prueba (`testDoPost`)
+- Comentado para no sincronizar `capi_sent` por defecto (puedes activarlo fácilmente)
+
+Sigue los pasos del consultor para desplegarlo como Aplicación Web y crear el segundo Database Webhook en Supabase.
+
+---
+
+## 9) Full End-to-End Automation Requirements
 
 For the entire flow to trigger **automatically** (no manual steps):
 
