@@ -395,11 +395,17 @@ async function trackMetaCapiEvent(accessToken: string, input: MetaCapiEventInput
   if (input.userData.client_ip_address) hashedUserData.client_ip_address = input.userData.client_ip_address;
   if (input.userData.client_user_agent) hashedUserData.client_user_agent = input.userData.client_user_agent;
 
-  // Quality alert for EMQ (Event Match Quality)
+  // Quality alert for EMQ (Event Match Quality) - critical for Meta optimization
   const criticalParams = ['em', 'ph', 'fbc', 'fbp', 'client_ip_address', 'client_user_agent'];
   const missing = criticalParams.filter(p => !hashedUserData[p]);
   if (missing.length > 0) {
-    console.warn(`[CAPI-QUALITY-ALERT] Event ${input.eventName} has low signal (missing: ${missing.join(', ')}). This may affect EMQ score.`);
+    console.warn(`[CAPI-QUALITY-ALERT] Event ${input.eventName} has low signal (missing: ${missing.join(', ')}). This may affect EMQ / Event Match Quality score. Aim for ≥2-3 strong signals (especially em + ph + fbc/fbp).`, {
+      eventName: input.eventName,
+      eventId: input.eventId,
+      missingSignals: missing,
+      hasPhone: Boolean(userData.ph?.length),
+      hasEmail: Boolean(userData.em?.length),
+    });
   }
 
   if (Object.keys(hashedUserData).length === 0) {
@@ -425,6 +431,7 @@ async function trackMetaCapiEvent(accessToken: string, input: MetaCapiEventInput
     eventName: input.eventName,
     eventId: input.eventId ?? null,
     pixelId,
+    adAccountHint: userData.external_id?.[0] ?? null,
     hasPhone: Boolean(userData.ph?.length),
     hasEmail: Boolean(userData.em?.length),
     hasFbc: Boolean(hashedUserData.fbc),
@@ -1523,10 +1530,10 @@ async function handleRequest(req: Request): Promise<Response> {
   }
 
   let userId = authUser ? authUser.id : userIdHeader;
-  if (!userId && isApiKeyValid) {
-    const { data: demoUser } = await adminClient.from('users').select('id').eq('email', 'demo@nuvanx.com').maybeSingle();
-    if (demoUser) userId = demoUser.id;
-  }
+
+  // Security: Removed automatic fallback to demo@nuvanx.com for API key requests.
+  // All production API key usage must provide explicit X-User-Id header or proper auth.
+  // The previous fallback was only intended for early development and posed a risk.
 
   if ((isServiceRole || isApiKeyValid) && !userId && resource !== 'health') {
     return sendJson({ success: false, message: 'Missing user context' }, 400);
@@ -1616,6 +1623,7 @@ export const AUTHENTICATED_ROUTE_HANDLERS = new Map<string, RouteHandler>([
   ['reports|campaign-roi|GET', handleReportsCampaignRoiGet],
   ['leads|reconcile|POST', handleLeadsReconcilePost],
   ['agenda|doctoralia|GET', handleAgendaDoctoraliaGet],
+  ['capi|quality|GET', handleCapiQualityGet],
 ]);
 
 
@@ -2160,7 +2168,8 @@ async function handleSupabaseWebhook(ctx: PublicRouteContext): Promise<Response 
 
   if (schema === 'public' && table === 'produccion_intermediarios' && record) {
     const estado = String(record.estado ?? '').trim().toLowerCase();
-    if (estado === 'pagada') {
+    const alreadySent = Boolean(record.capi_sent);
+    if (estado === 'pagada' && !alreadySent) {
       (async () => {
         try {
           const adminClient = createAdminClient();
@@ -2207,11 +2216,14 @@ async function handleSupabaseWebhook(ctx: PublicRouteContext): Promise<Response 
 
           const { data: trace, error: traceErr } = await adminClient
             .from('vw_doctoralia_lead_traceability_unified')
-            .select('lead_id, leadgen_id, campaign_id, lead_phone_normalized, clinic_id')
+            .select('lead_id, leadgen_id, campaign_id, lead_phone_normalized, clinic_id, lead_fbc, lead_fbp')
             .eq('paciente_telefono_normalized', phoneNormalized)
             .eq('clinic_id', clinicId)
             .limit(1)
             .maybeSingle();
+
+          const fbc = trace?.lead_fbc ?? null;
+          const fbp = trace?.lead_fbp ?? null;
           if (traceErr) {
             console.error('[CAPI-PROD] Traceability query error', traceErr);
             return;
@@ -2229,6 +2241,8 @@ async function handleSupabaseWebhook(ctx: PublicRouteContext): Promise<Response 
             pixelId: creds.pixelId,
             eventId: `prod_${record.id}`,
             phone: trace.lead_phone_normalized ?? phoneNormalized,
+            fbc,
+            fbp,
             externalId: trace.lead_id,
             customData: {
               value: importe,
@@ -2240,11 +2254,20 @@ async function handleSupabaseWebhook(ctx: PublicRouteContext): Promise<Response 
             },
           });
 
-          console.log('[CAPI-PROD] Conversion sent', {
-            produccionId: record.id ?? null,
-            leadId: trace.lead_id,
+          await adminClient.from('produccion_intermediarios')
+            .update({ capi_sent: true })
+            .eq('id', record.id ?? null);
+
+          console.log('[CAPI-PROD] Purchase event dispatched and marked as capi_sent', {
+            produccion_id: record.id ?? null,
+            lead_id: trace.lead_id,
             importe,
-            pixelId: creds.pixelId,
+            pixel: creds.pixelId,
+            ad_account: creds.adAccountId,
+            event_id: `prod_${record.id}`,
+            has_fbc: Boolean(fbc),
+            has_fbp: Boolean(fbp),
+            has_traceability: true,
           });
         } catch (err) {
           console.error('[CAPI-PROD] Failed to process production webhook', err);
@@ -2562,7 +2585,7 @@ async function upsertLeadIdempotent(adminClient: any, userId: string, payload: a
 }
 
 const FALLBACK_META_AD_ACCOUNT_ID = '9523446201036125';
-const DEFAULT_LANDING_USER_EMAIL = 'demo@nuvanx.com';
+// DEFAULT_LANDING_USER_EMAIL removed for security (was demo@nuvanx.com fallback)
 
 function readPayloadString(payload: Record<string, any>, keys: string[], fallback: string | null = null): string | null {
   for (const key of keys) {
@@ -4353,6 +4376,87 @@ async function handleHealthMeta(ctx: AuthenticatedRouteContext): Promise<Respons
     }
   }
   return null;
+}
+
+/**
+ * CAPI Quality Monitoring Endpoint
+ * Helps verify EMQ health for events fired from handleSupabaseWebhook (Lead + Purchase).
+ * Useful for post-deployment monitoring as suggested by Meta account management.
+ */
+async function handleCapiQualityGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
+  const { adminClient, userId, resource, sub, url, sendJson } = ctx;
+  if (resource !== 'capi' || sub !== 'quality') return null;
+
+  try {
+    const limit = Math.min(Math.max(Number.parseInt(url.searchParams.get('limit') ?? '20'), 5), 100);
+
+    // Recent Purchase events (from produccion_intermediarios with estado Pagada)
+    const { data: recentPurchases } = await adminClient
+      .from('produccion_intermediarios')
+      .select('id, created_at, estado, importe, phone_normalized, clinic_id')
+      .eq('estado', 'Pagada')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    // Recent leads for the current user (with fbc/fbp signal presence)
+    const { data: recentLeads } = await adminClient
+      .from('leads')
+      .select('id, created_at, name, phone_normalized, fbc, fbp, stage, revenue')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    // Basic signal quality summary
+    const leadsWithStrongSignals = (recentLeads ?? []).filter(l => l.fbc || l.fbp).length;
+    const totalRecentLeads = (recentLeads ?? []).length;
+    const signalCoverage = totalRecentLeads > 0 
+      ? Math.round((leadsWithStrongSignals / totalRecentLeads) * 100) 
+      : 0;
+
+    // Pixel routing status (known accounts)
+    const knownRouting = [
+      { account: '9523446201036125', pixel: '1405503384615251', label: 'Francisco Antonio' },
+      { account: '4172099716404860', pixel: '877262375461917', label: 'Nuvanx' },
+    ];
+
+    return sendJson({
+      success: true,
+      generated_at: new Date().toISOString(),
+      summary: {
+        recent_purchases_tracked: (recentPurchases ?? []).length,
+        recent_leads: totalRecentLeads,
+        leads_with_fbc_or_fbp: leadsWithStrongSignals,
+        fbc_fbp_coverage_percent: signalCoverage,
+        note: signalCoverage >= 70 
+          ? 'Buena cobertura de señales fuertes (fbc/fbp). Favorece EMQ alto.'
+          : 'Se recomienda revisar captura de fbc/fbp en el frontend para mejorar EMQ.',
+      },
+      recent_purchase_events: (recentPurchases ?? []).map(p => ({
+        id: p.id,
+        created_at: p.created_at,
+        importe: p.importe,
+        has_phone: !!p.phone_normalized,
+        clinic_id: p.clinic_id,
+      })),
+      recent_leads_signals: (recentLeads ?? []).map(l => ({
+        id: l.id,
+        created_at: l.created_at,
+        stage: l.stage,
+        has_fbc: !!l.fbc,
+        has_fbp: !!l.fbp,
+        strong_signals: (l.fbc ? 1 : 0) + (l.fbp ? 1 : 0),
+      })),
+      pixel_routing: knownRouting,
+      recommendations: [
+        'Revisa logs [CAPI-PROD] después de cada despliegue.',
+        'Activa temporalmente META_TEST_EVENT_CODE si necesitas validar en Events Manager.',
+        'Asegúrate de capturar fbc/fbp en el primer toque del lead (frontend pixel + server).',
+      ],
+    });
+  } catch (err: any) {
+    console.error('[CAPI-QUALITY] Error generating report:', err);
+    return sendJson({ success: false, error: err.message }, 500);
+  }
 }
 
 function getMetaDatePreset(days: number) {

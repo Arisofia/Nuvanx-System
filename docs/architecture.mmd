@@ -1,0 +1,134 @@
+graph TD
+  subgraph "Root"
+    A["package.json"]
+    B["README.md"]
+    C[".github/workflows/*"]
+    D["supabase/config.toml"]
+    E["vercel.json"]
+  end
+
+  subgraph "Frontend (Vercel)"
+    F["frontend/src/pages/*"]
+    G["frontend/src/components/*"]
+    H["frontend/src/hooks/*"]
+    I["frontend/src/lib/env.ts"]
+    J["frontend/src/lib/metaPixel.ts"]
+  end
+
+  subgraph "Supabase"
+    subgraph "Functions (Edge)"
+      K["supabase/functions/api/index.ts"]
+      L["supabase/functions/daily-aggregates/index.ts"]
+      M["supabase/functions/mcp/index.ts"]
+      N["supabase/functions/_shared/config.ts"]
+      O["supabase/functions/_shared/phone.ts"]
+    end
+    subgraph "Database"
+      P["supabase/migrations/*.sql"]
+      Q["Tables: leads, financial_settlements, doctoralia_*,\nmeta_daily_insights, meta_cache, agent_outputs, users, clinics"]
+      R["Views: vw_lead_traceability, vw_doctoralia_* ,\nvw_campaign_performance_real, vw_source_comparison,\nvw_financial_patient_production, vw_whatsapp_conversion_real"]
+      S["RPC: get_trazabilidad_funnel,\nget_campaign_roi, get_campaigns_filter,\nget_phone_normalization_coverage,\nmatch_*_to_doctoralia_*, reconcile_*"]
+    end
+  end
+
+  subgraph "Scripts (Node)"
+    T["scripts/sync-doctoralia.js\n(Doctoralia → financial_settlements)"]
+    U["scripts/shared/meta-daily-insights.js"]
+    V["scripts/sync-platform-secrets.js"]
+    W["scripts/health-check-nuvanx.ts"]
+    X["scripts/verify-meta-access.js"]
+  end
+
+  subgraph "CI/CD"
+    C1[".github/workflows/deploy.yml\n(Supabase migrate + Edge deploy)"]
+    C2[".github/workflows/ci.yml\n(ESLint, tests, build)"]
+    C3[".github/workflows/sync-doctoralia.yml\n(cron Doctoralia sync)"]
+    C4[".github/workflows/daily-sync.yml\n(Daily orchestrator)"]
+    C5["docs/codex/meta-capi-operational-checklist.md"]
+  end
+
+  subgraph "External Services"
+    Y["Supabase Cloud\n(DB + Edge Runtime)"]
+    Z["Vercel\n(Frontend hosting)"]
+    AA["Meta Graph API\n(Ads, leadgen, CAPI)"]
+    AB["Doctoralia\n(Exports → Sheets)"]
+    AC["Google Sheets / Google Ads"]
+    AD["OpenAI / Gemini\n(AI layer)"]
+    AE["Telegram Bot\n(notifications)"]
+  end
+
+  subgraph "Monitoring & Observability"
+    AF["/capi/quality (CAPI EMQ monitoring)"]
+    AG["[CAPI-QUALITY-ALERT] logs"]
+    AH["Daily sync quality logs\n(reconciliation, phone coverage)"]
+  end
+
+  %% Root wiring
+  A --> F
+  A --> K
+  A --> T
+  D --> K
+  D --> L
+  D --> M
+
+  %% Frontend to backend
+  F -->|"fetch /api/*"| K
+  G --> F
+  H --> F
+  I --> F
+  J --> F
+
+  %% Functions to shared + DB
+  K --> N
+  K --> O
+  L --> N
+  M --> N
+  K --> Q
+  K --> R
+  K --> S
+  K --> AF
+
+  %% Scripts to DB & externals
+  T --> Q
+  T --> AB
+  T --> AC
+  U --> Q
+  U --> AA
+  X --> AA
+
+  %% CI/CD links
+  C1 --> P
+  C1 --> K
+  C1 --> L
+  C1 --> M
+  C2 --> F
+  C3 --> T
+  C4 --> T
+  C4 --> U
+  C5 --> AA
+  C5 --> K
+  C5 --> AF
+
+  %% Deploy targets
+  K --> Y
+  L --> Y
+  M --> Y
+  F --> Z
+
+  %% External integrations
+  K --> AA
+  K --> AD
+  K --> AC
+  K --> AE
+  T --> AC
+  K --> AB
+  K --> AC
+  K --> AD
+
+  %% Monitoring connections (new)
+  AF --> AG
+  T --> AH
+  K --> AH
+
+  %% Security note
+  K -. "No more demo@nuvanx.com fallback for API keys" .-> K

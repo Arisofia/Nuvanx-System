@@ -49,6 +49,50 @@
 
 **Where:** Frontend playbook execution with valid authenticated JWT.
 
+---
+
+## 5) Duplicate Purchase events in Meta (CAPI guard)
+
+**Where:** `produccion_intermediarios` table + `handleSupabaseWebhook`.
+
+**New guard:** Column `capi_sent` (boolean, default false).
+
+**Monitoring query** (run in Supabase SQL editor or via the new anomaly script):
+
+```sql
+SELECT id, created_at, estado, importe, phone_normalized, clinic_id, capi_sent
+FROM public.produccion_intermediarios
+WHERE estado ILIKE '%pagada%'
+  AND (capi_sent IS FALSE OR capi_sent IS NULL)
+ORDER BY created_at DESC;
+```
+
+**Expected behavior after deployment:**
+- A "Pagada" row triggers a CAPI `Purchase` event **only once**.
+- After successful send, `capi_sent` is set to `true`.
+- Re-entrancy or webhook retries no longer duplicate events in Meta.
+
+---
+
+## 6) CAPI Quality Monitoring Endpoint
+
+**New protected route:** `GET /capi/quality` (authenticated).
+
+Use this endpoint (or the daily sync quality logs) for post-deployment validation of EMQ health.
+
+**Key signals to watch:**
+- Recent Purchase events from paid productions.
+- % of recent leads carrying `fbc` + `fbp`.
+- Pixel routing per ad account (`9523446201036125` vs `4172099716404860`).
+
+**Recommended cadence:** Check after each deployment and daily via the orchestrator logs (`[sync-doctoralia] Daily data quality for CAPI`).
+
+---
+
+## 7) Anomaly Dashboard (Pagada sin enviar)
+
+Create or schedule the query from `docs/capi/capi_anomaly_detection_pagada_not_sent.sql` as a recurring check or Supabase scheduled function to surface any "Pagada" rows that never received their CAPI Purchase event.
+
 **Required action:**
 1. Obtain a real authenticated JWT (non-anonymous) for a production user.
 2. Execute one playbook run from `/playbooks` UI **or** via API call:
