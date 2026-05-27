@@ -129,7 +129,10 @@ vercel inspect dpl_4YqxemmXtAqgWUp937LDi7EvCTAb --token "$VERCEL_TOKEN"
 vercel env ls production --token "$VERCEL_TOKEN"
 ```
 
-- **Required envs:** `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`.
+- **Required envs:** `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_SUPABASE_ANON_KEY` (alias), `FRONTEND_URL` (Supabase secret for webhooks/CAPI).
+- **Pending ops actions (as of latest review):**
+  - Set Supabase secret: `supabase secrets set FRONTEND_URL="https://nuvanx.com" --project-ref ssvvuuysgxyqvmovrlvk`
+  - Ensure in Vercel (production + preview): `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_MCP_API_KEY`
 - **Completion criteria:** deployment is `READY`, promoted/aliased to production domain, and required envs exist in production.
 
 ### TODO P0-07 — Execute full production E2E

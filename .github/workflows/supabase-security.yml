@@ -58,7 +58,7 @@ jobs:
       - uses: actions/checkout@v4.2.2
       - name: Prefer IPv4 + hardened resolver (Supabase IPv6 root cause mitigation)
         run: |
-          echo "=== Hardening for Supabase Security lint (same IPv6/direct-host issues as Deploy) ==="
+          echo "=== Hardening for Security Lint (Supabase IPv6 mitigation) ==="
           # Nuclear: disable IPv6 on runner (most reliable fix per Supabase + GHA reports)
           sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1 || true
           sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1 || true
@@ -151,7 +151,7 @@ jobs:
               return 1
             }
 
-            # Try Session Pooler first (recommended for CI)
+            # Try Session Pooler first (recommended for CI IPv4 stability)
             if run_lint_with_retry "$SESSION_URL" "Session Pooler"; then
               echo "Supabase security lint passed on Session Pooler."
               exit 0

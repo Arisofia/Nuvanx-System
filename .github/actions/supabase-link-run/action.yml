@@ -183,13 +183,23 @@ runs:
           # Note: we intentionally do NOT default to db.<ref> here to avoid IPv6 failures.
           SESSION_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
           export SESSION_URL
-          echo "::warning::No DATABASE_URL provided; falling back to direct host (may hit IPv6 issues on GitHub runners). Prefer setting DATABASE_URL to your Session Pooler connection string."
-        else
-          echo "::error::Cannot build SESSION_URL. Provide DATABASE_URL (Session Pooler preferred), or SUPABASE_DB_PASSWORD + SUPABASE_PROJECT_REF."
-          exit 1
+          echo "::warning::No DATABASE_URL provided; falling back to direct host (potential IPv6 issues). Prefer Session Pooler."
         fi
 
-        bash /tmp/supabase_command.sh
+        if [ -z "${SESSION_URL:-}" ]; then
+          echo "::warning::SESSION_URL not set. CLI will use default link context."
+        fi
 
-        # Optional: cleanup temporary script after execution
-        # rm -f /tmp/supabase_command.sh || true
+        # Pre-flight connectivity check (Debugging like your psql commands)
+        echo "Checking connectivity to database host..."
+        DB_HOST=$(python3 -c "import os, urllib.parse as p; u=os.environ.get('SESSION_URL',''); print(p.urlparse(u).hostname or '')" 2>/dev/null || true)
+        if [ -n "$DB_HOST" ]; then
+          nc -zv -w 5 "$DB_HOST" 5432 || echo "::warning::Could not connect to $DB_HOST on port 5432"
+        fi
+
+        if [ -f /tmp/supabase_command.sh ]; then
+          bash /tmp/supabase_command.sh
+        else
+          echo "::error::Command script /tmp/supabase_command.sh not found."
+          exit 1
+        fi

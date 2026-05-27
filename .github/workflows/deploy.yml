@@ -482,7 +482,6 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-      VITE_MCP_API_KEY: ${{ secrets.MCP_API_KEY }}
     steps:
       - uses: actions/checkout@v4.2.2
 
