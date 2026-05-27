@@ -46,33 +46,53 @@ jobs:
             echo "skip_supabase=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Prefer IPv4 (CI reliability)
+        run: |
+          sudo sed -i 's/^#precedence ::ffff:0:0\/96  100/precedence ::ffff:0:0\/96  100/' /etc/gai.conf || true
+
+      - name: Compute reliable Direct DB URL for migrations
+        id: db_url
+        if: steps.validate.outputs.skip_supabase != 'true'
+        run: |
+          set -euo pipefail
+          if [ -n "${{ secrets.SUPABASE_DB_PASSWORD }}" ] && [ -n "${{ secrets.SUPABASE_PROJECT_REF }}" ]; then
+            DIRECT_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' \
+              "${{ secrets.SUPABASE_DB_PASSWORD }}" "${{ secrets.SUPABASE_PROJECT_REF }}")
+            echo "url=$DIRECT_URL" >> "$GITHUB_OUTPUT"
+            echo "Using direct database host for migrations (more reliable in GitHub Actions)"
+          else
+            echo "url=${{ secrets.DATABASE_URL }}" >> "$GITHUB_OUTPUT"
+            echo "::warning::Falling back to DATABASE_URL secret (may use pooler)"
+          fi
+
       - name: Supabase DB migrations
         if: steps.validate.outputs.skip_supabase != 'true'
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
           supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
-          database_url: ${{ env.DATABASE_URL }}
+          database_url: ${{ steps.db_url.outputs.url }}
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           skip_link: true
           command: |
             set -euo pipefail
 
-            # Robust DB URL resolution with fallback from pooler to direct host
+            # Robust DB URL resolution with preference for direct host (more stable for migrations)
             resolve_working_db_url() {
               local primary_url="$1"
               local password="$2"
               local project_ref="$3"
 
-              # If we have a primary URL, try to use it first
-              if [ -n "$primary_url" ]; then
-                echo "$primary_url"
+              # 1. Try direct connection first (port 5432, db.<ref>.supabase.co)
+              # This is recommended for migrations as it avoids pooler overhead and DNS issues with shared pooler hosts.
+              if [ -n "$password" ] && [ -n "$project_ref" ]; then
+                printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$password" "$project_ref"
                 return 0
               fi
 
-              # Fallback: build direct connection
-              if [ -n "$password" ] && [ -n "$project_ref" ]; then
-                printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$password" "$project_ref"
+              # 2. Fallback to primary URL (usually pooler) if provided
+              if [ -n "$primary_url" ]; then
+                echo "$primary_url"
                 return 0
               fi
 
