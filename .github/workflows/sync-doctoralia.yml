@@ -66,10 +66,11 @@ jobs:
           HAS_AUTH=0
           if [ -n "${GOOGLE_API_KEY:-}" ]; then HAS_AUTH=1; echo "Auth: API Key detected"; fi
           if [ -n "${GOOGLE_DOCTORALIA_SERVICE_ACCOUNT:-}" ]; then HAS_AUTH=1; echo "Auth: GOOGLE_DOCTORALIA_SERVICE_ACCOUNT detected"; fi
+          if [ -n "${GOOGLE_ADS_SERVICE_ACCOUNT:-}" ]; then HAS_AUTH=1; echo "Auth: GOOGLE_ADS_SERVICE_ACCOUNT detected"; fi
           if [ -n "${GOOGLE_CLIENT_EMAIL:-}" ] && [ -n "${GOOGLE_PRIVATE_KEY:-}" ]; then HAS_AUTH=1; echo "Auth: Individual GOOGLE_CLIENT_EMAIL and GOOGLE_PRIVATE_KEY detected"; fi
 
           if [ "$HAS_AUTH" -eq 0 ]; then
-             MISSING+=("Authentication (GOOGLE_API_KEY, GOOGLE_DOCTORALIA_SERVICE_ACCOUNT, or EMAIL+KEY)")
+             MISSING+=("Authentication (GOOGLE_API_KEY, GOOGLE_DOCTORALIA_SERVICE_ACCOUNT, GOOGLE_ADS_SERVICE_ACCOUNT, or EMAIL+KEY)")
           fi
 
           # Conditional Sheet ID validation
@@ -95,8 +96,8 @@ jobs:
           # Log presence of optional secrets for debugging
           [ -n "${GOOGLE_API_KEY:-}" ] && echo "Auth method: GOOGLE_API_KEY is present." || echo "Auth method: GOOGLE_API_KEY is missing."
           
-          # Try to decode GOOGLE_DOCTORALIA_SERVICE_ACCOUNT
-          export SA_JSON_RAW="${GOOGLE_DOCTORALIA_SERVICE_ACCOUNT:-}"
+          # Try to decode Service Account (Doctoralia or Ads fallback)
+          export SA_JSON_RAW="${GOOGLE_DOCTORALIA_SERVICE_ACCOUNT:-${GOOGLE_ADS_SERVICE_ACCOUNT:-}}"
           if [ -n "$SA_JSON_RAW" ]; then
             if python3 -c "import os,json; json.loads(os.environ.get('SA_JSON_RAW', ''))" 2>/dev/null; then
               echo "SA_JSON_RAW format: Detected raw JSON"
@@ -129,6 +130,8 @@ jobs:
         run: node scripts/sync-doctoralia.js
         env:
           GOOGLE_SA_JSON_FILE: ${{ env.GOOGLE_SA_JSON_FILE }}
+          GOOGLE_DOCTORALIA_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_DOCTORALIA_SERVICE_ACCOUNT }}
+          GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
           GOOGLE_API_KEY:      ${{ secrets.GOOGLE_API_KEY }}
           GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
           GOOGLE_CLIENT_ID:    ${{ secrets.GOOGLE_CLIENT_ID }}

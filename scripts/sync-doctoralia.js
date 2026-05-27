@@ -42,6 +42,8 @@ const { extractPhonesFromSubject, normalizePhoneForMatching, getPrimaryPhoneFrom
 
 const {
   GOOGLE_SA_JSON: SA_JSON,
+  GOOGLE_ADS_SERVICE_ACCOUNT,
+  GOOGLE_DOCTORALIA_SERVICE_ACCOUNT,
   GOOGLE_SA_JSON_FILE,
   GOOGLE_API_KEY,
   GOOGLE_CLIENT_EMAIL,
@@ -56,12 +58,22 @@ const {
 } = process.env;
 
 function loadServiceAccountJson() {
-  if (SA_JSON) {
+  const saRaw = SA_JSON || GOOGLE_DOCTORALIA_SERVICE_ACCOUNT || GOOGLE_ADS_SERVICE_ACCOUNT;
+  if (saRaw) {
     try {
-      JSON.parse(SA_JSON);
-      return SA_JSON;
+      // If it's already JSON, return it
+      if (saRaw.trim().startsWith('{')) {
+        JSON.parse(saRaw);
+        return saRaw;
+      }
+      // Try base64 decoding if it doesn't look like JSON
+      const decoded = Buffer.from(saRaw, 'base64').toString('utf8');
+      if (decoded.trim().startsWith('{')) {
+        JSON.parse(decoded);
+        return decoded;
+      }
     } catch (e) {
-      // Not a valid JSON, ignore and try fallback
+      // Not a valid JSON or Base64 JSON, ignore and try fallback
     }
   }
   
@@ -113,7 +125,7 @@ const SHEET_ID = (DOCTORALIA_SHEET_ID || DOCTORALIA_DRIVE_FILE_ID)?.trim();
 const ALLOW_PERMISSION_SKIP = DOCTORALIA_SYNC_PERMISSION_MODE.toLowerCase() === 'warn';
 
 // ─── Validation ───────────────────────────────────────────────────────────────
-const hasAuth = SA_JSON || GOOGLE_SA_JSON_FILE || GOOGLE_API_KEY || (GOOGLE_CLIENT_EMAIL && GOOGLE_PRIVATE_KEY);
+const hasAuth = SA_JSON || GOOGLE_SA_JSON_FILE || GOOGLE_API_KEY || GOOGLE_ADS_SERVICE_ACCOUNT || GOOGLE_DOCTORALIA_SERVICE_ACCOUNT || (GOOGLE_CLIENT_EMAIL && GOOGLE_PRIVATE_KEY);
 if (!hasAuth || !SHEET_ID || !DATABASE_URL || !CLINIC_ID) {
   console.error('[sync-doctoralia] Missing required env vars.');
   console.error('  Required: Authentication (SA_JSON, GOOGLE_API_KEY, or EMAIL+KEY), DOCTORALIA_SHEET_ID, DATABASE_URL, CLINIC_ID');
@@ -470,6 +482,7 @@ async function setupGoogleSheetsAuth() {
   if (saJson) {
     try {
       saObject = JSON.parse(saJson);
+      console.log(`[sync-doctoralia] Using Service Account: ${getServiceAccountEmail(saObject)}`);
       return {
         auth: new google.auth.GoogleAuth({
           credentials: saObject,
@@ -484,6 +497,7 @@ async function setupGoogleSheetsAuth() {
   }
 
   if (GOOGLE_API_KEY) {
+    console.log('[sync-doctoralia] Using API Key authentication');
     return { auth: GOOGLE_API_KEY, saObject: null };
   }
 
