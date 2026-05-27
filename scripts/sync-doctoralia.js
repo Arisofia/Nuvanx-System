@@ -497,7 +497,8 @@ async function setupGoogleSheetsAuth() {
   if (saJson) {
     try {
       saObject = JSON.parse(saJson);
-      console.log(`[sync-doctoralia] Using Service Account: ${getServiceAccountEmail(saObject)}`);
+      // Do not log any part of the service account email or object to avoid leaking credentials in logs/CI
+      console.log('[sync-doctoralia] Using Service Account authentication');
       return {
         auth: new google.auth.GoogleAuth({
           credentials: saObject,
@@ -748,7 +749,11 @@ module.exports = {
 
 if (require.main === module) {
   main().catch(err => {
-    console.error('[sync-doctoralia] Fatal error:', err.message);
+    // Never log raw error messages from credential-related failures, as they may contain sensitive data
+    console.error('[sync-doctoralia] Fatal error occurred (see previous logs for details).');
+    if (err.code || err.status) {
+      console.error('Error code:', err.code || err.status);
+    }
     process.exit(1);
   });
 }
