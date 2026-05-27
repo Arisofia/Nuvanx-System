@@ -56,8 +56,14 @@ jobs:
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
     steps:
       - uses: actions/checkout@v4.2.2
-      - name: Prefer IPv4 + hardened resolver
+      - name: Prefer IPv4 + hardened resolver (Supabase IPv6 root cause mitigation)
         run: |
+          echo "=== Hardening for Supabase Security lint (same IPv6/direct-host issues as Deploy) ==="
+          # Nuclear: disable IPv6 on runner (most reliable fix per Supabase + GHA reports)
+          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1 || true
+          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1 || true
+          sudo sysctl -w net.ipv6.conf.lo.disable_ipv6=1 || true
+
           # Prefer IPv4 globally
           sudo sed -i 's/^#precedence ::ffff:0:0\/96  100/precedence ::ffff:0:0\/96  100/' /etc/gai.conf || true
 
@@ -65,6 +71,10 @@ jobs:
           echo 'options single-request-reopen' | sudo tee -a /etc/resolv.conf >/dev/null || true
           echo 'options timeout:2' | sudo tee -a /etc/resolv.conf >/dev/null || true
           echo 'options attempts:3' | sudo tee -a /etc/resolv.conf >/dev/null || true
+
+          # Tools for resolution + optional preflight
+          sudo apt-get update -qq || true
+          sudo apt-get install -y -qq dnsutils postgresql-client || true
       - name: Report upstream Deploy Supabase result
         if: github.event_name == 'workflow_run'
         run: |

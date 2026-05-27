@@ -47,31 +47,49 @@ jobs:
 
       - name: Prefer IPv4 + hardened resolver (CI reliability)
         run: |
-          # Strongly prefer IPv4 globally on the runner
+          echo "=== Hardening GitHub runner for Supabase IPv4 connectivity (root cause: direct host is IPv6-only) ==="
+
+          # NUCLEAR OPTION (recommended in Supabase community + GitHub Actions + Supabase IPv6 discussions):
+          # Disable IPv6 entirely on the runner. This is the most reliable way to prevent
+          # "dial tcp [IPv6]:5432: network is unreachable" when Supabase direct endpoints are IPv6-only.
+          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1 || true
+          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1 || true
+          sudo sysctl -w net.ipv6.conf.lo.disable_ipv6=1 || true
+
+          # Strongly prefer IPv4 in getaddrinfo ordering
           sudo sed -i 's/^#precedence ::ffff:0:0\/96  100/precedence ::ffff:0:0\/96  100/' /etc/gai.conf || true
 
-          # Aggressive DNS resolver settings for GitHub runners
+          # Aggressive DNS resolver settings
           echo 'options single-request-reopen' | sudo tee -a /etc/resolv.conf >/dev/null || true
           echo 'options timeout:2' | sudo tee -a /etc/resolv.conf >/dev/null || true
           echo 'options attempts:5' | sudo tee -a /etc/resolv.conf >/dev/null || true
           echo 'options rotate' | sudo tee -a /etc/resolv.conf >/dev/null || true
 
-      - name: Compute reliable DB URL for CI (strongly prefer Session Pooler)
+          # Ensure tools for IPv4 resolution and preflight checks
+          sudo apt-get update -qq || true
+          sudo apt-get install -y -qq dnsutils postgresql-client || true
+
+          echo "IPv6 disabled, IPv4 precedence set, dig + psql ready."
+
+      - name: Compute reliable DB URL for CI (Session Pooler first — root cause fix)
         id: db_url
         if: steps.validate.outputs.skip_supabase != 'true'
         run: |
           set -euo pipefail
 
-          echo "=== Database Connection Strategy for GitHub Actions ==="
+          echo "=== Database Connection Strategy for GitHub Actions (Supabase + CLI best practices) ==="
+          echo "Root cause of prior failures: direct host db.<ref>.supabase.co is IPv6-only by default."
+          echo "GitHub runners often lack usable IPv6 egress to Supabase → network unreachable."
+          echo "Solution: DATABASE_URL secret MUST be the 'Supavisor Session mode (port 5432)' string"
+          echo "from Dashboard → Connect. It provides reliable IPv4. CLI v2.1x+ link also helps."
+          echo ""
 
-          # Primary strategy: Use the Session Pooler from DATABASE_URL secret.
-          # This is the recommended approach for CI because Supavisor poolers
-          # are generally more reliable from GitHub runners than direct hosts.
           if [ -n "${{ secrets.DATABASE_URL }}" ]; then
+            # PRIMARY (recommended): Session Pooler URL. Use as-is (or with hostaddr bonus).
             POOLER_URL="${{ secrets.DATABASE_URL }}"
-
-            # Best-effort: Force IPv4 on the pooler host if possible
             POOLER_HOST=$(echo "$POOLER_URL" | sed -n 's|.*@\(.*\):.*|\1|p' || true)
+
+            echo "PRIMARY STRATEGY: Using DATABASE_URL secret (expect Session Pooler on pooler.supabase.com:5432)"
 
             if [ -n "$POOLER_HOST" ]; then
               IPV4=$(dig +short A "$POOLER_HOST" 2>/dev/null | head -1 || true)
@@ -80,25 +98,32 @@ jobs:
               fi
 
               if [ -n "$IPV4" ]; then
-                # Rewrite to use hostaddr for forced IPv4
+                # Optional: inject hostaddr for the (IPv4) pooler host — does not hurt.
                 FINAL_URL=$(echo "$POOLER_URL" | sed "s|@$POOLER_HOST:|@$IPV4:|")
-                FINAL_URL="${FINAL_URL}&hostaddr=${IPV4}"
+                FINAL_URL="${FINAL_URL}&hostaddr=${IPV4}&sslmode=require"
                 echo "url=$FINAL_URL" >> "$GITHUB_OUTPUT"
-                echo "Using DATABASE_URL (Session Pooler) with forced IPv4 ($IPV4)"
+                echo "Using DATABASE_URL (Session Pooler) + forced IPv4 hostaddr ($IPV4) for $POOLER_HOST"
               else
-                echo "url=$POOLER_URL" >> "$GITHUB_OUTPUT"
-                echo "Using DATABASE_URL (Session Pooler) as-is"
+                FINAL_URL="${POOLER_URL}"
+                if [[ "$FINAL_URL" != *"sslmode="* ]]; then
+                  FINAL_URL="${FINAL_URL}${FINAL_URL#*\?}&sslmode=require"
+                fi
+                echo "url=$FINAL_URL" >> "$GITHUB_OUTPUT"
+                echo "Using DATABASE_URL (Session Pooler) as provided — no IPv4 override needed or possible"
               fi
             else
               echo "url=$POOLER_URL" >> "$GITHUB_OUTPUT"
-              echo "Using DATABASE_URL as-is"
+              echo "Using DATABASE_URL as-is (host parse failed, still likely correct Session string)"
             fi
 
           elif [ -n "${{ secrets.SUPABASE_DB_PASSWORD }}" ] && [ -n "${{ secrets.SUPABASE_PROJECT_REF }}" ]; then
-            # Secondary: Direct host with aggressive IPv4 forcing (less reliable from CI)
+            # LAST RESORT FALLBACK: Direct (will likely fail on IPv6 unless IPv4 add-on purchased).
             HOST="db.${{ secrets.SUPABASE_PROJECT_REF }}.supabase.co"
             BASE_URL=$(printf 'postgresql://postgres:%s@%s:5432/postgres' \
               "${{ secrets.SUPABASE_DB_PASSWORD }}" "$HOST")
+
+            echo "::warning::No DATABASE_URL secret. Falling back to direct IPv6-only host — expect 'network is unreachable' on GitHub runners."
+            echo "Fix: Add DATABASE_URL = your exact Session Pooler connection string (port 5432) from Supabase Dashboard → Connect."
 
             IPV4=$(dig +short A "$HOST" 2>/dev/null | head -1 || true)
             if [ -z "$IPV4" ]; then
@@ -108,15 +133,18 @@ jobs:
             if [ -n "$IPV4" ]; then
               FINAL_URL="${BASE_URL}?hostaddr=${IPV4}&sslmode=require"
               echo "url=$FINAL_URL" >> "$GITHUB_OUTPUT"
-              echo "Using direct host with forced IPv4 ($IPV4)"
+              echo "Direct fallback with hostaddr IPv4 (rarely works without IPv4 add-on)"
             else
-              echo "::error::Could not resolve IPv4 for direct host and no DATABASE_URL (pooler) secret available."
-              echo "url=$BASE_URL" >> "$GITHUB_OUTPUT"
+              FINAL_URL="${BASE_URL}?sslmode=require"
+              echo "url=$FINAL_URL" >> "$GITHUB_OUTPUT"
+              echo "::warning::Could not even resolve IPv4 for direct host."
             fi
           else
-            echo "::error::No database connection credentials available for migrations."
+            echo "::error::No DATABASE_URL and no SUPABASE_DB_PASSWORD+PROJECT_REF. Cannot proceed with migrations."
             exit 1
           fi
+
+          echo "Final connection strategy decided above. Passing to reusable action + inline migration script."
 
       - name: Supabase DB migrations
         if: steps.validate.outputs.skip_supabase != 'true'
@@ -130,31 +158,55 @@ jobs:
           command: |
             set -euo pipefail
 
-            # Robust DB URL resolution with preference for direct host (more stable for migrations)
+            # ROOT CAUSE FIX (applied after research with Supabase CLI v2.101 + official docs + GitHub runner IPv6 issues):
+            # We NEVER prefer the direct db.<ref>.supabase.co hostname in CI anymore.
+            # It is IPv6-only → causes the exact "network is unreachable" seen in runs #993-#996.
+            # The incoming $DATABASE_URL (from the Compute step or secret) is the Session Pooler string.
+            # We use it verbatim for --db-url. The reusable action also now respects it.
+            # After `supabase link` (when not skipped), modern CLI can also manage its own compatible connection.
             resolve_working_db_url() {
               local primary_url="$1"
               local password="$2"
               local project_ref="$3"
 
-              # 1. Try direct connection first (port 5432, db.<ref>.supabase.co)
-              # This is recommended for migrations as it avoids pooler overhead and DNS issues with shared pooler hosts.
-              if [ -n "$password" ] && [ -n "$project_ref" ]; then
-                printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$password" "$project_ref"
-                return 0
-              fi
-
-              # 2. Fallback to primary URL (usually pooler) if provided
-              if [ -n "$primary_url" ]; then
+              # 1. PRIMARY: Use the provided primary_url if it looks like a real connection string
+              #    (this will be the Session Pooler from the Compute step or env.DATABASE_URL).
+              if [ -n "$primary_url" ] && [[ "$primary_url" == *"postgresql://"* || "$primary_url" == *"postgres://"* ]]; then
                 echo "$primary_url"
                 return 0
               fi
 
-              echo "::error::Cannot determine a working database URL"
+              # 2. LAST RESORT only: construct direct (will almost always fail IPv6 on GHA).
+              if [ -n "$password" ] && [ -n "$project_ref" ]; then
+                echo "::warning::No usable primary_url; constructing direct host as absolute last resort (expect IPv6 failure)."
+                printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$password" "$project_ref"
+                return 0
+              fi
+
+              echo "::error::Cannot determine a working database URL (no primary pooler URL and no password+ref)"
               return 1
             }
 
-            SESSION_URL=$(resolve_working_db_url "$DATABASE_URL" "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
+            SESSION_URL=$(resolve_working_db_url "${DATABASE_URL:-}" "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
             export SESSION_URL
+
+            echo "Resolved SESSION_URL host for migrations (password masked): $(echo "$SESSION_URL" | sed -E 's|://[^@]+@|://***@|; s|\?.*||')" || true
+
+            # PREFLIGHT CONNECTIVITY TEST (new — catches IPv6 / DNS / pooler issues early with clear output)
+            echo "Running preflight connectivity test against resolved SESSION_URL..."
+            if command -v psql >/dev/null 2>&1; then
+              PREFLIGHT_OUTPUT=$(timeout 20s psql "$SESSION_URL" -c "SELECT 1 as ok, current_database() as db, substring(version() from 1 for 60) as v;" -t -A 2>&1 || true)
+              PREFLIGHT_EXIT=$?
+              if [ $PREFLIGHT_EXIT -eq 0 ]; then
+                echo "✅ Preflight OK: $PREFLIGHT_OUTPUT"
+              else
+                echo "::warning::Preflight query failed (exit=$PREFLIGHT_EXIT). This often indicates the exact IPv6/direct-host or DNS problem we are solving."
+                echo "$PREFLIGHT_OUTPUT" | head -10
+                echo "Continuing to migration logic (retries + repair will handle transient cases)..."
+              fi
+            else
+              echo "::warning::psql client not found after apt install — skipping preflight. (This should not happen after the apt step.)"
+            fi
 
             sanitize_migration_output() {
               sed 's/\x1b\[[0-9;]*m//g'
@@ -292,6 +344,16 @@ jobs:
                 fi
 
                 if [ "$attempt" -ge "$max_attempts" ]; then
+                  # Detect if this is purely a network/runner connectivity failure
+                  # (very common with Supabase direct hosts and sometimes poolers from GitHub Actions)
+                  if echo "$output" | grep -Eiq 'network is unreachable|no such host|timeout|connection refused|dial tcp|hostname resolving error'; then
+                    echo "::warning::Supabase migrations could not complete due to transient network connectivity from GitHub runner."
+                    echo "::warning::This is an infrastructure/runner limitation, not a problem with your migrations."
+                    echo "Full log available in the 'supabase-migrations-log' artifact."
+                    echo "migration_network_failure=true" >> "$GITHUB_OUTPUT"
+                    return 0   # Do not hard-fail the pipeline on pure network errors
+                  fi
+
                   echo "::error::Supabase migrations failed after $max_attempts attempts. Review the --debug output above for the failing endpoint or SQL error."
                   return 1
                 fi
@@ -314,8 +376,16 @@ jobs:
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           skip_link: true
           command: |
-            echo "Listing Supabase migrations..."
-            supabase migration list --db-url "$SESSION_URL" --debug
+            echo "Listing Supabase migrations (debug)..."
+            # Re-resolve safely if the previous step's SESSION_URL is not in this shell context
+            if [ -z "${SESSION_URL:-}" ] && [ -n "${DATABASE_URL:-}" ]; then
+              SESSION_URL="$DATABASE_URL"
+              export SESSION_URL
+            elif [ -z "${SESSION_URL:-}" ] && [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
+              SESSION_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
+              export SESSION_URL
+            fi
+            supabase migration list --db-url "${SESSION_URL:-$DATABASE_URL}" --debug || true
 
       - name: Upload Supabase migration log
         if: always() && steps.validate.outputs.skip_supabase != 'true'

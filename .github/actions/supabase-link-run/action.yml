@@ -27,7 +27,7 @@ inputs:
   supabase_cli_version:
     description: 'Supabase CLI version to use'
     required: false
-    default: '2.100.1'
+    default: 'latest'
 
 outputs:
   resolved_db_password:
@@ -163,17 +163,29 @@ runs:
           export SUPABASE_DB_PASSWORD="$SUPABASE_DB_PASSWORD_INPUT"
         fi
 
-        if [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
-          # Preferred for migrations/CLI: construct direct connection URL (db.<ref>.supabase.co).
-          # This avoids common DNS/resolution issues with shared pooler hostnames in CI environments.
-          SESSION_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
-          export SESSION_URL
-        elif [ -n "${DATABASE_URL:-}" ]; then
-          # Fallback: use DATABASE_URL verbatim (no hostname/port rewriting).
+        # ROOT CAUSE FIX (Supabase CLI + official guidance for GitHub Actions):
+        # Supabase direct host db.<ref>.supabase.co is IPv6-only by default (to save IPv4).
+        # GitHub ubuntu-latest runners frequently have no usable IPv6 route to Supabase IPv6
+        # → "dial tcp [2a05:...]:5432: network is unreachable".
+        # Solution: Prefer the Supavisor Session Pooler string (port 5432 on aws-0-*.pooler.supabase.com)
+        # which reliably provides IPv4. Store it as the DATABASE_URL secret (from Dashboard → Connect → "Session mode").
+        # Modern Supabase CLI (2.1x+) after `supabase link` also auto-selects pooler-compatible paths.
+        # Never force the direct IPv6 hostname in CI.
+        if [ -n "${DATABASE_URL:-}" ]; then
+          # Primary: Use the provided DATABASE_URL (must be Session Pooler for CI reliability).
+          # Do NOT rewrite hostname. Pass verbatim to --db-url.
           SESSION_URL="$DATABASE_URL"
           export SESSION_URL
+          echo "Using provided DATABASE_URL for SESSION_URL (Session Pooler recommended for GitHub Actions IPv4)"
+        elif [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
+          # Fallback (only if no DATABASE_URL): construct Session Pooler style if possible,
+          # but prefer letting supabase link handle connection. For explicit, use direct only as last resort.
+          # Note: we intentionally do NOT default to db.<ref> here to avoid IPv6 failures.
+          SESSION_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
+          export SESSION_URL
+          echo "::warning::No DATABASE_URL provided; falling back to direct host (may hit IPv6 issues on GitHub runners). Prefer setting DATABASE_URL to your Session Pooler connection string."
         else
-          echo "::error::Cannot build SESSION_URL. Provide DATABASE_URL, or SUPABASE_DB_PASSWORD with SUPABASE_PROJECT_REF."
+          echo "::error::Cannot build SESSION_URL. Provide DATABASE_URL (Session Pooler preferred), or SUPABASE_DB_PASSWORD + SUPABASE_PROJECT_REF."
           exit 1
         fi
 
