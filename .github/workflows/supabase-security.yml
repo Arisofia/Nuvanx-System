@@ -56,9 +56,15 @@ jobs:
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
     steps:
       - uses: actions/checkout@v4.2.2
-      - name: Prefer IPv4
+      - name: Prefer IPv4 + hardened resolver
         run: |
-          sudo sed -i 's/^#precedence ::ffff:0:0\/96  100/precedence ::ffff:0:0\/96  100/' /etc/gai.conf
+          # Prefer IPv4 globally
+          sudo sed -i 's/^#precedence ::ffff:0:0\/96  100/precedence ::ffff:0:0\/96  100/' /etc/gai.conf || true
+
+          # Make getaddrinfo more aggressive about trying IPv4 first
+          echo 'options single-request-reopen' | sudo tee -a /etc/resolv.conf >/dev/null || true
+          echo 'options timeout:2' | sudo tee -a /etc/resolv.conf >/dev/null || true
+          echo 'options attempts:3' | sudo tee -a /etc/resolv.conf >/dev/null || true
       - name: Report upstream Deploy Supabase result
         if: github.event_name == 'workflow_run'
         run: |
@@ -107,28 +113,51 @@ jobs:
               }
             fi
 
-            # Hard timeout so a stuck connection doesn't burn Actions minutes.
-            echo "Running supabase db lint..."
-            lint_output=$(timeout --signal=TERM --kill-after=30s 240s \
-              supabase db lint --db-url "$SESSION_URL" --level error --fail-on error </dev/null 2>&1) || {
-              lint_exit=$?
-              echo "$lint_output"
-              if echo "$lint_output" | grep -Eiq 'SQLSTATE 28P01|no such host|NXDOMAIN|Temporary failure in name resolution|server misbehaving' && [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
-                echo "::warning::Pooler DNS/auth failed; retrying lint with direct DB host fallback."
-                DIRECT_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
-                export DIRECT_URL
-                DIRECT_HOST=$(python3 -c "import os, urllib.parse as p; u=os.environ.get('DIRECT_URL',''); print((p.urlparse(u).hostname or '') if u else '')" 2>/dev/null || true)
-                if [ -n "$DIRECT_HOST" ]; then
-                  echo "DIRECT_URL_HOST=$DIRECT_HOST"
-                  getent hosts "$DIRECT_HOST" || {
-                    echo "::warning::Could not resolve $DIRECT_HOST via getent"
-                    nslookup "$DIRECT_HOST" || echo "::warning::Could not resolve $DIRECT_HOST via nslookup"
-                  }
+            # Robust lint with retries for transient DNS / IPv6 / pooler hiccups common on GitHub runners.
+            run_lint_with_retry() {
+              local url="$1"
+              local label="$2"
+              local max_attempts=3
+              local attempt=1
+
+              while [ $attempt -le $max_attempts ]; do
+                echo "Running supabase db lint against $label (attempt $attempt/$max_attempts)..."
+                if timeout --signal=TERM --kill-after=30s 240s \
+                     supabase db lint --db-url "$url" --level error --fail-on error </dev/null; then
+                  return 0
                 fi
-                timeout --signal=TERM --kill-after=30s 240s \
-                  supabase db lint --db-url "$DIRECT_URL" --level error --fail-on error </dev/null
+
+                local exit_code=$?
+                echo "::warning::Lint attempt $attempt against $label failed (exit=$exit_code)."
+
+                if [ $attempt -lt $max_attempts ]; then
+                  local sleep_time=$(( attempt * 8 ))
+                  echo "Retrying in ${sleep_time}s..."
+                  sleep "$sleep_time"
+                fi
+                attempt=$((attempt + 1))
+              done
+
+              return 1
+            }
+
+            # Try Session Pooler first (recommended for CI)
+            if run_lint_with_retry "$SESSION_URL" "Session Pooler"; then
+              echo "Supabase security lint passed on Session Pooler."
+              exit 0
+            fi
+
+            # Fallback to direct database connection with retries
+            if [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
+              echo "::warning::Session Pooler attempts exhausted. Retrying with direct database host..."
+              DIRECT_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
+              export DIRECT_URL
+
+              if run_lint_with_retry "$DIRECT_URL" "Direct DB Host"; then
+                echo "Supabase security lint passed on direct database host (after pooler failures)."
                 exit 0
               fi
-              exit "$lint_exit"
-            }
-            echo "$lint_output"
+            fi
+
+            echo "::error::Supabase db lint failed after all retries against both pooler and direct host."
+            exit 1
