@@ -1,63 +1,91 @@
-# Setting Up Supabase Database Webhooks via CLI
+# Setting Up Supabase Database Webhooks via CLI (Native HTTPS - Sin Dependencias)
 
-This guide explains how to create the two required Database Webhooks using the Supabase CLI + a helper script (instead of clicking in the Dashboard).
+Esta guía usa la **versión nativa** del script (`https` module de Node.js) para crear los webhooks sin necesidad de instalar `node-fetch` ni otras dependencias.
 
-## Prerequisites
+## Prerrequisitos
 
-1. Supabase CLI installed and authenticated (`supabase login`)
-2. A Personal Access Token with project admin permissions
-3. Your project reference
+1. Supabase CLI instalado y autenticado
+2. GitHub CLI (`gh`) autenticado (`gh auth login`)
+3. Tu Personal Access Token de Supabase (con permisos de admin)
 
-## Step 1: Apply the capi_sent Migration + Deploy Function
+## Paso 1: Aplicar Migración y Desplegar Función
 
 ```bash
-# Apply database changes
 supabase db push
-
-# Deploy the Edge Function (contains the CAPI handler)
 supabase functions deploy api --no-verify-jwt
 ```
 
-## Step 2: Create Both Webhooks Programmatically
+## Paso 2: Guardar Secretos con CLI (Local + GitHub + Supabase)
 
-O sigue la guía paso a paso exacta que te dieron (recomendada para el Webhook #2):
-
-→ Ver `docs/supabase-webhook-2-setup-steps.md` (incluye los clics exactos en "Add header" + `X-Webhook-Secret` + valor `Doctoralia_Secret_2026_!!`)
+### 2.1 Localmente (`.env.webhooks`)
 
 ```bash
-# Set the required variables
-export SUPABASE_ACCESS_TOKEN="sbp_xxxxxxxxxxxxxxxx"
-export SUPABASE_PROJECT_REF="ssvvuuysgxyqvmovrlvk"
+cp .env.webhooks.example .env.webhooks
+# Edita .env.webhooks y pon tus valores reales
+```
 
-# Webhook #2 (Google Sheets) - required
-export SHEETS_WEBHOOK_URL="https://script.google.com/macros/s/XXXXXXXXXXXXXXXX/exec"
+Contenido recomendado:
+```env
+SUPABASE_ACCESS_TOKEN=sbp_tu_token_real
+SUPABASE_PROJECT_REF=ssvvuuysgxyqvmovrlvk
+SHEETS_WEBHOOK_URL=https://script.google.com/macros/s/TU_URL_REAL/exec
+SHEETS_WEBHOOK_SECRET=Doctoralia_Secret_2026_!!
+```
 
-# Optional but recommended
-export SHEETS_WEBHOOK_SECRET="your-super-secret-string-here"
+### 2.2 En GitHub (usando gh CLI)
 
-# Run the setup script
+```bash
+# Secret principal (ya configurado)
+echo "Doctoralia_Secret_2026_!!" | gh secret set SHEETS_WEBHOOK_SECRET --repo Arisofia/Nuvanx-System
+
+# Los dos que faltan (reemplaza con tus valores reales)
+gh secret set SHEETS_WEBHOOK_URL --repo Arisofia/Nuvanx-System   # Pega tu URL de Google Apps Script
+gh secret set SUPABASE_ACCESS_TOKEN --repo Arisofia/Nuvanx-System   # Pega tu sbp_ token
+```
+
+### 2.3 En Supabase (usando Supabase CLI)
+
+```bash
+# Opción recomendada
+supabase secrets set SHEETS_WEBHOOK_SECRET="Doctoralia_Secret_2026_!!" --project-ref ssvvuuysgxyqvmovrlvk
+
+# También puedes guardar los otros dos
+supabase secrets set SHEETS_WEBHOOK_URL="https://script.google.com/..." --project-ref ssvvuuysgxyqvmovrlvk
+supabase secrets set SUPABASE_ACCESS_TOKEN="sbp_..." --project-ref ssvvuuysgxyqvmovrlvk
+```
+
+## Paso 3: Ejecutar el Script de Creación de Webhooks
+
+```bash
+# Con archivo .env (recomendado)
+node -r dotenv/config scripts/setup-supabase-webhooks.js --env-file=.env.webhooks
+
+# O con exports manuales
+SUPABASE_ACCESS_TOKEN=... \
+SUPABASE_PROJECT_REF=ssvvuuysgxyqvmovrlvk \
+SHEETS_WEBHOOK_URL=... \
+SHEETS_WEBHOOK_SECRET=Doctoralia_Secret_2026_!! \
 node scripts/setup-supabase-webhooks.js
 ```
 
-The script will create (or detect existing):
-- `capi_purchase_on_pagada` → Webhook #1 (CAPI)
-- `sync_to_google_sheets` → Webhook #2 (Google Sheets mirror)
+El script (versión nativa sin dependencias) creará o actualizará:
+- `Sync_To_Google_Sheets` (Webhook #2 hacia Google Apps Script)
+- (Opcional) Webhook #1 para CAPI si se extiende
 
-## Step 3: Verify
-
-You can check the created webhooks with:
+## Verificación
 
 ```bash
+# Listar webhooks vía API
 curl -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-  "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/database/webhooks"
+  "https://api.supabase.com/v1/projects/ssvvuuysgxyqvmovrlvk/database/webhooks"
 ```
 
-Or simply go to the Dashboard → Database → Webhooks to confirm they appear.
+## Notas
 
-## Notes
+- El script `scripts/setup-supabase-webhooks.js` usa solo el módulo `https` nativo de Node.js → **sin necesidad de `npm install node-fetch`**.
+- Todos los secrets sensibles están en `.env.webhooks` (local) y en GitHub Secrets (para CI).
+- El flujo completo ahora es 100% automatizado vía CLI + GitHub Actions + Supabase Database Webhooks.
 
-- The script is idempotent (safe to run multiple times).
-- Webhook #1 points to your Edge Function and uses the `capi_sent` guard.
-- Webhook #2 points to your Google Apps Script and includes the secret header when provided.
+---
 
-This approach allows full infrastructure-as-code automation for the webhook layer.
+**Última actualización:** Versión nativa sin dependencias externas (https module).
