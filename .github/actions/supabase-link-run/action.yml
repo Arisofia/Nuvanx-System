@@ -125,20 +125,6 @@ runs:
 
         run_link_with_retry
 
-    - name: Write command script
-      if: steps.link.outputs.skipped != 'true'
-      shell: bash
-      env:
-        ACTION_COMMAND: ${{ inputs.command }}
-      run: |
-        set -euo pipefail
-        cat > /tmp/supabase_command.sh << 'SUPABASE_CMD_EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-${{ inputs.command }}
-SUPABASE_CMD_EOF
-        chmod +x /tmp/supabase_command.sh
-
     - name: Execute command
       if: steps.link.outputs.skipped != 'true'
       shell: bash
@@ -162,7 +148,7 @@ SUPABASE_CMD_EOF
 
         export SESSION_URL
 
-        # Lightweight, non-blocking preflight (no Python or nc dependency)
+        # Lightweight, non-blocking preflight
         if [ -n "$SESSION_URL" ]; then
           HOST=$(echo "$SESSION_URL" | sed -n 's|.*@\(.*\):.*|\1|p' | cut -d'?' -f1 || true)
           if [ -n "$HOST" ]; then
@@ -172,9 +158,5 @@ SUPABASE_CMD_EOF
           fi
         fi
 
-        if [ -f /tmp/supabase_command.sh ]; then
-          bash /tmp/supabase_command.sh
-        else
-          echo "::error::Command script not found"
-          exit 1
-        fi
+        # Execute the provided command directly (with proper shell settings)
+        ${{ inputs.command }}
