@@ -58,6 +58,31 @@ jobs:
           command: |
             set -euo pipefail
 
+            # Robust DB URL resolution with fallback from pooler to direct host
+            resolve_working_db_url() {
+              local primary_url="$1"
+              local password="$2"
+              local project_ref="$3"
+
+              # If we have a primary URL, try to use it first
+              if [ -n "$primary_url" ]; then
+                echo "$primary_url"
+                return 0
+              fi
+
+              # Fallback: build direct connection
+              if [ -n "$password" ] && [ -n "$project_ref" ]; then
+                printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$password" "$project_ref"
+                return 0
+              fi
+
+              echo "::error::Cannot determine a working database URL"
+              return 1
+            }
+
+            SESSION_URL=$(resolve_working_db_url "$DATABASE_URL" "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
+            export SESSION_URL
+
             sanitize_migration_output() {
               sed 's/\x1b\[[0-9;]*m//g'
             }
