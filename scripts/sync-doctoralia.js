@@ -507,7 +507,10 @@ async function setupGoogleSheetsAuth() {
         saObject,
       };
     } catch (err) {
-      console.error(`[sync-doctoralia] Google service account JSON is not valid: ${err.message}`);
+      // Never log err.message here — the input was the raw service account JSON from env/file.
+      // Logging the parse error could leak fragments of the credential.
+      console.error('[sync-doctoralia] Google service account JSON is not valid (parse error). Check GOOGLE_SA_JSON / GOOGLE_SA_JSON_FILE.');
+      if (err.code) console.error('  error code:', err.code);
       process.exit(1);
     }
   }
@@ -547,7 +550,12 @@ async function fetchSheetRows(sheets, saObject) {
       const guidance = formatPermissionGuidance(saObject);
       throw new Error(guidance);
     }
-    console.error(`[sync-doctoralia] Sheets API Error: ${err.message}`);
+    // Do not log the full err.message — it can contain request/response fragments that include
+    // tokens, project ids, or other data derived from the authenticated session.
+    console.error('[sync-doctoralia] Sheets API Error (non-permission). See previous logs or enable --debug for details.');
+    if (err.code || err.status) {
+      console.error('  error code/status:', err.code || err.status);
+    }
     throw err;
   }
 }
@@ -619,7 +627,9 @@ async function main() {
       await db.end();
       console.log('[sync-doctoralia] Database connection closed.');
     } catch (e) {
-      console.warn('[sync-doctoralia] Error closing DB connection:', e?.message || e);
+      // Never log the full error object/message from DB close — it can contain connection strings or paths.
+      console.warn('[sync-doctoralia] Error closing DB connection (details redacted).');
+      if (e?.code) console.warn('  error code:', e.code);
     }
   }
 }
@@ -750,9 +760,10 @@ module.exports = {
 if (require.main === module) {
   main().catch(err => {
     // Never log raw error messages from credential-related failures, as they may contain sensitive data
+    // (including data flowing from process.env.GOOGLE_SA_JSON etc.)
     console.error('[sync-doctoralia] Fatal error occurred (see previous logs for details).');
-    if (err.code || err.status) {
-      console.error('Error code:', err.code || err.status);
+    if (err && (err.code || err.status)) {
+      console.error('Error code/status:', err.code || err.status);
     }
     process.exit(1);
   });
