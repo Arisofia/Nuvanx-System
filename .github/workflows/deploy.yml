@@ -219,6 +219,23 @@ jobs:
               return 1
             }
 
+            # DNS retry helper — mitigates transient "no such host" from GitHub runner stub resolver against Supabase pooler
+            resolve_with_retry() {
+              local host="$1"
+              local max=4
+              local delay=3
+              for i in $(seq 1 $max); do
+                if getent hosts "$host" >/dev/null 2>&1 || dig +short +timeout=4 +tries=1 @"8.8.8.8" A "$host" >/dev/null 2>&1; then
+                  return 0
+                fi
+                echo "::warning::DNS resolution failed for $host (attempt $i/$max) — waiting ${delay}s before retry..."
+                sleep "$delay"
+                delay=$((delay + 2))
+              done
+              echo "::warning::DNS for $host still failing after retries. Proceeding anyway (db push will surface the final error)."
+              return 1
+            }
+
             # Suppress noisy "open /home/runner/.supabase/profile: no such file" when skip_link=true
             mkdir -p "$HOME/.supabase" 2>/dev/null || true
             touch "$HOME/.supabase/profile" 2>/dev/null || true
@@ -228,17 +245,25 @@ jobs:
 
             echo "Resolved SESSION_URL host for migrations (password masked): $(echo "$SESSION_URL" | sed -E 's|://[^@]+@|://***@|; s|\?.*||')" || true
 
-            # PREFLIGHT CONNECTIVITY TEST (new — catches IPv6 / DNS / pooler issues early with clear output)
+            # Extract host and run DNS retry before any psql / db push
+            SESSION_HOST=$(echo "$SESSION_URL" | sed -n 's|.*@\(.*\):.*|\1|p' || true)
+            if [ -n "$SESSION_HOST" ]; then
+              resolve_with_retry "$SESSION_HOST" || true   # non-fatal; we still want the later graceful network handling
+            fi
+
+            # PREFLIGHT CONNECTIVITY TEST (fixed — previous || true swallowed real psql exit code, causing always "✅ OK" even on DNS failure)
             echo "Running preflight connectivity test against resolved SESSION_URL..."
             if command -v psql >/dev/null 2>&1; then
-              PREFLIGHT_OUTPUT=$(timeout 20s psql "$SESSION_URL" -c "SELECT 1 as ok, current_database() as db, substring(version() from 1 for 60) as v;" -t -A 2>&1 || true)
+              set +e
+              PREFLIGHT_OUTPUT=$(timeout 20s psql "$SESSION_URL" -c "SELECT 1 as ok, current_database() as db, substring(version() from 1 for 60) as v;" -t -A 2>&1)
               PREFLIGHT_EXIT=$?
+              set -e
               if [ $PREFLIGHT_EXIT -eq 0 ]; then
                 echo "✅ Preflight OK: $PREFLIGHT_OUTPUT"
               else
-                echo "::warning::Preflight query failed (exit=$PREFLIGHT_EXIT). This often indicates the exact IPv6/direct-host or DNS problem we are solving."
-                echo "$PREFLIGHT_OUTPUT" | head -10
-                echo "Continuing to migration logic (retries + repair will handle transient cases)..."
+                echo "::warning::Preflight query failed (exit=$PREFLIGHT_EXIT). This often indicates the exact DNS / pooler resolution problem from this GitHub runner."
+                echo "$PREFLIGHT_OUTPUT" | head -15
+                echo "Continuing with retries (the migration logic will attempt its own recovery)..."
               fi
             else
               echo "::warning::psql client not found after apt install — skipping preflight. (This should not happen after the apt step.)"
