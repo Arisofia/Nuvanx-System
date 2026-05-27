@@ -74,19 +74,35 @@ El script (versión nativa sin dependencias) creará o actualizará:
 - `Sync_To_Google_Sheets` (Webhook #2 hacia Google Apps Script)
 - (Opcional) Webhook #1 para CAPI si se extiende
 
-## Verificación
+## Importante: Limitación del Webhook #2 (Google Sheets)
 
-```bash
-# Listar webhooks vía API
-curl -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-  "https://api.supabase.com/v1/projects/ssvvuuysgxyqvmovrlvk/database/webhooks"
-```
+**El script `setup-supabase-webhooks.js` NO puede crear el Webhook #2** (`Sync_To_Google_Sheets` hacia Google Apps Script).
+
+La Management API de Supabase devuelve **404** en `/v1/projects/{ref}/database/webhooks` para webhooks de tipo `http_request`.
+
+**Solución oficial (y la que funciona):** Créalo manualmente una sola vez en el Dashboard.
+
+Pasos:
+1. https://supabase.com/dashboard/project/ssvvuuysgxyqvmovrlvk/database/webhooks
+2. "Create a new hook"
+3. Name: `Sync_To_Google_Sheets`
+4. Table: `produccion_intermediarios`
+5. Events: `INSERT` + `UPDATE`
+6. Webhook URL: la URL de tu Apps Script
+7. Add header:
+   - `X-Webhook-Secret` = `Doctoralia_Secret_2026_!!`
+8. Create webhook.
+
+El script ahora detecta el 404 y te muestra estos pasos automáticamente.
+
+## Webhook #1 (CAPI)
+
+El webhook interno hacia la Edge Function (`/functions/v1/api/webhooks/supabase`) se configura normalmente desde el Dashboard o vía Edge Functions.
 
 ## Notas
 
-- El script `scripts/setup-supabase-webhooks.js` usa solo el módulo `https` nativo de Node.js → **sin necesidad de `npm install node-fetch`**.
-- Todos los secrets sensibles están en `.env.webhooks` (local) y en GitHub Secrets (para CI).
-- El flujo completo ahora es 100% automatizado vía CLI + GitHub Actions + Supabase Database Webhooks.
+- El script `scripts/setup-supabase-webhooks.js` usa solo el módulo `https` nativo de Node.js.
+- El secreto `SHEETS_WEBHOOK_SECRET` debe coincidir exactamente entre Supabase y tu Google Apps Script.
 
 ---
 

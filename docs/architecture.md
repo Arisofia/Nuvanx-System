@@ -175,7 +175,7 @@ graph TD
 - **Webhook #2 (Operational Mirror)**: Supabase → Google Apps Script (`docs/google-apps-script/webhook-produccion-intermediarios.js`) → Real-time update of the "Produccion Intermediarios" sheet.
 - Robust version of the script is saved at:
   `docs/google-apps-script/webhook-produccion-intermediarios.js`
-- **Fully CLI-driven setup**: Use `scripts/setup-supabase-webhooks.js` (Management API) to create both webhooks programmatically.
+- **Webhook #2 (Google Sheets)**: Se crea **manualmente una sola vez** en Supabase Dashboard → Database → Webhooks (la Management API devuelve 404 para este tipo de webhook). El script `setup-supabase-webhooks.js` ahora detecta este caso y muestra los pasos exactos.
 
 **Result**: The entire flow (Doctoralia export → Supabase → CAPI Purchase in Meta + live Sheet mirror) runs **100% automatically** after the initial one-time configuration of the two Database Webhooks.
 
