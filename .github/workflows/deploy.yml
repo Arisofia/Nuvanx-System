@@ -49,19 +49,32 @@ jobs:
         run: |
           sudo sed -i 's/^#precedence ::ffff:0:0\/96  100/precedence ::ffff:0:0\/96  100/' /etc/gai.conf || true
 
-      - name: Compute reliable Direct DB URL for migrations
+      - name: Compute reliable IPv4-forced Direct DB URL
         id: db_url
         if: steps.validate.outputs.skip_supabase != 'true'
         run: |
           set -euo pipefail
+
           if [ -n "${{ secrets.SUPABASE_DB_PASSWORD }}" ] && [ -n "${{ secrets.SUPABASE_PROJECT_REF }}" ]; then
-            DIRECT_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' \
-              "${{ secrets.SUPABASE_DB_PASSWORD }}" "${{ secrets.SUPABASE_PROJECT_REF }}")
-            echo "url=$DIRECT_URL" >> "$GITHUB_OUTPUT"
-            echo "Using direct database host for migrations (more reliable in GitHub Actions)"
+            HOST="db.${{ secrets.SUPABASE_PROJECT_REF }}.supabase.co"
+            BASE_URL=$(printf 'postgresql://postgres:%s@%s:5432/postgres' \
+              "${{ secrets.SUPABASE_DB_PASSWORD }}" "$HOST")
+
+            # Try to get an IPv4 address explicitly (GitHub runners often have broken IPv6)
+            IPV4=$(getent ahostsv4 "$HOST" 2>/dev/null | head -1 | awk '{print $1}' || true)
+
+            if [ -n "$IPV4" ]; then
+              # Use hostaddr to force IPv4 and avoid IPv6 "network unreachable"
+              FINAL_URL="${BASE_URL}?hostaddr=${IPV4}&sslmode=require"
+              echo "url=$FINAL_URL" >> "$GITHUB_OUTPUT"
+              echo "Using direct database host with forced IPv4 ($IPV4)"
+            else
+              echo "url=$BASE_URL" >> "$GITHUB_OUTPUT"
+              echo "::warning::Could not resolve IPv4 for direct host, using hostname (may fail on IPv6)"
+            fi
           else
             echo "url=${{ secrets.DATABASE_URL }}" >> "$GITHUB_OUTPUT"
-            echo "::warning::Falling back to DATABASE_URL secret (may use pooler)"
+            echo "::warning::Falling back to DATABASE_URL secret"
           fi
 
       - name: Supabase DB migrations

@@ -4294,7 +4294,7 @@ async function handleHealthMeta(ctx: AuthenticatedRouteContext): Promise<Respons
 
           // 2. Very lightweight insights probe (further confirms ads_read on this specific account)
           let insightsOk = false;
-          let insightsError: string | null = null;
+          let insightsError: string | undefined = undefined;
           try {
             await metaFetch(`/${accountId}/insights`, {
               fields: 'spend',

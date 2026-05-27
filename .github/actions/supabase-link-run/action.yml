@@ -163,13 +163,14 @@ runs:
           export SUPABASE_DB_PASSWORD="$SUPABASE_DB_PASSWORD_INPUT"
         fi
 
-        if [ -n "${DATABASE_URL:-}" ]; then
-          # Use DATABASE_URL verbatim (no hostname/port rewriting).
-          SESSION_URL="$DATABASE_URL"
-          export SESSION_URL
-        elif [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
-          # Fallback: construct direct connection URL when DATABASE_URL is unavailable.
+        if [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
+          # Preferred for migrations/CLI: construct direct connection URL (db.<ref>.supabase.co).
+          # This avoids common DNS/resolution issues with shared pooler hostnames in CI environments.
           SESSION_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
+          export SESSION_URL
+        elif [ -n "${DATABASE_URL:-}" ]; then
+          # Fallback: use DATABASE_URL verbatim (no hostname/port rewriting).
+          SESSION_URL="$DATABASE_URL"
           export SESSION_URL
         else
           echo "::error::Cannot build SESSION_URL. Provide DATABASE_URL, or SUPABASE_DB_PASSWORD with SUPABASE_PROJECT_REF."
