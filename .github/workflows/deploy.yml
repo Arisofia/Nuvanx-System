@@ -45,39 +45,77 @@ jobs:
             echo "skip_supabase=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Prefer IPv4 (CI reliability)
+      - name: Prefer IPv4 + hardened resolver (CI reliability)
         run: |
+          # Strongly prefer IPv4 globally on the runner
           sudo sed -i 's/^#precedence ::ffff:0:0\/96  100/precedence ::ffff:0:0\/96  100/' /etc/gai.conf || true
 
-      - name: Compute reliable IPv4-forced Direct DB URL
+          # Aggressive DNS resolver settings for GitHub runners
+          echo 'options single-request-reopen' | sudo tee -a /etc/resolv.conf >/dev/null || true
+          echo 'options timeout:2' | sudo tee -a /etc/resolv.conf >/dev/null || true
+          echo 'options attempts:5' | sudo tee -a /etc/resolv.conf >/dev/null || true
+          echo 'options rotate' | sudo tee -a /etc/resolv.conf >/dev/null || true
+
+      - name: Compute reliable DB URL for CI (strongly prefer Session Pooler)
         id: db_url
         if: steps.validate.outputs.skip_supabase != 'true'
         run: |
           set -euo pipefail
 
-          if [ -n "${{ secrets.SUPABASE_DB_PASSWORD }}" ] && [ -n "${{ secrets.SUPABASE_PROJECT_REF }}" ]; then
+          echo "=== Database Connection Strategy for GitHub Actions ==="
+
+          # Primary strategy: Use the Session Pooler from DATABASE_URL secret.
+          # This is the recommended approach for CI because Supavisor poolers
+          # are generally more reliable from GitHub runners than direct hosts.
+          if [ -n "${{ secrets.DATABASE_URL }}" ]; then
+            POOLER_URL="${{ secrets.DATABASE_URL }}"
+
+            # Best-effort: Force IPv4 on the pooler host if possible
+            POOLER_HOST=$(echo "$POOLER_URL" | sed -n 's|.*@\(.*\):.*|\1|p' || true)
+
+            if [ -n "$POOLER_HOST" ]; then
+              IPV4=$(dig +short A "$POOLER_HOST" 2>/dev/null | head -1 || true)
+              if [ -z "$IPV4" ]; then
+                IPV4=$(getent ahostsv4 "$POOLER_HOST" 2>/dev/null | head -1 | awk '{print $1}' || true)
+              fi
+
+              if [ -n "$IPV4" ]; then
+                # Rewrite to use hostaddr for forced IPv4
+                FINAL_URL=$(echo "$POOLER_URL" | sed "s|@$POOLER_HOST:|@$IPV4:|")
+                FINAL_URL="${FINAL_URL}&hostaddr=${IPV4}"
+                echo "url=$FINAL_URL" >> "$GITHUB_OUTPUT"
+                echo "Using DATABASE_URL (Session Pooler) with forced IPv4 ($IPV4)"
+              else
+                echo "url=$POOLER_URL" >> "$GITHUB_OUTPUT"
+                echo "Using DATABASE_URL (Session Pooler) as-is"
+              fi
+            else
+              echo "url=$POOLER_URL" >> "$GITHUB_OUTPUT"
+              echo "Using DATABASE_URL as-is"
+            fi
+
+          elif [ -n "${{ secrets.SUPABASE_DB_PASSWORD }}" ] && [ -n "${{ secrets.SUPABASE_PROJECT_REF }}" ]; then
+            # Secondary: Direct host with aggressive IPv4 forcing (less reliable from CI)
             HOST="db.${{ secrets.SUPABASE_PROJECT_REF }}.supabase.co"
             BASE_URL=$(printf 'postgresql://postgres:%s@%s:5432/postgres' \
               "${{ secrets.SUPABASE_DB_PASSWORD }}" "$HOST")
 
-            # Robust IPv4 resolution (dig is more reliable than getent on many runners)
             IPV4=$(dig +short A "$HOST" 2>/dev/null | head -1 || true)
             if [ -z "$IPV4" ]; then
               IPV4=$(getent ahostsv4 "$HOST" 2>/dev/null | head -1 | awk '{print $1}' || true)
             fi
 
             if [ -n "$IPV4" ]; then
-              # Force IPv4 using hostaddr parameter (best way to bypass IPv6 issues on GitHub runners)
               FINAL_URL="${BASE_URL}?hostaddr=${IPV4}&sslmode=require"
               echo "url=$FINAL_URL" >> "$GITHUB_OUTPUT"
-              echo "Using direct database host with forced IPv4 ($IPV4)"
+              echo "Using direct host with forced IPv4 ($IPV4)"
             else
+              echo "::error::Could not resolve IPv4 for direct host and no DATABASE_URL (pooler) secret available."
               echo "url=$BASE_URL" >> "$GITHUB_OUTPUT"
-              echo "::warning::Could not resolve IPv4 for direct host. Will try hostname (very likely to fail on IPv6)"
             fi
           else
-            echo "url=${{ secrets.DATABASE_URL }}" >> "$GITHUB_OUTPUT"
-            echo "::warning::Falling back to DATABASE_URL secret"
+            echo "::error::No database connection credentials available for migrations."
+            exit 1
           fi
 
       - name: Supabase DB migrations
