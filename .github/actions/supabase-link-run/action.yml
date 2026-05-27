@@ -133,6 +133,7 @@ runs:
         SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
         SUPABASE_PROJECT_REF: ${{ inputs.project_ref }}
         SUPABASE_DB_PASSWORD: ${{ steps.creds.outputs.resolved_db_password }}
+        ACTION_COMMAND: ${{ inputs.command }}
       run: |
         set -euo pipefail
 
@@ -158,5 +159,7 @@ runs:
           fi
         fi
 
-        # Execute the provided command directly (with proper shell settings)
-        ${{ inputs.command }}
+        # Write and execute the provided command safely (avoids YAML/heredoc parsing issues with large inline scripts)
+        printf '%s\n' "$ACTION_COMMAND" > /tmp/supabase_command.sh
+        chmod +x /tmp/supabase_command.sh
+        bash /tmp/supabase_command.sh
