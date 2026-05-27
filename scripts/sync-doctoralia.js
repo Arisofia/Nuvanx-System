@@ -74,6 +74,7 @@ function loadServiceAccountJson() {
       }
     } catch (e) {
       // Not a valid JSON or Base64 JSON, ignore and try fallback
+      return null;
     }
   }
   
@@ -82,11 +83,11 @@ function loadServiceAccountJson() {
   }
 
   // If we have individual components (Service Account)
-  if (GOOGLE_CLIENT_EMAIL && GOOGLE_PRIVATE_KEY && GOOGLE_PRIVATE_KEY.includes('BEGIN PRIVATE KEY')) {
+  if (GOOGLE_CLIENT_EMAIL && GOOGLE_PRIVATE_KEY?.includes('BEGIN PRIVATE KEY')) {
     return JSON.stringify({
       type: 'service_account',
       project_id: GOOGLE_PROJECT_ID || 'unknown',
-      private_key: GOOGLE_PRIVATE_KEY.replaceAll('\\n', '\n'),
+      private_key: GOOGLE_PRIVATE_KEY.replaceAll(String.raw`\n`, '\n'),
       client_email: GOOGLE_CLIENT_EMAIL,
     });
   }
@@ -701,7 +702,7 @@ async function upsertDoctoraliaRow(row, i, params) {
       ]
     );
     return true;
-  } catch (rowError) {
+  } catch {
     console.warn(`[sync-doctoralia] Skipping row ${i + 1} due to DB error`);
     return false;
   }

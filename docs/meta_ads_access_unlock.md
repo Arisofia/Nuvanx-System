@@ -43,6 +43,40 @@ En [Meta Business Settings](https://business.facebook.com/settings/), confirma q
 
 Una vez completado el acceso, genera un nuevo token desde [Graph API Explorer](https://developers.facebook.com/tools/explorer/) o desde un **system user** en Business Manager. El token debe incluir `ads_read` y `ads_management`, y debe estar emitido por la app **NUVANX_SYSTEM**. Después valida el token en [Access Token Debugger](https://developers.facebook.com/tools/debug/accesstoken/) y confirma que aparecen ambas cuentas al consultar `/me/adaccounts`.
 
+### Después de generar el nuevo token (importante)
+
+**Recomendado:** Usa el script especializado de rotación (valida permisos automáticamente):
+
+```bash
+META_ACCESS_TOKEN_NEW="EAA..." node scripts/rotate-meta-token.js --all
+```
+
+Este script:
+- Valida que el nuevo token tenga acceso real a `act_9523446201036125` con `ads_read` + `ads_management`.
+- Actualiza `.env.tokens.local` de forma segura.
+- Ejecuta el sincronizador a Supabase + Vercel + GitHub.
+
+Si prefieres el flujo manual:
+
+1. Actualiza el valor de `META_ACCESS_TOKEN` en tu archivo `.env.tokens.local`.
+2. Ejecuta el sincronizador oficial:
+
+   ```bash
+   node scripts/sync-platform-secrets.js
+   ```
+
+3. Despliega la función `api` de nuevo:
+
+   ```bash
+   supabase functions deploy api --project-ref ssvvuuysgxyqvmovrlvk
+   ```
+
+4. Ve a la página **Integraciones** → "Verificar accesos" y confirma:
+
+   `✅ act_9523446201036125 (Francisco Antonio)`
+
+El sistema ahora detecta automáticamente los errores de permisos por cuenta y muestra instrucciones claras.
+
 El token final debe permitir estas operaciones de comprobación antes de reintentar la creación A1–A4: lectura de campañas de ambas cuentas, lectura de insights, creación de campaña de prueba pausada, creación de creative y creación de anuncio pausado. Si cualquiera de estas comprobaciones falla, el bloqueo estará en permisos de Business Manager, revisión de app o nivel de acceso de Marketing API.
 
 ## Referencias
