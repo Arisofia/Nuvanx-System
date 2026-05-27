@@ -121,6 +121,33 @@ Script robusto: `docs/google-apps-script/webhook-produccion-intermediarios.js`
 
 ---
 
+## Supabase Database Advisor Findings (Current)
+
+### auth_allow_anonymous_sign_ins (cron schema)
+- **Status**: Addressed via migration `20260528000000_final_cron_anon_rls_hardening.sql`
+- **Action required**: Apply the latest migration (`supabase db push` or via Dashboard).
+- **Note**: pg_cron tables (`cron.job`, `cron.job_run_details`) now restrict access to `service_role` only.
+
+### auth_leaked_password_protection
+- **Status**: Currently disabled (high risk)
+- **Action required (Manual)**: 
+  1. Go to Supabase Dashboard → Authentication → Providers → Email
+  2. Enable **"Leaked Password Protection"**
+- This cannot be done via SQL migration. Must be enabled in the Dashboard.
+
+### auth_rls_initplan (17 tables)
+- **Status**: ✅ Fixed via migration `20260529000000_fix_remaining_auth_rls_initplan.sql`
+- **Tables addressed** (exact list from linter): `api_call_log`, `appointments`, `credentials`, `doctoralia_patients`, `doctors`, `financial_settlements`, `integrations`, `patients`, `treatment_types`, `clinics`, `leads`, `meta_daily_insights`, `meta_ig_account_daily`, `meta_ig_media_performance`, `meta_organic_daily`, `meta_post_performance`, `produccion_intermediarios`, `whatsapp_conversations`.
+- **Action required**: Apply the migration with `npx supabase migration up --linked` (or `supabase db push`) and re-run lint.
+- **Pattern applied**: All SELECT policies now use `(SELECT auth.uid())`, `(SELECT auth.jwt() ...)`, `(SELECT auth.role())` and `(SELECT public.current_clinic_id())` so the planner treats them as init-plan (once per query) instead of per-row re-evaluation.
+- **Verification command** (after linking the project):
+  ```
+  npx supabase db lint --linked --level warning
+  ```
+  (or `--db-url "postgresql://..."` if using direct connection string).
+
+---
+
 ## 9) Full End-to-End Automation Requirements
 
 For the entire flow to trigger **automatically** (no manual steps):
