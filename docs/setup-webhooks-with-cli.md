@@ -20,6 +20,10 @@ supabase functions deploy api --no-verify-jwt
 
 ## Step 2: Create Both Webhooks Programmatically
 
+O sigue la guía paso a paso exacta que te dieron (recomendada para el Webhook #2):
+
+→ Ver `docs/supabase-webhook-2-setup-steps.md` (incluye los clics exactos en "Add header" + `X-Webhook-Secret` + valor `Doctoralia_Secret_2026_!!`)
+
 ```bash
 # Set the required variables
 export SUPABASE_ACCESS_TOKEN="sbp_xxxxxxxxxxxxxxxx"

@@ -20,7 +20,7 @@ const SECRET_HEADER = "X-Webhook-Secret"; // Opcional pero recomendado
 // === CONFIGURACIÓN DE SEGURIDAD (recomendado) ===
 // En Supabase Webhook, agrega un header personalizado:
 //   X-Webhook-Secret: tu-clave-secreta-aqui
-const EXPECTED_SECRET = ""; // Deja vacío si no quieres usar secreto por ahora
+const EXPECTED_SECRET = "Doctoralia_Secret_2026_!!"; // Clave secreta para el header X-Webhook-Secret en Supabase
 
 function doPost(e) {
   try {

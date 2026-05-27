@@ -37,6 +37,7 @@ async function setupWebhooks() {
       method: 'POST',
       timeout_ms: 5000,
       headers: {
+        // Exact header requested by the user for Supabase Webhook configuration
         'X-Webhook-Secret': WEBHOOK_SECRET,
         'Content-Type': 'application/json'
       }
