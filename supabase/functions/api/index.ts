@@ -16,6 +16,8 @@ import {
   buildCorsHeaders,
   requireRuntimeSecret,
 } from '../_shared/config.ts';
+
+const DEFAULT_LANDING_USER_EMAIL = 'demo@nuvanx.com';
 import { getPhoneNormalizationFailureReason, normalizePhoneForMeta } from '../_shared/phone.ts';
 
 // ── Core Helpers ─────────────────────────────────────────────────────────────
@@ -2117,7 +2119,9 @@ function handleHealthRoutes(ctx: any): Response | null {
 }
 
 async function handleSupabaseWebhook(ctx: PublicRouteContext): Promise<Response | null> {
-  const { req, sendJson } = ctx;
+  const { req, resource, sub, sendJson } = ctx;
+  if (resource !== 'webhooks' || sub !== 'supabase') return null;
+
   let payload: any;
   try {
     payload = await req.json();
@@ -4407,7 +4411,7 @@ async function handleCapiQualityGet(ctx: AuthenticatedRouteContext): Promise<Res
       .limit(limit);
 
     // Basic signal quality summary
-    const leadsWithStrongSignals = (recentLeads ?? []).filter(l => l.fbc || l.fbp).length;
+    const leadsWithStrongSignals = (recentLeads ?? []).filter((l: any) => l.fbc || l.fbp).length;
     const totalRecentLeads = (recentLeads ?? []).length;
     const signalCoverage = totalRecentLeads > 0 
       ? Math.round((leadsWithStrongSignals / totalRecentLeads) * 100) 
@@ -4431,14 +4435,14 @@ async function handleCapiQualityGet(ctx: AuthenticatedRouteContext): Promise<Res
           ? 'Buena cobertura de señales fuertes (fbc/fbp). Favorece EMQ alto.'
           : 'Se recomienda revisar captura de fbc/fbp en el frontend para mejorar EMQ.',
       },
-      recent_purchase_events: (recentPurchases ?? []).map(p => ({
+      recent_purchase_events: (recentPurchases ?? []).map((p: any) => ({
         id: p.id,
         created_at: p.created_at,
         importe: p.importe,
         has_phone: !!p.phone_normalized,
         clinic_id: p.clinic_id,
       })),
-      recent_leads_signals: (recentLeads ?? []).map(l => ({
+      recent_leads_signals: (recentLeads ?? []).map((l: any) => ({
         id: l.id,
         created_at: l.created_at,
         stage: l.stage,
