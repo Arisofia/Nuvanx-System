@@ -1,6 +1,14 @@
 #!/usr/bin/env node
 'use strict';
 
+// Cargar variables de entorno desde .env.local si existe
+try {
+  // eslint-disable-next-line global-require
+  require('dotenv').config({ path: '.env.local' });
+} catch {
+  // Si dotenv no está instalado o el archivo no existe, seguimos sin romper
+}
+
 const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v20.0';
 const MIN_NODE_MAJOR = 18;
 
@@ -60,6 +68,13 @@ async function main() {
   const hasAccess = normalized.some((account) => account.id === targetAdAccountId);
 
   console.log(`Accessible ad accounts: ${normalized.length}`);
+  // Mostrar todas las cuentas a las que el token tiene acceso
+  normalized.forEach((account) => {
+    console.log(
+      `- ${account.id} | ${account.name} | status=${account.status} | currency=${account.currency}`
+    );
+  });
+
   if (hasAccess) {
     console.log('✅ Meta token has access to the configured ad account.');
     return;
@@ -72,8 +87,8 @@ async function main() {
   );
 }
 
-main().catch(() => {
+main().catch((err) => {
   console.error('❌ Meta access verification failed.');
-  console.error('Reason: request failed. Enable secure debug logging locally if needed.');
+  console.error('Reason:', err?.message || err);
   process.exit(1);
 });

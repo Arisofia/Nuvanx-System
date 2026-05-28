@@ -59,6 +59,9 @@ jobs:
           DOCTORALIA_SHEET_ID: ${{ env.DOCTORALIA_SHEET_ID }}
           CLINIC_ID: ${{ env.CLINIC_ID }}
           ENCRYPTION_KEY: ${{ env.ENCRYPTION_KEY }}
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
+          EXPECTED_DOCTORALIA_SHEET_ID: ${{ secrets.EXPECTED_DOCTORALIA_SHEET_ID }}
 
       - name: Fetch Meta Daily Insights
         run: |
