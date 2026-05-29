@@ -20,7 +20,7 @@ inputs:
     required: true
   supabase_cli_version:
     required: false
-    default: 'latest'
+    default: '2.101.0'
 
 outputs:
   resolved_db_password:
