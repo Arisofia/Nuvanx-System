@@ -539,6 +539,24 @@ async function fetchSheetRows(sheets, saObject) {
     });
     return res.data.values ?? [];
   } catch (err) {
+    if (err.code === 400 || err.status === 400) {
+      console.error(`[sync-doctoralia] Sheets API 400 Error. Possible causes:`);
+      console.error(`  - Sheet name "${normalizedSheetName}" does not exist.`);
+      console.error(`  - Range "${SHEET_RANGE}" is malformed.`);
+      console.error(`  - Spreadsheet ID "${SHEET_ID}" is invalid or inaccessible.`);
+      
+      try {
+        console.log('[sync-doctoralia] Attempting to list available sheets for debugging...');
+        const metadata = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
+        const sheetNames = metadata.data.sheets?.map(s => s.properties?.title).filter(Boolean);
+        if (sheetNames?.length) {
+          console.log(`[sync-doctoralia] Available sheets: ${sheetNames.join(', ')}`);
+        }
+      } catch (metaErr) {
+        console.error('[sync-doctoralia] Could not fetch spreadsheet metadata to list sheets.');
+      }
+    }
+    
     if (isGooglePermissionError(err)) {
       if (ALLOW_PERMISSION_SKIP) {
         // Use safe version that contains no service account data at all
