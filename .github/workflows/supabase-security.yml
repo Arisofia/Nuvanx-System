@@ -44,6 +44,7 @@ concurrency:
 jobs:
   advisor:
     name: RLS & security lint
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 8
     permissions:

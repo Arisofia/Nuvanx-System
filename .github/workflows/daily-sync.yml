@@ -18,12 +18,17 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE22: true
 
+concurrency:
+  group: daily-sync-${{ github.ref_name }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
 jobs:
   daily-sync:
     name: Run Daily Sync Orchestrator
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     

@@ -27,6 +27,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: sync-doctoralia-${{ github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   sync:
     name: Google Sheets to financial_settlements

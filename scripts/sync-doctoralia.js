@@ -510,7 +510,7 @@ async function setupGoogleSheetsAuth() {
       // Never log err.message here — the input was the raw service account JSON from env/file.
       // Logging the parse error could leak fragments of the credential.
       console.error('[sync-doctoralia] Google service account JSON is not valid (parse error). Check GOOGLE_SA_JSON / GOOGLE_SA_JSON_FILE.');
-      if (err.code) console.error('  error code:', err.code);
+      if (err.code) console.error('  error code:', String(err.code).substring(0, 10));
       process.exit(1);
     }
   }
@@ -649,7 +649,7 @@ async function main() {
     } catch (e) {
       // Never log the full error object/message from DB close — it can contain connection strings or paths.
       console.warn('[sync-doctoralia] Error closing DB connection (details redacted).');
-      if (e?.code) console.warn('  error code:', e.code);
+      if (e?.code) console.warn('  error code:', String(e.code).substring(0, 10));
     }
   }
 }
@@ -783,7 +783,8 @@ if (require.main === module) {
     // (including data flowing from process.env.GOOGLE_SA_JSON etc.)
     console.error('[sync-doctoralia] Fatal error occurred (see previous logs for details).');
     if (err && (err.code || err.status)) {
-      console.error('Error code/status:', err.code || err.status);
+      // Log only the first 10 chars of the code/status to avoid accidental leakage of long sensitive strings
+      console.error('Error code/status:', String(err.code || err.status).substring(0, 10));
     }
     process.exit(1);
   });
