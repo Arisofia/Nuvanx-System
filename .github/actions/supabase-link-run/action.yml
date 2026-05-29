@@ -43,8 +43,14 @@ runs:
         SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
       run: |
         set -euo pipefail
-        [[ -z "$INPUT_PROJECT_REF" ]] && { echo "::error::project_ref is required"; exit 1; }
-        [[ -z "$SUPABASE_ACCESS_TOKEN" ]] && { echo "::error::supabase_access_token is required"; exit 1; }
+        if [[ -z "$INPUT_PROJECT_REF" ]]; then
+          echo "::error::project_ref is required"
+          exit 1
+        fi
+        if [[ -z "$SUPABASE_ACCESS_TOKEN" ]]; then
+          echo "::error::supabase_access_token is required"
+          exit 1
+        fi
 
     - name: Resolve DB credentials
       id: creds
