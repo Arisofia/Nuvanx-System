@@ -46,7 +46,7 @@ jobs:
       META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
       META_AD_ACCOUNT_IDS: ${{ secrets.META_AD_ACCOUNT_IDS }}
       META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
-      META_GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION != '' && secrets.META_GRAPH_VERSION || 'v20.0' }}
+      META_GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION || 'v20.0' }}
 
     steps:
       - name: Checkout repository
@@ -98,7 +98,7 @@ jobs:
           META_AD_ACCOUNT_ID: ${{ env.META_AD_ACCOUNT_ID }}
           META_AD_ACCOUNT_IDS: ${{ env.META_AD_ACCOUNT_IDS }}
           META_APP_SECRET: ${{ env.META_APP_SECRET }}
-          META_GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION != '' && secrets.META_GRAPH_VERSION || 'v20.0' }}
+          META_GRAPH_VERSION: ${{ env.META_GRAPH_VERSION }}
 
       - name: Fetch Meta Daily Insights
         env:
