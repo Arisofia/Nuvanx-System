@@ -17,6 +17,7 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE22: true
+  META_GRAPH_VERSION: v20.0
 
 concurrency:
   group: daily-sync-${{ github.ref_name }}
@@ -46,7 +47,7 @@ jobs:
       META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
       META_AD_ACCOUNT_IDS: ${{ secrets.META_AD_ACCOUNT_IDS }}
       META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
-      META_GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION || 'v20.0' }}
+      META_GRAPH_VERSION: ${{ env.META_GRAPH_VERSION }}
 
     steps:
       - name: Checkout repository
