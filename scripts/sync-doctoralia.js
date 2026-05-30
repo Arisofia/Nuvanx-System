@@ -543,7 +543,7 @@ async function fetchSheetRows(sheets, saObject) {
       console.error(`[sync-doctoralia] Sheets API 400 Error. Possible causes:`);
       console.error(`  - Sheet name "${normalizedSheetName}" does not exist.`);
       console.error(`  - Range "${SHEET_RANGE}" is malformed.`);
-      console.error(`  - Spreadsheet ID "${SHEET_ID}" is invalid or inaccessible.`);
+      console.error(`  - Spreadsheet ID "${SHEET_ID.slice(0, 4)}...${SHEET_ID.slice(-4)}" is invalid or inaccessible.`);
       
       try {
         console.log('[sync-doctoralia] Attempting to list available sheets for debugging...');
@@ -572,7 +572,7 @@ async function fetchSheetRows(sheets, saObject) {
     // tokens, project ids, or other data derived from the authenticated session.
     console.error('[sync-doctoralia] Sheets API Error (non-permission). See previous logs or enable --debug for details.');
     if (err.code || err.status) {
-      console.error('  error code/status:', err.code || err.status);
+      console.error('  error code/status:', String(err.code || err.status).substring(0, 10));
     }
     throw err;
   }

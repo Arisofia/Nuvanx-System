@@ -4351,8 +4351,8 @@ async function checkMetaAdAccountHealth(creds: any, accountId: string): Promise<
     return {
       id: accountId,
       status: insightsOk ? 'ok' : 'partial_read_ok',
-      name: acct?.name,
-      error: insightsError,
+      name: acct?.name ?? undefined,
+      error: insightsError ?? undefined,
       details: {
         account_status: acct?.account_status,
         currency: acct?.currency
@@ -4389,7 +4389,7 @@ async function handleHealthMeta(ctx: AuthenticatedRouteContext): Promise<Respons
       const me = await metaFetch('/me', { fields: 'id,name' }, creds.accessToken);
 
       // Now test EACH configured ad account for real permissions (ads_read / ads_management)
-      const accountChecks: any[] = [];
+      const accountChecks: Array<{ id: string; status: string; name?: string; error?: string; details?: any }> = [];
       for (const accountId of creds.adAccountIds) {
         accountChecks.push(await checkMetaAdAccountHealth(creds, accountId));
       }

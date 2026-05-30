@@ -2,7 +2,7 @@
 
 Este documento alinea el Google Apps Script con la definición real de la tabla `produccion_intermediarios` en Supabase.
 
-## Columnas Reales de la Tabla (migración 20260513200000)
+## Columnas Reales de la Tabla (migración 20260530205600)
 
 ```sql
 CREATE TABLE public.produccion_intermediarios (
@@ -19,6 +19,19 @@ CREATE TABLE public.produccion_intermediarios (
   confirmada BOOLEAN,
   procedencia TEXT,
   importe NUMERIC,
+  fecha_para_normalizar DATE,
+  doc_patient_id TEXT,   -- ID en Doctoralia
+  paciente_nombre TEXT,  -- Nombre en Doctoralia
+  telefono_original TEXT,
+  procedimiento_nombre TEXT, -- Tratamiento
+  tipo_cliente TEXT,
+  email_hubspot TEXT,
+  ejecutivo_asignado TEXT,
+  ingreso_lead TEXT,
+  campana TEXT,
+  dia INTEGER,
+  mes INTEGER,
+  ano INTEGER,
   phone_normalized TEXT, -- derivado de 'asunto'
   ...
 );
@@ -39,14 +52,26 @@ CREATE TABLE public.produccion_intermediarios (
 | I                | confirmada                | confirmada                | BOOLEAN |
 | J                | procedencia               | procedencia               | - |
 | K                | importe                   | importe                   | - |
-| L                | (usamos fecha)            | -                         | No existe `fecha_para_normalizar` |
+| L                | fecha_para_normalizar     | fecha_para_normalizar     | - |
+| M                | doc_patient_id            | doc_patient_id            | ID (Doctoralia) |
+| N                | paciente_nombre           | paciente_nombre           | Nombre (Doctoralia) |
+| O                | telefono_original         | telefono_original         | Teléfono |
+| P                | procedimiento_nombre      | procedimiento_nombre      | Tratamiento |
+| Q                | tipo_cliente              | tipo_cliente              | - |
+| R                | email_hubspot             | email_hubspot             | - |
+| S                | ejecutivo_asignado        | ejecutivo_asignado        | - |
+| T                | ingreso_lead              | ingreso_lead              | - |
+| U                | campana                   | campana                   | - |
+| V                | (fórmula)                 | dia                       | `=DAY(B...)` |
+| W                | (fórmula)                 | mes                       | `=MONTH(B...)` |
+| X                | (fórmula)                 | ano                       | `=YEAR(B...)` |
 
-## Cambios Recomendados en el Script de Google
+## Cambios Recientes (Mayo 2026)
 
 Ya aplicados en `webhook-produccion-intermediarios.js`:
-- Se corrigió el mapeo para usar columnas reales.
-- Se eliminó la referencia a `fecha_para_normalizar` (no existe).
-- Se mejoró el comentario sobre `asunto` como clave.
+- Se amplió el mapeo a 24 columnas para coincidir con el análisis técnico.
+- Se añadió soporte para `fecha_para_normalizar`.
+- Se añadieron fórmulas automáticas para `Día`, `Mes` y `Año` en nuevas filas.
 
 ## Si Quieres Cambiar la Clave de Deduplicación
 
