@@ -93,6 +93,7 @@ jobs:
       - name: Fallback shellcheck on standalone .sh scripts
         run: |
           # Some repos keep critical logic in separate .sh files for easier linting.
+          # This now includes scripts/supabase-migrate.sh (extracted from deploy.yml).
           find . -name '*.sh' \
             -not -path './node_modules/*' \
             -not -path './frontend/node_modules/*' \

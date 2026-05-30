@@ -101,6 +101,7 @@ jobs:
       - name: Run Supabase DB lint
         id: lint
         if: steps.validate.outputs.skip != 'true'
+        timeout-minutes: 6
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
@@ -111,15 +112,16 @@ jobs:
           command: |
             set -euo pipefail
 
-            # The supabase-link-run action resolves SESSION_URL (with Python-based pooler rewriting
-            # and masking) and makes it available as both an output and $SESSION_URL inside the command.
-            if [ -z "${SESSION_URL:-}" ]; then
-              echo "::error::supabase-link-run action did not provide SESSION_URL. Check secrets."
+            # Prefer the explicit session_url output when available (newer versions of the action).
+            # Fall back to the SESSION_URL environment variable set by the action.
+            LINT_DB_URL="${{ steps.lint.outputs.session_url || SESSION_URL }}"
+
+            if [ -z "${LINT_DB_URL:-}" ]; then
+              echo "::error::supabase-link-run action did not provide a usable database URL."
               exit 1
             fi
 
-            LINT_DB_URL="$SESSION_URL"
-            echo "LINT using SESSION_URL provided by supabase-link-run action (Session Pooler recommended)"
+            echo "LINT using database URL provided by supabase-link-run action (Session Pooler recommended)"
             export LINT_DB_URL
 
             # Hard timeout so a stuck connection doesn't burn Actions minutes.
