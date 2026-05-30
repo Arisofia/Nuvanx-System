@@ -1,4 +1,5 @@
 import type { DashboardMetrics } from '../types'
+import { META_AD_ACCOUNT_IDS } from '../config/metaAccounts'
 
 export interface CombinedMetrics {
   metaEstimatedLeads: number
@@ -23,7 +24,8 @@ export interface DashboardQuality {
   metaIsReal: boolean
   crmIsReal: boolean
   doctoraliaIsReal: boolean
-  metaAccountIds?: string[]
+  // Now sourced from centralized config when kpisResponse is incomplete
+  metaAccountIds?: readonly string[]
 }
 
 export interface DashboardStateOptions {
@@ -176,7 +178,10 @@ export function buildDashboardState(options: DashboardStateOptions) {
       metaIsReal: kpisResponse?.meta?.is_real,
       crmIsReal: kpisResponse?.crm?.is_real,
       doctoraliaIsReal: kpisResponse?.doctoralia?.is_real,
-      metaAccountIds: Array.isArray(kpisResponse?.meta?.accountIds) ? kpisResponse.meta.accountIds : [],
+      // Prefer centralized source of truth (active accounts + future FB/IG assets)
+      metaAccountIds: Array.isArray(kpisResponse?.meta?.accountIds) && kpisResponse.meta.accountIds.length > 0
+        ? kpisResponse.meta.accountIds
+        : META_AD_ACCOUNT_IDS,
     }
   }
 }

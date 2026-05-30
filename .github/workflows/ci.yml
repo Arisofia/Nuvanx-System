@@ -81,6 +81,25 @@ jobs:
           end
           RUBY
 
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+
+      - name: Run shellcheck (standalone scripts + best-effort note for inline workflow bash)
+        run: |
+          shellcheck --version || true
+          # Check any .sh scripts (the main embedded bash lives in composite actions and workflow run: blocks)
+          find . -name '*.sh' \
+            -not -path './node_modules/*' \
+            -not -path './frontend/node_modules/*' \
+            -not -path './.git/*' \
+            -exec shellcheck --severity=warning {} + || true
+          echo ""
+          echo "Note: Complex inline 'run:' bash in .github/workflows and composite actions"
+          echo "is difficult to extract perfectly. Review critical blocks (especially supabase-link-run) manually"
+          echo "or integrate reviewdog/action-shellcheck for PR annotations in the future."
+
       - name: Validate Supabase config function blocks
         run: |
           python3 - <<'PY'

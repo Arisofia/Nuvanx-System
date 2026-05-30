@@ -2,11 +2,15 @@
 import { supabase } from './supabaseClient'
 
 export async function invokeApi<T>(functionName: string, body?: any): Promise<T> {
+  // Prefer MCP key when available (for protected admin routes), fall back to anon
+  const authToken =
+    import.meta.env.VITE_MCP_API_KEY ||
+    import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    import.meta.env.VITE_SUPABASE_ANON_KEY;
+
   const { data, error } = await supabase.functions.invoke(functionName, {
     body: body || {},
-    headers: {
-      'Authorization': `Bearer ${import.meta.env.VITE_MCP_API_KEY}`
-    }
+    headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
   });
 
   if (error) {
@@ -14,7 +18,5 @@ export async function invokeApi<T>(functionName: string, body?: any): Promise<T>
     throw new Error(error.message || `Error in ${functionName}`);
   }
 
-  // Devolvemos la data directamente para que componentes como useLeads.ts
-  // puedan acceder a resp.leads sin errores de TypeScript.
   return data as T;
 }

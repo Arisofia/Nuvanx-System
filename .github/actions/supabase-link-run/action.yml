@@ -27,7 +27,7 @@ inputs:
   supabase_cli_version:
     description: 'Supabase CLI version to use'
     required: false
-    default: '2.22.0'
+    default: '2.102.0'
 
 outputs:
   resolved_db_password:
@@ -41,7 +41,9 @@ runs:
   using: 'composite'
   steps:
     - name: Setup Supabase CLI
-      # Updated to latest major (v1 tracks current Supabase CLI releases)
+      # The setup-cli@v1 action installs the requested version of the Supabase CLI.
+      # Default is pinned to a recent stable release (updated periodically for features/fixes).
+      # Override via input for reproducibility or to test a specific version.
       uses: supabase/setup-cli@v1
       with:
         version: ${{ inputs.supabase_cli_version }}
@@ -72,10 +74,17 @@ runs:
         set -euo pipefail
         RESOLVED_DB_PASSWORD="$INPUT_SUPABASE_DB_PASSWORD"
         if [ -z "$RESOLVED_DB_PASSWORD" ] && [ -n "$INPUT_DATABASE_URL" ]; then
-          # More robust password extraction (handles common Supabase URL formats)
-          RESOLVED_DB_PASSWORD=$(printf '%s' "$INPUT_DATABASE_URL" | awk -F'[:@]' '{for(i=1;i<=NF;i++) if ($i ~ /^[^\/]*$/ && $(i+1) ~ /@/) {print $i; exit}}' || echo "")
-          # Fallback to simple sed if awk fails
+          # Reliable password extraction.
+          # Prefer Python urllib.parse (handles percent-encoding correctly, e.g. %40 for @ in passwords).
+          # Falls back to sed for unusual environments without python3.
+          if command -v python3 >/dev/null 2>&1; then
+            RESOLVED_DB_PASSWORD=$(python3 -c '
+import sys, urllib.parse
+print(urllib.parse.urlparse(sys.argv[1]).password or "")
+' "$INPUT_DATABASE_URL")
+          fi
           if [ -z "$RESOLVED_DB_PASSWORD" ]; then
+            # Fallback (no percent-decoding, but covers basic cases)
             RESOLVED_DB_PASSWORD=$(echo "$INPUT_DATABASE_URL" | sed -n 's|.*://[^:]*:\([^@]*\)@.*|\1|p' || echo "")
           fi
         fi
@@ -139,7 +148,7 @@ runs:
             output=$(run_link_once 2>&1) || {
               local exit_code=$?
               echo "$output"
-              # Correct bash syntax: func "$arg" (sin paréntesis)
+              # Correct bash syntax: call the function as is_deterministic_link_error "$output" (no parentheses)
               if is_deterministic_link_error "$output"; then
                 echo "::warning::Supabase link skipped (deterministic error): $output"
                 echo "skipped=true" >> "$GITHUB_OUTPUT"
@@ -162,16 +171,21 @@ runs:
         run_link_with_retry
 
     - name: Write command script
+      id: write-script
       if: steps.link.outputs.skipped != 'true'
       shell: bash
       env:
         ACTION_COMMAND: ${{ inputs.command }}
       run: |
         set -euo pipefail
-        # Safer script generation: avoid command injection risks from untrusted input
-        printf '%s\n' '#!/usr/bin/env bash' > /tmp/supabase_command.sh
-        printf '%s\n' "$ACTION_COMMAND" >> /tmp/supabase_command.sh
-        chmod +x /tmp/supabase_command.sh
+        # Safer script generation: avoid command injection risks from untrusted input.
+        # Use unique temp file under $RUNNER_TEMP (recommended by GitHub) so multiple
+        # invocations of this composite action in the same job cannot collide.
+        SCRIPT_PATH=$(mktemp "${RUNNER_TEMP:-/tmp}/supabase_command.XXXXXX.sh")
+        printf '%s\n' '#!/usr/bin/env bash' > "$SCRIPT_PATH"
+        printf '%s\n' "$ACTION_COMMAND" >> "$SCRIPT_PATH"
+        chmod +x "$SCRIPT_PATH"
+        printf 'script_path=%s\n' "$SCRIPT_PATH" >> "$GITHUB_OUTPUT"
 
 
     - name: Execute command
@@ -182,6 +196,7 @@ runs:
         SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
         SUPABASE_PROJECT_REF: ${{ inputs.project_ref }}
         SUPABASE_DB_PASSWORD_INPUT: ${{ steps.creds.outputs.resolved_db_password }}
+        SCRIPT_PATH: ${{ steps.write-script.outputs.script_path }}
       run: |
         set -euo pipefail
 
@@ -195,12 +210,24 @@ runs:
           # CONFIRMED: The direct db.<ref>.supabase.co hostname for this project is IPv6-only.
           # GitHub runners often have unreliable IPv6, so we strongly prefer Session Pooler (port 5432).
           #
-          # If a Transaction Pooler URL (port 6543) is provided, we rewrite it to Session Pooler.
+          # If a Transaction Pooler URL (port 6543 or pgbouncer=true) is provided, we rewrite it
+          # to Session Pooler (port 5432) using Python for robust query-string handling.
           if [[ "${DATABASE_URL}" == *"pooler.supabase"* ]] && [[ "${DATABASE_URL}" == *":6543/"* || "${DATABASE_URL}" == *"pgbouncer=true"* ]]; then
-            SESSION_URL=$(echo "$DATABASE_URL" | sed -E 's|:6543/|:5432/|; s|\?pgbouncer=true||g; s|&pgbouncer=true||g')
-            if [[ "$SESSION_URL" != *"sslmode="* ]]; then
-              SESSION_URL="${SESSION_URL}?sslmode=require"
-            fi
+            SESSION_URL=$(python3 -c '
+import sys, urllib.parse
+url = sys.argv[1]
+p = urllib.parse.urlparse(url)
+qs = urllib.parse.parse_qs(p.query, keep_blank_values=True)
+qs.pop("pgbouncer", None)
+new_query = urllib.parse.urlencode(qs, doseq=True)
+# Rewrite port 6543 -> 5432 if present in netloc
+new_netloc = p.netloc.replace(":6543", ":5432") if ":6543" in p.netloc else p.netloc
+new_url = urllib.parse.urlunparse((p.scheme, new_netloc, p.path, p.params, new_query, p.fragment))
+if "sslmode" not in new_url.lower():
+    sep = "&" if new_query else ""
+    new_url = new_url + (sep + "sslmode=require") if "?" in new_url or new_query else new_url + "?sslmode=require"
+print(new_url)
+' "$DATABASE_URL")
             echo "::warning::DATABASE_URL looked like Transaction Pooler. Rewrote to Session Pooler (port 5432) for better GitHub Actions compatibility."
             echo "Using Session Pooler URL (hostname preserved, port changed to 5432)"
           else
@@ -218,5 +245,5 @@ runs:
           exit 1
         fi
 
-        bash /tmp/supabase_command.sh
-        rm -f /tmp/supabase_command.sh || true
+        bash "${SCRIPT_PATH}"
+        rm -f "${SCRIPT_PATH}" || true

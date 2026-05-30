@@ -6,6 +6,7 @@ import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, AuthContext } from './contexts/AuthContext'
 import Layout from './components/Layout'
 import MetaAccountsNotice from './components/MetaAccountsNotice'
+// Centralized Meta account notice (uses active accounts + pixel from src/config/metaAccounts)
 import NotFound from './pages/NotFound'
 import Login from './pages/Login'
 import { useMetaPageView, useMetaContextCapture } from './lib/metaPixel'

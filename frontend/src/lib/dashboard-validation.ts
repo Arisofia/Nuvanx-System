@@ -1,5 +1,6 @@
 import type { DashboardMetrics, MetaTrendPoint } from '../types'
 import type { CombinedMetrics, DashboardQuality, RealFunnel } from './dashboard-helpers'
+import { META_AD_ACCOUNT_IDS } from '../config/metaAccounts'
 
 export interface DashboardPayload<T> {
   readonly data: T
@@ -117,7 +118,10 @@ export function validateDashboardBundle(input: {
             metaIsReal: Boolean(meta.is_real),
             crmIsReal: Boolean(crm.is_real),
             doctoraliaIsReal: Boolean(doctoralia.is_real),
-            metaAccountIds: Array.isArray(meta.accountIds) ? meta.accountIds.map((id) => String(id)) : [],
+            // Centralized fallback ensures we always have the current active Meta ad accounts
+            metaAccountIds: Array.isArray(meta.accountIds) && meta.accountIds.length > 0
+              ? meta.accountIds.map((id: any) => String(id))
+              : META_AD_ACCOUNT_IDS,
           }
         : null,
     },
