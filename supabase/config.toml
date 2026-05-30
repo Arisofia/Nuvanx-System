@@ -1,8 +1,16 @@
 # For detailed configuration reference documentation, visit:
 # https://supabase.com/docs/guides/local-development/cli/config
-# A string used to distinguish different Supabase projects on the same host. Defaults to the
-# working directory name when running `supabase init`.
+#
+# LOCAL project identifier (used for `supabase start`, `supabase db reset`, etc.).
+# This is NOT the remote project ref.
 project_id = "Nuvanx-System"
+
+# REAL REMOTE PROJECT (used with --project-ref or SUPABASE_PROJECT_REF env var)
+# Remote project ref: ssvvuuysgxyqvmovrlvk
+# All production secrets, functions, and migrations target this project.
+# When running CLI commands against production, always use:
+#   supabase <command> --project-ref ssvvuuysgxyqvmovrlvk
+# or export SUPABASE_PROJECT_REF=ssvvuuysgxyqvmovrlvk before running scripts.
 
 [api]
 enabled = true

@@ -1,9 +1,9 @@
-import { useState, type SyntheticEvent, type ChangeEvent } from 'react'
+import { useState, ChangeEvent, SyntheticEvent } from 'react'
 import { useLocation } from 'wouter'
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
+import { Card, CardContent, CardHeader } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
-import { supabase } from '../lib/supabaseClient'
+import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import logo from '../assets/logo.png'
 
 export default function Login() {
@@ -21,6 +21,11 @@ export default function Login() {
       return
     }
 
+    if (!isSupabaseConfigured) {
+      setMessage('Supabase no está configurado. Revisa las variables públicas de entorno del frontend.')
+      return
+    }
+
     setLoading(true)
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     setLoading(false)
@@ -35,7 +40,6 @@ export default function Login() {
 
   return (
     <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center p-6 relative overflow-hidden">
-      {/* Decorative background elements */}
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/5 rounded-full blur-[120px]" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-primary/5 rounded-full blur-[120px]" />
 

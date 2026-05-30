@@ -18,9 +18,12 @@ function formatDayLabel(dateStr: string): string {
   return d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 }
 
+const sortByHora = (a: DoctoraliaAppointment, b: DoctoraliaAppointment) =>
+  (a.hora || '00:00').localeCompare(b.hora || '00:00')
+
 // ── Campaign badge ─────────────────────────────────────────────────────────────
 
-function CampaignBadge({ name }: { name: string | null }) {
+function CampaignBadge({ name }: { readonly name: string | null }) {
   if (name) {
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-primary/15 text-primary border border-primary/25 max-w-[200px] truncate">
@@ -39,7 +42,7 @@ function CampaignBadge({ name }: { name: string | null }) {
 
 // ── Estado badge ───────────────────────────────────────────────────────────────
 
-function EstadoBadge({ estado, confirmada }: { estado: string | null; confirmada: boolean }) {
+function EstadoBadge({ estado, confirmada }: { readonly estado: string | null; readonly confirmada: boolean }) {
   const e = (estado ?? '').toLowerCase()
   let cls = 'bg-border/40 text-muted border-border'
   let Icon = XCircle
@@ -75,9 +78,9 @@ export default function Live() {
       setAgendaLoading(true)
       setAgendaError(null)
       try {
-        const data = await invokeApi(`/agenda/doctoralia?date=${selectedDate}`)
+        const data = await invokeApi<{ appointments?: DoctoraliaAppointment[] }>(`/agenda/doctoralia?date=${selectedDate}`)
         if (!active) return
-        setAppointments(data?.data?.appointments ?? [])
+        setAppointments(data.appointments ?? [])
       } catch (err: any) {
         if (!active) return
         logger.error('Live.Agenda', err)
@@ -94,15 +97,15 @@ export default function Live() {
   // ── Agenda: group by hour ─────────────────────────────────────────────────
   const groupedByHour = useMemo(() => {
     const map = new Map<string, DoctoraliaAppointment[]>()
-    const sorted = [...appointments].sort((a, b) => {
-      const ta = a.hora ?? '00:00'
-      const tb = b.hora ?? '00:00'
-      return ta.localeCompare(tb)
-    })
+    const sorted = [...appointments].sort(sortByHora)
     for (const row of sorted) {
       const key = row.hora ? row.hora.slice(0, 5) : 'Sin hora'
-      if (!map.has(key)) map.set(key, [])
-      map.get(key)!.push(row)
+      let group = map.get(key)
+      if (!group) {
+        group = []
+        map.set(key, group)
+      }
+      group.push(row)
     }
     return map
   }, [appointments])
@@ -144,7 +147,7 @@ export default function Live() {
         const apptDay = (r.fecha ?? '').slice(0, 10)
         if (apptDay === selectedDateRef.current) {
           const newAppt = transformDoctoraliaAppointment(r)
-          setAppointments((prev) => [newAppt, ...prev].sort((a, b) => (a.hora || '00:00').localeCompare(b.hora || '00:00')))
+          setAppointments((prev) => [newAppt, ...prev].sort(sortByHora))
         }
       })
       .subscribe((status) => setConnected(status === 'SUBSCRIBED'))

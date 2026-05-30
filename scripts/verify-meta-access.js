@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 
+const crypto = require('node:crypto');
+
 // Cargar variables de entorno desde .env.local si existe
 try {
   // eslint-disable-next-line global-require
@@ -18,6 +20,41 @@ function normalizeAdAccountId(raw) {
   return value.startsWith('act_') ? value : `act_${value}`;
 }
 
+function parseTargetAdAccountIds() {
+  const values = [
+    process.env.META_AD_ACCOUNT_IDS || '',
+    process.env.META_AD_ACCOUNT_ID || '',
+  ]
+    .join(',')
+    .split(',')
+    .map((item) => normalizeAdAccountId(item))
+    .filter(Boolean);
+
+  return Array.from(new Set(values));
+}
+
+function buildAppSecretProof(accessToken) {
+  const appSecret = String(process.env.META_APP_SECRET || '').trim();
+  if (!appSecret) return '';
+
+  return crypto
+    .createHmac('sha256', appSecret)
+    .update(accessToken)
+    .digest('hex');
+}
+
+function createMetaUrl(path, accessToken) {
+  const url = new URL(`https://graph.facebook.com/${META_GRAPH_VERSION}${path}`);
+  url.searchParams.set('access_token', accessToken);
+
+  const appsecretProof = buildAppSecretProof(accessToken);
+  if (appsecretProof) {
+    url.searchParams.set('appsecret_proof', appsecretProof);
+  }
+
+  return url;
+}
+
 async function fetchJson(url) {
   const res = await fetch(url);
   const body = await res.json().catch(() => ({}));
@@ -25,21 +62,29 @@ async function fetchJson(url) {
   if (!res.ok || body.error) {
     const code = body?.error?.code ? ` code=${body.error.code}` : '';
     const subcode = body?.error?.error_subcode ? ` subcode=${body.error.error_subcode}` : '';
+    const type = body?.error?.type ? ` type=${body.error.type}` : '';
     const message = body?.error?.message || `HTTP ${res.status}`;
-    throw new Error(`Meta API request failed:${code}${subcode} ${message}`.trim());
+    throw new Error(`Meta API request failed:${code}${subcode}${type} ${message}`.trim());
   }
 
   return body;
 }
 
 async function listAccessibleAdAccounts(accessToken) {
-  const url = new URL(`https://graph.facebook.com/${META_GRAPH_VERSION}/me/adaccounts`);
+  const url = createMetaUrl('/me/adaccounts', accessToken);
   url.searchParams.set('fields', 'id,name,account_status,currency');
   url.searchParams.set('limit', '500');
-  url.searchParams.set('access_token', accessToken);
 
   const payload = await fetchJson(url);
   return Array.isArray(payload.data) ? payload.data : [];
+}
+
+function sanitizeError(error) {
+  const message = error instanceof Error ? error.message : String(error || 'Unknown error');
+  return message
+    .replace(/access_token=[^\s&]+/gi, 'access_token=<redacted>')
+    .replace(/appsecret_proof=[^\s&]+/gi, 'appsecret_proof=<redacted>')
+    .replace(/EAA[A-Za-z0-9_-]+/g, '<redacted_meta_token>');
 }
 
 async function main() {
@@ -49,10 +94,14 @@ async function main() {
   }
 
   const accessToken = String(process.env.META_ACCESS_TOKEN || '').trim();
-  const targetAdAccountId = normalizeAdAccountId(process.env.META_AD_ACCOUNT_ID || '');
+  const targetAdAccountIds = parseTargetAdAccountIds();
 
-  if (!accessToken || !targetAdAccountId) {
-    throw new Error('META_ACCESS_TOKEN and META_AD_ACCOUNT_ID are required.');
+  if (!accessToken) {
+    throw new Error('Missing required GitHub secret/env var: META_ACCESS_TOKEN.');
+  }
+
+  if (!targetAdAccountIds.length) {
+    throw new Error('Missing required GitHub secret/env var: META_AD_ACCOUNT_ID or META_AD_ACCOUNT_IDS.');
   }
 
   const accounts = await listAccessibleAdAccounts(accessToken);
@@ -65,7 +114,8 @@ async function main() {
     }))
     .filter((row) => row.id);
 
-  const hasAccess = normalized.some((account) => account.id === targetAdAccountId);
+  const accessibleIds = new Set(normalized.map((account) => account.id));
+  const missing = targetAdAccountIds.filter((id) => !accessibleIds.has(id));
 
   console.log(`Accessible ad accounts: ${normalized.length}`);
   // Mostrar todas las cuentas a las que el token tiene acceso
@@ -75,20 +125,22 @@ async function main() {
     );
   });
 
-  if (hasAccess) {
-    console.log('✅ Meta token has access to the configured ad account.');
+  console.log(`Configured target ad accounts: ${targetAdAccountIds.length}`);
+
+  if (!missing.length) {
+    console.log('✅ Meta token has access to all configured ad accounts.');
     return;
   }
 
   throw new Error(
     normalized.length
-      ? 'Token cannot access the configured ad account.'
-      : 'Token cannot access the configured ad account. No accessible accounts returned by API.'
+      ? `Token cannot access configured ad account(s): ${missing.join(', ')}.`
+      : 'Token cannot access the configured ad account(s). No accessible accounts returned by API.'
   );
 }
 
 main().catch((err) => {
   console.error('❌ Meta access verification failed.');
-  console.error('Reason:', err?.message || err);
+  console.error('Reason:', sanitizeError(err));
   process.exit(1);
 });

@@ -416,12 +416,12 @@ const useMarketingData = (days: number, campaignId: string, customFrom: string, 
         const cParams = buildMarketingParams(isCustomRange, customFrom, customTo, days)
 
         const [insightsRes, campaignsRes] = await Promise.allSettled([
-          invokeApi(`/meta/insights?${iParams}`),
-          invokeApi(`/meta/campaigns?${cParams}`),
+          invokeApi<Partial<MarketingState>>(`/meta/insights?${iParams}`),
+          invokeApi<{ campaigns?: CampaignRow[]; accountIds?: string[]; currency?: string; accountId?: string }>(`/meta/campaigns?${cParams}`),
         ])
 
-        const insightsData = insightsRes.status === 'fulfilled' ? insightsRes.value.data : null
-        const campaignsData = campaignsRes.status === 'fulfilled' ? campaignsRes.value.data : null
+        const insightsData = insightsRes.status === 'fulfilled' ? insightsRes.value : null
+        const campaignsData = campaignsRes.status === 'fulfilled' ? campaignsRes.value : null
 
         const rawCampaigns: CampaignRow[] = Array.isArray(campaignsData?.campaigns)
           ? campaignsData.campaigns.map(mapCampaignRow)
@@ -591,9 +591,9 @@ export default function Marketing() {
     const params = buildMarketingParams(Boolean(customFrom || customTo), customFrom, customTo, days)
 
     try {
-      const data = await invokeApi(`/meta/ads?${params}`)
+      const data = await invokeApi<{ ads?: any[] }>(`/meta/ads?${params}`)
       if (!mountedRef.current) return
-      adsDispatch({ type: 'success', ads: data?.data?.ads ?? [] })
+      adsDispatch({ type: 'success', ads: data.ads ?? [] })
     } catch (err: any) {
       if (!mountedRef.current) return
       adsDispatch({ type: 'failure', error: err?.message ?? 'Error cargando anuncios.' })
@@ -618,9 +618,9 @@ export default function Marketing() {
         invokeApi(`/meta/organic/posts?${postsParams}`),
       ])
       if (!mountedRef.current) return
-      setOrganicSummary(dailyRes?.data?.summary ?? null)
-      setOrganicDaily(Array.isArray(dailyRes?.data?.daily) ? dailyRes.data.daily : [])
-      setOrganicPosts(Array.isArray(postsRes?.data?.posts) ? postsRes.data.posts : [])
+      setOrganicSummary(dailyRes?.summary ?? null)
+      setOrganicDaily(Array.isArray(dailyRes?.daily) ? dailyRes.daily : [])
+      setOrganicPosts(Array.isArray(postsRes?.posts) ? postsRes.posts : [])
     } catch (err: any) {
       if (!mountedRef.current) return
       setOrganicError(err?.message ?? 'Error cargando datos orgánicos.')
@@ -641,9 +641,9 @@ export default function Marketing() {
         invokeApi(`/meta/ig/posts?${postsParams}`),
       ])
       if (!mountedRef.current) return
-      setIgSummary(dailyRes?.data?.summary ?? null)
-      setIgDaily(Array.isArray(dailyRes?.data?.daily) ? dailyRes.data.daily : [])
-      setIgPosts(Array.isArray(postsRes?.data?.posts) ? postsRes.data.posts : [])
+      setIgSummary(dailyRes?.summary ?? null)
+      setIgDaily(Array.isArray(dailyRes?.daily) ? dailyRes.daily : [])
+      setIgPosts(Array.isArray(postsRes?.posts) ? postsRes.posts : [])
     } catch (err: any) {
       if (!mountedRef.current) return
       setIgError(err?.message ?? 'Error cargando datos de Instagram.')
@@ -689,6 +689,19 @@ export default function Marketing() {
       .filter((c) => c.insights)
       .map(mapCampaignToChart)
   }, [campaigns])
+
+  const getEmptyMessage = () => {
+    if (campaigns.length === 0) {
+      return 'No hay campañas disponibles para el período seleccionado.'
+    }
+    
+    let msg = 'Ninguna campaña coincide con los filtros actuales'
+    if (statusFilter !== 'ALL') {
+      const label = STATUS_LABELS[statusFilter as keyof typeof STATUS_LABELS] ?? statusFilter
+      msg += ` (estado: ${label})`
+    }
+    return `${msg}.`
+  }
 
   const periodLabel = period
     ? `${period.since} → ${period.until} (${period.days} días)`
@@ -985,9 +998,7 @@ export default function Marketing() {
           {!loading && filteredCampaigns.length === 0 && (
             <div className="p-4 flex items-center gap-3">
               <p className="text-sm text-muted">
-                {campaigns.length === 0
-                  ? 'No hay campañas disponibles para el período seleccionado.'
-                  : `Ninguna campaña coincide con los filtros actuales${statusFilter !== 'ALL' ? ` (estado: ${STATUS_LABELS[statusFilter as keyof typeof STATUS_LABELS] ?? statusFilter})` : ''}.`}
+                {getEmptyMessage()}
               </p>
               {campaigns.length > 0 && (statusFilter !== 'ALL' || search || campaignId !== 'ALL') && (
                 <button

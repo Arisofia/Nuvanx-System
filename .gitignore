@@ -27,7 +27,16 @@ lerna-debug.log*
 # Otros secretos
 .secrets.local
 backend/google-service-account.json
+
+# Google Service Account keys (nunca commitear)
+# Estos archivos contienen claves privadas y múltiples tokens embebidos.
 *service-account*.json
+*service_account*.json
+*-a[0-9a-f]{16,}.json          # Patrón común de archivos descargados de Google (ej: cedar-league-...-a477171afb68.json)
+doctoralia-service-account.json
+
+# Advertencia: Si tienes un archivo de Service Account en tu máquina (ej. en Downloads),
+# revócalo inmediatamente y bórralo. No lo uses directamente en el proyecto.
 
 # Editor / OS
 .idea/
@@ -47,6 +56,9 @@ Thumbs.db
 .zencoder/
 .zenflow/
 .playwright-mcp/
+artifact/
+artifacts/
+*.tsbuildinfo
 
 # Deployment tool caches
 frontend/.vercel/
@@ -63,3 +75,9 @@ supabase/.temp/
 
 # Python cache (scripts/)
 scripts/__pycache__/
+
+# Local secrets file (never commit)
+.env.tokens.local
+.env.local
+.env.webhooks
+.env.webhooks*

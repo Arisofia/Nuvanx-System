@@ -11,6 +11,7 @@ on:
 env:
   # VITE_ env vars are used during build/deploy steps.
   VITE_MCP_API_KEY: ${{ secrets.MCP_API_KEY }}
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE22: true
 
 concurrency:
   group: deploy-supabase-production

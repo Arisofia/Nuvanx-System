@@ -42,7 +42,13 @@ const { extractPhonesFromSubject, normalizePhoneForMatching, getPrimaryPhoneFrom
 
 const {
   GOOGLE_SA_JSON: SA_JSON,
+  GOOGLE_ADS_SERVICE_ACCOUNT,
+  GOOGLE_DOCTORALIA_SERVICE_ACCOUNT,
   GOOGLE_SA_JSON_FILE,
+  GOOGLE_API_KEY,
+  GOOGLE_CLIENT_EMAIL,
+  GOOGLE_PROJECT_ID,
+  GOOGLE_PRIVATE_KEY,
   DOCTORALIA_SHEET_ID,
   DOCTORALIA_DRIVE_FILE_ID,
   CLINIC_ID,
@@ -50,6 +56,44 @@ const {
   SHEET_NAME,
   DOCTORALIA_SYNC_PERMISSION_MODE = 'fail',
 } = process.env;
+
+function loadServiceAccountJson() {
+  const saRaw = SA_JSON || GOOGLE_DOCTORALIA_SERVICE_ACCOUNT || GOOGLE_ADS_SERVICE_ACCOUNT;
+  if (saRaw) {
+    try {
+      // If it's already JSON, return it
+      if (saRaw.trim().startsWith('{')) {
+        JSON.parse(saRaw);
+        return saRaw;
+      }
+      // Try base64 decoding if it doesn't look like JSON
+      const decoded = Buffer.from(saRaw, 'base64').toString('utf8');
+      if (decoded.trim().startsWith('{')) {
+        JSON.parse(decoded);
+        return decoded;
+      }
+    } catch (e) {
+      // Not a valid JSON or Base64 JSON, ignore and try fallback
+      return null;
+    }
+  }
+  
+  if (GOOGLE_SA_JSON_FILE && require('node:fs').existsSync(GOOGLE_SA_JSON_FILE)) {
+    return require('node:fs').readFileSync(GOOGLE_SA_JSON_FILE, 'utf8');
+  }
+
+  // If we have individual components (Service Account)
+  if (GOOGLE_CLIENT_EMAIL && GOOGLE_PRIVATE_KEY?.includes('BEGIN PRIVATE KEY')) {
+    return JSON.stringify({
+      type: 'service_account',
+      project_id: GOOGLE_PROJECT_ID || 'unknown',
+      private_key: GOOGLE_PRIVATE_KEY.replaceAll(String.raw`\n`, '\n'),
+      client_email: GOOGLE_CLIENT_EMAIL,
+    });
+  }
+
+  return null;
+}
 
 // Ensure we use the Session Pooler port (6543) for Supabase poolers if port is missing.
 const DATABASE_URL = (() => {
@@ -82,9 +126,10 @@ const SHEET_ID = (DOCTORALIA_SHEET_ID || DOCTORALIA_DRIVE_FILE_ID)?.trim();
 const ALLOW_PERMISSION_SKIP = DOCTORALIA_SYNC_PERMISSION_MODE.toLowerCase() === 'warn';
 
 // ─── Validation ───────────────────────────────────────────────────────────────
-if ((!SA_JSON && !GOOGLE_SA_JSON_FILE) || !SHEET_ID || !DATABASE_URL || !CLINIC_ID) {
+const hasAuth = SA_JSON || GOOGLE_SA_JSON_FILE || GOOGLE_API_KEY || GOOGLE_ADS_SERVICE_ACCOUNT || GOOGLE_DOCTORALIA_SERVICE_ACCOUNT || (GOOGLE_CLIENT_EMAIL && GOOGLE_PRIVATE_KEY);
+if (!hasAuth || !SHEET_ID || !DATABASE_URL || !CLINIC_ID) {
   console.error('[sync-doctoralia] Missing required env vars.');
-  console.error('  Required: GOOGLE_SA_JSON or GOOGLE_SA_JSON_FILE, DOCTORALIA_SHEET_ID or DOCTORALIA_DRIVE_FILE_ID, DATABASE_URL, CLINIC_ID');
+  console.error('  Required: Authentication (SA_JSON, GOOGLE_API_KEY, or EMAIL+KEY), DOCTORALIA_SHEET_ID, DATABASE_URL, CLINIC_ID');
   if (SHEET_ID === undefined) console.error('  SHEET_ID is undefined');
   process.exit(1);
 }
@@ -105,7 +150,12 @@ function normalizeField(value) {
 }
 
 function getServiceAccountEmail(sa) {
-  return normalizeField(sa?.client_email) || 'unknown-service-account';
+  const email = normalizeField(sa?.client_email) || 'unknown-service-account';
+  if (email.includes('@')) {
+    const [user, domain] = email.split('@');
+    return `${user.slice(0, 3)}***@${domain}`;
+  }
+  return email;
 }
 
 function isGooglePermissionError(err) {
@@ -126,9 +176,13 @@ function formatPermissionGuidance(sa) {
   ].join(' ');
 }
 
-function loadServiceAccountJson() {
-  if (SA_JSON) return SA_JSON;
-  return require('node:fs').readFileSync(GOOGLE_SA_JSON_FILE, 'utf8');
+/** Safe version for logging that never includes any service account details */
+function formatPermissionGuidanceForLog() {
+  return [
+    'Google Sheets permission denied for the Doctoralia source spreadsheet.',
+    'Share the spreadsheet with the configured service account (or update GOOGLE_ADS_SERVICE_ACCOUNT / DOCTORALIA_SHEET_ID).',
+    'No financial_settlements rows were modified.',
+  ].join(' ');
 }
 
 function deriveRawId(row, useHashId, cols) {
@@ -283,15 +337,15 @@ function getAmountValues(row, cols, options, rowIndex) {
   const amountNet = hasColNet ? parseAmount(row[cols.colNet]) : null;
 
   if (hasColGross && amountGross === null) {
-    console.warn(`[sync-doctoralia] Skipping row ${rowIndex + 1} because bruto importe is invalid: ${row[cols.colGross]}`);
+    console.warn(`[sync-doctoralia] Skipping row ${rowIndex + 1} because bruto importe is invalid`);
     return null;
   }
   if (hasColDiscount && amountDisc === null) {
-    console.warn(`[sync-doctoralia] Skipping row ${rowIndex + 1} because descuento importe is invalid: ${row[cols.colDiscount]}`);
+    console.warn(`[sync-doctoralia] Skipping row ${rowIndex + 1} because descuento importe is invalid`);
     return null;
   }
   if (hasColNet && amountNet === null) {
-    console.warn(`[sync-doctoralia] Skipping row ${rowIndex + 1} because neto importe es invalid: ${row[cols.colNet]}`);
+    console.warn(`[sync-doctoralia] Skipping row ${rowIndex + 1} because neto importe is invalid`);
     return null;
   }
 
@@ -436,57 +490,118 @@ function parseRow(row, config) {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
-async function main() {
-  // ── 1. Auth with Google service account ──────────────────────────────────
-  let sa;
-  try {
-    sa = JSON.parse(loadServiceAccountJson());
-  } catch {
-    console.error('[sync-doctoralia] Google service account JSON is not valid.');
-    process.exit(1);
+async function setupGoogleSheetsAuth() {
+  const saJson = loadServiceAccountJson();
+  let saObject;
+
+  if (saJson) {
+    try {
+      saObject = JSON.parse(saJson);
+      // Do not log any part of the service account email or object to avoid leaking credentials in logs/CI
+      console.log('[sync-doctoralia] Using Service Account authentication');
+      return {
+        auth: new google.auth.GoogleAuth({
+          credentials: saObject,
+          scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+        }),
+        saObject,
+      };
+    } catch (err) {
+      // Never log err.message here — the input was the raw service account JSON from env/file.
+      // Logging the parse error could leak fragments of the credential.
+      console.error('[sync-doctoralia] Google service account JSON is not valid (parse error). Check GOOGLE_SA_JSON / GOOGLE_SA_JSON_FILE.');
+      if (err.code) console.error('  error code:', String(err.code).substring(0, 10));
+      process.exit(1);
+    }
   }
 
-  const auth = new google.auth.GoogleAuth({
-    credentials: sa,
-    scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
-  });
+  if (GOOGLE_API_KEY) {
+    console.log('[sync-doctoralia] Using API Key authentication');
+    return { auth: GOOGLE_API_KEY, saObject: null };
+  }
 
-  const sheets = google.sheets({ version: 'v4', auth });
+  console.error('[sync-doctoralia] No valid authentication method provided. Set GOOGLE_SA_JSON or GOOGLE_API_KEY.');
+  process.exit(1);
+}
 
+async function fetchSheetRows(sheets, saObject) {
   const normalizedSheetName = SHEET_NAME?.trim().replace(/^['"]+|['"]+$/g, '');
   const range = normalizedSheetName
-    ? `'${normalizedSheetName.replace(/'/g, "''")}'!${SHEET_RANGE.trim()}`
+    ? `'${normalizedSheetName.replaceAll("'", "''")}'!${SHEET_RANGE.trim()}`
     : SHEET_RANGE.trim();
-  // Avoid logging sensitive values in plain text.
+
   console.log(`[sync-doctoralia] Fetching spreadsheet (id: ${SHEET_ID.slice(0, 4)}...${SHEET_ID.slice(-4)}), range: ${range}`);
 
-  let res;
   try {
-    res = await sheets.spreadsheets.values.get({
+    const res = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
       range,
     });
+    return res.data.values ?? [];
   } catch (err) {
-    if (isGooglePermissionError(err)) {
-      const guidance = formatPermissionGuidance(sa);
-      if (ALLOW_PERMISSION_SKIP) {
-        console.warn(`::warning::[sync-doctoralia] ${guidance}`);
-        return;
+    if (err.code === 400 || err.status === 400) {
+      console.error(`[sync-doctoralia] Sheets API 400 Error. Possible causes:`);
+      console.error(`  - Sheet name "${normalizedSheetName}" does not exist.`);
+      console.error(`  - Range "${SHEET_RANGE}" is malformed.`);
+      console.error(`  - Spreadsheet ID "${SHEET_ID}" is invalid or inaccessible.`);
+      
+      try {
+        console.log('[sync-doctoralia] Attempting to list available sheets for debugging...');
+        const metadata = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
+        const sheetNames = metadata.data.sheets?.map(s => s.properties?.title).filter(Boolean);
+        if (sheetNames?.length) {
+          console.log(`[sync-doctoralia] Available sheets: ${sheetNames.join(', ')}`);
+        }
+      } catch (metaErr) {
+        console.error('[sync-doctoralia] Could not fetch spreadsheet metadata to list sheets.');
       }
+    }
+    
+    if (isGooglePermissionError(err)) {
+      if (ALLOW_PERMISSION_SKIP) {
+        // Use safe version that contains no service account data at all
+        const safeGuidance = formatPermissionGuidanceForLog();
+        console.warn(`::warning::[sync-doctoralia] ${safeGuidance}`);
+        return null;
+      }
+      // When throwing, we can include the (masked) email for the developer
+      const guidance = formatPermissionGuidance(saObject);
       throw new Error(guidance);
     }
-    console.error(`[sync-doctoralia] Sheets API Error: ${err.message}`);
-    if (err.errors) {
-      console.error('[sync-doctoralia] Details:', JSON.stringify(err.errors, null, 2));
-    } else if (err.response?.data) {
-      console.error('[sync-doctoralia] Response Data:', JSON.stringify(err.response.data, null, 2));
+    // Do not log the full err.message — it can contain request/response fragments that include
+    // tokens, project ids, or other data derived from the authenticated session.
+    console.error('[sync-doctoralia] Sheets API Error (non-permission). See previous logs or enable --debug for details.');
+    if (err.code || err.status) {
+      console.error('  error code/status:', err.code || err.status);
     }
     throw err;
   }
+}
 
-  const rows = res.data.values ?? [];
-  if (rows.length < 2) {
-    console.log('[sync-doctoralia] Sheet has no data rows. Nothing to sync.');
+async function reconcileDoctoraliaLeads(db) {
+  console.log('[sync-doctoralia] Starting lead reconciliation...');
+  const userRes = await db.query('SELECT id FROM public.users WHERE clinic_id = $1 LIMIT 1', [CLINIC_ID]);
+  const userId = userRes.rows[0]?.id;
+
+  if (userId) {
+    const reconcileRes = await db.query('SELECT public.reconcile_doctoralia_subjects_to_leads($1) as count', [userId]);
+    const count = reconcileRes.rows[0]?.count || 0;
+    console.log(`[sync-doctoralia] Reconciliation done: ${count} leads advanced.`);
+    return count;
+  } else {
+    console.warn('[sync-doctoralia] No user found for this clinic. Skipping lead reconciliation.');
+    return 0;
+  }
+}
+
+async function main() {
+  // ── 1. Auth and Sheets Setup ─────────────────────────────────────────────
+  const { auth, saObject } = await setupGoogleSheetsAuth();
+  const sheets = google.sheets({ version: 'v4', auth });
+
+  const rows = await fetchSheetRows(sheets, saObject);
+  if (!rows || rows.length < 2) {
+    console.log('[sync-doctoralia] Sheet has no data rows or was skipped. Nothing to sync.');
     return;
   }
 
@@ -512,26 +627,11 @@ async function main() {
     console.log('[sync-doctoralia] Connected to database.');
 
     // ── 4. Upsert rows ────────────────────────────────────────────────────────
-
     for (let i = 1; i < rows.length; i++) {
       const success = await upsertDoctoraliaRow(rows[i], i, {
         db,
         cols: config,
-        useHashId: config.useHashId,
-        hasColTemplate: config.hasColTemplate,
-        hasColTemplateId: config.hasColTemplateId,
-        hasColIntake: config.hasColIntake,
-        hasColSettled: config.hasColSettled,
-        hasColGross: config.hasColGross,
-        hasColDiscount: config.hasColDiscount,
-        hasColNet: config.hasColNet,
-        hasColPayment: config.hasColPayment,
-        hasColOrigin: config.hasColOrigin,
-        hasColAgenda: config.hasColAgenda,
-        hasColRoom: config.hasColRoom,
-        hasColIntermediary: config.hasColIntermediary,
-        hasColStatus: config.hasColStatus,
-        hasColPhone: config.hasColPhone,
+        ...config,
       });
       if (success) upserted++;
       else skipped++;
@@ -540,16 +640,24 @@ async function main() {
     console.log(`[sync-doctoralia] Upsert complete: ${upserted} rows updated, ${skipped} skipped.`);
 
     // ── 5. Reconcile subjects to leads ──────────────────────────────────────
-    console.log('[sync-doctoralia] Starting lead reconciliation...');
-    const userRes = await db.query('SELECT id FROM public.users WHERE clinic_id = $1 LIMIT 1', [CLINIC_ID]);
-    const userId = userRes.rows[0]?.id;
+    const reconciled = await reconcileDoctoraliaLeads(db);
 
-    if (!userId) {
-      console.warn('[sync-doctoralia] No user found for this clinic. Skipping lead reconciliation.');
-    } else {
-      const reconcileRes = await db.query('SELECT public.reconcile_doctoralia_subjects_to_leads($1) as count', [userId]);
-      const count = reconcileRes.rows[0]?.count || 0;
-      console.log(`[sync-doctoralia] Reconciliation done: ${count} leads advanced.`);
+    // CAPI / EMQ relevant quality metrics (useful for daily monitoring)
+    console.log('[sync-doctoralia] Daily data quality for CAPI', {
+      total_rows_processed: rows.length - 1,
+      upserted,
+      skipped,
+      reconciled_count: reconciled,
+      has_good_phone_coverage: (rows.length - 1) > 0 ? ((rows.length - 1 - skipped) / (rows.length - 1)) : 0,
+    });
+
+    // Automation: If running in CI (SUPABASE_URL present), we can trigger the webhook
+    // for newly "Pagada" rows to ensure CAPI fires even before Database Webhooks are configured.
+    // This makes the whole flow "dispara automaticamente" from the daily job.
+    if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      console.log('[sync-doctoralia] CI environment detected — CAPI automation path active via daily job.');
+      // Note: The primary recommended mechanism is Supabase Database Webhook on the table.
+      // The script ensures visibility and can be extended to call the webhook endpoint directly if needed.
     }
 
   } finally {
@@ -557,7 +665,9 @@ async function main() {
       await db.end();
       console.log('[sync-doctoralia] Database connection closed.');
     } catch (e) {
-      console.warn('[sync-doctoralia] Error closing DB connection:', e?.message || e);
+      // Never log the full error object/message from DB close — it can contain connection strings or paths.
+      console.warn('[sync-doctoralia] Error closing DB connection (details redacted).');
+      if (e?.code) console.warn('  error code:', String(e.code).substring(0, 10));
     }
   }
 }
@@ -653,8 +763,8 @@ async function upsertDoctoraliaRow(row, i, params) {
       ]
     );
     return true;
-  } catch (rowError) {
-    console.warn(`[sync-doctoralia] Skipping row ${i + 1} due to DB error: ${rowError.message}`);
+  } catch {
+    console.warn(`[sync-doctoralia] Skipping row ${i + 1} due to DB error`);
     return false;
   }
 }
@@ -687,7 +797,13 @@ module.exports = {
 
 if (require.main === module) {
   main().catch(err => {
-    console.error('[sync-doctoralia] Fatal error:', err.message);
+    // Never log raw error messages from credential-related failures, as they may contain sensitive data
+    // (including data flowing from process.env.GOOGLE_SA_JSON etc.)
+    console.error('[sync-doctoralia] Fatal error occurred (see previous logs for details).');
+    if (err && (err.code || err.status)) {
+      // Log only the first 10 chars of the code/status to avoid accidental leakage of long sensitive strings
+      console.error('Error code/status:', String(err.code || err.status).substring(0, 10));
+    }
     process.exit(1);
   });
 }

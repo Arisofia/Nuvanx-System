@@ -161,7 +161,7 @@ export default function Intelligence() {
     attributionContent = (
       <SortableTable
         columns={attributionColumns}
-        rows={campaigns as unknown as Record<string, unknown>[]}
+        rows={campaigns}
         exportFilename="attribution-campaigns"
         pageSize={200}
         emptyMessage="No hay datos de atribución para el período seleccionado."

@@ -1,6 +1,6 @@
 import { createContext, useEffect, useMemo, useState, ReactNode } from 'react'
 import type { User, Session } from '@supabase/supabase-js'
-import { supabase } from '../lib/supabaseClient'
+import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 
 export interface AuthContextType {
   user: User | null
@@ -15,9 +15,13 @@ export const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [user, setUser] = useState<User | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(isSupabaseConfigured)
 
   useEffect(() => {
+    if (!isSupabaseConfigured) {
+      return undefined
+    }
+
     // Load initial session
     supabase.auth.getSession().then(({ data, error }) => {
       if (!error && data?.session?.user) {
@@ -36,17 +40,27 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
   }, [])
 
   const signIn = async (email: string, password: string) => {
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabase no está configurado. Revisa las variables públicas de entorno del frontend.')
+    }
+
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) throw error
     setUser(data.user)
   }
 
   const signOut = async () => {
-    await supabase.auth.signOut()
+    if (isSupabaseConfigured) {
+      await supabase.auth.signOut()
+    }
     setUser(null)
   }
 
   const getSession = async () => {
+    if (!isSupabaseConfigured) {
+      return { session: null, error: new Error('Supabase no está configurado.') }
+    }
+
     const { data, error } = await supabase.auth.getSession()
     return { session: data?.session || null, error }
   }

@@ -59,7 +59,9 @@ export function RealROISection({ funnel, combined, isFunnelDemo }: RealROISectio
               </div>
             </div>
             <p className="text-3xl font-serif font-bold text-[#2C2825]">
-              {funnel.cac != null ? `€${funnel.cac.toLocaleString('es-ES')}` : '0'}
+              {funnel.cac != null && funnel.cac > 0
+                ? `€${funnel.cac.toLocaleString('es-ES')}`
+                : <span className="text-[#B0AAA4] text-lg">Sin datos suficientes</span>}
             </p>
             <p className="text-[10px] text-[#8E8680] font-medium italic opacity-60">Coste Adquisición Paciente</p>
           </div>
@@ -72,7 +74,9 @@ export function RealROISection({ funnel, combined, isFunnelDemo }: RealROISectio
               </div>
             </div>
             <p className="text-3xl font-serif font-bold text-[#2C2825]">
-              {combined.revenuePerLead != null ? `€${combined.revenuePerLead.toLocaleString('es-ES')}` : '0'}
+              {combined.revenuePerLead != null && combined.revenuePerLead > 0
+                ? `€${combined.revenuePerLead.toLocaleString('es-ES')}`
+                : <span className="text-[#B0AAA4] text-lg">Sin datos suficientes</span>}
             </p>
             <p className="text-[10px] text-[#8E8680] font-medium italic opacity-60">Ticket medio por adquisición</p>
           </div>

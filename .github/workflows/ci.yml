@@ -226,7 +226,7 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          VITE_MCP_API_KEY: ${{ secrets.MCP_API_KEY }}
+          VITE_MCP_API_KEY: ${{ secrets.VITE_MCP_API_KEY || '' }}
 
   frontend-e2e-smoke:
     needs: frontend
@@ -258,18 +258,12 @@ jobs:
       - name: Validate E2E secrets
         id: check-e2e-secrets
         run: |
-          MISSING=()
-          [ -z "$E2E_EMAIL" ] && MISSING+=("E2E_EMAIL")
-          [ -z "$E2E_PASSWORD" ] && MISSING+=("E2E_PASSWORD")
-          if [ ${#MISSING[@]} -gt 0 ]; then
-            echo "::warning::E2E smoke tests skipped — missing secrets: ${MISSING[*]}."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
+          if [ -z "${{ secrets.PRODUCTION_E2E_URL }}" ] || [ -z "${{ secrets.E2E_EMAIL }}" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "::warning::E2E smoke tests SKIPPED — secrets PRODUCTION_E2E_URL / E2E_EMAIL not configured in GitHub Actions. Dashboard production smoke is NOT verified."
           else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "skip=false" >> $GITHUB_OUTPUT
           fi
-        env:
-          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
-          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
 
       - name: Run Playwright smoke tests
         if: steps.check-e2e-secrets.outputs.skip == 'false'
@@ -277,6 +271,13 @@ jobs:
         env:
           E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
           E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+
+      - name: Warn if E2E skipped
+        if: steps.check-e2e-secrets.outputs.skip == 'true'
+        run: |
+          echo "⚠️  ADVERTENCIA: Los tests E2E fueron omitidos por falta de secrets."
+          echo "    Configura PRODUCTION_E2E_URL y E2E_EMAIL en GitHub Actions Secrets."
+          echo "    El dashboard NO ha sido verificado en este build."
 
   # ─── Shared & Functions: tests ──────────────────────────────────────────────
   shared-functions-test:
@@ -328,8 +329,8 @@ jobs:
           NODE_ENV: test
           # Use repository secrets for CI test credentials to avoid hardcoding sensitive values.
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
-          VITE_MCP_API_KEY: ${{ secrets.MCP_API_KEY }}
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY || '' }}
+          VITE_MCP_API_KEY: ${{ secrets.VITE_MCP_API_KEY || '' }}
           DEFAULT_PHONE_COUNTRY_CODE: '34'
 
   # ─── Edge Function: type-check ─────────────────────────────────────────────

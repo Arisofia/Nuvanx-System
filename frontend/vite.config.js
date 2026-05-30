@@ -24,6 +24,10 @@ export default ({ mode }) => {
       include: ['tests/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
     },
     server: {
+      allowedHosts: (process.env.VITE_ALLOWED_HOSTS ?? '.manus.computer')
+        .split(',')
+        .map((host) => host.trim())
+        .filter(Boolean),
       proxy: {
         '/api': {
           // Forward /api/* to the Supabase Edge Function in local dev.

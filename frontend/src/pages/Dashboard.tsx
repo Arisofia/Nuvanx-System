@@ -32,7 +32,7 @@ export default function Dashboard() {
     customTo,
     campaignId,
     sourceFilter,
-    0, // Will be updated by hook internally if counts are 0
+    0,
     0,
   )
 

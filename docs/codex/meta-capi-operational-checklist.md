@@ -49,6 +49,125 @@
 
 **Where:** Frontend playbook execution with valid authenticated JWT.
 
+---
+
+## 5) Duplicate Purchase events in Meta (CAPI guard)
+
+**Where:** `produccion_intermediarios` table + `handleSupabaseWebhook`.
+
+**New guard:** Column `capi_sent` (boolean, default false).
+
+**Monitoring query** (run in Supabase SQL editor or via the new anomaly script):
+
+```sql
+SELECT id, created_at, estado, importe, phone_normalized, clinic_id, capi_sent
+FROM public.produccion_intermediarios
+WHERE estado ILIKE '%pagada%'
+  AND (capi_sent IS FALSE OR capi_sent IS NULL)
+ORDER BY created_at DESC;
+```
+
+**Expected behavior after deployment:**
+- A "Pagada" row triggers a CAPI `Purchase` event **only once**.
+- After successful send, `capi_sent` is set to `true`.
+- Re-entrancy or webhook retries no longer duplicate events in Meta.
+
+---
+
+## 6) CAPI Quality Monitoring Endpoint
+
+**New protected route:** `GET /capi/quality` (authenticated).
+
+Use this endpoint (or the daily sync quality logs) for post-deployment validation of EMQ health.
+
+**Key signals to watch:**
+- Recent Purchase events from paid productions.
+- % of recent leads carrying `fbc` + `fbp`.
+- Pixel routing per ad account (`9523446201036125` vs `4172099716404860`).
+
+**Recommended cadence:** Check after each deployment and daily via the orchestrator logs (`[sync-doctoralia] Daily data quality for CAPI`).
+
+---
+
+## 7) Anomaly Dashboard (Pagada sin enviar)
+
+Create or schedule the query from `docs/capi/capi_anomaly_detection_pagada_not_sent.sql` as a recurring check or Supabase scheduled function to surface any "Pagada" rows that never received their CAPI Purchase event.
+
+**Automation tip**: Add a Supabase Scheduled Function or GitHub cron that runs this query daily and posts results to Telegram/Slack if any rows are found.
+
+**Recommended CLI method** (fully scriptable):
+```bash
+SHEETS_WEBHOOK_URL="https://script.google.com/..." \
+SHEETS_WEBHOOK_SECRET="tu-clave-secreta" \
+SUPABASE_ACCESS_TOKEN="sbp_xxx" \
+SUPABASE_PROJECT_REF="ssvvuuysgxyqvmovrlvk" \
+node scripts/setup-supabase-webhooks.js
+```
+
+---
+
+## 8) Google Apps Script para espejo en tiempo real (Produccion Intermediarios)
+
+**Estado:** ✅ Webhook creado el 27 de mayo de 2026
+
+- **Nombre del webhook:** `Sync_To_Google_Sheets`
+- **Tabla:** `produccion_intermediarios`
+- **URL:** Google Apps Script (Produccion Intermediarios)
+- **Header de seguridad:** `X-Webhook-Secret = Doctoralia_Secret_2026_!!`
+
+Script robusto: `docs/google-apps-script/webhook-produccion-intermediarios.js`
+
+**Próximo paso:** Verificar que el webhook esté recibiendo eventos correctamente (revisar Ejecuciones en Apps Script).
+
+---
+
+## Supabase Database Advisor Findings (Current)
+
+### auth_allow_anonymous_sign_ins (cron schema)
+- **Status**: Addressed via migration `20260528000000_final_cron_anon_rls_hardening.sql`
+- **Action required**: Apply the latest migration (`supabase db push` or via Dashboard).
+- **Note**: pg_cron tables (`cron.job`, `cron.job_run_details`) now restrict access to `service_role` only.
+
+### auth_leaked_password_protection
+- **Status**: Currently disabled (high risk)
+- **Action required (Manual)**: 
+  1. Go to Supabase Dashboard → Authentication → Providers → Email
+  2. Enable **"Leaked Password Protection"**
+- This cannot be done via SQL migration. Must be enabled in the Dashboard.
+
+### auth_rls_initplan (17 tables)
+- **Status**: ✅ Fixed via migration `20260529000000_fix_remaining_auth_rls_initplan.sql`
+- **Tables addressed** (exact list from linter): `api_call_log`, `appointments`, `credentials`, `doctoralia_patients`, `doctors`, `financial_settlements`, `integrations`, `patients`, `treatment_types`, `clinics`, `leads`, `meta_daily_insights`, `meta_ig_account_daily`, `meta_ig_media_performance`, `meta_organic_daily`, `meta_post_performance`, `produccion_intermediarios`, `whatsapp_conversations`.
+- **Action required**: Apply the migration with `npx supabase migration up --linked` (or `supabase db push`) and re-run lint.
+- **Pattern applied**: All SELECT policies now use `(SELECT auth.uid())`, `(SELECT auth.jwt() ...)`, `(SELECT auth.role())` and `(SELECT public.current_clinic_id())` so the planner treats them as init-plan (once per query) instead of per-row re-evaluation.
+- **Verification command** (after linking the project):
+  ```
+  npx supabase db lint --linked --level warning
+  ```
+  (or `--db-url "postgresql://..."` if using direct connection string).
+
+---
+
+## 9) Full End-to-End Automation Requirements
+
+For the entire flow to trigger **automatically** (no manual steps):
+
+1. **Daily Doctoralia Sync** (already automated via GitHub Actions cron in `daily-sync.yml`).
+2. **Supabase Database Webhook** (must be configured once in Dashboard):
+   - Go to Supabase Dashboard → Database → Webhooks
+   - Create webhook on table `produccion_intermediarios`
+   - Events: `INSERT` + `UPDATE`
+   - Filter (optional): `estado = 'pagada'`
+   - POST to: `https://<project-ref>.supabase.co/functions/v1/api/webhooks/supabase`
+   - Use `service_role` key as Authorization (secret).
+3. **capi_sent guard** (already implemented) ensures idempotency.
+4. **Monitoring**:
+   - Daily sync logs include CAPI quality metrics.
+   - Use `/capi/quality` endpoint regularly.
+   - Anomaly query via the helper script `scripts/check-capi-pending-pagadas.js`.
+
+Once the Database Webhook (step 2) is created, the flow "Doctoralia export → sync → 'pagada' → CAPI Purchase (one time only)" runs 100% automatically.
+
 **Required action:**
 1. Obtain a real authenticated JWT (non-anonymous) for a production user.
 2. Execute one playbook run from `/playbooks` UI **or** via API call:

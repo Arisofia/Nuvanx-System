@@ -4,6 +4,9 @@ name: Sync Doctoralia Financials
 # Reads individual settlement rows from Google Sheets (Doctoralia export) and
 # upserts them into the financial_settlements table.
 #
+# Runs automatically every day at 07:00 UTC via schedule.
+# Can also be triggered manually via workflow_dispatch.
+#
 # Required GitHub secrets:
 #   GOOGLE_ADS_SERVICE_ACCOUNT  - Service account credentials (raw JSON OR base64-encoded JSON);
 #                                  must be a valid Google service account in a project with
@@ -15,15 +18,18 @@ name: Sync Doctoralia Financials
 #   DATABASE_URL                - Direct Postgres connection string (Supabase)
 #   CLINIC_ID                   - UUID of the clinic owning these settlements
 
-# on:
-#   schedule:
-#     - cron: '0 7 * * *'   # Daily at 07:00 UTC (09:00 Spain, before business hours)
 on:
+  schedule:
+    - cron: '0 7 * * *'   # Daily at 07:00 UTC (09:00 Spain, before business hours)
   workflow_dispatch: {}
   workflow_call: {}
 
 permissions:
   contents: read
+
+concurrency:
+  group: sync-doctoralia-${{ github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
   sync:
@@ -31,6 +37,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      GOOGLE_PROJECT_ID: ${{ secrets.GOOGLE_PROJECT_ID }}
+      GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+      GOOGLE_DOCTORALIA_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_DOCTORALIA_SERVICE_ACCOUNT }}
       GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
       DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID }}
       DOCTORALIA_DRIVE_FILE_ID: ${{ secrets.DOCTORALIA_DRIVE_FILE_ID }}
@@ -53,10 +65,21 @@ jobs:
         run: |
           set -euo pipefail
           MISSING=()
-          [ -z "${GOOGLE_ADS_SERVICE_ACCOUNT:-}" ] && MISSING+=("GOOGLE_ADS_SERVICE_ACCOUNT")
+          # Check for Sheet ID, DB and Clinic
           [ -z "${DOCTORALIA_SHEET_ID:-}" ] && [ -z "${DOCTORALIA_DRIVE_FILE_ID:-}" ] && MISSING+=("DOCTORALIA_SHEET_ID or DOCTORALIA_DRIVE_FILE_ID")
           [ -z "${DATABASE_URL:-}" ]         && MISSING+=("DATABASE_URL")
           [ -z "${CLINIC_ID:-}" ]            && MISSING+=("CLINIC_ID")
+
+          # Check for Auth: API Key, Service Account JSON (Doctoralia), or individual Email+Key
+          HAS_AUTH=0
+          if [ -n "${GOOGLE_API_KEY:-}" ]; then HAS_AUTH=1; echo "Auth: API Key detected"; fi
+          if [ -n "${GOOGLE_DOCTORALIA_SERVICE_ACCOUNT:-}" ]; then HAS_AUTH=1; echo "Auth: GOOGLE_DOCTORALIA_SERVICE_ACCOUNT detected"; fi
+          if [ -n "${GOOGLE_ADS_SERVICE_ACCOUNT:-}" ]; then HAS_AUTH=1; echo "Auth: GOOGLE_ADS_SERVICE_ACCOUNT detected"; fi
+          if [ -n "${GOOGLE_CLIENT_EMAIL:-}" ] && [ -n "${GOOGLE_PRIVATE_KEY:-}" ]; then HAS_AUTH=1; echo "Auth: Individual GOOGLE_CLIENT_EMAIL and GOOGLE_PRIVATE_KEY detected"; fi
+
+          if [ "$HAS_AUTH" -eq 0 ]; then
+             MISSING+=("Authentication (GOOGLE_API_KEY, GOOGLE_DOCTORALIA_SERVICE_ACCOUNT, GOOGLE_ADS_SERVICE_ACCOUNT, or EMAIL+KEY)")
+          fi
 
           # Conditional Sheet ID validation
           SHEET_ID_EFFECTIVE="${DOCTORALIA_SHEET_ID:-${DOCTORALIA_DRIVE_FILE_ID:-}}"
@@ -73,42 +96,40 @@ jobs:
           fi
 
           if [ ${#MISSING[@]} -gt 0 ]; then
-            echo "::error::Missing secrets: ${MISSING[*]}"
+            echo "::error::Missing critical secrets: ${MISSING[*]}"
             echo "::error::Add them at Settings -> Secrets and variables -> Actions"
             exit 1
           fi
 
-          # Accept both formats for GOOGLE_ADS_SERVICE_ACCOUNT:
-          #  1) base64(service-account.json)
-          #  2) raw JSON object string
-          if echo "$GOOGLE_ADS_SERVICE_ACCOUNT" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
-            echo "GOOGLE_ADS_SERVICE_ACCOUNT format: Detected raw JSON"
-            # Mask the raw JSON to avoid accidental leakage in logs
-            echo "::add-mask::$GOOGLE_ADS_SERVICE_ACCOUNT"
-            SA_FILE="$RUNNER_TEMP/google-service-account.json"
-            printf '%s' "$GOOGLE_ADS_SERVICE_ACCOUNT" > "$SA_FILE"
-            chmod 600 "$SA_FILE"
-            echo "GOOGLE_SA_JSON_FILE=$SA_FILE" >> "$GITHUB_ENV"
-          else
-            DECODED="$(echo "$GOOGLE_ADS_SERVICE_ACCOUNT" | base64 -d 2>/dev/null)" || {
-              echo "::error::GOOGLE_ADS_SERVICE_ACCOUNT is not valid raw JSON and failed Base64 decoding."
-              exit 1
-            }
-            
-            echo "$DECODED" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null || {
-              echo "::error::GOOGLE_ADS_SERVICE_ACCOUNT was Base64 decoded, but the result is not a valid JSON object."
-              exit 1
-            }
-            echo "GOOGLE_ADS_SERVICE_ACCOUNT format: Detected Base64 JSON"
-            # Mask the decoded JSON to avoid accidental leakage in logs
-            echo "::add-mask::$DECODED"
-            SA_FILE="$RUNNER_TEMP/google-service-account.json"
-            printf '%s' "$DECODED" > "$SA_FILE"
-            chmod 600 "$SA_FILE"
-            echo "GOOGLE_SA_JSON_FILE=$SA_FILE" >> "$GITHUB_ENV"
+          # Log presence of optional secrets for debugging
+          [ -n "${GOOGLE_API_KEY:-}" ] && echo "Auth method: GOOGLE_API_KEY is present." || echo "Auth method: GOOGLE_API_KEY is missing."
+          
+          # Try to decode Service Account (Doctoralia or Ads fallback)
+          export SA_JSON_RAW="${GOOGLE_DOCTORALIA_SERVICE_ACCOUNT:-${GOOGLE_ADS_SERVICE_ACCOUNT:-}}"
+          if [ -n "$SA_JSON_RAW" ]; then
+            if python3 -c "import os,json; json.loads(os.environ.get('SA_JSON_RAW', ''))" 2>/dev/null; then
+              echo "SA_JSON_RAW format: Detected raw JSON"
+              echo "::add-mask::$SA_JSON_RAW"
+              SA_FILE="$RUNNER_TEMP/google-service-account.json"
+              printf '%s' "$SA_JSON_RAW" > "$SA_FILE"
+              chmod 600 "$SA_FILE"
+              echo "GOOGLE_SA_JSON_FILE=$SA_FILE" >> "$GITHUB_ENV"
+            else
+              DECODED="$(echo "$SA_JSON_RAW" | base64 -d 2>/dev/null)" || DECODED=""
+              if [ -n "$DECODED" ] && echo "$DECODED" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
+                echo "SA_JSON_RAW format: Detected Base64 JSON"
+                echo "::add-mask::$DECODED"
+                SA_FILE="$RUNNER_TEMP/google-service-account.json"
+                printf '%s' "$DECODED" > "$SA_FILE"
+                chmod 600 "$SA_FILE"
+                echo "GOOGLE_SA_JSON_FILE=$SA_FILE" >> "$GITHUB_ENV"
+              else
+                echo "SA_JSON_RAW is not a valid JSON/Base64 (used as-is if applicable)."
+              fi
+            fi
           fi
 
-          echo "All required secrets present and valid."
+          echo "Preflight complete."
 
       - name: Install sync dependencies
         run: npm install --no-save googleapis pg
@@ -117,6 +138,13 @@ jobs:
         run: node scripts/sync-doctoralia.js
         env:
           GOOGLE_SA_JSON_FILE: ${{ env.GOOGLE_SA_JSON_FILE }}
+          GOOGLE_DOCTORALIA_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_DOCTORALIA_SERVICE_ACCOUNT }}
+          GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
+          GOOGLE_API_KEY:      ${{ secrets.GOOGLE_API_KEY }}
+          GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
+          GOOGLE_CLIENT_ID:    ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_PROJECT_ID:   ${{ secrets.GOOGLE_PROJECT_ID }}
+          GOOGLE_PRIVATE_KEY:  ${{ secrets.GOOGLE_PRIVATE_KEY }}
           EXPECTED_SHEET_ID:   ${{ env.EXPECTED_SHEET_ID }}
           SHEET_RANGE:         A1:Z5000
           SHEET_NAME:          "Produccion Intermediarios"

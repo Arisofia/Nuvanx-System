@@ -27,7 +27,7 @@ inputs:
   supabase_cli_version:
     description: 'Supabase CLI version to use'
     required: false
-    default: 'latest'
+    default: '2.101.0'
 
 outputs:
   resolved_db_password:
@@ -35,7 +35,7 @@ outputs:
     value: ${{ steps.creds.outputs.resolved_db_password }}
   skipped:
     description: 'True if the link step was skipped due to deterministic errors'
-    value: ${{ steps.link.outputs.skipped }}
+    value: ${{ steps.link.outputs.skipped || 'false' }}
 
 runs:
   using: 'composite'

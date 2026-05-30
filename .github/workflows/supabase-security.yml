@@ -36,6 +36,7 @@ on:
 
 env:
   VITE_MCP_API_KEY: ${{ secrets.VITE_MCP_API_KEY }}
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE22: true
 
 concurrency:
   group: supabase-security-${{ github.ref_name }}

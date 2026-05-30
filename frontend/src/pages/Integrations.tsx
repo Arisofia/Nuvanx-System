@@ -103,44 +103,63 @@ export default function Integrations() {
     return []
   }
 
-  const handleConnect = async (e: SyntheticEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    setSaveError(null)
-    if (!form.token.trim()) { setSaveError('Token / API key is required.'); return }
-    if (form.service === 'meta') {
-      if (!form.adAccountId.trim()) { setSaveError('Ad Account ID is required for Meta.'); return }
-      if (!form.pageId.trim()) { setSaveError('Page ID is required for Meta to enable lead webhooks.'); return }
-    }
+  const getValidationError = () => {
+    if (!form.token.trim()) return 'Token / API key is required.'
 
-    const metadata: Record<string, unknown> = {}
     if (form.service === 'meta') {
+      if (!form.adAccountId.trim()) return 'Ad Account ID is required for Meta.'
+      if (!form.pageId.trim()) return 'Page ID is required for Meta to enable lead webhooks.'
+
       const adAccountIds = normalizeMetaAdAccountIds(form.adAccountId)
       const rawValues = String(form.adAccountId)
         .split(/[\s,;]+/)
         .map((value) => value.trim())
         .filter(Boolean)
+
       if (adAccountIds.length === 0) {
-        setSaveError('Ingrese al menos un ID de cuenta publicitaria válido (act_1234567890 o 1234567890).');
-        return
+        return 'Ingrese al menos un ID de cuenta publicitaria válido (act_1234567890 o 1234567890).'
       }
       if (rawValues.length > 1 && adAccountIds.length < rawValues.length) {
-        setSaveError('Verifica que todas las cuentas publicitarias sean IDs válidas. Debes separar varias IDs con comas o espacios, por ejemplo: act_1234567890, act_0987654321.');
-        return
+        return 'Verifica que todas las cuentas publicitarias sean IDs válidas. Debes separar varias IDs con comas o espacios, por ejemplo: act_1234567890, act_0987654321.'
       }
+    }
+
+    if (form.service === 'google_ads') {
+      if (!form.googleAdsCustomerId?.trim()) return 'Customer ID is required for Google Ads.'
+    }
+
+    return null
+  }
+
+  const getMetadata = () => {
+    const metadata: Record<string, unknown> = {}
+    if (form.service === 'meta') {
+      const adAccountIds = normalizeMetaAdAccountIds(form.adAccountId)
       metadata.adAccountIds = adAccountIds
       metadata.adAccountId = adAccountIds[0]
       metadata.pageId = form.pageId.trim()
       if (form.pixelId?.trim()) {
         metadata.pixelId = form.pixelId.trim()
       }
-    }
-    if (form.service === 'whatsapp') {
+    } else if (form.service === 'whatsapp') {
       metadata.phoneNumberId = form.phoneNumberId.trim()
-    }
-    if (form.service === 'google_ads') {
-      if (!form.googleAdsCustomerId?.trim()) { setSaveError('Customer ID is required for Google Ads.'); return }
+    } else if (form.service === 'google_ads') {
       metadata.customerId = form.googleAdsCustomerId.trim()
     }
+    return metadata
+  }
+
+  const handleConnect = async (e: SyntheticEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    setSaveError(null)
+
+    const validationError = getValidationError()
+    if (validationError) {
+      setSaveError(validationError)
+      return
+    }
+
+    const metadata = getMetadata()
 
     setSaving(true)
     try {
@@ -183,15 +202,34 @@ export default function Integrations() {
     setHealthResult((prev) => ({ ...prev, [service]: '' }))
     try {
       const res: any = await invokeApi('/health/meta')
-      const account = res.ad_account ?? res.accountId ?? ''
-      const accountIds = Array.isArray(res.accountIds) ? res.accountIds : String(res.accountIds ?? '').split(/[\s,;]+/).filter(Boolean)
+      const accounts = Array.isArray(res.accounts) ? res.accounts : []
       const name = res.meta_user ?? res.metaUser ?? 'Meta user'
-      const accountText = account ? ` · Cuenta: ${account}` : ''
-      const accountIdsText = accountIds.length > 0 ? ` · Cuentas: ${accountIds.join(', ')}` : ''
-      setHealthResult((prev) => ({
-        ...prev,
-        [service]: `OK: ${name}${accountText}${accountIdsText}`,
-      }))
+
+      if (accounts.length > 0) {
+        const lines = accounts.map((a: any) => {
+          if (a.status === 'ok' || a.status === 'partial_read_ok') {
+            return `✅ ${a.id} ${a.name ? `(${a.name})` : ''}`
+          }
+          if (a.status === 'permission_error') {
+            return `❌ ${a.id} — SIN PERMISOS ads_read/ads_management. ${a.error ? a.error.substring(0, 120) : ''}`
+          }
+          return `⚠️ ${a.id} — ${a.error ? a.error.substring(0, 100) : 'error'}`
+        })
+        const remediation = res.remediation ? `\n\n🔧 ${res.remediation}` : ''
+        setHealthResult((prev) => ({
+          ...prev,
+          [service]: `Meta: ${name}\n${lines.join('\n')}${remediation}`,
+        }))
+      } else {
+        const account = res.ad_account ?? res.accountId ?? ''
+        const accountIds = Array.isArray(res.accountIds) ? res.accountIds : String(res.accountIds ?? '').split(/[\s,;]+/).filter(Boolean)
+        const accountText = account ? ` · Cuenta: ${account}` : ''
+        const accountIdsText = accountIds.length > 0 ? ` · Cuentas: ${accountIds.join(', ')}` : ''
+        setHealthResult((prev) => ({
+          ...prev,
+          [service]: `OK: ${name}${accountText}${accountIdsText}`,
+        }))
+      }
     } catch (err: any) {
       setHealthResult((prev) => ({ ...prev, [service]: err?.message ?? 'Verificación de Meta falló.' }))
     } finally {
@@ -440,7 +478,9 @@ export default function Integrations() {
                   )}
                 </div>
                 {healthResult[integration.service] && (
-                  <p className="text-xs text-muted mt-2">{healthResult[integration.service]}</p>
+                  <pre className="text-[10px] text-muted mt-2 whitespace-pre-wrap font-mono bg-[#FAF7F2] p-2 rounded border border-border/30 overflow-x-auto">
+                    {healthResult[integration.service]}
+                  </pre>
                 )}
               </CardContent>
             </Card>

@@ -1,9 +1,15 @@
 import { createClient } from '@supabase/supabase-js'
-import { supabaseKey, supabaseUrl } from './env'
+import { isSupabaseConfigured, supabaseKey, supabaseUrl } from './env'
 
-export { supabaseKey, supabaseUrl }
+export { isSupabaseConfigured, supabaseKey, supabaseUrl }
 
-export const supabase = createClient(supabaseUrl || '', supabaseKey || '')
+const fallbackSupabaseUrl = 'https://not-configured.supabase.co'
+const fallbackSupabaseKey = 'not-configured-public-key'
+
+export const supabase = createClient(
+  isSupabaseConfigured ? supabaseUrl : fallbackSupabaseUrl,
+  isSupabaseConfigured ? supabaseKey : fallbackSupabaseKey,
+)
 
 // Backward-compatible re-export for legacy imports:
 // import { invokeApi } from '../lib/supabaseClient'

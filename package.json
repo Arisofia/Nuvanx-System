@@ -12,6 +12,7 @@
     "meta:token:generate": "node scripts/generate-meta-token.js",
     "meta:token:audit": "node scripts/generate-meta-token.js --audit-file artifacts/meta-token-audit.json",
     "update:meta-token": "META_ACCESS_TOKEN_NEW=REPLACE_ME node scripts/set-meta-token.js",
+    "meta:token:rotate": "node scripts/rotate-meta-token.js --all",
     "meta:weekly:report": "node scripts/meta-weekly-report.js",
     "ingest:doctoralia": "node scripts/ingest-doctoralia.js",
     "supabase:functions:list": "npx --yes supabase functions list",
@@ -34,6 +35,7 @@
     "@supabase/supabase-js": "^2.106.1",
     "dotenv": "^17.4.2",
     "googleapis": "^171.4.0",
+    "node-fetch": "^2.7.0",
     "pg": "^8.21.0",
     "xlsx-populate": "^1.21.0"
   },

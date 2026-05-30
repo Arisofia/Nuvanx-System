@@ -99,7 +99,7 @@ BEGIN
     ) THEN
       CREATE POLICY users_select_own ON public.users
         FOR SELECT TO authenticated
-        USING (auth.uid() = id);
+        USING ((SELECT auth.uid()) = id);
     END IF;
   END IF;
 END $$;
