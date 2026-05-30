@@ -813,7 +813,7 @@ async function upsertDoctoraliaRow(row, i, params) {
           patient_phone, phone_normalized, source_system,
           patient_name, tratamiento_nombre, email_hubspot, ejecutivo_asignado,
           ingreso_lead, campana, capi_sent)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26, false)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, false)
        ON CONFLICT (id) DO UPDATE SET
          amount_gross        = EXCLUDED.amount_gross,
          amount_discount     = EXCLUDED.amount_discount,
