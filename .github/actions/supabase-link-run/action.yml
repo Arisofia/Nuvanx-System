@@ -27,7 +27,7 @@ inputs:
   supabase_cli_version:
     description: 'Supabase CLI version to use'
     required: false
-    default: '2.101.0'
+    default: '2.22.0'
 
 outputs:
   resolved_db_password:
@@ -41,6 +41,7 @@ runs:
   using: 'composite'
   steps:
     - name: Setup Supabase CLI
+      # Updated to latest major (v1 tracks current Supabase CLI releases)
       uses: supabase/setup-cli@v1
       with:
         version: ${{ inputs.supabase_cli_version }}
@@ -164,15 +165,28 @@ runs:
         fi
 
         if [ -n "${DATABASE_URL:-}" ]; then
-          # Use DATABASE_URL verbatim (no hostname/port rewriting).
-          SESSION_URL="$DATABASE_URL"
+          # Smart handling for Supabase connection strings in GitHub Actions (no IPv6)
+          # If the caller provided a transaction pooler (port 6543 / pgbouncer), rewrite to Session Pooler (5432)
+          # This is the recommended quick fix for DNS issues on GitHub runners.
+          if [[ "${DATABASE_URL}" == *"pooler.supabase"* ]] && [[ "${DATABASE_URL}" == *":6543/"* || "${DATABASE_URL}" == *"pgbouncer=true"* ]]; then
+            SESSION_URL=$(echo "$DATABASE_URL" | sed -E 's|:6543/|:5432/|; s|\?pgbouncer=true||g; s|&pgbouncer=true||g')
+            if [[ "$SESSION_URL" != *"sslmode="* ]]; then
+              SESSION_URL="${SESSION_URL}?sslmode=require"
+            fi
+            echo "::warning::DATABASE_URL looked like Transaction Pooler. Rewrote to Session Pooler (port 5432) for better GitHub Actions compatibility."
+            echo "Using Session Pooler URL (hostname preserved, port changed to 5432)"
+          else
+            SESSION_URL="$DATABASE_URL"
+            echo "Using provided DATABASE_URL as-is (Session Pooler or Direct recommended)"
+          fi
           export SESSION_URL
         elif [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
-          # Fallback: construct direct connection URL when DATABASE_URL is unavailable.
+          # Fallback: construct direct connection (requires IPv4 add-on to be enabled in Supabase)
           SESSION_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
           export SESSION_URL
+          echo "No DATABASE_URL provided — falling back to direct DB URL (db.<ref>.supabase.co:5432)"
         else
-          echo "::error::Cannot build SESSION_URL. Provide DATABASE_URL, or SUPABASE_DB_PASSWORD with SUPABASE_PROJECT_REF."
+          echo "::error::Cannot build SESSION_URL. Provide DATABASE_URL (Session Pooler 5432 recommended), or SUPABASE_DB_PASSWORD with SUPABASE_PROJECT_REF."
           exit 1
         fi
 

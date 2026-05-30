@@ -18,7 +18,7 @@ on:
 env:
   # Using node-version: 22 in setup-node directly.
   SYNC_MODE: daily
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE22: true
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   META_GRAPH_VERSION: v20.0
 
 concurrency:
@@ -52,7 +52,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v4
 
       - name: Prefer IPv4 + hardened resolver (Supabase IPv6 root cause mitigation)
         run: |

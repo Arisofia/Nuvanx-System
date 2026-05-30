@@ -17,7 +17,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v4
 
       - name: Fail on merge conflict markers in CI-critical config
         run: |
@@ -135,7 +135,7 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v4
 
       - name: Use Node.js
         uses: actions/setup-node@v4
@@ -161,7 +161,7 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v4
 
       - name: Use Node.js
         uses: actions/setup-node@v4
@@ -189,7 +189,7 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v4
 
       - name: Use Node.js
         uses: actions/setup-node@v4
@@ -240,7 +240,7 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v4
 
       - name: Use Node.js
         uses: actions/setup-node@v4
@@ -288,7 +288,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v4
 
       - name: Use Node.js
         uses: actions/setup-node@v4
@@ -342,7 +342,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v4
 
       - name: Setup Deno
         uses: denoland/setup-deno@v2 # Pin to latest v2.x

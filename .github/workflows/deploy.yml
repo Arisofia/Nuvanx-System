@@ -1,6 +1,11 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
 name: Deploy Supabase
 
+# IMPORTANT for GitHub Actions + Supabase connectivity:
+# - Store a Session Pooler connection string (port 5432) in the DATABASE_URL secret for best reliability.
+# - The supabase-link-run action now auto-rewrites transaction pooler URLs to session pooler when detected.
+# - IPv4 add-on in Supabase is enabled (helps direct + pooler reachability).
+
 on:
   push:
     branches: [main]
@@ -11,7 +16,8 @@ on:
 env:
   # VITE_ env vars are used during build/deploy steps.
   VITE_MCP_API_KEY: ${{ secrets.MCP_API_KEY }}
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE22: true
+  # Force modern Node for actions (checkout, etc.) to avoid Node 20 deprecation issues on GitHub runners.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 concurrency:
   group: deploy-supabase-production
@@ -30,8 +36,32 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v4
+
+      - name: Diagnose Supabase connectivity (DNS + IPv4/IPv6)
+        run: |
+          echo "=== Supabase host diagnosis for migrations (GitHub runner) ==="
+          ref="${SUPABASE_PROJECT_REF:-}"
+          if [ -z "$ref" ]; then
+            echo "SUPABASE_PROJECT_REF not available, skipping detailed diagnosis."
+          else
+            hosts=(
+              "db.${ref}.supabase.co"
+              "aws-1-eu-central-1.pooler.supabase.co"
+              "aws-0-eu-central-1.pooler.supabase.co"
+            )
+            for h in "${hosts[@]}"; do
+              echo ""
+              echo "Host: $h"
+              nslookup "$h" 2>/dev/null || echo "  nslookup: no output / failed"
+              echo "  IPv4 (A records):    $(getent ahosts "$h" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -3 | tr '\n' ' ' || echo 'none')"
+              echo "  IPv6 (AAAA):         $(getent ahosts "$h" 2>/dev/null | grep -oE '([0-9a-fA-F]{1,4}:){2,}[0-9a-fA-F]{1,4}' | head -3 | tr '\n' ' ' || echo 'none')"
+            done
+          fi
+          echo ""
+          echo "Tip: Best results on GitHub Actions come from storing a Session Pooler (port 5432) string in DATABASE_URL."
 
       - name: Validate Supabase deployment secrets
         id: validate
@@ -241,8 +271,9 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v4
 
       - name: Deploy API Edge Function
         id: deploy_api

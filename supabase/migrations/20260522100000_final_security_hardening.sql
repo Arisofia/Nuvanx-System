@@ -79,7 +79,10 @@ DECLARE
     'vw_doctoralia_lead_traceability_unified',
     'vw_doctoralia_patient_ltv',
     'vw_campaign_performance_real',
-    'vw_lead_traceability'
+    'vw_lead_traceability',
+    'vw_produccion_intermediarios_kpis',
+    'vw_produccion_intermediarios_by_agenda',
+    'vw_produccion_intermediarios_by_proc'
   ];
 BEGIN
   FOREACH v IN ARRAY view_list LOOP
