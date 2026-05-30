@@ -40,8 +40,15 @@ function doPost(e) {
       }
     }
 
-    const payload = JSON.parse(e.postData.contents);
-    const record = payload.record; // Supabase envía el nuevo registro en "record"
+    let payload;
+    try {
+      payload = JSON.parse(e.postData.contents);
+    } catch (parseErr) {
+      console.error("Error parseando JSON del webhook:", parseErr);
+      return ContentService.createTextOutput("Bad Request: Invalid JSON").setMimeType(ContentService.MimeType.TEXT);
+    }
+
+    const record = payload.record;
 
     if (!record) {
       console.error("Payload sin campo 'record'");

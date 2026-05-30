@@ -448,6 +448,8 @@ function buildHeaderConfig(headers) {
 
   // Diagnostic logging - very useful when columns are not detected as expected
   console.log('[sync-doctoralia] Column detection results:');
+  // Newer columns supported (from 20260530+ migrations):
+  // paciente_nombre, procedimiento_nombre (tratamiento), email_hubspot, ejecutivo_asignado, ingreso_lead, campana, capi_sent
   console.log('  ID/Operacion     :', hasColId ? `col ${colId}` : 'NOT FOUND (will use hash ID)');
   console.log('  Plantilla/Asunto :', hasColTemplate ? `col ${colTemplate}` : 'NOT FOUND');
   console.log('  Fecha Liquidación:', hasColSettled ? `col ${colSettled}` : `FALLBACK to Fecha (col ${colFecha})`);

@@ -126,8 +126,10 @@ jobs:
 
             # Hard timeout so a stuck connection doesn't burn Actions minutes.
             echo "Running supabase db lint with: $(echo "$LINT_DB_URL" | sed -E 's|:[^@]*@|://***@|')"
+            # Use --level warning on PRs to avoid blocking development.
+            # Use --level error only in scheduled/main deploys if stricter policy is desired.
             lint_output=$(timeout --signal=TERM --kill-after=30s 240s \
-              supabase db lint --db-url "$LINT_DB_URL" --level error --fail-on error </dev/null 2>&1) || {
+              supabase db lint --db-url "$LINT_DB_URL" --level warning --fail-on error </dev/null 2>&1) || {
               lint_exit=$?
               echo "$lint_output"
               echo "::error::supabase db lint failed using the selected LINT_DB_URL."

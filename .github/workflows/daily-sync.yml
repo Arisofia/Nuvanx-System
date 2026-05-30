@@ -32,7 +32,7 @@ jobs:
     name: Run Daily Sync Orchestrator
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 25   # Stricter timeout as per security/hardening review
     
     env:
       # Centralized secret loading for the daily sync job.
