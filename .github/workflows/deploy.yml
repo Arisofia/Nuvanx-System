@@ -83,7 +83,8 @@ jobs:
 
       - name: Supabase DB migrations
         if: steps.validate.outputs.skip_supabase != 'true'
-        # Hard timeout — the inline command has its own retry logic (up to 3 attempts)
+        # Hard timeout — the migration logic (in scripts/supabase-migrate.sh) has its own retry logic (up to 3 attempts).
+        # The supabase-link-run action provides $SESSION_URL (and the `session_url` output) with proper pooler rewriting + masking.
         timeout-minutes: 25
         uses: ./.github/actions/supabase-link-run
         with:
@@ -109,6 +110,7 @@ jobs:
           skip_link: true
           command: |
             echo "Listing Supabase migrations..."
+            # Uses $SESSION_URL (or the action's session_url output) provided by supabase-link-run
             supabase migration list --db-url "$SESSION_URL" --debug
 
       - name: Upload Supabase migration log
