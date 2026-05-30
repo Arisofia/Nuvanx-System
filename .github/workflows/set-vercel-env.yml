@@ -1,11 +1,15 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
+#
+# Manually sync selected VITE_* secrets from GitHub Actions to a Vercel project.
+# This is useful when you want to keep Vercel preview/production environments
+# in sync with the latest Supabase/MCP keys without going through the Vercel UI.
+#
+# Run manually from the Actions tab when secrets change.
+
 name: Set Vercel Env Vars
 
 on:
   workflow_dispatch: {}
-
-env:
-  NODE_VERSION: 22
 
 jobs:
   set-env:
@@ -18,36 +22,39 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ -z "${VERCEL_TOKEN:-}" ]; then
-            echo "::error::VERCEL_TOKEN is not set. Configure it in GitHub → Settings → Secrets and variables → Actions."
-            exit 1
-          fi
+          : "${VERCEL_TOKEN:?VERCEL_TOKEN secret is required}"
+          : "${PROJECT_ID:?VERCEL_PROJECT_ID secret is required}"
+          : "${ORG_ID:?VERCEL_ORG_ID secret is required}"
 
-          set_var() {
-            local KEY=$1 VAL=$2
+          declare -A VARS=(
+            ["VITE_SUPABASE_URL"]="$VITE_SUPABASE_URL"
+            ["VITE_SUPABASE_ANON_KEY"]="$VITE_SUPABASE_ANON_KEY"
+            ["VITE_SUPABASE_PUBLISHABLE_KEY"]="$VITE_SUPABASE_PUBLISHABLE_KEY"
+            ["VITE_MCP_API_KEY"]="$VITE_MCP_API_KEY"
+          )
+
+          for KEY in "${!VARS[@]}"; do
+            VAL="${VARS[$KEY]}"
+
             if [ -z "$VAL" ]; then
               echo "::warning::Skipping ${KEY} because value is empty."
-              return 0
+              continue
             fi
 
-            # Delete existing first (ignore 404)
+            # Delete existing variable (ignore errors)
             curl -s -o /dev/null -X DELETE \
               "https://api.vercel.com/v10/projects/${PROJECT_ID}/env?key=${KEY}&teamId=${ORG_ID}" \
-              -H "Authorization: Bearer ${VERCEL_TOKEN}"
+              -H "Authorization: Bearer ${VERCEL_TOKEN}" || true
 
-            # Create new encrypted env var for all targets
-            HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+            # Create / update as encrypted var for all targets
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
               "https://api.vercel.com/v10/projects/${PROJECT_ID}/env?teamId=${ORG_ID}" \
               -H "Authorization: Bearer ${VERCEL_TOKEN}" \
               -H "Content-Type: application/json" \
               --data-raw "{\"key\":\"${KEY}\",\"value\":\"${VAL}\",\"type\":\"encrypted\",\"target\":[\"production\",\"preview\",\"development\"]}")
-            echo "${KEY} -> HTTP ${HTTP}"
-          }
 
-          set_var "VITE_SUPABASE_URL"             "${VITE_SUPABASE_URL:-}"
-          set_var "VITE_SUPABASE_ANON_KEY"        "${VITE_SUPABASE_ANON_KEY:-}"
-          set_var "VITE_SUPABASE_PUBLISHABLE_KEY" "${VITE_SUPABASE_PUBLISHABLE_KEY:-}"
-          set_var "VITE_MCP_API_KEY"              "${VITE_MCP_API_KEY:-}"
+            echo "${KEY} -> HTTP ${HTTP_CODE}"
+          done
         env:
           VERCEL_TOKEN:                  ${{ secrets.VERCEL_TOKEN }}
           PROJECT_ID:                    ${{ secrets.VERCEL_PROJECT_ID }}
@@ -56,3 +63,16 @@ jobs:
           VITE_SUPABASE_ANON_KEY:        ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_MCP_API_KEY:              ${{ secrets.VITE_MCP_API_KEY }}
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Vercel Environment Variables Sync" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Variables processed:" >> $GITHUB_STEP_SUMMARY
+          echo "- VITE_SUPABASE_URL" >> $GITHUB_STEP_SUMMARY
+          echo "- VITE_SUPABASE_ANON_KEY" >> $GITHUB_STEP_SUMMARY
+          echo "- VITE_SUPABASE_PUBLISHABLE_KEY" >> $GITHUB_STEP_SUMMARY
+          echo "- VITE_MCP_API_KEY" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Note:** Values are only updated if the corresponding GitHub secret is not empty." >> $GITHUB_STEP_SUMMARY

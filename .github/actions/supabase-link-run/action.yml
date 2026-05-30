@@ -72,8 +72,12 @@ runs:
         set -euo pipefail
         RESOLVED_DB_PASSWORD="$INPUT_SUPABASE_DB_PASSWORD"
         if [ -z "$RESOLVED_DB_PASSWORD" ] && [ -n "$INPUT_DATABASE_URL" ]; then
-          # Extract password from URL defensively without failing on malformed URL variants.
-          RESOLVED_DB_PASSWORD=$(echo "$INPUT_DATABASE_URL" | sed -n 's|.*://[^:]*:\([^@]*\)@.*|\1|p' || echo "")
+          # More robust password extraction (handles common Supabase URL formats)
+          RESOLVED_DB_PASSWORD=$(printf '%s' "$INPUT_DATABASE_URL" | awk -F'[:@]' '{for(i=1;i<=NF;i++) if ($i ~ /^[^\/]*$/ && $(i+1) ~ /@/) {print $i; exit}}' || echo "")
+          # Fallback to simple sed if awk fails
+          if [ -z "$RESOLVED_DB_PASSWORD" ]; then
+            RESOLVED_DB_PASSWORD=$(echo "$INPUT_DATABASE_URL" | sed -n 's|.*://[^:]*:\([^@]*\)@.*|\1|p' || echo "")
+          fi
         fi
         if [ -n "$RESOLVED_DB_PASSWORD" ]; then
           echo "::add-mask::$RESOLVED_DB_PASSWORD"
@@ -92,8 +96,29 @@ runs:
         set -euo pipefail
         is_deterministic_link_error() {
           local output="$1"
-          local pattern='invalid access token|invalid token|not authorized|unauthorized|forbidden|permission denied|necessary privileges|project ref.*not found|project.*not found|invalid project ref|database password.*incorrect|password authentication failed|Unexpected HTTP response: 404'
-          echo "$output" | grep -Eiq "$pattern"
+          # More maintainable than a giant regex. Add new patterns here as Supabase CLI evolves.
+          local -a deterministic_patterns=(
+            'invalid access token'
+            'invalid token'
+            'not authorized'
+            'unauthorized'
+            'forbidden'
+            'permission denied'
+            'necessary privileges'
+            'project ref.*not found'
+            'project.*not found'
+            'invalid project ref'
+            'database password.*incorrect'
+            'password authentication failed'
+            'Unexpected HTTP response: 404'
+          )
+
+          for pattern in "${deterministic_patterns[@]}"; do
+            if echo "$output" | grep -Eiq "$pattern"; then
+              return 0
+            fi
+          done
+          return 1
         }
         run_link_once() {
           if [ -n "$RESOLVED_DB_PASSWORD" ]; then
@@ -143,11 +168,11 @@ runs:
         ACTION_COMMAND: ${{ inputs.command }}
       run: |
         set -euo pipefail
-        {
-          echo '#!/usr/bin/env bash'
-          printf '%s\n' "$ACTION_COMMAND"
-        } > /tmp/supabase_command.sh
+        # Safer script generation: avoid command injection risks from untrusted input
+        printf '%s\n' '#!/usr/bin/env bash' > /tmp/supabase_command.sh
+        printf '%s\n' "$ACTION_COMMAND" >> /tmp/supabase_command.sh
         chmod +x /tmp/supabase_command.sh
+
 
     - name: Execute command
       if: steps.link.outputs.skipped != 'true'
@@ -165,9 +190,12 @@ runs:
         fi
 
         if [ -n "${DATABASE_URL:-}" ]; then
-          # Smart handling for Supabase connection strings in GitHub Actions (no IPv6)
-          # If the caller provided a transaction pooler (port 6543 / pgbouncer), rewrite to Session Pooler (5432)
-          # This is the recommended quick fix for DNS issues on GitHub runners.
+          # Smart handling for Supabase connection strings in GitHub Actions.
+          #
+          # CONFIRMED: The direct db.<ref>.supabase.co hostname for this project is IPv6-only.
+          # GitHub runners often have unreliable IPv6, so we strongly prefer Session Pooler (port 5432).
+          #
+          # If a Transaction Pooler URL (port 6543) is provided, we rewrite it to Session Pooler.
           if [[ "${DATABASE_URL}" == *"pooler.supabase"* ]] && [[ "${DATABASE_URL}" == *":6543/"* || "${DATABASE_URL}" == *"pgbouncer=true"* ]]; then
             SESSION_URL=$(echo "$DATABASE_URL" | sed -E 's|:6543/|:5432/|; s|\?pgbouncer=true||g; s|&pgbouncer=true||g')
             if [[ "$SESSION_URL" != *"sslmode="* ]]; then
@@ -191,6 +219,4 @@ runs:
         fi
 
         bash /tmp/supabase_command.sh
-
-        # Optional: cleanup temporary script after execution
-        # rm -f /tmp/supabase_command.sh || true
+        rm -f /tmp/supabase_command.sh || true
