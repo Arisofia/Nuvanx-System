@@ -11,7 +11,7 @@ Nuvanx-System es una plataforma de inteligencia empresarial (BI) y automatizaci�
 - **Frontend**: React 19 + Vite → deployed to **Vercel**
 - **Production backend API**: Supabase Edge Function at `supabase/functions/api/index.ts`
 - **MCP backend**: Supabase Edge Function at `supabase/functions/mcp/index.ts`
-- **Legacy Node backend**: `backend/src/server.js` is a local legacy/placeholder server, not the production backend
+- **Legacy Node backend**: Previously existed as `backend/src/server.js` (local only). It has been removed — the production backend is now fully on Supabase Edge Functions (`supabase/functions/api/index.ts`).
 - **Database**: Supabase (`ssvvuuysgxyqvmovrlvk` — nuvanx-prod)
 - **Figma sync**: Secondary Supabase project (`zpowfbeftxexzidlxndy`)
 
