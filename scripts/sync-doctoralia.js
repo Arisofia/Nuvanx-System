@@ -123,7 +123,20 @@ const DATABASE_URL = (() => {
 })();
 
 const SHEET_ID = (DOCTORALIA_SHEET_ID || DOCTORALIA_DRIVE_FILE_ID)?.trim();
+const EXPECTED_SHEET_ID = process.env.EXPECTED_SHEET_ID?.trim();
 const ALLOW_PERMISSION_SKIP = DOCTORALIA_SYNC_PERMISSION_MODE.toLowerCase() === 'warn';
+
+// Extra safety: validate sheet ID against expected value (defense in depth with the YAML preflight)
+if (EXPECTED_SHEET_ID && SHEET_ID && SHEET_ID !== EXPECTED_SHEET_ID) {
+  console.error(`[sync-doctoralia] FATAL: Sheet ID mismatch.`);
+  console.error(`  Expected: ${EXPECTED_SHEET_ID}`);
+  console.error(`  Received: ${SHEET_ID}`);
+  console.error(`  This is a protection against accidental use of the wrong spreadsheet.`);
+  process.exit(1);
+}
+if (EXPECTED_SHEET_ID && SHEET_ID) {
+  console.log(`[sync-doctoralia] Sheet ID validated against EXPECTED_SHEET_ID.`);
+}
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 const hasAuth = SA_JSON || GOOGLE_SA_JSON_FILE || GOOGLE_API_KEY || GOOGLE_ADS_SERVICE_ACCOUNT || GOOGLE_DOCTORALIA_SERVICE_ACCOUNT || (GOOGLE_CLIENT_EMAIL && GOOGLE_PRIVATE_KEY);
@@ -361,23 +374,24 @@ function getOptionalTextValue(row, col, enabled) {
 }
 
 function buildHeaderConfig(headers) {
-  const colId           = findCol(headers, '=id', '=num', 'id op', 'id_op', 'num op', 'operacion', 'operation');
-  const colTemplate     = findCol(headers, 'plantilladescr', 'plantilla descr', 'plantilla', 'template descr', 'template', 'asunto');
-  const colTemplateId   = findCol(headers, 'id plantilla', 'template_id', 'id_plantilla', 'cod plantilla');
+  // Enhanced hints for typical Doctoralia "Produccion Intermediarios" exports
+  const colId           = findCol(headers, '=id', '=num', 'id op', 'id_op', 'num op', 'operacion', 'operation', 'nº operacion');
+  const colTemplate     = findCol(headers, 'plantilladescr', 'plantilla descr', 'plantilla', 'template descr', 'template', 'asunto', 'descripcion');
+  const colTemplateId   = findCol(headers, 'id plantilla', 'template_id', 'id_plantilla', 'cod plantilla', 'codigo plantilla');
   const colFecha        = findCol(headers, 'fecha');
   const colHora         = findCol(headers, 'hora');
-  const colIntake       = findCol(headers, 'fecha ingreso', 'fecha inicio', 'ingreso', 'inicio', 'intake', 'alta', 'desde', 'fecha creacion', 'fecha creaci');
-  const colSettled      = findCol(headers, 'fecha liquidaci', 'liquidaci', 'fecha liq', 'settled', 'f. liq');
-  const colGross        = findCol(headers, 'importe bruto', 'bruto', 'gross', 'financiad', 'capital');
-  const colDiscount     = findCol(headers, 'descuento', 'discount', 'bonific');
+  const colIntake       = findCol(headers, 'fecha ingreso', 'fecha inicio', 'ingreso', 'inicio', 'intake', 'alta', 'desde', 'fecha creacion', 'fecha creaci', 'fecha cita');
+  const colSettled      = findCol(headers, 'fecha liquidaci', 'liquidaci', 'fecha liq', 'settled', 'f. liq', 'fecha liquidacion');
+  const colGross        = findCol(headers, 'importe bruto', 'bruto', 'gross', 'financiad', 'capital', 'importe total');
+  const colDiscount     = findCol(headers, 'descuento', 'discount', 'bonific', 'bonificacion');
   const colNet          = findCol(headers, 'importe neto', 'importe liq', 'neto', 'net', 'liquidado', 'importe');
   const colPayment      = findCol(headers, 'metodo pago', 'metodo de pago', 'pago', 'payment', 'forma pago', 'procedencia');
-  const colIntermediary = findCol(headers, 'intermediario', 'mediador', 'financiera', 'entidad', 'agenda');
-  const colStatus       = findCol(headers, 'estado', 'status', 'situacion');
+  const colIntermediary = findCol(headers, 'intermediario', 'mediador', 'financiera', 'entidad', 'agenda', 'centro');
+  const colStatus       = findCol(headers, 'estado', 'status', 'situacion', 'estado cita');
   const colOrigin       = findCol(headers, 'procedencia', 'origen', 'source', 'origin');
-  const colAgenda       = findCol(headers, 'agenda', 'calendario', 'doctor');
-  const colRoom         = findCol(headers, 'sala', 'habitacion', 'room', 'box');
-  const colPhone        = findCol(headers, 'telefono', 'tel', 'movil', 'celular', 'phone', 'contact');
+  const colAgenda       = findCol(headers, 'agenda', 'calendario', 'doctor', 'profesional');
+  const colRoom         = findCol(headers, 'sala', 'habitacion', 'room', 'box', 'consultorio');
+  const colPhone        = findCol(headers, 'telefono', 'tel', 'movil', 'celular', 'phone', 'contacto', 'telefono paciente');
 
   const hasColId           = colId !== -1;
   const hasColTemplate     = colTemplate !== -1;
@@ -395,7 +409,7 @@ function buildHeaderConfig(headers) {
   const hasColRoom         = colRoom !== -1;
   const hasColPhone        = colPhone !== -1;
 
-  return {
+  const config = {
     colId,
     colTemplate,
     colTemplateId,
@@ -431,6 +445,18 @@ function buildHeaderConfig(headers) {
     useHashId: !hasColId,
     colSettledEff: hasColSettled ? colSettled : colFecha,
   };
+
+  // Diagnostic logging - very useful when columns are not detected as expected
+  console.log('[sync-doctoralia] Column detection results:');
+  console.log('  ID/Operacion     :', hasColId ? `col ${colId}` : 'NOT FOUND (will use hash ID)');
+  console.log('  Plantilla/Asunto :', hasColTemplate ? `col ${colTemplate}` : 'NOT FOUND');
+  console.log('  Fecha Liquidación:', hasColSettled ? `col ${colSettled}` : `FALLBACK to Fecha (col ${colFecha})`);
+  console.log('  Importe Bruto    :', hasColGross ? `col ${colGross}` : 'NOT FOUND');
+  console.log('  Importe Neto     :', hasColNet ? `col ${colNet}` : 'NOT FOUND (will calculate)');
+  console.log('  Intermediario    :', hasColIntermediary ? `col ${colIntermediary}` : 'NOT FOUND');
+  console.log('  Estado           :', hasColStatus ? `col ${colStatus}` : 'NOT FOUND');
+
+  return config;
 }
 
 function getRowId(row, config) {
