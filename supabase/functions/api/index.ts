@@ -1357,6 +1357,11 @@ function validateSupabaseRuntimeConfig() {
   requireRuntimeSecret('SUPABASE_SERVICE_ROLE_KEY');
   requireRuntimeSecret('SUPABASE_ANON_KEY');
 
+  // Critical for credential decryption (used by Meta, WhatsApp, etc.)
+  if (!ENCRYPTION_KEY) {
+    throw new Error('ENCRYPTION_KEY is required in Edge Function secrets but is not set.');
+  }
+
   if (!isValidEncryptionKey(ENCRYPTION_KEY)) {
     throw new Error('ENCRYPTION_KEY is required and must be at least 32 characters.');
   }
@@ -1548,9 +1553,8 @@ async function handleRequest(req: Request): Promise<Response> {
 
   let userId = authUser ? authUser.id : userIdHeader;
 
-  // Security: Removed automatic fallback to demo@nuvanx.com for API key requests.
   // All production API key usage must provide explicit X-User-Id header or proper auth.
-  // The previous fallback was only intended for early development and posed a risk.
+  // There is no automatic demo fallback for security reasons.
 
   if ((isServiceRole || isApiKeyValid) && !userId && resource !== 'health') {
     return sendJson({ success: false, message: 'Missing user context' }, 400);
