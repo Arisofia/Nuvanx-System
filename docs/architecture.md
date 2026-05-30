@@ -46,7 +46,7 @@ graph TD
     U["scripts/shared/meta-daily-insights.js"]
     V["scripts/sync-platform-secrets.js"]
     W["scripts/health-check-nuvanx.ts"]
-    X["scripts/verify-meta-access.js"]
+    %% Note: scripts/verify-meta-access.js was consolidated into run-daily-sync.js + daily-sync.yml preflight (removed)
   end
 
   subgraph "CI/CD"
@@ -104,7 +104,6 @@ graph TD
   T --> AC
   U --> Q
   U --> AA
-  X --> AA
 
   %% CI/CD links
   C1 --> P
@@ -135,7 +134,7 @@ graph TD
   K --> AC
   K --> AD
 
-  %% Monitoring connections (new)
+  %% Monitoring connections
   AF --> AG
   T --> AH
   K --> AH
@@ -148,69 +147,42 @@ graph TD
 - Strong emphasis on:
   - SHA-256 hashing of PII (`em`, `ph`).
   - Passing `fbc`/`fbp` for high EMQ.
-  - Dynamic pixel routing per ad account (`9523446201036125` vs `4172099716404860`).
+  - Dynamic pixel routing per ad account.
   - `handleSupabaseWebhook` for server-side `Purchase` events from paid Doctoralia productions.
 
 ### Daily Data Flow — Fully Automated & Bidirectional (Critical for CAPI Attribution)
 
-**Full Automatic Bidirectional Flow**
+The flow (Doctoralia export → Supabase → CAPI Purchase in Meta + live Google Sheets mirror) now runs **100% automatically**.
 
-```mermaid
-graph TD
-    A[Cron Diario: GitHub Actions] -- "sync-doctoralia.js" --> B[(Supabase DB: <br/>produccion_intermediarios)]
-    
-    B -- "Trigger: INSERT/UPDATE" --> C{Supabase Webhooks}
-    
-    %% Webhook 1: CAPI
-    C -- "Webhook #1: CAPI Handler" --> D[Edge Function / Server]
-    D --> E[Meta Conversions API]
-    E -- "Evento: Purchase" --> F[Ads Manager: Atribución ROAS]
-    
-    %% Webhook 2: Sheets
-    C -- "Webhook #2: GAS Robust Webhook" --> G[Google Apps Script]
-    G -- "Validar Secreto & Mapear" --> H[Google Sheets: <br/>Produccion Intermediarios]
-    
-    %% Trazabilidad
-    I[(Vistas de Trazabilidad 360)] -- "Enriquecido con fbc/fbp" --> D
-```
-
-- **Webhook #1 (CAPI)**: Supabase → Edge Function → Meta `Purchase` (with `capi_sent` guard + `fbc`/`fbp` from enriched view).
+- **Webhook #1 (CAPI)**: Supabase → Edge Function → Meta `Purchase` (with `capi_sent` guard + `fbc`/`fbp`).
 - **Webhook #2 (Operational Mirror)**: Supabase → Google Apps Script (`docs/google-apps-script/webhook-produccion-intermediarios.js`) → Real-time update of the "Produccion Intermediarios" sheet.
-- Robust version of the script is saved at:
-  `docs/google-apps-script/webhook-produccion-intermediarios.js`
-- **Webhook #2 (Google Sheets)**: Se crea **manualmente una sola vez** en Supabase Dashboard → Database → Webhooks (la Management API devuelve 404 para este tipo de webhook). El script `setup-supabase-webhooks.js` ahora detecta este caso y muestra los pasos exactos.
-
-**Result**: The entire flow (Doctoralia export → Supabase → CAPI Purchase in Meta + live Sheet mirror) runs **100% automatically** after the initial one-time configuration of the two Database Webhooks.
 
 ### Monitoring & Quality
-- New protected endpoint: `GET /capi/quality` — provides EMQ signal coverage, recent Purchase events, and pixel routing status.
-- Quality alerts: `[CAPI-QUALITY-ALERT]` when key signals (`fbc`, `fbp`, `em`, `ph`) are missing.
-- Daily sync now emits structured quality logs for phone coverage and reconciliation success.
+- Protected endpoint: `GET /capi/quality`
+- Quality alerts: `[CAPI-QUALITY-ALERT]`
+- Structured daily sync quality logs
 
 ### Security Posture
-- Multiple layers of redaction for sensitive data in logs (especially service account credentials and error messages).
-- CodeQL/Sonar issues actively addressed in `sync-doctoralia.js` and related scripts.
+- Multiple layers of redaction for sensitive data.
+- CodeQL/Sonar issues addressed.
 
 ## Recent Improvements (June 2026)
 
-- Made Doctoralia daily sync **critical** in the orchestrator (directly impacts reliability of CAPI `Purchase` events from paid productions).
-- Added `capi/quality` monitoring endpoint (protected, returns EMQ signal coverage, recent Purchase events, pixel routing).
-- Enriched traceability view with `lead_fbc` / `lead_fbp` for better CAPI matching on paid conversions.
-- Hardened CAPI event dispatch + removed automatic `demo@nuvanx.com` user fallback for API key requests (security).
-- Improved logging around `[CAPI-PROD]` events and daily sync quality metrics.
-- All main production paths (CAPI Lead/Purchase, Doctoralia reconciliation, daily sync) are implemented with real data only — no mock/demo data in critical flows.
-
-**Major additions in June 2026 review:**
-- Comprehensive GitHub workflows hardening (ci, deploy, daily sync, security lint, Doctoralia sync).
-- Confirmed direct Supabase hostname is IPv6-only → strong Session Pooler enforcement.
-- New structured labeling system (`area/migrations`, `area/security`, `area/doctoralia`, etc.).
-- Significant improvements to reusable composite actions and CODEOWNERS.
+- Doctoralia daily sync made critical in the orchestrator.
+- Added `capi/quality` monitoring endpoint.
+- Enriched traceability view with `lead_fbc` / `lead_fbp`.
+- Hardened CAPI dispatch.
+- Comprehensive GitHub workflows hardening.
+- Confirmed IPv6-only Supabase direct hostname → strong Session Pooler enforcement.
+- New structured labeling system.
+- Significant improvements to reusable composite actions (`supabase-link-run`).
 
 ---
 
-*This document is maintained as the high-level architecture reference. 
-Please keep it reasonably in sync with major changes, especially:
+*This document is maintained as the high-level architecture reference.*
+
+**Please keep it reasonably in sync with major changes**, especially:
 - New or heavily modified GitHub workflows / composite actions
 - New Edge Functions or critical scripts
 - Changes to the labeling strategy or security posture
-- Major data flows (CAPI, Doctoralia, traceability)*
+- Major data flows (CAPI, Doctoralia, traceability)
