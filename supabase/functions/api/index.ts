@@ -1630,6 +1630,7 @@ export const AUTHENTICATED_ROUTE_HANDLERS = new Map<string, RouteHandler>([
   ['figma-events||*', handleFigmaEvents],
   ['whatsapp|send|POST', handleWhatsappSend],
   ['whatsapp|conversion|POST', handleWhatsappConversionPost],
+  ['meta|test-contact|POST', handleMetaTestContactPost],
   ['kpis||GET', handleKpisGet],
   ['reports|doctoralia-financials|GET', handleReportsDoctoraliaFinancialsGet],
   ['reports|campaign-performance|GET', handleReportsCampaignPerformanceGet],
@@ -2262,9 +2263,20 @@ async function handleSupabaseWebhook(ctx: PublicRouteContext): Promise<Response 
             return;
           }
 
+          // Optimized matching using unified traceability view (rich identifiers for CAPI)
           const { data: trace, error: traceErr } = await adminClient
             .from('vw_doctoralia_lead_traceability_unified')
-            .select('lead_id, leadgen_id, campaign_id, lead_phone_normalized, clinic_id, lead_fbc, lead_fbp')
+            .select(`
+              lead_id,
+              leadgen_id,
+              lead_full_name,
+              lead_phone_normalized,
+              lead_fbc,
+              lead_fbp,
+              campaign_id,
+              ad_id,
+              clinic_id
+            `)
             .eq('paciente_telefono_normalized', phoneNormalized)
             .eq('clinic_id', clinicId)
             .limit(1)
@@ -2284,21 +2296,30 @@ async function handleSupabaseWebhook(ctx: PublicRouteContext): Promise<Response 
             return;
           }
 
+          // Extract rich identifiers for high-quality CAPI Purchase payload
+          const leadFullName = trace?.lead_full_name || null;
+          const leadGenId = trace?.leadgen_id || trace?.lead_id;
+          const firstName = leadFullName ? leadFullName.split(' ')[0] : null;
+          const lastName = leadFullName ? leadFullName.split(' ').slice(1).join(' ') : null;
+
           await trackMetaConversion('lead', creds.accessToken, {
             eventName: 'Purchase',
             pixelId: creds.pixelId,
             eventId: `prod_${record.id}`,
             phone: trace.lead_phone_normalized ?? phoneNormalized,
+            firstName,
+            lastName,
             fbc,
             fbp,
-            externalId: trace.lead_id,
+            externalId: leadGenId,           // Prefer leadgen_id for Meta attribution
             customData: {
               value: importe,
               currency: 'EUR',
               source: 'doctoralia_production',
               produccion_id: record.id ?? null,
               campaign_id: trace.campaign_id ?? null,
-              leadgen_id: trace.leadgen_id ?? null,
+              ad_id: trace.ad_id ?? null,
+              lead_id: trace.lead_id,
             },
           });
 
@@ -6688,6 +6709,75 @@ async function handleWhatsappConversionPost(ctx: AuthenticatedRouteContext): Pro
     return await processWhatsappConversionPost(adminClient, userId, req, url, sendJson);
   }
   return null;
+}
+
+/**
+ * Test endpoint: POST /meta/test-contact
+ * Allows firing a Contact CAPI event with full signals + test_event_code
+ * for real-time EMQ debugging in Meta Events Manager without touching prod flows.
+ *
+ * Body example:
+ * {
+ *   "phone": "+34612345678",
+ *   "email": "test@nuvanx.com",
+ *   "fbc": "...",
+ *   "fbp": "...",
+ *   "test_event_code": "YOUR_TEST_CODE_FROM_META"
+ * }
+ */
+async function handleMetaTestContactPost(ctx: AuthenticatedRouteContext): Promise<Response> {
+  const { adminClient, userId, req, url, sendJson } = ctx;
+
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return sendJson({ success: false, message: 'Invalid JSON' }, 400);
+  }
+
+  const phone = String(body.phone ?? '').trim();
+  const email = body.email ? String(body.email).trim() : null;
+  const fbc = body.fbc ? String(body.fbc).trim() : null;
+  const fbp = body.fbp ? String(body.fbp).trim() : null;
+  const testEventCode = body.test_event_code || url.searchParams.get('test_event_code');
+
+  if (!phone && !email) {
+    return sendJson({ success: false, message: 'phone or email required' }, 400);
+  }
+  if (!testEventCode) {
+    return sendJson({ success: false, message: 'test_event_code is required for testing' }, 400);
+  }
+
+  const creds = await resolveMetaCreds(adminClient, userId, '');
+  const validation = validateMetaCredentialResult(creds);
+  if (!validation.ok) {
+    return sendJson({ success: false, message: validation.message }, validation.statusCode);
+  }
+
+  try {
+    const result = await trackMetaConversion('contact', creds.accessToken, {
+      pixelId: creds.pixelId,
+      eventId: `test_contact_${Date.now()}`,
+      phone: phone || null,
+      email: email || null,
+      fbc,
+      fbp,
+      externalId: `test-${userId}`,
+      testEventCode,
+      // Add realistic UA to help EMQ in test
+      ua: req.headers.get('user-agent') || 'Mozilla/5.0 (Test CAPI)',
+    });
+
+    return sendJson({
+      success: true,
+      message: 'Test Contact event fired. Check Meta Events Manager → Test Events tab.',
+      pixel: creds.pixelId,
+      event_id: `test_contact_${Date.now()}`,
+      result,
+    });
+  } catch (e: any) {
+    return sendJson({ success: false, error: e?.message ?? String(e) }, 502);
+  }
 }
 
 async function processWhatsappConversionPost(adminClient: any, userId: string, req: Request, url: URL, sendJson: any): Promise<Response> {
