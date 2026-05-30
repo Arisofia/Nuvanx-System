@@ -1,10 +1,19 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
 #
 # Manually sync selected VITE_* secrets from GitHub Actions to a Vercel project.
-# This is useful when you want to keep Vercel preview/production environments
-# in sync with the latest Supabase/MCP keys without going through the Vercel UI.
 #
-# Run manually from the Actions tab when secrets change.
+# Context:
+# - This project uses a hardened Supabase setup (see deploy.yml, daily-sync.yml, ci.yml).
+# - The direct Supabase hostname is IPv6-only; we strongly prefer Session Pooler (port 5432).
+# - Vercel environments (preview + production) need the latest Supabase + MCP keys.
+# - This workflow provides a reliable, auditable way to push VITE_* secrets via the Vercel API
+#   without manual UI work, keeping parity with the secrets used in the hardened CI/CD flows.
+#
+# When to run:
+# - After rotating Supabase keys, MCP API key, or other VITE_* secrets.
+# - As part of secret rotation procedures.
+#
+# Note: Uses the supabase-link-run composite action's philosophy of explicit, auditable secret handling.
 
 name: Set Vercel Env Vars
 
@@ -22,6 +31,7 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Required secrets validation (fail fast with clear messages)
           : "${VERCEL_TOKEN:?VERCEL_TOKEN secret is required}"
           : "${PROJECT_ID:?VERCEL_PROJECT_ID secret is required}"
           : "${ORG_ID:?VERCEL_ORG_ID secret is required}"
@@ -33,6 +43,8 @@ jobs:
             ["VITE_MCP_API_KEY"]="$VITE_MCP_API_KEY"
           )
 
+          echo "Starting Vercel env var sync for project ${PROJECT_ID}..."
+
           for KEY in "${!VARS[@]}"; do
             VAL="${VARS[$KEY]}"
 
@@ -41,20 +53,28 @@ jobs:
               continue
             fi
 
-            # Delete existing variable (ignore errors)
-            curl -s -o /dev/null -X DELETE \
-              "https://api.vercel.com/v10/projects/${PROJECT_ID}/env?key=${KEY}&teamId=${ORG_ID}" \
-              -H "Authorization: Bearer ${VERCEL_TOKEN}" || true
+            echo "Processing ${KEY}..."
 
-            # Create / update as encrypted var for all targets
+            # Delete existing variable (ignore errors - variable may not exist)
+            DELETE_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
+              "https://api.vercel.com/v10/projects/${PROJECT_ID}/env?key=${KEY}&teamId=${ORG_ID}" \
+              -H "Authorization: Bearer ${VERCEL_TOKEN}" || echo "000")
+
+            # Create / update as encrypted var for all targets (production, preview, development)
             HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
               "https://api.vercel.com/v10/projects/${PROJECT_ID}/env?teamId=${ORG_ID}" \
               -H "Authorization: Bearer ${VERCEL_TOKEN}" \
               -H "Content-Type: application/json" \
               --data-raw "{\"key\":\"${KEY}\",\"value\":\"${VAL}\",\"type\":\"encrypted\",\"target\":[\"production\",\"preview\",\"development\"]}")
 
-            echo "${KEY} -> HTTP ${HTTP_CODE}"
+            if [[ "$HTTP_CODE" =~ ^2 ]]; then
+              echo "  ${KEY} -> OK (HTTP ${HTTP_CODE})"
+            else
+              echo "::warning::${KEY} -> HTTP ${HTTP_CODE} (delete was ${DELETE_CODE})"
+            fi
           done
+
+          echo "Vercel env var sync completed."
         env:
           VERCEL_TOKEN:                  ${{ secrets.VERCEL_TOKEN }}
           PROJECT_ID:                    ${{ secrets.VERCEL_PROJECT_ID }}
@@ -69,10 +89,13 @@ jobs:
         run: |
           echo "### Vercel Environment Variables Sync" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Variables processed:" >> $GITHUB_STEP_SUMMARY
+          echo "This workflow pushes selected VITE_* secrets to Vercel via API for parity with GitHub Actions." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Variables targeted:**" >> $GITHUB_STEP_SUMMARY
           echo "- VITE_SUPABASE_URL" >> $GITHUB_STEP_SUMMARY
           echo "- VITE_SUPABASE_ANON_KEY" >> $GITHUB_STEP_SUMMARY
           echo "- VITE_SUPABASE_PUBLISHABLE_KEY" >> $GITHUB_STEP_SUMMARY
           echo "- VITE_MCP_API_KEY" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Note:** Values are only updated if the corresponding GitHub secret is not empty." >> $GITHUB_STEP_SUMMARY
+          echo "**Important:** Only non-empty GitHub secrets are synced. Empty values are skipped." >> $GITHUB_STEP_SUMMARY
+          echo "This helps keep Vercel preview/production environments aligned with the hardened Supabase/MCP setup used in deploy and daily-sync workflows." >> $GITHUB_STEP_SUMMARY
