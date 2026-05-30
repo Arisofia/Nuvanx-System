@@ -9,7 +9,7 @@ on:
   workflow_dispatch: {}
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE22: true
+  # VITE_ env vars are used during build/deploy steps.
   VITE_MCP_API_KEY: ${{ secrets.MCP_API_KEY }}
 
 concurrency:

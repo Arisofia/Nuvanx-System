@@ -27,7 +27,7 @@ inputs:
   supabase_cli_version:
     description: 'Supabase CLI version to use'
     required: false
-    default: '2.100.1'
+    default: 'latest'
 
 outputs:
   resolved_db_password:
