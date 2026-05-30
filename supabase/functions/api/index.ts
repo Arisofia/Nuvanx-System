@@ -17,7 +17,6 @@ import {
   requireRuntimeSecret,
 } from '../_shared/config.ts';
 
-const DEFAULT_LANDING_USER_EMAIL = 'demo@nuvanx.com';
 import { getPhoneNormalizationFailureReason, normalizePhoneForMeta } from '../_shared/phone.ts';
 
 // ── Core Helpers ─────────────────────────────────────────────────────────────
@@ -2654,7 +2653,6 @@ async function upsertLeadIdempotent(adminClient: any, userId: string, payload: a
 }
 
 const FALLBACK_META_AD_ACCOUNT_ID = '9523446201036125';
-// DEFAULT_LANDING_USER_EMAIL removed for security (was demo@nuvanx.com fallback)
 
 function readPayloadString(payload: Record<string, any>, keys: string[], fallback: string | null = null): string | null {
   for (const key of keys) {
@@ -2696,10 +2694,17 @@ async function resolvePublicLeadOwner(adminClient: any, payloadObj: Record<strin
     if (userByClinic?.id) return { userId: userByClinic.id, clinicId: userByClinic.clinic_id ?? requestedClinicId };
   }
 
+  const landingEmail = Deno.env.get('DEFAULT_LANDING_USER_EMAIL');
+
+  if (!landingEmail) {
+    console.warn('[CAPI] DEFAULT_LANDING_USER_EMAIL not configured in Edge Function secrets. Cannot resolve landing lead owner.');
+    return { userId: null, clinicId: requestedClinicId ?? null };
+  }
+
   const { data: fallbackUser } = await adminClient
     .from('users')
     .select('id, clinic_id')
-    .eq('email', DEFAULT_LANDING_USER_EMAIL)
+    .eq('email', landingEmail)
     .maybeSingle();
 
   return { userId: fallbackUser?.id ?? null, clinicId: fallbackUser?.clinic_id ?? requestedClinicId ?? null };
@@ -6567,24 +6572,11 @@ async function handleConversations(ctx: AuthenticatedRouteContext): Promise<Resp
 }
 
 async function handleFigmaEvents(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, resource, sub, url, sendJson } = ctx;
+  const { resource, sub, sendJson } = ctx;
   if (resource === 'figma' && sub === 'events') {
-    const limit = Math.min(Number.parseInt(url.searchParams.get('limit') || '20', 10), 50);
-    const { data: rows } = await adminClient.from('figma_sync_log')
-      .select('id, file_key, status, message, components_synced, tokens_synced, created_at')
-      .order('created_at', { ascending: false })
-      .limit(limit);
-    const events = (rows || []).map((r: any) => ({
-      id: r.id,
-      type: r.status === 'error' ? 'figma_error' : 'figma_sync',
-      message: r.message || `Synced ${r.components_synced ?? 0} components`,
-      fileKey: r.file_key,
-      componentsSynced: r.components_synced,
-      tokensSynced: r.tokens_synced,
-      status: r.status,
-      createdAt: r.created_at,
-    }));
-    return sendJson({ success: true, events });
+    // figma_sync_log table does not exist in current migrations.
+    // Returning empty list until the Figma sync feature is fully implemented.
+    return sendJson({ success: true, events: [] });
   }
   return null;
 }

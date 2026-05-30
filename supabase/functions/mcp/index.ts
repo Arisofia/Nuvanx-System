@@ -8,7 +8,6 @@ import { z } from 'zod'
 import { zodToJsonSchema } from 'zod-to-json-schema'
 
 const app = new Hono()
-
 const mcp = new McpServer({
   name: 'nuvanx-mcp',
   version: '1.0.0',
@@ -400,6 +399,5 @@ mcpApp.all('/mcp', async (c) => {
   return response
 })
 
-app.route('/mcp', mcpApp)
 
 Deno.serve(app.fetch)
