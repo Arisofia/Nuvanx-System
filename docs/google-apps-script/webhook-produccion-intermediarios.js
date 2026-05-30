@@ -17,10 +17,11 @@
 const SHEET_NAME = "Produccion Intermediarios";
 const SECRET_HEADER = "X-Webhook-Secret"; // Opcional pero recomendado
 
-// === CONFIGURACIÓN DE SEGURIDAD (recomendado) ===
-// En Supabase Webhook, agrega un header personalizado:
-//   X-Webhook-Secret: tu-clave-secreta-aqui
-const EXPECTED_SECRET = "Doctoralia_Secret_2026_!!"; // Clave secreta para el header X-Webhook-Secret en Supabase
+// === CONFIGURACIÓN DE SEGURIDAD ===
+// Recomendado: Guardar el secreto en "Project settings → Script properties"
+// Clave: WEBHOOK_SECRET
+// Valor: (la misma clave que configuras en el Webhook de Supabase)
+const EXPECTED_SECRET = PropertiesService.getScriptProperties().getProperty('WEBHOOK_SECRET') || '';
 
 function doPost(e) {
   try {
@@ -81,23 +82,19 @@ function doPost(e) {
       record.campana || ""                    // U: CAMPAÑA
     ];
 
-    // 4. Búsqueda por "Asunto" (columna F).
-    // NOTA: Actualmente usamos "asunto" como clave única porque es lo que viene de Doctoralia.
+    // 4. Búsqueda por "Asunto" (columna F) - clave única.
+    // Optimizado: usamos find() en lugar de recorrer todo manualmente.
     const data = sheet.getDataRange().getValues();
     const asuntoIndex = 5; // Columna F (0-based)
-    let rowIndex = -1;
+    const targetAsunto = String(record.asunto || '').trim();
 
-    for (let i = 1; i < data.length; i++) {
-      if (String(data[i][asuntoIndex]).trim() === String(record.asunto).trim()) {
-        rowIndex = i + 1;
-        break;
-      }
-    }
+    const rowIndex = data.findIndex((row, idx) => idx > 0 && String(row[asuntoIndex]).trim() === targetAsunto);
+    const foundRow = rowIndex !== -1 ? rowIndex + 1 : -1;
 
     // 5. Insertar o actualizar
-    if (rowIndex !== -1) {
+    if (foundRow !== -1) {
       // Para actualizaciones, preservamos las fórmulas de las columnas V, W, X si existen
-      sheet.getRange(rowIndex, 1, 1, rowData.length).setValues([rowData]);
+      sheet.getRange(foundRow, 1, 1, rowData.length).setValues([rowData]);
       console.log(`Fila actualizada (Asunto: ${record.asunto})`);
     } else {
       // Para nuevas filas, añadimos las fórmulas de Día, Mes, Año (V, W, X)
@@ -114,11 +111,12 @@ function doPost(e) {
       .setMimeType(ContentService.MimeType.TEXT);
 
   } catch (err) {
-    console.error("Error procesando webhook:", err);
-    // Devolvemos 200 igual para que Supabase no reintente infinitamente
-    // (puedes cambiar la lógica si prefieres que reintente)
+    console.error("Error procesando webhook:", err, err.stack);
+    // Importante: Seguimos devolviendo 200 para evitar que Supabase reintente infinitamente.
+    // Los errores quedan registrados en "Ejecuciones" de Apps Script.
+    // Si quieres que Supabase reintente en caso de error, cambia a return con código 500.
     return ContentService
-      .createTextOutput("Error procesado")
+      .createTextOutput("Error procesado (ver logs)")
       .setMimeType(ContentService.MimeType.TEXT);
   }
 }
