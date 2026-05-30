@@ -45,3 +45,26 @@ area/infra:
       - any-glob-to-any-file: 'vercel.json'
       - any-glob-to-any-file: 'tsconfig*.json'
       - any-glob-to-any-file: 'supabase/config.toml'
+
+# Security & hardening (high risk)
+area/security:
+  - changed-files:
+      - any-glob-to-any-file: '**/*security*'
+      - any-glob-to-any-file: '**/*RLS*'
+      - any-glob-to-any-file: 'supabase/migrations/**/*rls*'
+      - any-glob-to-any-file: 'supabase/migrations/**/*policy*'
+
+# Doctoralia / Financial settlements
+area/doctoralia:
+  - changed-files:
+      - any-glob-to-any-file: 'scripts/sync-doctoralia.js'
+      - any-glob-to-any-file: 'scripts/ingest-doctoralia.js'
+      - any-glob-to-any-file: '**/*doctoralia*'
+      - any-glob-to-any-file: '**/*financial_settlements*'
+
+# Meta Ads / CAPI / Attribution
+area/meta-ads:
+  - changed-files:
+      - any-glob-to-any-file: '**/*meta*'
+      - any-glob-to-any-file: '**/*capi*'
+      - any-glob-to-any-file: 'scripts/meta*'
