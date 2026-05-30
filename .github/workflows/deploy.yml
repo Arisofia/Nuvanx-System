@@ -10,8 +10,9 @@ name: Deploy Supabase
 # → ALWAYS use a Session Pooler connection string on port 5432 in the DATABASE_URL secret.
 #
 # The supabase-link-run action resolves a safe SESSION_URL (Session Pooler on 5432
-# preferred, with robust rewriting and masking) and makes it available as $SESSION_URL
-# inside commands as well as via the action output.
+# preferred, using Python urllib for reliable rewriting + full secret masking)
+# and exposes it both as $SESSION_URL (inside commands) and as the `session_url`
+# action output.
 #
 # This workflow splits migrations and functions into separate jobs so a broken
 # schema does not cause function deploys to fail.
@@ -82,6 +83,8 @@ jobs:
 
       - name: Supabase DB migrations
         if: steps.validate.outputs.skip_supabase != 'true'
+        # Hard timeout — the inline command has its own retry logic (up to 3 attempts)
+        timeout-minutes: 25
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
@@ -137,7 +140,8 @@ jobs:
 
             is_deterministic_migration_error() {
               local output="$1"
-              # Keep this list in sync with the one in .github/actions/supabase-link-run/action.yml when possible
+              # Keep error patterns reasonably in sync with similar logic in
+              # .github/actions/supabase-link-run/action.yml (link errors) and other workflows.
               local -a patterns=(
                 'syntax error'
                 'permission denied'
@@ -262,6 +266,7 @@ jobs:
 
       - name: Debug – list Supabase migrations
         if: always() && steps.validate.outputs.skip_supabase != 'true'
+        timeout-minutes: 5
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
@@ -302,6 +307,7 @@ jobs:
       - name: Deploy Edge Functions
         continue-on-error: true
         id: deploy_functions
+        timeout-minutes: 10
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
