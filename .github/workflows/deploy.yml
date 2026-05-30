@@ -9,8 +9,9 @@ name: Deploy Supabase
 # → Direct connections frequently fail or are extremely slow on GitHub runners.
 # → ALWAYS use a Session Pooler connection string on port 5432 in the DATABASE_URL secret.
 #
-# The supabase-link-run action has logic to auto-rewrite Transaction Pooler (6543)
-# URLs to Session Pooler (5432) when detected.
+# The supabase-link-run action resolves a safe SESSION_URL (Session Pooler on 5432
+# preferred, with robust rewriting and masking) and makes it available as $SESSION_URL
+# inside commands as well as via the action output.
 #
 # This workflow splits migrations and functions into separate jobs so a broken
 # schema does not cause function deploys to fail.

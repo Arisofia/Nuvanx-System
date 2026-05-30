@@ -75,7 +75,7 @@ jobs:
           fi
           echo "Direct host: db.${ref}.supabase.co → IPv6-only (no A records)"
           echo "Strongly recommended: Use Session Pooler (port 5432) in DATABASE_URL secret."
-          echo "The supabase-link-run composite action will auto-rewrite Transaction Pooler URLs."
+          echo "The supabase-link-run composite action resolves a safe SESSION_URL (Session Pooler preferred) and exposes it both as an output and as \$SESSION_URL for commands."
 
       - name: Report upstream Deploy Supabase result
         if: github.event_name == 'workflow_run'
@@ -111,26 +111,15 @@ jobs:
           command: |
             set -euo pipefail
 
-            # === DB URL resolution for lint ===
-            # The supabase-link-run action sets SESSION_URL from DATABASE_URL (or builds direct).
-            # Recommended: Store a Session Pooler (port 5432) string in the DATABASE_URL secret.
-            # The shared action will auto-rewrite transaction pooler URLs to session pooler.
-            #
-            # Priority:
-            #   1. Use SESSION_URL if provided by the action (best when it is a Session Pooler)
-            #   2. Build direct connection as fallback
-
-            if [ -n "${SESSION_URL:-}" ]; then
-              LINT_DB_URL="$SESSION_URL"
-              echo "LINT using SESSION_URL (recommended: Session Pooler on port 5432)"
-            elif [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
-              LINT_DB_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
-              echo "LINT using DIRECT connection (db.<ref>.supabase.co:5432)"
-            else
-              echo "::error::No usable DB URL for lint. The action should have set SESSION_URL from DATABASE_URL."
+            # The supabase-link-run action resolves SESSION_URL (with Python-based pooler rewriting
+            # and masking) and makes it available as both an output and $SESSION_URL inside the command.
+            if [ -z "${SESSION_URL:-}" ]; then
+              echo "::error::supabase-link-run action did not provide SESSION_URL. Check secrets."
               exit 1
             fi
 
+            LINT_DB_URL="$SESSION_URL"
+            echo "LINT using SESSION_URL provided by supabase-link-run action (Session Pooler recommended)"
             export LINT_DB_URL
 
             # Hard timeout so a stuck connection doesn't burn Actions minutes.
