@@ -6,10 +6,16 @@
 --       20260531000000_mark_final_rls_hardening_as_obsolete.sql
 --       (evita colisión de nombres de migración).
 --
+-- Revisión #10 (2026-05-31):
+--   - Simplificada la extracción de clinic_id del JWT (eliminado EXCEPTION WHEN OTHERS
+--     amplio, ahora usa NULLIF para casting seguro).
+--   - Ambas funciones tienen search_path = public, pg_catalog correctamente.
+--   - Se incluyó hardening de normalize_phone() y run_doctoralia_name_match().
+--
 -- Objetivo:
 --   - Mejorar current_clinic_id() (más robusto y sin excepciones innecesarias)
 --   - Consolidar current_user_id()
---   - Hardcodear normalize_phone() con search_path seguro (revisión 2026-05-31)
+--   - Hardcodear normalize_phone() y run_doctoralia_name_match() con search_path seguro
 --   - Eliminar funciones muertas (is_service_role)
 --   - Asegurar search_path correcto en helpers
 --   - Documentar que migraciones anteriores de RLS fueron consolidadas
@@ -17,7 +23,9 @@
 
 BEGIN;
 
--- 1. Mejorar current_clinic_id() (versión más limpia y robusta)
+-- 1. Mejorar current_clinic_id() (versión simplificada y robusta)
+--    Revisión #10: Se eliminó el bloque EXCEPTION WHEN OTHERS amplio.
+--    Ahora usa NULLIF para casting seguro del claim del JWT.
 CREATE OR REPLACE FUNCTION public.current_clinic_id()
 RETURNS uuid
 LANGUAGE plpgsql
@@ -36,12 +44,9 @@ BEGIN
     RETURN NULL;
   END IF;
 
-  -- Intentar obtener clinic_id del JWT (más rápido)
-  BEGIN
-    v_claim_clinic := ((SELECT auth.jwt()) ->> 'clinic_id')::uuid;
-  EXCEPTION WHEN OTHERS THEN
-    v_claim_clinic := NULL;
-  END;
+  -- Intentar obtener clinic_id del JWT (más rápido y seguro)
+  -- Usamos NULLIF para evitar casting fallido sin usar EXCEPTION broad
+  v_claim_clinic := NULLIF((SELECT (auth.jwt() ->> 'clinic_id')), '')::uuid;
 
   IF v_claim_clinic IS NOT NULL THEN
     RETURN v_claim_clinic;

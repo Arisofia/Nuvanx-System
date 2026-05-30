@@ -1,6 +1,24 @@
 -- =============================================================================
 -- Final Security Hardening (RLS & SECURITY DEFINER) - Actualizado 2026-05-31
 -- =============================================================================
+--
+-- Esta migración realiza varias acciones de endurecimiento de seguridad:
+--
+-- 1. Habilita Row Level Security (RLS) en tablas core que aún no lo tenían.
+-- 2. Endurece funciones SECURITY DEFINER con SET search_path seguro
+--    (previene search_path hijacking).
+-- 3. Configura security_invoker = true en vistas críticas para que respeten RLS
+--    de las tablas subyacentes.
+-- 4. Agrega una política básica de ownership en la tabla users.
+--
+-- Revisión 2026-05-31 (Revisión #4):
+-- - Lista de vistas actualizada con las de Producción Intermediarios.
+-- - Comentarios mejorados.
+-- - Nota sobre alcance limitado de funciones endurecidas (ver consolidación posterior).
+--
+-- Funciones y vistas adicionales pueden haber sido endurecidas en migraciones
+-- de consolidación posteriores (20260531000010).
+-- =============================================================================
 
 BEGIN;
 
@@ -22,6 +40,10 @@ BEGIN
 END $$;
 
 -- 2. Harden SECURITY DEFINER functions with search_path
+--    This prevents functions from being vulnerable to search_path hijacking attacks.
+--    We only harden the most critical ones here to avoid breaking functions that
+--    legitimately need to access other schemas (e.g., extensions).
+--    Additional functions were hardened later in 20260531000010.
 DO $$
 BEGIN
   IF to_regprocedure('public.current_user_id()') IS NOT NULL THEN
@@ -42,6 +64,9 @@ BEGIN
 END $$;
 
 -- 3. Set security_invoker = true on important views
+--    This ensures that queries against these views will respect the RLS policies
+--    of the underlying tables (instead of bypassing them with the view owner's privileges).
+--    Includes key traceability, financial, doctoralia, campaign, and produccion_intermediarios views.
 DO $$
 DECLARE
   v TEXT;
@@ -66,6 +91,17 @@ BEGIN
 END $$;
 
 -- 4. Basic RLS policy for users table
+--    Simple ownership policy: authenticated users can only see their own record.
+--
+--    Limitation: This is intentionally minimal. More advanced policies
+--    (e.g., clinic-scoped access, admin roles, etc.) may exist in later
+--    consolidation migrations.
+--
+--    Note on updated_at: Several tables have an `updated_at` column.
+--    Automatic maintenance via triggers is recommended but not implemented
+--    in this migration (handled elsewhere or manually in application code).
+--    Consider adding a generic updated_at trigger in a future cleanup migration
+--    if data consistency becomes an issue.
 DO $$
 BEGIN
   IF to_regclass('public.users') IS NOT NULL THEN

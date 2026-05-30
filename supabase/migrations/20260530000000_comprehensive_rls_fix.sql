@@ -1,65 +1,27 @@
 -- 20260530000000_comprehensive_rls_fix.sql
 --
--- Comprehensive fix for all remaining Supabase Advisor warnings:
--- 1. auth_rls_initplan (Performance): Wrap all auth functions in (SELECT ...)
--- 2. multiple_permissive_policies (Performance): Ensure only one policy per role/action
--- 3. auth_allow_anonymous_sign_ins (Security): Restrict policies to specific roles and add anonymous guards
--- 4. Harden cron table policies
+-- Comprehensive fix for remaining Supabase Advisor warnings (policy hardening focus).
+--
+-- Changes applied in later cleanup:
+-- - Removed duplicate re-definition of current_clinic_id() / current_user_id()
+--   (consolidated in 20260531000010).
+-- - Simplified the aggressive multi-name policy DROP loop.
+--
+-- Original goals kept:
+-- 1. auth_rls_initplan (Performance)
+-- 2. multiple_permissive_policies
+-- 3. Role scoping + anonymous guards
+-- 4. pg_cron hardening (note: dedicated migration 20260528000000 also exists)
 
 BEGIN;
 
 -- =============================================================================
--- 1. Helper Function Hardening
+-- 1. Clean up and Recreate Policies
 -- =============================================================================
-
-CREATE OR REPLACE FUNCTION public.current_clinic_id()
-RETURNS uuid
-LANGUAGE plpgsql
-STABLE
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  v_user_id uuid;
-  v_claim_clinic uuid;
-  v_user_clinic uuid;
-BEGIN
-  v_user_id := (SELECT auth.uid());
-  IF v_user_id IS NULL THEN
-    RETURN NULL;
-  END IF;
-
-  BEGIN
-    v_claim_clinic := ((SELECT auth.jwt()) ->> 'clinic_id')::uuid;
-  EXCEPTION WHEN OTHERS THEN
-    v_claim_clinic := NULL;
-  END;
-
-  IF v_claim_clinic IS NOT NULL THEN
-    RETURN v_claim_clinic;
-  END IF;
-
-  IF to_regclass('public.users') IS NOT NULL THEN
-    SELECT clinic_id INTO v_user_clinic FROM public.users WHERE id = v_user_id LIMIT 1;
-    RETURN v_user_clinic;
-  END IF;
-
-  RETURN NULL;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION public.current_user_id()
-RETURNS uuid
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = public
-AS $$
-  SELECT (SELECT auth.uid());
-$$;
-
--- =============================================================================
--- 2. Clean up and Recreate Policies
+--
+-- Note: Helper functions (current_clinic_id / current_user_id) were consolidated
+-- and improved in later migrations (20260531000010).
+-- This migration focuses on policy hardening only.
 -- =============================================================================
 
 DO $$
@@ -74,19 +36,14 @@ DECLARE
     'agent_outputs'
   ];
 BEGIN
-  -- Drop existing problematic policies first to avoid collisions
+  -- Drop the most common policy names we created in earlier migrations.
+  -- (Simplified from the original very broad cleanup to reduce noise.)
   FOREACH t IN ARRAY tables
   LOOP
     EXECUTE format('DROP POLICY IF EXISTS %I_select ON public.%I', t, t);
     EXECUTE format('DROP POLICY IF EXISTS %I_select_clinic ON public.%I', t, t);
     EXECUTE format('DROP POLICY IF EXISTS %I_select_own ON public.%I', t, t);
-    EXECUTE format('DROP POLICY IF EXISTS %I_authenticated_select ON public.%I', t, t);
     EXECUTE format('DROP POLICY IF EXISTS %I_service_role_only ON public.%I', t, t);
-    EXECUTE format('DROP POLICY IF EXISTS %I_service_only ON public.%I', t, t);
-    EXECUTE format('DROP POLICY IF EXISTS %I_insert ON public.%I', t, t);
-    EXECUTE format('DROP POLICY IF EXISTS %I_insert_own ON public.%I', t, t);
-    EXECUTE format('DROP POLICY IF EXISTS %I_insert_service ON public.%I', t, t);
-    EXECUTE format('DROP POLICY IF EXISTS %I_read_service ON public.%I', t, t);
   END LOOP;
 
   -- Recreate policies with strict role scoping and initplan wrappers
@@ -160,7 +117,7 @@ BEGIN
 END $$;
 
 -- =============================================================================
--- 3. pg_cron Table Hardening
+-- 2. pg_cron Table Hardening
 -- =============================================================================
 
 DO $$

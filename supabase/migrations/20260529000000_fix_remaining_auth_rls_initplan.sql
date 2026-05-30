@@ -24,53 +24,14 @@
 
 BEGIN;
 
--- Ensure the helper function itself uses wrapped auth calls (idempotent)
-CREATE OR REPLACE FUNCTION public.current_clinic_id()
-RETURNS uuid
-LANGUAGE plpgsql
-STABLE
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  v_user_id uuid;
-  v_claim_clinic uuid;
-  v_user_clinic uuid;
-BEGIN
-  v_user_id := (SELECT auth.uid());
-  IF v_user_id IS NULL THEN
-    RETURN NULL;
-  END IF;
-
-  BEGIN
-    v_claim_clinic := ((SELECT auth.jwt()) ->> 'clinic_id')::uuid;
-  EXCEPTION WHEN OTHERS THEN
-    v_claim_clinic := NULL;
-  END;
-
-  IF v_claim_clinic IS NOT NULL THEN
-    RETURN v_claim_clinic;
-  END IF;
-
-  IF to_regclass('public.users') IS NOT NULL THEN
-    SELECT clinic_id INTO v_user_clinic FROM public.users WHERE id = v_user_id LIMIT 1;
-    RETURN v_user_clinic;
-  END IF;
-
-  RETURN NULL;
-END;
-$$;
-
--- Also ensure current_user_id helper (used elsewhere) is correct
-CREATE OR REPLACE FUNCTION public.current_user_id()
-RETURNS uuid
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = public
-AS $$
-  SELECT (SELECT auth.uid());
-$$;
+-- NOTE (added during 2026-05-31 cleanup review):
+-- This migration was an intermediate step for auth_rls_initplan fixes.
+-- It redefines current_clinic_id() / current_user_id() (now consolidated in 20260531000010).
+-- Much of its policy work was later superseded by the more comprehensive
+-- 20260530000000_comprehensive_rls_fix.sql.
+--
+-- This file is kept for historical record but its value is reduced.
+-- Consider it a candidate for partial obsolescence.
 
 -- Drop the exact policies reported by the linter (safe IF EXISTS)
 DROP POLICY IF EXISTS api_call_log_select_own ON public.api_call_log;
