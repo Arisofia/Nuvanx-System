@@ -393,6 +393,14 @@ function buildHeaderConfig(headers) {
   const colRoom         = findCol(headers, 'sala', 'habitacion', 'room', 'box', 'consultorio');
   const colPhone        = findCol(headers, 'telefono', 'tel', 'movil', 'celular', 'phone', 'contacto', 'telefono paciente');
 
+  // New columns from recent produccion_intermediarios extensions (20260530+)
+  const colPatientName  = findCol(headers, 'paciente_nombre', 'nombre paciente', 'patient name', 'nombre');
+  const colTratamiento  = findCol(headers, 'procedimiento_nombre', 'tratamiento', 'treatment', 'procedimiento');
+  const colEmailHubspot = findCol(headers, 'email_hubspot', 'email hubspot');
+  const colEjecutivo    = findCol(headers, 'ejecutivo_asignado', 'ejecutivo', 'asignado');
+  const colIngresoLead  = findCol(headers, 'ingreso_lead', 'ingreso del lead');
+  const colCampana      = findCol(headers, 'campana', 'campaign');
+
   const hasColId           = colId !== -1;
   const hasColTemplate     = colTemplate !== -1;
   const hasColTemplateId   = colTemplateId !== -1;
@@ -427,6 +435,12 @@ function buildHeaderConfig(headers) {
     colAgenda,
     colRoom,
     colPhone,
+    colPatientName,
+    colTratamiento,
+    colEmailHubspot,
+    colEjecutivo,
+    colIngresoLead,
+    colCampana,
     hasColId,
     hasColTemplate,
     hasColTemplateId,
@@ -442,15 +456,36 @@ function buildHeaderConfig(headers) {
     hasColAgenda,
     hasColRoom,
     hasColPhone,
+    hasColPatientName:  colPatientName  !== -1,
+    hasColTratamiento:  colTratamiento  !== -1,
+    hasColEmailHubspot: colEmailHubspot !== -1,
+    hasColEjecutivo:    colEjecutivo    !== -1,
+    hasColIngresoLead:  colIngresoLead  !== -1,
+    hasColCampana:      colCampana      !== -1,
     useHashId: !hasColId,
     colSettledEff: hasColSettled ? colSettled : colFecha,
   };
 
   // Diagnostic logging - very useful when columns are not detected as expected
   console.log('[sync-doctoralia] Column detection results:');
-  // Newer columns supported (from 20260530+ migrations):
-  // paciente_nombre, procedimiento_nombre (tratamiento), email_hubspot, ejecutivo_asignado, ingreso_lead, campana, capi_sent
   console.log('  ID/Operacion     :', hasColId ? `col ${colId}` : 'NOT FOUND (will use hash ID)');
+  console.log('  Plantilla/Asunto :', hasColTemplate ? `col ${colTemplate}` : 'NOT FOUND');
+  console.log('  Fecha Liquidación:', hasColSettled ? `col ${colSettled}` : `FALLBACK to Fecha (col ${colFecha})`);
+  console.log('  Importe Bruto    :', hasColGross ? `col ${colGross}` : 'NOT FOUND');
+  console.log('  Importe Neto     :', hasColNet ? `col ${colNet}` : 'NOT FOUND (will calculate)');
+  console.log('  Intermediario    :', hasColIntermediary ? `col ${colIntermediary}` : 'NOT FOUND');
+  console.log('  Estado           :', hasColStatus ? `col ${colStatus}` : 'NOT FOUND');
+
+  // New columns (20260530+)
+  if (hasColPatientName || hasColTratamiento || hasColEmailHubspot || hasColEjecutivo || hasColIngresoLead || hasColCampana) {
+    console.log('[sync-doctoralia] New columns detected from produccion_intermediarios:');
+    if (hasColPatientName)  console.log('  - paciente_nombre');
+    if (hasColTratamiento)  console.log('  - procedimiento_nombre / tratamiento');
+    if (hasColEmailHubspot) console.log('  - email_hubspot');
+    if (hasColEjecutivo)    console.log('  - ejecutivo_asignado');
+    if (hasColIngresoLead)  console.log('  - ingreso_lead');
+    if (hasColCampana)      console.log('  - campana');
+  }
   console.log('  Plantilla/Asunto :', hasColTemplate ? `col ${colTemplate}` : 'NOT FOUND');
   console.log('  Fecha Liquidación:', hasColSettled ? `col ${colSettled}` : `FALLBACK to Fecha (col ${colFecha})`);
   console.log('  Importe Bruto    :', hasColGross ? `col ${colGross}` : 'NOT FOUND');
@@ -513,6 +548,13 @@ function parseRow(row, config) {
     tmplName: config.hasColTemplate     ? (row[config.colTemplate]?.trim() || null)    : null,
     tmplId: config.hasColTemplateId   ? (row[config.colTemplateId]?.trim() || null)  : null,
     intermed: config.hasColIntermediary ? (row[config.colIntermediary]?.trim() || null) : null,
+    // New columns from produccion_intermediarios (20260530+)
+    patientName:  config.hasColPatientName  ? getOptionalTextValue(row, cols.colPatientName, true)  : null,
+    tratamiento:  config.hasColTratamiento  ? getOptionalTextValue(row, cols.colTratamiento, true)  : null,
+    emailHubspot: config.hasColEmailHubspot ? getOptionalTextValue(row, cols.colEmailHubspot, true) : null,
+    ejecutivo:    config.hasColEjecutivo    ? getOptionalTextValue(row, cols.colEjecutivo, true)    : null,
+    ingresoLead:  config.hasColIngresoLead  ? getOptionalTextValue(row, cols.colIngresoLead, true)  : null,
+    campana:      config.hasColCampana      ? getOptionalTextValue(row, cols.colCampana, true)      : null,
   };
 }
 
@@ -718,6 +760,12 @@ async function upsertDoctoraliaRow(row, i, params) {
     hasColIntermediary,
     hasColStatus,
     hasColPhone,
+    hasColPatientName,
+    hasColTratamiento,
+    hasColEmailHubspot,
+    hasColEjecutivo,
+    hasColIngresoLead,
+    hasColCampana,
   } = params;
 
   const rawId = deriveRawId(row, useHashId, cols);
@@ -747,6 +795,14 @@ async function upsertDoctoraliaRow(row, i, params) {
   const tmplId    = getOptionalTextValue(row, cols.colTemplateId, hasColTemplateId);
   const intermed  = getOptionalTextValue(row, cols.colIntermediary, hasColIntermediary);
 
+  // Newer fields from produccion_intermediarios extensions
+  const patientName   = getOptionalTextValue(row, cols.colPatientName, hasColPatientName);
+  const tratamiento   = getOptionalTextValue(row, cols.colTratamiento, hasColTratamiento);
+  const emailHubspot  = getOptionalTextValue(row, cols.colEmailHubspot, hasColEmailHubspot);
+  const ejecutivo     = getOptionalTextValue(row, cols.colEjecutivo, hasColEjecutivo);
+  const ingresoLead   = getOptionalTextValue(row, cols.colIngresoLead, hasColIngresoLead);
+  const campana       = getOptionalTextValue(row, cols.colCampana, hasColCampana);
+
   try {
     await db.query(
       `INSERT INTO financial_settlements
@@ -754,30 +810,45 @@ async function upsertDoctoraliaRow(row, i, params) {
           payment_method, template_name, template_id,
           settled_at, intake_at, cancelled_at, intermediary_name,
           status_original, status_type, room_id, lead_source, agenda_name,
-          patient_phone, phone_normalized, source_system)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$18,'doctoralia')
+          patient_phone, phone_normalized, source_system,
+          patient_name, tratamiento_nombre, email_hubspot, ejecutivo_asignado,
+          ingreso_lead, campana, capi_sent)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26, false)
        ON CONFLICT (id) DO UPDATE SET
-         amount_gross      = EXCLUDED.amount_gross,
-         amount_discount   = EXCLUDED.amount_discount,
-         amount_net        = EXCLUDED.amount_net,
-         payment_method    = EXCLUDED.payment_method,
-         template_name     = EXCLUDED.template_name,
-         template_id       = EXCLUDED.template_id,
-         settled_at        = EXCLUDED.settled_at,
-         intake_at         = EXCLUDED.intake_at,
-         cancelled_at      = EXCLUDED.cancelled_at,
-         intermediary_name = EXCLUDED.intermediary_name,
-         status_original   = EXCLUDED.status_original,
-         status_type       = EXCLUDED.status_type,
-         room_id           = EXCLUDED.room_id,
-         lead_source       = EXCLUDED.lead_source,
-         agenda_name       = EXCLUDED.agenda_name,
-         patient_phone     = COALESCE(EXCLUDED.patient_phone, financial_settlements.patient_phone),
-         phone_normalized  = COALESCE(EXCLUDED.phone_normalized, financial_settlements.phone_normalized),
-         source_system     = 'doctoralia'`,
+         amount_gross        = EXCLUDED.amount_gross,
+         amount_discount     = EXCLUDED.amount_discount,
+         amount_net          = EXCLUDED.amount_net,
+         payment_method      = EXCLUDED.payment_method,
+         template_name       = EXCLUDED.template_name,
+         template_id         = EXCLUDED.template_id,
+         settled_at          = EXCLUDED.settled_at,
+         intake_at           = EXCLUDED.intake_at,
+         cancelled_at        = EXCLUDED.cancelled_at,
+         intermediary_name   = EXCLUDED.intermediary_name,
+         status_original     = EXCLUDED.status_original,
+         status_type         = EXCLUDED.status_type,
+         room_id             = EXCLUDED.room_id,
+         lead_source         = EXCLUDED.lead_source,
+         agenda_name         = EXCLUDED.agenda_name,
+         patient_phone       = COALESCE(EXCLUDED.patient_phone, financial_settlements.patient_phone),
+         phone_normalized    = COALESCE(EXCLUDED.phone_normalized, financial_settlements.phone_normalized),
+         source_system       = 'doctoralia',
+         patient_name        = COALESCE(EXCLUDED.patient_name, financial_settlements.patient_name),
+         tratamiento_nombre  = COALESCE(EXCLUDED.tratamiento_nombre, financial_settlements.tratamiento_nombre),
+         email_hubspot       = COALESCE(EXCLUDED.email_hubspot, financial_settlements.email_hubspot),
+         ejecutivo_asignado  = COALESCE(EXCLUDED.ejecutivo_asignado, financial_settlements.ejecutivo_asignado),
+         ingreso_lead        = COALESCE(EXCLUDED.ingreso_lead, financial_settlements.ingreso_lead),
+         campana             = COALESCE(EXCLUDED.campana, financial_settlements.campana),
+         capi_sent           = COALESCE(financial_settlements.capi_sent, false)`,
       [
-        rawId, CLINIC_ID, finalAmountGross, finalAmountDisc, finalAmountNet,
-        payment, tmplName, tmplId,
+        rawId,
+        CLINIC_ID,
+        finalAmountGross,
+        finalAmountDisc,
+        finalAmountNet,
+        payment,
+        tmplName,
+        tmplId,
         settledAt.toISOString(),
         intakeAt?.toISOString() ?? null,
         cancelledAt?.toISOString() ?? null,
@@ -788,6 +859,12 @@ async function upsertDoctoraliaRow(row, i, params) {
         leadSource,
         agenda,
         patientPhone,
+        patientName,
+        tratamiento,
+        emailHubspot,
+        ejecutivo,
+        ingresoLead,
+        campana,
       ]
     );
     return true;
