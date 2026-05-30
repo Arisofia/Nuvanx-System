@@ -1,7 +1,10 @@
--- Production traceability validation checklist.
+-- Production Traceability Validation Checklist
 -- Run this file in the Supabase SQL editor after production migrations finish.
--- Copy the numeric outputs into the release note before approving KPIs that rely
--- on Lead Audit / Traceability / Doctoralia matching.
+--
+-- Goal: Validate that the core traceability and Doctoralia matching infrastructure
+-- is healthy before trusting reports, KPIs, or CAPI attribution.
+--
+-- Copy the key numeric results into your release notes.
 
 -- 1) Confirm the production relations created or refreshed by the latest migrations.
 SELECT
@@ -68,3 +71,13 @@ SELECT
   COUNT(*) FILTER (WHERE phone_normalized IS NOT NULL AND phone_normalized <> '') AS produccion_rows_con_phone,
   COUNT(*) FILTER (WHERE asunto IS NOT NULL AND asunto <> '') AS produccion_rows_con_asunto
 FROM public.produccion_intermediarios;
+
+-- 10) Quick health: recent Doctoralia production activity (last 7 days)
+SELECT
+  DATE(fecha) AS dia,
+  COUNT(*) AS registros,
+  COUNT(*) FILTER (WHERE phone_normalized IS NOT NULL AND phone_normalized <> '') AS con_telefono
+FROM public.produccion_intermediarios
+WHERE fecha >= current_date - 7
+GROUP BY DATE(fecha)
+ORDER BY dia DESC;

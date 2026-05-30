@@ -4,7 +4,10 @@ This document describes the high-level architecture of the Nuvanx System (Meta A
 
 ## Diagram
 
+**Source of truth**: `docs/architecture.mmd` (recommended to view/edit the diagram there).
+
 ```mermaid
+%% For the latest version, see docs/architecture.mmd
 graph TD
   subgraph "Root"
     A["package.json"]
@@ -188,7 +191,7 @@ graph TD
 - Multiple layers of redaction for sensitive data in logs (especially service account credentials and error messages).
 - CodeQL/Sonar issues actively addressed in `sync-doctoralia.js` and related scripts.
 
-## Recent Improvements (May 2026)
+## Recent Improvements (June 2026)
 
 - Made Doctoralia daily sync **critical** in the orchestrator (directly impacts reliability of CAPI `Purchase` events from paid productions).
 - Added `capi/quality` monitoring endpoint (protected, returns EMQ signal coverage, recent Purchase events, pixel routing).
@@ -197,6 +200,17 @@ graph TD
 - Improved logging around `[CAPI-PROD]` events and daily sync quality metrics.
 - All main production paths (CAPI Lead/Purchase, Doctoralia reconciliation, daily sync) are implemented with real data only — no mock/demo data in critical flows.
 
+**Major additions in June 2026 review:**
+- Comprehensive GitHub workflows hardening (ci, deploy, daily sync, security lint, Doctoralia sync).
+- Confirmed direct Supabase hostname is IPv6-only → strong Session Pooler enforcement.
+- New structured labeling system (`area/migrations`, `area/security`, `area/doctoralia`, etc.).
+- Significant improvements to reusable composite actions and CODEOWNERS.
+
 ---
 
-*This diagram is maintained as the single source of truth for the system architecture. Update it when adding major components (new Edge Functions, scripts, or external integrations).*
+*This document is maintained as the high-level architecture reference. 
+Please keep it reasonably in sync with major changes, especially:
+- New or heavily modified GitHub workflows / composite actions
+- New Edge Functions or critical scripts
+- Changes to the labeling strategy or security posture
+- Major data flows (CAPI, Doctoralia, traceability)*

@@ -1,8 +1,16 @@
+%% Nuvanx System Architecture - Mermaid Source (Canonical)
+%% 
+%% This is the single source of truth for the system architecture diagram.
+%% Do NOT duplicate large parts of this diagram in other .md files.
+%%
+%% Update this file when major components or flows change significantly.
+%% Last major update: June 2026 (GitHub workflows hardening + labeling system)
+
 graph TD
-  subgraph "Root"
+  subgraph "Root & Configuration"
     A["package.json"]
     B["README.md"]
-    C[".github/workflows/*"]
+    C[".github/ (workflows, actions, CODEOWNERS, labels)"]
     D["supabase/config.toml"]
     E["vercel.json"]
   end
@@ -36,15 +44,17 @@ graph TD
     U["scripts/shared/meta-daily-insights.js"]
     V["scripts/sync-platform-secrets.js"]
     W["scripts/health-check-nuvanx.ts"]
-    X["scripts/verify-meta-access.js"]
+    %% verify-meta-access.js was removed / consolidated
   end
 
-  subgraph "CI/CD"
-    C1[".github/workflows/deploy.yml\n(Supabase migrate + Edge deploy)"]
+  subgraph "CI/CD & Governance"
+    C1[".github/workflows/deploy.yml\n(Supabase migrate + Edge Functions)"]
     C2[".github/workflows/ci.yml\n(ESLint, tests, build)"]
-    C3[".github/workflows/sync-doctoralia.yml\n(cron Doctoralia sync)"]
-    C4[".github/workflows/daily-sync.yml\n(Daily orchestrator)"]
-    C5["docs/codex/meta-capi-operational-checklist.md"]
+    C3[".github/workflows/sync-doctoralia.yml"]
+    C4[".github/workflows/daily-sync.yml\n(Daily orchestrator + CAPI)"]
+    C5[".github/workflows/supabase-security.yml\n(RLS + security lint)"]
+    C6["Composite Action: supabase-link-run"]
+    C7["Labeling system (area/* labels)"]
   end
 
   subgraph "External Services"
@@ -94,7 +104,7 @@ graph TD
   T --> AC
   U --> Q
   U --> AA
-  X --> AA
+  %% X (verify-meta-access.js) was removed / consolidated into run-daily-sync.js
 
   %% CI/CD links
   C1 --> P
@@ -105,9 +115,12 @@ graph TD
   C3 --> T
   C4 --> T
   C4 --> U
-  C5 --> AA
-  C5 --> K
-  C5 --> AF
+  C5 --> P   %% security lint touches DB
+  C6 --> C1
+  C6 --> C3
+  C6 --> C4
+  C7 --> C1
+  C7 --> C5
 
   %% Deploy targets
   K --> Y
@@ -124,20 +137,21 @@ graph TD
   K --> AB
   K --> AC
   K --> AD
+  %% Note: Many CAPI and Doctoralia flows now go through centralized orchestration in run-daily-sync.js + webhooks
 
-  %% Full Automatic Flow (no manual intervention) - Bidirectional
-  A[Cron Diario: GitHub Actions] -- "sync-doctoralia.js" --> B[(Supabase DB: <br/>produccion_intermediarios)]
+  %% Full Automatic Bidirectional Flow (Doctoralia → Supabase → CAPI + Sheets)
+  Cron["Cron Diario (GitHub Actions)"] -- "sync-doctoralia.js" --> DB[(Supabase: produccion_intermediarios)]
   
-  B -- "Trigger: INSERT/UPDATE" --> C{Supabase Webhooks}
+  DB -- "INSERT/UPDATE" --> Webhooks{Supabase Webhooks}
   
-  %% Webhook 1: CAPI
-  C -- "Webhook #1: CAPI Handler" --> D[Edge Function / Server]
-  D --> E[Meta Conversions API]
-  E -- "Evento: Purchase" --> F[Ads Manager: Atribución ROAS]
+  %% CAPI Path (critical for ROAS)
+  Webhooks -- "CAPI Handler" --> EdgeCAPI[Edge Function: CAPI]
+  EdgeCAPI --> MetaCAPI[Meta Conversions API]
+  MetaCAPI --> ROAS[Ads Manager: Purchase Attribution]
   
-  %% Webhook 2: Sheets
-  C -- "Webhook #2: GAS Robust Webhook" --> G[Google Apps Script]
-  G -- "Validar Secreto & Mapear" --> H[Google Sheets: <br/>Produccion Intermediarios]
+  %% Operational Mirror to Sheets
+  Webhooks -- "GAS Webhook" --> GAS[Google Apps Script]
+  GAS --> Sheets[Google Sheets: Produccion Intermediarios]
   
-  %% Trazabilidad
-  I[(Vistas de Trazabilidad 360)] -- "Enriquecido con fbc/fbp" --> D
+  %% Traceability enrichment
+  Trace[(vw_lead_traceability + fbc/fbp)] -- "Enriched context" --> EdgeCAPI
