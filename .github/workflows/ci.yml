@@ -81,24 +81,23 @@ jobs:
           end
           RUBY
 
-      - name: Install shellcheck
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq shellcheck
+      - name: ShellCheck (standalone scripts + critical embedded bash)
+        # This provides PR annotations for shell issues found in .github/ (including the complex
+        # bash inside supabase-link-run/action.yml and other workflow run: blocks).
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: '.github'
+        env:
+          SHELLCHECK_OPTS: -e SC1091 -e SC2086 -e SC2155 --severity=warning
 
-      - name: Run shellcheck (standalone scripts + best-effort note for inline workflow bash)
+      - name: Fallback shellcheck on standalone .sh scripts
         run: |
-          shellcheck --version || true
-          # Check any .sh scripts (the main embedded bash lives in composite actions and workflow run: blocks)
+          # Some repos keep critical logic in separate .sh files for easier linting.
           find . -name '*.sh' \
             -not -path './node_modules/*' \
             -not -path './frontend/node_modules/*' \
             -not -path './.git/*' \
             -exec shellcheck --severity=warning {} + || true
-          echo ""
-          echo "Note: Complex inline 'run:' bash in .github/workflows and composite actions"
-          echo "is difficult to extract perfectly. Review critical blocks (especially supabase-link-run) manually"
-          echo "or integrate reviewdog/action-shellcheck for PR annotations in the future."
 
       - name: Validate Supabase config function blocks
         run: |
