@@ -1,4 +1,18 @@
+# Pull Request Labeler
+#
+# IMPORTANT SECURITY NOTE:
+# This workflow uses `pull_request_target`, which runs with write permissions
+# even for PRs coming from forks. This is required for the labeler to work on
+# external contributions.
+#
+# We keep permissions as tight as possible:
+# - contents: read (to read .github/labeler.yml)
+# - pull-requests: write (to add/remove labels)
+#
+# We do NOT grant issues: write unless strictly necessary.
+
 name: "Pull Request Labeler"
+
 on:
   pull_request_target: {}
 
@@ -6,15 +20,24 @@ concurrency:
   group: labeler-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   triage:
-    permissions:
-      contents: read
-      pull-requests: write
-      issues: write
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/labeler@v5
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Required for pull_request_target to safely read the labeler config
+          # from the base branch (not the PR head)
+          ref: ${{ github.event.pull_request.base.ref }}
+
+      - name: Label pull request
+        uses: actions/labeler@v5.0.0
         with:
           repo-token: "${{ secrets.GITHUB_TOKEN }}"
           sync-labels: true
+          configuration-path: .github/labeler.yml

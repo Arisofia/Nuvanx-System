@@ -37,13 +37,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      # Primary auth method (recommended)
+      GOOGLE_DOCTORALIA_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_DOCTORALIA_SERVICE_ACCOUNT }}
+      GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
+
+      # Fallback individual credentials (used only if service account JSON not provided)
       GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
       GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
       GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
       GOOGLE_PROJECT_ID: ${{ secrets.GOOGLE_PROJECT_ID }}
       GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
-      GOOGLE_DOCTORALIA_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_DOCTORALIA_SERVICE_ACCOUNT }}
-      GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
+
       DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID }}
       DOCTORALIA_DRIVE_FILE_ID: ${{ secrets.DOCTORALIA_DRIVE_FILE_ID }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -134,10 +138,23 @@ jobs:
       - name: Install sync dependencies
         run: npm install --no-save googleapis pg
 
+      - name: Sync Summary
+        if: always()
+        run: |
+          echo "### Doctoralia Financial Sync Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Sheet: ${DOCTORALIA_SHEET_ID:-${DOCTORALIA_DRIVE_FILE_ID:-'not set'}}" >> $GITHUB_STEP_SUMMARY
+          echo "- Clinic: ${{ env.CLINIC_ID }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Script: scripts/sync-doctoralia.js" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "See job logs for detailed upsert results." >> $GITHUB_STEP_SUMMARY
+
       - name: Run Doctoralia to DB sync
+        timeout-minutes: 15
         run: node scripts/sync-doctoralia.js
         env:
           GOOGLE_SA_JSON_FILE: ${{ env.GOOGLE_SA_JSON_FILE }}
+          # Pass through all possible auth methods (script decides priority)
           GOOGLE_DOCTORALIA_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_DOCTORALIA_SERVICE_ACCOUNT }}
           GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
           GOOGLE_API_KEY:      ${{ secrets.GOOGLE_API_KEY }}

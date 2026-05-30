@@ -2,17 +2,16 @@
 name: Supabase Security Check
 
 # Fails the CI if any table is missing RLS or has a dangerous policy.
-# Runs on every push and pull_request to main.
+# Runs after Deploy Supabase (on main) and on PRs.
+#
+# IMPORTANT (confirmed via DNS):
+#   The direct hostname db.<project-ref>.supabase.co for this project
+#   is IPv6-only (only AAAA records, no A records).
+#   GitHub runners have unreliable IPv6 → always prefer Session Pooler (port 5432).
 #
 # Required secrets:
-#   SUPABASE_ACCESS_TOKEN   — Supabase personal access token
-#   SUPABASE_PROJECT_REF    — Supabase project ref used by supabase link
-#   SUPABASE_DB_PASSWORD    — used to build direct DB URL (db.<ref>.supabase.co:5432) as fallback
-#   DATABASE_URL            — main secret. Recommended: Session Pooler connection string (port 5432)
-#
-# GitHub Actions runners have no IPv6.
-# The supabase-link-run action auto-rewrites transaction pooler (6543) → Session Pooler (5432).
-# Best practice: Store a Session Pooler (5432) string in the DATABASE_URL secret.
+#   SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_REF, DATABASE_URL (Session Pooler recommended)
+#   SUPABASE_DB_PASSWORD (fallback for direct connection)
 
 on:
   # On push to main, wait for Deploy Supabase to finish so the lint runs against
@@ -40,7 +39,6 @@ on:
 
 env:
   VITE_MCP_API_KEY: ${{ secrets.VITE_MCP_API_KEY }}
-  # Deprecated in favor of per-job setting; see advisor job for NODE24 force.
 
 concurrency:
   group: supabase-security-${{ github.ref_name }}
@@ -58,7 +56,6 @@ jobs:
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - uses: actions/checkout@v4
       - name: Prefer IPv4 (gai.conf + diagnostics)
@@ -68,28 +65,17 @@ jobs:
           echo "Current gai.conf precedence:"
           grep -E 'precedence|IPv4' /etc/gai.conf || true
 
-      - name: Diagnose Supabase host resolution (IPv4 vs IPv6)
+      - name: Diagnose Supabase host resolution
         run: |
-          echo "=== Supabase connectivity diagnosis (GitHub runner has no IPv6) ==="
+          echo "=== Supabase connectivity (confirmed: direct host is IPv6-only) ==="
           ref="${SUPABASE_PROJECT_REF:-}"
           if [ -z "$ref" ]; then
-            echo "SUPABASE_PROJECT_REF not set — skipping host diagnosis."
+            echo "SUPABASE_PROJECT_REF not set — skipping diagnosis."
             exit 0
           fi
-          hosts=(
-            "db.${ref}.supabase.co"
-            "aws-1-eu-central-1.pooler.supabase.co"
-            "aws-0-eu-central-1.pooler.supabase.co"
-          )
-          for h in "${hosts[@]}"; do
-            echo ""
-            echo "Host: $h"
-            nslookup "$h" 2>/dev/null || echo "  nslookup failed or no output"
-            echo "  IPv4 (A):    $(getent ahosts "$h" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -3 | tr '\n' ' ' || echo 'none')"
-            echo "  IPv6 (AAAA): $(getent ahosts "$h" 2>/dev/null | grep -oE '([0-9a-fA-F]{1,4}:){2,}[0-9a-fA-F]{1,4}' | head -3 | tr '\n' ' ' || echo 'none')"
-          done
-          echo ""
-          echo "Recommendation: Store a Session Pooler (port 5432) string in the DATABASE_URL secret for reliable connections from GitHub runners."
+          echo "Direct host: db.${ref}.supabase.co → IPv6-only (no A records)"
+          echo "Strongly recommended: Use Session Pooler (port 5432) in DATABASE_URL secret."
+          echo "The supabase-link-run composite action will auto-rewrite Transaction Pooler URLs."
 
       - name: Report upstream Deploy Supabase result
         if: github.event_name == 'workflow_run'
@@ -147,23 +133,6 @@ jobs:
 
             export LINT_DB_URL
 
-            LINT_HOST=$(python3 -c "import os, urllib.parse as p; u=os.environ.get('LINT_DB_URL',''); print((p.urlparse(u).hostname or '') if u else '')" 2>/dev/null || true)
-            echo "LINT_DB_HOST=$LINT_HOST"
-
-            if [ -n "$LINT_HOST" ]; then
-              echo "=== DNS + address family diagnosis for $LINT_HOST ==="
-              getent hosts "$LINT_HOST" || {
-                echo "::warning::getent failed for $LINT_HOST"
-                nslookup "$LINT_HOST" || echo "::warning::nslookup also failed"
-              }
-
-              # Show IPv4 vs IPv6 addresses explicitly (helps confirm IPv6-only situation)
-              echo "IPv4 addresses (A records):"
-              getent ahosts "$LINT_HOST" 2>/dev/null | grep -E 'STREAM.*[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' || echo "  (none or getent ahosts not available)"
-              echo "IPv6 addresses (AAAA records):"
-              getent ahosts "$LINT_HOST" 2>/dev/null | grep -i 'STREAM.*:' || echo "  (none visible)"
-            fi
-
             # Hard timeout so a stuck connection doesn't burn Actions minutes.
             echo "Running supabase db lint with: $(echo "$LINT_DB_URL" | sed -E 's|:[^@]*@|://***@|')"
             lint_output=$(timeout --signal=TERM --kill-after=30s 240s \
@@ -175,3 +144,12 @@ jobs:
               exit "$lint_exit"
             }
             echo "$lint_output"
+
+      - name: Security Lint Summary
+        if: always()
+        run: |
+          echo "### Supabase Security Lint Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "This workflow runs \`supabase db lint --level error\` against the remote database." >> $GITHUB_STEP_SUMMARY
+          echo "It catches missing RLS policies and dangerous policy patterns." >> $GITHUB_STEP_SUMMARY
+

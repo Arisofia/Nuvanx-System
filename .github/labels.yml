@@ -1,27 +1,122 @@
+# Repository Labels for Nuvanx System
+# This file is used to define and manage labels (via gh CLI, actions, or manual sync).
+
+# ============================================
+# Standard GitHub labels (kept for compatibility)
+# ============================================
+
 - name: "good first issue"
   color: "7057ff"
   description: "Good for newcomers"
+
 - name: "help wanted"
   color: "008672"
   description: "Extra attention is needed"
+
 - name: "bug"
   color: "d73a4a"
   description: "Something isn't working"
-- name: "documentation"
-  color: "0075ca"
-  description: "Improvements or additions to documentation"
+
 - name: "duplicate"
   color: "cfd3d7"
   description: "This issue or pull request already exists"
+
 - name: "enhancement"
   color: "a2eeef"
   description: "New feature or request"
+
 - name: "invalid"
   color: "e4e669"
   description: "This doesn't seem right"
+
 - name: "question"
   color: "d876e3"
   description: "Further information is requested"
+
 - name: "wontfix"
   color: "ffffff"
   description: "This will not be worked on"
+
+# ============================================
+# Area labels (used by .github/labeler.yml)
+# ============================================
+
+- name: "area/frontend"
+  color: "0e8a16"
+  description: "Changes in the frontend application"
+
+- name: "area/backend"
+  color: "1d76db"
+  description: "Changes in backend, Supabase, or scripts"
+
+- name: "area/migrations"
+  color: "b60205"
+  description: "Database migrations (high risk - requires extra review)"
+
+- name: "area/docs"
+  color: "0075ca"
+  description: "Documentation changes"
+
+- name: "area/ci"
+  color: "5319e7"
+  description: "CI/CD, GitHub Actions, workflows, or infrastructure automation"
+
+- name: "area/infra"
+  color: "5319e7"
+  description: "Root configuration, dependencies, or infrastructure files"
+
+- name: "area/doctoralia"
+  color: "f9d0c4"
+  description: "Doctoralia integration, sheets sync, or financial settlements"
+
+- name: "area/meta-ads"
+  color: "c5def5"
+  description: "Meta Ads, CAPI, lead generation, or attribution logic"
+
+- name: "area/security"
+  color: "b60205"
+  description: "Security, RLS policies, authentication, or hardening"
+
+- name: "area/financials"
+  color: "0e8a16"
+  description: "Financial settlements, production, or revenue attribution"
+
+- name: "area/traceability"
+  color: "1d76db"
+  description: "Lead traceability, attribution, or funnel logic"
+
+# ============================================
+# Type labels (optional but useful)
+# ============================================
+
+- name: "type/refactor"
+  color: "f9d0c4"
+  description: "Code refactoring without new features"
+
+- name: "type/dependencies"
+  color: "bfd4f2"
+  description: "Dependency updates (npm, etc.)"
+
+- name: "type/performance"
+  color: "c5def5"
+  description: "Performance improvements"
+
+# ============================================
+# Priority labels
+# ============================================
+
+- name: "priority/P0"
+  color: "b60205"
+  description: "Critical - blocking production or major issues"
+
+- name: "priority/P1"
+  color: "d93f0b"
+  description: "High priority"
+
+- name: "priority/P2"
+  color: "fbca04"
+  description: "Medium priority"
+
+- name: "priority/P3"
+  color: "0e8a16"
+  description: "Low priority / nice to have"
