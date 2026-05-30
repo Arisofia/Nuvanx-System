@@ -2,15 +2,32 @@
 # scripts/supabase-migrate.sh
 #
 # Robust Supabase migration runner with retry, ghost repair, and failure analysis.
-# Intended to be called from GitHub Actions via the supabase-link-run composite action.
 #
-# Expects the following environment variables to be set:
-#   - SESSION_URL (provided by supabase-link-run action)
+# Usage (in GitHub Actions via supabase-link-run composite):
+#   bash scripts/supabase-migrate.sh
 #
-# This script is extracted from .github/workflows/deploy.yml for better maintainability
-# and to allow proper shellcheck + unit testing of the logic.
+# Local usage (for testing):
+#   SESSION_URL="postgresql://...@...5432/postgres" bash scripts/supabase-migrate.sh
+#
+# Requirements:
+#   - supabase CLI installed and authenticated (or SESSION_URL provided)
+#   - SESSION_URL must point to a Session Pooler (port 5432) for best reliability.
+#
+# This script was extracted from .github/workflows/deploy.yml for:
+#   - Better maintainability
+#   - Proper shellcheck coverage
+#   - Easier local testing and iteration
 
 set -euo pipefail
+
+# Ensure SESSION_URL is available
+if [ -z "${SESSION_URL:-}" ]; then
+  echo "::error::SESSION_URL is not set. This script must be called from the supabase-link-run composite action (or with SESSION_URL exported)."
+  exit 1
+fi
+
+# Ensure log file exists (for local runs and to avoid sed/append issues)
+touch supabase-migrations.log || true
 
 sanitize_migration_output() {
   sed 's/\x1b\[[0-9;]*m//g'

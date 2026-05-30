@@ -93,8 +93,8 @@ jobs:
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           skip_link: true
           command: |
-            # The heavy migration logic lives in scripts/supabase-migrate.sh
-            # for better maintainability and shellcheck coverage.
+            # Heavy migration logic extracted to scripts/supabase-migrate.sh
+            # (better maintainability, full shellcheck coverage, easier local testing).
             bash scripts/supabase-migrate.sh
 
       - name: Debug – list Supabase migrations
