@@ -29,6 +29,15 @@ export const META_AD_ACCOUNT_IDS = getEnv('META_AD_ACCOUNT_IDS');
 export const META_APP_ID = getEnv('META_APP_ID');
 export const META_APP_SECRET = getEnv('META_APP_SECRET');
 
+// Active Meta Pixel ID for CAPI (must match the one receiving events in Meta Events Manager)
+export const META_PIXEL_ID = getEnv('META_PIXEL_ID') || '1405503384615251'; // Francisco Antonio Geraldo Lorenzo Pixel (active)
+
+// NUVANX main contact / WhatsApp phones (for lead matching and CAPI signals)
+export const NUVANX_WHATSAPP_PHONES = [
+  getEnv('NUVANX_WHATSAPP_PHONE_1') || '9084540447',
+  getEnv('NUVANX_WHATSAPP_PHONE_2') || '8265708501',
+].filter(Boolean);
+
 export function normalizeFrontendUrl(url: string): string | null {
   if (!url) return null;
   if (url === '*' || url.toLowerCase() === 'null') return null;

@@ -249,7 +249,10 @@ async function metaFetchInsightsWithFallback(path: string, params: Record<string
   }
 }
 
-const DEFAULT_META_PIXEL_ID = Deno.env.get('META_PIXEL_ID') ?? '877262375461917';
+// Active Meta Pixel receiving events (as of latest Meta report)
+// Francisco Antonio Geraldo Lorenzo Pixel — this must match what is configured
+// in Meta Events Manager for the ad accounts 9523446201036125 and 4172099716404860.
+const DEFAULT_META_PIXEL_ID = Deno.env.get('META_PIXEL_ID') ?? '1405503384615251';
 
 async function sha256Hex(raw: string): Promise<string> {
   const data = new TextEncoder().encode(raw.trim().toLowerCase());
@@ -1167,17 +1170,20 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
     ? qAccountIds
     : metadataAccountIds;
 
-  // Dynamic routing: ensure correct pixel is used for specific ad accounts
-  // as per requirement for Francisco Antonio and Nuvanx separation.
+  // Dynamic pixel routing for CAPI (critical for EMQ and attribution)
+  // Current active pixel (receiving events): 1405503384615251 (Francisco Antonio Geraldo Lorenzo Pixel)
+  // This must be kept in sync with Meta Events Manager.
+  // Both ad accounts should generally use the active pixel for Contact/Purchase events
+  // coming from WhatsApp/Doctoralia to ensure proper deduplication and optimization.
   let pixelId = metadata.pixelId ?? metadata.pixel_id ?? '';
   const activeAccountId = adAccountIds[0] ?? '';
-  if (activeAccountId.includes('9523446201036125')) {
-    pixelId = '1405503384615251'; // Francisco Antonio Pixel
-  } else if (activeAccountId.includes('4172099716404860')) {
-    pixelId = '877262375461917'; // Nuvanx Pixel
+
+  if (activeAccountId.includes('9523446201036125') || activeAccountId.includes('4172099716404860')) {
+    // Force the currently active pixel for both accounts (per latest Meta diagnostics)
+    pixelId = Deno.env.get('META_PIXEL_ID') || '1405503384615251';
   }
 
-  console.log(`[CAPI-ROUTING] Cuenta: ${activeAccountId} -> Usando Píxel: ${pixelId}`);
+  console.log(`[CAPI-ROUTING] Cuenta: ${activeAccountId} -> Usando Píxel activo: ${pixelId}`);
 
   return {
     notConnected: false,
@@ -2053,7 +2059,7 @@ async function processWhatsappWebhookMessage(adminClient: any, userId: string, v
     },
   );
 
-  // Trigger Meta CAPI Contact event
+  // Trigger Meta CAPI Contact event (strengthened for better EMQ)
   (async () => {
     try {
       const { data: credRow } = await adminClient.from('credentials')
@@ -2064,12 +2070,37 @@ async function processWhatsappWebhookMessage(adminClient: any, userId: string, v
       
       if (credRow) {
         const accessToken = await publicRouteHelpers.decryptCred(credRow.encrypted_key);
-        // For WhatsApp webhooks we don't have IP/UA context, but we have phone
+
+        // Try to enrich with fbc/fbp from the original lead (if this WhatsApp contact came from a Meta lead)
+        let fbc: string | null = null;
+        let fbp: string | null = null;
+        if (leadId) {
+          const { data: leadRow } = await adminClient
+            .from('leads')
+            .select('fbc, fbp')
+            .eq('id', leadId)
+            .maybeSingle();
+          fbc = leadRow?.fbc ?? null;
+          fbp = leadRow?.fbp ?? null;
+        }
+
+        const eventId = leadId ? `contact_wa_${leadId}` : `wa_${message.id}`;
+
         await trackMetaConversion('contact', accessToken, {
           pixelId: pixelId || undefined,
-          eventId: `wa_${message.id}`,
+          eventId,
           phone: phone || null,
-          externalId: userId,
+          fbc,
+          fbp,
+          externalId: leadId || userId,
+        });
+
+        console.log('[CAPI-CONTACT] WhatsApp Contact dispatched', {
+          event_id: eventId,
+          phone: !!phone,
+          has_fbc: !!fbc,
+          has_fbp: !!fbp,
+          lead_id: leadId,
         });
       }
     } catch (err) {
@@ -4453,7 +4484,7 @@ async function handleCapiQualityGet(ctx: AuthenticatedRouteContext): Promise<Res
     // Pixel routing status (known accounts)
     const knownRouting = [
       { account: '9523446201036125', pixel: '1405503384615251', label: 'Francisco Antonio' },
-      { account: '4172099716404860', pixel: '877262375461917', label: 'Nuvanx' },
+      { account: '4172099716404860', pixel: '1405503384615251', label: 'Nuvanx (active pixel)' },
     ];
 
     return sendJson({
@@ -6555,43 +6586,84 @@ async function matchPatientByPhone(adminClient: any, clinicId: string, normalize
   return patient?.id ?? null;
 }
 
-async function matchLeadByPhone(adminClient: any, userId: string, normalizedPhone: string) {
+async function matchLeadByPhone(adminClient: any, userId: string, normalizedPhone: string, clinicId?: string | null) {
   if (!normalizedPhone) return null;
-  const { data: lead } = await adminClient.from('leads')
-    .select('id, stage, phone_normalized')
-    .eq('user_id', userId)
+
+  // Build query supporting both user_id and clinic_id for robustness
+  let query = adminClient.from('leads')
+    .select('id, stage, phone_normalized, telefono_hash, name, email, fbc, fbp, source, created_at')
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (clinicId) {
+    query = query.eq('clinic_id', clinicId);
+  } else {
+    query = query.eq('user_id', userId);
+  }
+
+  // Primary: phone_normalized
+  let { data: lead } = await query
     .eq('phone_normalized', normalizedPhone)
-    .order('created_at', { ascending: false })
-    .limit(1)
     .maybeSingle();
+
+  if (lead) return lead;
+
+  // Fallback: telefono_hash (very useful for Meta leads)
+  const hashed = await sha256Hex(normalizedPhone);
+  let hashQuery = adminClient.from('leads')
+    .select('id, stage, phone_normalized, telefono_hash, name, email, fbc, fbp, source, created_at')
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (clinicId) hashQuery = hashQuery.eq('clinic_id', clinicId);
+  else hashQuery = hashQuery.eq('user_id', userId);
+
+  ({ data: lead } = await hashQuery
+    .eq('telefono_hash', hashed)
+    .maybeSingle());
+
   return lead ?? null;
 }
 
-async function matchLeadByEmail(adminClient: any, userId: string, email: string) {
+async function matchLeadByEmail(adminClient: any, userId: string, email: string, clinicId?: string | null) {
   if (!email) return null;
-  const normalizedEmail = String(email).trim();
-  const { data: lead } = await adminClient.from('leads')
-    .select('id, stage, email')
-    .eq('user_id', userId)
-    .ilike('email', normalizedEmail)
+  const normalizedEmail = String(email).trim().toLowerCase();
+
+  let query = adminClient.from('leads')
+    .select('id, stage, phone_normalized, telefono_hash, name, email, fbc, fbp, source, created_at')
+    .is('deleted_at', null)
     .order('created_at', { ascending: false })
-    .limit(1)
+    .limit(1);
+
+  if (clinicId) query = query.eq('clinic_id', clinicId);
+  else query = query.eq('user_id', userId);
+
+  const { data: lead } = await query
+    .ilike('email', normalizedEmail)
     .maybeSingle();
+
   return lead ?? null;
 }
 
-async function findWhatsappConversionLead(adminClient: any, userId: string, phone: string, email: string) {
+async function findWhatsappConversionLead(adminClient: any, userId: string, phone: string, email: string, clinicId?: string | null) {
   const normalizedPhone = normalizePhoneForMeta(phone);
   let matchedLead = normalizedPhone
-    ? await matchLeadByPhone(adminClient, userId, normalizedPhone)
+    ? await matchLeadByPhone(adminClient, userId, normalizedPhone, clinicId)
     : null;
   let leadMatchMethod: string | null = null;
 
   if (!matchedLead && email) {
-    matchedLead = await matchLeadByEmail(adminClient, userId, email);
+    matchedLead = await matchLeadByEmail(adminClient, userId, email, clinicId);
     leadMatchMethod = matchedLead ? 'email' : null;
   } else if (matchedLead) {
     leadMatchMethod = 'phone';
+  }
+
+  // If we matched by phone but also have email, try to enrich email from DB if missing in input
+  if (matchedLead && !email && matchedLead.email) {
+    // email will be used in payload below
   }
 
   return { matchedLead, leadMatchMethod };
@@ -6654,6 +6726,10 @@ async function processWhatsappConversionPost(adminClient: any, userId: string, r
     let matchedPatientId: string | null = null;
     let matchedLeadId: string | null = null;
     let leadStageUpdated = false;
+    let leadName: string | null = null;
+    let leadEmail: string | null = null;
+    let leadFbc: string | null = null;
+    let leadFbp: string | null = null;
 
     if (clinicId && phone) {
       const normalizedPhone = normalizePhoneForMeta(phone);
@@ -6662,21 +6738,31 @@ async function processWhatsappConversionPost(adminClient: any, userId: string, r
         : null;
     }
 
-    const { matchedLead, leadMatchMethod } = await findWhatsappConversionLead(adminClient, userId, phone, email);
+    const { matchedLead, leadMatchMethod } = await findWhatsappConversionLead(adminClient, userId, phone, email, clinicId);
     if (matchedLead) {
       matchedLeadId = matchedLead.id;
+      leadName = matchedLead.name ?? null;
+      leadEmail = matchedLead.email ?? email ?? null;
+      leadFbc = matchedLead.fbc ?? fbc ?? null;
+      leadFbp = matchedLead.fbp ?? fbp ?? null;
       leadStageUpdated = await updateLeadStageToWhatsapp(adminClient, userId, matchedLead);
     }
 
-    // Trigger Meta CAPI Contact event
+    // Trigger Meta CAPI Contact event with rich signals for high EMQ
     const externalId = matchedPatientId || matchedLeadId || userId;
+    const finalFbc = leadFbc || fbc || null;
+    const finalFbp = leadFbp || fbp || null;
+    const finalEmail = email || leadEmail || null;
+
     const result = await trackMetaConversion('contact', creds.accessToken, {
       pixelId: creds.pixelId,
       eventId: `contact_${matchedLeadId || matchedPatientId || Date.now()}`,
       phone: phone || null,
-      email: email || null,
-      fbc,
-      fbp,
+      email: finalEmail,
+      firstName: leadName ? leadName.split(' ')[0] : null,
+      lastName: leadName ? leadName.split(' ').slice(1).join(' ') : null,
+      fbc: finalFbc,
+      fbp: finalFbp,
       ip,
       ua,
       externalId,
@@ -6691,7 +6777,11 @@ async function processWhatsappConversionPost(adminClient: any, userId: string, r
       leadMatchMethod,
       leadStageUpdated,
       phone: phone || null,
-      email: email || null,
+      email: finalEmail,
+      lead_name: leadName,
+      has_fbc: !!finalFbc,
+      has_fbp: !!finalFbp,
+      external_id: externalId,
     });
   } catch (e: any) {
     return sendJson({ success: false, message: e?.message ?? 'Meta pixel event failed' }, 502);

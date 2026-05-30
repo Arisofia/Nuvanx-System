@@ -1,4 +1,3 @@
-// Moved from ui/FilterBar.tsx
 // This is a domain-specific filter component (dates + campaigns + sources).
 // It belongs better in a filters or domain folder rather than pure ui primitives.
 

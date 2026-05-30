@@ -335,7 +335,7 @@ export default function Integrations() {
                       id="pixelId-input"
                       type="text"
                       name="pixelId"
-                      placeholder="ej. 877262375461917"
+                      placeholder="ej. 1405503384615251 (píxel activo Francisco Antonio)"
                       value={form.pixelId}
                       onChange={handleFieldChange}
                       className="mt-1"

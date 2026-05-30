@@ -1,4 +1,3 @@
-// Moved from ui/SortableTable.tsx
 // This is a composite table component with sorting, pagination and export.
 // It is intentionally kept outside the pure ui/ primitives folder.
 

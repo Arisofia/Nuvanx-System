@@ -1,4 +1,3 @@
-// Moved from ui/DataModeBadge.tsx
 // This component is highly domain-specific (data quality mode for the dashboard).
 // It makes more sense living inside the dashboard folder.
 
