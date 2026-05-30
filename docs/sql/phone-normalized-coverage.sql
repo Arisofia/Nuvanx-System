@@ -4,7 +4,12 @@
 -- Purpose: Quick visibility into how many records have a usable phone_normalized value.
 -- This is critical for Doctoralia matching and CAPI quality.
 --
--- For the full production release checklist, use: docs/sql/production-traceability-validation.sql
+-- Usage:
+--   - Run this as a quick daily/weekly health check.
+--   - Low coverage here usually explains poor Doctoralia matching rates.
+--
+-- For the full production release checklist (including traceability view coverage), use:
+--   docs/sql/production-traceability-validation.sql
 
 -- Leads: cobertura de phone_normalized
 SELECT

@@ -4,6 +4,13 @@
 -- Goal: Validate that the core traceability and Doctoralia matching infrastructure
 -- is healthy before trusting reports, KPIs, or CAPI attribution.
 --
+-- Usage:
+--   1. Run after any significant migration touching leads/patients/doctoralia_patients/produccion_intermediarios.
+--   2. Copy the key numeric results (especially sections 3–7 and 9–10) into your release notes.
+--   3. Use section 7 to identify leads that have phone_normalized but no Doctoralia match (investigation candidates).
+--
+-- Related quick checks: docs/sql/phone-normalized-coverage.sql
+--
 -- Copy the key numeric results into your release notes.
 
 -- 1) Confirm the production relations created or refreshed by the latest migrations.
