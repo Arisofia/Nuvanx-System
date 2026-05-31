@@ -27,7 +27,7 @@ inputs:
   supabase_cli_version:
     description: 'Supabase CLI version to use'
     required: false
-    default: '2.100.1'
+    default: '2.102.0'
 
 outputs:
   resolved_db_password:
@@ -35,12 +35,18 @@ outputs:
     value: ${{ steps.creds.outputs.resolved_db_password }}
   skipped:
     description: 'True if the link step was skipped due to deterministic errors'
-    value: ${{ steps.link.outputs.skipped }}
+    value: ${{ steps.link.outputs.skipped || 'false' }}
+  session_url:
+    description: 'Resolved connection string (Session Pooler on 5432 preferred) for use with --db-url and Supabase CLI commands'
+    value: ${{ steps.resolve-url.outputs.session_url || '' }}
 
 runs:
   using: 'composite'
   steps:
     - name: Setup Supabase CLI
+      # The setup-cli@v1 action installs the requested version of the Supabase CLI.
+      # Default is pinned to a recent stable release (updated periodically for features/fixes).
+      # Override via input for reproducibility or to test a specific version.
       uses: supabase/setup-cli@v1
       with:
         version: ${{ inputs.supabase_cli_version }}
@@ -71,13 +77,75 @@ runs:
         set -euo pipefail
         RESOLVED_DB_PASSWORD="$INPUT_SUPABASE_DB_PASSWORD"
         if [ -z "$RESOLVED_DB_PASSWORD" ] && [ -n "$INPUT_DATABASE_URL" ]; then
-          # Extract password from URL defensively without failing on malformed URL variants.
-          RESOLVED_DB_PASSWORD=$(echo "$INPUT_DATABASE_URL" | sed -n 's|.*://[^:]*:\([^@]*\)@.*|\1|p' || echo "")
+          # Reliable password extraction.
+          # Prefer Python urllib.parse (handles percent-encoding correctly, e.g. %40 for @ in passwords).
+          # Falls back to sed for unusual environments without python3.
+          if command -v python3 >/dev/null 2>&1; then
+            RESOLVED_DB_PASSWORD=$(python3 -c '
+import sys, urllib.parse
+print(urllib.parse.urlparse(sys.argv[1]).password or "")
+' "$INPUT_DATABASE_URL")
+          fi
+          if [ -z "$RESOLVED_DB_PASSWORD" ]; then
+            # Fallback (no percent-decoding, but covers basic cases)
+            RESOLVED_DB_PASSWORD=$(echo "$INPUT_DATABASE_URL" | sed -n 's|.*://[^:]*:\([^@]*\)@.*|\1|p' || echo "")
+          fi
         fi
         if [ -n "$RESOLVED_DB_PASSWORD" ]; then
           echo "::add-mask::$RESOLVED_DB_PASSWORD"
         fi
         printf 'resolved_db_password=%s\n' "$RESOLVED_DB_PASSWORD" >> "$GITHUB_OUTPUT"
+
+    - name: Resolve Session URL
+      id: resolve-url
+      shell: bash
+      env:
+        INPUT_DATABASE_URL: ${{ inputs.database_url }}
+        INPUT_SUPABASE_DB_PASSWORD: ${{ steps.creds.outputs.resolved_db_password }}
+        INPUT_SUPABASE_PROJECT_REF: ${{ inputs.project_ref }}
+      run: |
+        set -euo pipefail
+
+        RESOLVED_DB_PASSWORD="$INPUT_SUPABASE_DB_PASSWORD"
+
+        if [ -n "${INPUT_DATABASE_URL:-}" ]; then
+          # Smart handling for Supabase connection strings in GitHub Actions.
+          #
+          # CONFIRMED: The direct db.<ref>.supabase.co hostname for this project is IPv6-only.
+          # GitHub runners often have unreliable IPv6, so we strongly prefer Session Pooler (port 5432).
+          if [[ "${INPUT_DATABASE_URL}" == *"pooler.supabase"* ]] && [[ "${INPUT_DATABASE_URL}" == *":6543/"* || "${INPUT_DATABASE_URL}" == *"pgbouncer=true"* ]]; then
+            SESSION_URL=$(python3 -c '
+import sys, urllib.parse
+url = sys.argv[1]
+p = urllib.parse.urlparse(url)
+qs = urllib.parse.parse_qs(p.query, keep_blank_values=True)
+qs.pop("pgbouncer", None)
+new_query = urllib.parse.urlencode(qs, doseq=True)
+new_netloc = p.netloc.replace(":6543", ":5432") if ":6543" in p.netloc else p.netloc
+new_url = urllib.parse.urlunparse((p.scheme, new_netloc, p.path, p.params, new_query, p.fragment))
+if "sslmode" not in new_url.lower():
+    sep = "&" if new_query else ""
+    new_url = new_url + (sep + "sslmode=require") if "?" in new_url or new_query else new_url + "?sslmode=require"
+print(new_url)
+' "$INPUT_DATABASE_URL")
+            echo "::warning::DATABASE_URL looked like Transaction Pooler. Rewrote to Session Pooler (port 5432)."
+          else
+            SESSION_URL="$INPUT_DATABASE_URL"
+          fi
+        elif [ -n "$RESOLVED_DB_PASSWORD" ] && [ -n "${INPUT_SUPABASE_PROJECT_REF:-}" ]; then
+          # Fallback: construct direct connection (requires IPv4 add-on in Supabase)
+          SESSION_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$RESOLVED_DB_PASSWORD" "$INPUT_SUPABASE_PROJECT_REF")
+          echo "No DATABASE_URL provided — falling back to direct DB URL (db.<ref>.supabase.co:5432)"
+        else
+          SESSION_URL=""
+        fi
+
+        if [ -n "$SESSION_URL" ]; then
+          # Mask the full connection string (it contains the password)
+          echo "::add-mask::$SESSION_URL"
+          echo "session_url=$SESSION_URL" >> "$GITHUB_OUTPUT"
+          echo "SESSION_URL=$SESSION_URL" >> "$GITHUB_ENV"
+        fi
 
     - name: Link Supabase project
       id: link
@@ -91,8 +159,29 @@ runs:
         set -euo pipefail
         is_deterministic_link_error() {
           local output="$1"
-          local pattern='invalid access token|invalid token|not authorized|unauthorized|forbidden|permission denied|necessary privileges|project ref.*not found|project.*not found|invalid project ref|database password.*incorrect|password authentication failed|Unexpected HTTP response: 404'
-          echo "$output" | grep -Eiq "$pattern"
+          # More maintainable than a giant regex. Add new patterns here as Supabase CLI evolves.
+          local -a deterministic_patterns=(
+            'invalid access token'
+            'invalid token'
+            'not authorized'
+            'unauthorized'
+            'forbidden'
+            'permission denied'
+            'necessary privileges'
+            'project ref.*not found'
+            'project.*not found'
+            'invalid project ref'
+            'database password.*incorrect'
+            'password authentication failed'
+            'Unexpected HTTP response: 404'
+          )
+
+          for pattern in "${deterministic_patterns[@]}"; do
+            if echo "$output" | grep -Eiq "$pattern"; then
+              return 0
+            fi
+          done
+          return 1
         }
         run_link_once() {
           if [ -n "$RESOLVED_DB_PASSWORD" ]; then
@@ -113,7 +202,7 @@ runs:
             output=$(run_link_once 2>&1) || {
               local exit_code=$?
               echo "$output"
-              # Correct bash syntax: func "$arg" (sin paréntesis)
+              # Correct bash syntax: call the function as is_deterministic_link_error "$output" (no parentheses)
               if is_deterministic_link_error "$output"; then
                 echo "::warning::Supabase link skipped (deterministic error): $output"
                 echo "skipped=true" >> "$GITHUB_OUTPUT"
@@ -136,26 +225,30 @@ runs:
         run_link_with_retry
 
     - name: Write command script
+      id: write-script
       if: steps.link.outputs.skipped != 'true'
       shell: bash
       env:
         ACTION_COMMAND: ${{ inputs.command }}
       run: |
         set -euo pipefail
-        {
-          echo '#!/usr/bin/env bash'
-          printf '%s\n' "$ACTION_COMMAND"
-        } > /tmp/supabase_command.sh
-        chmod +x /tmp/supabase_command.sh
+        # Safer script generation: avoid command injection risks from untrusted input.
+        # Use unique temp file under $RUNNER_TEMP (recommended by GitHub) so multiple
+        # invocations of this composite action in the same job cannot collide.
+        SCRIPT_PATH=$(mktemp "${RUNNER_TEMP:-/tmp}/supabase_command.XXXXXX.sh")
+        printf '%s\n' '#!/usr/bin/env bash' > "$SCRIPT_PATH"
+        printf '%s\n' "$ACTION_COMMAND" >> "$SCRIPT_PATH"
+        chmod +x "$SCRIPT_PATH"
+        printf 'script_path=%s\n' "$SCRIPT_PATH" >> "$GITHUB_OUTPUT"
+
 
     - name: Execute command
       if: steps.link.outputs.skipped != 'true'
       shell: bash
       env:
-        DATABASE_URL: ${{ inputs.database_url }}
         SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
-        SUPABASE_PROJECT_REF: ${{ inputs.project_ref }}
         SUPABASE_DB_PASSWORD_INPUT: ${{ steps.creds.outputs.resolved_db_password }}
+        SCRIPT_PATH: ${{ steps.write-script.outputs.script_path }}
       run: |
         set -euo pipefail
 
@@ -163,23 +256,11 @@ runs:
           export SUPABASE_DB_PASSWORD="$SUPABASE_DB_PASSWORD_INPUT"
         fi
 
-        if [ -n "${DATABASE_URL:-}" ]; then
-          # Use DATABASE_URL verbatim (no hostname/port rewriting).
-          SESSION_URL="$DATABASE_URL"
-          export SESSION_URL
-        elif [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
-          # Fallback: construct direct connection URL when DATABASE_URL is unavailable.
-          SESSION_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
-          export SESSION_URL
-        else
-          echo "::error::Cannot build SESSION_URL. Provide DATABASE_URL, or SUPABASE_DB_PASSWORD with SUPABASE_PROJECT_REF."
-          exit 1
+        # SESSION_URL is provided by the preceding "Resolve Session URL" step via $GITHUB_ENV.
+        # It is already masked and exported for the user's command script.
+        if [ -z "${SESSION_URL:-}" ]; then
+          echo "::warning::SESSION_URL was not resolved by the action. Your command may need to provide explicit --db-url or --project-ref flags."
         fi
 
-        echo "::add-mask::$SESSION_URL"
-        printf 'SESSION_URL=%s\n' "$SESSION_URL" >> "$GITHUB_ENV"
-
-        bash /tmp/supabase_command.sh
-
-        # Optional: cleanup temporary script after execution
-        # rm -f /tmp/supabase_command.sh || true
+        bash "${SCRIPT_PATH}"
+        rm -f "${SCRIPT_PATH}" || true

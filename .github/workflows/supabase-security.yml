@@ -57,7 +57,7 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.2.2
 
       - name: Prefer IPv4 (gai.conf + diagnostics)
         run: |
@@ -76,7 +76,7 @@ jobs:
           fi
           echo "Direct host: db.${ref}.supabase.co → IPv6-only (no A records)"
           echo "Strongly recommended: Use Session Pooler (port 5432) in DATABASE_URL secret."
-          echo "The supabase-link-run composite action resolves a safe SESSION_URL (Session Pooler preferred), exports it to GITHUB_ENV, and exposes it as \$SESSION_URL for commands."
+          echo "The supabase-link-run composite action resolves a safe SESSION_URL (Session Pooler preferred) and exposes it as \$SESSION_URL for commands."
 
       - name: Report upstream Deploy Supabase result
         if: github.event_name == 'workflow_run'

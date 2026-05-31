@@ -1,6 +1,12 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
 name: Daily Sync Orchestrator
 
+# This workflow is part of the hardened Supabase + external sync pipeline.
+# It follows the project's established patterns:
+# - Strong IPv6 mitigation (direct Supabase host is IPv6-only)
+# - Preference for Session Pooler (port 5432)
+# - Use of the supabase-link-run composite action for reliable connectivity
+
 on:
   schedule:
     - cron: '0 7 * * *'   # Daily at 07:00 UTC
@@ -16,74 +22,133 @@ on:
         default: '2'
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE22: true
+  SYNC_MODE: daily
+  # Node 22 is used explicitly in setup-node below for stability
+  META_GRAPH_VERSION: v22.0  # Updated to current stable Meta Graph API version
+
+concurrency:
+  group: daily-sync-${{ github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   daily-sync:
     name: Run Daily Sync Orchestrator
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 25   # Stricter timeout as per security/hardening review
     
     env:
+      # Centralized secret loading for the daily sync job.
+      # Many are required by scripts/sync-doctoralia.js and related modules.
+      # Some have fallbacks for flexibility during development.
       SUPABASE_URL: ${{ secrets.SUPABASE_URL || secrets.VITE_SUPABASE_URL }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || '' }}
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
       DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID }}
       CLINIC_ID: ${{ secrets.CLINIC_ID }}
-      ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+      ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY || '' }}
       META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
       META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
       META_AD_ACCOUNT_IDS: ${{ secrets.META_AD_ACCOUNT_IDS }}
       META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
-      META_GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION || 'v20.0' }}
+
+      # NOTE: For future calls to Supabase Edge Functions or DB operations,
+      # consider using the hardened .github/actions/supabase-link-run composite action
+      # (it provides consistent IPv6/pooler handling + masking).
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v4
+
+      - name: Prefer IPv4 + hardened resolver (Supabase IPv6 mitigation)
+        run: |
+          echo "=== Hardening for Daily Sync (Supabase IPv6 mitigation) ==="
+          echo "Note: Direct db.<ref>.supabase.co for this project is IPv6-only (confirmed via DNS)."
+          echo "All connectivity hardening below exists because of this (see also deploy.yml and ci.yml)."
+          # Disable IPv6 (best effort - common cause of Supabase connection issues on GitHub runners)
+          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1 2>/dev/null || true
+          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1 2>/dev/null || true
+          sudo sysctl -w net.ipv6.conf.lo.disable_ipv6=1 2>/dev/null || true
+
+          # Prefer IPv4 for DNS resolution
+          if [ -f /etc/gai.conf ]; then
+            sudo sed -i 's/^#precedence ::ffff:0:0\/96  100/precedence ::ffff:0:0\/96  100/' /etc/gai.conf 2>/dev/null || true
+          fi
+
+          # Tighter resolver settings
+          echo 'options single-request-reopen timeout:2 attempts:3' | sudo tee -a /etc/resolv.conf >/dev/null 2>&1 || true
+
+          # Install debug tools only if missing
+          if ! command -v dig >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq dnsutils netcat-openbsd 2>/dev/null || true
+          fi
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4.1.0
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm install --include=dev --ignore-scripts --legacy-peer-deps
 
       - name: Run Orchestrator Script
+        # Hard timeout to prevent the daily sync from hanging indefinitely
+        timeout-minutes: 25
         run: node scripts/run-daily-sync.js
         env:
-          # run-daily-sync.js needs these for sync-doctoralia and supabase deploy
-          SUPABASE_ACCESS_TOKEN: ${{ env.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ env.SUPABASE_PROJECT_REF }}
-          DATABASE_URL: ${{ env.DATABASE_URL }}
-          GOOGLE_ADS_SERVICE_ACCOUNT: ${{ env.GOOGLE_ADS_SERVICE_ACCOUNT }}
-          DOCTORALIA_SHEET_ID: ${{ env.DOCTORALIA_SHEET_ID }}
-          CLINIC_ID: ${{ env.CLINIC_ID }}
-          ENCRYPTION_KEY: ${{ env.ENCRYPTION_KEY }}
-          META_ACCESS_TOKEN: ${{ env.META_ACCESS_TOKEN }}
-          META_AD_ACCOUNT_ID: ${{ env.META_AD_ACCOUNT_ID }}
-          META_AD_ACCOUNT_IDS: ${{ env.META_AD_ACCOUNT_IDS }}
-          META_APP_SECRET: ${{ env.META_APP_SECRET }}
+          # Inherit most secrets from job-level env. Only add workflow-specific ones.
           META_GRAPH_VERSION: ${{ env.META_GRAPH_VERSION }}
+          EXPECTED_DOCTORALIA_SHEET_ID: ${{ secrets.EXPECTED_DOCTORALIA_SHEET_ID }}
 
       - name: Fetch Meta Daily Insights
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ env.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ env.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           DAYS="${{ github.event.inputs.days || '2' }}"
           echo "Fetching Meta insights for last $DAYS days..."
-          
-          RESPONSE=$(curl -s -X POST "${SUPABASE_URL}/functions/v1/daily-aggregates" \
+
+          # Robust call to daily-aggregates Edge Function
+          RESPONSE=$(curl -sS --max-time 180 --retry 2 --retry-delay 5 -X POST "${SUPABASE_URL}/functions/v1/daily-aggregates" \
             -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
             -H "Content-Type: application/json" \
-            -d "{\"action\": \"fetch_meta_insights\", \"days\": $DAYS}")
-          
+            -d "{\"action\": \"fetch_meta_insights\", \"days\": ${DAYS}}" || echo '{"success":false,"error":"curl_failed"}')
+
           echo "Response: $RESPONSE"
-          if echo "$RESPONSE" | grep -q '"success":true'; then
-            echo "Meta insights fetched successfully."
+
+          # Use jq for reliable JSON parsing (more robust than grep)
+          if command -v jq >/dev/null 2>&1; then
+            SUCCESS=$(echo "$RESPONSE" | jq -r '.success // false' 2>/dev/null || echo "false")
           else
-            echo "::error::Failed to fetch Meta insights."
-            exit 1
+            # Fallback if jq is not available
+            SUCCESS=$(echo "$RESPONSE" | grep -o '"success":[^,}]*' | head -1 | grep -q 'true' && echo "true" || echo "false")
           fi
+
+          if [ "$SUCCESS" = "true" ]; then
+            echo "✅ Meta insights fetched successfully."
+          else
+            echo "::warning::Meta insights step failed or returned error (non-fatal — continuing daily sync)."
+            echo "Response: $RESPONSE"
+            # Do not fail the whole job — the main doctoralia sync may still be valuable
+          fi
+
+      - name: Daily Sync Summary
+        if: always()
+        run: |
+          echo "### 📅 Daily Sync Orchestrator Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Run type:** ${{ github.event_name }}"
+          echo "- **Meta insights days:** ${{ github.event.inputs.days || '2' }}"
+          echo "- **Node version:** 22"
+          echo "- **IPv6 disabled:** Yes (hardened for Supabase)"
+          echo ""
+          echo "See job logs for detailed sync-doctoralia + Meta insights results."

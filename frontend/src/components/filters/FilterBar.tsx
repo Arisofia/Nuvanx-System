@@ -1,14 +1,14 @@
+// This is a domain-specific filter component (dates + campaigns + sources).
+// It belongs better in a filters or domain folder rather than pure ui primitives.
+
 import { useState } from 'react'
 import { Calendar } from 'lucide-react'
 
 export interface FilterBarProps {
-  /** Called whenever the date range changes. Empty strings mean "no filter / all time". */
   readonly onDateChange: (from: string, to: string) => void
-  /** Optional campaign dropdown */
   readonly campaigns?: { id: string; name: string }[]
   readonly onCampaignChange?: (id: string) => void
   readonly campaignValue?: string
-  /** Optional source dropdown */
   readonly sources?: string[]
   readonly onSourceChange?: (src: string) => void
   readonly sourceValue?: string
@@ -85,7 +85,6 @@ export function FilterBar({
 
   return (
     <div className="flex flex-wrap items-center gap-2 print:hidden">
-      {/* Preset buttons */}
       <div className="flex items-center gap-1 bg-card rounded-lg p-1">
         {PRESETS.map((p) => (
           <button
@@ -110,7 +109,6 @@ export function FilterBar({
         </button>
       </div>
 
-      {/* Custom date inputs */}
       <div className="flex items-center gap-1">
         <Calendar className="w-3.5 h-3.5 text-muted" />
         <input
@@ -128,7 +126,6 @@ export function FilterBar({
         />
       </div>
 
-      {/* Campaign select */}
       {campaigns && campaigns.length > 0 && onCampaignChange && (
         <select
           value={campaignValue}
@@ -142,7 +139,6 @@ export function FilterBar({
         </select>
       )}
 
-      {/* Source select */}
       {sources && sources.length > 0 && onSourceChange && (
         <select
           value={sourceValue}

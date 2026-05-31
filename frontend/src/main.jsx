@@ -13,8 +13,9 @@ if (import.meta.env.VITE_SENTRY_DSN) {
   })
 }
 
-// Bootstraps the Meta Pixel and emits the first PageView. No-op when the env
-// variable is empty (e.g. local dev without ad-tracking).
+// Bootstraps the Meta Pixel (active: 1405503384615251 - Francisco Antonio Geraldo Lorenzo).
+// Must match the server-side CAPI pixel for proper event deduplication (eventID ↔ event_id).
+// No-op when the env variable is empty (safe for local dev).
 initMetaPixel(import.meta.env.VITE_META_PIXEL_ID)
 
 createRoot(document.getElementById('root')).render(

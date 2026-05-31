@@ -1,20 +1,39 @@
 // frontend/src/lib/invokeApi.ts
-import { supabase } from './supabaseClient'
+import { supabase } from './supabaseClient';
 
+/**
+ * Calls a Supabase Edge Function through the Vercel proxy.
+ * Automatically uses the current user's Supabase session JWT.
+ *
+ * This is the secure way — never expose MCP_API_KEY or service role keys to the browser.
+ */
 export async function invokeApi<T>(functionName: string, body?: any): Promise<T> {
-  const { data, error } = await supabase.functions.invoke(functionName, {
-    body: body || {},
-    headers: {
-      'Authorization': `Bearer ${import.meta.env.VITE_MCP_API_KEY}`
-    }
-  });
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData?.session?.access_token;
 
-  if (error) {
-    console.error(`Error invoking ${functionName}:`, error);
-    throw new Error(error.message || `Error in ${functionName}`);
+  if (!accessToken) {
+    throw new Error('No active Supabase session. User must be logged in to call protected functions.');
   }
 
-  // Devolvemos la data directamente para que componentes como useLeads.ts
-  // puedan acceder a resp.leads sin errores de TypeScript.
-  return data as T;
+  const response = await fetch(`/api/${functionName}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  if (!response.ok) {
+    let errorMessage = `HTTP ${response.status}`;
+    try {
+      const errorBody = await response.json();
+      errorMessage = errorBody?.message || errorBody?.error || errorMessage;
+    } catch {
+      // ignore json parse error
+    }
+    throw new Error(errorMessage);
+  }
+
+  return (await response.json()) as T;
 }

@@ -25,3 +25,6 @@ if (!isSupabaseConfigured) {
     '[env] Supabase is not fully configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY (or VITE_SUPABASE_ANON_KEY).',
   )
 }
+
+// Note: Meta assets (pixel, ad accounts, FB Page, IG Account) are centralized in
+// src/config/metaAccounts.ts and should be loaded via VITE_META_* env vars.
