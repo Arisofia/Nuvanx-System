@@ -158,7 +158,7 @@ export async function metaFetch(path: string, params: Record<string, string>, to
     const e = d?.error ?? {};
     const errorMessageFromD = d?.message;
     const textValue = typeof text === 'string' ? text : '';
-    const metaErrorMessage = e.message ?? errorMessageFromD ?? (textValue.trim() ? textValue : `Meta API ${r.status}`); // Already uses ??
+    const metaErrorMessage = e.message ?? errorMessageFromD ?? (textValue.trim() ? textValue : `Meta API ${r.status}`);
     const msg = `${metaErrorMessage} (code=${e.code ?? '?'}, sub=${e.error_subcode ?? '?'}, type=${e.type ?? '?'})`;
     throw new Error(msg);
   }
@@ -6575,14 +6575,10 @@ async function handleConversations(ctx: AuthenticatedRouteContext): Promise<Resp
   return null;
 }
 
-async function handleFigmaEvents(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { resource, sub, sendJson } = ctx;
-  if (resource === 'figma' && sub === 'events') {
-    // figma_sync_log table does not exist in current migrations.
-    // Returning empty list until the Figma sync feature is fully implemented.
-    return sendJson({ success: true, events: [] });
-  }
-  return null;
+async function handleFigmaEvents(_ctx: AuthenticatedRouteContext): Promise<Response | null> {
+  // figma_sync_log table does not exist in current migrations.
+  // Returning empty list until the Figma sync feature is fully implemented.
+  return null; // The router will handle returning the response for this path
 }
 
 async function handleWhatsappSend(ctx: AuthenticatedRouteContext): Promise<Response | null> {
