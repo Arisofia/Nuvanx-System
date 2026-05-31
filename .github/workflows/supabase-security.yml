@@ -57,7 +57,8 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.2.2
+
       - name: Prefer IPv4 (gai.conf + diagnostics)
         run: |
           echo "Applying IPv4 precedence (only helps when both A and AAAA records exist)"
@@ -75,7 +76,7 @@ jobs:
           fi
           echo "Direct host: db.${ref}.supabase.co → IPv6-only (no A records)"
           echo "Strongly recommended: Use Session Pooler (port 5432) in DATABASE_URL secret."
-          echo "The supabase-link-run composite action resolves a safe SESSION_URL (Session Pooler preferred) and exposes it both as an output and as \$SESSION_URL for commands."
+          echo "The supabase-link-run composite action resolves a safe SESSION_URL (Session Pooler preferred) and exposes it as \$SESSION_URL for commands."
 
       - name: Report upstream Deploy Supabase result
         if: github.event_name == 'workflow_run'
@@ -112,22 +113,23 @@ jobs:
           command: |
             set -euo pipefail
 
-            # Prefer the explicit session_url output when available (newer versions of the action).
-            # Fall back to the SESSION_URL environment variable set by the action.
-            LINT_DB_URL="${{ steps.lint.outputs.session_url || SESSION_URL }}"
+            # The supabase-link-run action (skip_link=true) resolves SESSION_URL
+            # before executing this command. Do not reference steps.lint.outputs here:
+            # the lint step has not completed yet, so that expression is empty pre-run.
+            LINT_DB_URL="${SESSION_URL:-}"
 
             if [ -z "${LINT_DB_URL:-}" ]; then
-              echo "::error::supabase-link-run action did not provide a usable database URL."
+              echo "::error::supabase-link-run action did not provide a usable database URL (SESSION_URL missing)."
+              echo "::error::Check DATABASE_URL secret or SUPABASE_DB_PASSWORD + SUPABASE_PROJECT_REF."
               exit 1
             fi
 
-            echo "LINT using database URL provided by supabase-link-run action (Session Pooler recommended)"
+            echo "LINT using database URL from supabase-link-run action (Session Pooler recommended)"
             export LINT_DB_URL
 
             # Hard timeout so a stuck connection doesn't burn Actions minutes.
             echo "Running supabase db lint with: $(echo "$LINT_DB_URL" | sed -E 's|:[^@]*@|://***@|')"
-            # Use --level warning on PRs to avoid blocking development.
-            # Use --level error only in scheduled/main deploys if stricter policy is desired.
+            # Use --level warning for visibility while failing only on Supabase lint errors.
             lint_output=$(timeout --signal=TERM --kill-after=30s 240s \
               supabase db lint --db-url "$LINT_DB_URL" --level warning --fail-on error </dev/null 2>&1) || {
               lint_exit=$?
@@ -141,8 +143,7 @@ jobs:
       - name: Security Lint Summary
         if: always()
         run: |
-          echo "### Supabase Security Lint Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "This workflow runs \`supabase db lint --level warning\` against the remote database (error level only on scheduled/main runs if desired)." >> $GITHUB_STEP_SUMMARY
-          echo "It catches missing RLS policies and dangerous policy patterns." >> $GITHUB_STEP_SUMMARY
-
+          echo "### Supabase Security Lint Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "This workflow runs \`supabase db lint --level warning --fail-on error\` against the remote database." >> "$GITHUB_STEP_SUMMARY"
+          echo "It catches missing RLS policies and dangerous policy patterns without relying on pre-run step outputs." >> "$GITHUB_STEP_SUMMARY"
