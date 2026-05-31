@@ -7,7 +7,6 @@ import { McpServer, StreamableHttpTransport } from 'mcp-lite'
 import { z } from 'zod'
 import { zodToJsonSchema } from 'zod-to-json-schema'
 
-const app = new Hono()
 const mcp = new McpServer({
   name: 'nuvanx-mcp',
   version: '1.0.0',
@@ -400,4 +399,4 @@ mcpApp.all('/mcp', async (c) => {
 })
 
 
-Deno.serve(app.fetch)
+Deno.serve(mcpApp.fetch)
