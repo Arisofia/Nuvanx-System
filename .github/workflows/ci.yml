@@ -112,7 +112,9 @@ jobs:
           RUBY
 
       - name: Run actionlint
-        uses: rhysd/actionlint-action@v1
+        uses: reviewdog/action-actionlint@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: ShellCheck (standalone scripts + critical embedded bash)
         # This provides PR annotations for shell issues found in .github/ (including the complex
@@ -176,7 +178,7 @@ jobs:
                   raise SystemExit(f'[functions.{function_name}] import_map must be {import_map}')
               if block.get('verify_jwt') is not False:
                   raise SystemExit(f'[functions.{function_name}] verify_jwt must be false')
-              
+
               # Ensure S3 keys are NOT in the function block (they belong in [experimental])
               leaked_keys = invalid_keys.intersection(block)
               if leaked_keys:
