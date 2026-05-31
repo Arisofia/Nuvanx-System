@@ -101,9 +101,7 @@ async function setupWebhooks() {
         console.log("4. En 'HTTP Headers' → Add header:");
         console.log('   - Header Name:    X-Webhook-Secret');
         console.log(
-          `   - Header Value:   ${
-            WEBHOOK_SECRET ? `${WEBHOOK_SECRET.substring(0, 4)}****` : 'UNDEFINED'
-          }`,
+          '   - Header Value:   (usa el valor de la variable SHEETS_WEBHOOK_SECRET; no se muestra por seguridad)',
         );
         console.log('5. (Opcional) Conditions: déjalo vacío.');
         console.log("6. Haz clic en 'Create webhook'.\n");
