@@ -2,6 +2,10 @@
   "name": "nuvanx-system",
   "private": true,
   "version": "1.0.0",
+  "engines": {
+    "node": "22.x",
+    "npm": ">=10"
+  },
   "description": "Unified workspace commands for Nuvanx System",
   "scripts": {
     "test": "node scripts/lib/phone-normalization.test.js && vitest run supabase/functions --passWithNoTests",
