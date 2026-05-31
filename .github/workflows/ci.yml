@@ -15,7 +15,32 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Report main synchronization status
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          echo "Base branch: ${BASE_REF}"
+          echo "Head branch: ${HEAD_REF}"
+          git fetch --no-tags origin "${BASE_REF}:refs/remotes/origin/${BASE_REF}" --depth=1
+          BASE_SHA=$(git rev-parse "refs/remotes/origin/${BASE_REF}")
+          HEAD_TARGET="HEAD"
+          if [ -n "${HEAD_REF:-}" ] && git fetch --no-tags origin "${HEAD_REF}:refs/remotes/origin/${HEAD_REF}" --depth=50; then
+            HEAD_TARGET="refs/remotes/origin/${HEAD_REF}"
+          fi
+          echo "Latest ${BASE_REF}: ${BASE_SHA}"
+          echo "Checked head target: $(git rev-parse "${HEAD_TARGET}")"
+          if git merge-base --is-ancestor "${BASE_SHA}" "${HEAD_TARGET}"; then
+            echo "Branch includes the latest ${BASE_REF}; merge-conflict risk from a stale base is reduced."
+          else
+            echo "::warning::Branch does not include the latest ${BASE_REF}. Rebase or merge ${BASE_REF} before pushing to reduce conflict risk."
+          fi
 
       - name: Fail on merge conflict markers in CI-critical config
         run: |
@@ -51,21 +76,38 @@ jobs:
           print(f'OK {len(versions)} unique Supabase migration versions')
           PY
 
-      - name: Parse workflow and action YAML files
+      - name: Parse GitHub YAML files
         run: |
           ruby - <<'RUBY'
           require 'yaml'
-          files = Dir.glob('.github/workflows/*.{yml,yaml}') + Dir.glob('.github/actions/**/action.yml')
+
+          files = Dir.glob('.github/**/*.{yml,yaml}').sort
           if files.empty?
-            warn 'No workflow/action YAML files found.'
+            warn 'No GitHub YAML files found.'
             exit 1
           end
+
+          failed = false
           files.each do |f|
-            # Use safe_load to avoid instantiating arbitrary objects from YAML files
-            YAML.safe_load(File.read(f), permitted_classes: [], permitted_symbols: [], aliases: true)
-            puts "OK #{f}"
+            begin
+              # Use safe_load to avoid instantiating arbitrary objects from YAML files.
+              YAML.safe_load(File.read(f), permitted_classes: [], permitted_symbols: [], aliases: true)
+              puts "OK #{f}"
+            rescue Psych::SyntaxError => e
+              failed = true
+              warn "::error file=#{f},line=#{e.line},col=#{e.column}::#{e.problem}"
+            end
           end
+
+          exit 1 if failed
           RUBY
+
+      - name: Run actionlint
+        env:
+          ACTIONLINT_VERSION: v1.7.7
+        run: |
+          go install "github.com/rhysd/actionlint/cmd/actionlint@${ACTIONLINT_VERSION}"
+          "$(go env GOPATH)/bin/actionlint"
 
       - name: Validate Supabase config function blocks
         run: |

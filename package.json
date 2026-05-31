@@ -42,5 +42,9 @@
     "tsx": "^4.22.1",
     "tweetsodium": "^0.0.6",
     "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": "22.x",
+    "npm": ">=10"
   }
 }

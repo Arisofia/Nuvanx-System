@@ -32,10 +32,10 @@ inputs:
 outputs:
   resolved_db_password:
     description: 'Resolved DB password extracted from inputs or DATABASE_URL'
-    value: ${{ steps.creds.outputs.resolved_db_password }}
+    value: '${{ steps.creds.outputs.resolved_db_password }}'
   skipped:
     description: 'True if the link step was skipped due to deterministic errors'
-    value: ${{ steps.link.outputs.skipped }}
+    value: '${{ steps.link.outputs.skipped }}'
 
 runs:
   using: 'composite'
@@ -43,13 +43,13 @@ runs:
     - name: Setup Supabase CLI
       uses: supabase/setup-cli@v1
       with:
-        version: ${{ inputs.supabase_cli_version }}
+        version: '${{ inputs.supabase_cli_version }}'
 
     - name: Validate required inputs
       shell: bash
       env:
-        INPUT_PROJECT_REF: ${{ inputs.project_ref }}
-        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
+        INPUT_PROJECT_REF: '${{ inputs.project_ref }}'
+        SUPABASE_ACCESS_TOKEN: '${{ inputs.supabase_access_token }}'
       run: |
         set -euo pipefail
         if [ -z "$INPUT_PROJECT_REF" ]; then
@@ -65,8 +65,8 @@ runs:
       id: creds
       shell: bash
       env:
-        INPUT_DATABASE_URL: ${{ inputs.database_url }}
-        INPUT_SUPABASE_DB_PASSWORD: ${{ inputs.supabase_db_password }}
+        INPUT_DATABASE_URL: '${{ inputs.database_url }}'
+        INPUT_SUPABASE_DB_PASSWORD: '${{ inputs.supabase_db_password }}'
       run: |
         set -euo pipefail
         RESOLVED_DB_PASSWORD="$INPUT_SUPABASE_DB_PASSWORD"
@@ -81,12 +81,12 @@ runs:
 
     - name: Link Supabase project
       id: link
-      if: ${{ inputs.skip_link != 'true' }}
+      if: "${{ inputs.skip_link != 'true' }}"
       shell: bash
       env:
-        INPUT_PROJECT_REF: ${{ inputs.project_ref }}
-        RESOLVED_DB_PASSWORD: ${{ steps.creds.outputs.resolved_db_password }}
-        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
+        INPUT_PROJECT_REF: '${{ inputs.project_ref }}'
+        RESOLVED_DB_PASSWORD: '${{ steps.creds.outputs.resolved_db_password }}'
+        SUPABASE_ACCESS_TOKEN: '${{ inputs.supabase_access_token }}'
       run: |
         set -euo pipefail
         is_deterministic_link_error() {
@@ -136,10 +136,10 @@ runs:
         run_link_with_retry
 
     - name: Write command script
-      if: steps.link.outputs.skipped != 'true'
+      if: "steps.link.outputs.skipped != 'true'"
       shell: bash
       env:
-        ACTION_COMMAND: ${{ inputs.command }}
+        ACTION_COMMAND: '${{ inputs.command }}'
       run: |
         set -euo pipefail
         {
@@ -149,13 +149,13 @@ runs:
         chmod +x /tmp/supabase_command.sh
 
     - name: Execute command
-      if: steps.link.outputs.skipped != 'true'
+      if: "steps.link.outputs.skipped != 'true'"
       shell: bash
       env:
-        DATABASE_URL: ${{ inputs.database_url }}
-        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
-        SUPABASE_PROJECT_REF: ${{ inputs.project_ref }}
-        SUPABASE_DB_PASSWORD_INPUT: ${{ steps.creds.outputs.resolved_db_password }}
+        DATABASE_URL: '${{ inputs.database_url }}'
+        SUPABASE_ACCESS_TOKEN: '${{ inputs.supabase_access_token }}'
+        SUPABASE_PROJECT_REF: '${{ inputs.project_ref }}'
+        SUPABASE_DB_PASSWORD_INPUT: '${{ steps.creds.outputs.resolved_db_password }}'
       run: |
         set -euo pipefail
 
@@ -175,6 +175,9 @@ runs:
           echo "::error::Cannot build SESSION_URL. Provide DATABASE_URL, or SUPABASE_DB_PASSWORD with SUPABASE_PROJECT_REF."
           exit 1
         fi
+
+        echo "::add-mask::$SESSION_URL"
+        printf 'SESSION_URL=%s\n' "$SESSION_URL" >> "$GITHUB_ENV"
 
         bash /tmp/supabase_command.sh
 
