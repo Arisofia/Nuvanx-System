@@ -176,6 +176,9 @@ runs:
           exit 1
         fi
 
+        echo "::add-mask::$SESSION_URL"
+        printf 'SESSION_URL=%s\n' "$SESSION_URL" >> "$GITHUB_ENV"
+
         bash /tmp/supabase_command.sh
 
         # Optional: cleanup temporary script after execution
