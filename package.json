@@ -9,12 +9,6 @@
     "dev": "npm --prefix frontend run dev",
     "lint": "npm --prefix frontend run lint",
     "secrets:sync:all": "node scripts/sync-platform-secrets.js",
-    "meta:token:generate": "node scripts/generate-meta-token.js",
-    "meta:token:audit": "node scripts/generate-meta-token.js --audit-file artifacts/meta-token-audit.json",
-    "update:meta-token": "META_ACCESS_TOKEN_NEW=REPLACE_ME node scripts/set-meta-token.js",
-    "meta:token:rotate": "node scripts/rotate-meta-token.js --all",
-    "meta:weekly:report": "node scripts/meta-weekly-report.js",
-    "ingest:doctoralia": "node scripts/ingest-doctoralia.js",
     "supabase:functions:list": "npx --yes supabase functions list",
     "supabase:functions:deploy:api": "npx --yes supabase functions deploy api --no-verify-jwt",
     "supabase:migration:list": "npx --yes supabase migration list",
@@ -23,13 +17,8 @@
     "supabase:types": "npx --yes supabase gen types typescript --local --schema public > frontend/src/lib/supabase/types.ts",
     "install:all": "npm install && npm --prefix frontend install",
     "secrets:scan": "node scripts/scan-secrets.js",
-    "production:e2e": "node scripts/production-e2e.js",
-    "verify:ai-generate": "node scripts/verify-ai-generate.js",
-    "verify:doctoralia-config": "node -e 'const req=[\"DOCTORALIA_SHEET_ID\",\"DATABASE_URL\",\"CLINIC_ID\",\"GOOGLE_ADS_SERVICE_ACCOUNT\",\"SHEET_NAME\"]; console.log(\"Verificando configuración de Doctoralia...\"); req.forEach(v=>process.env[v]?console.log(`✅ ${v} configurada`):console.error(`❌ Falta variable: ${v}`))'",
-    "meta:ads:extract": "python scripts/meta_ads_library.py",
-    "ops:meta-capi-checklist": "cat docs/codex/meta-capi-operational-checklist.md",
     "daily:sync": "node scripts/run-daily-sync.js",
-    "meta:token": "node scripts/set-meta-token.js"
+    "verify:doctoralia-config": "node -e 'const req=[\"DOCTORALIA_SHEET_ID\",\"DATABASE_URL\",\"CLINIC_ID\",\"GOOGLE_ADS_SERVICE_ACCOUNT\",\"SHEET_NAME\"]; console.log(\"Verificando configuración de Doctoralia...\"); req.forEach(v=>process.env[v]?console.log(`✅ ${v} configurada`):console.error(`❌ Falta variable: ${v}`))'"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.1",

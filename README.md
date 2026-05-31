@@ -64,12 +64,16 @@ Nuvanx-System es una plataforma de inteligencia empresarial (BI) y automatizaci�
 
 ```bash
 npm run install:all
-npm run dev:backend   # Express server on :3001 (webhooks + credential vault)
-npm run dev:frontend  # Vite on http://localhost:5173
+npm run dev:frontend  # Vite on http://localhost:5173 (proxies /api to Supabase Edge Functions locally)
 ```
 
-### Local Meta script credentials
-Para ejecutar los scripts locales de Meta y generar reportes, copia `.env.example` a `.env.local` o exporta estas variables en tu shell:
+The legacy Express backend (`backend/src/server.js`) was fully removed. Production backend is now 100% on Supabase Edge Functions (`supabase/functions/api/index.ts` and others).
+
+### Local development & scripts
+- Frontend + API proxy: `npm run dev:frontend`
+- Doctoralia sync script: `node scripts/sync-doctoralia.js` (requires proper env vars)
+- Daily orchestrator: `node scripts/run-daily-sync.js`
+- Secret sync helper: `node scripts/sync-platform-secrets.js`
 
 ### Environment Setup Hierarchy
 The system uses the following priority for loading environment variables:
@@ -79,66 +83,39 @@ The system uses the following priority for loading environment variables:
 
 **Action Required**: If you have a `config.env` file, rename it to `.env.tokens.local` to ensure local scripts can access the vault.
 
+For most scripts the critical variables are:
 ```bash
-export META_ACCESS_TOKEN=...
-export META_AD_ACCOUNT_ID=act_...
-export DATABASE_URL=postgresql://user:password@host:port/dbname
+export DATABASE_URL=...
 export CLINIC_ID=...
+export SUPABASE_URL=...
+export SUPABASE_SERVICE_ROLE_KEY=...
+# Plus provider-specific ones (META_*, GOOGLE_*, etc.)
 ```
 
-Para actualizar el token de Meta en los `.env` locales detectados, usa:
-
-```bash
-npm run update:meta-token
-```
-
-Si quieres propagar el token también a GitHub, Supabase y Vercel desde el mismo script, ejecuta:
-
-```bash
-META_ACCESS_TOKEN_NEW=REPLACE_ME node scripts/set-meta-token.js --github --supabase --vercel
-```
-
-El script actualizará `META_ACCESS_TOKEN` en los archivos `.env` detectados sin modificar otras variables.
-
-Si prefieres hacerlo manualmente, sincroniza los entornos remotos así:
-
-- Supabase:
-  ```bash
-  supabase secrets set META_ACCESS_TOKEN="..."
-  npm run supabase:functions:deploy:api
-  ```
-- GitHub Actions:
-  ```bash
-  gh secret set META_ACCESS_TOKEN --body "..."
-  ```
-- Vercel:
-  ```bash
-  vercel env add META_ACCESS_TOKEN production --value "..." --yes
-  ```
-  Nota: este comando requiere que el directorio esté vinculado a un proyecto de Vercel (`vercel link`).
-
-`META_ACCESS_TOKEN`, `META_AD_ACCOUNT_ID`, `DATABASE_URL` y `CLINIC_ID` son requeridos por `scripts/meta-daily-report.js` y `scripts/meta-weekly-report.js`.
+Manual secret sync examples:
+- Supabase: `supabase secrets set KEY="value"`
+- GitHub Actions: `gh secret set KEY --body "value"`
+- Vercel: `vercel env add KEY production --value "..." --yes` (requires `vercel link`)
 
 ## Testing
 
 ```bash
-npm run test:backend
-cd backend && npx jest tests/auth.test.js --runInBand --forceExit
 npm --prefix frontend run test:ci
+# Backend tests now live primarily in Supabase Edge Functions (api/index.ts) and scripts (e.g. phone-normalization.test.js)
 ```
 
 ## CI/CD
 
-- GitHub Actions CI: backend tests + frontend lint/build on every push to `main`
-- Deploy: frontend → Vercel (auto), Edge Function → Supabase (manual: `npx supabase functions deploy api`)
-- No Railway or Render deployments are used.
+- GitHub Actions CI: frontend lint/build + secret scanning + workflow validation on every push to `main`
+- Deploy: frontend → Vercel (automatic), Edge Functions + migrations → Supabase (via `daily-sync.yml`, `deploy.yml` and manual `supabase functions deploy`)
+- No Railway or Render deployments are used. All production backend runs on Supabase Edge Functions.
 
 ## Project maturity
 
-- Puntuación técnica: **6.5 / 10**
-- Estado: **Emergente a Creciente**
-- El proyecto tiene una base sólida, pero requiere inversión en arquitectura, testing y automatización para ser production-ready a escala.
-- Documentación adicional: [Project Purpose](docs/project-purpose.md)
+- Puntuación técnica: **7.5 / 10** (updated after major RLS, CAPI, workflow hardening and secret hygiene work in 2026)
+- Estado: **Creciente → Production hardening phase**
+- The project has a solid foundation with strong automation (Doctoralia ↔ Supabase ↔ CAPI bidirectional flows, daily orchestrator, secret sync tooling) and hardened security posture.
+- Most critical documentation now lives in code comments, the few maintained .md files listed above, and the architecture diagram. Large amounts of historical/outdated docs were removed during aggressive cleanup.
 
 ## GitHub Actions secrets
 
@@ -173,11 +150,8 @@ If neither Supabase key is set, the frontend will warn and disable Supabase feat
 - Use the canonical alias for QA/UAT and incident verification.
 - Treat hash-prefixed deployment URLs (`frontend-<hash>-...vercel.app`) as immutable snapshots for debugging only.
 
-## Key Documentation
+## Key Documentation (current & maintained)
 
-- [SECURITY.md](SECURITY.md) — Security posture and production readiness
-- [docs/agents-and-integrations-architecture.md](docs/agents-and-integrations-architecture.md) — Architecture and agent roadmap
-- [docs/production-validation-checklist.md](docs/production-validation-checklist.md) — Production secrets and runtime verification checklist
-- [docs/MCP.md](docs/MCP.md) — MCP server URL, tools, Grok connector setup, and security notes
-- [docs/lead-reconciliation-validation.md](docs/lead-reconciliation-validation.md) — Manual validation for `?reconcile=true` lead reconciliation and Lead Audit matching semantics
-- [docs/setup-clean.md](docs/setup-clean.md) — Clean bootstrap / zero-to-production setup guide
+- [docs/architecture.md](docs/architecture.md) + [docs/architecture.mmd](docs/architecture.mmd) — High-level architecture + canonical Mermaid diagram (single source of truth)
+- [docs/sql/rls_hardening_and_traceability_summary.md](docs/sql/rls_hardening_and_traceability_summary.md) — Final state of RLS hardening, traceability views, CAPI columns and migration hygiene (June 2026)
+- [docs/daily_sync_meta_access_diagnosis.md](docs/daily_sync_meta_access_diagnosis.md) — Historical diagnosis of daily sync / Meta access issues (kept for traceability; marked obsolete)

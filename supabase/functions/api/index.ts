@@ -2698,20 +2698,11 @@ async function resolvePublicLeadOwner(adminClient: any, payloadObj: Record<strin
     if (userByClinic?.id) return { userId: userByClinic.id, clinicId: userByClinic.clinic_id ?? requestedClinicId };
   }
 
-  const landingEmail = Deno.env.get('DEFAULT_LANDING_USER_EMAIL');
-
-  if (!landingEmail) {
-    console.warn('[CAPI] DEFAULT_LANDING_USER_EMAIL not configured in Edge Function secrets. Cannot resolve landing lead owner.');
-    return { userId: null, clinicId: requestedClinicId ?? null };
-  }
-
-  const { data: fallbackUser } = await adminClient
-    .from('users')
-    .select('id, clinic_id')
-    .eq('email', landingEmail)
-    .maybeSingle();
-
-  return { userId: fallbackUser?.id ?? null, clinicId: fallbackUser?.clinic_id ?? requestedClinicId ?? null };
+  // Aggressive fallback removed in hardening pass: DEFAULT_LANDING_USER_EMAIL is deprecated.
+  // All leads should carry explicit clinic_id or be created with proper attribution upstream.
+  // Keeping minimal warning for operational visibility during transition.
+  console.warn('[CAPI] No clinic/user resolved for lead and DEFAULT_LANDING_USER_EMAIL fallback is no longer used. Lead will have null owner.');
+  return { userId: null, clinicId: requestedClinicId ?? null };
 }
 
 function buildExternalLeadPayload(params: {

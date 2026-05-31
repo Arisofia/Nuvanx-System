@@ -1,4 +1,4 @@
-﻿/**
+/**
  * scripts/test-capi-contact.js
  * 
  * Manual test script to fire a Contact CAPI event with rich signals

@@ -23,11 +23,18 @@ function requireEnv(name: string): string {
   return value
 }
 
-const supabase = createClient(
-  requireEnv('SUPABASE_URL'),
-  requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
-  { auth: { persistSession: false } },
-)
+let supabase: ReturnType<typeof createClient> | null = null;
+
+function getSupabase() {
+  if (!supabase) {
+    supabase = createClient(
+      requireEnv('SUPABASE_URL'),
+      requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
+      { auth: { persistSession: false } },
+    );
+  }
+  return supabase;
+}
 
 const DateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD')
 const LimitSchema = z.number().int().min(1).max(200).default(50)
@@ -106,8 +113,8 @@ mcp.tool('get_dashboard_metrics', {
     if (date_to) metaQuery = metaQuery.lte('date', date_to)
 
     const integrationsQuery = clinic_id
-      ? supabase.from('integrations').select('service,status,clinic_id').eq('clinic_id', clinic_id)
-      : supabase.from('integrations').select('service,status,clinic_id')
+      ? getSupabase().from('integrations').select('service,status,clinic_id').eq('clinic_id', clinic_id)
+      : getSupabase().from('integrations').select('service,status,clinic_id')
 
     const [leadsRes, settlementsRes, integrationsRes, metaRes] = await Promise.all([
       leadsQuery.limit(5000),

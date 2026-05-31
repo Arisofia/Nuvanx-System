@@ -33,7 +33,14 @@ function doPost(e) {
 
     // 2. Verificación de secreto (si está configurado)
     if (EXPECTED_SECRET) {
-      const receivedSecret = e.parameter[SECRET_HEADER] || (e.headers && e.headers[SECRET_HEADER]);
+      // GAS normalizes header keys to lowercase; support common variants + query param fallback (for manual tests)
+      const h = (e.headers || {});
+      const receivedSecret =
+        e.parameter[SECRET_HEADER] ||
+        h[SECRET_HEADER] ||
+        h[SECRET_HEADER.toLowerCase()] ||
+        h['x-webhook-secret'] ||
+        '';
       if (receivedSecret !== EXPECTED_SECRET) {
         console.warn("Intento de webhook no autorizado");
         return ContentService.createTextOutput("Unauthorized").setMimeType(ContentService.MimeType.TEXT);

@@ -486,12 +486,6 @@ function buildHeaderConfig(headers) {
     if (hasColIngresoLead)  console.log('  - ingreso_lead');
     if (hasColCampana)      console.log('  - campana');
   }
-  console.log('  Plantilla/Asunto :', hasColTemplate ? `col ${colTemplate}` : 'NOT FOUND');
-  console.log('  Fecha Liquidación:', hasColSettled ? `col ${colSettled}` : `FALLBACK to Fecha (col ${colFecha})`);
-  console.log('  Importe Bruto    :', hasColGross ? `col ${colGross}` : 'NOT FOUND');
-  console.log('  Importe Neto     :', hasColNet ? `col ${colNet}` : 'NOT FOUND (will calculate)');
-  console.log('  Intermediario    :', hasColIntermediary ? `col ${colIntermediary}` : 'NOT FOUND');
-  console.log('  Estado           :', hasColStatus ? `col ${colStatus}` : 'NOT FOUND');
 
   return config;
 }
@@ -549,12 +543,12 @@ function parseRow(row, config) {
     tmplId: config.hasColTemplateId   ? (row[config.colTemplateId]?.trim() || null)  : null,
     intermed: config.hasColIntermediary ? (row[config.colIntermediary]?.trim() || null) : null,
     // New columns from produccion_intermediarios (20260530+)
-    patientName:  config.hasColPatientName  ? getOptionalTextValue(row, cols.colPatientName, true)  : null,
-    tratamiento:  config.hasColTratamiento  ? getOptionalTextValue(row, cols.colTratamiento, true)  : null,
-    emailHubspot: config.hasColEmailHubspot ? getOptionalTextValue(row, cols.colEmailHubspot, true) : null,
-    ejecutivo:    config.hasColEjecutivo    ? getOptionalTextValue(row, cols.colEjecutivo, true)    : null,
-    ingresoLead:  config.hasColIngresoLead  ? getOptionalTextValue(row, cols.colIngresoLead, true)  : null,
-    campana:      config.hasColCampana      ? getOptionalTextValue(row, cols.colCampana, true)      : null,
+    patientName:  config.hasColPatientName  ? getOptionalTextValue(row, config.colPatientName, true)  : null,
+    tratamiento:  config.hasColTratamiento  ? getOptionalTextValue(row, config.colTratamiento, true)  : null,
+    emailHubspot: config.hasColEmailHubspot ? getOptionalTextValue(row, config.colEmailHubspot, true) : null,
+    ejecutivo:    config.hasColEjecutivo    ? getOptionalTextValue(row, config.colEjecutivo, true)    : null,
+    ingresoLead:  config.hasColIngresoLead  ? getOptionalTextValue(row, config.colIngresoLead, true)  : null,
+    campana:      config.hasColCampana      ? getOptionalTextValue(row, config.colCampana, true)      : null,
   };
 }
 
@@ -789,11 +783,15 @@ async function upsertDoctoraliaRow(row, i, params) {
   const roomId    = getOptionalTextValue(row, cols.colRoom, hasColRoom);
   const agenda    = getOptionalTextValue(row, cols.colAgenda, hasColAgenda);
   const tmplName  = getOptionalTextValue(row, cols.colTemplate, hasColTemplate);
-  const patientPhone = hasColPhone 
-    ? normalizePhoneForMatching(row[cols.colPhone]) 
-    : getPrimaryPhoneFromSubject(tmplName);
   const tmplId    = getOptionalTextValue(row, cols.colTemplateId, hasColTemplateId);
   const intermed  = getOptionalTextValue(row, cols.colIntermediary, hasColIntermediary);
+
+  // Phones: patient_phone stores the raw/original when available (traceability);
+  // phone_normalized always stores the 9-digit matching key (for joins/reconciliation).
+  const phoneRaw  = hasColPhone ? (normalizeField(row[cols.colPhone]) || null) : null;
+  const phoneNorm = hasColPhone
+    ? normalizePhoneForMatching(row[cols.colPhone])
+    : getPrimaryPhoneFromSubject(tmplName);
 
   // Newer fields from produccion_intermediarios extensions
   const patientName   = getOptionalTextValue(row, cols.colPatientName, hasColPatientName);
@@ -858,7 +856,9 @@ async function upsertDoctoraliaRow(row, i, params) {
         roomId,
         leadSource,
         agenda,
-        patientPhone,
+        phoneRaw,
+        phoneNorm,
+        'doctoralia',
         patientName,
         tratamiento,
         emailHubspot,
@@ -868,8 +868,12 @@ async function upsertDoctoraliaRow(row, i, params) {
       ]
     );
     return true;
-  } catch {
+  } catch (dbErr) {
+    // Redact any potential sensitive fragments from DB errors
     console.warn(`[sync-doctoralia] Skipping row ${i + 1} due to DB error`);
+    if (dbErr && dbErr.code) {
+      console.warn('  error code:', String(dbErr.code).substring(0, 10));
+    }
     return false;
   }
 }

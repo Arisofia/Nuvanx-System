@@ -11,7 +11,7 @@ import { ENCRYPTION_KEY, META_APP_SECRET, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_UR
  *
  * Throws if SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY are not set.
  */
-function createSupabaseAdminClient() {
+function getSupabase() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be configured for daily-aggregates.');
   }
@@ -19,8 +19,6 @@ function createSupabaseAdminClient() {
     auth: { persistSession: false },
   });
 }
-
-const supabase = createSupabaseAdminClient()
 
 // ── Encryption Helpers ──────────────────────────────────────────────────────
 

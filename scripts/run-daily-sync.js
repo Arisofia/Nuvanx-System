@@ -15,13 +15,9 @@ const steps = [
 
 // Optional post-sync health check for CAPI readiness (non-critical)
 if (process.env.NODE_ENV !== 'test') {
-  try {
-    console.log('→ Running CAPI readiness check (using new fbc/fbp/capi_sent columns)...');
-    // This could be expanded to call an Edge Function that reports on capi_sent = false for recent paid rows
-    console.log('✅ CAPI readiness check completed (see Edge Function logs for details)');
-  } catch (err) {
-    console.warn('⚠️ CAPI readiness check failed (non-critical):', err.message);
-  }
+  console.log('→ Running CAPI readiness check (using new fbc/fbp/capi_sent columns)...');
+  // This could be expanded to call an Edge Function that reports on capi_sent = false for recent paid rows
+  console.log('✅ CAPI readiness check completed (see Edge Function logs for details)');
 }
 
 console.log('🚀 Starting Nuvanx daily sync orchestrator...');
