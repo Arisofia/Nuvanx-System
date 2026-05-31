@@ -74,20 +74,8 @@ runs:
         set -euo pipefail
         RESOLVED_DB_PASSWORD="$INPUT_SUPABASE_DB_PASSWORD"
         if [ -z "$RESOLVED_DB_PASSWORD" ] && [ -n "$INPUT_DATABASE_URL" ]; then
-          # Reliable password extraction.
-          # Prefer Python urllib.parse (handles percent-encoding correctly, e.g. %40 for @ in passwords).
-          # Falls back to sed for unusual environments without python3.
-          if command -v python3 >/dev/null 2>&1; then
-            RESOLVED_DB_PASSWORD=$(python3 - << 'EOF'
-import sys, urllib.parse
-print(urllib.parse.urlparse(sys.argv[1]).password or "")
-EOF
-"$INPUT_DATABASE_URL")
-          fi
-          if [ -z "$RESOLVED_DB_PASSWORD" ]; then
-            # Fallback (no percent-decoding, but covers basic cases)
-            RESOLVED_DB_PASSWORD=$(echo "$INPUT_DATABASE_URL" | sed -n 's|.*://[^:]*:\([^@]*\)@.*|\1|p' || echo "")
-          fi
+          # Extraer password de la URL (no hace percent-decoding, pero cubre casos normales)
+          RESOLVED_DB_PASSWORD=$(echo "$INPUT_DATABASE_URL" | sed -n 's|.*://[^:]*:\([^@]*\)@.*|\1|p' || echo "")
         fi
         if [ -n "$RESOLVED_DB_PASSWORD" ]; then
           echo "::add-mask::$RESOLVED_DB_PASSWORD"
@@ -107,26 +95,20 @@ EOF
         RESOLVED_DB_PASSWORD="$INPUT_SUPABASE_DB_PASSWORD"
 
         if [ -n "${INPUT_DATABASE_URL:-}" ]; then
-          # Smart handling for Supabase connection strings in GitHub Actions.
-          #
-          # CONFIRMED: The direct db.<ref>.supabase.co hostname for this project is IPv6-only.
-          # GitHub runners often have unreliable IPv6, so we strongly prefer Session Pooler (port 5432).
+          # Si es Transaction Pooler (6543 o pgbouncer=true), reescribir a Session (5432) y añadir sslmode=require
           if [[ "${INPUT_DATABASE_URL}" == *"pooler.supabase"* ]] && { [[ "${INPUT_DATABASE_URL}" == *":6543/"* ]] || [[ "${INPUT_DATABASE_URL}" == *"pgbouncer=true"* ]]; }; then
-            SESSION_URL=$(python3 - << 'EOF'
-import sys, urllib.parse
-url = sys.argv[1]
-p = urllib.parse.urlparse(url)
-qs = urllib.parse.parse_qs(p.query, keep_blank_values=True)
-qs.pop("pgbouncer", None)
-new_query = urllib.parse.urlencode(qs, doseq=True)
-new_netloc = p.netloc.replace(":6543", ":5432") if ":6543" in p.netloc else p.netloc
-new_url = urllib.parse.urlunparse((p.scheme, new_netloc, p.path, p.params, new_query, p.fragment))
-if "sslmode" not in new_url.lower():
-    sep = "&" if new_query else ""
-    new_url = new_url + (sep + "sslmode=require") if "?" in new_url or new_query else new_url + "?sslmode=require"
-print(new_url)
-EOF
-"$INPUT_DATABASE_URL")
+            SESSION_URL="${INPUT_DATABASE_URL/:6543/:5432}"
+            SESSION_URL="${SESSION_URL//pgbouncer=true/}"
+            if [[ "$SESSION_URL" != *"sslmode="* ]]; then
+              if [[ "$SESSION_URL" == *"?"* ]]; then
+                SEP="&"
+              elif [[ "$SESSION_URL" == *"?"* ]]; then
+                SEP="&"
+              else
+                SEP="?"
+              fi
+              SESSION_URL="${SESSION_URL}${SEP}sslmode=require"
+            fi
             echo "::warning::DATABASE_URL looked like Transaction Pooler. Rewrote to Session Pooler (port 5432)."
           else
             SESSION_URL="$INPUT_DATABASE_URL"
@@ -140,7 +122,6 @@ EOF
         fi
 
         if [ -n "$SESSION_URL" ]; then
-          # Mask the full connection string (it contains the password)
           echo "::add-mask::$SESSION_URL"
           echo "session_url=$SESSION_URL" >> "$GITHUB_OUTPUT"
           echo "SESSION_URL=$SESSION_URL" >> "$GITHUB_ENV"
@@ -158,7 +139,6 @@ EOF
         set -euo pipefail
         is_deterministic_link_error() {
           local output="$1"
-          # More maintainable than a giant regex. Add new patterns here as Supabase CLI evolves.
           local -a deterministic_patterns=(
             'invalid access token'
             'invalid token'
@@ -174,7 +154,6 @@ EOF
             'password authentication failed'
             'Unexpected HTTP response: 404'
           )
-
           for pattern in "${deterministic_patterns[@]}"; do
             if echo "$output" | grep -Eiq "$pattern"; then
               return 0
@@ -230,7 +209,6 @@ EOF
         ACTION_COMMAND: ${{ inputs.command }}
       run: |
         set -euo pipefail
-        # Safer script generation: avoid command injection risks from untrusted input.
         SCRIPT_PATH=$(mktemp "${RUNNER_TEMP:-/tmp}/supabase_command.XXXXXX.sh")
         printf '%s\n' '#!/usr/bin/env bash' > "$SCRIPT_PATH"
         printf '%s\n' "$ACTION_COMMAND" >> "$SCRIPT_PATH"
@@ -251,7 +229,6 @@ EOF
           export SUPABASE_DB_PASSWORD="$SUPABASE_DB_PASSWORD_INPUT"
         fi
 
-        # SESSION_URL is provided by the preceding "Resolve Session URL" step via $GITHUB_ENV.
         if [ -z "${SESSION_URL:-}" ]; then
           echo "::warning::SESSION_URL was not resolved by the action. Your command may need to provide explicit --db-url or --project-ref flags."
         fi
