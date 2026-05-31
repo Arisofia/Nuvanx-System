@@ -18,6 +18,7 @@ area/backend:
       - any-glob-to-any-file: 'scripts/**/*'
 
 # Database migrations (high risk — deserves extra review)
+# Changes here can have production impact and should trigger careful review.
 area/migrations:
   - changed-files:
       - any-glob-to-any-file: 'supabase/migrations/**/*'

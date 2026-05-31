@@ -9,6 +9,8 @@
 # When to run:
 # - After rotating Supabase keys, MCP API key, or other VITE_* secrets.
 # - As part of secret rotation procedures.
+#
+# Note: This workflow only updates non-empty secrets. Empty values are skipped.
 
 name: Set Vercel Env Vars
 
