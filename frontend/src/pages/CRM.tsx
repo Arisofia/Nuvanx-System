@@ -199,6 +199,7 @@ export default function CRM() {
       </Tabs>
 
       <LeadDetailSheet 
+        key={selectedLead?.id}
         lead={selectedLead} 
         isOpen={isDetailOpen} 
         onClose={() => setIsDetailOpen(false)}

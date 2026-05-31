@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Lead } from '../../types'
 import { Button } from '../ui/button'
 
@@ -15,30 +15,15 @@ const STAGES = ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'] as con
 // Custom hook to manage form state for the lead detail sheet
 function useLeadForm(lead: Lead | null) {
   const [form, setForm] = useState({
-    name: '',
-    status: '',
-    phone: '',
-    dni: '',
-    notes: '',
-    revenue: '',
-    appointment_date: '',
-    treatment_name: '',
+    name: lead?.name ?? '',
+    status: lead?.status ?? 'lead',
+    phone: lead?.phone ?? '',
+    dni: lead?.dni ?? '',
+    notes: lead?.notes ?? '',
+    revenue: lead?.revenue == null ? '' : String(lead.revenue),
+    appointment_date: lead?.appointment_date ?? '',
+    treatment_name: lead?.treatment_name ?? '',
   })
-
-  useEffect(() => {
-    if (lead) {
-      setForm({
-        name: lead.name ?? '',
-        status: lead.status ?? 'lead',
-        phone: lead.phone ?? '',
-        dni: lead.dni ?? '',
-        notes: lead.notes ?? '',
-        revenue: lead.revenue == null ? '' : String(lead.revenue),
-        appointment_date: lead.appointment_date ?? '',
-        treatment_name: lead.treatment_name ?? '',
-      })
-    }
-  }, [lead])
 
   return { form, setForm }
 }
@@ -50,11 +35,6 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
   const [saveError, setSaveError] = useState<string | null>(null)
 
   const { form, setForm } = useLeadForm(lead)
-
-  useEffect(() => {
-    setIsEditing(false)
-    setSaveError(null)
-  }, [lead])
 
   if (!isOpen || !lead) return null
 
@@ -309,37 +289,6 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
       </div>
     </div>
   )
-}
-
-// === Extracted smaller components for better maintainability ===
-
-function LeadContactSection({ 
-  isEditing, 
-  lead, 
-  form, 
-  setForm, 
-  inputField, 
-  field 
-}: any) {
-  return (
-    <section>
-      <h3 className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Contact Details</h3>
-      <div className="grid gap-4 bg-background/50 rounded-xl p-4 border border-[#2d2218]/50">
-        {isEditing ? (
-          <>
-            {inputField('Phone', 'phone', 'tel', '+34 600 000 000')}
-            {inputField('DNI / NIF', 'dni', 'text', '12345678X')}
-          </>
-        ) : (
-          <>
-            {field('Email', lead.email)}
-            {field('Phone', lead.phone)}
-            {field('DNI', lead.dni)}
-          </>
-        )}
-      </div>
-    </section>
-  );
 }
 
 // More section components can be extracted here (Financials, Pipeline, Notes, etc.)
