@@ -23,7 +23,7 @@ jobs:
     name: Run Daily Sync Orchestrator
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    
+
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL || secrets.VITE_SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -38,7 +38,8 @@ jobs:
       META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
       META_AD_ACCOUNT_IDS: ${{ secrets.META_AD_ACCOUNT_IDS }}
       META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
-      META_GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION || 'v20.0' }}
+      # Usa el secreto si existe; si no, deja env vacío y se pondrá por defecto en el paso
+      META_GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION }}
 
     steps:
       - name: Checkout repository
@@ -68,18 +69,19 @@ jobs:
           META_AD_ACCOUNT_ID: ${{ env.META_AD_ACCOUNT_ID }}
           META_AD_ACCOUNT_IDS: ${{ env.META_AD_ACCOUNT_IDS }}
           META_APP_SECRET: ${{ env.META_APP_SECRET }}
-          META_GRAPH_VERSION: ${{ env.META_GRAPH_VERSION }}
+          # si no hay secreto, usa 'v20.0' como default
+          META_GRAPH_VERSION: ${{ env.META_GRAPH_VERSION || 'v20.0' }}
 
       - name: Fetch Meta Daily Insights
         run: |
           DAYS="${{ github.event.inputs.days || '2' }}"
           echo "Fetching Meta insights for last $DAYS days..."
-          
+
           RESPONSE=$(curl -s -X POST "${SUPABASE_URL}/functions/v1/daily-aggregates" \
             -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
             -H "Content-Type: application/json" \
             -d "{\"action\": \"fetch_meta_insights\", \"days\": $DAYS}")
-          
+
           echo "Response: $RESPONSE"
           if echo "$RESPONSE" | grep -q '"success":true'; then
             echo "Meta insights fetched successfully."
