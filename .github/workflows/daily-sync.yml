@@ -15,8 +15,8 @@ on:
         required: false
         default: '2'
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE22: true
+# Ya no usamos FORCE_JAVASCRIPT_ACTIONS_TO_NODE22; Node se configura en setup-node
+env: {}
 
 jobs:
   daily-sync:
@@ -38,7 +38,7 @@ jobs:
       META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
       META_AD_ACCOUNT_IDS: ${{ secrets.META_AD_ACCOUNT_IDS }}
       META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
-      # Usa el secreto si existe; si no, deja env vacío y se pondrá por defecto en el paso
+      # Usa el secreto si existe; si no, este env quedará vacío y pondremos default en el paso
       META_GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION }}
 
     steps:
