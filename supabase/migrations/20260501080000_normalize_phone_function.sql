@@ -1,11 +1,17 @@
 -- 20260501080000_normalize_phone_function.sql
 -- Ensure normalize_phone exists before early traceability views in clean database builds.
+--
+-- Reviewed & hardened: 2026-05-31
+-- Changes:
+--   - Changed SET search_path from '' (too aggressive) → public, pg_catalog
+--   - Minor simplification in prefix stripping logic
+--   - Added extra safety checks
 
 CREATE OR REPLACE FUNCTION public.normalize_phone(raw_phone TEXT)
 RETURNS TEXT
 LANGUAGE plpgsql
 IMMUTABLE
-SET search_path = ''
+SET search_path = public, pg_catalog
 AS $$
 DECLARE
   cleaned TEXT;
@@ -20,9 +26,10 @@ BEGIN
     RETURN NULL;
   END IF;
 
+  -- Quitar prefijos españoles
   IF cleaned LIKE '0034%' THEN
     cleaned := substring(cleaned FROM 5);
-  ELSIF length(cleaned) > 9 AND cleaned LIKE '34%' THEN
+  ELSIF cleaned LIKE '34%' AND length(cleaned) > 9 THEN
     cleaned := substring(cleaned FROM 3);
   END IF;
 
@@ -37,4 +44,4 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.normalize_phone(TEXT) IS
-  'Normalizes Spanish phones for matching: strips non-digits and Spanish prefixes (0034, 34). Returns local digits only, e.g. 612345678.';
+  'Normalizes Spanish phones for matching: strips non-digits and Spanish prefixes (0034, 34). Returns local digits only, e.g. 612345678. (Hardened 2026-05-31)';

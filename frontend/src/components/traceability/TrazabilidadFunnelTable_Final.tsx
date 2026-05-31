@@ -4,7 +4,7 @@ import { invokeApi } from '../../lib/supabaseClient'
 import { Button } from '../ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import { Input } from '../ui/input'
-import { SortableTable, type ColDef } from '../ui/SortableTable'
+import { SortableTable, type ColDef } from '../tables/SortableTable'
 
 type FunnelFilters = {
   lead_from: string

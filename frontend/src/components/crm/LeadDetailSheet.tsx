@@ -12,11 +12,8 @@ interface LeadDetailSheetProps {
 
 const STAGES = ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'] as const
 
-export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: Readonly<LeadDetailSheetProps>) {
-  const [isEditing, setIsEditing] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [saveError, setSaveError] = useState<string | null>(null)
+// Custom hook to manage form state for the lead detail sheet
+function useLeadForm(lead: Lead | null) {
   const [form, setForm] = useState({
     name: '',
     status: '',
@@ -41,6 +38,20 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
         treatment_name: lead.treatment_name ?? '',
       })
     }
+  }, [lead])
+
+  return { form, setForm }
+}
+
+export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: Readonly<LeadDetailSheetProps>) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  const { form, setForm } = useLeadForm(lead)
+
+  useEffect(() => {
     setIsEditing(false)
     setSaveError(null)
   }, [lead])
@@ -77,30 +88,36 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
     onClose()
   }
 
-  const field = (label: string, value: string) => (
+  // Small presentational helpers (can be extracted further later)
+  const ReadonlyField = ({ label, value }: { label: string; value: string | number | null | undefined }) => (
     <div>
       <p className="text-xs text-muted mb-1">{label}</p>
       <p className="text-white">{value || '—'}</p>
     </div>
-  )
+  );
 
-  const input = (
-    label: string,
-    key: keyof typeof form,
-    type: string = 'text',
-    placeholder?: string
-  ) => (
+  const EditInput = ({ 
+    label, 
+    fieldKey, 
+    type = 'text', 
+    placeholder 
+  }: { 
+    label: string; 
+    fieldKey: keyof typeof form; 
+    type?: string; 
+    placeholder?: string 
+  }) => (
     <div>
       <label className="text-xs text-muted mb-1 block">{label}</label>
       <input
         type={type}
-        value={form[key]}
-        onChange={e => setForm(prev => ({ ...prev, [key]: e.target.value }))}
+        value={form[fieldKey]}
+        onChange={e => setForm(prev => ({ ...prev, [fieldKey]: e.target.value }))}
         placeholder={placeholder}
         className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm text-white placeholder-muted focus:outline-none focus:border-primary"
       />
     </div>
-  )
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm transition-all duration-300">
@@ -293,3 +310,37 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
     </div>
   )
 }
+
+// === Extracted smaller components for better maintainability ===
+
+function LeadContactSection({ 
+  isEditing, 
+  lead, 
+  form, 
+  setForm, 
+  inputField, 
+  field 
+}: any) {
+  return (
+    <section>
+      <h3 className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Contact Details</h3>
+      <div className="grid gap-4 bg-background/50 rounded-xl p-4 border border-[#2d2218]/50">
+        {isEditing ? (
+          <>
+            {inputField('Phone', 'phone', 'tel', '+34 600 000 000')}
+            {inputField('DNI / NIF', 'dni', 'text', '12345678X')}
+          </>
+        ) : (
+          <>
+            {field('Email', lead.email)}
+            {field('Phone', lead.phone)}
+            {field('DNI', lead.dni)}
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+// More section components can be extracted here (Financials, Pipeline, Notes, etc.)
+

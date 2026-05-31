@@ -1,3 +1,6 @@
+// This component is highly domain-specific (data quality mode for the dashboard).
+// It makes more sense living inside the dashboard folder.
+
 import type { FC } from 'react';
 
 type OverallMode = 'full_real' | 'partial_demo' | 'full_demo' | 'unknown' | undefined;

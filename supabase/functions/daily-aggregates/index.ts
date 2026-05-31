@@ -201,10 +201,9 @@ async function fetchAllClinicsMetaInsights(days: number) {
 }
 
 
-async function handleMetaDailyInsights(req: Request) {
+async function handleMetaDailyInsights(body: any) {
   try {
-    const payload = await req.json().catch(() => ({} as Record<string, unknown>));
-    const days = typeof payload.days === 'number' && Number.isFinite(payload.days) ? payload.days : 2;
+    const days = typeof body.days === 'number' && Number.isFinite(body.days) ? body.days : 2;
 
     console.log(`[Daily] Fetching Meta insights for last ${days} days`);
     const result = await fetchAllClinicsMetaInsights(days);
@@ -233,7 +232,7 @@ Deno.serve(async (req: Request) => {
   const { action, days = 2 } = body;
 
   if (action === 'fetch_meta_insights' || action === 'meta-daily-insights') {
-    return await handleMetaDailyInsights(req);
+    return await handleMetaDailyInsights(body);
   }
 
   // Fallback to existing logic if no action is provided (for legacy compatibility)

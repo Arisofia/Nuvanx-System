@@ -1,39 +1,84 @@
-export const META_ACCOUNT_IDS = ['act_9523446201036125', 'act_4172099716404860'] as const
-export const META_PIXEL_IDS = ['1405503384615251'] as const
-export const GOOGLE_ADS_ACCOUNT_IDS = ['AW-18182220789'] as const
+/**
+ * Centralized Meta Assets Configuration (Frontend + Scripts)
+ *
+ * Source of truth for all Meta-related identifiers used across the system.
+ *
+ * Environment variables (VITE_* are exposed to the browser):
+ *   VITE_META_ACCOUNT_IDS          → comma-separated ad accounts (act_...)
+ *   VITE_META_FACEBOOK_PAGE_ID     → Facebook Page ID (Nuvanx)
+ *   VITE_META_INSTAGRAM_ACCOUNT_ID → Instagram Business Account ID
+ *
+ * Non-VITE versions (META_*) are used by backend scripts / Edge Functions.
+ *
+ * Real values should live in .env.local or .env.tokens.local (never committed).
+ */
 
-export function resolveMetaAccountIds(accountIds: readonly unknown[] = []) {
-  const normalized = [...META_ACCOUNT_IDS, ...accountIds]
-    .map((accountId) => String(accountId ?? '').trim())
-    .filter(Boolean)
+const DEFAULT_META_AD_ACCOUNT_IDS = [
+  'act_9523446201036125', // Principal
+  'act_4172099716404860', // Secundaria
+] as const;
 
-  return Array.from(new Set(normalized))
+const DEFAULT_FACEBOOK_PAGE_ID = '685010274687129';     // Nuvanx
+const DEFAULT_INSTAGRAM_ACCOUNT_ID = '599157696620256'; // nuvanx_
+
+/** Robust parser for comma-separated IDs coming from env */
+function parseCsvList(envValue: string | undefined, defaults: readonly string[]): readonly string[] {
+  if (envValue && envValue.trim().length > 0) {
+    const parsed = envValue
+      .split(/[,\s;]+/)
+      .map((v) => v.trim())
+      .filter(Boolean);
+
+    if (parsed.length > 0) return parsed as readonly string[];
+  }
+  return defaults;
 }
 
-export function resolveMetaPixelIds(pixelIds: readonly unknown[] = []) {
-  const normalized = [...META_PIXEL_IDS, ...pixelIds]
-    .map((pixelId) => String(pixelId ?? '').trim())
-    .filter(Boolean)
+// ─────────────────────────────────────────────────────────────────────────────
+// Ad Accounts (the two main ones used for all paid campaigns)
+export const META_AD_ACCOUNT_IDS = parseCsvList(
+  import.meta.env.VITE_META_ACCOUNT_IDS,
+  DEFAULT_META_AD_ACCOUNT_IDS
+);
 
-  return Array.from(new Set(normalized))
+// ─────────────────────────────────────────────────────────────────────────────
+// Organic / Content Assets (newly centralized)
+export const META_FACEBOOK_PAGE_ID = (
+  import.meta.env.VITE_META_FACEBOOK_PAGE_ID ?? DEFAULT_FACEBOOK_PAGE_ID
+).trim();
+
+export const META_INSTAGRAM_ACCOUNT_ID = (
+  import.meta.env.VITE_META_INSTAGRAM_ACCOUNT_ID ?? DEFAULT_INSTAGRAM_ACCOUNT_ID
+).trim();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Convenience exports (most common usage in UI)
+
+export const PRIMARY_META_AD_ACCOUNT = META_AD_ACCOUNT_IDS[0] ?? DEFAULT_META_AD_ACCOUNT_IDS[0];
+
+/** Returns the list of ad accounts, optionally merged with extra ones passed at runtime */
+export function resolveMetaAccountIds(extra: readonly unknown[] = []): readonly string[] {
+  const extraClean = extra
+    .map((x) => String(x ?? '').trim())
+    .filter(Boolean);
+
+  const merged = [...META_AD_ACCOUNT_IDS, ...extraClean];
+  return Array.from(new Set(merged)); // dedup while preserving order
 }
 
-export function resolveGoogleAdsAccountIds(accountIds: readonly unknown[] = []) {
-  const normalized = [...GOOGLE_ADS_ACCOUNT_IDS, ...accountIds]
-    .map((accountId) => String(accountId ?? '').trim())
-    .filter(Boolean)
-
-  return Array.from(new Set(normalized))
+/** Human-friendly comma separated string (used in tables, notices, exports) */
+export function formatMetaAccountIds(extra?: readonly unknown[]): string {
+  return resolveMetaAccountIds(extra).join(', ');
 }
 
-export function formatMetaAccountIds(accountIds?: readonly unknown[]) {
-  return resolveMetaAccountIds(accountIds).join(', ')
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// Backwards-compatible aliases (used in several pages today)
+export const META_ACCOUNT_IDS = META_AD_ACCOUNT_IDS;
+export const resolveMetaAccountIdsLegacy = resolveMetaAccountIds;
+export const formatMetaAccountIdsLegacy = formatMetaAccountIds;
 
-export function formatMetaPixelIds(pixelIds?: readonly unknown[]) {
-  return resolveMetaPixelIds(pixelIds).join(', ')
-}
-
-export function formatGoogleAdsAccountIds(accountIds?: readonly unknown[]) {
-  return resolveGoogleAdsAccountIds(accountIds).join(', ')
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// Type helpers (for future stricter usage)
+export type MetaAdAccountId = `act_${string}`;
+export type FacebookPageId = string;
+export type InstagramAccountId = string;

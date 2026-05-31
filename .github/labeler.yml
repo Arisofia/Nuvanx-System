@@ -1,20 +1,71 @@
-# PR labeler configuration — keeps labels in sync with code areas
+# PR Labeler Configuration
+# Uses modern changed-files syntax (actions/labeler v5+)
+#
+# Goals:
+# - Automatic area labels for better triage
+# - Special attention to high-risk areas (migrations, security, infra)
+# - Keep rules minimal and maintainable
 
-frontend:
+# Frontend
+area/frontend:
   - changed-files:
       - any-glob-to-any-file: 'frontend/**/*'
 
-backend:
+# Backend / Data layer
+area/backend:
   - changed-files:
       - any-glob-to-any-file: 'supabase/**/*'
       - any-glob-to-any-file: 'scripts/**/*'
 
-docs:
+# Database migrations (high risk — deserves extra review)
+# Changes here can have production impact and should trigger careful review.
+area/migrations:
+  - changed-files:
+      - any-glob-to-any-file: 'supabase/migrations/**/*'
+
+# Documentation
+area/docs:
   - changed-files:
       - any-glob-to-any-file: '**/*.md'
       - any-glob-to-any-file: 'docs/**/*'
 
-ci:
+# CI / GitHub Actions / Workflows
+area/ci:
   - changed-files:
       - any-glob-to-any-file: '.github/workflows/**/*'
       - any-glob-to-any-file: '.github/actions/**/*'
+      - any-glob-to-any-file: '.github/CODEOWNERS'
+      - any-glob-to-any-file: '.github/labeler.yml'
+      - any-glob-to-any-file: '.github/labels.yml'
+
+# Infrastructure & configuration
+area/infra:
+  - changed-files:
+      - any-glob-to-any-file: 'package.json'
+      - any-glob-to-any-file: 'package-lock.json'
+      - any-glob-to-any-file: 'vercel.json'
+      - any-glob-to-any-file: 'tsconfig*.json'
+      - any-glob-to-any-file: 'supabase/config.toml'
+
+# Security & hardening (high risk)
+area/security:
+  - changed-files:
+      - any-glob-to-any-file: '**/*security*'
+      - any-glob-to-any-file: '**/*RLS*'
+      - any-glob-to-any-file: 'supabase/migrations/**/*rls*'
+      - any-glob-to-any-file: 'supabase/migrations/**/*policy*'
+
+# Doctoralia / Financial settlements
+area/doctoralia:
+  - changed-files:
+      - any-glob-to-any-file: 'scripts/sync-doctoralia.js'
+      - any-glob-to-any-file: 'scripts/ingest-doctoralia.js'
+      - any-glob-to-any-file: '**/*doctoralia*'
+      - any-glob-to-any-file: '**/*financial_settlements*'
+
+# Meta Ads / CAPI / Attribution
+area/meta-ads:
+  - changed-files:
+      - any-glob-to-any-file: '**/*meta*'
+      - any-glob-to-any-file: '**/*capi*'
+      - any-glob-to-any-file: 'scripts/meta*'

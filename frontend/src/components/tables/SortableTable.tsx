@@ -1,3 +1,6 @@
+// This is a composite table component with sorting, pagination and export.
+// It is intentionally kept outside the pure ui/ primitives folder.
+
 import { useState, useMemo } from 'react'
 import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { ExportButton } from '../reports/ExportButton'
@@ -6,9 +9,7 @@ export interface ColDef {
   key: string
   label: string
   align?: 'left' | 'right' | 'center'
-  /** Return null/undefined to render "—" */
   format?: (value: any, row: Record<string, any>) => string | number | null | undefined
-  /** Set false to disable sorting on this column (default: sortable) */
   sortable?: boolean
 }
 
@@ -20,7 +21,6 @@ interface Props {
   loading?: boolean
   emptyMessage?: string
   className?: string
-  /** Optional totals footer row — same length as columns */
   footerRow?: (string | number | null | undefined)[]
 }
 
@@ -99,7 +99,6 @@ export function SortableTable({
 
   return (
     <div className={`space-y-3 ${className}`}>
-      {/* Controls row */}
       <div className="flex items-center justify-between gap-2 print:hidden">
         <p className="text-xs text-muted">
           {sorted.length.toLocaleString()} rows
@@ -177,7 +176,6 @@ export function SortableTable({
         </table>
       </div>
 
-      {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-2 pt-1 print:hidden">
           <button
