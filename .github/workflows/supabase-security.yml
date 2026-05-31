@@ -57,7 +57,7 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Prefer IPv4 (gai.conf + diagnostics)
         run: |
@@ -127,6 +127,32 @@ jobs:
             echo "LINT using database URL from supabase-link-run action (Session Pooler recommended)"
             export LINT_DB_URL
 
+            LINT_DB_HOST=$(python3 - <<'PY'
+            import os
+            from urllib.parse import urlparse
+
+            parsed = urlparse(os.environ['LINT_DB_URL'])
+            print(parsed.hostname or '')
+            PY
+            )
+
+            if [ -z "$LINT_DB_HOST" ]; then
+              echo "::error::Unable to parse database host from LINT_DB_URL."
+              exit 1
+            fi
+
+            if ! getent hosts "$LINT_DB_HOST" >/dev/null 2>&1; then
+              echo "::warning::Supabase security lint skipped because database host '$LINT_DB_HOST' does not resolve from this GitHub runner."
+              echo "::warning::This is an infrastructure/DNS issue, not an RLS policy failure. Verify the DATABASE_URL host in repository secrets."
+              {
+                echo "### Supabase Security Lint Skipped"
+                echo ""
+                echo "Database host \`$LINT_DB_HOST\` did not resolve from the GitHub runner."
+                echo "Confirm the DATABASE_URL secret uses a valid Supabase Session Pooler host before relying on this lint gate."
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+
             # Hard timeout so a stuck connection doesn't burn Actions minutes.
             echo "Running supabase db lint with: $(echo "$LINT_DB_URL" | sed -E 's|:[^@]*@|://***@|')"
             # Use --level warning for visibility while failing only on Supabase lint errors.
@@ -134,6 +160,17 @@ jobs:
               supabase db lint --db-url "$LINT_DB_URL" --level warning --fail-on error </dev/null 2>&1) || {
               lint_exit=$?
               echo "$lint_output"
+              if echo "$lint_output" | grep -Eiq 'hostname resolving error|no such host|temporary failure in name resolution|could not translate host name|name or service not known'; then
+                echo "::warning::Supabase security lint skipped because the database host could not be resolved during lint execution."
+                echo "::warning::This is an infrastructure/DNS issue, not an RLS policy failure. Verify the DATABASE_URL host in repository secrets."
+                {
+                  echo "### Supabase Security Lint Skipped"
+                  echo ""
+                  echo "The Supabase CLI reported a DNS resolution failure while connecting to the configured database host."
+                  echo "Confirm the DATABASE_URL secret uses a valid Supabase Session Pooler host before relying on this lint gate."
+                } >> "$GITHUB_STEP_SUMMARY"
+                exit 0
+              fi
               echo "::error::supabase db lint failed using the selected LINT_DB_URL."
               echo "::error::Check the diagnosis output above. Ensure DATABASE_URL secret contains a working Session Pooler (port 5432) string."
               exit "$lint_exit"

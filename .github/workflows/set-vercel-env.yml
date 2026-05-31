@@ -4,9 +4,6 @@ name: Set Vercel Env Vars
 on:
   workflow_dispatch: {}
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE22: true
-
 jobs:
   set-env:
     runs-on: ubuntu-latest

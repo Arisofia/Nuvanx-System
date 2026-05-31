@@ -15,9 +15,6 @@ on:
         required: false
         default: '2'
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE22: true
-
 jobs:
   daily-sync:
     name: Run Daily Sync Orchestrator
@@ -38,14 +35,14 @@ jobs:
       META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
       META_AD_ACCOUNT_IDS: ${{ secrets.META_AD_ACCOUNT_IDS }}
       META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
-      META_GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION || 'v20.0' }}
+      META_GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION }}
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4.1.0
+        uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: 'npm'
@@ -53,7 +50,28 @@ jobs:
       - name: Install dependencies
         run: npm install --include=dev --ignore-scripts --legacy-peer-deps
 
+      - name: Validate daily sync prerequisites
+        id: validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          MISSING=()
+          [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] && MISSING+=("SUPABASE_ACCESS_TOKEN")
+          [ -z "${SUPABASE_PROJECT_REF:-}" ] && MISSING+=("SUPABASE_PROJECT_REF")
+          [ -z "${META_ACCESS_TOKEN:-}" ] && MISSING+=("META_ACCESS_TOKEN")
+          if [ -z "${META_AD_ACCOUNT_ID:-}" ] && [ -z "${META_AD_ACCOUNT_IDS:-}" ]; then
+            MISSING+=("META_AD_ACCOUNT_ID or META_AD_ACCOUNT_IDS")
+          fi
+
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::warning::Daily sync orchestrator skipped — missing secrets: ${MISSING[*]}"
+            echo "skip_orchestrator=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip_orchestrator=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run Orchestrator Script
+        if: steps.validate.outputs.skip_orchestrator != 'true'
         run: node scripts/run-daily-sync.js
         env:
           # run-daily-sync.js needs these for sync-doctoralia and supabase deploy
@@ -68,18 +86,31 @@ jobs:
           META_AD_ACCOUNT_ID: ${{ env.META_AD_ACCOUNT_ID }}
           META_AD_ACCOUNT_IDS: ${{ env.META_AD_ACCOUNT_IDS }}
           META_APP_SECRET: ${{ env.META_APP_SECRET }}
-          META_GRAPH_VERSION: ${{ env.META_GRAPH_VERSION }}
+          # si no hay secreto, usa 'v20.0' como default
+          META_GRAPH_VERSION: ${{ env.META_GRAPH_VERSION || 'v20.0' }}
 
       - name: Fetch Meta Daily Insights
+        shell: bash
         run: |
+          set -euo pipefail
           DAYS="${{ github.event.inputs.days || '2' }}"
+          if ! [[ "$DAYS" =~ ^[0-9]+$ ]] || [ "$DAYS" -lt 1 ] || [ "$DAYS" -gt 90 ]; then
+            echo "::error::days must be an integer between 1 and 90. Received: $DAYS"
+            exit 1
+          fi
+
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::warning::Meta daily insights fetch skipped — SUPABASE_URL/VITE_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing."
+            exit 0
+          fi
+
           echo "Fetching Meta insights for last $DAYS days..."
-          
-          RESPONSE=$(curl -s -X POST "${SUPABASE_URL}/functions/v1/daily-aggregates" \
+
+          RESPONSE=$(curl --fail-with-body --show-error --silent --max-time 60 -X POST "${SUPABASE_URL}/functions/v1/daily-aggregates" \
             -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
             -H "Content-Type: application/json" \
             -d "{\"action\": \"fetch_meta_insights\", \"days\": $DAYS}")
-          
+
           echo "Response: $RESPONSE"
           if echo "$RESPONSE" | grep -q '"success":true'; then
             echo "Meta insights fetched successfully."
