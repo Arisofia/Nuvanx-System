@@ -44,7 +44,7 @@ runs:
   using: 'composite'
   steps:
     - name: Setup Supabase CLI
-      uses: supabase/setup-cli@v1
+      uses: supabase/setup-cli@v2
       with:
         version: ${{ inputs.supabase_cli_version }}
 
