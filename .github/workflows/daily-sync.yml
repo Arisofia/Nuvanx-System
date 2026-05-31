@@ -20,7 +20,7 @@ jobs:
     name: Run Daily Sync Orchestrator
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    
+
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL || secrets.VITE_SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
