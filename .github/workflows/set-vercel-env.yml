@@ -2,18 +2,13 @@
 #
 # Manually sync selected VITE_* secrets from GitHub Actions to a Vercel project.
 #
-# Context:
-# - This project uses a hardened Supabase setup (see deploy.yml, daily-sync.yml, ci.yml).
-# - The direct Supabase hostname is IPv6-only; we strongly prefer Session Pooler (port 5432).
-# - Vercel environments (preview + production) need the latest Supabase + MCP keys.
-# - This workflow provides a reliable, auditable way to push VITE_* secrets via the Vercel API
-#   without manual UI work, keeping parity with the secrets used in the hardened CI/CD flows.
+# Part of the project's hardened secret management strategy.
+# Keeps Vercel preview/production environments in sync with the same Supabase/MCP secrets
+# used in the hardened deploy, daily-sync, and CAPI flows.
 #
 # When to run:
 # - After rotating Supabase keys, MCP API key, or other VITE_* secrets.
 # - As part of secret rotation procedures.
-#
-# Note: Uses the supabase-link-run composite action's philosophy of explicit, auditable secret handling.
 
 name: Set Vercel Env Vars
 

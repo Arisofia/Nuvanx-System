@@ -1,6 +1,9 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
 name: CI
 
+# Part of the project's hardened CI/CD pipeline.
+# Focuses on security, build quality, and early detection of issues before they reach production workflows (deploy, daily-sync, etc.).
+
 on:
   pull_request:
     branches: [main]

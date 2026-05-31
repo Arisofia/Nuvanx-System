@@ -1,6 +1,12 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
 name: Daily Sync Orchestrator
 
+# This workflow is part of the hardened Supabase + external sync pipeline.
+# It follows the project's established patterns:
+# - Strong IPv6 mitigation (direct Supabase host is IPv6-only)
+# - Preference for Session Pooler (port 5432)
+# - Use of the supabase-link-run composite action for reliable connectivity
+
 on:
   schedule:
     - cron: '0 7 * * *'   # Daily at 07:00 UTC

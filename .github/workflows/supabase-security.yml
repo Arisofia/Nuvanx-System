@@ -143,6 +143,6 @@ jobs:
         run: |
           echo "### Supabase Security Lint Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "This workflow runs \`supabase db lint --level error\` against the remote database." >> $GITHUB_STEP_SUMMARY
+          echo "This workflow runs \`supabase db lint --level warning\` against the remote database (error level only on scheduled/main runs if desired)." >> $GITHUB_STEP_SUMMARY
           echo "It catches missing RLS policies and dangerous policy patterns." >> $GITHUB_STEP_SUMMARY
 
