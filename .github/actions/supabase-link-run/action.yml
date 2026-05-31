@@ -102,8 +102,6 @@ runs:
             if [[ "$SESSION_URL" != *"sslmode="* ]]; then
               if [[ "$SESSION_URL" == *"?"* ]]; then
                 SEP="&"
-              elif [[ "$SESSION_URL" == *"?"* ]]; then
-                SEP="&"
               else
                 SEP="?"
               fi
