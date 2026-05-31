@@ -28,7 +28,8 @@
     "meta:ads:extract": "python scripts/meta_ads_library.py",
     "ops:meta-capi-checklist": "cat docs/codex/meta-capi-operational-checklist.md",
     "daily:sync": "node scripts/run-daily-sync.js",
-    "meta:token": "node scripts/set-meta-token.js"
+    "meta:token": "node scripts/set-meta-token.js",
+    "validate:workflows": "ruby scripts/validate-github-workflows.rb"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.1",
