@@ -306,16 +306,3 @@ export interface RunResult {
   result: string | null
   error: string | null
 }
-
-// ── Meta Assets (Centralized) ─────────────────────────────────────────────────
-// These types support the centralized configuration in src/config/metaAccounts.ts
-// and align with CAPI deduplication requirements (event_id matching, strong signals).
-
-export type MetaAdAccountId = `act_${string}`;
-
-export interface MetaAssets {
-  adAccountIds: readonly string[];           // e.g. ['act_9523446201036125', 'act_4172099716404860']
-  activePixelId: string;                     // Currently 1405503384615251 (Francisco Antonio)
-  facebookPageId?: string;                   // 685010274687129
-  instagramAccountId?: string;               // 599157696620256
-}

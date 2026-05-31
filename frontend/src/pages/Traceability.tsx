@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { GitMerge, Search, CheckCircle2, XCircle, TrendingUp, MessageCircle } from 'lucide-react'
 import { invokeApi } from '../lib/supabaseClient'
-import { SortableTable, type ColDef } from '../components/tables/SortableTable'
+import { SortableTable, type ColDef } from '../components/ui/SortableTable'
 import TrazabilidadFunnelTableFinal from '../components/traceability/TrazabilidadFunnelTable_Final'
 
 interface TraceabilitySummary {

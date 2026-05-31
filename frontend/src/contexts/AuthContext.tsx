@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, ReactNode } from 'react'
+import { createContext, useEffect, useMemo, useState, ReactNode } from 'react'
 import type { User, Session } from '@supabase/supabase-js'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 
@@ -71,12 +71,4 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
-}
-
-export const useAuth = () => {
-  const context = useContext(AuthContext)
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider')
-  }
-  return context
 }

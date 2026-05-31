@@ -3,16 +3,12 @@
 -- table alias for public.leads, causing the plpgsql checker to report
 -- "record l is not assigned yet" (sqlState 55000).
 -- Fix: rename the inner table alias to "ld" throughout the FOR query.
---
--- Reviewed & hardened: 2026-05-31
--- - Changed SET search_path from '' → public, pg_catalog (security best practice)
--- - Added COMMENT
 
 CREATE OR REPLACE FUNCTION public.run_doctoralia_name_match()
 RETURNS void
 LANGUAGE plpgsql
 SECURITY INVOKER
-SET search_path = public, pg_catalog
+SET search_path = ''
 AS $$
 DECLARE
   patient_row RECORD;
@@ -54,6 +50,3 @@ BEGIN
   END LOOP;
 END;
 $$;
-
-COMMENT ON FUNCTION public.run_doctoralia_name_match() IS
-  'Matching fuzzy entre doctoralia_patients y leads usando similitud + teléfono. Fix de alias (2026-05-02). search_path hardened (2026-05-31).';

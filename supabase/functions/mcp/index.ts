@@ -7,6 +7,8 @@ import { McpServer, StreamableHttpTransport } from 'mcp-lite'
 import { z } from 'zod'
 import { zodToJsonSchema } from 'zod-to-json-schema'
 
+const app = new Hono()
+
 const mcp = new McpServer({
   name: 'nuvanx-mcp',
   version: '1.0.0',
@@ -23,18 +25,11 @@ function requireEnv(name: string): string {
   return value
 }
 
-let supabase: ReturnType<typeof createClient> | null = null;
-
-function getSupabase() {
-  if (!supabase) {
-    supabase = createClient(
-      requireEnv('SUPABASE_URL'),
-      requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
-      { auth: { persistSession: false } },
-    );
-  }
-  return supabase;
-}
+const supabase = createClient(
+  requireEnv('SUPABASE_URL'),
+  requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
+  { auth: { persistSession: false } },
+)
 
 const DateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD')
 const LimitSchema = z.number().int().min(1).max(200).default(50)
@@ -113,8 +108,8 @@ mcp.tool('get_dashboard_metrics', {
     if (date_to) metaQuery = metaQuery.lte('date', date_to)
 
     const integrationsQuery = clinic_id
-      ? getSupabase().from('integrations').select('service,status,clinic_id').eq('clinic_id', clinic_id)
-      : getSupabase().from('integrations').select('service,status,clinic_id')
+      ? supabase.from('integrations').select('service,status,clinic_id').eq('clinic_id', clinic_id)
+      : supabase.from('integrations').select('service,status,clinic_id')
 
     const [leadsRes, settlementsRes, integrationsRes, metaRes] = await Promise.all([
       leadsQuery.limit(5000),
@@ -405,5 +400,6 @@ mcpApp.all('/mcp', async (c) => {
   return response
 })
 
+app.route('/mcp', mcpApp)
 
-Deno.serve(mcpApp.fetch)
+Deno.serve(app.fetch)

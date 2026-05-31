@@ -3,9 +3,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { invokeApi } from '../lib/supabaseClient'
 import type { FunnelRow, CampaignPerformance as Campaign, Conversation, TraceabilityLead } from '../types'
-import { FilterBar } from '../components/filters/FilterBar'
-import { SortableTable } from '../components/tables/SortableTable'
-import type { ColDef } from '../components/tables/SortableTable'
+import { FilterBar } from '../components/ui/FilterBar'
+import { SortableTable } from '../components/ui/SortableTable'
+import type { ColDef } from '../components/ui/SortableTable'
 import { MetaAccountsInline } from '../components/MetaAccountsNotice'
 
 export default function Intelligence() {

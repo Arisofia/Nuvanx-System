@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Lead } from '../../types'
 import { Button } from '../ui/button'
 
@@ -12,29 +12,38 @@ interface LeadDetailSheetProps {
 
 const STAGES = ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'] as const
 
-// Custom hook to manage form state for the lead detail sheet
-function useLeadForm(lead: Lead | null) {
-  const [form, setForm] = useState({
-    name: lead?.name ?? '',
-    status: lead?.status ?? 'lead',
-    phone: lead?.phone ?? '',
-    dni: lead?.dni ?? '',
-    notes: lead?.notes ?? '',
-    revenue: lead?.revenue == null ? '' : String(lead.revenue),
-    appointment_date: lead?.appointment_date ?? '',
-    treatment_name: lead?.treatment_name ?? '',
-  })
-
-  return { form, setForm }
-}
-
 export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: Readonly<LeadDetailSheetProps>) {
   const [isEditing, setIsEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [form, setForm] = useState({
+    name: '',
+    status: '',
+    phone: '',
+    dni: '',
+    notes: '',
+    revenue: '',
+    appointment_date: '',
+    treatment_name: '',
+  })
 
-  const { form, setForm } = useLeadForm(lead)
+  useEffect(() => {
+    if (lead) {
+      setForm({
+        name: lead.name ?? '',
+        status: lead.status ?? 'lead',
+        phone: lead.phone ?? '',
+        dni: lead.dni ?? '',
+        notes: lead.notes ?? '',
+        revenue: lead.revenue == null ? '' : String(lead.revenue),
+        appointment_date: lead.appointment_date ?? '',
+        treatment_name: lead.treatment_name ?? '',
+      })
+    }
+    setIsEditing(false)
+    setSaveError(null)
+  }, [lead])
 
   if (!isOpen || !lead) return null
 
@@ -68,36 +77,30 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
     onClose()
   }
 
-  // Small presentational helpers (can be extracted further later)
-  const ReadonlyField = ({ label, value }: { label: string; value: string | number | null | undefined }) => (
+  const field = (label: string, value: string) => (
     <div>
       <p className="text-xs text-muted mb-1">{label}</p>
       <p className="text-white">{value || '—'}</p>
     </div>
-  );
+  )
 
-  const EditInput = ({ 
-    label, 
-    fieldKey, 
-    type = 'text', 
-    placeholder 
-  }: { 
-    label: string; 
-    fieldKey: keyof typeof form; 
-    type?: string; 
-    placeholder?: string 
-  }) => (
+  const input = (
+    label: string,
+    key: keyof typeof form,
+    type: string = 'text',
+    placeholder?: string
+  ) => (
     <div>
       <label className="text-xs text-muted mb-1 block">{label}</label>
       <input
         type={type}
-        value={form[fieldKey]}
-        onChange={e => setForm(prev => ({ ...prev, [fieldKey]: e.target.value }))}
+        value={form[key]}
+        onChange={e => setForm(prev => ({ ...prev, [key]: e.target.value }))}
         placeholder={placeholder}
         className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm text-white placeholder-muted focus:outline-none focus:border-primary"
       />
     </div>
-  );
+  )
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm transition-all duration-300">
@@ -290,6 +293,3 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
     </div>
   )
 }
-
-// More section components can be extracted here (Financials, Pipeline, Notes, etc.)
-

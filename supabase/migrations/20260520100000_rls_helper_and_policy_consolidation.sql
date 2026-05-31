@@ -1,20 +1,58 @@
 -- =============================================================================
--- RLS Helper and Policy Consolidation (2026-05-20) - SIMPLIFIED
--- =============================================================================
---
--- Revisión 2026-05-31 (Revisión #5 y #9):
--- - Se eliminó la redefinición duplicada de current_clinic_id() y current_user_id().
---   Estas funciones ahora se mantienen de forma consolidada en 20260531000010.
--- - Esta migración queda como un paso intermedio histórico.
--- - Su valor real se limita a la consolidación de políticas en clinics, leads y whatsapp_conversations.
--- - Muchas de las políticas que crea aquí probablemente fueron sobrescritas o mejoradas
---   en 20260530000000_comprehensive_rls_fix.sql.
---
--- Decisión: Se mantiene simplificada. No se recomienda depender de ella para
--- el estado actual de las políticas.
+-- Final RLS performance pass
+-- - Standardize helper wrappers for auth identity lookups.
+-- - Consolidate duplicate permissive SELECT policies on clinics/leads/whatsapp_conversations.
+-- - Keep integrations unique index naming canonical.
 -- =============================================================================
 
 BEGIN;
+
+-- Stable helper wrappers used by RLS policies.
+CREATE OR REPLACE FUNCTION public.current_user_id()
+RETURNS uuid
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT (SELECT auth.uid());
+$$;
+
+CREATE OR REPLACE FUNCTION public.current_clinic_id()
+RETURNS uuid
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_user_id uuid;
+  v_claim_clinic uuid;
+  v_user_clinic uuid;
+BEGIN
+  v_user_id := (SELECT auth.uid());
+  IF v_user_id IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  BEGIN
+    v_claim_clinic := ((SELECT auth.jwt()) ->> 'clinic_id')::uuid;
+  EXCEPTION WHEN OTHERS THEN
+    v_claim_clinic := NULL;
+  END;
+
+  IF v_claim_clinic IS NOT NULL THEN
+    RETURN v_claim_clinic;
+  END IF;
+
+  IF to_regclass('public.users') IS NOT NULL THEN
+    SELECT clinic_id INTO v_user_clinic FROM public.users WHERE id = v_user_id LIMIT 1;
+    RETURN v_user_clinic;
+  END IF;
+
+  RETURN NULL;
+END;
+$$;
 
 DO $$
 BEGIN
@@ -62,7 +100,6 @@ BEGIN
 END $$;
 
 -- Optional naming cleanup for the canonical integrations unique index.
--- (Minor operation - likely already applied or superseded in later migrations)
 DO $$
 BEGIN
   IF to_regclass('public.integrations_user_id_service_unique_idx') IS NOT NULL

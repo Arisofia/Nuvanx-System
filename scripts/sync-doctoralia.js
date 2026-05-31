@@ -42,8 +42,6 @@ const { extractPhonesFromSubject, normalizePhoneForMatching, getPrimaryPhoneFrom
 
 const {
   GOOGLE_SA_JSON: SA_JSON,
-  GOOGLE_ADS_SERVICE_ACCOUNT,
-  GOOGLE_DOCTORALIA_SERVICE_ACCOUNT,
   GOOGLE_SA_JSON_FILE,
   GOOGLE_API_KEY,
   GOOGLE_CLIENT_EMAIL,
@@ -58,23 +56,12 @@ const {
 } = process.env;
 
 function loadServiceAccountJson() {
-  const saRaw = SA_JSON || GOOGLE_DOCTORALIA_SERVICE_ACCOUNT || GOOGLE_ADS_SERVICE_ACCOUNT;
-  if (saRaw) {
+  if (SA_JSON) {
     try {
-      // If it's already JSON, return it
-      if (saRaw.trim().startsWith('{')) {
-        JSON.parse(saRaw);
-        return saRaw;
-      }
-      // Try base64 decoding if it doesn't look like JSON
-      const decoded = Buffer.from(saRaw, 'base64').toString('utf8');
-      if (decoded.trim().startsWith('{')) {
-        JSON.parse(decoded);
-        return decoded;
-      }
+      JSON.parse(SA_JSON);
+      return SA_JSON;
     } catch (e) {
-      // Not a valid JSON or Base64 JSON, ignore and try fallback
-      return null;
+      // Not a valid JSON, ignore and try fallback
     }
   }
   
@@ -83,11 +70,11 @@ function loadServiceAccountJson() {
   }
 
   // If we have individual components (Service Account)
-  if (GOOGLE_CLIENT_EMAIL && GOOGLE_PRIVATE_KEY?.includes('BEGIN PRIVATE KEY')) {
+  if (GOOGLE_CLIENT_EMAIL && GOOGLE_PRIVATE_KEY && GOOGLE_PRIVATE_KEY.includes('BEGIN PRIVATE KEY')) {
     return JSON.stringify({
       type: 'service_account',
       project_id: GOOGLE_PROJECT_ID || 'unknown',
-      private_key: GOOGLE_PRIVATE_KEY.replaceAll(String.raw`\n`, '\n'),
+      private_key: GOOGLE_PRIVATE_KEY.replaceAll('\\n', '\n'),
       client_email: GOOGLE_CLIENT_EMAIL,
     });
   }
@@ -123,23 +110,10 @@ const DATABASE_URL = (() => {
 })();
 
 const SHEET_ID = (DOCTORALIA_SHEET_ID || DOCTORALIA_DRIVE_FILE_ID)?.trim();
-const EXPECTED_SHEET_ID = process.env.EXPECTED_SHEET_ID?.trim();
 const ALLOW_PERMISSION_SKIP = DOCTORALIA_SYNC_PERMISSION_MODE.toLowerCase() === 'warn';
 
-// Extra safety: validate sheet ID against expected value (defense in depth with the YAML preflight)
-if (EXPECTED_SHEET_ID && SHEET_ID && SHEET_ID !== EXPECTED_SHEET_ID) {
-  console.error(`[sync-doctoralia] FATAL: Sheet ID mismatch.`);
-  console.error(`  Expected: ${EXPECTED_SHEET_ID}`);
-  console.error(`  Received: ${SHEET_ID}`);
-  console.error(`  This is a protection against accidental use of the wrong spreadsheet.`);
-  process.exit(1);
-}
-if (EXPECTED_SHEET_ID && SHEET_ID) {
-  console.log(`[sync-doctoralia] Sheet ID validated against EXPECTED_SHEET_ID.`);
-}
-
 // ─── Validation ───────────────────────────────────────────────────────────────
-const hasAuth = SA_JSON || GOOGLE_SA_JSON_FILE || GOOGLE_API_KEY || GOOGLE_ADS_SERVICE_ACCOUNT || GOOGLE_DOCTORALIA_SERVICE_ACCOUNT || (GOOGLE_CLIENT_EMAIL && GOOGLE_PRIVATE_KEY);
+const hasAuth = SA_JSON || GOOGLE_SA_JSON_FILE || GOOGLE_API_KEY || (GOOGLE_CLIENT_EMAIL && GOOGLE_PRIVATE_KEY);
 if (!hasAuth || !SHEET_ID || !DATABASE_URL || !CLINIC_ID) {
   console.error('[sync-doctoralia] Missing required env vars.');
   console.error('  Required: Authentication (SA_JSON, GOOGLE_API_KEY, or EMAIL+KEY), DOCTORALIA_SHEET_ID, DATABASE_URL, CLINIC_ID');
@@ -163,12 +137,7 @@ function normalizeField(value) {
 }
 
 function getServiceAccountEmail(sa) {
-  const email = normalizeField(sa?.client_email) || 'unknown-service-account';
-  if (email.includes('@')) {
-    const [user, domain] = email.split('@');
-    return `${user.slice(0, 3)}***@${domain}`;
-  }
-  return email;
+  return normalizeField(sa?.client_email) || 'unknown-service-account';
 }
 
 function isGooglePermissionError(err) {
@@ -185,15 +154,6 @@ function formatPermissionGuidance(sa) {
   return [
     'Google Sheets permission denied for the Doctoralia source spreadsheet.',
     `Share the spreadsheet with service account ${email} as Viewer, or update GOOGLE_ADS_SERVICE_ACCOUNT/DOCTORALIA_SHEET_ID to matching credentials and file ID.`,
-    'No financial_settlements rows were modified.',
-  ].join(' ');
-}
-
-/** Safe version for logging that never includes any service account details */
-function formatPermissionGuidanceForLog() {
-  return [
-    'Google Sheets permission denied for the Doctoralia source spreadsheet.',
-    'Share the spreadsheet with the configured service account (or update GOOGLE_ADS_SERVICE_ACCOUNT / DOCTORALIA_SHEET_ID).',
     'No financial_settlements rows were modified.',
   ].join(' ');
 }
@@ -350,15 +310,15 @@ function getAmountValues(row, cols, options, rowIndex) {
   const amountNet = hasColNet ? parseAmount(row[cols.colNet]) : null;
 
   if (hasColGross && amountGross === null) {
-    console.warn(`[sync-doctoralia] Skipping row ${rowIndex + 1} because bruto importe is invalid`);
+    console.warn(`[sync-doctoralia] Skipping row ${rowIndex + 1} because bruto importe is invalid: ${row[cols.colGross]}`);
     return null;
   }
   if (hasColDiscount && amountDisc === null) {
-    console.warn(`[sync-doctoralia] Skipping row ${rowIndex + 1} because descuento importe is invalid`);
+    console.warn(`[sync-doctoralia] Skipping row ${rowIndex + 1} because descuento importe is invalid: ${row[cols.colDiscount]}`);
     return null;
   }
   if (hasColNet && amountNet === null) {
-    console.warn(`[sync-doctoralia] Skipping row ${rowIndex + 1} because neto importe is invalid`);
+    console.warn(`[sync-doctoralia] Skipping row ${rowIndex + 1} because neto importe es invalid: ${row[cols.colNet]}`);
     return null;
   }
 
@@ -374,32 +334,23 @@ function getOptionalTextValue(row, col, enabled) {
 }
 
 function buildHeaderConfig(headers) {
-  // Enhanced hints for typical Doctoralia "Produccion Intermediarios" exports
-  const colId           = findCol(headers, '=id', '=num', 'id op', 'id_op', 'num op', 'operacion', 'operation', 'nº operacion');
-  const colTemplate     = findCol(headers, 'plantilladescr', 'plantilla descr', 'plantilla', 'template descr', 'template', 'asunto', 'descripcion');
-  const colTemplateId   = findCol(headers, 'id plantilla', 'template_id', 'id_plantilla', 'cod plantilla', 'codigo plantilla');
+  const colId           = findCol(headers, '=id', '=num', 'id op', 'id_op', 'num op', 'operacion', 'operation');
+  const colTemplate     = findCol(headers, 'plantilladescr', 'plantilla descr', 'plantilla', 'template descr', 'template', 'asunto');
+  const colTemplateId   = findCol(headers, 'id plantilla', 'template_id', 'id_plantilla', 'cod plantilla');
   const colFecha        = findCol(headers, 'fecha');
   const colHora         = findCol(headers, 'hora');
-  const colIntake       = findCol(headers, 'fecha ingreso', 'fecha inicio', 'ingreso', 'inicio', 'intake', 'alta', 'desde', 'fecha creacion', 'fecha creaci', 'fecha cita');
-  const colSettled      = findCol(headers, 'fecha liquidaci', 'liquidaci', 'fecha liq', 'settled', 'f. liq', 'fecha liquidacion');
-  const colGross        = findCol(headers, 'importe bruto', 'bruto', 'gross', 'financiad', 'capital', 'importe total');
-  const colDiscount     = findCol(headers, 'descuento', 'discount', 'bonific', 'bonificacion');
+  const colIntake       = findCol(headers, 'fecha ingreso', 'fecha inicio', 'ingreso', 'inicio', 'intake', 'alta', 'desde', 'fecha creacion', 'fecha creaci');
+  const colSettled      = findCol(headers, 'fecha liquidaci', 'liquidaci', 'fecha liq', 'settled', 'f. liq');
+  const colGross        = findCol(headers, 'importe bruto', 'bruto', 'gross', 'financiad', 'capital');
+  const colDiscount     = findCol(headers, 'descuento', 'discount', 'bonific');
   const colNet          = findCol(headers, 'importe neto', 'importe liq', 'neto', 'net', 'liquidado', 'importe');
   const colPayment      = findCol(headers, 'metodo pago', 'metodo de pago', 'pago', 'payment', 'forma pago', 'procedencia');
-  const colIntermediary = findCol(headers, 'intermediario', 'mediador', 'financiera', 'entidad', 'agenda', 'centro');
-  const colStatus       = findCol(headers, 'estado', 'status', 'situacion', 'estado cita');
+  const colIntermediary = findCol(headers, 'intermediario', 'mediador', 'financiera', 'entidad', 'agenda');
+  const colStatus       = findCol(headers, 'estado', 'status', 'situacion');
   const colOrigin       = findCol(headers, 'procedencia', 'origen', 'source', 'origin');
-  const colAgenda       = findCol(headers, 'agenda', 'calendario', 'doctor', 'profesional');
-  const colRoom         = findCol(headers, 'sala', 'habitacion', 'room', 'box', 'consultorio');
-  const colPhone        = findCol(headers, 'telefono', 'tel', 'movil', 'celular', 'phone', 'contacto', 'telefono paciente');
-
-  // New columns from recent produccion_intermediarios extensions (20260530+)
-  const colPatientName  = findCol(headers, 'paciente_nombre', 'nombre paciente', 'patient name', 'nombre');
-  const colTratamiento  = findCol(headers, 'procedimiento_nombre', 'tratamiento', 'treatment', 'procedimiento');
-  const colEmailHubspot = findCol(headers, 'email_hubspot', 'email hubspot');
-  const colEjecutivo    = findCol(headers, 'ejecutivo_asignado', 'ejecutivo', 'asignado');
-  const colIngresoLead  = findCol(headers, 'ingreso_lead', 'ingreso del lead');
-  const colCampana      = findCol(headers, 'campana', 'campaign');
+  const colAgenda       = findCol(headers, 'agenda', 'calendario', 'doctor');
+  const colRoom         = findCol(headers, 'sala', 'habitacion', 'room', 'box');
+  const colPhone        = findCol(headers, 'telefono', 'tel', 'movil', 'celular', 'phone', 'contact');
 
   const hasColId           = colId !== -1;
   const hasColTemplate     = colTemplate !== -1;
@@ -417,7 +368,7 @@ function buildHeaderConfig(headers) {
   const hasColRoom         = colRoom !== -1;
   const hasColPhone        = colPhone !== -1;
 
-  const config = {
+  return {
     colId,
     colTemplate,
     colTemplateId,
@@ -435,12 +386,6 @@ function buildHeaderConfig(headers) {
     colAgenda,
     colRoom,
     colPhone,
-    colPatientName,
-    colTratamiento,
-    colEmailHubspot,
-    colEjecutivo,
-    colIngresoLead,
-    colCampana,
     hasColId,
     hasColTemplate,
     hasColTemplateId,
@@ -456,38 +401,9 @@ function buildHeaderConfig(headers) {
     hasColAgenda,
     hasColRoom,
     hasColPhone,
-    hasColPatientName:  colPatientName  !== -1,
-    hasColTratamiento:  colTratamiento  !== -1,
-    hasColEmailHubspot: colEmailHubspot !== -1,
-    hasColEjecutivo:    colEjecutivo    !== -1,
-    hasColIngresoLead:  colIngresoLead  !== -1,
-    hasColCampana:      colCampana      !== -1,
     useHashId: !hasColId,
     colSettledEff: hasColSettled ? colSettled : colFecha,
   };
-
-  // Diagnostic logging - very useful when columns are not detected as expected
-  console.log('[sync-doctoralia] Column detection results:');
-  console.log('  ID/Operacion     :', hasColId ? `col ${colId}` : 'NOT FOUND (will use hash ID)');
-  console.log('  Plantilla/Asunto :', hasColTemplate ? `col ${colTemplate}` : 'NOT FOUND');
-  console.log('  Fecha Liquidación:', hasColSettled ? `col ${colSettled}` : `FALLBACK to Fecha (col ${colFecha})`);
-  console.log('  Importe Bruto    :', hasColGross ? `col ${colGross}` : 'NOT FOUND');
-  console.log('  Importe Neto     :', hasColNet ? `col ${colNet}` : 'NOT FOUND (will calculate)');
-  console.log('  Intermediario    :', hasColIntermediary ? `col ${colIntermediary}` : 'NOT FOUND');
-  console.log('  Estado           :', hasColStatus ? `col ${colStatus}` : 'NOT FOUND');
-
-  // New columns (20260530+)
-  if (hasColPatientName || hasColTratamiento || hasColEmailHubspot || hasColEjecutivo || hasColIngresoLead || hasColCampana) {
-    console.log('[sync-doctoralia] New columns detected from produccion_intermediarios:');
-    if (hasColPatientName)  console.log('  - paciente_nombre');
-    if (hasColTratamiento)  console.log('  - procedimiento_nombre / tratamiento');
-    if (hasColEmailHubspot) console.log('  - email_hubspot');
-    if (hasColEjecutivo)    console.log('  - ejecutivo_asignado');
-    if (hasColIngresoLead)  console.log('  - ingreso_lead');
-    if (hasColCampana)      console.log('  - campana');
-  }
-
-  return config;
 }
 
 function getRowId(row, config) {
@@ -542,13 +458,6 @@ function parseRow(row, config) {
     tmplName: config.hasColTemplate     ? (row[config.colTemplate]?.trim() || null)    : null,
     tmplId: config.hasColTemplateId   ? (row[config.colTemplateId]?.trim() || null)  : null,
     intermed: config.hasColIntermediary ? (row[config.colIntermediary]?.trim() || null) : null,
-    // New columns from produccion_intermediarios (20260530+)
-    patientName:  config.hasColPatientName  ? getOptionalTextValue(row, config.colPatientName, true)  : null,
-    tratamiento:  config.hasColTratamiento  ? getOptionalTextValue(row, config.colTratamiento, true)  : null,
-    emailHubspot: config.hasColEmailHubspot ? getOptionalTextValue(row, config.colEmailHubspot, true) : null,
-    ejecutivo:    config.hasColEjecutivo    ? getOptionalTextValue(row, config.colEjecutivo, true)    : null,
-    ingresoLead:  config.hasColIngresoLead  ? getOptionalTextValue(row, config.colIngresoLead, true)  : null,
-    campana:      config.hasColCampana      ? getOptionalTextValue(row, config.colCampana, true)      : null,
   };
 }
 
@@ -561,8 +470,6 @@ async function setupGoogleSheetsAuth() {
   if (saJson) {
     try {
       saObject = JSON.parse(saJson);
-      // Do not log any part of the service account email or object to avoid leaking credentials in logs/CI
-      console.log('[sync-doctoralia] Using Service Account authentication');
       return {
         auth: new google.auth.GoogleAuth({
           credentials: saObject,
@@ -571,16 +478,12 @@ async function setupGoogleSheetsAuth() {
         saObject,
       };
     } catch (err) {
-      // Never log err.message here — the input was the raw service account JSON from env/file.
-      // Logging the parse error could leak fragments of the credential.
-      console.error('[sync-doctoralia] Google service account JSON is not valid (parse error). Check GOOGLE_SA_JSON / GOOGLE_SA_JSON_FILE.');
-      if (err.code) console.error('  error code:', String(err.code).substring(0, 10));
+      console.error(`[sync-doctoralia] Google service account JSON is not valid: ${err.message}`);
       process.exit(1);
     }
   }
 
   if (GOOGLE_API_KEY) {
-    console.log('[sync-doctoralia] Using API Key authentication');
     return { auth: GOOGLE_API_KEY, saObject: null };
   }
 
@@ -603,40 +506,19 @@ async function fetchSheetRows(sheets, saObject) {
     });
     return res.data.values ?? [];
   } catch (err) {
-    if (err.code === 400 || err.status === 400) {
-      console.error(`[sync-doctoralia] Sheets API 400 Error. Possible causes:`);
-      console.error(`  - Sheet name "${normalizedSheetName}" does not exist.`);
-      console.error(`  - Range "${SHEET_RANGE}" is malformed.`);
-      console.error(`  - Spreadsheet ID "${SHEET_ID.slice(0, 4)}...${SHEET_ID.slice(-4)}" is invalid or inaccessible.`);
-      
-      try {
-        console.log('[sync-doctoralia] Attempting to list available sheets for debugging...');
-        const metadata = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
-        const sheetNames = metadata.data.sheets?.map(s => s.properties?.title).filter(Boolean);
-        if (sheetNames?.length) {
-          console.log(`[sync-doctoralia] Available sheets: ${sheetNames.join(', ')}`);
-        }
-      } catch (metaErr) {
-        console.error('[sync-doctoralia] Could not fetch spreadsheet metadata to list sheets.');
-      }
-    }
-    
     if (isGooglePermissionError(err)) {
+      const guidance = formatPermissionGuidance(saObject);
       if (ALLOW_PERMISSION_SKIP) {
-        // Use safe version that contains no service account data at all
-        const safeGuidance = formatPermissionGuidanceForLog();
-        console.warn(`::warning::[sync-doctoralia] ${safeGuidance}`);
+        console.warn(`::warning::[sync-doctoralia] ${guidance}`);
         return null;
       }
-      // When throwing, we can include the (masked) email for the developer
-      const guidance = formatPermissionGuidance(saObject);
       throw new Error(guidance);
     }
-    // Do not log the full err.message — it can contain request/response fragments that include
-    // tokens, project ids, or other data derived from the authenticated session.
-    console.error('[sync-doctoralia] Sheets API Error (non-permission). See previous logs or enable --debug for details.');
-    if (err.code || err.status) {
-      console.error('  error code/status:', String(err.code || err.status).substring(0, 10));
+    console.error(`[sync-doctoralia] Sheets API Error: ${err.message}`);
+    if (err.errors) {
+      console.error('[sync-doctoralia] Details:', JSON.stringify(err.errors, null, 2));
+    } else if (err.response?.data) {
+      console.error('[sync-doctoralia] Response Data:', JSON.stringify(err.response.data, null, 2));
     }
     throw err;
   }
@@ -651,10 +533,8 @@ async function reconcileDoctoraliaLeads(db) {
     const reconcileRes = await db.query('SELECT public.reconcile_doctoralia_subjects_to_leads($1) as count', [userId]);
     const count = reconcileRes.rows[0]?.count || 0;
     console.log(`[sync-doctoralia] Reconciliation done: ${count} leads advanced.`);
-    return count;
   } else {
     console.warn('[sync-doctoralia] No user found for this clinic. Skipping lead reconciliation.');
-    return 0;
   }
 }
 
@@ -704,34 +584,14 @@ async function main() {
     console.log(`[sync-doctoralia] Upsert complete: ${upserted} rows updated, ${skipped} skipped.`);
 
     // ── 5. Reconcile subjects to leads ──────────────────────────────────────
-    const reconciled = await reconcileDoctoraliaLeads(db);
-
-    // CAPI / EMQ relevant quality metrics (useful for daily monitoring)
-    console.log('[sync-doctoralia] Daily data quality for CAPI', {
-      total_rows_processed: rows.length - 1,
-      upserted,
-      skipped,
-      reconciled_count: reconciled,
-      has_good_phone_coverage: (rows.length - 1) > 0 ? ((rows.length - 1 - skipped) / (rows.length - 1)) : 0,
-    });
-
-    // Automation: If running in CI (SUPABASE_URL present), we can trigger the webhook
-    // for newly "Pagada" rows to ensure CAPI fires even before Database Webhooks are configured.
-    // This makes the whole flow "dispara automaticamente" from the daily job.
-    if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      console.log('[sync-doctoralia] CI environment detected — CAPI automation path active via daily job.');
-      // Note: The primary recommended mechanism is Supabase Database Webhook on the table.
-      // The script ensures visibility and can be extended to call the webhook endpoint directly if needed.
-    }
+    await reconcileDoctoraliaLeads(db);
 
   } finally {
     try {
       await db.end();
       console.log('[sync-doctoralia] Database connection closed.');
     } catch (e) {
-      // Never log the full error object/message from DB close — it can contain connection strings or paths.
-      console.warn('[sync-doctoralia] Error closing DB connection (details redacted).');
-      if (e?.code) console.warn('  error code:', String(e.code).substring(0, 10));
+      console.warn('[sync-doctoralia] Error closing DB connection:', e?.message || e);
     }
   }
 }
@@ -754,12 +614,6 @@ async function upsertDoctoraliaRow(row, i, params) {
     hasColIntermediary,
     hasColStatus,
     hasColPhone,
-    hasColPatientName,
-    hasColTratamiento,
-    hasColEmailHubspot,
-    hasColEjecutivo,
-    hasColIngresoLead,
-    hasColCampana,
   } = params;
 
   const rawId = deriveRawId(row, useHashId, cols);
@@ -783,23 +637,11 @@ async function upsertDoctoraliaRow(row, i, params) {
   const roomId    = getOptionalTextValue(row, cols.colRoom, hasColRoom);
   const agenda    = getOptionalTextValue(row, cols.colAgenda, hasColAgenda);
   const tmplName  = getOptionalTextValue(row, cols.colTemplate, hasColTemplate);
+  const patientPhone = hasColPhone 
+    ? normalizePhoneForMatching(row[cols.colPhone]) 
+    : getPrimaryPhoneFromSubject(tmplName);
   const tmplId    = getOptionalTextValue(row, cols.colTemplateId, hasColTemplateId);
   const intermed  = getOptionalTextValue(row, cols.colIntermediary, hasColIntermediary);
-
-  // Phones: patient_phone stores the raw/original when available (traceability);
-  // phone_normalized always stores the 9-digit matching key (for joins/reconciliation).
-  const phoneRaw  = hasColPhone ? (normalizeField(row[cols.colPhone]) || null) : null;
-  const phoneNorm = hasColPhone
-    ? normalizePhoneForMatching(row[cols.colPhone])
-    : getPrimaryPhoneFromSubject(tmplName);
-
-  // Newer fields from produccion_intermediarios extensions
-  const patientName   = getOptionalTextValue(row, cols.colPatientName, hasColPatientName);
-  const tratamiento   = getOptionalTextValue(row, cols.colTratamiento, hasColTratamiento);
-  const emailHubspot  = getOptionalTextValue(row, cols.colEmailHubspot, hasColEmailHubspot);
-  const ejecutivo     = getOptionalTextValue(row, cols.colEjecutivo, hasColEjecutivo);
-  const ingresoLead   = getOptionalTextValue(row, cols.colIngresoLead, hasColIngresoLead);
-  const campana       = getOptionalTextValue(row, cols.colCampana, hasColCampana);
 
   try {
     await db.query(
@@ -808,45 +650,30 @@ async function upsertDoctoraliaRow(row, i, params) {
           payment_method, template_name, template_id,
           settled_at, intake_at, cancelled_at, intermediary_name,
           status_original, status_type, room_id, lead_source, agenda_name,
-          patient_phone, phone_normalized, source_system,
-          patient_name, tratamiento_nombre, email_hubspot, ejecutivo_asignado,
-          ingreso_lead, campana, capi_sent)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, false)
+          patient_phone, phone_normalized, source_system)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$18,'doctoralia')
        ON CONFLICT (id) DO UPDATE SET
-         amount_gross        = EXCLUDED.amount_gross,
-         amount_discount     = EXCLUDED.amount_discount,
-         amount_net          = EXCLUDED.amount_net,
-         payment_method      = EXCLUDED.payment_method,
-         template_name       = EXCLUDED.template_name,
-         template_id         = EXCLUDED.template_id,
-         settled_at          = EXCLUDED.settled_at,
-         intake_at           = EXCLUDED.intake_at,
-         cancelled_at        = EXCLUDED.cancelled_at,
-         intermediary_name   = EXCLUDED.intermediary_name,
-         status_original     = EXCLUDED.status_original,
-         status_type         = EXCLUDED.status_type,
-         room_id             = EXCLUDED.room_id,
-         lead_source         = EXCLUDED.lead_source,
-         agenda_name         = EXCLUDED.agenda_name,
-         patient_phone       = COALESCE(EXCLUDED.patient_phone, financial_settlements.patient_phone),
-         phone_normalized    = COALESCE(EXCLUDED.phone_normalized, financial_settlements.phone_normalized),
-         source_system       = 'doctoralia',
-         patient_name        = COALESCE(EXCLUDED.patient_name, financial_settlements.patient_name),
-         tratamiento_nombre  = COALESCE(EXCLUDED.tratamiento_nombre, financial_settlements.tratamiento_nombre),
-         email_hubspot       = COALESCE(EXCLUDED.email_hubspot, financial_settlements.email_hubspot),
-         ejecutivo_asignado  = COALESCE(EXCLUDED.ejecutivo_asignado, financial_settlements.ejecutivo_asignado),
-         ingreso_lead        = COALESCE(EXCLUDED.ingreso_lead, financial_settlements.ingreso_lead),
-         campana             = COALESCE(EXCLUDED.campana, financial_settlements.campana),
-         capi_sent           = COALESCE(financial_settlements.capi_sent, false)`,
+         amount_gross      = EXCLUDED.amount_gross,
+         amount_discount   = EXCLUDED.amount_discount,
+         amount_net        = EXCLUDED.amount_net,
+         payment_method    = EXCLUDED.payment_method,
+         template_name     = EXCLUDED.template_name,
+         template_id       = EXCLUDED.template_id,
+         settled_at        = EXCLUDED.settled_at,
+         intake_at         = EXCLUDED.intake_at,
+         cancelled_at      = EXCLUDED.cancelled_at,
+         intermediary_name = EXCLUDED.intermediary_name,
+         status_original   = EXCLUDED.status_original,
+         status_type       = EXCLUDED.status_type,
+         room_id           = EXCLUDED.room_id,
+         lead_source       = EXCLUDED.lead_source,
+         agenda_name       = EXCLUDED.agenda_name,
+         patient_phone     = COALESCE(EXCLUDED.patient_phone, financial_settlements.patient_phone),
+         phone_normalized  = COALESCE(EXCLUDED.phone_normalized, financial_settlements.phone_normalized),
+         source_system     = 'doctoralia'`,
       [
-        rawId,
-        CLINIC_ID,
-        finalAmountGross,
-        finalAmountDisc,
-        finalAmountNet,
-        payment,
-        tmplName,
-        tmplId,
+        rawId, CLINIC_ID, finalAmountGross, finalAmountDisc, finalAmountNet,
+        payment, tmplName, tmplId,
         settledAt.toISOString(),
         intakeAt?.toISOString() ?? null,
         cancelledAt?.toISOString() ?? null,
@@ -856,24 +683,12 @@ async function upsertDoctoraliaRow(row, i, params) {
         roomId,
         leadSource,
         agenda,
-        phoneRaw,
-        phoneNorm,
-        'doctoralia',
-        patientName,
-        tratamiento,
-        emailHubspot,
-        ejecutivo,
-        ingresoLead,
-        campana,
+        patientPhone,
       ]
     );
     return true;
-  } catch (dbErr) {
-    // Redact any potential sensitive fragments from DB errors
-    console.warn(`[sync-doctoralia] Skipping row ${i + 1} due to DB error`);
-    if (dbErr && dbErr.code) {
-      console.warn('  error code:', String(dbErr.code).substring(0, 10));
-    }
+  } catch (rowError) {
+    console.warn(`[sync-doctoralia] Skipping row ${i + 1} due to DB error: ${rowError.message}`);
     return false;
   }
 }
@@ -906,13 +721,7 @@ module.exports = {
 
 if (require.main === module) {
   main().catch(err => {
-    // Never log raw error messages from credential-related failures, as they may contain sensitive data
-    // (including data flowing from process.env.GOOGLE_SA_JSON etc.)
-    console.error('[sync-doctoralia] Fatal error occurred (see previous logs for details).');
-    if (err && (err.code || err.status)) {
-      // Log only the first 10 chars of the code/status to avoid accidental leakage of long sensitive strings
-      console.error('Error code/status:', String(err.code || err.status).substring(0, 10));
-    }
+    console.error('[sync-doctoralia] Fatal error:', err.message);
     process.exit(1);
   });
 }

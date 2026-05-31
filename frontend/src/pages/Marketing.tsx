@@ -111,7 +111,7 @@ interface CampaignTableProps {
   filteredCampaigns: CampaignRow[];
   currency: string;
   summary: MarketingState['summary'];
-  accountIds: readonly string[];
+  accountIds: string[];
 }
 
 function CampaignTable({ campaigns, filteredCampaigns, currency, summary, accountIds }: Readonly<CampaignTableProps>) {
@@ -301,7 +301,7 @@ const mapCampaignToChart = (c: CampaignRow) => ({
   CPC: Number((c.insights?.cpc ?? 0).toFixed(3)),
 })
 
-function AdsTable({ adsState, currency, accountIds }: Readonly<{ adsState: any; currency: string; accountIds: readonly string[] }>) {
+function AdsTable({ adsState, currency, accountIds }: Readonly<{ adsState: any; currency: string; accountIds: string[] }>) {
   if (adsState.loading) {
     return <p className="p-4 text-sm text-muted animate-pulse">Cargando anuncios…</p>
   }
@@ -464,7 +464,7 @@ function MarketingHeader({
   loading, periodLabel, accountIds, currency, campaigns, campaignId, setCampaignId,
   days, setDays, customFrom, setCustomFrom, customTo, setCustomTo, since2025,
 }: Readonly<{
-  loading: boolean; periodLabel: string; accountIds: readonly string[]; currency: string; campaigns: CampaignRow[];
+  loading: boolean; periodLabel: string; accountIds: string[]; currency: string; campaigns: CampaignRow[];
   campaignId: string; setCampaignId: (id: string) => void; days: number; setDays: (d: number) => void;
   customFrom: string; setCustomFrom: (s: string) => void; customTo: string; setCustomTo: (s: string) => void;
   since2025: string;

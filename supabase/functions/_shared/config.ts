@@ -22,21 +22,9 @@ export const SUPABASE_ANON_KEY = getEnv('SUPABASE_ANON_KEY');
 export const NUVANX_SUPABASE_SERVICE_ROLE_KEY = getEnv('NUVANX_SUPABASE_SERVICE_ROLE_KEY');
 export const MCP_API_KEY = getEnv('MCP_API_KEY');
 export const ENCRYPTION_KEY = getEnv('ENCRYPTION_KEY');
-if (!ENCRYPTION_KEY) {
-  console.error('[CONFIG] CRITICAL: ENCRYPTION_KEY is not set. All credential decryption will fail. Set this secret in Supabase Edge Functions Secrets.');
-}
 export const META_AD_ACCOUNT_IDS = getEnv('META_AD_ACCOUNT_IDS');
 export const META_APP_ID = getEnv('META_APP_ID');
 export const META_APP_SECRET = getEnv('META_APP_SECRET');
-
-// Active Meta Pixel ID for CAPI (must match the one receiving events in Meta Events Manager)
-export const META_PIXEL_ID = getEnv('META_PIXEL_ID') || '1405503384615251'; // Francisco Antonio Geraldo Lorenzo Pixel (active)
-
-// NUVANX main contact / WhatsApp phones (for lead matching and CAPI signals)
-export const NUVANX_WHATSAPP_PHONES = [
-  getEnv('NUVANX_WHATSAPP_PHONE_1') || '9084540447',
-  getEnv('NUVANX_WHATSAPP_PHONE_2') || '8265708501',
-].filter(Boolean);
 
 export function normalizeFrontendUrl(url: string): string | null {
   if (!url) return null;

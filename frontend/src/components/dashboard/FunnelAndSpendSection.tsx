@@ -62,7 +62,7 @@ export function FunnelAndSpendSection({
               <span className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em] group-hover:text-primary transition-colors">Inversión Meta</span>
               <DollarSign className="h-4 w-4 text-primary opacity-40 group-hover:opacity-100 transition-opacity" />
             </div>
-            <p className="text-4xl font-serif font-bold tracking-tight text-[#2C2825]">{metrics.spend != null ? `€${metrics.spend.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : '—'}</p>
+            <p className="text-4xl font-serif font-bold tracking-tight text-[#2C2825]">€{metrics.spend.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
             <div className="h-[1px] w-8 bg-primary/20 my-4" />
             <p className="text-[10px] text-[#8E8680] font-medium italic opacity-60">{periodLabel}</p>
           </div>
@@ -94,7 +94,7 @@ export function FunnelAndSpendSection({
               <span className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em] group-hover:text-primary transition-colors">CPC Medio</span>
               <ArrowUpRight className="h-4 w-4 text-primary opacity-40 group-hover:opacity-100 transition-opacity" />
             </div>
-            <p className="text-4xl font-serif font-bold tracking-tight text-[#2C2825]">{metrics.averageCpc != null ? `€${metrics.averageCpc.toLocaleString('es-ES')}` : '—'}</p>
+            <p className="text-4xl font-serif font-bold tracking-tight text-[#2C2825]">€{metrics.averageCpc.toLocaleString('es-ES')}</p>
             <div className="h-[1px] w-8 bg-primary/20 my-4" />
             <p className="text-[10px] text-[#8E8680] font-medium italic opacity-60">Coste por Click</p>
           </div>

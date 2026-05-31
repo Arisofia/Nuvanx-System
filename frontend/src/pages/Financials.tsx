@@ -4,8 +4,8 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { AlertCircle } from 'lucide-react'
 import { invokeApi } from '../lib/supabaseClient'
 import type { MonthlyTrend, FinancialsState } from '../types'
-import { SortableTable } from '../components/tables/SortableTable'
-import type { ColDef } from '../components/tables/SortableTable'
+import { SortableTable } from '../components/ui/SortableTable'
+import type { ColDef } from '../components/ui/SortableTable'
 
 const PRESETS = [
   { label: '30d', days: 30 },

@@ -1,10 +1,5 @@
-// ⚠️ DEPRECATED
-//
-// This file has been replaced by `toaster.tsx` for clarity.
-// 
-// Please import from './toaster' instead:
-//   import { Toaster } from './components/ui/toaster'
-//
-// This file will be deleted in a future cleanup.
+import { Toaster as HotToaster } from 'react-hot-toast'
 
-export { Toaster } from './toaster'
+export function Toaster() {
+  return <HotToaster />
+}

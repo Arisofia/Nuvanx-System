@@ -13,7 +13,6 @@ FROM public.users u
 WHERE m.user_id = u.id AND m.clinic_id IS NULL AND u.clinic_id IS NOT NULL;
 
 DROP POLICY IF EXISTS meta_organic_daily_select_own ON public.meta_organic_daily;
-DROP POLICY IF EXISTS meta_organic_daily_select ON public.meta_organic_daily;
 CREATE POLICY meta_organic_daily_select ON public.meta_organic_daily
   FOR SELECT TO authenticated
   USING ((SELECT auth.uid()) IS NOT NULL AND clinic_id = (SELECT public.current_clinic_id()));
@@ -34,7 +33,6 @@ FROM public.users u
 WHERE m.user_id = u.id AND m.clinic_id IS NULL AND u.clinic_id IS NOT NULL;
 
 DROP POLICY IF EXISTS meta_post_performance_select_own ON public.meta_post_performance;
-DROP POLICY IF EXISTS meta_post_performance_select ON public.meta_post_performance;
 CREATE POLICY meta_post_performance_select ON public.meta_post_performance
   FOR SELECT TO authenticated
   USING ((SELECT auth.uid()) IS NOT NULL AND clinic_id = (SELECT public.current_clinic_id()));
@@ -55,7 +53,6 @@ FROM public.users u
 WHERE m.user_id = u.id AND m.clinic_id IS NULL AND u.clinic_id IS NOT NULL;
 
 DROP POLICY IF EXISTS meta_ig_account_daily_select_own ON public.meta_ig_account_daily;
-DROP POLICY IF EXISTS meta_ig_account_daily_select ON public.meta_ig_account_daily;
 CREATE POLICY meta_ig_account_daily_select ON public.meta_ig_account_daily
   FOR SELECT TO authenticated
   USING ((SELECT auth.uid()) IS NOT NULL AND clinic_id = (SELECT public.current_clinic_id()));
@@ -76,7 +73,6 @@ FROM public.users u
 WHERE m.user_id = u.id AND m.clinic_id IS NULL AND u.clinic_id IS NOT NULL;
 
 DROP POLICY IF EXISTS meta_ig_media_performance_select_own ON public.meta_ig_media_performance;
-DROP POLICY IF EXISTS meta_ig_media_performance_select ON public.meta_ig_media_performance;
 CREATE POLICY meta_ig_media_performance_select ON public.meta_ig_media_performance
   FOR SELECT TO authenticated
   USING ((SELECT auth.uid()) IS NOT NULL AND clinic_id = (SELECT public.current_clinic_id()));
@@ -89,7 +85,6 @@ CREATE POLICY meta_ig_media_performance_service_role ON public.meta_ig_media_per
 
 -- 5) meta_daily_insights (Harden existing policies with initplan pattern)
 DROP POLICY IF EXISTS meta_daily_insights_select_own ON public.meta_daily_insights;
-DROP POLICY IF EXISTS meta_daily_insights_select ON public.meta_daily_insights;
 CREATE POLICY meta_daily_insights_select ON public.meta_daily_insights
   FOR SELECT TO authenticated
   USING ((SELECT auth.uid()) IS NOT NULL AND clinic_id = (SELECT public.current_clinic_id()));
@@ -102,7 +97,6 @@ CREATE POLICY meta_daily_insights_service_role ON public.meta_daily_insights
 
 -- 6) produccion_intermediarios (Scope to clinic)
 DROP POLICY IF EXISTS produccion_intermediarios_authenticated_select ON public.produccion_intermediarios;
-DROP POLICY IF EXISTS produccion_intermediarios_select ON public.produccion_intermediarios;
 CREATE POLICY produccion_intermediarios_select ON public.produccion_intermediarios
   FOR SELECT TO authenticated
   USING (

@@ -1,5 +1,4 @@
 import type { DashboardMetrics } from '../types'
-import { META_AD_ACCOUNT_IDS } from '../config/metaAccounts'
 
 export interface CombinedMetrics {
   metaEstimatedLeads: number
@@ -24,8 +23,7 @@ export interface DashboardQuality {
   metaIsReal: boolean
   crmIsReal: boolean
   doctoraliaIsReal: boolean
-  // Now sourced from centralized config when kpisResponse is incomplete
-  metaAccountIds?: readonly string[]
+  metaAccountIds?: string[]
 }
 
 export interface DashboardStateOptions {
@@ -125,7 +123,7 @@ export function buildDashboardState(options: DashboardStateOptions) {
   const canonicalMetaSpend = hasFiniteMetric(rawKpisMetaSpend) && (hasMultiAccountKpis(kpisResponse) || !hasCanonicalInsightsSpend(insightsResponse, campaigns))
     ? Number(rawKpisMetaSpend)
     : spend
-  const canonicalMetaLeads = Number(kpisResponse?.meta?.leads ?? metaConversions ?? 0) || 0
+  const canonicalMetaLeads = Number(kpisResponse?.meta?.leads ?? metaConversions)
   const doctoraliaPatients = Number(kpisResponse?.doctoralia?.newVerifiedPatients ?? 0)
   const doctoraliaVerifiedRevenue = Number(kpisResponse?.doctoralia?.verifiedRevenue ?? Number(metricsData.verifiedRevenue ?? 0))
   const metaCpl = calculateRatio(canonicalMetaSpend, canonicalMetaLeads)
@@ -178,10 +176,7 @@ export function buildDashboardState(options: DashboardStateOptions) {
       metaIsReal: kpisResponse?.meta?.is_real,
       crmIsReal: kpisResponse?.crm?.is_real,
       doctoraliaIsReal: kpisResponse?.doctoralia?.is_real,
-      // Prefer centralized source of truth (active accounts + future FB/IG assets)
-      metaAccountIds: Array.isArray(kpisResponse?.meta?.accountIds) && kpisResponse.meta.accountIds.length > 0
-        ? kpisResponse.meta.accountIds
-        : META_AD_ACCOUNT_IDS,
+      metaAccountIds: Array.isArray(kpisResponse?.meta?.accountIds) ? kpisResponse.meta.accountIds : [],
     }
   }
 }

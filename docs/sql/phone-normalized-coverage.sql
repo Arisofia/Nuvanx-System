@@ -1,15 +1,7 @@
 -- Phone normalization coverage checks for Lead Audit / Doctoralia matching.
--- Run these statements directly in the Supabase SQL editor.
---
--- Purpose: Quick visibility into how many records have a usable phone_normalized value.
--- This is critical for Doctoralia matching and CAPI quality.
---
--- Usage:
---   - Run this as a quick daily/weekly health check.
---   - Low coverage here usually explains poor Doctoralia matching rates.
---
--- For the full production release checklist (including traceability view coverage), use:
---   docs/sql/production-traceability-validation.sql
+-- Run these statements directly in the Supabase SQL editor and copy only the
+-- numeric outputs: total records and records with usable phone_normalized.
+-- For the full production release checklist, use docs/sql/production-traceability-validation.sql.
 
 -- Leads: cobertura de phone_normalized
 SELECT

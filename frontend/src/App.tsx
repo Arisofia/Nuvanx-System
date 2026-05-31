@@ -1,12 +1,12 @@
 import { lazy, Suspense, useContext, useEffect } from 'react'
-import { Toaster } from './components/ui/toaster'
+import { Toaster } from './components/ui/sonner'
+import { TooltipProvider } from './components/ui/tooltip'
 import { useLocation } from 'wouter'
 import ErrorBoundary from './components/ErrorBoundary'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, AuthContext } from './contexts/AuthContext'
 import Layout from './components/Layout'
 import MetaAccountsNotice from './components/MetaAccountsNotice'
-// Centralized Meta account notice (uses active accounts + pixel from src/config/metaAccounts)
 import NotFound from './pages/NotFound'
 import Login from './pages/Login'
 import { useMetaPageView, useMetaContextCapture } from './lib/metaPixel'
@@ -136,11 +136,13 @@ export default function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
-        <Toaster />
-        <AuthProvider>
-          <Router />
-          <MetaAccountsNotice />
-        </AuthProvider>
+        <TooltipProvider>
+          <Toaster />
+          <AuthProvider>
+            <Router />
+            <MetaAccountsNotice />
+          </AuthProvider>
+        </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>
   )

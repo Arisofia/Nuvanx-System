@@ -35,7 +35,7 @@ outputs:
     value: '${{ steps.creds.outputs.resolved_db_password }}'
   skipped:
     description: 'True if the link step was skipped due to deterministic errors'
-    value: "${{ steps.link.outputs.skipped || 'false' }}"
+    value: '${{ steps.link.outputs.skipped || 'false' }}'
   session_url:
     description: 'Resolved connection string (Session Pooler on 5432 preferred) for use with --db-url and Supabase CLI commands'
     value: '${{ steps.resolve-url.outputs.session_url || '' }}'
@@ -49,13 +49,13 @@ runs:
       # Override via input for reproducibility or to test a specific version.
       uses: supabase/setup-cli@v1
       with:
-        version: '${{ inputs.supabase_cli_version }}'
+        version: ${{ inputs.supabase_cli_version }}
 
     - name: Validate required inputs
       shell: bash
       env:
-        INPUT_PROJECT_REF: '${{ inputs.project_ref }}'
-        SUPABASE_ACCESS_TOKEN: '${{ inputs.supabase_access_token }}'
+        INPUT_PROJECT_REF: ${{ inputs.project_ref }}
+        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
       run: |
         set -euo pipefail
         if [ -z "$INPUT_PROJECT_REF" ]; then
@@ -71,8 +71,8 @@ runs:
       id: creds
       shell: bash
       env:
-        INPUT_DATABASE_URL: '${{ inputs.database_url }}'
-        INPUT_SUPABASE_DB_PASSWORD: '${{ inputs.supabase_db_password }}'
+        INPUT_DATABASE_URL: ${{ inputs.database_url }}
+        INPUT_SUPABASE_DB_PASSWORD: ${{ inputs.supabase_db_password }}
       run: |
         set -euo pipefail
         RESOLVED_DB_PASSWORD="$INPUT_SUPABASE_DB_PASSWORD"
@@ -82,9 +82,9 @@ runs:
           # Falls back to sed for unusual environments without python3.
           if command -v python3 >/dev/null 2>&1; then
             RESOLVED_DB_PASSWORD=$(python3 -c '
-              import sys, urllib.parse
-              print(urllib.parse.urlparse(sys.argv[1]).password or "")
-            ' "$INPUT_DATABASE_URL")
+import sys, urllib.parse
+print(urllib.parse.urlparse(sys.argv[1]).password or "")
+' "$INPUT_DATABASE_URL")
           fi
           if [ -z "$RESOLVED_DB_PASSWORD" ]; then
             # Fallback (no percent-decoding, but covers basic cases)
@@ -100,9 +100,9 @@ runs:
       id: resolve-url
       shell: bash
       env:
-        INPUT_DATABASE_URL: '${{ inputs.database_url }}'
-        INPUT_SUPABASE_DB_PASSWORD: '${{ steps.creds.outputs.resolved_db_password }}'
-        INPUT_SUPABASE_PROJECT_REF: '${{ inputs.project_ref }}'
+        INPUT_DATABASE_URL: ${{ inputs.database_url }}
+        INPUT_SUPABASE_DB_PASSWORD: ${{ steps.creds.outputs.resolved_db_password }}
+        INPUT_SUPABASE_PROJECT_REF: ${{ inputs.project_ref }}
       run: |
         set -euo pipefail
 
@@ -115,19 +115,19 @@ runs:
           # GitHub runners often have unreliable IPv6, so we strongly prefer Session Pooler (port 5432).
           if [[ "${INPUT_DATABASE_URL}" == *"pooler.supabase"* ]] && [[ "${INPUT_DATABASE_URL}" == *":6543/"* || "${INPUT_DATABASE_URL}" == *"pgbouncer=true"* ]]; then
             SESSION_URL=$(python3 -c '
-              import sys, urllib.parse
-              url = sys.argv[1]
-              p = urllib.parse.urlparse(url)
-              qs = urllib.parse.parse_qs(p.query, keep_blank_values=True)
-              qs.pop("pgbouncer", None)
-              new_query = urllib.parse.urlencode(qs, doseq=True)
-              new_netloc = p.netloc.replace(":6543", ":5432") if ":6543" in p.netloc else p.netloc
-              new_url = urllib.parse.urlunparse((p.scheme, new_netloc, p.path, p.params, new_query, p.fragment))
-              if "sslmode" not in new_url.lower():
-                  sep = "&" if new_query else ""
-                  new_url = new_url + (sep + "sslmode=require") if "?" in new_url or new_query else new_url + "?sslmode=require"
-              print(new_url)
-            ' "$INPUT_DATABASE_URL")
+import sys, urllib.parse
+url = sys.argv[1]
+p = urllib.parse.urlparse(url)
+qs = urllib.parse.parse_qs(p.query, keep_blank_values=True)
+qs.pop("pgbouncer", None)
+new_query = urllib.parse.urlencode(qs, doseq=True)
+new_netloc = p.netloc.replace(":6543", ":5432") if ":6543" in p.netloc else p.netloc
+new_url = urllib.parse.urlunparse((p.scheme, new_netloc, p.path, p.params, new_query, p.fragment))
+if "sslmode" not in new_url.lower():
+    sep = "&" if new_query else ""
+    new_url = new_url + (sep + "sslmode=require") if "?" in new_url or new_query else new_url + "?sslmode=require"
+print(new_url)
+' "$INPUT_DATABASE_URL")
             echo "::warning::DATABASE_URL looked like Transaction Pooler. Rewrote to Session Pooler (port 5432)."
           else
             SESSION_URL="$INPUT_DATABASE_URL"
@@ -152,9 +152,9 @@ runs:
       if: ${{ inputs.skip_link != 'true' }}
       shell: bash
       env:
-        INPUT_PROJECT_REF: '${{ inputs.project_ref }}'
-        RESOLVED_DB_PASSWORD: '${{ steps.creds.outputs.resolved_db_password }}'
-        SUPABASE_ACCESS_TOKEN: '${{ inputs.supabase_access_token }}'
+        INPUT_PROJECT_REF: ${{ inputs.project_ref }}
+        RESOLVED_DB_PASSWORD: ${{ steps.creds.outputs.resolved_db_password }}
+        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
       run: |
         set -euo pipefail
         is_deterministic_link_error() {
@@ -229,7 +229,7 @@ runs:
       if: ${{ steps.link.outputs.skipped != 'true' }}
       shell: bash
       env:
-        ACTION_COMMAND: '${{ inputs.command }}'
+        ACTION_COMMAND: ${{ inputs.command }}
       run: |
         set -euo pipefail
         # Safer script generation: avoid command injection risks from untrusted input.
@@ -245,9 +245,9 @@ runs:
       if: ${{ steps.link.outputs.skipped != 'true' }}
       shell: bash
       env:
-        SUPABASE_ACCESS_TOKEN: '${{ inputs.supabase_access_token }}'
-        SUPABASE_DB_PASSWORD_INPUT: '${{ steps.creds.outputs.resolved_db_password }}'
-        SCRIPT_PATH: '${{ steps.write-script.outputs.script_path }}'
+        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
+        SUPABASE_DB_PASSWORD_INPUT: ${{ steps.creds.outputs.resolved_db_password }}
+        SCRIPT_PATH: ${{ steps.write-script.outputs.script_path }}
       run: |
         set -euo pipefail
 

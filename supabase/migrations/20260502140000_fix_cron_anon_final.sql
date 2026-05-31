@@ -1,0 +1,23 @@
+-- =============================================================================
+-- Supabase advisor: auth_allow_anonymous_sign_ins on cron.job / job_run_details
+--
+-- STATUS: Cannot be remediated via SQL migrations on hosted Supabase.
+--
+-- Root cause: pg_cron creates its default policies with polroles = {} (PUBLIC),
+-- which the advisor interprets as allowing anonymous access. The cron schema
+-- is owned by the supabase_admin superuser role; the migration runner (postgres)
+-- cannot DROP or CREATE policies on tables it does not own.
+--
+-- Actual security impact: NONE
+--   • The cron schema is NOT exposed in PostgREST
+--     (config.toml: schemas = ["public", "graphql_public"])
+--   • The anon role has no GRANT on cron.* tables
+--   • Anonymous clients cannot reach cron.job via any Supabase API surface
+--
+-- This migration is intentionally a no-op. The advisor warning will persist
+-- until Supabase updates pg_cron's default policy on their hosted platform.
+-- Tracked at: https://github.com/supabase/supabase/issues (pg_cron RLS)
+-- =============================================================================
+
+-- No SQL changes — documentation only.
+SELECT 'cron policy advisory: no-op, see migration comment for rationale'::text AS info;

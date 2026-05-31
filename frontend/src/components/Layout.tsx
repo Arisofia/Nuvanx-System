@@ -3,7 +3,6 @@ import { Link, useLocation } from 'wouter'
 import { Menu, LogOut, Home, Activity, Users, Megaphone, DollarSign, BarChart2, Plug, Sparkles, FileBarChart2, GitMerge } from 'lucide-react'
 import { Button } from './ui/button'
 import logo from '../assets/logo.png'
-import { useAuth } from '../contexts/AuthContext'
 
 const navItems = [
   { label: 'Dashboard', href: '/dashboard', icon: Home },
@@ -22,7 +21,6 @@ const navItems = [
 export default function Layout({ children }: Readonly<{ children: React.ReactNode }>) {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [location] = useLocation()
-  const { signOut } = useAuth()
 
   return (
     <div className="flex h-screen bg-[#FAF7F2] text-foreground font-sans">
@@ -65,12 +63,7 @@ export default function Layout({ children }: Readonly<{ children: React.ReactNod
         </nav>
 
         <div className="p-6 border-t border-border/40">
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            className="w-full gap-3 justify-start px-4 py-6 rounded-xl hover:bg-red-50 hover:text-red-500 transition-colors text-muted"
-            onClick={() => void signOut()}
-          >
+          <Button variant="ghost" size="sm" className="w-full gap-3 justify-start px-4 py-6 rounded-xl hover:bg-red-50 hover:text-red-500 transition-colors text-muted">
             <LogOut className="w-4 h-4" />
             {sidebarOpen && <span className="text-sm font-medium">Cerrar Sesión</span>}
           </Button>

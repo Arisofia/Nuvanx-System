@@ -1,12 +1,6 @@
 import { useState } from 'react'
 
-interface Template {
-  label: string
-  category: string
-  prompt: string
-}
-
-const TEMPLATES: Template[] = [
+const TEMPLATES = [
   {
     label: 'WhatsApp Follow-up',
     category: 'WhatsApp',
@@ -29,21 +23,18 @@ const TEMPLATES: Template[] = [
 
 const ALL_CATEGORIES = ['All', ...Array.from(new Set(TEMPLATES.map((t) => t.category)))]
 
-interface TemplateGalleryProps {
+interface Props {
   onSelect: (prompt: string) => void
 }
 
-export function TemplateGallery({ onSelect }: TemplateGalleryProps) {
-  const [activeCategory, setActiveCategory] = useState<string>('All')
+export function TemplateGallery({ onSelect }: Props) {
+  const [activeCategory, setActiveCategory] = useState('All')
 
   const filtered =
-    activeCategory === 'All'
-      ? TEMPLATES
-      : TEMPLATES.filter((t) => t.category === activeCategory)
+    activeCategory === 'All' ? TEMPLATES : TEMPLATES.filter((t) => t.category === activeCategory)
 
   return (
     <div className="space-y-3">
-      {/* Category Filter */}
       <div className="flex flex-wrap gap-2">
         {ALL_CATEGORIES.map((cat) => (
           <button
@@ -54,32 +45,29 @@ export function TemplateGallery({ onSelect }: TemplateGalleryProps) {
                 ? 'bg-primary text-primary-foreground border-primary'
                 : 'border-[#5c4a33] text-muted hover:border-primary hover:text-foreground'
             }`}
-            aria-pressed={activeCategory === cat}
           >
             {cat}
           </button>
         ))}
       </div>
 
-      {/* Templates */}
       <div className="grid grid-cols-1 gap-2">
-        {filtered.map((template) => (
+        {filtered.map((t) => (
           <button
-            key={template.label}
-            onClick={() => onSelect(template.prompt)}
-            className="text-left p-3 rounded-lg border border-border bg-surface hover:border-muted hover:bg-card transition-colors focus:outline-none focus:ring-2 focus:ring-primary"
+            key={t.label}
+            onClick={() => onSelect(t.prompt)}
+            className="text-left p-3 rounded-lg border border-border bg-surface hover:border-muted hover:bg-card transition-colors"
           >
             <div className="flex items-start justify-between gap-2">
-              <span className="text-sm font-medium text-foreground">{template.label}</span>
+              <span className="text-sm font-medium text-foreground">{t.label}</span>
               <span className="text-xs px-2 py-0.5 rounded bg-card text-muted border border-border shrink-0">
-                {template.category}
+                {t.category}
               </span>
             </div>
-            <p className="text-xs text-muted mt-1 line-clamp-2">{template.prompt}</p>
+            <p className="text-xs text-muted mt-1 line-clamp-2">{t.prompt}</p>
           </button>
         ))}
       </div>
     </div>
   )
 }
-

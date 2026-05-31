@@ -4,10 +4,9 @@
  * Loads the official Meta Pixel snippet on demand and exposes a small typed
  * surface (`initMetaPixel`, `trackMetaEvent`, `useMetaPageView`).
  *
- * The pixel ID is read from `import.meta.env.VITE_META_PIXEL_ID`.
- * Current active pixel (as of 2026-06): 1405503384615251 (Francisco Antonio Geraldo Lorenzo Pixel).
- * This value is centralized in .env files and should match the server-side CAPI pixel
- * for proper event deduplication (client eventID ↔ server event_id).
+ * The pixel ID is read from `import.meta.env.VITE_META_PIXEL_ID` so that it
+ * stays out of the source tree. If the variable is empty/undefined the helper
+ * is a no-op (useful for local dev to avoid polluting Meta with test events).
  *
  * Events fired here can be deduplicated against server-side CAPI events by
  * passing a stable `eventId` (Meta uses `eventID` on the client + `event_id`

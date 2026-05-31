@@ -1,18 +1,7 @@
-# CODEOWNERS - Nuvanx System
-#
-# Primary owner for the entire repository.
-# This file is intentionally minimal because the project is currently maintained
-# by a small team / single lead developer.
-#
-# IMPORTANT:
-# - All PRs that touch sensitive areas (migrations, security workflows, secrets scripts)
-#   should receive extra scrutiny even if this file only requires one approval.
-# - Consider adding backup owners or a team alias when the team grows.
+# Code owners for Nuvanx System
+# Update these values if the repository or team structure changes.
 
-*          @Arisofia
-
-# Critical infrastructure - same owner but highlighted for visibility
-/.github/  @Arisofia
+*         @Arisofia
+/frontend/ @Arisofia
 /supabase/ @Arisofia
 /scripts/  @Arisofia
-/frontend/ @Arisofia

@@ -1,4 +1,4 @@
-import DataModeBadge from './DataModeBadge'
+import DataModeBadge from '../ui/DataModeBadge'
 import { MetaAccountsInline } from '../MetaAccountsNotice'
 
 interface DashboardHeaderProps {

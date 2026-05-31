@@ -11,7 +11,7 @@ import { ENCRYPTION_KEY, META_APP_SECRET, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_UR
  *
  * Throws if SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY are not set.
  */
-function getSupabase() {
+function createSupabaseAdminClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be configured for daily-aggregates.');
   }
@@ -19,6 +19,8 @@ function getSupabase() {
     auth: { persistSession: false },
   });
 }
+
+const supabase = createSupabaseAdminClient()
 
 // ── Encryption Helpers ──────────────────────────────────────────────────────
 
@@ -199,9 +201,10 @@ async function fetchAllClinicsMetaInsights(days: number) {
 }
 
 
-async function handleMetaDailyInsights(body: any) {
+async function handleMetaDailyInsights(req: Request) {
   try {
-    const days = typeof body.days === 'number' && Number.isFinite(body.days) ? body.days : 2;
+    const payload = await req.json().catch(() => ({} as Record<string, unknown>));
+    const days = typeof payload.days === 'number' && Number.isFinite(payload.days) ? payload.days : 2;
 
     console.log(`[Daily] Fetching Meta insights for last ${days} days`);
     const result = await fetchAllClinicsMetaInsights(days);
@@ -230,7 +233,7 @@ Deno.serve(async (req: Request) => {
   const { action, days = 2 } = body;
 
   if (action === 'fetch_meta_insights' || action === 'meta-daily-insights') {
-    return await handleMetaDailyInsights(body);
+    return await handleMetaDailyInsights(req);
   }
 
   // Fallback to existing logic if no action is provided (for legacy compatibility)
