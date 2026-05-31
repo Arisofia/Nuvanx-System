@@ -84,8 +84,8 @@ runs:
           # instead of relying on this extraction.
           #
           # Supported formats:
-          #   postgres://user:password@host:5432/dbname
-          #   postgresql://user:pass-with-dashes_and.dots@host/dbname
+          #   postgres://user:${DB_PASSWORD}@host:5432/dbname
+          #   postgresql://user:${SUPABASE_DB_PASSWORD}@host/dbname
           RESOLVED_DB_PASSWORD=$(
             printf '%s\n' "$INPUT_DATABASE_URL" \
               | sed -n 's|^[a-zA-Z0-9+.-]*://[^:]*:\([^@]*\)@.*$|\1|p' \
@@ -137,6 +137,15 @@ runs:
           DB_HOST="${DB_USER_PASS_HOST_PORT%%:*}"
           DB_PORT="${DB_USER_PASS_HOST_PORT#*:}"
           [ "$DB_HOST" = "$DB_USER_PASS_HOST_PORT" ] && DB_PORT=""
+
+          # Normalize a common secret typo before handing the URL to Supabase CLI.
+          # Supabase pooler hosts use pooler.supabase.com; pooler.supabase.co does not resolve.
+          HOST_NORMALIZED=false
+          if [[ "$DB_HOST" == *.pooler.supabase.co ]]; then
+            DB_HOST="${DB_HOST%.pooler.supabase.co}.pooler.supabase.com"
+            HOST_NORMALIZED=true
+            echo "::warning::DATABASE_URL pooler host ended with .supabase.co. Normalized it to .supabase.com before running Supabase CLI."
+          fi
 
           # Split path from query string
           DB_PATH="${DB_PATH_QUERY%%\?*}"
@@ -199,7 +208,17 @@ runs:
             echo "::warning::DATABASE_URL looked like Transaction Pooler. Rewrote to Session Pooler (port 5432) and normalized query parameters."
 
           else
-            SESSION_URL="$INPUT_DATABASE_URL"
+            if [ "$HOST_NORMALIZED" = true ]; then
+              DB_HOST_PORT_REWRITTEN="${DB_HOST}${DB_PORT:+:$DB_PORT}"
+              DB_AUTH_REWRITTEN="${DB_AUTH_HOST_PORT/$DB_USER_PASS_HOST_PORT/$DB_HOST_PORT_REWRITTEN}"
+              if [ -n "$DB_SCHEME" ]; then
+                SESSION_URL="${DB_SCHEME}://${DB_AUTH_REWRITTEN}/${DB_PATH_QUERY}"
+              else
+                SESSION_URL="${DB_AUTH_REWRITTEN}/${DB_PATH_QUERY}"
+              fi
+            else
+              SESSION_URL="$INPUT_DATABASE_URL"
+            fi
           fi
 
         elif [ -n "$RESOLVED_DB_PASSWORD" ] && [ -n "${INPUT_SUPABASE_PROJECT_REF:-}" ]; then
