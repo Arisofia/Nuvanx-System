@@ -49,7 +49,7 @@ print_migration_failure_summary() {
   local summary sanitized_summary
   summary=$(printf '%s\n' "$output" | awk '
     BEGIN { remaining = 0; found = 0 }
-    /ERROR:|SQLSTATE|ErrorResponse|cannot change return type|duplicate key|permission denied|failed to connect|network is unreachable|password authentication failed|could not find valid entry for job|relation .* does not exist|column .* does not exist|function .* does not exist|type .* does not exist|invalid input syntax|checksum|failed to parse|error parsing/ {
+    /ERROR:|SQLSTATE|ErrorResponse|cannot change return type|duplicate key|permission denied|failed to connect|network is unreachable|hostname resolving error|no such host|password authentication failed|could not find valid entry for job|relation .* does not exist|column .* does not exist|function .* does not exist|type .* does not exist|invalid input syntax|checksum|failed to parse|error parsing/ {
       if (!found) { found = 1; remaining = 40 }
     }
     found && remaining > 0 { print; remaining-- }
@@ -80,6 +80,8 @@ is_deterministic_migration_error() {
     'syntax error'
     'permission denied'
     'not a valid migration'
+    'hostname resolving error'
+    'no such host'
     'SQLSTATE 42P01'
     'could not find valid entry for job'
     'relation .* does not exist'
