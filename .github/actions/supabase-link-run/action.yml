@@ -73,10 +73,26 @@ runs:
       run: |
         set -euo pipefail
         RESOLVED_DB_PASSWORD="$INPUT_SUPABASE_DB_PASSWORD"
+
         if [ -z "$RESOLVED_DB_PASSWORD" ] && [ -n "$INPUT_DATABASE_URL" ]; then
-          # Extraer password de la URL (no hace percent-decoding, pero cubre casos normales)
-          RESOLVED_DB_PASSWORD=$(echo "$INPUT_DATABASE_URL" | sed -n 's|.*://[^:]*:\([^@]*\)@.*|\1|p' || echo "")
+          # Best-effort password extraction from DATABASE_URL.
+          # LIMITATIONS — only supports URLs where:
+          #   - The username contains no colons
+          #   - The password contains no '@' characters
+          #   - The host is not an IPv6 literal (no raw brackets)
+          # If your URL is more complex, set supabase_db_password explicitly
+          # instead of relying on this extraction.
+          #
+          # Supported formats:
+          #   postgres://user:password@host:5432/dbname
+          #   postgresql://user:pass-with-dashes_and.dots@host/dbname
+          RESOLVED_DB_PASSWORD=$(
+            printf '%s\n' "$INPUT_DATABASE_URL" \
+              | sed -n 's|^[a-zA-Z0-9+.-]*://[^:]*:\([^@]*\)@.*$|\1|p' \
+              || printf ''
+          )
         fi
+
         if [ -n "$RESOLVED_DB_PASSWORD" ]; then
           echo "::add-mask::$RESOLVED_DB_PASSWORD"
         fi
@@ -95,22 +111,97 @@ runs:
         RESOLVED_DB_PASSWORD="$INPUT_SUPABASE_DB_PASSWORD"
 
         if [ -n "${INPUT_DATABASE_URL:-}" ]; then
-          # Si es Transaction Pooler (6543 o pgbouncer=true), reescribir a Session (5432) y añadir sslmode=require
-          if [[ "${INPUT_DATABASE_URL}" == *"pooler.supabase"* ]] && { [[ "${INPUT_DATABASE_URL}" == *":6543/"* ]] || [[ "${INPUT_DATABASE_URL}" == *"pgbouncer=true"* ]]; }; then
-            SESSION_URL="${INPUT_DATABASE_URL/:6543/:5432}"
-            SESSION_URL="${SESSION_URL//pgbouncer=true/}"
-            if [[ "$SESSION_URL" != *"sslmode="* ]]; then
-              if [[ "$SESSION_URL" == *"?"* ]]; then
-                SEP="&"
-              else
-                SEP="?"
-              fi
-              SESSION_URL="${SESSION_URL}${SEP}sslmode=require"
+
+          # ── Structured URL parsing ────────────────────────────────────────────
+          # Split scheme
+          DB_SCHEME="${INPUT_DATABASE_URL%%://*}"
+          DB_URL_NO_SCHEME="${INPUT_DATABASE_URL#*://}"
+          if [ "$DB_SCHEME" = "$INPUT_DATABASE_URL" ]; then
+            # No '://' found
+            DB_SCHEME=""
+            DB_REST="$INPUT_DATABASE_URL"
+          else
+            DB_REST="$DB_URL_NO_SCHEME"
+          fi
+
+          # Split authority (user:pass@host:port) from path+query
+          DB_AUTH_HOST_PORT="${DB_REST%%/*}"
+          DB_PATH_QUERY="${DB_REST#*/}"
+
+          # Split host:port from user:pass@ section
+          DB_USER_PASS_HOST_PORT="${DB_AUTH_HOST_PORT##*@}"
+          DB_USER_PASS_PART="${DB_AUTH_HOST_PORT%"$DB_USER_PASS_HOST_PORT"}"
+          DB_USER_PASS_PART="${DB_USER_PASS_PART%@}"
+
+          # Split host and port
+          DB_HOST="${DB_USER_PASS_HOST_PORT%%:*}"
+          DB_PORT="${DB_USER_PASS_HOST_PORT#*:}"
+          [ "$DB_HOST" = "$DB_USER_PASS_HOST_PORT" ] && DB_PORT=""
+
+          # Split path from query string
+          DB_PATH="${DB_PATH_QUERY%%\?*}"
+          DB_QUERY=""
+          [ "$DB_PATH_QUERY" != "$DB_PATH" ] && DB_QUERY="${DB_PATH_QUERY#*\?}"
+
+          # ── Detect transaction pooler ─────────────────────────────────────────
+          # Only match on the actual host+port or the discrete pgbouncer query param —
+          # never on broad substring matches that could hit unrelated URL segments.
+          TRANSACTION_POOLER=false
+          if [[ "$DB_HOST" == *"pooler.supabase"* ]] && [ "$DB_PORT" = "6543" ]; then
+            TRANSACTION_POOLER=true
+          elif [ -n "$DB_QUERY" ]; then
+            IFS='&' read -r -a _QPARAMS <<< "$DB_QUERY"
+            for _p in "${_QPARAMS[@]}"; do
+              [ "$_p" = "pgbouncer=true" ] && TRANSACTION_POOLER=true && break
+            done
+          fi
+
+          if [ "$TRANSACTION_POOLER" = true ]; then
+
+            # ── Rewrite to session pooler ───────────────────────────────────────
+            # Rewrite port only when the host confirms it is a Supabase pooler
+            [[ "$DB_HOST" == *"pooler.supabase"* ]] && DB_PORT="5432"
+            DB_HOST_PORT_REWRITTEN="${DB_HOST}${DB_PORT:+:$DB_PORT}"
+
+            # Rebuild query: drop pgbouncer=true, ensure sslmode=require
+            NEW_QUERY_PARAMS=()
+            if [ -n "$DB_QUERY" ]; then
+              IFS='&' read -r -a _QPARAMS <<< "$DB_QUERY"
+              for _p in "${_QPARAMS[@]}"; do
+                case "$_p" in
+                  pgbouncer=true | "") ;;           # drop
+                  *) NEW_QUERY_PARAMS+=("$_p") ;;
+                esac
+              done
             fi
-            echo "::warning::DATABASE_URL looked like Transaction Pooler. Rewrote to Session Pooler (port 5432)."
+
+            HAS_SSLMODE=false
+            for _p in "${NEW_QUERY_PARAMS[@]}"; do
+              case "$_p" in sslmode=*) HAS_SSLMODE=true ;; esac
+            done
+            [ "$HAS_SSLMODE" = false ] && NEW_QUERY_PARAMS+=("sslmode=require")
+
+            if [ "${#NEW_QUERY_PARAMS[@]}" -gt 0 ]; then
+              _QS="$(IFS='&'; echo "${NEW_QUERY_PARAMS[*]}")"
+              DB_PATH_QUERY_REWRITTEN="${DB_PATH}?${_QS}"
+            else
+              DB_PATH_QUERY_REWRITTEN="${DB_PATH}"
+            fi
+
+            # Reconstruct full URL, replacing only the host:port segment
+            DB_AUTH_REWRITTEN="${DB_AUTH_HOST_PORT/$DB_USER_PASS_HOST_PORT/$DB_HOST_PORT_REWRITTEN}"
+            if [ -n "$DB_SCHEME" ]; then
+              SESSION_URL="${DB_SCHEME}://${DB_AUTH_REWRITTEN}/${DB_PATH_QUERY_REWRITTEN}"
+            else
+              SESSION_URL="${DB_AUTH_REWRITTEN}/${DB_PATH_QUERY_REWRITTEN}"
+            fi
+
+            echo "::warning::DATABASE_URL looked like Transaction Pooler. Rewrote to Session Pooler (port 5432) and normalized query parameters."
+
           else
             SESSION_URL="$INPUT_DATABASE_URL"
           fi
+
         elif [ -n "$RESOLVED_DB_PASSWORD" ] && [ -n "${INPUT_SUPABASE_PROJECT_REF:-}" ]; then
           # Fallback: construct direct connection (requires IPv4 add-on in Supabase)
           SESSION_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$RESOLVED_DB_PASSWORD" "$INPUT_SUPABASE_PROJECT_REF")
