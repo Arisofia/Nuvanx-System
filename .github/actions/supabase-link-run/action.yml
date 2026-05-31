@@ -32,21 +32,18 @@ inputs:
 outputs:
   resolved_db_password:
     description: 'Resolved DB password extracted from inputs or DATABASE_URL'
-    value: '${{ steps.creds.outputs.resolved_db_password }}'
+    value: ${{ steps.creds.outputs.resolved_db_password }}
   skipped:
     description: 'True if the link step was skipped due to deterministic errors'
-    value: '${{ steps.link.outputs.skipped || 'false' }}'
+    value: ${{ steps.link.outputs.skipped || false }}
   session_url:
     description: 'Resolved connection string (Session Pooler on 5432 preferred) for use with --db-url and Supabase CLI commands'
-    value: '${{ steps.resolve-url.outputs.session_url || '' }}'
+    value: ${{ steps.resolve-url.outputs.session_url }}
 
 runs:
   using: 'composite'
   steps:
     - name: Setup Supabase CLI
-      # The setup-cli@v1 action installs the requested version of the Supabase CLI.
-      # Default is pinned to a recent stable release (updated periodically for features/fixes).
-      # Override via input for reproducibility or to test a specific version.
       uses: supabase/setup-cli@v1
       with:
         version: ${{ inputs.supabase_cli_version }}
@@ -81,10 +78,11 @@ runs:
           # Prefer Python urllib.parse (handles percent-encoding correctly, e.g. %40 for @ in passwords).
           # Falls back to sed for unusual environments without python3.
           if command -v python3 >/dev/null 2>&1; then
-            RESOLVED_DB_PASSWORD=$(python3 -c '
+            RESOLVED_DB_PASSWORD=$(python3 - << 'EOF'
 import sys, urllib.parse
 print(urllib.parse.urlparse(sys.argv[1]).password or "")
-' "$INPUT_DATABASE_URL")
+EOF
+"$INPUT_DATABASE_URL")
           fi
           if [ -z "$RESOLVED_DB_PASSWORD" ]; then
             # Fallback (no percent-decoding, but covers basic cases)
@@ -113,8 +111,8 @@ print(urllib.parse.urlparse(sys.argv[1]).password or "")
           #
           # CONFIRMED: The direct db.<ref>.supabase.co hostname for this project is IPv6-only.
           # GitHub runners often have unreliable IPv6, so we strongly prefer Session Pooler (port 5432).
-          if [[ "${INPUT_DATABASE_URL}" == *"pooler.supabase"* ]] && [[ "${INPUT_DATABASE_URL}" == *":6543/"* || "${INPUT_DATABASE_URL}" == *"pgbouncer=true"* ]]; then
-            SESSION_URL=$(python3 -c '
+          if [[ "${INPUT_DATABASE_URL}" == *"pooler.supabase"* ]] && { [[ "${INPUT_DATABASE_URL}" == *":6543/"* ]] || [[ "${INPUT_DATABASE_URL}" == *"pgbouncer=true"* ]]; }; then
+            SESSION_URL=$(python3 - << 'EOF'
 import sys, urllib.parse
 url = sys.argv[1]
 p = urllib.parse.urlparse(url)
@@ -127,7 +125,8 @@ if "sslmode" not in new_url.lower():
     sep = "&" if new_query else ""
     new_url = new_url + (sep + "sslmode=require") if "?" in new_url or new_query else new_url + "?sslmode=require"
 print(new_url)
-' "$INPUT_DATABASE_URL")
+EOF
+"$INPUT_DATABASE_URL")
             echo "::warning::DATABASE_URL looked like Transaction Pooler. Rewrote to Session Pooler (port 5432)."
           else
             SESSION_URL="$INPUT_DATABASE_URL"
@@ -202,7 +201,6 @@ print(new_url)
             output=$(run_link_once 2>&1) || {
               local exit_code=$?
               echo "$output"
-              # Correct bash syntax: call the function as is_deterministic_link_error "$output" (no parentheses)
               if is_deterministic_link_error "$output"; then
                 echo "::warning::Supabase link skipped (deterministic error): $output"
                 echo "skipped=true" >> "$GITHUB_OUTPUT"
@@ -233,8 +231,6 @@ print(new_url)
       run: |
         set -euo pipefail
         # Safer script generation: avoid command injection risks from untrusted input.
-        # Use unique temp file under $RUNNER_TEMP (recommended by GitHub) so multiple
-        # invocations of this composite action in the same job cannot collide.
         SCRIPT_PATH=$(mktemp "${RUNNER_TEMP:-/tmp}/supabase_command.XXXXXX.sh")
         printf '%s\n' '#!/usr/bin/env bash' > "$SCRIPT_PATH"
         printf '%s\n' "$ACTION_COMMAND" >> "$SCRIPT_PATH"
@@ -256,7 +252,6 @@ print(new_url)
         fi
 
         # SESSION_URL is provided by the preceding "Resolve Session URL" step via $GITHUB_ENV.
-        # It is already masked and exported for the user's command script.
         if [ -z "${SESSION_URL:-}" ]; then
           echo "::warning::SESSION_URL was not resolved by the action. Your command may need to provide explicit --db-url or --project-ref flags."
         fi
