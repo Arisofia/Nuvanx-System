@@ -86,6 +86,7 @@ jobs:
           META_AD_ACCOUNT_ID: ${{ env.META_AD_ACCOUNT_ID }}
           META_AD_ACCOUNT_IDS: ${{ env.META_AD_ACCOUNT_IDS }}
           META_APP_SECRET: ${{ env.META_APP_SECRET }}
+          # si no hay secreto, usa 'v20.0' como default
           META_GRAPH_VERSION: ${{ env.META_GRAPH_VERSION || 'v20.0' }}
 
       - name: Fetch Meta Daily Insights
@@ -104,6 +105,7 @@ jobs:
           fi
 
           echo "Fetching Meta insights for last $DAYS days..."
+
           RESPONSE=$(curl --fail-with-body --show-error --silent --max-time 60 -X POST "${SUPABASE_URL}/functions/v1/daily-aggregates" \
             -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
             -H "Content-Type: application/json" \
