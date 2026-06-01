@@ -31,7 +31,7 @@ on:
         required: false
       SUPABASE_DB_PASSWORD:
         required: false
-      VITE_MCP_API_KEY:
+      MCP_API_KEY:
         required: false
 
 env:

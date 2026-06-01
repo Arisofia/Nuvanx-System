@@ -220,7 +220,7 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          VITE_MCP_API_KEY: ${{ secrets.VITE_MCP_API_KEY || '' }}
+          VITE_MCP_API_KEY: ${{ secrets.MCP_API_KEY || '' }}
 
   frontend-e2e-smoke:
     needs: frontend
@@ -324,7 +324,7 @@ jobs:
           # Use repository secrets for CI test credentials to avoid hardcoding sensitive values.
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY || '' }}
-          VITE_MCP_API_KEY: ${{ secrets.VITE_MCP_API_KEY || '' }}
+          VITE_MCP_API_KEY: ${{ secrets.MCP_API_KEY || '' }}
           DEFAULT_PHONE_COUNTRY_CODE: '34'
 
   # ─── Edge Function: type-check ─────────────────────────────────────────────
