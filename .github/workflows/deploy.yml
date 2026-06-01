@@ -9,7 +9,7 @@ on:
   workflow_dispatch: {}
 
 env:
-  VITE_MCP_API_KEY: ${{ secrets.VITE_MCP_API_KEY }}
+  VITE_MCP_API_KEY: ${{ secrets.MCP_API_KEY }}
 
 concurrency:
   group: deploy-supabase-production
