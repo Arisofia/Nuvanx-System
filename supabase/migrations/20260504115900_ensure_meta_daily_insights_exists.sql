@@ -14,8 +14,9 @@ CREATE TABLE IF NOT EXISTS public.meta_daily_insights (
   ctr NUMERIC(8,4) NOT NULL DEFAULT 0,
   cpc NUMERIC(8,4) NOT NULL DEFAULT 0,
   cpm NUMERIC(8,4) NOT NULL DEFAULT 0,
-  messaging_conversations INTEGER NOT NULL DEFAULT 0,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  messaging_conversations INTEGER       NOT NULL DEFAULT 0,
+  updated_at              TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+  created_at              TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
   PRIMARY KEY (user_id, ad_account_id, date)
 );
 
