@@ -158,9 +158,39 @@ function formatPermissionGuidance(sa) {
   ].join(' ');
 }
 
+/**
+ * Parses the "Asunto" column (F) using a robust regex.
+ * Handles cases where the patient name itself contains parentheses.
+ * 
+ * Expected format: "398. ANGELA ISABEL ANCHUNDIA ALVARADO (SANDRA ALVARADO) [722252733] (REVISIÓN TRATAMIENTO )"
+ */
+function parseAsunto(asunto) {
+  if (!asunto) return null;
+  const pattern = /^(\d+)\.\s+(.*?)\s+\[(.*?)\]\s+\((.*?)\)\s*$/;
+  const match = String(asunto).match(pattern);
+  
+  if (!match) return null;
+
+  return {
+    id: match[1],
+    nombre: match[2].trim(),
+    telefono: match[3].trim(),
+    tratamiento: match[4].trim()
+  };
+}
+
 function deriveRawId(row, useHashId, cols) {
   if (!useHashId) {
     return normalizeField(row[cols.colId]);
+  }
+
+  // Fallback: Try robust parsing from Asunto column
+  if (cols.hasColTemplate) {
+    const asunto = normalizeField(row[cols.colTemplate]);
+    const parsed = parseAsunto(asunto);
+    if (parsed && parsed.id) {
+      return parsed.id;
+    }
   }
 
   const fecha  = normalizeField(row[cols.colFecha]);
@@ -421,6 +451,16 @@ function getRowId(row, config) {
     return row[config.colId]?.toString().trim() ?? '';
   }
 
+  // Fallback: Try to extract a real ID from the Asunto column (F) using robust regex
+  if (config.hasColTemplate) {
+    const asunto = row[config.colTemplate]?.toString().trim() ?? '';
+    const parsed = parseAsunto(asunto);
+    if (parsed && parsed.id) {
+      return parsed.id;
+    }
+  }
+
+  // Last resort: hash-based ID (existing behavior)
   const fecha  = row[config.colFecha]?.toString().trim() ?? '';
   const hora   = row[config.colHora]?.toString().trim() ?? '';
   const asunto = config.hasColTemplate ? (row[config.colTemplate]?.toString().trim() ?? '') : '';
@@ -456,6 +496,13 @@ function parseRow(row, config) {
     return null;
   }
 
+  // Try to parse rich data from Asunto (F) as fallback / enrichment
+  let parsedFromAsunto = null;
+  if (config.hasColTemplate) {
+    const asunto = row[config.colTemplate]?.toString().trim() ?? '';
+    parsedFromAsunto = parseAsunto(asunto);
+  }
+
   return {
     rawId,
     settledAt,
@@ -467,6 +514,11 @@ function parseRow(row, config) {
     payment: config.hasColPayment      ? (row[config.colPayment]?.trim() || null)     : null,
     tmplName: config.hasColTemplate     ? (row[config.colTemplate]?.trim() || null)    : null,
     tmplId: config.hasColTemplateId   ? (row[config.colTemplateId]?.trim() || null)  : null,
+
+    // Fallback / enrichment from Asunto column when dedicated columns are missing
+    nombre: config.hasColName ? (row[config.colName]?.trim() || null) : (parsedFromAsunto?.nombre || null),
+    telefono: config.hasColPhone ? (row[config.colPhone]?.trim() || null) : (parsedFromAsunto?.telefono || null),
+    tratamiento: config.hasColTratamiento ? (row[config.colTratamiento]?.trim() || null) : (parsedFromAsunto?.tratamiento || null),
     intermed: config.hasColIntermediary ? (row[config.colIntermediary]?.trim() || null) : null,
   };
 }
@@ -767,6 +819,7 @@ module.exports = {
   parseDate,
   parseAmount,
   parseStatus,
+  parseAsunto,
   buildHeaderConfig,
   getRowId,
   getCancelledAt,
