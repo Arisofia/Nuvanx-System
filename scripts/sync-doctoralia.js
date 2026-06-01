@@ -335,9 +335,17 @@ function getStatusInfo(row, cols, hasColStatus, settledAt) {
 
 function getAmountValues(row, cols, options, rowIndex) {
   const { hasColGross, hasColDiscount, hasColNet } = options;
-  const amountGross = hasColGross ? parseAmount(row[cols.colGross]) : null;
-  const amountDisc = hasColDiscount ? parseAmount(row[cols.colDiscount]) : null;
-  const amountNet = hasColNet ? parseAmount(row[cols.colNet]) : null;
+
+  // Priority 1: If we have a dedicated Net column (usually "Importe" in this sheet), prefer it
+  let amountNet = hasColNet ? parseAmount(row[cols.colNet]) : null;
+  let amountGross = hasColGross ? parseAmount(row[cols.colGross]) : null;
+  let amountDisc = hasColDiscount ? parseAmount(row[cols.colDiscount]) : null;
+
+  // If we only have one "Importe" column (common in Doctoralia exports), treat it as net
+  if (!hasColGross && !hasColDiscount && hasColNet && amountNet !== null) {
+    amountGross = amountNet;
+    amountDisc = 0;
+  }
 
   if (hasColGross && amountGross === null) {
     console.warn(`[sync-doctoralia] Skipping row ${rowIndex + 1} because bruto importe is invalid: ${row[cols.colGross]}`);
@@ -348,7 +356,7 @@ function getAmountValues(row, cols, options, rowIndex) {
     return null;
   }
   if (hasColNet && amountNet === null) {
-    console.warn(`[sync-doctoralia] Skipping row ${rowIndex + 1} because neto importe es invalid: ${row[cols.colNet]}`);
+    console.warn(`[sync-doctoralia] Skipping row ${rowIndex + 1} because importe is invalid: ${row[cols.colNet]}`);
     return null;
   }
 
@@ -747,11 +755,23 @@ async function upsertDoctoraliaRow(row, i, params) {
   const roomId    = getOptionalTextValue(row, cols.colRoom, hasColRoom);
   const agenda    = getOptionalTextValue(row, cols.colAgenda, hasColAgenda);
   const tmplName  = getOptionalTextValue(row, cols.colTemplate, hasColTemplate);
-  const patientPhone = hasColPhone 
-    ? normalizePhoneForMatching(row[cols.colPhone]) 
-    : getPrimaryPhoneFromSubject(tmplName);
   const tmplId    = getOptionalTextValue(row, cols.colTemplateId, hasColTemplateId);
   const intermed  = getOptionalTextValue(row, cols.colIntermediary, hasColIntermediary);
+
+  // Improved phone extraction using parseAsunto as strong fallback
+  let patientPhone = null;
+  if (hasColPhone) {
+    patientPhone = normalizePhoneForMatching(row[cols.colPhone]);
+  }
+  if (!patientPhone && hasColTemplate) {
+    const asunto = row[cols.colTemplate]?.toString().trim() ?? '';
+    const parsed = parseAsunto(asunto);
+    if (parsed && parsed.telefono) {
+      patientPhone = normalizePhoneForMatching(parsed.telefono);
+    } else {
+      patientPhone = getPrimaryPhoneFromSubject(asunto);
+    }
+  }
 
   try {
     await db.query(
