@@ -67,3 +67,4 @@ supabase/.temp/
 
 # Python cache (scripts/)
 scripts/__pycache__/
+secrets/
