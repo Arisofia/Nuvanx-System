@@ -202,34 +202,15 @@ export default function Integrations() {
     setHealthResult((prev) => ({ ...prev, [service]: '' }))
     try {
       const res: any = await invokeApi('/health/meta')
-      const accounts = Array.isArray(res.accounts) ? res.accounts : []
+      const account = res.ad_account ?? res.accountId ?? ''
+      const accountIds = Array.isArray(res.accountIds) ? res.accountIds : String(res.accountIds ?? '').split(/[\s,;]+/).filter(Boolean)
       const name = res.meta_user ?? res.metaUser ?? 'Meta user'
-
-      if (accounts.length > 0) {
-        const lines = accounts.map((a: any) => {
-          if (a.status === 'ok' || a.status === 'partial_read_ok') {
-            return `✅ ${a.id} ${a.name ? `(${a.name})` : ''}`
-          }
-          if (a.status === 'permission_error') {
-            return `❌ ${a.id} — SIN PERMISOS ads_read/ads_management. ${a.error ? a.error.substring(0, 120) : ''}`
-          }
-          return `⚠️ ${a.id} — ${a.error ? a.error.substring(0, 100) : 'error'}`
-        })
-        const remediation = res.remediation ? `\n\n🔧 ${res.remediation}` : ''
-        setHealthResult((prev) => ({
-          ...prev,
-          [service]: `Meta: ${name}\n${lines.join('\n')}${remediation}`,
-        }))
-      } else {
-        const account = res.ad_account ?? res.accountId ?? ''
-        const accountIds = Array.isArray(res.accountIds) ? res.accountIds : String(res.accountIds ?? '').split(/[\s,;]+/).filter(Boolean)
-        const accountText = account ? ` · Cuenta: ${account}` : ''
-        const accountIdsText = accountIds.length > 0 ? ` · Cuentas: ${accountIds.join(', ')}` : ''
-        setHealthResult((prev) => ({
-          ...prev,
-          [service]: `OK: ${name}${accountText}${accountIdsText}`,
-        }))
-      }
+      const accountText = account ? ` · Cuenta: ${account}` : ''
+      const accountIdsText = accountIds.length > 0 ? ` · Cuentas: ${accountIds.join(', ')}` : ''
+      setHealthResult((prev) => ({
+        ...prev,
+        [service]: `OK: ${name}${accountText}${accountIdsText}`,
+      }))
     } catch (err: any) {
       setHealthResult((prev) => ({ ...prev, [service]: err?.message ?? 'Verificación de Meta falló.' }))
     } finally {
@@ -478,9 +459,7 @@ export default function Integrations() {
                   )}
                 </div>
                 {healthResult[integration.service] && (
-                  <pre className="text-[10px] text-muted mt-2 whitespace-pre-wrap font-mono bg-[#FAF7F2] p-2 rounded border border-border/30 overflow-x-auto">
-                    {healthResult[integration.service]}
-                  </pre>
+                  <p className="text-xs text-muted mt-2">{healthResult[integration.service]}</p>
                 )}
               </CardContent>
             </Card>

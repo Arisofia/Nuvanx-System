@@ -17,10 +17,11 @@
 const SHEET_NAME = "Produccion Intermediarios";
 const SECRET_HEADER = "X-Webhook-Secret"; // Opcional pero recomendado
 
-// === CONFIGURACIÓN DE SEGURIDAD (recomendado) ===
-// En Supabase Webhook, agrega un header personalizado:
-//   X-Webhook-Secret: tu-clave-secreta-aqui
-const EXPECTED_SECRET = "Doctoralia_Secret_2026_!!"; // Clave secreta para el header X-Webhook-Secret en Supabase
+// === CONFIGURACIÓN DE SEGURIDAD ===
+// Recomendado: Guardar el secreto en "Project settings → Script properties"
+// Clave: WEBHOOK_SECRET
+// Valor: (la misma clave que configuras en el Webhook de Supabase)
+const EXPECTED_SECRET = PropertiesService.getScriptProperties().getProperty('WEBHOOK_SECRET') || '';
 
 function doPost(e) {
   try {
@@ -32,15 +33,29 @@ function doPost(e) {
 
     // 2. Verificación de secreto (si está configurado)
     if (EXPECTED_SECRET) {
-      const receivedSecret = e.parameter[SECRET_HEADER] || (e.headers && e.headers[SECRET_HEADER]);
+      // GAS normalizes header keys to lowercase; support common variants + query param fallback (for manual tests)
+      const h = (e.headers || {});
+      const receivedSecret =
+        e.parameter[SECRET_HEADER] ||
+        h[SECRET_HEADER] ||
+        h[SECRET_HEADER.toLowerCase()] ||
+        h['x-webhook-secret'] ||
+        '';
       if (receivedSecret !== EXPECTED_SECRET) {
         console.warn("Intento de webhook no autorizado");
         return ContentService.createTextOutput("Unauthorized").setMimeType(ContentService.MimeType.TEXT);
       }
     }
 
-    const payload = JSON.parse(e.postData.contents);
-    const record = payload.record; // Supabase envía el nuevo registro en "record"
+    let payload;
+    try {
+      payload = JSON.parse(e.postData.contents);
+    } catch (parseErr) {
+      console.error("Error parseando JSON del webhook:", parseErr);
+      return ContentService.createTextOutput("Bad Request: Invalid JSON").setMimeType(ContentService.MimeType.TEXT);
+    }
+
+    const record = payload.record;
 
     if (!record) {
       console.error("Payload sin campo 'record'");
@@ -56,7 +71,7 @@ function doPost(e) {
     }
 
     // 3. Mapeo basado en la definición real de la tabla produccion_intermediarios
-    // (ver migración 20260513200000_create_produccion_intermediarios.sql)
+    // (ver migración 20260530205600_extend_produccion_intermediarios_v2.sql)
     const rowData = [
       record.estado || "",                    // A: estado
       record.fecha || "",                     // B: fecha
@@ -69,31 +84,38 @@ function doPost(e) {
       record.confirmada || false,             // I: confirmada (BOOLEAN)
       record.procedencia || "",               // J: procedencia
       record.importe || 0,                    // K: importe
-      // "fecha_para_normalizar" no es una columna directa.
-      // Usamos 'fecha' como valor más útil para esa posición.
-      record.fecha || ""                      // L: fallback a 'fecha'
+      record.fecha_para_normalizar || record.fecha || "", // L: fecha_para_normalizar
+      record.doc_patient_id || "",            // M: ID
+      record.paciente_nombre || "",           // N: Nombre
+      record.telefono_original || "",         // O: Teléfono
+      record.procedimiento_nombre || "",      // P: Tratamiento
+      record.tipo_cliente || "",              // Q: Tipo de Cliente
+      record.email_hubspot || "",             // R: Email HubSpot
+      record.ejecutivo_asignado || "",        // S: EJECUTIVO ASIGNADO
+      record.ingreso_lead || "",              // T: INGRESO DEL LEAD
+      record.campana || ""                    // U: CAMPAÑA
     ];
 
-    // 4. Búsqueda por "Asunto" (columna F).
-    // NOTA: Actualmente usamos "asunto" como clave única porque es lo que viene de Doctoralia.
-    // Si en el futuro agregas un campo "id" más estable en la tabla, avísame y lo cambiamos
-    // a record.id para mayor robustez.
+    // 4. Búsqueda por "Asunto" (columna F) - clave única.
+    // Optimizado: usamos find() en lugar de recorrer todo manualmente.
     const data = sheet.getDataRange().getValues();
     const asuntoIndex = 5; // Columna F (0-based)
-    let rowIndex = -1;
+    const targetAsunto = String(record.asunto || '').trim();
 
-    for (let i = 1; i < data.length; i++) {
-      if (String(data[i][asuntoIndex]).trim() === String(record.asunto).trim()) {
-        rowIndex = i + 1;
-        break;
-      }
-    }
+    const rowIndex = data.findIndex((row, idx) => idx > 0 && String(row[asuntoIndex]).trim() === targetAsunto);
+    const foundRow = rowIndex !== -1 ? rowIndex + 1 : -1;
 
     // 5. Insertar o actualizar
-    if (rowIndex !== -1) {
-      sheet.getRange(rowIndex, 1, 1, rowData.length).setValues([rowData]);
+    if (foundRow !== -1) {
+      // Para actualizaciones, preservamos las fórmulas de las columnas V, W, X si existen
+      sheet.getRange(foundRow, 1, 1, rowData.length).setValues([rowData]);
       console.log(`Fila actualizada (Asunto: ${record.asunto})`);
     } else {
+      // Para nuevas filas, añadimos las fórmulas de Día, Mes, Año (V, W, X)
+      const nextRow = sheet.getLastRow() + 1;
+      rowData.push(`=DAY(B${nextRow})`);   // V: Día
+      rowData.push(`=MONTH(B${nextRow})`); // W: Mes
+      rowData.push(`=YEAR(B${nextRow})`);  // X: Año
       sheet.appendRow(rowData);
       console.log(`Nueva fila añadida (Asunto: ${record.asunto})`);
     }
@@ -103,11 +125,12 @@ function doPost(e) {
       .setMimeType(ContentService.MimeType.TEXT);
 
   } catch (err) {
-    console.error("Error procesando webhook:", err);
-    // Devolvemos 200 igual para que Supabase no reintente infinitamente
-    // (puedes cambiar la lógica si prefieres que reintente)
+    console.error("Error procesando webhook:", err, err.stack);
+    // Importante: Seguimos devolviendo 200 para evitar que Supabase reintente infinitamente.
+    // Los errores quedan registrados en "Ejecuciones" de Apps Script.
+    // Si quieres que Supabase reintente en caso de error, cambia a return con código 500.
     return ContentService
-      .createTextOutput("Error procesado")
+      .createTextOutput("Error procesado (ver logs)")
       .setMimeType(ContentService.MimeType.TEXT);
   }
 }
@@ -126,13 +149,22 @@ function testDoPost() {
           hora: "10:30",
           fecha_creacion: "2026-05-20",
           hora_creacion: "09:15",
-          asunto: "Test Webhook - Paciente Ejemplo",
-          agenda: "Dra. María",
-          sala_box: "Box 3",
-          confirmada: "Sí",
+          asunto: "292. Aymara KB Luizaga Revaldería [657607191] (INDUTOR DE COLAGENOS...)",
+          agenda: "MEDICINA ESTÉTICA JJRT",
+          sala_box: "BOX 1",
+          confirmada: true,
           procedencia: "Doctoralia",
           importe: 450,
-          fecha_para_normalizar: "2026-05-27"
+          fecha_para_normalizar: "2026-05-27",
+          doc_patient_id: "292",
+          paciente_nombre: "Aymara KB Luizaga Revaldería",
+          telefono_original: "657607191",
+          procedimiento_nombre: "INDUTOR DE COLAGENOS",
+          tipo_cliente: "Cliente nuevo",
+          email_hubspot: "aymara@example.com",
+          ejecutivo_asignado: "Jeninefer Deras",
+          ingreso_lead: "46101.77",
+          campana: "Laser CO2"
         }
       })
     }

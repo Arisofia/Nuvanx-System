@@ -123,7 +123,7 @@ export function buildDashboardState(options: DashboardStateOptions) {
   const canonicalMetaSpend = hasFiniteMetric(rawKpisMetaSpend) && (hasMultiAccountKpis(kpisResponse) || !hasCanonicalInsightsSpend(insightsResponse, campaigns))
     ? Number(rawKpisMetaSpend)
     : spend
-  const canonicalMetaLeads = Number(kpisResponse?.meta?.leads ?? metaConversions ?? 0) || 0
+  const canonicalMetaLeads = Number(kpisResponse?.meta?.leads ?? metaConversions)
   const doctoraliaPatients = Number(kpisResponse?.doctoralia?.newVerifiedPatients ?? 0)
   const doctoraliaVerifiedRevenue = Number(kpisResponse?.doctoralia?.verifiedRevenue ?? Number(metricsData.verifiedRevenue ?? 0))
   const metaCpl = calculateRatio(canonicalMetaSpend, canonicalMetaLeads)

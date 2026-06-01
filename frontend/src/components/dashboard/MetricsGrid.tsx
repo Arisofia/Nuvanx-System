@@ -34,17 +34,12 @@ export function MetricsGrid({ metrics, quality }: MetricsGridProps) {
         <CardContent>
           <div className="flex items-baseline gap-3 mt-4">
             <div className="text-4xl font-serif font-bold tracking-tight text-[#2C2825]">
-              {metrics.metaConversions != null
-                ? metrics.metaConversions.toLocaleString('es-ES')
-                : '—'}
+              {metrics.metaConversions.toLocaleString('es-ES')}
             </div>
             {metrics.deltas && <MetricDelta value={metrics.deltas.conversions} />}
           </div>
           <div className="mt-4">
-            <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-wider italic">Leads Atribuidos por Meta</p>
-            <p className="text-[9px] text-[#B0AAA4] font-medium italic mt-1 leading-tight">
-              Conversiones Meta (formularios + WhatsApp). No equivale a leads únicos en CRM.
-            </p>
+            <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-wider italic">Leads Atribuidos</p>
           </div>
         </CardContent>
       </Card>
@@ -62,9 +57,7 @@ export function MetricsGrid({ metrics, quality }: MetricsGridProps) {
         <CardContent>
           <div className="flex items-baseline gap-3 mt-4">
             <div className="text-4xl font-serif font-bold tracking-tight text-[#2C2825]">
-              {metrics.totalLeads != null
-                ? metrics.totalLeads.toLocaleString('es-ES')
-                : '—'}
+              {metrics.totalLeads.toLocaleString('es-ES')}
             </div>
             {metrics.deltas && <MetricDelta value={metrics.deltas.leads} />}
           </div>
@@ -87,9 +80,7 @@ export function MetricsGrid({ metrics, quality }: MetricsGridProps) {
         <CardContent>
           <div className="flex items-baseline gap-3 mt-4">
             <div className="text-4xl font-serif font-bold tracking-tight text-[#2C2825]">
-              {metrics.verifiedRevenue != null
-                ? `€${metrics.verifiedRevenue.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
-                : '—'}
+              {`€${metrics.verifiedRevenue.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
             </div>
             {metrics.deltas && <MetricDelta value={metrics.deltas.revenue} />}
           </div>
@@ -111,9 +102,7 @@ export function MetricsGrid({ metrics, quality }: MetricsGridProps) {
         </CardHeader>
         <CardContent>
           <div className="text-4xl font-serif font-bold tracking-tight text-[#2C2825] mt-4">
-            {metrics.conversionRate != null
-              ? `${metrics.conversionRate.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}%`
-              : '—'}
+            {`${metrics.conversionRate.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}%`}
           </div>
           <div className="mt-4">
             <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-wider italic">Lead → Venta</p>

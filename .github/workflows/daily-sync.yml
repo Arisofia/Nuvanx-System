@@ -15,65 +15,34 @@ on:
         required: false
         default: '2'
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE22: true
-  META_GRAPH_VERSION: v20.0
-
-concurrency:
-  group: daily-sync-${{ github.ref_name }}
-  cancel-in-progress: true
-
-permissions:
-  contents: read
-
 jobs:
   daily-sync:
     name: Run Daily Sync Orchestrator
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    
+
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL || secrets.VITE_SUPABASE_URL }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || '' }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
       DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID }}
       CLINIC_ID: ${{ secrets.CLINIC_ID }}
-      ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY || '' }}
+      ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
       META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
       META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
       META_AD_ACCOUNT_IDS: ${{ secrets.META_AD_ACCOUNT_IDS }}
       META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
+      META_GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION }}
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4.2.2
-
-      - name: Prefer IPv4 + hardened resolver (Supabase IPv6 root cause mitigation)
-        run: |
-          echo "=== Hardening for Daily Sync (Supabase IPv6 mitigation) ==="
-          # Disable IPv6 on runner to force IPv4 (reliable fix for network is unreachable)
-          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1 || true
-          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1 || true
-          sudo sysctl -w net.ipv6.conf.lo.disable_ipv6=1 || true
-
-          # Prefer IPv4 in name resolution
-          sudo sed -i 's/^#precedence ::ffff:0:0\/96  100/precedence ::ffff:0:0\/96  100/' /etc/gai.conf || true
-
-          # Aggressive resolver settings
-          echo 'options single-request-reopen' | sudo tee -a /etc/resolv.conf >/dev/null || true
-          echo 'options timeout:2' | sudo tee -a /etc/resolv.conf >/dev/null || true
-          echo 'options attempts:3' | sudo tee -a /etc/resolv.conf >/dev/null || true
-
-          # Ensure network tools are present for potential debugging
-          sudo apt-get update -qq || true
-          sudo apt-get install -y -qq dnsutils netcat-openbsd || true
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4.1.0
+        uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: 'npm'
@@ -81,14 +50,33 @@ jobs:
       - name: Install dependencies
         run: npm install --include=dev --ignore-scripts --legacy-peer-deps
 
+      - name: Validate daily sync prerequisites
+        id: validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          MISSING=()
+          [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] && MISSING+=("SUPABASE_ACCESS_TOKEN")
+          [ -z "${SUPABASE_PROJECT_REF:-}" ] && MISSING+=("SUPABASE_PROJECT_REF")
+          [ -z "${META_ACCESS_TOKEN:-}" ] && MISSING+=("META_ACCESS_TOKEN")
+          if [ -z "${META_AD_ACCOUNT_ID:-}" ] && [ -z "${META_AD_ACCOUNT_IDS:-}" ]; then
+            MISSING+=("META_AD_ACCOUNT_ID or META_AD_ACCOUNT_IDS")
+          fi
+
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::warning::Daily sync orchestrator skipped — missing secrets: ${MISSING[*]}"
+            echo "skip_orchestrator=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip_orchestrator=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run Orchestrator Script
+        if: steps.validate.outputs.skip_orchestrator != 'true'
         run: node scripts/run-daily-sync.js
         env:
-          # Critical secrets for sync-doctoralia.js + Supabase operations (CAPI, webhooks, etc.)
+          # run-daily-sync.js needs these for sync-doctoralia and supabase deploy
           SUPABASE_ACCESS_TOKEN: ${{ env.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ env.SUPABASE_PROJECT_REF }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ env.SUPABASE_SERVICE_ROLE_KEY }}
-          SUPABASE_URL: ${{ env.SUPABASE_URL }}
           DATABASE_URL: ${{ env.DATABASE_URL }}
           GOOGLE_ADS_SERVICE_ACCOUNT: ${{ env.GOOGLE_ADS_SERVICE_ACCOUNT }}
           DOCTORALIA_SHEET_ID: ${{ env.DOCTORALIA_SHEET_ID }}
@@ -98,40 +86,35 @@ jobs:
           META_AD_ACCOUNT_ID: ${{ env.META_AD_ACCOUNT_ID }}
           META_AD_ACCOUNT_IDS: ${{ env.META_AD_ACCOUNT_IDS }}
           META_APP_SECRET: ${{ env.META_APP_SECRET }}
-          META_GRAPH_VERSION: ${{ env.META_GRAPH_VERSION }}
+          # si no hay secreto, usa 'v20.0' como default
+          META_GRAPH_VERSION: ${{ env.META_GRAPH_VERSION || 'v20.0' }}
 
       - name: Fetch Meta Daily Insights
-        env:
-          SUPABASE_URL: ${{ env.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ env.SUPABASE_SERVICE_ROLE_KEY }}
+        shell: bash
         run: |
+          set -euo pipefail
           DAYS="${{ github.event.inputs.days || '2' }}"
-          echo "Fetching Meta insights for last $DAYS days..."
-
-          # More robust call with timeout and better error handling
-          RESPONSE=$(curl -sS --max-time 120 -X POST "${SUPABASE_URL}/functions/v1/daily-aggregates" \
-            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
-            -H "Content-Type: application/json" \
-            -d "{\"action\": \"fetch_meta_insights\", \"days\": $DAYS}" || echo '{"success":false,"error":"curl_failed"}')
-
-          echo "Response: $RESPONSE"
-
-          if echo "$RESPONSE" | grep -q '"success":true'; then
-            echo "✅ Meta insights fetched successfully."
-          else
-            echo "::error::Failed to fetch Meta insights."
-            echo "$RESPONSE"
+          if ! [[ "$DAYS" =~ ^[0-9]+$ ]] || [ "$DAYS" -lt 1 ] || [ "$DAYS" -gt 90 ]; then
+            echo "::error::days must be an integer between 1 and 90. Received: $DAYS"
             exit 1
           fi
 
-      - name: Daily Sync Summary
-        if: always()
-        run: |
-          echo "### 📅 Daily Sync Orchestrator Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Run type:** ${{ github.event_name }}"
-          echo "- **Meta insights days:** ${{ github.event.inputs.days || '2' }}"
-          echo "- **Node version:** 22"
-          echo "- **IPv6 disabled:** Yes (hardened for Supabase)"
-          echo ""
-          echo "See job logs for detailed sync-doctoralia + Meta insights results."
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::warning::Meta daily insights fetch skipped — SUPABASE_URL/VITE_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing."
+            exit 0
+          fi
+
+          echo "Fetching Meta insights for last $DAYS days..."
+
+          RESPONSE=$(curl --fail-with-body --show-error --silent --max-time 60 -X POST "${SUPABASE_URL}/functions/v1/daily-aggregates" \
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"action\": \"fetch_meta_insights\", \"days\": $DAYS}")
+
+          echo "Response: $RESPONSE"
+          if echo "$RESPONSE" | grep -q '"success":true'; then
+            echo "Meta insights fetched successfully."
+          else
+            echo "::error::Failed to fetch Meta insights."
+            exit 1
+          fi

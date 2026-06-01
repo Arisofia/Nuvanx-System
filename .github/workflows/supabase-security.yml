@@ -2,13 +2,16 @@
 name: Supabase Security Check
 
 # Fails the CI if any table is missing RLS or has a dangerous policy.
-# Runs on every push and pull_request to main.
+# Runs after Deploy Supabase (on main) and on PRs.
+#
+# IMPORTANT (confirmed via DNS):
+#   The direct hostname db.<project-ref>.supabase.co for this project
+#   is IPv6-only (only AAAA records, no A records).
+#   GitHub runners have unreliable IPv6 → always prefer Session Pooler (port 5432).
 #
 # Required secrets:
-#   SUPABASE_ACCESS_TOKEN   — Supabase personal access token
-#   SUPABASE_PROJECT_REF    — Supabase project ref used by supabase link
-#   SUPABASE_DB_PASSWORD    — optional fallback for direct db lint
-#   DATABASE_URL            — recommended; use the Supavisor session pooler URL on GitHub Actions
+#   SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_REF, DATABASE_URL (Session Pooler recommended)
+#   SUPABASE_DB_PASSWORD (fallback for direct connection)
 
 on:
   # On push to main, wait for Deploy Supabase to finish so the lint runs against
@@ -35,7 +38,7 @@ on:
         required: false
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE22: true
+  VITE_MCP_API_KEY: ${{ secrets.VITE_MCP_API_KEY }}
 
 concurrency:
   group: supabase-security-${{ github.ref_name }}
@@ -44,7 +47,6 @@ concurrency:
 jobs:
   advisor:
     name: RLS & security lint
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 8
     permissions:
@@ -55,26 +57,27 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4.2.2
-      - name: Prefer IPv4 + hardened resolver (Supabase IPv6 root cause mitigation)
+      - uses: actions/checkout@v5
+
+      - name: Prefer IPv4 (gai.conf + diagnostics)
         run: |
-          echo "=== Hardening for Security Lint (Supabase IPv6 mitigation) ==="
-          # Nuclear: disable IPv6 on runner (most reliable fix per Supabase + GHA reports)
-          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1 || true
-          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1 || true
-          sudo sysctl -w net.ipv6.conf.lo.disable_ipv6=1 || true
-
-          # Prefer IPv4 globally
+          echo "Applying IPv4 precedence (only helps when both A and AAAA records exist)"
           sudo sed -i 's/^#precedence ::ffff:0:0\/96  100/precedence ::ffff:0:0\/96  100/' /etc/gai.conf || true
+          echo "Current gai.conf precedence:"
+          grep -E 'precedence|IPv4' /etc/gai.conf || true
 
-          # Make getaddrinfo more aggressive about trying IPv4 first
-          echo 'options single-request-reopen' | sudo tee -a /etc/resolv.conf >/dev/null || true
-          echo 'options timeout:2' | sudo tee -a /etc/resolv.conf >/dev/null || true
-          echo 'options attempts:3' | sudo tee -a /etc/resolv.conf >/dev/null || true
+      - name: Diagnose Supabase host resolution
+        run: |
+          echo "=== Supabase connectivity (confirmed: direct host is IPv6-only) ==="
+          ref="${SUPABASE_PROJECT_REF:-}"
+          if [ -z "$ref" ]; then
+            echo "SUPABASE_PROJECT_REF not set — skipping diagnosis."
+            exit 0
+          fi
+          echo "Direct host: db.${ref}.supabase.co → IPv6-only (no A records)"
+          echo "Strongly recommended: Use Session Pooler (port 5432) in DATABASE_URL secret."
+          echo "The supabase-link-run composite action resolves a safe SESSION_URL (Session Pooler preferred), exports it to GITHUB_ENV, and exposes it as \$SESSION_URL for commands."
 
-          # Tools for resolution + optional preflight
-          sudo apt-get update -qq || true
-          sudo apt-get install -y -qq dnsutils postgresql-client || true
       - name: Report upstream Deploy Supabase result
         if: github.event_name == 'workflow_run'
         run: |
@@ -99,6 +102,7 @@ jobs:
       - name: Run Supabase DB lint
         id: lint
         if: steps.validate.outputs.skip != 'true'
+        timeout-minutes: 6
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
@@ -108,69 +112,75 @@ jobs:
           skip_link: true
           command: |
             set -euo pipefail
-            if [ -z "${SESSION_URL:-}" ]; then
-              echo "::error::SESSION_URL is required and should be prepared by supabase-link-run."
+
+            # The supabase-link-run action (skip_link=true) resolves SESSION_URL
+            # before executing this command. Do not reference steps.lint.outputs here:
+            # the lint step has not completed yet, so that expression is empty pre-run.
+            LINT_DB_URL="${SESSION_URL:-}"
+
+            if [ -z "${LINT_DB_URL:-}" ]; then
+              echo "::error::supabase-link-run action did not provide a usable database URL (SESSION_URL missing)."
+              echo "::error::Check DATABASE_URL secret or SUPABASE_DB_PASSWORD + SUPABASE_PROJECT_REF."
               exit 1
             fi
 
-            SESSION_URL_HOST=$(python3 -c "import os, urllib.parse as p; u=os.environ.get('SESSION_URL',''); print((p.urlparse(u).hostname or '') if u else '')" 2>/dev/null || true)
-            echo "SESSION_URL_HOST=$SESSION_URL_HOST"
-            if [ -n "$SESSION_URL_HOST" ]; then
-              echo "Checking resolution for $SESSION_URL_HOST..."
-              getent hosts "$SESSION_URL_HOST" || {
-                echo "::warning::Could not resolve $SESSION_URL_HOST via getent"
-                nslookup "$SESSION_URL_HOST" || echo "::warning::Could not resolve $SESSION_URL_HOST via nslookup"
-              }
+            echo "LINT using database URL from supabase-link-run action (Session Pooler recommended)"
+            export LINT_DB_URL
+
+            LINT_DB_HOST=$(python3 - <<'PY'
+            import os
+            from urllib.parse import urlparse
+
+            parsed = urlparse(os.environ['LINT_DB_URL'])
+            print(parsed.hostname or '')
+            PY
+            )
+
+            if [ -z "$LINT_DB_HOST" ]; then
+              echo "::error::Unable to parse database host from LINT_DB_URL."
+              exit 1
             fi
 
-            # Robust lint with retries for transient DNS / IPv6 / pooler hiccups common on GitHub runners.
-            run_lint_with_retry() {
-              local url="$1"
-              local label="$2"
-              local max_attempts=3
-              local attempt=1
-
-              while [ $attempt -le $max_attempts ]; do
-                echo "Running supabase db lint against $label (attempt $attempt/$max_attempts)..."
-                if timeout --signal=TERM --kill-after=30s 240s \
-                     supabase db lint --db-url "$url" --level error --fail-on error </dev/null; then
-                  return 0
-                fi
-
-                local exit_code=$?
-                echo "::warning::Lint attempt $attempt against $label failed (exit=$exit_code)."
-
-                if [ $attempt -lt $max_attempts ]; then
-                  local sleep_time=$(( attempt * 8 ))
-                  echo "Retrying in ${sleep_time}s..."
-                  sleep "$sleep_time"
-                fi
-                attempt=$((attempt + 1))
-              done
-
-              return 1
-            }
-
-            # Try Session Pooler first (recommended for CI IPv4 stability)
-            if run_lint_with_retry "$SESSION_URL" "Session Pooler"; then
-              echo "Supabase security lint passed on Session Pooler."
+            if ! getent hosts "$LINT_DB_HOST" >/dev/null 2>&1; then
+              echo "::warning::Supabase security lint skipped because database host '$LINT_DB_HOST' does not resolve from this GitHub runner."
+              echo "::warning::This is an infrastructure/DNS issue, not an RLS policy failure. Verify the DATABASE_URL host in repository secrets."
+              {
+                echo "### Supabase Security Lint Skipped"
+                echo ""
+                echo "Database host \`$LINT_DB_HOST\` did not resolve from the GitHub runner."
+                echo "Confirm the DATABASE_URL secret uses a valid Supabase Session Pooler host before relying on this lint gate."
+              } >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
 
-            # Fallback to direct database connection with retries
-            if [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
-              echo "::warning::Session Pooler attempts exhausted. Retrying with direct database host..."
-              DIRECT_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$SUPABASE_DB_PASSWORD" "$SUPABASE_PROJECT_REF")
-              export DIRECT_URL
-
-              if run_lint_with_retry "$DIRECT_URL" "Direct DB Host"; then
-                echo "Supabase security lint passed on direct database host (after pooler failures)."
+            # Hard timeout so a stuck connection doesn't burn Actions minutes.
+            echo "Running supabase db lint with: $(echo "$LINT_DB_URL" | sed -E 's|:[^@]*@|://***@|')"
+            # Use --level warning for visibility while failing only on Supabase lint errors.
+            lint_output=$(timeout --signal=TERM --kill-after=30s 240s \
+              supabase db lint --db-url "$LINT_DB_URL" --level warning --fail-on error </dev/null 2>&1) || {
+              lint_exit=$?
+              echo "$lint_output"
+              if echo "$lint_output" | grep -Eiq 'hostname resolving error|no such host|temporary failure in name resolution|could not translate host name|name or service not known'; then
+                echo "::warning::Supabase security lint skipped because the database host could not be resolved during lint execution."
+                echo "::warning::This is an infrastructure/DNS issue, not an RLS policy failure. Verify the DATABASE_URL host in repository secrets."
+                {
+                  echo "### Supabase Security Lint Skipped"
+                  echo ""
+                  echo "The Supabase CLI reported a DNS resolution failure while connecting to the configured database host."
+                  echo "Confirm the DATABASE_URL secret uses a valid Supabase Session Pooler host before relying on this lint gate."
+                } >> "$GITHUB_STEP_SUMMARY"
                 exit 0
               fi
-            fi
+              echo "::error::supabase db lint failed using the selected LINT_DB_URL."
+              echo "::error::Check the diagnosis output above. Ensure DATABASE_URL secret contains a working Session Pooler (port 5432) string."
+              exit "$lint_exit"
+            }
+            echo "$lint_output"
 
-            echo "::warning::Supabase db lint could not complete due to transient network/DNS issues from GitHub runner (common with Supabase poolers)."
-            echo "::warning::This is an infrastructure connectivity problem, not a security/R LS violation."
-            echo "Supabase security lint skipped due to runner connectivity (non-blocking)."
-            # Do not fail the job on pure connectivity errors after retries
-            exit 0
+      - name: Security Lint Summary
+        if: always()
+        run: |
+          echo "### Supabase Security Lint Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "This workflow runs \`supabase db lint --level warning --fail-on error\` against the remote database." >> "$GITHUB_STEP_SUMMARY"
+          echo "It catches missing RLS policies and dangerous policy patterns without relying on pre-run step outputs." >> "$GITHUB_STEP_SUMMARY"

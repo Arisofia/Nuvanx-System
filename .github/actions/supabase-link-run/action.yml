@@ -1,38 +1,50 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-action.json
 name: 'Supabase Link and Run'
-description: 'Composite action that links a Supabase project and runs a command using the Supabase CLI (hardened for GitHub Actions + Supabase IPv6/DNS issues).'
+description: 'Composite action that links a Supabase project and runs a command using the Supabase CLI.'
 
 inputs:
   project_ref:
+    description: 'Supabase project reference'
     required: true
   supabase_access_token:
+    description: 'Supabase access token'
     required: true
   database_url:
+    description: 'Optional database URL for deriving SUPABASE_DB_PASSWORD if not provided'
     required: false
     default: ''
   supabase_db_password:
+    description: 'Optional database password for Supabase CLI operations'
     required: false
     default: ''
   skip_link:
+    description: 'Skip the supabase link step'
     required: false
     default: 'false'
   command:
+    description: 'Shell command to execute after linking (e.g. "supabase db push")'
     required: true
   supabase_cli_version:
+    description: 'Supabase CLI version to use'
     required: false
-    default: '2.101.0'
+    default: '2.102.0'
 
 outputs:
   resolved_db_password:
+    description: 'Resolved DB password extracted from inputs or DATABASE_URL'
     value: ${{ steps.creds.outputs.resolved_db_password }}
   skipped:
-    value: ${{ steps.link.outputs.skipped || 'false' }}
+    description: 'True if the link step was skipped due to deterministic errors'
+    value: ${{ steps.link.outputs.skipped || false }}
+  session_url:
+    description: 'Resolved connection string (Session Pooler on 5432 preferred) for use with --db-url and Supabase CLI commands'
+    value: ${{ steps.resolve-url.outputs.session_url }}
 
 runs:
   using: 'composite'
   steps:
     - name: Setup Supabase CLI
-      uses: supabase/setup-cli@v1
+      uses: supabase/setup-cli@v2
       with:
         version: ${{ inputs.supabase_cli_version }}
 
@@ -43,12 +55,12 @@ runs:
         SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
       run: |
         set -euo pipefail
-        if [[ -z "$INPUT_PROJECT_REF" ]]; then
-          echo "::error::project_ref is required"
+        if [ -z "$INPUT_PROJECT_REF" ]; then
+          echo "::error::project_ref is required."
           exit 1
         fi
-        if [[ -z "$SUPABASE_ACCESS_TOKEN" ]]; then
-          echo "::error::supabase_access_token is required"
+        if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+          echo "::error::supabase_access_token is required."
           exit 1
         fi
 
@@ -63,15 +75,165 @@ runs:
         RESOLVED_DB_PASSWORD="$INPUT_SUPABASE_DB_PASSWORD"
 
         if [ -z "$RESOLVED_DB_PASSWORD" ] && [ -n "$INPUT_DATABASE_URL" ]; then
-          # More robust password extraction
-          RESOLVED_DB_PASSWORD=$(printf '%s' "$INPUT_DATABASE_URL" | sed -n 's|^[^:]*://[^:]*:\([^@]*\)@.*|\1|p' || true)
+          # Best-effort password extraction from DATABASE_URL.
+          # LIMITATIONS — only supports URLs where:
+          #   - The username contains no colons
+          #   - The password contains no '@' characters
+          #   - The host is not an IPv6 literal (no raw brackets)
+          # If your URL is more complex, set supabase_db_password explicitly
+          # instead of relying on this extraction.
+          #
+          # Supported formats:
+          #   postgres://user:${DB_PASSWORD}@host:5432/dbname
+          #   postgresql://user:${SUPABASE_DB_PASSWORD}@host/dbname
+          RESOLVED_DB_PASSWORD=$(
+            printf '%s\n' "$INPUT_DATABASE_URL" \
+              | sed -n 's|^[a-zA-Z0-9+.-]*://[^:]*:\([^@]*\)@.*$|\1|p' \
+              || printf ''
+          )
         fi
 
         if [ -n "$RESOLVED_DB_PASSWORD" ]; then
           echo "::add-mask::$RESOLVED_DB_PASSWORD"
         fi
-
         printf 'resolved_db_password=%s\n' "$RESOLVED_DB_PASSWORD" >> "$GITHUB_OUTPUT"
+
+    - name: Resolve Session URL
+      id: resolve-url
+      shell: bash
+      env:
+        INPUT_DATABASE_URL: ${{ inputs.database_url }}
+        INPUT_SUPABASE_DB_PASSWORD: ${{ steps.creds.outputs.resolved_db_password }}
+        INPUT_SUPABASE_PROJECT_REF: ${{ inputs.project_ref }}
+      run: |
+        set -euo pipefail
+
+        RESOLVED_DB_PASSWORD="$INPUT_SUPABASE_DB_PASSWORD"
+
+        if [ -n "${INPUT_DATABASE_URL:-}" ]; then
+
+          # ── Structured URL parsing ────────────────────────────────────────────
+          # Split scheme
+          DB_SCHEME="${INPUT_DATABASE_URL%%://*}"
+          DB_URL_NO_SCHEME="${INPUT_DATABASE_URL#*://}"
+          if [ "$DB_SCHEME" = "$INPUT_DATABASE_URL" ]; then
+            # No '://' found
+            DB_SCHEME=""
+            DB_REST="$INPUT_DATABASE_URL"
+          else
+            DB_REST="$DB_URL_NO_SCHEME"
+          fi
+
+          # Split authority (user:pass@host:port) from path+query
+          DB_AUTH_HOST_PORT="${DB_REST%%/*}"
+          DB_PATH_QUERY="${DB_REST#*/}"
+
+          # Split host:port from user:pass@ section
+          DB_USER_PASS_HOST_PORT="${DB_AUTH_HOST_PORT##*@}"
+          DB_USER_PASS_PART="${DB_AUTH_HOST_PORT%"$DB_USER_PASS_HOST_PORT"}"
+          DB_USER_PASS_PART="${DB_USER_PASS_PART%@}"
+
+          # Split host and port
+          DB_HOST="${DB_USER_PASS_HOST_PORT%%:*}"
+          DB_PORT="${DB_USER_PASS_HOST_PORT#*:}"
+          [ "$DB_HOST" = "$DB_USER_PASS_HOST_PORT" ] && DB_PORT=""
+
+          # Normalize a common secret typo before handing the URL to Supabase CLI.
+          # Supabase pooler hosts use pooler.supabase.com; pooler.supabase.co does not resolve.
+          HOST_NORMALIZED=false
+          if [[ "$DB_HOST" == *.pooler.supabase.co ]]; then
+            DB_HOST="${DB_HOST%.pooler.supabase.co}.pooler.supabase.com"
+            HOST_NORMALIZED=true
+            echo "::warning::DATABASE_URL pooler host ended with .supabase.co. Normalized it to .supabase.com before running Supabase CLI."
+          fi
+
+          # Split path from query string
+          DB_PATH="${DB_PATH_QUERY%%\?*}"
+          DB_QUERY=""
+          [ "$DB_PATH_QUERY" != "$DB_PATH" ] && DB_QUERY="${DB_PATH_QUERY#*\?}"
+
+          # ── Detect transaction pooler ─────────────────────────────────────────
+          # Only match on the actual host+port or the discrete pgbouncer query param —
+          # never on broad substring matches that could hit unrelated URL segments.
+          TRANSACTION_POOLER=false
+          if [[ "$DB_HOST" == *"pooler.supabase"* ]] && [ "$DB_PORT" = "6543" ]; then
+            TRANSACTION_POOLER=true
+          elif [ -n "$DB_QUERY" ]; then
+            IFS='&' read -r -a _QPARAMS <<< "$DB_QUERY"
+            for _p in "${_QPARAMS[@]}"; do
+              [ "$_p" = "pgbouncer=true" ] && TRANSACTION_POOLER=true && break
+            done
+          fi
+
+          if [ "$TRANSACTION_POOLER" = true ]; then
+
+            # ── Rewrite to session pooler ───────────────────────────────────────
+            # Rewrite port only when the host confirms it is a Supabase pooler
+            [[ "$DB_HOST" == *"pooler.supabase"* ]] && DB_PORT="5432"
+            DB_HOST_PORT_REWRITTEN="${DB_HOST}${DB_PORT:+:$DB_PORT}"
+
+            # Rebuild query: drop pgbouncer=true, ensure sslmode=require
+            NEW_QUERY_PARAMS=()
+            if [ -n "$DB_QUERY" ]; then
+              IFS='&' read -r -a _QPARAMS <<< "$DB_QUERY"
+              for _p in "${_QPARAMS[@]}"; do
+                case "$_p" in
+                  pgbouncer=true | "") ;;           # drop
+                  *) NEW_QUERY_PARAMS+=("$_p") ;;
+                esac
+              done
+            fi
+
+            HAS_SSLMODE=false
+            for _p in "${NEW_QUERY_PARAMS[@]}"; do
+              case "$_p" in sslmode=*) HAS_SSLMODE=true ;; esac
+            done
+            [ "$HAS_SSLMODE" = false ] && NEW_QUERY_PARAMS+=("sslmode=require")
+
+            if [ "${#NEW_QUERY_PARAMS[@]}" -gt 0 ]; then
+              _QS="$(IFS='&'; echo "${NEW_QUERY_PARAMS[*]}")"
+              DB_PATH_QUERY_REWRITTEN="${DB_PATH}?${_QS}"
+            else
+              DB_PATH_QUERY_REWRITTEN="${DB_PATH}"
+            fi
+
+            # Reconstruct full URL, replacing only the host:port segment
+            DB_AUTH_REWRITTEN="${DB_AUTH_HOST_PORT/$DB_USER_PASS_HOST_PORT/$DB_HOST_PORT_REWRITTEN}"
+            if [ -n "$DB_SCHEME" ]; then
+              SESSION_URL="${DB_SCHEME}://${DB_AUTH_REWRITTEN}/${DB_PATH_QUERY_REWRITTEN}"
+            else
+              SESSION_URL="${DB_AUTH_REWRITTEN}/${DB_PATH_QUERY_REWRITTEN}"
+            fi
+
+            echo "::warning::DATABASE_URL looked like Transaction Pooler. Rewrote to Session Pooler (port 5432) and normalized query parameters."
+
+          else
+            if [ "$HOST_NORMALIZED" = true ]; then
+              DB_HOST_PORT_REWRITTEN="${DB_HOST}${DB_PORT:+:$DB_PORT}"
+              DB_AUTH_REWRITTEN="${DB_AUTH_HOST_PORT/$DB_USER_PASS_HOST_PORT/$DB_HOST_PORT_REWRITTEN}"
+              if [ -n "$DB_SCHEME" ]; then
+                SESSION_URL="${DB_SCHEME}://${DB_AUTH_REWRITTEN}/${DB_PATH_QUERY}"
+              else
+                SESSION_URL="${DB_AUTH_REWRITTEN}/${DB_PATH_QUERY}"
+              fi
+            else
+              SESSION_URL="$INPUT_DATABASE_URL"
+            fi
+          fi
+
+        elif [ -n "$RESOLVED_DB_PASSWORD" ] && [ -n "${INPUT_SUPABASE_PROJECT_REF:-}" ]; then
+          # Fallback: construct direct connection (requires IPv4 add-on in Supabase)
+          SESSION_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$RESOLVED_DB_PASSWORD" "$INPUT_SUPABASE_PROJECT_REF")
+          echo "No DATABASE_URL provided — falling back to direct DB URL (db.<ref>.supabase.co:5432)"
+        else
+          SESSION_URL=""
+        fi
+
+        if [ -n "$SESSION_URL" ]; then
+          echo "::add-mask::$SESSION_URL"
+          echo "session_url=$SESSION_URL" >> "$GITHUB_OUTPUT"
+          echo "SESSION_URL=$SESSION_URL" >> "$GITHUB_ENV"
+        fi
 
     - name: Link Supabase project
       id: link
@@ -83,89 +245,101 @@ runs:
         SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
       run: |
         set -euo pipefail
-
         is_deterministic_link_error() {
           local output="$1"
-          local pattern='invalid access token|invalid token|not authorized|unauthorized|forbidden|permission denied|necessary privileges|project ref.*not found|project.*not found|invalid project ref|database password.*incorrect|password authentication failed|Unexpected HTTP response: 404'
-          echo "$output" | grep -Eiq "$pattern"
+          local -a deterministic_patterns=(
+            'invalid access token'
+            'invalid token'
+            'not authorized'
+            'unauthorized'
+            'forbidden'
+            'permission denied'
+            'necessary privileges'
+            'project ref.*not found'
+            'project.*not found'
+            'invalid project ref'
+            'database password.*incorrect'
+            'password authentication failed'
+            'Unexpected HTTP response: 404'
+          )
+          for pattern in "${deterministic_patterns[@]}"; do
+            if echo "$output" | grep -Eiq "$pattern"; then
+              return 0
+            fi
+          done
+          return 1
         }
-
         run_link_once() {
-          local args=(--project-ref "$INPUT_PROJECT_REF" --yes)
-          [ -n "$RESOLVED_DB_PASSWORD" ] && args+=(--password "$RESOLVED_DB_PASSWORD")
-
-          timeout --signal=TERM --kill-after=15s 120s \
-            supabase link "${args[@]}" </dev/null
+          if [ -n "$RESOLVED_DB_PASSWORD" ]; then
+            timeout --signal=TERM --kill-after=15s 120s \
+              supabase link --project-ref "$INPUT_PROJECT_REF" --password "$RESOLVED_DB_PASSWORD" --yes </dev/null
+          else
+            timeout --signal=TERM --kill-after=15s 120s \
+              supabase link --project-ref "$INPUT_PROJECT_REF" --yes </dev/null
+          fi
         }
-
         run_link_with_retry() {
-          local max_attempts=3 delay=10 attempt=1
+          local max_attempts=3
+          local delay_seconds=10
+          local attempt=1
           while true; do
             echo "Linking Supabase project (attempt $attempt/$max_attempts)..."
-            local output exit_code=0
-            output=$(run_link_once 2>&1) || exit_code=$?
-
+            local output
+            output=$(run_link_once 2>&1) || {
+              local exit_code=$?
+              echo "$output"
+              if is_deterministic_link_error "$output"; then
+                echo "::warning::Supabase link skipped (deterministic error): $output"
+                echo "skipped=true" >> "$GITHUB_OUTPUT"
+                return 0
+              fi
+              if [ "$attempt" -ge "$max_attempts" ]; then
+                echo "::error::Supabase project link failed after $max_attempts attempts. Check the link step output above for the upstream/proxy error returned by Supabase CLI."
+                return 1
+              fi
+              attempt=$((attempt + 1))
+              echo "::warning::Supabase project link failed, retrying in ${delay_seconds}s in case this was a transient upstream/proxy error."
+              sleep "$delay_seconds"
+              continue
+            }
             echo "$output"
-
-            if [ $exit_code -eq 0 ]; then
-              echo "Supabase project linked successfully."
-              return 0
-            fi
-
-            if is_deterministic_link_error "$output"; then
-              echo "::warning::Supabase link skipped (deterministic error)"
-              echo "skipped=true" >> "$GITHUB_OUTPUT"
-              return 0
-            fi
-
-            if [ $attempt -ge $max_attempts ]; then
-              echo "::error::Supabase project link failed after $max_attempts attempts."
-              return 1
-            fi
-
-            attempt=$((attempt + 1))
-            echo "::warning::Link failed, retrying in ${delay}s..."
-            sleep "$delay"
+            echo "Supabase project linked successfully."
+            return 0
           done
         }
-
         run_link_with_retry
 
-    - name: Execute command
-      if: steps.link.outputs.skipped != 'true'
+    - name: Write command script
+      id: write-script
+      if: ${{ steps.link.outputs.skipped != 'true' }}
       shell: bash
       env:
-        DATABASE_URL: ${{ inputs.database_url }}
-        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
-        SUPABASE_PROJECT_REF: ${{ inputs.project_ref }}
-        SUPABASE_DB_PASSWORD: ${{ steps.creds.outputs.resolved_db_password }}
         ACTION_COMMAND: ${{ inputs.command }}
       run: |
         set -euo pipefail
+        SCRIPT_PATH=$(mktemp "${RUNNER_TEMP:-/tmp}/supabase_command.XXXXXX.sh")
+        printf '%s\n' '#!/usr/bin/env bash' > "$SCRIPT_PATH"
+        printf '%s\n' "$ACTION_COMMAND" >> "$SCRIPT_PATH"
+        chmod +x "$SCRIPT_PATH"
+        printf 'script_path=%s\n' "$SCRIPT_PATH" >> "$GITHUB_OUTPUT"
 
-        # Prefer Session Pooler (DATABASE_URL) over direct host for GitHub Actions reliability
-        if [ -n "${DATABASE_URL:-}" ]; then
-          SESSION_URL="$DATABASE_URL"
-        elif [ -n "${SUPABASE_DB_PASSWORD:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ]; then
-          SESSION_URL="postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.${SUPABASE_PROJECT_REF}.supabase.co:5432/postgres?sslmode=require"
-          echo "::warning::No DATABASE_URL provided. Using direct host (may have IPv6 issues)."
-        else
-          SESSION_URL=""
+    - name: Execute command
+      if: ${{ steps.link.outputs.skipped != 'true' }}
+      shell: bash
+      env:
+        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
+        SUPABASE_DB_PASSWORD_INPUT: ${{ steps.creds.outputs.resolved_db_password }}
+        SCRIPT_PATH: ${{ steps.write-script.outputs.script_path }}
+      run: |
+        set -euo pipefail
+
+        if [ -n "${SUPABASE_DB_PASSWORD_INPUT:-}" ]; then
+          export SUPABASE_DB_PASSWORD="$SUPABASE_DB_PASSWORD_INPUT"
         fi
 
-        export SESSION_URL
-
-        # Lightweight, non-blocking preflight
-        if [ -n "$SESSION_URL" ]; then
-          HOST=$(echo "$SESSION_URL" | sed -n 's|.*@\(.*\):.*|\1|p' | cut -d'?' -f1 || true)
-          if [ -n "$HOST" ]; then
-            echo "Preflight: resolving $HOST..."
-            getent hosts "$HOST" >/dev/null 2>&1 || dig +short "$HOST" @8.8.8.8 >/dev/null 2>&1 || \
-              echo "::warning::Could not resolve $HOST (possible transient DNS issue on runner)"
-          fi
+        if [ -z "${SESSION_URL:-}" ]; then
+          echo "::warning::SESSION_URL was not resolved by the action. Your command may need to provide explicit --db-url or --project-ref flags."
         fi
 
-        # Write and execute the provided command safely (avoids YAML/heredoc parsing issues with large inline scripts)
-        printf '%s\n' "$ACTION_COMMAND" > /tmp/supabase_command.sh
-        chmod +x /tmp/supabase_command.sh
-        bash /tmp/supabase_command.sh
+        bash "${SCRIPT_PATH}"
+        rm -f "${SCRIPT_PATH}" || true

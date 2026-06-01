@@ -54,7 +54,7 @@ const requiredSecretKeys = [
   'SUPABASE_SERVICE_ROLE_KEY', // Included for GitHub/Vercel, filtered for Supabase API
   'NUVANX_SUPABASE_SERVICE_ROLE_KEY', // Included for GitHub/Vercel, filtered for Supabase API
   'SUPABASE_ANON_KEY', // Included for GitHub/Vercel, filtered for Supabase API
-  'MCP_API_KEY',
+  'VITE_MCP_API_KEY',
   'HEALTH_CHECK_API_AUTH_TOKEN',
 ];
 
@@ -107,11 +107,6 @@ function mergeSources() {
   }
   if (merged.DOCTORALIA_SHEET_ID && !merged.DOCTORALIA_DRIVE_FILE_ID) {
     merged.DOCTORALIA_DRIVE_FILE_ID = merged.DOCTORALIA_SHEET_ID;
-  }
-
-  // Ensure VITE_MCP_API_KEY is populated from MCP_API_KEY if missing.
-  if (merged.MCP_API_KEY && !merged.VITE_MCP_API_KEY) {
-    merged.VITE_MCP_API_KEY = merged.MCP_API_KEY;
   }
 
   return merged;

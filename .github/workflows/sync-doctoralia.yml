@@ -4,9 +4,6 @@ name: Sync Doctoralia Financials
 # Reads individual settlement rows from Google Sheets (Doctoralia export) and
 # upserts them into the financial_settlements table.
 #
-# Runs automatically every day at 07:00 UTC via schedule.
-# Can also be triggered manually via workflow_dispatch.
-#
 # Required GitHub secrets:
 #   GOOGLE_ADS_SERVICE_ACCOUNT  - Service account credentials (raw JSON OR base64-encoded JSON);
 #                                  must be a valid Google service account in a project with
@@ -18,18 +15,15 @@ name: Sync Doctoralia Financials
 #   DATABASE_URL                - Direct Postgres connection string (Supabase)
 #   CLINIC_ID                   - UUID of the clinic owning these settlements
 
+# on:
+#   schedule:
+#     - cron: '0 7 * * *'   # Daily at 07:00 UTC (09:00 Spain, before business hours)
 on:
-  schedule:
-    - cron: '0 7 * * *'   # Daily at 07:00 UTC (09:00 Spain, before business hours)
   workflow_dispatch: {}
   workflow_call: {}
 
 permissions:
   contents: read
-
-concurrency:
-  group: sync-doctoralia-${{ github.ref_name }}
-  cancel-in-progress: true
 
 jobs:
   sync:
@@ -52,10 +46,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4.1.0
+        uses: actions/setup-node@v6
         with:
           node-version: '22'
 
@@ -72,11 +66,10 @@ jobs:
           HAS_AUTH=0
           if [ -n "${GOOGLE_API_KEY:-}" ]; then HAS_AUTH=1; echo "Auth: API Key detected"; fi
           if [ -n "${GOOGLE_DOCTORALIA_SERVICE_ACCOUNT:-}" ]; then HAS_AUTH=1; echo "Auth: GOOGLE_DOCTORALIA_SERVICE_ACCOUNT detected"; fi
-          if [ -n "${GOOGLE_ADS_SERVICE_ACCOUNT:-}" ]; then HAS_AUTH=1; echo "Auth: GOOGLE_ADS_SERVICE_ACCOUNT detected"; fi
           if [ -n "${GOOGLE_CLIENT_EMAIL:-}" ] && [ -n "${GOOGLE_PRIVATE_KEY:-}" ]; then HAS_AUTH=1; echo "Auth: Individual GOOGLE_CLIENT_EMAIL and GOOGLE_PRIVATE_KEY detected"; fi
 
           if [ "$HAS_AUTH" -eq 0 ]; then
-             MISSING+=("Authentication (GOOGLE_API_KEY, GOOGLE_DOCTORALIA_SERVICE_ACCOUNT, GOOGLE_ADS_SERVICE_ACCOUNT, or EMAIL+KEY)")
+             MISSING+=("Authentication (GOOGLE_API_KEY, GOOGLE_DOCTORALIA_SERVICE_ACCOUNT, or EMAIL+KEY)")
           fi
 
           # Conditional Sheet ID validation
@@ -102,8 +95,8 @@ jobs:
           # Log presence of optional secrets for debugging
           [ -n "${GOOGLE_API_KEY:-}" ] && echo "Auth method: GOOGLE_API_KEY is present." || echo "Auth method: GOOGLE_API_KEY is missing."
           
-          # Try to decode Service Account (Doctoralia or Ads fallback)
-          export SA_JSON_RAW="${GOOGLE_DOCTORALIA_SERVICE_ACCOUNT:-${GOOGLE_ADS_SERVICE_ACCOUNT:-}}"
+          # Try to decode GOOGLE_DOCTORALIA_SERVICE_ACCOUNT
+          export SA_JSON_RAW="${GOOGLE_DOCTORALIA_SERVICE_ACCOUNT:-}"
           if [ -n "$SA_JSON_RAW" ]; then
             if python3 -c "import os,json; json.loads(os.environ.get('SA_JSON_RAW', ''))" 2>/dev/null; then
               echo "SA_JSON_RAW format: Detected raw JSON"
@@ -136,8 +129,6 @@ jobs:
         run: node scripts/sync-doctoralia.js
         env:
           GOOGLE_SA_JSON_FILE: ${{ env.GOOGLE_SA_JSON_FILE }}
-          GOOGLE_DOCTORALIA_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_DOCTORALIA_SERVICE_ACCOUNT }}
-          GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
           GOOGLE_API_KEY:      ${{ secrets.GOOGLE_API_KEY }}
           GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
           GOOGLE_CLIENT_ID:    ${{ secrets.GOOGLE_CLIENT_ID }}

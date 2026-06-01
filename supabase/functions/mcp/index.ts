@@ -68,7 +68,7 @@ function getBearerToken(request: Request): string {
 
 function isAuthorized(request: Request): boolean {
   const providedKey = request.headers.get('x-api-key')?.trim() || getBearerToken(request)
-  const expectedApiKey = Deno.env.get('MCP_API_KEY')?.trim()
+  const expectedApiKey = (Deno.env.get('VITE_MCP_API_KEY') || Deno.env.get('MCP_API_KEY'))?.trim()
   if (!expectedApiKey) return false
   return providedKey === expectedApiKey
 }
@@ -382,14 +382,14 @@ mcpApp.get('/', (c) => c.json({
 mcpApp.get('/health', (c) => c.json({
   status: 'ok',
   timestamp: new Date().toISOString(),
-  auth: Deno.env.get('MCP_API_KEY')?.trim() ? 'bearer' : 'disabled',
+  auth: (Deno.env.get('VITE_MCP_API_KEY') || Deno.env.get('MCP_API_KEY'))?.trim() ? 'bearer' : 'disabled',
 }))
 
 mcpApp.all('/mcp', async (c) => {
   // === API KEY AUTHENTICATION ===
   const providedKey = c.req.header('x-api-key') ||
                       c.req.header('authorization')?.replace(/^Bearer\s+/i, '')
-  const expectedKey = Deno.env.get('MCP_API_KEY')
+  const expectedKey = Deno.env.get('VITE_MCP_API_KEY') || Deno.env.get('MCP_API_KEY')
 
   if (!expectedKey || providedKey !== expectedKey) {
     console.warn('[MCP] Unauthorized request')

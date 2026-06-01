@@ -52,5 +52,9 @@
     "@typescript-eslint/typescript-estree": {
       "minimatch": "^9.0.9"
     }
+  },
+  "engines": {
+    "node": "22.x",
+    "npm": ">=10"
   }
 }

@@ -9,6 +9,41 @@ const tracked = cp.execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8' })
   .filter(Boolean)
   .filter((file) => !file.startsWith('node_modules/') && !file.startsWith('frontend/node_modules/'));
 
+
+const POSTGRES_PLACEHOLDER_PASSWORDS = new Set([
+  'password',
+  'pass',
+  'pass-with-dashes_and.dots',
+  'db_password',
+  'database_password',
+  'supabase_db_password',
+  'redacted_password',
+  'your_password',
+  'your-password',
+]);
+
+function isPlaceholderPostgresUrlLine(line) {
+  const urlPasswordPattern = /postgres(?:ql)?:\/\/[^\s:@$]+:([^@\s]+)@/gi;
+  const matches = Array.from(line.matchAll(urlPasswordPattern));
+
+  if (matches.length === 0) return false;
+
+  return matches.every((match) => {
+    const password = match[1].trim();
+    const normalized = password
+      .replace(/^[[({<]+|[\])}>]+$/g, '')
+      .toLowerCase();
+
+    return (
+      password.startsWith('${')
+      || normalized.includes('example')
+      || normalized.includes('placeholder')
+      || normalized.includes('redacted')
+      || POSTGRES_PLACEHOLDER_PASSWORDS.has(normalized)
+    );
+  });
+}
+
 const patterns = [
   { name: 'Postgres URL with inline password', re: /postgres(?:ql)?:\/\/[^\s:@$]+:(?!password@|\$\{)[^\s:@$]{8,}@[^\s]+/i },
   { name: 'Supabase pooler URL with inline password', re: /postgres\.[a-z0-9]+:(?!\$\{)[^\s:@$]{8,}@aws-[^\s]+\.pooler\.supabase\.com/i },
@@ -16,7 +51,7 @@ const patterns = [
   { name: 'Private key block', re: /-----BEGIN (?:RSA |EC |OPENSSH |)PRIVATE KEY-----/ },
   {
     name: 'Hardcoded secret assignment',
-    re: /(?:SECRET|TOKEN|API_KEY|PASSWORD|SERVICE_ROLE_KEY|PRIVATE_KEY)\s*[:=]\s*['"](?!env\(|\.\.\.|(?:REPLACE_ME|changeme|example|test-|your-|Doctoralia_Secret_)|\$)[^'"\s]{20,}['"]/i,
+    re: /(?:SECRET|TOKEN|API_KEY|PASSWORD|SERVICE_ROLE_KEY|PRIVATE_KEY)\s*[:=]\s*['\"](?!env\(|\.\.\.|REPLACE_ME|changeme|example|test-|your-|\$)[^'\"\s]{20,}['\"]/i,
   },
 ];
 
@@ -33,7 +68,7 @@ for (const file of tracked) {
     for (const pattern of patterns) {
       if (pattern.re.test(line)) {
         if (pattern.name === 'Private key block' && line.includes('replaceAll(')) continue;
-        if (pattern.name.includes('Postgres') && line.includes('[REDACTED_PASSWORD]')) continue;
+        if (pattern.name.includes('Postgres') && isPlaceholderPostgresUrlLine(line)) continue;
         findings.push({ file, line: index + 1, pattern: pattern.name });
       }
     }

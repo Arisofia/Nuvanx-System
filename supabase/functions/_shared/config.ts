@@ -20,11 +20,8 @@ export const SUPABASE_URL = getEnv('SUPABASE_URL');
 export const SUPABASE_SERVICE_ROLE_KEY = getEnv('SUPABASE_SERVICE_ROLE_KEY');
 export const SUPABASE_ANON_KEY = getEnv('SUPABASE_ANON_KEY');
 export const NUVANX_SUPABASE_SERVICE_ROLE_KEY = getEnv('NUVANX_SUPABASE_SERVICE_ROLE_KEY');
-export const MCP_API_KEY = getEnv('MCP_API_KEY');
+export const MCP_API_KEY = getEnv('VITE_MCP_API_KEY') || getEnv('MCP_API_KEY');
 export const ENCRYPTION_KEY = getEnv('ENCRYPTION_KEY');
-if (!ENCRYPTION_KEY) {
-  console.error('[CONFIG] CRITICAL: ENCRYPTION_KEY is not set. All credential decryption will fail. Set this secret in Supabase Edge Functions Secrets.');
-}
 export const META_AD_ACCOUNT_IDS = getEnv('META_AD_ACCOUNT_IDS');
 export const META_APP_ID = getEnv('META_APP_ID');
 export const META_APP_SECRET = getEnv('META_APP_SECRET');
