@@ -470,6 +470,8 @@ async function setupGoogleSheetsAuth() {
   if (saJson) {
     try {
       saObject = JSON.parse(saJson);
+      const email = getServiceAccountEmail(saObject);
+      console.log(`[sync-doctoralia] Using Google Service Account: ${email}`);
       return {
         auth: new google.auth.GoogleAuth({
           credentials: saObject,
@@ -570,8 +572,15 @@ async function reconcileDoctoraliaLeads(db) {
 }
 
 async function main() {
+  console.log('[sync-doctoralia] Starting Doctoralia financial sync...');
+
   // ── 1. Auth and Sheets Setup ─────────────────────────────────────────────
   const { auth, saObject } = await setupGoogleSheetsAuth();
+
+  if (!saObject && GOOGLE_API_KEY) {
+    console.log('[sync-doctoralia] Using GOOGLE_API_KEY for authentication (limited permissions).');
+  }
+
   const sheets = google.sheets({ version: 'v4', auth });
 
   const rows = await fetchSheetRows(sheets, saObject);
