@@ -13,10 +13,11 @@ BEGIN
 
   DROP VIEW IF EXISTS public.vw_campaign_performance_real;
 
+  EXECUTE '
   CREATE OR REPLACE VIEW public.vw_campaign_performance_real AS
   SELECT
     u.id                                                AS user_id,
-    COALESCE(ma.campaign_name, ut.campaign_name, 'Organic / Unknown') AS campaign_name,
+    COALESCE(ma.campaign_name, ut.campaign_name, ''Organic / Unknown'') AS campaign_name,
     COALESCE(ma.campaign_id, ut.campaign_id)            AS campaign_id,
 
     COUNT(*)                                            AS total_leads,
@@ -25,7 +26,7 @@ BEGIN
     COUNT(*) FILTER (WHERE ut.has_contacted)            AS contacted,
     COUNT(*) FILTER (WHERE ut.has_replied)              AS replied,
 
-    COUNT(*) FILTER (WHERE ut.lead_stage IN ('scheduled','confirmed','showed','completed')) AS booked,
+    COUNT(*) FILTER (WHERE ut.lead_stage IN (''scheduled'',''confirmed'',''showed'',''completed'')) AS booked,
     COUNT(*) FILTER (WHERE ut.attended_at IS NOT NULL)  AS attended,
     COUNT(*) FILTER (WHERE ut.no_show_flag = TRUE)      AS no_shows,
 
@@ -41,7 +42,7 @@ BEGIN
     )                                                   AS reply_rate_pct,
 
     ROUND(
-      100.0 * COUNT(*) FILTER (WHERE ut.has_replied AND ut.lead_stage IN ('scheduled','confirmed','showed','completed')) /
+      100.0 * COUNT(*) FILTER (WHERE ut.has_replied AND ut.lead_stage IN (''scheduled'',''confirmed'',''showed'',''completed'')) /
       NULLIF(COUNT(*) FILTER (WHERE ut.has_replied), 0), 1
     )                                                   AS replied_to_booked_pct,
 
@@ -67,12 +68,12 @@ BEGIN
     ON ma.lead_id = ut.lead_id
   GROUP BY
     u.id,
-    COALESCE(ma.campaign_name, ut.campaign_name, 'Organic / Unknown'),
-    COALESCE(ma.campaign_id, ut.campaign_id);
+    COALESCE(ma.campaign_name, ut.campaign_name, ''Organic / Unknown''),
+    COALESCE(ma.campaign_id, ut.campaign_id)';
 
-  ALTER VIEW public.vw_campaign_performance_real SET (security_invoker = true);
-  GRANT SELECT ON public.vw_campaign_performance_real TO service_role;
-  GRANT SELECT ON public.vw_campaign_performance_real TO authenticated;
+  EXECUTE 'ALTER VIEW public.vw_campaign_performance_real SET (security_invoker = true)';
+  EXECUTE 'GRANT SELECT ON public.vw_campaign_performance_real TO service_role';
+  EXECUTE 'GRANT SELECT ON public.vw_campaign_performance_real TO authenticated';
 
 END $$;
 

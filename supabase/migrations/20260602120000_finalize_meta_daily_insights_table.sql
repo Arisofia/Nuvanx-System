@@ -38,6 +38,12 @@ ALTER TABLE public.meta_daily_insights
   ADD COLUMN IF NOT EXISTS action_values JSONB,
   ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
+-- Backfill clinic_id from users table
+UPDATE public.meta_daily_insights m
+SET clinic_id = u.clinic_id
+FROM public.users u
+WHERE m.user_id = u.id AND m.clinic_id IS NULL;
+
 -- lead_actions (handled separately as it is generated)
 DO $$
 BEGIN
@@ -57,8 +63,15 @@ BEGIN
 END $$;
 
 -- Ensure primary key is correct (swap from user-scoped to clinic-scoped if needed)
+-- We must ensure clinic_id is NOT NULL before it can be part of PK
 DO $$
 BEGIN
+  -- If there are still NULLs in clinic_id (e.g. orphaned rows), we must handle them
+  -- to avoid PK creation failure.
+  DELETE FROM public.meta_daily_insights WHERE clinic_id IS NULL;
+
+  ALTER TABLE public.meta_daily_insights ALTER COLUMN clinic_id SET NOT NULL;
+
   IF EXISTS (
     SELECT 1 FROM information_schema.table_constraints 
     WHERE table_name='meta_daily_insights' 

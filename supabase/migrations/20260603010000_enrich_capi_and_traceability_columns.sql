@@ -37,8 +37,9 @@ BEGIN
   IF to_regclass('public.vw_doctoralia_lead_traceability_unified') IS NOT NULL THEN
     -- We recreate the view with the new columns
     -- Note: This assumes the previous definition. Adjust if the base view changes.
-    DROP VIEW IF EXISTS public.vw_doctoralia_lead_traceability_unified;
+    EXECUTE 'DROP VIEW IF EXISTS public.vw_doctoralia_lead_traceability_unified';
 
+    EXECUTE '
     CREATE OR REPLACE VIEW public.vw_doctoralia_lead_traceability_unified AS
     SELECT
       dr.*,
@@ -78,7 +79,7 @@ BEGIN
         normalize_phone(dr.paciente_telefono) = l.phone_normalized
         OR normalize_phone(dr.phone_primary)  = l.phone_normalized
         OR normalize_phone(dr.phone_secondary) = l.phone_normalized
-      );
+      )';
   END IF;
 END $$;
 
