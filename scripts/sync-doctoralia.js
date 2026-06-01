@@ -492,59 +492,67 @@ async function setupGoogleSheetsAuth() {
 }
 
 async function fetchSheetRows(sheets, saObject) {
-  const normalizedSheetName = SHEET_NAME?.trim().replace(/^['"]+|['"]+$/g, '');
-  const range = normalizedSheetName
-    ? `'${normalizedSheetName.replaceAll("'", "''")}'!${SHEET_RANGE.trim()}`
+  console.log(`[sync-doctoralia] Fetching spreadsheet metadata (id: ${SHEET_ID.slice(0, 4)}...${SHEET_ID.slice(-4)})`);
+
+  // First, get the list of sheets to find the correct title
+  let targetSheetTitle = null;
+
+  try {
+    const meta = await sheets.spreadsheets.get({
+      spreadsheetId: SHEET_ID,
+      fields: 'sheets.properties.title,sheets.properties.sheetId'
+    });
+
+    const sheetsList = meta.data.sheets || [];
+
+    if (SHEET_NAME) {
+      const normalized = SHEET_NAME.trim().toLowerCase();
+      const found = sheetsList.find(s => 
+        s.properties.title.toLowerCase() === normalized ||
+        s.properties.title.toLowerCase().includes(normalized)
+      );
+      if (found) targetSheetTitle = found.properties.title;
+    }
+
+    if (!targetSheetTitle && sheetsList.length > 0) {
+      // Fallback to first sheet
+      targetSheetTitle = sheetsList[0].properties.title;
+      console.log(`[sync-doctoralia] No exact sheet match for "${SHEET_NAME}", using first sheet: "${targetSheetTitle}"`);
+    }
+  } catch (metaErr) {
+    console.warn(`[sync-doctoralia] Could not fetch spreadsheet metadata: ${metaErr.message}. Will try direct range.`);
+  }
+
+  const range = targetSheetTitle 
+    ? `'${targetSheetTitle.replaceAll("'", "''")}'!${SHEET_RANGE.trim()}`
     : SHEET_RANGE.trim();
 
-  console.log(`[sync-doctoralia] Fetching spreadsheet (id: ${SHEET_ID.slice(0, 4)}...${SHEET_ID.slice(-4)}), range: ${range}`);
+  console.log(`[sync-doctoralia] Final range: ${range}`);
 
-  const attempts = [range];
-
-  // If a sheet name was provided and we get invalid argument, retry without the sheet prefix
-  // (many exports have the data in the first/default sheet).
-  if (normalizedSheetName && SHEET_RANGE) {
-    attempts.push(SHEET_RANGE.trim());
-  }
-
-  for (const attemptRange of attempts) {
-    try {
-      console.log(`[sync-doctoralia] Trying range: ${attemptRange}`);
-      const res = await sheets.spreadsheets.values.get({
-        spreadsheetId: SHEET_ID,
-        range: attemptRange,
-      });
-      return res.data.values ?? [];
-    } catch (err) {
-      const isInvalidArg = err?.code === 400 || 
-        (err?.errors && err.errors.some(e => e.reason === 'badRequest')) ||
-        String(err?.message || '').toLowerCase().includes('invalid argument');
-
-      if (isInvalidArg && attemptRange !== attempts[attempts.length - 1]) {
-        console.warn(`[sync-doctoralia] Range '${attemptRange}' invalid, trying fallback...`);
-        continue;
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range,
+    });
+    return res.data.values ?? [];
+  } catch (err) {
+    if (isGooglePermissionError(err)) {
+      const guidance = formatPermissionGuidance(saObject);
+      if (ALLOW_PERMISSION_SKIP) {
+        console.warn(`::warning::[sync-doctoralia] ${guidance}`);
+        return null;
       }
-
-      if (isGooglePermissionError(err)) {
-        const guidance = formatPermissionGuidance(saObject);
-        if (ALLOW_PERMISSION_SKIP) {
-          console.warn(`::warning::[sync-doctoralia] ${guidance}`);
-          return null;
-        }
-        throw new Error(guidance);
-      }
-
-      console.error(`[sync-doctoralia] Sheets API Error: ${err.message}`);
-      if (err.errors) {
-        console.error('[sync-doctoralia] Details:', JSON.stringify(err.errors, null, 2));
-      } else if (err.response?.data) {
-        console.error('[sync-doctoralia] Response Data:', JSON.stringify(err.response.data, null, 2));
-      }
-      throw err;
+      throw new Error(guidance);
     }
-  }
 
-  throw new Error(`Failed to fetch data from spreadsheet ${SHEET_ID} with ranges: ${attempts.join(', ')}`);
+    console.error(`[sync-doctoralia] Sheets API Error: ${err.message}`);
+    if (err.errors) {
+      console.error('[sync-doctoralia] Details:', JSON.stringify(err.errors, null, 2));
+    } else if (err.response?.data) {
+      console.error('[sync-doctoralia] Response Data:', JSON.stringify(err.response.data, null, 2));
+    }
+    throw err;
+  }
 }
 
 async function reconcileDoctoraliaLeads(db) {
