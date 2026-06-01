@@ -136,5 +136,5 @@ jobs:
           GOOGLE_PRIVATE_KEY:  ${{ secrets.GOOGLE_PRIVATE_KEY }}
           EXPECTED_SHEET_ID:   ${{ env.EXPECTED_SHEET_ID }}
           SHEET_RANGE:         A1:Z5000
-          SHEET_NAME:          "Produccion Intermediarios"
+          SHEET_NAME:          ""   # Let the script auto-discover the correct tab (more robust)
           DOCTORALIA_SYNC_PERMISSION_MODE: warn
