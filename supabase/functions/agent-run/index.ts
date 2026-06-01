@@ -59,6 +59,28 @@ async function callAnthropicAPI(prompt: string, context: string): Promise<{ text
   };
 }
 
+async function callGeminiAPI(prompt: string, context: string): Promise<{ text: string; model: string; tokens: number }> {
+  const fullPrompt = context ? `${context}\n\n${prompt}` : prompt;
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_KEY}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: fullPrompt }] }],
+      generationConfig: { maxOutputTokens: 2000 }
+    })
+  });
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Gemini API error ${response.status}: ${err}`);
+  }
+  const data = await response.json();
+  return {
+    text: data.candidates?.[0]?.content?.parts?.[0]?.text ?? '',
+    model: 'gemini-1.5-flash',
+    tokens: (data.usageMetadata?.promptTokenCount ?? 0) + (data.usageMetadata?.candidatesTokenCount ?? 0)
+  };
+}
+
 async function callOpenAIAPI(prompt: string, context: string): Promise<{ text: string; model: string; tokens: number }> {
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -155,7 +177,7 @@ Deno.serve(async (req: Request) => {
 
     // Determine which AI to use
     let result: { text: string; model: string; tokens: number };
-    const availableKey = ANTHROPIC_KEY ? 'anthropic' : OPENAI_KEY ? 'openai' : null;
+    const availableKey = GEMINI_KEY ? 'gemini' : ANTHROPIC_KEY ? 'anthropic' : OPENAI_KEY ? 'openai' : null;
 
     if (!availableKey) {
       // No API keys in secrets - persist a blocked record
@@ -177,7 +199,9 @@ Deno.serve(async (req: Request) => {
     }
 
     try {
-      result = availableKey === 'anthropic'
+      result = availableKey === 'gemini'
+        ? await callGeminiAPI(prompt, context)
+        : availableKey === 'anthropic'
         ? await callAnthropicAPI(prompt, context)
         : await callOpenAIAPI(prompt, context);
     } catch (err: any) {
