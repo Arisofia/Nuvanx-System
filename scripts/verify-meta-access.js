@@ -124,8 +124,8 @@ async function main() {
   );
 }
 
-main().catch((error) => {
+main().catch(() => {
   console.error('❌ Meta access verification failed.');
-  console.error(`Reason: ${sanitizeError(error)}`);
+  console.error('Reason: verification failed. Check configuration and Meta token permissions.');
   process.exit(1);
 });
