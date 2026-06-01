@@ -34,11 +34,11 @@ on:
         required: false
       SUPABASE_DB_PASSWORD:
         required: false
-      VITE_MCP_API_KEY:
+      MCP_API_KEY:
         required: false
 
 env:
-  VITE_MCP_API_KEY: ${{ secrets.VITE_MCP_API_KEY }}
+  VITE_MCP_API_KEY: ${{ secrets.MCP_API_KEY }}
 
 concurrency:
   group: supabase-security-${{ github.ref_name }}

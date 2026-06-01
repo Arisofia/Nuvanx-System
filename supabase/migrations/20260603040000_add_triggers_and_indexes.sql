@@ -46,9 +46,22 @@ BEGIN
     -- Organic vs paid
     CREATE INDEX IF NOT EXISTS idx_leads_is_organic ON public.leads(is_organic) WHERE is_organic IS NOT NULL;
 
-    -- Phone hashes (for fast matching)
-    CREATE INDEX IF NOT EXISTS idx_leads_phone_sha256 ON public.leads USING hash (phone_sha256) WHERE phone_sha256 IS NOT NULL;
-    CREATE INDEX IF NOT EXISTS idx_leads_phone_md5 ON public.leads USING hash (phone_md5) WHERE phone_md5 IS NOT NULL;
+    -- Phone hashes (for fast matching) - only if columns exist
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns 
+      WHERE table_name = 'leads' AND column_name = 'phone_sha256'
+    ) THEN
+      EXECUTE 'CREATE INDEX IF NOT EXISTS idx_leads_phone_sha256 ON public.leads USING hash (phone_sha256) WHERE phone_sha256 IS NOT NULL';
+      RAISE NOTICE 'Created index idx_leads_phone_sha256';
+    END IF;
+
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns 
+      WHERE table_name = 'leads' AND column_name = 'phone_md5'
+    ) THEN
+      EXECUTE 'CREATE INDEX IF NOT EXISTS idx_leads_phone_md5 ON public.leads USING hash (phone_md5) WHERE phone_md5 IS NOT NULL';
+      RAISE NOTICE 'Created index idx_leads_phone_md5';
+    END IF;
 
     -- Composite for common queries
     CREATE INDEX IF NOT EXISTS idx_leads_user_campaign ON public.leads(user_id, campaign_id) WHERE deleted_at IS NULL;

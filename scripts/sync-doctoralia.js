@@ -158,9 +158,39 @@ function formatPermissionGuidance(sa) {
   ].join(' ');
 }
 
+/**
+ * Parses the "Asunto" column (F) using a robust regex.
+ * Handles cases where the patient name itself contains parentheses.
+ * 
+ * Expected format: "398. ANGELA ISABEL ANCHUNDIA ALVARADO (SANDRA ALVARADO) [722252733] (REVISIÓN TRATAMIENTO )"
+ */
+function parseAsunto(asunto) {
+  if (!asunto) return null;
+  const pattern = /^(\d+)\.\s+(.*?)\s+\[(.*?)\]\s+\((.*?)\)\s*$/;
+  const match = String(asunto).match(pattern);
+  
+  if (!match) return null;
+
+  return {
+    id: match[1],
+    nombre: match[2].trim(),
+    telefono: match[3].trim(),
+    tratamiento: match[4].trim()
+  };
+}
+
 function deriveRawId(row, useHashId, cols) {
   if (!useHashId) {
     return normalizeField(row[cols.colId]);
+  }
+
+  // Fallback: Try robust parsing from Asunto column
+  if (cols.hasColTemplate) {
+    const asunto = normalizeField(row[cols.colTemplate]);
+    const parsed = parseAsunto(asunto);
+    if (parsed && parsed.id) {
+      return parsed.id;
+    }
   }
 
   const fecha  = normalizeField(row[cols.colFecha]);
@@ -305,9 +335,17 @@ function getStatusInfo(row, cols, hasColStatus, settledAt) {
 
 function getAmountValues(row, cols, options, rowIndex) {
   const { hasColGross, hasColDiscount, hasColNet } = options;
-  const amountGross = hasColGross ? parseAmount(row[cols.colGross]) : null;
-  const amountDisc = hasColDiscount ? parseAmount(row[cols.colDiscount]) : null;
-  const amountNet = hasColNet ? parseAmount(row[cols.colNet]) : null;
+
+  // Priority 1: If we have a dedicated Net column (usually "Importe" in this sheet), prefer it
+  let amountNet = hasColNet ? parseAmount(row[cols.colNet]) : null;
+  let amountGross = hasColGross ? parseAmount(row[cols.colGross]) : null;
+  let amountDisc = hasColDiscount ? parseAmount(row[cols.colDiscount]) : null;
+
+  // If we only have one "Importe" column (common in Doctoralia exports), treat it as net
+  if (!hasColGross && !hasColDiscount && hasColNet && amountNet !== null) {
+    amountGross = amountNet;
+    amountDisc = 0;
+  }
 
   if (hasColGross && amountGross === null) {
     console.warn(`[sync-doctoralia] Skipping row ${rowIndex + 1} because bruto importe is invalid: ${row[cols.colGross]}`);
@@ -318,7 +356,7 @@ function getAmountValues(row, cols, options, rowIndex) {
     return null;
   }
   if (hasColNet && amountNet === null) {
-    console.warn(`[sync-doctoralia] Skipping row ${rowIndex + 1} because neto importe es invalid: ${row[cols.colNet]}`);
+    console.warn(`[sync-doctoralia] Skipping row ${rowIndex + 1} because importe is invalid: ${row[cols.colNet]}`);
     return null;
   }
 
@@ -334,23 +372,27 @@ function getOptionalTextValue(row, col, enabled) {
 }
 
 function buildHeaderConfig(headers) {
-  const colId           = findCol(headers, '=id', '=num', 'id op', 'id_op', 'num op', 'operacion', 'operation');
-  const colTemplate     = findCol(headers, 'plantilladescr', 'plantilla descr', 'plantilla', 'template descr', 'template', 'asunto');
+  // Optimized for the exact "Produccion Intermediarios" sheet structure (as of June 2026 inspection)
+  const colId           = findCol(headers, '=id', '=num', 'id op', 'id_op', 'num op', 'operacion', 'operation', 'm');
+  const colTemplate     = findCol(headers, 'plantilladescr', 'plantilla descr', 'plantilla', 'template descr', 'template', 'asunto', 'f');
   const colTemplateId   = findCol(headers, 'id plantilla', 'template_id', 'id_plantilla', 'cod plantilla');
-  const colFecha        = findCol(headers, 'fecha');
-  const colHora         = findCol(headers, 'hora');
-  const colIntake       = findCol(headers, 'fecha ingreso', 'fecha inicio', 'ingreso', 'inicio', 'intake', 'alta', 'desde', 'fecha creacion', 'fecha creaci');
-  const colSettled      = findCol(headers, 'fecha liquidaci', 'liquidaci', 'fecha liq', 'settled', 'f. liq');
+  const colFecha        = findCol(headers, 'fecha', 'b');
+  const colHora         = findCol(headers, 'hora', 'c');
+  const colIntake       = findCol(headers, 'fecha ingreso', 'fecha inicio', 'ingreso', 'inicio', 'intake', 'alta', 'desde', 'fecha creacion', 'fecha creaci', 'd');
+  const colSettled      = findCol(headers, 'fecha liquidaci', 'liquidaci', 'fecha liq', 'settled', 'f. liq', 'b'); // B is the main date
   const colGross        = findCol(headers, 'importe bruto', 'bruto', 'gross', 'financiad', 'capital');
   const colDiscount     = findCol(headers, 'descuento', 'discount', 'bonific');
-  const colNet          = findCol(headers, 'importe neto', 'importe liq', 'neto', 'net', 'liquidado', 'importe');
+  const colNet          = findCol(headers, 'importe neto', 'importe liq', 'neto', 'net', 'liquidado', 'importe', 'k'); // K = Importe
   const colPayment      = findCol(headers, 'metodo pago', 'metodo de pago', 'pago', 'payment', 'forma pago', 'procedencia');
-  const colIntermediary = findCol(headers, 'intermediario', 'mediador', 'financiera', 'entidad', 'agenda');
-  const colStatus       = findCol(headers, 'estado', 'status', 'situacion');
-  const colOrigin       = findCol(headers, 'procedencia', 'origen', 'source', 'origin');
-  const colAgenda       = findCol(headers, 'agenda', 'calendario', 'doctor');
-  const colRoom         = findCol(headers, 'sala', 'habitacion', 'room', 'box');
-  const colPhone        = findCol(headers, 'telefono', 'tel', 'movil', 'celular', 'phone', 'contact');
+  const colIntermediary = findCol(headers, 'intermediario', 'mediador', 'financiera', 'entidad', 'agenda', 'g');
+  const colStatus       = findCol(headers, 'estado', 'status', 'situacion', 'a');
+  const colOrigin       = findCol(headers, 'procedencia', 'origen', 'source', 'origin', 'j');
+  const colAgenda       = findCol(headers, 'agenda', 'calendario', 'doctor', 'g');
+  const colRoom         = findCol(headers, 'sala', 'habitacion', 'room', 'box', 'h');
+  const colPhone        = findCol(headers, 'telefono', 'tel', 'movil', 'celular', 'phone', 'contact', 'o'); // O = Teléfono
+  const colCampaign     = findCol(headers, 'campaña', 'campaign', 'u'); // U = CAMPAÑA
+  const colName         = findCol(headers, 'nombre', 'name', 'n'); // N = Nombre
+  const colTratamiento  = findCol(headers, 'tratamiento', 'p'); // P = Tratamiento
 
   const hasColId           = colId !== -1;
   const hasColTemplate     = colTemplate !== -1;
@@ -401,6 +443,12 @@ function buildHeaderConfig(headers) {
     hasColAgenda,
     hasColRoom,
     hasColPhone,
+    hasColCampaign: colCampaign !== -1,
+    hasColName: colName !== -1,
+    hasColTratamiento: colTratamiento !== -1,
+    colCampaign,
+    colName,
+    colTratamiento,
     useHashId: !hasColId,
     colSettledEff: hasColSettled ? colSettled : colFecha,
   };
@@ -411,6 +459,16 @@ function getRowId(row, config) {
     return row[config.colId]?.toString().trim() ?? '';
   }
 
+  // Fallback: Try to extract a real ID from the Asunto column (F) using robust regex
+  if (config.hasColTemplate) {
+    const asunto = row[config.colTemplate]?.toString().trim() ?? '';
+    const parsed = parseAsunto(asunto);
+    if (parsed && parsed.id) {
+      return parsed.id;
+    }
+  }
+
+  // Last resort: hash-based ID (existing behavior)
   const fecha  = row[config.colFecha]?.toString().trim() ?? '';
   const hora   = row[config.colHora]?.toString().trim() ?? '';
   const asunto = config.hasColTemplate ? (row[config.colTemplate]?.toString().trim() ?? '') : '';
@@ -446,6 +504,13 @@ function parseRow(row, config) {
     return null;
   }
 
+  // Try to parse rich data from Asunto (F) as fallback / enrichment
+  let parsedFromAsunto = null;
+  if (config.hasColTemplate) {
+    const asunto = row[config.colTemplate]?.toString().trim() ?? '';
+    parsedFromAsunto = parseAsunto(asunto);
+  }
+
   return {
     rawId,
     settledAt,
@@ -457,6 +522,11 @@ function parseRow(row, config) {
     payment: config.hasColPayment      ? (row[config.colPayment]?.trim() || null)     : null,
     tmplName: config.hasColTemplate     ? (row[config.colTemplate]?.trim() || null)    : null,
     tmplId: config.hasColTemplateId   ? (row[config.colTemplateId]?.trim() || null)  : null,
+
+    // Fallback / enrichment from Asunto column when dedicated columns are missing
+    nombre: config.hasColName ? (row[config.colName]?.trim() || null) : (parsedFromAsunto?.nombre || null),
+    telefono: config.hasColPhone ? (row[config.colPhone]?.trim() || null) : (parsedFromAsunto?.telefono || null),
+    tratamiento: config.hasColTratamiento ? (row[config.colTratamiento]?.trim() || null) : (parsedFromAsunto?.tratamiento || null),
     intermed: config.hasColIntermediary ? (row[config.colIntermediary]?.trim() || null) : null,
   };
 }
@@ -470,6 +540,8 @@ async function setupGoogleSheetsAuth() {
   if (saJson) {
     try {
       saObject = JSON.parse(saJson);
+      const email = getServiceAccountEmail(saObject);
+      console.log(`[sync-doctoralia] Using Google Service Account: ${email}`);
       return {
         auth: new google.auth.GoogleAuth({
           credentials: saObject,
@@ -492,12 +564,46 @@ async function setupGoogleSheetsAuth() {
 }
 
 async function fetchSheetRows(sheets, saObject) {
-  const normalizedSheetName = SHEET_NAME?.trim().replace(/^['"]+|['"]+$/g, '');
-  const range = normalizedSheetName
-    ? `'${normalizedSheetName.replaceAll("'", "''")}'!${SHEET_RANGE.trim()}`
+  console.log(`[sync-doctoralia] Fetching spreadsheet metadata (id: ${SHEET_ID.slice(0, 4)}...${SHEET_ID.slice(-4)})`);
+
+  // First, get the list of sheets to find the correct title
+  let targetSheetTitle = null;
+  let availableSheets = [];
+
+  try {
+    const meta = await sheets.spreadsheets.get({
+      spreadsheetId: SHEET_ID,
+      fields: 'sheets.properties.title,sheets.properties.sheetId'
+    });
+
+    const sheetsList = meta.data.sheets || [];
+    availableSheets = sheetsList.map(s => s.properties.title);
+
+    console.log(`[sync-doctoralia] Available sheets in spreadsheet: ${availableSheets.join(' | ')}`);
+
+    if (SHEET_NAME) {
+      const normalized = SHEET_NAME.trim().toLowerCase();
+      const found = sheetsList.find(s => 
+        s.properties.title.toLowerCase() === normalized ||
+        s.properties.title.toLowerCase().includes(normalized)
+      );
+      if (found) targetSheetTitle = found.properties.title;
+    }
+
+    if (!targetSheetTitle && sheetsList.length > 0) {
+      // Fallback to first sheet
+      targetSheetTitle = sheetsList[0].properties.title;
+      console.log(`[sync-doctoralia] No exact sheet match for "${SHEET_NAME}", using first sheet: "${targetSheetTitle}"`);
+    }
+  } catch (metaErr) {
+    console.warn(`[sync-doctoralia] Could not fetch spreadsheet metadata: ${metaErr.message}. Will try direct range.`);
+  }
+
+  const range = targetSheetTitle 
+    ? `'${targetSheetTitle.replaceAll("'", "''")}'!${SHEET_RANGE.trim()}`
     : SHEET_RANGE.trim();
 
-  console.log(`[sync-doctoralia] Fetching spreadsheet (id: ${SHEET_ID.slice(0, 4)}...${SHEET_ID.slice(-4)}), range: ${range}`);
+  console.log(`[sync-doctoralia] Final range: ${range}`);
 
   try {
     const res = await sheets.spreadsheets.values.get({
@@ -514,11 +620,16 @@ async function fetchSheetRows(sheets, saObject) {
       }
       throw new Error(guidance);
     }
+
     console.error(`[sync-doctoralia] Sheets API Error: ${err.message}`);
     if (err.errors) {
       console.error('[sync-doctoralia] Details:', JSON.stringify(err.errors, null, 2));
     } else if (err.response?.data) {
       console.error('[sync-doctoralia] Response Data:', JSON.stringify(err.response.data, null, 2));
+    }
+
+    if (availableSheets.length > 0) {
+      console.error(`[sync-doctoralia] Available sheets were: ${availableSheets.join(' | ')}`);
     }
     throw err;
   }
@@ -539,8 +650,15 @@ async function reconcileDoctoraliaLeads(db) {
 }
 
 async function main() {
+  console.log('[sync-doctoralia] Starting Doctoralia financial sync...');
+
   // ── 1. Auth and Sheets Setup ─────────────────────────────────────────────
   const { auth, saObject } = await setupGoogleSheetsAuth();
+
+  if (!saObject && GOOGLE_API_KEY) {
+    console.log('[sync-doctoralia] Using GOOGLE_API_KEY for authentication (limited permissions).');
+  }
+
   const sheets = google.sheets({ version: 'v4', auth });
 
   const rows = await fetchSheetRows(sheets, saObject);
@@ -637,11 +755,23 @@ async function upsertDoctoraliaRow(row, i, params) {
   const roomId    = getOptionalTextValue(row, cols.colRoom, hasColRoom);
   const agenda    = getOptionalTextValue(row, cols.colAgenda, hasColAgenda);
   const tmplName  = getOptionalTextValue(row, cols.colTemplate, hasColTemplate);
-  const patientPhone = hasColPhone 
-    ? normalizePhoneForMatching(row[cols.colPhone]) 
-    : getPrimaryPhoneFromSubject(tmplName);
   const tmplId    = getOptionalTextValue(row, cols.colTemplateId, hasColTemplateId);
   const intermed  = getOptionalTextValue(row, cols.colIntermediary, hasColIntermediary);
+
+  // Improved phone extraction using parseAsunto as strong fallback
+  let patientPhone = null;
+  if (hasColPhone) {
+    patientPhone = normalizePhoneForMatching(row[cols.colPhone]);
+  }
+  if (!patientPhone && hasColTemplate) {
+    const asunto = row[cols.colTemplate]?.toString().trim() ?? '';
+    const parsed = parseAsunto(asunto);
+    if (parsed && parsed.telefono) {
+      patientPhone = normalizePhoneForMatching(parsed.telefono);
+    } else {
+      patientPhone = getPrimaryPhoneFromSubject(asunto);
+    }
+  }
 
   try {
     await db.query(
@@ -651,7 +781,7 @@ async function upsertDoctoraliaRow(row, i, params) {
           settled_at, intake_at, cancelled_at, intermediary_name,
           status_original, status_type, room_id, lead_source, agenda_name,
           patient_phone, phone_normalized, source_system)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$18,'doctoralia')
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'doctoralia')
        ON CONFLICT (id) DO UPDATE SET
          amount_gross      = EXCLUDED.amount_gross,
          amount_discount   = EXCLUDED.amount_discount,
@@ -684,6 +814,7 @@ async function upsertDoctoraliaRow(row, i, params) {
         leadSource,
         agenda,
         patientPhone,
+        patientPhone ? normalizePhoneForMatching(patientPhone) : null,  // phone_normalized as 19th param
       ]
     );
     return true;
@@ -709,6 +840,7 @@ module.exports = {
   parseDate,
   parseAmount,
   parseStatus,
+  parseAsunto,
   buildHeaderConfig,
   getRowId,
   getCancelledAt,

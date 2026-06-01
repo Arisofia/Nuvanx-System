@@ -12,40 +12,50 @@ DO $$
 DECLARE
   t text;
   cron_tables text[] := ARRAY['cron.job', 'cron.job_run_details'];
+  schema_name text;
+  table_name text;
 BEGIN
-  SET search_path = cron, public;
+  -- Set search_path locally for the duration of this block
+  SET LOCAL search_path = cron, public;
 
   FOREACH t IN ARRAY cron_tables LOOP
     IF to_regclass(t) IS NOT NULL THEN
-      BEGIN
-        -- Drop all known previous policy names that may still exist
-        EXECUTE format('DROP POLICY IF EXISTS cron_job_policy ON %s', t);
-        EXECUTE format('DROP POLICY IF EXISTS cron_job_select ON %s', t);
-        EXECUTE format('DROP POLICY IF EXISTS cron_job_insert ON %s', t);
-        EXECUTE format('DROP POLICY IF EXISTS cron_job_update ON %s', t);
-        EXECUTE format('DROP POLICY IF EXISTS cron_job_delete ON %s', t);
-        EXECUTE format('DROP POLICY IF EXISTS cron_job_all ON %s', t);
-        EXECUTE format('DROP POLICY IF EXISTS %I_policy ON %s', split_part(t, '.', 2), t);
-        EXECUTE format('DROP POLICY IF EXISTS %I_select ON %s', split_part(t, '.', 2), t);
-        EXECUTE format('DROP POLICY IF EXISTS %I_insert ON %s', split_part(t, '.', 2), t);
-        EXECUTE format('DROP POLICY IF EXISTS %I_update ON %s', split_part(t, '.', 2), t);
-        EXECUTE format('DROP POLICY IF EXISTS %I_delete ON %s', split_part(t, '.', 2), t);
-        EXECUTE format('DROP POLICY IF EXISTS %I_all ON %s', split_part(t, '.', 2), t);
+      schema_name := split_part(t, '.', 1);
+      table_name := split_part(t, '.', 2);
 
-        -- Create a single, restrictive policy for service_role only
-        EXECUTE format('CREATE POLICY %I_service_role_only ON %s
+      BEGIN
+        -- 1. Ensure RLS is enabled (CRITICAL for the policies to have any effect)
+        EXECUTE format('ALTER TABLE %I.%I ENABLE ROW LEVEL SECURITY', schema_name, table_name);
+
+        -- 2. Drop all known previous policy names that may still exist
+        EXECUTE format('DROP POLICY IF EXISTS cron_job_policy ON %I.%I', schema_name, table_name);
+        EXECUTE format('DROP POLICY IF EXISTS cron_job_select ON %I.%I', schema_name, table_name);
+        EXECUTE format('DROP POLICY IF EXISTS cron_job_insert ON %I.%I', schema_name, table_name);
+        EXECUTE format('DROP POLICY IF EXISTS cron_job_update ON %I.%I', schema_name, table_name);
+        EXECUTE format('DROP POLICY IF EXISTS cron_job_delete ON %I.%I', schema_name, table_name);
+        EXECUTE format('DROP POLICY IF EXISTS cron_job_all ON %I.%I', schema_name, table_name);
+        
+        -- Drop dynamic names using the table name prefix
+        EXECUTE format('DROP POLICY IF EXISTS %I ON %I.%I', table_name || '_policy', schema_name, table_name);
+        EXECUTE format('DROP POLICY IF EXISTS %I ON %I.%I', table_name || '_select', schema_name, table_name);
+        EXECUTE format('DROP POLICY IF EXISTS %I ON %I.%I', table_name || '_insert', schema_name, table_name);
+        EXECUTE format('DROP POLICY IF EXISTS %I ON %I.%I', table_name || '_update', schema_name, table_name);
+        EXECUTE format('DROP POLICY IF EXISTS %I ON %I.%I', table_name || '_delete', schema_name, table_name);
+        EXECUTE format('DROP POLICY IF EXISTS %I ON %I.%I', table_name || '_all', schema_name, table_name);
+
+        -- 3. Create a single, definitive, restrictive policy for service_role only
+        EXECUTE format('CREATE POLICY %I ON %I.%I
                         FOR ALL TO service_role
                         USING (true)
-                        WITH CHECK (true)', split_part(t, '.', 2), t);
+                        WITH CHECK (true)', table_name || '_service_role_only', schema_name, table_name);
 
-        RAISE NOTICE '%: Applied service_role-only policy', t;
+        -- 4. Add comment for the advisor
+        EXECUTE format('COMMENT ON TABLE %I.%I IS %L', schema_name, table_name, 'RLS hardened - only service_role should have access (see migration 20260528000000)');
+
+        RAISE NOTICE '%: Hardened RLS and applied service_role-only policy', t;
       EXCEPTION WHEN insufficient_privilege THEN
         RAISE NOTICE '%: Insufficient privilege to manage policies. Manual intervention may be required.', t;
       END;
     END IF;
   END LOOP;
-END $$;
-
--- Final comment for the advisor
-COMMENT ON TABLE cron.job IS 'RLS hardened - only service_role should have access (see migration 20260528000000)';
-COMMENT ON TABLE cron.job_run_details IS 'RLS hardened - only service_role should have access (see migration 20260528000000)';
+END $$ LANGUAGE plpgsql;

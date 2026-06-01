@@ -37,8 +37,9 @@ BEGIN
   IF to_regclass('public.vw_doctoralia_lead_traceability_unified') IS NOT NULL THEN
     -- We recreate the view with the new columns
     -- Note: This assumes the previous definition. Adjust if the base view changes.
-    DROP VIEW IF EXISTS public.vw_doctoralia_lead_traceability_unified;
+    EXECUTE 'DROP VIEW IF EXISTS public.vw_doctoralia_lead_traceability_unified CASCADE';
 
+    EXECUTE '
     CREATE OR REPLACE VIEW public.vw_doctoralia_lead_traceability_unified AS
     SELECT
       dr.*,
@@ -78,7 +79,45 @@ BEGIN
         normalize_phone(dr.paciente_telefono) = l.phone_normalized
         OR normalize_phone(dr.phone_primary)  = l.phone_normalized
         OR normalize_phone(dr.phone_secondary) = l.phone_normalized
-      );
+      )';
+
+    -- Re-create dependent views dropped by CASCADE
+    EXECUTE '
+    CREATE OR REPLACE VIEW public.vw_doctoralia_patient_ltv AS
+    SELECT
+      paciente_telefono_normalized,
+      paciente_telefono,
+      paciente_id,
+      paciente_nombre,
+      procedimiento_nombre,
+      COUNT(*) AS total_citas,
+      COUNT(*) FILTER (WHERE cita_efectiva) AS citas_efectivas,
+      COUNT(*) FILTER (WHERE cita_perdida) AS citas_perdidas,
+      ROUND(COALESCE(SUM(importe_numerico) FILTER (WHERE cita_efectiva), 0), 2) AS ingresos_totales,
+      ROUND(COALESCE(SUM(importe_numerico), 0), 2) AS ingresos_brutos,
+      COUNT(DISTINCT campaign_name) AS campañas_distintas,
+      ARRAY_REMOVE(ARRAY_AGG(DISTINCT campaign_name), NULL) AS campaign_names,
+      ARRAY_REMOVE(ARRAY_AGG(DISTINCT ad_name), NULL) AS ad_names,
+      ARRAY_REMOVE(ARRAY_AGG(DISTINCT form_name), NULL) AS form_names,
+      MIN(timestamp_cita) AS primera_cita,
+      MAX(timestamp_cita) AS ultima_cita,
+      MIN(lead_created_at) AS primera_captacion,
+      MAX(lead_created_at) AS ultima_captacion,
+      AVG(lead_time_days) AS promedio_lead_time_dias
+    FROM public.vw_doctoralia_lead_traceability_unified
+    GROUP BY
+      paciente_telefono_normalized,
+      paciente_telefono,
+      paciente_id,
+      paciente_nombre,
+      procedimiento_nombre';
+
+    EXECUTE 'ALTER VIEW public.vw_doctoralia_patient_ltv SET (security_invoker = true)';
+
+    -- NOTE: View creation for vw_campaign_performance_real has been moved to
+    -- the final migration 20260604000000_final_vw_campaign_performance_real.sql
+    RAISE NOTICE 'Skipping vw_campaign_performance_real recreation in 20260603010000 (superseded by 20260604000000)';
+
   END IF;
 END $$;
 

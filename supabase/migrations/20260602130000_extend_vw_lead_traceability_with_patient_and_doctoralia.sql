@@ -15,7 +15,7 @@ BEGIN
   END IF;
 
   DROP VIEW IF EXISTS public.vw_lead_traceability;
-
+  EXECUTE '
   CREATE VIEW public.vw_lead_traceability AS
 SELECT
   -- ── lead (existing columns, unchanged order) ──────────────────────────────
@@ -68,9 +68,9 @@ SELECT
   NULL::VARCHAR(32)       AS match_class,
   -- ── first settlement placeholder ─────────────────────────────────────────
   NULL::TIMESTAMPTZ       AS first_settlement_at
-FROM public.leads l;
+FROM public.leads l';
 
-ALTER VIEW public.vw_lead_traceability SET (security_invoker = true);
-GRANT SELECT ON public.vw_lead_traceability TO authenticated;
-GRANT SELECT ON public.vw_lead_traceability TO service_role;
+  EXECUTE 'ALTER VIEW public.vw_lead_traceability SET (security_invoker = true)';
+  EXECUTE 'GRANT SELECT ON public.vw_lead_traceability TO authenticated';
+  EXECUTE 'GRANT SELECT ON public.vw_lead_traceability TO service_role';
 END $$;

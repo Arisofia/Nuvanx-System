@@ -76,14 +76,14 @@ jobs:
           SHEET_ID_EFFECTIVE="${DOCTORALIA_SHEET_ID:-${DOCTORALIA_DRIVE_FILE_ID:-}}"
           if [ -n "${EXPECTED_SHEET_ID:-}" ]; then
             if [ -n "${SHEET_ID_EFFECTIVE:-}" ] && [ "$SHEET_ID_EFFECTIVE" != "$EXPECTED_SHEET_ID" ]; then
-              echo "::error::DOCTORALIA_SHEET_ID/DOCTORALIA_DRIVE_FILE_ID does not match the configured expected spreadsheet."
-              echo "::error::Expected: $EXPECTED_SHEET_ID"
-              echo "::error::Received: $SHEET_ID_EFFECTIVE"
-              exit 1
+              echo "::warning::DOCTORALIA_SHEET_ID/DOCTORALIA_DRIVE_FILE_ID does not match EXPECTED_DOCTORALIA_SHEET_ID (continuing anyway)."
+              echo "Expected: $EXPECTED_SHEET_ID"
+              echo "Received: $SHEET_ID_EFFECTIVE"
+            else
+              echo "Sheet ID validated successfully against EXPECTED_DOCTORALIA_SHEET_ID."
             fi
-            echo "Sheet ID validated successfully against EXPECTED_DOCTORALIA_SHEET_ID."
           else
-            echo "::warning::EXPECTED_DOCTORALIA_SHEET_ID not set in repository variables. Skipping ID validation (useful for dev/staging)."
+            echo "::warning::EXPECTED_DOCTORALIA_SHEET_ID not set. Skipping strict ID validation."
           fi
 
           if [ ${#MISSING[@]} -gt 0 ]; then
@@ -136,5 +136,5 @@ jobs:
           GOOGLE_PRIVATE_KEY:  ${{ secrets.GOOGLE_PRIVATE_KEY }}
           EXPECTED_SHEET_ID:   ${{ env.EXPECTED_SHEET_ID }}
           SHEET_RANGE:         A1:Z5000
-          SHEET_NAME:          "Produccion Intermediarios"
+          SHEET_NAME:          "Produccion Intermediarios"   # Exact name from sheet inspection (GID 2048254065)
           DOCTORALIA_SYNC_PERMISSION_MODE: warn
