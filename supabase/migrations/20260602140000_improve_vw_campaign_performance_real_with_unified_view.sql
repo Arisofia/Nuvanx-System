@@ -91,8 +91,8 @@ BEGIN
   EXECUTE 'GRANT SELECT ON public.vw_campaign_performance_real TO service_role';
   EXECUTE 'GRANT SELECT ON public.vw_campaign_performance_real TO authenticated';
 
-END $$;
+  EXECUTE 'COMMENT ON VIEW public.vw_campaign_performance_real IS
+    ''Real campaign performance metrics. Currently partially enriched via vw_doctoralia_lead_traceability_unified + meta_attribution. ''
+    ''Several funnel columns (contacted, replied, reply_rate_pct, etc.) are still placeholders pending WhatsApp + full attribution data.''';
 
-COMMENT ON VIEW public.vw_campaign_performance_real IS
-  'Real campaign performance metrics. Currently partially enriched via vw_doctoralia_lead_traceability_unified + meta_attribution. '
-  'Several funnel columns (contacted, replied, reply_rate_pct, etc.) are still placeholders pending WhatsApp + full attribution data.';
+END $$ LANGUAGE plpgsql;

@@ -114,8 +114,8 @@ BEGIN
   EXECUTE 'GRANT SELECT ON public.vw_campaign_performance_real TO service_role';
   EXECUTE 'GRANT SELECT ON public.vw_campaign_performance_real TO authenticated';
 
-END $$;
+  EXECUTE 'COMMENT ON VIEW public.vw_campaign_performance_real IS
+    ''Campaign performance with real WhatsApp interaction data (contacted/replied from whatsapp_conversations). ''
+    ''Still has some placeholders for closed deals until better financial_settlements linking is in place.''';
 
-COMMENT ON VIEW public.vw_campaign_performance_real IS
-  'Campaign performance with real WhatsApp interaction data (contacted/replied from whatsapp_conversations). '
-  'Still has some placeholders for closed deals until better financial_settlements linking is in place.';
+END $$ LANGUAGE plpgsql;
