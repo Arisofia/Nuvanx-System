@@ -499,29 +499,52 @@ async function fetchSheetRows(sheets, saObject) {
 
   console.log(`[sync-doctoralia] Fetching spreadsheet (id: ${SHEET_ID.slice(0, 4)}...${SHEET_ID.slice(-4)}), range: ${range}`);
 
-  try {
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: SHEET_ID,
-      range,
-    });
-    return res.data.values ?? [];
-  } catch (err) {
-    if (isGooglePermissionError(err)) {
-      const guidance = formatPermissionGuidance(saObject);
-      if (ALLOW_PERMISSION_SKIP) {
-        console.warn(`::warning::[sync-doctoralia] ${guidance}`);
-        return null;
-      }
-      throw new Error(guidance);
-    }
-    console.error(`[sync-doctoralia] Sheets API Error: ${err.message}`);
-    if (err.errors) {
-      console.error('[sync-doctoralia] Details:', JSON.stringify(err.errors, null, 2));
-    } else if (err.response?.data) {
-      console.error('[sync-doctoralia] Response Data:', JSON.stringify(err.response.data, null, 2));
-    }
-    throw err;
+  const attempts = [range];
+
+  // If a sheet name was provided and we get invalid argument, retry without the sheet prefix
+  // (many exports have the data in the first/default sheet).
+  if (normalizedSheetName && SHEET_RANGE) {
+    attempts.push(SHEET_RANGE.trim());
   }
+
+  for (const attemptRange of attempts) {
+    try {
+      console.log(`[sync-doctoralia] Trying range: ${attemptRange}`);
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId: SHEET_ID,
+        range: attemptRange,
+      });
+      return res.data.values ?? [];
+    } catch (err) {
+      const isInvalidArg = err?.code === 400 || 
+        (err?.errors && err.errors.some(e => e.reason === 'badRequest')) ||
+        String(err?.message || '').toLowerCase().includes('invalid argument');
+
+      if (isInvalidArg && attemptRange !== attempts[attempts.length - 1]) {
+        console.warn(`[sync-doctoralia] Range '${attemptRange}' invalid, trying fallback...`);
+        continue;
+      }
+
+      if (isGooglePermissionError(err)) {
+        const guidance = formatPermissionGuidance(saObject);
+        if (ALLOW_PERMISSION_SKIP) {
+          console.warn(`::warning::[sync-doctoralia] ${guidance}`);
+          return null;
+        }
+        throw new Error(guidance);
+      }
+
+      console.error(`[sync-doctoralia] Sheets API Error: ${err.message}`);
+      if (err.errors) {
+        console.error('[sync-doctoralia] Details:', JSON.stringify(err.errors, null, 2));
+      } else if (err.response?.data) {
+        console.error('[sync-doctoralia] Response Data:', JSON.stringify(err.response.data, null, 2));
+      }
+      throw err;
+    }
+  }
+
+  throw new Error(`Failed to fetch data from spreadsheet ${SHEET_ID} with ranges: ${attempts.join(', ')}`);
 }
 
 async function reconcileDoctoraliaLeads(db) {
