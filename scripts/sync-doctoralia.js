@@ -781,7 +781,7 @@ async function upsertDoctoraliaRow(row, i, params) {
           settled_at, intake_at, cancelled_at, intermediary_name,
           status_original, status_type, room_id, lead_source, agenda_name,
           patient_phone, phone_normalized, source_system)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$18,'doctoralia')
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'doctoralia')
        ON CONFLICT (id) DO UPDATE SET
          amount_gross      = EXCLUDED.amount_gross,
          amount_discount   = EXCLUDED.amount_discount,
@@ -814,6 +814,7 @@ async function upsertDoctoraliaRow(row, i, params) {
         leadSource,
         agenda,
         patientPhone,
+        patientPhone ? normalizePhoneForMatching(patientPhone) : null,  // phone_normalized as 19th param
       ]
     );
     return true;
