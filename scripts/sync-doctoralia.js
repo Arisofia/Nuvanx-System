@@ -498,6 +498,7 @@ async function fetchSheetRows(sheets, saObject) {
 
   // First, get the list of sheets to find the correct title
   let targetSheetTitle = null;
+  let availableSheets = [];
 
   try {
     const meta = await sheets.spreadsheets.get({
@@ -506,6 +507,9 @@ async function fetchSheetRows(sheets, saObject) {
     });
 
     const sheetsList = meta.data.sheets || [];
+    availableSheets = sheetsList.map(s => s.properties.title);
+
+    console.log(`[sync-doctoralia] Available sheets in spreadsheet: ${availableSheets.join(' | ')}`);
 
     if (SHEET_NAME) {
       const normalized = SHEET_NAME.trim().toLowerCase();
@@ -552,6 +556,10 @@ async function fetchSheetRows(sheets, saObject) {
       console.error('[sync-doctoralia] Details:', JSON.stringify(err.errors, null, 2));
     } else if (err.response?.data) {
       console.error('[sync-doctoralia] Response Data:', JSON.stringify(err.response.data, null, 2));
+    }
+
+    if (availableSheets.length > 0) {
+      console.error(`[sync-doctoralia] Available sheets were: ${availableSheets.join(' | ')}`);
     }
     throw err;
   }
