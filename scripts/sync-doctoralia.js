@@ -334,23 +334,27 @@ function getOptionalTextValue(row, col, enabled) {
 }
 
 function buildHeaderConfig(headers) {
-  const colId           = findCol(headers, '=id', '=num', 'id op', 'id_op', 'num op', 'operacion', 'operation');
-  const colTemplate     = findCol(headers, 'plantilladescr', 'plantilla descr', 'plantilla', 'template descr', 'template', 'asunto');
+  // Optimized for the exact "Produccion Intermediarios" sheet structure (as of June 2026 inspection)
+  const colId           = findCol(headers, '=id', '=num', 'id op', 'id_op', 'num op', 'operacion', 'operation', 'm');
+  const colTemplate     = findCol(headers, 'plantilladescr', 'plantilla descr', 'plantilla', 'template descr', 'template', 'asunto', 'f');
   const colTemplateId   = findCol(headers, 'id plantilla', 'template_id', 'id_plantilla', 'cod plantilla');
-  const colFecha        = findCol(headers, 'fecha');
-  const colHora         = findCol(headers, 'hora');
-  const colIntake       = findCol(headers, 'fecha ingreso', 'fecha inicio', 'ingreso', 'inicio', 'intake', 'alta', 'desde', 'fecha creacion', 'fecha creaci');
-  const colSettled      = findCol(headers, 'fecha liquidaci', 'liquidaci', 'fecha liq', 'settled', 'f. liq');
+  const colFecha        = findCol(headers, 'fecha', 'b');
+  const colHora         = findCol(headers, 'hora', 'c');
+  const colIntake       = findCol(headers, 'fecha ingreso', 'fecha inicio', 'ingreso', 'inicio', 'intake', 'alta', 'desde', 'fecha creacion', 'fecha creaci', 'd');
+  const colSettled      = findCol(headers, 'fecha liquidaci', 'liquidaci', 'fecha liq', 'settled', 'f. liq', 'b'); // B is the main date
   const colGross        = findCol(headers, 'importe bruto', 'bruto', 'gross', 'financiad', 'capital');
   const colDiscount     = findCol(headers, 'descuento', 'discount', 'bonific');
-  const colNet          = findCol(headers, 'importe neto', 'importe liq', 'neto', 'net', 'liquidado', 'importe');
+  const colNet          = findCol(headers, 'importe neto', 'importe liq', 'neto', 'net', 'liquidado', 'importe', 'k'); // K = Importe
   const colPayment      = findCol(headers, 'metodo pago', 'metodo de pago', 'pago', 'payment', 'forma pago', 'procedencia');
-  const colIntermediary = findCol(headers, 'intermediario', 'mediador', 'financiera', 'entidad', 'agenda');
-  const colStatus       = findCol(headers, 'estado', 'status', 'situacion');
-  const colOrigin       = findCol(headers, 'procedencia', 'origen', 'source', 'origin');
-  const colAgenda       = findCol(headers, 'agenda', 'calendario', 'doctor');
-  const colRoom         = findCol(headers, 'sala', 'habitacion', 'room', 'box');
-  const colPhone        = findCol(headers, 'telefono', 'tel', 'movil', 'celular', 'phone', 'contact');
+  const colIntermediary = findCol(headers, 'intermediario', 'mediador', 'financiera', 'entidad', 'agenda', 'g');
+  const colStatus       = findCol(headers, 'estado', 'status', 'situacion', 'a');
+  const colOrigin       = findCol(headers, 'procedencia', 'origen', 'source', 'origin', 'j');
+  const colAgenda       = findCol(headers, 'agenda', 'calendario', 'doctor', 'g');
+  const colRoom         = findCol(headers, 'sala', 'habitacion', 'room', 'box', 'h');
+  const colPhone        = findCol(headers, 'telefono', 'tel', 'movil', 'celular', 'phone', 'contact', 'o'); // O = Teléfono
+  const colCampaign     = findCol(headers, 'campaña', 'campaign', 'u'); // U = CAMPAÑA
+  const colName         = findCol(headers, 'nombre', 'name', 'n'); // N = Nombre
+  const colTratamiento  = findCol(headers, 'tratamiento', 'p'); // P = Tratamiento
 
   const hasColId           = colId !== -1;
   const hasColTemplate     = colTemplate !== -1;
@@ -401,6 +405,12 @@ function buildHeaderConfig(headers) {
     hasColAgenda,
     hasColRoom,
     hasColPhone,
+    hasColCampaign: colCampaign !== -1,
+    hasColName: colName !== -1,
+    hasColTratamiento: colTratamiento !== -1,
+    colCampaign,
+    colName,
+    colTratamiento,
     useHashId: !hasColId,
     colSettledEff: hasColSettled ? colSettled : colFecha,
   };
