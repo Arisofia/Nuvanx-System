@@ -14,7 +14,8 @@ BEGIN
     RETURN;
   END IF;
 
-  DROP VIEW IF EXISTS public.vw_campaign_performance_real;
+  -- View recreation moved to 20260604000000_final_vw_campaign_performance_real.sql
+  -- DROP VIEW IF EXISTS public.vw_campaign_performance_real; -- disabled to avoid conflicts
 
   EXECUTE '
   CREATE OR REPLACE VIEW public.vw_campaign_performance_real AS
