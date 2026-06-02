@@ -4,6 +4,7 @@ declare const Deno: any;
 import { createClient } from '@supabase/supabase-js';
 import {
   DEFAULT_CORS_HEADERS,
+  DEFAULT_LANDING_USER_EMAIL,
   ENCRYPTION_KEY,
   IS_DEVELOPMENT,
   MCP_API_KEY,
@@ -1527,9 +1528,9 @@ async function handleRequest(req: Request): Promise<Response> {
   }
 
   let userId = authUser ? authUser.id : userIdHeader;
-  if (!userId && isApiKeyValid) {
-    const { data: demoUser } = await adminClient.from('users').select('id').eq('email', 'demo@nuvanx.com').maybeSingle();
-    if (demoUser) userId = demoUser.id;
+  if (!userId && isApiKeyValid && DEFAULT_LANDING_USER_EMAIL) {
+    const { data: fallbackUser } = await adminClient.from('users').select('id').eq('email', DEFAULT_LANDING_USER_EMAIL).maybeSingle();
+    if (fallbackUser) userId = fallbackUser.id;
   }
 
   if ((isServiceRole || isApiKeyValid) && !userId && resource !== 'health') {
@@ -2543,7 +2544,6 @@ async function upsertLeadIdempotent(adminClient: any, userId: string, payload: a
 }
 
 const FALLBACK_META_AD_ACCOUNT_ID = '9523446201036125';
-const DEFAULT_LANDING_USER_EMAIL = 'demo@nuvanx.com';
 
 function readPayloadString(payload: Record<string, any>, keys: string[], fallback: string | null = null): string | null {
   for (const key of keys) {

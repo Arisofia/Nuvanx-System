@@ -20,7 +20,15 @@ function createSupabaseAdminClient() {
   });
 }
 
-const supabase = createSupabaseAdminClient()
+// Lazy getter so module load never throws on missing envs (e.g. during health or cold start).
+// Real supabase client created on first use inside handlers only.
+let supabaseInstance: ReturnType<typeof createSupabaseAdminClient> | null = null;
+function getSupabase() {
+  if (!supabaseInstance) {
+    supabaseInstance = createSupabaseAdminClient();
+  }
+  return supabaseInstance;
+}
 
 // ── Encryption Helpers ──────────────────────────────────────────────────────
 
@@ -145,7 +153,8 @@ function actionValue(actions: any[], matcher: (t: string) => boolean): number {
 
 // ── Core Logic ──────────────────────────────────────────────────────────────
 async function fetchAllClinicsMetaInsights(days: number) {
-  const { data: credentials } = await supabase
+  const sb = getSupabase();
+  const { data: credentials } = await sb
     .from('credentials')
     .select('*')
     .eq('service', 'meta')
@@ -179,7 +188,7 @@ async function fetchAllClinicsMetaInsights(days: number) {
           reach: Math.round(Number(r.reach || 0)),
           clicks: Math.round(Number(r.clicks || 0)),
           spend: Number(r.spend || 0),
-          conversions: actionValue(r.actions, (t) => t.includes('lead') || t.includes('conversion')),
+          conversions: actionValue(r.actions, (t) => t.includes('lead') || t.includes('conversion') || t.includes('complete_registration')),
           ctr: Number(r.ctr || 0),
           cpc: Number(r.cpc || 0),
           cpm: Number(r.cpm || 0),
@@ -188,7 +197,7 @@ async function fetchAllClinicsMetaInsights(days: number) {
         }));
 
         if (rows.length > 0) {
-          const { error } = await supabase.from('meta_daily_insights').upsert(rows, { onConflict: 'clinic_id,ad_account_id,date' });
+          const { error } = await getSupabase().from('meta_daily_insights').upsert(rows, { onConflict: 'clinic_id,ad_account_id,date' });
           if (error) console.error(`Error upserting insights for ${adAccountId}:`, error);
           else totalRows += rows.length;
         }
@@ -201,10 +210,9 @@ async function fetchAllClinicsMetaInsights(days: number) {
 }
 
 
-async function handleMetaDailyInsights(req: Request) {
+async function handleMetaDailyInsights(daysInput: number = 2) {
   try {
-    const payload = await req.json().catch(() => ({} as Record<string, unknown>));
-    const days = typeof payload.days === 'number' && Number.isFinite(payload.days) ? payload.days : 2;
+    const days = typeof daysInput === 'number' && Number.isFinite(daysInput) ? daysInput : 2;
 
     console.log(`[Daily] Fetching Meta insights for last ${days} days`);
     const result = await fetchAllClinicsMetaInsights(days);
@@ -233,7 +241,7 @@ Deno.serve(async (req: Request) => {
   const { action, days = 2 } = body;
 
   if (action === 'fetch_meta_insights' || action === 'meta-daily-insights') {
-    return await handleMetaDailyInsights(req);
+    return await handleMetaDailyInsights(days);
   }
 
   // Fallback to existing logic if no action is provided (for legacy compatibility)
@@ -245,7 +253,8 @@ Deno.serve(async (req: Request) => {
   // ============================================
   // TAREA 1: Leads en riesgo (>14 días en "Nuevo")
   // ============================================
-  const { data: riskLeads } = await supabase
+  const sb1 = getSupabase();
+  const { data: riskLeads } = await sb1
     .from('leads')
     .select('id, name, phone, clinic_id, created_at, stage')
     .eq('stage', 'Nuevo')
@@ -257,11 +266,12 @@ Deno.serve(async (req: Request) => {
   // ============================================
   // TAREA 2: Ranking semanal de campañas (top 5)
   // ============================================
-  const { data: campaignRanking } = await supabase
+  const sb2 = getSupabase();
+  const { data: campaignRanking } = await sb2
     .from('financial_settlements')
     .select('campaign_name, amount_net')
     .gte('settled_at', new Date(Date.now() - 7 * 86400000).toISOString())
-    .neq('source_system', 'doctoralia') // solo campañas de marketing
+    .neq('source_system', 'doctoralia') // solo campañas de marketing (real acquisition, no doctoralia)
 
   let processedRanking: any[] = []
   if (campaignRanking) {
@@ -280,7 +290,8 @@ Deno.serve(async (req: Request) => {
   // ============================================
   // TAREA 3: Resumen diario Doctoralia (revenue verificado)
   // ============================================
-  const { data: settlementsToday } = await supabase
+  const sb3 = getSupabase();
+  const { data: settlementsToday } = await sb3
     .from('financial_settlements')
     .select('amount_net')
     .eq('source_system', 'doctoralia')

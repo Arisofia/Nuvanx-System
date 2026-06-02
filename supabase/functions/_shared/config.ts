@@ -73,3 +73,10 @@ export function buildCorsHeaders(origin: string | null) {
     'Access-Control-Allow-Origin': allowedOrigin,
   };
 }
+
+// Default/fallback user email for public landing-page lead ingestion when no
+// explicit user_id or clinic_id is provided in the payload or querystring.
+// MUST be set via DEFAULT_LANDING_USER_EMAIL (or LANDING_USER_EMAIL) env/secret
+// for landing forms to resolve an owner. No demo fallback — only real data.
+export const DEFAULT_LANDING_USER_EMAIL =
+  getEnv('DEFAULT_LANDING_USER_EMAIL') || getEnv('LANDING_USER_EMAIL') || '';

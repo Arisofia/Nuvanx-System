@@ -79,7 +79,7 @@ const endpoints: Endpoint[] = [
   },
   {
     name: 'KPIs',
-    url: `${SUPABASE_URL}/functions/v1/api/kpis?clinic_id=demo`,
+    url: `${SUPABASE_URL}/functions/v1/api/kpis`,
     headers: API_AUTH_TOKEN ? { Authorization: `Bearer ${API_AUTH_TOKEN}` } : undefined,
     expectedStatuses: authGuardExpectedStatuses,
     healthyStatusLabel: authGuardLabel,
