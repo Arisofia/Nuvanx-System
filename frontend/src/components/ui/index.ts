@@ -11,9 +11,8 @@ export * from './tabs';
 // Feedback
 export * from './toaster';
 
-// Note: Composite/domain-specific components were moved out of ui/ (review June 2026):
-// - SortableTable → components/tables
-// - FilterBar     → components/filters
-// - DataModeBadge → components/dashboard
-//
-// Deprecated stubs in this folder (that threw on import) were removed after confirming zero remaining references.
+// Note: Composite/domain-specific components (FilterBar, SortableTable, DataModeBadge)
+// exist as copies in ui/ (actively imported by pages) and in domain folders
+// (dashboard/, filters/, tables/). The domain-folder copies were unreferenced
+// (confirmed via full codebase search) and have been removed to eliminate
+// duplication and future drift risk. ui/ versions remain the source for now.
