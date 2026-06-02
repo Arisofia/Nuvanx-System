@@ -89,6 +89,7 @@ jobs:
           META_APP_SECRET: ${{ env.META_APP_SECRET }}
           # si no hay secreto, usa 'v20.0' como default
           META_GRAPH_VERSION: ${{ env.META_GRAPH_VERSION || 'v20.0' }}
+          SHEET_NAME: "Produccion Intermediarios"
 
       - name: Fetch Meta Daily Insights
         shell: bash
