@@ -285,6 +285,9 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          # VITE_MCP_API_KEY exposed to frontend build (for any build-time needs) but sourced from
+          # plain MCP_API_KEY GitHub secret (no VITE_ prefix on the secret itself, per convention).
+          VITE_MCP_API_KEY: ${{ secrets.MCP_API_KEY || '' }}
 
       - name: Build
         run: |
@@ -292,11 +295,15 @@ jobs:
           export VITE_SUPABASE_URL="${VITE_SUPABASE_URL:-}"
           export VITE_SUPABASE_PUBLISHABLE_KEY="${VITE_SUPABASE_PUBLISHABLE_KEY:-${VITE_SUPABASE_ANON_KEY:-}}"
           export VITE_SUPABASE_ANON_KEY="${VITE_SUPABASE_ANON_KEY:-}"
+          export VITE_MCP_API_KEY="${VITE_MCP_API_KEY:-}"
           npm run build
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          # VITE_MCP_API_KEY exposed to frontend build (for any build-time needs) but sourced from
+          # plain MCP_API_KEY GitHub secret (no VITE_ prefix on the secret itself, per convention).
+          VITE_MCP_API_KEY: ${{ secrets.MCP_API_KEY || '' }}
 
   frontend-e2e-smoke:
     needs: frontend
