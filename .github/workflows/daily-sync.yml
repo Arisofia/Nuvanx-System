@@ -31,6 +31,10 @@ jobs:
       DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID }}
       CLINIC_ID: ${{ secrets.CLINIC_ID }}
       ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+      # Real production Meta creds for CAPI, insights, and daily sync (provided):
+      # META_ACCESS_TOKEN=... (see .env.local / GH secrets)
+      # META_AD_ACCOUNT_ID=act_9523446201036125
+      # META_APP_SECRET=... (for appsecret_proof in verify + edge)
       META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
       META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
       META_AD_ACCOUNT_IDS: ${{ secrets.META_AD_ACCOUNT_IDS }}
