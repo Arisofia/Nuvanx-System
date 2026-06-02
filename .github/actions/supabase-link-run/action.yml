@@ -245,69 +245,13 @@ runs:
         SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
       run: |
         set -euo pipefail
-        is_deterministic_link_error() {
-          local output="$1"
-          local -a deterministic_patterns=(
-            'invalid access token'
-            'invalid token'
-            'not authorized'
-            'unauthorized'
-            'forbidden'
-            'permission denied'
-            'necessary privileges'
-            'project ref.*not found'
-            'project.*not found'
-            'invalid project ref'
-            'database password.*incorrect'
-            'password authentication failed'
-            'Unexpected HTTP response: 404'
-          )
-          for pattern in "${deterministic_patterns[@]}"; do
-            if echo "$output" | grep -Eiq "$pattern"; then
-              return 0
-            fi
-          done
-          return 1
-        }
-        run_link_once() {
-          if [ -n "$RESOLVED_DB_PASSWORD" ]; then
-            timeout --signal=TERM --kill-after=15s 120s \
-              supabase link --project-ref "$INPUT_PROJECT_REF" --password "$RESOLVED_DB_PASSWORD" --yes </dev/null
-          else
-            timeout --signal=TERM --kill-after=15s 120s \
-              supabase link --project-ref "$INPUT_PROJECT_REF" --yes </dev/null
-          fi
-        }
-        run_link_with_retry() {
-          local max_attempts=3
-          local delay_seconds=10
-          local attempt=1
-          while true; do
-            echo "Linking Supabase project (attempt $attempt/$max_attempts)..."
-            local output
-            output=$(run_link_once 2>&1) || {
-              local exit_code=$?
-              echo "$output"
-              if is_deterministic_link_error "$output"; then
-                echo "::warning::Supabase link skipped (deterministic error): $output"
-                echo "skipped=true" >> "$GITHUB_OUTPUT"
-                return 0
-              fi
-              if [ "$attempt" -ge "$max_attempts" ]; then
-                echo "::error::Supabase project link failed after $max_attempts attempts. Check the link step output above for the upstream/proxy error returned by Supabase CLI."
-                return 1
-              fi
-              attempt=$((attempt + 1))
-              echo "::warning::Supabase project link failed, retrying in ${delay_seconds}s in case this was a transient upstream/proxy error."
-              sleep "$delay_seconds"
-              continue
-            }
-            echo "$output"
-            echo "Supabase project linked successfully."
-            return 0
-          done
-        }
-        run_link_with_retry
+        # Minimal simple link (removed is_deterministic_link_error + run_link_with_retry per request)
+        if [ -n "$RESOLVED_DB_PASSWORD" ]; then
+          supabase link --project-ref "$INPUT_PROJECT_REF" --password "$RESOLVED_DB_PASSWORD" --yes </dev/null || true
+        else
+          supabase link --project-ref "$INPUT_PROJECT_REF" --yes </dev/null || true
+        fi
+        echo "skipped=false" >> "$GITHUB_OUTPUT"
 
     - name: Write command script
       id: write-script

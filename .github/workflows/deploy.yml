@@ -117,46 +117,6 @@ jobs:
 
               print_migration_failure_summary "$output"
 
-              # 1) Handle explicit repair suggestions for "ghost" (reverted) migrations
-              ghosts=$(echo "$output" | grep "supabase migration repair --status reverted" | sed 's/.*reverted //' || true)
-              if [ -n "$ghosts" ]; then
-                for version in $ghosts; do
-                  echo "::warning::Repairing ghost migration $version"
-                  printf '%s\n' "Repairing ghost migration $version" | append_migration_log
-                  output=$(supabase migration repair --status reverted "$version" --db-url "$SESSION_URL" --debug 2>&1)
-                  exit_code=$?
-                  printf '%s\n' "$output" | print_migration_output
-                  if [ "$exit_code" -ne 0 ]; then
-                    return "$exit_code"
-                  fi
-                done
-                output=$(supabase db push --include-all --db-url "$SESSION_URL" --debug 2>&1)
-                exit_code=$?
-                printf '%s\n' "$output" | print_migration_output
-                return "$exit_code"
-              fi
-
-              # 2) Handle "Remote migration versions not found in local migrations directory"
-              # This often happens when migrations are deleted locally but remain in schema_migrations remotely.
-              missing_remotes=$(echo "$output" | grep "Remote migration versions not found in local migrations directory" | sed 's/.*directory: //' | tr -d ' ' | tr ',' '\n' || true)
-              if [ -n "$missing_remotes" ]; then
-                for version in $missing_remotes; do
-                  echo "::warning::Removing orphaned remote migration record: $version (missing locally)"
-                  printf '%s\n' "Removing orphaned remote migration record: $version" | append_migration_log
-                  output=$(supabase migration repair --status reverted "$version" --db-url "$SESSION_URL" --debug 2>&1)
-                  exit_code=$?
-                  printf '%s\n' "$output" | print_migration_output
-                  if [ "$exit_code" -ne 0 ]; then
-                    return "$exit_code"
-                  fi
-                done
-                echo "Retrying db push after repairing orphaned remote records..."
-                output=$(supabase db push --include-all --db-url "$SESSION_URL" --debug 2>&1)
-                exit_code=$?
-                printf '%s\n' "$output" | print_migration_output
-                return "$exit_code"
-              fi
-
               dup_version=$(echo "$output" | grep -oE 'Key \(version\)=\([0-9]+\) already exists' | grep -oE '[0-9]+' || true)
               if [ -n "$dup_version" ]; then
                 echo "::error::Migration version $dup_version already exists in supabase_migrations.schema_migrations. Check for duplicate local migration prefixes or a remote history mismatch before retrying."
