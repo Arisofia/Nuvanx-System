@@ -36,7 +36,7 @@ async function setupWebhooks() {
     console.log("  export SUPABASE_ACCESS_TOKEN='sbp_xxx'");
     console.log("  export SUPABASE_PROJECT_REF='tu_ref'");
     console.log("  export SHEETS_WEBHOOK_URL='https://script.google.com/...'");
-    console.log("  export SHEETS_WEBHOOK_SECRET='REPLACE_ME_WITH_YOUR_SECRET'");
+    console.log("  export SHEETS_WEBHOOK_SECRET='webhook-secret-value'");
     console.log('\nO cárgalas desde tu archivo de secrets y luego ejecuta el script.');
     process.exit(1);
   }

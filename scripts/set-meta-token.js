@@ -7,10 +7,10 @@
  * están configurados.
  *
  * Uso local:
- *   META_ACCESS_TOKEN_NEW=REPLACE_ME node scripts/set-meta-token.js
+ *   META_ACCESS_TOKEN_NEW=<new_token> node scripts/set-meta-token.js
  *
  * Uso remoto:
- *   META_ACCESS_TOKEN_NEW=REPLACE_ME node scripts/set-meta-token.js --github --supabase --vercel
+ *   META_ACCESS_TOKEN_NEW=<new_token> node scripts/set-meta-token.js --github --supabase --vercel
  *
  * Si no se pasa META_ACCESS_TOKEN_NEW, el script busca el token existente en
  * los archivos locales .env y backend/.env.
@@ -64,7 +64,7 @@ function readTokenFromEnvFiles() {
 const newToken = process.env.META_ACCESS_TOKEN_NEW || readTokenFromEnvFiles();
 if (!newToken) {
   console.error('ERROR: Debes exportar META_ACCESS_TOKEN_NEW con el nuevo token o tenerlo presente en un archivo .env local.');
-  console.error('Uso: META_ACCESS_TOKEN_NEW=REPLACE_ME node scripts/set-meta-token.js [--local] [--github] [--supabase] [--vercel]');
+  console.error('Uso: META_ACCESS_TOKEN_NEW=<new_token> node scripts/set-meta-token.js [--local] [--github] [--supabase] [--vercel]');
   process.exit(1);
 }
 

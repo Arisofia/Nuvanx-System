@@ -5,7 +5,7 @@ name: Supabase Security Check
 # Runs after Deploy Supabase (on main) and on PRs.
 #
 # IMPORTANT (confirmed via DNS):
-#   The direct hostname db.<project-ref>.supabase.co for this project
+#   The direct hostname db.<SUPABASE_PROJECT_REF>.supabase.co for this project
 #   is IPv6-only (only AAAA records, no A records).
 #   GitHub runners have unreliable IPv6 → always prefer Session Pooler (port 5432).
 #

@@ -95,7 +95,7 @@ npm run update:meta-token
 Si quieres propagar el token también a GitHub, Supabase y Vercel desde el mismo script, ejecuta:
 
 ```bash
-META_ACCESS_TOKEN_NEW=<token> node scripts/set-meta-token.js --github --supabase --vercel
+META_ACCESS_TOKEN_NEW=<new_token> node scripts/set-meta-token.js --github --supabase --vercel
 ```
 
 El script actualizará `META_ACCESS_TOKEN` en los archivos `.env` detectados sin modificar otras variables.
@@ -161,7 +161,7 @@ The repository uses GitHub Actions secrets for Supabase and production validatio
 
 For Vercel production deploys, configure these environment variables in the frontend project settings:
 
-- `VITE_SUPABASE_URL` — your Supabase project URL, e.g. `https://<project-ref>.supabase.co`
+- `VITE_SUPABASE_URL` — your Supabase project URL, e.g. `https://<SUPABASE_PROJECT_REF>.supabase.co`
 - `VITE_SUPABASE_PUBLISHABLE_KEY` — preferred Supabase publishable key from Supabase Connect
 - `VITE_SUPABASE_ANON_KEY` — legacy anonymous key; used only as a fallback when `VITE_SUPABASE_PUBLISHABLE_KEY` is not set
 - `VITE_API_BASE_URL` / `VITE_API_URL` — optional overrides for the API host; leave empty to use Vercel rewrite paths (`/api/*`)
