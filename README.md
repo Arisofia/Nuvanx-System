@@ -270,7 +270,7 @@ Si prefieres hacerlo manualmente, sincroniza los entornos remotos así:
   ```
   Nota: este comando requiere que el directorio esté vinculado a un proyecto de Vercel (`vercel link`).
 
-`META_ACCESS_TOKEN`, `META_AD_ACCOUNT_ID`, `DATABASE_URL` y `CLINIC_ID` son requeridos por `scripts/meta-daily-report.js` y `scripts/meta-weekly-report.js`.
+`META_ACCESS_TOKEN`, `META_AD_ACCOUNT_ID`, `DATABASE_URL` y `CLINIC_ID` son requeridos por los scripts de orquestación y monitoreo del repositorio.
 
 ## Testing
 
