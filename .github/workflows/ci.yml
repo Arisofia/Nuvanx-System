@@ -287,7 +287,8 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           # VITE_MCP_API_KEY exposed to frontend build (for any build-time needs) but sourced from
           # plain MCP_API_KEY GitHub secret (no VITE_ prefix on the secret itself, per convention).
-          VITE_MCP_API_KEY: ${{ secrets.MCP_API_KEY || '' }}
+          # Guarded access to silence "Context access might be invalid" in fork PRs (secrets unavailable).
+          VITE_MCP_API_KEY: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.MCP_API_KEY || '' }}
 
       - name: Build
         run: |
@@ -302,7 +303,8 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           # VITE_MCP_API_KEY exposed to frontend build (for any build-time needs) but sourced from
           # plain MCP_API_KEY GitHub secret (no VITE_ prefix on the secret itself, per convention).
-          VITE_MCP_API_KEY: ${{ secrets.MCP_API_KEY || '' }}
+          # Guarded access to silence "Context access might be invalid" in fork PRs (secrets unavailable).
+          VITE_MCP_API_KEY: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.MCP_API_KEY || '' }}
 
   frontend-e2e-smoke:
     needs: frontend
@@ -408,10 +410,11 @@ jobs:
         env:
           NODE_ENV: test
           # Use repository secrets for CI test credentials to avoid hardcoding sensitive values.
+          # Guarded secrets access to fix "Context access might be invalid" diagnostics on fork PRs.
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY || 'ci_dummy_encryption_key_32chars_minimum_for_check' }}
-          MCP_API_KEY: ${{ secrets.MCP_API_KEY || '' }}
-          FALLBACK_META_AD_ACCOUNT_ID: ${{ secrets.FALLBACK_META_AD_ACCOUNT_ID || '9523446201036125' }}
+          MCP_API_KEY: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.MCP_API_KEY || '' }}
+          FALLBACK_META_AD_ACCOUNT_ID: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FALLBACK_META_AD_ACCOUNT_ID || '9523446201036125' }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://ci-check.supabase.co' }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || 'ci_dummy_service_role_key_for_check_only' }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || 'ci_dummy_anon_key_for_check_only' }}
@@ -445,7 +448,8 @@ jobs:
           # Provide placeholder (and other runtime config secrets) so validateSupabaseRuntimeConfig() and any
           # getFallback... calls in api/index.ts do not cause errors during 'deno cache' (module load) in CI.
           # Real values must be set in Supabase Edge Function secrets for production.
-          FALLBACK_META_AD_ACCOUNT_ID: ${{ secrets.FALLBACK_META_AD_ACCOUNT_ID || '9523446201036125' }}
+          # Guarded to fix linter "Context access might be invalid" on fork PRs.
+          FALLBACK_META_AD_ACCOUNT_ID: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FALLBACK_META_AD_ACCOUNT_ID || '9523446201036125' }}
           # Dummies for CI cache/test so validateSupabaseRuntimeConfig() succeeds without real secrets (PRs/forks).
           # Real secrets from Supabase/GH are used in runtime deploys and when present.
           SUPABASE_URL: https://ci-check.supabase.co
