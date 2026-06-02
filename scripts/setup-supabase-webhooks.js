@@ -10,6 +10,8 @@
  *   node scripts/setup-supabase-webhooks.js
  *
  * Para GitHub Actions / CI, define estos secretos en Settings → Secrets.
+ *
+ * See README for "Doctoralia" sheet + webhook setup (separate SHEETS_WEBHOOK_URL_DOCTORALIA etc for the raw Doctoralia tab with ARRAYFORMULA parsing).
  */
 const https = require('https');
 

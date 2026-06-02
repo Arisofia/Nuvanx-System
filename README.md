@@ -53,6 +53,157 @@ Nuvanx-System es una plataforma de inteligencia empresarial (BI) y automatizaci�
   - `9`: Procedencia (Lead Source)
   - `10`: Importe
 
+### Doctoralia Sheet Structure (for SQL integration and webhook sync)
+
+The Google Sheets document also contains a "Doctoralia" tab (raw export) and "Listado" (patient master) for direct mapping to SQL tables.
+
+#### 1. Tabla: `Doctoralia`
+This table contains the detailed record of patient appointments and treatments.
+
+| Columna              | Descripción                                                  | Tipo de Dato Sugerido (SQL)     |
+| :------------------- | :----------------------------------------------------------- | :------------------------------ |
+| **Estado**           | Estado de la cita (ej. Pendiente, Realizada).                | `VARCHAR(50)`                   |
+| **Fecha**            | Fecha programada de la cita.                                 | `DATE`                          |
+| **Hora**             | Rango horario de la cita.                                    | `VARCHAR(50)`                   |
+| **Fecha creación**   | Fecha en la que se registró la cita.                         | `DATE`                          |
+| **Hora creación**    | Hora del registro (puede contener valores nulos).            | `TIME`                          |
+| **Asunto**           | Descripción completa que incluye ID, nombre y tratamiento.   | `TEXT`                          |
+| **Agenda**           | Especialidad o profesional asignado (ej. Medicina Estética). | `VARCHAR(100)`                  |
+| **Sala/Box**         | Ubicación física de la consulta.                             | `VARCHAR(50)`                   |
+| **Confirmada**       | Indicador de confirmación (booleano o estado).               | `VARCHAR(20)`                   |
+| **Procedencia**      | Origen del paciente (ej. Doctoralia, Directo).               | `VARCHAR(50)`                   |
+| **Importe**          | Valor monetario del tratamiento o consulta.                  | `DECIMAL(10,2)`                 |
+| **Fecha normalizar** | Fecha en formato estandarizado para procesamiento.           | `DATE`                          |
+| **ID**               | Identificador único del paciente en esta tabla.              | `INT` (Clave Foránea potencial) |
+| **Nombre**           | Nombre completo del paciente.                                | `VARCHAR(255)`                  |
+| **Teléfono**         | Número de contacto.                                          | `VARCHAR(20)`                   |
+| **Tratamiento**      | Tipo de procedimiento médico realizado.                      | `VARCHAR(255)`                  |
+| **Día / Mes / Año**  | Componentes de la fecha desglosados.                         | `INT`                           |
+
+#### 2. Tabla: `Listado`
+This table functions as the patient master, containing demographic and contact information.
+
+| Columna               | Descripción                                     | Tipo de Dato Sugerido (SQL) |
+| :-------------------- | :---------------------------------------------- | :-------------------------- |
+| **Nº**                | Identificador único del paciente (Primary Key). | `INT PRIMARY KEY`           |
+| **Codigo cliente**    | Código interno adicional (suele estar vacío).   | `VARCHAR(50)`               |
+| **Nombre**            | Nombre de pila del paciente.                    | `VARCHAR(100)`              |
+| **Apellidos**         | Apellidos del paciente.                         | `VARCHAR(100)`              |
+| **DNI**               | Documento Nacional de Identidad o Pasaporte.    | `VARCHAR(20)`               |
+| **Edad**              | Edad del paciente.                              | `INT`                       |
+| **Sexo**              | Género del paciente.                            | `VARCHAR(20)`               |
+| **Email**             | Correo electrónico de contacto.                 | `VARCHAR(150)`              |
+| **Tel. móvil**        | Número de teléfono principal.                   | `VARCHAR(20)`               |
+| **Direccion**         | Domicilio del paciente.                         | `TEXT`                      |
+| **Localidad / Prov.** | Ubicación geográfica.                           | `VARCHAR(100)`              |
+| **Primera visita**    | Fecha de la primera interacción con la clínica. | `DATE`                      |
+| **Última visita**     | Fecha de la actividad más reciente.             | `DATE`                      |
+
+**SQL Considerations**:
+* **Relation**: Link both tables using the `ID` field from the `Doctoralia` table with the `Nº` field from the `Listado` table.
+* **Data Cleaning**: Numeric fields like `Importe` or `Edad` may require cleaning to remove non-numeric characters before import.
+* **Dates**: Convert all date columns to ISO `YYYY-MM-DD` standard format.
+
+#### Formulas for "Doctoralia" Sheet (columns M-S, set as ARRAYFORMULA in row 2)
+
+| Columna | Encabezado      | Fórmula en la Fila 2 (Celda M2, N2, etc.)                                                    |
+| :------ | :-------------- | :------------------------------------------------------------------------------------------- |
+| **M**   | **ID**          | `=ARRAYFORMULA(IF(F2:F="", "", IFERROR(REGEXEXTRACT(F2:F, "^(\d+)\."), "")))`                |
+| **N**   | **Nombre**      | `=ARRAYFORMULA(IF(F2:F="", "", IFERROR(REGEXEXTRACT(F2:F, "^\d+\.\s+(.*?)\s+\["), "")))`     |
+| **O**   | **Teléfono**    | `=ARRAYFORMULA(IF(F2:F="", "", IFERROR(REGEXEXTRACT(F2:F, "\[(.*?)\]"), "")))`               |
+| **P**   | **Tratamiento** | `=ARRAYFORMULA(IF(F2:F="", "", IFERROR(REGEXEXTRACT(F2:F, "\[.*?\]\s*\((.*?)\)\s*$"), "")))` |
+| **Q**   | **Día**         | `=ARRAYFORMULA(IF(B2:B="", "", IFERROR(DAY(B2:B), "")))`                                     |
+| **R**   | **Mes**         | `=ARRAYFORMULA(IF(B2:B="", "", IFERROR(MONTH(B2:B), "")))`                                   |
+| **S**   | **Año**         | `=ARRAYFORMULA(IF(B2:B="", "", IFERROR(YEAR(B2:B), "")))`                                    |
+
+#### Webhook Script for Doctoralia Sheet Sync (Supabase → Google Sheets)
+
+For robust sync, use this Google Apps Script as Web App (see deployment steps below).
+
+```javascript
+/**
+ * WEBHOOK PARA DOCTORALIA - SINCRONIZACIÓN SUPABASE
+ */
+const SHEET_NAME = "Doctoralia";
+const SECRET_HEADER = "X-Webhook-Secret";
+const EXPECTED_SECRET = "Doctoralia_Secret_2026_!!"; 
+
+function doPost(e) {
+  try {
+    // 1. Verificación de contenido
+    if (!e || !e.postData || !e.postData.contents) return createResponse("No content", 400);
+
+    // 2. Seguridad
+    const headers = e.headers || {};
+    const receivedSecret = headers[SECRET_HEADER] || headers[SECRET_HEADER.toLowerCase()];
+    if (receivedSecret !== EXPECTED_SECRET) return createResponse("Unauthorized", 401);
+
+    const payload = JSON.parse(e.postData.contents);
+    const record = payload.record; // Datos desde Supabase
+    if (!record || !record.asunto) return createResponse("No record data", 400);
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(SHEET_NAME);
+    if (!sheet) return createResponse("Sheet not found", 404);
+
+    // 3. Mapeo de columnas A:L
+    const rowData = [
+      record.estado || "Pendiente",       // A
+      record.fecha || "",                // B
+      record.hora || "",                 // C
+      record.fecha_creacion || "",       // D
+      record.hora_creacion || "",        // E
+      record.asunto.trim(),              // F (Clave única)
+      record.agenda || "",               // G
+      record.sala_box || "Sin asignar",  // H
+      record.confirmada || "",           // I
+      record.procedencia || "-",         // J
+      record.importe || 0,               // K
+      record.fecha_para_normalizar || "" // L
+    ];
+
+    // 4. Lógica de Upsert (Evitar duplicados usando la columna F)
+    const data = sheet.getDataRange().getValues();
+    let rowIndex = -1;
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][5]).trim() === String(record.asunto).trim()) {
+        rowIndex = i + 1;
+        break;
+      }
+    }
+
+    if (rowIndex !== -1) {
+      // Actualiza fila existente (Columnas A a L únicamente)
+      sheet.getRange(rowIndex, 1, 1, rowData.length).setValues([rowData]);
+    } else {
+      // Añade fila nueva
+      sheet.appendRow(rowData);
+    }
+
+    return createResponse("Success", 200);
+
+  } catch (err) {
+    return createResponse("Error: " + err.toString(), 500);
+  }
+}
+
+function createResponse(message, code) {
+  return ContentService.createTextOutput(JSON.stringify({
+    status: message, code: code, timestamp: new Date().toISOString()
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+```
+
+#### Deployment Steps for the Webhook
+
+1. In Apps Script editor: **Deploy > New deployment** > Type: **Web App**.
+2. Execute as: You; Access: Anyone.
+3. Copy the Web App URL.
+4. In Supabase: Create Database Webhook for the relevant table (e.g. produccion_intermediarios or doctoralia_raw) pointing to the URL, with Header `X-Webhook-Secret: Doctoralia_Secret_2026_!!`.
+
+This keeps the "Doctoralia" sheet in sync with Supabase, and the ARRAYFORMULA in M-S parse the Asunto automatically.
+
 ## Revenue Truth Model
 
 - `leads.revenue` = **estimated** (entered manually in CRM, never verified)
