@@ -2834,13 +2834,16 @@ async function handleLeadsPatch(ctx: AuthenticatedRouteContext): Promise<Respons
       return sendJson({ success: false, message: 'No valid fields provided for update' }, 400);
     }
 
-    const { data, error } = await adminClient.from('leads')
+    const clinicId = await resolveClinicId(adminClient, userId);
+    const leadsQuery = adminClient.from('leads')
       .update(updateData)
       .eq('id', leadId)
-      .eq('user_id', userId)
       .is('deleted_at', null)
       .select()
       .maybeSingle();
+
+    const query = clinicId ? leadsQuery.eq('clinic_id', clinicId) : leadsQuery.eq('user_id', userId);
+    const { data, error } = await query;
 
     if (error) throw error;
     if (!data) return sendJson({ success: false, message: 'Lead not found' }, 404);
