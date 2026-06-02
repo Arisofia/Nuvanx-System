@@ -35,8 +35,8 @@ jobs:
       META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
       META_AD_ACCOUNT_IDS: ${{ secrets.META_AD_ACCOUNT_IDS }}
       META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
-      META_GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION }}
-      FALLBACK_META_AD_ACCOUNT_ID: ${{ secrets.FALLBACK_META_AD_ACCOUNT_ID || '9523446201036125' }}
+      META_GRAPH_VERSION: 'v20.0'
+      FALLBACK_META_AD_ACCOUNT_ID: '9523446201036125'
 
     steps:
       - name: Checkout repository

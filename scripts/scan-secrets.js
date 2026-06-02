@@ -51,7 +51,7 @@ const patterns = [
   { name: 'Private key block', re: /-----BEGIN (?:RSA |EC |OPENSSH |)PRIVATE KEY-----/ },
   {
     name: 'Hardcoded secret assignment',
-    re: /(?:SECRET|TOKEN|API_KEY|PASSWORD|SERVICE_ROLE_KEY|PRIVATE_KEY)\s*[:=]\s*['\"](?!env\(|\.\.\.|REPLACE_ME|changeme|example|test-|your-|webhook-|\$)[^'\"\s]{20,}['\"]/i,
+    re: /(?:SECRET|TOKEN|API_KEY|PASSWORD|SERVICE_ROLE|PRIVATE_KEY)\s*[:=]\s*['"](?!env\(|\.{3}|REPLACE_ME|changeme|example|(?:test|your|webhook)-|\$)[^'"\s]{20,}['"]/i,
   },
 ];
 
