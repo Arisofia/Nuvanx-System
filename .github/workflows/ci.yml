@@ -409,12 +409,12 @@ jobs:
           NODE_ENV: test
           # Use repository secrets for CI test credentials to avoid hardcoding sensitive values.
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY || '' }}
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY || 'ci_dummy_encryption_key_32chars_minimum_for_check' }}
           MCP_API_KEY: ${{ secrets.MCP_API_KEY || '' }}
           FALLBACK_META_AD_ACCOUNT_ID: ${{ secrets.FALLBACK_META_AD_ACCOUNT_ID || '9523446201036125' }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL || '' }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || '' }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || '' }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://ci-check.supabase.co' }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || 'ci_dummy_service_role_key_for_check_only' }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || 'ci_dummy_anon_key_for_check_only' }}
           DEFAULT_PHONE_COUNTRY_CODE: '34'
 
   # (continues in the same section as above)
@@ -446,7 +446,9 @@ jobs:
           # getFallback... calls in api/index.ts do not cause errors during 'deno cache' (module load) in CI.
           # Real values must be set in Supabase Edge Function secrets for production.
           FALLBACK_META_AD_ACCOUNT_ID: ${{ secrets.FALLBACK_META_AD_ACCOUNT_ID || '9523446201036125' }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL || '' }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || '' }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || '' }}
-          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY || '' }}
+          # Dummies for CI cache/test so validateSupabaseRuntimeConfig() succeeds without real secrets (PRs/forks).
+          # Real secrets from Supabase/GH are used in runtime deploys and when present.
+          SUPABASE_URL: https://ci-check.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ci_dummy_service_role_key_for_check_only
+          SUPABASE_ANON_KEY: ci_dummy_anon_key_for_check_only
+          ENCRYPTION_KEY: ci_dummy_encryption_key_32chars_minimum_for_check
