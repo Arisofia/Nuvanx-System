@@ -6,6 +6,7 @@ import { Hono } from 'hono'
 import { McpServer, StreamableHttpTransport } from 'mcp-lite'
 import { z } from 'zod'
 import { zodToJsonSchema } from 'zod-to-json-schema'
+import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, MCP_API_KEY } from '../_shared/config.ts'
 
 const app = new Hono()
 
@@ -19,17 +20,20 @@ const mcp = new McpServer({
     }),
 })
 
-function requireEnv(name: string): string {
-  const value = Deno.env.get(name)?.trim()
-  if (!value) throw new Error(`${name} is required`)
-  return value
+// Lazy Supabase client (getSupabase) to avoid top-level throws on missing envs.
+// Client is created on first tool invocation, using shared config (real values only).
+let supabaseInstance: any = null;
+function getSupabase() {
+  if (!supabaseInstance) {
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+      throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be configured for mcp.');
+    }
+    supabaseInstance = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false },
+    });
+  }
+  return supabaseInstance;
 }
-
-const supabase = createClient(
-  requireEnv('SUPABASE_URL'),
-  requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
-  { auth: { persistSession: false } },
-)
 
 const DateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD')
 const LimitSchema = z.number().int().min(1).max(200).default(50)
@@ -68,7 +72,7 @@ function getBearerToken(request: Request): string {
 
 function isAuthorized(request: Request): boolean {
   const providedKey = request.headers.get('x-api-key')?.trim() || getBearerToken(request)
-  const expectedApiKey = (Deno.env.get('VITE_MCP_API_KEY') || Deno.env.get('MCP_API_KEY'))?.trim()
+  const expectedApiKey = MCP_API_KEY
   if (!expectedApiKey) return false
   return providedKey === expectedApiKey
 }
@@ -81,7 +85,7 @@ mcp.tool('get_dashboard_metrics', {
     date_to: DateSchema.optional().describe('End date in YYYY-MM-DD format.'),
   }),
   handler: async ({ clinic_id, date_from, date_to }) => {
-    let leadsQuery = supabase
+    let leadsQuery = getSupabase()
       .from('leads')
       .select('id,stage,source,revenue,converted_patient_id,created_at')
       .is('deleted_at', null)
@@ -90,7 +94,7 @@ mcp.tool('get_dashboard_metrics', {
     if (date_from) leadsQuery = leadsQuery.gte('created_at', date_from)
     if (date_to) leadsQuery = leadsQuery.lte('created_at', date_to)
 
-    let settlementsQuery = supabase
+    let settlementsQuery = getSupabase()
       .from('financial_settlements')
       .select('amount_net,cancelled_at,settled_at')
       .is('cancelled_at', null)
@@ -99,7 +103,7 @@ mcp.tool('get_dashboard_metrics', {
     if (date_from) settlementsQuery = settlementsQuery.gte('settled_at', date_from)
     if (date_to) settlementsQuery = settlementsQuery.lte('settled_at', date_to)
 
-    let metaQuery = supabase
+    let metaQuery = getSupabase()
       .from('meta_daily_insights')
       .select('spend,impressions,clicks,conversions,date')
 
@@ -108,8 +112,8 @@ mcp.tool('get_dashboard_metrics', {
     if (date_to) metaQuery = metaQuery.lte('date', date_to)
 
     const integrationsQuery = clinic_id
-      ? supabase.from('integrations').select('service,status,clinic_id').eq('clinic_id', clinic_id)
-      : supabase.from('integrations').select('service,status,clinic_id')
+      ? getSupabase().from('integrations').select('service,status,clinic_id').eq('clinic_id', clinic_id)
+      : getSupabase().from('integrations').select('service,status,clinic_id')
 
     const [leadsRes, settlementsRes, integrationsRes, metaRes] = await Promise.all([
       leadsQuery.limit(5000),
@@ -191,7 +195,7 @@ mcp.tool('get_leads', {
     limit: LimitSchema,
   }),
   handler: async ({ clinic_id, stage, source, date_from, date_to, limit }) => {
-    let query = supabase
+    let query = getSupabase()
       .from('leads')
       .select('id,clinic_id,user_id,name,email,phone,source,stage,revenue,created_at,updated_at,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name')
       .is('deleted_at', null)
@@ -222,7 +226,7 @@ mcp.tool('get_meta_campaign_insights', {
     limit: z.number().int().min(1).max(500).default(100),
   }),
   handler: async ({ clinic_id, ad_account_id, date_from, date_to, limit }) => {
-    let query = supabase
+    let query = getSupabase()
       .from('meta_daily_insights')
       .select('clinic_id,user_id,ad_account_id,date,impressions,reach,clicks,spend,conversions,ctr,cpc,cpm,messaging_conversations,updated_at')
       .order('date', { ascending: false })
@@ -252,7 +256,7 @@ mcp.tool('search_leads', {
     const term = escapeIlikeTerm(query)
     if (!term) return jsonContent([])
 
-    let sqlQuery = supabase
+    let sqlQuery = getSupabase()
       .from('leads')
       .select('id,clinic_id,user_id,name,email,phone,source,stage,revenue,created_at,updated_at')
       .is('deleted_at', null)
@@ -280,7 +284,7 @@ mcp.tool('get_risk_leads', {
     limit: LimitSchema,
   }),
   handler: async ({ clinic_id, limit }) => {
-    let query = supabase
+    let query = getSupabase()
       .from('leads')
       .select('id, name, phone, email, stage, created_at, clinic_id')
       .eq('stage', 'lead')
@@ -307,7 +311,7 @@ mcp.tool('get_top_campaigns', {
     clinic_id: z.string().uuid().optional(),
   }),
   handler: async ({ clinic_id }) => {
-    let query = supabase
+    let query = getSupabase()
       .from('financial_settlements')
       .select('campaign_name, amount_net')
       .gte('settled_at', new Date(Date.now() - 7 * 86400000).toISOString())
@@ -344,7 +348,7 @@ mcp.tool('get_leads_by_stage', {
     date_from: DateSchema.optional(),
   }),
   handler: async ({ clinic_id, date_from }) => {
-    let query = supabase
+    let query = getSupabase()
       .from('leads')
       .select('stage')
       .is('deleted_at', null)
@@ -381,16 +385,12 @@ app.get('/', (c) => c.json({
 app.get('/health', (c) => c.json({
   status: 'ok',
   timestamp: new Date().toISOString(),
-  auth: Deno.env.get('MCP_API_KEY')?.trim() ? 'bearer' : 'disabled',
+  auth: MCP_API_KEY ? 'bearer' : 'disabled',
 }))
 
 app.all('/mcp', async (c) => {
-  // === API KEY AUTHENTICATION ===
-  const providedKey = c.req.header('x-api-key') ||
-                      c.req.header('authorization')?.replace(/^Bearer\s+/i, '')
-  const expectedKey = Deno.env.get('MCP_API_KEY')
-
-  if (!expectedKey || providedKey !== expectedKey) {
+  // === API KEY AUTHENTICATION (use shared isAuthorized + imported MCP_API_KEY from config) ===
+  if (!isAuthorized(c.req.raw)) {
     console.warn('[MCP] Unauthorized request')
     return c.json({ error: 'Unauthorized - Invalid or missing API Key' }, 401)
   }
