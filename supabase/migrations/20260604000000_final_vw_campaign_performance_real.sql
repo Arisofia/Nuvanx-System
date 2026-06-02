@@ -16,7 +16,6 @@ DO $$
 BEGIN
   -- Only proceed if the required base objects exist
   IF to_regclass('public.leads') IS NULL THEN
-    RAISE NOTICE 'Skipping final vw_campaign_performance_real: leads table missing';
     RETURN;
   END IF;
 
@@ -75,8 +74,6 @@ BEGIN
   EXECUTE 'ALTER VIEW public.vw_campaign_performance_real SET (security_invoker = true)';
   EXECUTE 'GRANT SELECT ON public.vw_campaign_performance_real TO service_role';
   EXECUTE 'GRANT SELECT ON public.vw_campaign_performance_real TO authenticated';
-
-  RAISE NOTICE 'vw_campaign_performance_real (final) created successfully';
 END $$;
 
 COMMENT ON VIEW public.vw_campaign_performance_real IS

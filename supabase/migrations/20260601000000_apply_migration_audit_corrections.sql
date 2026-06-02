@@ -25,7 +25,7 @@ BEGIN;
 -- ============================================================================
 -- La versión original (20260523100000) era funcional pero no tenía
 -- search_path endurecido. La redefinimos aquí siguiendo el patrón
--- de 20260531000010.
+-- de consolidación RLS.
 
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
 RETURNS TRIGGER
@@ -57,9 +57,6 @@ BEGIN
       BEFORE UPDATE ON public.meta_ig_account_daily
       FOR EACH ROW
       EXECUTE FUNCTION public.handle_updated_at();
-    RAISE NOTICE 'Trigger updated_at aplicado a meta_ig_account_daily';
-  ELSE
-    RAISE NOTICE 'Saltando trigger en meta_ig_account_daily: tabla no existe';
   END IF;
 
   IF to_regclass('public.meta_ig_media_performance') IS NOT NULL THEN
@@ -68,9 +65,6 @@ BEGIN
       BEFORE UPDATE ON public.meta_ig_media_performance
       FOR EACH ROW
       EXECUTE FUNCTION public.handle_updated_at();
-    RAISE NOTICE 'Trigger updated_at aplicado a meta_ig_media_performance';
-  ELSE
-    RAISE NOTICE 'Saltando trigger en meta_ig_media_performance: tabla no existe';
   END IF;
 END $$;
 
@@ -86,9 +80,6 @@ BEGIN
       BEFORE UPDATE ON public.meta_organic_daily
       FOR EACH ROW
       EXECUTE FUNCTION public.handle_updated_at();
-    RAISE NOTICE 'Trigger updated_at aplicado a meta_organic_daily';
-  ELSE
-    RAISE NOTICE 'Saltando trigger en meta_organic_daily: tabla no existe';
   END IF;
 
   IF to_regclass('public.meta_post_performance') IS NOT NULL THEN
@@ -97,9 +88,6 @@ BEGIN
       BEFORE UPDATE ON public.meta_post_performance
       FOR EACH ROW
       EXECUTE FUNCTION public.handle_updated_at();
-    RAISE NOTICE 'Trigger updated_at aplicado a meta_post_performance';
-  ELSE
-    RAISE NOTICE 'Saltando trigger en meta_post_performance: tabla no existe';
   END IF;
 END $$;
 
@@ -173,10 +161,6 @@ BEGIN
     CREATE INDEX IF NOT EXISTS idx_leads_meta_ad_name
       ON public.leads (clinic_id, meta_ad_name)
       WHERE meta_ad_name IS NOT NULL;
-
-    RAISE NOTICE 'Índices Meta aplicados en public.leads';
-  ELSE
-    RAISE NOTICE 'Saltando índices en leads: tabla no existe';
   END IF;
 END $$;
 
@@ -195,36 +179,8 @@ BEGIN
     CREATE INDEX IF NOT EXISTS idx_meta_ig_media_performance_ig_id
       ON public.meta_ig_media_performance (ig_id, timestamp DESC);
   END IF;
-
-  RAISE NOTICE 'Índices adicionales de insights aplicados (si las tablas existen)';
 END $$;
 
--- ============================================================================
--- 7. Documentación de la corrección
--- ============================================================================
-
-DO $$
-BEGIN
-  RAISE NOTICE '══════════════════════════════════════════════════════════════════';
-  RAISE NOTICE 'CORRECCIONES DE REVISIÓN DE MIGRACIONES APLICADAS (2026-06-01)';
-  RAISE NOTICE '══════════════════════════════════════════════════════════════════';
-  RAISE NOTICE '';
-  RAISE NOTICE '→ Triggers updated_at añadidos a:';
-  RAISE NOTICE '   - meta_ig_account_daily';
-  RAISE NOTICE '   - meta_ig_media_performance';
-  RAISE NOTICE '   - meta_organic_daily';
-  RAISE NOTICE '   - meta_post_performance';
-  RAISE NOTICE '';
-  RAISE NOTICE '→ Comentarios aclarados sobre deprecación v22 (Meta Graph API).';
-  RAISE NOTICE '';
-  RAISE NOTICE '→ Índices de rendimiento añadidos en leads para columnas Meta:';
-  RAISE NOTICE '   is_organic, meta_ad_id, meta_form_id, telefono_hash, email_hash, meta_ad_name';
-  RAISE NOTICE '';
-  RAISE NOTICE '→ handle_updated_at() endurecido con search_path = public, pg_catalog.';
-  RAISE NOTICE '';
-  RAISE NOTICE 'Recomendación: Ejecutar ANALYZE en las tablas afectadas después de aplicar.';
-  RAISE NOTICE 'Ejecutar supabase db lint para verificar que no hay nuevas advertencias.';
-  RAISE NOTICE '══════════════════════════════════════════════════════════════════';
-END $$;
+-- (Documentación de correcciones omitida - verbosa RAISE NOTICE removida en cleanup)
 
 COMMIT;

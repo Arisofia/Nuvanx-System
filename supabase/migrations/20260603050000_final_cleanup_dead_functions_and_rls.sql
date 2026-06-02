@@ -15,18 +15,11 @@ BEGIN
       AND p.proname = 'is_service_role'
   ) THEN
     DROP FUNCTION IF EXISTS public.is_service_role();
-    RAISE NOTICE 'Dropped dead function public.is_service_role()';
-  ELSE
-    RAISE NOTICE 'Function public.is_service_role() does not exist (already cleaned)';
   END IF;
 END $$;
 
--- 2. Optional: We could add more aggressive cleanup here in the future,
--- but for now we rely on the "mark as obsolete" migration (20260603020000)
--- to document which early RLS/cron migrations should be ignored.
-
--- 3. Ensure we don't have conflicting early RLS policies lingering
--- (This is mostly a safety net; the real cleanup is in the mark-obsolete migration)
+-- 2. Ensure we don't have conflicting early RLS policies lingering
+-- (early RLS/cron migrations before 20260531 are considered obsolete per consolidation).
 DO $$
 DECLARE
   t TEXT;

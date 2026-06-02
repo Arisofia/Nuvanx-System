@@ -26,7 +26,7 @@ BEGIN;
 
 -- NOTE (added during 2026-05-31 cleanup review):
 -- This migration was an intermediate step for auth_rls_initplan fixes.
--- It redefines current_clinic_id() / current_user_id() (now consolidated in 20260531000010).
+-- current_clinic_id() / current_user_id() consolidated in later RLS migrations.
 -- Much of its policy work was later superseded by the more comprehensive
 -- 20260530000000_comprehensive_rls_fix.sql.
 --

@@ -4,7 +4,7 @@
 --
 -- Changes applied in later cleanup:
 -- - Removed duplicate re-definition of current_clinic_id() / current_user_id()
---   (consolidated in 20260531000010).
+--   (consolidated in later RLS migrations).
 -- - Simplified the aggressive multi-name policy DROP loop.
 --
 -- Original goals kept:
@@ -20,7 +20,7 @@ BEGIN;
 -- =============================================================================
 --
 -- Note: Helper functions (current_clinic_id / current_user_id) were consolidated
--- and improved in later migrations (20260531000010).
+-- in later RLS migrations.
 -- This migration focuses on policy hardening only.
 -- =============================================================================
 

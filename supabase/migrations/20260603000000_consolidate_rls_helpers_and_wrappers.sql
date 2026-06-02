@@ -105,7 +105,7 @@ COMMENT ON FUNCTION public.run_doctoralia_name_match() IS
   'Fuzzy matching between doctoralia_patients and leads. Alias fixed + search_path hardened (2026-06-03).';
 
 -- 3. Consolidated and more robust current_clinic_id()
--- (Based on the hardened version from 20260531000010)
+-- (final version)
 CREATE OR REPLACE FUNCTION public.current_clinic_id()
 RETURNS uuid
 LANGUAGE plpgsql
