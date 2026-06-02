@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
+﻿# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
 name: Deploy Supabase
 
 on:
@@ -9,7 +9,7 @@ on:
   workflow_dispatch: {}
 
 env:
-  VITE_MCP_API_KEY: ${{ secrets.MCP_API_KEY }}
+  NODE_ENV: production
 
 concurrency:
   group: deploy-supabase-production
