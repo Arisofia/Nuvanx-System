@@ -104,7 +104,7 @@ jobs:
             }
 
             run_db_push_once() {
-              local output exit_code ghosts dup_version missing_remotes
+              local output exit_code dup_version
               DB_PUSH_RETRYABLE=true
 
               output=$(supabase db push --include-all --db-url "$SESSION_URL" --debug 2>&1)

@@ -57,7 +57,7 @@ The following early RLS and cron-related migrations are considered historical an
 - 20260523090000*
 - 20260507170000*
 - 20260521100000*
-- Various early cron/anon RLS duplicates (see `20260603020000_mark_obsolete_early_rls_and_cron_migrations.sql`)
+- Various early cron/anon RLS duplicates (historical markers removed in 2026-06 cleanup)
 
 ### Migration Hygiene
 
