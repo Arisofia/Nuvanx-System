@@ -1,7 +1,7 @@
 /** @ts-ignore: Deno global is provided by Supabase Edge Runtime */
 declare const Deno: any;
 
-import { createClient } from '@getSupabase()/getSupabase()-js'
+import { createClient } from '@supabase/supabase-js'
 import { Hono } from 'hono'
 import { McpServer, StreamableHttpTransport } from 'mcp-lite'
 import { z } from 'zod'
@@ -19,12 +19,6 @@ const mcp = new McpServer({
       $refStrategy: 'none',
     }),
 })
-
-function requireEnv(name: string): string {
-  const value = Deno.env.get(name)?.trim()
-  if (!value) throw new Error(`${name} is required`)
-  return value
-}
 
 // Lazy Supabase client (getSupabase) to avoid top-level throws on missing envs.
 // Client is created on first tool invocation, using shared config (real values only).
@@ -282,9 +276,9 @@ mcp.tool('search_leads', {
 
 // ==================== ADDITIONAL MCP TOOLS (real production data only) ====================
 
-// 7. Leads en riesgo (>14 días en "Nuevo")
+// 7. Leads en riesgo (>14 días en etapa inicial "lead")
 mcp.tool('get_risk_leads', {
-  description: 'Obtiene leads que llevan más de 14 días en etapa "Nuevo" (riesgo de pérdida)',
+  description: 'Obtiene leads que llevan más de 14 días en etapa inicial "lead" (riesgo de pérdida)',
   inputSchema: z.object({
     clinic_id: z.string().uuid().optional(),
     limit: LimitSchema,
@@ -293,7 +287,7 @@ mcp.tool('get_risk_leads', {
     let query = getSupabase()
       .from('leads')
       .select('id, name, phone, email, stage, created_at, clinic_id')
-      .eq('stage', 'Nuevo')
+      .eq('stage', 'lead')
       .lt('created_at', new Date(Date.now() - 14 * 86400000).toISOString())
       .neq('source', 'doctoralia')
       .order('created_at', { ascending: true })
@@ -382,27 +376,25 @@ mcp.tool('get_leads_by_stage', {
 
 const transport = new StreamableHttpTransport()
 const httpHandler = transport.bind(mcp)
-const mcpApp = new Hono()
 
-mcpApp.get('/', (c) => c.json({
+// Single Hono app (removed double app + mcpApp pattern which was causing
+// incorrect nested routing like /mcp/mcp/* and mismatched health endpoint
+// at /functions/v1/mcp/health vs the prefixed version).
+app.get('/', (c) => c.json({
   name: 'Nuvanx MCP Server',
   version: '1.0.0',
   endpoints: { mcp: '/mcp', health: '/health' },
 }))
 
-mcpApp.get('/health', (c) => c.json({
+app.get('/health', (c) => c.json({
   status: 'ok',
   timestamp: new Date().toISOString(),
   auth: (Deno.env.get('VITE_MCP_API_KEY') || Deno.env.get('MCP_API_KEY'))?.trim() ? 'bearer' : 'disabled',
 }))
 
-mcpApp.all('/mcp', async (c) => {
-  // === API KEY AUTHENTICATION ===
-  const providedKey = c.req.header('x-api-key') ||
-                      c.req.header('authorization')?.replace(/^Bearer\s+/i, '')
-  const expectedKey = Deno.env.get('VITE_MCP_API_KEY') || Deno.env.get('MCP_API_KEY')
-
-  if (!expectedKey || providedKey !== expectedKey) {
+app.all('/mcp', async (c) => {
+  // === API KEY AUTHENTICATION (use shared helper, no duplication) ===
+  if (!isAuthorized(c.req.raw)) {
     console.warn('[MCP] Unauthorized request')
     return c.json({ error: 'Unauthorized - Invalid or missing API Key' }, 401)
   }
@@ -410,7 +402,5 @@ mcpApp.all('/mcp', async (c) => {
   const response = await httpHandler(c.req.raw)
   return response
 })
-
-app.route('/mcp', mcpApp)
 
 Deno.serve(app.fetch)
