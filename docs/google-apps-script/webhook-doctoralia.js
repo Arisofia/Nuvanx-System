@@ -70,3 +70,34 @@ function createResponse(message, code) {
     status: message, code: code, timestamp: new Date().toISOString()
   })).setMimeType(ContentService.MimeType.JSON);
 }
+
+/**
+ * Función de prueba manual (ejecuta desde el editor de Apps Script)
+ * Úsala para probar que el mapeo funciona y se inserta/actualiza la fila.
+ * Después de ejecutar, revisa la hoja "Doctoralia" al final de la tabla.
+ */
+function testWebhook() {
+  const fakeEvent = {
+    postData: {
+      contents: JSON.stringify({
+        record: {
+          estado: "Pendiente",
+          fecha: "2026-06-02",
+          hora: "10:00",
+          fecha_creacion: "2026-06-01",
+          hora_creacion: "09:00",
+          asunto: "999. CLIENTE DE PRUEBA [600000000] (TRATAMIENTO TEST)",
+          agenda: "MEDICINA ESTÉTICA",
+          sala_box: "BOX 1",
+          confirmada: false,
+          procedencia: "Doctoralia",
+          importe: 100,
+          fecha_para_normalizar: "2026-06-02"
+        }
+      })
+    }
+  };
+
+  const result = doPost(fakeEvent);
+  console.log("Resultado de prueba:", result.getContent());
+}

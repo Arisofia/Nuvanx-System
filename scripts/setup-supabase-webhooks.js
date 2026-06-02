@@ -17,8 +17,9 @@ const https = require('https');
 
 const PROJECT_REF = process.env.SUPABASE_PROJECT_REF;
 const ACCESS_TOKEN = process.env.SUPABASE_ACCESS_TOKEN;
-const WEBHOOK_URL = process.env.SHEETS_WEBHOOK_URL;
-const WEBHOOK_SECRET = process.env.SHEETS_WEBHOOK_SECRET;
+const WEBHOOK_URL = process.env.SHEETS_WEBHOOK_URL || process.env.SHEETS_WEBHOOK_URL_DOCTORALIA;
+const WEBHOOK_SECRET = process.env.SHEETS_WEBHOOK_SECRET || process.env.SHEETS_WEBHOOK_SECRET_DOCTORALIA;
+const WEBHOOK_TABLE = process.env.WEBHOOK_TABLE || 'produccion_intermediarios'; // or 'doctoralia' etc.
 
 async function setupWebhooks() {
   console.log(`🚀 Iniciando configuración de webhooks para el proyecto: ${PROJECT_REF}`);
@@ -39,13 +40,14 @@ async function setupWebhooks() {
     console.log("  export SUPABASE_PROJECT_REF='tu_ref'");
     console.log("  export SHEETS_WEBHOOK_URL='https://script.google.com/...'");
     console.log("  export SHEETS_WEBHOOK_SECRET='webhook-secret-value'");
+    console.log("  # For Doctoralia: export SHEETS_WEBHOOK_URL_DOCTORALIA=... SHEETS_WEBHOOK_SECRET_DOCTORALIA=Doctoralia_Secret_2026_!! WEBHOOK_TABLE=doctoralia (or produccion_intermediarios)");
     console.log('\nO cárgalas desde tu archivo de secrets y luego ejecuta el script.');
     process.exit(1);
   }
 
   const webhookData = JSON.stringify({
     name: 'Sync_To_Google_Sheets',
-    table: 'produccion_intermediarios',
+    table: WEBHOOK_TABLE,
     events: ['INSERT', 'UPDATE'],
     type: 'http_request',
     config: {
@@ -96,14 +98,14 @@ async function setupWebhooks() {
         console.log("2. Haz clic en 'Create a new hook'");
         console.log('3. Configura exactamente:');
         console.log('   - Name:           Sync_To_Google_Sheets');
-        console.log('   - Table:          produccion_intermediarios');
+        console.log(`   - Table:          ${WEBHOOK_TABLE}`);
         console.log('   - Events:         INSERT + UPDATE (marca ambos)');
         console.log(`   - Webhook URL:    ${WEBHOOK_URL}`);
         console.log('   - Method:         POST');
         console.log("4. En 'HTTP Headers' → Add header:");
         console.log('   - Header Name:    X-Webhook-Secret');
         console.log(
-          '   - Header Value:   (usa el valor de la variable SHEETS_WEBHOOK_SECRET; no se muestra por seguridad)',
+          '   - Header Value:   (usa el valor de la variable SHEETS_WEBHOOK_SECRET_DOCTORALIA o SHEETS_WEBHOOK_SECRET; no se muestra por seguridad)',
         );
         console.log('5. (Opcional) Conditions: déjalo vacío.');
         console.log("6. Haz clic en 'Create webhook'.\n");
