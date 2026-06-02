@@ -295,7 +295,6 @@ jobs:
           export VITE_SUPABASE_URL="${VITE_SUPABASE_URL:-}"
           export VITE_SUPABASE_PUBLISHABLE_KEY="${VITE_SUPABASE_PUBLISHABLE_KEY:-${VITE_SUPABASE_ANON_KEY:-}}"
           export VITE_SUPABASE_ANON_KEY="${VITE_SUPABASE_ANON_KEY:-}"
-          export VITE_MCP_API_KEY="${VITE_MCP_API_KEY:-}"
           npm run build
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
@@ -413,6 +412,9 @@ jobs:
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY || '' }}
           MCP_API_KEY: ${{ secrets.MCP_API_KEY || '' }}
           FALLBACK_META_AD_ACCOUNT_ID: ${{ secrets.FALLBACK_META_AD_ACCOUNT_ID || '9523446201036125' }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || '' }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || '' }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || '' }}
           DEFAULT_PHONE_COUNTRY_CODE: '34'
 
   # (continues in the same section as above)
@@ -440,6 +442,11 @@ jobs:
           fi
           deno cache supabase/functions/api/index.ts
         env:
-          # Provide placeholder so top-level requireRuntimeSecret('FALLBACK_META_AD_ACCOUNT_ID') in api/index.ts
-          # does not throw during 'deno cache' (module load) in CI. Real value must be set in Supabase Edge secrets.
+          # Provide placeholder (and other runtime config secrets) so validateSupabaseRuntimeConfig() and any
+          # getFallback... calls in api/index.ts do not cause errors during 'deno cache' (module load) in CI.
+          # Real values must be set in Supabase Edge Function secrets for production.
           FALLBACK_META_AD_ACCOUNT_ID: ${{ secrets.FALLBACK_META_AD_ACCOUNT_ID || '9523446201036125' }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || '' }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || '' }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || '' }}
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY || '' }}
