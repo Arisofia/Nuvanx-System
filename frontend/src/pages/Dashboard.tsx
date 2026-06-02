@@ -24,32 +24,6 @@ interface RealFunnel {
   cac: number
 }
 
-const DEMO_DASHBOARD_METRICS: DashboardMetrics = {
-  totalLeads: 86,
-  conversionRate: 4.2,
-  activeCampaigns: 8,
-  spend: 37_200,
-  averageCpc: 1.07,
-  loading: false,
-  error: null,
-}
-
-const DEMO_COMBINED_METRICS: CombinedMetrics = {
-  metaEstimatedLeads: 92,
-  verifiedRevenue: 19_400,
-  metaCpl: 1.18,
-  revenuePerLead: 212,
-}
-
-const DEMO_FUNNEL: RealFunnel = {
-  metaSpend: 12_450,
-  metaLeads: 320,
-  crmLeads: 250,
-  doctoraliaRevenue: 24_580,
-  doctoraliaPatients: 190,
-  cac: 65,
-}
-
 export default function Dashboard() {
   const [days, setDays] = useState<7 | 14 | 30 | 90>(30)
   const [customFrom, setCustomFrom] = useState<string>('')
