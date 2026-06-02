@@ -78,7 +78,7 @@ Only the final, consolidated RLS migrations from the 20260531 and 20260603 serie
 
 - Update `scripts/run-daily-sync.js` and the Edge Function (`supabase/functions/api/index.ts`) to explicitly leverage the new `fbc`/`fbp`/`capi_sent` fields for CAPI Purchase events.
 - Add monitoring/alerting around `capi_sent = false` for recent paid productions.
-- Consider deprecating or archiving the obsolete migration files in a future cleanup sprint.
+- Obsolete marker migration files (the 20260531* and 20260603* mark-obsolete series) have been removed in this cleanup.
 
 ---
 
