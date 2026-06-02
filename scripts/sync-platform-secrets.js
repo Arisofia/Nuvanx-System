@@ -54,7 +54,6 @@ const requiredSecretKeys = [
   'SUPABASE_SERVICE_ROLE_KEY', // Included for GitHub/Vercel, filtered for Supabase API
   'NUVANX_SUPABASE_SERVICE_ROLE_KEY', // Included for GitHub/Vercel, filtered for Supabase API
   'SUPABASE_ANON_KEY', // Included for GitHub/Vercel, filtered for Supabase API
-  'VITE_MCP_API_KEY',
   'HEALTH_CHECK_API_AUTH_TOKEN',
 ];
 
@@ -67,7 +66,7 @@ const frontendKeys = [
   'VITE_SUPABASE_FIGMA_URL',
   'VITE_SUPABASE_FIGMA_ANON_KEY',
   'VITE_SENTRY_DSN',
-  'VITE_MCP_API_KEY',
+
 ];
 
 function readEnvFile(filePath) {

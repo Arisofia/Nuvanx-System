@@ -26,7 +26,7 @@ const DEFAULT_SUPABASE_URL = 'https://ssvvuuysgxyqvmovrlvk.supabase.co';
 const SUPABASE_URL = (
   getEnv('PRODUCTION_E2E_URL') || getEnv('VITE_SUPABASE_URL') || getEnv('SUPABASE_URL') || DEFAULT_SUPABASE_URL
 ).replace(/\/$/, '');
-const MCP_API_KEY = (getEnv('MCP_API_KEY') || getEnv('VITE_MCP_API_KEY'))?.trim();
+const MCP_API_KEY = getEnv('MCP_API_KEY')?.trim();
 const API_AUTH_TOKEN = (getEnv('PRODUCTION_E2E_TOKEN') || getEnv('HEALTH_CHECK_API_AUTH_TOKEN'))?.trim();
 
 const DEFAULT_TIMEOUT_MS = 10_000;
