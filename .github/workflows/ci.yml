@@ -415,6 +415,9 @@ jobs:
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY || 'ci_dummy_encryption_key_32chars_minimum_for_check' }}
           MCP_API_KEY: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.MCP_API_KEY || '' }}
           FALLBACK_META_AD_ACCOUNT_ID: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FALLBACK_META_AD_ACCOUNT_ID || '9523446201036125' }}
+          # Doctoralia webhook secrets (guarded; real values from GH secrets for setup flows)
+          SHEETS_WEBHOOK_URL_DOCTORALIA: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.SHEETS_WEBHOOK_URL_DOCTORALIA || '' }}
+          SHEETS_WEBHOOK_SECRET_DOCTORALIA: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.SHEETS_WEBHOOK_SECRET_DOCTORALIA || 'Doctoralia_Secret_2026_!!' }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://ci-check.supabase.co' }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || 'ci_dummy_service_role_key_for_check_only' }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || 'ci_dummy_anon_key_for_check_only' }}
@@ -436,23 +439,23 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: Cache dependencies
-        continue-on-error: true
+      - name: Run Deno type check
+        continue-on-error: false
         run: |
           if [ ! -f supabase/functions/deno.json ]; then
-            echo "deno.json not found in supabase/functions/ — skipping cache step."
+            echo "deno.json not found in supabase/functions/ — skipping Deno check."
             exit 0
           fi
-          deno cache supabase/functions/api/index.ts
+          echo "Checking all Supabase Edge Function sources..."
+          deno check --unstable --import-map=supabase/functions/deno.json $(find supabase/functions -name '*.ts' | sort)
         env:
-          # Provide placeholder (and other runtime config secrets) so validateSupabaseRuntimeConfig() and any
-          # getFallback... calls in api/index.ts do not cause errors during 'deno cache' (module load) in CI.
-          # Real values must be set in Supabase Edge Function secrets for production.
-          # Guarded to fix linter "Context access might be invalid" on fork PRs.
+          # Provide runtime config dummies so module-level config validation can complete during Deno type checking.
+          # Real values should be configured in Supabase Edge Function secrets for production.
           FALLBACK_META_AD_ACCOUNT_ID: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FALLBACK_META_AD_ACCOUNT_ID || '9523446201036125' }}
-          # Dummies for CI cache/test so validateSupabaseRuntimeConfig() succeeds without real secrets (PRs/forks).
-          # Real secrets from Supabase/GH are used in runtime deploys and when present.
+          # Doctoralia webhook values are optional during CI type checking.
+          SHEETS_WEBHOOK_URL_DOCTORALIA: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.SHEETS_WEBHOOK_URL_DOCTORALIA || '' }}
+          SHEETS_WEBHOOK_SECRET_DOCTORALIA: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.SHEETS_WEBHOOK_SECRET_DOCTORALIA || 'ci_dummy_doctoralia_secret' }}
           SUPABASE_URL: https://ci-check.supabase.co
           SUPABASE_SERVICE_ROLE_KEY: ci_dummy_service_role_key_for_check_only
           SUPABASE_ANON_KEY: ci_dummy_anon_key_for_check_only
-          ENCRYPTION_KEY: ci_dummy_encryption_key_32chars_minimum_for_check
+          ENCRYPTION_KEY: ci_dummy_encryption_key_32chars_minimum_for_check_only

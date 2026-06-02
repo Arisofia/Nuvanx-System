@@ -35,9 +35,12 @@ jobs:
       META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
       META_AD_ACCOUNT_IDS: ${{ secrets.META_AD_ACCOUNT_IDS }}
       META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
-      # Defaults to silence "Context access might be invalid" linter warnings (secrets may be unavailable in certain workflow_run/PR-analysis contexts).
-      META_GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION || 'v20.0' }}
-      FALLBACK_META_AD_ACCOUNT_ID: ${{ secrets.FALLBACK_META_AD_ACCOUNT_ID || '9523446201036125' }}
+      # Guarded to fix "Context access might be invalid" (for PR analysis of this file, and potential workflow_run restrictions).
+      META_GRAPH_VERSION: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.META_GRAPH_VERSION || 'v20.0' }}
+      FALLBACK_META_AD_ACCOUNT_ID: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FALLBACK_META_AD_ACCOUNT_ID || '9523446201036125' }}
+      # Doctoralia webhook (real data for Supabase DB -> GAS bridge). Guarded for PRs/forks.
+      SHEETS_WEBHOOK_URL_DOCTORALIA: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.SHEETS_WEBHOOK_URL_DOCTORALIA || '' }}
+      SHEETS_WEBHOOK_SECRET_DOCTORALIA: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.SHEETS_WEBHOOK_SECRET_DOCTORALIA || 'Doctoralia_Secret_2026_!!' }}
 
     steps:
       - name: Checkout repository
@@ -91,6 +94,9 @@ jobs:
           # si no hay secreto, usa 'v20.0' como default
           META_GRAPH_VERSION: ${{ env.META_GRAPH_VERSION || 'v20.0' }}
           SHEET_NAME: "Produccion Intermediarios"
+          # Doctoralia webhook config (for setup scripts / real bridge)
+          SHEETS_WEBHOOK_URL_DOCTORALIA: ${{ env.SHEETS_WEBHOOK_URL_DOCTORALIA }}
+          SHEETS_WEBHOOK_SECRET_DOCTORALIA: ${{ env.SHEETS_WEBHOOK_SECRET_DOCTORALIA }}
 
       - name: Fetch Meta Daily Insights
         shell: bash
