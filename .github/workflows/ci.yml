@@ -285,6 +285,9 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          # VITE_MCP_API_KEY exposed to frontend build (for any build-time needs) but sourced from
+          # plain MCP_API_KEY GitHub secret (no VITE_ prefix on the secret itself, per convention).
+          VITE_MCP_API_KEY: ${{ secrets.MCP_API_KEY || '' }}
 
       - name: Build
         run: |
@@ -292,11 +295,15 @@ jobs:
           export VITE_SUPABASE_URL="${VITE_SUPABASE_URL:-}"
           export VITE_SUPABASE_PUBLISHABLE_KEY="${VITE_SUPABASE_PUBLISHABLE_KEY:-${VITE_SUPABASE_ANON_KEY:-}}"
           export VITE_SUPABASE_ANON_KEY="${VITE_SUPABASE_ANON_KEY:-}"
+          export VITE_MCP_API_KEY="${VITE_MCP_API_KEY:-}"
           npm run build
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          # VITE_MCP_API_KEY exposed to frontend build (for any build-time needs) but sourced from
+          # plain MCP_API_KEY GitHub secret (no VITE_ prefix on the secret itself, per convention).
+          VITE_MCP_API_KEY: ${{ secrets.MCP_API_KEY || '' }}
 
   frontend-e2e-smoke:
     needs: frontend
@@ -405,6 +412,7 @@ jobs:
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY || '' }}
           MCP_API_KEY: ${{ secrets.MCP_API_KEY || '' }}
+          FALLBACK_META_AD_ACCOUNT_ID: ${{ secrets.FALLBACK_META_AD_ACCOUNT_ID || '9523446201036125' }}
           DEFAULT_PHONE_COUNTRY_CODE: '34'
 
   # (continues in the same section as above)
@@ -431,3 +439,7 @@ jobs:
             exit 0
           fi
           deno cache supabase/functions/api/index.ts
+        env:
+          # Provide placeholder so top-level requireRuntimeSecret('FALLBACK_META_AD_ACCOUNT_ID') in api/index.ts
+          # does not throw during 'deno cache' (module load) in CI. Real value must be set in Supabase Edge secrets.
+          FALLBACK_META_AD_ACCOUNT_ID: ${{ secrets.FALLBACK_META_AD_ACCOUNT_ID || '9523446201036125' }}

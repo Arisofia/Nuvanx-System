@@ -239,6 +239,7 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      FALLBACK_META_AD_ACCOUNT_ID: ${{ secrets.FALLBACK_META_AD_ACCOUNT_ID }}
     steps:
       - uses: actions/checkout@v5
 

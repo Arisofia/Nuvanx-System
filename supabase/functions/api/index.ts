@@ -2543,7 +2543,13 @@ async function upsertLeadIdempotent(adminClient: any, userId: string, payload: a
   return { data: existing, deduplicated: true, status: 200 };
 }
 
-const FALLBACK_META_AD_ACCOUNT_ID = requireRuntimeSecret('FALLBACK_META_AD_ACCOUNT_ID');
+function getFallbackMetaAdAccountId(): string {
+  const v = Deno.env.get('FALLBACK_META_AD_ACCOUNT_ID')?.trim();
+  if (!v) {
+    throw new Error('FALLBACK_META_AD_ACCOUNT_ID is required. Refusing to run with missing Supabase runtime configuration (set via Supabase Dashboard → Edge Function secrets).');
+  }
+  return v;
+}
 
 function readPayloadString(payload: Record<string, any>, keys: string[], fallback: string | null = null): string | null {
   for (const key of keys) {
@@ -2638,7 +2644,7 @@ function buildExternalLeadPayload(params: {
     ad_name: readPayloadString(payloadObj, ['ad_name', 'adName']),
     form_id: readPayloadString(payloadObj, ['form_id', 'formId']),
     form_name: readPayloadString(payloadObj, ['form_name', 'formName']),
-    ad_account_id: requestedAdAccountId ?? FALLBACK_META_AD_ACCOUNT_ID,
+    ad_account_id: requestedAdAccountId ?? getFallbackMetaAdAccountId(),
     fbc: readPayloadString(payloadObj, ['fbc'], meta.fbc ?? null),
     fbp: readPayloadString(payloadObj, ['fbp'], meta.fbp ?? null),
     ip_address: req.headers.get('x-forwarded-for')?.split(',')[0].trim() || null,
@@ -2789,7 +2795,7 @@ async function handleLeadsPost(ctx: AuthenticatedRouteContext): Promise<Response
       })
       : {
         ...body,
-        ad_account_id: requestedAdAccountId ?? FALLBACK_META_AD_ACCOUNT_ID,
+        ad_account_id: requestedAdAccountId ?? getFallbackMetaAdAccountId(),
         user_id: userId,
         clinic_id: body?.clinic_id ?? clinicId,
       };
