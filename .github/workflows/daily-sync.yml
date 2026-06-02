@@ -36,7 +36,7 @@ jobs:
       META_AD_ACCOUNT_IDS: ${{ secrets.META_AD_ACCOUNT_IDS }}
       META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
       # Defaults to silence "Context access might be invalid" linter warnings (secrets may be unavailable in certain workflow_run/PR-analysis contexts).
-      META_GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION || '' }}
+      META_GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION || 'v20.0' }}
       FALLBACK_META_AD_ACCOUNT_ID: ${{ secrets.FALLBACK_META_AD_ACCOUNT_ID || '9523446201036125' }}
 
     steps:
@@ -90,6 +90,7 @@ jobs:
           META_APP_SECRET: ${{ env.META_APP_SECRET }}
           # si no hay secreto, usa 'v20.0' como default
           META_GRAPH_VERSION: ${{ env.META_GRAPH_VERSION || 'v20.0' }}
+          SHEET_NAME: "Produccion Intermediarios"
 
       - name: Fetch Meta Daily Insights
         shell: bash
