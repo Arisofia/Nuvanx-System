@@ -95,7 +95,7 @@ npm run update:meta-token
 Si quieres propagar el token también a GitHub, Supabase y Vercel desde el mismo script, ejecuta:
 
 ```bash
-META_ACCESS_TOKEN_NEW=REPLACE_ME node scripts/set-meta-token.js --github --supabase --vercel
+META_ACCESS_TOKEN_NEW=<token> node scripts/set-meta-token.js --github --supabase --vercel
 ```
 
 El script actualizará `META_ACCESS_TOKEN` en los archivos `.env` detectados sin modificar otras variables.
@@ -105,7 +105,9 @@ Si prefieres hacerlo manualmente, sincroniza los entornos remotos así:
 - Supabase:
   ```bash
   supabase secrets set META_ACCESS_TOKEN="..."
+  supabase secrets set FALLBACK_META_AD_ACCOUNT_ID="9523446201036125"   # required (see GitHub Actions secrets list)
   npm run supabase:functions:deploy:api
+  npm run supabase:functions:deploy:mcp
   ```
 - GitHub Actions:
   ```bash
@@ -152,12 +154,14 @@ The repository uses GitHub Actions secrets for Supabase and production validatio
 - `PRODUCTION_E2E_TOKEN` — Auth token used by `scripts/production-e2e.js`.
 - `GOOGLE_ADS_SERVICE_ACCOUNT` — Google Sheets service account JSON for Doctoralia sync.
 - `DOCTORALIA_SHEET_ID` / `DOCTORALIA_DRIVE_FILE_ID` — Spreadsheet ID used for Doctoralia ingestion.
+- `MCP_API_KEY` — API key for authenticating to /mcp Edge Function (and scripts/health-check-nuvanx.ts).
+- `FALLBACK_META_AD_ACCOUNT_ID` — Required fallback Meta ad account ID (numeric or act_ form) for lead attribution paths. No longer has hardcoded default; must be set in Supabase Dashboard (Edge Function secrets) after fix #6. Use `supabase secrets set FALLBACK_META_AD_ACCOUNT_ID="..."`.
 
 ## Vercel environment variables
 
 For Vercel production deploys, configure these environment variables in the frontend project settings:
 
-- `VITE_SUPABASE_URL` — your Supabase project URL, e.g. `https://YOUR_SUPABASE_PROJECT_REF.supabase.co`
+- `VITE_SUPABASE_URL` — your Supabase project URL, e.g. `https://<project-ref>.supabase.co`
 - `VITE_SUPABASE_PUBLISHABLE_KEY` — preferred Supabase publishable key from Supabase Connect
 - `VITE_SUPABASE_ANON_KEY` — legacy anonymous key; used only as a fallback when `VITE_SUPABASE_PUBLISHABLE_KEY` is not set
 - `VITE_API_BASE_URL` / `VITE_API_URL` — optional overrides for the API host; leave empty to use Vercel rewrite paths (`/api/*`)
