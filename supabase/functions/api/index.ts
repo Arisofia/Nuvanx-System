@@ -2543,7 +2543,7 @@ async function upsertLeadIdempotent(adminClient: any, userId: string, payload: a
   return { data: existing, deduplicated: true, status: 200 };
 }
 
-const FALLBACK_META_AD_ACCOUNT_ID = '9523446201036125';
+const FALLBACK_META_AD_ACCOUNT_ID = Deno.env.get('FALLBACK_META_AD_ACCOUNT_ID')?.trim() || '9523446201036125';
 
 function readPayloadString(payload: Record<string, any>, keys: string[], fallback: string | null = null): string | null {
   for (const key of keys) {
