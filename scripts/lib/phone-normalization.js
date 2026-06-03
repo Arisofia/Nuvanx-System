@@ -14,6 +14,12 @@ function normalizePhoneForMatching(value) {
   let cleaned = String(value).trim().replace(/[^0-9]/g, '');
   if (!cleaned) return null;
 
+  // Reject obvious fake/placeholder phones from exports (e.g. 000000000, 000000 from Listado/Doctoralia)
+  if (/^0+$/.test(cleaned)) return null;
+
+  // Require plausible length: Spanish mobiles/fixed are 9 digits. Reject shorts like 8-digit or 6-digit fakes seen in data.
+  if (cleaned.length < 9) return null;
+
   // ROBUST: Always use the last 9 digits for matching Spanish numbers (ignoring prefixes)
   if (cleaned.length >= 9) {
     return cleaned.slice(-9);

@@ -116,13 +116,18 @@ const DATABASE_URL = (() => {
 const SHEET_ID = (DOCTORALIA_SHEET_ID || DOCTORALIA_DRIVE_FILE_ID)?.trim();
 const ALLOW_PERMISSION_SKIP = DOCTORALIA_SYNC_PERMISSION_MODE.toLowerCase() === 'warn';
 
-// ─── Validation ───────────────────────────────────────────────────────────────
-const hasAuth = SA_JSON || GOOGLE_SA_JSON_FILE || GOOGLE_API_KEY || (GOOGLE_CLIENT_EMAIL && GOOGLE_PRIVATE_KEY);
-if (!hasAuth || !SHEET_ID || !DATABASE_URL || !CLINIC_ID) {
-  console.error('[sync-doctoralia] Missing required env vars.');
-  console.error('  Required: Authentication (SA_JSON, GOOGLE_API_KEY, or EMAIL+KEY), DOCTORALIA_SHEET_ID, DATABASE_URL, CLINIC_ID');
-  if (SHEET_ID === undefined) console.error('  SHEET_ID is undefined');
-  process.exit(1);
+// ─── Validation (only when executed directly as the sync script) ──────────────
+// This prevents require() from test files / other modules from exiting the process
+// when prod env vars (DB, SA, SHEET_ID, CLINIC_ID) are not present. Pure helpers
+// (parseAsunto, normalize*, buildHeaderConfig, parseRow etc) remain usable.
+if (require.main === module) {
+  const hasAuth = SA_JSON || GOOGLE_SA_JSON_FILE || GOOGLE_API_KEY || (GOOGLE_CLIENT_EMAIL && GOOGLE_PRIVATE_KEY);
+  if (!hasAuth || !SHEET_ID || !DATABASE_URL || !CLINIC_ID) {
+    console.error('[sync-doctoralia] Missing required env vars.');
+    console.error('  Required: Authentication (SA_JSON, GOOGLE_API_KEY, or EMAIL+KEY), DOCTORALIA_SHEET_ID, DATABASE_URL, CLINIC_ID');
+    if (SHEET_ID === undefined) console.error('  SHEET_ID is undefined');
+    process.exit(1);
+  }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -627,7 +632,21 @@ async function fetchSheetRows(sheets, saObject) {
       spreadsheetId: SHEET_ID,
       range,
     });
-    return res.data.values ?? [];
+    let values = res.data.values ?? [];
+
+    // Trim trailing completely empty rows. Large ranges (e.g. A1:Z5000) or Doctoralia/Listado
+    // exports often include 100+ blank rows at the end, which would otherwise be counted
+    // as "skipped" and slow down processing / reconciliation.
+    while (values.length > 0) {
+      const last = values[values.length - 1] || [];
+      const isEmptyRow = last.every((c) => c == null || String(c).trim() === '');
+      if (isEmptyRow) {
+        values.pop();
+      } else {
+        break;
+      }
+    }
+    return values;
   } catch (err) {
     if (isGooglePermissionError(err)) {
       const guidance = formatPermissionGuidance(saObject);
@@ -683,6 +702,8 @@ async function main() {
     console.log('[sync-doctoralia] Sheet has no data rows or was skipped. Nothing to sync.');
     return;
   }
+
+  console.log(`[sync-doctoralia] Data rows after trimming trailing empties: ${rows.length - 1}`);
 
   // ── 2. Map headers ────────────────────────────────────────────────────────
   const headers = rows[0];
