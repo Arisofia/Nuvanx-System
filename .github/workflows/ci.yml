@@ -447,7 +447,7 @@ jobs:
             exit 0
           fi
           echo "Checking all Supabase Edge Function sources..."
-          deno check --unstable --import-map=supabase/functions/deno.json $(find supabase/functions -name '*.ts' | sort)
+          deno check --config=supabase/functions/deno.json $(find supabase/functions -name '*.ts' | sort)
         env:
           # Provide runtime config dummies so module-level config validation can complete during Deno type checking.
           # Real values should be configured in Supabase Edge Function secrets for production.

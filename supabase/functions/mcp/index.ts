@@ -2,7 +2,7 @@
 declare const Deno: any;
 
 import { createClient } from '@supabase/supabase-js'
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { McpServer, StreamableHttpTransport } from 'mcp-lite'
 import { z } from 'zod'
 import { zodToJsonSchema } from 'zod-to-json-schema'
@@ -13,7 +13,8 @@ const app = new Hono()
 const mcp = new McpServer({
   name: 'nuvanx-mcp',
   version: '1.0.0',
-  schemaAdapter: (schema) =>
+  schemaAdapter: (schema: any) =>
+    // @ts-ignore: zodToJsonSchema type instantiation can be excessively deep with current esm.sh types + Deno TS
     zodToJsonSchema(schema as z.ZodType<any, z.ZodTypeDef, any>, {
       target: 'jsonSchema7',
       $refStrategy: 'none',
@@ -84,7 +85,7 @@ mcp.tool('get_dashboard_metrics', {
     date_from: DateSchema.optional().describe('Start date in YYYY-MM-DD format.'),
     date_to: DateSchema.optional().describe('End date in YYYY-MM-DD format.'),
   }),
-  handler: async ({ clinic_id, date_from, date_to }) => {
+  handler: async ({ clinic_id, date_from, date_to }: { clinic_id?: string; date_from?: string; date_to?: string }) => {
     let leadsQuery = getSupabase()
       .from('leads')
       .select('id,stage,source,revenue,converted_patient_id,created_at')
@@ -128,10 +129,10 @@ mcp.tool('get_dashboard_metrics', {
       return errorContent('Database error while fetching dashboard metrics')
     }
 
-    const leads = leadsRes.data ?? []
-    const settlements = settlementsRes.data ?? []
-    const integrations = integrationsRes.data ?? []
-    const metaRows = metaRes.data ?? []
+    const leads: any[] = leadsRes.data ?? []
+    const settlements: any[] = settlementsRes.data ?? []
+    const integrations: any[] = integrationsRes.data ?? []
+    const metaRows: any[] = metaRes.data ?? []
 
     const byStage = leads.reduce<Record<string, number>>((acc, lead) => {
       const key = String(lead.stage ?? 'unknown')
@@ -194,7 +195,7 @@ mcp.tool('get_leads', {
     date_to: DateSchema.optional(),
     limit: LimitSchema,
   }),
-  handler: async ({ clinic_id, stage, source, date_from, date_to, limit }) => {
+  handler: async ({ clinic_id, stage, source, date_from, date_to, limit }: { clinic_id?: string; stage?: string; source?: string; date_from?: string; date_to?: string; limit: number }) => {
     let query = getSupabase()
       .from('leads')
       .select('id,clinic_id,user_id,name,email,phone,source,stage,revenue,created_at,updated_at,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name')
@@ -225,7 +226,7 @@ mcp.tool('get_meta_campaign_insights', {
     date_to: DateSchema.optional(),
     limit: z.number().int().min(1).max(500).default(100),
   }),
-  handler: async ({ clinic_id, ad_account_id, date_from, date_to, limit }) => {
+  handler: async ({ clinic_id, ad_account_id, date_from, date_to, limit }: { clinic_id?: string; ad_account_id?: string; date_from?: string; date_to?: string; limit: number }) => {
     let query = getSupabase()
       .from('meta_daily_insights')
       .select('clinic_id,user_id,ad_account_id,date,impressions,reach,clicks,spend,conversions,ctr,cpc,cpm,messaging_conversations,updated_at')
@@ -252,7 +253,7 @@ mcp.tool('search_leads', {
     clinic_id: z.string().uuid().optional(),
     limit: z.number().int().min(1).max(100).default(30),
   }),
-  handler: async ({ query, clinic_id, limit }) => {
+  handler: async ({ query, clinic_id, limit }: { query: string; clinic_id?: string; limit: number }) => {
     const term = escapeIlikeTerm(query)
     if (!term) return jsonContent([])
 
@@ -283,7 +284,7 @@ mcp.tool('get_risk_leads', {
     clinic_id: z.string().uuid().optional(),
     limit: LimitSchema,
   }),
-  handler: async ({ clinic_id, limit }) => {
+  handler: async ({ clinic_id, limit }: { clinic_id?: string; limit: number }) => {
     let query = getSupabase()
       .from('leads')
       .select('id, name, phone, email, stage, created_at, clinic_id')
@@ -310,7 +311,7 @@ mcp.tool('get_top_campaigns', {
   inputSchema: z.object({
     clinic_id: z.string().uuid().optional(),
   }),
-  handler: async ({ clinic_id }) => {
+  handler: async ({ clinic_id }: { clinic_id?: string }) => {
     let query = getSupabase()
       .from('financial_settlements')
       .select('campaign_name, amount_net')
@@ -347,7 +348,7 @@ mcp.tool('get_leads_by_stage', {
     clinic_id: z.string().uuid().optional(),
     date_from: DateSchema.optional(),
   }),
-  handler: async ({ clinic_id, date_from }) => {
+  handler: async ({ clinic_id, date_from }: { clinic_id?: string; date_from?: string }) => {
     let query = getSupabase()
       .from('leads')
       .select('stage')
@@ -376,19 +377,19 @@ mcp.tool('get_leads_by_stage', {
 const transport = new StreamableHttpTransport()
 const httpHandler = transport.bind(mcp)
 
-app.get('/', (c) => c.json({
+app.get('/', (c: Context) => c.json({
   name: 'Nuvanx MCP Server',
   version: '1.0.0',
   endpoints: { mcp: '/mcp', health: '/health' },
 }))
 
-app.get('/health', (c) => c.json({
+app.get('/health', (c: Context) => c.json({
   status: 'ok',
   timestamp: new Date().toISOString(),
   auth: MCP_API_KEY ? 'bearer' : 'disabled',
 }))
 
-app.all('/mcp', async (c) => {
+app.all('/mcp', async (c: Context) => {
   // === API KEY AUTHENTICATION (use shared isAuthorized + imported MCP_API_KEY from config) ===
   if (!isAuthorized(c.req.raw)) {
     console.warn('[MCP] Unauthorized request')

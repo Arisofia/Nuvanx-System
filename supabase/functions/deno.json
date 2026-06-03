@@ -5,6 +5,10 @@
     "skipLibCheck": true
   },
   "imports": {
-    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.106.1"
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.106.1",
+    "hono": "https://esm.sh/hono@4",
+    "mcp-lite": "https://esm.sh/mcp-lite@latest",
+    "zod": "https://esm.sh/zod@3",
+    "zod-to-json-schema": "https://esm.sh/zod-to-json-schema@3"
   }
 }
