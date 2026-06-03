@@ -4,7 +4,7 @@ import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { CheckCircle2, AlertCircle, Plus, X, Loader2 } from 'lucide-react'
-import { invokeApi, supabase } from '../lib/supabaseClient'
+import { invokeApi } from '../lib/supabaseClient'
 import type { IntegrationRow, ConnectForm } from '../types'
 
 const serviceIcons: Record<string, string> = {
@@ -54,22 +54,13 @@ export default function Integrations() {
     setLoading(true)
     setError(null)
     try {
-      const { data, error: queryError } = await supabase
-        .from('integrations')
-        .select('*')
-        .order('service', { ascending: true })
-      if (queryError) {
-        // Do not leak internal DB errors (e.g. permission denied for current_clinic_id) in real-time UI.
-        // Only show friendly message; real error is for logs/support.
-        console.error('[Integrations] load error (sanitized for UI):', queryError)
-        setError('No se pudieron cargar las integraciones. Recarga la página o contacta a support@nuvanx.com.')
-        setIntegrations([])
-      } else {
-        setIntegrations((data ?? []) as IntegrationRow[])
-      }
-    } catch (e) {
-      console.error('[Integrations] unexpected load error:', e)
-      setError('Error al cargar la bóveda de credenciales. Intenta de nuevo.')
+      // Use backend route so credentials/metadata travel through Edge Function (admin scope + user filter).
+      // Only show friendly error on failure, no real-time internal errors.
+      const res: any = await invokeApi('/api/integrations')
+      setIntegrations((res?.integrations ?? []) as IntegrationRow[])
+    } catch (err: any) {
+      console.error('[Integrations] load error (sanitized for UI):', err)
+      setError('No se pudieron cargar las integraciones. Recarga la página o contacta a support@nuvanx.com.')
       setIntegrations([])
     }
     setLoading(false)

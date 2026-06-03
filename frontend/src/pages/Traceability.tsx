@@ -79,8 +79,8 @@ export default function Traceability() {
         if (matchedOnly) params.set('matched', 'true')
         
         const [leadsData, campaignsData] = await Promise.all([
-          invokeApi<any>(`/traceability/leads?${params}`),
-          invokeApi<any>(`/traceability/campaigns?${params}`),
+          invokeApi<any>(`/api/traceability/leads?${params}`),
+          invokeApi<any>(`/api/traceability/campaigns?${params}`),
         ])
 
         if (!isActive) return

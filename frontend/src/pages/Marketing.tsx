@@ -416,8 +416,8 @@ const useMarketingData = (days: number, campaignId: string, customFrom: string, 
         const cParams = buildMarketingParams(isCustomRange, customFrom, customTo, days)
 
         const [insightsRes, campaignsRes] = await Promise.allSettled([
-          invokeApi<Partial<MarketingState>>(`/meta/insights?${iParams}`),
-          invokeApi<{ campaigns?: CampaignRow[]; accountIds?: string[]; currency?: string; accountId?: string }>(`/meta/campaigns?${cParams}`),
+          invokeApi<Partial<MarketingState>>(`/api/meta/insights?${iParams}`),
+          invokeApi<{ campaigns?: CampaignRow[]; accountIds?: string[]; currency?: string; accountId?: string }>(`/api/meta/campaigns?${cParams}`),
         ])
 
         const insightsData = insightsRes.status === 'fulfilled' ? insightsRes.value : null
@@ -591,7 +591,7 @@ export default function Marketing() {
     const params = buildMarketingParams(Boolean(customFrom || customTo), customFrom, customTo, days)
 
     try {
-      const data = await invokeApi<{ ads?: any[] }>(`/meta/ads?${params}`)
+      const data = await invokeApi<{ ads?: any[] }>(`/api/meta/ads?${params}`)
       if (!mountedRef.current) return
       adsDispatch({ type: 'success', ads: data.ads ?? [] })
     } catch (err: any) {
