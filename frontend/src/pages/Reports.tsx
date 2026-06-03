@@ -113,6 +113,10 @@ export default function Reports() {
   const [igSummary, setIgSummary] = useState<any>(null)
   const [metaExtraLoading, setMetaExtraLoading] = useState(true)
 
+  // KPIs from API (to ensure /kpis and api data shown in Reports)
+  const [kpisSummary, setKpisSummary] = useState<any>(null)
+  const [kpisLoading, setKpisLoading] = useState(true)
+
   // Doctoralia fetch — re-runs on date filter change
   useEffect(() => {
     const params: string[] = []
@@ -241,6 +245,16 @@ export default function Reports() {
     return () => { cancelled = true }
   }, [])
 
+  // Fetch KPIs summary (exposes /kpis api data which aggregates Meta + other sources)
+  useEffect(() => {
+    let cancelled = false
+    invokeApi<any>('/kpis?days=30')
+      .then((d) => { if (!cancelled) setKpisSummary(d) })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setKpisLoading(false) })
+    return () => { cancelled = true }
+  }, [])
+
   // Local date filters for campaign/source (front-end only)
   const filteredCampaigns = useMemo(() => {
     return campaigns.filter((r) => {
@@ -297,6 +311,7 @@ export default function Reports() {
             { value: 'lead-audit', label: 'Lead Audit', icon: FileBarChart2 },
             { value: 'doctors', label: 'Doctors', icon: Stethoscope },
             { value: 'campaign-roi', label: 'Campaign ROI', icon: BarChart3 },
+            { value: 'kpis', label: 'KPIs (API)', icon: BarChart3 },
             { value: 'meta-organic', label: 'Meta Organic', icon: Activity },
             { value: 'meta-ig', label: 'Meta IG', icon: Activity },
           ].map((tab) => (
@@ -778,6 +793,33 @@ export default function Reports() {
                   emptyMessage="No campaign ROI data available yet."
                   pageSize={200}
                 />
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="kpis" className="mt-0 space-y-6">
+          <Card className="border-none shadow-md bg-white overflow-hidden">
+            <CardHeader className="flex flex-row items-center justify-between border-b border-border/10 pb-6">
+              <div>
+                <CardTitle className="font-serif text-2xl flex items-center gap-2 text-[#2C2825]">
+                  <BarChart3 className="h-6 w-6 text-primary" />
+                  KPIs desde API (/kpis)
+                </CardTitle>
+                <p className="text-xs text-[#5C5550] font-medium mt-1">Resumen de KPIs calculados vía API (agrega leads, financial_settlements, meta_daily_insights y más).</p>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-6">
+              {kpisLoading ? (
+                <p className="text-muted text-sm">Cargando KPIs…</p>
+              ) : kpisSummary ? (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                  <div>Total Leads: <span className="font-semibold">{(kpisSummary.totalLeads ?? kpisSummary.leads?.total ?? 0).toLocaleString('es-ES')}</span></div>
+                  <div>Meta Spend: <span className="font-semibold">{kpisSummary.meta?.spend != null ? kpisSummary.meta.spend.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' }) : '—'}</span></div>
+                  <div>Verified Revenue: <span className="font-semibold">{kpisSummary.revenue?.verified != null ? kpisSummary.revenue.verified.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' }) : '—'}</span></div>
+                </div>
+              ) : (
+                <p className="text-muted text-sm">Sin datos de KPIs. Verifica conexión a Meta/Doctoralia.</p>
               )}
             </CardContent>
           </Card>

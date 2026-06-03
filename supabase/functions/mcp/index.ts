@@ -8,17 +8,6 @@ import { z } from 'zod'
 import { zodToJsonSchema } from 'zod-to-json-schema'
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, MCP_API_KEY } from '../_shared/config.ts'
 
-type ToolInput = {
-  clinic_id?: string;
-  stage?: string;
-  source?: string;
-  date_from?: string;
-  date_to?: string;
-  limit?: number;
-  ad_account_id?: string;
-  query?: string;
-}
-
 const app = new Hono()
 
 const mcp = new McpServer({
@@ -89,14 +78,17 @@ function isAuthorized(request: Request): boolean {
   return providedKey === expectedApiKey
 }
 
+const DashboardMetricsSchema = z.object({
+  clinic_id: z.string().uuid().optional().describe('Clinic UUID. When omitted, aggregates all clinics available to the service role.'),
+  date_from: DateSchema.optional().describe('Start date in YYYY-MM-DD format.'),
+  date_to: DateSchema.optional().describe('End date in YYYY-MM-DD format.'),
+})
+
 mcp.tool('get_dashboard_metrics', {
   description: 'Returns dashboard KPI metrics from real Nuvanx production tables: leads, financial settlements, integrations, and Meta insights.',
-  inputSchema: z.object({
-    clinic_id: z.string().uuid().optional().describe('Clinic UUID. When omitted, aggregates all clinics available to the service role.'),
-    date_from: DateSchema.optional().describe('Start date in YYYY-MM-DD format.'),
-    date_to: DateSchema.optional().describe('End date in YYYY-MM-DD format.'),
-  }),
-  handler: async ({ clinic_id, date_from, date_to }: ToolInput) => {
+  inputSchema: DashboardMetricsSchema,
+  handler: async (args: z.infer<typeof DashboardMetricsSchema>) => {
+    const { clinic_id, date_from, date_to } = args;
     let leadsQuery = getSupabase()
       .from('leads')
       .select('id,stage,source,revenue,converted_patient_id,created_at')
@@ -196,17 +188,20 @@ mcp.tool('get_dashboard_metrics', {
   },
 })
 
+const GetLeadsSchema = z.object({
+  clinic_id: z.string().uuid().optional(),
+  stage: z.string().min(1).max(64).optional(),
+  source: z.string().min(1).max(64).optional(),
+  date_from: DateSchema.optional(),
+  date_to: DateSchema.optional(),
+  limit: LimitSchema,
+})
+
 mcp.tool('get_leads', {
   description: 'Returns CRM leads with optional filters for clinic, stage, source, and creation date.',
-  inputSchema: z.object({
-    clinic_id: z.string().uuid().optional(),
-    stage: z.string().min(1).max(64).optional(),
-    source: z.string().min(1).max(64).optional(),
-    date_from: DateSchema.optional(),
-    date_to: DateSchema.optional(),
-    limit: LimitSchema,
-  }),
-  handler: async ({ clinic_id, stage, source, date_from, date_to, limit }: ToolInput) => {
+  inputSchema: GetLeadsSchema,
+  handler: async (args: z.infer<typeof GetLeadsSchema>) => {
+    const { clinic_id, stage, source, date_from, date_to, limit } = args;
     let query = getSupabase()
       .from('leads')
       .select('id,clinic_id,user_id,name,email,phone,source,stage,revenue,created_at,updated_at,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name')
@@ -228,16 +223,19 @@ mcp.tool('get_leads', {
   },
 })
 
+const MetaCampaignInsightsSchema = z.object({
+  clinic_id: z.string().uuid().optional(),
+  ad_account_id: z.string().min(1).max(32).optional(),
+  date_from: DateSchema.optional(),
+  date_to: DateSchema.optional(),
+  limit: z.number().int().min(1).max(500).default(100),
+})
+
 mcp.tool('get_meta_campaign_insights', {
   description: 'Returns cached Meta Ads daily insights from the production meta_daily_insights table.',
-  inputSchema: z.object({
-    clinic_id: z.string().uuid().optional(),
-    ad_account_id: z.string().min(1).max(32).optional(),
-    date_from: DateSchema.optional(),
-    date_to: DateSchema.optional(),
-    limit: z.number().int().min(1).max(500).default(100),
-  }),
-  handler: async ({ clinic_id, ad_account_id, date_from, date_to, limit }: ToolInput) => {
+  inputSchema: MetaCampaignInsightsSchema,
+  handler: async (args: z.infer<typeof MetaCampaignInsightsSchema>) => {
+    const { clinic_id, ad_account_id, date_from, date_to, limit } = args;
     let query = getSupabase()
       .from('meta_daily_insights')
       .select('clinic_id,user_id,ad_account_id,date,impressions,reach,clicks,spend,conversions,ctr,cpc,cpm,messaging_conversations,updated_at')
@@ -257,14 +255,17 @@ mcp.tool('get_meta_campaign_insights', {
   },
 })
 
+const SearchLeadsSchema = z.object({
+  query: z.string().min(1).max(120),
+  clinic_id: z.string().uuid().optional(),
+  limit: z.number().int().min(1).max(100).default(30),
+})
+
 mcp.tool('search_leads', {
   description: 'Searches active leads by name, phone, or email.',
-  inputSchema: z.object({
-    query: z.string().min(1).max(120),
-    clinic_id: z.string().uuid().optional(),
-    limit: z.number().int().min(1).max(100).default(30),
-  }),
-  handler: async ({ query, clinic_id, limit }: ToolInput & { query: string }) => {
+  inputSchema: SearchLeadsSchema,
+  handler: async (args: z.infer<typeof SearchLeadsSchema>) => {
+    const { query, clinic_id, limit } = args;
     const term = escapeIlikeTerm(query)
     if (!term) return jsonContent([])
 
@@ -289,13 +290,16 @@ mcp.tool('search_leads', {
 // ==================== NUEVAS TOOLS (08-05-2026) ====================
 
 // 7. Leads en riesgo (>14 días en "Nuevo")
+const RiskLeadsSchema = z.object({
+  clinic_id: z.string().uuid().optional(),
+  limit: LimitSchema,
+})
+
 mcp.tool('get_risk_leads', {
   description: 'Obtiene leads que llevan más de 14 días en etapa "Nuevo" (riesgo de pérdida)',
-  inputSchema: z.object({
-    clinic_id: z.string().uuid().optional(),
-    limit: LimitSchema,
-  }),
-  handler: async ({ clinic_id, limit }: ToolInput) => {
+  inputSchema: RiskLeadsSchema,
+  handler: async (args: z.infer<typeof RiskLeadsSchema>) => {
+    const { clinic_id, limit } = args;
     let query = getSupabase()
       .from('leads')
       .select('id, name, phone, email, stage, created_at, clinic_id')
@@ -317,12 +321,15 @@ mcp.tool('get_risk_leads', {
 })
 
 // 8. Top campañas por revenue (últimos 7 días)
+const TopCampaignsSchema = z.object({
+  clinic_id: z.string().uuid().optional(),
+})
+
 mcp.tool('get_top_campaigns', {
   description: 'Top 5 campañas por revenue verificado en los últimos 7 días',
-  inputSchema: z.object({
-    clinic_id: z.string().uuid().optional(),
-  }),
-  handler: async ({ clinic_id }: ToolInput) => {
+  inputSchema: TopCampaignsSchema,
+  handler: async (args: z.infer<typeof TopCampaignsSchema>) => {
+    const { clinic_id } = args;
     let query = getSupabase()
       .from('financial_settlements')
       .select('campaign_name, amount_net')
@@ -353,13 +360,16 @@ mcp.tool('get_top_campaigns', {
 })
 
 // 9. Leads por etapa
+const LeadsByStageSchema = z.object({
+  clinic_id: z.string().uuid().optional(),
+  date_from: DateSchema.optional(),
+})
+
 mcp.tool('get_leads_by_stage', {
   description: 'Conteo de leads por etapa (funnel)',
-  inputSchema: z.object({
-    clinic_id: z.string().uuid().optional(),
-    date_from: DateSchema.optional(),
-  }),
-  handler: async ({ clinic_id, date_from }: ToolInput) => {
+  inputSchema: LeadsByStageSchema,
+  handler: async (args: z.infer<typeof LeadsByStageSchema>) => {
+    const { clinic_id, date_from } = args;
     let query = getSupabase()
       .from('leads')
       .select('stage')
@@ -375,11 +385,11 @@ mcp.tool('get_leads_by_stage', {
       return errorContent('Database error while fetching leads by stage')
     }
 
-    const counts = (data || []).reduce((acc: any, row: any) => {
-      const stage = row.stage || 'lead'
+    const counts = (data || []).reduce((acc: Record<string, number>, row: any) => {
+      const stage = String(row.stage || 'lead')
       acc[stage] = (acc[stage] || 0) + 1
       return acc
-    }, {})
+    }, {} as Record<string, number>)
 
     return jsonContent(counts)
   },
