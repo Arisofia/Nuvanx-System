@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
-import { AlertCircle, FileBarChart2, TrendingUp, Users, MessageCircle, Stethoscope, BarChart3, CheckCircle2, XCircle } from 'lucide-react'
+import { AlertCircle, FileBarChart2, TrendingUp, Users, MessageCircle, Stethoscope, BarChart3, CheckCircle2, XCircle, Activity } from 'lucide-react'
 import { invokeApi } from '../lib/supabaseClient'
 import { ExportButton } from '../components/reports/ExportButton'
 import { FilterBar } from '../components/ui/FilterBar'
@@ -108,6 +108,11 @@ export default function Reports() {
   const [leadAuditCampaignName, setLeadAuditCampaignName] = useState<string>('')
   const [leadAuditPhone, setLeadAuditPhone] = useState<string>('')
 
+  // Meta Organic & IG summaries (to expose full Meta info in Reports)
+  const [organicSummary, setOrganicSummary] = useState<any>(null)
+  const [igSummary, setIgSummary] = useState<any>(null)
+  const [metaExtraLoading, setMetaExtraLoading] = useState(true)
+
   // Doctoralia fetch — re-runs on date filter change
   useEffect(() => {
     const params: string[] = []
@@ -212,6 +217,30 @@ export default function Reports() {
     }
   }, [leadAuditMatchedOnly, leadAuditFrom, leadAuditTo, leadAuditCampaignName, leadAuditPhone])
 
+  // Fetch organic & IG summaries for full Meta exposure (calls existing /meta/* endpoints)
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      setMetaExtraLoading(true)
+      try {
+        const [orgRes, igRes] = await Promise.allSettled([
+          invokeApi<any>('/meta/organic/daily?days=30'),
+          invokeApi<any>('/meta/ig/daily?days=30'),
+        ])
+        if (!cancelled) {
+          setOrganicSummary(orgRes.status === 'fulfilled' ? (orgRes.value?.summary || orgRes.value) : null)
+          setIgSummary(igRes.status === 'fulfilled' ? (igRes.value?.summary || igRes.value) : null)
+        }
+      } catch (e) {
+        // silent, optional data
+      } finally {
+        if (!cancelled) setMetaExtraLoading(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [])
+
   // Local date filters for campaign/source (front-end only)
   const filteredCampaigns = useMemo(() => {
     return campaigns.filter((r) => {
@@ -268,6 +297,8 @@ export default function Reports() {
             { value: 'lead-audit', label: 'Lead Audit', icon: FileBarChart2 },
             { value: 'doctors', label: 'Doctors', icon: Stethoscope },
             { value: 'campaign-roi', label: 'Campaign ROI', icon: BarChart3 },
+            { value: 'meta-organic', label: 'Meta Organic', icon: Activity },
+            { value: 'meta-ig', label: 'Meta IG', icon: Activity },
           ].map((tab) => (
             <TabsTrigger
               key={tab.value}
@@ -747,6 +778,64 @@ export default function Reports() {
                   emptyMessage="No campaign ROI data available yet."
                   pageSize={200}
                 />
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* New tabs to expose full Meta info (Organic + IG) in Reports, using existing backend endpoints */}
+        <TabsContent value="meta-organic" className="mt-0 space-y-6">
+          <Card className="border-none shadow-md bg-white overflow-hidden">
+            <CardHeader className="flex flex-row items-center justify-between border-b border-border/10 pb-6">
+              <div>
+                <CardTitle className="font-serif text-2xl flex items-center gap-2 text-[#2C2825]">
+                  <Activity className="h-6 w-6 text-primary" />
+                  Meta Organic (Facebook Page)
+                </CardTitle>
+                <p className="text-xs text-[#5C5550] font-medium mt-1">Resumen de insights orgánicos de la página de Facebook (últimos 30 días vía /meta/organic).</p>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-6">
+              {metaExtraLoading ? (
+                <p className="text-muted text-sm">Cargando datos orgánicos Meta…</p>
+              ) : organicSummary ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div>Reach: <span className="font-semibold">{Number(organicSummary.reach ?? 0).toLocaleString('es-ES')}</span></div>
+                  <div>Engagements: <span className="font-semibold">{Number(organicSummary.engagements ?? 0).toLocaleString('es-ES')}</span></div>
+                  <div>Page Views: <span className="font-semibold">{Number(organicSummary.page_views ?? 0).toLocaleString('es-ES')}</span></div>
+                  <div>Video Views: <span className="font-semibold">{Number(organicSummary.video_views ?? 0).toLocaleString('es-ES')}</span></div>
+                  <div>Reactions: <span className="font-semibold">{Number(organicSummary.reactions ?? 0).toLocaleString('es-ES')}</span></div>
+                </div>
+              ) : (
+                <p className="text-muted text-sm">Sin datos orgánicos disponibles. Conecta la página de Facebook en Integrations.</p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="meta-ig" className="mt-0 space-y-6">
+          <Card className="border-none shadow-md bg-white overflow-hidden">
+            <CardHeader className="flex flex-row items-center justify-between border-b border-border/10 pb-6">
+              <div>
+                <CardTitle className="font-serif text-2xl flex items-center gap-2 text-[#2C2825]">
+                  <Activity className="h-6 w-6 text-primary" />
+                  Meta Instagram (Organic)
+                </CardTitle>
+                <p className="text-xs text-[#5C5550] font-medium mt-1">Resumen de insights orgánicos de Instagram (últimos 30 días vía /meta/ig).</p>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-6">
+              {metaExtraLoading ? (
+                <p className="text-muted text-sm">Cargando datos IG Meta…</p>
+              ) : igSummary ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div>Reach: <span className="font-semibold">{Number(igSummary.reach ?? 0).toLocaleString('es-ES')}</span></div>
+                  <div>Interacciones: <span className="font-semibold">{Number(igSummary.total_interactions ?? 0).toLocaleString('es-ES')}</span></div>
+                  <div>Visitas Perfil: <span className="font-semibold">{Number(igSummary.profile_views ?? 0).toLocaleString('es-ES')}</span></div>
+                  <div>Cuentas Activadas: <span className="font-semibold">{Number(igSummary.accounts_engaged ?? 0).toLocaleString('es-ES')}</span></div>
+                </div>
+              ) : (
+                <p className="text-muted text-sm">Sin datos de Instagram disponibles. Conecta la cuenta en Integrations.</p>
               )}
             </CardContent>
           </Card>
