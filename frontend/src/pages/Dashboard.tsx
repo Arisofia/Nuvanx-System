@@ -36,7 +36,6 @@ export default function Dashboard() {
     combined,
     funnel,
     funnelData,
-    isFunnelDemo,
     dataMode,
     trendData,
     sourcesList,
@@ -105,7 +104,6 @@ export default function Dashboard() {
           <RealROISection
             funnel={funnel}
             combined={combined}
-            isFunnelDemo={isFunnelDemo}
           />
 
           <TrendSection trendData={trendData} formatDate={formatDateForLabel} />

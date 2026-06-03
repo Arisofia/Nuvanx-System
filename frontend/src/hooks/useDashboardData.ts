@@ -21,7 +21,7 @@ import {
   isCacheEntryFresh,
   validateDashboardBundle,
 } from '../lib/dashboard-validation'
-import { logger, isProdEnv } from '../lib/utils'
+import { logger } from '../lib/utils'
 
 const defaultTrend: MetaTrendPoint[] = []
 
@@ -175,7 +175,6 @@ export function useDashboardData(
   const [combined, setCombined] = useState<CombinedMetrics>(EMPTY_COMBINED_METRICS)
   const [funnel, setFunnel] = useState<RealFunnel | null>(null)
   const [quality, setQuality] = useState<any>(null)
-  const [isFunnelDemo, setIsFunnelDemo] = useState<boolean>(false)
   const [dataMode, setDataMode] = useState<string | undefined>(undefined)
   const [trendData, setTrendData] = useState(defaultTrend)
   const [sourcesList, setSourcesList] = useState<string[]>([])
@@ -255,7 +254,6 @@ export function useDashboardData(
       })
 
       if (kpisResponse && kpisResponse.success !== true && !metricsData.totalLeads && !campaigns.length) {
-        setIsFunnelDemo(false)
         setTrendData(defaultTrend)
         setCombined(EMPTY_COMBINED_METRICS)
         setFunnel(EMPTY_FUNNEL)
@@ -268,10 +266,6 @@ export function useDashboardData(
         return
       }
 
-      setIsFunnelDemo(
-        !isProdEnv() &&
-        (kpisResponse?.doctoralia?.newVerifiedPatients ?? 0) === 0,
-      )
       setDataMode(kpisResponse?.data_quality?.overall_mode as string | undefined)
       setTrendData(safeTrendData)
 
@@ -346,7 +340,6 @@ export function useDashboardData(
     combined,
     funnel,
     funnelData,
-    isFunnelDemo,
     dataMode,
     trendData,
     sourcesList,

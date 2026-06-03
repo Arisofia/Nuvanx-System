@@ -1,30 +1,23 @@
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
-import { Target, TrendingUp, AlertCircle, Percent } from 'lucide-react'
+import { Target, TrendingUp, Percent } from 'lucide-react'
 import type { RealFunnel, CombinedMetrics } from '../../lib/dashboard-helpers'
 
 interface RealROISectionProps {
   readonly funnel: RealFunnel | null
   readonly combined: CombinedMetrics
-  readonly isFunnelDemo: boolean
 }
 
-export function RealROISection({ funnel, combined, isFunnelDemo }: RealROISectionProps) {
+export function RealROISection({ funnel, combined }: RealROISectionProps) {
   if (!funnel) return null
 
   return (
-    <Card className={`border-none shadow-md overflow-hidden relative transition-all duration-500 ${isFunnelDemo ? 'bg-amber-50/30' : 'bg-white'}`}>
+    <Card className="border-none shadow-md overflow-hidden relative transition-all duration-500 bg-white">
       <CardHeader className="flex flex-row items-center justify-between border-b border-border/10 pb-6">
         <div className="flex flex-col gap-1">
           <CardTitle className="flex items-center gap-3 font-serif text-2xl text-[#2C2825]">
             <Target className="h-6 w-6 text-primary" />
             Atribución y ROI Real
           </CardTitle>
-          {isFunnelDemo && (
-            <div className="flex items-center gap-2 text-[10px] font-bold text-amber-600 uppercase tracking-widest bg-amber-500/5 px-3 py-1 rounded-full border border-amber-500/10">
-              <AlertCircle className="h-3 w-3" />
-              Vista de demostración: No hay pacientes verificados para este periodo
-            </div>
-          )}
         </div>
       </CardHeader>
       <CardContent className="pt-8">
