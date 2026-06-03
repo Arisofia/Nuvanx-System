@@ -177,10 +177,9 @@ function isGooglePermissionError(err) {
 }
 
 function formatPermissionGuidance(sa) {
-  const email = getServiceAccountEmail(sa);
   return [
     'Google Sheets permission denied for the Doctoralia source spreadsheet.',
-    `Share the spreadsheet with service account ${email} as Viewer, or update GOOGLE_ADS_SERVICE_ACCOUNT/DOCTORALIA_SHEET_ID to matching credentials and file ID.`,
+    'Share the spreadsheet with the configured service account as Viewer, or update GOOGLE_ADS_SERVICE_ACCOUNT/DOCTORALIA_SHEET_ID to matching credentials and file ID.',
     'No financial_settlements rows were modified.',
   ].join(' ');
 }
