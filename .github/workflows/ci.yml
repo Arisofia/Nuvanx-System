@@ -272,6 +272,10 @@ jobs:
       - name: Install dependencies
         run: npm install --include=dev --ignore-scripts --legacy-peer-deps
 
+      - name: Prepare frontend secret env
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        run: echo "VITE_MCP_API_KEY=${{ secrets.MCP_API_KEY }}" >> $GITHUB_ENV
+
       - name: Prepare frontend env for PR validation
         run: |
           # These secrets are optional for PR builds (we want to validate that the app builds even without real credentials)
@@ -285,10 +289,6 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          # VITE_MCP_API_KEY exposed to frontend build (for any build-time needs) but sourced from
-          # plain MCP_API_KEY GitHub secret (no VITE_ prefix on the secret itself, per convention).
-          # Guarded access to silence "Context access might be invalid" in fork PRs (secrets unavailable).
-          VITE_MCP_API_KEY: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && secrets.MCP_API_KEY || '' }}
 
       - name: Build
         run: |
@@ -301,10 +301,6 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          # VITE_MCP_API_KEY exposed to frontend build (for any build-time needs) but sourced from
-          # plain MCP_API_KEY GitHub secret (no VITE_ prefix on the secret itself, per convention).
-          # Guarded access to silence "Context access might be invalid" in fork PRs (secrets unavailable).
-          VITE_MCP_API_KEY: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && secrets.MCP_API_KEY || '' }}
 
   frontend-e2e-smoke:
     needs: frontend
@@ -368,6 +364,11 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
+    env:
+      MCP_API_KEY: ''
+      FALLBACK_META_AD_ACCOUNT_ID: '9523446201036125'
+      SHEETS_WEBHOOK_URL_DOCTORALIA: ''
+      SHEETS_WEBHOOK_SECRET_DOCTORALIA: 'webhook-doctoralia-secret-example'
     steps:
       - uses: actions/checkout@v5
 
@@ -397,6 +398,14 @@ jobs:
             sleep 10
           done
 
+      - name: Prepare test secret env
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          echo "MCP_API_KEY=${{ secrets.MCP_API_KEY }}" >> $GITHUB_ENV
+          echo "FALLBACK_META_AD_ACCOUNT_ID=${{ secrets.FALLBACK_META_AD_ACCOUNT_ID }}" >> $GITHUB_ENV
+          echo "SHEETS_WEBHOOK_URL_DOCTORALIA=${{ secrets.SHEETS_WEBHOOK_URL_DOCTORALIA }}" >> $GITHUB_ENV
+          echo "SHEETS_WEBHOOK_SECRET_DOCTORALIA=${{ secrets.SHEETS_WEBHOOK_SECRET_DOCTORALIA }}" >> $GITHUB_ENV
+
       - name: Run shared and functions tests
         run: |
           set -euo pipefail
@@ -410,14 +419,13 @@ jobs:
         env:
           NODE_ENV: test
           # Use repository secrets for CI test credentials to avoid hardcoding sensitive values.
-          # Guarded secrets access to fix "Context access might be invalid" diagnostics on fork PRs.
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY || 'ci_dummy_encryption_key_32chars_minimum_for_check' }}
-          MCP_API_KEY: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && secrets.MCP_API_KEY || '' }}
-          FALLBACK_META_AD_ACCOUNT_ID: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && secrets.FALLBACK_META_AD_ACCOUNT_ID || '9523446201036125' }}
+          MCP_API_KEY: ${{ env.MCP_API_KEY }}
+          FALLBACK_META_AD_ACCOUNT_ID: ${{ env.FALLBACK_META_AD_ACCOUNT_ID }}
           # Doctoralia webhook secrets (guarded; real values from GH secrets for setup flows)
-          SHEETS_WEBHOOK_URL_DOCTORALIA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && secrets.SHEETS_WEBHOOK_URL_DOCTORALIA || '' }}
-          SHEETS_WEBHOOK_SECRET_DOCTORALIA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && secrets.SHEETS_WEBHOOK_SECRET_DOCTORALIA || 'webhook-doctoralia-secret-example' }}
+          SHEETS_WEBHOOK_URL_DOCTORALIA: ${{ env.SHEETS_WEBHOOK_URL_DOCTORALIA }}
+          SHEETS_WEBHOOK_SECRET_DOCTORALIA: ${{ env.SHEETS_WEBHOOK_SECRET_DOCTORALIA }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://ci-check.supabase.co' }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || 'ci_dummy_service_role_key_for_check_only' }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || 'ci_dummy_anon_key_for_check_only' }}
@@ -451,10 +459,10 @@ jobs:
         env:
           # Provide runtime config dummies so module-level config validation can complete during Deno type checking.
           # Real values should be configured in Supabase Edge Function secrets for production.
-          FALLBACK_META_AD_ACCOUNT_ID: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && secrets.FALLBACK_META_AD_ACCOUNT_ID || '9523446201036125' }}
+          FALLBACK_META_AD_ACCOUNT_ID: '9523446201036125'
           # Doctoralia webhook values are optional during CI type checking.
-          SHEETS_WEBHOOK_URL_DOCTORALIA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && secrets.SHEETS_WEBHOOK_URL_DOCTORALIA || '' }}
-          SHEETS_WEBHOOK_SECRET_DOCTORALIA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && secrets.SHEETS_WEBHOOK_SECRET_DOCTORALIA || 'ci_dummy_doctoralia_secret' }}
+          SHEETS_WEBHOOK_URL_DOCTORALIA: ''
+          SHEETS_WEBHOOK_SECRET_DOCTORALIA: 'ci_dummy_doctoralia_secret'
           SUPABASE_URL: https://ci-check.supabase.co
           SUPABASE_SERVICE_ROLE_KEY: ci_dummy_service_role_key_for_check_only
           SUPABASE_ANON_KEY: ci_dummy_anon_key_for_check_only

@@ -28,7 +28,6 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  const url = new URL(req.url);
   const userId = user.id;
 
   try {
@@ -59,7 +58,7 @@ Deno.serve(async (req: Request) => {
           phone: body.phone || '',
           source: body.source || 'manual',
           stage,
-          revenue: parseFloat(body.revenue) || 0,
+          revenue: Number.parseFloat(body.revenue) || 0,
           notes: body.notes || '',
           external_id: body.external_id || null
         })
