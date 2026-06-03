@@ -213,9 +213,9 @@ async function fetchAllClinicsMetaInsights(days: number) {
             clinic_id: cred.clinic_id,
             ad_account_ids: adAccountIds,
             date: sinceDate,
-            insights_rows: totalRows // cumulative but per cred in loop
+            insights_rows: totalRows
           };
-          const aiPrompt = `Eres un analista de marketing experto para clínicas de medicina estética. Analiza estos datos diarios de Meta Ads para la clínica: ${JSON.stringify(clinicContext)}. P[...]
+          const aiPrompt = `Eres un analista de marketing experto para clínicas de medicina estética. Analiza estos datos diarios de Meta Ads para la clínica: ${JSON.stringify(clinicContext)}. Proporciona 3 insights clave y 2 recomendaciones accionables.`;
 
           let aiInsight = `Datos del día para ${adAccountIds.join(', ')}: ${totalRowsForClinic} registros de insights. Base: priorizar cuentas con mejor CTR y CPC.`;
 
@@ -365,7 +365,7 @@ Deno.serve(async (req: Request) => {
   try {
     const gemKey = Deno.env.get('GEMINI_API_KEY') || '';
     if (gemKey) {
-      const prompt = `Eres analista experto para clínicas estéticas. Datos del día: ${JSON.stringify({risk: riskLeads?.length||0, top: processedRanking, doc: doctoraliaSummary})}. Da 3 insight[...]
+      const prompt = `Eres analista experto para clínicas estéticas. Datos del día: ${JSON.stringify({risk: riskLeads?.length||0, top: processedRanking, doc: doctoraliaSummary})}. Da 3 insights y 2 recomendaciones accionables.`;
       const gRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${gemKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
