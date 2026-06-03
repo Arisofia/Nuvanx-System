@@ -125,18 +125,30 @@ For robust sync, use this Google Apps Script as Web App (see deployment steps be
  * WEBHOOK PARA DOCTORALIA - SINCRONIZACIÓN SUPABASE
  */
 const SHEET_NAME = "Doctoralia";
-const SECRET_HEADER = "X-Webhook-Secret";
-const EXPECTED_SECRET = "Doctoralia_Secret_2026_!!"; 
+const SECRET_HEADER = "X-Webhook-Secret"; // Opcional pero recomendado
+
+// === CONFIGURACIÓN DE SEGURIDAD ===
+// Recomendado: Guardar el secreto en "Project settings → Script properties"
+// Clave: WEBHOOK_SECRET
+// Valor: (la misma clave que configuras en el Webhook de Supabase)
+const EXPECTED_SECRET = PropertiesService.getScriptProperties().getProperty('WEBHOOK_SECRET') || '';
 
 function doPost(e) {
   try {
     // 1. Verificación de contenido
     if (!e || !e.postData || !e.postData.contents) return createResponse("No content", 400);
 
-    // 2. Seguridad
-    const headers = e.headers || {};
-    const receivedSecret = headers[SECRET_HEADER] || headers[SECRET_HEADER.toLowerCase()];
-    if (receivedSecret !== EXPECTED_SECRET) return createResponse("Unauthorized", 401);
+    // 2. Seguridad (solo si se configuró un secreto)
+    if (EXPECTED_SECRET) {
+      const headers = e.headers || {};
+      const receivedSecret =
+        e.parameter?.[SECRET_HEADER] ||
+        headers[SECRET_HEADER] ||
+        headers[SECRET_HEADER.toLowerCase()] ||
+        headers['x-webhook-secret'] ||
+        '';
+      if (receivedSecret !== EXPECTED_SECRET) return createResponse("Unauthorized", 401);
+    }
 
     const payload = JSON.parse(e.postData.contents);
     const record = payload.record; // Datos desde Supabase
@@ -197,10 +209,11 @@ function createResponse(message, code) {
 
 #### Deployment Steps for the Webhook
 
-1. In Apps Script editor: **Deploy > New deployment** > Type: **Web App**.
-2. Execute as: You; Access: Anyone.
-3. Copy the Web App URL.
-4. In Supabase: Create Database Webhook for the relevant table (e.g. produccion_intermediarios or doctoralia_raw) pointing to the URL, with Header `X-Webhook-Secret: Doctoralia_Secret_2026_!!`.
+1. Copy the script above into a new Google Apps Script project (or the script bound to your target spreadsheet).
+2. In Apps Script: **Project settings → Script properties** → Add a property named `WEBHOOK_SECRET` with a strong secret value. Remember this value.
+3. **Deploy > New deployment** > Type: **Web App**. Execute as: You; Access: Anyone.
+4. Copy the Web App URL.
+5. In Supabase: Create Database Webhook for the relevant table (e.g. `produccion_intermediarios` or `doctoralia_raw`) pointing to the URL, with Header `X-Webhook-Secret: <the exact WEBHOOK_SECRET value you set>`.
 
 This keeps the "Doctoralia" sheet in sync with Supabase, and the ARRAYFORMULA in M-S parse the Asunto automatically.
 

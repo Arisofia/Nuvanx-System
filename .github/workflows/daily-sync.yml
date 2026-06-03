@@ -44,7 +44,9 @@ jobs:
       FALLBACK_META_AD_ACCOUNT_ID: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FALLBACK_META_AD_ACCOUNT_ID || '9523446201036125' }}
       # Doctoralia webhook (real data for Supabase DB -> GAS bridge). Guarded for PRs/forks.
       SHEETS_WEBHOOK_URL_DOCTORALIA: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.SHEETS_WEBHOOK_URL_DOCTORALIA || '' }}
-      SHEETS_WEBHOOK_SECRET_DOCTORALIA: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.SHEETS_WEBHOOK_SECRET_DOCTORALIA || 'Doctoralia_Secret_2026_!!' }}
+      SHEETS_WEBHOOK_SECRET_DOCTORALIA: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.SHEETS_WEBHOOK_SECRET_DOCTORALIA || 'webhook-doctoralia-secret-example' }}
+      # For the doctoralia sync script (non-critical step)
+      SHEET_NAME: "Produccion Intermediarios"
 
     steps:
       - name: Checkout repository
@@ -82,25 +84,6 @@ jobs:
       - name: Run Orchestrator Script
         if: steps.validate.outputs.skip_orchestrator != 'true'
         run: node scripts/run-daily-sync.js
-        env:
-          # run-daily-sync.js needs these for sync-doctoralia and supabase deploy
-          SUPABASE_ACCESS_TOKEN: ${{ env.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ env.SUPABASE_PROJECT_REF }}
-          DATABASE_URL: ${{ env.DATABASE_URL }}
-          GOOGLE_ADS_SERVICE_ACCOUNT: ${{ env.GOOGLE_ADS_SERVICE_ACCOUNT }}
-          DOCTORALIA_SHEET_ID: ${{ env.DOCTORALIA_SHEET_ID }}
-          CLINIC_ID: ${{ env.CLINIC_ID }}
-          ENCRYPTION_KEY: ${{ env.ENCRYPTION_KEY }}
-          META_ACCESS_TOKEN: ${{ env.META_ACCESS_TOKEN }}
-          META_AD_ACCOUNT_ID: ${{ env.META_AD_ACCOUNT_ID }}
-          META_AD_ACCOUNT_IDS: ${{ env.META_AD_ACCOUNT_IDS }}
-          META_APP_SECRET: ${{ env.META_APP_SECRET }}
-          # si no hay secreto, usa 'v20.0' como default
-          META_GRAPH_VERSION: ${{ env.META_GRAPH_VERSION || 'v20.0' }}
-          SHEET_NAME: "Produccion Intermediarios"
-          # Doctoralia webhook config (for setup scripts / real bridge)
-          SHEETS_WEBHOOK_URL_DOCTORALIA: ${{ env.SHEETS_WEBHOOK_URL_DOCTORALIA }}
-          SHEETS_WEBHOOK_SECRET_DOCTORALIA: ${{ env.SHEETS_WEBHOOK_SECRET_DOCTORALIA }}
 
       - name: Fetch Meta Daily Insights
         shell: bash

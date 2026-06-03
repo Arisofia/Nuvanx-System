@@ -417,7 +417,7 @@ jobs:
           FALLBACK_META_AD_ACCOUNT_ID: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.FALLBACK_META_AD_ACCOUNT_ID || '9523446201036125' }}
           # Doctoralia webhook secrets (guarded; real values from GH secrets for setup flows)
           SHEETS_WEBHOOK_URL_DOCTORALIA: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.SHEETS_WEBHOOK_URL_DOCTORALIA || '' }}
-          SHEETS_WEBHOOK_SECRET_DOCTORALIA: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.SHEETS_WEBHOOK_SECRET_DOCTORALIA || 'Doctoralia_Secret_2026_!!' }}
+          SHEETS_WEBHOOK_SECRET_DOCTORALIA: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.SHEETS_WEBHOOK_SECRET_DOCTORALIA || 'webhook-doctoralia-secret-example' }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://ci-check.supabase.co' }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || 'ci_dummy_service_role_key_for_check_only' }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || 'ci_dummy_anon_key_for_check_only' }}

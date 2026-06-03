@@ -12,7 +12,7 @@ const steps = [
   { name: 'sync-doctoralia', cmd: 'node scripts/sync-doctoralia.js', critical: false },
   { 
     name: 'deploy-daily-aggregates', 
-    cmd: 'npx --yes supabase functions deploy daily-aggregates --no-verify-jwt --project-ref ' + (process.env.SUPABASE_PROJECT_REF || ''), 
+    cmd: 'npx --yes supabase --yes functions deploy daily-aggregates --no-verify-jwt --project-ref ' + (process.env.SUPABASE_PROJECT_REF || ''), 
     critical: true,
     retry: 2 // retry up to 2 times for transient network issues
   },

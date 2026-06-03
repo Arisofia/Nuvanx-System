@@ -140,6 +140,19 @@ function normalizeField(value) {
   return value?.toString().trim() ?? '';
 }
 
+function maskSensitive(text) {
+  if (!text) return text;
+  const str = String(text);
+  return str
+    // Mask passwords in connection strings: postgres://user:password@host
+    .replace(/(postgres(?:ql)?:\/\/[^:]+:)([^@\s]+)(@)/gi, '$1****$3')
+    // Mask emails: keep first 3 chars, then ***, then @domain
+    .replace(/([a-zA-Z0-9._%+-]+)@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g, (match, p1, p2) => {
+      const maskedP1 = p1.length > 3 ? p1.slice(0, 3) + '***' : '***';
+      return maskedP1 + '@' + p2;
+    });
+}
+
 function getServiceAccountEmail(sa) {
   return normalizeField(sa?.client_email) || 'unknown-service-account';
 }
@@ -545,7 +558,7 @@ async function setupGoogleSheetsAuth() {
     try {
       saObject = JSON.parse(saJson);
       const email = getServiceAccountEmail(saObject);
-      console.log(`[sync-doctoralia] Using Google Service Account: ${email}`);
+      console.log(`[sync-doctoralia] Using Google Service Account: ${maskSensitive(email)}`);
       return {
         auth: new google.auth.GoogleAuth({
           credentials: saObject,
@@ -554,7 +567,7 @@ async function setupGoogleSheetsAuth() {
         saObject,
       };
     } catch (err) {
-      console.error(`[sync-doctoralia] Google service account JSON is not valid: ${err.message}`);
+      console.error(`[sync-doctoralia] Google service account JSON is not valid: ${maskSensitive(err.message)}`);
       process.exit(1);
     }
   }
@@ -600,7 +613,7 @@ async function fetchSheetRows(sheets, saObject) {
       console.log(`[sync-doctoralia] No exact sheet match for "${SHEET_NAME}", using first sheet: "${targetSheetTitle}"`);
     }
   } catch (metaErr) {
-    console.warn(`[sync-doctoralia] Could not fetch spreadsheet metadata: ${metaErr.message}. Will try direct range.`);
+    console.warn(`[sync-doctoralia] Could not fetch spreadsheet metadata: ${maskSensitive(metaErr.message)}. Will try direct range.`);
   }
 
   const range = targetSheetTitle 
@@ -619,17 +632,17 @@ async function fetchSheetRows(sheets, saObject) {
     if (isGooglePermissionError(err)) {
       const guidance = formatPermissionGuidance(saObject);
       if (ALLOW_PERMISSION_SKIP) {
-        console.warn(`::warning::[sync-doctoralia] ${guidance}`);
+        console.warn(`::warning::[sync-doctoralia] ${maskSensitive(guidance)}`);
         return null;
       }
       throw new Error(guidance);
     }
 
-    console.error(`[sync-doctoralia] Sheets API Error: ${err.message}`);
+    console.error(`[sync-doctoralia] Sheets API Error: ${maskSensitive(err.message)}`);
     if (err.errors) {
-      console.error('[sync-doctoralia] Details:', JSON.stringify(err.errors, null, 2));
+      console.error('[sync-doctoralia] Details:', maskSensitive(JSON.stringify(err.errors, null, 2)));
     } else if (err.response?.data) {
-      console.error('[sync-doctoralia] Response Data:', JSON.stringify(err.response.data, null, 2));
+      console.error('[sync-doctoralia] Response Data:', maskSensitive(JSON.stringify(err.response.data, null, 2)));
     }
 
     if (availableSheets.length > 0) {
@@ -823,7 +836,7 @@ async function upsertDoctoraliaRow(row, i, params) {
     );
     return true;
   } catch (rowError) {
-    console.warn(`[sync-doctoralia] Skipping row ${i + 1} due to DB error: ${rowError.message}`);
+    console.warn(`[sync-doctoralia] Skipping row ${i + 1} due to DB error: ${maskSensitive(rowError.message)}`);
     return false;
   }
 }
@@ -857,7 +870,7 @@ module.exports = {
 
 if (require.main === module) {
   main().catch(err => {
-    console.error('[sync-doctoralia] Fatal error:', err.message);
+    console.error('[sync-doctoralia] Fatal error:', maskSensitive(err.message));
     process.exit(1);
   });
 }

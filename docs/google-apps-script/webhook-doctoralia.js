@@ -2,18 +2,30 @@
  * WEBHOOK PARA DOCTORALIA - SINCRONIZACIÓN SUPABASE
  */
 const SHEET_NAME = "Doctoralia";
-const SECRET_HEADER = "X-Webhook-Secret";
-const EXPECTED_SECRET = "Doctoralia_Secret_2026_!!"; 
+const SECRET_HEADER = "X-Webhook-Secret"; // Opcional pero recomendado
+
+// === CONFIGURACIÓN DE SEGURIDAD ===
+// Recomendado: Guardar el secreto en "Project settings → Script properties"
+// Clave: WEBHOOK_SECRET
+// Valor: (la misma clave que configuras en el Webhook de Supabase)
+const EXPECTED_SECRET = PropertiesService.getScriptProperties().getProperty('WEBHOOK_SECRET') || '';
 
 function doPost(e) {
   try {
     // 1. Verificación de contenido
     if (!e || !e.postData || !e.postData.contents) return createResponse("No content", 400);
 
-    // 2. Seguridad
-    const headers = e.headers || {};
-    const receivedSecret = headers[SECRET_HEADER] || headers[SECRET_HEADER.toLowerCase()];
-    if (receivedSecret !== EXPECTED_SECRET) return createResponse("Unauthorized", 401);
+    // 2. Seguridad (solo si se configuró un secreto)
+    if (EXPECTED_SECRET) {
+      const headers = e.headers || {};
+      const receivedSecret =
+        e.parameter?.[SECRET_HEADER] ||
+        headers[SECRET_HEADER] ||
+        headers[SECRET_HEADER.toLowerCase()] ||
+        headers['x-webhook-secret'] ||
+        '';
+      if (receivedSecret !== EXPECTED_SECRET) return createResponse("Unauthorized", 401);
+    }
 
     const payload = JSON.parse(e.postData.contents);
     const record = payload.record; // Datos desde Supabase
