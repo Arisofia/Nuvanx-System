@@ -58,6 +58,67 @@ function curr(n: number | null | undefined) {
     : n.toLocaleString('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
 }
 
+function formatCurrencyOrDash(value: number | null | undefined) {
+  return value == null ? '—' : value.toLocaleString('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
+}
+
+function renderKpisContent(kpisLoading: boolean, kpisSummary: any) {
+  if (kpisLoading) {
+    return <p className="text-muted text-sm">Cargando KPIs…</p>
+  }
+
+  if (!kpisSummary) {
+    return <p className="text-muted text-sm">Sin datos de KPIs. Verifica conexión a Meta/Doctoralia.</p>
+  }
+
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+      <div>Total Leads: <span className="font-semibold">{(kpisSummary.totalLeads ?? kpisSummary.leads?.total ?? 0).toLocaleString('es-ES')}</span></div>
+      <div>Meta Spend: <span className="font-semibold">{formatCurrencyOrDash(kpisSummary.meta?.spend ?? null)}</span></div>
+      <div>Verified Revenue: <span className="font-semibold">{formatCurrencyOrDash(kpisSummary.revenue?.verified ?? null)}</span></div>
+    </div>
+  )
+}
+
+function renderOrganicSummaryContent(metaExtraLoading: boolean, organicSummary: any) {
+  if (metaExtraLoading) {
+    return <p className="text-muted text-sm">Cargando datos orgánicos Meta…</p>
+  }
+
+  if (!organicSummary) {
+    return <p className="text-muted text-sm">Sin datos orgánicos disponibles. Conecta la página de Facebook en Integrations.</p>
+  }
+
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+      <div>Reach: <span className="font-semibold">{Number(organicSummary.reach ?? 0).toLocaleString('es-ES')}</span></div>
+      <div>Engagements: <span className="font-semibold">{Number(organicSummary.engagements ?? 0).toLocaleString('es-ES')}</span></div>
+      <div>Page Views: <span className="font-semibold">{Number(organicSummary.page_views ?? 0).toLocaleString('es-ES')}</span></div>
+      <div>Video Views: <span className="font-semibold">{Number(organicSummary.video_views ?? 0).toLocaleString('es-ES')}</span></div>
+      <div>Reactions: <span className="font-semibold">{Number(organicSummary.reactions ?? 0).toLocaleString('es-ES')}</span></div>
+    </div>
+  )
+}
+
+function renderIgSummaryContent(metaExtraLoading: boolean, igSummary: any) {
+  if (metaExtraLoading) {
+    return <p className="text-muted text-sm">Cargando datos IG Meta…</p>
+  }
+
+  if (!igSummary) {
+    return <p className="text-muted text-sm">Sin datos de Instagram disponibles. Conecta la cuenta en Integrations.</p>
+  }
+
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+      <div>Reach: <span className="font-semibold">{Number(igSummary.reach ?? 0).toLocaleString('es-ES')}</span></div>
+      <div>Interacciones: <span className="font-semibold">{Number(igSummary.total_interactions ?? 0).toLocaleString('es-ES')}</span></div>
+      <div>Visitas Perfil: <span className="font-semibold">{Number(igSummary.profile_views ?? 0).toLocaleString('es-ES')}</span></div>
+      <div>Cuentas Activadas: <span className="font-semibold">{Number(igSummary.accounts_engaged ?? 0).toLocaleString('es-ES')}</span></div>
+    </div>
+  )
+}
+
 export default function Reports() {
   // Doctoralia Financials
   const [docData, setDocData] = useState<{ templateSummary: any[]; byMonth: any[] } | null>(null)
@@ -812,17 +873,7 @@ export default function Reports() {
               </div>
             </CardHeader>
             <CardContent className="pt-6">
-              {kpisLoading ? (
-                <p className="text-muted text-sm">Cargando KPIs…</p>
-              ) : kpisSummary ? (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>Total Leads: <span className="font-semibold">{(kpisSummary.totalLeads ?? kpisSummary.leads?.total ?? 0).toLocaleString('es-ES')}</span></div>
-                  <div>Meta Spend: <span className="font-semibold">{kpisSummary.meta?.spend != null ? kpisSummary.meta.spend.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' }) : '—'}</span></div>
-                  <div>Verified Revenue: <span className="font-semibold">{kpisSummary.revenue?.verified != null ? kpisSummary.revenue.verified.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' }) : '—'}</span></div>
-                </div>
-              ) : (
-                <p className="text-muted text-sm">Sin datos de KPIs. Verifica conexión a Meta/Doctoralia.</p>
-              )}
+              {renderKpisContent(kpisLoading, kpisSummary)}
             </CardContent>
           </Card>
         </TabsContent>
@@ -840,19 +891,7 @@ export default function Reports() {
               </div>
             </CardHeader>
             <CardContent className="pt-6">
-              {metaExtraLoading ? (
-                <p className="text-muted text-sm">Cargando datos orgánicos Meta…</p>
-              ) : organicSummary ? (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                  <div>Reach: <span className="font-semibold">{Number(organicSummary.reach ?? 0).toLocaleString('es-ES')}</span></div>
-                  <div>Engagements: <span className="font-semibold">{Number(organicSummary.engagements ?? 0).toLocaleString('es-ES')}</span></div>
-                  <div>Page Views: <span className="font-semibold">{Number(organicSummary.page_views ?? 0).toLocaleString('es-ES')}</span></div>
-                  <div>Video Views: <span className="font-semibold">{Number(organicSummary.video_views ?? 0).toLocaleString('es-ES')}</span></div>
-                  <div>Reactions: <span className="font-semibold">{Number(organicSummary.reactions ?? 0).toLocaleString('es-ES')}</span></div>
-                </div>
-              ) : (
-                <p className="text-muted text-sm">Sin datos orgánicos disponibles. Conecta la página de Facebook en Integrations.</p>
-              )}
+              {renderOrganicSummaryContent(metaExtraLoading, organicSummary)}
             </CardContent>
           </Card>
         </TabsContent>
@@ -869,18 +908,7 @@ export default function Reports() {
               </div>
             </CardHeader>
             <CardContent className="pt-6">
-              {metaExtraLoading ? (
-                <p className="text-muted text-sm">Cargando datos IG Meta…</p>
-              ) : igSummary ? (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                  <div>Reach: <span className="font-semibold">{Number(igSummary.reach ?? 0).toLocaleString('es-ES')}</span></div>
-                  <div>Interacciones: <span className="font-semibold">{Number(igSummary.total_interactions ?? 0).toLocaleString('es-ES')}</span></div>
-                  <div>Visitas Perfil: <span className="font-semibold">{Number(igSummary.profile_views ?? 0).toLocaleString('es-ES')}</span></div>
-                  <div>Cuentas Activadas: <span className="font-semibold">{Number(igSummary.accounts_engaged ?? 0).toLocaleString('es-ES')}</span></div>
-                </div>
-              ) : (
-                <p className="text-muted text-sm">Sin datos de Instagram disponibles. Conecta la cuenta en Integrations.</p>
-              )}
+              {renderIgSummaryContent(metaExtraLoading, igSummary)}
             </CardContent>
           </Card>
         </TabsContent>

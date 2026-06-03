@@ -72,7 +72,7 @@ function getDailyInsightsContent(dailyLoading: boolean, dailyInsights: any[]) {
 
   return (
     <div className="space-y-4">
-      {dailyInsights.map(renderDailyInsightCard)}
+      {dailyInsights.map((ins, idx) => renderDailyInsightCard(ins, idx))}
     </div>
   )
 }
