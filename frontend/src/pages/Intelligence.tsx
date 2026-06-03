@@ -8,6 +8,75 @@ import { SortableTable } from '../components/ui/SortableTable'
 import type { ColDef } from '../components/ui/SortableTable'
 import { MetaAccountsInline } from '../components/MetaAccountsNotice'
 
+function getTraceabilityStage(row: TraceabilityLead) {
+  if ((row as any).doctoralia_net != null) return 'Revenue'
+  if ((row as any).patient_id) return 'Patient'
+  return 'Lead only'
+}
+
+function getInsightKey(ins: any, idx: number) {
+  return ins.id
+    ? String(ins.id)
+    : `${ins.agent_type ?? 'insight'}-${ins.created_at ?? ''}-${String(ins.output_text ?? ins.output_data ?? '').slice(0, 30)}-${idx}`
+}
+
+function renderDailyInsightCard(ins: any, idx: number) {
+  let content = ins.output_text || ''
+  let parsed: any = null
+
+  try {
+    parsed = JSON.parse(content)
+    content = ''
+  } catch {
+    // ignore invalid JSON from agent output
+  }
+
+  return (
+    <div key={getInsightKey(ins, idx)} className="p-4 border rounded-lg bg-surface">
+      <div className="flex justify-between text-xs text-muted mb-2">
+        <span className="font-medium uppercase tracking-widest">
+          {ins.agent_type?.replace('daily-','').replace('-',' ')}
+        </span>
+        <span>{ins.created_at ? new Date(ins.created_at).toLocaleDateString('es-ES') : ''}</span>
+      </div>
+      {parsed && typeof parsed === 'object' ? (
+        <div className="space-y-2 text-sm">
+          {parsed.recommendations && Array.isArray(parsed.recommendations) && (
+            <div>
+              <div className="font-semibold text-xs uppercase text-primary mb-1">Recomendaciones accionables:</div>
+              <ul className="list-disc pl-5">
+                {parsed.recommendations.map((r: string, j: number) => <li key={`${getInsightKey(ins, idx)}-rec-${j}`}>{r}</li>)}
+              </ul>
+            </div>
+          )}
+          {parsed.ai_summary && <div><span className="font-semibold text-xs uppercase">Resumen IA:</span> {parsed.ai_summary}</div>}
+          {parsed.risk_leads != null && <div>Riesgo leads: {parsed.risk_leads}</div>}
+          {parsed.doctoralia_summary && <div>Doctoralia: €{parsed.doctoralia_summary.total_revenue} ({parsed.doctoralia_summary.total_patients} pacientes)</div>}
+        </div>
+      ) : (
+        <div className="text-sm whitespace-pre-wrap">{content || JSON.stringify(ins.output_data || {})}</div>
+      )}
+      {ins.model_used && <div className="text-[10px] text-muted mt-1">Agente: {ins.model_used}</div>}
+    </div>
+  )
+}
+
+function getDailyInsightsContent(dailyLoading: boolean, dailyInsights: any[]) {
+  if (dailyLoading) {
+    return <p className="text-muted text-sm">Cargando insights del día...</p>
+  }
+
+  if (dailyInsights.length === 0) {
+    return <p className="text-muted text-sm">Aún no hay insights diarios generados. El proceso diario (daily-aggregates + agentes) los creará automáticamente.</p>
+  }
+
+  return (
+    <div className="space-y-4">
+      {dailyInsights.map(renderDailyInsightCard)}
+    </div>
+  )
+}
+
 export default function Intelligence() {
   const [funnel, setFunnel] = useState<FunnelRow[]>([])
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
@@ -63,18 +132,10 @@ export default function Intelligence() {
   ]
 
   const traceabilityRows = useMemo(
-    () => traceability.map((row: TraceabilityLead) => {
-      let stage = 'Lead only';
-      if ((row as any).doctoralia_net != null) {
-        stage = 'Revenue';
-      } else if ((row as any).patient_id) {
-        stage = 'Patient';
-      }
-      return {
-        ...row,
-        _stage: stage,
-      };
-    }),
+    () => traceability.map((row: TraceabilityLead) => ({
+      ...row,
+      _stage: getTraceabilityStage(row),
+    })),
     [traceability],
   )
 
@@ -354,41 +415,7 @@ export default function Intelligence() {
               <p className="text-xs text-muted">Generados automáticamente por el daily-aggregates + agentes IA cada día. Categorías: Meta, general, etc. Ayudan a decisiones: priorizar campañas, atender riesgos, etc.</p>
             </CardHeader>
             <CardContent>
-              {dailyLoading ? <p className="text-muted text-sm">Cargando insights del día...</p> : dailyInsights.length === 0 ? (
-                <p className="text-muted text-sm">Aún no hay insights diarios generados. El proceso diario (daily-aggregates + agentes) los creará automáticamente.</p>
-              ) : (
-                <div className="space-y-4">
-                  {dailyInsights.map((ins: any, idx: number) => {
-                    let content = ins.output_text || '';
-                    let parsed: any = null;
-                    try { parsed = JSON.parse(content); content = ''; } catch { void 0 }
-                    return (
-                      <div key={idx} className="p-4 border rounded-lg bg-surface">
-                        <div className="flex justify-between text-xs text-muted mb-2">
-                          <span className="font-medium uppercase tracking-widest">{ins.agent_type?.replace('daily-','').replace('-',' ')}</span>
-                          <span>{ins.created_at ? new Date(ins.created_at).toLocaleDateString('es-ES') : ''}</span>
-                        </div>
-                        {parsed && typeof parsed === 'object' ? (
-                          <div className="space-y-2 text-sm">
-                            {parsed.recommendations && Array.isArray(parsed.recommendations) && (
-                              <div>
-                                <div className="font-semibold text-xs uppercase text-primary mb-1">Recomendaciones accionables:</div>
-                                <ul className="list-disc pl-5">{parsed.recommendations.map((r: string, i: number) => <li key={i}>{r}</li>)}</ul>
-                              </div>
-                            )}
-                            {parsed.ai_summary && <div><span className="font-semibold text-xs uppercase">Resumen IA:</span> {parsed.ai_summary}</div>}
-                            {parsed.risk_leads != null && <div>Riesgo leads: {parsed.risk_leads}</div>}
-                            {parsed.doctoralia_summary && <div>Doctoralia: €{parsed.doctoralia_summary.total_revenue} ({parsed.doctoralia_summary.total_patients} pacientes)</div>}
-                          </div>
-                        ) : (
-                          <div className="text-sm whitespace-pre-wrap">{content || JSON.stringify(ins.output_data || {})}</div>
-                        )}
-                        {ins.model_used && <div className="text-[10px] text-muted mt-1">Agente: {ins.model_used}</div>}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+              {getDailyInsightsContent(dailyLoading, dailyInsights)}
             </CardContent>
           </Card>
         </TabsContent>
