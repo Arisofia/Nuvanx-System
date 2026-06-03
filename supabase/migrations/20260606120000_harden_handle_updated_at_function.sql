@@ -6,8 +6,8 @@
 -- execute permissions so anon/authenticated cannot call it via /rest/v1/rpc.
 -- =============================================================================
 
-BEGIN;
-
+-- Note: wrapped in DO for conditional apply; use distinct dollar-quoting to avoid
+-- parser ambiguity with nested BEGIN / AS $$ inside plpgsql DO blocks.
 DO $$
 BEGIN
   IF to_regprocedure('public.handle_updated_at()') IS NOT NULL THEN
@@ -16,12 +16,12 @@ BEGIN
     LANGUAGE plpgsql
     SECURITY INVOKER
     SET search_path = public, pg_catalog
-    AS $$
+    AS $func$
     BEGIN
       NEW.updated_at := now();
       RETURN NEW;
     END;
-    $$;
+    $func$;
 
     REVOKE EXECUTE ON FUNCTION public.handle_updated_at() FROM PUBLIC;
 
@@ -29,5 +29,3 @@ BEGIN
       'Trigger function for updated_at maintenance. Hardened 2026-06-06: SECURITY INVOKER + revoke PUBLIC execute to prevent public RPC access.';
   END IF;
 END $$;
-
-COMMIT;
