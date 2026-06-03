@@ -890,8 +890,8 @@ module.exports = {
 };
 
 if (require.main === module) {
-  main().catch(err => {
-    console.error('[sync-doctoralia] Fatal error:', maskSensitive(err.message));
+  main().catch(() => {
+    console.error('[sync-doctoralia] Fatal error. Enable secure debug logging to inspect details.');
     process.exit(1);
   });
 }
