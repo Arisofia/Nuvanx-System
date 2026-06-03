@@ -12,7 +12,7 @@ export default function Playbooks() {
   const [runs, setRuns] = useState<Record<string, RunResult>>({})
 
   useEffect(() => {
-    invokeApi('/playbooks')
+    invokeApi('/api/playbooks')
       .then((data: any) => {
         setPlaybooks(Array.isArray(data?.playbooks) ? data.playbooks : [])
         setLoading(false)
@@ -26,7 +26,7 @@ export default function Playbooks() {
   const runPlaybook = async (pb: Playbook) => {
     setRuns((prev) => ({ ...prev, [pb.id]: { playbookId: pb.id, loading: true, result: null, error: null } }))
     try {
-      const data: any = await invokeApi(`/playbooks/${pb.slug}/run`, { method: 'POST', body: {} })
+      const data: any = await invokeApi(`/api/playbooks/${pb.slug}/run`, { method: 'POST', body: {} })
       if (!data?.success) throw new Error(data?.message || 'Playbook run failed')
       setRuns((prev) => ({ ...prev, [pb.id]: { playbookId: pb.id, loading: false, result: data.generatedMessage ?? data.result ?? 'Done', error: null } }))
       setPlaybooks((prev) => prev.map((p) => p.id === pb.id ? { ...p, runs: p.runs + 1 } : p))

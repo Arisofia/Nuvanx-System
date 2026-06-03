@@ -100,7 +100,7 @@ export default function Intelligence() {
   ]
 
   useEffect(() => {
-    invokeApi('/traceability/funnel')
+    invokeApi('/api/traceability/funnel')
       .then((data: any) => {
         setFunnel(Array.isArray(data?.funnel) ? data.funnel : [])
         setLoading((prev) => ({ ...prev, funnel: false }))
@@ -110,7 +110,7 @@ export default function Intelligence() {
         setLoading((prev) => ({ ...prev, funnel: false }))
       })
 
-    invokeApi('/conversations')
+    invokeApi('/api/conversations')
       .then((data: any) => {
         setConversations(Array.isArray(data?.conversations) ? data.conversations.slice(0, 20) : [])
         setLoading((prev) => ({ ...prev, conversations: false }))
@@ -128,7 +128,7 @@ export default function Intelligence() {
     if (attrTo)   params.push(`to=${attrTo}`)
     if (attrSource) params.push(`source=${encodeURIComponent(attrSource)}`)
     const qs = params.length ? `?${params.join('&')}` : ''
-    invokeApi(`/traceability/campaigns${qs}`)
+    invokeApi(`/api/traceability/campaigns${qs}`)
       .then((data: any) => {
         setCampaigns(Array.isArray(data?.campaigns) ? data.campaigns : [])
         setLoading((prev) => ({ ...prev, campaigns: false }))
@@ -145,7 +145,7 @@ export default function Intelligence() {
     if (traceFrom) params.push(`from=${traceFrom}`)
     if (traceTo) params.push(`to=${traceTo}`)
     if (traceSource) params.push(`source=${encodeURIComponent(traceSource)}`)
-    invokeApi(`/traceability/leads?${params.join('&')}`)
+    invokeApi(`/api/traceability/leads?${params.join('&')}`)
       .then((data: any) => {
         setTraceability(Array.isArray(data?.leads) ? data.leads : [])
         setLoading((prev) => ({ ...prev, traceability: false }))
@@ -162,7 +162,7 @@ export default function Intelligence() {
     const load = async () => {
       setDailyLoading(true)
       try {
-        const data: any = await invokeApi('/ai/outputs?limit=20')
+        const data: any = await invokeApi('/api/ai/outputs?limit=20')
         if (!active) return
         const daily = (data?.outputs || []).filter((o: any) => 
           o.agent_type && (o.agent_type.includes('daily') || o.agent_type.includes('insight'))

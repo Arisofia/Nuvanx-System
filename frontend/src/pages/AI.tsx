@@ -36,7 +36,7 @@ export default function AI() {
     setError(null)
     setResult(null)
     try {
-      const data: any = await invokeApi('/ai/generate', { method: 'POST', body: { prompt: prompt.trim() } })
+      const data: any = await invokeApi('/api/ai/generate', { method: 'POST', body: { prompt: prompt.trim() } })
       if (!data?.success) throw new Error(data?.message || 'Generation failed')
       setResult(data.content ?? data.result ?? '')
     } catch (err: any) {
@@ -53,7 +53,7 @@ export default function AI() {
     try {
       // Backend agent auto-fetches a CRM-side snapshot when no payload is sent,
       // so the panel can render on mount without the client gathering data first.
-      const data: any = await invokeApi('/ai/analyze-campaign', { method: 'POST', body: {} })
+      const data: any = await invokeApi('/api/ai/analyze-campaign', { method: 'POST', body: {} })
       if (!data?.success) throw new Error(data?.message || 'Analysis failed')
       if (data?.empty) {
         setAnalysisResult(null)
@@ -72,7 +72,7 @@ export default function AI() {
     setSuggestionsLoading(true)
     setSuggestionsError(null)
     try {
-      const data: any = await invokeApi('/ai/suggestions', { method: 'POST', body: {} })
+      const data: any = await invokeApi('/api/ai/suggestions', { method: 'POST', body: {} })
       if (!data?.success) throw new Error(data?.message || 'Failed to fetch suggestions')
       setSuggestions(Array.isArray(data.suggestions) ? data.suggestions : [])
     } catch (err: any) {
@@ -93,7 +93,7 @@ export default function AI() {
     setOutputsLoading(true)
     setOutputsError(null)
     try {
-      const data: any = await invokeApi('/ai/outputs?limit=50')
+      const data: any = await invokeApi('/api/ai/outputs?limit=50')
       if (!data?.success) throw new Error(data?.message || 'Failed to fetch history')
       setOutputs(Array.isArray(data.outputs) ? data.outputs : [])
     } catch (err: any) {

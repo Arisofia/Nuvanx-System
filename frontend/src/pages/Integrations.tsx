@@ -163,7 +163,7 @@ export default function Integrations() {
 
     setSaving(true)
     try {
-      await invokeApi('/integrations/connect', {
+      await invokeApi('/api/integrations/connect', {
         method: 'POST',
         body: { service: form.service, token: form.token.trim(), metadata },
       })
@@ -184,7 +184,7 @@ export default function Integrations() {
     setTesting(service)
     setTestResult((prev) => ({ ...prev, [service]: '' }))
     try {
-      const res: any = await invokeApi('/integrations/test', {
+      const res: any = await invokeApi('/api/integrations/test', {
         method: 'POST',
         body: { service },
       })
@@ -201,7 +201,7 @@ export default function Integrations() {
     setHealthLoading(service)
     setHealthResult((prev) => ({ ...prev, [service]: '' }))
     try {
-      const res: any = await invokeApi('/health/meta')
+      const res: any = await invokeApi('/api/health/meta')
       const account = res.ad_account ?? res.accountId ?? ''
       const accountIds = Array.isArray(res.accountIds) ? res.accountIds : String(res.accountIds ?? '').split(/[\s,;]+/).filter(Boolean)
       const name = res.meta_user ?? res.metaUser ?? 'Meta user'

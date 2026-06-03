@@ -123,7 +123,7 @@ export default function Reports() {
     if (docFrom) params.push(`from=${docFrom}`)
     if (docTo) params.push(`to=${docTo}`)
     const qs = params.length ? `?${params.join('&')}` : ''
-    invokeApi(`/reports/doctoralia-financials${qs}`)
+    invokeApi(`/api/reports/doctoralia-financials${qs}`)
       .then((d: any) => {
         setDocError(null)
         setDocData({ templateSummary: d?.templateSummary ?? [], byMonth: d?.byMonth ?? [] })
@@ -133,12 +133,12 @@ export default function Reports() {
   }, [docFrom, docTo])
 
   useEffect(() => {
-    invokeApi('/reports/whatsapp-conversion')
+    invokeApi('/api/reports/whatsapp-conversion')
       .then((d: any) => setCohorts(d?.cohorts ?? []))
       .catch((e: any) => setWaError(e?.message || 'Failed to load WhatsApp conversion.'))
       .finally(() => setWaLoading(false))
 
-    invokeApi('/reports/doctor-performance')
+    invokeApi('/api/reports/doctor-performance')
       .then((d: any) => setDoctors(d?.doctors ?? []))
       .catch((e: any) => setDocPerfError(e?.message || 'Failed to load doctor performance.'))
       .finally(() => setDocPerfLoading(false))
@@ -153,7 +153,7 @@ export default function Reports() {
       if (campTo) params.push(`to=${campTo}`)
       const qs = params.length ? `?${params.join('&')}` : ''
       try {
-        const d: any = await invokeApi(`/reports/campaign-performance${qs}`)
+        const d: any = await invokeApi(`/api/reports/campaign-performance${qs}`)
         setCampaigns(d?.campaigns ?? [])
       } catch (e: any) {
         setCampError(e?.message || 'Failed to load campaign performance.')
@@ -173,7 +173,7 @@ export default function Reports() {
       if (srcTo) params.push(`to=${srcTo}`)
       const qs = params.length ? `?${params.join('&')}` : ''
       try {
-        const d: any = await invokeApi(`/reports/source-comparison${qs}`)
+        const d: any = await invokeApi(`/api/reports/source-comparison${qs}`)
         setSources(d?.sources ?? [])
       } catch (e: any) {
         setSrcError(e?.message || 'Failed to load source comparison.')
@@ -192,7 +192,7 @@ export default function Reports() {
     if (roiSource) params.push(`source=${encodeURIComponent(roiSource)}`)
     const qs = params.length ? `?${params.join('&')}` : ''
     let cancelled = false
-    invokeApi(`/reports/campaign-roi${qs}`)
+    invokeApi(`/api/reports/campaign-roi${qs}`)
       .then((d: any) => { if (!cancelled) { setRoiError(null); setRoiRows(d?.rows ?? []); setRoiLoading(false) } })
       .catch((e: any) => { if (!cancelled) { setRoiError(e?.message || 'Failed to load campaign ROI.'); setRoiLoading(false) } })
     return () => { cancelled = true }
@@ -210,7 +210,7 @@ export default function Reports() {
     const timer = setTimeout(() => {
       setLeadAuditLoading(true)
       setLeadAuditError(null)
-      invokeApi(`/reports/lead-audit${qs}`)
+      invokeApi(`/api/reports/lead-audit${qs}`)
         .then((d: any) => { if (!cancelled) { setLeadAuditRows(d?.leads ?? []); setLeadAuditError(null) } })
         .catch((e: any) => { if (!cancelled) setLeadAuditError(e?.message || 'Failed to load lead audit.') })
         .finally(() => { if (!cancelled) setLeadAuditLoading(false) })
@@ -228,8 +228,8 @@ export default function Reports() {
       setMetaExtraLoading(true)
       try {
         const [orgRes, igRes] = await Promise.allSettled([
-          invokeApi<any>('/meta/organic/daily?days=30'),
-          invokeApi<any>('/meta/ig/daily?days=30'),
+          invokeApi<any>('/api/meta/organic/daily?days=30'),
+          invokeApi<any>('/api/meta/ig/daily?days=30'),
         ])
         if (!cancelled) {
           setOrganicSummary(orgRes.status === 'fulfilled' ? (orgRes.value?.summary || orgRes.value) : null)
@@ -248,7 +248,7 @@ export default function Reports() {
   // Fetch KPIs summary (exposes /kpis api data which aggregates Meta + other sources)
   useEffect(() => {
     let cancelled = false
-    invokeApi<any>('/kpis?days=30')
+    invokeApi<any>('/api/kpis?days=30')
       .then((d) => { if (!cancelled) setKpisSummary(d) })
       .catch(() => {})
       .finally(() => { if (!cancelled) setKpisLoading(false) })

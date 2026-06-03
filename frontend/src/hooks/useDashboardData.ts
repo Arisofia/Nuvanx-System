@@ -310,12 +310,12 @@ export function useDashboardData(
         const { queryParams, dashboardParams, campaignsPath } = buildParams()
         const cacheNamespace = session.user?.id ?? 'anonymous'
         const [metricsResult, metaTrendsResult, campaignsResult, insightsResult, funnelResult, kpisResult] = await Promise.allSettled([
-          getCachedDashboardResource(`/dashboard/metrics${dashboardParams}`, cacheNamespace),
-          getCachedDashboardResource(`/dashboard/meta-trends${queryParams}`, cacheNamespace),
-          getCachedDashboardResource(`/meta/campaigns${campaignsPath}`, cacheNamespace),
-          getCachedDashboardResource(`/meta/insights${queryParams}`, cacheNamespace),
-          getCachedDashboardResource('/dashboard/lead-flow', cacheNamespace),
-          getCachedDashboardResource(`/kpis${dashboardParams}`, cacheNamespace),
+          getCachedDashboardResource(`/api/dashboard/metrics${dashboardParams}`, cacheNamespace),
+          getCachedDashboardResource(`/api/dashboard/meta-trends${queryParams}`, cacheNamespace),
+          getCachedDashboardResource(`/api/meta/campaigns${campaignsPath}`, cacheNamespace),
+          getCachedDashboardResource(`/api/meta/insights${queryParams}`, cacheNamespace),
+          getCachedDashboardResource('/api/dashboard/lead-flow', cacheNamespace),
+          getCachedDashboardResource(`/api/kpis${dashboardParams}`, cacheNamespace),
         ])
 
         processResults(metricsResult, metaTrendsResult, campaignsResult, insightsResult, funnelResult, kpisResult)

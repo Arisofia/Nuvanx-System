@@ -11,7 +11,7 @@ export function useLeads() {
     setLoading(true)
     setError(null)
     try {
-      const response = await invokeApi<{ leads?: any[] }>('/leads')
+      const response = await invokeApi<{ leads?: any[] }>('/api/leads')
       const data = response.leads
 
       if (activeFlag && !activeFlag.active) return
@@ -56,7 +56,7 @@ export function useLeads() {
         delete apiUpdates.status
       }
 
-      const response = await invokeApi<{ success?: boolean; lead?: any; message?: string }>(`/leads/${id}`, {
+      const response = await invokeApi<{ success?: boolean; lead?: any; message?: string }>(`/api/leads/${id}`, {
         method: 'PATCH',
         body: apiUpdates,
       })
@@ -85,7 +85,7 @@ export function useLeads() {
 
   const deleteLead = async (id: string) => {
     try {
-      const response = await invokeApi<{ success?: boolean; message?: string }>(`/leads/${id}`, { method: 'DELETE' })
+      const response = await invokeApi<{ success?: boolean; message?: string }>(`/api/leads/${id}`, { method: 'DELETE' })
       if (response.success) {
         setLeads(prev => prev.filter(lead => lead.id !== id))
         return { success: true }

@@ -614,8 +614,8 @@ export default function Marketing() {
       const dailyParams = new URLSearchParams({ days: String(days) }).toString()
       const postsParams = new URLSearchParams({ limit: '50', ...(kw ? { keyword: kw } : {}) }).toString()
       const [dailyRes, postsRes]: any[] = await Promise.all([
-        invokeApi(`/meta/organic/daily?${dailyParams}`),
-        invokeApi(`/meta/organic/posts?${postsParams}`),
+        invokeApi(`/api/meta/organic/daily?${dailyParams}`),
+        invokeApi(`/api/meta/organic/posts?${postsParams}`),
       ])
       if (!mountedRef.current) return
       setOrganicSummary(dailyRes?.summary ?? null)
@@ -637,8 +637,8 @@ export default function Marketing() {
       const dailyParams = new URLSearchParams({ days: String(days) }).toString()
       const postsParams = new URLSearchParams({ limit: '50', ...(kw ? { keyword: kw } : {}) }).toString()
       const [dailyRes, postsRes]: any[] = await Promise.all([
-        invokeApi(`/meta/ig/daily?${dailyParams}`),
-        invokeApi(`/meta/ig/posts?${postsParams}`),
+        invokeApi(`/api/meta/ig/daily?${dailyParams}`),
+        invokeApi(`/api/meta/ig/posts?${postsParams}`),
       ])
       if (!mountedRef.current) return
       setIgSummary(dailyRes?.summary ?? null)

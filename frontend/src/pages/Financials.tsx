@@ -47,7 +47,7 @@ export default function Financials() {
       const qs = params.toString() ? `?${params.toString()}` : ''
 
       try {
-        const data: any = await invokeApi(`/financials/summary${qs}`)
+        const data: any = await invokeApi(`/api/financials/summary${qs}`)
         if (cancelled) return
         setState({
           summary: data?.summary ?? null,

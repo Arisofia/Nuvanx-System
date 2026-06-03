@@ -47,7 +47,7 @@ export default function LeadAudit() {
       setLoading(true)
       setError(null)
       try {
-        const data: any = await invokeApi(`/reports/lead-audit${qs}`)
+        const data: any = await invokeApi(`/api/reports/lead-audit${qs}`)
         if (!active) return
         setRows(data?.leads ?? [])
       } catch (err: any) {
