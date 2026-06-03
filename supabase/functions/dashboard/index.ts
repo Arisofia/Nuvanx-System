@@ -86,17 +86,17 @@ Deno.serve(async (req: Request) => {
 
   // ── CRM metrics (from leads table)
   const totalLeads   = leads.length;
-  const totalRevenue = leads.reduce((s, l) => s + (parseFloat(l.revenue) || 0), 0);
+  const totalRevenue = leads.reduce((s, l) => s + (Number.parseFloat(l.revenue) || 0), 0);
   const conversions  = leads.filter(l => l.stage === 'treatment' || l.stage === 'closed').length;
-  const conversionRate = totalLeads > 0 ? parseFloat(((conversions / totalLeads) * 100).toFixed(1)) : 0;
+  const conversionRate = totalLeads > 0 ? Number.parseFloat(((conversions / totalLeads) * 100).toFixed(1)) : 0;
   const STAGES       = ['lead','whatsapp','appointment','treatment','closed'];
   const byStage      = STAGES.reduce((acc, s) => { acc[s] = leads.filter(l => l.stage === s).length; return acc; }, {} as any);
   const connectedIntegrations = integrations.filter(i => i.status === 'connected').length;
 
   // ── Doctoralia metrics (from financial_settlements - real data)
-  const docTotalNet   = settlements.reduce((s, r) => s + parseFloat(r.amount_net ?? 0), 0);
-  const docTotalGross = settlements.reduce((s, r) => s + parseFloat(r.amount_gross ?? 0), 0);
-  const docDiscount   = settlements.reduce((s, r) => s + parseFloat(r.amount_discount ?? 0), 0);
+  const docTotalNet   = settlements.reduce((s, r) => s + Number.parseFloat(r.amount_net ?? 0), 0);
+  const docTotalGross = settlements.reduce((s, r) => s + Number.parseFloat(r.amount_gross ?? 0), 0);
+  const docDiscount   = settlements.reduce((s, r) => s + Number.parseFloat(r.amount_discount ?? 0), 0);
   const avgTicket     = settlements.length > 0 ? docTotalNet / settlements.length : 0;
   const uniquePatients = patients.length;
 
@@ -105,21 +105,21 @@ Deno.serve(async (req: Request) => {
     const key = s.template_name ?? 'Unknown';
     if (!acc[key]) acc[key] = { count: 0, revenue: 0 };
     acc[key].count++;
-    acc[key].revenue = parseFloat((acc[key].revenue + parseFloat(s.amount_net ?? 0)).toFixed(2));
+    acc[key].revenue = Number.parseFloat((acc[key].revenue + Number.parseFloat(s.amount_net ?? 0)).toFixed(2));
     return acc;
   }, {});
 
   // Settlement timeline for chart
   const settlementTimeline = settlements.map(s => ({
     date:     (s.settled_at ?? s.created_at ?? '').split('T')[0],
-    net:      parseFloat(s.amount_net ?? 0),
+    net:      Number.parseFloat(s.amount_net ?? 0),
     template: s.template_name ?? '',
     patient:  s.patient_name ?? ''
   })).sort((a, b) => a.date.localeCompare(b.date));
 
   // ── Meta metrics
-  const metaCampaigns = [...new Set(metaLeads.map(m => m.campaign_id).filter(Boolean))].length;
-  const metaForms     = [...new Set(metaLeads.map(m => m.form_id).filter(Boolean))].length;
+  const metaCampaigns = new Set(metaLeads.map(m => m.campaign_id).filter(Boolean)).size;
+  const metaForms     = new Set(metaLeads.map(m => m.form_id).filter(Boolean)).size;
 
   // ── Agent outputs summary
   const agentSummary = agentOutputs.map(a => ({
@@ -136,7 +136,7 @@ Deno.serve(async (req: Request) => {
     // Real CRM funnel data (properly scoped + filtered)
     metrics: {
       totalLeads,
-      totalRevenue: parseFloat(totalRevenue.toFixed(2)),
+      totalRevenue: Number.parseFloat(totalRevenue.toFixed(2)),
       conversions,
       conversionRate,
       byStage,
@@ -145,10 +145,10 @@ Deno.serve(async (req: Request) => {
     },
     // Doctoralia revenue (REAL data - 6 settlements)
     doctoralia: {
-      totalNet:       parseFloat(docTotalNet.toFixed(2)),
-      totalGross:     parseFloat(docTotalGross.toFixed(2)),
-      totalDiscount:  parseFloat(docDiscount.toFixed(2)),
-      avgTicket:      parseFloat(avgTicket.toFixed(2)),
+      totalNet:       Number.parseFloat(docTotalNet.toFixed(2)),
+      totalGross:     Number.parseFloat(docTotalGross.toFixed(2)),
+      totalDiscount:  Number.parseFloat(docDiscount.toFixed(2)),
+      avgTicket:      Number.parseFloat(avgTicket.toFixed(2)),
       uniquePatients,
       totalSettlements: settlements.length,
       templateBreakdown,
@@ -179,8 +179,8 @@ Deno.serve(async (req: Request) => {
       stage,
       label:      stage.charAt(0).toUpperCase() + stage.slice(1),
       count:      byStage[stage] ?? 0,
-      percentage: parseFloat(((byStage[stage] ?? 0) / (totalLeads || 1) * 100).toFixed(1)),
-      revenue:    parseFloat(leads.filter(l => l.stage === stage).reduce((s, l) => s + (parseFloat(l.revenue) || 0), 0).toFixed(2))
+      percentage: Number.parseFloat(((byStage[stage] ?? 0) / (totalLeads || 1) * 100).toFixed(1)),
+      revenue:    Number.parseFloat(leads.filter(l => l.stage === stage).reduce((s, l) => s + (Number.parseFloat(l.revenue) || 0), 0).toFixed(2))
     }))
   });
 });
