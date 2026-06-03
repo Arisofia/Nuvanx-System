@@ -119,6 +119,8 @@ export default function Reports() {
 
   // Doctoralia fetch — re-runs on date filter change
   useEffect(() => {
+    setDocLoading(true)
+    setDocError(null)
     const params: string[] = []
     if (docFrom) params.push(`from=${docFrom}`)
     if (docTo) params.push(`to=${docTo}`)

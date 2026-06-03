@@ -258,7 +258,8 @@ The system uses the following priority for loading environment variables:
 ```bash
 export META_ACCESS_TOKEN=...
 export META_AD_ACCOUNT_ID=act_...
-export DATABASE_URL=postgresql://user:password@host:port/dbname
+export DATABASE_URL=postgresql://postgres.<PROJECT-REF>:<PASSWORD>@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require
+# IMPORTANT: Always use the Session Pooler host (not the direct db.<ref>.supabase.co which is IPv6-only for this project).
 export CLINIC_ID=...
 ```
 
@@ -324,8 +325,8 @@ The repository uses GitHub Actions secrets for Supabase and production validatio
 
 - `SUPABASE_ACCESS_TOKEN` — Supabase personal access token for CLI operations.
 - `SUPABASE_PROJECT_REF` — Target Supabase project ref for `supabase link`.
-- `SUPABASE_DB_PASSWORD` — Optional DB password used when `DATABASE_URL` is unavailable.
-- `DATABASE_URL` — Optional Postgres connection string used for migrations and linting.
+- `SUPABASE_DB_PASSWORD` — Optional DB password used when `DATABASE_URL` is unavailable (fallback constructs Session Pooler URL).
+- `DATABASE_URL` — Postgres connection string. **Must use Session Pooler** (e.g. `postgresql://postgres.<ref>:<pw>@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require`). Direct `db.<ref>.supabase.co` is IPv6-only and unreliable.
 - `PRODUCTION_E2E_URL` — Production API base URL used by automated smoke tests.
 - `PRODUCTION_E2E_TOKEN` — Auth token used by `scripts/production-e2e.js`.
 - `GOOGLE_ADS_SERVICE_ACCOUNT` — Google Sheets service account JSON for Doctoralia sync.

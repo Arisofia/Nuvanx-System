@@ -7,11 +7,11 @@ name: Supabase Security Check
 # IMPORTANT (confirmed via DNS):
 #   The direct hostname db.<SUPABASE_PROJECT_REF>.supabase.co for this project
 #   is IPv6-only (only AAAA records, no A records).
-#   GitHub runners have unreliable IPv6 → always prefer Session Pooler (port 5432).
+#   GitHub runners have unreliable IPv6 → always prefer/use Session Pooler (aws-1-eu-central-1.pooler.supabase.com:5432).
 #
 # Required secrets:
-#   SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_REF, DATABASE_URL (Session Pooler recommended)
-#   SUPABASE_DB_PASSWORD (fallback for direct connection)
+#   SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_REF, DATABASE_URL (Session Pooler strongly recommended: postgresql://postgres.<ref>:<pw>@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require)
+#   SUPABASE_DB_PASSWORD (used by CI action to construct Session Pooler fallback when DATABASE_URL not provided)
 
 on:
   # On push to main, wait for Deploy Supabase to finish so the lint runs against
@@ -69,7 +69,7 @@ jobs:
             echo "SUPABASE_PROJECT_REF not set — skipping diagnosis."
             exit 0
           fi
-          echo "Direct host: db.${ref}.supabase.co → IPv6-only (no A records)"
+          echo "Direct host: db.${ref}.supabase.co → IPv6-only (no A records). Use Session Pooler instead."
           echo "Strongly recommended: Use Session Pooler (port 5432) in DATABASE_URL secret."
           echo "The supabase-link-run composite action resolves a safe SESSION_URL (Session Pooler preferred), exports it to GITHUB_ENV, and exposes it as \$SESSION_URL for commands."
 

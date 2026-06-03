@@ -53,15 +53,24 @@ export default function Integrations() {
   async function loadIntegrations() {
     setLoading(true)
     setError(null)
-    const { data, error: queryError } = await supabase
-      .from('integrations')
-      .select('*')
-      .order('service', { ascending: true })
-    if (queryError) {
-      setError(queryError.message)
+    try {
+      const { data, error: queryError } = await supabase
+        .from('integrations')
+        .select('*')
+        .order('service', { ascending: true })
+      if (queryError) {
+        // Do not leak internal DB errors (e.g. permission denied for current_clinic_id) in real-time UI.
+        // Only show friendly message; real error is for logs/support.
+        console.error('[Integrations] load error (sanitized for UI):', queryError)
+        setError('No se pudieron cargar las integraciones. Recarga la página o contacta a support@nuvanx.com.')
+        setIntegrations([])
+      } else {
+        setIntegrations((data ?? []) as IntegrationRow[])
+      }
+    } catch (e) {
+      console.error('[Integrations] unexpected load error:', e)
+      setError('Error al cargar la bóveda de credenciales. Intenta de nuevo.')
       setIntegrations([])
-    } else {
-      setIntegrations((data ?? []) as IntegrationRow[])
     }
     setLoading(false)
   }
@@ -174,7 +183,9 @@ export default function Integrations() {
         await handleHealthCheck('meta')
       }
     } catch (err: any) {
-      setSaveError(err?.message ?? 'Failed to connect integration.')
+      // Sanitize: do not show raw internal/permission errors in real-time. Credentials travel securely via /api.
+      console.error('[Integrations] connect error (sanitized):', err)
+      setSaveError('Error al conectar la integración. Verifica el token/ID e intenta de nuevo, o contacta soporte.')
     } finally {
       setSaving(false)
     }
@@ -190,7 +201,8 @@ export default function Integrations() {
       })
       setTestResult((prev) => ({ ...prev, [service]: res?.message ?? (res?.success ? 'OK' : 'Error') }))
     } catch (err: any) {
-      setTestResult((prev) => ({ ...prev, [service]: err?.message ?? 'Test failed' }))
+      console.error('[Integrations] test error (sanitized):', err)
+      setTestResult((prev) => ({ ...prev, [service]: 'Error en la prueba de conexión. Revisa las credenciales.' }))
     } finally {
       setTesting(null)
     }
@@ -212,7 +224,8 @@ export default function Integrations() {
         [service]: `OK: ${name}${accountText}${accountIdsText}`,
       }))
     } catch (err: any) {
-      setHealthResult((prev) => ({ ...prev, [service]: err?.message ?? 'Verificación de Meta falló.' }))
+      console.error('[Integrations] health/meta error (sanitized):', err)
+      setHealthResult((prev) => ({ ...prev, [service]: 'Verificación falló. Asegúrate de que las credenciales de Meta viajen correctamente al backend.' }))
     } finally {
       setHealthLoading(null)
     }

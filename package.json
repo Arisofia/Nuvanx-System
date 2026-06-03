@@ -26,7 +26,7 @@
     "validate:workflows": "ruby scripts/validate-github-workflows.rb"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.106.1",
+    "@supabase/supabase-js": "^2.107.0",
     "dotenv": "^17.4.2",
     "googleapis": "^171.4.0",
     "pg": "^8.21.0",

@@ -54,6 +54,7 @@ export const ALLOWED_CORS_ORIGINS = new Set([
   // Always include the production Vercel URL regardless of NODE_ENV so that
   // POST requests from the browser (which send Origin) are never rejected in production.
   PRODUCTION_FALLBACK_URL,
+  'https://frontend-beta-ten-49.vercel.app',
   'https://nuvanx.com',
   'https://www.nuvanx.com',
 ]);
@@ -65,9 +66,18 @@ export const DEFAULT_CORS_HEADERS = {
 };
 
 export function buildCorsHeaders(origin: string | null) {
-  const allowedOrigin = origin && ALLOWED_CORS_ORIGINS.has(origin)
-    ? origin
-    : DEFAULT_CORS_ORIGIN;
+  let allowedOrigin = DEFAULT_CORS_ORIGIN;
+  if (origin) {
+    if (ALLOWED_CORS_ORIGINS.has(origin)) {
+      allowedOrigin = origin;
+    } else if (
+      // Support any Vercel deploy/preview/alias URL for this project (new hashes on each deploy --prod)
+      /\.vercel\.app$/.test(origin) &&
+      origin.includes('arisofias-projects-c2217452')
+    ) {
+      allowedOrigin = origin;
+    }
+  }
   return {
     ...DEFAULT_CORS_HEADERS,
     'Access-Control-Allow-Origin': allowedOrigin,

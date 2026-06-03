@@ -6856,31 +6856,62 @@ async function handleReportsDoctoraliaFinancialsGet(ctx: AuthenticatedRouteConte
     const clinicId = usr?.clinic_id;
     if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
 
-    // settled_month is 'YYYY-MM'; compare date params truncated to 7 chars
-    const fromMonth = (url.searchParams.get('from') ?? '').slice(7);
-    const toMonth   = (url.searchParams.get('to')   ?? '').slice(7);
+    const fromParam = url.searchParams.get('from') ?? '';
+    const toParam = url.searchParams.get('to') ?? '';
 
-    // vw_doctoralia_financials: rows are already aggregated per template × month by the DB view
-    let templateQ = adminClient
-      .from('vw_doctoralia_financials')
-      .select('*')
+    // Query base table (views may not be present in all envs/migrations); scope to clinic + doctoralia source
+    let query = adminClient
+      .from('financial_settlements')
+      .select('amount_gross, amount_discount, amount_net, template_name, settled_at, intake_at, cancelled_at, source_system')
+      .eq('clinic_id', clinicId)
       .eq('source_system', 'doctoralia')
-      .order('settled_month', { ascending: true });
-    if (fromMonth) templateQ = templateQ.gte('settled_month', fromMonth);
-    if (toMonth)   templateQ = templateQ.lte('settled_month', toMonth);
-    const { data: templateRows } = await templateQ;
+      .order('settled_at', { ascending: true });
+    if (fromParam) query = query.gte('settled_at', fromParam);
+    if (toParam) query = query.lte('settled_at', toParam);
 
-    // vw_doctoralia_by_month: rows are already aggregated per month by the DB view
-    let monthQ = adminClient
-      .from('vw_doctoralia_by_month')
-      .select('*')
-      .order('settled_month', { ascending: true });
-    if (fromMonth) monthQ = monthQ.gte('settled_month', fromMonth);
-    if (toMonth)   monthQ = monthQ.lte('settled_month', toMonth);
-    const { data: monthRows } = await monthQ;
+    const { data: rows, error: qerr } = await query;
+    if (qerr) {
+      console.error('doctoralia financials settlements query error:', qerr);
+      return sendJson({ success: false, message: 'Failed to load Doctoralia financials.', error: qerr.message }, 500);
+    }
 
-    const byTemplate = aggregateDoctoraliaTemplates(templateRows || []);
-    const byMonth = mapDoctoraliaMonthlyData(monthRows || []);
+    // Build fact rows shaped like the old view rows so existing aggregate fn works (per template per month facts)
+    const factRows: any[] = (rows || []).map((r: any) => {
+      const settledMonth = (r.settled_at || r.intake_at || '').slice(0, 7);
+      const isCancelled = !!r.cancelled_at;
+      return {
+        template_name: r.template_name || 'Unknown',
+        source_system: r.source_system,
+        settled_month: settledMonth,
+        operations_count: 1,
+        total_net: Number(r.amount_net || 0),
+        total_gross: Number(r.amount_gross || r.amount_net || 0),
+        total_discount: Number(r.amount_discount || 0),
+        cancellation_count: isCancelled ? 1 : 0,
+      };
+    });
+
+    // Group facts by month for the monthly detail (simple reduce)
+    const monthAgg: Record<string, any> = {};
+    for (const f of factRows) {
+      const m = f.settled_month;
+      if (!m) continue;
+      if (!monthAgg[m]) monthAgg[m] = { settled_month: m, operations_count: 0, cancellation_count: 0, total_gross: 0, total_discount: 0, total_net: 0 };
+      monthAgg[m].operations_count += f.operations_count;
+      monthAgg[m].cancellation_count += f.cancellation_count;
+      monthAgg[m].total_gross += f.total_gross;
+      monthAgg[m].total_discount += f.total_discount;
+      monthAgg[m].total_net += f.total_net;
+    }
+    const monthRows = Object.values(monthAgg).map((m: any) => ({
+      ...m,
+      avg_ticket_net: m.operations_count ? Math.round((m.total_net / m.operations_count) * 100) / 100 : 0,
+      discount_rate_pct: m.total_gross ? Math.round((m.total_discount / m.total_gross) * 1000) / 10 : 0,
+      cancellation_rate_pct: m.operations_count ? Math.round((m.cancellation_count / m.operations_count) * 1000) / 10 : 0,
+    })).sort((a: any, b: any) => a.settled_month.localeCompare(b.settled_month));
+
+    const byTemplate = aggregateDoctoraliaTemplates(factRows);
+    const byMonth = mapDoctoraliaMonthlyData(monthRows);
 
     return sendJson({ success: true, byTemplate, byMonth, templateSummary: byTemplate });
   }

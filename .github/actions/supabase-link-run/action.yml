@@ -222,9 +222,10 @@ runs:
           fi
 
         elif [ -n "$RESOLVED_DB_PASSWORD" ] && [ -n "${INPUT_SUPABASE_PROJECT_REF:-}" ]; then
-          # Fallback: construct direct connection (requires IPv4 add-on in Supabase)
-          SESSION_URL=$(printf 'postgresql://postgres:%s@db.%s.supabase.co:5432/postgres' "$RESOLVED_DB_PASSWORD" "$INPUT_SUPABASE_PROJECT_REF")
-          echo "No DATABASE_URL provided — falling back to direct DB URL (db.<ref>.supabase.co:5432)"
+          # Fallback: construct Session Pooler connection (preferred; works over IPv4, no direct IPv6 issues)
+          # Format: postgresql://postgres.<ref>:<pw>@aws-1-eu-central-1.pooler.supabase.com:5432/postgres
+          SESSION_URL=$(printf 'postgresql://postgres.%s:%s@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require' "$INPUT_SUPABASE_PROJECT_REF" "$RESOLVED_DB_PASSWORD")
+          echo "No DATABASE_URL provided — falling back to Session Pooler (aws-1-eu-central-1.pooler.supabase.com:5432)"
         else
           SESSION_URL=""
         fi
