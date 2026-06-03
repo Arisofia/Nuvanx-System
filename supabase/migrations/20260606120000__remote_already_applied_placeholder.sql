@@ -1,0 +1,7 @@
+-- Placeholder to satisfy "remote migration version has local file" check in supabase db push.
+-- The version 20260606120000 (and its security changes for view + handle_updated_at) was already
+-- applied in a prior deploy. The actual SQL was moved/renamed to unique prefixes 20260607000001/2
+-- to avoid duplicate local prefix errors.
+-- This file ensures the version appears in local dir so db push proceeds past the remote-vs-local check
+-- and can apply subsequent migrations + deploy edge functions.
+-- No statements here; the real changes are in the 20260607* files (idempotent ALTERs).
