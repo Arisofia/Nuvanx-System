@@ -110,6 +110,7 @@ CREATE OR REPLACE FUNCTION public.current_clinic_id()
 RETURNS uuid
 LANGUAGE plpgsql
 STABLE
+SECURITY DEFINER
 SET search_path = pg_catalog, public
 AS $$
 DECLARE
@@ -156,6 +157,7 @@ CREATE OR REPLACE FUNCTION public.current_user_id()
 RETURNS uuid
 LANGUAGE sql
 STABLE
+SECURITY DEFINER
 SET search_path = pg_catalog, public
 AS $$
   SELECT auth.uid();

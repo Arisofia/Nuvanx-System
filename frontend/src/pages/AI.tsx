@@ -7,6 +7,42 @@ import { Sparkles, BarChart2, Lightbulb, History, Copy, Check, RefreshCw } from 
 import { invokeApi } from '../lib/supabaseClient'
 import { TemplateGallery } from '../components/ai/TemplateGallery'
 
+function getOutputContent(output: any): string {
+  if (typeof output === 'string') {
+    return output
+  }
+  return output?.content ?? output?.result ?? JSON.stringify(output ?? {})
+}
+
+function getAiStatusMessage(
+  aiStatusLoading: boolean,
+  aiStatusError: string | null,
+  aiAvailable: boolean | null,
+  aiProvider: string | null,
+) {
+  if (aiStatusLoading) {
+    return <p className="text-xs text-muted">Verificando estado de IA…</p>
+  }
+
+  if (aiStatusError) {
+    return <p className="text-xs text-[#D9534F]">{aiStatusError}</p>
+  }
+
+  if (aiAvailable) {
+    return (
+      <p className="text-xs text-muted">
+        IA disponible: {aiProvider ? aiProvider.toUpperCase() : 'conectada'}. El agente analiza tus campañas con memoria previa.
+      </p>
+    )
+  }
+
+  return (
+    <p className="text-xs text-muted">
+      No hay integración de IA configurada. Conecta OpenAI o Gemini en Integraciones para generar contenido y sugerencias.
+    </p>
+  )
+}
+
 export default function AI() {
   // Generate tab
   const [prompt, setPrompt] = useState('')
@@ -17,6 +53,10 @@ export default function AI() {
   const [analysisError, setAnalysisError] = useState<string | null>(null)
   const [analysisResult, setAnalysisResult] = useState<string | null>(null)
   const [analysisEmpty, setAnalysisEmpty] = useState<string | null>(null)
+  const [aiAvailable, setAiAvailable] = useState<boolean | null>(null)
+  const [aiProvider, setAiProvider] = useState<string | null>(null)
+  const [aiStatusLoading, setAiStatusLoading] = useState(false)
+  const [aiStatusError, setAiStatusError] = useState<string | null>(null)
 
   // Suggestions tab
   const [suggestions, setSuggestions] = useState<string[]>([])
@@ -103,6 +143,23 @@ export default function AI() {
     }
   }
 
+  const handleFetchAiStatus = async () => {
+    setAiStatusLoading(true)
+    setAiStatusError(null)
+    try {
+      const data: any = await invokeApi('/api/ai/status')
+      if (!data?.success) throw new Error(data?.message || 'Failed to fetch AI status')
+      setAiAvailable(Boolean(data.available))
+      setAiProvider(data.provider ?? null)
+    } catch (err: any) {
+      setAiStatusError(err?.message || 'No se pudo determinar el estado de la IA.')
+      setAiAvailable(false)
+      setAiProvider(null)
+    } finally {
+      setAiStatusLoading(false)
+    }
+  }
+
   // Auto-load every panel on mount so the UI is "connected by default" and
   // only surfaces errors when a specific agent fails.
   useEffect(() => {
@@ -110,6 +167,7 @@ export default function AI() {
       void handleAnalyze()
       void handleFetchSuggestions()
       void handleFetchOutputs()
+      void handleFetchAiStatus()
     }, 0)
     return () => clearTimeout(timer)
   }, [])
@@ -241,9 +299,7 @@ export default function AI() {
                   </button>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-xs text-muted">
-                    Conectado por defecto. El agente analiza tus campañas con memoria de análisis previos.
-                  </p>
+                  {getAiStatusMessage(aiStatusLoading, aiStatusError, aiAvailable, aiProvider)}
                 </CardContent>
               </Card>
             </div>
@@ -328,9 +384,7 @@ export default function AI() {
               )}
               <div className="space-y-3">
                 {filteredOutputs.map((o) => {
-                  const content = typeof o.output === 'string'
-                    ? o.output
-                    : o.output?.content ?? o.output?.result ?? JSON.stringify(o.output ?? {})
+                  const content = getOutputContent(o.output)
                   return (
                     <div key={o.id} className="p-4 rounded-lg border border-border bg-surface space-y-2">
                       <div className="flex items-center justify-between gap-2">
