@@ -171,6 +171,8 @@ async function fetchAllClinicsMetaInsights(days: number) {
       const accessToken = await decryptCred(cred.encrypted_key);
       const adAccountIds = cred.metadata?.ad_account_ids || (cred.metadata?.ad_account_id ? [cred.metadata.ad_account_id] : []);
       
+      let totalRowsForClinic = 0;
+
       for (const adAccountId of adAccountIds) {
         const insights = await metaFetch(`/${adAccountId}/insights`, {
           fields: 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,actions',
@@ -199,7 +201,10 @@ async function fetchAllClinicsMetaInsights(days: number) {
         if (rows.length > 0) {
           const { error } = await getSupabase().from('meta_daily_insights').upsert(rows, { onConflict: 'clinic_id,ad_account_id,date' });
           if (error) console.error(`Error upserting insights for ${adAccountId}:`, error);
-          else totalRows += rows.length;
+          else {
+            totalRows += rows.length;
+            totalRowsForClinic += rows.length;
+          }
         }
 
         // Daily AI-powered insight for this clinic (agent runs daily, stored for morning access)
@@ -212,7 +217,7 @@ async function fetchAllClinicsMetaInsights(days: number) {
           };
           const aiPrompt = `Eres un analista de marketing experto para clínicas de medicina estética. Analiza estos datos diarios de Meta Ads para la clínica: ${JSON.stringify(clinicContext)}. P[...]
 
-          let aiInsight = `Datos del día para ${adAccountIds.join(', ')}: ${rows.length} registros de insights. Base: priorizar cuentas con mejor CTR y CPC.`;
+          let aiInsight = `Datos del día para ${adAccountIds.join(', ')}: ${totalRowsForClinic} registros de insights. Base: priorizar cuentas con mejor CTR y CPC.`;
 
           const gemKey = Deno.env.get('GEMINI_API_KEY') || '';
           if (gemKey) {
