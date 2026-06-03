@@ -108,7 +108,7 @@ export default function Integrations() {
 
     if (form.service === 'meta') {
       if (!form.adAccountId.trim()) return 'Ad Account ID is required for Meta.'
-      if (!form.pageId.trim()) return 'Page ID is required for Meta to enable lead webhooks.'
+      // pageId is optional: needed only for Lead Ads webhooks.
 
       const adAccountIds = normalizeMetaAdAccountIds(form.adAccountId)
       const rawValues = String(form.adAccountId)
@@ -298,7 +298,7 @@ export default function Integrations() {
                     <p className="text-xs text-muted mt-1">Puedes añadir varios IDs separados por comas o espacios. Si tienes más de una cuenta Meta, ingrésalas todas para que el dashboard muestre el gasto combinado.</p>
                   </div>
                   <div>
-                    <label htmlFor="pageId-input" className="text-sm font-medium">ID de la Página <span className="text-red-500">*</span></label>
+                    <label htmlFor="pageId-input" className="text-sm font-medium">ID de la Página <span className="text-muted-foreground text-xs">(opcional)</span></label>
                     <Input
                       id="pageId-input"
                       type="text"
@@ -308,7 +308,7 @@ export default function Integrations() {
                       onChange={handleFieldChange}
                       className="mt-1"
                     />
-                    <p className="text-xs text-muted mt-1">Este campo es obligatorio para que el webhook de leads de Meta pueda activarse correctamente.</p>
+                    <p className="text-xs text-muted mt-1">Este campo es opcional y solo es necesario si deseas activar el webhook de leads de Meta.</p>
                   </div>
                   <div>
                     <label htmlFor="pixelId-input" className="text-sm font-medium">ID del Píxel de Meta</label>
