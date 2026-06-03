@@ -16,6 +16,10 @@ export default function Intelligence() {
   const [loading, setLoading] = useState({ funnel: true, campaigns: true, conversations: true, traceability: true })
   const [error, setError] = useState<{ funnel?: string; campaigns?: string; conversations?: string; traceability?: string }>({})
 
+  // Daily agent insights (pre-computed by daily-aggregates + agents, ready on morning login)
+  const [dailyInsights, setDailyInsights] = useState<any[]>([])
+  const [dailyLoading, setDailyLoading] = useState(true)
+
   // Traceability filter state
   const [traceFrom, setTraceFrom] = useState<string>(
     () => new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10)
@@ -152,6 +156,28 @@ export default function Intelligence() {
       })
   }, [traceFrom, traceTo, traceSource])
 
+  // Fetch pre-computed daily insights from agents (stored in agent_outputs by daily-aggregates)
+  useEffect(() => {
+    let active = true
+    const load = async () => {
+      setDailyLoading(true)
+      try {
+        const data: any = await invokeApi('/ai/outputs?limit=20')
+        if (!active) return
+        const daily = (data?.outputs || []).filter((o: any) => 
+          o.agent_type && (o.agent_type.includes('daily') || o.agent_type.includes('insight'))
+        )
+        setDailyInsights(daily)
+      } catch (e) {
+        // optional
+      } finally {
+        if (active) setDailyLoading(false)
+      }
+    }
+    load()
+    return () => { active = false }
+  }, [])
+
   let attributionContent;
   if (loading.campaigns) {
     attributionContent = <p className="text-muted text-sm">Cargando datos de atribución…</p>;
@@ -262,6 +288,7 @@ export default function Intelligence() {
           <TabsTrigger value="funnel">Embudo WhatsApp</TabsTrigger>
           <TabsTrigger value="conversations">Conversaciones</TabsTrigger>
           <TabsTrigger value="traceability">Trazabilidad</TabsTrigger>
+          <TabsTrigger value="daily-insights">Insights Diarios (Agentes)</TabsTrigger>
         </TabsList>
 
         <TabsContent value="attribution">
@@ -316,6 +343,33 @@ export default function Intelligence() {
                 onSourceChange={setTraceSource}
               />
               {traceabilityContent}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="daily-insights">
+          <Card>
+            <CardHeader>
+              <CardTitle>Insights Diarios de Agentes (listos al ingresar por la mañana)</CardTitle>
+              <p className="text-xs text-muted">Generados automáticamente por el daily-aggregates + agentes IA cada día. Categorías: Meta, general, etc. Ayudan a decisiones: priorizar campañas, atender riesgos, etc.</p>
+            </CardHeader>
+            <CardContent>
+              {dailyLoading ? <p className="text-muted text-sm">Cargando insights del día...</p> : dailyInsights.length === 0 ? (
+                <p className="text-muted text-sm">Aún no hay insights diarios generados. El proceso diario los creará.</p>
+              ) : (
+                <div className="space-y-4">
+                  {dailyInsights.map((ins: any, idx: number) => (
+                    <div key={idx} className="p-4 border rounded-lg bg-surface">
+                      <div className="flex justify-between text-xs text-muted mb-2">
+                        <span className="font-medium">{ins.agent_type}</span>
+                        <span>{ins.created_at ? new Date(ins.created_at).toLocaleDateString('es-ES') : ''}</span>
+                      </div>
+                      <div className="text-sm whitespace-pre-wrap">{ins.output_text || JSON.stringify(ins.output_data || {})}</div>
+                      {ins.model_used && <div className="text-[10px] text-muted mt-1">Modelo: {ins.model_used}</div>}
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
