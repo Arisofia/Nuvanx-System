@@ -75,7 +75,8 @@ Deno.serve(async (req: Request) => {
       status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   } catch (err: any) {
-    return new Response(JSON.stringify({ success: false, message: err?.message ?? String(err) }), {
+    console.error('[supabase/functions/leads] Error handling request:', err);
+    return new Response(JSON.stringify({ success: false, message: 'Internal server error' }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
