@@ -274,7 +274,9 @@ jobs:
 
       - name: Prepare frontend secret env
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        run: echo "VITE_MCP_API_KEY=${{ secrets.MCP_API_KEY }}" >> $GITHUB_ENV
+        env:
+          VITE_MCP_API_KEY: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && secrets.MCP_API_KEY || '' }}
+        run: echo "VITE_MCP_API_KEY=$VITE_MCP_API_KEY" >> $GITHUB_ENV
 
       - name: Prepare frontend env for PR validation
         run: |
@@ -400,11 +402,16 @@ jobs:
 
       - name: Prepare test secret env
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          MCP_API_KEY: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && secrets.MCP_API_KEY || '' }}
+          FALLBACK_META_AD_ACCOUNT_ID: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && secrets.FALLBACK_META_AD_ACCOUNT_ID || '9523446201036125' }}
+          SHEETS_WEBHOOK_URL_DOCTORALIA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && secrets.SHEETS_WEBHOOK_URL_DOCTORALIA || '' }}
+          SHEETS_WEBHOOK_SECRET_DOCTORALIA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && secrets.SHEETS_WEBHOOK_SECRET_DOCTORALIA || 'webhook-doctoralia-secret-example' }}
         run: |
-          echo "MCP_API_KEY=${{ secrets.MCP_API_KEY }}" >> $GITHUB_ENV
-          echo "FALLBACK_META_AD_ACCOUNT_ID=${{ secrets.FALLBACK_META_AD_ACCOUNT_ID }}" >> $GITHUB_ENV
-          echo "SHEETS_WEBHOOK_URL_DOCTORALIA=${{ secrets.SHEETS_WEBHOOK_URL_DOCTORALIA }}" >> $GITHUB_ENV
-          echo "SHEETS_WEBHOOK_SECRET_DOCTORALIA=${{ secrets.SHEETS_WEBHOOK_SECRET_DOCTORALIA }}" >> $GITHUB_ENV
+          echo "MCP_API_KEY=$MCP_API_KEY" >> $GITHUB_ENV
+          echo "FALLBACK_META_AD_ACCOUNT_ID=$FALLBACK_META_AD_ACCOUNT_ID" >> $GITHUB_ENV
+          echo "SHEETS_WEBHOOK_URL_DOCTORALIA=$SHEETS_WEBHOOK_URL_DOCTORALIA" >> $GITHUB_ENV
+          echo "SHEETS_WEBHOOK_SECRET_DOCTORALIA=$SHEETS_WEBHOOK_SECRET_DOCTORALIA" >> $GITHUB_ENV
 
       - name: Run shared and functions tests
         run: |
