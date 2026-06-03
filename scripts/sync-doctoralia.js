@@ -86,7 +86,10 @@ function loadServiceAccountJson() {
   return null;
 }
 
-// Ensure we use the Session Pooler port (6543) for Supabase poolers if port is missing.
+// Normalize DATABASE_URL:
+// - Prefer/keep Session Pooler (port 5432, host aws-*-pooler.supabase.com) for reliability.
+// - Transaction pooler is 6543; the CI action rewrites tx -> session where appropriate.
+// - Direct db.* hosts are IPv6-only for this project → rewrite attempts or warnings elsewhere.
 const DATABASE_URL = (() => {
   const url = process.env.DATABASE_URL;
   if (!url) return undefined;
@@ -95,13 +98,15 @@ const DATABASE_URL = (() => {
     const isPooler = u.hostname.includes('pooler.supabase.');
     const isDirect = u.hostname.startsWith('db.') && (u.hostname.endsWith('.supabase.co') || u.hostname.endsWith('.supabase.com'));
 
-    // Fix .co -> .com for poolers
+    // Fix .co -> .com for poolers (some older strings)
     if (isPooler && u.hostname.endsWith('.supabase.co')) {
       u.hostname = u.hostname.replace('.supabase.co', '.supabase.com');
     }
 
-    if (isPooler && (!u.port || u.port === '5432')) {
-      u.port = '6543';
+    // Only force 6543 (tx pooler) if no port was specified at all.
+    // If caller provided :5432 for session pooler, keep it.
+    if (isPooler && !u.port) {
+      u.port = '5432';  // default to session pooler (matches recommended secret)
     } else if (isDirect && (!u.port || u.port === '6543')) {
       u.port = '5432';
     }
@@ -562,7 +567,7 @@ async function setupGoogleSheetsAuth() {
   if (saJson) {
     try {
       saObject = JSON.parse(saJson);
-      console.log('[sync-doctoralia] Using Google Service Account credentials.');
+      console.log('[sync-doctoralia] Using Google Service Account credentials from environment.');
       return {
         auth: new google.auth.GoogleAuth({
           credentials: saObject,
