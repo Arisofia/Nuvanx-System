@@ -562,8 +562,7 @@ async function setupGoogleSheetsAuth() {
   if (saJson) {
     try {
       saObject = JSON.parse(saJson);
-      const email = getServiceAccountEmail(saObject);
-      console.log(`[sync-doctoralia] Using Google Service Account: ${maskSensitive(email)}`);
+      console.log('[sync-doctoralia] Using Google Service Account credentials.');
       return {
         auth: new google.auth.GoogleAuth({
           credentials: saObject,
