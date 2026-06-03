@@ -17,7 +17,6 @@ BEGIN;
 
 -- Drop dead tables (IF EXISTS for safety in all envs)
 DROP TABLE IF EXISTS public.agent_run_steps;
-DROP TABLE IF EXISTS public.appointments;
 DROP TABLE IF EXISTS public.audit_log;
 DROP TABLE IF EXISTS public.dashboard_metrics;
 DROP TABLE IF EXISTS public.design_tokens;
@@ -31,8 +30,9 @@ DROP TABLE IF EXISTS public.lead_timeline_events;
 DROP TABLE IF EXISTS public.side_effect_locks;
 
 -- Note: We keep figma_sync_log (actively used), api_call_log (used for logging),
--- appointments/doctors/treatment_types/patients (referenced in reports/live/kpis
--- and doctoralia flows), etc.
+-- appointments (base table for vw_doctor_performance_real used by Reports "Doctor Performance"),
+-- doctors/treatment_types/patients (referenced in reports/live/kpis and doctoralia flows), etc.
+-- Removed appointments from drops to avoid breaking dependent view (2BP01 dependency error).
 
 COMMIT;
 
