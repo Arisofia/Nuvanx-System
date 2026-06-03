@@ -595,7 +595,7 @@ async function fetchSheetRows(sheets, saObject) {
   try {
     const meta = await sheets.spreadsheets.get({
       spreadsheetId: SHEET_ID,
-      fields: 'sheets.properties.title,sheets.properties.sheetId'
+      fields: 'sheets.properties.title,sheets.properties.sheetId,sheets.properties.gridProperties'
     });
 
     const sheetsList = meta.data.sheets || [];
@@ -621,9 +621,26 @@ async function fetchSheetRows(sheets, saObject) {
     console.warn(`[sync-doctoralia] Could not fetch spreadsheet metadata: ${maskSensitive(metaErr.message)}. Will try direct range.`);
   }
 
+  let effectiveRange = SHEET_RANGE.trim();
+  if (targetSheetTitle) {
+    // Try to get actual dimensions from metadata to avoid overly large ranges
+    // that can cause "invalid argument" on certain sheets or when ID is wrong.
+    const sheetMeta = sheetsList.find(s => s.properties.title === targetSheetTitle);
+    const gp = sheetMeta?.properties?.gridProperties;
+    if (gp) {
+      const maxRows = Math.min(gp.rowCount || 5000, 20000);
+      // If the configured range looks like A1:LETTER9999, cap the row number.
+      if (/^A1:[A-Z]+\d+$/.test(effectiveRange)) {
+        effectiveRange = effectiveRange.replace(/\d+$/, String(maxRows));
+      } else if (effectiveRange === 'A1:Z5000' || effectiveRange.includes(':Z')) {
+        effectiveRange = `A1:Z${maxRows}`;
+      }
+    }
+  }
+
   const range = targetSheetTitle 
-    ? `'${targetSheetTitle.replaceAll("'", "''")}'!${SHEET_RANGE.trim()}`
-    : SHEET_RANGE.trim();
+    ? `'${targetSheetTitle.replaceAll("'", "''")}'!${effectiveRange}`
+    : effectiveRange;
 
   console.log(`[sync-doctoralia] Final range: ${range}`);
 
@@ -634,17 +651,27 @@ async function fetchSheetRows(sheets, saObject) {
     });
     let values = res.data.values ?? [];
 
-    // Trim trailing completely empty rows. Large ranges (e.g. A1:Z5000) or Doctoralia/Listado
-    // exports often include 100+ blank rows at the end, which would otherwise be counted
-    // as "skipped" and slow down processing / reconciliation.
+    // Trim trailing completely empty rows OR "mostly empty" rows that only contain
+    // default values in trailing columns (e.g. "NUVANX Medicina Estética Láser" only in col T/Clínica,
+    // with A-S empty). These 170-row tails from exports cause processing noise and can
+    // contribute to range/arg issues if the sheet is large.
+    // We consider a data row "empty" for trimming if its primary key columns are blank.
+    const beforeTrim = values.length;
     while (values.length > 0) {
       const last = values[values.length - 1] || [];
-      const isEmptyRow = last.every((c) => c == null || String(c).trim() === '');
-      if (isEmptyRow) {
+      const isAllEmpty = last.every((c) => c == null || String(c).trim() === '');
+      // Key columns for this dataset: col 5 (Asunto/F, the unique key), col 1 (Fecha/B)
+      const keyColsBlank = (last[5] == null || String(last[5]).trim() === '') &&
+                           (last[1] == null || String(last[1]).trim() === '');
+      if (isAllEmpty || keyColsBlank) {
         values.pop();
       } else {
         break;
       }
+    }
+    const trimmed = beforeTrim - values.length;
+    if (trimmed > 0) {
+      console.log(`[sync-doctoralia] Trimmed ${trimmed} trailing empty or mostly-empty rows (e.g. clinic name only in last column).`);
     }
     return values;
   } catch (err) {

@@ -76,9 +76,11 @@ jobs:
           SHEET_ID_EFFECTIVE="${DOCTORALIA_SHEET_ID:-${DOCTORALIA_DRIVE_FILE_ID:-}}"
           if [ -n "${EXPECTED_SHEET_ID:-}" ]; then
             if [ -n "${SHEET_ID_EFFECTIVE:-}" ] && [ "$SHEET_ID_EFFECTIVE" != "$EXPECTED_SHEET_ID" ]; then
-              echo "::warning::DOCTORALIA_SHEET_ID/DOCTORALIA_DRIVE_FILE_ID does not match EXPECTED_DOCTORALIA_SHEET_ID (continuing anyway)."
+              echo "::error::DOCTORALIA_SHEET_ID/DOCTORALIA_DRIVE_FILE_ID does not match EXPECTED_DOCTORALIA_SHEET_ID. Aborting to avoid using the wrong spreadsheet (common cause of Google Sheets 400 INVALID_ARGUMENT)."
               echo "Expected: $EXPECTED_SHEET_ID"
               echo "Received: $SHEET_ID_EFFECTIVE"
+              echo "Fix: Update the DOCTORALIA_SHEET_ID (or DOCTORALIA_DRIVE_FILE_ID) secret to the correct value from the Google Sheet URL."
+              exit 1
             else
               echo "Sheet ID validated successfully against EXPECTED_DOCTORALIA_SHEET_ID."
             fi
