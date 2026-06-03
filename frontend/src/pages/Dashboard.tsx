@@ -57,12 +57,22 @@ export default function Dashboard() {
 
   if (metrics.loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]" role="status" aria-live="polite">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
-          <p className="text-sm font-bold text-[#8E8680] uppercase tracking-widest animate-pulse">
-            Sincronizando Nuvanx…
-          </p>
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-12 pb-24 animate-pulse">
+        <div className="flex flex-col md:flex-row justify-between items-end gap-6 mb-12">
+          <div className="space-y-4">
+            <div className="h-16 w-64 bg-[#E5D5C5]/30 rounded-3xl" />
+            <div className="h-4 w-48 bg-[#E5D5C5]/20 rounded-xl" />
+          </div>
+          <div className="h-14 w-48 bg-[#E5D5C5]/30 rounded-2xl" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-48 bg-white/60 rounded-[2rem] border border-[#E5D5C5]/20 shadow-sm" />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+          <div className="h-[500px] bg-white/60 rounded-[2.5rem] border border-[#E5D5C5]/20 shadow-sm" />
+          <div className="h-[500px] bg-white/60 rounded-[2.5rem] border border-[#E5D5C5]/20 shadow-sm" />
         </div>
       </div>
     )

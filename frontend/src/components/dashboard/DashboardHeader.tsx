@@ -1,3 +1,4 @@
+import { Filter, Calendar, MapPin, Target } from 'lucide-react'
 import DataModeBadge from '../ui/DataModeBadge'
 import { MetaAccountsInline } from '../MetaAccountsNotice'
 
@@ -35,36 +36,41 @@ export function DashboardHeader({
   metaAccountIds,
 }: DashboardHeaderProps) {
   const controlTextClass = 'text-[#5C5550] font-bold uppercase'
-  const selectClass = 'bg-transparent border-none focus:ring-0 text-[10px] font-bold uppercase tracking-wider px-4 py-2 cursor-pointer'
-  const dateInputClass = 'bg-transparent border-none focus:ring-0 text-[10px] font-bold uppercase w-28 text-center'
+  const selectClass = 'bg-transparent border-none focus:ring-0 text-[10px] font-bold uppercase tracking-wider px-4 py-2 cursor-pointer outline-none appearance-none'
+  const dateInputClass = 'bg-transparent border-none focus:ring-0 text-[10px] font-bold uppercase w-28 text-center outline-none cursor-pointer'
 
   return (
-    <div className="flex flex-col space-y-8 mb-12">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-        <div className="space-y-2">
-          <div className="flex items-center gap-4">
-            <h1 id="dashboard-title" className="text-5xl font-serif font-bold tracking-tight text-[#2C2825]">Dashboard</h1>
-            <DataModeBadge overallMode={dataMode as any} />
+    <div className="flex flex-col space-y-10 mb-12">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-8">
+        <div className="space-y-4">
+          <div className="flex items-center gap-6">
+            <h1 id="dashboard-title" className="text-6xl font-serif font-bold tracking-tight text-[#2C2825] drop-shadow-sm">Dashboard</h1>
+            <div className="mt-2">
+              <DataModeBadge overallMode={dataMode as any} />
+            </div>
           </div>
-          <p className={`${controlTextClass} text-xs tracking-wide`}>Control de rendimiento médico</p>
+          <div className="flex items-center gap-3">
+            <div className="h-[2px] w-12 bg-[#B08B5A]/30" />
+            <p className={`${controlTextClass} text-[11px] tracking-[0.25em] text-[#84643B]`}>Control de rendimiento médico</p>
+          </div>
           <MetaAccountsInline
             accountIds={metaAccountIds}
             context="Dashboard consolidado de inversión, campañas y leads atribuidos."
-            className="max-w-2xl bg-white/60"
+            className="max-w-2xl bg-white/40 border-none shadow-none p-0"
           />
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1 bg-white/60 backdrop-blur-md p-1.5 rounded-2xl border border-border/40 shadow-sm">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1.5 bg-white/80 backdrop-blur-xl p-2 rounded-[1.25rem] border border-[#E5D5C5]/60 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
             {([7, 14, 30, 90] as const).map((d) => (
               <button
                 type="button"
                 key={d}
                 onClick={() => { setDays(d); setCustomFrom(''); setCustomTo('') }}
-                className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase transition-all ${
+                className={`px-5 py-2.5 rounded-xl text-[10px] font-bold uppercase transition-all duration-300 ${
                   !customFrom && days === d
-                    ? 'bg-primary text-white shadow-md'
-                    : 'text-[#8E8680] hover:text-primary hover:bg-primary/5'
+                    ? 'bg-[#84643B] text-white shadow-[0_4px_12px_rgba(132,100,59,0.3)]'
+                    : 'text-[#8E8680] hover:text-[#84643B] hover:bg-[#84643B]/5'
                 }`}
               >
                 {d}d
@@ -74,55 +80,66 @@ export function DashboardHeader({
         </div>
       </div>
 
-      <div className="w-full flex flex-col lg:flex-row items-center justify-between gap-6 bg-white/40 backdrop-blur-md p-6 rounded-[2rem] border border-border/40 shadow-sm">
-        <div className="flex flex-wrap items-center gap-4">
+      <div className="w-full grid grid-cols-1 lg:grid-cols-2 gap-8 items-center justify-between bg-white/30 backdrop-blur-2xl p-8 rounded-[2.5rem] border border-[#E5D5C5]/40 shadow-[0_20px_50px_rgba(176,139,90,0.05)]">
+        <div className="flex flex-wrap items-center gap-6">
           {(sourcesList.length > 0 || campaignsList.length > 0) && (
-            <div className="flex items-center gap-2 bg-white/80 p-1.5 rounded-2xl border border-border/60 shadow-inner">
+            <div className="flex items-center gap-1 bg-white/90 p-2 rounded-2xl border border-[#E5D5C5]/60 shadow-[inset_0_2px_4px_rgba(0,0,0,0.02)]">
               {sourcesList.length > 0 && (
-                <select
-                  value={sourceFilter}
-                  onChange={(e) => setSourceFilter(e.target.value)}
-                  className={selectClass + ' border-r border-border/40'}
-                >
-                  <option value="ALL">Todas las fuentes</option>
-                  {sourcesList.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
+                <div className="flex items-center border-r border-[#E5D5C5]/40 pr-2">
+                  <MapPin className="w-3.5 h-3.5 ml-3 text-[#B08B5A]" />
+                  <select
+                    value={sourceFilter}
+                    onChange={(e) => setSourceFilter(e.target.value)}
+                    className={selectClass}
+                  >
+                    <option value="ALL">Todas las fuentes</option>
+                    {sourcesList.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
               )}
               {campaignsList.length > 0 && (
-                <select
-                  value={campaignId}
-                  onChange={(e) => setCampaignId(e.target.value)}
-                  className={selectClass}
-                >
-                  <option value="ALL">Todas las campañas</option>
-                  {campaignsList.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
+                <div className="flex items-center">
+                  <Target className="w-3.5 h-3.5 ml-3 text-[#B08B5A]" />
+                  <select
+                    value={campaignId}
+                    onChange={(e) => setCampaignId(e.target.value)}
+                    className={selectClass}
+                  >
+                    <option value="ALL">Todas las campañas</option>
+                    {campaignsList.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
               )}
             </div>
           )}
         </div>
 
-        <div className="flex items-center gap-2 bg-white/80 p-2 rounded-2xl border border-border/60 shadow-inner">
-          <input
-            type="date"
-            value={customFrom}
-            onChange={(e) => {
-              setCustomFrom(e.target.value)
-              setCustomTo((prev) => prev || new Date().toISOString().slice(0, 10))
-            }}
-            className={dateInputClass}
-          />
-          <span className="text-[#8E8680] text-xs">→</span>
-          <input
-            type="date"
-            value={customTo}
-            onChange={(e) => setCustomTo(e.target.value)}
-            className={dateInputClass}
-          />
+        <div className="flex justify-end">
+          <div className="flex items-center gap-3 bg-white/90 p-2.5 rounded-2xl border border-[#E5D5C5]/60 shadow-[inset_0_2px_4px_rgba(0,0,0,0.02)]">
+            <Calendar className="w-3.5 h-3.5 ml-2 text-[#B08B5A]" />
+            <div className="flex items-center">
+              <input
+                type="date"
+                value={customFrom}
+                onChange={(e) => {
+                  setCustomFrom(e.target.value)
+                  setCustomTo((prev) => prev || new Date().toISOString().slice(0, 10))
+                }}
+                className={dateInputClass}
+              />
+              <span className="text-[#8E8680] text-[10px] font-bold mx-2">→</span>
+              <input
+                type="date"
+                value={customTo}
+                onChange={(e) => setCustomTo(e.target.value)}
+                className={dateInputClass}
+              />
+            </div>
+          </div>
         </div>
       </div>
     </div>
