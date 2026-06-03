@@ -8,6 +8,17 @@ import { z } from 'zod'
 import { zodToJsonSchema } from 'zod-to-json-schema'
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, MCP_API_KEY } from '../_shared/config.ts'
 
+type ToolInput = {
+  clinic_id?: string;
+  stage?: string;
+  source?: string;
+  date_from?: string;
+  date_to?: string;
+  limit?: number;
+  ad_account_id?: string;
+  query?: string;
+}
+
 const app = new Hono()
 
 const mcp = new McpServer({
@@ -85,7 +96,7 @@ mcp.tool('get_dashboard_metrics', {
     date_from: DateSchema.optional().describe('Start date in YYYY-MM-DD format.'),
     date_to: DateSchema.optional().describe('End date in YYYY-MM-DD format.'),
   }),
-  handler: async ({ clinic_id, date_from, date_to }: { clinic_id?: string; date_from?: string; date_to?: string }) => {
+  handler: async ({ clinic_id, date_from, date_to }: ToolInput) => {
     let leadsQuery = getSupabase()
       .from('leads')
       .select('id,stage,source,revenue,converted_patient_id,created_at')
@@ -134,25 +145,25 @@ mcp.tool('get_dashboard_metrics', {
     const integrations: any[] = integrationsRes.data ?? []
     const metaRows: any[] = metaRes.data ?? []
 
-    const byStage = leads.reduce<Record<string, number>>((acc, lead) => {
+    const byStage = leads.reduce<Record<string, number>>((acc: Record<string, number>, lead: any) => {
       const key = String(lead.stage ?? 'unknown')
       acc[key] = (acc[key] ?? 0) + 1
       return acc
     }, {})
 
-    const bySource = leads.reduce<Record<string, number>>((acc, lead) => {
+    const bySource = leads.reduce<Record<string, number>>((acc: Record<string, number>, lead: any) => {
       const key = String(lead.source ?? 'unknown')
       acc[key] = (acc[key] ?? 0) + 1
       return acc
     }, {})
 
     const totalLeads = leads.length
-    const conversions = leads.filter((lead) => ['treatment', 'closed'].includes(String(lead.stage))).length
-    const verifiedRevenue = settlements.reduce((sum, row) => sum + Number(row.amount_net ?? 0), 0)
-    const metaSpend = metaRows.reduce((sum, row) => sum + Number(row.spend ?? 0), 0)
-    const metaConversions = metaRows.reduce((sum, row) => sum + Number(row.conversions ?? 0), 0)
-    const metaClicks = metaRows.reduce((sum, row) => sum + Number(row.clicks ?? 0), 0)
-    const metaImpressions = metaRows.reduce((sum, row) => sum + Number(row.impressions ?? 0), 0)
+    const conversions = leads.filter((lead: any) => ['treatment', 'closed'].includes(String(lead.stage))).length
+    const verifiedRevenue = settlements.reduce((sum: number, row: any) => sum + Number(row.amount_net ?? 0), 0)
+    const metaSpend = metaRows.reduce((sum: number, row: any) => sum + Number(row.spend ?? 0), 0)
+    const metaConversions = metaRows.reduce((sum: number, row: any) => sum + Number(row.conversions ?? 0), 0)
+    const metaClicks = metaRows.reduce((sum: number, row: any) => sum + Number(row.clicks ?? 0), 0)
+    const metaImpressions = metaRows.reduce((sum: number, row: any) => sum + Number(row.impressions ?? 0), 0)
 
     return jsonContent({
       period: { date_from: date_from ?? null, date_to: date_to ?? null },
@@ -161,7 +172,7 @@ mcp.tool('get_dashboard_metrics', {
         total: totalLeads,
         conversions,
         conversion_rate_pct: totalLeads > 0 ? Number(((conversions / totalLeads) * 100).toFixed(1)) : 0,
-        patient_matches: leads.filter((lead) => lead.converted_patient_id != null).length,
+        patient_matches: leads.filter((lead: any) => lead.converted_patient_id != null).length,
         by_stage: byStage,
         by_source: bySource,
       },
@@ -170,7 +181,7 @@ mcp.tool('get_dashboard_metrics', {
         settlements_count: settlements.length,
       },
       integrations: {
-        connected: integrations.filter((integration) => integration.status === 'connected').length,
+        connected: integrations.filter((integration: any) => integration.status === 'connected').length,
         total: integrations.length,
       },
       meta: {
@@ -195,7 +206,7 @@ mcp.tool('get_leads', {
     date_to: DateSchema.optional(),
     limit: LimitSchema,
   }),
-  handler: async ({ clinic_id, stage, source, date_from, date_to, limit }: { clinic_id?: string; stage?: string; source?: string; date_from?: string; date_to?: string; limit: number }) => {
+  handler: async ({ clinic_id, stage, source, date_from, date_to, limit }: ToolInput) => {
     let query = getSupabase()
       .from('leads')
       .select('id,clinic_id,user_id,name,email,phone,source,stage,revenue,created_at,updated_at,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name')
@@ -226,7 +237,7 @@ mcp.tool('get_meta_campaign_insights', {
     date_to: DateSchema.optional(),
     limit: z.number().int().min(1).max(500).default(100),
   }),
-  handler: async ({ clinic_id, ad_account_id, date_from, date_to, limit }: { clinic_id?: string; ad_account_id?: string; date_from?: string; date_to?: string; limit: number }) => {
+  handler: async ({ clinic_id, ad_account_id, date_from, date_to, limit }: ToolInput) => {
     let query = getSupabase()
       .from('meta_daily_insights')
       .select('clinic_id,user_id,ad_account_id,date,impressions,reach,clicks,spend,conversions,ctr,cpc,cpm,messaging_conversations,updated_at')
@@ -253,7 +264,7 @@ mcp.tool('search_leads', {
     clinic_id: z.string().uuid().optional(),
     limit: z.number().int().min(1).max(100).default(30),
   }),
-  handler: async ({ query, clinic_id, limit }: { query: string; clinic_id?: string; limit: number }) => {
+  handler: async ({ query, clinic_id, limit }: ToolInput & { query: string }) => {
     const term = escapeIlikeTerm(query)
     if (!term) return jsonContent([])
 
@@ -284,7 +295,7 @@ mcp.tool('get_risk_leads', {
     clinic_id: z.string().uuid().optional(),
     limit: LimitSchema,
   }),
-  handler: async ({ clinic_id, limit }: { clinic_id?: string; limit: number }) => {
+  handler: async ({ clinic_id, limit }: ToolInput) => {
     let query = getSupabase()
       .from('leads')
       .select('id, name, phone, email, stage, created_at, clinic_id')
@@ -311,7 +322,7 @@ mcp.tool('get_top_campaigns', {
   inputSchema: z.object({
     clinic_id: z.string().uuid().optional(),
   }),
-  handler: async ({ clinic_id }: { clinic_id?: string }) => {
+  handler: async ({ clinic_id }: ToolInput) => {
     let query = getSupabase()
       .from('financial_settlements')
       .select('campaign_name, amount_net')
@@ -348,7 +359,7 @@ mcp.tool('get_leads_by_stage', {
     clinic_id: z.string().uuid().optional(),
     date_from: DateSchema.optional(),
   }),
-  handler: async ({ clinic_id, date_from }: { clinic_id?: string; date_from?: string }) => {
+  handler: async ({ clinic_id, date_from }: ToolInput) => {
     let query = getSupabase()
       .from('leads')
       .select('stage')
