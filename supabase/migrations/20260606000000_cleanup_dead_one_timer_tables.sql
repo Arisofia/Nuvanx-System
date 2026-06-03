@@ -22,9 +22,10 @@ DROP TABLE IF EXISTS public.dashboard_metrics;
 DROP TABLE IF EXISTS public.design_tokens;
 DROP TABLE IF EXISTS public.doctoralia_lead_matches;
 DROP TABLE IF EXISTS public.figma_components;
-DROP TABLE IF EXISTS public.kpi_blocked;
-DROP TABLE IF EXISTS public.kpi_definitions;
-DROP TABLE IF EXISTS public.kpi_values;
+-- kpi_* are dead (no active origin/output per audit); drop children first or use CASCADE to satisfy FKs (e.g. kpi_values -> kpi_definitions)
+DROP TABLE IF EXISTS public.kpi_values CASCADE;
+DROP TABLE IF EXISTS public.kpi_blocked CASCADE;
+DROP TABLE IF EXISTS public.kpi_definitions CASCADE;
 DROP TABLE IF EXISTS public.lead_scores;
 DROP TABLE IF EXISTS public.lead_timeline_events;
 DROP TABLE IF EXISTS public.side_effect_locks;
