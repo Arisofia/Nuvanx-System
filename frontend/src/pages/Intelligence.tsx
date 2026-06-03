@@ -355,19 +355,38 @@ export default function Intelligence() {
             </CardHeader>
             <CardContent>
               {dailyLoading ? <p className="text-muted text-sm">Cargando insights del día...</p> : dailyInsights.length === 0 ? (
-                <p className="text-muted text-sm">Aún no hay insights diarios generados. El proceso diario los creará.</p>
+                <p className="text-muted text-sm">Aún no hay insights diarios generados. El proceso diario (daily-aggregates + agentes) los creará automáticamente.</p>
               ) : (
                 <div className="space-y-4">
-                  {dailyInsights.map((ins: any, idx: number) => (
-                    <div key={idx} className="p-4 border rounded-lg bg-surface">
-                      <div className="flex justify-between text-xs text-muted mb-2">
-                        <span className="font-medium">{ins.agent_type}</span>
-                        <span>{ins.created_at ? new Date(ins.created_at).toLocaleDateString('es-ES') : ''}</span>
+                  {dailyInsights.map((ins: any, idx: number) => {
+                    let content = ins.output_text || '';
+                    let parsed: any = null;
+                    try { parsed = JSON.parse(content); content = ''; } catch {}
+                    return (
+                      <div key={idx} className="p-4 border rounded-lg bg-surface">
+                        <div className="flex justify-between text-xs text-muted mb-2">
+                          <span className="font-medium uppercase tracking-widest">{ins.agent_type?.replace('daily-','').replace('-',' ')}</span>
+                          <span>{ins.created_at ? new Date(ins.created_at).toLocaleDateString('es-ES') : ''}</span>
+                        </div>
+                        {parsed && typeof parsed === 'object' ? (
+                          <div className="space-y-2 text-sm">
+                            {parsed.recommendations && Array.isArray(parsed.recommendations) && (
+                              <div>
+                                <div className="font-semibold text-xs uppercase text-primary mb-1">Recomendaciones accionables:</div>
+                                <ul className="list-disc pl-5">{parsed.recommendations.map((r: string, i: number) => <li key={i}>{r}</li>)}</ul>
+                              </div>
+                            )}
+                            {parsed.ai_summary && <div><span className="font-semibold text-xs uppercase">Resumen IA:</span> {parsed.ai_summary}</div>}
+                            {parsed.risk_leads != null && <div>Riesgo leads: {parsed.risk_leads}</div>}
+                            {parsed.doctoralia_summary && <div>Doctoralia: €{parsed.doctoralia_summary.total_revenue} ({parsed.doctoralia_summary.total_patients} pacientes)</div>}
+                          </div>
+                        ) : (
+                          <div className="text-sm whitespace-pre-wrap">{content || JSON.stringify(ins.output_data || {})}</div>
+                        )}
+                        {ins.model_used && <div className="text-[10px] text-muted mt-1">Agente: {ins.model_used}</div>}
                       </div>
-                      <div className="text-sm whitespace-pre-wrap">{ins.output_text || JSON.stringify(ins.output_data || {})}</div>
-                      {ins.model_used && <div className="text-[10px] text-muted mt-1">Modelo: {ins.model_used}</div>}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
