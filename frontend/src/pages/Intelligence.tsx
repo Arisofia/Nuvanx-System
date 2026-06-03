@@ -168,8 +168,8 @@ export default function Intelligence() {
           o.agent_type && (o.agent_type.includes('daily') || o.agent_type.includes('insight'))
         )
         setDailyInsights(daily)
-      } catch (e) {
-        // optional
+      } catch {
+        void 0
       } finally {
         if (active) setDailyLoading(false)
       }
@@ -361,7 +361,7 @@ export default function Intelligence() {
                   {dailyInsights.map((ins: any, idx: number) => {
                     let content = ins.output_text || '';
                     let parsed: any = null;
-                    try { parsed = JSON.parse(content); content = ''; } catch {}
+                    try { parsed = JSON.parse(content); content = ''; } catch { void 0 }
                     return (
                       <div key={idx} className="p-4 border rounded-lg bg-surface">
                         <div className="flex justify-between text-xs text-muted mb-2">

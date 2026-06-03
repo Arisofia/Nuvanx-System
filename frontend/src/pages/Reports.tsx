@@ -237,8 +237,8 @@ export default function Reports() {
           setOrganicSummary(orgRes.status === 'fulfilled' ? (orgRes.value?.summary || orgRes.value) : null)
           setIgSummary(igRes.status === 'fulfilled' ? (igRes.value?.summary || igRes.value) : null)
         }
-      } catch (e) {
-        // silent, optional data
+      } catch {
+        void 0
       } finally {
         if (!cancelled) setMetaExtraLoading(false)
       }
