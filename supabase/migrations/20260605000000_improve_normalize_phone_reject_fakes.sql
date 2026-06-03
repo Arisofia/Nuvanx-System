@@ -61,6 +61,26 @@ COMMENT ON FUNCTION public.normalize_phone(TEXT) IS
 --    This prevents bogus matches in reconciliation / attribution / traceability.
 --    Safe: only affects all-zero strings; real phones starting with 0 after prefix strip are rare and would have been 00... anyway.
 
+-- Ensure columns exist (defensive; the dedicated earlier migration 20260604100000
+-- should have added them, but this makes the backfill resilient).
+ALTER TABLE IF EXISTS public.financial_settlements
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE IF EXISTS public.leads
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE IF EXISTS public.produccion_intermediarios
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema='public' AND table_name='doctoralia_patients'
+  ) THEN
+    ALTER TABLE public.doctoralia_patients
+      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+  END IF;
+END $$;
+
 UPDATE public.financial_settlements
 SET phone_normalized = NULL,
     updated_at = NOW()
@@ -83,6 +103,7 @@ BEGIN
     SELECT 1 FROM information_schema.columns
     WHERE table_schema='public' AND table_name='doctoralia_patients' AND column_name='phone_normalized'
   ) THEN
+    -- Column updated_at guaranteed by the ALTERs above (or the dedicated 20260604100000 migration)
     UPDATE public.doctoralia_patients
     SET phone_normalized = NULL,
         updated_at = NOW()
