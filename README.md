@@ -104,17 +104,25 @@ This table functions as the patient master, containing demographic and contact i
 * **Data Cleaning**: Numeric fields like `Importe` or `Edad` may require cleaning to remove non-numeric characters before import.
 * **Dates**: Convert all date columns to ISO `YYYY-MM-DD` standard format.
 
-#### Formulas for "Doctoralia" Sheet (columns M-S, set as ARRAYFORMULA in row 2)
+#### Formulas for "Doctoralia" Sheet (columns M-T, set as ARRAYFORMULA in row 1)
 
-| Columna | Encabezado      | Fórmula en la Fila 2 (Celda M2, N2, etc.)                                                    |
-| :------ | :-------------- | :------------------------------------------------------------------------------------------- |
-| **M**   | **ID**          | `=ARRAYFORMULA(IF(F2:F="", "", IFERROR(REGEXEXTRACT(F2:F, "^(\d+)\."), "")))`                |
-| **N**   | **Nombre**      | `=ARRAYFORMULA(IF(F2:F="", "", IFERROR(REGEXEXTRACT(F2:F, "^\d+\.\s+(.*?)\s+\["), "")))`     |
-| **O**   | **Teléfono**    | `=ARRAYFORMULA(IF(F2:F="", "", IFERROR(REGEXEXTRACT(F2:F, "\[(.*?)\]"), "")))`               |
-| **P**   | **Tratamiento** | `=ARRAYFORMULA(IF(F2:F="", "", IFERROR(REGEXEXTRACT(F2:F, "\[.*?\]\s*\((.*?)\)\s*$"), "")))` |
-| **Q**   | **Día**         | `=ARRAYFORMULA(IF(B2:B="", "", IFERROR(DAY(B2:B), "")))`                                     |
-| **R**   | **Mes**         | `=ARRAYFORMULA(IF(B2:B="", "", IFERROR(MONTH(B2:B), "")))`                                   |
-| **S**   | **Año**         | `=ARRAYFORMULA(IF(B2:B="", "", IFERROR(YEAR(B2:B), "")))`                                    |
+**Importante:** Coloca estas fórmulas en la **celda 1** de cada columna (M1, N1, etc.) y borra el resto de la columna. Esto incluye el encabezado + la fórmula ARRAYFORMULA para todas las filas de datos. El script webhook solo escribe columnas A-L, por lo que las fórmulas de M-T se preservan en updates y se expanden automáticamente en inserts.
+
+| Columna | Encabezado   | Fórmula (pegar en la celda **1** de la columna, ej. M1) |
+| :------ | :----------- | :----------------------------------------------------- |
+| **M**   | **ID**       | `={"ID"; ARRAYFORMULA(IF(F2:F=""; ""; IFERROR(REGEXEXTRACT(F2:F; "^(\d+)"); "")))}` |
+| **N**   | **Nombre**   | `={"Nombre"; ARRAYFORMULA(IF(F2:F=""; ""; IFERROR(REGEXEXTRACT(F2:F; "^\d+\.\s+(.*?)\s+\["); "")))}` |
+| **O**   | **Teléfono** | `={"Teléfono"; ARRAYFORMULA(IF(F2:F=""; ""; IFERROR(REGEXEXTRACT(F2:F; "\[(.*?)\]"); "")))}` |
+| **P**   | **Tratamiento** | `={"Tratamiento"; ARRAYFORMULA(IF(F2:F=""; ""; IFERROR(REGEXEXTRACT(F2:F; "\((.*?)\)\s*$"); "")))}` |
+| **Q**   | **Día**      | `={"Día"; ARRAYFORMULA(IF(B2:B=""; ""; DAY(B2:B)))}` |
+| **R**   | **Mes**      | `={"Mes"; ARRAYFORMULA(IF(B2:B=""; ""; MONTH(B2:B)))}` |
+| **S**   | **Año**      | `={"Año"; ARRAYFORMULA(IF(B2:B=""; ""; YEAR(B2:B)))}` |
+| **T**   | **Clínica**  | `={"Clínica"; ARRAYFORMULA(IF(N2:N=""; ""; IFS(ISNUMBER(SEARCH("Esquivel";N2:N)); "Clínica Esquivel"; OR(ISNUMBER(SEARCH("C Clinic";N2:N)); ISNUMBER(SEARCH("CClinic";N2:N))); "CClinic"; OR(ISNUMBER(SEARCH("Alcala";N2:N)); ISNUMBER(SEARCH("Alcalá";N2:N))); "Clínica Alcalá"; OR(ISNUMBER(SEARCH("D´Cadiz";N2:N)); ISNUMBER(SEARCH("Cadíz";N2:N))); "Clínica D Cadíz"; OR(ISNUMBER(SEARCH("Aesthetic Bar";N2:N)); ISNUMBER(SEARCH("Aestetic";N2:N))); "Aesthetic Bar"; ISNUMBER(SEARCH("Leganes";N2:N)); "Sonia Leganés"; ISNUMBER(SEARCH("Arroyomolinos";N2:N)); "Clinica Arroyomolinos"; ISNUMBER(SEARCH("Rivera";N2:N)); "Clínica Rivera"; TRUE; "NUVANX Medicina Estética Láser")))}` |
+
+**Notas sobre las fórmulas:**
+- Se usan en fila 1 con el patrón `={"Encabezado"; ARRAYFORMULA(...)}` para autocompletar el header y los datos.
+- La columna **T (Clínica)** usa coincidencias por nombre (columna N) para asignar la clínica correspondiente. Ajusta los patrones `SEARCH` según tus nombres reales de pacientes/clínicas.
+- Estas fórmulas se calculan automáticamente en Google Sheets sin que el script las toque (el script solo actualiza/inserta A-L).
 
 #### Webhook Script for Doctoralia Sheet Sync (Supabase → Google Sheets)
 
@@ -158,7 +166,10 @@ function doPost(e) {
     const sheet = ss.getSheetByName(SHEET_NAME);
     if (!sheet) return createResponse("Sheet not found", 404);
 
-    // 3. Mapeo de columnas A:L
+    // 3. Mapeo de columnas A:L (solo estas se escriben vía script)
+    // Las columnas M-T (ID, Nombre, Teléfono, Tratamiento, Día/Mes/Año, Clínica, etc.)
+    // se gestionan con ARRAYFORMULA en la propia hoja (ver fórmulas recomendadas arriba).
+    // Esto evita sobrescribir fórmulas al hacer updates y mantiene la hoja ligera.
     const rowData = [
       record.estado || "Pendiente",       // A
       record.fecha || "",                // B
@@ -186,10 +197,10 @@ function doPost(e) {
     }
 
     if (rowIndex !== -1) {
-      // Actualiza fila existente (Columnas A a L únicamente)
+      // Actualiza fila existente (Columnas A a L únicamente; M-T quedan intactas)
       sheet.getRange(rowIndex, 1, 1, rowData.length).setValues([rowData]);
     } else {
-      // Añade fila nueva
+      // Añade fila nueva (las fórmulas ARRAYFORMULA de M-T se expandirán solas)
       sheet.appendRow(rowData);
     }
 
@@ -213,9 +224,10 @@ function createResponse(message, code) {
 2. In Apps Script: **Project settings → Script properties** → Add a property named `WEBHOOK_SECRET` with a strong secret value. Remember this value.
 3. **Deploy > New deployment** > Type: **Web App**. Execute as: You; Access: Anyone.
 4. Copy the Web App URL.
-5. In Supabase: Create Database Webhook for the relevant table (e.g. `produccion_intermediarios` or `doctoralia_raw`) pointing to the URL, with Header `X-Webhook-Secret: <the exact WEBHOOK_SECRET value you set>`.
+5. **Set up derived columns (M-T):** In your "Doctoralia" sheet, paste the ARRAYFORMULA formulas documented in the section above into cells M1, N1, ..., T1 (clear the rest of those columns first). These will auto-populate ID, Nombre, Teléfono, Tratamiento, dates, and Clínica based on the "Asunto" (col F) without the script touching them.
+6. In Supabase: Create Database Webhook for the relevant table (e.g. `produccion_intermediarios` or `doctoralia_raw`) pointing to the URL, with Header `X-Webhook-Secret: <the exact WEBHOOK_SECRET value you set>`.
 
-This keeps the "Doctoralia" sheet in sync with Supabase, and the ARRAYFORMULA in M-S parse the Asunto automatically.
+This keeps the "Doctoralia" sheet in sync with Supabase. The script writes only A-L; the ARRAYFORMULAs in M-T parse/enrich the Asunto (and other fields) automatically on every insert/update.
 
 ## Revenue Truth Model
 

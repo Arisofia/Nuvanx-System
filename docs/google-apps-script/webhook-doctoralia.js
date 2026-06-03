@@ -1,5 +1,12 @@
 ﻿/**
  * WEBHOOK PARA DOCTORALIA - SINCRONIZACIÓN SUPABASE
+ *
+ * Este script recibe webhooks de Supabase (Database Webhooks) y mantiene
+ * la hoja "Doctoralia" actualizada en tiempo real (columnas A-L).
+ *
+ * Columnas M-T (ID, Nombre, Teléfono, Tratamiento, Día/Mes/Año, Clínica...)
+ * se calculan automáticamente vía ARRAYFORMULA en la hoja (ver fórmulas
+ * recomendadas en el README.md). El script NO las toca para preservarlas.
  */
 const SHEET_NAME = "Doctoralia";
 const SECRET_HEADER = "X-Webhook-Secret"; // Opcional pero recomendado
@@ -35,7 +42,11 @@ function doPost(e) {
     const sheet = ss.getSheetByName(SHEET_NAME);
     if (!sheet) return createResponse("Sheet not found", 404);
 
-    // 3. Mapeo de columnas A:L
+    // 3. Mapeo de columnas A:L (solo estas se escriben vía script)
+    // Las columnas M-T (ID, Nombre, Teléfono, Tratamiento, Día/Mes/Año, Clínica, etc.)
+    // se gestionan con ARRAYFORMULA en la propia hoja (ver documentación en README
+    // y sección de fórmulas recomendadas). Esto evita sobrescribir fórmulas al
+    // hacer updates y mantiene la hoja ligera.
     const rowData = [
       record.estado || "Pendiente",       // A
       record.fecha || "",                // B
@@ -63,10 +74,10 @@ function doPost(e) {
     }
 
     if (rowIndex !== -1) {
-      // Actualiza fila existente (Columnas A a L únicamente)
+      // Actualiza fila existente (Columnas A a L únicamente; M-T quedan intactas)
       sheet.getRange(rowIndex, 1, 1, rowData.length).setValues([rowData]);
     } else {
-      // Añade fila nueva
+      // Añade fila nueva (las fórmulas ARRAYFORMULA de M-T se expandirán solas)
       sheet.appendRow(rowData);
     }
 
@@ -85,8 +96,10 @@ function createResponse(message, code) {
 
 /**
  * Función de prueba manual (ejecuta desde el editor de Apps Script)
- * Úsala para probar que el mapeo funciona y se inserta/actualiza la fila.
- * Después de ejecutar, revisa la hoja "Doctoralia" al final de la tabla.
+ * Úsala para probar que el mapeo A-L funciona y se inserta/actualiza la fila.
+ * Después de ejecutar, revisa la hoja "Doctoralia":
+ * - Columnas A-L deben actualizarse.
+ * - Columnas M-T deben calcularse vía las ARRAYFORMULA que hayas puesto en fila 1.
  */
 function testWebhook() {
   const fakeEvent = {
