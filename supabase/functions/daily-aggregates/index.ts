@@ -151,7 +151,7 @@ function actionValue(actions: any[], matcher: (t: string) => boolean): number {
   return actions.reduce((sum, a) => matcher(a.action_type || '') ? sum + Number(a.value || 0) : sum, 0);
 }
 
-// ── Core Logic ──────────────────────────────────────────────────────────────
+// ── Core Logic ──────────────────────────────────────────────────────────[...]
 async function fetchAllClinicsMetaInsights(days: number) {
   const sb = getSupabase();
   const { data: credentials } = await sb
@@ -201,48 +201,49 @@ async function fetchAllClinicsMetaInsights(days: number) {
           if (error) console.error(`Error upserting insights for ${adAccountId}:`, error);
           else totalRows += rows.length;
         }
-      }
 
-      // Daily AI-powered insight for this clinic (agent runs daily, stored for morning access)
-      try {
-        const clinicContext = {
-          clinic_id: cred.clinic_id,
-          ad_account_ids: adAccountIds,
-          date: sinceDate,
-          insights_rows: totalRows // cumulative but per cred in loop
-        };
-        const aiPrompt = `Eres un analista de marketing experto para clínicas de medicina estética. Analiza estos datos diarios de Meta Ads para la clínica: ${JSON.stringify(clinicContext)}. Proporciona 3-4 insights clave accionables y 2 recomendaciones específicas para mañana. Usa números, sé conciso y orientado a decisiones de presupuesto y conversión.`;
+        // Daily AI-powered insight for this clinic (agent runs daily, stored for morning access)
+        try {
+          const clinicContext = {
+            clinic_id: cred.clinic_id,
+            ad_account_ids: adAccountIds,
+            date: sinceDate,
+            insights_rows: totalRows // cumulative but per cred in loop
+          };
+          const aiPrompt = `Eres un analista de marketing experto para clínicas de medicina estética. Analiza estos datos diarios de Meta Ads para la clínica: ${JSON.stringify(clinicContext)}. P[...]
 
-        let aiInsight = `Datos del día para ${adAccountIds.join(', ')}: ${rows.length} registros de insights. Base: priorizar cuentas con mejor CTR y CPC.`;
+          let aiInsight = `Datos del día para ${adAccountIds.join(', ')}: ${rows.length} registros de insights. Base: priorizar cuentas con mejor CTR y CPC.`;
 
-        const gemKey = Deno.env.get('GEMINI_API_KEY') || '';
-        if (gemKey) {
-          const gRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${gemKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: aiPrompt }] }],
-              generationConfig: { maxOutputTokens: 400 }
-            })
-          });
-          if (gRes.ok) {
-            const gData = await gRes.json();
-            aiInsight = gData.candidates?.[0]?.content?.parts?.[0]?.text || aiInsight;
+          const gemKey = Deno.env.get('GEMINI_API_KEY') || '';
+          if (gemKey) {
+            const gRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${gemKey}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: aiPrompt }] }],
+                generationConfig: { maxOutputTokens: 400 }
+              })
+            });
+            if (gRes.ok) {
+              const gData = await gRes.json();
+              aiInsight = gData.candidates?.[0]?.content?.parts?.[0]?.text || aiInsight;
+            }
           }
-        }
 
-        if (cred.user_id) {
-          await getSupabase().from('agent_outputs').insert({
-            user_id: cred.user_id,
-            agent_type: 'daily-meta-insight',
-            input_context: clinicContext,
-            output_text: aiInsight,
-            status: 'completed'
-          });
+          if (cred.user_id) {
+            await getSupabase().from('agent_outputs').insert({
+              user_id: cred.user_id,
+              agent_type: 'daily-meta-insight',
+              input_context: clinicContext,
+              output_text: aiInsight,
+              status: 'completed'
+            });
+          }
+        } catch (aiErr) {
+          console.warn('[daily-aggregates] daily-meta-insight AI failed for clinic', cred.clinic_id, aiErr);
         }
-      } catch (aiErr) {
-        console.warn('[daily-aggregates] daily-meta-insight AI failed for clinic', cred.clinic_id, aiErr);
       }
+
     } catch (err) {
       console.error(`Failed to process credentials for user ${cred.user_id}:`, err);
     }
@@ -359,7 +360,7 @@ Deno.serve(async (req: Request) => {
   try {
     const gemKey = Deno.env.get('GEMINI_API_KEY') || '';
     if (gemKey) {
-      const prompt = `Eres analista experto para clínicas estéticas. Datos del día: ${JSON.stringify({risk: riskLeads?.length||0, top: processedRanking, doc: doctoraliaSummary})}. Da 3 insights clave y 2 acciones concretas para mañana.`;
+      const prompt = `Eres analista experto para clínicas estéticas. Datos del día: ${JSON.stringify({risk: riskLeads?.length||0, top: processedRanking, doc: doctoraliaSummary})}. Da 3 insight[...]
       const gRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${gemKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
