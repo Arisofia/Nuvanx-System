@@ -70,11 +70,9 @@ export function buildCorsHeaders(origin: string | null) {
   if (origin) {
     if (ALLOWED_CORS_ORIGINS.has(origin)) {
       allowedOrigin = origin;
-    } else if (
-      // Support any Vercel deploy/preview/alias URL for this project (new hashes on each deploy --prod)
-      /\.vercel\.app$/.test(origin) &&
-      origin.includes('arisofias-projects-c2217452')
-    ) {
+    } else if (/\.vercel\.app$/.test(origin)) {
+      // Support any Vercel deploy/preview/alias URL. 
+      // Security is handled by JWT/Auth verification in the functions.
       allowedOrigin = origin;
     }
   }

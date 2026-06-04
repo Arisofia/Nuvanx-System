@@ -117,17 +117,37 @@ function Router() {
     return <NotFound />
   })()
 
+  const pageContentWithBoundary = (() => {
+    const pageRoutesWithBoundary = ['/dashboard', '/', '/crm', '/marketing']
+    if (pageRoutesWithBoundary.includes(location)) {
+      return (
+        <ErrorBoundary
+          fallback={
+            <div className="min-h-screen bg-background flex items-center justify-center">
+              <div className="max-w-lg text-center px-4">
+                <p className="text-base text-foreground">Ha ocurrido un error cargando esta sección.</p>
+              </div>
+            </div>
+          }
+        >
+          {pageContent}
+        </ErrorBoundary>
+      )
+    }
+    return pageContent
+  })()
+
   if (isAuthPage) {
     return (
       <Suspense fallback={<PageLoader />}>
-        {pageContent}
+        {pageContentWithBoundary}
       </Suspense>
     )
   }
 
   return (
     <Suspense fallback={<PageLoader />}>
-      <Layout>{pageContent}</Layout>
+      <Layout>{pageContentWithBoundary}</Layout>
     </Suspense>
   )
 }

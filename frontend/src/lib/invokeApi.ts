@@ -20,7 +20,15 @@ export async function invokeApi<T = unknown>(functionName: string, init?: Invoke
   }
 
   const functionPath = functionName.startsWith('/') ? functionName : `/${functionName}`
-  const url = `${supabaseUrl}/functions/v1${functionPath}`
+  
+  // In the browser, we use relative paths for /api calls to benefit from Vercel rewrites and Vite proxies.
+  // This avoids CORS issues and simplifies configuration.
+  const isBrowser = typeof window !== 'undefined'
+  const isApiCall = functionPath.startsWith('/api/') || functionPath === '/api'
+  
+  const url = isBrowser && isApiCall
+    ? functionPath
+    : `${supabaseUrl}/functions/v1${functionPath}`
 
   const headers = new Headers(init?.headers ?? {})
   headers.set('Authorization', `Bearer ${accessToken}`)
