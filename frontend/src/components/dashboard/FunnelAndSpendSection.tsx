@@ -72,7 +72,7 @@ export function FunnelAndSpendSection({
               <span className="text-[10px] font-bold text-[#8E8680] uppercase tracking-[0.2em] group-hover:text-[#84643B] transition-colors">Inversión Meta</span>
               <DollarSign className="h-4 w-4 text-[#B08B5A] opacity-40 group-hover:opacity-100 transition-opacity" />
             </div>
-            <p className="text-4xl font-serif font-bold tracking-tight text-[#2C2825]">€{metrics.spend.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+            <p className="text-4xl font-serif font-bold tracking-tight text-[#2C2825]">€{(metrics.spend ?? 0).toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
             <div className="h-[2px] w-8 bg-[#B08B5A]/20 my-5 group-hover:w-12 transition-all duration-500" />
             <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest opacity-60">{periodLabel}</p>
           </div>
@@ -85,7 +85,7 @@ export function FunnelAndSpendSection({
               <span className="text-[10px] font-bold text-[#8E8680] uppercase tracking-[0.2em] group-hover:text-[#84643B] transition-colors">Conversiones Meta</span>
               <Users className="h-4 w-4 text-[#B08B5A] opacity-40 group-hover:opacity-100 transition-opacity" />
             </div>
-            <p className="text-4xl font-serif font-bold tracking-tight text-[#2C2825]">{combined.metaEstimatedLeads.toLocaleString('es-ES')}</p>
+            <p className="text-4xl font-serif font-bold tracking-tight text-[#2C2825]">{(combined.metaEstimatedLeads ?? 0).toLocaleString('es-ES')}</p>
             <div className="h-[2px] w-8 bg-[#B08B5A]/20 my-5 group-hover:w-12 transition-all duration-500" />
             <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest opacity-60">Campo Conversions</p>
           </div>
@@ -113,7 +113,7 @@ export function FunnelAndSpendSection({
               <span className="text-[10px] font-bold text-[#8E8680] uppercase tracking-[0.2em] group-hover:text-[#84643B] transition-colors">CPC Medio</span>
               <ArrowUpRight className="h-4 w-4 text-[#B08B5A] opacity-40 group-hover:opacity-100 transition-opacity" />
             </div>
-            <p className="text-4xl font-serif font-bold tracking-tight text-[#2C2825]">€{metrics.averageCpc.toLocaleString('es-ES')}</p>
+            <p className="text-4xl font-serif font-bold tracking-tight text-[#2C2825]">€{(metrics.averageCpc ?? 0).toLocaleString('es-ES')}</p>
             <div className="h-[2px] w-8 bg-[#B08B5A]/20 my-5 group-hover:w-12 transition-all duration-500" />
             <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest opacity-60">Coste por Click</p>
           </div>

@@ -37,7 +37,7 @@ export function MetricsGrid({ metrics, quality }: MetricsGridProps) {
         <CardContent className="relative z-10">
           <div className="flex items-baseline gap-4 mt-6">
             <div className="text-5xl font-serif font-bold tracking-tight text-[#2C2825]">
-              {metrics.metaConversions.toLocaleString('es-ES')}
+              {(metrics.metaConversions ?? 0).toLocaleString('es-ES')}
             </div>
             {metrics.deltas && <MetricDelta value={metrics.deltas.conversions} />}
           </div>
@@ -64,7 +64,7 @@ export function MetricsGrid({ metrics, quality }: MetricsGridProps) {
         <CardContent className="relative z-10">
           <div className="flex items-baseline gap-4 mt-6">
             <div className="text-5xl font-serif font-bold tracking-tight text-[#2C2825]">
-              {metrics.totalLeads.toLocaleString('es-ES')}
+              {(metrics.totalLeads ?? 0).toLocaleString('es-ES')}
             </div>
             {metrics.deltas && <MetricDelta value={metrics.deltas.leads} />}
           </div>
@@ -91,7 +91,7 @@ export function MetricsGrid({ metrics, quality }: MetricsGridProps) {
         <CardContent className="relative z-10">
           <div className="flex items-baseline gap-4 mt-6">
             <div className="text-5xl font-serif font-bold tracking-tight text-[#2C2825]">
-              {`€${metrics.verifiedRevenue.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+              {`€${(metrics.verifiedRevenue ?? 0).toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
             </div>
             {metrics.deltas && <MetricDelta value={metrics.deltas.revenue} />}
           </div>
@@ -117,7 +117,7 @@ export function MetricsGrid({ metrics, quality }: MetricsGridProps) {
         </CardHeader>
         <CardContent className="relative z-10">
           <div className="text-5xl font-serif font-bold tracking-tight text-[#2C2825] mt-6">
-            {`${metrics.conversionRate.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}%`}
+            {`${(metrics.conversionRate ?? 0).toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}%`}
           </div>
           <div className="mt-6 flex items-center gap-2">
             <div className="h-[1px] w-4 bg-[#B08B5A]/40" />

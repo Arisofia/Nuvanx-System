@@ -23,6 +23,7 @@
     "ops:meta-capi-checklist": "cat docs/codex/meta-capi-operational-checklist.md",
     "daily:sync": "node scripts/run-daily-sync.js",
     "meta:token": "node scripts/set-meta-token.js",
+    "meta:audit": "node scripts/meta-ads-account-report.js",
     "validate:workflows": "ruby scripts/validate-github-workflows.rb"
   },
   "dependencies": {

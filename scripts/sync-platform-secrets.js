@@ -348,12 +348,25 @@ async function main() {
   if (!vars.SUPABASE_PROJECT_REF) {
     throw new Error('SUPABASE_PROJECT_REF is missing in .env.tokens.local. Please add your Supabase Project Ref (e.g., ssvvuuysgxyqvmovrlvk) to proceed.');
   }
-  const supabaseMainResult = await setSupabaseSecrets(vars, vars.SUPABASE_PROJECT_REF);
+  
+  let supabaseMainResult = { skipped: true, reason: 'error during sync' };
+  try {
+    supabaseMainResult = await setSupabaseSecrets(vars, vars.SUPABASE_PROJECT_REF);
+  } catch (err) {
+    console.error(`[SUPABASE] Main sync failed: ${err.message}`);
+  }
+
   if (!vars.SUPABASE_FIGMA_PROJECT_REF) {
     console.warn('[sync-platform-secrets] SUPABASE_FIGMA_PROJECT_REF missing; skipping secondary sync.');
   }
   const supabaseFigmaResult = vars.SUPABASE_FIGMA_PROJECT_REF ? await setSupabaseSecrets(vars, vars.SUPABASE_FIGMA_PROJECT_REF) : { skipped: true, reason: 'missing ref' };
-  const vercelResult = await setVercelSecrets(vars);
+  
+  let vercelResult = { skipped: true, reason: 'error during sync' };
+  try {
+    vercelResult = await setVercelSecrets(vars);
+  } catch (err) {
+    console.error(`[VERCEL] Sync failed: ${err.message}`);
+  }
 
   console.log('Secret sync completed.');
   console.log(`Local frontend env: ${frontendEnvPath}`);

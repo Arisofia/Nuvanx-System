@@ -25,6 +25,34 @@ Decision constraints: The dashboard must not be used for production CAC, CPL, re
 | Secrets/configuration audit | Partial | Local environment presence check showed all production secrets absent in this execution environment. | GitHub/Vercel/Supabase secret stores cannot be inspected from this environment. |
 | Live data validation | No | `VITE_SUPABASE_URL`, Supabase service role, `DATABASE_URL`, Meta and Doctoralia credentials were missing locally. | Required before any GO/CONDITIONAL GO decision. |
 
+## 2.1 Live Meta access verification
+
+Using the local `.env` token and current repository access, the audit confirmed:
+
+- `META_AD_ACCOUNT_IDS` is configured for `act_9523446201036125` and `act_4172099716404860`.
+- `META_APP_SECRET` is present for appsecret_proof support.
+- The configured token can list 2 accessible Meta ad accounts via `/me/adaccounts`.
+- Account identities returned by the Meta Graph API are:
+  - `act_9523446201036125` → Francisco Antonio Geraldo Lorenzo
+  - `act_4172099716404860` → Nuvanx
+- Account-level insight retrieval for the audited accounts is technically available, but direct `/{account_id}` detail fetch requires verifying current Graph permission scopes.
+
+### Live extractable coverage
+
+A sample extract of the last 7 days of account insights is possible through Meta Graph API and can be automated with `scripts/meta-ads-account-report.js`.
+
+### Evidence gaps remaining
+
+- No live Supabase or Doctoralia DB credentials were available in this audit run.
+- The account list confirms token access, but campaign-level and conversion-level detail access should be rechecked with the production Graph token scopes for `ads_read` / `ads_management`.
+
+### Recommendation
+
+If the audit is extended, the next step is to run the report script against the configured accounts and capture:
+- per-account spend, impressions, clicks, and conversion action totals
+- account-level permission scope summary
+- lead generation event taxonomy for the current active campaigns
+
 ### Audit inventory
 
 | Layer | File / Endpoint / Table | Purpose | Directly affects KPI? | Audit priority |

@@ -32,7 +32,7 @@ export function RealROISection({ funnel, combined }: RealROISectionProps) {
                 <Wallet className="h-3.5 w-3.5 text-[#B08B5A] group-hover:text-white" />
               </div>
             </div>
-            <p className="text-4xl font-serif font-bold text-[#2C2825]">€{funnel.metaSpend.toLocaleString('es-ES')}</p>
+            <p className="text-4xl font-serif font-bold text-[#2C2825]">€{(funnel.metaSpend ?? 0).toLocaleString('es-ES')}</p>
             <div className="h-[2px] w-6 bg-[#B08B5A]/20 group-hover:w-10 transition-all duration-500" />
             <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest opacity-60">Gasto total publicidad</p>
           </div>

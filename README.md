@@ -269,6 +269,13 @@ Para actualizar el token de Meta en los `.env` locales detectados, usa:
 npm run update:meta-token
 ```
 
+Para verificar el acceso y auditar las cuentas Meta configuradas, usa:
+
+```bash
+npm run meta:audit -- --list --details
+npm run meta:audit -- --insights 7
+```
+
 Si quieres propagar el token también a GitHub, Supabase y Vercel desde el mismo script, ejecuta:
 
 ```bash
