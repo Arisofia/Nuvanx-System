@@ -1178,12 +1178,9 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
   }
 
   if (!pixelId && !mappingStr) {
-     // Legacy/Default logic if no mapping is provided
-     if (activeAccountId.includes('9523446201036125')) {
-       pixelId = '1405503384615251'; // Francisco Antonio Pixel
-     } else if (activeAccountId.includes('4172099716404860')) {
-       pixelId = '877262375461917'; // Nuvanx Pixel
-     }
+     // Default/Fallback logic: if no pixel is provided in metadata or mapping,
+     // we log a warning but don't use hardcoded fallbacks in production source.
+     console.warn(`[CAPI-ROUTING] No pixel mapping found for account ${activeAccountId}`);
   }
 
   console.log(`[CAPI-ROUTING] Cuenta: ${activeAccountId} -> Usando Píxel: ${pixelId}`);

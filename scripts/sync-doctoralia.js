@@ -188,7 +188,7 @@ function formatPermissionGuidance(sa) {
  * Parses the "Asunto" column (F) using a robust regex.
  * Handles cases where the patient name itself contains parentheses.
  * 
- * Expected format: "398. ANGELA ISABEL ANCHUNDIA ALVARADO (SANDRA ALVARADO) [722252733] (REVISIÓN TRATAMIENTO )"
+ * Expected format: "398. PATIENT NAME (REPRESENTATIVE) [123456789] (TREATMENT NAME)"
  */
 function parseAsunto(asunto) {
   if (!asunto) return null;
