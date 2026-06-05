@@ -54,7 +54,7 @@ export function DashboardHeader({
             <p className={`${controlTextClass} text-[11px] tracking-[0.25em] text-[#84643B]`}>Control de rendimiento médico</p>
           </div>
           <MetaAccountsInline
-            accountIds={metaAccountIds}
+            accountIds={metaAccountIds || []}
             context="Dashboard consolidado de inversión, campañas y leads atribuidos."
             className="max-w-2xl bg-white/40 border-none shadow-none p-0"
           />

@@ -248,7 +248,7 @@ async function metaFetchInsightsWithFallback(path: string, params: Record<string
   }
 }
 
-const DEFAULT_META_PIXEL_ID = Deno.env.get('META_PIXEL_ID') ?? '877262375461917';
+const DEFAULT_META_PIXEL_ID = Deno.env.get('META_PIXEL_ID') ?? '1405503384615251';
 
 async function sha256Hex(raw: string): Promise<string> {
   const data = new TextEncoder().encode(raw.trim().toLowerCase());
