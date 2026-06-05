@@ -10,6 +10,24 @@ import MetaAccountsNotice from './components/MetaAccountsNotice'
 import NotFound from './pages/NotFound'
 import Login from './pages/Login'
 import { useMetaPageView, useMetaContextCapture } from './lib/metaPixel'
+import { isSupabaseConfigured } from './lib/env'
+
+function ConfigurationError() {
+  return (
+    <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center p-6">
+      <div className="text-center space-y-4 max-w-sm">
+        <p className="text-xs font-bold uppercase tracking-widest text-primary">Nuvanx · Control Centre</p>
+        <h1 className="text-xl font-serif font-bold text-[#2C2825]">Configuración incompleta</h1>
+        <p className="text-sm text-[#5C5550]">
+          Las variables de entorno de Supabase no están configuradas.
+          Añade <code className="bg-[#F0ECE6] px-1 rounded text-xs">VITE_SUPABASE_URL</code> y{' '}
+          <code className="bg-[#F0ECE6] px-1 rounded text-xs">VITE_SUPABASE_ANON_KEY</code> en
+          el panel de Vercel y vuelve a desplegar.
+        </p>
+      </div>
+    </div>
+  )
+}
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Live = lazy(() => import('./pages/Live'))
@@ -153,6 +171,10 @@ function Router() {
 }
 
 export default function App() {
+  if (!isSupabaseConfigured) {
+    return <ConfigurationError />
+  }
+
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
