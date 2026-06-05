@@ -64,7 +64,7 @@ function loadServiceAccountJson() {
     try {
       JSON.parse(SA_JSON);
       return SA_JSON;
-    } catch (e) {
+    } catch {
       // Not a valid JSON, ignore and try fallback
     }
   }
@@ -74,11 +74,11 @@ function loadServiceAccountJson() {
   }
 
   // If we have individual components (Service Account)
-  if (GOOGLE_CLIENT_EMAIL && GOOGLE_PRIVATE_KEY && GOOGLE_PRIVATE_KEY.includes('BEGIN PRIVATE KEY')) {
+  if (GOOGLE_CLIENT_EMAIL && GOOGLE_PRIVATE_KEY?.includes('BEGIN PRIVATE KEY')) {
     return JSON.stringify({
       type: 'service_account',
       project_id: GOOGLE_PROJECT_ID || 'unknown',
-      private_key: GOOGLE_PRIVATE_KEY.replaceAll('\\n', '\n'),
+      private_key: GOOGLE_PRIVATE_KEY.replaceAll(String.raw`\\n`, '\n'),
       client_email: GOOGLE_CLIENT_EMAIL,
     });
   }
@@ -103,11 +103,8 @@ const DATABASE_URL = (() => {
       u.hostname = u.hostname.replace('.supabase.co', '.supabase.com');
     }
 
-    // Only force 6543 (tx pooler) if no port was specified at all.
-    // If caller provided :5432 for session pooler, keep it.
-    if (isPooler && !u.port) {
-      u.port = '5432';  // default to session pooler (matches recommended secret)
-    } else if (isDirect && (!u.port || u.port === '6543')) {
+    // Default to session pooler port (5432) for known host patterns if port is missing or uses tx pooler port
+    if ((isPooler && !u.port) || (isDirect && (!u.port || u.port === '6543'))) {
       u.port = '5432';
     }
 
@@ -193,7 +190,7 @@ function formatPermissionGuidance(sa) {
 function parseAsunto(asunto) {
   if (!asunto) return null;
   const pattern = /^(\d+)\.\s+(.*?)\s+\[(.*?)\]\s+\((.*?)\)\s*$/;
-  const match = String(asunto).match(pattern);
+  const match = pattern.exec(String(asunto));
   
   if (!match) return null;
 
@@ -211,10 +208,10 @@ function deriveRawId(row, useHashId, cols) {
   }
 
   // Fallback: Try robust parsing from Asunto column
-  if (cols.hasColTemplate) {
+  if (cols?.hasColTemplate) {
     const asunto = normalizeField(row[cols.colTemplate]);
     const parsed = parseAsunto(asunto);
-    if (parsed && parsed.id) {
+    if (parsed?.id) {
       return parsed.id;
     }
   }

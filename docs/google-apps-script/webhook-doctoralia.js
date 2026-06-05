@@ -20,7 +20,7 @@ const EXPECTED_SECRET = PropertiesService.getScriptProperties().getProperty('WEB
 function doPost(e) {
   try {
     // 1. Verificación de contenido
-    if (!e || !e.postData || !e.postData.contents) return createResponse("No content", 400);
+    if (!e?.postData?.contents) return createResponse("No content", 400);
 
     // 2. Seguridad (solo si se configuró un secreto)
     if (EXPECTED_SECRET) {
@@ -35,8 +35,8 @@ function doPost(e) {
     }
 
     const payload = JSON.parse(e.postData.contents);
-    const record = payload.record; // Datos desde Supabase
-    if (!record || !record.asunto) return createResponse("No record data", 400);
+    const { record } = payload; // Datos desde Supabase
+    if (!record?.asunto) return createResponse("No record data", 400);
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = ss.getSheetByName(SHEET_NAME);
@@ -73,7 +73,7 @@ function doPost(e) {
       }
     }
 
-    if (rowIndex !== -1) {
+    if (rowIndex >= 0) {
       // Actualiza fila existente (Columnas A a L únicamente; M-T quedan intactas)
       sheet.getRange(rowIndex, 1, 1, rowData.length).setValues([rowData]);
     } else {

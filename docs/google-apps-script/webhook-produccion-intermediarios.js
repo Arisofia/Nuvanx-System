@@ -26,7 +26,7 @@ const EXPECTED_SECRET = PropertiesService.getScriptProperties().getProperty('WEB
 function doPost(e) {
   try {
     // 1. Validación básica del request
-    if (!e || !e.postData || !e.postData.contents) {
+    if (!e?.postData?.contents) {
       console.error("Webhook recibido sin contenido");
       return ContentService.createTextOutput("Bad Request: No content").setMimeType(ContentService.MimeType.TEXT);
     }
@@ -55,7 +55,7 @@ function doPost(e) {
       return ContentService.createTextOutput("Bad Request: Invalid JSON").setMimeType(ContentService.MimeType.TEXT);
     }
 
-    const record = payload.record;
+    const { record } = payload;
 
     if (!record) {
       console.error("Payload sin campo 'record'");
@@ -103,19 +103,21 @@ function doPost(e) {
     const targetAsunto = String(record.asunto || '').trim();
 
     const rowIndex = data.findIndex((row, idx) => idx > 0 && String(row[asuntoIndex]).trim() === targetAsunto);
-    const foundRow = rowIndex !== -1 ? rowIndex + 1 : -1;
+    const foundRow = rowIndex >= 0 ? rowIndex + 1 : -1;
 
     // 5. Insertar o actualizar
-    if (foundRow !== -1) {
+    if (foundRow >= 0) {
       // Para actualizaciones, preservamos las fórmulas de las columnas V, W, X si existen
       sheet.getRange(foundRow, 1, 1, rowData.length).setValues([rowData]);
       console.log(`Fila actualizada (Asunto: ${record.asunto})`);
     } else {
       // Para nuevas filas, añadimos las fórmulas de Día, Mes, Año (V, W, X)
       const nextRow = sheet.getLastRow() + 1;
-      rowData.push(`=DAY(B${nextRow})`);   // V: Día
-      rowData.push(`=MONTH(B${nextRow})`); // W: Mes
-      rowData.push(`=YEAR(B${nextRow})`);  // X: Año
+      rowData.push(
+        `=DAY(B${nextRow})`,   // V: Día
+        `=MONTH(B${nextRow})`, // W: Mes
+        `=YEAR(B${nextRow})`   // X: Año
+      );
       sheet.appendRow(rowData);
       console.log(`Nueva fila añadida (Asunto: ${record.asunto})`);
     }

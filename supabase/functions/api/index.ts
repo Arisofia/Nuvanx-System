@@ -371,7 +371,7 @@ interface MetaCapiEventInput {
  */
 function addNormalizedUserField(target: Record<string, string[]>, key: string, raw: unknown) {
   if (!raw) return;
-  const val = String(raw).trim().toLowerCase();
+  const val = (typeof raw === 'string' || typeof raw === 'number') ? String(raw).trim().toLowerCase() : '';
   if (val) target[key] = [val];
 }
 
