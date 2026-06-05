@@ -1,6 +1,8 @@
-export const META_ACCOUNT_IDS = ['act_9523446201036125', 'act_4172099716404860'] as const
-export const META_PIXEL_IDS = ['1405503384615251'] as const
-export const GOOGLE_ADS_ACCOUNT_IDS = ['AW-18182220789'] as const
+import { metaAccountIds, metaPixelId, googleAdsAccountIds } from '../lib/env'
+
+export const META_ACCOUNT_IDS = (metaAccountIds ? metaAccountIds.split(',').map(id => id.trim()) : []) as readonly string[]
+export const META_PIXEL_IDS = (metaPixelId ? metaPixelId.split(',').map(id => id.trim()) : []) as readonly string[]
+export const GOOGLE_ADS_ACCOUNT_IDS = (googleAdsAccountIds ? googleAdsAccountIds.split(',').map(id => id.trim()) : []) as readonly string[]
 
 export function resolveMetaAccountIds(accountIds: readonly unknown[] = []) {
   const normalized = [...META_ACCOUNT_IDS, ...accountIds]

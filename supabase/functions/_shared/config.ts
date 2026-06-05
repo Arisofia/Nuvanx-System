@@ -41,22 +41,22 @@ export function normalizeFrontendUrl(url: string): string | null {
 export const RAW_FRONTEND_URL = getEnv('FRONTEND_URL');
 export const NORMALIZED_FRONTEND_URL = normalizeFrontendUrl(RAW_FRONTEND_URL);
 
-// Hard-coded production Vercel URL as a CORS safety-net in case FRONTEND_URL secret is misconfigured.
-export const PRODUCTION_FALLBACK_URL = 'https://frontend-arisofias-projects-c2217452.vercel.app';
+// Production Vercel URL as a CORS safety-net in case FRONTEND_URL secret is misconfigured.
+export const PRODUCTION_FALLBACK_URL = getEnv('PRODUCTION_FALLBACK_URL') || 'https://frontend-arisofias-projects-c2217452.vercel.app';
 export const FRONTEND_URL = NORMALIZED_FRONTEND_URL ?? (IS_DEVELOPMENT ? 'http://localhost:5173' : PRODUCTION_FALLBACK_URL);
 
 export const DEFAULT_CORS_ORIGIN = IS_DEVELOPMENT
   ? 'http://localhost:5173'
   : FRONTEND_URL;
 
+const EXTRA_CORS_ORIGINS = getEnv('CORS_ALLOWED_ORIGINS')?.split(',').map(o => o.trim()).filter(Boolean) || [];
+
 export const ALLOWED_CORS_ORIGINS = new Set([
   DEFAULT_CORS_ORIGIN,
   // Always include the production Vercel URL regardless of NODE_ENV so that
   // POST requests from the browser (which send Origin) are never rejected in production.
   PRODUCTION_FALLBACK_URL,
-  'https://frontend-beta-ten-49.vercel.app',
-  'https://nuvanx.com',
-  'https://www.nuvanx.com',
+  ...EXTRA_CORS_ORIGINS
 ]);
 
 export const DEFAULT_CORS_HEADERS = {

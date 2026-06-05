@@ -18,6 +18,10 @@ export const supabaseKey =
   sanitizeEnv(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) ||
   sanitizeEnv(import.meta.env.VITE_SUPABASE_ANON_KEY)
 
+export const metaPixelId = sanitizeEnv(import.meta.env.VITE_META_PIXEL_ID)
+export const metaAccountIds = sanitizeEnv(import.meta.env.VITE_META_AD_ACCOUNT_IDS)
+export const googleAdsAccountIds = sanitizeEnv(import.meta.env.VITE_GOOGLE_ADS_ACCOUNT_IDS)
+
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseKey)
 
 if (!isSupabaseConfigured) {

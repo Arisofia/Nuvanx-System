@@ -119,7 +119,8 @@ async function decryptCred(encoded: string): Promise<string> {
 }
 
 // ── Meta Fetch Helpers ──────────────────────────────────────────────────────
-const META_GRAPH = 'https://graph.facebook.com/v22.0';
+const META_GRAPH_VERSION = Deno.env.get('META_GRAPH_VERSION') || 'v22.0';
+const META_GRAPH = `https://graph.facebook.com/${META_GRAPH_VERSION}`;
 
 function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');

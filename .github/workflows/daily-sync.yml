@@ -31,19 +31,16 @@ jobs:
       DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID }}
       CLINIC_ID: ${{ secrets.CLINIC_ID }}
       ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
-      # Real production Meta creds for CAPI, insights, and daily sync (provided):
-      # META_ACCESS_TOKEN=... (see .env.local / GH secrets)
-      # META_AD_ACCOUNT_ID=act_9523446201036125
-      # META_APP_SECRET=... (for appsecret_proof in verify + edge)
+      # Real production Meta creds for CAPI, insights, and daily sync (provided via GH secrets):
       META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
       META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
       META_AD_ACCOUNT_IDS: ${{ secrets.META_AD_ACCOUNT_IDS }}
       META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
       META_GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION || 'v20.0' }}
-      FALLBACK_META_AD_ACCOUNT_ID: ${{ secrets.FALLBACK_META_AD_ACCOUNT_ID || '9523446201036125' }}
+      FALLBACK_META_AD_ACCOUNT_ID: ${{ secrets.FALLBACK_META_AD_ACCOUNT_ID }}
       # Doctoralia webhook (real data for Supabase DB -> GAS bridge).
       SHEETS_WEBHOOK_URL_DOCTORALIA: ${{ secrets.SHEETS_WEBHOOK_URL_DOCTORALIA || '' }}
-      SHEETS_WEBHOOK_SECRET_DOCTORALIA: ${{ secrets.SHEETS_WEBHOOK_SECRET_DOCTORALIA || 'webhook-doctoralia-secret-example' }}
+      SHEETS_WEBHOOK_SECRET_DOCTORALIA: ${{ secrets.SHEETS_WEBHOOK_SECRET_DOCTORALIA }}
       # For the doctoralia sync script (non-critical step)
       SHEET_NAME: "Doctoralia"
 

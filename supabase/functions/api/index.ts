@@ -248,7 +248,7 @@ async function metaFetchInsightsWithFallback(path: string, params: Record<string
   }
 }
 
-const DEFAULT_META_PIXEL_ID = Deno.env.get('META_PIXEL_ID') ?? '1405503384615251';
+const DEFAULT_META_PIXEL_ID = Deno.env.get('META_PIXEL_ID');
 
 async function sha256Hex(raw: string): Promise<string> {
   const data = new TextEncoder().encode(raw.trim().toLowerCase());
@@ -442,7 +442,8 @@ async function trackMetaCapiEvent(accessToken: string, input: MetaCapiEventInput
 }
 
 async function enviarNotificacionMovil(lead: any) {
-  const mensaje = ` ¡Nuevo Lead de Alto Valor! Cuenta: ${lead.cuenta_id === "act_9523446201036125" ? "Francisco Antonio" : "Nuvanx"} Paciente: ${lead.nombre || lead.name || 'Nuevo registro'} Teléfono: ${lead.phone} Valor: ${lead.valor || lead.revenue || 0} EUR Procesado en Meta CAPI`;
+  const cuentaName = lead.cuenta_name || lead.cuenta_id || 'Nuvanx';
+  const mensaje = ` ¡Nuevo Lead de Alto Valor! Cuenta: ${cuentaName} Paciente: ${lead.nombre || lead.name || 'Nuevo registro'} Teléfono: ${lead.phone} Valor: ${lead.valor || lead.revenue || 0} EUR Procesado en Meta CAPI`;
   const botToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
   const chatId = Deno.env.get("TELEGRAM_CHAT_ID");
   if (!botToken || !chatId) return;
@@ -1159,14 +1160,30 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
     ? qAccountIds
     : metadataAccountIds;
 
-  // Dynamic routing: ensure correct pixel is used for specific ad accounts
-  // as per requirement for Francisco Antonio and Nuvanx separation.
+  // Dynamic routing: use mapping from environment if available
   let pixelId = metadata.pixelId ?? metadata.pixel_id ?? '';
   const activeAccountId = adAccountIds[0] ?? '';
-  if (activeAccountId.includes('9523446201036125')) {
-    pixelId = '1405503384615251'; // Francisco Antonio Pixel
-  } else if (activeAccountId.includes('4172099716404860')) {
-    pixelId = '877262375461917'; // Nuvanx Pixel
+  
+  const mappingStr = Deno.env.get('META_PIXEL_MAPPING');
+  if (mappingStr) {
+    try {
+      const mapping = JSON.parse(mappingStr);
+      // mapping should be { "act_id": "pixel_id", ... }
+      if (mapping[activeAccountId]) {
+        pixelId = mapping[activeAccountId];
+      }
+    } catch (e) {
+      console.error('[CAPI-ROUTING] Error parsing META_PIXEL_MAPPING:', e);
+    }
+  }
+
+  if (!pixelId && !mappingStr) {
+     // Legacy/Default logic if no mapping is provided
+     if (activeAccountId.includes('9523446201036125')) {
+       pixelId = '1405503384615251'; // Francisco Antonio Pixel
+     } else if (activeAccountId.includes('4172099716404860')) {
+       pixelId = '877262375461917'; // Nuvanx Pixel
+     }
   }
 
   console.log(`[CAPI-ROUTING] Cuenta: ${activeAccountId} -> Usando Píxel: ${pixelId}`);

@@ -7,7 +7,7 @@
  * Required env vars:
  *   GOOGLE_SA_JSON        — Service account JSON (GOOGLE_ADS_SERVICE_ACCOUNT secret)
  *   GOOGLE_SA_JSON_FILE   — Path to service account JSON file (preferred in CI)
- *   DOCTORALIA_SHEET_ID   — Spreadsheet ID (e.g. 1GAJoASGdjsKB7bTtC5hXPFkWbB7S4fVXhKD_cZoDwPw)
+ *   DOCTORALIA_SHEET_ID   — Spreadsheet ID
  *   DOCTORALIA_DRIVE_FILE_ID — Alias for DOCTORALIA_SHEET_ID
  *   DATABASE_URL          — Postgres connection string
  *   CLINIC_ID             — UUID of the clinic owning these settlements
