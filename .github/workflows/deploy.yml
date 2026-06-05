@@ -35,7 +35,11 @@ jobs:
         id: validate
         run: |
           MISSING=()
-          [ -z "$SUPABASE_ACCESS_TOKEN" ] && MISSING+=("SUPABASE_ACCESS_TOKEN")
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            MISSING+=("SUPABASE_ACCESS_TOKEN")
+          elif ! [[ "$SUPABASE_ACCESS_TOKEN" =~ ^sbp_[A-Za-z0-9]+$ ]]; then
+            MISSING+=("SUPABASE_ACCESS_TOKEN (invalid format, must start with sbp_)")
+          fi
           [ -z "$SUPABASE_PROJECT_REF" ] && MISSING+=("SUPABASE_PROJECT_REF")
           if [ ${#MISSING[@]} -gt 0 ]; then
             echo "::warning::Supabase deploy skipped — missing secrets: ${MISSING[*]}"

@@ -330,7 +330,7 @@ npm --prefix frontend run test:ci
 
 The repository uses GitHub Actions secrets for Supabase and production validation workflows:
 
-- `SUPABASE_ACCESS_TOKEN` — Supabase personal access token for CLI operations.
+- `SUPABASE_ACCESS_TOKEN` — Supabase personal access token for CLI operations. Must be a valid `sbp_...` token.
 - `SUPABASE_PROJECT_REF` — Target Supabase project ref for `supabase link`.
 - `SUPABASE_DB_PASSWORD` — Optional DB password used when `DATABASE_URL` is unavailable (fallback constructs Session Pooler URL).
 - `DATABASE_URL` — Postgres connection string. **Must use Session Pooler** (e.g. `postgresql://postgres.<ref>:<pw>@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require`). Direct `db.<ref>.supabase.co` is IPv6-only and unreliable.
