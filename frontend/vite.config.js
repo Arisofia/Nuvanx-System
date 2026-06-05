@@ -32,7 +32,7 @@ export default ({ mode }) => {
         '/api': {
           // Forward /api/* to the Supabase Edge Function in local dev.
           // In production, Vercel handles this via vercel.json rewrites.
-          target: `${process.env.VITE_SUPABASE_URL ?? 'https://ssvvuuysgxyqvmovrlvk.supabase.co'}/functions/v1`,
+          target: `${process.env.VITE_SUPABASE_URL}/functions/v1`,
           changeOrigin: true,
           secure: true,
         },

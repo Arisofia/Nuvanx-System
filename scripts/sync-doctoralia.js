@@ -20,7 +20,7 @@
  * Expected sheet columns (case-insensitive, accent-insensitive, partial match):
  *   id / operacion / operation / num         → id (PRIMARY KEY)
  *   plantilla / template / plantilladescr    → template_name
- *     also parses bracketed phones in Asunto, e.g. [657174670 - 657174670]
+ *     also parses bracketed phones in Asunto, e.g. [000000000 - 000000000]
  *     into patient_phone / phone_normalized
  *   id plantilla / template_id / cod         → template_id
  *   ingreso / inicio / intake / alta / desde → intake_at
