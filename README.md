@@ -289,7 +289,7 @@ Si prefieres hacerlo manualmente, sincroniza los entornos remotos así:
 - Supabase:
   ```bash
   supabase secrets set META_ACCESS_TOKEN="..."
-  supabase secrets set FALLBACK_META_AD_ACCOUNT_ID="9523446201036125"   # required (see GitHub Actions secrets list)
+  supabase secrets set FALLBACK_META_AD_ACCOUNT_ID="0000000000000000"   # required (see GitHub Actions secrets list)
   npm run supabase:functions:deploy:api
   npm run supabase:functions:deploy:mcp
   ```

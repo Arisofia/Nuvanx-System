@@ -22,6 +22,7 @@ Deno.serve(async (req: Request) => {
 
   const accessToken   = Deno.env.get('WHATSAPP_ACCESS_TOKEN') ?? '';
   const phoneNumberId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID') ?? '';
+  const graphVersion  = Deno.env.get('META_GRAPH_VERSION') ?? 'v22.0';
 
   if (!accessToken || !phoneNumberId) {
     return json({
@@ -30,7 +31,7 @@ Deno.serve(async (req: Request) => {
     }, 503);
   }
 
-  const waRes = await fetch(`https://graph.facebook.com/v21.0/${phoneNumberId}/messages`, {
+  const waRes = await fetch(`https://graph.facebook.com/${graphVersion}/${phoneNumberId}/messages`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${accessToken}`,

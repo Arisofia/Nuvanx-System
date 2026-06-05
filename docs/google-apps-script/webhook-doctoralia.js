@@ -111,11 +111,11 @@ function testWebhook() {
           hora: "10:00",
           fecha_creacion: "2026-06-01",
           hora_creacion: "09:00",
-          asunto: "999. CLIENTE DE PRUEBA [600000000] (TRATAMIENTO TEST)",
-          agenda: "MEDICINA ESTÉTICA",
+          asunto: "000. PATIENT NAME [123456789] (TREATMENT)",
+          agenda: "AGENDA NAME",
           sala_box: "BOX 1",
           confirmada: false,
-          procedencia: "Doctoralia",
+          procedencia: "Source",
           importe: 100,
           fecha_para_normalizar: "2026-06-02"
         }

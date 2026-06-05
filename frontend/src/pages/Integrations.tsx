@@ -294,7 +294,7 @@ export default function Integrations() {
                       id="adAccountId-input"
                       type="text"
                       name="adAccountId"
-                      placeholder="ej. act_123456789012345, act_098765432109876"
+                      placeholder="ej. act_..."
                       value={form.adAccountId}
                       onChange={handleFieldChange}
                       className="mt-1"
@@ -307,7 +307,7 @@ export default function Integrations() {
                       id="pageId-input"
                       type="text"
                       name="pageId"
-                      placeholder="ID de la página de Facebook para webhooks de leads"
+                      placeholder="ID de la página"
                       value={form.pageId}
                       onChange={handleFieldChange}
                       className="mt-1"
@@ -320,7 +320,7 @@ export default function Integrations() {
                       id="pixelId-input"
                       type="text"
                       name="pixelId"
-                      placeholder="ej. 877262375461917"
+                      placeholder="ID del píxel"
                       value={form.pixelId}
                       onChange={handleFieldChange}
                       className="mt-1"
@@ -352,7 +352,7 @@ export default function Integrations() {
                     id="googleAdsCustomerId-input"
                     type="text"
                     name="googleAdsCustomerId"
-                    placeholder="ej. 123-456-7890"
+                    placeholder="ej. 000-000-0000"
                     value={form.googleAdsCustomerId}
                     onChange={handleFieldChange}
                     className="mt-1"
