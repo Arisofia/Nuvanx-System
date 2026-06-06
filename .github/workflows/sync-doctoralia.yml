@@ -136,7 +136,6 @@ jobs:
           GOOGLE_CLIENT_ID:    ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_PROJECT_ID:   ${{ secrets.GOOGLE_PROJECT_ID }}
           GOOGLE_PRIVATE_KEY:  ${{ secrets.GOOGLE_PRIVATE_KEY }}
-          GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
           DATABASE_URL:        ${{ secrets.DATABASE_URL }}
           CLINIC_ID:           ${{ secrets.CLINIC_ID }}
           EXPECTED_SHEET_ID:   ${{ env.EXPECTED_SHEET_ID }}

@@ -42,7 +42,6 @@ const { extractPhonesFromSubject, normalizePhoneForMatching, getPrimaryPhoneFrom
 
 const {
   GOOGLE_SA_JSON,
-  GOOGLE_ADS_SERVICE_ACCOUNT,
   GOOGLE_DOCTORALIA_SERVICE_ACCOUNT,
   GOOGLE_SA_JSON_FILE,
   GOOGLE_API_KEY,
@@ -57,7 +56,7 @@ const {
   DOCTORALIA_SYNC_PERMISSION_MODE = 'fail',
 } = process.env;
 
-const SA_JSON = GOOGLE_SA_JSON || GOOGLE_DOCTORALIA_SERVICE_ACCOUNT || GOOGLE_ADS_SERVICE_ACCOUNT;
+const SA_JSON = GOOGLE_SA_JSON || GOOGLE_DOCTORALIA_SERVICE_ACCOUNT;
 
 function loadServiceAccountJson() {
   if (SA_JSON) {
