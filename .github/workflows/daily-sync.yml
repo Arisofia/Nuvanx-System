@@ -44,6 +44,7 @@ jobs:
       SHEETS_WEBHOOK_SECRET_DOCTORALIA: ${{ secrets.SHEETS_WEBHOOK_SECRET_DOCTORALIA || '' }}
       # For the doctoralia sync script (non-critical step)
       SHEET_NAME: "Doctoralia"
+      SHEET_RANGE: "A1:T5000"
 
     steps:
       - name: Checkout repository

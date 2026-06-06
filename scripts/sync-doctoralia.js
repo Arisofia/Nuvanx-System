@@ -477,25 +477,28 @@ function buildHeaderConfig(headers) {
 }
 
 function getRowId(row, config) {
-  if (!config.useHashId) {
-    return row[config.colId]?.toString().trim() ?? '';
-  }
-
-  // Fallback: Try to extract a real ID from the Asunto column (F) using robust regex
+  // We explicitly switch to composite hash-based ID because Column M (ID) in 
+  // Doctoralia exports is often a Patient ID or Appointment ID that repeats across rows,
+  // causing overwrites in the financial_settlements table.
+  
+  // Try robust parsing from Asunto column (F) to get a base identifier if possible
+  let baseId = '';
   if (config.hasColTemplate) {
     const asunto = row[config.colTemplate]?.toString().trim() ?? '';
     const parsed = parseAsunto(asunto);
     if (parsed && parsed.id) {
-      return parsed.id;
+      baseId = parsed.id;
     }
   }
 
-  // Last resort: hash-based ID (existing behavior)
+  // Use a composite key to ensure uniqueness per settlement row
   const fecha  = row[config.colFecha]?.toString().trim() ?? '';
   const hora   = row[config.colHora]?.toString().trim() ?? '';
   const asunto = config.hasColTemplate ? (row[config.colTemplate]?.toString().trim() ?? '') : '';
-  const agenda = config.hasColIntermediary ? (row[config.colIntermediary]?.toString().trim() ?? '') : '';
-  const key    = `${fecha}|${hora}|${asunto}|${agenda}`;
+  const agenda = config.hasColAgenda ? (row[config.colAgenda]?.toString().trim() ?? '') : '';
+  const amount = config.hasColNet ? (row[config.colNet]?.toString().trim() ?? '') : '';
+  
+  const key = `${baseId}|${fecha}|${hora}|${asunto}|${agenda}|${amount}`;
   return createHash('sha256').update(key).digest('hex').slice(0, 32);
 }
 

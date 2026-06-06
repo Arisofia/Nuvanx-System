@@ -139,6 +139,6 @@ jobs:
           DATABASE_URL:        ${{ secrets.DATABASE_URL }}
           CLINIC_ID:           ${{ secrets.CLINIC_ID }}
           EXPECTED_SHEET_ID:   ${{ env.EXPECTED_SHEET_ID }}
-          SHEET_RANGE:         A1:Z5000
+          SHEET_RANGE:         A1:T5000
           SHEET_NAME:          "Doctoralia"
           DOCTORALIA_SYNC_PERMISSION_MODE: warn
