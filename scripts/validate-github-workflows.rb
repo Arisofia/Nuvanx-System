@@ -15,6 +15,15 @@ FORBIDDEN_RUNTIME_FLAGS = %w[
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24
 ].freeze
 
+# Production workflows must not pass by using placeholder credentials, dummy data,
+# warning-only gates, skipped validations, or swallowed command failures.
+FORBIDDEN_TEXT_PATTERNS = {
+  /ci_dummy|dummy_|fake_|not-configured|your-project\.supabase\.co|your-anon-key|your-public-anon-key|your-publishable-key/i => 'placeholder or dummy credential/data detected',
+  /continue-on-error:\s*true/i => 'continue-on-error is forbidden for production workflow gates',
+  /skip_.*=true|skipped.*missing secrets|warning::.*skipped/i => 'skip-on-missing-secrets pattern detected',
+  /\|\|\s*true/ => 'command failure swallowed with || true'
+}.freeze
+
 errors = []
 workflow_files = Dir.glob(File.join(GITHUB_DIR, '**', '*.{yml,yaml}')).sort
 
@@ -58,6 +67,12 @@ workflow_files.each do |file|
 
   if text.match?(/^(<<<<<<<|=======|>>>>>>>)$/)
     errors << "#{rel}: merge conflict marker detected"
+  end
+
+  FORBIDDEN_TEXT_PATTERNS.each do |pattern, message|
+    next unless text.match?(pattern)
+
+    errors << "#{rel}: #{message}"
   end
 
   FORBIDDEN_RUNTIME_FLAGS.each do |flag|
@@ -114,4 +129,4 @@ if errors.any?
   exit 1
 end
 
-puts "OK #{workflow_files.length} GitHub YAML files validated"
+puts "OK #{workflow_files.length} GitHub YAML files validated without placeholder/fake-data gates"
