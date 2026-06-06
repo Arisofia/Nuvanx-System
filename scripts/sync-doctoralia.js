@@ -57,7 +57,7 @@ const {
   DOCTORALIA_SYNC_PERMISSION_MODE = 'fail',
 } = process.env;
 
-const SA_JSON = GOOGLE_SA_JSON || GOOGLE_ADS_SERVICE_ACCOUNT || GOOGLE_DOCTORALIA_SERVICE_ACCOUNT;
+const SA_JSON = GOOGLE_SA_JSON || GOOGLE_DOCTORALIA_SERVICE_ACCOUNT || GOOGLE_ADS_SERVICE_ACCOUNT;
 
 function loadServiceAccountJson() {
   if (SA_JSON) {
@@ -591,6 +591,7 @@ async function fetchSheetRows(sheets, saObject) {
   // First, get the list of sheets to find the correct title
   let targetSheetTitle = null;
   let availableSheets = [];
+  let sheetsList = [];
 
   try {
     const meta = await sheets.spreadsheets.get({
@@ -598,7 +599,7 @@ async function fetchSheetRows(sheets, saObject) {
       fields: 'sheets.properties.title,sheets.properties.sheetId,sheets.properties.gridProperties'
     });
 
-    const sheetsList = meta.data.sheets || [];
+    sheetsList = meta.data.sheets || [];
     availableSheets = sheetsList.map(s => s.properties.title);
 
     console.log(`[sync-doctoralia] Available sheets in spreadsheet: ${availableSheets.join(' | ')}`);
@@ -917,8 +918,11 @@ module.exports = {
 };
 
 if (require.main === module) {
-  main().catch(() => {
-    console.error('[sync-doctoralia] Fatal error. Enable secure debug logging to inspect details.');
+  main().catch((err) => {
+    console.error(`[sync-doctoralia] Fatal error: ${maskSensitive(err.message)}`);
+    if (err.stack) {
+      console.debug('[sync-doctoralia] Stack trace:', maskSensitive(err.stack));
+    }
     process.exit(1);
   });
 }
