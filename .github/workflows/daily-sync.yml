@@ -3,7 +3,7 @@ name: Daily Sync Orchestrator
 
 on:
   schedule:
-    - cron: '0 7 * * *'   # Daily at 07:00 UTC
+    - cron: '0 7 * * *'
   workflow_run:
     workflows: ["Supabase Security Check"]
     types: [completed]
@@ -16,19 +16,18 @@ on:
         default: '2'
 
 env:
-  META_GRAPH_VERSION: ${{ format('{0}', secrets.META_GRAPH_VERSION || 'v20.0') }}
-  FALLBACK_META_AD_ACCOUNT_ID: ${{ format('{0}', secrets.FALLBACK_META_AD_ACCOUNT_ID || '') }}
-  SHEETS_WEBHOOK_URL_DOCTORALIA: ${{ format('{0}', secrets.SHEETS_WEBHOOK_URL_DOCTORALIA || '') }}
-  SHEETS_WEBHOOK_SECRET_DOCTORALIA: ${{ format('{0}', secrets.SHEETS_WEBHOOK_SECRET_DOCTORALIA || '') }}
+  META_GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION }}
+  FALLBACK_META_AD_ACCOUNT_ID: ${{ secrets.FALLBACK_META_AD_ACCOUNT_ID }}
+  SHEETS_WEBHOOK_URL_DOCTORALIA: ${{ secrets.SHEETS_WEBHOOK_URL_DOCTORALIA }}
+  SHEETS_WEBHOOK_SECRET_DOCTORALIA: ${{ secrets.SHEETS_WEBHOOK_SECRET_DOCTORALIA }}
 
 jobs:
   daily-sync:
     name: Run Daily Sync Orchestrator
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
     env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL || secrets.VITE_SUPABASE_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
@@ -38,15 +37,12 @@ jobs:
       DOCTORALIA_SHEET_ID: ${{ secrets.DOCTORALIA_SHEET_ID }}
       CLINIC_ID: ${{ secrets.CLINIC_ID }}
       ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
-      # Real production Meta creds for CAPI, insights, and daily sync (provided via GH secrets):
       META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
       META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
       META_AD_ACCOUNT_IDS: ${{ secrets.META_AD_ACCOUNT_IDS }}
-      META_APP_SECRET: ${{ secrets.META_APP_SECRET || '' }}
-      # For the doctoralia sync script (non-critical step)
+      META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
       SHEET_NAME: "Doctoralia"
       SHEET_RANGE: "A1:T5000"
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -60,32 +56,28 @@ jobs:
       - name: Install dependencies
         run: npm install --include=dev --ignore-scripts --legacy-peer-deps
 
-      - name: Validate daily sync prerequisites
-        id: validate
+      - name: Validate real daily sync prerequisites
         shell: bash
         run: |
           set -euo pipefail
-          MISSING=()
-          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
-            MISSING+=("SUPABASE_ACCESS_TOKEN")
-          elif ! [[ "${SUPABASE_ACCESS_TOKEN:-}" =~ ^sbp_[A-Za-z0-9]+$ ]]; then
-            MISSING+=("SUPABASE_ACCESS_TOKEN (invalid format, must start with sbp_)")
-          fi
-          [ -z "${SUPABASE_PROJECT_REF:-}" ] && MISSING+=("SUPABASE_PROJECT_REF")
-          [ -z "${META_ACCESS_TOKEN:-}" ] && MISSING+=("META_ACCESS_TOKEN")
+          REQUIRED=(SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY SUPABASE_ACCESS_TOKEN SUPABASE_PROJECT_REF META_ACCESS_TOKEN)
+          for key in "${REQUIRED[@]}"; do
+            value="${!key:-}"
+            if [ -z "$value" ]; then
+              echo "::error::$key secret is required. Daily sync must not pass without real production data credentials."
+              exit 1
+            fi
+          done
           if [ -z "${META_AD_ACCOUNT_ID:-}" ] && [ -z "${META_AD_ACCOUNT_IDS:-}" ]; then
-            MISSING+=("META_AD_ACCOUNT_ID or META_AD_ACCOUNT_IDS")
+            echo "::error::META_AD_ACCOUNT_ID or META_AD_ACCOUNT_IDS secret is required."
+            exit 1
           fi
-
-          if [ ${#MISSING[@]} -gt 0 ]; then
-            echo "::warning::Daily sync orchestrator skipped — missing secrets: ${MISSING[*]}"
-            echo "skip_orchestrator=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip_orchestrator=false" >> "$GITHUB_OUTPUT"
+          if ! [[ "${SUPABASE_ACCESS_TOKEN:-}" =~ ^sbp_[A-Za-z0-9]+$ ]]; then
+            echo "::error::SUPABASE_ACCESS_TOKEN format is invalid."
+            exit 1
           fi
 
       - name: Run Orchestrator Script
-        if: steps.validate.outputs.skip_orchestrator != 'true'
         run: node scripts/run-daily-sync.js
 
       - name: Fetch Meta Daily Insights
@@ -97,19 +89,10 @@ jobs:
             echo "::error::days must be an integer between 1 and 90. Received: $DAYS"
             exit 1
           fi
-
-          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
-            echo "::warning::Meta daily insights fetch skipped — SUPABASE_URL/VITE_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing."
-            exit 0
-          fi
-
-          echo "Fetching Meta insights for last $DAYS days..."
-
           RESPONSE=$(curl --fail-with-body --show-error --silent --max-time 60 -X POST "${SUPABASE_URL}/functions/v1/daily-aggregates" \
             -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
             -H "Content-Type: application/json" \
             -d "{\"action\": \"fetch_meta_insights\", \"days\": $DAYS}")
-
           echo "Response: $RESPONSE"
           if echo "$RESPONSE" | grep -q '"success":true'; then
             echo "Meta insights fetched successfully."
