@@ -1,4 +1,4 @@
-﻿# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
+﻿﻿﻿# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
 name: Deploy Supabase
 
 on:
@@ -200,7 +200,7 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-      FALLBACK_META_AD_ACCOUNT_ID: ${{ secrets.FALLBACK_META_AD_ACCOUNT_ID || '9523446201036125' }}
+      FALLBACK_RAW: ${{ secrets.FALLBACK_META_AD_ACCOUNT_ID }}
     steps:
       - uses: actions/checkout@v5
 
@@ -214,7 +214,9 @@ jobs:
           database_url: ${{ env.DATABASE_URL }}
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           skip_link: true
-          command: supabase functions deploy api --no-verify-jwt --project-ref ${{ env.SUPABASE_PROJECT_REF }}
+          command: |
+            export FALLBACK_META_AD_ACCOUNT_ID="${FALLBACK_RAW:-9523446201036125}"
+            supabase functions deploy api --no-verify-jwt --project-ref ${{ env.SUPABASE_PROJECT_REF }}
 
       - name: Deploy MCP Edge Function
         id: deploy_mcp
@@ -226,7 +228,9 @@ jobs:
           database_url: ${{ env.DATABASE_URL }}
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           skip_link: true
-          command: supabase functions deploy mcp --project-ref ${{ env.SUPABASE_PROJECT_REF }} --no-verify-jwt
+          command: |
+            export FALLBACK_META_AD_ACCOUNT_ID="${FALLBACK_RAW:-9523446201036125}"
+            supabase functions deploy mcp --project-ref ${{ env.SUPABASE_PROJECT_REF }} --no-verify-jwt
 
       - name: Deploy Daily Aggregates Edge Function
         id: deploy_daily
@@ -238,7 +242,9 @@ jobs:
           database_url: ${{ env.DATABASE_URL }}
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           skip_link: true
-          command: supabase functions deploy daily-aggregates --no-verify-jwt --project-ref ${{ env.SUPABASE_PROJECT_REF }}
+          command: |
+            export FALLBACK_META_AD_ACCOUNT_ID="${FALLBACK_RAW:-9523446201036125}"
+            supabase functions deploy daily-aggregates --no-verify-jwt --project-ref ${{ env.SUPABASE_PROJECT_REF }}
 
       - name: Summarize Deploys
         if: always()
