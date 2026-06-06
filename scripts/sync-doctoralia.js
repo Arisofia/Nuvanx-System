@@ -184,11 +184,14 @@ function formatPermissionGuidance(sa) {
  * Parses the "Asunto" column (F) using a robust regex.
  * Handles cases where the patient name itself contains parentheses.
  * 
- * Expected format: "398. PATIENT NAME (REPRESENTATIVE) [123456789] (TREATMENT NAME)"
+ * Expected formats:
+ *   "398. PATIENT NAME (REPRESENTATIVE) [123456789] (TREATMENT NAME)"
+ *   "O/1. CLINICAS ESQUIVEL ESQUIVEL [657174670]"
  */
 function parseAsunto(asunto) {
   if (!asunto) return null;
-  const pattern = /^(\d+)\.\s+(.*?)\s+\[(.*?)\]\s+\((.*?)\)\s*$/;
+  // Flexible pattern: optional O/ prefix, digits, dot, name, phone in [], and optional treatment in ()
+  const pattern = /^(?:O\/)?(\d+)\.\s+(.*?)\s+\[(.*?)\](?:\s+\((.*?)\))?\s*$/;
   const match = pattern.exec(String(asunto));
   
   if (!match) return null;
@@ -197,7 +200,7 @@ function parseAsunto(asunto) {
     id: match[1],
     nombre: match[2].trim(),
     telefono: match[3].trim(),
-    tratamiento: match[4].trim()
+    tratamiento: (match[4] || '').trim()
   };
 }
 
@@ -761,6 +764,7 @@ async function main() {
       const success = await upsertDoctoraliaRow(rows[i], i, {
         db,
         cols: config,
+        hasColName: config.hasColName,
         ...config,
       });
       if (success) upserted++;
@@ -771,6 +775,12 @@ async function main() {
 
     // ── 5. Reconcile subjects to leads ──────────────────────────────────────
     await reconcileDoctoraliaLeads(db);
+
+    // ── 6. Sync doctoralia_patients table ───────────────────────────────────
+    console.log('[sync-doctoralia] Syncing doctoralia_patients table...');
+    const syncRes = await db.query('SELECT public.sync_doctoralia_patients() as count');
+    const syncCount = syncRes.rows[0]?.count || 0;
+    console.log(`[sync-doctoralia] Doctoralia patients synced: ${syncCount} records updated.`);
 
   } finally {
     try {
@@ -828,17 +838,32 @@ async function upsertDoctoraliaRow(row, i, params) {
 
   // Improved phone extraction using parseAsunto as strong fallback
   let patientPhone = null;
+  let patientName = null;
+  
   if (hasColPhone) {
     patientPhone = normalizePhoneForMatching(row[cols.colPhone]);
   }
-  if (!patientPhone && hasColTemplate) {
+  
+  if (hasColTemplate) {
     const asunto = row[cols.colTemplate]?.toString().trim() ?? '';
     const parsed = parseAsunto(asunto);
-    if (parsed && parsed.telefono) {
-      patientPhone = normalizePhoneForMatching(parsed.telefono);
-    } else {
-      patientPhone = getPrimaryPhoneFromSubject(asunto);
+    if (parsed) {
+      if (!patientPhone && parsed.telefono) {
+        patientPhone = normalizePhoneForMatching(parsed.telefono);
+      }
+      patientName = parsed.nombre;
     }
+  }
+
+  // Final check for name from dedicated column if not found in Asunto
+  if (!patientName && params.hasColName) {
+    patientName = row[cols.colName]?.trim();
+  }
+
+  // SKIP rows that still lack basic identification after parsing
+  if (!patientName || patientName.length < 2) {
+    console.warn(`[sync-doctoralia] Skipping row ${i + 1} because patient name is missing or too short.`);
+    return false;
   }
 
   try {
@@ -848,8 +873,8 @@ async function upsertDoctoraliaRow(row, i, params) {
           payment_method, template_name, template_id,
           settled_at, intake_at, cancelled_at, intermediary_name,
           status_original, status_type, room_id, lead_source, agenda_name,
-          patient_phone, phone_normalized, source_system)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'doctoralia')
+          patient_phone, phone_normalized, patient_name, source_system)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,'doctoralia')
        ON CONFLICT (id) DO UPDATE SET
          amount_gross      = EXCLUDED.amount_gross,
          amount_discount   = EXCLUDED.amount_discount,
@@ -868,6 +893,7 @@ async function upsertDoctoraliaRow(row, i, params) {
          agenda_name       = EXCLUDED.agenda_name,
          patient_phone     = COALESCE(EXCLUDED.patient_phone, financial_settlements.patient_phone),
          phone_normalized  = COALESCE(EXCLUDED.phone_normalized, financial_settlements.phone_normalized),
+         patient_name      = COALESCE(EXCLUDED.patient_name, financial_settlements.patient_name),
          source_system     = 'doctoralia'`,
       [
         rawId, CLINIC_ID, finalAmountGross, finalAmountDisc, finalAmountNet,
@@ -882,7 +908,8 @@ async function upsertDoctoraliaRow(row, i, params) {
         leadSource,
         agenda,
         patientPhone,
-        patientPhone ? normalizePhoneForMatching(patientPhone) : null,  // phone_normalized as 19th param
+        patientPhone ? normalizePhoneForMatching(patientPhone) : null,
+        patientName,
       ]
     );
     return true;
