@@ -216,7 +216,7 @@ jobs:
           skip_link: true
           command: |
             export FALLBACK_META_AD_ACCOUNT_ID="${FALLBACK_RAW:-9523446201036125}"
-            supabase functions deploy api --no-verify-jwt --project-ref ${{ env.SUPABASE_PROJECT_REF }}
+            supabase functions deploy api --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
 
       - name: Deploy MCP Edge Function
         id: deploy_mcp
@@ -230,7 +230,7 @@ jobs:
           skip_link: true
           command: |
             export FALLBACK_META_AD_ACCOUNT_ID="${FALLBACK_RAW:-9523446201036125}"
-            supabase functions deploy mcp --project-ref ${{ env.SUPABASE_PROJECT_REF }} --no-verify-jwt
+            supabase functions deploy mcp --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
 
       - name: Deploy Daily Aggregates Edge Function
         id: deploy_daily
@@ -244,7 +244,7 @@ jobs:
           skip_link: true
           command: |
             export FALLBACK_META_AD_ACCOUNT_ID="${FALLBACK_RAW:-9523446201036125}"
-            supabase functions deploy daily-aggregates --no-verify-jwt --project-ref ${{ env.SUPABASE_PROJECT_REF }}
+            supabase functions deploy daily-aggregates --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
 
       - name: Summarize Deploys
         if: always()
