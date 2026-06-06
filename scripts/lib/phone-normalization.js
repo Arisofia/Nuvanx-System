@@ -11,7 +11,7 @@
 function normalizePhoneForMatching(value) {
   if (value == null) return null;
 
-  let cleaned = String(value).trim().replace(/[^0-9]/g, '');
+  let cleaned = String(value).trim().replace(/\D/g, '');
   if (!cleaned) return null;
 
   // Reject obvious fake/placeholder phones from exports (e.g. 000000000, 111111111, 123456789)
