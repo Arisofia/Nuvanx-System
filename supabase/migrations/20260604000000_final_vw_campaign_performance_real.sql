@@ -26,7 +26,7 @@ BEGIN
   EXECUTE '
   CREATE OR REPLACE VIEW public.vw_campaign_performance_real AS
   SELECT
-    COALESCE(u.id, l.user_id)                           AS user_id,
+    l.user_id                           AS user_id,
     COALESCE(ma.campaign_name, l.campaign_name, ''Organic / Unknown'') AS campaign_name,
     COALESCE(ma.campaign_id, l.campaign_id)             AS campaign_id,
 
@@ -64,10 +64,8 @@ BEGIN
     ON ut.lead_id = l.id
   LEFT JOIN public.meta_attribution ma
     ON ma.lead_id = l.id
-  LEFT JOIN public.users u
-    ON u.id = l.user_id
   GROUP BY
-    COALESCE(u.id, l.user_id),
+    l.user_id,
     COALESCE(ma.campaign_name, l.campaign_name, ''Organic / Unknown''),
     COALESCE(ma.campaign_id, l.campaign_id)';
 

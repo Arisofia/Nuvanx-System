@@ -52,6 +52,7 @@ jobs:
           skip_link: true
           command: |
             set -euo pipefail
+            node scripts/validate-sql-migrations.js
             supabase db push --include-all --db-url "$SESSION_URL" --debug
 
       - name: List Supabase migrations

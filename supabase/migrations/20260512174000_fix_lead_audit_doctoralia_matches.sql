@@ -54,7 +54,7 @@ SELECT
   dp.match_class,
   fs_first.settled_at     AS first_settlement_at
 FROM public.leads l
-LEFT JOIN public.users u ON u.id = l.user_id
+LEFT JOIN LATERAL (SELECT l.clinic_id) u(clinic_id) ON TRUE
 LEFT JOIN public.patients p
   ON  (p.dni_hash = l.dni_hash AND l.dni_hash IS NOT NULL)
   OR   p.id = l.converted_patient_id
