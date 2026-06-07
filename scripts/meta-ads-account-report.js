@@ -52,10 +52,10 @@ function parseAccountIds(raw) {
 }
 
 function redactAccountId(accountId) {
-  const value = String(accountId || '');
-  if (!value) return '[redacted]';
-  const suffix = value.slice(-4);
-  return `***${suffix}`;
+  const value = String(accountId || '').trim();
+  if (!value) return '[redacted-account]';
+  if (value.length <= 8) return '[redacted-account]';
+  return `${value.slice(0, 4)}…${value.slice(-4)}`;
 }
 
 function parseArgs() {
@@ -267,13 +267,13 @@ async function main() {
       for (const accountId of targetIds) {
         try {
           const details = await fetchAccountDetails(accessToken, accountId);
-          console.log(`\n${accountId} details:`);
+          console.log(`\n${redactAccountId(accountId)} details:`);
           console.log(`  name: ${details.name || '<unknown>'}`);
           console.log(`  status: ${details.account_status}`);
           console.log(`  currency: ${details.currency || '<unknown>'}`);
           console.log(`  amount_spent: ${details.amount_spent ?? '<unknown>'}`);
         } catch (err) {
-          console.error(`  Failed to fetch details for ${accountId}: ${maskSensitive(err.message)}`);
+          console.error(`  Failed to fetch details for ${redactAccountId(accountId)}: ${maskSensitive(err.message)}`);
         }
       }
     }
@@ -298,7 +298,8 @@ async function main() {
             { spend: 0, impressions: 0, clicks: 0, conversions: 0, messaging: 0, link_clicks: 0 }
           );
 
-          console.log(`\n${accountId} summary:`);
+          const accountLabel = redactAccountId(accountId);
+          console.log(`\n${accountLabel} summary:`);
           console.log(`  rows: ${rows.length}`);
           console.log(`  spend: ${totals.spend}`);
           console.log(`  impressions: ${totals.impressions}`);
@@ -308,7 +309,6 @@ async function main() {
           console.log(`  link clicks: ${totals.link_clicks}`);
         } catch (err) {
           console.error(`  Failed to fetch insights for ${redactAccountId(accountId)}: ${err.message}`);
-          console.error(`  Failed to fetch insights for ${accountId}: ${maskSensitive(err.message)}`);
         }
       }
     }
