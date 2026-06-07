@@ -248,9 +248,15 @@ runs:
         set -euo pipefail
         # Minimal simple link (removed is_deterministic_link_error + run_link_with_retry per request)
         if [ -n "$RESOLVED_DB_PASSWORD" ]; then
-          supabase link --project-ref "$INPUT_PROJECT_REF" --password "$RESOLVED_DB_PASSWORD" --yes </dev/null || true
+          if ! supabase link --project-ref "$INPUT_PROJECT_REF" --password "$RESOLVED_DB_PASSWORD" --yes </dev/null; then
+            echo "::error::Failed to link Supabase project $INPUT_PROJECT_REF"
+            exit 1
+          fi
         else
-          supabase link --project-ref "$INPUT_PROJECT_REF" --yes </dev/null || true
+          if ! supabase link --project-ref "$INPUT_PROJECT_REF" --yes </dev/null; then
+            echo "::error::Failed to link Supabase project $INPUT_PROJECT_REF (no password provided)"
+            exit 1
+          fi
         fi
         echo "skipped=false" >> "$GITHUB_OUTPUT"
 

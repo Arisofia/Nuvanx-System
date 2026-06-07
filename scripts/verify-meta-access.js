@@ -17,8 +17,25 @@ const FAILURE_MESSAGES = {
 
 function fail(code) {
   console.error('❌ Meta access verification failed.');
-  console.error(`Reason: ${FAILURE_MESSAGES[code] || FAILURE_MESSAGES.UNKNOWN}`);
+  console.error(`Reason: ${maskSensitive(FAILURE_MESSAGES[code] || FAILURE_MESSAGES.UNKNOWN)}`);
   process.exit(1);
+}
+
+function maskSensitive(text) {
+  if (!text) return text;
+  const str = String(text);
+  return str
+    // Mask passwords in connection strings: postgres://user:password@host
+    .replace(/(postgres(?:ql)?:\/\/[^:]+:)([^@\s]+)(@)/gi, '$1****$3')
+    // Mask emails: keep first 3 chars, then ***, then @domain
+    .replace(/([a-zA-Z0-9._%+-]+)@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g, (match, p1, p2) => {
+      const maskedP1 = p1.length > 3 ? p1.slice(0, 3) + '***' : '***';
+      return maskedP1 + '@' + p2;
+    })
+    // Mask potential token/secret values in error messages (long alphanumeric strings)
+    .replace(/[a-zA-Z0-9_-]{32,}/g, (match) => {
+      return match.slice(0, 4) + '****' + match.slice(-4);
+    });
 }
 
 function normalizeAdAccountId(raw) {

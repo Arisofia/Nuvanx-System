@@ -333,28 +333,17 @@ jobs:
         run: npm exec playwright install --with-deps
 
       - name: Validate E2E secrets
-        id: check-e2e-secrets
         run: |
           if [ -z "${{ secrets.PRODUCTION_E2E_URL }}" ] || [ -z "${{ secrets.E2E_EMAIL }}" ]; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-            echo "::warning::E2E smoke tests SKIPPED — secrets PRODUCTION_E2E_URL / E2E_EMAIL not configured in GitHub Actions. Dashboard production smoke is NOT verified."
-          else
-            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "::error::E2E smoke tests require PRODUCTION_E2E_URL and E2E_EMAIL secrets"
+            exit 1
           fi
 
       - name: Run Playwright smoke tests
-        if: steps.check-e2e-secrets.outputs.skip == 'false'
         run: npm run test:e2e
         env:
           E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
           E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
-
-      - name: Warn if E2E skipped
-        if: steps.check-e2e-secrets.outputs.skip == 'true'
-        run: |
-          echo "⚠️  ADVERTENCIA: Los tests E2E fueron omitidos por falta de secrets."
-          echo "    Configura PRODUCTION_E2E_URL y E2E_EMAIL en GitHub Actions Secrets."
-          echo "    El dashboard NO ha sido verificado en este build."
 
   # ─────────────────────────────────────────────────────────────────────────────
   # 3. Shared libraries + Edge Functions (Deno)
@@ -367,10 +356,10 @@ jobs:
     permissions:
       contents: read
     env:
-      MCP_API_KEY: ''
-      FALLBACK_META_AD_ACCOUNT_ID: '9523446201036125'
-      SHEETS_WEBHOOK_URL_DOCTORALIA: ''
-      SHEETS_WEBHOOK_SECRET_DOCTORALIA: 'webhook-doctoralia-secret-example'
+      MCP_API_KEY: ${{ secrets.MCP_API_KEY || '' }}
+      FALLBACK_META_AD_ACCOUNT_ID: ${{ secrets.FALLBACK_META_AD_ACCOUNT_ID || '9523446201036125' }}
+      SHEETS_WEBHOOK_URL_DOCTORALIA: ${{ secrets.SHEETS_WEBHOOK_URL_DOCTORALIA || '' }}
+      SHEETS_WEBHOOK_SECRET_DOCTORALIA: ${{ secrets.SHEETS_WEBHOOK_SECRET_DOCTORALIA || '' }}
     steps:
       - uses: actions/checkout@v5
 
@@ -383,21 +372,16 @@ jobs:
 
       - name: Install dependencies
         id: install-deps
-        continue-on-error: true
-        run: | # This block is for npm install retry logic
+        run: |
           set -euo pipefail
           max_attempts=3
           attempt=1
-          while true; do
-            # Use npm ci for CI environments for deterministic installs
-            # npm install --include=dev --ignore-scripts --legacy-peer-deps
-            # is replaced by npm ci for better CI practices.
-            # If you specifically need 'npm install', revert this line.
+          while [ $attempt -le $max_attempts ]; do
             if npm install --include=dev --ignore-scripts --legacy-peer-deps; then
               exit 0
             fi
-            if [ "$attempt" -ge "$max_attempts" ]; then
-              echo "::warning::npm ci failed after ${max_attempts} attempts; proceeding with fallback test path."
+            if [ $attempt -eq $max_attempts ]; then
+              echo "::error::npm install failed after ${max_attempts} attempts"
               exit 1
             fi
             attempt=$((attempt + 1))
@@ -415,23 +399,15 @@ jobs:
           echo "MCP_API_KEY=${MCP_KEY}" >> $GITHUB_ENV
           echo "FALLBACK_META_AD_ACCOUNT_ID=${FB_ID:-9523446201036125}" >> $GITHUB_ENV
           echo "SHEETS_WEBHOOK_URL_DOCTORALIA=${SHEETS_URL}" >> $GITHUB_ENV
-          echo "SHEETS_WEBHOOK_SECRET_DOCTORALIA=${SHEETS_SECRET:-webhook-doctoralia-secret-example}" >> $GITHUB_ENV
+          echo "SHEETS_WEBHOOK_SECRET_DOCTORALIA=${SHEETS_SECRET}" >> $GITHUB_ENV
 
       - name: Run shared and functions tests
-        run: |
-          set -euo pipefail
-          if [ "${{ steps.install-deps.outcome }}" != "success" ]; then
-            echo "::warning::npm install failed after retries. Running minimal smoke tests only."
-            # Run the most critical unit test that doesn't require full deps
-            node --test scripts/lib/phone-normalization.test.js || echo "::warning::Fallback test also failed"
-            exit 0
-          fi
-          npm test
+        run: npm test
         env:
           NODE_ENV: test
           # Use repository secrets for CI test credentials to avoid hardcoding sensitive values.
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY || 'ci_dummy_encryption_key_32chars_minimum_for_check' }}
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY || '' }}
           MCP_API_KEY: ${{ env.MCP_API_KEY }}
           FALLBACK_META_AD_ACCOUNT_ID: ${{ env.FALLBACK_META_AD_ACCOUNT_ID }}
           # Doctoralia webhook secrets (guarded; real values from GH secrets for setup flows)

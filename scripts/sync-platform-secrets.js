@@ -141,6 +141,23 @@ function writeFrontendEnv(vars) {
   return target;
 }
 
+function maskSensitive(text) {
+  if (!text) return text;
+  const str = String(text);
+  return str
+    // Mask passwords in connection strings: postgres://user:password@host
+    .replace(/(postgres(?:ql)?:\/\/[^:]+:)([^@\s]+)(@)/gi, '$1****$3')
+    // Mask emails: keep first 3 chars, then ***, then @domain
+    .replace(/([a-zA-Z0-9._%+-]+)@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g, (match, p1, p2) => {
+      const maskedP1 = p1.length > 3 ? p1.slice(0, 3) + '***' : '***';
+      return maskedP1 + '@' + p2;
+    })
+    // Mask potential token/secret values in error messages (long alphanumeric strings)
+    .replace(/[a-zA-Z0-9_-]{32,}/g, (match) => {
+      return match.slice(0, 4) + '****' + match.slice(-4);
+    });
+}
+
 async function setSupabaseSecrets(vars, projectRef) {
   console.log(`[PHASE] Syncing secrets to Supabase project: ${projectRef}`);
   const accessToken = vars.SUPABASE_ACCESS_TOKEN;
@@ -240,7 +257,7 @@ async function handleVercelKey(key, value, existingMap, projectId, token, queryS
     try {
       await updateVercelEnv(projectId, env.id, value, token, queryString);
     } catch (error) {
-      console.warn(`Patch failed for ${key}, falling back to delete/create: ${error.message}`);
+      console.warn(`Patch failed for ${key}, falling back to delete/create: ${maskSensitive(error.message)}`);
       for (const e of existingEnvs) {
         await deleteVercelEnv(projectId, e.id, token, queryString);
       }
@@ -335,7 +352,7 @@ function setGithubSecrets(vars) {
       });
       uploaded += 1;
     } catch (err) {
-      console.error(`[GITHUB] Failed to set secret ${key}: ${err.message}`);
+      console.error(`[GITHUB] Failed to set secret ${key}: ${maskSensitive(err.message)}`);
       if (err.message.includes('401')) {
         console.error('Tip: Your GITHUB_TOKEN/GH_TOKEN might be expired or the gh CLI needs re-authentication (gh auth login).');
       }
@@ -366,7 +383,7 @@ async function main() {
   try {
     supabaseMainResult = await setSupabaseSecrets(vars, vars.SUPABASE_PROJECT_REF);
   } catch (err) {
-    console.error(`[SUPABASE] Main sync failed: ${err.message}`);
+    console.error(`[SUPABASE] Main sync failed: ${maskSensitive(err.message)}`);
   }
 
   if (!vars.SUPABASE_FIGMA_PROJECT_REF) {
@@ -378,18 +395,18 @@ async function main() {
   try {
     vercelResult = await setVercelSecrets(vars);
   } catch (err) {
-    console.error(`[VERCEL] Sync failed: ${err.message}`);
+    console.error(`[VERCEL] Sync failed: ${maskSensitive(err.message)}`);
   }
 
   console.log('Secret sync completed.');
   console.log(`Local frontend env: ${frontendEnvPath}`);
-  console.log(`GitHub: ${JSON.stringify(githubResult)}`);
-  console.log(`Supabase main: ${JSON.stringify(supabaseMainResult)}`);
-  console.log(`Supabase figma: ${JSON.stringify(supabaseFigmaResult)}`);
-  console.log(`Vercel: ${JSON.stringify(vercelResult)}`);
+  console.log(`GitHub: ${maskSensitive(JSON.stringify(githubResult))}`);
+  console.log(`Supabase main: ${maskSensitive(JSON.stringify(supabaseMainResult))}`);
+  console.log(`Supabase figma: ${maskSensitive(JSON.stringify(supabaseFigmaResult))}`);
+  console.log(`Vercel: ${maskSensitive(JSON.stringify(vercelResult))}`);
 }
 
 main().catch((err) => {
-  console.error(err.message || err);
+  console.error(maskSensitive(err.message || err));
   process.exit(1);
 });
