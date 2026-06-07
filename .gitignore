@@ -69,3 +69,8 @@ supabase/.temp/
 scripts/__pycache__/
 secrets/
 .env*
+# Local data imports
+Base Pacientes Nuvanx.xlsx
+*.xlsx
+*.xls
+scripts/local/
