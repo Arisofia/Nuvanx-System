@@ -69,7 +69,7 @@ COMMENT ON FUNCTION public.normalize_phone_for_matching(TEXT) IS
 ALTER TABLE public.leads
   ADD COLUMN IF NOT EXISTS phone_normalized TEXT;
 
-ALTER TABLE public.financial_settlements
+ALTER TABLE IF EXISTS public.financial_settlements
   ADD COLUMN IF NOT EXISTS phone_normalized TEXT;
 
 DO $$
@@ -91,12 +91,19 @@ WHERE phone IS NOT NULL
   AND public.normalize_phone(phone) IS NOT NULL
   AND phone_normalized IS DISTINCT FROM public.normalize_phone(phone);
 
-UPDATE public.financial_settlements
-SET phone_normalized = public.normalize_phone(patient_phone)
-WHERE source_system = 'doctoralia'
-  AND patient_phone IS NOT NULL
-  AND public.normalize_phone(patient_phone) IS NOT NULL
-  AND phone_normalized IS DISTINCT FROM public.normalize_phone(patient_phone);
+DO $$
+BEGIN
+  IF to_regclass('public.financial_settlements') IS NOT NULL THEN
+    UPDATE public.financial_settlements
+    SET phone_normalized = public.normalize_phone(patient_phone)
+    WHERE source_system = 'doctoralia'
+      AND patient_phone IS NOT NULL
+      AND public.normalize_phone(patient_phone) IS NOT NULL
+      AND phone_normalized IS DISTINCT FROM public.normalize_phone(patient_phone);
+  ELSE
+    RAISE NOTICE 'Skipping financial_settlements phone normalization backfill: table does not exist yet';
+  END IF;
+END $$;
 
 DO $$
 BEGIN
@@ -125,15 +132,22 @@ CREATE INDEX IF NOT EXISTS idx_leads_clinic_phone_normalized
   ON public.leads (clinic_id, phone_normalized)
   WHERE phone_normalized IS NOT NULL;
 
-CREATE INDEX IF NOT EXISTS idx_financial_settlements_phone_normalized
-  ON public.financial_settlements (phone_normalized)
-  WHERE phone_normalized IS NOT NULL
-    AND source_system = 'doctoralia';
+DO $$
+BEGIN
+  IF to_regclass('public.financial_settlements') IS NOT NULL THEN
+    CREATE INDEX IF NOT EXISTS idx_financial_settlements_phone_normalized
+      ON public.financial_settlements (phone_normalized)
+      WHERE phone_normalized IS NOT NULL
+        AND source_system = 'doctoralia';
 
-CREATE INDEX IF NOT EXISTS idx_financial_settlements_clinic_phone_normalized
-  ON public.financial_settlements (clinic_id, phone_normalized)
-  WHERE phone_normalized IS NOT NULL
-    AND source_system = 'doctoralia';
+    CREATE INDEX IF NOT EXISTS idx_financial_settlements_clinic_phone_normalized
+      ON public.financial_settlements (clinic_id, phone_normalized)
+      WHERE phone_normalized IS NOT NULL
+        AND source_system = 'doctoralia';
+  ELSE
+    RAISE NOTICE 'Skipping financial_settlements phone indexes: table does not exist yet';
+  END IF;
+END $$;
 
 DO $$
 BEGIN
@@ -183,11 +197,18 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS trg_financial_settlements_normalize_phone ON public.financial_settlements;
-CREATE TRIGGER trg_financial_settlements_normalize_phone
-  BEFORE INSERT OR UPDATE OF patient_phone, source_system ON public.financial_settlements
-  FOR EACH ROW
-  EXECUTE FUNCTION public.trg_normalize_settlement_phone();
+DO $$
+BEGIN
+  IF to_regclass('public.financial_settlements') IS NOT NULL THEN
+    DROP TRIGGER IF EXISTS trg_financial_settlements_normalize_phone ON public.financial_settlements;
+    CREATE TRIGGER trg_financial_settlements_normalize_phone
+      BEFORE INSERT OR UPDATE OF patient_phone, source_system ON public.financial_settlements
+      FOR EACH ROW
+      EXECUTE FUNCTION public.trg_normalize_settlement_phone();
+  ELSE
+    RAISE NOTICE 'Skipping financial_settlements phone trigger: table does not exist yet';
+  END IF;
+END $$;
 
 -- 6. Batch phone-only matching. Safe and idempotent: it only fills
 --    converted_patient_id when it is currently NULL. Matching is exclusively

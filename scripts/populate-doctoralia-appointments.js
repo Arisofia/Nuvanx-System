@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * Loads the Doctoralia appointment export from a local Excel workbook into
+ * Loads Doctoralia appointment exports from a local CSV or Excel workbook into
  * public.doctoralia_appointments_ingestion.
  *
  * Required env vars (.env.local is loaded automatically):
@@ -10,12 +10,13 @@
  *   SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY
  *
  * Optional env vars:
- *   DOCTORALIA_APPOINTMENTS_XLSX_PATH (default: ./Base Pacientes Nuvanx.xlsx)
- *   DOCTORALIA_APPOINTMENTS_SHEET_NAME (default: Doctoralia)
+ *   DOCTORALIA_APPOINTMENTS_INPUT_PATH (default: ./doctoralia_appointments.csv when present, otherwise ./Base Pacientes Nuvanx.xlsx)
+ *   DOCTORALIA_APPOINTMENTS_XLSX_PATH (legacy alias for Excel-only runs)
+ *   DOCTORALIA_APPOINTMENTS_SHEET_NAME (default: Doctoralia; Excel only)
  *   DOCTORALIA_APPOINTMENTS_CHUNK_SIZE (default: 500)
  *
  * Flags:
- *   --dry-run  Parse and summarize the workbook without writing to Supabase.
+ *   --dry-run  Parse and summarize the input file without writing to Supabase.
  */
 
 const fs = require('node:fs');
@@ -25,15 +26,20 @@ const { createClient } = require('@supabase/supabase-js');
 
 require('dotenv').config({ path: '.env.local' });
 
+const DEFAULT_CSV = 'doctoralia_appointments.csv';
 const DEFAULT_WORKBOOK = 'Base Pacientes Nuvanx.xlsx';
 const DEFAULT_SHEET = 'Doctoralia';
 const DEFAULT_CHUNK_SIZE = 500;
 const DRY_RUN = process.argv.includes('--dry-run');
 
-const WORKBOOK_PATH = path.resolve(
+const INPUT_PATH = path.resolve(
   process.cwd(),
-  process.env.DOCTORALIA_APPOINTMENTS_XLSX_PATH || DEFAULT_WORKBOOK,
+  process.env.DOCTORALIA_APPOINTMENTS_INPUT_PATH ||
+    process.env.DOCTORALIA_APPOINTMENTS_CSV_PATH ||
+    process.env.DOCTORALIA_APPOINTMENTS_XLSX_PATH ||
+    (fs.existsSync(path.resolve(process.cwd(), DEFAULT_CSV)) ? DEFAULT_CSV : DEFAULT_WORKBOOK),
 );
+const INPUT_EXT = path.extname(INPUT_PATH).toLowerCase();
 const SHEET_NAME = process.env.DOCTORALIA_APPOINTMENTS_SHEET_NAME || DEFAULT_SHEET;
 const CHUNK_SIZE = parsePositiveInt(process.env.DOCTORALIA_APPOINTMENTS_CHUNK_SIZE, DEFAULT_CHUNK_SIZE);
 
@@ -42,7 +48,7 @@ const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABA
 
 const HEADER_ALIASES = {
   estado: ['estado', 'status'],
-  appointment_date: ['fecha', 'fecha cita', 'appointment date'],
+  appointment_date: ['fecha', 'fecha cita', 'appointment date', 'appointment_date'],
   appointment_time: ['hora', 'hora cita', 'appointment time'],
   created_date: ['fecha creacion', 'fecha creación', 'created date'],
   created_time: ['hora creacion', 'hora creación', 'created time'],
@@ -53,10 +59,12 @@ const HEADER_ALIASES = {
   origin: ['origen', 'origin', 'canal'],
   amount: ['importe', 'amount', 'precio'],
   normalized_date: ['fecha normalizada', 'normalized date'],
-  doctoralia_id: ['id', 'doctoralia id', 'id doctoralia'],
-  patient_name: ['nombre', 'paciente', 'patient name'],
-  phone: ['telefono', 'teléfono', 'phone', 'movil', 'móvil'],
-  treatment: ['tratamiento', 'treatment'],
+  doctoralia_id: ['id', 'doctoralia id', 'id doctoralia', 'appointment id', 'appointment_id'],
+  patient_name: ['nombre', 'paciente', 'patient name', 'patient_name'],
+  patient_email: ['email', 'correo', 'patient email', 'patient_email'],
+  phone: ['telefono', 'teléfono', 'phone', 'movil', 'móvil', 'patient phone', 'patient_phone'],
+  treatment: ['tratamiento', 'treatment', 'appointment type', 'appointment_type'],
+  notes: ['notas', 'notes', 'observaciones'],
   day_num: ['dia', 'día', 'day'],
   month_num: ['mes', 'month'],
   year_num: ['ano', 'año', 'year'],
@@ -66,15 +74,8 @@ const HEADER_ALIASES = {
 const REQUIRED_HEADERS = [
   'estado',
   'appointment_date',
-  'appointment_time',
-  'subject',
-  'agenda',
-  'amount',
   'doctoralia_id',
   'patient_name',
-  'phone',
-  'treatment',
-  'clinic',
 ];
 
 function normalizeHeader(value) {
@@ -185,18 +186,73 @@ function ensureRequiredHeaders(headerMap) {
   }
 }
 
+function recordsFromRows(rows) {
+  if (!rows || rows.length < 2) return [];
+
+  const headerMap = buildHeaderMap(rows[0]);
+  ensureRequiredHeaders(headerMap);
+
+  return rows
+    .slice(1)
+    .map((row, index) => (isBlankRow(row) ? null : buildRecord(row, headerMap, index + 2)))
+    .filter(Boolean);
+}
+
 function isBlankRow(row) {
   return row.every((cell) => clean(cell) === null);
+}
+
+function parseCsv(content) {
+  const rows = [];
+  let row = [];
+  let cell = '';
+  let inQuotes = false;
+
+  for (let index = 0; index < content.length; index += 1) {
+    const char = content[index];
+    const next = content[index + 1];
+
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        cell += '"';
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      row.push(cell);
+      cell = '';
+    } else if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (char === '\r' && next === '\n') index += 1;
+      row.push(cell);
+      if (!isBlankRow(row)) rows.push(row);
+      row = [];
+      cell = '';
+    } else {
+      cell += char;
+    }
+  }
+
+  if (cell.length > 0 || row.length > 0) {
+    row.push(cell);
+    if (!isBlankRow(row)) rows.push(row);
+  }
+
+  return rows;
 }
 
 function buildRecord(row, headerMap, sheetRow) {
   const estado = clean(getCell(row, headerMap, 'estado'));
   const agenda = clean(getCell(row, headerMap, 'agenda'));
   const treatment = clean(getCell(row, headerMap, 'treatment'));
+  const doctoraliaId = clean(getCell(row, headerMap, 'doctoralia_id'));
+  const sourceKey = doctoraliaId ? `doctoralia:${doctoraliaId}` : `source-row:${sheetRow}`;
 
   return {
+    source_key: sourceKey,
     sheet_row: sheetRow,
     estado,
+    status: estado,
     appointment_date: parseDate(getCell(row, headerMap, 'appointment_date')),
     appointment_time: clean(getCell(row, headerMap, 'appointment_time')),
     created_date: parseDate(getCell(row, headerMap, 'created_date')),
@@ -208,11 +264,16 @@ function buildRecord(row, headerMap, sheetRow) {
     origin: clean(getCell(row, headerMap, 'origin')),
     amount: parseAmount(getCell(row, headerMap, 'amount')),
     normalized_date: parseDate(getCell(row, headerMap, 'normalized_date')),
-    doctoralia_id: clean(getCell(row, headerMap, 'doctoralia_id')),
+    doctoralia_id: doctoraliaId,
+    appointment_id: doctoraliaId,
     patient_name: clean(getCell(row, headerMap, 'patient_name')),
+    patient_email: clean(getCell(row, headerMap, 'patient_email')),
     phone: clean(getCell(row, headerMap, 'phone')),
+    patient_phone: clean(getCell(row, headerMap, 'phone')),
     phone_normalized: normalizePhone(getCell(row, headerMap, 'phone')),
     treatment,
+    appointment_type: treatment,
+    notes: clean(getCell(row, headerMap, 'notes')),
     day_num: parseIntOrNull(getCell(row, headerMap, 'day_num')),
     month_num: parseIntOrNull(getCell(row, headerMap, 'month_num')),
     year_num: parseIntOrNull(getCell(row, headerMap, 'year_num')),
@@ -222,7 +283,7 @@ function buildRecord(row, headerMap, sheetRow) {
     is_nursing: hasAny(agenda, ['ENFERMER', 'DERMOCOSM']),
     is_control: hasAny(treatment, ['REVISION', 'CONTROL', 'REPASO']),
     raw_data: {
-      source: path.basename(WORKBOOK_PATH),
+      source: path.basename(INPUT_PATH),
       sheet: SHEET_NAME,
       row: sheetRow,
     },
@@ -241,44 +302,80 @@ function summarize(records) {
   };
 }
 
-async function readRecords() {
-  if (!fs.existsSync(WORKBOOK_PATH)) {
-    throw new Error(`Workbook not found: ${WORKBOOK_PATH}`);
-  }
+function validateRecordsForUpsert(records) {
+  const invalid = records
+    .map((record, index) => ({ record, index }))
+    .filter(({ record }) => !record.source_key || !Number.isInteger(record.sheet_row));
 
-  const workbook = await XlsxPopulate.fromFileAsync(WORKBOOK_PATH);
+  if (invalid.length > 0) {
+    const sample = invalid.slice(0, 5).map(({ record, index }) => ({
+      index,
+      sheet_row: record.sheet_row,
+      source_key: record.source_key,
+      doctoralia_id: record.doctoralia_id,
+      patient_name: record.patient_name,
+    }));
+    throw new Error(`Invalid Doctoralia appointment records before upsert: every row must include source_key and integer sheet_row. Sample: ${JSON.stringify(sample)}`);
+  }
+}
+
+async function readRowsFromCsv() {
+  const content = fs.readFileSync(INPUT_PATH, 'utf8').replace(/^\uFEFF/, '');
+  return parseCsv(content);
+}
+
+async function readRowsFromWorkbook() {
+  const workbook = await XlsxPopulate.fromFileAsync(INPUT_PATH);
   const sheet = workbook.sheet(SHEET_NAME);
   if (!sheet) throw new Error(`Sheet not found: ${SHEET_NAME}`);
 
   const usedRange = sheet.usedRange();
   if (!usedRange) return [];
 
-  const rows = usedRange.value();
-  if (!rows || rows.length < 2) return [];
-
-  const headerMap = buildHeaderMap(rows[0]);
-  ensureRequiredHeaders(headerMap);
-
-  return rows
-    .slice(1)
-    .map((row, index) => (isBlankRow(row) ? null : buildRecord(row, headerMap, index + 2)))
-    .filter(Boolean);
+  return usedRange.value() || [];
 }
 
-async function upsertRecords(records) {
+async function readRecords() {
+  if (!fs.existsSync(INPUT_PATH)) {
+    throw new Error(`Doctoralia appointments input not found: ${INPUT_PATH}`);
+  }
+
+  const rows = INPUT_EXT === '.csv'
+    ? await readRowsFromCsv()
+    : await readRowsFromWorkbook();
+
+  return recordsFromRows(rows);
+}
+
+function getSupabaseClient() {
   if (!SUPABASE_URL || !SERVICE_ROLE) {
     throw new Error('Missing SUPABASE_URL/VITE_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY/SUPABASE_SECRET_KEY in .env.local');
   }
 
-  const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, {
+  return createClient(SUPABASE_URL, SERVICE_ROLE, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+}
+
+async function countIngestedRecords() {
+  const supabase = getSupabaseClient();
+  const { count, error } = await supabase
+    .from('doctoralia_appointments_ingestion')
+    .select('source_key', { count: 'exact', head: true });
+
+  if (error) throw error;
+  return count || 0;
+}
+
+async function upsertRecords(records) {
+  validateRecordsForUpsert(records);
+  const supabase = getSupabaseClient();
 
   for (let index = 0; index < records.length; index += CHUNK_SIZE) {
     const chunk = records.slice(index, index + CHUNK_SIZE);
     const { error } = await supabase
       .from('doctoralia_appointments_ingestion')
-      .upsert(chunk, { onConflict: 'sheet_row' });
+      .upsert(chunk, { onConflict: 'source_key' });
 
     if (error) {
       const firstSheetRow = chunk[0]?.sheet_row;
@@ -317,7 +414,7 @@ async function main() {
   const records = await readRecords();
   const totals = summarize(records);
 
-  console.log(`[doctoralia-appointments] Parsed ${records.length} rows from ${WORKBOOK_PATH} (${SHEET_NAME}).`);
+  console.log(`[doctoralia-appointments] Parsed ${records.length} rows from ${INPUT_PATH}${INPUT_EXT === '.csv' ? '' : ` (${SHEET_NAME})`}.`);
   console.table(totals);
 
   if (DRY_RUN) {
@@ -326,7 +423,8 @@ async function main() {
   }
 
   await upsertRecords(records);
-  console.log('[doctoralia-appointments] Load completed.');
+  const tableCount = await countIngestedRecords();
+  console.log(`[doctoralia-appointments] Load completed. Table now has ${tableCount} rows.`);
 }
 
 if (require.main === module) {
@@ -339,7 +437,15 @@ if (require.main === module) {
 
 module.exports = {
   buildHeaderMap,
+  parseCsv,
   buildRecord,
+  countIngestedRecords,
+  ensureRequiredHeaders,
+  getSupabaseClient,
+  recordsFromRows,
+  readRecords,
+  upsertRecords,
+  validateRecordsForUpsert,
   clean,
   hasAny,
   normalizePhone,

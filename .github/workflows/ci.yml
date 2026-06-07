@@ -100,6 +100,9 @@ jobs:
           print(f'OK {len(versions)} unique Supabase migration versions')
           PY
 
+      - name: Validate Supabase SQL migration safety
+        run: node scripts/validate-sql-migrations.js
+
       - name: Parse GitHub YAML files
         run: |
           ruby - <<'RUBY'

@@ -2,20 +2,21 @@
 -- doctoralia_patients with phone-based matching (phone-only rows were skipped in migration
 -- 20260506100000 because the ELSE branch ran when patient_phone did not yet exist).
 
--- Step 1: Add the column unconditionally (idempotent).
-ALTER TABLE public.financial_settlements
+-- Step 1: Add the column when the table exists (idempotent/order-safe).
+ALTER TABLE IF EXISTS public.financial_settlements
   ADD COLUMN IF NOT EXISTS patient_phone TEXT;
 
 -- Step 2: Backfill patient_phone from patients.phone if that column exists.
 DO $$
 BEGIN
-  IF EXISTS (
-    SELECT 1
-    FROM information_schema.columns
-    WHERE table_schema = 'public'
-      AND table_name   = 'patients'
-      AND column_name  = 'phone'
-  ) THEN
+  IF to_regclass('public.financial_settlements') IS NOT NULL
+    AND EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name   = 'patients'
+        AND column_name  = 'phone'
+    ) THEN
     UPDATE public.financial_settlements fs
     SET patient_phone = NULLIF(public.normalize_phone(p.phone), '')
     FROM public.patients p
@@ -26,10 +27,17 @@ BEGIN
   END IF;
 END $$;
 
--- Step 3: Index for clinic + phone lookups (idempotent).
-CREATE INDEX IF NOT EXISTS financial_settlements_patient_phone_idx
-  ON public.financial_settlements (clinic_id, patient_phone)
-  WHERE patient_phone IS NOT NULL;
+-- Step 3: Index for clinic + phone lookups (idempotent/order-safe).
+DO $$
+BEGIN
+  IF to_regclass('public.financial_settlements') IS NOT NULL THEN
+    CREATE INDEX IF NOT EXISTS financial_settlements_patient_phone_idx
+      ON public.financial_settlements (clinic_id, patient_phone)
+      WHERE patient_phone IS NOT NULL;
+  ELSE
+    RAISE NOTICE 'Skipping financial_settlements_patient_phone_idx: public.financial_settlements does not exist yet';
+  END IF;
+END $$;
 
 -- Step 4: Re-populate doctoralia_patients when the required identity columns are present.
 DO $$
@@ -125,10 +133,22 @@ SELECT public.run_doctoralia_name_match();
 
 -- Step 5: Schedule daily Doctoralia name matching.
 DO $$
+DECLARE
+  target_job RECORD;
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
-    PERFORM cron.unschedule('doctoralia-name-match-daily')
-      WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'doctoralia-name-match-daily');
+    FOR target_job IN
+      SELECT jobid
+      FROM cron.job
+      WHERE jobname = 'doctoralia-name-match-daily'
+    LOOP
+      BEGIN
+        PERFORM cron.unschedule(target_job.jobid);
+      EXCEPTION WHEN OTHERS THEN
+        RAISE NOTICE 'Skipping stale pg_cron jobid % for doctoralia-name-match-daily: %', target_job.jobid, SQLERRM;
+      END;
+    END LOOP;
+
     PERFORM cron.schedule(
       'doctoralia-name-match-daily',
       '15 3 * * *',

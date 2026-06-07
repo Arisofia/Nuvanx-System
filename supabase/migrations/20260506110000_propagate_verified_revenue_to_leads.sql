@@ -37,10 +37,22 @@ $$;
 GRANT EXECUTE ON FUNCTION public.reconcile_doctoralia_matches_to_leads() TO service_role;
 
 DO $$
+DECLARE
+  target_job RECORD;
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
-    PERFORM cron.unschedule('doctoralia-reconcile-leads-daily')
-      WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'doctoralia-reconcile-leads-daily');
+    FOR target_job IN
+      SELECT jobid
+      FROM cron.job
+      WHERE jobname = 'doctoralia-reconcile-leads-daily'
+    LOOP
+      BEGIN
+        PERFORM cron.unschedule(target_job.jobid);
+      EXCEPTION WHEN OTHERS THEN
+        RAISE NOTICE 'Skipping stale pg_cron jobid % for doctoralia-reconcile-leads-daily: %', target_job.jobid, SQLERRM;
+      END;
+    END LOOP;
+
     PERFORM cron.schedule(
       'doctoralia-reconcile-leads-daily',
       '30 3 * * *',
