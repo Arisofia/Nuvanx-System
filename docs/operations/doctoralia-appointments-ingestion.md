@@ -115,6 +115,31 @@ SELECT
 FROM public.doctoralia_appointments_ingestion;
 ```
 
+
+## Security Verification Queries
+
+Use this catalog query to verify reporting views are actually running with `security_invoker=true` after migrations. It checks PostgreSQL `pg_class.reloptions` directly instead of relying on UI labels:
+
+```sql
+SELECT
+  n.nspname AS schema_name,
+  c.relname AS view_name,
+  COALESCE(c.reloptions @> ARRAY['security_invoker=true'], FALSE) AS security_invoker_enabled,
+  c.reloptions
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'public'
+  AND c.relkind = 'v'
+  AND c.relname IN (
+    'v_new_clients_by_channel_monthly',
+    'v_new_clients_by_channel_detail',
+    'v_patient_conversion_funnel',
+    'vw_source_comparison',
+    'vw_acquisition_channel_daily'
+  )
+ORDER BY c.relname;
+```
+
 ## Troubleshooting
 
 | Symptom | Resolution |
@@ -126,6 +151,8 @@ FROM public.doctoralia_appointments_ingestion;
 | Parsed rows below `DOCTORALIA_APPOINTMENTS_MIN_ROWS` | Check that `DOCTORALIA_APPOINTMENTS_SHEET_NAME` and `DOCTORALIA_APPOINTMENTS_SHEET_RANGE` point to the full appointments agenda, not the financial/caja tab. |
 | `Missing required Doctoralia headers` | Ensure the export includes at least status/estado, appointment date, appointment ID, and patient name columns. |
 | Upsert fails on `source_key` | Apply the latest migrations; the loader upserts against `ux_doctoralia_appointments_ingestion_source_key`. |
+| `cron.unschedule(...)` says the job does not exist | Re-run migrations after the pg_cron hardening patch; migrations now unschedule by `jobid` only after reading `cron.job`. |
+| SQL error at `... final schema ...` | Remove placeholder snippets before executing SQL. Repository migrations are expected to contain concrete schemas only; `...` is not valid PostgreSQL syntax. |
 
 ## Operational Notes
 
