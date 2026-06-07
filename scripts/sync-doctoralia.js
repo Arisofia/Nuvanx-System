@@ -948,9 +948,9 @@ module.exports = {
 
 if (require.main === module) {
   main().catch((err) => {
-    console.error(`[sync-doctoralia] Fatal error: ${maskSensitive(err.message)}`);
-    if (err.stack) {
-      console.debug('[sync-doctoralia] Stack trace:', maskSensitive(err.stack));
+    console.error('[sync-doctoralia] Fatal error:', maskSensitive(err?.message ?? err));
+    if (err?.stack) {
+      console.error(maskSensitive(err.stack));
     }
     process.exit(1);
   });

@@ -15,6 +15,7 @@ import {
   SUPABASE_SERVICE_ROLE_KEY,
   SUPABASE_URL,
   buildCorsHeaders,
+  maskSensitive,
   requireRuntimeSecret,
 } from '../_shared/config.ts';
 import { getPhoneNormalizationFailureReason, normalizePhoneForMeta } from '../_shared/phone.ts';
@@ -1370,7 +1371,7 @@ function validateSupabaseRuntimeConfig() {
 try {
   validateSupabaseRuntimeConfig();
 } catch (initErr: any) {
-  console.error('validateSupabaseRuntimeConfig failed:', initErr?.message ?? initErr);
+  console.error('validateSupabaseRuntimeConfig failed:', maskSensitive(initErr?.message ?? initErr));
 }
 
 function normalizePhoneNumberId(raw: unknown): string {
@@ -3703,7 +3704,7 @@ async function ingestMetaLeadsFromForms(adminClient: any, userId: string, adAcco
         if (success) totalFetched++;
       }
     } catch (formError: any) {
-      console.warn(`Meta backfill failed for form ${form?.id}:`, formError?.message ?? formError);
+      console.warn(`Meta backfill failed for form ${form?.id}:`, maskSensitive(formError?.message ?? formError));
     }
   }
 
@@ -3909,7 +3910,7 @@ async function persistMetaIgMediaPerformance(adminClient: any, userId: string, i
       
       upserted++;
     } catch (e: any) {
-      console.warn(`Failed to fetch insights for IG media ${m.id}:`, e.message);
+      console.warn(`Failed to fetch insights for IG media ${m.id}:`, maskSensitive(e.message));
     }
   }
 
@@ -4089,12 +4090,12 @@ async function performMetaAdsBackfill(
     try {
       dailyInsightsPersisted += await persistMetaDailyInsights(adminClient, userId, accountId, accessToken, sinceDate, untilDate);
     } catch (e: any) {
-      console.warn(`Meta backfill insights persist failed for ${accountId}:`, e?.message ?? e);
+      console.warn(`Meta backfill insights persist failed for ${accountId}:`, maskSensitive(e?.message ?? e));
     }
     try {
       totalFetched += await ingestMetaLeadsFromForms(adminClient, userId, accountId, accessToken, sinceTs);
     } catch (e: any) {
-      console.error(`Backfill lead ingestion failed for ${accountId}:`, e?.message ?? e);
+      console.error(`Backfill lead ingestion failed for ${accountId}:`, maskSensitive(e?.message ?? e));
     }
   }
   return { dailyInsightsPersisted, totalFetched };
@@ -4113,7 +4114,7 @@ async function performMetaSocialBackfill(
       result.organicDailyPersisted = await persistMetaOrganicDailyInsights(adminClient, userId, creds.pageId, creds.accessToken, sinceDate, untilDate);
       result.organicPostsPersisted = await persistMetaPostPerformance(adminClient, userId, creds.pageId, creds.accessToken, 100);
     } catch (e: any) {
-      console.warn(`Meta organic backfill failed:`, e?.message ?? e);
+      console.warn(`Meta organic backfill failed:`, maskSensitive(e?.message ?? e));
     }
   }
   if (creds.igId) {
@@ -4121,7 +4122,7 @@ async function performMetaSocialBackfill(
       result.igAccountDailyPersisted = await persistMetaIgAccountDailyInsights(adminClient, userId, creds.igId, creds.accessToken, sinceDate, untilDate);
       result.igMediaPersisted = await persistMetaIgMediaPerformance(adminClient, userId, creds.igId, creds.accessToken, 100);
     } catch (e: any) {
-      console.warn(`Meta IG backfill failed:`, e?.message ?? e);
+      console.warn(`Meta IG backfill failed:`, maskSensitive(e?.message ?? e));
     }
   }
 }
@@ -4504,7 +4505,7 @@ async function fetchAdInsightsFromMeta(creds: any, insightsSince: string, insigh
         };
       }
     } catch (insErr: any) {
-      console.warn(`Ad-level insights fetch failed for ${accountId}:`, insErr?.message ?? insErr);
+      console.warn(`Ad-level insights fetch failed for ${accountId}:`, maskSensitive(insErr?.message ?? insErr));
     }
   }
   return insightsMap;

@@ -17,8 +17,25 @@ const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v20.0';
 const MIN_NODE_MAJOR = 18;
 
 function fail(message) {
-  console.error('❌', message);
+  console.error('❌', maskSensitive(message));
   process.exit(1);
+}
+
+function maskSensitive(text) {
+  if (!text) return text;
+  const str = String(text);
+  return str
+    // Mask passwords in connection strings: postgres://user:password@host
+    .replace(/(postgres(?:ql)?:\/\/[^:]+:)([^@\s]+)(@)/gi, '$1****$3')
+    // Mask emails: keep first 3 chars, then ***, then @domain
+    .replace(/([a-zA-Z0-9._%+-]+)@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g, (match, p1, p2) => {
+      const maskedP1 = p1.length > 3 ? p1.slice(0, 3) + '***' : '***';
+      return maskedP1 + '@' + p2;
+    })
+    // Mask potential token/secret values in error messages (long alphanumeric strings)
+    .replace(/[a-zA-Z0-9_-]{32,}/g, (match) => {
+      return match.slice(0, 4) + '****' + match.slice(-4);
+    });
 }
 
 function normalizeAdAccountId(raw) {
@@ -256,7 +273,7 @@ async function main() {
           console.log(`  currency: ${details.currency || '<unknown>'}`);
           console.log(`  amount_spent: ${details.amount_spent ?? '<unknown>'}`);
         } catch (err) {
-          console.error(`  Failed to fetch details for ${accountId}: ${err.message}`);
+          console.error(`  Failed to fetch details for ${accountId}: ${maskSensitive(err.message)}`);
         }
       }
     }
@@ -291,6 +308,7 @@ async function main() {
           console.log(`  link clicks: ${totals.link_clicks}`);
         } catch (err) {
           console.error(`  Failed to fetch insights for ${redactAccountId(accountId)}: ${err.message}`);
+          console.error(`  Failed to fetch insights for ${accountId}: ${maskSensitive(err.message)}`);
         }
       }
     }
