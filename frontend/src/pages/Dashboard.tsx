@@ -7,22 +7,7 @@ import { MetricsGrid } from '../components/dashboard/MetricsGrid'
 import { FunnelAndSpendSection } from '../components/dashboard/FunnelAndSpendSection'
 import { RealROISection } from '../components/dashboard/RealROISection'
 import { TrendSection } from '../components/dashboard/TrendSection'
-
-interface CombinedMetrics {
-  metaEstimatedLeads: number
-  verifiedRevenue: number
-  metaCpl: number
-  revenuePerLead: number
-}
-
-interface RealFunnel {
-  metaSpend: number
-  metaLeads: number
-  crmLeads: number
-  doctoraliaRevenue: number
-  doctoraliaPatients: number
-  cac: number
-}
+import { PatientConversionSection } from '../components/dashboard/PatientConversionSection'
 
 export default function Dashboard() {
   const [days, setDays] = useState<7 | 14 | 30 | 90>(30)
@@ -41,15 +26,7 @@ export default function Dashboard() {
     sourcesList,
     campaignsList,
     quality,
-  } = useDashboardData(
-    days,
-    customFrom,
-    customTo,
-    campaignId,
-    sourceFilter,
-    0,
-    0,
-  )
+  } = useDashboardData(days, customFrom, customTo, campaignId, sourceFilter, 0, 0)
 
   const periodLabel = customFrom && customTo
     ? `${formatDateForLabel(customFrom)} al ${formatDateForLabel(customTo)}`
@@ -102,20 +79,9 @@ export default function Dashboard() {
       {!metrics.error && (
         <>
           <MetricsGrid metrics={metrics} quality={quality} />
-
-          <FunnelAndSpendSection
-            funnelData={funnelData}
-            metrics={metrics}
-            combined={combined}
-            periodLabel={periodLabel}
-            quality={quality}
-          />
-
-          <RealROISection
-            funnel={funnel}
-            combined={combined}
-          />
-
+          <FunnelAndSpendSection funnelData={funnelData} metrics={metrics} combined={combined} periodLabel={periodLabel} quality={quality} />
+          <RealROISection funnel={funnel} combined={combined} />
+          <PatientConversionSection sourceFilter={sourceFilter} campaignId={campaignId} customFrom={customFrom} customTo={customTo} />
           <TrendSection trendData={trendData} formatDate={formatDateForLabel} />
         </>
       )}
