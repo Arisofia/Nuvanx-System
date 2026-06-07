@@ -26,6 +26,9 @@
     "meta:audit": "node scripts/meta-ads-account-report.js",
     "validate:workflow-yaml": "ruby -e 'require \"yaml\"; Dir.glob(\".github/**/*.{yml,yaml}\").sort.each { |file| YAML.safe_load(File.read(file), permitted_classes: [], permitted_symbols: [], aliases: true); puts \"OK #{file}\" }'",
     "validate:workflows": "ruby scripts/validate-github-workflows.rb",
+    "validate:github-actions": "npm run validate:workflow-yaml && npm run validate:workflows",
+    "validate:actionlint": "actionlint .github/workflows/*.yml",
+    "validate:edge-deno": "deno check --config=supabase/functions/deno.json $(find supabase/functions -name '*.ts' | sort)",
     "doctoralia:appointments:load": "node scripts/populate-doctoralia-appointments.js",
     "doctoralia:appointments:dry-run": "node scripts/populate-doctoralia-appointments.js --dry-run"
   },

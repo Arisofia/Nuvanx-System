@@ -51,10 +51,27 @@ jobs:
 
       - name: Fail on merge conflict markers in CI-critical config
         run: |
-          if rg --line-number --regexp "^(<<<<<<<|=======|>>>>>>>)" .github supabase/config.toml; then
-            echo "::error::Merge conflict markers detected in CI-critical config files."
-            exit 1
-          fi
+          python3 - <<'PY'
+          from pathlib import Path
+
+          targets = [Path('.github'), Path('supabase/config.toml')]
+          markers = ('<<<<<<<', '=======', '>>>>>>>')
+          found = False
+
+          for target in targets:
+              files = sorted(target.rglob('*')) if target.is_dir() else [target]
+              for file_path in files:
+                  if not file_path.is_file():
+                      continue
+                  for line_number, line in enumerate(file_path.read_text(errors='ignore').splitlines(), 1):
+                      if line.startswith(markers):
+                          print(f'{file_path}:{line_number}:{line}')
+                          found = True
+
+          if found:
+              print('::error::Merge conflict markers detected in CI-critical config files.')
+              raise SystemExit(1)
+          PY
 
       - name: Ensure Supabase migration versions are unique
         run: |
@@ -409,9 +426,8 @@ jobs:
           echo "Checking all Supabase Edge Function sources..."
           deno check --config=supabase/functions/deno.json $(find supabase/functions -name '*.ts' | sort)
         env:
-          # Provide runtime config dummies so module-level config validation can complete during Deno type checking.
-          # Real values should be configured in Supabase Edge Function secrets for production.
-          FALLBACK_META_AD_ACCOUNT_ID: '9523446201036125'
+          # Keep type checks wired to repository configuration without embedding account identifiers.
+          FALLBACK_META_AD_ACCOUNT_ID: ${{ vars.FALLBACK_META_AD_ACCOUNT_ID || secrets.FALLBACK_META_AD_ACCOUNT_ID || '' }}
           # Doctoralia webhook values are optional during CI type checking.
           SHEETS_WEBHOOK_URL_DOCTORALIA: ''
           SHEETS_WEBHOOK_SECRET_DOCTORALIA: ''
