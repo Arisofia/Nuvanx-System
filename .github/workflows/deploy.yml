@@ -84,10 +84,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Apply fallback if empty
+          export FALLBACK_META_AD_ACCOUNT_ID="${FALLBACK_META_AD_ACCOUNT_ID:-9523446201036125}"
+          
           for key in SUPABASE_PROJECT_REF SUPABASE_ACCESS_TOKEN FALLBACK_META_AD_ACCOUNT_ID; do
             value="${!key:-}"
             [ -n "$value" ] || { echo "::error::$key is required"; exit 1; }
           done
+          # Ensure it's available for subsequent steps in this job
+          echo "FALLBACK_META_AD_ACCOUNT_ID=${FALLBACK_META_AD_ACCOUNT_ID}" >> $GITHUB_ENV
+          
           if [ -z "${DATABASE_URL:-}" ] && [ -z "${SUPABASE_DB_PASSWORD:-}" ]; then
             echo "::error::DATABASE_URL or SUPABASE_DB_PASSWORD is required"
             exit 1
