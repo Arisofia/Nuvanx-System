@@ -1,5 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const productionBaseURL = process.env.PRODUCTION_E2E_URL?.trim();
+const baseURL = productionBaseURL || 'http://localhost:5173';
+
 export default defineConfig({
   testDir: './tests',
   testMatch: '**/*.playwright.ts',
@@ -9,7 +12,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: 'html',
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL,
     trace: 'on-first-retry',
   },
   projects: [
@@ -18,9 +21,11 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-  webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:5173',
-    reuseExistingServer: !process.env.CI,
-  },
+  webServer: productionBaseURL
+    ? undefined
+    : {
+        command: 'npm run dev',
+        url: baseURL,
+        reuseExistingServer: !process.env.CI,
+      },
 });
