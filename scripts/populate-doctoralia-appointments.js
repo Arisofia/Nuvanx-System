@@ -186,6 +186,18 @@ function ensureRequiredHeaders(headerMap) {
   }
 }
 
+function recordsFromRows(rows) {
+  if (!rows || rows.length < 2) return [];
+
+  const headerMap = buildHeaderMap(rows[0]);
+  ensureRequiredHeaders(headerMap);
+
+  return rows
+    .slice(1)
+    .map((row, index) => (isBlankRow(row) ? null : buildRecord(row, headerMap, index + 2)))
+    .filter(Boolean);
+}
+
 function isBlankRow(row) {
   return row.every((cell) => clean(cell) === null);
 }
@@ -315,25 +327,31 @@ async function readRecords() {
     ? await readRowsFromCsv()
     : await readRowsFromWorkbook();
 
-  if (!rows || rows.length < 2) return [];
-
-  const headerMap = buildHeaderMap(rows[0]);
-  ensureRequiredHeaders(headerMap);
-
-  return rows
-    .slice(1)
-    .map((row, index) => (isBlankRow(row) ? null : buildRecord(row, headerMap, index + 2)))
-    .filter(Boolean);
+  return recordsFromRows(rows);
 }
 
-async function upsertRecords(records) {
+function getSupabaseClient() {
   if (!SUPABASE_URL || !SERVICE_ROLE) {
     throw new Error('Missing SUPABASE_URL/VITE_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY/SUPABASE_SECRET_KEY in .env.local');
   }
 
-  const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, {
+  return createClient(SUPABASE_URL, SERVICE_ROLE, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+}
+
+async function countIngestedRecords() {
+  const supabase = getSupabaseClient();
+  const { count, error } = await supabase
+    .from('doctoralia_appointments_ingestion')
+    .select('source_key', { count: 'exact', head: true });
+
+  if (error) throw error;
+  return count || 0;
+}
+
+async function upsertRecords(records) {
+  const supabase = getSupabaseClient();
 
   for (let index = 0; index < records.length; index += CHUNK_SIZE) {
     const chunk = records.slice(index, index + CHUNK_SIZE);
@@ -387,7 +405,8 @@ async function main() {
   }
 
   await upsertRecords(records);
-  console.log('[doctoralia-appointments] Load completed.');
+  const tableCount = await countIngestedRecords();
+  console.log(`[doctoralia-appointments] Load completed. Table now has ${tableCount} rows.`);
 }
 
 if (require.main === module) {
@@ -402,6 +421,12 @@ module.exports = {
   buildHeaderMap,
   parseCsv,
   buildRecord,
+  countIngestedRecords,
+  ensureRequiredHeaders,
+  getSupabaseClient,
+  recordsFromRows,
+  readRecords,
+  upsertRecords,
   clean,
   hasAny,
   normalizePhone,

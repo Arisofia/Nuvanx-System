@@ -42,6 +42,9 @@ jobs:
       META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
       SHEET_NAME: "Doctoralia"
       SHEET_RANGE: "A1:T5000"
+      DOCTORALIA_APPOINTMENTS_SHEET_NAME: "Doctoralia"
+      DOCTORALIA_APPOINTMENTS_SHEET_RANGE: "A1:Z5000"
+      DOCTORALIA_APPOINTMENTS_MIN_ROWS: "2200"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -59,7 +62,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          REQUIRED=(SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY SUPABASE_ACCESS_TOKEN SUPABASE_PROJECT_REF META_ACCESS_TOKEN)
+          REQUIRED=(SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY SUPABASE_ACCESS_TOKEN SUPABASE_PROJECT_REF META_ACCESS_TOKEN DOCTORALIA_SHEET_ID)
           for key in "${REQUIRED[@]}"; do
             value="${!key:-}"
             if [ -z "$value" ]; then
@@ -69,6 +72,10 @@ jobs:
           done
           if [ -z "${META_AD_ACCOUNT_ID:-}" ] && [ -z "${META_AD_ACCOUNT_IDS:-}" ]; then
             echo "::error::META_AD_ACCOUNT_ID or META_AD_ACCOUNT_IDS secret is required."
+            exit 1
+          fi
+          if [ -z "${GOOGLE_DOCTORALIA_SERVICE_ACCOUNT:-}" ] && [ -z "${GOOGLE_ADS_SERVICE_ACCOUNT:-}" ]; then
+            echo "::error::GOOGLE_DOCTORALIA_SERVICE_ACCOUNT or GOOGLE_ADS_SERVICE_ACCOUNT secret is required for Doctoralia appointments sync."
             exit 1
           fi
           if ! [[ "${SUPABASE_ACCESS_TOKEN:-}" =~ ^sbp_[A-Za-z0-9]+$ ]]; then

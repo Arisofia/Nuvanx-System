@@ -10,6 +10,7 @@ The loader supports both of these local export formats:
 
 1. `doctoralia_appointments.csv` in the repository root.
 2. `Base Pacientes Nuvanx.xlsx` with the `Doctoralia` sheet.
+3. Google Sheets via `npm run doctoralia:appointments:sync`, which is now part of the daily sync orchestrator.
 
 Override the input file when needed:
 
@@ -24,6 +25,8 @@ Create or update `.env.local` with production Supabase credentials:
 ```env
 SUPABASE_URL=https://ssvvuuysgxyqvmovrlvk.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=<service-role-key-from-supabase-settings-api>
+DOCTORALIA_SHEET_ID=<google-sheet-id-for-appointments-sync>
+GOOGLE_DOCTORALIA_SERVICE_ACCOUNT=<service-account-json>
 ```
 
 Do **not** commit `.env.local` or any Supabase service-role key. The service-role key is required because the staging table is protected by RLS and only grants write access to `service_role`.
@@ -55,17 +58,26 @@ It also accepts the richer operational Google Sheets headers used by NUVANX, inc
 
 3. Place the export in the repo root as `doctoralia_appointments.csv`, or set `DOCTORALIA_APPOINTMENTS_INPUT_PATH`.
 
-4. Validate parsing without writing to Supabase:
+4. Validate local parsing without writing to Supabase:
 
    ```bash
    npm run doctoralia:appointments:dry-run
    ```
 
-5. Run the ingestion:
+5. Run the local file ingestion:
 
    ```bash
    npm run doctoralia:appointments:load
    ```
+
+6. For automated Google Sheets ingestion, validate and then sync directly from the Doctoralia appointments sheet:
+
+   ```bash
+   DOCTORALIA_APPOINTMENTS_MIN_ROWS=2200 npm run doctoralia:appointments:sync:dry-run
+   DOCTORALIA_APPOINTMENTS_MIN_ROWS=2200 npm run doctoralia:appointments:sync
+   ```
+
+The daily orchestrator also runs `sync-doctoralia-appointments` as a critical step, so production daily sync fails if the appointment agenda cannot be fetched, parsed, loaded, or validated against the configured minimum row count.
 
 ## Verification Queries
 
@@ -110,6 +122,8 @@ FROM public.doctoralia_appointments_ingestion;
 | `Missing SUPABASE_URL...` | Confirm `.env.local` contains `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. |
 | `Invalid API key` | Re-copy the service-role key from Supabase Settings → API; do not use the anon key for ingestion. |
 | `Doctoralia appointments input not found` | Put `doctoralia_appointments.csv` in the repo root or set `DOCTORALIA_APPOINTMENTS_INPUT_PATH`. |
+| Google Sheets 403/404 during automated sync | Share the Doctoralia appointments spreadsheet with the service-account email stored in `GOOGLE_DOCTORALIA_SERVICE_ACCOUNT`. |
+| Parsed rows below `DOCTORALIA_APPOINTMENTS_MIN_ROWS` | Check that `DOCTORALIA_APPOINTMENTS_SHEET_NAME` and `DOCTORALIA_APPOINTMENTS_SHEET_RANGE` point to the full appointments agenda, not the financial/caja tab. |
 | `Missing required Doctoralia headers` | Ensure the export includes at least status/estado, appointment date, appointment ID, and patient name columns. |
 | Upsert fails on `source_key` | Apply the latest migrations; the loader upserts against `ux_doctoralia_appointments_ingestion_source_key`. |
 
@@ -118,3 +132,4 @@ FROM public.doctoralia_appointments_ingestion;
 - Default batch size is 500 rows. Override with `DOCTORALIA_APPOINTMENTS_CHUNK_SIZE=1000` for larger exports after testing.
 - Phone numbers are normalized for Spanish local matching, preserving raw phone values in `phone` and `patient_phone`.
 - The table intentionally keeps direct table access restricted to `service_role` because it stores patient PII.
+- Production automation sets `DOCTORALIA_APPOINTMENTS_MIN_ROWS=2200` to guard against partial agenda loads and keep the JJRT → Enfermería/control funnel complete.
