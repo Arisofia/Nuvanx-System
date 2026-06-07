@@ -85,8 +85,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          export FALLBACK_META_AD_ACCOUNT_ID="${FALLBACK_META_AD_ACCOUNT_ID:-9523446201036125}"
-
           for key in SUPABASE_PROJECT_REF SUPABASE_ACCESS_TOKEN FALLBACK_META_AD_ACCOUNT_ID; do
             value="${!key:-}"
             [ -n "$value" ] || { echo "::error::$key is required"; exit 1; }

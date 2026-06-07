@@ -292,10 +292,15 @@ runs:
           echo "::warning::SESSION_URL was not resolved by the action. Your command may need to provide explicit --db-url or --project-ref flags."
         fi
 
-        # Execute script without suppressing errors
-        bash "${SCRIPT_PATH}"
+        cleanup_script() {
+          if [ -n "${SCRIPT_PATH:-}" ] && [ -f "${SCRIPT_PATH}" ]; then
+            if ! rm -f "${SCRIPT_PATH}"; then
+              echo "::warning::Failed to remove temporary Supabase command script."
+            fi
+          fi
+        }
+        trap cleanup_script EXIT
 
-        # Clean up separately with explicit error handling
-        if [ -f "${SCRIPT_PATH}" ]; then
-          rm -f "${SCRIPT_PATH}"
-        fi
+        # Execute script without suppressing errors. The EXIT trap handles cleanup
+        # while preserving the command status for the workflow gate.
+        bash "${SCRIPT_PATH}"
