@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS public.doctoralia_appointments_ingestion (
 
   raw_data JSONB NOT NULL DEFAULT '{}'::JSONB,
   inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
   CONSTRAINT doctoralia_appointments_ingestion_source_key_not_blank
@@ -95,6 +96,7 @@ ALTER TABLE public.doctoralia_appointments_ingestion
   ADD COLUMN IF NOT EXISTS is_control BOOLEAN NOT NULL DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS raw_data JSONB NOT NULL DEFAULT '{}'::JSONB,
   ADD COLUMN IF NOT EXISTS inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 UPDATE public.doctoralia_appointments_ingestion
@@ -111,6 +113,7 @@ ALTER TABLE public.doctoralia_appointments_ingestion
   ALTER COLUMN source_key SET NOT NULL,
   ALTER COLUMN raw_data SET DEFAULT '{}'::JSONB,
   ALTER COLUMN inserted_at SET DEFAULT NOW(),
+  ALTER COLUMN imported_at SET DEFAULT NOW(),
   ALTER COLUMN updated_at SET DEFAULT NOW();
 
 DO $$
@@ -170,6 +173,8 @@ COMMENT ON COLUMN public.doctoralia_appointments_ingestion.source_key IS
   'Stable idempotency key used by scripts/populate-doctoralia-appointments.js for Supabase upserts.';
 COMMENT ON COLUMN public.doctoralia_appointments_ingestion.raw_data IS
   'Source-file metadata and preserved operational ingestion context.';
+COMMENT ON COLUMN public.doctoralia_appointments_ingestion.imported_at IS
+  'Timestamp when the appointment ingestion row was first imported. Kept alongside inserted_at for production compatibility.';
 
 ALTER TABLE public.doctoralia_appointments_ingestion ENABLE ROW LEVEL SECURITY;
 

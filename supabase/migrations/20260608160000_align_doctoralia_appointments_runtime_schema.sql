@@ -11,6 +11,7 @@ BEGIN
   END IF;
 
   ALTER TABLE public.doctoralia_appointments_ingestion
+    ADD COLUMN IF NOT EXISTS status TEXT,
     ADD COLUMN IF NOT EXISTS imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
   UPDATE public.doctoralia_appointments_ingestion
