@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run tests",
-    "test:ci": "vitest run tests --reporter=verbose --passWithNoTests",
+    "test:ci": "vitest run \"tests/**/*.test.*\" \"tests/**/*.spec.*\" --reporter=verbose --passWithNoTests",
     "test:e2e": "playwright test"
   },
   "dependencies": {

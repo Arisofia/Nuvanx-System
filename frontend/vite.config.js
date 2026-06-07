@@ -21,7 +21,8 @@ export default ({ mode }) => {
     test: {
       globals: true,
       environment: 'node',
-      include: ['tests/**/*.test.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+      include: ['tests/**/*.test.{js,mjs,cjs,ts,mts,cts,jsx,tsx}', 'tests/**/*.spec.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+      exclude: ['**/*.playwright.ts', '**/*.playwright.tsx'],
     },
     server: {
       allowedHosts: (process.env.VITE_ALLOWED_HOSTS ?? '.manus.computer')
