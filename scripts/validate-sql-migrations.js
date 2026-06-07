@@ -7,6 +7,12 @@ const path = require('node:path');
 const MIGRATIONS_DIR = path.resolve(process.cwd(), 'supabase/migrations');
 const failures = [];
 
+function stripSqlComments(sql) {
+  return sql
+    .replace(/--.*$/gm, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
 function walkSqlFiles(dir) {
   return fs.readdirSync(dir, { withFileTypes: true })
     .flatMap((entry) => {
@@ -19,9 +25,7 @@ function walkSqlFiles(dir) {
 
 for (const file of walkSqlFiles(MIGRATIONS_DIR)) {
   const sql = fs.readFileSync(file, 'utf8');
-  const executableSql = sql
-    .replace(/--.*$/gm, '')
-    .replace(/\/\*[\s\S]*?\*\//g, '');
+  const executableSql = stripSqlComments(sql);
   const rel = path.relative(process.cwd(), file);
 
   if (/\.\.\.\s*(final\s+schema|schema|columns?)\s*\.\.\./i.test(executableSql) || /\(\s*\.\.\.\s*\)/.test(executableSql)) {

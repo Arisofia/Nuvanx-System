@@ -4,6 +4,9 @@
 -- Purpose: receive the 2,220-row Doctoralia appointment export from CSV/XLSX,
 -- preserve both the simplified guide columns and the richer operational export
 -- columns, and expose deterministic keys for idempotent batch upserts.
+--
+-- No explicit BEGIN/COMMIT is used here; Supabase migration tooling manages
+-- migration transactions, and nested wrappers can break preview deployments.
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS public.doctoralia_appointments_ingestion (
