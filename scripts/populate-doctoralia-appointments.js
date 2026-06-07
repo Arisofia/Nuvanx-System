@@ -280,8 +280,36 @@ async function upsertRecords(records) {
       .from('doctoralia_appointments_ingestion')
       .upsert(chunk, { onConflict: 'sheet_row' });
 
-    if (error) throw error;
-    console.log(`[doctoralia-appointments] Upserted ${index + chunk.length}/${records.length}`);
+    if (error) {
+      const firstSheetRow = chunk[0]?.sheet_row;
+      const lastSheetRow = chunk[chunk.length - 1]?.sheet_row;
+
+      console.error('[doctoralia-appointments] Failed to upsert chunk', {
+        error,
+        index,
+        chunkSize: chunk.length,
+        startOffset: index,
+        endOffset: index + chunk.length - 1,
+        firstSheetRow,
+        lastSheetRow,
+      });
+
+      const wrappedError = new Error(
+        `[doctoralia-appointments] Failed to upsert chunk ` +
+          `(index=${index}, size=${chunk.length}, first_sheet_row=${firstSheetRow}, last_sheet_row=${lastSheetRow}): ` +
+          error.message
+      );
+
+      // Preserve original error as cause when supported by the runtime
+      // (Node 16+ / modern JS engines)
+      wrappedError.cause = error;
+
+      throw wrappedError;
+    }
+
+    console.log(
+      `[doctoralia-appointments] Upserted ${index + chunk.length}/${records.length} (chunkSize=${chunk.length})`
+    );
   }
 }
 
