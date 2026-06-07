@@ -30,7 +30,9 @@
     "validate:actionlint": "actionlint .github/workflows/*.yml",
     "validate:edge-deno": "deno check --config=supabase/functions/deno.json $(find supabase/functions -name '*.ts' | sort)",
     "doctoralia:appointments:load": "node scripts/populate-doctoralia-appointments.js",
-    "doctoralia:appointments:dry-run": "node scripts/populate-doctoralia-appointments.js --dry-run"
+    "doctoralia:appointments:dry-run": "node scripts/populate-doctoralia-appointments.js --dry-run",
+    "doctoralia:appointments:sync": "node scripts/sync-doctoralia-appointments.js",
+    "doctoralia:appointments:sync:dry-run": "node scripts/sync-doctoralia-appointments.js --dry-run"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.107.0",
