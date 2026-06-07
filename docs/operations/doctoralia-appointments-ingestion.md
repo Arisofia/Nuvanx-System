@@ -6,7 +6,7 @@ Use this runbook to load Doctoralia appointment exports into `public.doctoralia_
 
 ## Supported Source Files
 
-The loader supports both of these local export formats:
+The loader supports the following export formats:
 
 1. `doctoralia_appointments.csv` in the repository root.
 2. `Base Pacientes Nuvanx.xlsx` with the `Doctoralia` sheet.
