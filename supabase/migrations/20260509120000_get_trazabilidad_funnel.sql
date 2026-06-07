@@ -93,9 +93,8 @@ AS $$
       l.source,
       l.stage,
       l.phone_normalized,
-      COALESCE(l.clinic_id, u.clinic_id) AS clinic_id
+      l.clinic_id AS clinic_id
     FROM public.leads l
-    LEFT JOIN public.users u ON u.id = l.user_id
     WHERE l.user_id = p_user_id
       AND l.deleted_at IS NULL
       AND (l.source IS NULL OR lower(l.source) <> 'doctoralia')

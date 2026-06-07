@@ -12,7 +12,7 @@
 --      Now also matches by phone extracted from template_name "[phone]" brackets.
 --
 --   3. clinic_id context:
---      Added LEFT JOIN users to provide u.clinic_id for scoping phone-based joins.
+--      Uses leads.clinic_id for scoping phone-based joins so preview databases without public.users still compile.
 --
 --   4. Data Type Error (SQLSTATE 42P16):
 --      Recreating a view with CREATE OR REPLACE fails if a column's data type
@@ -77,8 +77,8 @@ SELECT
 
 FROM public.leads l
 
--- clinic_id needed for phone-based scoped joins
-LEFT JOIN public.users u ON u.id = l.user_id
+-- clinic_id needed for phone-based scoped joins; avoid public.users dependency in preview replays
+LEFT JOIN LATERAL (SELECT l.clinic_id) u(clinic_id) ON TRUE
 
 LEFT JOIN public.patients p
   ON  (p.dni_hash = l.dni_hash AND l.dni_hash IS NOT NULL)

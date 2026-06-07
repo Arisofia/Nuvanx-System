@@ -6,7 +6,7 @@ Use this runbook to load Doctoralia appointment exports into `public.doctoralia_
 
 ## Supported Source Files
 
-The loader supports the following export formats:
+The loader supports both of these local export formats:
 
 1. `doctoralia_appointments.csv` in the repository root.
 2. `Base Pacientes Nuvanx.xlsx` with the `Doctoralia` sheet.
@@ -145,6 +145,15 @@ WHERE n.nspname = 'public'
   )
 ORDER BY c.relname;
 ```
+
+
+## Merge-Conflict Resolution Notes
+
+When this branch is rebased or updated from `main`, keep these canonical decisions:
+
+- `supabase/migrations/20260608130000_create_doctoralia_appointments_ingestion.sql` must not include explicit `BEGIN;` / `COMMIT;` wrappers; Supabase tooling controls migration transactions.
+- `scripts/validate-sql-migrations.js` should flag only unguarded `ALTER TABLE financial_settlements` statements and should allow `ALTER TABLE IF EXISTS`.
+- This runbook should keep both local CSV/XLSX and automated Google Sheets paths because production uses both manual recovery and scheduled sync.
 
 ## Troubleshooting
 

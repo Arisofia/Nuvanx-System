@@ -31,3 +31,14 @@ CREATE TABLE IF NOT EXISTS public.leads (
   updated_at TIMESTAMPTZ DEFAULT now(),
   inserted_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- Preview/core-schema compatibility: production carries public.users remotely,
+-- but fresh Supabase Preview databases replay only repository migrations. Provide
+-- the minimal columns referenced by historical attribution/traceability SQL.
+CREATE TABLE IF NOT EXISTS public.users (
+  id UUID PRIMARY KEY,
+  clinic_id UUID,
+  email TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
