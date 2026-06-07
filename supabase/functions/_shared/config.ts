@@ -20,9 +20,12 @@ export const SUPABASE_URL = getEnv('SUPABASE_URL') || 'https://ci-check.supabase
 export const SUPABASE_SERVICE_ROLE_KEY = getEnv('SUPABASE_SERVICE_ROLE_KEY') || 'ci_dummy_service_role_key_for_check_only';
 export const SUPABASE_ANON_KEY = getEnv('SUPABASE_ANON_KEY') || 'ci_dummy_anon_key_for_check_only';
 export const NUVANX_SUPABASE_SERVICE_ROLE_KEY = getEnv('NUVANX_SUPABASE_SERVICE_ROLE_KEY');
-export const MCP_API_KEY = getEnv('MCP_API_KEY');
+export const MCP_API_KEY = getEnv('MCP_API_KEY') || 'ci_dummy_mcp_api_key';
 export const ENCRYPTION_KEY = getEnv('ENCRYPTION_KEY') || 'ci_dummy_encryption_key_32chars_minimum_for_check_only';
 export const META_AD_ACCOUNT_IDS = getEnv('META_AD_ACCOUNT_IDS');
+export const FALLBACK_META_AD_ACCOUNT_ID = getEnv('FALLBACK_META_AD_ACCOUNT_ID') || '9523446201036125';
+export const SHEETS_WEBHOOK_URL_DOCTORALIA = getEnv('SHEETS_WEBHOOK_URL_DOCTORALIA') || '';
+export const SHEETS_WEBHOOK_SECRET_DOCTORALIA = getEnv('SHEETS_WEBHOOK_SECRET_DOCTORALIA') || 'ci_dummy_doctoralia_secret';
 export const META_APP_ID = getEnv('META_APP_ID');
 export const META_APP_SECRET = getEnv('META_APP_SECRET');
 
