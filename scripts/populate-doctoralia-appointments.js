@@ -192,10 +192,30 @@ function recordsFromRows(rows) {
   const headerMap = buildHeaderMap(rows[0]);
   ensureRequiredHeaders(headerMap);
 
-  return rows
+  const records = rows
     .slice(1)
     .map((row, index) => (isBlankRow(row) ? null : buildRecord(row, headerMap, index + 2)))
     .filter(Boolean);
+
+  // Log duplicate detection for diagnostics
+  const sourceKeyCount = new Map();
+  for (const record of records) {
+    sourceKeyCount.set(record.source_key, (sourceKeyCount.get(record.source_key) || 0) + 1);
+  }
+
+  const duplicates = Array.from(sourceKeyCount.entries())
+    .filter(([, count]) => count > 1)
+    .map(([key, count]) => ({ key, count }));
+
+  if (duplicates.length > 0) {
+    console.warn(
+      `[doctoralia-appointments] Found ${duplicates.length} duplicate source_keys. ` +
+      `These will be deduplicated during upsert (keeping latest). ` +
+      `Sample: ${JSON.stringify(duplicates.slice(0, 5))}`
+    );
+  }
+
+  return records;
 }
 
 function isBlankRow(row) {
@@ -371,8 +391,29 @@ async function upsertRecords(records) {
   validateRecordsForUpsert(records);
   const supabase = getSupabaseClient();
 
-  for (let index = 0; index < records.length; index += CHUNK_SIZE) {
-    const chunk = records.slice(index, index + CHUNK_SIZE);
+  // Deduplicate records by source_key before upserting
+  // This prevents PostgreSQL "ON CONFLICT DO UPDATE cannot affect row a second time" error
+  const deduplicatedRecords = [];
+  const seenKeys = new Map();
+
+  for (const record of records) {
+    // Keep the last occurrence of each source_key (last write wins)
+    seenKeys.set(record.source_key, record);
+  }
+
+  for (const record of seenKeys.values()) {
+    deduplicatedRecords.push(record);
+  }
+
+  if (deduplicatedRecords.length < records.length) {
+    console.log(
+      `[doctoralia-appointments] Deduplicated ${records.length} records to ${deduplicatedRecords.length} unique source keys ` +
+      `(removed ${records.length - deduplicatedRecords.length} duplicates)`
+    );
+  }
+
+  for (let index = 0; index < deduplicatedRecords.length; index += CHUNK_SIZE) {
+    const chunk = deduplicatedRecords.slice(index, index + CHUNK_SIZE);
     const { error } = await supabase
       .from('doctoralia_appointments_ingestion')
       .upsert(chunk, { onConflict: 'source_key' });
@@ -403,7 +444,7 @@ async function upsertRecords(records) {
     }
 
     console.log(
-      `[doctoralia-appointments] Upserted ${index + chunk.length}/${records.length} (chunkSize=${chunk.length})`
+      `[doctoralia-appointments] Upserted ${index + chunk.length}/${deduplicatedRecords.length} (chunkSize=${chunk.length})`
     );
   }
 }
