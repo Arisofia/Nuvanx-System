@@ -2981,8 +2981,45 @@ function aggregateDashboardResults(leads: any[], prevLeads: any[], settlements: 
   };
 }
 
+
+function classifyAcquisitionChannel(row: any): 'social' | 'paid_search' | 'whatsapp' | 'landing' | 'other' {
+  const source = String(row?.source ?? '').trim().toLowerCase();
+  const utmSource = String(row?.utm_source ?? '').trim().toLowerCase();
+  const landingUrl = String(row?.landing_url ?? '').trim().toLowerCase();
+
+  if (
+    ['meta_leadgen', 'meta_lead_gen', 'facebook_leadgen', 'meta ads', 'meta_ads', 'facebook_ads', 'instagram_ads', 'facebook', 'instagram', 'fb', 'ig'].includes(source)
+    || source.startsWith('meta')
+    || source.startsWith('facebook')
+    || source.startsWith('instagram')
+    || ['meta', 'facebook', 'instagram', 'fb', 'ig', 'social', 'paid_social'].includes(utmSource)
+    || utmSource.startsWith('meta')
+    || utmSource.startsWith('facebook')
+    || utmSource.startsWith('instagram')
+    || landingUrl.includes('facebook')
+    || landingUrl.includes('instagram')
+    || landingUrl.includes('fbclid')
+  ) return 'social';
+
+  if (
+    ['google_ads', 'google ads', 'google', 'sem', 'paid_search'].includes(source)
+    || ['google', 'google_ads', 'google ads', 'sem', 'paid_search'].includes(utmSource)
+    || landingUrl.includes('gclid=')
+  ) return 'paid_search';
+
+  if (['whatsapp', 'meta_whatsapp', 'facebook_whatsapp'].includes(source) || utmSource === 'whatsapp') return 'whatsapp';
+  if (['landing', 'landing_page'].includes(source)) return 'landing';
+  return 'other';
+}
+
+function countAcquisitionChannels(rows: any[]) {
+  const socialNewClients = rows.filter((row: any) => classifyAcquisitionChannel(row) === 'social').length;
+  const otherChannelNewClients = rows.length - socialNewClients;
+  return { socialNewClients, otherChannelNewClients };
+}
+
 function buildDashboardLeadsQuery(adminClient: any, userId: string, clinicId: string | null, since: string | null, until: string | null, sourceFilter: string) {
-  let q = adminClient.from('leads').select('stage, revenue, source, created_at, converted_patient_id').is('deleted_at', null).neq('source', 'doctoralia');
+  let q = adminClient.from('leads').select('stage, revenue, source, utm_source, landing_url, created_at, converted_patient_id').is('deleted_at', null).neq('source', 'doctoralia');
   q = applyClinicOrUserScope(q, clinicId, userId);
   if (since) q = q.gte('created_at', since);
   if (until) q = q.lte('created_at', until);
@@ -3039,7 +3076,7 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
     }
 
     let leadsQ = adminClient.from('leads')
-      .select('id, stage, created_at, source, converted_patient_id')
+      .select('id, stage, created_at, source, utm_source, landing_url, converted_patient_id')
       .is('deleted_at', null)
       .neq('source', 'doctoralia')
       .gte('created_at', since)
@@ -3078,6 +3115,7 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
 
     const totalLeads = leads.length;
     const metaLeads = leads.filter((l: any) => ['meta_leadgen', 'meta_lead_gen', 'facebook_leadgen'].includes(l.source || '')).length;
+    const { socialNewClients, otherChannelNewClients } = countAcquisitionChannels(leads);
     const convertedLeads = leads.filter((l: any) => l.converted_patient_id != null).length;
 
     const totalSpend = metaInsights.reduce((sum: number, r: any) => sum + Number(r.spend ?? 0), 0);
@@ -3090,6 +3128,8 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
       leads: {
         total: totalLeads,
         meta: metaLeads,
+        social: socialNewClients,
+        other_channels: otherChannelNewClients,
         converted: convertedLeads,
         conversion_rate: totalLeads > 0 ? Number(((convertedLeads / totalLeads) * 100).toFixed(2)) : 0
       },
@@ -6692,7 +6732,7 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
     .lte('created_at', untilFullDay);
 
   let leadsByStageQ = adminClient.from('leads')
-    .select('stage')
+    .select('stage, source, utm_source, landing_url')
     .is('deleted_at', null)
     .neq('source', 'doctoralia')
     .gte('created_at', since)
@@ -6732,7 +6772,9 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
 
   const crmLeads = leadCountRes.count ?? 0;
   const metaLeads = leadMetaCountRes.count ?? 0;
-  const byStage = processLeadsByStage(leadsByStageRes.data ?? []);
+  const leadRows = leadsByStageRes.data ?? [];
+  const byStage = processLeadsByStage(leadRows);
+  const { socialNewClients, otherChannelNewClients } = countAcquisitionChannels(leadRows);
   const settlements = (settlementsRes.data ?? []).filter((r: any) => Number(r.amount_net) > 0);
   const metaInsights = metaDailyInsightsRes.data ?? [];
 
@@ -6787,6 +6829,8 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
     crm: {
       totalLeads: crmLeads,
       metaLeads,
+      socialNewClients,
+      otherChannelNewClients,
       by_stage: byStage,
       is_real: leadsReal,
     },
@@ -6973,7 +7017,11 @@ async function handleReportsSourceComparisonGet(ctx: AuthenticatedRouteContext):
       .order('total_leads', { ascending: false });
     if (from) query = query.gte('first_lead_at', from);
     if (to)   query = query.lte('last_lead_at', to);
-    const { data: rows } = await query;
+    const { data: rows, error } = await query;
+    if (error) {
+      console.error('[Reports] source comparison error:', error);
+      return sendJson({ success: false, message: 'Source comparison view is unavailable. Apply the latest Supabase migrations and retry.' }, 500);
+    }
     return sendJson({ success: true, sources: rows || [] });
   }
   return null;

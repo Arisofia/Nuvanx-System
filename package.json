@@ -24,6 +24,7 @@
     "daily:sync": "node scripts/run-daily-sync.js",
     "meta:token": "node scripts/set-meta-token.js",
     "meta:audit": "node scripts/meta-ads-account-report.js",
+    "validate:workflow-yaml": "ruby -e 'require \"yaml\"; Dir.glob(\".github/**/*.{yml,yaml}\").sort.each { |file| YAML.safe_load(File.read(file), permitted_classes: [], permitted_symbols: [], aliases: true); puts \"OK #{file}\" }'",
     "validate:workflows": "ruby scripts/validate-github-workflows.rb"
   },
   "dependencies": {
