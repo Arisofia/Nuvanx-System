@@ -51,6 +51,13 @@ function parseAccountIds(raw) {
     .filter(Boolean);
 }
 
+function redactAccountId(accountId) {
+  const value = String(accountId || '');
+  if (!value) return '[redacted]';
+  const suffix = value.slice(-4);
+  return `***${suffix}`;
+}
+
 function parseArgs() {
   const args = process.argv.slice(2);
   const opts = {
@@ -300,6 +307,7 @@ async function main() {
           console.log(`  messaging: ${totals.messaging}`);
           console.log(`  link clicks: ${totals.link_clicks}`);
         } catch (err) {
+          console.error(`  Failed to fetch insights for ${redactAccountId(accountId)}: ${err.message}`);
           console.error(`  Failed to fetch insights for ${accountId}: ${maskSensitive(err.message)}`);
         }
       }
