@@ -6,7 +6,7 @@ Use this runbook to load Doctoralia appointment exports into `public.doctoralia_
 
 ## Supported Source Files
 
-The loader supports both of these local export formats:
+The loader supports the following export formats:
 
 1. `doctoralia_appointments.csv` in the repository root.
 2. `Base Pacientes Nuvanx.xlsx` with the `Doctoralia` sheet.
@@ -64,20 +64,26 @@ It also accepts the richer operational Google Sheets headers used by NUVANX, inc
    npm run doctoralia:appointments:dry-run
    ```
 
-5. Run the local file ingestion:
+5. Validate the production table schema before writing:
+
+   ```bash
+   npm run validate:doctoralia-appointments
+   ```
+
+6. Run the local file ingestion:
 
    ```bash
    npm run doctoralia:appointments:load
    ```
 
-6. For automated Google Sheets ingestion, validate and then sync directly from the Doctoralia appointments sheet:
+7. For automated Google Sheets ingestion, validate and then sync directly from the Doctoralia appointments sheet:
 
    ```bash
    DOCTORALIA_APPOINTMENTS_MIN_ROWS=2200 npm run doctoralia:appointments:sync:dry-run
    DOCTORALIA_APPOINTMENTS_MIN_ROWS=2200 npm run doctoralia:appointments:sync
    ```
 
-The daily orchestrator also runs `sync-doctoralia-appointments` as a critical step, so production daily sync fails if the appointment agenda cannot be fetched, parsed, loaded, or validated against the configured minimum row count.
+The daily orchestrator validates required secrets, validates the `doctoralia_appointments_ingestion` schema, and also runs `sync-doctoralia-appointments` as a critical step, so production daily sync fails if the appointment agenda cannot be fetched, parsed, loaded, or validated against the configured minimum row count.
 
 ## Verification Queries
 
@@ -149,10 +155,13 @@ ORDER BY c.relname;
 | `Doctoralia appointments input not found` | Put `doctoralia_appointments.csv` in the repo root or set `DOCTORALIA_APPOINTMENTS_INPUT_PATH`. |
 | Google Sheets 403/404 during automated sync | Share the Doctoralia appointments spreadsheet with the service-account email stored in `GOOGLE_DOCTORALIA_SERVICE_ACCOUNT`. |
 | Parsed rows below `DOCTORALIA_APPOINTMENTS_MIN_ROWS` | Check that `DOCTORALIA_APPOINTMENTS_SHEET_NAME` and `DOCTORALIA_APPOINTMENTS_SHEET_RANGE` point to the full appointments agenda, not the financial/caja tab. |
+| Daily sync preflight fails on missing secrets | Run `npm run validate:daily-sync-config` locally or inspect the workflow preflight output; it prints the exact missing secret names without exposing values. |
+| Doctoralia schema validation fails | Run `npm run validate:doctoralia-appointments`; the table must expose every column sent by the loader and `sheet_row`/`source_key` must be available for idempotent upserts. |
 | `Missing required Doctoralia headers` | Ensure the export includes at least status/estado, appointment date, appointment ID, and patient name columns. |
 | Upsert fails on `source_key` | Apply the latest migrations; the loader upserts against `ux_doctoralia_appointments_ingestion_source_key`. |
 | `cron.unschedule(...)` says the job does not exist | Re-run migrations after the pg_cron hardening patch; migrations now unschedule by `jobid` only after reading `cron.job`. |
 | SQL error at `... final schema ...` | Remove placeholder snippets before executing SQL. Repository migrations are expected to contain concrete schemas only; `...` is not valid PostgreSQL syntax. |
+| `relation public.financial_settlements does not exist` during early replay | Re-run after the migration safety patch; legacy `ALTER TABLE financial_settlements` statements now use `IF EXISTS` and CI blocks regressions. |
 
 ## Operational Notes
 

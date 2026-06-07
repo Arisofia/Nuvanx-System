@@ -6,8 +6,8 @@
 
 -- 0. Ensure columns exist (in case previous migrations failed/skipped)
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS phone_normalized TEXT;
-ALTER TABLE public.financial_settlements ADD COLUMN IF NOT EXISTS phone_normalized TEXT;
-ALTER TABLE public.financial_settlements ADD COLUMN IF NOT EXISTS patient_phone TEXT;
+ALTER TABLE IF EXISTS public.financial_settlements ADD COLUMN IF NOT EXISTS phone_normalized TEXT;
+ALTER TABLE IF EXISTS public.financial_settlements ADD COLUMN IF NOT EXISTS patient_phone TEXT;
 
 DO $$
 BEGIN
@@ -61,10 +61,17 @@ SET phone_normalized = public.normalize_phone(phone)
 WHERE phone IS NOT NULL
   AND phone_normalized IS NULL;
 
-UPDATE public.financial_settlements
-SET phone_normalized = public.normalize_phone(patient_phone)
-WHERE patient_phone IS NOT NULL
-  AND phone_normalized IS NULL;
+DO $$
+BEGIN
+  IF to_regclass('public.financial_settlements') IS NOT NULL THEN
+    UPDATE public.financial_settlements
+    SET phone_normalized = public.normalize_phone(patient_phone)
+    WHERE patient_phone IS NOT NULL
+      AND phone_normalized IS NULL;
+  ELSE
+    RAISE NOTICE 'Skipping financial_settlements phone backfill: table does not exist yet';
+  END IF;
+END $$;
 
 DO $$
 BEGIN

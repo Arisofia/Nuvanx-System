@@ -13,29 +13,36 @@ ALTER TABLE public.leads
   ADD COLUMN IF NOT EXISTS appointment_date TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS treatment_name VARCHAR(255);
 
-ALTER TABLE public.financial_settlements
+ALTER TABLE IF EXISTS public.financial_settlements
   ADD COLUMN IF NOT EXISTS patient_phone TEXT,
   ADD COLUMN IF NOT EXISTS phone_normalized TEXT;
 
 -- Backfill Doctoralia phone fields from Asunto/template_name when the dedicated
 -- patient_phone column is empty. Handles repeated phones: [657174670 - 657174670].
-WITH extracted AS (
-  SELECT DISTINCT ON (fs.id)
-    fs.id,
-    public.normalize_phone(token.phone_token) AS phone_normalized
-  FROM public.financial_settlements fs
-  CROSS JOIN LATERAL regexp_matches(COALESCE(fs.template_name, ''), '\[([^\]]+)\]', 'g') AS bracket(raw_value)
-  CROSS JOIN LATERAL regexp_split_to_table(bracket.raw_value[1], '[^0-9+]+') AS token(phone_token)
-  WHERE fs.source_system = 'doctoralia'
-    AND public.normalize_phone(token.phone_token) IS NOT NULL
-  ORDER BY fs.id, LENGTH(public.normalize_phone(token.phone_token)) DESC
-)
-UPDATE public.financial_settlements fs
-SET patient_phone = COALESCE(fs.patient_phone, extracted.phone_normalized),
-    phone_normalized = COALESCE(fs.phone_normalized, extracted.phone_normalized)
-FROM extracted
-WHERE fs.id = extracted.id
-  AND (fs.patient_phone IS NULL OR fs.phone_normalized IS NULL);
+DO $$
+BEGIN
+  IF to_regclass('public.financial_settlements') IS NOT NULL THEN
+    WITH extracted AS (
+      SELECT DISTINCT ON (fs.id)
+        fs.id,
+        public.normalize_phone(token.phone_token) AS phone_normalized
+      FROM public.financial_settlements fs
+      CROSS JOIN LATERAL regexp_matches(COALESCE(fs.template_name, ''), '\[([^\]]+)\]', 'g') AS bracket(raw_value)
+      CROSS JOIN LATERAL regexp_split_to_table(bracket.raw_value[1], '[^0-9+]+') AS token(phone_token)
+      WHERE fs.source_system = 'doctoralia'
+        AND public.normalize_phone(token.phone_token) IS NOT NULL
+      ORDER BY fs.id, LENGTH(public.normalize_phone(token.phone_token)) DESC
+    )
+    UPDATE public.financial_settlements fs
+    SET patient_phone = COALESCE(fs.patient_phone, extracted.phone_normalized),
+        phone_normalized = COALESCE(fs.phone_normalized, extracted.phone_normalized)
+    FROM extracted
+    WHERE fs.id = extracted.id
+      AND (fs.patient_phone IS NULL OR fs.phone_normalized IS NULL);
+  ELSE
+    RAISE NOTICE 'Skipping Doctoralia subject phone backfill: public.financial_settlements does not exist yet';
+  END IF;
+END $$;
 
 CREATE OR REPLACE FUNCTION public.reconcile_doctoralia_subjects_to_leads(p_user_id UUID)
 RETURNS INTEGER

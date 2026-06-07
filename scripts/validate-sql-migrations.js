@@ -32,6 +32,11 @@ for (const file of walkSqlFiles(MIGRATIONS_DIR)) {
   for (const call of unsafeCronUnschedule) {
     failures.push(`${rel}: uses unsafe ${call}; unschedule pg_cron jobs by jobid after selecting from cron.job.`);
   }
+
+  const unsafeFinancialAlter = executableSql.match(/ALTER\s+TABLE\s+(?:public\.)?financial_settlements\b/gi) || [];
+  for (const call of unsafeFinancialAlter) {
+    failures.push(`${rel}: uses unsafe ${call}; use ALTER TABLE IF EXISTS or wrap in to_regclass('public.financial_settlements') guard.`);
+  }
 }
 
 if (failures.length > 0) {

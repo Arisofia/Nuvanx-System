@@ -265,7 +265,7 @@ function buildRecord(row, headerMap, sheetRow) {
     amount: parseAmount(getCell(row, headerMap, 'amount')),
     normalized_date: parseDate(getCell(row, headerMap, 'normalized_date')),
     doctoralia_id: doctoraliaId,
-    // appointment_id: doctoraliaId,  // ya no se usa; la clave es doctoralia_id
+    appointment_id: doctoraliaId,
     patient_name: clean(getCell(row, headerMap, 'patient_name')),
     patient_email: clean(getCell(row, headerMap, 'patient_email')),
     phone: clean(getCell(row, headerMap, 'phone')),
@@ -300,6 +300,23 @@ function summarize(records) {
     control: records.filter((record) => record.is_control).length,
     withPhone: records.filter((record) => record.phone_normalized).length,
   };
+}
+
+function validateRecordsForUpsert(records) {
+  const invalid = records
+    .map((record, index) => ({ record, index }))
+    .filter(({ record }) => !record.source_key || !Number.isInteger(record.sheet_row));
+
+  if (invalid.length > 0) {
+    const sample = invalid.slice(0, 5).map(({ record, index }) => ({
+      index,
+      sheet_row: record.sheet_row,
+      source_key: record.source_key,
+      doctoralia_id: record.doctoralia_id,
+      patient_name: record.patient_name,
+    }));
+    throw new Error(`Invalid Doctoralia appointment records before upsert: every row must include source_key and integer sheet_row. Sample: ${JSON.stringify(sample)}`);
+  }
 }
 
 async function readRowsFromCsv() {
@@ -351,6 +368,7 @@ async function countIngestedRecords() {
 }
 
 async function upsertRecords(records) {
+  validateRecordsForUpsert(records);
   const supabase = getSupabaseClient();
 
   for (let index = 0; index < records.length; index += CHUNK_SIZE) {
@@ -425,6 +443,7 @@ module.exports = {
   recordsFromRows,
   readRecords,
   upsertRecords,
+  validateRecordsForUpsert,
   clean,
   hasAny,
   normalizePhone,
