@@ -255,10 +255,21 @@ END $$;
 SELECT public.run_doctoralia_name_match();
 
 DO $$
+DECLARE
+  target_job RECORD;
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
-    PERFORM cron.unschedule('doctoralia-name-match-daily')
-      WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'doctoralia-name-match-daily');
+    FOR target_job IN
+      SELECT jobid
+      FROM cron.job
+      WHERE jobname = 'doctoralia-name-match-daily'
+    LOOP
+      BEGIN
+        PERFORM cron.unschedule(target_job.jobid);
+      EXCEPTION WHEN OTHERS THEN
+        RAISE NOTICE 'Skipping stale pg_cron jobid % for doctoralia-name-match-daily: %', target_job.jobid, SQLERRM;
+      END;
+    END LOOP;
 
     PERFORM cron.schedule(
       'doctoralia-name-match-daily',
