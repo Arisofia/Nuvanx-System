@@ -7,12 +7,6 @@ const path = require('node:path');
 const MIGRATIONS_DIR = path.resolve(process.cwd(), 'supabase/migrations');
 const failures = [];
 
-function stripSqlComments(sql) {
-  return sql
-    .replace(/--.*$/gm, '')
-    .replace(/\/\*[\s\S]*?\*\//g, '');
-}
-
 function walkSqlFiles(dir) {
   return fs.readdirSync(dir, { withFileTypes: true })
     .flatMap((entry) => {
@@ -25,7 +19,9 @@ function walkSqlFiles(dir) {
 
 for (const file of walkSqlFiles(MIGRATIONS_DIR)) {
   const sql = fs.readFileSync(file, 'utf8');
-  const executableSql = stripSqlComments(sql);
+  const executableSql = sql
+    .replace(/--.*$/gm, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
   const rel = path.relative(process.cwd(), file);
 
   if (/\.\.\.\s*(final\s+schema|schema|columns?)\s*\.\.\./i.test(executableSql) || /\(\s*\.\.\.\s*\)/.test(executableSql)) {
@@ -37,7 +33,7 @@ for (const file of walkSqlFiles(MIGRATIONS_DIR)) {
     failures.push(`${rel}: uses unsafe ${call}; unschedule pg_cron jobs by jobid after selecting from cron.job.`);
   }
 
-  const unsafeFinancialAlter = executableSql.match(/ALTER\s+TABLE\s+(?!IF\s+EXISTS\s+)(?:public\.)?financial_settlements\b/gi) || [];
+  const unsafeFinancialAlter = executableSql.match(/ALTER\s+TABLE\s+(?:public\.)?financial_settlements\b/gi) || [];
   for (const call of unsafeFinancialAlter) {
     failures.push(`${rel}: uses unsafe ${call}; use ALTER TABLE IF EXISTS or wrap in to_regclass('public.financial_settlements') guard.`);
   }
