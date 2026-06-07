@@ -265,7 +265,7 @@ function buildRecord(row, headerMap, sheetRow) {
     amount: parseAmount(getCell(row, headerMap, 'amount')),
     normalized_date: parseDate(getCell(row, headerMap, 'normalized_date')),
     doctoralia_id: doctoraliaId,
-    appointment_id: doctoraliaId,
+    // appointment_id: doctoraliaId,  // ya no se usa; la clave es doctoralia_id
     patient_name: clean(getCell(row, headerMap, 'patient_name')),
     patient_email: clean(getCell(row, headerMap, 'patient_email')),
     phone: clean(getCell(row, headerMap, 'phone')),
@@ -379,8 +379,6 @@ async function upsertRecords(records) {
           error.message
       );
 
-      // Preserve original error as cause when supported by the runtime
-      // (Node 16+ / modern JS engines)
       wrappedError.cause = error;
 
       throw wrappedError;
