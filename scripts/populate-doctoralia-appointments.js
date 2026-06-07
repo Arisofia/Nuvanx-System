@@ -397,8 +397,6 @@ async function upsertRecords(records) {
           error.message
       );
 
-      // Preserve original error as cause when supported by the runtime
-      // (Node 16+ / modern JS engines)
       wrappedError.cause = error;
 
       throw wrappedError;
