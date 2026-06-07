@@ -1,14 +1,11 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from '../_shared/config.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, GET, OPTIONS'
 };
-
-const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-const anonKey    = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
@@ -26,7 +23,7 @@ Deno.serve(async (req: Request) => {
     if (!email || !password) return json({ success: false, message: 'email and password required' }, 400);
     if (password.length < 8)  return json({ success: false, message: 'password must be at least 8 characters' }, 400);
 
-    const supabase = createClient(supabaseUrl, serviceKey);
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     // Use Supabase Auth so sessions work across frontend
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
       email, password, email_confirm: true,
@@ -51,7 +48,7 @@ Deno.serve(async (req: Request) => {
   // GET /auth/me — verify token and return user
   if (req.method === 'GET' && path === 'me') {
     const authHeader = req.headers.get('Authorization') ?? '';
-    const client = createClient(supabaseUrl, anonKey, { global: { headers: { Authorization: authHeader } } });
+    const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { headers: { Authorization: authHeader } } });
     const { data: { user }, error } = await client.auth.getUser();
     if (error || !user) return json({ success: false, message: 'Unauthorized' }, 401);
     return json({ success: true, user: { id: user.id, email: user.email, name: user.user_metadata?.name } });

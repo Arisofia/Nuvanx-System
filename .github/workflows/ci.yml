@@ -413,9 +413,9 @@ jobs:
           # Doctoralia webhook secrets (guarded; real values from GH secrets for setup flows)
           SHEETS_WEBHOOK_URL_DOCTORALIA: ${{ env.SHEETS_WEBHOOK_URL_DOCTORALIA }}
           SHEETS_WEBHOOK_SECRET_DOCTORALIA: ${{ env.SHEETS_WEBHOOK_SECRET_DOCTORALIA }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://ci-check.supabase.co' }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || 'ci_dummy_service_role_key_for_check_only' }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || 'ci_dummy_anon_key_for_check_only' }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || '' }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || '' }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || '' }}
           DEFAULT_PHONE_COUNTRY_CODE: '34'
 
   # (continues in the same section as above)
@@ -449,8 +449,8 @@ jobs:
           FALLBACK_META_AD_ACCOUNT_ID: '9523446201036125'
           # Doctoralia webhook values are optional during CI type checking.
           SHEETS_WEBHOOK_URL_DOCTORALIA: ''
-          SHEETS_WEBHOOK_SECRET_DOCTORALIA: 'ci_dummy_doctoralia_secret'
-          SUPABASE_URL: https://ci-check.supabase.co
-          SUPABASE_SERVICE_ROLE_KEY: ci_dummy_service_role_key_for_check_only
-          SUPABASE_ANON_KEY: ci_dummy_anon_key_for_check_only
-          ENCRYPTION_KEY: ci_dummy_encryption_key_32chars_minimum_for_check_only
+          SHEETS_WEBHOOK_SECRET_DOCTORALIA: ''
+          SUPABASE_URL: ''
+          SUPABASE_SERVICE_ROLE_KEY: ''
+          SUPABASE_ANON_KEY: ''
+          ENCRYPTION_KEY: ''

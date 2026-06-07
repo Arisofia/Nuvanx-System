@@ -292,5 +292,10 @@ runs:
           echo "::warning::SESSION_URL was not resolved by the action. Your command may need to provide explicit --db-url or --project-ref flags."
         fi
 
+        # Execute script without suppressing errors
         bash "${SCRIPT_PATH}"
-        rm -f "${SCRIPT_PATH}" || true
+
+        # Clean up separately with explicit error handling
+        if [ -f "${SCRIPT_PATH}" ]; then
+          rm -f "${SCRIPT_PATH}"
+        fi
