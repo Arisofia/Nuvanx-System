@@ -283,7 +283,7 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          VITE_MCP_API_KEY: ${{ secrets['MCP_API_KEY'] }}
+          VITE_MCP_API_KEY: ${{ secrets.MCP_API_KEY }}
 
   frontend-e2e-smoke:
     needs: frontend
@@ -371,11 +371,11 @@ jobs:
           # Use repository secrets for CI test credentials to avoid hardcoding sensitive values.
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY || '' }}
-          MCP_API_KEY: ${{ secrets['MCP_API_KEY'] || '' }}
-          FALLBACK_META_AD_ACCOUNT_ID: ${{ secrets['FALLBACK_META_AD_ACCOUNT_ID'] || '' }}
+          MCP_API_KEY: ${{ secrets.MCP_API_KEY || '' }}
+          FALLBACK_META_AD_ACCOUNT_ID: ${{ secrets.FALLBACK_META_AD_ACCOUNT_ID || '' }}
           # Doctoralia webhook secrets (guarded; real values from GH secrets for setup flows)
-          SHEETS_WEBHOOK_URL_DOCTORALIA: ${{ secrets['SHEETS_WEBHOOK_URL_DOCTORALIA'] || '' }}
-          SHEETS_WEBHOOK_SECRET_DOCTORALIA: ${{ secrets['SHEETS_WEBHOOK_SECRET_DOCTORALIA'] || '' }}
+          SHEETS_WEBHOOK_URL_DOCTORALIA: ${{ secrets.SHEETS_WEBHOOK_URL_DOCTORALIA || '' }}
+          SHEETS_WEBHOOK_SECRET_DOCTORALIA: ${{ secrets.SHEETS_WEBHOOK_SECRET_DOCTORALIA || '' }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL || '' }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || '' }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || '' }}
