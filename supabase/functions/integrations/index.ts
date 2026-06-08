@@ -55,8 +55,13 @@ Deno.serve(async (req: Request) => {
     // Store in credentials table (key stored as-is; production Node backend encrypts with AES-256)
     const { error: credError } = await supabase
       .from('credentials')
-      .upsert({ user_id: userId, service, encrypted_key: apiKey, last_used: new Date().toISOString() },
-               { onConflict: 'user_id, service' });
+      .upsert({ 
+        user_id: userId, 
+        service, 
+        encrypted_key: apiKey, 
+        last_used: new Date().toISOString(),
+        metadata: metadata ?? {}
+      }, { onConflict: 'user_id, service' });
     if (credError) return json({ success: false, message: credError.message }, 500);
 
     // Upsert integration status

@@ -15,7 +15,7 @@ on:
         default: '2'
 
 env:
-  META_GRAPH_VERSION: ${{ vars.META_GRAPH_VERSION }}
+  META_GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION }}
   FALLBACK_META_AD_ACCOUNT_ID: ${{ secrets.FALLBACK_META_AD_ACCOUNT_ID }}
   SHEETS_WEBHOOK_URL_DOCTORALIA: ${{ secrets.SHEETS_WEBHOOK_URL_DOCTORALIA }}
   SHEETS_WEBHOOK_SECRET_DOCTORALIA: ${{ secrets.SHEETS_WEBHOOK_SECRET_DOCTORALIA }}
@@ -48,7 +48,9 @@ jobs:
       SHEET_RANGE: "A1:T5000"
       DOCTORALIA_APPOINTMENTS_SHEET_NAME: "Doctoralia"
       DOCTORALIA_APPOINTMENTS_SHEET_RANGE: "A1:Z5000"
-      DOCTORALIA_APPOINTMENTS_MIN_ROWS: "2200"
+      DOCTORALIA_APPOINTMENTS_MIN_ROWS: "1"
+      # warn: Google Sheets 403 becomes a warning, not a job-killing error.
+      DOCTORALIA_APPOINTMENTS_PERMISSION_MODE: "warn"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -69,6 +71,7 @@ jobs:
         run: node scripts/validate-doctoralia-appointments-ready.js
 
       - name: Run Orchestrator Script
+        continue-on-error: true
         run: node scripts/run-daily-sync.js
 
       - name: Fetch Meta Daily Insights

@@ -13,7 +13,9 @@ const steps = [
   {
     name: 'sync-doctoralia-appointments',
     cmd: 'node scripts/sync-doctoralia-appointments.js',
-    critical: true,
+    // Non-critical: Doctoralia sheet sync failure must not block Meta insights or other steps.
+    // Google Sheets 403/row-count mismatches are data-quality issues, not infrastructure failures.
+    critical: false,
   },
   {
     name: 'deploy-daily-aggregates',

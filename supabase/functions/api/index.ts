@@ -4972,7 +4972,12 @@ async function handleIntegrationsConnectPost(ctx: AuthenticatedRouteContext): Pr
     const encryptedKey = await encryptCred(String(reqToken).trim());
 
     const { error: credErr } = await adminClient.from('credentials')
-      .upsert({ user_id: userId, service, encrypted_key: encryptedKey }, { onConflict: 'user_id,service' });
+      .upsert({ 
+        user_id: userId, 
+        service, 
+        encrypted_key: encryptedKey,
+        metadata: metadata ?? {}
+      }, { onConflict: 'user_id,service' });
     if (credErr) throw credErr;
 
     const { error: intErr } = await adminClient.from('integrations')
