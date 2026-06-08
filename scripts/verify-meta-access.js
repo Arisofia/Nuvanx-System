@@ -3,13 +3,13 @@
 
 const crypto = require('crypto');
 
-const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v20.0';
+const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v22.0';
 const MIN_NODE_MAJOR = 18;
 
 const FAILURE_MESSAGES = {
   INVALID_NODE_VERSION: `Node.js ${MIN_NODE_MAJOR}+ is required.`,
   MISSING_ACCESS_TOKEN: 'Missing required GitHub secret/env var: META_ACCESS_TOKEN.',
-  MISSING_AD_ACCOUNT_ID: 'Missing required GitHub secret/env var: META_AD_ACCOUNT_ID or META_AD_ACCOUNT_IDS.',
+  MISSING_AD_ACCOUNT_ID: 'Missing required GitHub secret/env var: META_AD_ACCOUNT_ID, META_AD_ACCOUNT_IDS, or FALLBACK_META_AD_ACCOUNT_ID.',
   META_API_REQUEST_FAILED: 'Meta API request failed. Verify token permissions and Graph API availability.',
   TOKEN_ACCESS_DENIED: 'Token cannot access one or more configured ad accounts.',
   UNKNOWN: 'Unexpected Meta access verification failure.',
@@ -48,6 +48,7 @@ function parseTargetAdAccountIds() {
   const values = [
     process.env.META_AD_ACCOUNT_IDS || '',
     process.env.META_AD_ACCOUNT_ID || '',
+    process.env.FALLBACK_META_AD_ACCOUNT_ID || '',
   ]
     .join(',')
     .split(',')
@@ -96,13 +97,27 @@ async function fetchJson(url) {
   return body;
 }
 
-async function listAccessibleAdAccounts(accessToken) {
-  const url = createMetaUrl('/me/adaccounts', accessToken);
+async function fetchAdAccount(accessToken, accountId) {
+  const url = createMetaUrl(`/${accountId}`, accessToken);
   url.searchParams.set('fields', 'id,name,account_status,currency');
-  url.searchParams.set('limit', '500');
 
-  const payload = await fetchJson(url);
-  return Array.isArray(payload.data) ? payload.data : [];
+  return fetchJson(url);
+}
+
+async function verifyConfiguredAdAccounts(accessToken, accountIds) {
+  const results = [];
+
+  for (const accountId of accountIds) {
+    const account = await fetchAdAccount(accessToken, accountId);
+    results.push({
+      id: normalizeAdAccountId(account.id || accountId),
+      name: String(account.name || '').trim(),
+      status: account.account_status,
+      currency: String(account.currency || '').trim(),
+    });
+  }
+
+  return results;
 }
 
 async function main() {
@@ -122,33 +137,16 @@ async function main() {
     fail('MISSING_AD_ACCOUNT_ID');
   }
 
-  let accounts;
+  let verifiedAccounts;
   try {
-    accounts = await listAccessibleAdAccounts(accessToken);
+    verifiedAccounts = await verifyConfiguredAdAccounts(accessToken, targetAdAccountIds);
   } catch {
-    fail('META_API_REQUEST_FAILED');
+    fail('TOKEN_ACCESS_DENIED');
   }
-  const normalized = accounts
-    .map((row) => ({
-      id: normalizeAdAccountId(row.id),
-      name: String(row.name || '').trim(),
-      status: row.account_status,
-      currency: String(row.currency || '').trim(),
-    }))
-    .filter((row) => row.id);
 
-  const accessibleIds = new Set(normalized.map((account) => account.id));
-  const missing = targetAdAccountIds.filter((id) => !accessibleIds.has(id));
-
-  console.log(`Accessible ad accounts: ${normalized.length}`);
+  console.log(`Verified configured ad accounts: ${verifiedAccounts.length}`);
   console.log(`Configured target ad accounts: ${targetAdAccountIds.length}`);
-
-  if (!missing.length) {
-    console.log('✅ Meta token has access to all configured ad accounts.');
-    return;
-  }
-
-  fail('TOKEN_ACCESS_DENIED');
+  console.log('✅ Meta token has access to all configured ad accounts.');
 }
 
 main().catch(() => {

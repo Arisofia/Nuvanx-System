@@ -37,8 +37,8 @@ for (const key of REQUIRED) {
   if (!hasValue(key)) fail(`${key} secret is required for Daily Sync Orchestrator.`);
 }
 
-if (!hasValue('META_AD_ACCOUNT_ID') && !hasValue('META_AD_ACCOUNT_IDS')) {
-  fail('META_AD_ACCOUNT_ID or META_AD_ACCOUNT_IDS secret is required.');
+if (!hasValue('META_AD_ACCOUNT_ID') && !hasValue('META_AD_ACCOUNT_IDS') && !hasValue('FALLBACK_META_AD_ACCOUNT_ID')) {
+  fail('META_AD_ACCOUNT_ID, META_AD_ACCOUNT_IDS, or FALLBACK_META_AD_ACCOUNT_ID secret is required.');
 }
 
 if (!hasValue('GOOGLE_DOCTORALIA_SERVICE_ACCOUNT') && !hasValue('GOOGLE_ADS_SERVICE_ACCOUNT')) {
