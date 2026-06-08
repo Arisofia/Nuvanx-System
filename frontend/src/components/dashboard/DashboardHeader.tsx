@@ -1,4 +1,4 @@
-import { Filter, Calendar, MapPin, Target } from 'lucide-react'
+import { MapPin, Target } from 'lucide-react'
 import DataModeBadge from '../ui/DataModeBadge'
 import { MetaAccountsInline } from '../MetaAccountsNotice'
 
@@ -12,10 +12,6 @@ interface DashboardHeaderProps {
   readonly campaignsList: { id: string, name: string }[]
   readonly days: number
   readonly setDays: (v: 7 | 14 | 30 | 90) => void
-  readonly customFrom: string
-  readonly setCustomFrom: (v: string) => void
-  readonly customTo: string
-  readonly setCustomTo: (v: string | ((prev: string) => string)) => void
   readonly metaAccountIds: string[]
 }
 
@@ -29,15 +25,10 @@ export function DashboardHeader({
   campaignsList,
   days,
   setDays,
-  customFrom,
-  setCustomFrom,
-  customTo,
-  setCustomTo,
   metaAccountIds,
 }: DashboardHeaderProps) {
   const controlTextClass = 'text-[#5C5550] font-bold uppercase'
   const selectClass = 'bg-transparent border-none focus:ring-0 text-[10px] font-bold uppercase tracking-wider px-4 py-2 cursor-pointer outline-none appearance-none'
-  const dateInputClass = 'bg-transparent border-none focus:ring-0 text-[10px] font-bold uppercase w-28 text-center outline-none cursor-pointer'
 
   return (
     <div className="flex flex-col space-y-10 mb-12">
@@ -66,9 +57,9 @@ export function DashboardHeader({
               <button
                 type="button"
                 key={d}
-                onClick={() => { setDays(d); setCustomFrom(''); setCustomTo('') }}
+                onClick={() => setDays(d)}
                 className={`px-5 py-2.5 rounded-xl text-[10px] font-bold uppercase transition-all duration-300 ${
-                  !customFrom && days === d
+                  days === d
                     ? 'bg-[#84643B] text-white shadow-[0_4px_12px_rgba(132,100,59,0.3)]'
                     : 'text-[#8E8680] hover:text-[#84643B] hover:bg-[#84643B]/5'
                 }`}
@@ -119,26 +110,8 @@ export function DashboardHeader({
         </div>
 
         <div className="flex justify-end">
-          <div className="flex items-center gap-3 bg-white/90 p-2.5 rounded-2xl border border-[#E5D5C5]/60 shadow-[inset_0_2px_4px_rgba(0,0,0,0.02)]">
-            <Calendar className="w-3.5 h-3.5 ml-2 text-[#B08B5A]" />
-            <div className="flex items-center">
-              <input
-                type="date"
-                value={customFrom}
-                onChange={(e) => {
-                  setCustomFrom(e.target.value)
-                  setCustomTo((prev) => prev || new Date().toISOString().slice(0, 10))
-                }}
-                className={dateInputClass}
-              />
-              <span className="text-[#8E8680] text-[10px] font-bold mx-2">→</span>
-              <input
-                type="date"
-                value={customTo}
-                onChange={(e) => setCustomTo(e.target.value)}
-                className={dateInputClass}
-              />
-            </div>
+          <div className="rounded-2xl bg-white/70 px-5 py-3 text-[10px] font-bold uppercase tracking-[0.18em] text-[#8E8680] border border-[#E5D5C5]/40">
+            Filtro global: últimos {days} días
           </div>
         </div>
       </div>
