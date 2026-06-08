@@ -4,10 +4,15 @@
 -- - vw_campaign_performance_real.source
 -- - vw_doctor_performance_real.clinic_id
 --
--- This version avoids referencing non-existent columns such as
+-- This migration drops and recreates the views because PostgreSQL cannot change
+-- existing view column types/order using CREATE OR REPLACE VIEW.
+-- It also avoids referencing non-existent columns such as
 -- vw_doctoralia_lead_traceability_unified.status in production.
 
-create or replace view public.vw_campaign_performance_real as
+drop view if exists public.vw_campaign_performance_real;
+drop view if exists public.vw_doctor_performance_real;
+
+create view public.vw_campaign_performance_real as
 select
   l.user_id,
   coalesce(ma.campaign_name, l.campaign_name, 'Organic / Unknown')::text as campaign_name,
@@ -75,13 +80,13 @@ group by
     case when ma.lead_id is not null then 'meta' else 'unknown' end
   )::text;
 
-alter view if exists public.vw_campaign_performance_real
+alter view public.vw_campaign_performance_real
 set (security_invoker = true);
 
 grant select on public.vw_campaign_performance_real to service_role;
 grant select on public.vw_campaign_performance_real to authenticated;
 
-create or replace view public.vw_doctor_performance_real as
+create view public.vw_doctor_performance_real as
 select
   d.id as doctor_id,
   d.name as doctor_name,
@@ -99,7 +104,7 @@ select
   d.clinic_id as clinic_id
 from public.doctors d;
 
-alter view if exists public.vw_doctor_performance_real
+alter view public.vw_doctor_performance_real
 set (security_invoker = true);
 
 grant select on public.vw_doctor_performance_real to service_role;
