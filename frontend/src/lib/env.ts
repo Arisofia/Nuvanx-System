@@ -23,8 +23,14 @@ export const supabaseKey =
   sanitizeEnv(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) ||
   sanitizeEnv(import.meta.env.VITE_SUPABASE_ANON_KEY)
 
+export const metaAppId = sanitizeEnv(import.meta.env.VITE_META_APP_ID)
 export const metaPixelId = sanitizeEnv(import.meta.env.VITE_META_PIXEL_ID)
 export const metaAccountIds = sanitizeEnv(import.meta.env.VITE_META_AD_ACCOUNT_IDS)
+export const metaPageId = sanitizeEnv(import.meta.env.VITE_META_PAGE_ID)
+export const metaInstagramChamberiId = sanitizeEnv(import.meta.env.VITE_META_INSTAGRAM_CHAMBERI_ID)
+export const metaInstagramGoyaId = sanitizeEnv(import.meta.env.VITE_META_INSTAGRAM_GOYA_ID)
+export const metaBusinessPortfolioNuvanxId = sanitizeEnv(import.meta.env.VITE_META_BUSINESS_PORTFOLIO_NUVANX_ID)
+export const metaBusinessPortfolioYolandaId = sanitizeEnv(import.meta.env.VITE_META_BUSINESS_PORTFOLIO_YOLANDA_ID)
 export const googleAdsAccountIds = sanitizeEnv(import.meta.env.VITE_GOOGLE_ADS_ACCOUNT_IDS)
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseKey)
