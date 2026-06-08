@@ -261,6 +261,19 @@ export function buildDashboardState(options: DashboardStateOptions) {
 
   const deltas = asObject(metricsData.deltas)
 
+  const metaIsReal = toBoolean(pick(kpisMeta.is_real, kpisMeta.isReal))
+  const crmIsReal = toBoolean(pick(kpisCrm.is_real, kpisCrm.isReal))
+  const doctoraliaIsReal = toBoolean(pick(kpisDoctoralia.is_real, kpisDoctoralia.isReal))
+
+  const doctoraliaSettlementsReal = toBoolean(pick(
+    kpisDataQuality.doctoralia_settlements_real,
+    kpisDataQuality.doctoraliaSettlementsReal
+  ))
+
+  // Detectar estado de "Atribución Parcial": tenemos gasto o revenue real, 
+  // pero no hay coincidencia de identidad (match) entre ellos.
+  const isPartialAttribution = (metaIsReal || doctoraliaSettlementsReal || doctoraliaVerifiedRevenue > 0) && doctoraliaPatients === 0
+
   return {
     metrics: {
       totalLeads,
@@ -314,9 +327,10 @@ export function buildDashboardState(options: DashboardStateOptions) {
     quality: {
       overallMode: toSafeLabel(pick(kpisDataQuality.overall_mode, kpisDataQuality.overallMode)),
       metaDataSource: toSafeLabel(pick(kpisMeta.data_source, kpisMeta.dataSource)),
-      metaIsReal: toBoolean(pick(kpisMeta.is_real, kpisMeta.isReal)),
-      crmIsReal: toBoolean(pick(kpisCrm.is_real, kpisCrm.isReal)),
-      doctoraliaIsReal: toBoolean(pick(kpisDoctoralia.is_real, kpisDoctoralia.isReal)),
+      metaIsReal,
+      crmIsReal,
+      doctoraliaIsReal,
+      isPartialAttribution,
       metaAccountIds: toStringArray(accountIds),
     } satisfies DashboardQuality,
   }

@@ -6852,6 +6852,7 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
     data_quality: {
       leads_real: leadsReal,
       meta_spend_real: metaSpendReal,
+      doctoralia_settlements_real: settlements.length > 0,
       doctoralia_real: doctoraliaReal,
       overall_mode: overallMode,
     }
