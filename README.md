@@ -289,7 +289,10 @@ Si prefieres hacerlo manualmente, sincroniza los entornos remotos así:
 - Supabase:
   ```bash
   supabase secrets set META_ACCESS_TOKEN="..."
-  supabase secrets set FALLBACK_META_AD_ACCOUNT_ID="0000000000000000"   # required (see GitHub Actions secrets list)
+  # Note: If you get a "privileges" error, set these via the Supabase Dashboard: Settings > Edge Functions > Secrets
+  # Nota: Usa un ID de cuenta (ej. 9523446201036125), NO el App ID.
+  # Si recibes error de "privileges", configura esto en el Dashboard (Settings > Edge Functions > Secrets).
+  supabase secrets set FALLBACK_META_AD_ACCOUNT_ID="9523446201036125"
   npm run supabase:functions:deploy:api
   npm run supabase:functions:deploy:mcp
   ```
