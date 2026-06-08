@@ -18,6 +18,7 @@ import {
   DASHBOARD_REQUEST_TIMEOUT_MS,
   buildDashboardCacheKey,
   getUserFacingDashboardError,
+  asRecord,
   isCacheEntryFresh,
   validateDashboardBundle,
 } from '../lib/dashboard-validation'
@@ -112,7 +113,7 @@ async function invokeDashboardResource<T>(path: string, retries = DASHBOARD_REQU
   let lastError: unknown
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     try {
-      return await withTimeout(invokeApi(path), DASHBOARD_REQUEST_TIMEOUT_MS, path) as T
+      return await withTimeout(invokeApi(path), DASHBOARD_REQUEST_TIMEOUT_MS, path)
     } catch (error) {
       lastError = error
       if (attempt < retries) {
@@ -129,7 +130,7 @@ function getCachedDashboardResource<T>(path: string, cacheNamespace: string): Pr
   if (cached?.value !== undefined && isCacheEntryFresh(cached.createdAt, DASHBOARD_CACHE_TTL_MS)) {
     return Promise.resolve(cached.value as T)
   }
-  if (cached?.promise && isCacheEntryFresh(cached.createdAt, DASHBOARD_CACHE_TTL_MS)) {
+  if (cached?.promise !== undefined && isCacheEntryFresh(cached.createdAt, DASHBOARD_CACHE_TTL_MS)) {
     return cached.promise as Promise<T>
   }
 
@@ -192,6 +193,9 @@ export function useDashboardData(
       return { queryParams, dashboardParams, campaignsPath }
     }
 
+    const getFulfilledValue = <T>(result: PromiseSettledResult<T>): T | null =>
+      result.status === 'fulfilled' ? result.value : null
+
     const processResults = (
       metricsResult: PromiseSettledResult<any>,
       metaTrendsResult: PromiseSettledResult<any>,
@@ -203,11 +207,11 @@ export function useDashboardData(
       if (!active) return
       if (metricsResult.status === 'rejected') throw metricsResult.reason
 
-      const kpisResponse = kpisResult.status === 'fulfilled' ? kpisResult.value : null
-      const campaignsResponse = campaignsResult.status === 'fulfilled' ? campaignsResult.value : null
-      const metaTrendsResponse = metaTrendsResult.status === 'fulfilled' ? metaTrendsResult.value : null
-      const insightsResponse = insightsResult.status === 'fulfilled' ? insightsResult.value : null
-      const funnelResponse = funnelResult.status === 'fulfilled' ? funnelResult.value : null
+      const kpisResponse = getFulfilledValue(kpisResult)
+      const campaignsResponse = getFulfilledValue(campaignsResult)
+      const metaTrendsResponse = getFulfilledValue(metaTrendsResult)
+      const insightsResponse = getFulfilledValue(insightsResult)
+      const funnelResponse = getFulfilledValue(funnelResult)
 
       const validation = validateDashboardBundle({
         metricsResponse: metricsResult.value,
@@ -222,9 +226,8 @@ export function useDashboardData(
       }
 
       const { metricsData, campaigns, trendData: safeTrendData, funnelRows } = validation.data
-      const bySource = metricsData.bySource && typeof metricsData.bySource === 'object' && !Array.isArray(metricsData.bySource)
-        ? metricsData.bySource as Record<string, unknown>
-        : {}
+      const bySource = asRecord(metricsData.bySource)
+
       if (Object.keys(bySource).length > 0 && sourcesCount === 0) {
         setSourcesList(Object.keys(bySource))
       }
@@ -233,10 +236,10 @@ export function useDashboardData(
 
       const metaFailureMessage = buildMetaFailureMessage(campaignsResult, insightsResult)
       if (campaigns.length > 0 && campaignsCount === 0) {
-        setCampaignsList(campaigns.map((campaign) => ({
-          id: String(campaign.id ?? ''),
-          name: String(campaign.name ?? 'Campaña sin nombre'),
-        })).filter((campaign) => campaign.id))
+        setCampaignsList(campaigns.map((c) => ({
+          id: (typeof c.id === 'string' || typeof c.id === 'number') ? String(c.id) : '',
+          name: typeof c.name === 'string' ? c.name : 'Campaña sin nombre',
+        })).filter((c) => c.id))
       }
 
       const insightsSummary = insightsResponse?.summary
@@ -312,7 +315,7 @@ export function useDashboardData(
         const [metricsResult, metaTrendsResult, campaignsResult, insightsResult, funnelResult, kpisResult] = await Promise.allSettled([
           getCachedDashboardResource(`/api/dashboard/metrics${dashboardParams}`, cacheNamespace),
           getCachedDashboardResource(`/api/dashboard/meta-trends${queryParams}`, cacheNamespace),
-          getCachedDashboardResource(`/api/meta/campaigns${campaignsPath}`, cacheNamespace),
+          getCachedDashboardResource(`/api/meta/campaigns${queryParams}`, cacheNamespace),
           getCachedDashboardResource(`/api/meta/insights${queryParams}`, cacheNamespace),
           getCachedDashboardResource('/api/dashboard/lead-flow', cacheNamespace),
           getCachedDashboardResource(`/api/kpis${dashboardParams}`, cacheNamespace),
