@@ -15,17 +15,26 @@ const steps = [
     cmd: 'node scripts/sync-doctoralia-appointments.js',
     critical: true,
   },
-  { 
-    name: 'deploy-daily-aggregates', 
-    cmd: 'npx --yes supabase --yes functions deploy daily-aggregates --no-verify-jwt --project-ref ' + (process.env.SUPABASE_PROJECT_REF || ''), 
+  {
+    name: 'deploy-daily-aggregates',
+    cmd: 'npx --yes supabase --yes functions deploy daily-aggregates --no-verify-jwt --project-ref '
+      + (process.env.SUPABASE_PROJECT_REF || ''),
     critical: true,
-    retry: 2 // retry up to 2 times for transient network issues
+    retry: 2, // retry up to 2 times for transient network issues
+    enabled: process.env.DAILY_SYNC_DEPLOY_FUNCTIONS === 'true',
+    skipReason: 'Edge Function deployment is handled by the Deploy Supabase workflow. '
+      + 'Set DAILY_SYNC_DEPLOY_FUNCTIONS=true to deploy from daily sync.',
   },
 ];
 
 console.log('🚀 Starting Nuvanx daily sync orchestrator...');
 
 for (const step of steps) {
+  if (step.enabled === false) {
+    console.log(`↷ Skipping ${step.name}: ${step.skipReason || 'step disabled'}`);
+    continue;
+  }
+
   let attempt = 0;
   const maxAttempts = (step.retry || 0) + 1;
   let success = false;
