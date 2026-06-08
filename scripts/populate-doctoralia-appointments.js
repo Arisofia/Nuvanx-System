@@ -467,10 +467,9 @@ async function main() {
 }
 
 if (require.main === module) {
-  main().catch((error) => {
+  main().catch(() => {
     console.error('[doctoralia-appointments] Load failed.');
-    const safeMessage = error instanceof Error ? error.message : 'Unexpected error';
-    console.error(`[doctoralia-appointments] ${safeMessage}`);
+    console.error('[doctoralia-appointments] An internal error occurred during execution.');
     process.exit(1);
   });
 }
