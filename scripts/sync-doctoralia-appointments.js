@@ -119,7 +119,7 @@ async function fetchRows() {
 
   const sheets = await getSheetsClient();
   const range = buildA1Range();
-  console.log(`[sync-doctoralia-appointments] Fetching spreadsheet ${mask(SHEET_ID)} range ${range}.`);
+  console.log('[sync-doctoralia-appointments] Fetching spreadsheet values (identifiers redacted).');
 
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
