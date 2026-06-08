@@ -453,7 +453,10 @@ async function main() {
   const records = await readRecords();
   const totals = summarize(records);
 
-  console.log(`[doctoralia-appointments] Parsed ${records.length} rows from ${INPUT_PATH}${INPUT_EXT === '.csv' ? '' : ` (${SHEET_NAME})`}.`);
+  console.log(
+    `[doctoralia-appointments] Parsed ${records.length} rows from input file ` +
+      `(type=${INPUT_EXT || 'unknown'}${INPUT_EXT === '.csv' ? '' : ', with sheet'}).`
+  );
   console.table(totals);
 
   if (DRY_RUN) {
