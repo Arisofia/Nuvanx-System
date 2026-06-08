@@ -455,7 +455,7 @@ async function main() {
 
   console.log(
     `[doctoralia-appointments] Parsed ${records.length} rows from input file ` +
-      `(type=${INPUT_EXT || 'unknown'}${INPUT_EXT === '.csv' ? '' : ', with sheet'}).`
+      `(type=${INPUT_EXT || 'unknown'}${SHEET_NAME ? ', with sheet' : ''}).`
   );
   console.table(totals);
 
