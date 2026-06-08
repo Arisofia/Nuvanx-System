@@ -587,6 +587,15 @@ export function actionValue(actions: any, matcher: (type: string) => boolean): n
 function isMessagingConversationAction(type: string): boolean {
   const t = String(type ?? '').toLowerCase();
 
+  return (
+    t.includes('messaging_conversation_started') ||
+    t.includes('conversation_started') ||
+    t.includes('messaging_first_reply') ||
+    t.includes('onsite_conversion.messaging') ||
+    t.includes('whatsapp')
+  );
+}
+
 function isLeadAction(type: string): boolean {
   const t = String(type ?? '').toLowerCase();
 
@@ -597,16 +606,6 @@ function isLeadAction(type: string): boolean {
     t.includes('complete_registration') ||
     t.includes('submit_application') ||
     t.includes('contact')
-  );
-}
-
-
-  return (
-    t.includes('messaging_conversation_started') ||
-    t.includes('conversation_started') ||
-    t.includes('messaging_first_reply') ||
-    t.includes('onsite_conversion.messaging') ||
-    t.includes('whatsapp')
   );
 }
 
