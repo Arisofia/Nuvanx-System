@@ -185,7 +185,7 @@ export function useDashboardData(
     let active = true
     const buildParams = () => {
       const isCustomRange = Boolean(customFrom && customTo)
-      const { baseParams, campaignsPath } = buildDashboardPaths(isCustomRange, customFrom, customTo, days)
+      const { baseParams } = buildDashboardPaths(isCustomRange, customFrom, customTo, days)
       const campaignParam = campaignId === 'ALL' ? '' : `&campaign_id=${encodeURIComponent(campaignId)}`
       const sourceParam = sourceFilter === 'ALL' ? '' : `&source=${encodeURIComponent(sourceFilter)}`
       const queryParams = `${baseParams}${campaignParam}`
