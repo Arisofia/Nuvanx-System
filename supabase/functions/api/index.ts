@@ -3974,7 +3974,6 @@ async function persistMetaIgAccountDailyInsights(adminClient: any, userId: strin
   const TIME_SERIES_METRICS = [
     'reach',
     'follower_count',
-    'views',
   ];
 
   const byDate = new Map<string, any>();
@@ -4027,7 +4026,7 @@ async function persistMetaIgAccountDailyInsights(adminClient: any, userId: strin
     accounts_engaged: 0,
     total_interactions: 0,
     website_clicks: 0,
-    views: Math.round(Number(r.views || 0)),
+    views: 0,
     followers_total: r.day === latestDate ? followersTotal : null,
     new_followers: null,
     unfollows: null,
@@ -4054,6 +4053,8 @@ async function persistMetaIgAccountDailyInsights(adminClient: any, userId: strin
 
   return dbRows.length;
 }
+
+
 
 
 
