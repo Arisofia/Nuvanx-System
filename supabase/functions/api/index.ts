@@ -3724,15 +3724,25 @@ async function persistMetaDailyInsights(adminClient: any, userId: string, adAcco
     'action_values',
   ].join(',');
 
-  const insightsRes = await metaFetch(`/${adAccountId}/insights`, {
+  const params = {
     fields,
     time_range: JSON.stringify({ since: sinceDate, until: untilDate }),
     time_increment: '1',
     limit: '1000',
-  }, accessToken);
+  };
 
-  const insightsDailyRows: any[] = insightsRes?.data ?? [];
-  if (insightsDailyRows.length === 0) return 0;
+  const insightsRes = await metaFetchInsightsWithFallback(
+    `/${adAccountId}/insights`,
+    params,
+    accessToken,
+  );
+
+  const insightsDailyRows: any[] = Array.isArray(insightsRes?.data) ? insightsRes.data : [];
+
+  if (insightsDailyRows.length === 0) {
+    console.warn(`Meta backfill returned 0 daily rows for ${adAccountId} between ${sinceDate} and ${untilDate}`);
+    return 0;
+  }
 
   const dbRows = insightsDailyRows.map((r: any) => {
     const actionsArr = Array.isArray(r.actions) ? r.actions : [];
@@ -3769,9 +3779,17 @@ async function persistMetaDailyInsights(adminClient: any, userId: string, adAcco
     .from('meta_daily_insights')
     .upsert(dbRows, { onConflict: 'clinic_id,ad_account_id,date' });
 
-  if (error) throw error;
+  if (error) {
+    console.error('meta_daily_insights upsert failed', error);
+    throw error;
+  }
+
+  console.log(`Persisted ${dbRows.length} Meta daily rows for ${adAccountId}`);
+
   return dbRows.length;
 }
+
+
 
 
 
@@ -4249,20 +4267,64 @@ async function performMetaAdsBackfill(
 ) {
   let dailyInsightsPersisted = 0;
   let totalFetched = 0;
+  const errors: string[] = [];
+  const diagnostics: any[] = [];
+
   for (const accountId of adAccountIds) {
     try {
-      dailyInsightsPersisted += await persistMetaDailyInsights(adminClient, userId, accountId, accessToken, sinceDate, untilDate);
+      const persisted = await persistMetaDailyInsights(adminClient, userId, accountId, accessToken, sinceDate, untilDate);
+      dailyInsightsPersisted += persisted;
+      diagnostics.push({
+        scope: 'ads_daily',
+        accountId,
+        persisted,
+        ok: true,
+      });
     } catch (e: any) {
-      console.warn(`Meta backfill insights persist failed for ${accountId}:`, maskSensitive(e?.message ?? e));
+      const msg = `Meta daily insights failed for ${accountId}: ${e?.message ?? e}`;
+      errors.push(msg);
+      diagnostics.push({
+        scope: 'ads_daily',
+        accountId,
+        persisted: 0,
+        ok: false,
+        error: msg,
+      });
+      console.error(msg);
     }
+
     try {
-      totalFetched += await ingestMetaLeadsFromForms(adminClient, userId, accountId, accessToken, sinceTs);
+      const fetched = await ingestMetaLeadsFromForms(adminClient, userId, accountId, accessToken, sinceTs);
+      totalFetched += fetched;
+      diagnostics.push({
+        scope: 'lead_forms',
+        accountId,
+        fetched,
+        ok: true,
+      });
     } catch (e: any) {
-      console.error(`Backfill lead ingestion failed for ${accountId}:`, maskSensitive(e?.message ?? e));
+      const msg = `Meta lead forms failed for ${accountId}: ${e?.message ?? e}`;
+      errors.push(msg);
+      diagnostics.push({
+        scope: 'lead_forms',
+        accountId,
+        fetched: 0,
+        ok: false,
+        error: msg,
+      });
+      console.error(msg);
     }
   }
-  return { dailyInsightsPersisted, totalFetched };
+
+  return {
+    dailyInsightsPersisted,
+    totalFetched,
+    errors,
+    diagnostics,
+  };
 }
+
+
 
 async function performMetaSocialBackfill(
   adminClient: any,
@@ -4272,23 +4334,99 @@ async function performMetaSocialBackfill(
   untilDate: string,
   result: any,
 ) {
+  result.errors = Array.isArray(result.errors) ? result.errors : [];
+  result.diagnostics = Array.isArray(result.diagnostics) ? result.diagnostics : [];
+
   if (creds.pageId) {
     try {
       result.organicDailyPersisted = await persistMetaOrganicDailyInsights(adminClient, userId, creds.pageId, creds.accessToken, sinceDate, untilDate);
-      result.organicPostsPersisted = await persistMetaPostPerformance(adminClient, userId, creds.pageId, creds.accessToken, 100);
+      result.diagnostics.push({
+        scope: 'page_organic_daily',
+        pageId: creds.pageId,
+        persisted: result.organicDailyPersisted,
+        ok: true,
+      });
     } catch (e: any) {
-      console.warn(`Meta organic backfill failed:`, maskSensitive(e?.message ?? e));
+      const msg = `Meta organic daily failed for page ${creds.pageId}: ${e?.message ?? e}`;
+      result.errors.push(msg);
+      result.diagnostics.push({
+        scope: 'page_organic_daily',
+        pageId: creds.pageId,
+        persisted: 0,
+        ok: false,
+        error: msg,
+      });
+      console.warn(msg);
+    }
+
+    try {
+      result.organicPostsPersisted = await persistMetaPostPerformance(adminClient, userId, creds.pageId, creds.accessToken, 100);
+      result.diagnostics.push({
+        scope: 'page_posts',
+        pageId: creds.pageId,
+        persisted: result.organicPostsPersisted,
+        ok: true,
+      });
+    } catch (e: any) {
+      const msg = `Meta organic posts failed for page ${creds.pageId}: ${e?.message ?? e}`;
+      result.errors.push(msg);
+      result.diagnostics.push({
+        scope: 'page_posts',
+        pageId: creds.pageId,
+        persisted: 0,
+        ok: false,
+        error: msg,
+      });
+      console.warn(msg);
     }
   }
+
   if (creds.igId) {
     try {
       result.igAccountDailyPersisted = await persistMetaIgAccountDailyInsights(adminClient, userId, creds.igId, creds.accessToken, sinceDate, untilDate);
-      result.igMediaPersisted = await persistMetaIgMediaPerformance(adminClient, userId, creds.igId, creds.accessToken, 100);
+      result.diagnostics.push({
+        scope: 'ig_account_daily',
+        igId: creds.igId,
+        persisted: result.igAccountDailyPersisted,
+        ok: true,
+      });
     } catch (e: any) {
-      console.warn(`Meta IG backfill failed:`, maskSensitive(e?.message ?? e));
+      const msg = `Meta IG account daily failed for ig ${creds.igId}: ${e?.message ?? e}`;
+      result.errors.push(msg);
+      result.diagnostics.push({
+        scope: 'ig_account_daily',
+        igId: creds.igId,
+        persisted: 0,
+        ok: false,
+        error: msg,
+      });
+      console.warn(msg);
+    }
+
+    try {
+      result.igMediaPersisted = await persistMetaIgMediaPerformance(adminClient, userId, creds.igId, creds.accessToken, 100);
+      result.diagnostics.push({
+        scope: 'ig_media',
+        igId: creds.igId,
+        persisted: result.igMediaPersisted,
+        ok: true,
+      });
+    } catch (e: any) {
+      const msg = `Meta IG media failed for ig ${creds.igId}: ${e?.message ?? e}`;
+      result.errors.push(msg);
+      result.diagnostics.push({
+        scope: 'ig_media',
+        igId: creds.igId,
+        persisted: 0,
+        ok: false,
+        error: msg,
+      });
+      console.warn(msg);
     }
   }
 }
+
+
 
 async function handleMetaBackfillPost(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
@@ -4301,7 +4439,8 @@ async function handleMetaBackfillPost(ctx: AuthenticatedRouteContext): Promise<R
   }
 
   const { sinceDate, untilDate, sinceTs } = parseMetaBackfillDates(url);
-  const { dailyInsightsPersisted, totalFetched } = await performMetaAdsBackfill(
+
+  const adsBackfill = await performMetaAdsBackfill(
     adminClient,
     userId,
     creds.accessToken,
@@ -4316,8 +4455,10 @@ async function handleMetaBackfillPost(ctx: AuthenticatedRouteContext): Promise<R
     accountIds: creds.adAccountIds,
     pageId: creds.pageId,
     igId: creds.igId,
-    totalLeadsBackfilled: totalFetched,
-    dailyInsightsPersisted,
+    errors: adsBackfill.errors ?? [],
+    diagnostics: adsBackfill.diagnostics ?? [],
+    totalLeadsBackfilled: adsBackfill.totalFetched,
+    dailyInsightsPersisted: adsBackfill.dailyInsightsPersisted,
     organicDailyPersisted: 0,
     organicPostsPersisted: 0,
     igAccountDailyPersisted: 0,
@@ -4329,11 +4470,13 @@ async function handleMetaBackfillPost(ctx: AuthenticatedRouteContext): Promise<R
 
   await performMetaSocialBackfill(adminClient, userId, creds, sinceDate, untilDate, backfillResult);
 
-  backfillResult.message = `Backfill completed (${sinceDate} → ${untilDate}). Ads: ${dailyInsightsPersisted} rows, ${totalFetched} leads. Organic: ${backfillResult.organicDailyPersisted} daily, ${backfillResult.organicPostsPersisted} posts. IG: ${backfillResult.igAccountDailyPersisted} daily, ${backfillResult.igMediaPersisted} media.`;
+  backfillResult.message = `Backfill completed (${sinceDate} → ${untilDate}). Ads: ${backfillResult.dailyInsightsPersisted} rows, ${backfillResult.totalLeadsBackfilled} leads. Organic: ${backfillResult.organicDailyPersisted} daily, ${backfillResult.organicPostsPersisted} posts. IG: ${backfillResult.igAccountDailyPersisted} daily, ${backfillResult.igMediaPersisted} media.`;
 
   await setMetaCache(adminClient, userId, `meta:backfill:${creds.adAccountIds.join(',')}`, backfillResult);
   return sendJson(backfillResult);
 }
+
+
 
 async function handleHealthMeta(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, sendJson } = ctx;
