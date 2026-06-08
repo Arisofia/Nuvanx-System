@@ -1,10 +1,14 @@
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
-import { Target, TrendingUp, Percent, ShieldCheck, Wallet, UserCheck } from 'lucide-react'
+import { Target, TrendingUp, ShieldCheck, Wallet, UserCheck } from 'lucide-react'
 import type { RealFunnel, CombinedMetrics } from '../../lib/dashboard-helpers'
 
 interface RealROISectionProps {
   readonly funnel: RealFunnel | null
   readonly combined: CombinedMetrics
+}
+
+function formatCurrency(value: number | null | undefined) {
+  return value != null ? `€${value.toLocaleString('es-ES')}` : '—'
 }
 
 export function RealROISection({ funnel, combined }: RealROISectionProps) {
@@ -32,21 +36,21 @@ export function RealROISection({ funnel, combined }: RealROISectionProps) {
                 <Wallet className="h-3.5 w-3.5 text-[#B08B5A] group-hover:text-white" />
               </div>
             </div>
-            <p className="text-4xl font-serif font-bold text-[#2C2825]">€{(funnel.metaSpend ?? 0).toLocaleString('es-ES')}</p>
+            <p className="text-4xl font-serif font-bold text-[#2C2825]">{formatCurrency(funnel.metaSpend)}</p>
             <div className="h-[2px] w-6 bg-[#B08B5A]/20 group-hover:w-10 transition-all duration-500" />
             <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest opacity-60">Gasto total publicidad</p>
           </div>
 
           <div className="space-y-5 group">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-[#8E8680] uppercase tracking-[0.2em] group-hover:text-[#84643B] transition-colors">Pacientes Reales</span>
+              <span className="text-[10px] font-bold text-[#8E8680] uppercase tracking-[0.2em] group-hover:text-[#84643B] transition-colors">Pacientes atribuidos</span>
               <div className="p-2.5 bg-[#FAF7F2] rounded-xl group-hover:bg-[#B08B5A] transition-all duration-500">
                 <UserCheck className="h-3.5 w-3.5 text-[#B08B5A] group-hover:text-white" />
               </div>
             </div>
-            <p className="text-4xl font-serif font-bold text-[#2C2825]">{funnel.doctoraliaPatients}</p>
+            <p className="text-4xl font-serif font-bold text-[#2C2825]">{funnel.doctoraliaPatients ?? '—'}</p>
             <div className="h-[2px] w-6 bg-[#B08B5A]/20 group-hover:w-10 transition-all duration-500" />
-            <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest opacity-60">Cruzados por Identidad</p>
+            <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest opacity-60">Cruzados por identidad</p>
           </div>
 
           <div className="space-y-5 group">
@@ -56,11 +60,9 @@ export function RealROISection({ funnel, combined }: RealROISectionProps) {
                 <Target className="h-3.5 w-3.5 text-[#B08B5A] group-hover:text-white" />
               </div>
             </div>
-            <p className="text-4xl font-serif font-bold text-[#2C2825]">
-              {funnel.cac != null ? `€${funnel.cac.toLocaleString('es-ES')}` : '0'}
-            </p>
+            <p className="text-4xl font-serif font-bold text-[#2C2825]">{formatCurrency(funnel.cac)}</p>
             <div className="h-[2px] w-6 bg-[#B08B5A]/20 group-hover:w-10 transition-all duration-500" />
-            <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest opacity-60">Coste Adquisición Paciente</p>
+            <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest opacity-60">Meta spend / pacientes atribuidos</p>
           </div>
 
           <div className="space-y-5 group">
@@ -70,11 +72,9 @@ export function RealROISection({ funnel, combined }: RealROISectionProps) {
                 <TrendingUp className="h-3.5 w-3.5 text-[#B08B5A] group-hover:text-white" />
               </div>
             </div>
-            <p className="text-4xl font-serif font-bold text-[#2C2825]">
-              {combined.revenuePerLead != null ? `€${combined.revenuePerLead.toLocaleString('es-ES')}` : '0'}
-            </p>
+            <p className="text-4xl font-serif font-bold text-[#2C2825]">{formatCurrency(combined.revenuePerLead)}</p>
             <div className="h-[2px] w-6 bg-[#B08B5A]/20 group-hover:w-10 transition-all duration-500" />
-            <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest opacity-60">Ticket medio x lead</p>
+            <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest opacity-60">Revenue verificado / leads CRM</p>
           </div>
         </div>
 
@@ -88,15 +88,15 @@ export function RealROISection({ funnel, combined }: RealROISectionProps) {
                 <span className="text-[10px] font-bold text-[#8E8680] uppercase tracking-[0.2em]">Confianza Atribución</span>
               </div>
               <div className="flex-1 sm:w-48 h-2 bg-[#FAF7F2] rounded-full overflow-hidden border border-[#E5D5C5]/40 shadow-inner min-w-[120px]">
-                <div 
+                <div
                   className={`h-full transition-all duration-[2000ms] cubic-bezier(0.4, 0, 0.2, 1) ${
-                    Number(funnel.cacConfidence) > 70 ? 'bg-[#28A745]' : Number(funnel.cacConfidence) > 40 ? 'bg-[#B08B5A]' : 'bg-[#D9534F]'
+                    funnel.cacConfidence > 70 ? 'bg-[#28A745]' : funnel.cacConfidence > 40 ? 'bg-[#B08B5A]' : 'bg-[#D9534F]'
                   }`}
                   style={{ width: `${funnel.cacConfidence}%` }}
                 />
               </div>
               <span className={`text-xs font-bold ${
-                Number(funnel.cacConfidence) > 70 ? 'text-[#28A745]' : Number(funnel.cacConfidence) > 40 ? 'text-[#B08B5A]' : 'text-[#D9534F]'
+                funnel.cacConfidence > 70 ? 'text-[#28A745]' : funnel.cacConfidence > 40 ? 'text-[#B08B5A]' : 'text-[#D9534F]'
               }`}>{funnel.cacConfidence}%</span>
             </div>
             <div className="flex items-center gap-2">
