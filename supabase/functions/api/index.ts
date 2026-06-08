@@ -6812,7 +6812,8 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
 
   const leadsReal = crmLeads > 0;
   const metaSpendReal = metaSpend > 0;
-  const doctoraliaReal = attributedPatients > 0;
+  const doctoraliaReal = settlements.length > 0;
+  const doctoraliaMatchingReal = attributedPatients > 0;
 
   let overallMode: 'full_real' | 'partial_demo' | 'full_demo' = 'full_real';
   if (!leadsReal && !metaSpendReal && !doctoraliaReal) {
@@ -6852,6 +6853,7 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
       leads_real: leadsReal,
       meta_spend_real: metaSpendReal,
       doctoralia_real: doctoraliaReal,
+      doctoralia_matching_real: doctoraliaMatchingReal,
       overall_mode: overallMode,
     }
   });
