@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { useDashboardData } from '../hooks/useDashboardData'
-import { formatDateForLabel } from '../lib/dashboard-helpers'
 import { DashboardHeader } from '../components/dashboard/DashboardHeader'
 import { AlertSection } from '../components/dashboard/AlertSection'
 import { MetricsGrid } from '../components/dashboard/MetricsGrid'
@@ -11,8 +10,6 @@ import { PatientConversionSection } from '../components/dashboard/PatientConvers
 
 export default function Dashboard() {
   const [days, setDays] = useState<7 | 14 | 30 | 90>(30)
-  const [customFrom, setCustomFrom] = useState<string>('')
-  const [customTo, setCustomTo] = useState<string>('')
   const [campaignId, setCampaignId] = useState<string>('ALL')
   const [sourceFilter, setSourceFilter] = useState<string>('ALL')
 
@@ -26,11 +23,9 @@ export default function Dashboard() {
     sourcesList,
     campaignsList,
     quality,
-  } = useDashboardData(days, customFrom, customTo, campaignId, sourceFilter, 0, 0)
+  } = useDashboardData(days, '', '', campaignId, sourceFilter, 0, 0)
 
-  const periodLabel = customFrom && customTo
-    ? `${formatDateForLabel(customFrom)} al ${formatDateForLabel(customTo)}`
-    : `Últimos ${days} días`
+  const periodLabel = `Últimos ${days} días`
 
   if (metrics.loading) {
     return (
@@ -67,10 +62,6 @@ export default function Dashboard() {
         campaignsList={campaignsList}
         days={days}
         setDays={setDays}
-        customFrom={customFrom}
-        setCustomFrom={setCustomFrom}
-        customTo={customTo}
-        setCustomTo={setCustomTo}
         metaAccountIds={quality?.metaAccountIds || []}
       />
 
@@ -81,8 +72,11 @@ export default function Dashboard() {
           <MetricsGrid metrics={metrics} quality={quality} />
           <FunnelAndSpendSection funnelData={funnelData} metrics={metrics} combined={combined} periodLabel={periodLabel} quality={quality} />
           <RealROISection funnel={funnel} combined={combined} />
-          <PatientConversionSection sourceFilter={sourceFilter} campaignId={campaignId} customFrom={customFrom} customTo={customTo} />
-          <TrendSection trendData={trendData} formatDate={formatDateForLabel} />
+          <PatientConversionSection sourceFilter={sourceFilter} campaignId={campaignId} days={days} />
+          <TrendSection trendData={trendData} formatDate={(dateString) => {
+            const [year, month, day] = dateString.split('-')
+            return year && month && day ? `${day}/${month}/${year}` : dateString
+          }} />
         </>
       )}
     </main>
