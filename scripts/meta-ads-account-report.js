@@ -17,27 +17,24 @@ const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v20.0';
 const MIN_NODE_MAJOR = 18;
 
 function fail(message) {
-  console.error('❌', maskSensitive(message));
+  console.error('❌ Meta account report failed.');
+  if (message) console.error(`Reason: ${safeMessage(message)}`);
   process.exit(1);
 }
 
-function maskSensitive(text) {
-  if (!text) return text;
-  const str = String(text);
-  return str
-    // Mask access tokens: EAAB...
-    .replace(/\b(EAA[a-zA-Z0-9]+)\b/g, (match) => match.slice(0, 8) + '***')
-    // Mask passwords in connection strings: postgres://user:password@host
-    .replace(/(postgres(?:ql)?:\/\/[^:]+:)([^@\s]+)(@)/gi, '$1****$3')
-    // Mask emails: keep first 3 chars, then ***, then @domain
-    .replace(/([a-zA-Z0-9._%+-]+)@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g, (match, p1, p2) => {
-      const maskedP1 = p1.length > 3 ? p1.slice(0, 3) + '***' : '***';
-      return maskedP1 + '@' + p2;
-    })
-    // Mask potential token/secret values in error messages (long alphanumeric strings)
-    .replace(/\b[a-zA-Z0-9_-]{32,}\b/g, (match) => {
-      return match.slice(0, 4) + '****' + match.slice(-4);
-    });
+function safeMessage(message) {
+  if (!message) return 'Unexpected error.';
+  const text = String(message);
+  if (/access token|token|secret|password|authorization|appsecret/i.test(text)) {
+    return 'Sensitive Meta credential or authorization error.';
+  }
+  if (/permission|access|denied|not authorized/i.test(text)) {
+    return 'Meta account access verification failed.';
+  }
+  return text
+    .replace(/act_\d{4,}/g, 'act_[redacted]')
+    .replace(/\b\d{10,}\b/g, '[redacted-id]')
+    .replace(/[a-zA-Z0-9_-]{32,}/g, '[redacted-secret]');
 }
 
 function normalizeAdAccountId(raw) {
@@ -55,9 +52,20 @@ function parseAccountIds(raw) {
 
 function redactAccountId(accountId) {
   const value = String(accountId || '').trim();
-  if (!value) return '[redacted-account]';
-  if (value.length <= 8) return '[redacted-account]';
-  return `${value.slice(0, 4)}…${value.slice(-4)}`;
+  if (!value) return 'act_[redacted]';
+  const withoutPrefix = value.replace(/^act_/i, '');
+  if (withoutPrefix.length <= 8) return 'act_[redacted]';
+  return `act_${withoutPrefix.slice(0, 4)}…${withoutPrefix.slice(-4)}`;
+}
+
+function redactAccountRow(row) {
+  return {
+    id: redactAccountId(row.id),
+    name: row.name ? '[redacted-name]' : '<unnamed>',
+    status: row.status,
+    currency: row.currency ? '[redacted-currency]' : 'unknown',
+    timezone: row.timezone ? '[redacted-timezone]' : 'unknown',
+  };
 }
 
 function parseArgs() {
@@ -103,11 +111,11 @@ function parseArgs() {
 function printHelp() {
   console.log('Usage: node scripts/meta-ads-account-report.js [options]');
   console.log('Options:');
-  console.log('  --list                 List accessible Meta ad accounts');
-  console.log('  --details              Include account detail fetch attempts');
-  console.log('  --insights <days>      Fetch last N days of account insights');
+  console.log('  --list                 List accessible Meta ad accounts with redacted identifiers');
+  console.log('  --details              Include redacted account detail fetch attempts');
+  console.log('  --insights <days>      Fetch last N days of account insights and print aggregate counts only');
   console.log('  --ad-accounts <ids>    Override configured META_AD_ACCOUNT_IDS');
-  console.log('  --json                 Output results as JSON');
+  console.log('  --json                 Output redacted JSON results');
   console.log('  --help, -h             Show this help message');
   process.exit(0);
 }
@@ -135,10 +143,9 @@ async function fetchJson(url) {
   const res = await fetch(url.toString());
   const body = await res.json().catch(() => ({}));
   if (!res.ok || body.error) {
-    const errorMessage = body.error?.message || `Meta API request failed with status ${res.status}`;
-    const err = new Error(errorMessage);
-    err.responseBody = body;
+    const err = new Error('Meta API request failed.');
     err.status = res.status;
+    err.metaCode = body?.error?.code ?? body?.error?.error_subcode;
     throw err;
   }
   return body;
@@ -204,7 +211,7 @@ function formatAccountRow(row) {
 }
 
 function printSummaryLine(label, value) {
-  console.log(maskSensitive(`${label}: ${value}`));
+  console.log(`${label}: ${value}`);
 }
 
 async function main() {
@@ -229,7 +236,7 @@ async function main() {
   try {
     accounts = await listAccessibleAdAccounts(accessToken);
   } catch (err) {
-    fail(`Unable to list accessible ad accounts: ${err.message}`);
+    fail(`Unable to list accessible ad accounts. Status: ${err.status || 'unknown'}`);
   }
 
   const normalizedAccounts = accounts.map(formatAccountRow);
@@ -237,52 +244,58 @@ async function main() {
 
   const shouldPrintAccessible = opts.list || opts.details || opts.insightsDays > 0 || opts.json;
   if (shouldPrintAccessible) {
-    printSummaryLine('Accessible ad accounts', normalizedAccounts.length);
+    printSummaryLine('Accessible ad account count', normalizedAccounts.length);
     if (opts.json) {
-      const result = { accessible_accounts: normalizedAccounts };
+      const result = {
+        accessible_account_count: normalizedAccounts.length,
+        accessible_accounts: normalizedAccounts.map(redactAccountRow),
+      };
       if (targetIds.length) {
-        result.configured_target_account_ids = targetIds;
+        result.configured_target_account_count = targetIds.length;
+        result.configured_target_account_ids = targetIds.map(redactAccountId);
       }
-      console.log(maskSensitive(JSON.stringify(result, null, 2)));
+      console.log(JSON.stringify(result, null, 2));
       return;
     }
 
-    normalizedAccounts.forEach((acct) => {
-      console.log(maskSensitive(`${acct.id} | ${acct.name} | status=${acct.status} | currency=${acct.currency} | timezone=${acct.timezone}`));
+    normalizedAccounts.forEach((acct, index) => {
+      const redacted = redactAccountRow(acct);
+      console.log(`Account ${index + 1}: ${redacted.id} | name=${redacted.name} | status=${redacted.status} | currency=${redacted.currency} | timezone=${redacted.timezone}`);
     });
   }
 
   if (targetIds.length) {
     console.log('\nConfigured target ad accounts:');
-    targetIds.forEach((id) => {
+    targetIds.forEach((id, index) => {
       const present = accessibleIds.has(id) ? 'accessible' : 'missing';
-      console.log(maskSensitive(`- ${id} (${present})`));
+      console.log(`- target ${index + 1}: ${redactAccountId(id)} (${present})`);
     });
 
     const missingIds = targetIds.filter((id) => !accessibleIds.has(id));
     if (missingIds.length) {
-      fail(maskSensitive(`Configured target account(s) are not accessible: ${missingIds.join(', ')}`));
+      fail(`Configured target account count not accessible: ${missingIds.length}`);
     }
 
     if (opts.details) {
       console.log('\nFetching account details...');
-      for (const accountId of targetIds) {
+      for (const [index, accountId] of targetIds.entries()) {
         try {
           const details = await fetchAccountDetails(accessToken, accountId);
-          console.log(maskSensitive(`\n${redactAccountId(accountId)} details:`));
-          console.log(maskSensitive(`  name: ${details.name || '<unknown>'}`));
-          console.log(maskSensitive(`  status: ${details.account_status}`));
-          console.log(maskSensitive(`  currency: ${details.currency || '<unknown>'}`));
-          console.log(maskSensitive(`  amount_spent: ${details.amount_spent ?? '<unknown>'}`));
+          console.log(`\nTarget ${index + 1} details:`);
+          console.log(`  id: ${redactAccountId(accountId)}`);
+          console.log(`  name: ${details.name ? '[redacted-name]' : '<unknown>'}`);
+          console.log(`  status: ${details.account_status}`);
+          console.log(`  currency: ${details.currency ? '[redacted-currency]' : '<unknown>'}`);
+          console.log(`  amount_spent_available: ${details.amount_spent != null}`);
         } catch (err) {
-          console.error(`  Failed to fetch details for ${redactAccountId(accountId)}: ${maskSensitive(err.message)}`);
+          console.error(`  Failed to fetch details for target ${index + 1}: ${safeMessage(err.message)}`);
         }
       }
     }
 
     if (opts.insightsDays > 0) {
-      console.log(`\nFetching account insights for the last ${opts.insightsDays} days...`);
-      for (const accountId of targetIds) {
+      console.log(`\nFetching account insights for the configured date window...`);
+      for (const [index, accountId] of targetIds.entries()) {
         try {
           const payload = await fetchAccountInsights(accessToken, accountId, opts.insightsDays);
           const rows = Array.isArray(payload.data) ? payload.data : [];
@@ -300,17 +313,17 @@ async function main() {
             { spend: 0, impressions: 0, clicks: 0, conversions: 0, messaging: 0, link_clicks: 0 }
           );
 
-          const accountLabel = redactAccountId(accountId);
-          console.log(maskSensitive(`\n${accountLabel} summary:`));
-          console.log(maskSensitive(`  rows: ${rows.length}`));
-          console.log(maskSensitive(`  spend: ${totals.spend}`));
-          console.log(maskSensitive(`  impressions: ${totals.impressions}`));
-          console.log(maskSensitive(`  clicks: ${totals.clicks}`));
-          console.log(maskSensitive(`  conversions: ${totals.conversions}`));
-          console.log(maskSensitive(`  messaging: ${totals.messaging}`));
-          console.log(maskSensitive(`  link clicks: ${totals.link_clicks}`));
+          console.log(`\nTarget ${index + 1} summary:`);
+          console.log(`  id: ${redactAccountId(accountId)}`);
+          console.log(`  rows: ${rows.length}`);
+          console.log(`  spend: ${totals.spend}`);
+          console.log(`  impressions: ${totals.impressions}`);
+          console.log(`  clicks: ${totals.clicks}`);
+          console.log(`  conversions: ${totals.conversions}`);
+          console.log(`  messaging: ${totals.messaging}`);
+          console.log(`  link clicks: ${totals.link_clicks}`);
         } catch (err) {
-          console.error(`  Failed to fetch insights for ${redactAccountId(accountId)}: ${maskSensitive(err.message)}`);
+          console.error(`  Failed to fetch insights for target ${index + 1}: ${safeMessage(err.message)}`);
         }
       }
     }
