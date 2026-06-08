@@ -6744,7 +6744,7 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
     .lte('created_at', untilFullDay);
 
   let settlementsQ = adminClient.from('financial_settlements')
-    .select('id, patient_id, amount_net, settled_at, cancelled_at')
+      .select('id, patient_id, phone_normalized, patient_phone, amount_net, settled_at, cancelled_at')
     .eq('source_system', 'doctoralia')
     .is('cancelled_at', null)
     .gt('amount_net', 0)
@@ -6785,7 +6785,8 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
 
   // Revenue verificado real
   const verifiedRevenue = settlements.reduce((sum: number, r: any) => sum + Number(r.amount_net), 0);
-  const totalVerifiedPatients = new Set(settlements.map((r: any) => r.patient_id).filter(Boolean)).size;
+    // Usar identificadores múltiples para contar pacientes únicos verificados de forma más robusta
+    const totalVerifiedPatients = new Set(settlements.map((r: any) => r.patient_id || r.phone_normalized || r.patient_phone).filter(Boolean)).size;
 
   // Calcular pacientes atribuidos (que vienen de un lead verificado)
   const patientIdsInPeriod = settlements.map((s: any) => s.patient_id).filter(Boolean);
@@ -6812,8 +6813,7 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
 
   const leadsReal = crmLeads > 0;
   const metaSpendReal = metaSpend > 0;
-  const doctoraliaReal = settlements.length > 0;
-  const doctoraliaMatchingReal = attributedPatients > 0;
+  const doctoraliaReal = attributedPatients > 0;
 
   let overallMode: 'full_real' | 'partial_demo' | 'full_demo' = 'full_real';
   if (!leadsReal && !metaSpendReal && !doctoraliaReal) {
@@ -6853,7 +6853,6 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
       leads_real: leadsReal,
       meta_spend_real: metaSpendReal,
       doctoralia_real: doctoraliaReal,
-      doctoralia_matching_real: doctoraliaMatchingReal,
       overall_mode: overallMode,
     }
   });
