@@ -3,7 +3,7 @@
 
 const crypto = require('crypto');
 
-const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v22.0';
+const DEFAULT_META_GRAPH_VERSION = 'v22.0';
 const MIN_NODE_MAJOR = 18;
 
 const FAILURE_MESSAGES = {
@@ -14,6 +14,10 @@ const FAILURE_MESSAGES = {
   TOKEN_ACCESS_DENIED: 'Token cannot access one or more configured ad accounts.',
   UNKNOWN: 'Unexpected Meta access verification failure.',
 };
+
+function getMetaGraphVersion() {
+  return String(process.env.META_GRAPH_VERSION || DEFAULT_META_GRAPH_VERSION).trim() || DEFAULT_META_GRAPH_VERSION;
+}
 
 function fail(code) {
   console.error('❌ Meta access verification failed.');
@@ -44,11 +48,11 @@ function normalizeAdAccountId(raw) {
   return value.startsWith('act_') ? value : `act_${value}`;
 }
 
-function parseTargetAdAccountIds() {
+function parseTargetAdAccountIds(env = process.env) {
   const values = [
-    process.env.META_AD_ACCOUNT_IDS || '',
-    process.env.META_AD_ACCOUNT_ID || '',
-    process.env.FALLBACK_META_AD_ACCOUNT_ID || '',
+    env.META_AD_ACCOUNT_IDS || '',
+    env.META_AD_ACCOUNT_ID || '',
+    env.FALLBACK_META_AD_ACCOUNT_ID || '',
   ]
     .join(',')
     .split(',')
@@ -69,7 +73,7 @@ function buildAppSecretProof(accessToken) {
 }
 
 function createMetaUrl(path, accessToken) {
-  const url = new URL(`https://graph.facebook.com/${META_GRAPH_VERSION}${path}`);
+  const url = new URL(`https://graph.facebook.com/${getMetaGraphVersion()}${path}`);
   url.searchParams.set('access_token', accessToken);
 
   const appsecretProof = buildAppSecretProof(accessToken);
@@ -149,6 +153,18 @@ async function main() {
   console.log('✅ Meta token has access to all configured ad accounts.');
 }
 
-main().catch(() => {
-  fail('UNKNOWN');
-});
+if (require.main === module) {
+  main().catch(() => {
+    fail('UNKNOWN');
+  });
+}
+
+module.exports = {
+  DEFAULT_META_GRAPH_VERSION,
+  createMetaUrl,
+  getMetaGraphVersion,
+  main,
+  normalizeAdAccountId,
+  parseTargetAdAccountIds,
+  verifyConfiguredAdAccounts,
+};

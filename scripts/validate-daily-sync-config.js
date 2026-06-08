@@ -55,7 +55,13 @@ if (hasValue('SUPABASE_PROJECT_REF') && !/^[a-z0-9]{20}$/.test(process.env.SUPAB
 
 if (process.exitCode) process.exit(process.exitCode);
 
-const missingRecommended = RECOMMENDED.filter((key) => !hasValue(key));
+const missingRecommended = RECOMMENDED.filter((key) => {
+  if (key === 'FALLBACK_META_AD_ACCOUNT_ID' && (hasValue('META_AD_ACCOUNT_ID') || hasValue('META_AD_ACCOUNT_IDS'))) {
+    return false;
+  }
+
+  return !hasValue(key);
+});
 if (missingRecommended.length > 0) {
   console.warn(`::warning::Recommended Daily Sync secrets not set: ${missingRecommended.join(', ')}`);
 }
