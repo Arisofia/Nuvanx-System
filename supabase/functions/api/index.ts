@@ -3707,6 +3707,24 @@ async function processMetaInsightsGet(adminClient: any, userId: string, url: URL
   }
 }
 
+
+function metaActionsArrayToObject(actions: any[] | undefined): Record<string, number> {
+  const out: Record<string, number> = {};
+
+  if (!Array.isArray(actions)) {
+    return out;
+  }
+
+  for (const item of actions) {
+    const key = String(item?.action_type ?? '').trim();
+    if (!key) continue;
+    out[key] = Number(item?.value ?? 0);
+  }
+
+  return out;
+}
+
+
 async function persistMetaDailyInsights(adminClient: any, userId: string, adAccountId: string, accessToken: string, sinceDate: string, untilDate: string): Promise<number> {
   const clinicId = await resolveClinicId(adminClient, userId);
 
@@ -3748,10 +3766,9 @@ async function persistMetaDailyInsights(adminClient: any, userId: string, adAcco
     const actionsArr = Array.isArray(r.actions) ? r.actions : [];
     const actionValuesArr = Array.isArray(r.action_values) ? r.action_values : [];
 
-    const leadActions = actionValue(actionsArr, isLeadAction);
     const messagingConversations = actionValue(actionsArr, isMessagingConversationAction);
     const rawConversions = parseMetaMetric(r.conversions);
-    const conversions = rawConversions || leadActions || messagingConversations;
+    const conversions = rawConversions || messagingConversations;
 
     return {
       user_id: userId,
@@ -3766,9 +3783,8 @@ async function persistMetaDailyInsights(adminClient: any, userId: string, adAcco
       ctr: Number(r.ctr || 0),
       cpc: Number(r.cpc || 0),
       cpm: Number(r.cpm || 0),
-      actions: actionsArr,
+      actions: metaActionsArrayToObject(actionsArr),
       action_values: actionValuesArr,
-      lead_actions: leadActions,
       messaging_conversations: messagingConversations,
       source_quality: 'daily_backfill',
       updated_at: new Date().toISOString(),
@@ -3788,6 +3804,8 @@ async function persistMetaDailyInsights(adminClient: any, userId: string, adAcco
 
   return dbRows.length;
 }
+
+
 
 
 
@@ -3956,7 +3974,6 @@ async function persistMetaIgAccountDailyInsights(adminClient: any, userId: strin
   const TIME_SERIES_METRICS = [
     'reach',
     'follower_count',
-    'profile_views',
     'accounts_engaged',
     'total_interactions',
     'website_clicks',
@@ -3966,12 +3983,15 @@ async function persistMetaIgAccountDailyInsights(adminClient: any, userId: strin
   const byDate = new Map<string, any>();
   const clinicId = await resolveClinicId(adminClient, userId);
 
+  const sinceUnix = String(Math.floor(new Date(`${sinceDate}T00:00:00Z`).getTime() / 1000));
+  const untilUnix = String(Math.floor(new Date(`${untilDate}T00:00:00Z`).getTime() / 1000));
+
   const tsData = await metaFetch(`/${igId}/insights`, {
     metric: TIME_SERIES_METRICS.join(','),
     period: 'day',
     metric_type: 'time_series',
-    since: String(Math.floor(new Date(`${sinceDate}T00:00:00Z`).getTime() / 1000)),
-    until: String(Math.floor(new Date(`${untilDate}T00:00:00Z`).getTime() / 1000)),
+    since: sinceUnix,
+    until: untilUnix,
   }, accessToken);
 
   for (const metric of tsData?.data || []) {
@@ -3985,6 +4005,7 @@ async function persistMetaIgAccountDailyInsights(adminClient: any, userId: strin
   }
 
   let followersTotal: number | null = null;
+
   try {
     const igData = await metaFetch(`/${igId}`, { fields: 'followers_count' }, accessToken);
     followersTotal = igData?.followers_count != null ? Number(igData.followers_count) : null;
@@ -4003,23 +4024,20 @@ async function persistMetaIgAccountDailyInsights(adminClient: any, userId: strin
     ig_id: igId,
     date: r.day,
     reach: Math.round(Number(r.reach || 0)),
-    profile_views: Math.round(Number(r.profile_views || 0)),
+    profile_views: 0,
     accounts_engaged: Math.round(Number(r.accounts_engaged || 0)),
     total_interactions: Math.round(Number(r.total_interactions || 0)),
     website_clicks: Math.round(Number(r.website_clicks || 0)),
     views: Math.round(Number(r.views ?? r.impressions ?? 0)),
     follower_count_delta: Math.round(Number(r.follower_count || 0)),
-
     followers_total: r.day === latestDate ? followersTotal : null,
     new_followers: null,
     unfollows: null,
     paid_follows: null,
     organic_follows: null,
-
     source_quality: r.day === latestDate
       ? 'daily_backfill_current_snapshot'
       : 'daily_backfill',
-
     updated_at: new Date().toISOString(),
   }));
 
@@ -4030,8 +4048,11 @@ async function persistMetaIgAccountDailyInsights(adminClient: any, userId: strin
     .upsert(dbRows, { onConflict: 'user_id,ig_id,date' });
 
   if (error) throw error;
+
   return dbRows.length;
 }
+
+
 
 
 
