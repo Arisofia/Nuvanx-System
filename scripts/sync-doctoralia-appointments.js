@@ -145,7 +145,7 @@ async function main() {
 
   const records = recordsFromRows(rows);
   const totals = summarize(records);
-  console.log(`[sync-doctoralia-appointments] Parsed ${records.length} appointment rows from ${SHEET_NAME}.`);
+  console.log(`[sync-doctoralia-appointments] Parsed ${records.length} appointment rows.`);
   console.table(totals);
 
   if (records.length < MIN_ROWS) {
