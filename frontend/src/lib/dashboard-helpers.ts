@@ -299,16 +299,20 @@ export function buildDashboardState(options: DashboardStateOptions) {
       doctoraliaRevenue: doctoraliaVerifiedRevenue,
       doctoraliaPatients,
       cac: cacDoctoralia,
-      cacConfidence: pick(
-        kpisDoctoralia.cac_confidence,
-        kpisDoctoralia.cacConfidence,
-        metricsData.cac_confidence,
-        metricsData.cacConfidence,
-      ) ?? null,
+      cacConfidence: (() => {
+        const value = pick(
+          kpisDoctoralia.cac_confidence,
+          kpisDoctoralia.cacConfidence,
+          metricsData.cac_confidence,
+          metricsData.cacConfidence,
+        )
+
+        return typeof value === 'number' || typeof value === 'string' ? value : null
+      })(),
     } satisfies RealFunnel,
     quality: {
-      overallMode: String(pick(kpisDataQuality.overall_mode, kpisDataQuality.overallMode, 'unknown')),
-      metaDataSource: String(pick(kpisMeta.data_source, kpisMeta.dataSource, 'unknown')),
+      overallMode: toSafeLabel(pick(kpisDataQuality.overall_mode, kpisDataQuality.overallMode)),
+      metaDataSource: toSafeLabel(pick(kpisMeta.data_source, kpisMeta.dataSource)),
       metaIsReal: toBoolean(pick(kpisMeta.is_real, kpisMeta.isReal)),
       crmIsReal: toBoolean(pick(kpisCrm.is_real, kpisCrm.isReal)),
       doctoraliaIsReal: toBoolean(pick(kpisDoctoralia.is_real, kpisDoctoralia.isReal)),
