@@ -10,9 +10,9 @@ on:
   workflow_dispatch:
     inputs:
       days:
-        description: 'Days of Meta insights to fetch'
+        description: 'Days of Meta insights/backfill to fetch'
         required: false
-        default: '2'
+        default: '90'
 
 env:
   META_GRAPH_VERSION: v22.0
@@ -79,7 +79,7 @@ jobs:
         run: |
           set -euo pipefail
           DAYS="${{ github.event.inputs.days }}"
-          DAYS="${DAYS:-2}"
+          DAYS="${DAYS:-90}"
           if ! [[ "$DAYS" =~ ^[0-9]+$ ]] || [ "$DAYS" -lt 1 ] || [ "$DAYS" -gt 90 ]; then
             echo "::error::days must be an integer between 1 and 90. Received: $DAYS"
             exit 1
@@ -93,5 +93,26 @@ jobs:
             echo "Meta insights fetched successfully."
           else
             echo "::error::Failed to fetch Meta insights."
+            exit 1
+          fi
+
+      - name: Run full Meta backfill including Instagram
+        shell: bash
+        run: |
+          set -euo pipefail
+          DAYS="${{ github.event.inputs.days }}"
+          DAYS="${DAYS:-90}"
+          if ! [[ "$DAYS" =~ ^[0-9]+$ ]] || [ "$DAYS" -lt 1 ] || [ "$DAYS" -gt 90 ]; then
+            echo "::error::days must be an integer between 1 and 90. Received: $DAYS"
+            exit 1
+          fi
+          RESPONSE=$(curl --fail-with-body --show-error --silent --max-time 180 -X POST "${SUPABASE_URL}/functions/v1/api/meta/backfill?days=${DAYS}" \
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "Content-Type: application/json")
+          echo "Response: $RESPONSE"
+          if echo "$RESPONSE" | grep -q '"success":true'; then
+            echo "Meta backfill completed successfully."
+          else
+            echo "::error::Meta backfill failed."
             exit 1
           fi
