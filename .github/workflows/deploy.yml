@@ -27,7 +27,7 @@ jobs:
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4  # antes era @v5, corregido a versión estable
 
       - name: Validate real Supabase deployment secrets
         shell: bash
@@ -53,7 +53,8 @@ jobs:
           command: |
             set -euo pipefail
             node scripts/validate-sql-migrations.js
-            supabase db push --include-all --db-url "$SESSION_URL" --debug
+            # Usar SESSION_URL si lo exporta la acción; si no, fallback a DATABASE_URL
+            supabase db push --include-all --db-url "${SESSION_URL:-$DATABASE_URL}" --debug
 
       - name: List Supabase migrations
         uses: ./.github/actions/supabase-link-run
@@ -65,7 +66,7 @@ jobs:
           skip_link: true
           command: |
             set -euo pipefail
-            supabase migration list --db-url "$SESSION_URL" --debug
+            supabase migration list --db-url "${SESSION_URL:-$DATABASE_URL}" --debug
 
   supabase-functions:
     name: Supabase - Edge Functions
@@ -80,7 +81,7 @@ jobs:
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       FALLBACK_META_AD_ACCOUNT_ID: ${{ secrets.FALLBACK_META_AD_ACCOUNT_ID }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4  # corregido a v4
 
       - name: Validate real Edge Function deploy secrets
         shell: bash
