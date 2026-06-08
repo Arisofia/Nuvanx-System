@@ -73,7 +73,6 @@ jobs:
         run: node scripts/validate-doctoralia-appointments-ready.js
 
       - name: Run Orchestrator Script
-        continue-on-error: true
         run: node scripts/run-daily-sync.js
 
       - name: Fetch Meta Daily Insights
