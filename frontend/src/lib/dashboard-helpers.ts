@@ -77,7 +77,11 @@ function toBoolean(value: unknown) {
 
 function toStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return []
-  return value.map((item) => String(item)).filter(Boolean)
+  return value.map(String).filter(Boolean)
+}
+
+function toSafeLabel(value: unknown, fallback = 'unknown') {
+  return typeof value === 'string' && value.trim() ? value : fallback
 }
 
 function asObject(value: unknown): Record<string, any> {
@@ -270,11 +274,11 @@ export function buildDashboardState(options: DashboardStateOptions) {
       averageCpc: canonicalAvgCpc,
       metaConversions: canonicalMetaLeads,
       deltas: {
-        leads: pick(deltas.leads, deltas.totalLeads, deltas.total_leads) ?? null,
-        revenue: pick(deltas.revenue, deltas.verifiedRevenue, deltas.verified_revenue) ?? null,
-        conversions: pick(deltas.conversions, deltas.metaConversions, deltas.meta_conversions) ?? null,
-        patientMatches: pick(deltas.patientMatches, deltas.patient_matches) ?? null,
-        spend: Number.isFinite(Number(spendDelta)) ? Number(spendDelta) : null,
+        leads: toNullableNumber(pick(deltas.leads, deltas.totalLeads, deltas.total_leads)),
+        revenue: toNullableNumber(pick(deltas.revenue, deltas.verifiedRevenue, deltas.verified_revenue)),
+        conversions: toNullableNumber(pick(deltas.conversions, deltas.metaConversions, deltas.meta_conversions)),
+        patientMatches: toNullableNumber(pick(deltas.patientMatches, deltas.patient_matches)),
+        spend: toNullableNumber(spendDelta),
       },
       loading: false,
       error: null,
