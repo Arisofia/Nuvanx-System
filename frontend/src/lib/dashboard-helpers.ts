@@ -77,7 +77,7 @@ function toBoolean(value: unknown) {
 
 function toStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return []
-  return value.map((item) => String(item)).filter(Boolean)
+  return value.map(String).filter(Boolean)
 }
 
 function toSafeLabel(value: unknown, fallback = 'unknown') {
