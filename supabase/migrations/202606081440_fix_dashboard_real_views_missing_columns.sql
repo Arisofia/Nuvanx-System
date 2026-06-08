@@ -1,29 +1,55 @@
 -- Align production reporting views with API queries used by the real dashboard.
--- Applied manually to nuvanx-prod on 2026-06-08 before committing this migration.
+-- Fix dashboard/report API contract for real dashboard views.
+-- These views are consumed by Supabase Edge Function routes that expect:
+-- - vw_campaign_performance_real.source
+-- - vw_doctor_performance_real.clinic_id
+--
+-- The production API was returning 502 because those columns did not exist.
 
 create or replace view public.vw_campaign_performance_real as
 select
-  coalesce(u.id, l.user_id) as user_id,
-  coalesce(ma.campaign_name, l.campaign_name, 'Organic / Unknown'::character varying) as campaign_name,
-  coalesce(ma.campaign_id, l.campaign_id) as campaign_id,
-  count(*) as total_leads,
-  count(*) filter (where coalesce(ut.lead_stage::text, l.appointment_status::text) = any (array['scheduled'::text,'confirmed'::text,'showed'::text,'completed'::text])) as booked,
-  count(*) filter (where coalesce(ut.attended_at, l.attended_at) is not null or coalesce(ut.lead_stage::text, l.appointment_status::text) = any (array['showed'::text,'completed'::text])) as attended,
-  count(*) filter (where coalesce(ut.no_show_flag, l.no_show_flag) = true) as no_shows,
-  count(*) filter (where coalesce(ut.lead_revenue_verified, l.verified_revenue) > 0::numeric) as closed,
-  round(coalesce(sum(coalesce(ut.lead_revenue_estimated, l.revenue)), 0::numeric), 2) as estimated_revenue,
-  round(coalesce(sum(coalesce(ut.lead_revenue_verified, l.verified_revenue)), 0::numeric), 2) as verified_revenue_crm,
-  round(100.0 * count(*) filter (where coalesce(ut.lead_revenue_verified, l.verified_revenue) > 0::numeric)::numeric / nullif(count(*), 0)::numeric, 1) as lead_to_close_rate_pct,
-  round(100.0 * count(*) filter (where coalesce(ut.no_show_flag, l.no_show_flag) = true)::numeric / nullif(count(*) filter (where coalesce(ut.lead_stage::text, l.appointment_status::text) is not null), 0)::numeric, 1) as no_show_rate_pct,
-  min(coalesce(ut.lead_created_at, l.created_at)) as first_lead_at,
-  max(coalesce(ut.lead_created_at, l.created_at)) as last_lead_at,
-  coalesce(nullif(l.utm_source, ''), nullif(l.source::text, ''), case when ma.lead_id is not null then 'meta' else 'unknown' end)::text as source
+  l.user_id,
+  coalesce(l.campaign_name, ma.campaign_name, 'Sin campaña')::text as campaign_name,
+  coalesce(l.campaign_id, ma.campaign_id)::text as campaign_id,
+  coalesce(
+    nullif(l.utm_source, ''),
+    nullif(l.source::text, ''),
+    case when ma.lead_id is not null then 'meta' else 'unknown' end
+  )::text as source,
+  count(*)::bigint as total_leads,
+  count(*) filter (where lower(coalesce(t.status, '')) in ('booked', 'confirmed', 'scheduled'))::bigint as booked,
+  count(*) filter (where lower(coalesce(t.status, '')) in ('attended', 'completed'))::bigint as attended,
+  count(*) filter (where lower(coalesce(t.status, '')) in ('no_show', 'no-show', 'noshow'))::bigint as no_shows,
+  count(*) filter (where lower(coalesce(t.status, '')) in ('closed', 'won', 'paid'))::bigint as closed,
+  coalesce(sum(t.estimated_revenue), 0)::numeric as estimated_revenue,
+  coalesce(sum(t.verified_revenue_crm), 0)::numeric as verified_revenue_crm,
+  round(
+    100.0 * count(*) filter (where lower(coalesce(t.status, '')) in ('closed', 'won', 'paid')) /
+    nullif(count(*), 0),
+    2
+  ) as lead_to_close_rate_pct,
+  round(
+    100.0 * count(*) filter (where lower(coalesce(t.status, '')) in ('no_show', 'no-show', 'noshow')) /
+    nullif(count(*), 0),
+    2
+  ) as no_show_rate_pct,
+  min(l.created_at) as first_lead_at,
+  max(l.created_at) as last_lead_at
 from public.leads l
-left join public.vw_doctoralia_lead_traceability_unified ut on ut.lead_id = l.id
-left join public.meta_attribution ma on ma.lead_id = l.id
-left join public.users u on u.id = l.user_id
+left join public.vw_doctoralia_lead_traceability_unified t
+  on t.lead_id = l.id
+left join public.meta_attribution ma
+  on ma.lead_id = l.id
 where l.deleted_at is null
-group by coalesce(u.id, l.user_id), coalesce(ma.campaign_name, l.campaign_name, 'Organic / Unknown'::character varying), coalesce(ma.campaign_id, l.campaign_id), coalesce(nullif(l.utm_source, ''), nullif(l.source::text, ''), case when ma.lead_id is not null then 'meta' else 'unknown' end)::text;
+group by
+  l.user_id,
+  coalesce(l.campaign_name, ma.campaign_name, 'Sin campaña')::text,
+  coalesce(l.campaign_id, ma.campaign_id)::text,
+  coalesce(
+    nullif(l.utm_source, ''),
+    nullif(l.source::text, ''),
+    case when ma.lead_id is not null then 'meta' else 'unknown' end
+  )::text;
 
 create or replace view public.vw_doctor_performance_real as
 select
