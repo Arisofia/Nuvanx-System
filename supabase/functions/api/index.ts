@@ -3976,29 +3976,45 @@ async function persistMetaIgAccountDailyInsights(adminClient: any, userId: strin
     'follower_count',
   ];
 
-  const byDate = new Map<string, any>();
   const clinicId = await resolveClinicId(adminClient, userId);
+  const byDate = new Map<string, any>();
 
-  const sinceUnix = String(Math.floor(new Date(`${sinceDate}T00:00:00Z`).getTime() / 1000));
-  const untilUnix = String(Math.floor(new Date(`${untilDate}T00:00:00Z`).getTime() / 1000));
+  const startDate = new Date(`${sinceDate}T00:00:00Z`);
+  const finalDate = new Date(`${untilDate}T00:00:00Z`);
 
-  const tsData = await metaFetch(`/${igId}/insights`, {
-    metric: TIME_SERIES_METRICS.join(','),
-    period: 'day',
-    metric_type: 'time_series',
-    since: sinceUnix,
-    until: untilUnix,
-  }, accessToken);
+  for (let cursor = new Date(startDate); cursor <= finalDate;) {
+    const chunkStart = new Date(cursor);
+    const chunkEnd = new Date(cursor);
+    chunkEnd.setUTCDate(chunkEnd.getUTCDate() + 29);
 
-  for (const metric of tsData?.data || []) {
-    for (const value of metric.values || []) {
-      const day = String(value.end_time || '').slice(0, 10);
-      if (!day) continue;
-
-      const row = byDate.get(day) || { day };
-      row[metric.name] = Number(value.value || 0);
-      byDate.set(day, row);
+    if (chunkEnd > finalDate) {
+      chunkEnd.setTime(finalDate.getTime());
     }
+
+    const sinceUnix = String(Math.floor(chunkStart.getTime() / 1000));
+    const untilUnix = String(Math.floor(chunkEnd.getTime() / 1000));
+
+    const tsData = await metaFetch(`/${igId}/insights`, {
+      metric: TIME_SERIES_METRICS.join(','),
+      period: 'day',
+      metric_type: 'time_series',
+      since: sinceUnix,
+      until: untilUnix,
+    }, accessToken);
+
+    for (const metric of tsData?.data || []) {
+      for (const value of metric.values || []) {
+        const day = String(value.end_time || '').slice(0, 10);
+        if (!day) continue;
+
+        const row = byDate.get(day) || { day };
+        row[metric.name] = Number(value.value || 0);
+        byDate.set(day, row);
+      }
+    }
+
+    cursor = new Date(chunkEnd);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
 
   let followersTotal: number | null = null;
@@ -4053,6 +4069,8 @@ async function persistMetaIgAccountDailyInsights(adminClient: any, userId: strin
 
   return dbRows.length;
 }
+
+
 
 
 
