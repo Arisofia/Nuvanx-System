@@ -6,8 +6,6 @@
 -- columns, and expose deterministic keys for idempotent batch upserts.
 -- =============================================================================
 
-BEGIN;
-
 CREATE TABLE IF NOT EXISTS public.doctoralia_appointments_ingestion (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   source_key TEXT NOT NULL,
@@ -183,5 +181,3 @@ CREATE POLICY doctoralia_appointments_ingestion_service_role_all
 
 REVOKE ALL ON public.doctoralia_appointments_ingestion FROM anon, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.doctoralia_appointments_ingestion TO service_role;
-
-COMMIT;

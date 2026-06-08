@@ -4,8 +4,6 @@
 --          that might have been imported from dirty Google Sheets data.
 -- =============================================================================
 
-BEGIN;
-
 -- 1. Update normalization function to be more aggressive with placeholders
 CREATE OR REPLACE FUNCTION public.normalize_phone(raw_phone TEXT)
 RETURNS TEXT
@@ -83,5 +81,3 @@ WHERE full_name ~* '^(test|prueba|desconocido|unknown|n/a|-|\.)$';
 
 -- 5. Re-run patient sync to fix any broken links after normalization change
 SELECT public.sync_doctoralia_patients();
-
-COMMIT;

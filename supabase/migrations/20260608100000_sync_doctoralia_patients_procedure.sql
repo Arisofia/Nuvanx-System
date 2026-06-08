@@ -3,8 +3,6 @@
 -- Purpose: Ensures doctoralia_patients is kept in sync with financial_settlements.
 -- =============================================================================
 
-BEGIN;
-
 -- 1. Create a function to sync doctoralia_patients from financial_settlements
 CREATE OR REPLACE FUNCTION public.sync_doctoralia_patients()
 RETURNS INTEGER
@@ -65,5 +63,3 @@ SELECT public.sync_doctoralia_patients();
 -- 3. Grant permissions
 REVOKE ALL ON FUNCTION public.sync_doctoralia_patients() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.sync_doctoralia_patients() TO service_role;
-
-COMMIT;
