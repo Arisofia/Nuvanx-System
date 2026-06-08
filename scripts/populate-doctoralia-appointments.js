@@ -387,33 +387,31 @@ async function countIngestedRecords() {
   return count || 0;
 }
 
-async function upsertRecords(records) {
+function dedupeRecordsBySourceKey(records) {
   validateRecordsForUpsert(records);
-  const supabase = getSupabaseClient();
 
-  // Deduplicate records by source_key before upserting
-  // This prevents PostgreSQL "ON CONFLICT DO UPDATE cannot affect row a second time" error
-  const deduplicatedRecords = [];
-  const seenKeys = new Map();
+  const dedupedMap = new Map();
 
   for (const record of records) {
-    // Keep the last occurrence of each source_key (last write wins)
-    seenKeys.set(record.source_key, record);
+    dedupedMap.set(record.source_key, record);
   }
 
-  for (const record of seenKeys.values()) {
-    deduplicatedRecords.push(record);
-  }
+  return Array.from(dedupedMap.values());
+}
 
-  if (deduplicatedRecords.length < records.length) {
-    console.log(
-      `[doctoralia-appointments] Deduplicated ${records.length} records to ${deduplicatedRecords.length} unique source keys ` +
-      `(removed ${records.length - deduplicatedRecords.length} duplicates)`
-    );
-  }
+async function upsertRecords(records) {
+  const supabase = getSupabaseClient();
 
-  for (let index = 0; index < deduplicatedRecords.length; index += CHUNK_SIZE) {
-    const chunk = deduplicatedRecords.slice(index, index + CHUNK_SIZE);
+  const dedupedRecords = dedupeRecordsBySourceKey(records);
+
+  console.log(
+    `[doctoralia-appointments] Deduped records by source_key: ` +
+      `${records.length} → ${dedupedRecords.length}`
+  );
+
+  for (let index = 0; index < dedupedRecords.length; index += CHUNK_SIZE) {
+    const chunk = dedupedRecords.slice(index, index + CHUNK_SIZE);
+
     const { error } = await supabase
       .from('doctoralia_appointments_ingestion')
       .upsert(chunk, { onConflict: 'source_key' });
@@ -434,7 +432,8 @@ async function upsertRecords(records) {
 
       const wrappedError = new Error(
         `[doctoralia-appointments] Failed to upsert chunk ` +
-          `(index=${index}, size=${chunk.length}, first_sheet_row=${firstSheetRow}, last_sheet_row=${lastSheetRow}): ` +
+          `(index=${index}, size=${chunk.length}, ` +
+          `first_sheet_row=${firstSheetRow}, last_sheet_row=${lastSheetRow}): ` +
           error.message
       );
 
@@ -444,7 +443,8 @@ async function upsertRecords(records) {
     }
 
     console.log(
-      `[doctoralia-appointments] Upserted ${index + chunk.length}/${deduplicatedRecords.length} (chunkSize=${chunk.length})`
+      `[doctoralia-appointments] Upserted ${index + chunk.length}/${dedupedRecords.length} ` +
+        `(chunkSize=${chunk.length})`
     );
   }
 }
@@ -479,6 +479,7 @@ module.exports = {
   parseCsv,
   buildRecord,
   countIngestedRecords,
+  dedupeRecordsBySourceKey,
   ensureRequiredHeaders,
   getSupabaseClient,
   recordsFromRows,
