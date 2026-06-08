@@ -5,6 +5,7 @@ export interface CombinedMetrics {
   verifiedRevenue: number
   metaCpl: number | null
   revenuePerLead: number | null
+  avgTicketPerMatchedPatient: number | null
 }
 
 export interface RealFunnel {
@@ -14,7 +15,7 @@ export interface RealFunnel {
   doctoraliaRevenue: number | null
   doctoraliaPatients: number | null
   cac: number | null
-  cacConfidence: number | string | null
+  cacConfidence: number | null
 }
 
 export interface DashboardQuality {
@@ -23,6 +24,7 @@ export interface DashboardQuality {
   metaIsReal: boolean
   crmIsReal: boolean
   doctoraliaIsReal: boolean
+  doctoraliaMatchingIsReal: boolean
   metaAccountIds?: string[]
 }
 
@@ -42,6 +44,7 @@ export const EMPTY_COMBINED_METRICS: CombinedMetrics = {
   verifiedRevenue: 0,
   metaCpl: null,
   revenuePerLead: null,
+  avgTicketPerMatchedPatient: null,
 }
 
 export const EMPTY_FUNNEL: RealFunnel = {
@@ -88,6 +91,40 @@ function asObject(value: unknown): Record<string, any> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, any>
     : {}
+}
+
+function normalizeConfidence(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, Math.min(100, value))
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    const numeric = Number(normalized)
+    if (Number.isFinite(numeric)) return Math.max(0, Math.min(100, numeric))
+    if (normalized === 'high') return 90
+    if (normalized === 'medium') return 60
+    if (normalized === 'low') return 25
+  }
+  return null
+}
+
+function resolveOverallMode(params: {
+  apiOverallMode: unknown
+  metaIsReal: boolean
+  crmIsReal: boolean
+  doctoraliaIsReal: boolean
+}) {
+  const { apiOverallMode, metaIsReal, crmIsReal, doctoraliaIsReal } = params
+  const calculated = (() => {
+    if (metaIsReal && crmIsReal && doctoraliaIsReal) return 'full_real'
+    if (metaIsReal || crmIsReal || doctoraliaIsReal) return 'partial_demo'
+    return 'full_demo'
+  })()
+
+  const apiMode = toSafeLabel(apiOverallMode, calculated)
+  if (apiMode === 'full_demo' && calculated !== 'full_demo') return calculated
+  if (apiMode === 'full_real' && calculated !== 'full_real') return calculated
+  return apiMode
 }
 
 export function buildDashboardPaths(isCustomRange: boolean, customFrom: string, customTo: string, days: number) {
@@ -250,15 +287,32 @@ export function buildDashboardState(options: DashboardStateOptions) {
     metricsData.settled_count,
     kpisDoctoralia.settledCount,
     kpisDoctoralia.settled_count,
+    kpisDoctoralia.total_settlements,
+    kpisDoctoralia.totalSettlements,
   ))
 
   const metaCpl = calculateRatio(canonicalMetaSpend, canonicalMetaLeads)
   const cacDoctoralia = calculateRatio(canonicalMetaSpend, doctoraliaPatients)
-  const revenuePerLead = calculateRatio(doctoraliaVerifiedRevenue, doctoraliaPatients)
+  const revenuePerLead = calculateRatio(doctoraliaVerifiedRevenue, totalLeads ?? 0)
+  const avgTicketPerMatchedPatient = calculateRatio(doctoraliaVerifiedRevenue, doctoraliaPatients)
 
   const accountIds = pick(kpisMeta.accountIds, kpisMeta.account_ids)
 
   const deltas = asObject(metricsData.deltas)
+
+  const metaIsReal = toBoolean(pick(kpisMeta.is_real, kpisMeta.isReal)) || canonicalMetaSpend > 0 || canonicalMetaLeads > 0
+  const crmIsReal = toBoolean(pick(kpisCrm.is_real, kpisCrm.isReal)) || Number(totalLeads ?? 0) > 0
+  const doctoraliaIsReal = toBoolean(pick(kpisDoctoralia.is_real, kpisDoctoralia.isReal)) || doctoraliaVerifiedRevenue > 0 || Number(settledCount ?? 0) > 0
+  const doctoraliaMatchingIsReal = toBoolean(pick(
+    kpisDataQuality.doctoralia_matching_real,
+    kpisDataQuality.doctoraliaMatchingReal,
+  )) || doctoraliaPatients > 0
+  const overallMode = resolveOverallMode({
+    apiOverallMode: pick(kpisDataQuality.overall_mode, kpisDataQuality.overallMode),
+    metaIsReal,
+    crmIsReal,
+    doctoraliaIsReal,
+  })
 
   return {
     metrics: {
@@ -290,6 +344,7 @@ export function buildDashboardState(options: DashboardStateOptions) {
       verifiedRevenue: doctoraliaVerifiedRevenue,
       metaCpl,
       revenuePerLead,
+      avgTicketPerMatchedPatient,
     } satisfies CombinedMetrics,
 
     funnel: {
@@ -299,23 +354,20 @@ export function buildDashboardState(options: DashboardStateOptions) {
       doctoraliaRevenue: doctoraliaVerifiedRevenue,
       doctoraliaPatients,
       cac: cacDoctoralia,
-      cacConfidence: (() => {
-        const value = pick(
-          kpisDoctoralia.cac_confidence,
-          kpisDoctoralia.cacConfidence,
-          metricsData.cac_confidence,
-          metricsData.cacConfidence,
-        )
-
-        return typeof value === 'number' || typeof value === 'string' ? value : null
-      })(),
+      cacConfidence: normalizeConfidence(pick(
+        kpisDoctoralia.cac_confidence,
+        kpisDoctoralia.cacConfidence,
+        metricsData.cac_confidence,
+        metricsData.cacConfidence,
+      )),
     } satisfies RealFunnel,
     quality: {
-      overallMode: toSafeLabel(pick(kpisDataQuality.overall_mode, kpisDataQuality.overallMode)),
+      overallMode,
       metaDataSource: toSafeLabel(pick(kpisMeta.data_source, kpisMeta.dataSource)),
-      metaIsReal: toBoolean(pick(kpisMeta.is_real, kpisMeta.isReal)),
-      crmIsReal: toBoolean(pick(kpisCrm.is_real, kpisCrm.isReal)),
-      doctoraliaIsReal: toBoolean(pick(kpisDoctoralia.is_real, kpisDoctoralia.isReal)),
+      metaIsReal,
+      crmIsReal,
+      doctoraliaIsReal,
+      doctoraliaMatchingIsReal,
       metaAccountIds: toStringArray(accountIds),
     } satisfies DashboardQuality,
   }
