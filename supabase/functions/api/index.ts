@@ -585,14 +585,32 @@ export function actionValue(actions: any, matcher: (type: string) => boolean): n
 }
 
 function isMessagingConversationAction(type: string): boolean {
-  return type.includes('conversation_started')
-    || type.includes('messaging')
-    || type.includes('whatsapp')
-    || type.includes('lead')
-    || type.includes('contact')
-    || type.includes('submit_application')
-    || type === 'onsite_conversion.messaging_conversation_started_7d';
+  const t = String(type ?? '').toLowerCase();
+
+function isLeadAction(type: string): boolean {
+  const t = String(type ?? '').toLowerCase();
+
+  return (
+    t.includes('lead') ||
+    t.includes('leadgen') ||
+    t.includes('onsite_conversion.lead') ||
+    t.includes('complete_registration') ||
+    t.includes('submit_application') ||
+    t.includes('contact')
+  );
 }
+
+
+  return (
+    t.includes('messaging_conversation_started') ||
+    t.includes('conversation_started') ||
+    t.includes('messaging_first_reply') ||
+    t.includes('onsite_conversion.messaging') ||
+    t.includes('whatsapp')
+  );
+}
+
+
 
 async function resolveClinicId(adminClient: any, userId: string): Promise<string | null> {
   const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
@@ -3443,7 +3461,7 @@ async function fetchMetaDailyInsightRows(adminClient: any, userId: string, accou
   if (accountIds.length === 0) return [];
   const clinicId = await resolveClinicId(adminClient, userId);
   let query = adminClient.from('meta_daily_insights')
-    .select('date,ad_account_id,impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,messaging_conversations')
+    .select('date,ad_account_id,impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,messaging_conversations,actions,action_values,lead_actions,source_quality')
     .in('ad_account_id', accountIds)
     .gte('date', since)
     .lte('date', until)
@@ -3692,37 +3710,71 @@ async function processMetaInsightsGet(adminClient: any, userId: string, url: URL
 
 async function persistMetaDailyInsights(adminClient: any, userId: string, adAccountId: string, accessToken: string, sinceDate: string, untilDate: string): Promise<number> {
   const clinicId = await resolveClinicId(adminClient, userId);
-  const fields = 'date_start,impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,actions';
+
+  const fields = [
+    'date_start',
+    'impressions',
+    'reach',
+    'clicks',
+    'spend',
+    'ctr',
+    'cpc',
+    'cpm',
+    'conversions',
+    'actions',
+    'action_values',
+  ].join(',');
+
   const insightsRes = await metaFetch(`/${adAccountId}/insights`, {
     fields,
     time_range: JSON.stringify({ since: sinceDate, until: untilDate }),
     time_increment: '1',
     limit: '1000',
   }, accessToken);
+
   const insightsDailyRows: any[] = insightsRes?.data ?? [];
   if (insightsDailyRows.length === 0) return 0;
 
-  const dbRows = insightsDailyRows.map((r: any) => ({
-    user_id: userId,
-    clinic_id: clinicId,
-    ad_account_id: adAccountId,
-    date: r.date_start,
-    impressions: Math.round(Number(r.impressions || 0)),
-    reach: Math.round(Number(r.reach || 0)),
-    clicks: Math.round(Number(r.clicks || 0)),
-    spend: Number(r.spend || 0),
-    conversions: Math.round(Number(r.conversions ?? actionValue(r.actions, (t: string) => t.includes('lead') || t.includes('conversion') || t.includes('complete_registration')) ?? 0)),
-    ctr: Number(r.ctr || 0),
-    cpc: Number(r.cpc || 0),
-    cpm: Number(r.cpm || 0),
-    messaging_conversations: actionValue(r.actions, isMessagingConversationAction),
-    updated_at: new Date().toISOString(),
-  }));
+  const dbRows = insightsDailyRows.map((r: any) => {
+    const actionsArr = Array.isArray(r.actions) ? r.actions : [];
+    const actionValuesArr = Array.isArray(r.action_values) ? r.action_values : [];
 
-  await adminClient.from('meta_daily_insights')
+    const leadActions = actionValue(actionsArr, isLeadAction);
+    const messagingConversations = actionValue(actionsArr, isMessagingConversationAction);
+    const rawConversions = parseMetaMetric(r.conversions);
+    const conversions = rawConversions || leadActions || messagingConversations;
+
+    return {
+      user_id: userId,
+      clinic_id: clinicId,
+      ad_account_id: adAccountId,
+      date: r.date_start,
+      impressions: Math.round(Number(r.impressions || 0)),
+      reach: Math.round(Number(r.reach || 0)),
+      clicks: Math.round(Number(r.clicks || 0)),
+      spend: Number(r.spend || 0),
+      conversions: Math.round(conversions),
+      ctr: Number(r.ctr || 0),
+      cpc: Number(r.cpc || 0),
+      cpm: Number(r.cpm || 0),
+      actions: actionsArr,
+      action_values: actionValuesArr,
+      lead_actions: leadActions,
+      messaging_conversations: messagingConversations,
+      source_quality: 'daily_backfill',
+      updated_at: new Date().toISOString(),
+    };
+  });
+
+  const { error } = await adminClient
+    .from('meta_daily_insights')
     .upsert(dbRows, { onConflict: 'clinic_id,ad_account_id,date' });
-  return insightsDailyRows.length;
+
+  if (error) throw error;
+  return dbRows.length;
 }
+
+
 
 async function ingestMetaLeadsFromForms(adminClient: any, userId: string, adAccountId: string, accessToken: string, sinceTs: number): Promise<number> {
   let totalFetched = 0;
@@ -3759,7 +3811,7 @@ async function persistMetaOrganicDailyInsights(adminClient: any, userId: string,
     'page_views_total',
     'page_actions_post_reactions_total',
   ];
-  
+
   const data = await metaFetch(`/${pageId}/insights`, {
     metric: PAGE_METRICS.join(','),
     period: 'day',
@@ -3769,19 +3821,23 @@ async function persistMetaOrganicDailyInsights(adminClient: any, userId: string,
 
   const series = Array.isArray(data?.data) ? data.data : [];
   const byDate = new Map<string, any>();
-  for (const m of series) {
-    const { name } = m;
-    for (const v of m.values || []) {
-      const day = (v.end_time || '').slice(0, 10);
+
+  for (const metric of series) {
+    const { name } = metric;
+    for (const value of metric.values || []) {
+      const day = String(value.end_time || '').slice(0, 10);
       if (!day) continue;
       const row = byDate.get(day) || { day };
-      row[name] = Number(v.value || 0);
+      row[name] = Number(value.value || 0);
       byDate.set(day, row);
     }
   }
 
-  const dbRows = Array.from(byDate.values()).map(r => ({
+  const clinicId = await resolveClinicId(adminClient, userId);
+
+  const dbRows = Array.from(byDate.values()).map((r: any) => ({
     user_id: userId,
+    clinic_id: clinicId,
     page_id: pageId,
     date: r.day,
     impressions: Math.round(Number(r.page_impressions_unique || 0)),
@@ -3790,16 +3846,21 @@ async function persistMetaOrganicDailyInsights(adminClient: any, userId: string,
     video_views: Math.round(Number(r.page_video_views || 0)),
     page_views: Math.round(Number(r.page_views_total || 0)),
     reactions: Math.round(Number(r.page_actions_post_reactions_total || 0)),
+    source_quality: 'daily_backfill',
     updated_at: new Date().toISOString(),
   }));
 
   if (dbRows.length === 0) return 0;
 
-  await adminClient.from('meta_organic_daily')
+  const { error } = await adminClient
+    .from('meta_organic_daily')
     .upsert(dbRows, { onConflict: 'user_id,page_id,date' });
 
+  if (error) throw error;
   return dbRows.length;
 }
+
+
 
 async function persistMetaPostPerformance(adminClient: any, userId: string, pageId: string, accessToken: string, limit: number): Promise<number> {
   const fields = [
@@ -3820,13 +3881,17 @@ async function persistMetaPostPerformance(adminClient: any, userId: string, page
   const posts = Array.isArray(data?.data) ? data.data : [];
   if (posts.length === 0) return 0;
 
+  const clinicId = await resolveClinicId(adminClient, userId);
+
   const dbRows = posts.map((p: any) => {
     const insightsByName = new Map();
     const insightsData = p?.insights?.data ?? [];
+
     for (const { name, values } of insightsData) {
       const firstValue = values?.[0]?.value;
       insightsByName.set(name, firstValue);
     }
+
     const reactionsObj = insightsByName.get('post_reactions_by_type_total') || {};
     const reactionsTotal = Number(Object.values(reactionsObj).reduce((a: number, b: any) => a + Number(b || 0), 0));
     const activityObj = insightsByName.get('post_activity_by_action_type') || {};
@@ -3840,6 +3905,7 @@ async function persistMetaPostPerformance(adminClient: any, userId: string, page
 
     return {
       user_id: userId,
+      clinic_id: clinicId,
       page_id: pageId,
       post_id: p.id,
       created_time: p.created_time,
@@ -3850,58 +3916,107 @@ async function persistMetaPostPerformance(adminClient: any, userId: string, page
       reach: Number(insightsByName.get('post_impressions_unique') || 0),
       engaged_users: engagedUsers,
       reactions: reactionsTotal,
-      comments: comments,
-      shares: shares,
+      comments,
+      shares,
       video_views: Number(insightsByName.get('post_video_views') || 0),
       is_video: Boolean(isVideo),
+      source_quality: 'daily_backfill',
       updated_at: new Date().toISOString(),
     };
   });
 
-  await adminClient.from('meta_post_performance')
+  const { error } = await adminClient
+    .from('meta_post_performance')
     .upsert(dbRows, { onConflict: 'user_id,post_id' });
 
+  if (error) throw error;
   return dbRows.length;
 }
 
+
+
 async function persistMetaIgAccountDailyInsights(adminClient: any, userId: string, igId: string, accessToken: string, sinceDate: string, untilDate: string): Promise<number> {
-  const TIME_SERIES_METRICS = ['reach', 'follower_count'];
+  const TIME_SERIES_METRICS = [
+    'reach',
+    'follower_count',
+    'profile_views',
+    'accounts_engaged',
+    'total_interactions',
+    'website_clicks',
+    'views',
+  ];
+
   const byDate = new Map<string, any>();
+  const clinicId = await resolveClinicId(adminClient, userId);
 
   const tsData = await metaFetch(`/${igId}/insights`, {
     metric: TIME_SERIES_METRICS.join(','),
     period: 'day',
     metric_type: 'time_series',
-    since: String(Math.floor(new Date(sinceDate).getTime() / 1000)),
-    until: String(Math.floor(new Date(untilDate).getTime() / 1000)),
+    since: String(Math.floor(new Date(`${sinceDate}T00:00:00Z`).getTime() / 1000)),
+    until: String(Math.floor(new Date(`${untilDate}T00:00:00Z`).getTime() / 1000)),
   }, accessToken);
 
-  for (const m of tsData?.data || []) {
-    for (const v of m.values || []) {
-      const day = (v.end_time || '').slice(0, 10);
+  for (const metric of tsData?.data || []) {
+    for (const value of metric.values || []) {
+      const day = String(value.end_time || '').slice(0, 10);
       if (!day) continue;
       const row = byDate.get(day) || { day };
-      row[m.name] = Number(v.value || 0);
+      row[metric.name] = Number(value.value || 0);
       byDate.set(day, row);
     }
   }
 
-  const dbRows = Array.from(byDate.values()).map(r => ({
+  let followersTotal: number | null = null;
+  try {
+    const igData = await metaFetch(`/${igId}`, { fields: 'followers_count' }, accessToken);
+    followersTotal = igData?.followers_count != null ? Number(igData.followers_count) : null;
+  } catch (_e) {
+    followersTotal = null;
+  }
+
+  const latestDate = Array.from(byDate.values())
+    .map((r: any) => String(r.day))
+    .sort()
+    .at(-1);
+
+  const dbRows = Array.from(byDate.values()).map((r: any) => ({
     user_id: userId,
+    clinic_id: clinicId,
     ig_id: igId,
     date: r.day,
-    reach: Number(r.reach || 0),
-    follower_count_delta: Number(r.follower_count || 0),
+    reach: Math.round(Number(r.reach || 0)),
+    profile_views: Math.round(Number(r.profile_views || 0)),
+    accounts_engaged: Math.round(Number(r.accounts_engaged || 0)),
+    total_interactions: Math.round(Number(r.total_interactions || 0)),
+    website_clicks: Math.round(Number(r.website_clicks || 0)),
+    views: Math.round(Number(r.views ?? r.impressions ?? 0)),
+    follower_count_delta: Math.round(Number(r.follower_count || 0)),
+
+    followers_total: r.day === latestDate ? followersTotal : null,
+    new_followers: null,
+    unfollows: null,
+    paid_follows: null,
+    organic_follows: null,
+
+    source_quality: r.day === latestDate
+      ? 'daily_backfill_current_snapshot'
+      : 'daily_backfill',
+
     updated_at: new Date().toISOString(),
   }));
 
   if (dbRows.length === 0) return 0;
 
-  await adminClient.from('meta_ig_account_daily')
+  const { error } = await adminClient
+    .from('meta_ig_account_daily')
     .upsert(dbRows, { onConflict: 'user_id,ig_id,date' });
 
+  if (error) throw error;
   return dbRows.length;
 }
+
+
 
 async function persistMetaIgMediaPerformance(adminClient: any, userId: string, igId: string, accessToken: string, limit: number): Promise<number> {
   const MEDIA_METRICS = ['reach', 'likes', 'comments', 'shares', 'saved', 'total_interactions', 'views'];
@@ -3915,29 +4030,34 @@ async function persistMetaIgMediaPerformance(adminClient: any, userId: string, i
   const items = Array.isArray(data?.data) ? data.data : [];
   if (items.length === 0) return 0;
 
+  const clinicId = await resolveClinicId(adminClient, userId);
   let upserted = 0;
-  for (const m of items) {
+
+  for (const media of items) {
     try {
-      const ins = await metaFetch(`/${m.id}/insights`, {
+      const ins = await metaFetch(`/${media.id}/insights`, {
         metric: MEDIA_METRICS.join(','),
       }, accessToken);
-      
+
       const insights: Record<string, number> = {};
       const insData = ins?.data ?? [];
+
       for (const row of insData) {
         insights[row.name] = Number(row.values?.[0]?.value ?? 0);
       }
 
-      await adminClient.from('meta_ig_media_performance')
+      const { error } = await adminClient
+        .from('meta_ig_media_performance')
         .upsert({
           user_id: userId,
+          clinic_id: clinicId,
           ig_id: igId,
-          media_id: m.id,
-          media_type: m.media_type ?? null,
-          media_product_type: m.media_product_type ?? null,
-          caption: m.caption ?? null,
-          permalink: m.permalink ?? null,
-          timestamp: m.timestamp,
+          media_id: media.id,
+          media_type: media.media_type ?? null,
+          media_product_type: media.media_product_type ?? null,
+          caption: media.caption ?? null,
+          permalink: media.permalink ?? null,
+          timestamp: media.timestamp,
           reach: Number(insights.reach || 0),
           views: Number(insights.views || 0),
           likes: Number(insights.likes || 0),
@@ -3945,17 +4065,21 @@ async function persistMetaIgMediaPerformance(adminClient: any, userId: string, i
           shares: Number(insights.shares || 0),
           saved: Number(insights.saved || 0),
           total_interactions: Number(insights.total_interactions || 0),
+          source_quality: 'daily_backfill',
           updated_at: new Date().toISOString(),
         }, { onConflict: 'user_id,media_id' });
-      
+
+      if (error) throw error;
       upserted++;
     } catch (e: any) {
-      console.warn(`Failed to fetch insights for IG media ${m.id}:`, maskSensitive(e.message));
+      console.warn(`Failed to fetch insights for IG media ${media.id}:`, maskSensitive(e.message));
     }
   }
 
   return upserted;
 }
+
+
 
 // ── Meta Organic (Page-level + Post-level) ────────────────────────────────
 async function handleMetaOrganicGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
