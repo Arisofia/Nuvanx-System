@@ -3971,17 +3971,13 @@ async function persistMetaPostPerformance(adminClient: any, userId: string, page
 
 
 async function persistMetaIgAccountDailyInsights(adminClient: any, userId: string, igId: string, accessToken: string, sinceDate: string, untilDate: string): Promise<number> {
-  const TIME_SERIES_METRICS = [
-    'reach',
-    'follower_count',
-  ];
-
   const clinicId = await resolveClinicId(adminClient, userId);
   const byDate = new Map<string, any>();
 
   const startDate = new Date(`${sinceDate}T00:00:00Z`);
   const finalDate = new Date(`${untilDate}T00:00:00Z`);
 
+  // 1) Historical reach in chunks of <= 30 days
   for (let cursor = new Date(startDate); cursor <= finalDate;) {
     const chunkStart = new Date(cursor);
     const chunkEnd = new Date(cursor);
@@ -3994,15 +3990,15 @@ async function persistMetaIgAccountDailyInsights(adminClient: any, userId: strin
     const sinceUnix = String(Math.floor(chunkStart.getTime() / 1000));
     const untilUnix = String(Math.floor(chunkEnd.getTime() / 1000));
 
-    const tsData = await metaFetch(`/${igId}/insights`, {
-      metric: TIME_SERIES_METRICS.join(','),
+    const reachData = await metaFetch(`/${igId}/insights`, {
+      metric: 'reach',
       period: 'day',
       metric_type: 'time_series',
       since: sinceUnix,
       until: untilUnix,
     }, accessToken);
 
-    for (const metric of tsData?.data || []) {
+    for (const metric of reachData?.data || []) {
       for (const value of metric.values || []) {
         const day = String(value.end_time || '').slice(0, 10);
         if (!day) continue;
@@ -4017,6 +4013,40 @@ async function persistMetaIgAccountDailyInsights(adminClient: any, userId: strin
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
 
+  // 2) follower_count only for the last 30 days excluding current day
+  const followerUntil = new Date(finalDate);
+  followerUntil.setUTCDate(followerUntil.getUTCDate() - 1);
+
+  const followerSince = new Date(followerUntil);
+  followerSince.setUTCDate(followerSince.getUTCDate() - 29);
+
+  const followerSinceUnix = String(Math.floor(followerSince.getTime() / 1000));
+  const followerUntilUnix = String(Math.floor(followerUntil.getTime() / 1000));
+
+  try {
+    const followerData = await metaFetch(`/${igId}/insights`, {
+      metric: 'follower_count',
+      period: 'day',
+      metric_type: 'time_series',
+      since: followerSinceUnix,
+      until: followerUntilUnix,
+    }, accessToken);
+
+    for (const metric of followerData?.data || []) {
+      for (const value of metric.values || []) {
+        const day = String(value.end_time || '').slice(0, 10);
+        if (!day) continue;
+
+        const row = byDate.get(day) || { day };
+        row[metric.name] = Number(value.value || 0);
+        byDate.set(day, row);
+      }
+    }
+  } catch (e) {
+    console.warn(`Meta IG follower_count backfill skipped for ${igId}:`, maskSensitive((e as any)?.message ?? e));
+  }
+
+  // 3) Current followers snapshot
   let followersTotal: number | null = null;
 
   try {
@@ -4069,6 +4099,8 @@ async function persistMetaIgAccountDailyInsights(adminClient: any, userId: strin
 
   return dbRows.length;
 }
+
+
 
 
 
