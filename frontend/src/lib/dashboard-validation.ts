@@ -51,6 +51,98 @@ export function asRecordArray(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value) ? value.map(asRecord).filter((item) => Object.keys(item).length > 0) : []
 }
 
+function pick(...values: unknown[]) {
+  return values.find((value) => value !== undefined && value !== null && value !== '')
+}
+
+function normalizeMetricsPayload(metricsResponse: Record<string, unknown>): Record<string, unknown> {
+  const explicitMetrics = asRecord(metricsResponse.metrics)
+  if (Object.keys(explicitMetrics).length > 0) return explicitMetrics
+
+  const leads = asRecord(metricsResponse.leads)
+  const meta = asRecord(metricsResponse.meta)
+  const doctoralia = asRecord(metricsResponse.doctoralia)
+  const summary = asRecord(metricsResponse.summary)
+  const revenue = asRecord(metricsResponse.revenue)
+
+  const normalized = {
+    totalLeads: pick(
+      metricsResponse.totalLeads,
+      summary.totalLeads,
+      summary.total_leads,
+      leads.totalLeads,
+      leads.total_leads,
+      leads.total,
+    ),
+    conversionRate: pick(
+      metricsResponse.conversionRate,
+      summary.conversionRate,
+      summary.conversion_rate,
+      leads.conversionRate,
+      leads.conversion_rate,
+    ),
+    patientMatches: pick(
+      metricsResponse.patientMatches,
+      summary.patientMatches,
+      summary.patient_matches,
+      doctoralia.patientMatches,
+      doctoralia.patient_matches,
+      doctoralia.newVerifiedPatients,
+      doctoralia.new_verified_patients,
+    ),
+    patientConversionRate: pick(
+      metricsResponse.patientConversionRate,
+      summary.patientConversionRate,
+      summary.patient_conversion_rate,
+      doctoralia.patientConversionRate,
+      doctoralia.patient_conversion_rate,
+    ),
+    verifiedRevenue: pick(
+      metricsResponse.verifiedRevenue,
+      summary.verifiedRevenue,
+      summary.verified_revenue,
+      revenue.verifiedRevenue,
+      revenue.verified_revenue,
+      doctoralia.verifiedRevenue,
+      doctoralia.verified_revenue,
+    ),
+    totalRevenue: pick(
+      metricsResponse.totalRevenue,
+      summary.totalRevenue,
+      summary.total_revenue,
+      revenue.totalRevenue,
+      revenue.total_revenue,
+      revenue.total,
+    ),
+    settledCount: pick(
+      metricsResponse.settledCount,
+      summary.settledCount,
+      summary.settled_count,
+      revenue.settledCount,
+      revenue.settled_count,
+      doctoralia.settledCount,
+      doctoralia.settled_count,
+    ),
+    spend: pick(
+      metricsResponse.spend,
+      summary.spend,
+      meta.spend,
+    ),
+    metaConversions: pick(
+      metricsResponse.metaConversions,
+      summary.metaConversions,
+      summary.meta_conversions,
+      meta.conversions,
+      meta.leads,
+    ),
+    deltas: asRecord(metricsResponse.deltas),
+  }
+
+  return Object.fromEntries(
+    Object.entries(normalized).filter(([, value]) => value !== undefined && value !== null),
+  )
+}
+
 export function normalizeTrendPoint(value: unknown): MetaTrendPoint | null {
   const row = asRecord(value)
   const week = toSafeString(row.date_start) || toSafeString(row.date) || toSafeString(row.week) || '–'
@@ -77,9 +169,9 @@ export function validateDashboardBundle(input: {
   const funnelResponse = asRecord(input.funnelResponse)
   const kpisResponse = asRecord(input.kpisResponse)
 
-  const metricsData = asRecord(metricsResponse.metrics)
+  const metricsData = normalizeMetricsPayload(metricsResponse)
   if (Object.keys(metricsData).length === 0 && Object.keys(metricsResponse).length > 0) {
-    errors.push('dashboard.metrics payload is missing a metrics object')
+    errors.push('dashboard.metrics payload does not include recognized metrics')
   }
 
   const campaigns = asRecordArray(campaignsResponse.campaigns)
