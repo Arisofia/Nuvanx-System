@@ -3,17 +3,33 @@
 
 const crypto = require('crypto');
 
-const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v20.0';
+const DEFAULT_META_GRAPH_VERSION = 'v22.0';
 const MIN_NODE_MAJOR = 18;
+const DEFAULT_VERIFY_CONCURRENCY = 4;
 
 const FAILURE_MESSAGES = {
   INVALID_NODE_VERSION: `Node.js ${MIN_NODE_MAJOR}+ is required.`,
   MISSING_ACCESS_TOKEN: 'Missing required GitHub secret/env var: META_ACCESS_TOKEN.',
-  MISSING_AD_ACCOUNT_ID: 'Missing required GitHub secret/env var: META_AD_ACCOUNT_ID or META_AD_ACCOUNT_IDS.',
+  MISSING_AD_ACCOUNT_ID: 'Missing required GitHub secret/env var: META_AD_ACCOUNT_ID, META_AD_ACCOUNT_IDS, or FALLBACK_META_AD_ACCOUNT_ID.',
   META_API_REQUEST_FAILED: 'Meta API request failed. Verify token permissions and Graph API availability.',
   TOKEN_ACCESS_DENIED: 'Token cannot access one or more configured ad accounts.',
   UNKNOWN: 'Unexpected Meta access verification failure.',
 };
+
+class MetaApiError extends Error {
+  constructor(message, options = {}) {
+    super(message);
+    this.name = 'MetaApiError';
+    this.status = options.status;
+    this.code = options.code;
+    this.body = options.body;
+    this.cause = options.cause;
+  }
+}
+
+function getMetaGraphVersion() {
+  return String(process.env.META_GRAPH_VERSION || DEFAULT_META_GRAPH_VERSION).trim() || DEFAULT_META_GRAPH_VERSION;
+}
 
 function fail(code) {
   console.error('❌ Meta access verification failed.');
@@ -44,10 +60,11 @@ function normalizeAdAccountId(raw) {
   return value.startsWith('act_') ? value : `act_${value}`;
 }
 
-function parseTargetAdAccountIds() {
+function parseTargetAdAccountIds(env = process.env) {
   const values = [
-    process.env.META_AD_ACCOUNT_IDS || '',
-    process.env.META_AD_ACCOUNT_ID || '',
+    env.META_AD_ACCOUNT_IDS || '',
+    env.META_AD_ACCOUNT_ID || '',
+    env.FALLBACK_META_AD_ACCOUNT_ID || '',
   ]
     .join(',')
     .split(',')
@@ -68,7 +85,7 @@ function buildAppSecretProof(accessToken) {
 }
 
 function createMetaUrl(path, accessToken) {
-  const url = new URL(`https://graph.facebook.com/${META_GRAPH_VERSION}${path}`);
+  const url = new URL(`https://graph.facebook.com/${getMetaGraphVersion()}${path}`);
   url.searchParams.set('access_token', accessToken);
 
   const appsecretProof = buildAppSecretProof(accessToken);
@@ -79,30 +96,80 @@ function createMetaUrl(path, accessToken) {
   return url;
 }
 
+function getMetaErrorCode(body) {
+  return body?.error?.code ?? body?.error?.error_subcode;
+}
+
+function isPermissionError(error) {
+  const status = error?.response?.status ?? error?.status;
+  const code = String(error?.code ?? getMetaErrorCode(error?.body) ?? '');
+
+  return status === 401 || status === 403 || code === '190' || code === 'TOKEN_ACCESS_DENIED';
+}
+
 async function fetchJson(url) {
   let res;
   try {
     res = await fetch(url);
-  } catch {
-    throw new Error(FAILURE_MESSAGES.META_API_REQUEST_FAILED);
+  } catch (error) {
+    throw new MetaApiError(FAILURE_MESSAGES.META_API_REQUEST_FAILED, {
+      code: 'NETWORK_ERROR',
+      cause: error,
+    });
   }
 
   const body = await res.json().catch(() => ({}));
 
   if (!res.ok || body.error) {
-    throw new Error(FAILURE_MESSAGES.META_API_REQUEST_FAILED);
+    throw new MetaApiError(FAILURE_MESSAGES.META_API_REQUEST_FAILED, {
+      status: res.status,
+      code: getMetaErrorCode(body),
+      body,
+    });
   }
 
   return body;
 }
 
-async function listAccessibleAdAccounts(accessToken) {
-  const url = createMetaUrl('/me/adaccounts', accessToken);
+async function fetchAdAccount(accessToken, accountId) {
+  const url = createMetaUrl(`/${accountId}`, accessToken);
   url.searchParams.set('fields', 'id,name,account_status,currency');
-  url.searchParams.set('limit', '500');
 
-  const payload = await fetchJson(url);
-  return Array.isArray(payload.data) ? payload.data : [];
+  return fetchJson(url);
+}
+
+function getVerifyConcurrency() {
+  const parsed = Number.parseInt(String(process.env.META_VERIFY_CONCURRENCY || ''), 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_VERIFY_CONCURRENCY;
+}
+
+async function mapWithConcurrency(items, concurrency, mapper) {
+  const limit = Math.max(1, Math.min(concurrency, items.length || 1));
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(items[index], index);
+    }
+  }
+
+  await Promise.all(Array.from({ length: limit }, worker));
+  return results;
+}
+
+async function verifyConfiguredAdAccounts(accessToken, accountIds) {
+  return mapWithConcurrency(accountIds, getVerifyConcurrency(), async (accountId) => {
+    const account = await fetchAdAccount(accessToken, accountId);
+    return {
+      id: normalizeAdAccountId(account.id || accountId),
+      name: String(account.name || '').trim(),
+      status: account.account_status,
+      currency: String(account.currency || '').trim(),
+    };
+  });
 }
 
 async function main() {
@@ -122,35 +189,38 @@ async function main() {
     fail('MISSING_AD_ACCOUNT_ID');
   }
 
-  let accounts;
+  let verifiedAccounts;
   try {
-    accounts = await listAccessibleAdAccounts(accessToken);
-  } catch {
+    verifiedAccounts = await verifyConfiguredAdAccounts(accessToken, targetAdAccountIds);
+  } catch (error) {
+    if (isPermissionError(error)) {
+      fail('TOKEN_ACCESS_DENIED');
+    }
+
     fail('META_API_REQUEST_FAILED');
   }
-  const normalized = accounts
-    .map((row) => ({
-      id: normalizeAdAccountId(row.id),
-      name: String(row.name || '').trim(),
-      status: row.account_status,
-      currency: String(row.currency || '').trim(),
-    }))
-    .filter((row) => row.id);
 
-  const accessibleIds = new Set(normalized.map((account) => account.id));
-  const missing = targetAdAccountIds.filter((id) => !accessibleIds.has(id));
-
-  console.log(`Accessible ad accounts: ${normalized.length}`);
+  console.log(`Verified configured ad accounts: ${verifiedAccounts.length}`);
   console.log(`Configured target ad accounts: ${targetAdAccountIds.length}`);
-
-  if (!missing.length) {
-    console.log('✅ Meta token has access to all configured ad accounts.');
-    return;
-  }
-
-  fail('TOKEN_ACCESS_DENIED');
+  console.log('✅ Meta token has access to all configured ad accounts.');
 }
 
-main().catch(() => {
-  fail('UNKNOWN');
-});
+if (require.main === module) {
+  main().catch(() => {
+    fail('UNKNOWN');
+  });
+}
+
+module.exports = {
+  DEFAULT_META_GRAPH_VERSION,
+  DEFAULT_VERIFY_CONCURRENCY,
+  MetaApiError,
+  createMetaUrl,
+  getMetaGraphVersion,
+  isPermissionError,
+  main,
+  mapWithConcurrency,
+  normalizeAdAccountId,
+  parseTargetAdAccountIds,
+  verifyConfiguredAdAccounts,
+};

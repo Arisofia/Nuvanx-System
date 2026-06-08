@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Unified workspace commands for Nuvanx System",
   "scripts": {
-    "test": "node scripts/lib/phone-normalization.test.js && node scripts/populate-doctoralia-appointments.test.js && vitest run supabase/functions --passWithNoTests",
+    "test": "node scripts/lib/phone-normalization.test.js && node scripts/populate-doctoralia-appointments.test.js && node scripts/verify-meta-access.test.js && vitest run supabase/functions --passWithNoTests",
     "build": "npm --prefix frontend ci --legacy-peer-deps && npm --prefix frontend run build",
     "dev": "npm --prefix frontend run dev",
     "lint": "npm --prefix frontend run lint",
