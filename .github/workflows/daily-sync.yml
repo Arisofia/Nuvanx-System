@@ -24,6 +24,8 @@ jobs:
   daily-sync:
     name: Run Daily Sync Orchestrator
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 30
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

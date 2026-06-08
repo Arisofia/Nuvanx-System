@@ -25,6 +25,8 @@ function maskSensitive(text) {
   if (!text) return text;
   const str = String(text);
   return str
+    // Mask access tokens: EAAB...
+    .replace(/\b(EAA[a-zA-Z0-9]+)\b/g, (match) => match.slice(0, 8) + '***')
     // Mask passwords in connection strings: postgres://user:password@host
     .replace(/(postgres(?:ql)?:\/\/[^:]+:)([^@\s]+)(@)/gi, '$1****$3')
     // Mask emails: keep first 3 chars, then ***, then @domain
@@ -33,7 +35,7 @@ function maskSensitive(text) {
       return maskedP1 + '@' + p2;
     })
     // Mask potential token/secret values in error messages (long alphanumeric strings)
-    .replace(/[a-zA-Z0-9_-]{32,}/g, (match) => {
+    .replace(/\b[a-zA-Z0-9_-]{32,}\b/g, (match) => {
       return match.slice(0, 4) + '****' + match.slice(-4);
     });
 }
@@ -202,7 +204,7 @@ function formatAccountRow(row) {
 }
 
 function printSummaryLine(label, value) {
-  console.log(`${label}: ${value}`);
+  console.log(maskSensitive(`${label}: ${value}`));
 }
 
 async function main() {
@@ -241,12 +243,12 @@ async function main() {
       if (targetIds.length) {
         result.configured_target_account_ids = targetIds;
       }
-      console.log(JSON.stringify(result, null, 2));
+      console.log(maskSensitive(JSON.stringify(result, null, 2)));
       return;
     }
 
     normalizedAccounts.forEach((acct) => {
-      console.log(`${acct.id} | ${acct.name} | status=${acct.status} | currency=${acct.currency} | timezone=${acct.timezone}`);
+      console.log(maskSensitive(`${acct.id} | ${acct.name} | status=${acct.status} | currency=${acct.currency} | timezone=${acct.timezone}`));
     });
   }
 
@@ -254,12 +256,12 @@ async function main() {
     console.log('\nConfigured target ad accounts:');
     targetIds.forEach((id) => {
       const present = accessibleIds.has(id) ? 'accessible' : 'missing';
-      console.log(`- ${id} (${present})`);
+      console.log(maskSensitive(`- ${id} (${present})`));
     });
 
     const missingIds = targetIds.filter((id) => !accessibleIds.has(id));
     if (missingIds.length) {
-      fail(`Configured target account(s) are not accessible: ${missingIds.join(', ')}`);
+      fail(maskSensitive(`Configured target account(s) are not accessible: ${missingIds.join(', ')}`));
     }
 
     if (opts.details) {
@@ -267,11 +269,11 @@ async function main() {
       for (const accountId of targetIds) {
         try {
           const details = await fetchAccountDetails(accessToken, accountId);
-          console.log(`\n${redactAccountId(accountId)} details:`);
-          console.log(`  name: ${details.name || '<unknown>'}`);
-          console.log(`  status: ${details.account_status}`);
-          console.log(`  currency: ${details.currency || '<unknown>'}`);
-          console.log(`  amount_spent: ${details.amount_spent ?? '<unknown>'}`);
+          console.log(maskSensitive(`\n${redactAccountId(accountId)} details:`));
+          console.log(maskSensitive(`  name: ${details.name || '<unknown>'}`));
+          console.log(maskSensitive(`  status: ${details.account_status}`));
+          console.log(maskSensitive(`  currency: ${details.currency || '<unknown>'}`));
+          console.log(maskSensitive(`  amount_spent: ${details.amount_spent ?? '<unknown>'}`));
         } catch (err) {
           console.error(`  Failed to fetch details for ${redactAccountId(accountId)}: ${maskSensitive(err.message)}`);
         }
@@ -299,16 +301,16 @@ async function main() {
           );
 
           const accountLabel = redactAccountId(accountId);
-          console.log(`\n${accountLabel} summary:`);
-          console.log(`  rows: ${rows.length}`);
-          console.log(`  spend: ${totals.spend}`);
-          console.log(`  impressions: ${totals.impressions}`);
-          console.log(`  clicks: ${totals.clicks}`);
-          console.log(`  conversions: ${totals.conversions}`);
-          console.log(`  messaging: ${totals.messaging}`);
-          console.log(`  link clicks: ${totals.link_clicks}`);
+          console.log(maskSensitive(`\n${accountLabel} summary:`));
+          console.log(maskSensitive(`  rows: ${rows.length}`));
+          console.log(maskSensitive(`  spend: ${totals.spend}`));
+          console.log(maskSensitive(`  impressions: ${totals.impressions}`));
+          console.log(maskSensitive(`  clicks: ${totals.clicks}`));
+          console.log(maskSensitive(`  conversions: ${totals.conversions}`));
+          console.log(maskSensitive(`  messaging: ${totals.messaging}`));
+          console.log(maskSensitive(`  link clicks: ${totals.link_clicks}`));
         } catch (err) {
-          console.error(`  Failed to fetch insights for ${redactAccountId(accountId)}: ${err.message}`);
+          console.error(`  Failed to fetch insights for ${redactAccountId(accountId)}: ${maskSensitive(err.message)}`);
         }
       }
     }
