@@ -15,7 +15,7 @@ on:
         default: '2'
 
 env:
-  META_GRAPH_VERSION: ${{ vars.META_GRAPH_VERSION || 'v22.0' }}
+  META_GRAPH_VERSION: ${{ vars.META_GRAPH_VERSION }}
   FALLBACK_META_AD_ACCOUNT_ID: ${{ secrets.FALLBACK_META_AD_ACCOUNT_ID }}
   SHEETS_WEBHOOK_URL_DOCTORALIA: ${{ secrets.SHEETS_WEBHOOK_URL_DOCTORALIA }}
   SHEETS_WEBHOOK_SECRET_DOCTORALIA: ${{ secrets.SHEETS_WEBHOOK_SECRET_DOCTORALIA }}
@@ -75,7 +75,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          DAYS="${{ github.event.inputs.days || '2' }}"
+          DAYS="${{ github.event.inputs.days }}"
+          DAYS="${DAYS:-2}"
           if ! [[ "$DAYS" =~ ^[0-9]+$ ]] || [ "$DAYS" -lt 1 ] || [ "$DAYS" -gt 90 ]; then
             echo "::error::days must be an integer between 1 and 90. Received: $DAYS"
             exit 1

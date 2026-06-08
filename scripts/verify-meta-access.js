@@ -5,6 +5,7 @@ const crypto = require('crypto');
 
 const DEFAULT_META_GRAPH_VERSION = 'v22.0';
 const MIN_NODE_MAJOR = 18;
+const DEFAULT_VERIFY_CONCURRENCY = 4;
 
 const FAILURE_MESSAGES = {
   INVALID_NODE_VERSION: `Node.js ${MIN_NODE_MAJOR}+ is required.`,
@@ -14,6 +15,17 @@ const FAILURE_MESSAGES = {
   TOKEN_ACCESS_DENIED: 'Token cannot access one or more configured ad accounts.',
   UNKNOWN: 'Unexpected Meta access verification failure.',
 };
+
+class MetaApiError extends Error {
+  constructor(message, options = {}) {
+    super(message);
+    this.name = 'MetaApiError';
+    this.status = options.status;
+    this.code = options.code;
+    this.body = options.body;
+    this.cause = options.cause;
+  }
+}
 
 function getMetaGraphVersion() {
   return String(process.env.META_GRAPH_VERSION || DEFAULT_META_GRAPH_VERSION).trim() || DEFAULT_META_GRAPH_VERSION;
@@ -84,18 +96,36 @@ function createMetaUrl(path, accessToken) {
   return url;
 }
 
+function getMetaErrorCode(body) {
+  return body?.error?.code ?? body?.error?.error_subcode;
+}
+
+function isPermissionError(error) {
+  const status = error?.response?.status ?? error?.status;
+  const code = String(error?.code ?? getMetaErrorCode(error?.body) ?? '');
+
+  return status === 401 || status === 403 || code === '190' || code === 'TOKEN_ACCESS_DENIED';
+}
+
 async function fetchJson(url) {
   let res;
   try {
     res = await fetch(url);
-  } catch {
-    throw new Error(FAILURE_MESSAGES.META_API_REQUEST_FAILED);
+  } catch (error) {
+    throw new MetaApiError(FAILURE_MESSAGES.META_API_REQUEST_FAILED, {
+      code: 'NETWORK_ERROR',
+      cause: error,
+    });
   }
 
   const body = await res.json().catch(() => ({}));
 
   if (!res.ok || body.error) {
-    throw new Error(FAILURE_MESSAGES.META_API_REQUEST_FAILED);
+    throw new MetaApiError(FAILURE_MESSAGES.META_API_REQUEST_FAILED, {
+      status: res.status,
+      code: getMetaErrorCode(body),
+      body,
+    });
   }
 
   return body;
@@ -108,20 +138,38 @@ async function fetchAdAccount(accessToken, accountId) {
   return fetchJson(url);
 }
 
-async function verifyConfiguredAdAccounts(accessToken, accountIds) {
-  const results = [];
+function getVerifyConcurrency() {
+  const parsed = Number.parseInt(String(process.env.META_VERIFY_CONCURRENCY || ''), 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_VERIFY_CONCURRENCY;
+}
 
-  for (const accountId of accountIds) {
+async function mapWithConcurrency(items, concurrency, mapper) {
+  const limit = Math.max(1, Math.min(concurrency, items.length || 1));
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(items[index], index);
+    }
+  }
+
+  await Promise.all(Array.from({ length: limit }, worker));
+  return results;
+}
+
+async function verifyConfiguredAdAccounts(accessToken, accountIds) {
+  return mapWithConcurrency(accountIds, getVerifyConcurrency(), async (accountId) => {
     const account = await fetchAdAccount(accessToken, accountId);
-    results.push({
+    return {
       id: normalizeAdAccountId(account.id || accountId),
       name: String(account.name || '').trim(),
       status: account.account_status,
       currency: String(account.currency || '').trim(),
-    });
-  }
-
-  return results;
+    };
+  });
 }
 
 async function main() {
@@ -144,8 +192,12 @@ async function main() {
   let verifiedAccounts;
   try {
     verifiedAccounts = await verifyConfiguredAdAccounts(accessToken, targetAdAccountIds);
-  } catch {
-    fail('TOKEN_ACCESS_DENIED');
+  } catch (error) {
+    if (isPermissionError(error)) {
+      fail('TOKEN_ACCESS_DENIED');
+    }
+
+    fail('META_API_REQUEST_FAILED');
   }
 
   console.log(`Verified configured ad accounts: ${verifiedAccounts.length}`);
@@ -161,9 +213,13 @@ if (require.main === module) {
 
 module.exports = {
   DEFAULT_META_GRAPH_VERSION,
+  DEFAULT_VERIFY_CONCURRENCY,
+  MetaApiError,
   createMetaUrl,
   getMetaGraphVersion,
+  isPermissionError,
   main,
+  mapWithConcurrency,
   normalizeAdAccountId,
   parseTargetAdAccountIds,
   verifyConfiguredAdAccounts,
