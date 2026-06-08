@@ -4,11 +4,14 @@
 -- - vw_campaign_performance_real.source
 -- - vw_doctor_performance_real.clinic_id
 --
--- This migration drops and recreates the views because PostgreSQL cannot change
--- existing view column types/order using CREATE OR REPLACE VIEW.
+-- This migration drops and recreates the dependent Figma KPI view first,
+-- then recreates the dashboard views. PostgreSQL cannot change existing
+-- view column types/order using CREATE OR REPLACE VIEW when dependent
+-- objects exist.
 -- It also avoids referencing non-existent columns such as
 -- vw_doctoralia_lead_traceability_unified.status in production.
 
+drop view if exists public.v_figma_campaign_kpis;
 drop view if exists public.vw_campaign_performance_real;
 drop view if exists public.vw_doctor_performance_real;
 
@@ -109,3 +112,47 @@ set (security_invoker = true);
 
 grant select on public.vw_doctor_performance_real to service_role;
 grant select on public.vw_doctor_performance_real to authenticated;
+
+create view public.v_figma_campaign_kpis as
+select
+  campaign_name,
+  min(campaign_id::text) as campaign_id,
+  sum(total_leads) as total_leads,
+  sum(booked) as booked,
+  sum(attended) as attended,
+  sum(no_shows) as no_shows,
+  sum(closed) as closed_won,
+  coalesce(sum(verified_revenue_crm), 0::numeric) as verified_revenue,
+  round(
+    case
+      when sum(total_leads) > 0 then sum(booked)::numeric / sum(total_leads)::numeric * 100::numeric
+      else 0::numeric
+    end,
+    2
+  ) as booking_rate_pct,
+  round(
+    case
+      when sum(total_leads) > 0 then sum(closed)::numeric / sum(total_leads)::numeric * 100::numeric
+      else 0::numeric
+    end,
+    2
+  ) as close_rate_pct,
+  round(
+    case
+      when sum(booked) > 0 then sum(no_shows)::numeric / sum(booked)::numeric * 100::numeric
+      else 0::numeric
+    end,
+    2
+  ) as no_show_rate_pct,
+  min(first_lead_at) as first_lead_at,
+  max(last_lead_at) as last_lead_at
+from public.vw_campaign_performance_real
+where campaign_name is not null
+group by campaign_name
+order by sum(total_leads) desc;
+
+alter view public.v_figma_campaign_kpis
+set (security_invoker = true);
+
+grant select on public.v_figma_campaign_kpis to service_role;
+grant select on public.v_figma_campaign_kpis to authenticated;
