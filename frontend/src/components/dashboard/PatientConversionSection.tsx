@@ -7,12 +7,12 @@ type MonthlyRow = {
   channel_group: 'social' | 'other' | string
   channel_source: string | null
   campaign_name: string | null
-  client_touchpoints_unique: number | string | null
-  real_clients_unique: number | string | null
-  new_clients_unique_by_channel: number | string | null
-  new_clients_unique_global: number | string | null
-  revenue: number | string | null
-  client_conversion_rate_pct: number | string | null
+  client_touchpoints_unique: number
+  real_clients_unique: number
+  new_clients_unique_by_channel: number
+  new_clients_unique_global: number
+  revenue: number
+  client_conversion_rate_pct: number
 }
 
 type DetailRow = {
@@ -51,15 +51,20 @@ function channelLabel(channel: string | null | undefined) {
   return channel || 'Sin canal'
 }
 
+function getGlobalFromDate(days: number) {
+  const fromDate = new Date()
+  fromDate.setHours(0, 0, 0, 0)
+  fromDate.setDate(fromDate.getDate() - Math.max(days - 1, 0))
+  return fromDate.toISOString().slice(0, 10)
+}
+
 interface PatientConversionSectionProps {
   readonly sourceFilter: string
   readonly campaignId: string
-  readonly customFrom: string
-  readonly customTo: string
+  readonly days: number
 }
 
-export function PatientConversionSection({ sourceFilter, campaignId, customFrom, customTo }: PatientConversionSectionProps) {
-  const [monthly, setMonthly] = useState<MonthlyRow[]>([])
+export function PatientConversionSection({ sourceFilter, campaignId, days }: PatientConversionSectionProps) {
   const [detail, setDetail] = useState<DetailRow[]>([])
   const [monthFilter, setMonthFilter] = useState('ALL')
   const [channelFilter, setChannelFilter] = useState('ALL')
@@ -75,37 +80,28 @@ export function PatientConversionSection({ sourceFilter, campaignId, customFrom,
       setLoading(true)
       setError(null)
 
-      let monthlyQuery = supabase
-        .from('v_new_clients_by_channel_monthly')
-        .select('*')
-        .order('month_key', { ascending: false })
-
+      const fromIso = getGlobalFromDate(days)
       let detailQuery = supabase
         .from('v_new_clients_by_channel_detail')
         .select('*')
+        .gte('event_at', fromIso)
         .order('event_at', { ascending: false })
         .limit(800)
 
       if (sourceFilter !== 'ALL') {
-        monthlyQuery = monthlyQuery.eq('channel_source', sourceFilter)
         detailQuery = detailQuery.eq('channel_source', sourceFilter)
       }
       if (campaignId !== 'ALL') {
-        monthlyQuery = monthlyQuery.eq('campaign_name', campaignId)
         detailQuery = detailQuery.eq('campaign_name', campaignId)
       }
-      if (customFrom) detailQuery = detailQuery.gte('event_at', customFrom)
-      if (customTo) detailQuery = detailQuery.lte('event_at', `${customTo}T23:59:59`)
 
-      const [monthlyResult, detailResult] = await Promise.all([monthlyQuery, detailQuery])
+      const detailResult = await detailQuery
       if (!active) return
 
-      if (monthlyResult.error || detailResult.error) {
-        setError(monthlyResult.error?.message || detailResult.error?.message || 'No se pudo cargar clientes nuevos')
-        setMonthly([])
+      if (detailResult.error) {
+        setError(detailResult.error.message || 'No se pudo cargar clientes nuevos')
         setDetail([])
       } else {
-        setMonthly((monthlyResult.data ?? []) as MonthlyRow[])
         setDetail((detailResult.data ?? []) as DetailRow[])
       }
       setLoading(false)
@@ -113,7 +109,40 @@ export function PatientConversionSection({ sourceFilter, campaignId, customFrom,
 
     load()
     return () => { active = false }
-  }, [sourceFilter, campaignId, customFrom, customTo])
+  }, [sourceFilter, campaignId, days])
+
+  const monthly = useMemo(() => {
+    const grouped = new Map<string, MonthlyRow>()
+
+    detail.forEach((row) => {
+      const key = `${row.month_key}-${row.channel_group}-${row.channel_source ?? 'unknown'}-${row.campaign_name ?? 'Sin campaña'}`
+      const current = grouped.get(key) ?? {
+        month_key: row.month_key,
+        channel_group: row.channel_group,
+        channel_source: row.channel_source,
+        campaign_name: row.campaign_name,
+        client_touchpoints_unique: 0,
+        real_clients_unique: 0,
+        new_clients_unique_by_channel: 0,
+        new_clients_unique_global: 0,
+        revenue: 0,
+        client_conversion_rate_pct: 0,
+      }
+
+      current.client_touchpoints_unique += 1
+      current.real_clients_unique += row.is_real_client ? 1 : 0
+      current.new_clients_unique_by_channel += row.is_new_client_by_channel ? 1 : 0
+      current.new_clients_unique_global += row.is_new_client_global ? 1 : 0
+      current.revenue += toNumber(row.revenue)
+      current.client_conversion_rate_pct = current.client_touchpoints_unique > 0
+        ? Number(((current.real_clients_unique / current.client_touchpoints_unique) * 100).toFixed(2))
+        : 0
+
+      grouped.set(key, current)
+    })
+
+    return Array.from(grouped.values()).sort((a, b) => b.month_key.localeCompare(a.month_key))
+  }, [detail])
 
   const months = useMemo(() => Array.from(new Set(detail.map((row) => row.month_key).filter(Boolean))).sort().reverse(), [detail])
 
@@ -152,7 +181,7 @@ export function PatientConversionSection({ sourceFilter, campaignId, customFrom,
           <div>
             <CardTitle className="font-serif text-3xl text-[#2C2825]">Clientes nuevos por canal</CardTitle>
             <p className="mt-2 text-[11px] uppercase tracking-[0.18em] text-[#8E8680] font-bold">
-              Redes sociales vs. otros canales · clientes únicos reales
+              Redes sociales vs. otros canales · últimos {days} días
             </p>
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-center">
