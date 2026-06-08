@@ -4061,6 +4061,8 @@ async function persistMetaIgAccountDailyInsights(adminClient: any, userId: strin
 
 
 
+
+
 async function persistMetaIgMediaPerformance(adminClient: any, userId: string, igId: string, accessToken: string, limit: number): Promise<number> {
   const MEDIA_METRICS = ['reach', 'likes', 'comments', 'shares', 'saved', 'total_interactions', 'views'];
   const fields = 'id,caption,media_type,media_product_type,permalink,timestamp';
