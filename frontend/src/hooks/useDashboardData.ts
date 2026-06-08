@@ -190,7 +190,7 @@ export function useDashboardData(
       const sourceParam = sourceFilter === 'ALL' ? '' : `&source=${encodeURIComponent(sourceFilter)}`
       const queryParams = `${baseParams}${campaignParam}`
       const dashboardParams = `${queryParams}${sourceParam}`
-      return { queryParams, dashboardParams, campaignsPath }
+      return { queryParams, dashboardParams }
     }
 
     const getFulfilledValue = <T>(result: PromiseSettledResult<T>): T | null =>
@@ -305,12 +305,12 @@ export function useDashboardData(
       if (!active) return
 
       if (!session?.access_token) {
-        setMetrics((prev) => ({ ...prev, loading: false }))
+        setMetrics((prev) => ({ ...prev, loading: false, error: 'No hay sesión activa. Inicia sesión para ver el dashboard.' }))
         return
       }
 
       try {
-        const { queryParams, dashboardParams, campaignsPath } = buildParams()
+        const { queryParams, dashboardParams } = buildParams()
         const cacheNamespace = session.user?.id ?? 'anonymous'
         const [metricsResult, metaTrendsResult, campaignsResult, insightsResult, funnelResult, kpisResult] = await Promise.allSettled([
           getCachedDashboardResource(`/api/dashboard/metrics${dashboardParams}`, cacheNamespace),
