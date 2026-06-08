@@ -266,7 +266,6 @@ export function useDashboardData(
         return
       }
 
-      setDataMode(kpisResponse?.data_quality?.overall_mode as string | undefined)
       setTrendData(safeTrendData)
 
       const { metrics: metricsPayload, combined: combinedPayload, funnel: funnelPayload, quality: qualityPayload } = buildDashboardState({
@@ -284,6 +283,7 @@ export function useDashboardData(
       setCombined(combinedPayload)
       setFunnel(funnelPayload)
       setQuality(qualityPayload)
+      setDataMode(qualityPayload.overallMode)
     }
 
     const fetchMetrics = async () => {
