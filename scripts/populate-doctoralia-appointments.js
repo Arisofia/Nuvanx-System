@@ -469,7 +469,8 @@ async function main() {
 if (require.main === module) {
   main().catch((error) => {
     console.error('[doctoralia-appointments] Load failed.');
-    console.error(error);
+    const safeMessage = error instanceof Error ? error.message : 'Unexpected error';
+    console.error(`[doctoralia-appointments] ${safeMessage}`);
     process.exit(1);
   });
 }
