@@ -388,10 +388,11 @@ async function countIngestedRecords() {
 }
 
 function dedupeRecordsBySourceKey(records) {
+  validateRecordsForUpsert(records);
+
   const dedupedMap = new Map();
 
   for (const record of records) {
-    if (!record.source_key) continue;
     dedupedMap.set(record.source_key, record);
   }
 
@@ -399,7 +400,6 @@ function dedupeRecordsBySourceKey(records) {
 }
 
 async function upsertRecords(records) {
-  validateRecordsForUpsert(records);
   const supabase = getSupabaseClient();
 
   const dedupedRecords = dedupeRecordsBySourceKey(records);
