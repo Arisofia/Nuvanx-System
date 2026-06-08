@@ -3974,9 +3974,6 @@ async function persistMetaIgAccountDailyInsights(adminClient: any, userId: strin
   const TIME_SERIES_METRICS = [
     'reach',
     'follower_count',
-    'accounts_engaged',
-    'total_interactions',
-    'website_clicks',
     'views',
   ];
 
@@ -3998,6 +3995,7 @@ async function persistMetaIgAccountDailyInsights(adminClient: any, userId: strin
     for (const value of metric.values || []) {
       const day = String(value.end_time || '').slice(0, 10);
       if (!day) continue;
+
       const row = byDate.get(day) || { day };
       row[metric.name] = Number(value.value || 0);
       byDate.set(day, row);
@@ -4024,12 +4022,12 @@ async function persistMetaIgAccountDailyInsights(adminClient: any, userId: strin
     ig_id: igId,
     date: r.day,
     reach: Math.round(Number(r.reach || 0)),
-    profile_views: 0,
-    accounts_engaged: Math.round(Number(r.accounts_engaged || 0)),
-    total_interactions: Math.round(Number(r.total_interactions || 0)),
-    website_clicks: Math.round(Number(r.website_clicks || 0)),
-    views: Math.round(Number(r.views ?? r.impressions ?? 0)),
     follower_count_delta: Math.round(Number(r.follower_count || 0)),
+    profile_views: 0,
+    accounts_engaged: 0,
+    total_interactions: 0,
+    website_clicks: 0,
+    views: Math.round(Number(r.views || 0)),
     followers_total: r.day === latestDate ? followersTotal : null,
     new_followers: null,
     unfollows: null,
@@ -4041,7 +4039,10 @@ async function persistMetaIgAccountDailyInsights(adminClient: any, userId: strin
     updated_at: new Date().toISOString(),
   }));
 
-  if (dbRows.length === 0) return 0;
+  if (dbRows.length === 0) {
+    console.warn(`Meta IG daily backfill returned 0 rows for ${igId} between ${sinceDate} and ${untilDate}`);
+    return 0;
+  }
 
   const { error } = await adminClient
     .from('meta_ig_account_daily')
@@ -4049,8 +4050,12 @@ async function persistMetaIgAccountDailyInsights(adminClient: any, userId: strin
 
   if (error) throw error;
 
+  console.log(`Persisted ${dbRows.length} IG daily rows for ${igId}`);
+
   return dbRows.length;
 }
+
+
 
 
 
