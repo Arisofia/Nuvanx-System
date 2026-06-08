@@ -252,7 +252,7 @@ async function main() {
       };
       if (targetIds.length) {
         result.configured_target_account_count = targetIds.length;
-        result.configured_target_account_ids = targetIds.map(redactAccountId);
+        result.has_configured_target_account_ids = true;
       }
       console.log(JSON.stringify(result, null, 2));
       return;
