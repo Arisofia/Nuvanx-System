@@ -12,6 +12,8 @@ type DetailRow = {
   revenue: number | string | null
   is_real_client: boolean | null
   is_new_client_by_channel: boolean | null
+  is_new_client_global: boolean | null
+  source_record_type: string | null
 }
 
 type SummaryRow = {
@@ -19,13 +21,15 @@ type SummaryRow = {
   channel: string
   source: string
   contacts: number
-  realClients: number
+  attributablePatients: number
+  paidPatients: number
   newByChannel: number
+  contactOnly: number
   conversion: number
   revenue: number
   cac: number | null
-  lastClient: string | null
-  lastClientDate: string | null
+  lastPatient: string | null
+  lastPatientDate: string | null
 }
 
 function toNumber(value: number | string | null | undefined) {
@@ -50,8 +54,10 @@ function channelLabel(channel: string | null | undefined) {
 }
 
 function clientKey(row: DetailRow) {
+  const phone = String((row as any).phone_normalized ?? '').trim().toLowerCase()
+  const email = String((row as any).email_normalized ?? '').trim().toLowerCase()
   const name = String(row.client_name ?? '').trim().toLowerCase()
-  return name || row.record_id
+  return phone || email || name || row.record_id
 }
 
 interface PatientConversionSectionProps {
@@ -96,7 +102,7 @@ export function PatientConversionSection({ sourceFilter, campaignId, from, to, a
       if (!active) return
 
       if (result.error) {
-        setError(result.error.message || 'No se pudo cargar conversión por canal')
+        setError(result.error.message || 'No se pudo cargar la clasificación de pacientes')
         setDetail([])
       } else {
         setDetail((result.data ?? []) as DetailRow[])
@@ -114,11 +120,12 @@ export function PatientConversionSection({ sourceFilter, campaignId, from, to, a
       channel: string
       source: string
       contacts: Set<string>
-      realClients: Set<string>
+      attributablePatients: Set<string>
+      paidPatients: Set<string>
       newByChannel: Set<string>
       revenue: number
-      lastClient: string | null
-      lastClientDate: string | null
+      lastPatient: string | null
+      lastPatientDate: string | null
     }>()
 
     detail.forEach((row) => {
@@ -128,74 +135,84 @@ export function PatientConversionSection({ sourceFilter, campaignId, from, to, a
         channel: row.channel_group || 'unknown',
         source: row.channel_source || 'Sin fuente',
         contacts: new Set<string>(),
-        realClients: new Set<string>(),
+        attributablePatients: new Set<string>(),
+        paidPatients: new Set<string>(),
         newByChannel: new Set<string>(),
         revenue: 0,
-        lastClient: null,
-        lastClientDate: null,
+        lastPatient: null,
+        lastPatientDate: null,
       }
 
-      current.contacts.add(row.record_id || clientKey(row))
-      current.revenue += toNumber(row.revenue)
+      const personKey = clientKey(row)
+      const revenue = toNumber(row.revenue)
+      current.contacts.add(personKey)
+      current.revenue += revenue
 
       if (row.is_real_client) {
-        current.realClients.add(clientKey(row))
+        current.attributablePatients.add(personKey)
         const rowTime = row.event_at ? new Date(row.event_at).getTime() : 0
-        const currentTime = current.lastClientDate ? new Date(current.lastClientDate).getTime() : 0
-        if (!current.lastClientDate || rowTime >= currentTime) {
-          current.lastClient = row.client_name || 'Cliente sin nombre'
-          current.lastClientDate = row.event_at
+        const currentTime = current.lastPatientDate ? new Date(current.lastPatientDate).getTime() : 0
+        if (!current.lastPatientDate || rowTime >= currentTime) {
+          current.lastPatient = row.client_name || 'Paciente sin nombre'
+          current.lastPatientDate = row.event_at
         }
       }
 
-      if (row.is_new_client_by_channel) current.newByChannel.add(clientKey(row))
+      if (revenue > 0) current.paidPatients.add(personKey)
+      if (row.is_new_client_by_channel) current.newByChannel.add(personKey)
       grouped.set(key, current)
     })
 
     return Array.from(grouped.values()).map((row): SummaryRow => {
       const contacts = row.contacts.size
-      const realClients = row.realClients.size
+      const attributablePatients = row.attributablePatients.size
+      const paidPatients = row.paidPatients.size
       const isSocial = row.channel === 'social' || row.source.toLowerCase().includes('meta') || row.source.toLowerCase().includes('instagram') || row.source.toLowerCase().includes('facebook')
       return {
         key: row.key,
         channel: row.channel,
         source: row.source,
         contacts,
-        realClients,
+        attributablePatients,
+        paidPatients,
         newByChannel: row.newByChannel.size,
-        conversion: contacts > 0 ? Number(((realClients / contacts) * 100).toFixed(1)) : 0,
+        contactOnly: Math.max(contacts - attributablePatients, 0),
+        conversion: contacts > 0 ? Number(((attributablePatients / contacts) * 100).toFixed(1)) : 0,
         revenue: row.revenue,
-        cac: isSocial && realClients > 0 && Number(attributedSpend) > 0 ? Number((Number(attributedSpend) / realClients).toFixed(0)) : null,
-        lastClient: row.lastClient,
-        lastClientDate: row.lastClientDate,
+        cac: isSocial && attributablePatients > 0 && Number(attributedSpend) > 0 ? Number((Number(attributedSpend) / attributablePatients).toFixed(0)) : null,
+        lastPatient: row.lastPatient,
+        lastPatientDate: row.lastPatientDate,
       }
-    }).sort((a, b) => b.realClients - a.realClients || b.revenue - a.revenue)
+    }).sort((a, b) => b.attributablePatients - a.attributablePatients || b.paidPatients - a.paidPatients || b.revenue - a.revenue)
   }, [detail, attributedSpend])
 
   const visibleRows = channelFilter === 'ALL' ? rows : rows.filter((row) => row.channel === channelFilter)
   const channels = Array.from(new Set(rows.map((row) => row.channel))).filter(Boolean)
   const totals = visibleRows.reduce((acc, row) => ({
     contacts: acc.contacts + row.contacts,
-    realClients: acc.realClients + row.realClients,
+    attributablePatients: acc.attributablePatients + row.attributablePatients,
+    paidPatients: acc.paidPatients + row.paidPatients,
     newByChannel: acc.newByChannel + row.newByChannel,
+    contactOnly: acc.contactOnly + row.contactOnly,
     revenue: acc.revenue + row.revenue,
-  }), { contacts: 0, realClients: 0, newByChannel: 0, revenue: 0 })
-  const totalConversion = totals.contacts > 0 ? Number(((totals.realClients / totals.contacts) * 100).toFixed(1)) : 0
+  }), { contacts: 0, attributablePatients: 0, paidPatients: 0, newByChannel: 0, contactOnly: 0, revenue: 0 })
+  const totalConversion = totals.contacts > 0 ? Number(((totals.attributablePatients / totals.contacts) * 100).toFixed(1)) : 0
 
-  if (loading) return <Card className="border-none rounded-[2.5rem] bg-white/70 p-8 text-[#8E8680]">Cargando conversión por canal...</Card>
+  if (loading) return <Card className="border-none rounded-[2.5rem] bg-white/70 p-8 text-[#8E8680]">Cargando clasificación de pacientes...</Card>
 
   return (
     <Card className="border-none shadow-[0_8px_30px_rgba(0,0,0,0.02)] overflow-hidden bg-white/80 backdrop-blur-md rounded-[2.5rem]">
       <CardHeader className="border-b border-[#E5D5C5]/20 px-8 pt-8 pb-6">
         <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
           <div>
-            <CardTitle className="font-serif text-3xl text-[#2C2825]">Conversión real por canal</CardTitle>
-            <p className="mt-2 text-[11px] uppercase tracking-[0.18em] text-[#8E8680] font-bold">Contactos, clientes reales, revenue y CAC atribuido · últimos {days} días</p>
+            <CardTitle className="font-serif text-3xl text-[#2C2825]">Clasificación de pacientes por canal</CardTitle>
+            <p className="mt-2 text-[11px] uppercase tracking-[0.18em] text-[#8E8680] font-bold">Contactos, pacientes atribuibles, pacientes pagados, revenue y CAC · últimos {days} días</p>
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-center">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 text-center">
             <div className="bg-[#FAF7F2] rounded-2xl px-5 py-4"><div className="text-2xl font-serif font-bold text-[#2C2825]">{totals.contacts}</div><div className="text-[9px] uppercase tracking-widest text-[#8E8680] font-bold">contactos únicos</div></div>
-            <div className="bg-[#FAF7F2] rounded-2xl px-5 py-4"><div className="text-2xl font-serif font-bold text-[#2C2825]">{totals.realClients}</div><div className="text-[9px] uppercase tracking-widest text-[#8E8680] font-bold">clientes reales</div></div>
-            <div className="bg-[#FAF7F2] rounded-2xl px-5 py-4"><div className="text-2xl font-serif font-bold text-[#2C2825]">{totalConversion.toLocaleString('es-ES')}%</div><div className="text-[9px] uppercase tracking-widest text-[#8E8680] font-bold">conversión</div></div>
+            <div className="bg-[#FAF7F2] rounded-2xl px-5 py-4"><div className="text-2xl font-serif font-bold text-[#2C2825]">{totals.attributablePatients}</div><div className="text-[9px] uppercase tracking-widest text-[#8E8680] font-bold">pacientes atribuibles</div></div>
+            <div className="bg-[#FAF7F2] rounded-2xl px-5 py-4"><div className="text-2xl font-serif font-bold text-[#2C2825]">{totals.paidPatients}</div><div className="text-[9px] uppercase tracking-widest text-[#8E8680] font-bold">pacientes pagados</div></div>
+            <div className="bg-[#FAF7F2] rounded-2xl px-5 py-4"><div className="text-2xl font-serif font-bold text-[#2C2825]">{totalConversion.toLocaleString('es-ES')}%</div><div className="text-[9px] uppercase tracking-widest text-[#8E8680] font-bold">conversión a paciente</div></div>
             <div className="bg-[#FAF7F2] rounded-2xl px-5 py-4"><div className="text-2xl font-serif font-bold text-[#2C2825]">{formatMoney(totals.revenue)}</div><div className="text-[9px] uppercase tracking-widest text-[#8E8680] font-bold">revenue</div></div>
           </div>
         </div>
@@ -208,10 +225,10 @@ export function PatientConversionSection({ sourceFilter, campaignId, from, to, a
         </select>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead><tr className="text-[10px] uppercase tracking-[0.18em] text-[#8E8680] border-b border-[#E5D5C5]/50"><th className="py-3 pr-4">Canal</th><th className="py-3 pr-4">Contactos únicos</th><th className="py-3 pr-4">Clientes reales</th><th className="py-3 pr-4">Nuevos por canal</th><th className="py-3 pr-4">Conversión</th><th className="py-3 pr-4">Revenue</th><th className="py-3 pr-4">CAC atribuido</th><th className="py-3 pr-4">Último cliente real</th></tr></thead>
+            <thead><tr className="text-[10px] uppercase tracking-[0.18em] text-[#8E8680] border-b border-[#E5D5C5]/50"><th className="py-3 pr-4">Canal</th><th className="py-3 pr-4">Contactos únicos</th><th className="py-3 pr-4">Pacientes atribuibles</th><th className="py-3 pr-4">Pacientes pagados</th><th className="py-3 pr-4">Nuevos por canal</th><th className="py-3 pr-4">Solo contacto</th><th className="py-3 pr-4">Conversión a paciente</th><th className="py-3 pr-4">Revenue</th><th className="py-3 pr-4">CAC atribuido</th><th className="py-3 pr-4">Último paciente</th></tr></thead>
             <tbody>
-              {visibleRows.map((row) => (<tr key={row.key} className="border-b border-[#E5D5C5]/20"><td className="py-4 pr-4"><div className="font-bold text-[#2C2825]">{channelLabel(row.channel)}</div><div className="text-xs text-[#8E8680]">{row.source}</div></td><td className="py-4 pr-4">{row.contacts}</td><td className="py-4 pr-4">{row.realClients}</td><td className="py-4 pr-4">{row.newByChannel}</td><td className="py-4 pr-4">{row.conversion.toLocaleString('es-ES')}%</td><td className="py-4 pr-4">{formatMoney(row.revenue)}</td><td className="py-4 pr-4">{formatMoney(row.cac)}</td><td className="py-4 pr-4">{row.lastClient ? <><div className="font-semibold text-[#2C2825]">{row.lastClient}</div><div className="text-xs text-[#8E8680]">{formatDate(row.lastClientDate)}</div></> : '—'}</td></tr>))}
-              {visibleRows.length === 0 && <tr><td className="py-8 text-center text-[#8E8680]" colSpan={8}>Sin datos para el rango y filtros seleccionados.</td></tr>}
+              {visibleRows.map((row) => (<tr key={row.key} className="border-b border-[#E5D5C5]/20"><td className="py-4 pr-4"><div className="font-bold text-[#2C2825]">{channelLabel(row.channel)}</div><div className="text-xs text-[#8E8680]">{row.source}</div></td><td className="py-4 pr-4">{row.contacts}</td><td className="py-4 pr-4">{row.attributablePatients}</td><td className="py-4 pr-4">{row.paidPatients}</td><td className="py-4 pr-4">{row.newByChannel}</td><td className="py-4 pr-4">{row.contactOnly}</td><td className="py-4 pr-4">{row.conversion.toLocaleString('es-ES')}%</td><td className="py-4 pr-4">{formatMoney(row.revenue)}</td><td className="py-4 pr-4">{formatMoney(row.cac)}</td><td className="py-4 pr-4">{row.lastPatient ? <><div className="font-semibold text-[#2C2825]">{row.lastPatient}</div><div className="text-xs text-[#8E8680]">{formatDate(row.lastPatientDate)}</div></> : '—'}</td></tr>))}
+              {visibleRows.length === 0 && <tr><td className="py-8 text-center text-[#8E8680]" colSpan={10}>Sin datos para el rango y filtros seleccionados.</td></tr>}
             </tbody>
           </table>
         </div>
