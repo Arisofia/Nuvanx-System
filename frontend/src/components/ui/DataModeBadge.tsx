@@ -1,22 +1,23 @@
 import type { FC } from 'react';
 
-type OverallMode = 'full_real' | 'partial_demo' | 'full_demo' | 'unknown' | undefined;
+type OverallMode = 'LIVE' | 'PARTIAL_LIVE' | 'STALE' | 'full_real' | 'partial_demo' | 'full_demo' | 'unknown' | undefined;
 
 interface DataModeBadgeProps {
   overallMode: OverallMode;
 }
 
-const config: Record<NonNullable<OverallMode>, { label: string; classes: string }> = {
-  full_real:    { label: 'Datos reales',    classes: 'mode-full_real' },
+const config: Record<Exclude<NonNullable<OverallMode>, 'full_real' | 'LIVE'>, { label: string; classes: string }> = {
+  PARTIAL_LIVE: { label: 'Datos parcialmente actualizados', classes: 'mode-partial_demo' },
+  STALE: { label: 'Datos desactualizados', classes: 'mode-unknown' },
   partial_demo: { label: 'Datos parciales', classes: 'mode-partial_demo' },
-  full_demo:    { label: 'Modo demo',       classes: 'mode-full_demo' },
-  unknown:      { label: 'Calidad desconocida', classes: 'mode-unknown' },
+  full_demo: { label: 'Modo demo', classes: 'mode-full_demo' },
+  unknown: { label: 'Calidad desconocida', classes: 'mode-unknown' },
 };
 
 const DataModeBadge: FC<DataModeBadgeProps> = ({ overallMode }) => {
-  if (!overallMode || overallMode === 'full_real') return null;
+  if (!overallMode || overallMode === 'full_real' || overallMode === 'LIVE') return null;
 
-  const modeConfig = config[overallMode] || config.unknown;
+  const modeConfig = config[overallMode as keyof typeof config] || config.unknown;
   const { label, classes } = modeConfig;
 
   return (
