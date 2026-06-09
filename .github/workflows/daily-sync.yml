@@ -30,6 +30,7 @@ jobs:
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      NUVANX_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
@@ -86,6 +87,7 @@ jobs:
           fi
           RESPONSE=$(curl --fail-with-body --show-error --silent --max-time 60 -X POST "${SUPABASE_URL}/functions/v1/daily-aggregates" \
             -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
             -H "Content-Type: application/json" \
             -d "{\"action\": \"fetch_meta_insights\", \"days\": $DAYS}")
           echo "Response: $RESPONSE"
@@ -107,7 +109,9 @@ jobs:
             exit 1
           fi
           RESPONSE=$(curl --fail-with-body --show-error --silent --max-time 180 -X POST "${SUPABASE_URL}/functions/v1/api/meta/backfill?days=${DAYS}" \
-            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "Authorization: Bearer ${NUVANX_SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "x-user-id: ${REPORT_USER_ID}" \
             -H "Content-Type: application/json")
           echo "Response: $RESPONSE"
           if echo "$RESPONSE" | grep -q '"success":true'; then
