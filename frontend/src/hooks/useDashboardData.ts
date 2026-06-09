@@ -158,7 +158,7 @@ export function useDashboardData(
   campaignId: string,
   sourceFilter: string,
   campaignsCount: number,
-  sourcesCount: number,
+  sourcesCount: number
 ) {
   const [funnelData, setFunnelData] = useState<Array<Record<string, unknown>>>([])
   const [metrics, setMetrics] = useState<DashboardMetrics>({
@@ -315,7 +315,7 @@ export function useDashboardData(
           getCachedDashboardResource(`/api/dashboard/meta-trends${queryParams}`, cacheNamespace),
           getCachedDashboardResource(`/api/meta/campaigns${queryParams}`, cacheNamespace),
           getCachedDashboardResource(`/api/meta/insights${queryParams}`, cacheNamespace),
-          getCachedDashboardResource('/api/dashboard/lead-flow', cacheNamespace),
+          getCachedDashboardResource(`/api/dashboard/lead-flow${dashboardParams}`, cacheNamespace),
           getCachedDashboardResource(`/api/kpis${dashboardParams}`, cacheNamespace),
         ])
 
