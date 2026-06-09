@@ -30,7 +30,7 @@ export default function Dashboard() {
     sourcesList,
     campaignsList,
     quality,
-  } = useDashboardData(0, dateRange.from, dateRange.to, campaignId, sourceFilter, 0, 0)
+  } = useDashboardData(dateRange.from, dateRange.to, campaignId, sourceFilter, 0, 0)
 
   const periodLabel = `Periodo: ${dateRange.from} al ${dateRange.to}`
 
