@@ -91,17 +91,7 @@ function asObject(value: unknown): Record<string, any> {
     : {}
 }
 
-export function buildDashboardPaths(isCustomRange: boolean, customFrom: string, customTo: string, days: number) {
-  let from = customFrom
-  let to = customTo
-
-  if (!isCustomRange) {
-    const now = new Date()
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
-    from = firstDay.toISOString().slice(0, 10)
-    to = now.toISOString().slice(0, 10)
-  }
-
+export function buildDashboardPaths(from: string, to: string) {
   const baseParams = `?from=${from}&to=${to}`
   const campaignsPath = `?from=${from}&to=${to}`
   return {

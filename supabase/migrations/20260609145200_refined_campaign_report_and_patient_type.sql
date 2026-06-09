@@ -130,4 +130,52 @@ SELECT
     END as patient_type
 FROM patient_activity;
 
+-- 4. Backfill lead_events from meta_attribution (Point 158)
+INSERT INTO public.lead_events (
+    meta_lead_id,
+    source_channel,
+    channel_label,
+    source_platform,
+    event_type,
+    attribution_locked,
+    full_name,
+    email,
+    phone,
+    normalized_email,
+    normalized_phone,
+    campaign_id,
+    campaign_name,
+    adset_id,
+    adset_name,
+    ad_id,
+    ad_name,
+    event_created_at,
+    captured_at,
+    resolution_status
+)
+SELECT 
+    COALESCE(l.external_id, 'historical_' || ma.lead_id::text),
+    'RRSS',
+    'RRSS',
+    'meta',
+    'meta_lead_form',
+    true,
+    l.name,
+    l.email,
+    l.phone,
+    l.normalized_email,
+    l.normalized_phone,
+    ma.campaign_id,
+    ma.campaign_name,
+    ma.adset_id,
+    ma.adset_name,
+    ma.ad_id,
+    ma.ad_name,
+    COALESCE(l.created_at, ma.captured_at),
+    ma.captured_at,
+    'historical_unresolved'
+FROM public.meta_attribution ma
+JOIN public.leads l ON ma.lead_id = l.id
+ON CONFLICT (meta_lead_id) DO NOTHING;
+
 COMMIT;

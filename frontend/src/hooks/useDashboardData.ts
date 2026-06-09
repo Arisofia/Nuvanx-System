@@ -153,9 +153,8 @@ export function clearDashboardDataCache() {
 }
 
 export function useDashboardData(
-  days: number,
-  customFrom: string,
-  customTo: string,
+  from: string,
+  to: string,
   campaignId: string,
   sourceFilter: string,
   campaignsCount: number,
@@ -184,8 +183,7 @@ export function useDashboardData(
   useEffect(() => {
     let active = true
     const buildParams = () => {
-      const isCustomRange = Boolean(customFrom && customTo)
-      const { baseParams } = buildDashboardPaths(isCustomRange, customFrom, customTo, days)
+      const { baseParams } = buildDashboardPaths(from, to)
       const campaignParam = campaignId === 'ALL' ? '' : `&campaign_id=${encodeURIComponent(campaignId)}`
       const sourceParam = sourceFilter === 'ALL' ? '' : `&source=${encodeURIComponent(sourceFilter)}`
       const queryParams = `${baseParams}${campaignParam}`
@@ -336,7 +334,7 @@ export function useDashboardData(
 
     fetchMetrics()
     return () => { active = false }
-  }, [days, customFrom, customTo, campaignId, sourceFilter, campaignsCount, sourcesCount])
+  }, [from, to, campaignId, sourceFilter, campaignsCount, sourcesCount])
 
   return {
     metrics,

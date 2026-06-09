@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabaseClient'
 
 type MonthlyRow = {
   month_key: string
-  channel_group: 'social' | 'other' | string
+  channel_group: string
   channel_source: string | null
   campaign_name: string | null
   client_touchpoints_unique: number
@@ -19,7 +19,7 @@ type DetailRow = {
   record_id: string
   event_at: string | null
   month_key: string
-  channel_group: 'social' | 'other' | string
+  channel_group: string
   channel_source: string | null
   campaign_name: string | null
   client_name: string | null
@@ -51,20 +51,14 @@ function channelLabel(channel: string | null | undefined) {
   return channel || 'Sin canal'
 }
 
-function getGlobalFromDate(days: number) {
-  const fromDate = new Date()
-  fromDate.setHours(0, 0, 0, 0)
-  fromDate.setDate(fromDate.getDate() - Math.max(days - 1, 0))
-  return fromDate.toISOString().slice(0, 10)
-}
-
 interface PatientConversionSectionProps {
   readonly sourceFilter: string
   readonly campaignId: string
-  readonly days: number
+  readonly from: string
+  readonly to: string
 }
 
-export function PatientConversionSection({ sourceFilter, campaignId, days }: PatientConversionSectionProps) {
+export function PatientConversionSection({ sourceFilter, campaignId, from, to }: PatientConversionSectionProps) {
   const [detail, setDetail] = useState<DetailRow[]>([])
   const [monthFilter, setMonthFilter] = useState('ALL')
   const [channelFilter, setChannelFilter] = useState('ALL')
@@ -76,15 +70,15 @@ export function PatientConversionSection({ sourceFilter, campaignId, days }: Pat
   useEffect(() => {
     let active = true
 
-    async function load() {
+    const load = async () => {
       setLoading(true)
       setError(null)
 
-      const fromIso = getGlobalFromDate(days)
       let detailQuery = supabase
         .from('v_new_clients_by_channel_detail')
         .select('*')
-        .gte('event_at', fromIso)
+        .gte('event_at', from)
+        .lte('event_at', to)
         .order('event_at', { ascending: false })
         .limit(800)
 
@@ -109,7 +103,7 @@ export function PatientConversionSection({ sourceFilter, campaignId, days }: Pat
 
     load()
     return () => { active = false }
-  }, [sourceFilter, campaignId, days])
+  }, [sourceFilter, campaignId, from, to])
 
   const monthly = useMemo(() => {
     const grouped = new Map<string, MonthlyRow>()

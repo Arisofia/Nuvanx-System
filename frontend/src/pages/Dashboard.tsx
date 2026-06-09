@@ -34,19 +34,6 @@ export default function Dashboard() {
 
   const periodLabel = `Periodo: ${dateRange.from} al ${dateRange.to}`
 
-  const setDays = (d: 7 | 14 | 30 | 90) => {
-    const now = new Date()
-    const fromDate = new Date(Date.now() - d * 86_400_000)
-    setDateRange({
-      from: fromDate.toISOString().slice(0, 10),
-      to: now.toISOString().slice(0, 10)
-    })
-  }
-
-  // Calculate days for UI if needed
-  const diffTime = Math.abs(new Date(dateRange.to).getTime() - new Date(dateRange.from).getTime());
-  const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 30;
-
   if (metrics.loading) {
     return (
       <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-12 pb-24 animate-pulse">
@@ -80,8 +67,8 @@ export default function Dashboard() {
         campaignId={campaignId}
         setCampaignId={setCampaignId}
         campaignsList={campaignsList}
-        days={days}
-        setDays={setDays}
+        dateRange={dateRange}
+        setDateRange={setDateRange}
         metaAccountIds={quality?.metaAccountIds || []}
       />
 
@@ -92,7 +79,7 @@ export default function Dashboard() {
           <MetricsGrid metrics={metrics} quality={quality} />
           <FunnelAndSpendSection funnelData={funnelData} metrics={metrics} combined={combined} periodLabel={periodLabel} quality={quality} />
           <RealROISection funnel={funnel} combined={combined} />
-          <PatientConversionSection sourceFilter={sourceFilter} campaignId={campaignId} days={days} />
+          <PatientConversionSection sourceFilter={sourceFilter} campaignId={campaignId} from={dateRange.from} to={dateRange.to} />
           <TrendSection trendData={trendData} formatDate={(dateString) => {
             const [year, month, day] = dateString.split('-')
             return year && month && day ? `${day}/${month}/${year}` : dateString
