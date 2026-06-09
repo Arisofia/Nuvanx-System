@@ -90,7 +90,7 @@ function doPost(e) {
       record.telefono_original || "",         // O: Teléfono
       record.procedimiento_nombre || "",      // P: Tratamiento
       record.tipo_cliente || "",              // Q: Tipo de Cliente
-      "",                                     // R: Email (HubSpot Purged)
+      "",                                     // R: Email (HubSpot Purged) 
       record.ejecutivo_asignado || "",        // S: EJECUTIVO ASIGNADO 
       record.ingreso_lead || "",              // T: INGRESO DEL LEAD
       record.campana || ""                    // U: CAMPAÑA

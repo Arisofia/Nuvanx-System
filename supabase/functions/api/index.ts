@@ -3165,19 +3165,11 @@ async function handleCampaignsFilter(ctx: AuthenticatedRouteContext): Promise<Re
   const { adminClient, resource, sub, url, sendJson } = ctx;
 
   if (resource === 'dashboard' && sub === 'campaigns-filter') {
-    // Use UTC-based calendar arithmetic for default dates to avoid DST / timezone off-by-one issues.
-    const nowUtc = new Date();
-    const defaultToDate = nowUtc.toISOString().slice(0, 10);
-    const fromUtc = new Date(nowUtc);
-    fromUtc.setUTCDate(fromUtc.getUTCDate() - 30);
-    const defaultFromDate = fromUtc.toISOString().slice(0, 10);
+    const { since, until } = getKpiDateRange(url);
 
-    const fromDate = url.searchParams.get('from') || url.searchParams.get('since') || defaultFromDate;
-    const toDate = url.searchParams.get('to') || url.searchParams.get('until') || defaultToDate;
-
-    const { data, error } = await adminClient.rpc('get_campaigns_filter', {
-      p_from_date: fromDate,
-      p_to_date: toDate
+    const { data, error } = await adminClient.rpc('get_campaign_report', { // Changed to get_campaign_report as per prompt
+      p_from_date: since,
+      p_to_date: until
     });
 
     if (error) {
@@ -3352,17 +3344,7 @@ async function handleDashboardMetaTrends(ctx: AuthenticatedRouteContext): Promis
 }
 
 function getMetaInsightsTimePeriods(url: URL) {
-  const fromParam = url.searchParams.get('from');
-  const toParam = url.searchParams.get('to');
-
-  let since = fromParam;
-  let until = toParam || new Date().toISOString().slice(0, 10);
-
-  if (!since) {
-    const now = new Date();
-    since = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-  }
-
+  const { since, until } = getKpiDateRange(url);
   const days = Math.max(1, Math.round((new Date(until).getTime() - new Date(since).getTime()) / 86_400_000) + 1);
   const prevSince = new Date(new Date(since).getTime() - days * 86_400_000).toISOString().slice(0, 10);
   return { since, until, days, prevSince };
@@ -4256,7 +4238,7 @@ async function handleMetaOrganicGet(ctx: AuthenticatedRouteContext): Promise<Res
   return sendJson({
     success: true,
     pageId,
-    period: { since: sinceStr, until, days },
+    period: { since: sinceStr, until },
     summary,
     daily,
   });
@@ -4338,18 +4320,16 @@ async function handleMetaIgGet(ctx: AuthenticatedRouteContext): Promise<Response
   return sendJson({
     success: true,
     igId,
-    period: { since: sinceStr, until, days },
+    period: { since: sinceStr, until },
     summary,
     daily,
   });
 }
 
 function parseMetaBackfillDates(url: URL) {
-  const days = Math.min(Math.max(Number.parseInt(url.searchParams.get('days') ?? '7', 10) || 7, 1), 500);
-  const fromParam = url.searchParams.get('from');
-  const sinceDate = fromParam || new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
-  const untilDate = new Date().toISOString().slice(0, 10);
-  const sinceTs = Math.floor(new Date(sinceDate).getTime() / 1000);
+  const { since: sinceDate, until: untilDate } = getKpiDateRange(url);
+  const sinceTs = Math.floor(new Date(sinceDate).getTime() / 1000); // Meta API expects Unix timestamp
+
   return { sinceDate, untilDate, sinceTs };
 }
 
@@ -5066,10 +5046,8 @@ async function handleMetaAdsGet(ctx: AuthenticatedRouteContext): Promise<Respons
     return sendJson(payload, validation.statusCode);
   }
 
-  const adsFrom = url.searchParams.get('from') ?? '';
-  const adsTo = url.searchParams.get('to') ?? '';
-  const adsDays = Number.parseInt(url.searchParams.get('days') ?? '30', 10) || 30;
-  return getMetaAdsLiveResult(creds, sendJson, adminClient, userId, adsFrom, adsTo, adsDays);
+  const { since: adsFrom, until: adsTo } = getKpiDateRange(url);
+  return getMetaAdsLiveResult(creds, sendJson, adminClient, userId, adsFrom, adsTo);
 }
 
 async function getMetaAdsLiveResult(
@@ -5079,12 +5057,8 @@ async function getMetaAdsLiveResult(
   userId: string,
   adsFrom: string,
   adsTo: string,
-  adsDays: number,
 ): Promise<Response> {
-  const datePreset = adsFrom && adsTo ? null : 'lifetime';
-  const insightsDateParam = adsFrom && adsTo
-    ? `time_range(${JSON.stringify({ since: adsFrom, until: adsTo })})`
-    : `date_preset(${datePreset})`;
+  const insightsDateParam = `time_range(${JSON.stringify({ since: adsFrom, until: adsTo })})`;
 
   try {
     const accountResults = await fetchAdsFromAccounts(creds.adAccountIds, insightsDateParam, creds.accessToken);
@@ -5102,12 +5076,12 @@ async function getMetaAdsLiveResult(
       .map((ad: any) => ({ ...ad, accountId: acct.accountId })));
 
     if (ads.length === 0) {
-      return fetchMetaAdsFallback({ creds, sendJson, e: new Error('Meta API returned 0 ads'), adminClient, userId, adsFrom, adsTo, adsDays });
+      return fetchMetaAdsFallback({ creds, sendJson, e: new Error('Meta API returned 0 ads'), adminClient, userId, adsFrom, adsTo });
     }
 
     return sendJson({ success: true, accountId: creds.adAccountId, accountIds: creds.adAccountIds, currency, ads: ads.map(mapMetaAd) });
   } catch (e: any) {
-    return fetchMetaAdsFallback({ creds, sendJson, e, adminClient, userId, adsFrom, adsTo, adsDays });
+    return fetchMetaAdsFallback({ creds, sendJson, e, adminClient, userId, adsFrom, adsTo });
   }
 }
 
@@ -5840,10 +5814,8 @@ async function handleGoogleAdsInsightsGet(ctx: AuthenticatedRouteContext): Promi
     if (g.notConnected) return sendJson({ success: false, notConnected: true, message: 'Google Ads not connected. Add your developer token in Integrations.' });
     const { customerId, devToken, serviceAccount } = g;
     if (!customerId) return sendJson({ success: false, noAccountId: true, message: 'Google Ads Customer ID not configured.' });
-    const days = Math.min(Math.max(Number.parseInt(url.searchParams.get('days') ?? '30', 10) || 30, 1), 90);
-    const since = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
-    const until = new Date().toISOString().slice(0, 10);
-    const prevSince = new Date(Date.now() - days * 2 * 86_400_000).toISOString().slice(0, 10);
+    const { since, until, days } = getKpiDateRange(url);
+    const prevSince = new Date(new Date(since).getTime() - days * 86_400_000).toISOString().slice(0, 10);
   
     const accessToken = await getGoogleAccessToken(serviceAccount);
   
@@ -5901,6 +5873,7 @@ async function handleGoogleAdsCampaignsGet(ctx: AuthenticatedRouteContext): Prom
     if (g.notConnected) return sendJson({ success: false, notConnected: true, message: 'Google Ads not connected.' });
     const { customerId, devToken, serviceAccount } = g;
     if (!customerId) return sendJson({ success: false, noAccountId: true, message: 'Google Ads Customer ID not configured.' });
+    const { since, until } = getKpiDateRange(url);
     const accessToken = await getGoogleAccessToken(serviceAccount);
     const rows = await googleAdsSearch(customerId, devToken, accessToken, `
       SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type,
@@ -5908,7 +5881,7 @@ async function handleGoogleAdsCampaignsGet(ctx: AuthenticatedRouteContext): Prom
              metrics.impressions, metrics.clicks, metrics.cost_micros,
              metrics.conversions, metrics.ctr, metrics.average_cpc, metrics.cost_per_conversion
       FROM campaign
-      WHERE segments.date DURING LAST_30_DAYS
+      WHERE segments.date BETWEEN '${since}' AND '${until}'
         AND campaign.status != 'REMOVED'
       ORDER BY metrics.cost_micros DESC
       LIMIT 50
@@ -7423,10 +7396,9 @@ async function handleReportsDoctoraliaFinancialsGet(ctx: AuthenticatedRouteConte
     const clinicId = usr?.clinic_id;
     if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
 
-    const fromParam = url.searchParams.get('from') ?? '';
-    const toParam = url.searchParams.get('to') ?? '';
+    const { since: fromParam, until: toParam } = getKpiDateRange(url);
 
-    // Query base table (views may not be present in all envs/migrations); scope to clinic + doctoralia source
+    // Query base table; scope to clinic + doctoralia source
     let query = adminClient
       .from('financial_settlements')
       .select('amount_gross, amount_discount, amount_net, template_name, settled_at, intake_at, cancelled_at, source_system')
@@ -7516,8 +7488,7 @@ async function handleReportsCampaignPerformanceGet(ctx: AuthenticatedRouteContex
 async function handleReportsSourceComparisonGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'reports' && sub === 'source-comparison' && req.method === 'GET') {
-    const from = url.searchParams.get('from') ?? '';
-    const to   = url.searchParams.get('to')   ?? '';
+    const { since: from, until: to } = getKpiDateRange(url);
     let query = adminClient
       .from('vw_source_comparison')
       .select('*')
@@ -7612,8 +7583,7 @@ async function handleReportsLeadAuditGet(ctx: AuthenticatedRouteContext): Promis
   if (resource === 'reports' && sub === 'lead-audit' && req.method === 'GET') {
     const limit = Math.min(Math.max(Number.parseInt(url.searchParams.get('limit') ?? '1000', 10), 1), 1000);
     const matchedOnly = url.searchParams.get('matched') === 'true';
-    const from = url.searchParams.get('from') ?? '';
-    const to = url.searchParams.get('to') ?? '';
+    const { since: from, until: to } = getKpiDateRange(url);
     const campaignName = url.searchParams.get('campaign_name') ?? '';
     const phone = url.searchParams.get('phone') ?? '';
     const reconcile = url.searchParams.get('reconcile') === 'true';
@@ -7691,8 +7661,7 @@ async function handleReportsDoctorPerformanceGet(ctx: AuthenticatedRouteContext)
 async function handleReportsCampaignRoiGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'reports' && sub === 'campaign-roi' && req.method === 'GET') {
-    const from   = url.searchParams.get('from')   ?? '';
-    const to     = url.searchParams.get('to')     ?? '';
+    const { since: from, until: to } = getKpiDateRange(url);
     const source = url.searchParams.get('source') ?? '';
     const { data: rows, error } = await adminClient.rpc('get_campaign_roi', {
       p_user_id: userId,

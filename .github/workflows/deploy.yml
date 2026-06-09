@@ -27,7 +27,7 @@ jobs:
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
     steps:
-      - uses: actions/checkout@v4  # antes era @v5, corregido a versión estable
+      - uses: actions/checkout@v5
 
       - name: Validate real Supabase deployment secrets
         shell: bash
@@ -81,7 +81,7 @@ jobs:
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       FALLBACK_META_AD_ACCOUNT_ID: ${{ secrets.FALLBACK_META_AD_ACCOUNT_ID }}
     steps:
-      - uses: actions/checkout@v4  # corregido a v4
+      - uses: actions/checkout@v5
 
       - name: Validate real Edge Function deploy secrets
         shell: bash
@@ -137,5 +137,3 @@ jobs:
           skip_link: true
           command: |
             set -euo pipefail
-            export FALLBACK_META_AD_ACCOUNT_ID="$FALLBACK_META_AD_ACCOUNT_ID"
-            supabase functions deploy daily-aggregates --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
