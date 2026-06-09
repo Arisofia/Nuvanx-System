@@ -51,6 +51,12 @@ function channelLabel(channel: string | null | undefined) {
   return channel || 'Sin canal'
 }
 
+function getClientStatusLabel(row: DetailRow) {
+  if (row.is_new_client_by_channel) return 'Nuevo por canal'
+  if (row.is_real_client) return 'Cliente real'
+  return 'Solo contacto'
+}
+
 interface PatientConversionSectionProps {
   readonly sourceFilter: string
   readonly campaignId: string
@@ -66,6 +72,13 @@ export function PatientConversionSection({ sourceFilter, campaignId, from, to }:
   const [nameSearch, setNameSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  const days = useMemo(() => {
+    const d1 = new Date(from)
+    const d2 = new Date(to)
+    const diff = Math.abs(d2.getTime() - d1.getTime())
+    return Math.ceil(diff / (1000 * 60 * 60 * 24))
+  }, [from, to])
 
   useEffect(() => {
     let active = true
@@ -138,7 +151,7 @@ export function PatientConversionSection({ sourceFilter, campaignId, from, to }:
     return Array.from(grouped.values()).sort((a, b) => b.month_key.localeCompare(a.month_key))
   }, [detail])
 
-  const months = useMemo(() => Array.from(new Set(detail.map((row) => row.month_key).filter(Boolean))).sort().reverse(), [detail])
+  const months = useMemo(() => Array.from(new Set(detail.map((row) => row.month_key).filter(Boolean))).sort((a, b) => a.localeCompare(b)).reverse(), [detail])
 
   const visibleDetail = useMemo(() => {
     const search = nameSearch.trim().toLowerCase()
@@ -198,7 +211,7 @@ export function PatientConversionSection({ sourceFilter, campaignId, from, to }:
 
         <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="text-[10px] uppercase tracking-[0.18em] text-[#8E8680] border-b border-[#E5D5C5]/50"><th className="py-3 pr-4">Mes</th><th className="py-3 pr-4">Canal</th><th className="py-3 pr-4">Fuente</th><th className="py-3 pr-4">Clientes reales</th><th className="py-3 pr-4">Nuevos canal</th><th className="py-3 pr-4">Conversión</th><th className="py-3 pr-4">Revenue</th></tr></thead><tbody>{filteredMonthly.map((row) => (<tr key={`${row.month_key}-${row.channel_group}-${row.channel_source}-${row.campaign_name}`} className="border-b border-[#E5D5C5]/20"><td className="py-4 pr-4 font-bold text-[#2C2825]">{row.month_key}</td><td className="py-4 pr-4">{channelLabel(row.channel_group)}</td><td className="py-4 pr-4 text-[#8E8680]">{row.channel_source}</td><td className="py-4 pr-4">{toNumber(row.real_clients_unique)}</td><td className="py-4 pr-4">{toNumber(row.new_clients_unique_by_channel)}</td><td className="py-4 pr-4">{toNumber(row.client_conversion_rate_pct).toLocaleString('es-ES')}%</td><td className="py-4 pr-4">{formatMoney(row.revenue)}</td></tr>))}</tbody></table></div>
 
-        <div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead><tr className="text-[10px] uppercase tracking-[0.18em] text-[#8E8680] border-b border-[#E5D5C5]/50"><th className="py-3 pr-4">Nombre</th><th className="py-3 pr-4">Fecha</th><th className="py-3 pr-4">Canal</th><th className="py-3 pr-4">Fuente</th><th className="py-3 pr-4">Estado</th><th className="py-3 pr-4">Tipo</th><th className="py-3 pr-4">Revenue</th></tr></thead><tbody>{visibleDetail.map((row) => (<tr key={`${row.source_record_type}-${row.record_id}`} className="border-b border-[#E5D5C5]/20"><td className="py-3 pr-4 font-bold text-[#2C2825]">{row.client_name || 'Sin nombre'}</td><td className="py-3 pr-4">{formatDate(row.event_at)}</td><td className="py-3 pr-4">{channelLabel(row.channel_group)}</td><td className="py-3 pr-4 text-[#8E8680]">{row.channel_source || '—'}</td><td className="py-3 pr-4">{row.is_new_client_by_channel ? 'Nuevo por canal' : row.is_real_client ? 'Cliente real' : 'Solo contacto'}</td><td className="py-3 pr-4">{row.source_record_type === 'financial_settlement' ? 'Caja / Doctoralia' : 'Lead redes'}</td><td className="py-3 pr-4">{formatMoney(row.revenue)}</td></tr>))}</tbody></table></div>
+        <div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead><tr className="text-[10px] uppercase tracking-[0.18em] text-[#8E8680] border-b border-[#E5D5C5]/50"><th className="py-3 pr-4">Nombre</th><th className="py-3 pr-4">Fecha</th><th className="py-3 pr-4">Canal</th><th className="py-3 pr-4">Fuente</th><th className="py-3 pr-4">Estado</th><th className="py-3 pr-4">Tipo</th><th className="py-3 pr-4">Revenue</th></tr></thead><tbody>{visibleDetail.map((row) => (<tr key={`${row.source_record_type}-${row.record_id}`} className="border-b border-[#E5D5C5]/20"><td className="py-3 pr-4 font-bold text-[#2C2825]">{row.client_name || 'Sin nombre'}</td><td className="py-3 pr-4">{formatDate(row.event_at)}</td><td className="py-3 pr-4">{channelLabel(row.channel_group)}</td><td className="py-3 pr-4 text-[#8E8680]">{row.channel_source || '—'}</td><td className="py-3 pr-4">{getClientStatusLabel(row)}</td><td className="py-3 pr-4">{row.source_record_type === 'financial_settlement' ? 'Caja / Doctoralia' : 'Lead redes'}</td><td className="py-3 pr-4">{formatMoney(row.revenue)}</td></tr>))}</tbody></table></div>
       </CardContent>
     </Card>
   )
