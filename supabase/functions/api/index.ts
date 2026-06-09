@@ -1515,17 +1515,23 @@ async function verifySupabaseUser(adminClient: any, token: string, anonKey: stri
   return user;
 }
 
-async function handleRequest(req: Request): Promise<Response> {
-  const url = new URL(req.url);
+function parseRequestSegments(url: URL): { resource: string, sub: string, sub2: string } {
   const rawParts = url.pathname.split('/').filter(Boolean);
   const parts = [...rawParts];
   if (parts[0] === 'functions' && parts[1] === 'v1') parts.splice(0, 2);
   if (parts[0] === 'api') parts.splice(0, 1);
   
-  const resource = parts[0] ?? '';
-  const sub = parts[1] ?? '';
-  const sub2 = parts[2] ?? '';
+  return {
+    resource: parts[0] ?? '',
+    sub: parts[1] ?? '',
+    sub2: parts[2] ?? '',
+  };
+}
 
+async function handleRequest(req: Request): Promise<Response> {
+  const url = new URL(req.url);
+  const { resource, sub, sub2 } = parseRequestSegments(url);
+  
   const requestOrigin = req.headers.get('Origin');
   const corsHeaders = buildCorsHeaders(requestOrigin);
   
@@ -2889,43 +2895,14 @@ async function handleLeadsPatch(ctx: AuthenticatedRouteContext): Promise<Respons
 }
 
 function getDashboardPeriods(url: URL) {
-  const days = Number.parseInt(url.searchParams.get('days') ?? '0', 10) || 0;
-  const fromParam = url.searchParams.get('from') ?? '';
-  const toParam = url.searchParams.get('to') ?? '';
+  const { since, until, days } = getKpiDateRange(url);
+  
+  const fromDate = new Date(since);
+  const toDate = new Date(until);
+  const durationMs = toDate.getTime() - fromDate.getTime();
 
-  let since: string | null = null;
-  let until: string | null = null;
-  let prevSince: string | null = null;
-  let prevUntil: string | null = null;
-
-  if (fromParam && toParam) {
-    // Fechas personalizadas (el caso que fallaba)
-    since = fromParam;
-    until = toParam;
-
-    const fromDate = new Date(fromParam);
-    const toDate = new Date(toParam);
-    const durationMs = toDate.getTime() - fromDate.getTime();
-
-    prevSince = new Date(fromDate.getTime() - durationMs).toISOString().slice(0, 10);
-    prevUntil = new Date(fromDate.getTime() - 1).toISOString().slice(0, 10);
-  } else if (days > 0) {
-    // Botones fijos (7d, 14d, 30d, 90d)
-    const nowTs = Date.now();
-    const currentSinceTs = nowTs - days * 86_400_000;
-    since = new Date(currentSinceTs).toISOString().slice(0, 10);
-    until = new Date(nowTs).toISOString().slice(0, 10);
-
-    prevSince = new Date(currentSinceTs - days * 86_400_000).toISOString().slice(0, 10);
-    prevUntil = new Date(currentSinceTs - 1).toISOString().slice(0, 10);
-  } else {
-    // Default: últimos 30 días
-    const nowTs = Date.now();
-    since = new Date(nowTs - 30 * 86_400_000).toISOString().slice(0, 10);
-    until = new Date(nowTs).toISOString().slice(0, 10);
-    prevSince = new Date(nowTs - 60 * 86_400_000).toISOString().slice(0, 10);
-    prevUntil = new Date(nowTs - 30 * 86_400_000 - 1).toISOString().slice(0, 10);
-  }
+  const prevSince = new Date(fromDate.getTime() - durationMs - 86400000).toISOString().slice(0, 10);
+  const prevUntil = new Date(fromDate.getTime() - 1).toISOString().slice(0, 10);
 
   return { since, until, prevSince, prevUntil, days };
 }
@@ -3071,6 +3048,28 @@ function applyClinicOrUserScope<T extends { eq: (col: string, val: any) => T }>(
   return clinicId ? q.eq(clinicCol, clinicId) : q.eq(userCol, userId);
 }
 
+function calculateDashboardMetricsSummary(leads: any[], metaInsights: any[], settlements: any[]) {
+  const totalLeads = leads.length;
+  const metaLeads = leads.filter((l: any) => ['meta_leadgen', 'meta_lead_gen', 'facebook_leadgen'].includes(l.source || '')).length;
+  const { socialNewClients, otherChannelNewClients } = countAcquisitionChannels(leads);
+  const convertedLeads = leads.filter((l: any) => l.converted_patient_id != null).length;
+
+  const totalSpend = metaInsights.reduce((sum: number, r: any) => sum + Number(r.spend ?? 0), 0);
+  const verifiedRevenue = settlements.reduce((sum: number, r: any) => sum + Number(r.amount_net), 0);
+  const uniquePatients = new Set(settlements.map((s: any) => s.patient_id).filter(Boolean)).size;
+
+  return {
+    totalLeads,
+    metaLeads,
+    socialNewClients,
+    otherChannelNewClients,
+    convertedLeads,
+    totalSpend,
+    verifiedRevenue,
+    uniquePatients,
+  };
+}
+
 async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, url, sendJson } = ctx;
   if (resource === 'dashboard' && sub === 'metrics') {
@@ -3130,38 +3129,31 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
     const metaInsights = metaRes.data ?? [];
     const settlements = settlementsRes.data ?? [];
 
-    const totalLeads = leads.length;
-    const metaLeads = leads.filter((l: any) => ['meta_leadgen', 'meta_lead_gen', 'facebook_leadgen'].includes(l.source || '')).length;
-    const { socialNewClients, otherChannelNewClients } = countAcquisitionChannels(leads);
-    const convertedLeads = leads.filter((l: any) => l.converted_patient_id != null).length;
-
-    const totalSpend = metaInsights.reduce((sum: number, r: any) => sum + Number(r.spend ?? 0), 0);
-    const verifiedRevenue = settlements.reduce((sum: number, r: any) => sum + Number(r.amount_net), 0);
-    const uniquePatients = new Set(settlements.map((s: any) => s.patient_id).filter(Boolean)).size;
+    const summary = calculateDashboardMetricsSummary(leads, metaInsights, settlements);
 
     return sendJson({
       success: true,
       date_range: { since, until },
       leads: {
-        total: totalLeads,
-        meta: metaLeads,
-        social: socialNewClients,
-        other_channels: otherChannelNewClients,
-        converted: convertedLeads,
-        conversion_rate: totalLeads > 0 ? Number(((convertedLeads / totalLeads) * 100).toFixed(2)) : 0
+        total: summary.totalLeads,
+        meta: summary.metaLeads,
+        social: summary.socialNewClients,
+        other_channels: summary.otherChannelNewClients,
+        converted: summary.convertedLeads,
+        conversion_rate: summary.totalLeads > 0 ? Number(((summary.convertedLeads / summary.totalLeads) * 100).toFixed(2)) : 0
       },
       meta: {
-        spend: Number(totalSpend.toFixed(2)),
-        cpl: metaLeads > 0 ? Number((totalSpend / metaLeads).toFixed(2)) : 0
+        spend: Number(summary.totalSpend.toFixed(2)),
+        cpl: summary.metaLeads > 0 ? Number((summary.totalSpend / summary.metaLeads).toFixed(2)) : 0
       },
       doctoralia: {
-        verified_patients: uniquePatients,
-        verified_revenue: Number(verifiedRevenue.toFixed(2)),
-        cac: uniquePatients > 0 ? Number((totalSpend / uniquePatients).toFixed(2)) : 0
+        verified_patients: summary.uniquePatients,
+        verified_revenue: Number(summary.verifiedRevenue.toFixed(2)),
+        cac: summary.uniquePatients > 0 ? Number((summary.totalSpend / summary.uniquePatients).toFixed(2)) : 0
       },
       summary: {
-        roi: verifiedRevenue > 0 && totalSpend > 0 
-          ? Number(((verifiedRevenue - totalSpend) / totalSpend * 100).toFixed(2)) 
+        roi: summary.verifiedRevenue > 0 && summary.totalSpend > 0 
+          ? Number(((summary.verifiedRevenue - summary.totalSpend) / summary.totalSpend * 100).toFixed(2)) 
           : 0
       }
     });
@@ -4070,14 +4062,15 @@ async function persistMetaIgAccountDailyInsights(adminClient: any, userId: strin
 
   try {
     const igData = await metaFetch(`/${igId}`, { fields: 'followers_count' }, accessToken);
-    followersTotal = igData?.followers_count != null ? Number(igData.followers_count) : null;
+    followersTotal = igData?.followers_count == null ? null : Number(igData.followers_count);
   } catch (_e) {
+    // IG account might be restricted or igId invalid, fallback to null
     followersTotal = null;
   }
 
   const latestDate = Array.from(byDate.values())
     .map((r: any) => String(r.day))
-    .sort()
+    .sort((a, b) => a.localeCompare(b))
     .at(-1);
 
   const dbRows = Array.from(byDate.values()).map((r: any) => ({
@@ -7142,29 +7135,39 @@ async function loadMetaFreshness(adminClient: any, userId: string, clinicId: str
   const igDailyFresh = igDailyAgeDays !== null && igDailyAgeDays <= 3;
   const igMediaFresh = igMediaAgeDays !== null && igMediaAgeDays <= 4;
 
-  const metaStatus = metaAdsFresh
-    ? 'META_LIVE'
-    : metaLastDate
-      ? 'META_STALE'
-      : 'META_NO_DATA';
+  let metaStatus = 'META_NO_DATA';
+  if (metaAdsFresh) {
+    metaStatus = 'META_LIVE';
+  } else if (metaLastDate) {
+    metaStatus = 'META_STALE';
+  }
 
-  const igDailyStatus = igDailyFresh
-    ? 'IG_DAILY_LIVE'
-    : igDailyLastDate
-      ? 'IG_DAILY_STALE'
-      : 'IG_DAILY_NO_DATA';
+  let igDailyStatus = 'IG_DAILY_NO_DATA';
+  if (igDailyFresh) {
+    igDailyStatus = 'IG_DAILY_LIVE';
+  } else if (igDailyLastDate) {
+    igDailyStatus = 'IG_DAILY_STALE';
+  }
 
-  const igMediaStatus = igMediaFresh
-    ? 'IG_MEDIA_LIVE'
-    : igMediaLastDate
-      ? 'IG_MEDIA_STALE'
-      : 'IG_MEDIA_NO_DATA';
+  let igMediaStatus = 'IG_MEDIA_NO_DATA';
+  if (igMediaFresh) {
+    igMediaStatus = 'IG_MEDIA_LIVE';
+  } else if (igMediaLastDate) {
+    igMediaStatus = 'IG_MEDIA_STALE';
+  }
 
   const allMetaFresh = metaAdsFresh && igDailyFresh && igMediaFresh;
   const anyMetaFresh = metaAdsFresh || igDailyFresh || igMediaFresh;
 
+  let overallMode = 'STALE';
+  if (allMetaFresh) {
+    overallMode = 'LIVE';
+  } else if (anyMetaFresh) {
+    overallMode = 'PARTIAL_LIVE';
+  }
+
   return {
-    overallMode: allMetaFresh ? 'LIVE' : anyMetaFresh ? 'PARTIAL_LIVE' : 'STALE',
+    overallMode,
     meta_status: metaStatus,
     ig_daily_status: igDailyStatus,
     ig_media_status: igMediaStatus,
@@ -7178,6 +7181,23 @@ async function loadMetaFreshness(adminClient: any, userId: string, clinicId: str
     ig_daily_fresh: igDailyFresh,
     ig_media_fresh: igMediaFresh,
   };
+}
+
+async function calculateAttributedPatients(adminClient: any, clinicId: string | null | undefined, settlements: any[]): Promise<number> {
+  const patientIdsInPeriod = settlements.map((s: any) => s.patient_id).filter(Boolean);
+  if (patientIdsInPeriod.length === 0) return 0;
+
+  const { data: matchedLeads, error: matchErr } = await adminClient
+    .from('leads')
+    .select('converted_patient_id')
+    .eq('clinic_id', clinicId)
+    .in('converted_patient_id', patientIdsInPeriod);
+  
+  if (matchErr) {
+    console.error('[KPIs] Lead matching query failed:', matchErr);
+    return 0;
+  }
+  return new Set(matchedLeads?.map((l: any) => l.converted_patient_id)).size;
 }
 
 async function processKpisGet(adminClient: any, userId: string, url: URL, sendJson: any): Promise<Response> {
@@ -7271,21 +7291,7 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
     const totalVerifiedPatients = new Set(settlements.map((r: any) => r.patient_id || r.phone_normalized || r.patient_phone).filter(Boolean)).size;
 
   // Calcular pacientes atribuidos (que vienen de un lead verificado)
-  const patientIdsInPeriod = settlements.map((s: any) => s.patient_id).filter(Boolean);
-  let attributedPatients = 0;
-  if (patientIdsInPeriod.length > 0) {
-    const { data: matchedLeads, error: matchErr } = await adminClient
-      .from('leads')
-      .select('converted_patient_id')
-      .eq('clinic_id', clinicId)
-      .in('converted_patient_id', patientIdsInPeriod);
-    
-    if (matchErr) {
-      console.error('[KPIs] Lead matching query failed:', matchErr);
-    } else {
-      attributedPatients = new Set(matchedLeads?.map((l: any) => l.converted_patient_id)).size;
-    }
-  }
+  const attributedPatients = await calculateAttributedPatients(adminClient, clinicId, settlements);
 
   const metaSpend = metaInsights.reduce((sum: number, r: any) => sum + Number(r.spend ?? 0), 0);
   const metaCpl = metaLeads > 0 ? Number((metaSpend / metaLeads).toFixed(2)) : 0;
@@ -7488,7 +7494,7 @@ function computeAvgTicketNet(row: any): number {
 }
 
 async function handleReportsCampaignPerformanceGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
+  const { adminClient, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'reports' && sub === 'campaign-performance' && req.method === 'GET') {
     const { since, until } = getKpiDateRange(url);
     
@@ -7588,6 +7594,19 @@ function normalizeLeadAuditRow(row: any) {
   };
 }
 
+function validateAndNormalizePhone(phone: string): { normalizedPhone: string | null, errorResponse?: { success: false, message: string } } {
+  const normalizedPhone = normalizePhoneForMeta(phone);
+  if (normalizedPhone === null) {
+    const failureReason = getPhoneNormalizationFailureReason(phone);
+    const isMissingCode = failureReason === 'missing-default-country-code';
+    const message = isMissingCode
+      ? 'Phone filter could not be normalized because DEFAULT_PHONE_COUNTRY_CODE is not configured. Use an international phone number or set DEFAULT_PHONE_COUNTRY_CODE.'
+      : 'Phone filter could not be normalized because the phone number format is invalid. Provide a valid phone number.';
+    return { normalizedPhone: null, errorResponse: { success: false, message } };
+  }
+  return { normalizedPhone };
+}
+
 async function handleReportsLeadAuditGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'reports' && sub === 'lead-audit' && req.method === 'GET') {
@@ -7599,14 +7618,11 @@ async function handleReportsLeadAuditGet(ctx: AuthenticatedRouteContext): Promis
     const phone = url.searchParams.get('phone') ?? '';
     const reconcile = url.searchParams.get('reconcile') === 'true';
 
-    const normalizedPhone = phone ? normalizePhoneForMeta(phone) : null;
-    if (phone && normalizedPhone === null) {
-      const failureReason = getPhoneNormalizationFailureReason(phone);
-      const isMissingCode = failureReason === 'missing-default-country-code';
-      const message = isMissingCode
-        ? 'Phone filter could not be normalized because DEFAULT_PHONE_COUNTRY_CODE is not configured. Use an international phone number or set DEFAULT_PHONE_COUNTRY_CODE.'
-        : 'Phone filter could not be normalized because the phone number format is invalid. Provide a valid phone number.';
-      return sendJson({ success: false, message }, 400);
+    let normalizedPhone: string | null = null;
+    if (phone) {
+      const { normalizedPhone: normalized, errorResponse } = validateAndNormalizePhone(phone);
+      if (errorResponse) return sendJson(errorResponse, 400);
+      normalizedPhone = normalized;
     }
 
     try {

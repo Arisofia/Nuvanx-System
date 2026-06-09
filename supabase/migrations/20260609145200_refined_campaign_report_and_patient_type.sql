@@ -3,27 +3,65 @@
 
 BEGIN;
 
--- 1. Refined RRSS Funnel View to include campaign_id and phone_normalized
+-- Ensure handle_updated_at function exists for triggers
+CREATE OR REPLACE FUNCTION public.handle_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 1. Persistir canal histórico en leads (Punto 4)
+-- Se añade la columna `historical_channel` a `public.leads` si no existe.
+ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS historical_channel text;
+
+-- Función para asignar el canal histórico
+CREATE OR REPLACE FUNCTION public.set_historical_channel_on_lead()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.historical_channel IS NULL THEN
+    -- Si el lead proviene de Meta Lead Form (RRSS)
+    IF NEW.meta_lead_id IS NOT NULL AND EXISTS (SELECT 1 FROM public.lead_events WHERE meta_lead_id = NEW.meta_lead_id AND source_channel = 'RRSS') THEN
+      NEW.historical_channel := 'RRSS';
+    -- Si no es de Meta Lead Form, se asume 'ORGANICO'
+    ELSE
+      NEW.historical_channel := 'ORGANICO';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger para asignar el canal histórico en la inserción de leads
+DROP TRIGGER IF EXISTS trg_set_historical_channel ON public.leads;
+CREATE TRIGGER trg_set_historical_channel
+BEFORE INSERT ON public.leads
+FOR EACH ROW EXECUTE FUNCTION public.set_historical_channel_on_lead();
+
+-- 2. Vista de Funnel RRSS (Reglas Punto 5)
 CREATE OR REPLACE VIEW public.vw_funnel_rrss AS
 WITH rrss_leads AS (
-    SELECT 
-        meta_lead_id, 
-        normalized_phone, 
-        normalized_email, 
-        campaign_id, 
-        campaign_name, 
+    SELECT
+        meta_lead_id,
+        normalized_phone,
+        normalized_email,
+        campaign_id,
+        campaign_name,
         event_created_at
     FROM public.lead_events
     WHERE source_channel = 'RRSS'
 ),
 appointments AS (
+    -- Asumimos que doctoralia_appointments_ingestion ya existe y contiene patient_phone, agenda, status, appointment_date
     SELECT patient_phone, agenda, status, appointment_date
     FROM public.doctoralia_appointments_ingestion
 )
-SELECT 
+SELECT
     l.meta_lead_id,
     l.campaign_id,
     l.campaign_name,
+    l.normalized_email,
     l.normalized_phone,
     l.event_created_at as fecha_lead,
     (EXISTS (SELECT 1 FROM appointments a WHERE a.patient_phone = l.normalized_phone)) as valoracion_agendada,
@@ -31,7 +69,44 @@ SELECT
     ((SELECT COUNT(*) FROM appointments a WHERE a.patient_phone = l.normalized_phone AND a.agenda ILIKE '%Enfermería%') >= 3) as procedimiento_realizado
 FROM rrss_leads l;
 
--- 2. Refined get_campaign_report (Point 8)
+-- 3. Clasificación de Pacientes (Reglas Punto 6)
+CREATE OR REPLACE VIEW public.vw_patient_classification AS
+WITH patient_visits AS (
+    SELECT
+        patient_phone,
+        appointment_date,
+        agenda,
+        LAG(appointment_date) OVER (PARTITION BY patient_phone ORDER BY appointment_date) as prev_visit_date,
+        FIRST_VALUE(appointment_date) OVER (PARTITION BY patient_phone ORDER BY appointment_date) as first_visit_date
+    FROM public.doctoralia_appointments_ingestion
+),
+patient_activity AS (
+    SELECT
+        patient_phone,
+        MAX(appointment_date) as last_visit,
+        MIN(appointment_date) as first_visit,
+        COUNT(*) as total_visits,
+        EXISTS (SELECT 1 FROM patient_visits pv2 WHERE pv2.patient_phone = pv.patient_phone AND (pv2.agenda ILIKE '%Javier%' OR pv2.agenda ILIKE '%Enfermería%')) as has_treatment
+    FROM patient_visits pv
+    GROUP BY patient_phone
+)
+SELECT
+    patient_phone,
+    CASE
+        -- prospecto: solo valoración o lead sin tratamiento.
+        WHEN NOT has_treatment THEN 'prospecto'
+        -- perdido: día 61 sin nueva visita/tratamiento.
+        WHEN (NOW() - last_visit) > interval '60 days' THEN 'perdido'
+        -- nuevo: primera vez que realiza tratamiento (visita Javier o Enfermería).
+        WHEN has_treatment AND total_visits = 1 THEN 'nuevo'
+        -- recurrente: nueva visita/tratamiento en menos de 60 días desde la última visita.
+        WHEN has_treatment AND (NOW() - last_visit) <= interval '60 days' THEN 'recurrente'
+        -- recuperado: nueva visita/tratamiento después de más de 60 días desde la última visita.
+        ELSE 'recuperado'
+    END as patient_type
+FROM patient_activity;
+
+-- 4. Reconstruir tabla de campañas (Punto 8)
 DROP FUNCTION IF EXISTS public.get_campaign_report(date, date);
 CREATE OR REPLACE FUNCTION public.get_campaign_report(from_date date, to_date date)
 RETURNS TABLE (
@@ -48,7 +123,7 @@ RETURNS TABLE (
 BEGIN
     RETURN QUERY
     WITH campaign_stats AS (
-        SELECT 
+        SELECT
             v.campaign_name as campaign,
             COUNT(DISTINCT v.meta_lead_id) as leads_count,
             COUNT(DISTINCT CASE WHEN v.valoracion_agendada THEN v.meta_lead_id END) as val_agendadas,
@@ -56,20 +131,20 @@ BEGIN
             COUNT(DISTINCT CASE WHEN v.procedimiento_realizado THEN v.meta_lead_id END) as proc_realizados,
             -- cerrados: procedimientos_realizados o cobro confirmado
             COUNT(DISTINCT CASE WHEN v.procedimiento_realizado OR EXISTS (
-                SELECT 1 FROM public.financial_settlements fs 
-                WHERE fs.phone_normalized = v.normalized_phone 
-                AND fs.amount_net > 0 
+                SELECT 1 FROM public.financial_settlements fs
+                WHERE fs.phone_normalized = v.normalized_phone
+                AND fs.amount_net > 0
                 AND fs.settled_at::date BETWEEN from_date AND to_date
             ) THEN v.meta_lead_id END) as closed_count,
             COALESCE(SUM(fs.amount_net), 0) as total_revenue,
             MAX(v.fecha_lead) as last_lead
         FROM public.vw_funnel_rrss v
-        LEFT JOIN public.financial_settlements fs ON fs.phone_normalized = v.normalized_phone 
+        LEFT JOIN public.financial_settlements fs ON fs.phone_normalized = v.normalized_phone
             AND fs.settled_at::date BETWEEN from_date AND to_date
         WHERE v.fecha_lead::date BETWEEN from_date AND to_date
         GROUP BY v.campaign_name
     )
-    SELECT 
+    SELECT
         campaign,
         leads_count,
         val_agendadas,
@@ -85,52 +160,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 3. Refined Patient Type (Point 6)
--- Rules:
--- prospecto: solo valoración o lead sin tratamiento.
--- nuevo: primera vez que realiza tratamiento (visita Javier o Enfermería).
--- recurrente: nueva visita < 60 días desde la última.
--- recuperado: nueva visita > 60 días desde la última.
--- perdido: día 61 sin nueva visita/tratamiento.
-
-CREATE OR REPLACE VIEW public.vw_patient_classification AS
-WITH patient_visits AS (
-    SELECT 
-        patient_phone,
-        appointment_date,
-        agenda,
-        LAG(appointment_date) OVER (PARTITION BY patient_phone ORDER BY appointment_date) as prev_visit_date,
-        FIRST_VALUE(appointment_date) OVER (PARTITION BY patient_phone ORDER BY appointment_date) as first_visit_date
-    FROM public.doctoralia_appointments_ingestion
-),
-patient_activity AS (
-    SELECT 
-        patient_phone,
-        MAX(appointment_date) as last_visit,
-        MIN(appointment_date) as first_visit,
-        COUNT(*) as total_visits,
-        EXISTS (SELECT 1 FROM patient_visits pv2 WHERE pv2.patient_phone = pv.patient_phone AND (pv2.agenda ILIKE '%Javier%' OR pv2.agenda ILIKE '%Enfermería%')) as has_treatment
-    FROM patient_visits pv
-    GROUP BY patient_phone
-)
-SELECT 
-    patient_phone,
-    CASE 
-        -- Si solo tiene valoración o es un lead sin tratamiento (visitas que no son Javier/Enfermería)
-        WHEN NOT has_treatment THEN 'prospecto'
-        -- Si tiene tratamiento y es el primer periodo (menos de 60 días desde la primera visita)
-        WHEN has_treatment AND (NOW() - last_visit) > interval '60 days' THEN 'perdido'
-        WHEN has_treatment AND total_visits = 1 THEN 'nuevo'
-        WHEN has_treatment AND (last_visit - first_visit) <= interval '60 days' THEN 'nuevo'
-        -- Recurrente: nueva visita < 60 días desde la anterior
-        -- Aquí simplificamos: si ha tenido visitas constantes es recurrente
-        WHEN has_treatment AND (NOW() - last_visit) <= interval '60 days' THEN 'recurrente'
-        -- Recuperado: volvió después de 60 días
-        ELSE 'recuperado'
-    END as patient_type
-FROM patient_activity;
-
--- 4. Backfill lead_events from meta_attribution (Point 158)
+-- 5. Backfill de `lead_events` desde `meta_attribution` (Punto 11 - Backfill)
 INSERT INTO public.lead_events (
     meta_lead_id,
     source_channel,
@@ -153,25 +183,25 @@ INSERT INTO public.lead_events (
     captured_at,
     resolution_status
 )
-SELECT 
-    COALESCE(l.external_id, 'historical_' || ma.lead_id::text),
+SELECT
+    COALESCE(l.external_id, 'historical_' || ma.lead_id::text), -- Usar external_id de leads si existe, sino un ID histórico
     'RRSS',
     'RRSS',
     'meta',
     'meta_lead_form',
     true,
-    l.name,
-    l.email,
-    l.phone,
-    l.normalized_email,
-    l.normalized_phone,
+    CASE WHEN l.name LIKE 'Meta Lead %' THEN NULL ELSE l.name END, -- No inventar nombres genéricos
+    CASE WHEN l.email = '' THEN NULL ELSE l.email END,             -- No inventar emails vacíos
+    CASE WHEN l.phone = '' THEN NULL ELSE l.phone END,             -- No inventar teléfonos vacíos
+    CASE WHEN l.normalized_email = '' THEN NULL ELSE l.normalized_email END,
+    CASE WHEN l.normalized_phone = '' THEN NULL ELSE l.normalized_phone END,
     ma.campaign_id,
     ma.campaign_name,
     ma.adset_id,
     ma.adset_name,
     ma.ad_id,
     ma.ad_name,
-    COALESCE(l.created_at, ma.captured_at),
+    COALESCE(l.created_at, ma.captured_at), -- Usar fecha de creación del lead si existe, sino la de captura
     ma.captured_at,
     'historical_unresolved'
 FROM public.meta_attribution ma

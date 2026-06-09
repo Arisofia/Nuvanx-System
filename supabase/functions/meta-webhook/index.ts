@@ -11,6 +11,7 @@
  *   META_WEBHOOK_VERIFY_TOKEN — set in Supabase Dashboard → Edge Functions → Secrets
  *   (any random string you choose, same one you put in Meta Business Manager)
  */
+/// <reference lib="deno.ns" />
 import { createClient } from '@supabase/supabase-js';
 
 const cors = {
@@ -18,6 +19,7 @@ const cors = {
   'Access-Control-Allow-Headers': 'content-type, x-hub-signature-256',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
 };
+/* global Deno */
 
 const supabaseUrl  = Deno.env.get('SUPABASE_URL') ?? '';
 const serviceKey   = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
@@ -34,7 +36,7 @@ function normalizeEmail(email: string): string {
 
 function normalizePhone(phone: string): string {
   // Remove spaces, dashes, parentheses, and any other non-numeric characters
-  return phone.replace(/[\s\-\(\)]/g, '').trim();
+  return phone.replace(/[\s-()]/g, '').trim();
 }
 
 // Helper to extract field from Meta's field_data array
@@ -117,7 +119,6 @@ Deno.serve(async (req: Request) => {
           .limit(1);
 
         const userId   = users?.[0]?.id ?? null;
-        const clinicId = users?.[0]?.clinic_id ?? null;
 
         if (!userId) {
           errors.push('No user with clinic_id found to link lead to');
@@ -246,7 +247,7 @@ Deno.serve(async (req: Request) => {
         // --------------------------------------------------------------------
         // 3. Upsert into public.leads (for dashboard compatibility)
         // --------------------------------------------------------------------
-        const { data: lead, error: leadError } = await supabase
+        const { error: leadError } = await supabase
           .from('leads')
           .upsert({
             user_id:     userId,

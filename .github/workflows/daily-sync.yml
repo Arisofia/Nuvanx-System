@@ -9,10 +9,12 @@ on:
     - cron: '0 7 * * *'
   workflow_dispatch:
     inputs:
-      days:
-        description: 'Days of Meta insights/backfill to fetch'
+      from_date:
+        description: 'Start date for Meta insights (YYYY-MM-DD)'
         required: false
-        default: '90'
+      to_date:
+        description: 'End date for Meta insights (YYYY-MM-DD)'
+        required: false
 
 env:
   META_GRAPH_VERSION: v22.0
@@ -79,44 +81,29 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          DAYS="${{ github.event.inputs.days }}"
-          DAYS="${DAYS:-90}"
-          if ! [[ "$DAYS" =~ ^[0-9]+$ ]] || [ "$DAYS" -lt 1 ] || [ "$DAYS" -gt 90 ]; then
-            echo "::error::days must be an integer between 1 and 90. Received: $DAYS"
+          FROM_DATE="${{ github.event.inputs.from_date }}"
+          TO_DATE="${{ github.event.inputs.to_date }}"
+
+          # Default to current month if dates are not provided
+          if [ -z "$FROM_DATE" ]; then
+            FROM_DATE=$(date -u +"%Y-%m-01")
+          fi
+          if [ -z "$TO_DATE" ]; then
+            TO_DATE=$(date -u +"%Y-%m-%d")
+          fi
+
+          # Basic date format validation (YYYY-MM-DD)
+          if ! [[ "$FROM_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || ! [[ "$TO_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+            echo "::error::Dates must be in YYYY-MM-DD format. Received FROM_DATE: $FROM_DATE, TO_DATE: $TO_DATE"
             exit 1
           fi
+
+          echo "Fetching Meta insights from $FROM_DATE to $TO_DATE"
           RESPONSE=$(curl --fail-with-body --show-error --silent --max-time 60 -X POST "${SUPABASE_URL}/functions/v1/daily-aggregates" \
             -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
             -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
             -H "Content-Type: application/json" \
-            -d "{\"action\": \"fetch_meta_insights\", \"days\": $DAYS}")
+            -d "{\"action\": \"fetch_meta_insights\", \"from\": \"$FROM_DATE\", \"to\": \"$TO_DATE\"}")
           echo "Response: $RESPONSE"
           if echo "$RESPONSE" | grep -q '"success":true'; then
-            echo "Meta insights fetched successfully."
-          else
-            echo "::error::Failed to fetch Meta insights."
-            exit 1
-          fi
-
-      - name: Run full Meta backfill including Instagram
-        shell: bash
-        run: |
-          set -euo pipefail
-          DAYS="${{ github.event.inputs.days }}"
-          DAYS="${DAYS:-90}"
-          if ! [[ "$DAYS" =~ ^[0-9]+$ ]] || [ "$DAYS" -lt 1 ] || [ "$DAYS" -gt 90 ]; then
-            echo "::error::days must be an integer between 1 and 90. Received: $DAYS"
-            exit 1
-          fi
-          RESPONSE=$(curl --fail-with-body --show-error --silent --max-time 180 -X POST "${SUPABASE_URL}/functions/v1/api/meta/backfill?days=${DAYS}" \
-            -H "Authorization: Bearer ${NUVANX_SUPABASE_SERVICE_ROLE_KEY}" \
-            -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
-            -H "x-user-id: ${REPORT_USER_ID}" \
-            -H "Content-Type: application/json")
-          echo "Response: $RESPONSE"
-          if echo "$RESPONSE" | grep -q '"success":true'; then
-            echo "Meta backfill completed successfully."
-          else
-            echo "::error::Meta backfill failed."
-            exit 1
-          fi
+      
