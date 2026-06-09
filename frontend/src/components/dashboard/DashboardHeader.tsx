@@ -15,9 +15,21 @@ interface DashboardHeaderProps {
   readonly metaAccountIds: string[]
 }
 
+function toLocalDateInputValue(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function formatDateLabel(dateValue: string) {
+  const [year, month, day] = dateValue.split('-')
+  return year && month && day ? `${day}/${month}/${year}` : dateValue
+}
+
 function calculateRangeDays(dateRange: { from: string; to: string }) {
-  const from = new Date(`${dateRange.from}T00:00:00Z`).getTime()
-  const to = new Date(`${dateRange.to}T00:00:00Z`).getTime()
+  const from = new Date(`${dateRange.from}T00:00:00`).getTime()
+  const to = new Date(`${dateRange.to}T00:00:00`).getTime()
 
   if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) {
     return 0
@@ -45,16 +57,16 @@ export function DashboardHeader({
   const setThisMonth = () => {
     const d = new Date()
     setDateRange({
-      from: new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10),
-      to: d.toISOString().slice(0, 10)
+      from: toLocalDateInputValue(new Date(d.getFullYear(), d.getMonth(), 1)),
+      to: toLocalDateInputValue(d)
     })
   }
 
   const setLastMonth = () => {
     const d = new Date()
     setDateRange({
-      from: new Date(d.getFullYear(), d.getMonth() - 1, 1).toISOString().slice(0, 10),
-      to: new Date(d.getFullYear(), d.getMonth(), 0).toISOString().slice(0, 10)
+      from: toLocalDateInputValue(new Date(d.getFullYear(), d.getMonth() - 1, 1)),
+      to: toLocalDateInputValue(new Date(d.getFullYear(), d.getMonth(), 0))
     })
   }
 
@@ -155,7 +167,7 @@ export function DashboardHeader({
 
         <div className="flex justify-end">
           <div className="rounded-2xl bg-white/70 px-5 py-3 text-[10px] font-bold uppercase tracking-[0.18em] text-[#8E8680] border border-[#E5D5C5]/40">
-            Filtro global: {days > 0 ? `últimos ${days} días` : 'rango no válido'}
+            Filtro global: {days > 0 ? `${formatDateLabel(dateRange.from)} al ${formatDateLabel(dateRange.to)}` : 'rango no válido'}
           </div>
         </div>
       </div>
