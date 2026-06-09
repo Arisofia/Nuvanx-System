@@ -6,15 +6,21 @@ import { MetricsGrid } from '../components/dashboard/MetricsGrid'
 import { FunnelAndSpendSection } from '../components/dashboard/FunnelAndSpendSection'
 import { RealROISection } from '../components/dashboard/RealROISection'
 import { TrendSection } from '../components/dashboard/TrendSection'
-import { PatientConversionSection } from '../components/dashboard/PatientConversionSection'
+
+function toLocalDateInputValue(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
 
 export default function Dashboard() {
   const [dateRange, setDateRange] = useState(() => {
     const now = new Date()
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
     return {
-      from: firstDay.toISOString().slice(0, 10),
-      to: now.toISOString().slice(0, 10)
+      from: toLocalDateInputValue(firstDay),
+      to: toLocalDateInputValue(now)
     }
   })
   const [campaignId, setCampaignId] = useState<string>('ALL')
@@ -79,7 +85,6 @@ export default function Dashboard() {
           <MetricsGrid metrics={metrics} quality={quality} />
           <FunnelAndSpendSection funnelData={funnelData} metrics={metrics} combined={combined} periodLabel={periodLabel} quality={quality} />
           <RealROISection funnel={funnel} combined={combined} />
-          <PatientConversionSection sourceFilter={sourceFilter} campaignId={campaignId} from={dateRange.from} to={dateRange.to} attributedSpend={metrics.spend} />
           <TrendSection trendData={trendData} formatDate={(dateString) => {
             const [year, month, day] = dateString.split('-')
             return year && month && day ? `${day}/${month}/${year}` : dateString
