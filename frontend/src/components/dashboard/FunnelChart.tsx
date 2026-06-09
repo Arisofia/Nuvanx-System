@@ -21,6 +21,11 @@ interface FunnelChartProps {
 }
 
 const STAGE_COLORS: Record<string, string> = {
+  total_leads: '#c9a471',
+  booked: '#d4b37d',
+  attended: '#b08b5a',
+  closed_won: '#8ee0b8',
+  settled_revenue: '#a38f79',
   lead: '#c9a471',
   whatsapp: '#d4b37d',
   appointment: '#b08b5a',
