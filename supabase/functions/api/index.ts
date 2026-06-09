@@ -7082,6 +7082,104 @@ async function handleKpisGet(ctx: AuthenticatedRouteContext): Promise<Response |
   return null;
 }
 
+function toDateOnly(value: any): string | null {
+  if (!value) return null;
+  return String(value).slice(0, 10);
+}
+
+function daysBetweenDates(fromDate: string | null, toDate: string): number | null {
+  if (!fromDate) return null;
+  const from = new Date(`${fromDate}T00:00:00Z`).getTime();
+  const to = new Date(`${toDate}T00:00:00Z`).getTime();
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return null;
+  return Math.floor((to - from) / 86_400_000);
+}
+
+async function loadMetaFreshness(adminClient: any, userId: string, clinicId: string | null) {
+  const today = new Date().toISOString().slice(0, 10);
+
+  let adsQ = adminClient
+    .from('meta_daily_insights')
+    .select('date')
+    .order('date', { ascending: false })
+    .limit(1);
+
+  let igDailyQ = adminClient
+    .from('meta_ig_account_daily')
+    .select('date')
+    .order('date', { ascending: false })
+    .limit(1);
+
+  let igMediaQ = adminClient
+    .from('meta_ig_media_performance')
+    .select('timestamp')
+    .order('timestamp', { ascending: false })
+    .limit(1);
+
+  adsQ = applyClinicOrUserScope(adsQ, clinicId, userId);
+  igDailyQ = applyClinicOrUserScope(igDailyQ, clinicId, userId);
+  igMediaQ = applyClinicOrUserScope(igMediaQ, clinicId, userId);
+
+  const [adsRes, igDailyRes, igMediaRes] = await Promise.allSettled([
+    adsQ,
+    igDailyQ,
+    igMediaQ,
+  ]);
+
+  const adsData = adsRes.status === 'fulfilled' ? adsRes.value?.data ?? [] : [];
+  const igDailyData = igDailyRes.status === 'fulfilled' ? igDailyRes.value?.data ?? [] : [];
+  const igMediaData = igMediaRes.status === 'fulfilled' ? igMediaRes.value?.data ?? [] : [];
+
+  const metaLastDate = toDateOnly(adsData?.[0]?.date);
+  const igDailyLastDate = toDateOnly(igDailyData?.[0]?.date);
+  const igMediaLastDate = toDateOnly(igMediaData?.[0]?.timestamp);
+
+  const metaAgeDays = daysBetweenDates(metaLastDate, today);
+  const igDailyAgeDays = daysBetweenDates(igDailyLastDate, today);
+  const igMediaAgeDays = daysBetweenDates(igMediaLastDate, today);
+
+  const metaAdsFresh = metaAgeDays !== null && metaAgeDays <= 2;
+  const igDailyFresh = igDailyAgeDays !== null && igDailyAgeDays <= 3;
+  const igMediaFresh = igMediaAgeDays !== null && igMediaAgeDays <= 4;
+
+  const metaStatus = metaAdsFresh
+    ? 'META_LIVE'
+    : metaLastDate
+      ? 'META_STALE'
+      : 'META_NO_DATA';
+
+  const igDailyStatus = igDailyFresh
+    ? 'IG_DAILY_LIVE'
+    : igDailyLastDate
+      ? 'IG_DAILY_STALE'
+      : 'IG_DAILY_NO_DATA';
+
+  const igMediaStatus = igMediaFresh
+    ? 'IG_MEDIA_LIVE'
+    : igMediaLastDate
+      ? 'IG_MEDIA_STALE'
+      : 'IG_MEDIA_NO_DATA';
+
+  const allMetaFresh = metaAdsFresh && igDailyFresh && igMediaFresh;
+  const anyMetaFresh = metaAdsFresh || igDailyFresh || igMediaFresh;
+
+  return {
+    overallMode: allMetaFresh ? 'LIVE' : anyMetaFresh ? 'PARTIAL_LIVE' : 'STALE',
+    meta_status: metaStatus,
+    ig_daily_status: igDailyStatus,
+    ig_media_status: igMediaStatus,
+    meta_last_date: metaLastDate,
+    ig_daily_last_date: igDailyLastDate,
+    ig_media_last_date: igMediaLastDate,
+    meta_age_days: metaAgeDays,
+    ig_daily_age_days: igDailyAgeDays,
+    ig_media_age_days: igMediaAgeDays,
+    meta_ads_fresh: metaAdsFresh,
+    ig_daily_fresh: igDailyFresh,
+    ig_media_fresh: igMediaFresh,
+  };
+}
+
 async function processKpisGet(adminClient: any, userId: string, url: URL, sendJson: any): Promise<Response> {
   const { since, until, period } = getKpiDateRange(url);
   // Expand until to include the whole day for timestamptz comparisons
@@ -7165,6 +7263,7 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
   const { socialNewClients, otherChannelNewClients } = countAcquisitionChannels(leadRows);
   const settlements = (settlementsRes.data ?? []).filter((r: any) => Number(r.amount_net) > 0);
   const metaInsights = metaDailyInsightsRes.data ?? [];
+  const metaFreshness = await loadMetaFreshness(adminClient, userId, clinicId);
 
   // Revenue verificado real
   const verifiedRevenue = settlements.reduce((sum: number, r: any) => sum + Number(r.amount_net), 0);
@@ -7237,7 +7336,20 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
       meta_spend_real: metaSpendReal,
       doctoralia_settlements_real: settlements.length > 0,
       doctoralia_real: doctoraliaReal,
-      overall_mode: overallMode,
+      overall_mode: metaFreshness.overallMode,
+      kpi_overall_mode: overallMode,
+      meta_status: metaFreshness.meta_status,
+      ig_daily_status: metaFreshness.ig_daily_status,
+      ig_media_status: metaFreshness.ig_media_status,
+      meta_last_date: metaFreshness.meta_last_date,
+      ig_daily_last_date: metaFreshness.ig_daily_last_date,
+      ig_media_last_date: metaFreshness.ig_media_last_date,
+      meta_age_days: metaFreshness.meta_age_days,
+      ig_daily_age_days: metaFreshness.ig_daily_age_days,
+      ig_media_age_days: metaFreshness.ig_media_age_days,
+      meta_ads_fresh: metaFreshness.meta_ads_fresh,
+      ig_daily_fresh: metaFreshness.ig_daily_fresh,
+      ig_media_fresh: metaFreshness.ig_media_fresh,
     }
   });
 }
