@@ -15,6 +15,17 @@ interface DashboardHeaderProps {
   readonly metaAccountIds: string[]
 }
 
+function calculateRangeDays(dateRange: { from: string; to: string }) {
+  const from = new Date(`${dateRange.from}T00:00:00Z`).getTime()
+  const to = new Date(`${dateRange.to}T00:00:00Z`).getTime()
+
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) {
+    return 0
+  }
+
+  return Math.max(1, Math.round((to - from) / 86_400_000) + 1)
+}
+
 export function DashboardHeader({
   dataMode,
   sourceFilter,
@@ -29,6 +40,7 @@ export function DashboardHeader({
 }: DashboardHeaderProps) {
   const controlTextClass = 'text-[#5C5550] font-bold uppercase'
   const selectClass = 'bg-transparent border-none focus:ring-0 text-[10px] font-bold uppercase tracking-wider px-4 py-2 cursor-pointer outline-none appearance-none'
+  const days = calculateRangeDays(dateRange)
 
   const setThisMonth = () => {
     const d = new Date()
@@ -143,7 +155,7 @@ export function DashboardHeader({
 
         <div className="flex justify-end">
           <div className="rounded-2xl bg-white/70 px-5 py-3 text-[10px] font-bold uppercase tracking-[0.18em] text-[#8E8680] border border-[#E5D5C5]/40">
-            Filtro global: últimos {days} días
+            Filtro global: {days > 0 ? `últimos ${days} días` : 'rango no válido'}
           </div>
         </div>
       </div>
