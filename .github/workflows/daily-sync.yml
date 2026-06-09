@@ -16,6 +16,10 @@ on:
         description: 'End date for Meta insights (YYYY-MM-DD)'
         required: false
 
+concurrency:
+  group: daily-sync-orchestrator-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   META_GRAPH_VERSION: v22.0
   FALLBACK_META_AD_ACCOUNT_ID: ${{ secrets.FALLBACK_META_AD_ACCOUNT_ID }}
@@ -53,7 +57,6 @@ jobs:
       DOCTORALIA_APPOINTMENTS_SHEET_NAME: "Doctoralia"
       DOCTORALIA_APPOINTMENTS_SHEET_RANGE: "A1:Z5000"
       DOCTORALIA_APPOINTMENTS_MIN_ROWS: "1"
-      # warn: Google Sheets 403 becomes a warning, not a job-killing error.
       DOCTORALIA_APPOINTMENTS_PERMISSION_MODE: "warn"
     steps:
       - name: Checkout repository
@@ -81,29 +84,36 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           FROM_DATE="${{ github.event.inputs.from_date }}"
           TO_DATE="${{ github.event.inputs.to_date }}"
 
-          # Default to current month if dates are not provided
           if [ -z "$FROM_DATE" ]; then
             FROM_DATE=$(date -u +"%Y-%m-01")
           fi
+
           if [ -z "$TO_DATE" ]; then
             TO_DATE=$(date -u +"%Y-%m-%d")
           fi
 
-          # Basic date format validation (YYYY-MM-DD)
           if ! [[ "$FROM_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || ! [[ "$TO_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
             echo "::error::Dates must be in YYYY-MM-DD format. Received FROM_DATE: $FROM_DATE, TO_DATE: $TO_DATE"
             exit 1
           fi
 
           echo "Fetching Meta insights from $FROM_DATE to $TO_DATE"
+
           RESPONSE=$(curl --fail-with-body --show-error --silent --max-time 60 -X POST "${SUPABASE_URL}/functions/v1/daily-aggregates" \
             -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
             -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
             -H "Content-Type: application/json" \
             -d "{\"action\": \"fetch_meta_insights\", \"from\": \"$FROM_DATE\", \"to\": \"$TO_DATE\"}")
+
           echo "Response: $RESPONSE"
+
           if echo "$RESPONSE" | grep -q '"success":true'; then
-      
+            echo "Meta insights sync completed successfully"
+          else
+            echo "::error::Meta insights sync failed"
+            exit 1
+          fi
