@@ -79,7 +79,7 @@ export default function Dashboard() {
           <MetricsGrid metrics={metrics} quality={quality} />
           <FunnelAndSpendSection funnelData={funnelData} metrics={metrics} combined={combined} periodLabel={periodLabel} quality={quality} />
           <RealROISection funnel={funnel} combined={combined} />
-          <PatientConversionSection sourceFilter={sourceFilter} campaignId={campaignId} from={dateRange.from} to={dateRange.to} />
+          <PatientConversionSection sourceFilter={sourceFilter} campaignId={campaignId} from={dateRange.from} to={dateRange.to} attributedSpend={metrics.spend} />
           <TrendSection trendData={trendData} formatDate={(dateString) => {
             const [year, month, day] = dateString.split('-')
             return year && month && day ? `${day}/${month}/${year}` : dateString
