@@ -235,7 +235,8 @@ async function metaFetchInsightsWithFallback(path: string, params: Record<string
       const alternateParams = { ...params, filtering: JSON.stringify(alternates) };
       try {
         return await metaFetch(path, alternateParams, token);
-      } catch {
+      } catch (err) {
+        console.warn('[Meta] Falló el filtrado alternativo de insights, procediendo con fallback:', err);
         // Continue to full fallback below.
       }
     }
@@ -666,10 +667,14 @@ async function fetchPriorAgentOutputs(
     } else {
       query = query.eq('user_id', userId);
     }
-    const { data, error } = await query;
-    if (error) return [];
+        const { data, error } = await query;
+        if (error) {
+          console.warn('[AI] Error al recuperar memoria de salidas previas:', error);
+          return [];
+        }
     return (data ?? []).filter((row: any) => row?.output_text);
-  } catch {
+  } catch (err) {
+    console.error('[AI] Fallo crítico en fetchPriorAgentOutputs:', err);
     return [];
   }
 }
@@ -3178,7 +3183,7 @@ async function handleCampaignsFilter(ctx: AuthenticatedRouteContext): Promise<Re
 
     return sendJson({
       success: true,
-      date_range: { from: fromDate, to: toDate },
+      date_range: { from: since, to: until },
       campaigns: (data ?? []).map((c: any) => {
         const totalImporte = Number(c.total_importe ?? c.spend ?? 0);
         const totalCitas = Number(c.total_citas ?? c.registros ?? 0);
@@ -5712,8 +5717,8 @@ function parseAiSuggestionsList(text: string): string[] {
     if (Array.isArray(parsed)) {
       return parsed.map((s: any) => String(s ?? '').trim()).filter(Boolean);
     }
-  } catch {
-    // ignore
+  } catch (err) {
+    console.debug('parseAiSuggestionsList: el texto no es un array JSON válido', err);
   }
   // Try to locate a JSON array inside the response.
   const match = /\[[\s\S]*\]/.exec(trimmed);
@@ -5723,8 +5728,8 @@ function parseAiSuggestionsList(text: string): string[] {
       if (Array.isArray(parsed)) {
         return parsed.map((s: any) => String(s ?? '').trim()).filter(Boolean);
       }
-    } catch {
-      // ignore
+    } catch (err) {
+      console.debug('parseAiSuggestionsList: no se encontró un array JSON en el texto', err);
     }
   }
   // Last resort: bullet/line splitting.
