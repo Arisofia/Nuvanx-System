@@ -7,7 +7,7 @@
  * - meta_attribution (Meta campaign data)
  * - agent_outputs (AI analysis log)
  */
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from '@supabase/supabase-js';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',

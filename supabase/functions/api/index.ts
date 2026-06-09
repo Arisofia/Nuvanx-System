@@ -3217,10 +3217,19 @@ async function handleCampaignsFilter(ctx: AuthenticatedRouteContext): Promise<Re
 }
 
 async function handleDashboardLeadFlow(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, userId, resource, sub, sendJson } = ctx;
+  const { adminClient, userId, resource, sub, url, sendJson } = ctx;
   if (resource === 'dashboard' && sub === 'lead-flow') {
+    const { since, until } = getKpiDateRange(url);
+    const untilFullDay = `${until}T23:59:59Z`;
+
     const clinicId = await resolveClinicId(adminClient, userId);
-    let query = adminClient.from('leads').select('stage, created_at').is('deleted_at', null).neq('source', 'doctoralia');
+    let query = adminClient.from('leads')
+      .select('stage, created_at')
+      .is('deleted_at', null)
+      .neq('source', 'doctoralia')
+      .gte('created_at', since)
+      .lte('created_at', untilFullDay);
+
     query = applyClinicOrUserScope(query, clinicId, userId);
     const { data: leads } = await query;
     const stages = ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'];
@@ -3236,14 +3245,19 @@ async function handleDashboardLeadFlow(ctx: AuthenticatedRouteContext): Promise<
 }
 
 function getDashboardMetaTrendContext(url: URL, accountIds: readonly string[]) {
-  const trendDays = Number.parseInt(url.searchParams.get('days') ?? '30', 10) || 30;
   const fromParam = url.searchParams.get('from');
   const toParam = url.searchParams.get('to');
   const campaignId = url.searchParams.get('campaign_id');
-  const since = fromParam || new Date(Date.now() - trendDays * 86_400_000).toISOString().slice(0, 10);
-  const until = toParam || new Date().toISOString().slice(0, 10);
-  const cacheKey = buildMetaCacheKey('dashboard:meta-trends', accountIds, since, until, campaignId);
 
+  let since = fromParam;
+  let until = toParam || new Date().toISOString().slice(0, 10);
+
+  if (!since) {
+    const now = new Date();
+    since = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  }
+
+  const cacheKey = buildMetaCacheKey('dashboard:meta-trends', accountIds, since, until, campaignId);
   return { since, until, campaignId, cacheKey };
 }
 
@@ -3346,12 +3360,17 @@ async function handleDashboardMetaTrends(ctx: AuthenticatedRouteContext): Promis
 }
 
 function getMetaInsightsTimePeriods(url: URL) {
-  const requestedDays = Number.parseInt(url.searchParams.get('days') ?? '30', 10) || 30;
   const fromParam = url.searchParams.get('from');
   const toParam = url.searchParams.get('to');
 
-  const since = fromParam || new Date(Date.now() - requestedDays * 86_400_000).toISOString().slice(0, 10);
-  const until = toParam || new Date().toISOString().slice(0, 10);
+  let since = fromParam;
+  let until = toParam || new Date().toISOString().slice(0, 10);
+
+  if (!since) {
+    const now = new Date();
+    since = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  }
+
   const days = Math.max(1, Math.round((new Date(until).getTime() - new Date(since).getTime()) / 86_400_000) + 1);
   const prevSince = new Date(new Date(since).getTime() - days * 86_400_000).toISOString().slice(0, 10);
   return { since, until, days, prevSince };
@@ -4195,12 +4214,15 @@ async function handleMetaOrganicGet(ctx: AuthenticatedRouteContext): Promise<Res
     return sendJson({ success: false, message: 'No Page ID configured for this Meta integration.' }, 400);
   }
 
-  const days = Math.min(Math.max(Number.parseInt(url.searchParams.get('days') ?? '30', 10) || 30, 1), 365);
-  const today = new Date();
-  const untilDate = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - 1));
-  const sinceDate = new Date(Date.UTC(untilDate.getUTCFullYear(), untilDate.getUTCMonth(), untilDate.getUTCDate() - (days - 1)));
-  const until = untilDate.toISOString().slice(0, 10);
-  const sinceStr = sinceDate.toISOString().slice(0, 10);
+  const fromParam = url.searchParams.get('from');
+  const toParam = url.searchParams.get('to') || new Date().toISOString().slice(0, 10);
+  
+  let sinceStr = fromParam;
+  if (!sinceStr) {
+    const now = new Date();
+    sinceStr = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  }
+  const until = toParam;
 
   if (sub2 === 'posts') {
     const keyword = (url.searchParams.get('keyword') ?? '').trim();
@@ -4274,12 +4296,15 @@ async function handleMetaIgGet(ctx: AuthenticatedRouteContext): Promise<Response
     return sendJson({ success: false, message: 'No Instagram Business Account linked to this Meta integration.' }, 400);
   }
 
-  const days = Math.min(Math.max(Number.parseInt(url.searchParams.get('days') ?? '30', 10) || 30, 1), 365);
-  const today = new Date();
-  const untilDate = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - 1));
-  const sinceDate = new Date(Date.UTC(untilDate.getUTCFullYear(), untilDate.getUTCMonth(), untilDate.getUTCDate() - (days - 1)));
-  const until = untilDate.toISOString().slice(0, 10);
-  const sinceStr = sinceDate.toISOString().slice(0, 10);
+  const fromParam = url.searchParams.get('from');
+  const toParam = url.searchParams.get('to') || new Date().toISOString().slice(0, 10);
+  
+  let sinceStr = fromParam;
+  if (!sinceStr) {
+    const now = new Date();
+    sinceStr = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  }
+  const until = toParam;
 
   if (sub2 === 'posts') {
     const keyword = (url.searchParams.get('keyword') ?? '').trim();
@@ -4761,9 +4786,8 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
     return sendJson(payload, validation.statusCode);
   }
 
-  const campFrom = url.searchParams.get('from') ?? '';
-  const campTo = url.searchParams.get('to') ?? '';
-  return getMetaCampaignsLiveResult(creds, adminClient, userId, sendJson, campFrom, campTo);
+  const { since, until } = getKpiDateRange(url);
+  return getMetaCampaignsLiveResult(creds, adminClient, userId, sendJson, since, until);
 }
 
 async function getMetaCampaignsLiveResult(
@@ -4774,10 +4798,7 @@ async function getMetaCampaignsLiveResult(
   campFrom: string,
   campTo: string,
 ): Promise<Response> {
-  const datePreset = campFrom && campTo ? null : 'lifetime';
-  const insightsDateParam = campFrom && campTo
-    ? `time_range(${JSON.stringify({ since: campFrom, until: campTo })})`
-    : `date_preset(${datePreset})`;
+  const insightsDateParam = `time_range(${JSON.stringify({ since: campFrom, until: campTo })})`;
 
   try {
     const accountResults = await Promise.allSettled(creds.adAccountIds.map(async (accountId: string) => {
@@ -6367,15 +6388,22 @@ function buildTraceabilityCampaigns(rows: any[]): any[] {
 }
 
 function applyTraceabilityFilters(query: any, userId: string, url: URL, options: { includeMatchedOnly?: boolean } = {}) {
-  const from = url.searchParams.get('from') ?? '';
-  const to = url.searchParams.get('to') ?? '';
+  const fromParam = url.searchParams.get('from');
+  const toParam = url.searchParams.get('to') || new Date().toISOString().slice(0, 10);
+  
+  let from = fromParam;
+  if (!from) {
+    const now = new Date();
+    from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  }
+
   const source = url.searchParams.get('source') ?? '';
   const campaignName = url.searchParams.get('campaign_name') ?? '';
   const matchedOnly = options.includeMatchedOnly && url.searchParams.get('matched') === 'true';
 
   let filtered = query.eq('lead_user_id', userId);
-  if (from) filtered = filtered.gte('lead_created_at', from);
-  if (to) filtered = filtered.lte('lead_created_at', `${to}T23:59:59Z`);
+  filtered = filtered.gte('lead_created_at', from);
+  filtered = filtered.lte('lead_created_at', `${toParam}T23:59:59Z`);
   if (source) filtered = filtered.eq('source', source);
   if (campaignName) filtered = filtered.ilike('campaign_name', `%${campaignName}%`);
   if (matchedOnly) filtered = filtered.or(TRACEABILITY_MATCH_OR);
@@ -6794,11 +6822,21 @@ async function processWhatsappConversionPost(adminClient: any, userId: string, r
 }
 
 function getKpiDateRange(url: URL) {
-  const days = Math.min(Math.max(Number.parseInt(url.searchParams.get('days') ?? '30', 10) || 30, 1), 90);
   const fromParam = url.searchParams.get('from') ?? '';
   const toParam = url.searchParams.get('to') ?? '';
-  const since = fromParam || new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
-  const until = toParam || new Date().toISOString().slice(0, 10);
+  
+  let since = fromParam;
+  let until = toParam || new Date().toISOString().slice(0, 10);
+  
+  if (!since) {
+    // Default to first day of current month if no from date provided
+    const now = new Date();
+    since = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  }
+  
+  const diffTime = Math.abs(new Date(until).getTime() - new Date(since).getTime());
+  const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 30;
+
   return { since, until, days, period: { since, until, range: `${days}d` } };
 }
 
@@ -7340,18 +7378,18 @@ function computeAvgTicketNet(row: any): number {
 async function handleReportsCampaignPerformanceGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'reports' && sub === 'campaign-performance' && req.method === 'GET') {
-    const from   = url.searchParams.get('from')   ?? '';
-    const to     = url.searchParams.get('to')     ?? '';
-    const source = url.searchParams.get('source') ?? '';
-    let query = adminClient
-      .from('vw_campaign_performance_real')
-      .select('*')
-      .eq('user_id', userId)
-      .order('total_leads', { ascending: false });
-    if (from)   query = query.gte('first_lead_at', from);
-    if (to)     query = query.lte('last_lead_at', to);
-    if (source) query = query.eq('source', source);
-    const { data: rows } = await query;
+    const { since, until } = getKpiDateRange(url);
+    
+    const { data: rows, error } = await adminClient.rpc('get_campaign_report', {
+      from_date: since,
+      to_date: until
+    });
+
+    if (error) {
+      console.error('[Reports] campaign performance error:', error);
+      return sendJson({ success: false, message: 'Failed to load campaign performance report.' }, 500);
+    }
+    
     return sendJson({ success: true, campaigns: rows || [] });
   }
   return null;

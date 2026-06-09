@@ -9,7 +9,14 @@ import { TrendSection } from '../components/dashboard/TrendSection'
 import { PatientConversionSection } from '../components/dashboard/PatientConversionSection'
 
 export default function Dashboard() {
-  const [days, setDays] = useState<7 | 14 | 30 | 90>(30)
+  const [dateRange, setDateRange] = useState(() => {
+    const now = new Date()
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
+    return {
+      from: firstDay.toISOString().slice(0, 10),
+      to: now.toISOString().slice(0, 10)
+    }
+  })
   const [campaignId, setCampaignId] = useState<string>('ALL')
   const [sourceFilter, setSourceFilter] = useState<string>('ALL')
 
@@ -23,9 +30,22 @@ export default function Dashboard() {
     sourcesList,
     campaignsList,
     quality,
-  } = useDashboardData(days, '', '', campaignId, sourceFilter, 0, 0)
+  } = useDashboardData(0, dateRange.from, dateRange.to, campaignId, sourceFilter, 0, 0)
 
-  const periodLabel = `Últimos ${days} días`
+  const periodLabel = `Periodo: ${dateRange.from} al ${dateRange.to}`
+
+  const setDays = (d: 7 | 14 | 30 | 90) => {
+    const now = new Date()
+    const fromDate = new Date(Date.now() - d * 86_400_000)
+    setDateRange({
+      from: fromDate.toISOString().slice(0, 10),
+      to: now.toISOString().slice(0, 10)
+    })
+  }
+
+  // Calculate days for UI if needed
+  const diffTime = Math.abs(new Date(dateRange.to).getTime() - new Date(dateRange.from).getTime());
+  const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 30;
 
   if (metrics.loading) {
     return (
