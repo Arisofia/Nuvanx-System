@@ -8,13 +8,13 @@ import { invokeApi } from '../lib/supabaseClient'
 import type { IntegrationRow, ConnectForm } from '../types'
 
 const serviceIcons: Record<string, string> = {
-  meta: '📱',
-  whatsapp: '💬',
-  google_ads: '🔍',
-  openai: '🤖',
-  gemini: '✨',
-  github: '🐙',
-  doctoralia: '🏥',
+  meta: 'ðŸ“±',
+  whatsapp: 'ðŸ’¬',
+  google_ads: 'ðŸ”',
+  openai: 'ðŸ¤–',
+  gemini: 'âœ¨',
+  github: 'ðŸ™',
+  doctoralia: 'ðŸ¥',
 }
 
 const serviceLabels: Record<string, string> = {
@@ -60,7 +60,7 @@ export default function Integrations() {
       setIntegrations((res?.integrations ?? []) as IntegrationRow[])
     } catch (err: any) {
       console.error('[Integrations] load error (sanitized for UI):', err)
-      setError('No se pudieron cargar las integraciones. Recarga la página o contacta a support@nuvanx.com.')
+      setError('No se pudieron cargar las integraciones. Recarga la pÃ¡gina o contacta a support@nuvanx.com.')
       setIntegrations([])
     }
     setLoading(false)
@@ -117,10 +117,10 @@ export default function Integrations() {
         .filter(Boolean)
 
       if (adAccountIds.length === 0) {
-        return 'Ingrese al menos un ID de cuenta publicitaria válido (act_1234567890 o 1234567890).'
+        return 'Ingrese al menos un ID de cuenta publicitaria vÃ¡lido (act_1234567890 o 1234567890).'
       }
       if (rawValues.length > 1 && adAccountIds.length < rawValues.length) {
-        return 'Verifica que todas las cuentas publicitarias sean IDs válidas. Debes separar varias IDs con comas o espacios, por ejemplo: act_1234567890, act_0987654321.'
+        return 'Verifica que todas las cuentas publicitarias sean IDs vÃ¡lidas. Debes separar varias IDs con comas o espacios, por ejemplo: act_1234567890, act_0987654321.'
       }
     }
 
@@ -176,7 +176,7 @@ export default function Integrations() {
     } catch (err: any) {
       // Sanitize: do not show raw internal/permission errors in real-time. Credentials travel securely via /api.
       console.error('[Integrations] connect error (sanitized):', err)
-      setSaveError('Error al conectar la integración. Verifica el token/ID e intenta de nuevo, o contacta soporte.')
+      setSaveError('Error al conectar la integraciÃ³n. Verifica el token/ID e intenta de nuevo, o contacta soporte.')
     } finally {
       setSaving(false)
     }
@@ -193,7 +193,7 @@ export default function Integrations() {
       setTestResult((prev) => ({ ...prev, [service]: res?.message ?? (res?.success ? 'OK' : 'Error') }))
     } catch (err: any) {
       console.error('[Integrations] test error (sanitized):', err)
-      setTestResult((prev) => ({ ...prev, [service]: 'Error en la prueba de conexión. Revisa las credenciales.' }))
+      setTestResult((prev) => ({ ...prev, [service]: 'Error en la prueba de conexiÃ³n. Revisa las credenciales.' }))
     } finally {
       setTesting(null)
     }
@@ -208,15 +208,15 @@ export default function Integrations() {
       const account = res.ad_account ?? res.accountId ?? ''
       const accountIds = Array.isArray(res.accountIds) ? res.accountIds : String(res.accountIds ?? '').split(/[\s,;]+/).filter(Boolean)
       const name = res.meta_user ?? res.metaUser ?? 'Meta user'
-      const accountText = account ? ` · Cuenta: ${account}` : ''
-      const accountIdsText = accountIds.length > 0 ? ` · Cuentas: ${accountIds.join(', ')}` : ''
+      const accountText = account ? ` Â· Cuenta: ${account}` : ''
+      const accountIdsText = accountIds.length > 0 ? ` Â· Cuentas: ${accountIds.join(', ')}` : ''
       setHealthResult((prev) => ({
         ...prev,
         [service]: `OK: ${name}${accountText}${accountIdsText}`,
       }))
     } catch (err: any) {
       console.error('[Integrations] health/meta error (sanitized):', err)
-      setHealthResult((prev) => ({ ...prev, [service]: 'Verificación falló. Asegúrate de que las credenciales de Meta viajen correctamente al backend.' }))
+      setHealthResult((prev) => ({ ...prev, [service]: 'VerificaciÃ³n fallÃ³. AsegÃºrate de que las credenciales de Meta viajen correctamente al backend.' }))
     } finally {
       setHealthLoading(null)
     }
@@ -236,22 +236,22 @@ export default function Integrations() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-serif font-bold text-foreground">Integraciones</h1>
-          <p className="text-muted mt-1">Bóveda de credenciales — Meta Ads, WhatsApp, OpenAI, Gemini, GitHub, Google Ads</p>
+          <p className="text-muted mt-1">BÃ³veda de credenciales â€” Meta Ads, WhatsApp, OpenAI, Gemini, GitHub, Google Ads</p>
           <p className="text-xs text-muted mt-1">
-            Inicia sesión con credenciales reales y consulta <a href="mailto:support@nuvanx.com" className="text-primary underline">support@nuvanx.com</a> si necesitas ayuda con tokens.
+            Inicia sesiÃ³n con credenciales reales y consulta <a href="mailto:support@nuvanx.com" className="text-primary underline">support@nuvanx.com</a> si necesitas ayuda con tokens.
           </p>
         </div>
         <Button className="gap-2" onClick={() => { setShowForm(true); setSaveError(null) }}>
           <Plus className="w-4 h-4" />
-          Agregar integración
+          Agregar integraciÃ³n
         </Button>
       </div>
 
-      {/* ── Connect form ───────────────────────────────────────────── */}
+      {/* â”€â”€ Connect form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {showForm && (
         <Card className="border-border bg-surface">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-base">Conectar Integración</CardTitle>
+            <CardTitle className="text-base">Conectar IntegraciÃ³n</CardTitle>
             <Button variant="ghost" size="sm" onClick={() => setShowForm(false)}><X className="w-4 h-4" /></Button>
           </CardHeader>
           <CardContent>
@@ -279,7 +279,7 @@ export default function Integrations() {
                   id="token-input"
                   type="password"
                   name="token"
-                  placeholder="Pega tu token aquí"
+                  placeholder="Pega tu token aquÃ­"
                   value={form.token}
                   onChange={handleFieldChange}
                   className="mt-1"
@@ -294,20 +294,19 @@ export default function Integrations() {
                       id="adAccountId-input"
                       type="text"
                       name="adAccountId"
-                      placeholder="ej. act_..."
                       value={form.adAccountId}
                       onChange={handleFieldChange}
                       className="mt-1"
                     />
-                    <p className="text-xs text-muted mt-1">Puedes añadir varios IDs separados por comas o espacios. Si tienes más de una cuenta Meta, ingrésalas todas para que el dashboard muestre el gasto combinado.</p>
+                    <p className="text-xs text-muted mt-1">Puedes aÃ±adir varios IDs separados por comas o espacios. Si tienes mÃ¡s de una cuenta Meta, ingrÃ©salas todas para que el dashboard muestre el gasto combinado.</p>
                   </div>
                   <div>
-                    <label htmlFor="pageId-input" className="text-sm font-medium">ID de la Página <span className="text-muted-foreground text-xs">(opcional)</span></label>
+                    <label htmlFor="pageId-input" className="text-sm font-medium">ID de la PÃ¡gina <span className="text-muted-foreground text-xs">(opcional)</span></label>
                     <Input
                       id="pageId-input"
                       type="text"
                       name="pageId"
-                      placeholder="ID de la página"
+                      placeholder="ID de la pÃ¡gina"
                       value={form.pageId}
                       onChange={handleFieldChange}
                       className="mt-1"
@@ -315,29 +314,29 @@ export default function Integrations() {
                     <p className="text-xs text-muted mt-1">Este campo es opcional y solo es necesario si deseas activar el webhook de leads de Meta.</p>
                   </div>
                   <div>
-                    <label htmlFor="pixelId-input" className="text-sm font-medium">ID del Píxel de Meta</label>
+                    <label htmlFor="pixelId-input" className="text-sm font-medium">ID del PÃ­xel de Meta</label>
                     <Input
                       id="pixelId-input"
                       type="text"
                       name="pixelId"
-                      placeholder="ID del píxel"
+                      placeholder="ID del pÃ­xel"
                       value={form.pixelId}
                       onChange={handleFieldChange}
                       className="mt-1"
                     />
-                    <p className="text-xs text-muted mt-1">Opcional. Si lo ingresas, los eventos de conversión se enviarán a este Píxel específico.</p>
+                    <p className="text-xs text-muted mt-1">Opcional. Si lo ingresas, los eventos de conversiÃ³n se enviarÃ¡n a este PÃ­xel especÃ­fico.</p>
                   </div>
                 </>
               )}
 
               {form.service === 'whatsapp' && (
                 <div>
-                  <label htmlFor="phoneNumberId-input" className="text-sm font-medium">ID del Número de Teléfono <span className="text-red-500">*</span></label>
+                  <label htmlFor="phoneNumberId-input" className="text-sm font-medium">ID del NÃºmero de TelÃ©fono <span className="text-red-500">*</span></label>
                   <Input
                     id="phoneNumberId-input"
                     type="text"
                     name="phoneNumberId"
-                    placeholder="ID del número de teléfono de WhatsApp Business"
+                    placeholder="ID del nÃºmero de telÃ©fono de WhatsApp Business"
                     value={form.phoneNumberId}
                     onChange={handleFieldChange}
                     className="mt-1"
@@ -352,7 +351,6 @@ export default function Integrations() {
                     id="googleAdsCustomerId-input"
                     type="text"
                     name="googleAdsCustomerId"
-                    placeholder="ej. 000-000-0000"
                     value={form.googleAdsCustomerId}
                     onChange={handleFieldChange}
                     className="mt-1"
@@ -365,7 +363,7 @@ export default function Integrations() {
 
               <div className="flex gap-2 pt-1">
                 <Button type="submit" disabled={saving} className="flex-1">
-                  {saving ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Guardando…</> : 'Conectar'}
+                  {saving ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Guardandoâ€¦</> : 'Conectar'}
                 </Button>
                 <Button type="button" variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button>
               </div>
@@ -375,19 +373,19 @@ export default function Integrations() {
       )}
 
       {loading && (
-        <Card><CardContent className="py-6 text-sm text-muted">Cargando integraciones…</CardContent></Card>
+        <Card><CardContent className="py-6 text-sm text-muted">Cargando integracionesâ€¦</CardContent></Card>
       )}
       {error && (
         <Card className="border-[#D9534F]/30 bg-[#D9534F]/8"><CardContent className="py-6 text-sm text-[#D9534F]">{error}</CardContent></Card>
       )}
       {!loading && !error && integrations.length === 0 && (
-        <Card><CardContent className="py-6 text-sm text-muted">No hay integraciones conectadas aún. Haz clic en "Agregar integración" para comenzar.</CardContent></Card>
+        <Card><CardContent className="py-6 text-sm text-muted">No hay integraciones conectadas aÃºn. Haz clic en "Agregar integraciÃ³n" para comenzar.</CardContent></Card>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {integrations.map((integration) => {
           const isConnected = integration.status === 'connected' || integration.status === 'active'
-          const icon = serviceIcons[integration.service] ?? '🔗'
+          const icon = serviceIcons[integration.service] ?? 'ðŸ”—'
           const meta = integration.metadata ?? {}
           const rawAdAccountIds = meta.adAccountIds ?? meta.ad_account_ids ?? meta.adAccountId ?? meta.ad_account_id ?? ''
           const adAccountIds = extractAdAccountIds(rawAdAccountIds)
@@ -419,16 +417,16 @@ export default function Integrations() {
                   </p>
                 )}
                 {pageId && (
-                  <p className="text-xs text-muted">ID de la Página: <span className="font-mono">{pageId}</span></p>
+                  <p className="text-xs text-muted">ID de la PÃ¡gina: <span className="font-mono">{pageId}</span></p>
                 )}
                 {pixelId && (
-                  <p className="text-xs text-muted">ID del Píxel: <span className="font-mono">{pixelId}</span></p>
+                  <p className="text-xs text-muted">ID del PÃ­xel: <span className="font-mono">{pixelId}</span></p>
                 )}
                 {customerId && (
                   <p className="text-xs text-muted">Customer ID: <span className="font-mono">{customerId}</span></p>
                 )}
                 {integration.last_error && (
-                  <p className="text-xs text-[#D9534F]">Último error: {integration.last_error}</p>
+                  <p className="text-xs text-[#D9534F]">Ãšltimo error: {integration.last_error}</p>
                 )}
                 {integration.updated_at && (
                   <p className="text-xs text-muted">Actualizado: {new Date(integration.updated_at).toLocaleString()}</p>
@@ -445,8 +443,8 @@ export default function Integrations() {
                     onClick={() => handleTest(integration.service)}
                   >
                     {testing === integration.service
-                      ? <><Loader2 className="w-3 h-3 mr-2 animate-spin" />Probando…</>
-                      : 'Probar Conexión'}
+                      ? <><Loader2 className="w-3 h-3 mr-2 animate-spin" />Probandoâ€¦</>
+                      : 'Probar ConexiÃ³n'}
                   </Button>
                   {integration.service === 'meta' && (
                     <Button
@@ -457,7 +455,7 @@ export default function Integrations() {
                       onClick={() => handleHealthCheck(integration.service)}
                     >
                       {healthLoading === integration.service
-                        ? <><Loader2 className="w-3 h-3 mr-2 animate-spin" />Verificando…</>
+                        ? <><Loader2 className="w-3 h-3 mr-2 animate-spin" />Verificandoâ€¦</>
                         : 'Verificar accesos'}
                     </Button>
                   )}

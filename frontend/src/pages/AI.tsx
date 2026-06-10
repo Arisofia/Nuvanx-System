@@ -21,7 +21,7 @@ function getAiStatusMessage(
   aiProvider: string | null,
 ) {
   if (aiStatusLoading) {
-    return <p className="text-xs text-muted">Verificando estado de IA…</p>
+    return <p className="text-xs text-muted">Verificando estado de IAâ€¦</p>
   }
 
   if (aiStatusError) {
@@ -31,14 +31,14 @@ function getAiStatusMessage(
   if (aiAvailable) {
     return (
       <p className="text-xs text-muted">
-        IA disponible: {aiProvider ? aiProvider.toUpperCase() : 'conectada'}. El agente analiza tus campañas con memoria previa.
+        IA disponible: {aiProvider ? aiProvider.toUpperCase() : 'conectada'}. El agente analiza tus campaÃ±as con memoria previa.
       </p>
     )
   }
 
   return (
     <p className="text-xs text-muted">
-      No hay integración de IA configurada. Conecta OpenAI o Gemini en Integraciones para generar contenido y sugerencias.
+      No hay integraciÃ³n de IA configurada. Conecta OpenAI o Gemini en Integraciones para generar contenido y sugerencias.
     </p>
   )
 }
@@ -97,7 +97,7 @@ export default function AI() {
       if (!data?.success) throw new Error(data?.message || 'Analysis failed')
       if (data?.empty) {
         setAnalysisResult(null)
-        setAnalysisEmpty(data?.message ?? 'Aún no hay datos suficientes para analizar.')
+        setAnalysisEmpty(data?.message ?? 'AÃºn no hay datos suficientes para analizar.')
       } else {
         setAnalysisResult(data.content ?? data.result ?? data.analysis ?? '')
       }
@@ -179,7 +179,7 @@ export default function AI() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-serif font-bold text-foreground">Capa IA</h1>
-        <p className="text-muted mt-1">Generación de contenido, sugerencias y registro de resultados</p>
+        <p className="text-muted mt-1">GeneraciÃ³n de contenido, sugerencias y registro de resultados</p>
       </div>
 
       <Tabs defaultValue="generate" className="w-full">
@@ -189,7 +189,7 @@ export default function AI() {
           <TabsTrigger value="history" className="gap-2"><History className="w-4 h-4" />Historial</TabsTrigger>
         </TabsList>
 
-        {/* ── Generate ── */}
+        {/* â”€â”€ Generate â”€â”€ */}
         <TabsContent value="generate" className="mt-4 space-y-4">
           {error && (
             <div className="rounded-md border border-[#D9534F]/30 bg-[#D9534F]/8 px-4 py-3 text-sm text-[#D9534F]">{error}</div>
@@ -205,7 +205,6 @@ export default function AI() {
                     <label htmlFor="ai-prompt" className="text-sm font-medium">Prompt</label>
                     <Textarea
                       id="ai-prompt"
-                      placeholder="Describe lo que quieres generar..."
                       value={prompt}
                       onChange={(e) => setPrompt(e.target.value)}
                       className="mt-2"
@@ -233,7 +232,7 @@ export default function AI() {
               {analysisError && (
                 <Card>
                   <CardHeader>
-                    <CardTitle>Análisis de campaña</CardTitle>
+                    <CardTitle>AnÃ¡lisis de campaÃ±a</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <p className="text-sm text-[#D9534F]">{analysisError}</p>
@@ -244,7 +243,7 @@ export default function AI() {
               {!analysisError && analysisEmpty && (
                 <Card>
                   <CardHeader>
-                    <CardTitle>Análisis de campaña</CardTitle>
+                    <CardTitle>AnÃ¡lisis de campaÃ±a</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <p className="text-sm text-muted">{analysisEmpty}</p>
@@ -255,7 +254,7 @@ export default function AI() {
               {!analysisError && !analysisEmpty && analysisResult !== null && (
                 <Card>
                   <CardHeader>
-                    <CardTitle>Análisis de campaña</CardTitle>
+                    <CardTitle>AnÃ¡lisis de campaÃ±a</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <pre className="whitespace-pre-wrap text-sm text-[#d7c5ae] leading-relaxed">{analysisResult}</pre>
@@ -266,10 +265,10 @@ export default function AI() {
               {!analysisError && !analysisEmpty && analysisResult === null && analyzing && (
                 <Card>
                   <CardHeader>
-                    <CardTitle>Análisis de campaña</CardTitle>
+                    <CardTitle>AnÃ¡lisis de campaÃ±a</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-sm text-muted">El agente está analizando tus campañas…</p>
+                    <p className="text-sm text-muted">El agente estÃ¡ analizando tus campaÃ±asâ€¦</p>
                   </CardContent>
                 </Card>
               )}
@@ -287,12 +286,12 @@ export default function AI() {
 
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0">
-                  <CardTitle className="text-base flex items-center gap-2"><BarChart2 className="w-4 h-4" />Agente de análisis</CardTitle>
+                  <CardTitle className="text-base flex items-center gap-2"><BarChart2 className="w-4 h-4" />Agente de anÃ¡lisis</CardTitle>
                   <button
                     type="button"
                     onClick={handleAnalyze}
                     disabled={analyzing}
-                    title="Refrescar análisis"
+                    title="Refrescar anÃ¡lisis"
                     className="text-muted hover:text-foreground transition-colors disabled:opacity-50"
                   >
                     <RefreshCw className={`w-4 h-4 ${analyzing ? 'animate-spin' : ''}`} />
@@ -306,7 +305,7 @@ export default function AI() {
           </div>
         </TabsContent>
 
-        {/* ── Suggestions ── */}
+        {/* â”€â”€ Suggestions â”€â”€ */}
         <TabsContent value="suggestions" className="mt-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
@@ -326,10 +325,10 @@ export default function AI() {
                 <p className="text-sm text-[#D9534F] mb-4">{suggestionsError}</p>
               )}
               {suggestions.length === 0 && !suggestionsLoading && !suggestionsError && (
-                <p className="text-muted text-sm py-4 text-center">Aún no hay sugerencias. El agente las generará cuando tengas leads en el CRM.</p>
+                <p className="text-muted text-sm py-4 text-center">AÃºn no hay sugerencias. El agente las generarÃ¡ cuando tengas leads en el CRM.</p>
               )}
               {suggestions.length === 0 && suggestionsLoading && (
-                <p className="text-muted text-sm py-4 text-center">El agente está preparando sugerencias…</p>
+                <p className="text-muted text-sm py-4 text-center">El agente estÃ¡ preparando sugerenciasâ€¦</p>
               )}
               <div className="space-y-3">
                 {suggestions.map((s) => (
@@ -349,7 +348,7 @@ export default function AI() {
           </Card>
         </TabsContent>
 
-        {/* ── History ── */}
+        {/* â”€â”€ History â”€â”€ */}
         <TabsContent value="history" className="mt-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
@@ -377,10 +376,10 @@ export default function AI() {
                 <p className="text-sm text-[#D9534F] mb-4">{outputsError}</p>
               )}
               {filteredOutputs.length === 0 && !outputsLoading && !outputsError && (
-                <p className="text-muted text-sm py-4 text-center">Aún no hay historial. Cuando los agentes generen resultados aparecerán aquí automáticamente.</p>
+                <p className="text-muted text-sm py-4 text-center">AÃºn no hay historial. Cuando los agentes generen resultados aparecerÃ¡n aquÃ­ automÃ¡ticamente.</p>
               )}
               {filteredOutputs.length === 0 && outputsLoading && (
-                <p className="text-muted text-sm py-4 text-center">Cargando historial…</p>
+                <p className="text-muted text-sm py-4 text-center">Cargando historialâ€¦</p>
               )}
               <div className="space-y-3">
                 {filteredOutputs.map((o) => {

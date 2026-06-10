@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef, useCallback, useReducer, type ReactNode } from 'react'
+﻿import { useEffect, useState, useMemo, useRef, useCallback, useReducer, type ReactNode } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import {
   AreaChart, Area, BarChart, Bar,
@@ -70,7 +70,7 @@ function DeltaBadge({ value }: Readonly<{ value: number | undefined }>) {
     <span className={`inline-flex items-center gap-0.5 text-xs font-medium px-1.5 py-0.5 rounded ml-2 ${
       up ? 'bg-[#28A745]/10 text-[#28A745]' : 'bg-[#D9534F]/10 text-[#D9534F]'
     }`}>
-      {up ? '▲' : '▼'} {Math.abs(value).toFixed(1)}%
+      {up ? 'Ã¢â€“Â²' : 'Ã¢â€“Â¼'} {Math.abs(value).toFixed(1)}%
     </span>
   )
 }
@@ -120,7 +120,7 @@ function CampaignTable({ campaigns, filteredCampaigns, currency, summary, accoun
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-border text-xs text-muted uppercase tracking-wide">
-            <th className="text-left px-4 py-3">Campaña</th>
+            <th className="text-left px-4 py-3">CampaÃƒÂ±a</th>
             <th className="text-left px-3 py-3">Cuenta Meta</th>
             <th className="text-center px-3 py-3">Estado</th>
             <th className="text-center px-3 py-3">Objetivo</th>
@@ -134,7 +134,7 @@ function CampaignTable({ campaigns, filteredCampaigns, currency, summary, accoun
             <th className="text-right px-3 py-3">CPM</th>
             <th className="text-right px-3 py-3">Conversiones</th>
             <th className="text-right px-3 py-3">CPP</th>
-            <th className="text-right px-3 py-3" title="Customer Acquisition Cost = Gasto ÷ Conversiones">CAC</th>
+            <th className="text-right px-3 py-3" title="Customer Acquisition Cost = Gasto ÃƒÂ· Conversiones">CAC</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
@@ -152,52 +152,52 @@ function CampaignTable({ campaigns, filteredCampaigns, currency, summary, accoun
                     ? 'bg-[#28A745]/10 text-[#28A745] border border-[#28A745]/30'
                     : 'bg-card text-muted border border-border'
                 }`}>
-                  {c.status === 'ACTIVE' ? '● ' : '○ '}{c.status}
+                  {c.status === 'ACTIVE' ? 'Ã¢â€”Â ' : 'Ã¢â€”â€¹ '}{c.status}
                 </span>
               </td>
-              <td className="px-3 py-3 text-center text-muted text-xs">{c.objective || '—'}</td>
+              <td className="px-3 py-3 text-center text-muted text-xs">{c.objective || 'Ã¢â‚¬â€'}</td>
               <td className="px-3 py-3 text-right text-muted text-xs">
                 {(() => {
                   if (c.dailyBudget != null) {
-                    return <><span className="text-muted">día</span> {fmtCurrency(c.dailyBudget, currency)}</>
+                    return <><span className="text-muted">dÃƒÂ­a</span> {fmtCurrency(c.dailyBudget, currency)}</>
                   }
                   if (c.lifetimeBudget != null) {
                     return <><span className="text-muted">vit</span> {fmtCurrency(c.lifetimeBudget, currency)}</>
                   }
-                  return '—'
+                  return 'Ã¢â‚¬â€'
                 })()}
               </td>
               <td className="px-3 py-3 text-right font-semibold text-[#28A745]">
-                {c.insights ? fmtCurrency(c.insights.spend, currency) : '—'}
+                {c.insights ? fmtCurrency(c.insights.spend, currency) : 'Ã¢â‚¬â€'}
               </td>
               <td className="px-3 py-3 text-right text-foreground">
-                {c.insights ? c.insights.impressions.toLocaleString('es-ES') : '—'}
+                {c.insights ? c.insights.impressions.toLocaleString('es-ES') : 'Ã¢â‚¬â€'}
               </td>
               <td className="px-3 py-3 text-right text-foreground">
-                {c.insights ? c.insights.reach.toLocaleString('es-ES') : '—'}
+                {c.insights ? c.insights.reach.toLocaleString('es-ES') : 'Ã¢â‚¬â€'}
               </td>
               <td className="px-3 py-3 text-right text-foreground">
-                {c.insights ? c.insights.clicks.toLocaleString('es-ES') : '—'}
+                {c.insights ? c.insights.clicks.toLocaleString('es-ES') : 'Ã¢â‚¬â€'}
               </td>
               <td className="px-3 py-3 text-right text-foreground">
-                {c.insights ? `${fmt(c.insights.ctr)}%` : '—'}
+                {c.insights ? `${fmt(c.insights.ctr)}%` : 'Ã¢â‚¬â€'}
               </td>
               <td className="px-3 py-3 text-right text-[#C49A6C]">
-                {c.insights ? fmtCurrency(c.insights.cpc, currency) : '—'}
+                {c.insights ? fmtCurrency(c.insights.cpc, currency) : 'Ã¢â‚¬â€'}
               </td>
               <td className="px-3 py-3 text-right text-foreground">
-                {c.insights ? fmtCurrency(c.insights.cpm, currency) : '—'}
+                {c.insights ? fmtCurrency(c.insights.cpm, currency) : 'Ã¢â‚¬â€'}
               </td>
               <td className="px-3 py-3 text-right text-[#28A745]">
-                {c.insights ? c.insights.conversions.toLocaleString('es-ES') : '—'}
+                {c.insights ? c.insights.conversions.toLocaleString('es-ES') : 'Ã¢â‚¬â€'}
               </td>
               <td className="px-3 py-3 text-right text-[#B08B5A]">
-                {c.insights?.cpp == null ? '—' : fmtCurrency(c.insights.cpp, currency)}
+                {c.insights?.cpp == null ? 'Ã¢â‚¬â€' : fmtCurrency(c.insights.cpp, currency)}
               </td>
               <td className="px-3 py-3 text-right">
                 {c.insights && c.insights.conversions > 0
                   ? <span className="text-[#D9534F] font-medium">{fmtCurrency(c.insights.spend / c.insights.conversions, currency)}</span>
-                  : <span className="text-muted" title="No conversions in this period">—</span>}
+                  : <span className="text-muted" title="No conversions in this period">Ã¢â‚¬â€</span>}
               </td>
             </tr>
           ))}
@@ -227,12 +227,12 @@ function CampaignTable({ campaigns, filteredCampaigns, currency, summary, accoun
                 {(summary?.conversions ?? 0).toLocaleString('es-ES')}
               </td>
               <td className="px-3 py-3 text-right text-[#B08B5A]">
-                {summary?.cpp ? fmtCurrency(summary.cpp, currency) : '—'}
+                {summary?.cpp ? fmtCurrency(summary.cpp, currency) : 'Ã¢â‚¬â€'}
               </td>
               <td className="px-3 py-3 text-right text-[#D9534F]">
                 {summary && summary.conversions > 0
                   ? fmtCurrency(summary.spend / summary.conversions, currency)
-                  : <span className="text-muted" title="No conversions in this period">—</span>}
+                  : <span className="text-muted" title="No conversions in this period">Ã¢â‚¬â€</span>}
               </td>
             </tr>
           </tfoot>
@@ -286,7 +286,7 @@ const mapDailyToRatesChart = (d: any) => ({
 })
 
 const mapCampaignToChart = (c: CampaignRow) => ({
-  name: c.name.length > 22 ? c.name.slice(0, 22) + '…' : c.name,
+  name: c.name.length > 22 ? c.name.slice(0, 22) + 'Ã¢â‚¬Â¦' : c.name,
   Gasto: c.insights?.spend ?? 0,
   Clics: c.insights?.clicks ?? 0,
   Impresiones: Math.round((c.insights?.impressions ?? 0) / 100),
@@ -296,13 +296,13 @@ const mapCampaignToChart = (c: CampaignRow) => ({
 
 function AdsTable({ adsState, currency, accountIds }: Readonly<{ adsState: any; currency: string; accountIds: string[] }>) {
   if (adsState.loading) {
-    return <p className="p-4 text-sm text-muted animate-pulse">Cargando anuncios…</p>
+    return <p className="p-4 text-sm text-muted animate-pulse">Cargando anunciosÃ¢â‚¬Â¦</p>
   }
   if (adsState.error) {
     return <p className="p-4 text-sm text-red-400">{adsState.error}</p>
   }
   if (adsState.ads.length === 0) {
-    return <p className="p-4 text-sm text-muted">No hay anuncios disponibles para el período seleccionado.</p>
+    return <p className="p-4 text-sm text-muted">No hay anuncios disponibles para el perÃƒÂ­odo seleccionado.</p>
   }
 
   const noInsights = adsState.ads.length > 0 && adsState.ads.every((ad: any) => !ad.insights || ad.insights.spend === 0)
@@ -312,14 +312,14 @@ function AdsTable({ adsState, currency, accountIds }: Readonly<{ adsState: any; 
       {noInsights && (
         <div className="flex items-start gap-2 px-4 py-3 mx-4 mt-4 mb-2 rounded-md border border-amber-500/40 bg-amber-500/10 text-amber-300 text-xs">
           <svg className="mt-0.5 shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          <span>Meta no permite desglose por anuncio con las credenciales actuales. Solo se muestra gasto agregado a nivel de cuenta/campaña.</span>
+          <span>Meta no permite desglose por anuncio con las credenciales actuales. Solo se muestra gasto agregado a nivel de cuenta/campaÃƒÂ±a.</span>
         </div>
       )}
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-border text-xs text-muted uppercase tracking-wide">
             <th className="text-left px-4 py-3">Anuncio</th>
-            <th className="text-left px-3 py-3">Campaña</th>
+            <th className="text-left px-3 py-3">CampaÃƒÂ±a</th>
             <th className="text-left px-3 py-3">Cuenta Meta</th>
             <th className="text-center px-3 py-3">Estado</th>
             <th className="text-right px-3 py-3">Gasto</th>
@@ -340,7 +340,7 @@ function AdsTable({ adsState, currency, accountIds }: Readonly<{ adsState: any; 
                 {ad.adsetName && <span className="text-muted text-xs truncate block">{ad.adsetName}</span>}
               </td>
               <td className="px-3 py-3 text-muted text-xs max-w-[160px]">
-                <span title={ad.campaignName ?? ''} className="truncate block">{ad.campaignName ?? '—'}</span>
+                <span title={ad.campaignName ?? ''} className="truncate block">{ad.campaignName ?? 'Ã¢â‚¬â€'}</span>
               </td>
               <td className="px-3 py-3 text-xs font-semibold text-[#5C5550] whitespace-nowrap">
                 {ad.accountId ?? formatMetaAccountIds(accountIds)}
@@ -351,32 +351,32 @@ function AdsTable({ adsState, currency, accountIds }: Readonly<{ adsState: any; 
                     ? 'bg-[#28A745]/10 text-[#28A745] border border-[#28A745]/30'
                     : 'bg-card text-muted border border-border'
                 }`}>
-                  {ad.status === 'ACTIVE' ? '● ' : '○ '}{ad.status}
+                  {ad.status === 'ACTIVE' ? 'Ã¢â€”Â ' : 'Ã¢â€”â€¹ '}{ad.status}
                 </span>
               </td>
               <td className="px-3 py-3 text-right font-semibold text-[#28A745]">
-                {ad.insights ? fmtCurrency(ad.insights.spend, currency) : '—'}
+                {ad.insights ? fmtCurrency(ad.insights.spend, currency) : 'Ã¢â‚¬â€'}
               </td>
               <td className="px-3 py-3 text-right text-foreground">
-                {ad.insights ? ad.insights.impressions.toLocaleString('es-ES') : '—'}
+                {ad.insights ? ad.insights.impressions.toLocaleString('es-ES') : 'Ã¢â‚¬â€'}
               </td>
               <td className="px-3 py-3 text-right text-foreground">
-                {ad.insights ? ad.insights.clicks.toLocaleString('es-ES') : '—'}
+                {ad.insights ? ad.insights.clicks.toLocaleString('es-ES') : 'Ã¢â‚¬â€'}
               </td>
               <td className="px-3 py-3 text-right text-foreground">
-                {ad.insights ? `${fmt(ad.insights.ctr)}%` : '—'}
+                {ad.insights ? `${fmt(ad.insights.ctr)}%` : 'Ã¢â‚¬â€'}
               </td>
               <td className="px-3 py-3 text-right text-[#C49A6C]">
-                {ad.insights ? fmtCurrency(ad.insights.cpc, currency) : '—'}
+                {ad.insights ? fmtCurrency(ad.insights.cpc, currency) : 'Ã¢â‚¬â€'}
               </td>
               <td className="px-3 py-3 text-right text-foreground">
-                {ad.insights ? fmtCurrency(ad.insights.cpm, currency) : '—'}
+                {ad.insights ? fmtCurrency(ad.insights.cpm, currency) : 'Ã¢â‚¬â€'}
               </td>
               <td className="px-3 py-3 text-right text-[#28A745]">
-                {ad.insights ? ad.insights.conversions.toLocaleString('es-ES') : '—'}
+                {ad.insights ? ad.insights.conversions.toLocaleString('es-ES') : 'Ã¢â‚¬â€'}
               </td>
               <td className="px-3 py-3 text-right text-[#B08B5A]">
-                {ad.insights?.cpp == null ? '—' : fmtCurrency(ad.insights.cpp, currency)}
+                {ad.insights?.cpp == null ? 'Ã¢â‚¬â€' : fmtCurrency(ad.insights.cpp, currency)}
               </td>
             </tr>
           ))}
@@ -420,7 +420,7 @@ const useMarketingData = (campaignId: string, from: string, to: string) => {
           : []
 
         const failedBoth = insightsRes.status === 'rejected' && campaignsRes.status === 'rejected'
-        const error = failedBoth ? 'No se pudo cargar la información de Meta Ads.' : null
+        const error = failedBoth ? 'No se pudo cargar la informaciÃƒÂ³n de Meta Ads.' : null
 
         let accountIds: string[]
         if (Array.isArray(insightsData?.accountIds)) {
@@ -477,14 +477,14 @@ function MarketingHeader({
   return (
     <div className="flex flex-col sm:flex-row sm:items-end gap-4">
       <div className="flex-1">
-        <h1 className="text-3xl font-serif font-bold text-foreground">Marketing · Meta Ads</h1>
+        <h1 className="text-3xl font-serif font-bold text-foreground">Marketing Ã‚Â· Meta Ads</h1>
         <p className="text-muted mt-1 text-sm">
-          Período: {loading ? '…' : periodLabel}
-          · Moneda: {loading ? '…' : currency}
+          PerÃƒÂ­odo: {loading ? 'Ã¢â‚¬Â¦' : periodLabel}
+          Ã‚Â· Moneda: {loading ? 'Ã¢â‚¬Â¦' : currency}
         </p>
         <MetaAccountsInline
           accountIds={resolvedAccountIds}
-          context="Marketing muestra campañas, anuncios y leads de estas cuentas."
+          context="Marketing muestra campaÃƒÂ±as, anuncios y leads de estas cuentas."
           className="mt-3 max-w-2xl"
         />
       </div>
@@ -495,7 +495,7 @@ function MarketingHeader({
             onChange={(e) => setCampaignId(e.target.value)}
             className="bg-card text-foreground text-xs font-medium px-3 py-1.5 rounded-lg border border-border focus:ring-1 focus:ring-primary"
           >
-            <option value="ALL">Todas las campañas</option>
+            <option value="ALL">Todas las campaÃƒÂ±as</option>
             {campaigns.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
@@ -522,7 +522,7 @@ function MarketingHeader({
             onChange={(e) => setFrom(e.target.value)}
             className="bg-card text-foreground text-xs px-2 py-1.5 rounded-lg border border-border focus:ring-1 focus:ring-primary"
           />
-          <span className="text-muted text-xs">→</span>
+          <span className="text-muted text-xs">Ã¢â€ â€™</span>
           <input
             type="date"
             value={to}
@@ -547,7 +547,7 @@ export default function Marketing() {
   const [activeTab, setActiveTab] = useState<'campaigns' | 'ads' | 'organic'>('campaigns')
   const [adsState, adsDispatch] = useReducer(adsReducer, initialAdsState)
 
-  // ── Organic (Page) data ───────────────────────────────────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Organic (Page) data Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const [organicLoading, setOrganicLoading] = useState(false)
   const [organicError, setOrganicError] = useState<string | null>(null)
   const [organicSummary, setOrganicSummary] = useState<{
@@ -558,10 +558,10 @@ export default function Marketing() {
   const [organicPosts, setOrganicPosts] = useState<Array<any>>([])
   const [organicKeyword, setOrganicKeyword] = useState('')
 
-  // ── Sub-toggle FB / IG (within Organic tab) ──────────────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Sub-toggle FB / IG (within Organic tab) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const [organicChannel, setOrganicChannel] = useState<'facebook' | 'instagram'>('facebook')
 
-  // ── Instagram organic data ───────────────────────────────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Instagram organic data Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const [igLoading, setIgLoading] = useState(false)
   const [igError, setIgError] = useState<string | null>(null)
   const [igSummary, setIgSummary] = useState<{
@@ -603,7 +603,7 @@ export default function Marketing() {
     fetchAds()
   }, [activeTab, from, to, fetchAds])
 
-  // ── Fetch organic Page insights (daily series + posts) ────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Fetch organic Page insights (daily series + posts) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const fetchOrganic = useCallback(async (kw: string = '') => {
     setOrganicLoading(true)
     setOrganicError(null)
@@ -620,13 +620,13 @@ export default function Marketing() {
       setOrganicPosts(Array.isArray(postsRes?.posts) ? postsRes.posts : [])
     } catch (err: any) {
       if (!mountedRef.current) return
-      setOrganicError(err?.message ?? 'Error cargando datos orgánicos.')
+      setOrganicError(err?.message ?? 'Error cargando datos orgÃƒÂ¡nicos.')
     } finally {
       if (mountedRef.current) setOrganicLoading(false)
     }
   }, [from, to])
 
-  // ── Fetch Instagram organic insights ──────────────────────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Fetch Instagram organic insights Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const fetchIg = useCallback(async (kw: string = '') => {
     setIgLoading(true)
     setIgError(null)
@@ -689,10 +689,10 @@ export default function Marketing() {
 
   const getEmptyMessage = () => {
     if (campaigns.length === 0) {
-      return 'No hay campañas disponibles para el período seleccionado.'
+      return 'No hay campaÃƒÂ±as disponibles para el perÃƒÂ­odo seleccionado.'
     }
     
-    let msg = 'Ninguna campaña coincide con los filtros actuales'
+    let msg = 'Ninguna campaÃƒÂ±a coincide con los filtros actuales'
     if (statusFilter !== 'ALL') {
       const label = STATUS_LABELS[statusFilter as keyof typeof STATUS_LABELS] ?? statusFilter
       msg += ` (estado: ${label})`
@@ -701,8 +701,8 @@ export default function Marketing() {
   }
 
   const periodLabel = period
-    ? `${period.since} → ${period.until} (${period.days} días)`
-    : `${from} → ${to}`
+    ? `${period.since} Ã¢â€ â€™ ${period.until} (${period.days} dÃƒÂ­as)`
+    : `${from} Ã¢â€ â€™ ${to}`
 
   return (
     <div className="space-y-6">
@@ -729,23 +729,23 @@ export default function Marketing() {
       {/* Empty state: no meta data for selected period */}
       {!loading && !error && !summary && campaigns.length === 0 && (
         <div className="rounded-xl border border-dashed border-border bg-card/50 p-10 text-center space-y-3">
-          <p className="text-muted font-medium">No hay datos de Meta Ads para este período</p>
+          <p className="text-muted font-medium">No hay datos de Meta Ads para este perÃƒÂ­odo</p>
           <p className="text-muted text-xs max-w-md mx-auto">
-            Ejecuta el script de sincronización para importar historial o verifica que el token de Meta Ads sea válido.
+            Ejecuta el script de sincronizaciÃƒÂ³n para importar historial o verifica que el token de Meta Ads sea vÃƒÂ¡lido.
           </p>
           <div className="flex justify-center gap-3 mt-2">
             <code className="bg-surface text-xs text-muted px-3 py-1.5 rounded-lg border border-border">
-              node scripts/meta-backfill.js
+              node scripts/run-meta-backfill.js
             </code>
           </div>
         </div>
       )}
 
-      {/* ── KPI cards ─────────────────────────────────────────────── */}
+      {/* Ã¢â€â‚¬Ã¢â€â‚¬ KPI cards Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard
           label="Gasto total"
-          value={loading ? '…' : fmtCurrency(summary?.spend ?? 0, currency)}
+          value={loading ? 'Ã¢â‚¬Â¦' : fmtCurrency(summary?.spend ?? 0, currency)}
           sub={periodLabel}
           icon={<DollarSign className="w-4 h-4 text-emerald-400" />}
           color="text-emerald-400"
@@ -753,7 +753,7 @@ export default function Marketing() {
         />
         <StatCard
           label="Impresiones"
-          value={loading ? '…' : (summary?.impressions ?? 0).toLocaleString('es-ES')}
+          value={loading ? 'Ã¢â‚¬Â¦' : (summary?.impressions ?? 0).toLocaleString('es-ES')}
           sub={`Alcance: ${(summary?.reach ?? 0).toLocaleString('es-ES')}`}
           icon={<Eye className="w-4 h-4 text-sky-400" />}
           color="text-sky-400"
@@ -761,7 +761,7 @@ export default function Marketing() {
         />
         <StatCard
           label="Clics"
-          value={loading ? '…' : (summary?.clicks ?? 0).toLocaleString('es-ES')}
+          value={loading ? 'Ã¢â‚¬Â¦' : (summary?.clicks ?? 0).toLocaleString('es-ES')}
           sub={`CTR: ${fmt(summary?.ctr ?? 0)}%`}
           icon={<MousePointerClick className="w-4 h-4 text-violet-400" />}
           color="text-violet-400"
@@ -769,47 +769,47 @@ export default function Marketing() {
         />
         <StatCard
           label="CPC promedio"
-          value={loading ? '…' : fmtCurrency(summary?.cpc ?? 0, currency)}
+          value={loading ? 'Ã¢â‚¬Â¦' : fmtCurrency(summary?.cpc ?? 0, currency)}
           sub={`CPM: ${fmtCurrency(summary?.cpm ?? 0, currency)}`}
           icon={<Target className="w-4 h-4 text-amber-400" />}
           color="text-amber-400"
         />
         <StatCard
-          label="Campañas activas"
-          value={loading ? '…' : String(activeCampaigns)}
+          label="CampaÃƒÂ±as activas"
+          value={loading ? 'Ã¢â‚¬Â¦' : String(activeCampaigns)}
           sub={`${campaigns.length} en total`}
           icon={<Megaphone className="w-4 h-4 text-rose-400" />}
         />
         <StatCard
           label="Conversaciones iniciadas"
-          value={loading ? '…' : String(summary?.messagingConversationStarted ?? 0)}
+          value={loading ? 'Ã¢â‚¬Â¦' : String(summary?.messagingConversationStarted ?? 0)}
           sub="WhatsApp / Messenger"
           icon={<Activity className="w-4 h-4 text-teal-400" />}
         />
         <StatCard
           label="Conversiones"
-          value={loading ? '…' : String(summary?.conversions ?? 0)}
-          sub="Eventos de conversión Meta"
+          value={loading ? 'Ã¢â‚¬Â¦' : String(summary?.conversions ?? 0)}
+          sub="Eventos de conversiÃƒÂ³n Meta"
           icon={<TrendingUp className="w-4 h-4 text-lime-400" />}
           delta={changes?.conversions}
         />
         <StatCard
           label="Alcance"
-          value={loading ? '…' : (summary?.reach ?? 0).toLocaleString('es-ES')}
-          sub={`CPP: ${summary?.cpp ? fmtCurrency(summary.cpp, currency) : '—'}`}
+          value={loading ? 'Ã¢â‚¬Â¦' : (summary?.reach ?? 0).toLocaleString('es-ES')}
+          sub={`CPP: ${summary?.cpp ? fmtCurrency(summary.cpp, currency) : 'Ã¢â‚¬â€'}`}
           icon={<TrendingDown className="w-4 h-4 text-orange-400" />}
           delta={changes?.reach}
         />
       </div>
 
-      {/* ── Daily spend + clicks chart ────────────────────────────── */}
+      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Daily spend + clicks chart Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */}
       <Card>
         <CardHeader>
-          <CardTitle>Gasto diario · ({currency})</CardTitle>
+          <CardTitle>Gasto diario Ã‚Â· ({currency})</CardTitle>
         </CardHeader>
         <CardContent className="h-72">
           {loading && (
-            <div className="h-full flex items-center justify-center text-muted text-sm">Cargando…</div>
+            <div className="h-full flex items-center justify-center text-muted text-sm">CargandoÃ¢â‚¬Â¦</div>
           )}
           {!loading && dailyChart.length === 0 && (
             <div className="h-full flex items-center justify-center text-muted text-sm">Sin datos diarios</div>
@@ -843,11 +843,11 @@ export default function Marketing() {
         </CardContent>
       </Card>
 
-      {/* ── Daily CTR / CPC / CPM chart ──────────────────────────── */}
+      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Daily CTR / CPC / CPM chart Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */}
       {dailyRatesChart.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>CTR · CPC · CPM diario</CardTitle>
+            <CardTitle>CTR Ã‚Â· CPC Ã‚Â· CPM diario</CardTitle>
           </CardHeader>
           <CardContent className="h-64">
             <ResponsiveContainer width="100%" height="100%">
@@ -883,11 +883,11 @@ export default function Marketing() {
         </Card>
       )}
 
-      {/* ── Per-campaign bar chart ────────────────────────────────── */}
+      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Per-campaign bar chart Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */}
       {campaignChart.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Gasto vs Clics por campaña</CardTitle>
+            <CardTitle>Gasto vs Clics por campaÃƒÂ±a</CardTitle>
           </CardHeader>
           <CardContent className="h-72">
             <ResponsiveContainer width="100%" height="100%">
@@ -918,7 +918,7 @@ export default function Marketing() {
         </Card>
       )}
 
-      {/* ── Tab switcher: Campañas / Anuncios / Orgánico ──────────── */}
+      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Tab switcher: CampaÃƒÂ±as / Anuncios / OrgÃƒÂ¡nico Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */}
       <div className="flex gap-1 bg-card border border-border rounded-lg p-1 w-fit">
         {(['campaigns', 'ads', 'organic'] as const).map((tab) => (
           <button
@@ -928,17 +928,17 @@ export default function Marketing() {
               activeTab === tab ? 'bg-primary/15 text-foreground' : 'text-muted hover:text-foreground'
             }`}
           >
-            {{ campaigns: 'Campañas', ads: 'Por anuncio', organic: 'Orgánico' }[tab]}
+            {{ campaigns: 'CampaÃƒÂ±as', ads: 'Por anuncio', organic: 'OrgÃƒÂ¡nico' }[tab]}
           </button>
         ))}
       </div>
 
-      {/* ── Campaign detail table ─────────────────────────────────── */}
+      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Campaign detail table Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */}
       {activeTab === 'campaigns' && (
       <Card>
         <CardHeader>
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-            <CardTitle className="flex-1">Detalle por campaña</CardTitle>
+            <CardTitle className="flex-1">Detalle por campaÃƒÂ±a</CardTitle>
             {/* Export */}
             <ExportButton
               data={filteredCampaigns.map((c) => ({
@@ -978,7 +978,7 @@ export default function Marketing() {
             {/* Search */}
             <input
               type="text"
-              placeholder="Buscar campaña…"
+              placeholder="Buscar campaÃƒÂ±aÃ¢â‚¬Â¦"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="bg-card border border-border text-sm text-foreground placeholder-muted rounded-lg px-3 py-1.5 w-48 focus:outline-none focus:border-muted"
@@ -987,7 +987,7 @@ export default function Marketing() {
         </CardHeader>
         <CardContent className="p-0">
           {loading && (
-            <p className="p-4 text-sm text-muted">Cargando campañas…</p>
+            <p className="p-4 text-sm text-muted">Cargando campaÃƒÂ±asÃ¢â‚¬Â¦</p>
           )}
           {!loading && filteredCampaigns.length === 0 && (
             <div className="p-4 flex items-center gap-3">
@@ -1018,7 +1018,7 @@ export default function Marketing() {
       </Card>
       )} {/* end campaigns tab */}
 
-      {/* ── Ads breakdown table ──────────────────────────────────── */}
+      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Ads breakdown table Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */}
       {activeTab === 'ads' && (
         <Card>
           <CardHeader>
@@ -1036,7 +1036,7 @@ export default function Marketing() {
       {activeTab === 'organic' && (
         <div className="space-y-4">
           {/* Sub-toggle: Facebook / Instagram */}
-          <MetaAccountsInline accountIds={resolvedAccountIds} context="Orgánico Meta conectado al mismo ecosistema de campañas y leads." />
+          <MetaAccountsInline accountIds={resolvedAccountIds} context="OrgÃƒÂ¡nico Meta conectado al mismo ecosistema de campaÃƒÂ±as y leads." />
           <div className="flex gap-2">
             {([
               { id: 'facebook', label: 'Facebook Page' },
@@ -1063,9 +1063,9 @@ export default function Marketing() {
           {/* Summary cards */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             {[
-              { label: 'Alcance único', value: organicSummary?.reach ?? 0 },
+              { label: 'Alcance ÃƒÂºnico', value: organicSummary?.reach ?? 0 },
               { label: 'Interacciones', value: organicSummary?.engagements ?? 0 },
-              { label: 'Vistas página', value: organicSummary?.page_views ?? 0 },
+              { label: 'Vistas pÃƒÂ¡gina', value: organicSummary?.page_views ?? 0 },
               { label: 'Vistas video', value: organicSummary?.video_views ?? 0 },
               { label: 'Reacciones', value: organicSummary?.reactions ?? 0 },
               { label: 'Posts (90d)', value: organicPosts.length },
@@ -1074,7 +1074,7 @@ export default function Marketing() {
                 <CardContent className="p-3">
                   <div className="text-xs text-muted">{m.label}</div>
                   <div className="text-xl font-semibold text-foreground mt-1">
-                    {organicLoading ? '…' : Number(m.value).toLocaleString('es-ES')}
+                    {organicLoading ? 'Ã¢â‚¬Â¦' : Number(m.value).toLocaleString('es-ES')}
                   </div>
                 </CardContent>
               </Card>
@@ -1083,11 +1083,11 @@ export default function Marketing() {
 
           {/* Daily area chart */}
           <Card>
-            <CardHeader><CardTitle>Tendencia orgánica diaria</CardTitle></CardHeader>
+            <CardHeader><CardTitle>Tendencia orgÃƒÂ¡nica diaria</CardTitle></CardHeader>
             <CardContent style={{ height: 260 }}>
-              {organicLoading && <p className="text-sm text-muted">Cargando…</p>}
+              {organicLoading && <p className="text-sm text-muted">CargandoÃ¢â‚¬Â¦</p>}
               {!organicLoading && organicDaily.length === 0 && (
-                <p className="text-sm text-muted">Sin datos en el período seleccionado.</p>
+                <p className="text-sm text-muted">Sin datos en el perÃƒÂ­odo seleccionado.</p>
               )}
               {!organicLoading && organicDaily.length > 0 && (
                 <ResponsiveContainer width="100%" height="100%">
@@ -1110,11 +1110,11 @@ export default function Marketing() {
           <Card>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                <CardTitle className="flex-1">Posts orgánicos (top 50)</CardTitle>
+                <CardTitle className="flex-1">Posts orgÃƒÂ¡nicos (top 50)</CardTitle>
                 <div className="flex gap-2">
                   <input
                     type="text"
-                    placeholder="Filtrar por palabra (ej. co2)…"
+                    placeholder="Filtrar por palabra (ej. co2)Ã¢â‚¬Â¦"
                     value={organicKeyword}
                     onChange={(e) => setOrganicKeyword(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') fetchOrganic(organicKeyword) }}
@@ -1128,7 +1128,7 @@ export default function Marketing() {
               </div>
             </CardHeader>
             <CardContent className="p-0 overflow-x-auto">
-              {organicLoading && <p className="p-4 text-sm text-muted">Cargando posts…</p>}
+              {organicLoading && <p className="p-4 text-sm text-muted">Cargando postsÃ¢â‚¬Â¦</p>}
               {!organicLoading && organicPosts.length === 0 && (
                 <p className="p-4 text-sm text-muted">Sin posts.</p>
               )}
@@ -1150,12 +1150,12 @@ export default function Marketing() {
                     {organicPosts.map((p) => (
                       <tr key={p.post_id} className="border-t border-border/50">
                         <td className="px-3 py-2 whitespace-nowrap text-muted">
-                          {p.created_time ? new Date(p.created_time).toISOString().slice(0, 10) : '—'}
+                          {p.created_time ? new Date(p.created_time).toISOString().slice(0, 10) : 'Ã¢â‚¬â€'}
                         </td>
                         <td className="px-3 py-2 max-w-md truncate" title={p.message ?? ''}>
-                          {p.message ?? '—'}
+                          {p.message ?? 'Ã¢â‚¬â€'}
                         </td>
-                        <td className="px-3 py-2 text-muted">{p.is_video ? 'Video' : (p.status_type ?? '—')}</td>
+                        <td className="px-3 py-2 text-muted">{p.is_video ? 'Video' : (p.status_type ?? 'Ã¢â‚¬â€')}</td>
                         <td className="px-3 py-2 text-right">{Number(p.reach || 0).toLocaleString('es-ES')}</td>
                         <td className="px-3 py-2 text-right">{Number(p.engaged_users || 0).toLocaleString('es-ES')}</td>
                         <td className="px-3 py-2 text-right">{Number(p.reactions || 0).toLocaleString('es-ES')}</td>
@@ -1163,7 +1163,7 @@ export default function Marketing() {
                         <td className="px-3 py-2">
                           {p.permalink_url
                             ? <a href={p.permalink_url} target="_blank" rel="noopener noreferrer" className="text-primary underline">Ver</a>
-                            : '—'}
+                            : 'Ã¢â‚¬â€'}
                         </td>
                       </tr>
                     ))}
@@ -1189,13 +1189,13 @@ export default function Marketing() {
               { label: 'Visitas perfil', value: igSummary?.profile_views ?? 0 },
               { label: 'Cuentas activadas', value: igSummary?.accounts_engaged ?? 0 },
               { label: 'Clicks web', value: igSummary?.website_clicks ?? 0 },
-              { label: 'Δ Seguidores', value: igSummary?.follower_count_delta ?? 0 },
+              { label: 'ÃŽâ€ Seguidores', value: igSummary?.follower_count_delta ?? 0 },
             ].map((m) => (
               <Card key={m.label}>
                 <CardContent className="p-3">
                   <div className="text-xs text-muted">{m.label}</div>
                   <div className="text-xl font-semibold text-foreground mt-1">
-                    {igLoading ? '…' : Number(m.value).toLocaleString('es-ES')}
+                    {igLoading ? 'Ã¢â‚¬Â¦' : Number(m.value).toLocaleString('es-ES')}
                   </div>
                 </CardContent>
               </Card>
@@ -1204,11 +1204,11 @@ export default function Marketing() {
 
           {/* IG daily chart */}
           <Card>
-            <CardHeader><CardTitle>Tendencia diaria · Instagram</CardTitle></CardHeader>
+            <CardHeader><CardTitle>Tendencia diaria Ã‚Â· Instagram</CardTitle></CardHeader>
             <CardContent style={{ height: 260 }}>
-              {igLoading && <p className="text-sm text-muted">Cargando…</p>}
+              {igLoading && <p className="text-sm text-muted">CargandoÃ¢â‚¬Â¦</p>}
               {!igLoading && igDaily.length === 0 && (
-                <p className="text-sm text-muted">Sin datos en el período seleccionado.</p>
+                <p className="text-sm text-muted">Sin datos en el perÃƒÂ­odo seleccionado.</p>
               )}
               {!igLoading && igDaily.length > 0 && (
                 <ResponsiveContainer width="100%" height="100%">
@@ -1235,7 +1235,7 @@ export default function Marketing() {
                 <div className="flex gap-2">
                   <input
                     type="text"
-                    placeholder="Filtrar caption…"
+                    placeholder="Filtrar captionÃ¢â‚¬Â¦"
                     value={igKeyword}
                     onChange={(e) => setIgKeyword(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') fetchIg(igKeyword) }}
@@ -1249,7 +1249,7 @@ export default function Marketing() {
               </div>
             </CardHeader>
             <CardContent className="p-0 overflow-x-auto">
-              {igLoading && <p className="p-4 text-sm text-muted">Cargando posts…</p>}
+              {igLoading && <p className="p-4 text-sm text-muted">Cargando postsÃ¢â‚¬Â¦</p>}
               {!igLoading && igPosts.length === 0 && (
                 <p className="p-4 text-sm text-muted">Sin posts.</p>
               )}
@@ -1272,12 +1272,12 @@ export default function Marketing() {
                     {igPosts.map((p) => (
                       <tr key={p.media_id} className="border-t border-border/50">
                         <td className="px-3 py-2 whitespace-nowrap text-muted">
-                          {p.timestamp ? new Date(p.timestamp).toISOString().slice(0, 10) : '—'}
+                          {p.timestamp ? new Date(p.timestamp).toISOString().slice(0, 10) : 'Ã¢â‚¬â€'}
                         </td>
                         <td className="px-3 py-2 max-w-md truncate" title={p.caption ?? ''}>
-                          {p.caption ?? '—'}
+                          {p.caption ?? 'Ã¢â‚¬â€'}
                         </td>
-                        <td className="px-3 py-2 text-muted">{p.media_product_type ?? p.media_type ?? '—'}</td>
+                        <td className="px-3 py-2 text-muted">{p.media_product_type ?? p.media_type ?? 'Ã¢â‚¬â€'}</td>
                         <td className="px-3 py-2 text-right">{Number(p.reach || 0).toLocaleString('es-ES')}</td>
                         <td className="px-3 py-2 text-right">{Number(p.likes || 0).toLocaleString('es-ES')}</td>
                         <td className="px-3 py-2 text-right">{Number(p.comments || 0).toLocaleString('es-ES')}</td>
@@ -1286,7 +1286,7 @@ export default function Marketing() {
                         <td className="px-3 py-2">
                           {p.permalink
                             ? <a href={p.permalink} target="_blank" rel="noopener noreferrer" className="text-primary underline">Ver</a>
-                            : '—'}
+                            : 'Ã¢â‚¬â€'}
                         </td>
                       </tr>
                     ))}
@@ -1302,3 +1302,4 @@ export default function Marketing() {
     </div>
   )
 }
+

@@ -42,7 +42,7 @@ function TableRow({ cells }: Readonly<{ cells: (string | number | null | undefin
     <tr className="border-b border-[#2d2218] hover:bg-card/50 transition-colors">
       {cells.map((c, i) => (
         <td key={`${c}-${i}`} className="px-3 py-2 text-sm text-[#d7c5ae] whitespace-nowrap">
-          {c ?? '—'}
+          {c ?? 'â€”'}
         </td>
       ))}
     </tr>
@@ -54,21 +54,21 @@ function pct(n: number | null | undefined) {
 }
 function curr(n: number | null | undefined) {
   return n == null
-    ? '0 €'
+    ? '0 â‚¬'
     : n.toLocaleString('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
 }
 
 function formatCurrencyOrDash(value: number | null | undefined) {
-  return value == null ? '—' : value.toLocaleString('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
+  return value == null ? 'â€”' : value.toLocaleString('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
 }
 
 function renderKpisContent(kpisLoading: boolean, kpisSummary: any) {
   if (kpisLoading) {
-    return <p className="text-muted text-sm">Cargando KPIs…</p>
+    return <p className="text-muted text-sm">Cargando KPIsâ€¦</p>
   }
 
   if (!kpisSummary) {
-    return <p className="text-muted text-sm">Sin datos de KPIs. Verifica conexión a Meta/Doctoralia.</p>
+    return <p className="text-muted text-sm">Sin datos de KPIs. Verifica conexiÃ³n a Meta/Doctoralia.</p>
   }
 
   return (
@@ -82,11 +82,11 @@ function renderKpisContent(kpisLoading: boolean, kpisSummary: any) {
 
 function renderOrganicSummaryContent(metaExtraLoading: boolean, organicSummary: any) {
   if (metaExtraLoading) {
-    return <p className="text-muted text-sm">Cargando datos orgánicos Meta…</p>
+    return <p className="text-muted text-sm">Cargando datos orgÃ¡nicos Metaâ€¦</p>
   }
 
   if (!organicSummary) {
-    return <p className="text-muted text-sm">Sin datos orgánicos disponibles. Conecta la página de Facebook en Integrations.</p>
+    return <p className="text-muted text-sm">Sin datos orgÃ¡nicos disponibles. Conecta la pÃ¡gina de Facebook en Integrations.</p>
   }
 
   return (
@@ -102,7 +102,7 @@ function renderOrganicSummaryContent(metaExtraLoading: boolean, organicSummary: 
 
 function renderIgSummaryContent(metaExtraLoading: boolean, igSummary: any) {
   if (metaExtraLoading) {
-    return <p className="text-muted text-sm">Cargando datos IG Meta…</p>
+    return <p className="text-muted text-sm">Cargando datos IG Metaâ€¦</p>
   }
 
   if (!igSummary) {
@@ -178,7 +178,7 @@ export default function Reports() {
   const [kpisSummary, setKpisSummary] = useState<any>(null)
   const [kpisLoading, setKpisLoading] = useState(true)
 
-  // Doctoralia fetch — re-runs on date filter change
+  // Doctoralia fetch â€” re-runs on date filter change
   useEffect(() => {
     setDocLoading(true)
     setDocError(null)
@@ -247,7 +247,7 @@ export default function Reports() {
     loadSourceComparison()
   }, [srcFrom, srcTo])
 
-  // Campaign ROI — re-runs on filter change
+  // Campaign ROI â€” re-runs on filter change
   useEffect(() => {
     const params: string[] = []
     if (roiFrom)   params.push(`from=${roiFrom}`)
@@ -351,7 +351,7 @@ export default function Reports() {
   const roiColumns: ColDef[] = [
     { key: 'month', label: 'Mes', align: 'left', sortable: true },
     { key: 'source', label: 'Fuente', align: 'left', sortable: true },
-    { key: 'campaign_name', label: 'Campaña', align: 'left' },
+    { key: 'campaign_name', label: 'CampaÃ±a', align: 'left' },
     { key: 'leads_count', label: 'Leads', align: 'right', sortable: true },
     { key: 'patients_count', label: 'Pacientes', align: 'right', sortable: true },
     { key: 'net_revenue', label: 'Revenue neto', align: 'right', sortable: true,
@@ -367,8 +367,8 @@ export default function Reports() {
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8">
         <div className="space-y-2">
           <h1 className="text-5xl font-serif font-bold tracking-tight text-[#2C2825]">Reportes</h1>
-          <p className="text-[#5C5550] text-xs uppercase tracking-[0.4em] font-bold">Inteligencia y Operación de Negocio</p>
-          <MetaAccountsInline context="Reportes de campañas, ROI y leads vinculados a estas cuentas Meta." className="mt-4 max-w-2xl" />
+          <p className="text-[#5C5550] text-xs uppercase tracking-[0.4em] font-bold">Inteligencia y OperaciÃ³n de Negocio</p>
+          <MetaAccountsInline context="Reportes de campaÃ±as, ROI y leads vinculados a estas cuentas Meta." className="mt-4 max-w-2xl" />
         </div>
       </div>
 
@@ -421,25 +421,25 @@ export default function Reports() {
             </CardHeader>
             <CardContent className="pt-8 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-2">
-                <label htmlFor="lead-audit-campaign-name" className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.15em] ml-1">Campaña</label>
+                <label htmlFor="lead-audit-campaign-name" className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.15em] ml-1">CampaÃ±a</label>
                 <input
                   id="lead-audit-campaign-name"
                   type="text"
                   value={leadAuditCampaignName}
                   onChange={(event) => setLeadAuditCampaignName(event.target.value)}
                   className="w-full px-5 py-2.5 bg-[#FAF7F2]/40 border border-border/30 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary transition-all text-[#2C2825] placeholder:text-[#8E8680]/60"
-                  placeholder="Nombre de campaña"
+                  placeholder="Nombre de campaÃ±a"
                 />
               </div>
               <div className="space-y-2">
-                <label htmlFor="lead-audit-phone" className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.15em] ml-1">Teléfono</label>
+                <label htmlFor="lead-audit-phone" className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.15em] ml-1">TelÃ©fono</label>
                 <input
                   id="lead-audit-phone"
                   type="text"
                   value={leadAuditPhone}
                   onChange={(event) => setLeadAuditPhone(event.target.value)}
                   className="w-full px-5 py-2.5 bg-[#FAF7F2]/40 border border-border/30 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary transition-all text-[#2C2825] placeholder:text-[#8E8680]/60"
-                  placeholder="Número de teléfono"
+                  placeholder="NÃºmero de telÃ©fono"
                 />
               </div>
               <div className="space-y-2">
@@ -473,7 +473,7 @@ export default function Reports() {
               {leadAuditLoading && (
                 <div className="py-20 flex flex-col items-center justify-center gap-4">
                   <div className="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
-                  <p className="text-sm text-[#8E8680] font-bold uppercase tracking-widest italic">Analizando trazabilidad…</p>
+                  <p className="text-sm text-[#8E8680] font-bold uppercase tracking-widest italic">Analizando trazabilidadâ€¦</p>
                 </div>
               )}
               {leadAuditError && <ErrorState message={leadAuditError} />}
@@ -486,7 +486,7 @@ export default function Reports() {
                     <thead>
                       <tr className="border-b border-border/10 text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.15em]">
                         <th className="px-5 py-4 font-bold">Lead / Fuente</th>
-                        <th className="px-5 py-4 font-bold">Campaña / Form</th>
+                        <th className="px-5 py-4 font-bold">CampaÃ±a / Form</th>
                         <th className="px-5 py-4 font-bold">Cuenta Meta</th>
                         <th className="px-5 py-4 text-center font-bold">Creado</th>
                         <th className="px-5 py-4 font-bold">Tel. Lead</th>
@@ -500,21 +500,21 @@ export default function Reports() {
                       {leadAuditRows.map((row, idx) => (
                         <tr key={row.lead_id} className={`group hover:bg-[#FAF7F2]/60 transition-colors ${idx % 2 === 0 ? 'bg-transparent' : 'bg-[#FAF7F2]/20'}`}>
                           <td className="px-5 py-5">
-                            <p className="font-serif font-bold text-[#2C2825] text-sm">{row.lead_name ?? '—'}</p>
-                            <p className="text-[9px] font-bold text-primary uppercase tracking-widest mt-1.5">{row.source ?? '—'}</p>
+                            <p className="font-serif font-bold text-[#2C2825] text-sm">{row.lead_name ?? 'â€”'}</p>
+                            <p className="text-[9px] font-bold text-primary uppercase tracking-widest mt-1.5">{row.source ?? 'â€”'}</p>
                           </td>
                           <td className="px-5 py-5 max-w-[200px]">
-                            <p className="text-xs font-semibold text-[#2C2825] truncate" title={row.campaign_name}>{row.campaign_name ?? '—'}</p>
-                            <p className="text-[10px] text-[#5C5550] font-medium mt-1 truncate" title={row.form_name}>{row.form_name ?? '—'}</p>
+                            <p className="text-xs font-semibold text-[#2C2825] truncate" title={row.campaign_name}>{row.campaign_name ?? 'â€”'}</p>
+                            <p className="text-[10px] text-[#5C5550] font-medium mt-1 truncate" title={row.form_name}>{row.form_name ?? 'â€”'}</p>
                           </td>
                           <td className="px-5 py-5 text-[10px] font-bold text-[#5C5550] whitespace-nowrap">
                             {row.ad_account_id ?? row.account_id ?? formatMetaAccountIds()}
                           </td>
                           <td className="px-5 py-5 text-xs text-center font-bold text-[#5C5550]">
-                            {row.lead_created_at ? new Date(row.lead_created_at).toLocaleDateString('es-ES') : '—'}
+                            {row.lead_created_at ? new Date(row.lead_created_at).toLocaleDateString('es-ES') : 'â€”'}
                           </td>
                           <td className="px-5 py-5 text-xs font-bold text-[#2C2825] font-mono">
-                            {row.phone_normalized ?? '—'}
+                            {row.phone_normalized ?? 'â€”'}
                           </td>
                           <td className="px-5 py-5 text-center">
                             {row.match_class ? (
@@ -528,18 +528,18 @@ export default function Reports() {
                               </div>
                             ) : (
                               <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-[#FAF7F2] text-[#8E8680] border border-border/40 w-fit">
-                                —
+                                â€”
                               </span>
                             )}
                           </td>
                           <td className="px-5 py-5">
-                            <p className="text-xs font-bold text-[#2C2825]">{row.patient_name ?? '—'}</p>
-                            <p className="text-[10px] text-[#5C5550] font-mono mt-1">{row.patient_phone ?? '—'}</p>
+                            <p className="text-xs font-bold text-[#2C2825]">{row.patient_name ?? 'â€”'}</p>
+                            <p className="text-[10px] text-[#5C5550] font-mono mt-1">{row.patient_phone ?? 'â€”'}</p>
                           </td>
                           <td className="px-5 py-5">
-                            <p className="text-xs font-serif font-bold text-primary tracking-tight">{row.settlement_date ? `€${row.doctoralia_net?.toLocaleString('es-ES') ?? '0'}` : '0'}</p>
+                            <p className="text-xs font-serif font-bold text-primary tracking-tight">{row.settlement_date ? `â‚¬${row.doctoralia_net?.toLocaleString('es-ES') ?? '0'}` : '0'}</p>
                             <p className="text-[10px] text-[#8E8680] font-bold mt-1 uppercase tracking-wider">
-                              {row.first_settlement_at ? new Date(row.first_settlement_at).toLocaleDateString('es-ES') : '—'}
+                              {row.first_settlement_at ? new Date(row.first_settlement_at).toLocaleDateString('es-ES') : 'â€”'}
                             </p>
                           </td>
                           <td className="px-5 py-5 text-center">
@@ -563,14 +563,14 @@ export default function Reports() {
           </Card>
         </TabsContent>
 
-        {/* ── Doctoralia Financials ── */}
+        {/* â”€â”€ Doctoralia Financials â”€â”€ */}
         <TabsContent value="doctoralia" className="mt-0 space-y-6">
           <div className="rounded-2xl border border-border/30 bg-[#FAF7F2]/40 p-4 shadow-sm">
             <FilterBar onDateChange={(from, to) => { setDocFrom(from); setDocTo(to) }} />
           </div>
           <Card className="border-none shadow-md bg-white overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between border-b border-border/10 pb-6">
-              <CardTitle className="font-serif text-2xl text-[#2C2825]">Doctoralia Financials — by Template</CardTitle>
+              <CardTitle className="font-serif text-2xl text-[#2C2825]">Doctoralia Financials â€” by Template</CardTitle>
               {docData && (
                 <ExportButton
                   data={docData.templateSummary}
@@ -582,9 +582,9 @@ export default function Reports() {
             <CardContent className="pt-6">
               {(() => {
                 if (docError) return <ErrorState message={docError} />
-                if (docLoading) return <p className="text-sm text-[#8E8680] py-12 text-center animate-pulse italic">Cargando datos financieros…</p>
+                if (docLoading) return <p className="text-sm text-[#8E8680] py-12 text-center animate-pulse italic">Cargando datos financierosâ€¦</p>
                 if ((docData?.templateSummary.length ?? 0) === 0)
-                  return <EmptyState message="No hay datos de liquidación disponibles todavía." />
+                  return <EmptyState message="No hay datos de liquidaciÃ³n disponibles todavÃ­a." />
                 return (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
@@ -659,7 +659,7 @@ export default function Reports() {
           )}
         </TabsContent>
 
-        {/* ── Campaign Performance ── */}
+        {/* â”€â”€ Campaign Performance â”€â”€ */}
         <TabsContent value="campaigns" className="mt-4 space-y-4">
           <div className="rounded-2xl border border-border bg-surface/70 p-3">
             <FilterBar onDateChange={(from, to) => { setCampFrom(from); setCampTo(to) }} />
@@ -672,7 +672,7 @@ export default function Reports() {
             <CardContent>
               {(() => {
                 if (campError) return <ErrorState message={campError} />
-                if (campLoading) return <EmptyState message="Loading…" />
+                if (campLoading) return <EmptyState message="Loadingâ€¦" />
                 if (filteredCampaigns.length === 0)
                   return <EmptyState message="No campaign data available yet." />
                 return (
@@ -707,7 +707,7 @@ export default function Reports() {
           </Card>
         </TabsContent>
 
-        {/* ── Source Comparison ── */}
+        {/* â”€â”€ Source Comparison â”€â”€ */}
         <TabsContent value="sources" className="mt-4 space-y-4">
           <div className="rounded-2xl border border-border bg-surface/70 p-3">
             <FilterBar onDateChange={(from, to) => { setSrcFrom(from); setSrcTo(to) }} />
@@ -720,7 +720,7 @@ export default function Reports() {
             <CardContent>
               {(() => {
                 if (srcError) return <ErrorState message={srcError} />
-                if (srcLoading) return <EmptyState message="Loading…" />
+                if (srcLoading) return <EmptyState message="Loadingâ€¦" />
                 if (filteredSources.length === 0)
                   return <EmptyState message="No source comparison data available yet." />
                 return (
@@ -752,7 +752,7 @@ export default function Reports() {
           </Card>
         </TabsContent>
 
-        {/* ── WhatsApp Conversion ── */}
+        {/* â”€â”€ WhatsApp Conversion â”€â”€ */}
         <TabsContent value="whatsapp" className="mt-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
@@ -762,7 +762,7 @@ export default function Reports() {
             <CardContent>
               {(() => {
                 if (waError) return <ErrorState message={waError} />
-                if (waLoading) return <EmptyState message="Loading…" />
+                if (waLoading) return <EmptyState message="Loadingâ€¦" />
                 if (cohorts.length === 0)
                   return <EmptyState message="No WhatsApp cohort data available yet." />
                 return (
@@ -794,7 +794,7 @@ export default function Reports() {
           </Card>
         </TabsContent>
 
-        {/* ── Doctor Performance ── */}
+        {/* â”€â”€ Doctor Performance â”€â”€ */}
         <TabsContent value="doctors" className="mt-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
@@ -804,7 +804,7 @@ export default function Reports() {
             <CardContent>
               {(() => {
                 if (docPerfError) return <ErrorState message={docPerfError} />
-                if (docPerfLoading) return <EmptyState message="Loading…" />
+                if (docPerfLoading) return <EmptyState message="Loadingâ€¦" />
                 if (doctors.length === 0)
                   return <EmptyState message="No doctor performance data available yet." />
                 return (
@@ -819,7 +819,7 @@ export default function Reports() {
                             key={doctorKey}
                             cells={[
                               r.doctor_name,
-                              r.specialty ?? '—',
+                              r.specialty ?? 'â€”',
                               r.total_appointments,
                               r.attended_count,
                               r.no_show_count,
@@ -839,7 +839,7 @@ export default function Reports() {
           </Card>
         </TabsContent>
 
-        {/* ── Campaign ROI ── */}
+        {/* â”€â”€ Campaign ROI â”€â”€ */}
         <TabsContent value="campaign-roi" className="mt-4 space-y-4">
           <div className="rounded-2xl border border-border bg-surface/70 p-3">
             <FilterBar
@@ -877,7 +877,7 @@ export default function Reports() {
                   <BarChart3 className="h-6 w-6 text-primary" />
                   KPIs desde API (/kpis)
                 </CardTitle>
-                <p className="text-xs text-[#5C5550] font-medium mt-1">Resumen de KPIs calculados vía API (agrega leads, financial_settlements, meta_daily_insights y más).</p>
+                <p className="text-xs text-[#5C5550] font-medium mt-1">Resumen de KPIs calculados vÃ­a API (agrega leads, financial_settlements, meta_daily_insights y mÃ¡s).</p>
               </div>
             </CardHeader>
             <CardContent className="pt-6">
@@ -895,7 +895,7 @@ export default function Reports() {
                   <Activity className="h-6 w-6 text-primary" />
                   Meta Organic (Facebook Page)
                 </CardTitle>
-                <p className="text-xs text-[#5C5550] font-medium mt-1">Resumen de insights orgánicos de la página de Facebook (últimos 30 días vía /meta/organic).</p>
+                <p className="text-xs text-[#5C5550] font-medium mt-1">Resumen de insights orgÃ¡nicos de la pÃ¡gina de Facebook (Ãºltimos 30 dÃ­as vÃ­a /meta/organic).</p>
               </div>
             </CardHeader>
             <CardContent className="pt-6">
@@ -912,7 +912,7 @@ export default function Reports() {
                   <Activity className="h-6 w-6 text-primary" />
                   Meta Instagram (Organic)
                 </CardTitle>
-                <p className="text-xs text-[#5C5550] font-medium mt-1">Resumen de insights orgánicos de Instagram (últimos 30 días vía /meta/ig).</p>
+                <p className="text-xs text-[#5C5550] font-medium mt-1">Resumen de insights orgÃ¡nicos de Instagram (Ãºltimos 30 dÃ­as vÃ­a /meta/ig).</p>
               </div>
             </CardHeader>
             <CardContent className="pt-6">
