@@ -19,15 +19,24 @@ const PRESETS = [
   { label: '30d', days: 30 },
   { label: '90d', days: 90 },
   { label: '180d', days: 180 },
-  { label: 'All', days: 0 },
+  { label: 'Todo', days: 0 },
 ] as const
 
-function daysAgo(n: number): string {
-  return new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10)
+function toLocalDateInputValue(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
-function todayISO(): string {
-  return new Date().toISOString().slice(0, 10)
+function daysAgo(n: number): string {
+  const date = new Date()
+  date.setDate(date.getDate() - n)
+  return toLocalDateInputValue(date)
+}
+
+function todayLocal(): string {
+  return toLocalDateInputValue(new Date())
 }
 
 export function FilterBar({
@@ -52,14 +61,14 @@ export function FilterBar({
     setFrom('')
     setTo('')
     if (days > 0) {
-      onDateChange(daysAgo(days), todayISO())
+      onDateChange(daysAgo(days), todayLocal())
     } else {
       onDateChange('', '')
     }
   }
 
   const setFrom2025 = () => {
-    const t = todayISO()
+    const t = todayLocal()
     setActiveDays(-1)
     setCustomMode(true)
     setFrom(since2025)
@@ -71,7 +80,7 @@ export function FilterBar({
     setFrom(v)
     setActiveDays(-1)
     setCustomMode(true)
-    onDateChange(v, to || todayISO())
+    onDateChange(v, to || todayLocal())
   }
 
   const handleToChange = (v: string) => {
@@ -85,7 +94,6 @@ export function FilterBar({
 
   return (
     <div className="flex flex-wrap items-center gap-2 print:hidden">
-      {/* Preset buttons */}
       <div className="flex items-center gap-1 bg-card rounded-lg p-1">
         {PRESETS.map((p) => (
           <button
@@ -110,7 +118,6 @@ export function FilterBar({
         </button>
       </div>
 
-      {/* Custom date inputs */}
       <div className="flex items-center gap-1">
         <Calendar className="w-3.5 h-3.5 text-muted" />
         <input
@@ -128,28 +135,26 @@ export function FilterBar({
         />
       </div>
 
-      {/* Campaign select */}
       {campaigns && campaigns.length > 0 && onCampaignChange && (
         <select
           value={campaignValue}
           onChange={(e) => onCampaignChange(e.target.value)}
           className="bg-card text-foreground text-xs font-medium px-3 py-1.5 rounded-lg border border-border focus:outline-none focus:ring-1 focus:ring-primary max-w-[200px]"
         >
-          <option value="ALL">All Campaigns</option>
+          <option value="ALL">Todas las campañas</option>
           {campaigns.map((c) => (
             <option key={c.id} value={c.id}>{c.name}</option>
           ))}
         </select>
       )}
 
-      {/* Source select */}
       {sources && sources.length > 0 && onSourceChange && (
         <select
           value={sourceValue}
           onChange={(e) => onSourceChange(e.target.value)}
           className="bg-card text-foreground text-xs font-medium px-3 py-1.5 rounded-lg border border-border focus:outline-none focus:ring-1 focus:ring-primary"
         >
-          <option value="ALL">All Sources</option>
+          <option value="ALL">Todas las fuentes</option>
           {sources.map((s) => (
             <option key={s} value={s}>{s}</option>
           ))}
