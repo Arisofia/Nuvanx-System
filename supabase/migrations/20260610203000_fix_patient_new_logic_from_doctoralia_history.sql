@@ -64,10 +64,15 @@ WITH ranked_appointments AS (
         -- Effective rank (only non-cancelled, non-control)
         CASE 
             WHEN is_cancelled IS NOT TRUE AND is_control IS NOT TRUE THEN
-                ROW_NUMBER() OVER (
-                    PARTITION BY COALESCE(doctoralia_id, phone_normalized, public.normalize_name(patient_name)) 
-                    FILTER (WHERE is_cancelled IS NOT TRUE AND is_control IS NOT TRUE)
+                SUM(
+                    CASE 
+                        WHEN is_cancelled IS NOT TRUE AND is_control IS NOT TRUE THEN 1
+                        ELSE 0
+                    END
+                ) OVER (
+                    PARTITION BY COALESCE(doctoralia_id, phone_normalized, public.normalize_name(patient_name))
                     ORDER BY appointment_date ASC, created_date ASC, id ASC
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
                 )
             ELSE NULL
         END as appointment_rank_effective
