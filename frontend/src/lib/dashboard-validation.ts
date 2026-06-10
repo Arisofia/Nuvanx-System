@@ -66,81 +66,19 @@ function normalizeMetricsPayload(metricsResponse: Record<string, unknown>): Reco
   const revenue = asRecord(metricsResponse.revenue)
 
   const normalized = {
-    totalLeads: pick(
-      metricsResponse.totalLeads,
-      summary.totalLeads,
-      summary.total_leads,
-      leads.totalLeads,
-      leads.total_leads,
-      leads.total,
-    ),
-    conversionRate: pick(
-      metricsResponse.conversionRate,
-      summary.conversionRate,
-      summary.conversion_rate,
-      leads.conversionRate,
-      leads.conversion_rate,
-    ),
-    patientMatches: pick(
-      metricsResponse.patientMatches,
-      summary.patientMatches,
-      summary.patient_matches,
-      doctoralia.patientMatches,
-      doctoralia.patient_matches,
-      doctoralia.newVerifiedPatients,
-      doctoralia.new_verified_patients,
-    ),
-    patientConversionRate: pick(
-      metricsResponse.patientConversionRate,
-      summary.patientConversionRate,
-      summary.patient_conversion_rate,
-      doctoralia.patientConversionRate,
-      doctoralia.patient_conversion_rate,
-    ),
-    verifiedRevenue: pick(
-      metricsResponse.verifiedRevenue,
-      summary.verifiedRevenue,
-      summary.verified_revenue,
-      revenue.verifiedRevenue,
-      revenue.verified_revenue,
-      doctoralia.verifiedRevenue,
-      doctoralia.verified_revenue,
-    ),
-    totalRevenue: pick(
-      metricsResponse.totalRevenue,
-      summary.totalRevenue,
-      summary.total_revenue,
-      revenue.totalRevenue,
-      revenue.total_revenue,
-      revenue.total,
-    ),
-    settledCount: pick(
-      metricsResponse.settledCount,
-      summary.settledCount,
-      summary.settled_count,
-      revenue.settledCount,
-      revenue.settled_count,
-      doctoralia.settledCount,
-      doctoralia.settled_count,
-    ),
-    spend: pick(
-      metricsResponse.spend,
-      summary.spend,
-      meta.spend,
-    ),
-    metaConversions: pick(
-      metricsResponse.metaConversions,
-      summary.metaConversions,
-      summary.meta_conversions,
-      meta.conversions,
-      meta.leads,
-    ),
+    totalLeads: pick(metricsResponse.totalLeads, summary.totalLeads, summary.total_leads, leads.totalLeads, leads.total_leads, leads.total),
+    conversionRate: pick(metricsResponse.conversionRate, summary.conversionRate, summary.conversion_rate, leads.conversionRate, leads.conversion_rate),
+    patientMatches: pick(metricsResponse.patientMatches, summary.patientMatches, summary.patient_matches, doctoralia.patientMatches, doctoralia.patient_matches, doctoralia.newVerifiedPatients, doctoralia.new_verified_patients),
+    patientConversionRate: pick(metricsResponse.patientConversionRate, summary.patientConversionRate, summary.patient_conversion_rate, doctoralia.patientConversionRate, doctoralia.patient_conversion_rate),
+    verifiedRevenue: pick(metricsResponse.verifiedRevenue, summary.verifiedRevenue, summary.verified_revenue, revenue.verifiedRevenue, revenue.verified_revenue, doctoralia.verifiedRevenue, doctoralia.verified_revenue),
+    totalRevenue: pick(metricsResponse.totalRevenue, summary.totalRevenue, summary.total_revenue, revenue.totalRevenue, revenue.total_revenue, revenue.total),
+    settledCount: pick(metricsResponse.settledCount, summary.settledCount, summary.settled_count, revenue.settledCount, revenue.settled_count, doctoralia.settledCount, doctoralia.settled_count),
+    spend: pick(metricsResponse.spend, summary.spend, meta.spend),
+    metaConversions: pick(metricsResponse.metaConversions, summary.metaConversions, summary.meta_conversions, meta.conversions, meta.leads),
     deltas: asRecord(metricsResponse.deltas),
   }
 
-  return Object.fromEntries(
-    Object.entries(normalized).filter(([, value]) => value !== undefined && value !== null),
-  )
+  return Object.fromEntries(Object.entries(normalized).filter(([, value]) => value !== undefined && value !== null))
 }
 
 export function normalizeTrendPoint(value: unknown): MetaTrendPoint | null {
@@ -186,7 +124,7 @@ export function validateDashboardBundle(input: {
 
   const funnelRows = asRecordArray(funnelResponse.funnel)
   if (funnelResponse.funnel != null && !Array.isArray(funnelResponse.funnel)) {
-    errors.push('dashboard.lead-flow payload is not an array')
+    errors.push('operational funnel payload is not an array')
   }
 
   const dataQuality = asRecord(kpisResponse.data_quality)
