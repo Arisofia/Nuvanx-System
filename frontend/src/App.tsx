@@ -1,4 +1,4 @@
-﻿import { lazy, Suspense, useContext, useEffect } from 'react'
+import { lazy, Suspense, useContext, useEffect } from 'react'
 import { Toaster } from './components/ui/toaster'
 import { TooltipProvider } from './components/ui/tooltip'
 import { useLocation } from 'wouter'
@@ -16,11 +16,11 @@ function ConfigurationError() {
   return (
     <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center p-6">
       <div className="text-center space-y-4 max-w-sm">
-        <p className="text-xs font-bold uppercase tracking-widest text-primary">Nuvanx Â· Control Centre</p>
-        <h1 className="text-xl font-serif font-bold text-[#2C2825]">ConfiguraciÃ³n incompleta</h1>
+        <p className="text-xs font-bold uppercase tracking-widest text-primary">Nuvanx · Control Centre</p>
+        <h1 className="text-xl font-serif font-bold text-[#2C2825]">Configuración incompleta</h1>
         <p className="text-sm text-[#5C5550]">
-          Las variables de entorno de Supabase no estÃ¡n configuradas.
-          AÃ±ade <code className="bg-[#F0ECE6] px-1 rounded text-xs">VITE_SUPABASE_URL</code> y{' '}
+          Las variables de entorno de Supabase no están configuradas.
+          Añade <code className="bg-[#F0ECE6] px-1 rounded text-xs">VITE_SUPABASE_URL</code> y{' '}
           <code className="bg-[#F0ECE6] px-1 rounded text-xs">VITE_SUPABASE_ANON_KEY</code> en
           el panel de Vercel y vuelve a desplegar.
         </p>
@@ -54,19 +54,15 @@ function Router() {
   const auth = useContext(AuthContext)
   const isAuthPage = location === '/login'
 
-  // Fire Meta Pixel PageView on every route change.
   useMetaPageView()
-  // Capture Meta click IDs and browser IDs.
   useMetaContextCapture()
 
-  // Redirect to login once auth state is resolved and user is not logged in.
   useEffect(() => {
     if (!isAuthPage && auth && !auth.loading && !auth.isAuthenticated) {
       setLocation('/login')
     }
   }, [auth?.loading, auth?.isAuthenticated, isAuthPage, setLocation, auth])
 
-  // Show spinner while auth state is loading to avoid flashing protected content.
   if (!isAuthPage && auth?.loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -75,9 +71,6 @@ function Router() {
     )
   }
 
-  // Guard: if auth has resolved and user is not authenticated, render the login
-  // view while the route transition completes. Returning null here caused a
-  // blank production screen when the redirect effect did not flush immediately.
   if (!isAuthPage && !auth?.loading && !auth?.isAuthenticated) {
     return (
       <Suspense fallback={<PageLoader />}>
@@ -87,51 +80,21 @@ function Router() {
   }
 
   const pageContent = (() => {
-    if (location === '/login') {
-      return <Login />
-    }
-    if (location === '/404') {
-      return <NotFound />
-    }
-    if (location === '/dashboard' || location === '/') {
-      return <Dashboard />
-    }
-    if (location === '/live') {
-      return <Live />
-    }
-    if (location === '/crm') {
-      return <CrmPage />
-    }
-    if (location === '/marketing') {
-      return <Marketing />
-    }
-    if (location === '/traceability') {
-      return <Traceability />
-    }
-    if (location === '/financials') {
-      return <Financials />
-    }
-    if (location === '/intelligence') {
-      return <Intelligence />
-    }
-    if (location === '/playbooks') {
-      return <Playbooks />
-    }
-    if (location === '/sales-playbook') {
-      return <SalesPlaybook />
-    }
-    if (location === '/integrations') {
-      return <Integrations />
-    }
-    if (location === '/ai') {
-      return <AiPage />
-    }
-    if (location === '/reports') {
-      return <Reports />
-    }
-    if (location === '/reports/lead-audit') {
-      return <LeadAudit />
-    }
+    if (location === '/login') return <Login />
+    if (location === '/404') return <NotFound />
+    if (location === '/dashboard' || location === '/') return <Dashboard />
+    if (location === '/live') return <Live />
+    if (location === '/crm') return <CrmPage />
+    if (location === '/marketing') return <Marketing />
+    if (location === '/traceability') return <Traceability />
+    if (location === '/financials') return <Financials />
+    if (location === '/intelligence') return <Intelligence />
+    if (location === '/playbooks') return <Playbooks />
+    if (location === '/sales-playbook') return <SalesPlaybook />
+    if (location === '/integrations') return <Integrations />
+    if (location === '/ai') return <AiPage />
+    if (location === '/reports') return <Reports />
+    if (location === '/reports/lead-audit') return <LeadAudit />
     return <NotFound />
   })()
 
@@ -143,7 +106,7 @@ function Router() {
           fallback={
             <div className="min-h-screen bg-background flex items-center justify-center">
               <div className="max-w-lg text-center px-4">
-                <p className="text-base text-foreground">Ha ocurrido un error cargando esta secciÃ³n.</p>
+                <p className="text-base text-foreground">Ha ocurrido un error cargando esta sección.</p>
               </div>
             </div>
           }
@@ -189,4 +152,3 @@ export default function App() {
     </ErrorBoundary>
   )
 }
-
