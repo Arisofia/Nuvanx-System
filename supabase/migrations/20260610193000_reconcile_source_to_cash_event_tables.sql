@@ -129,6 +129,22 @@ CREATE TABLE IF NOT EXISTS public.patient_classification (
     updated_at timestamptz DEFAULT now()
 );
 
+-- Ensure patient_classification is compatible with this migration even if it already existed.
+ALTER TABLE public.patient_classification
+    ADD COLUMN IF NOT EXISTS lead_id uuid REFERENCES public.leads(id),
+    ADD COLUMN IF NOT EXISTS phone_normalized text,
+    ADD COLUMN IF NOT EXISTS first_seen_at timestamptz,
+    ADD COLUMN IF NOT EXISTS first_visit_at timestamptz,
+    ADD COLUMN IF NOT EXISTS last_visit_at timestamptz,
+    ADD COLUMN IF NOT EXISTS patient_type text,
+    ADD COLUMN IF NOT EXISTS funnel_status text,
+    ADD COLUMN IF NOT EXISTS total_settled_amount numeric DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now(),
+    ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
+
+CREATE UNIQUE INDEX IF NOT EXISTS patient_classification_phone_normalized_uidx
+ON public.patient_classification (phone_normalized)
+WHERE phone_normalized IS NOT NULL;
 -- Truncate and Repopulate
 DELETE FROM public.patient_classification;
 
