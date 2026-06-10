@@ -24,13 +24,18 @@ export function transformDoctoraliaAppointment(r: any): DoctoraliaAppointment {
   }
 }
 
+function deterministicEventId(prefix: string, row: any) {
+  const raw = row.id ?? row.raw_hash ?? row.lead_id ?? row.doc_patient_id ?? row.timestamp_cita ?? row.created_at ?? row.fecha ?? 'unknown'
+  return `${prefix}-${String(raw)}`
+}
+
 /**
  * Transforms raw data from different sources into a uniform LiveEvent for the activity feed.
  */
 export function transformLiveEvent(source: 'DOCTORALIA' | 'META' | 'CRM', r: any): LiveEvent {
   if (source === 'DOCTORALIA') {
     return {
-      id: String(r.raw_hash ?? `doctoralia-${Math.random()}`),
+      id: deterministicEventId('doctoralia', r),
       type: 'DOCTORALIA',
       label: r.paciente_nombre ?? r.patient_name ?? 'Paciente Doctoralia',
       detail: [
@@ -42,9 +47,8 @@ export function transformLiveEvent(source: 'DOCTORALIA' | 'META' | 'CRM', r: any
     }
   }
   
-  // Default fallback
   return {
-    id: String(r.id ?? Math.random()),
+    id: deterministicEventId(source.toLowerCase(), r),
     type: source,
     label: r.label ?? r.name ?? 'Nuevo evento',
     detail: r.detail ?? '',
