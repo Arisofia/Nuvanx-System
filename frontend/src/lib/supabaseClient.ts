@@ -3,13 +3,15 @@ import { isSupabaseConfigured, supabaseKey, supabaseUrl } from './env'
 
 export { isSupabaseConfigured, supabaseKey, supabaseUrl }
 
-const fallbackSupabaseUrl = 'https://not-configured.supabase.co'
-const fallbackSupabaseKey = 'not-configured-public-key'
+function createSupabaseClient() {
+  if (!isSupabaseConfigured) {
+    return createClient('https://localhost.supabase.co', 'not-configured')
+  }
 
-export const supabase = createClient(
-  isSupabaseConfigured ? supabaseUrl : fallbackSupabaseUrl,
-  isSupabaseConfigured ? supabaseKey : fallbackSupabaseKey,
-)
+  return createClient(supabaseUrl, supabaseKey)
+}
+
+export const supabase = createSupabaseClient()
 
 // Backward-compatible re-export for legacy imports:
 // import { invokeApi } from '../lib/supabaseClient'
