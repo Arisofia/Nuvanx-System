@@ -1,31 +1,26 @@
-// frontend/src/lib/invokeApi.ts
 import { supabase, supabaseUrl } from './supabaseClient'
 
 export type InvokeApiOptions = Omit<RequestInit, 'body'> & { body?: unknown }
 
 export async function invokeApi<T = unknown>(functionName: string, init?: InvokeApiOptions): Promise<T> {
   if (!supabaseUrl) {
-    throw new Error('Supabase URL is not configured. Set VITE_SUPABASE_URL in your environment.')
+    throw new Error('Supabase URL no está configurada. Define VITE_SUPABASE_URL en el entorno.')
   }
 
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
   if (sessionError) {
-    console.error('Failed to retrieve Supabase session:', sessionError)
-    throw new Error('Unable to retrieve authenticated session.')
+    console.error('No se pudo recuperar la sesión de Supabase:', sessionError)
+    throw new Error('No se pudo recuperar la sesión autenticada.')
   }
 
   const accessToken = sessionData?.session?.access_token
   if (!accessToken) {
-    throw new Error('No authenticated Supabase session available. Sign in before calling invokeApi.')
+    throw new Error('No hay sesión activa de Supabase. Inicia sesión antes de consultar la API.')
   }
 
   const functionPath = functionName.startsWith('/') ? functionName : `/${functionName}`
-  
-  // In the browser, we use relative paths for /api calls to benefit from Vercel rewrites and Vite proxies.
-  // This avoids CORS issues and simplifies configuration.
   const isBrowser = typeof window !== 'undefined'
   const isApiCall = functionPath.startsWith('/api/') || functionPath === '/api'
-  
   const url = isBrowser && isApiCall
     ? functionPath
     : `${supabaseUrl}/functions/v1${functionPath}`
@@ -56,7 +51,7 @@ export async function invokeApi<T = unknown>(functionName: string, init?: Invoke
     } catch {
       // ignore parse failures
     }
-    throw new Error(`invokeApi(${functionName}) failed: ${response.status} ${message}`)
+    throw new Error(`invokeApi(${functionName}) falló: ${response.status} ${message}`)
   }
 
   return text ? (JSON.parse(text) as T) : ({} as T)
