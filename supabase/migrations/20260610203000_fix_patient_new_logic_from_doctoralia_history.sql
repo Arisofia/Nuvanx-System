@@ -32,7 +32,6 @@ SELECT
     COUNT(*) as total_appointments,
     COUNT(*) FILTER (WHERE is_cancelled IS NOT TRUE) as effective_appointments,
     COUNT(*) FILTER (WHERE is_control IS TRUE) as control_appointments,
-    -- Keep track of identifiers for matching
     MAX(doctoralia_id) as last_doctoralia_id,
     MAX(phone_normalized) as last_phone_normalized,
     MAX(patient_name) as last_patient_name
@@ -60,13 +59,16 @@ WITH ranked_appointments AS (
             PARTITION BY COALESCE(doctoralia_id, phone_normalized, public.normalize_name(patient_name))
             ORDER BY appointment_date ASC NULLS LAST, created_date ASC NULLS LAST, id ASC
         ) as appointment_rank_global,
-        CASE
+        CASE 
             WHEN is_cancelled IS NOT TRUE AND is_control IS NOT TRUE THEN
                 SUM(
-                    CASE WHEN is_cancelled IS NOT TRUE AND is_control IS NOT TRUE THEN 1 ELSE 0 END
+                    CASE 
+                        WHEN is_cancelled IS NOT TRUE AND is_control IS NOT TRUE THEN 1
+                        ELSE 0
+                    END
                 ) OVER (
                     PARTITION BY COALESCE(doctoralia_id, phone_normalized, public.normalize_name(patient_name))
-                    ORDER BY appointment_date ASC NULLS LAST, created_date ASC NULLS LAST, id ASC
+                    ORDER BY appointment_date ASC, created_date ASC, id ASC
                     ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
                 )
             ELSE NULL
@@ -101,14 +103,12 @@ WITH lead_doctoralia_match AS (
         l.verified_revenue as crm_verified_revenue,
         l.clinic_id,
         l.user_id,
-        -- Find matches in Doctoralia classification
         dac.identity_key,
         dac.patient_type,
         dac.appointment_date as doc_appointment_date,
         dac.is_cancelled,
         dac.is_control,
         dac.appointment_rank_effective,
-        -- Ranked matches to avoid duplication (closest appointment to lead creation)
         ROW_NUMBER() OVER (
             PARTITION BY l.id
             ORDER BY ABS(EXTRACT(EPOCH FROM (dac.appointment_date::timestamptz - l.created_at))) ASC
@@ -168,6 +168,7 @@ LEFT JOIN revenue_summary rs ON rs.phone_normalized = ldm.lead_phone
 WHERE ldm.match_rank = 1;
 
 -- 4. Replace v_patient_conversion_monthly
+DROP VIEW IF EXISTS public.v_patient_conversion_monthly CASCADE;
 CREATE OR REPLACE VIEW public.v_patient_conversion_monthly AS
 SELECT
     TO_CHAR(lead_created_at, 'YYYY-MM') as month_key,
@@ -212,6 +213,7 @@ SELECT
 FROM public.v_patient_conversion_detail;
 
 -- 6. Replace v_new_clients_by_channel_monthly
+DROP VIEW IF EXISTS public.v_new_clients_by_channel_monthly CASCADE;
 CREATE OR REPLACE VIEW public.v_new_clients_by_channel_monthly AS
 SELECT
     month_key,
