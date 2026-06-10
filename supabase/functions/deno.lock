@@ -1,18 +1,71 @@
 {
   "version": "5",
+  "specifiers": {
+    "npm:mcp-lite@0.8.2": "0.8.2"
+  },
+  "npm": {
+    "@standard-schema/spec@1.1.0": {
+      "integrity": "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="
+    },
+    "mcp-lite@0.8.2": {
+      "integrity": "sha512-v78gCsmOI9cGhUsu8xRZ8NEZ6AOFPaAxm4xarP6Dhro3l9HY6Voo43MNuX+CO5oT8gpRfgJ5bMJLTSCFsp+4Kg==",
+      "dependencies": [
+        "@standard-schema/spec"
+      ]
+    }
+  },
   "redirects": {
+    "https://esm.sh/@supabase/phoenix@^0.4.2?target=denonext": "https://esm.sh/@supabase/phoenix@0.4.2?target=denonext",
     "https://esm.sh/@supabase/supabase-js@2": "https://esm.sh/@supabase/supabase-js@2.107.0",
     "https://esm.sh/hono@4": "https://esm.sh/hono@4.12.23",
+    "https://esm.sh/iceberg-js@^0.8.1?target=denonext": "https://esm.sh/iceberg-js@0.8.1?target=denonext",
     "https://esm.sh/mcp-lite@latest": "https://esm.sh/mcp-lite@0.10.0",
     "https://esm.sh/zod-to-json-schema@3": "https://esm.sh/zod-to-json-schema@3.25.2",
-    "https://esm.sh/zod@3": "https://esm.sh/zod@3.25.76"
+    "https://esm.sh/zod@3": "https://esm.sh/zod@3.25.76",
+    "https://esm.sh/zod@^4.1.12/v3?target=denonext": "https://esm.sh/zod@4.4.3/v3?target=denonext"
   },
   "remote": {
+    "https://esm.sh/@supabase/auth-js@2.106.1/denonext/auth-js.mjs": "7167764d9d3590f3865de61dc7c64256cfc9d1f5de56a5c9d4b7ea5206484054",
+    "https://esm.sh/@supabase/functions-js@2.106.1/denonext/functions-js.mjs": "85fb07538aaa092210b598b4d0c46077491e3f7ed4a39a3a00c019ede40bf0c0",
+    "https://esm.sh/@supabase/phoenix@0.4.2/denonext/phoenix.mjs": "8099a9b1277ec1776f0d0ae15e35be72b87b541a3f787b5477a11b546c8d62a9",
+    "https://esm.sh/@supabase/phoenix@0.4.2?target=denonext": "0790ada96f524af71c1af9a3f01b5517bd6e90e9e7e22e4c5436b92bc1534e8d",
+    "https://esm.sh/@supabase/postgrest-js@2.106.1/denonext/postgrest-js.mjs": "66f34dbf9cf6d80b24d6da093871b972427bf2cd2e7e678d6787e768c7fff7fb",
+    "https://esm.sh/@supabase/realtime-js@2.106.1/denonext/realtime-js.mjs": "9b04ca8b407d5467f336ff548975ba5654965104c24f08d89684357556fcec70",
+    "https://esm.sh/@supabase/storage-js@2.106.1/denonext/storage-js.mjs": "ae2f3d671c578f618a994328012507b2ff8fda95db559963c36e06e233cf1e82",
     "https://esm.sh/@supabase/supabase-js@2.106.1": "1b378cc89620ed0bf3e646b946b593e75d8e8ac0e43a4e07db6b71516ca757ec",
+    "https://esm.sh/@supabase/supabase-js@2.106.1/denonext/supabase-js.mjs": "77f6d2a20e78d4b9620c4ea6c694ae6103e4bb9e282b55236d3eab86ffce1a23",
     "https://esm.sh/@supabase/supabase-js@2.107.0": "8caa09b0223684d83cfa273de2946af25430d7ca8e5320b721226a0c7a8c6e98",
     "https://esm.sh/hono@4.12.23": "5b69a19b471543088696e8a14464633137412003b8b03f69187be24d4f40a58b",
+    "https://esm.sh/hono@4.6.14": "7dc70dad8805d6e362db8b0a92d49628efc43fc4c7e64f8c6e1823aa4c275f76",
+    "https://esm.sh/hono@4.6.14/denonext/dist/compose.mjs": "51e105df9408aa728b200efb233fcb7d70d8adac5c62c86f8bb464d44637aeaf",
+    "https://esm.sh/hono@4.6.14/denonext/dist/context.mjs": "d96c9b16f09ba54d76aa2ccbc1464dbf3127c28a9b987d51daa448df0e7b7bdf",
+    "https://esm.sh/hono@4.6.14/denonext/dist/hono.mjs": "f009173825da00a84b7d9ca6293ac5311a866bab487e50c91ca796e6bbda3aaf",
+    "https://esm.sh/hono@4.6.14/denonext/dist/utils/body.mjs": "d5b59ebe56d55a5df6fd21cc3a7e2dea9ee6e941e80f3526e1d9518a41814f4c",
+    "https://esm.sh/hono@4.6.14/denonext/dist/utils/html.mjs": "242d61c25c4cb29a4a4bd68e3f6a669f7c70f76d1538373b91213eadad8deb7c",
+    "https://esm.sh/hono@4.6.14/denonext/dist/utils/url.mjs": "e04e85bf69a7b18b679aaefaf287c62ad107fafbf91b3c1be31bcce5066c95c1",
+    "https://esm.sh/hono@4.6.14/denonext/hono-base.mjs": "c54922bde18d65af48dff6fc27bea75ebda72a194972951aecb6f0f420dae386",
+    "https://esm.sh/hono@4.6.14/denonext/hono.mjs": "bfa5e7a1c2ce269d83d532850b0fb3f5e20312efccd4cd337fb2f06bed833a99",
+    "https://esm.sh/hono@4.6.14/denonext/request.mjs": "18e2e1f0801c99be51f459b91582ed93d5a9ee097b7252b5497fe064a67b39ca",
+    "https://esm.sh/hono@4.6.14/denonext/router.mjs": "baf61b39fddd13cc4a6dc032f45b4ec838dec1a1d2789e727416c9a32eb32dcd",
+    "https://esm.sh/hono@4.6.14/denonext/router/reg-exp-router.mjs": "5dab6e7104fd9737d2cd984cf89b21db0053f1941d09256fbff429a712bf8661",
+    "https://esm.sh/hono@4.6.14/denonext/router/smart-router.mjs": "b81072e6fb17ef1e449bb87937186f90207d67338b5b60ead145369196ca21e4",
+    "https://esm.sh/hono@4.6.14/denonext/router/trie-router.mjs": "35d2d0ebf4ee3333ecb879e68c236614b020cb9428679c64346a8a132889636c",
+    "https://esm.sh/iceberg-js@0.8.1/denonext/iceberg-js.mjs": "d839d81a2e3966500ca2cdd0c1cb458e9608bacfc91f7bb67a69b2e878dcdb4f",
+    "https://esm.sh/iceberg-js@0.8.1?target=denonext": "58c849d7fe2bf4eca4a84eb501e83c161a7d8c34ca1bec15a962b3bec3062633",
     "https://esm.sh/mcp-lite@0.10.0": "53e2589774c1c8cb92eb6d284f2e8b5be493e722b29a59602a65bffa590a73df",
+    "https://esm.sh/tslib@2.8.1/denonext/tslib.mjs": "c38da5dd6da6281964435002ce204cd586634fe3bdfb24a0ee116f48cf3292e9",
+    "https://esm.sh/zod-to-json-schema@3.25.0": "6cfa7e3e038c479dbe24f48fa5a402c12850b7052a225b2dc7c64de09e3519f5",
+    "https://esm.sh/zod-to-json-schema@3.25.0/denonext/zod-to-json-schema.mjs": "f3d5538c608935cdbe9a9917fe2ecb6dea71a7ab57397030c63d3f3c79473d98",
     "https://esm.sh/zod-to-json-schema@3.25.2": "c0d062b77cb951961c76ec2e6ee9c348505168a924ad432a87423b1bca9c53c8",
-    "https://esm.sh/zod@3.25.76": "3fb2d6fc9ba6facc140a9875710339f90e89befb26fd9b39da83644d4dd6a701"
+    "https://esm.sh/zod@3.24.4": "5a1c52369b00ff7f07ddfc1b926a5e5fd4b3a71ed977551e139651d2bf48c168",
+    "https://esm.sh/zod@3.24.4/denonext/zod.mjs": "e5556695609a4a6e4c307926e01831231fd9e2d31019859eec971cd6c23ccf57",
+    "https://esm.sh/zod@3.25.76": "3fb2d6fc9ba6facc140a9875710339f90e89befb26fd9b39da83644d4dd6a701",
+    "https://esm.sh/zod@4.4.3/denonext/v3.mjs": "a30fcbd86f1b8d75c3cebd0d2abd02366e761a8962d1cddddcc8c8315d60671a",
+    "https://esm.sh/zod@4.4.3/v3?target=denonext": "dd7269eb9e4c88423936914fe2011a9225ebaadd0512a96b788e2804634fe5ef"
+  },
+  "workspace": {
+    "dependencies": [
+      "npm:mcp-lite@0.8.2"
+    ]
   }
 }

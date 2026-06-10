@@ -1,4 +1,4 @@
-﻿/** @ts-ignore: Deno global is provided by Supabase Edge Runtime */
+/** @ts-ignore: Deno global is provided by Supabase Edge Runtime */
 declare const Deno: any;
 
 import { createClient } from '@supabase/supabase-js'
@@ -289,14 +289,14 @@ mcp.tool('search_leads', {
 
 // ==================== NUEVAS TOOLS (08-05-2026) ====================
 
-// 7. Leads en riesgo (>14 días en "Nuevo")
+// 7. Leads en riesgo (>14 días en etapa lead)
 const RiskLeadsSchema = z.object({
   clinic_id: z.string().uuid().optional(),
   limit: LimitSchema,
 })
 
 mcp.tool('get_risk_leads', {
-  description: 'Obtiene leads que llevan más de 14 días en etapa "Nuevo" (riesgo de pérdida)',
+  description: 'Obtiene leads que llevan más de 14 días en etapa lead (riesgo de pérdida)',
   inputSchema: RiskLeadsSchema,
   handler: async (args: z.infer<typeof RiskLeadsSchema>) => {
     const { clinic_id, limit } = args;
@@ -334,7 +334,7 @@ mcp.tool('get_top_campaigns', {
       .from('financial_settlements')
       .select('campaign_name, amount_net')
       .gte('settled_at', new Date(Date.now() - 7 * 86400000).toISOString())
-      .eq('source_system', 'doctoralia') // solo revenue real
+      .neq('source_system', 'doctoralia') // campañas de adquisición, no Doctoralia
 
     if (clinic_id) query = query.eq('clinic_id', clinic_id)
 
