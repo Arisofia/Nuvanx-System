@@ -14,8 +14,15 @@
 
 BEGIN;
 
--- The function public.normalize_person_name must already exist in the project.
--- This migration deliberately does not drop or recreate normalization functions.
+CREATE OR REPLACE FUNCTION public.normalize_person_name(p_name TEXT)
+RETURNS TEXT
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  SELECT public.normalize_name(p_name);
+$$;
+
+-- Compatibility alias for Doctoralia matching views; delegates to the canonical normalize_name function.
 
 CREATE OR REPLACE VIEW public.v_doctoralia_appointment_sequence
 WITH (security_invoker = true) AS

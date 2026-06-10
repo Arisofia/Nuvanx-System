@@ -8,6 +8,45 @@
 -- =============================================================================
 
 -- Replace vw_lead_traceability without dropping dependent reporting objects.
+-- Ensure reduced Supabase replay schemas have the CRM patient/lead columns used below.
+CREATE TABLE IF NOT EXISTS public.patients (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  clinic_id UUID,
+  name TEXT,
+  dni TEXT,
+  dni_hash TEXT,
+  phone TEXT,
+  phone_normalized TEXT,
+  total_ltv NUMERIC NOT NULL DEFAULT 0,
+  last_visit TIMESTAMPTZ,
+  doctoralia_patient_id TEXT,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.patients
+  ADD COLUMN IF NOT EXISTS clinic_id UUID,
+  ADD COLUMN IF NOT EXISTS name TEXT,
+  ADD COLUMN IF NOT EXISTS dni TEXT,
+  ADD COLUMN IF NOT EXISTS dni_hash TEXT,
+  ADD COLUMN IF NOT EXISTS phone TEXT,
+  ADD COLUMN IF NOT EXISTS phone_normalized TEXT,
+  ADD COLUMN IF NOT EXISTS total_ltv NUMERIC NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS last_visit TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS doctoralia_patient_id TEXT,
+  ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+ALTER TABLE IF EXISTS public.leads
+  ADD COLUMN IF NOT EXISTS dni TEXT,
+  ADD COLUMN IF NOT EXISTS dni_hash TEXT,
+  ADD COLUMN IF NOT EXISTS first_outbound_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS first_inbound_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS reply_delay_minutes NUMERIC,
+  ADD COLUMN IF NOT EXISTS lost_reason TEXT;
+
 CREATE OR REPLACE VIEW public.vw_lead_traceability AS
 SELECT
   l.id                    AS lead_id,
