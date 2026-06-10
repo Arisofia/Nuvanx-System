@@ -43,7 +43,7 @@ export function MetricsGrid({ metrics, quality }: MetricsGridProps) {
           </div>
           <div className="mt-6 flex items-center gap-2">
             <div className="h-[1px] w-4 bg-[#B08B5A]/40" />
-            <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest">Leads Atribuidos</p>
+            <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest">Conversiones Meta</p>
           </div>
         </CardContent>
       </Card>
@@ -81,7 +81,7 @@ export function MetricsGrid({ metrics, quality }: MetricsGridProps) {
         </div>
         <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 relative z-10">
           <div className="flex flex-col gap-3">
-            <CardTitle className="text-[10px] font-bold text-[#8E8680] uppercase tracking-[0.25em]">Ingresos Reales</CardTitle>
+            <CardTitle className="text-[10px] font-bold text-[#8E8680] uppercase tracking-[0.25em]">Caja Liquidada</CardTitle>
             {renderIsReal(quality?.doctoraliaIsReal)}
           </div>
           <div className="bg-[#FAF7F2] p-3.5 rounded-2xl group-hover:bg-[#B08B5A] transition-all duration-500 group-hover:scale-110">
@@ -97,7 +97,7 @@ export function MetricsGrid({ metrics, quality }: MetricsGridProps) {
           </div>
           <div className="mt-6 flex items-center gap-2">
             <div className="h-[1px] w-4 bg-[#B08B5A]/40" />
-            <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest">Doctoralia Verificado</p>
+            <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest">Doctoralia / Producción</p>
           </div>
         </CardContent>
       </Card>
@@ -121,7 +121,7 @@ export function MetricsGrid({ metrics, quality }: MetricsGridProps) {
           </div>
           <div className="mt-6 flex items-center gap-2">
             <div className="h-[1px] w-4 bg-[#B08B5A]/40" />
-            <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest">Lead → Venta</p>
+            <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest">Lead → Caja</p>
           </div>
         </CardContent>
       </Card>
