@@ -80,15 +80,14 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
   const field = (label: string, value: string) => (
     <div>
       <p className="text-xs text-muted mb-1">{label}</p>
-      <p className="text-white">{value || 'â€”'}</p>
+      <p className="text-white">{value || '—'}</p>
     </div>
   )
 
   const input = (
     label: string,
     key: keyof typeof form,
-    type: string = 'text',
-    placeholder?: string
+    type: string = 'text'
   ) => (
     <div>
       <label className="text-xs text-muted mb-1 block">{label}</label>
@@ -96,8 +95,7 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
         type={type}
         value={form[key]}
         onChange={e => setForm(prev => ({ ...prev, [key]: e.target.value }))}
-        placeholder={placeholder}
-        className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm text-white placeholder-muted focus:outline-none focus:border-primary"
+        className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
       />
     </div>
   )
@@ -116,7 +114,7 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
           <h2 className="text-xl font-bold text-white">
             {isEditing ? 'Edit Lead' : 'Lead Details'}
           </h2>
-          <Button variant="ghost" onClick={onClose} className="text-muted hover:text-white">âœ•</Button>
+          <Button variant="ghost" onClick={onClose} className="text-muted hover:text-white">×</Button>
         </div>
 
         <div className="flex-1 overflow-y-auto space-y-8">
@@ -177,12 +175,12 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
             <h3 className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Financials</h3>
             <div className="grid gap-4 bg-background/50 rounded-xl p-4 border border-[#2d2218]/50">
               {isEditing ? (
-                input('Estimated Revenue (â‚¬)', 'revenue', 'number', '0')
+                input('Estimated Revenue (€)', 'revenue', 'number')
               ) : (
                 <div>
                   <p className="text-xs text-muted mb-1">Estimated Revenue</p>
                   <p className="text-emerald-500 font-bold text-lg">
-                    {lead.revenue ? `â‚¬${Number(lead.revenue).toLocaleString()}` : '0 â‚¬'}
+                    {lead.revenue ? `€${Number(lead.revenue).toLocaleString()}` : '0 €'}
                   </p>
                 </div>
               )}
@@ -196,7 +194,7 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
                 {isEditing ? (
                   <>
                     {input('Appointment Date', 'appointment_date', 'date')}
-                    {input('Treatment / Procedure', 'treatment_name', 'text', 'e.g. Endolift, Comboâ€¦')}
+                    {input('Treatment / Procedure', 'treatment_name', 'text')}
                   </>
                 ) : (
                   <>
@@ -206,20 +204,20 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
                         <p className="text-[#E0A020] font-medium">
                           {lead.appointment_date
                             ? new Date(lead.appointment_date).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-                            : 'â€”'}
+                            : '—'}
                         </p>
                       </div>
                     )}
                     {lead.status === 'treatment' && (
                       <div>
                         <p className="text-xs text-muted mb-1">Treatment / Procedure</p>
-                        <p className="text-[#B08B5A] font-medium">{lead.treatment_name || 'â€”'}</p>
+                        <p className="text-[#B08B5A] font-medium">{lead.treatment_name || '—'}</p>
                       </div>
                     )}
                     {lead.status === 'closed' && (
                       <div className="flex items-center gap-2">
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/20">
-                          âœ“ Cerrado
+                          ✓ Cerrado
                         </span>
                         {lead.treatment_name && (
                           <span className="text-xs text-muted">{lead.treatment_name}</span>
@@ -233,14 +231,14 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
           )}
 
           <section>
-            <h3 className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Notes</h3>            <div className="bg-background/50 rounded-xl p-4 border border-[#2d2218]/50 min-h-[100px]">
+            <h3 className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Notes</h3>
+            <div className="bg-background/50 rounded-xl p-4 border border-[#2d2218]/50 min-h-[100px]">
               {isEditing ? (
                 <textarea
                   value={form.notes}
                   onChange={e => setForm(prev => ({ ...prev, notes: e.target.value }))}
                   rows={4}
-                  className="w-full bg-transparent text-sm text-[#d7c5ae] resize-none focus:outline-none placeholder-muted"
-                  
+                  className="w-full bg-transparent text-sm text-[#d7c5ae] resize-none focus:outline-none"
                 />
               ) : (
                 <p className="text-[#d7c5ae] text-sm whitespace-pre-wrap">
@@ -267,7 +265,7 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
                 Cancel
               </Button>
               <Button onClick={handleSave} className="flex-1" disabled={saving}>
-                {saving ? 'Savingâ€¦' : 'Save'}
+                {saving ? 'Saving…' : 'Save'}
               </Button>
             </div>
           ) : (
@@ -278,7 +276,7 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
                 disabled={deleting}
                 className="text-rose-500 border-rose-500/30 hover:bg-rose-500/10"
               >
-                {deleting ? 'â€¦' : 'Archive'}
+                {deleting ? '…' : 'Archive'}
               </Button>
               <Button variant="outline" onClick={onClose} className="flex-1">
                 Close
