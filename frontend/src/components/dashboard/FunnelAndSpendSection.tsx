@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
-import { TrendingUp, DollarSign, Users, Target, ArrowUpRight, BarChart3, AlertCircle } from 'lucide-react'
+import { DollarSign, Users, Target, ArrowUpRight, BarChart3, AlertCircle } from 'lucide-react'
 import { FunnelChart } from './FunnelChart'
 import type { DashboardMetrics } from '../../types'
 import type { CombinedMetrics, DashboardQuality } from '../../lib/dashboard-helpers'
@@ -59,7 +59,7 @@ export function FunnelAndSpendSection({
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-800">Estado de atribución</p>
               <p className="mt-1.5 text-[11px] leading-relaxed text-amber-900/80 font-medium">
-                Datos no aptos para decisiones de presupuesto, CAC, CPL ni validación CAPI. Uso permitido solo para monitoreo interno de gasto Meta (Goya) y volumen bruto de leads CRM.
+                Datos no aptos para decisiones de presupuesto, CAC, CPL ni validación CAPI. Uso permitido solo para monitoreo interno de gasto Meta y volumen bruto de leads CRM.
               </p>
             </div>
           </div>
