@@ -33,7 +33,7 @@ BEGIN
         event_created_at,
         resolution_status
     )
-    SELECT 
+    SELECT DISTINCT ON (COALESCE(l.external_id, 'legacy_' || l.id::text))
         COALESCE(l.external_id, 'legacy_' || l.id::text),
         COALESCE(l.source, 'ORGANICO'),
         COALESCE(l.source, 'ORGANICO'),
@@ -63,7 +63,8 @@ WHERE NOT EXISTS (
     SELECT 1
     FROM public.lead_events existing
     WHERE existing.meta_lead_id = COALESCE(l.external_id, 'legacy_' || l.id::text)
-);
+)
+ORDER BY COALESCE(l.external_id, 'legacy_' || l.id::text), l.created_at DESC NULLS LAST, l.id;
 END;
 $$ LANGUAGE plpgsql;
 
