@@ -1,30 +1,21 @@
-/**
- * Unified tracking configuration for NUVANX
- * Synchronizes Meta Pixel, Google Ads, HubSpot, and UTM tracking
- */
+import {
+  googleAdsAccountIds,
+  metaPixelId,
+} from '../lib/env'
+
+const googleAdsIds = googleAdsAccountIds
+  ? googleAdsAccountIds.split(',').map((id) => id.trim()).filter(Boolean)
+  : []
 
 export const TRACKING_CONFIG = {
-  // Meta Pixel
-  META_PIXEL_ID: '1405503384615251',
-  
-  // Google Ads
-  GOOGLE_ADS_ID: 'AW-18182220789',
-  
-  // HubSpot
-  HUBSPOT_PORTAL_ID: '147416356',
-  HUBSPOT_FORM_ID: '5042522a-0bc5-4381-ac3e-5aee8649b69c',
-  
-  // WhatsApp
-  WHATSAPP_PHONE: '34669319836',
-  WHATSAPP_MESSAGE: 'Hola NUVANX, me gustaría solicitar una valoración médica',
-  
-  // Google Calendar
-  CALENDAR_URL: 'https://calendar.app.google/hbdUARMCmQhqQzKf7',
-  
-  // Doctoralia
-  DOCTORALIA_URL: 'https://www.doctoralia.es/dr-jose-javier-rivera-tejeda',
-  
-  // Events configuration
+  META_PIXEL_ID: metaPixelId,
+  GOOGLE_ADS_IDS: googleAdsIds,
+  HUBSPOT_PORTAL_ID: import.meta.env.VITE_HUBSPOT_PORTAL_ID?.trim() ?? '',
+  HUBSPOT_FORM_ID: import.meta.env.VITE_HUBSPOT_FORM_ID?.trim() ?? '',
+  WHATSAPP_PHONE: import.meta.env.VITE_WHATSAPP_PHONE?.trim() ?? '',
+  WHATSAPP_MESSAGE: import.meta.env.VITE_WHATSAPP_MESSAGE?.trim() ?? '',
+  CALENDAR_URL: import.meta.env.VITE_CALENDAR_URL?.trim() ?? '',
+  DOCTORALIA_URL: import.meta.env.VITE_DOCTORALIA_URL?.trim() ?? '',
   EVENTS: {
     CONTACT: {
       name: 'Contact',
@@ -42,13 +33,11 @@ export const TRACKING_CONFIG = {
       description: 'Calendar booking click',
     },
     DOCTORALIA: {
-      name: 'Información de pago añadida',
+      name: 'DoctoraliaProfileView',
       category: 'profile_view',
       description: 'Doctoralia profile view',
     },
   },
-  
-  // UTM parameters to capture
   UTM_PARAMS: [
     'utm_source',
     'utm_medium',
@@ -58,59 +47,47 @@ export const TRACKING_CONFIG = {
     'gclid',
     'fbclid',
   ],
-  
-  // Throttling (milliseconds)
   THROTTLE: {
     WHATSAPP: 1000,
     FORM: 2000,
     CALENDAR: 1000,
     DOCTORALIA: 1000,
   },
-  
-  // Scroll tracking
-  SCROLL_DEPTH_THRESHOLD: 0.75, // 75%
-  
-  // Landing page URLs
+  SCROLL_DEPTH_THRESHOLD: 0.75,
   LANDING_URLS: {
-    MANUS: 'https://nuvanxlp-nvxf53wk.manus.space',
-    CUSTOM: 'https://nuvanx.manus.space',
+    PRIMARY: import.meta.env.VITE_LANDING_URL_PRIMARY?.trim() ?? '',
+    SECONDARY: import.meta.env.VITE_LANDING_URL_SECONDARY?.trim() ?? '',
   },
 } as const
 
-/**
- * Validate tracking configuration
- */
 export function validateTrackingConfig(): {
   valid: boolean
   errors: string[]
 } {
   const errors: string[] = []
-  
+
   if (!TRACKING_CONFIG.META_PIXEL_ID) {
-    errors.push('META_PIXEL_ID is missing')
+    errors.push('VITE_META_PIXEL_ID is missing')
   }
-  
-  if (!TRACKING_CONFIG.GOOGLE_ADS_ID) {
-    errors.push('GOOGLE_ADS_ID is missing')
+
+  if (TRACKING_CONFIG.GOOGLE_ADS_IDS.length === 0) {
+    errors.push('VITE_GOOGLE_ADS_ACCOUNT_IDS is missing')
   }
-  
+
   if (!TRACKING_CONFIG.HUBSPOT_PORTAL_ID) {
-    errors.push('HUBSPOT_PORTAL_ID is missing')
+    errors.push('VITE_HUBSPOT_PORTAL_ID is missing')
   }
-  
+
   if (!TRACKING_CONFIG.WHATSAPP_PHONE) {
-    errors.push('WHATSAPP_PHONE is missing')
+    errors.push('VITE_WHATSAPP_PHONE is missing')
   }
-  
+
   return {
     valid: errors.length === 0,
     errors,
   }
 }
 
-/**
- * Get tracking context for API calls
- */
 export function getTrackingContext() {
   if (typeof window === 'undefined') {
     return {
@@ -120,7 +97,7 @@ export function getTrackingContext() {
       timestamp: new Date().toISOString(),
     }
   }
-  
+
   return {
     url: window.location.href,
     referrer: document.referrer,
