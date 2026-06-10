@@ -80,7 +80,7 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
   const field = (label: string, value: string) => (
     <div>
       <p className="text-xs text-muted mb-1">{label}</p>
-      <p className="text-white">{value || '—'}</p>
+      <p className="text-white">{value || 'â€”'}</p>
     </div>
   )
 
@@ -116,7 +116,7 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
           <h2 className="text-xl font-bold text-white">
             {isEditing ? 'Edit Lead' : 'Lead Details'}
           </h2>
-          <Button variant="ghost" onClick={onClose} className="text-muted hover:text-white">✕</Button>
+          <Button variant="ghost" onClick={onClose} className="text-muted hover:text-white">âœ•</Button>
         </div>
 
         <div className="flex-1 overflow-y-auto space-y-8">
@@ -160,8 +160,8 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
             <div className="grid gap-4 bg-background/50 rounded-xl p-4 border border-[#2d2218]/50">
               {isEditing ? (
                 <>
-                  {input('Phone', 'phone', 'tel', '+34 600 000 000')}
-                  {input('DNI / NIF', 'dni', 'text', '12345678X')}
+                  {input('Phone', 'phone', 'tel')}
+                  {input('DNI / NIF', 'dni')}
                 </>
               ) : (
                 <>
@@ -177,12 +177,12 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
             <h3 className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Financials</h3>
             <div className="grid gap-4 bg-background/50 rounded-xl p-4 border border-[#2d2218]/50">
               {isEditing ? (
-                input('Estimated Revenue (€)', 'revenue', 'number', '0')
+                input('Estimated Revenue (â‚¬)', 'revenue', 'number', '0')
               ) : (
                 <div>
                   <p className="text-xs text-muted mb-1">Estimated Revenue</p>
                   <p className="text-emerald-500 font-bold text-lg">
-                    {lead.revenue ? `€${Number(lead.revenue).toLocaleString()}` : '0 €'}
+                    {lead.revenue ? `â‚¬${Number(lead.revenue).toLocaleString()}` : '0 â‚¬'}
                   </p>
                 </div>
               )}
@@ -196,7 +196,7 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
                 {isEditing ? (
                   <>
                     {input('Appointment Date', 'appointment_date', 'date')}
-                    {input('Treatment / Procedure', 'treatment_name', 'text', 'e.g. Endolift, Combo…')}
+                    {input('Treatment / Procedure', 'treatment_name', 'text', 'e.g. Endolift, Comboâ€¦')}
                   </>
                 ) : (
                   <>
@@ -206,20 +206,20 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
                         <p className="text-[#E0A020] font-medium">
                           {lead.appointment_date
                             ? new Date(lead.appointment_date).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-                            : '—'}
+                            : 'â€”'}
                         </p>
                       </div>
                     )}
                     {lead.status === 'treatment' && (
                       <div>
                         <p className="text-xs text-muted mb-1">Treatment / Procedure</p>
-                        <p className="text-[#B08B5A] font-medium">{lead.treatment_name || '—'}</p>
+                        <p className="text-[#B08B5A] font-medium">{lead.treatment_name || 'â€”'}</p>
                       </div>
                     )}
                     {lead.status === 'closed' && (
                       <div className="flex items-center gap-2">
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/20">
-                          ✓ Cerrado
+                          âœ“ Cerrado
                         </span>
                         {lead.treatment_name && (
                           <span className="text-xs text-muted">{lead.treatment_name}</span>
@@ -240,7 +240,7 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
                   onChange={e => setForm(prev => ({ ...prev, notes: e.target.value }))}
                   rows={4}
                   className="w-full bg-transparent text-sm text-[#d7c5ae] resize-none focus:outline-none placeholder-muted"
-                  placeholder="Add notes..."
+                  
                 />
               ) : (
                 <p className="text-[#d7c5ae] text-sm whitespace-pre-wrap">
@@ -267,7 +267,7 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
                 Cancel
               </Button>
               <Button onClick={handleSave} className="flex-1" disabled={saving}>
-                {saving ? 'Saving…' : 'Save'}
+                {saving ? 'Savingâ€¦' : 'Save'}
               </Button>
             </div>
           ) : (
@@ -278,7 +278,7 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
                 disabled={deleting}
                 className="text-rose-500 border-rose-500/30 hover:bg-rose-500/10"
               >
-                {deleting ? '…' : 'Archive'}
+                {deleting ? 'â€¦' : 'Archive'}
               </Button>
               <Button variant="outline" onClick={onClose} className="flex-1">
                 Close
