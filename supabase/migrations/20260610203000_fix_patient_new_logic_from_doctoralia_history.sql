@@ -32,7 +32,6 @@ SELECT
     COUNT(*) as total_appointments,
     COUNT(*) FILTER (WHERE is_cancelled IS NOT TRUE) as effective_appointments,
     COUNT(*) FILTER (WHERE is_control IS TRUE) as control_appointments,
-    -- Keep track of identifiers for matching
     MAX(doctoralia_id) as last_doctoralia_id,
     MAX(phone_normalized) as last_phone_normalized,
     MAX(patient_name) as last_patient_name
@@ -56,12 +55,10 @@ WITH ranked_appointments AS (
         is_cancelled,
         is_control,
         status,
-        -- Global rank including cancelled and controls
         ROW_NUMBER() OVER (
             PARTITION BY COALESCE(doctoralia_id, phone_normalized, public.normalize_name(patient_name)) 
             ORDER BY appointment_date ASC, created_date ASC, id ASC
         ) as appointment_rank_global,
-        -- Effective rank (only non-cancelled, non-control)
         CASE 
             WHEN is_cancelled IS NOT TRUE AND is_control IS NOT TRUE THEN
                 SUM(
@@ -106,14 +103,12 @@ WITH lead_doctoralia_match AS (
         l.verified_revenue as crm_verified_revenue,
         l.clinic_id,
         l.user_id,
-        -- Find matches in Doctoralia classification
         dac.identity_key,
         dac.patient_type,
         dac.appointment_date as doc_appointment_date,
         dac.is_cancelled,
         dac.is_control,
         dac.appointment_rank_effective,
-        -- Ranked matches to avoid duplication (closest appointment to lead creation)
         ROW_NUMBER() OVER (
             PARTITION BY l.id 
             ORDER BY ABS(EXTRACT(EPOCH FROM (dac.appointment_date::timestamp - l.created_at))) ASC
@@ -125,7 +120,6 @@ WITH lead_doctoralia_match AS (
     WHERE l.deleted_at IS NULL
 ),
 revenue_summary AS (
-    -- Revenue aggregated by phone to match leads (since lead_id is mostly empty)
     SELECT 
         phone_normalized,
         SUM(amount_net) as total_revenue,
@@ -150,21 +144,11 @@ SELECT
             ELSE 'lead_only'
         END
     ) as status_detail,
-    CASE 
-        WHEN ldm.patient_type = 'new' THEN 1 ELSE 0 
-    END as is_new_patient,
-    CASE 
-        WHEN ldm.patient_type = 'returning' THEN 1 ELSE 0 
-    END as is_returning_patient,
-    CASE 
-        WHEN ldm.patient_type = 'control' THEN 1 ELSE 0 
-    END as is_control_patient,
-    CASE 
-        WHEN ldm.is_cancelled IS TRUE THEN 1 ELSE 0 
-    END as is_cancelled_appointment,
-    CASE 
-        WHEN rs.payment_count > 0 THEN 1 ELSE 0 
-    END as is_paid_patient,
+    CASE WHEN ldm.patient_type = 'new' THEN 1 ELSE 0 END as is_new_patient,
+    CASE WHEN ldm.patient_type = 'returning' THEN 1 ELSE 0 END as is_returning_patient,
+    CASE WHEN ldm.patient_type = 'control' THEN 1 ELSE 0 END as is_control_patient,
+    CASE WHEN ldm.is_cancelled IS TRUE THEN 1 ELSE 0 END as is_cancelled_appointment,
+    CASE WHEN rs.payment_count > 0 THEN 1 ELSE 0 END as is_paid_patient,
     COALESCE(rs.total_revenue, 0) as total_revenue,
     COALESCE(ldm.crm_verified_revenue, 0) as crm_verified_revenue,
     GREATEST(COALESCE(rs.total_revenue, 0), COALESCE(ldm.crm_verified_revenue, 0)) as final_revenue
@@ -173,6 +157,7 @@ LEFT JOIN revenue_summary rs ON rs.phone_normalized = ldm.lead_phone
 WHERE ldm.match_rank = 1;
 
 -- 4. Replace v_patient_conversion_monthly
+DROP VIEW IF EXISTS public.v_patient_conversion_monthly CASCADE;
 CREATE OR REPLACE VIEW public.v_patient_conversion_monthly AS
 SELECT 
     TO_CHAR(lead_created_at, 'YYYY-MM') as month_key,
@@ -217,6 +202,7 @@ SELECT
 FROM public.v_patient_conversion_detail;
 
 -- 6. Replace v_new_clients_by_channel_monthly
+DROP VIEW IF EXISTS public.v_new_clients_by_channel_monthly CASCADE;
 CREATE OR REPLACE VIEW public.v_new_clients_by_channel_monthly AS
 SELECT
     month_key,
