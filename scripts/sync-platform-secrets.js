@@ -65,6 +65,7 @@ const requiredSecretKeys = [
 ];
 
 const frontendKeys = [
+  'SUPABASE_FUNCTIONS_ORIGIN',
   'VITE_API_BASE_URL',
   'VITE_API_URL',
   'VITE_SUPABASE_URL',
@@ -73,13 +74,23 @@ const frontendKeys = [
   'VITE_SUPABASE_FIGMA_URL',
   'VITE_SUPABASE_FIGMA_ANON_KEY',
   'VITE_SENTRY_DSN',
-  'GOOGLE_ADS_CLIENT_ID',
-  'GOOGLE_ADS_PROJECT_ID',
-  'GOOGLE_ADS_AUTH_URI',
-  'GOOGLE_ADS_TOKEN_URI',
-  'GOOGLE_ADS_AUTH_PROVIDER_CERT_URL',
-  'GOOGLE_ADS_CLIENT_SECRET',
-  'GOOGLE_ADS_REDIRECT_URIS',
+  'VITE_META_APP_ID',
+  'VITE_META_PIXEL_ID',
+  'VITE_META_AD_ACCOUNT_IDS',
+  'VITE_META_PAGE_ID',
+  'VITE_META_INSTAGRAM_CHAMBERI_ID',
+  'VITE_META_INSTAGRAM_GOYA_ID',
+  'VITE_META_BUSINESS_PORTFOLIO_NUVANX_ID',
+  'VITE_META_BUSINESS_PORTFOLIO_YOLANDA_ID',
+  'VITE_GOOGLE_ADS_ACCOUNT_IDS',
+  'VITE_HUBSPOT_PORTAL_ID',
+  'VITE_HUBSPOT_FORM_ID',
+  'VITE_WHATSAPP_PHONE',
+  'VITE_WHATSAPP_MESSAGE',
+  'VITE_CALENDAR_URL',
+  'VITE_DOCTORALIA_URL',
+  'VITE_LANDING_URL_PRIMARY',
+  'VITE_LANDING_URL_SECONDARY',
 ];
 
 function readEnvFile(filePath) {
@@ -376,7 +387,7 @@ async function main() {
 
   const githubResult = setGithubSecrets(vars);
   if (!vars.SUPABASE_PROJECT_REF) {
-    throw new Error('SUPABASE_PROJECT_REF is missing in .env.tokens.local. Please add your Supabase Project Ref (e.g., ssvvuuysgxyqvmovrlvk) to proceed.');
+    throw new Error('SUPABASE_PROJECT_REF is missing in .env.tokens.local. Add the 20-character Supabase project ref before syncing.');
   }
   
   let supabaseMainResult = { skipped: true, reason: 'error during sync' };
