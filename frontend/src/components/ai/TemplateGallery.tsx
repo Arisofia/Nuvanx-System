@@ -2,36 +2,36 @@ import { useState } from 'react'
 
 const TEMPLATES = [
   {
-    label: 'WhatsApp Follow-up',
+    label: 'WhatsApp seguimiento lead',
     category: 'WhatsApp',
     prompt:
-      'Generate 3 WhatsApp follow-up messages for dental clinic leads. Style: warm, professional, action-oriented. Max 3 short paragraphs each with a clear CTA.',
+      'Genera 3 mensajes de seguimiento por WhatsApp para leads de NUVANX Medicina Estética Láser. Tono: claro, elegante, médico y sin presión. Máximo 3 párrafos breves. CTA: valoración médica gratuita.',
   },
   {
-    label: 'Email Campaign',
-    category: 'Email',
+    label: 'Respuesta a paciente',
+    category: 'Paciente',
     prompt:
-      'Write a compelling email campaign for an aesthetics clinic promoting a new treatment. Include subject line, body, and CTA.',
+      'Redacta una respuesta breve para una paciente interesada en medicina estética láser. Debe explicar que la indicación final y presupuesto se confirman en valoración médica gratuita. Tono español de España, cercano y profesional.',
   },
   {
-    label: 'Ad Copy',
-    category: 'Advertising',
+    label: 'Copy Meta compliant',
+    category: 'Publicidad',
     prompt:
-      'Generate 3 variations of Meta/Google ad copy for an aesthetics clinic. Each variation: headline (max 30 chars), description (max 90 chars), CTA.',
+      'Genera 3 variaciones de copy para Meta Ads de NUVANX. Evita señalar defectos personales, promesas absolutas o lenguaje de antes/después agresivo. Enfoque: naturalidad, criterio médico, discreción y valoración previa.',
   },
 ]
 
-const ALL_CATEGORIES = ['All', ...Array.from(new Set(TEMPLATES.map((t) => t.category)))]
+const ALL_CATEGORIES = ['Todas', ...Array.from(new Set(TEMPLATES.map((t) => t.category)))]
 
 interface Props {
   onSelect: (prompt: string) => void
 }
 
 export function TemplateGallery({ onSelect }: Props) {
-  const [activeCategory, setActiveCategory] = useState('All')
+  const [activeCategory, setActiveCategory] = useState('Todas')
 
   const filtered =
-    activeCategory === 'All' ? TEMPLATES : TEMPLATES.filter((t) => t.category === activeCategory)
+    activeCategory === 'Todas' ? TEMPLATES : TEMPLATES.filter((t) => t.category === activeCategory)
 
   return (
     <div className="space-y-3">
