@@ -14,12 +14,12 @@ with social_leads as (
     coalesce(l.campaign_name, 'Sin campaña'::varchar)::text as campaign_name,
     nullif(trim(l.name), '') as client_name,
     l.phone_normalized::text as phone_normalized,
-    l.email_normalized::text as email_normalized,
+    COALESCE(l.normalized_email, l.email)::text as email_normalized,
     l.treatment_name::text as treatment_name,
     coalesce(l.verified_revenue, 0::numeric) as revenue,
     (coalesce(l.verified_revenue, 0::numeric) > 0::numeric) as is_attributable_patient,
     'lead_valuation'::text as source_record_type,
-    lower(coalesce(nullif(l.phone_normalized::text, ''), nullif(l.email_normalized::text, ''), nullif(l.name_normalized, ''), nullif(l.name::text, ''), l.id::text)) as identity_key
+    lower(coalesce(nullif(l.phone_normalized::text, ''), nullif(COALESCE(l.normalized_email, l.email)::text, ''), nullif(public.normalize_name(l.name), ''), nullif(l.name::text, ''), l.id::text)) as identity_key
   from public.leads l
   where l.deleted_at is null
     and l.appointment_date is not null

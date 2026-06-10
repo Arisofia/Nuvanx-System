@@ -12,7 +12,7 @@ BEGIN;
 -- Aggregates patient information by a stable identity_key.
 CREATE OR REPLACE VIEW public.v_doctoralia_patient_history AS
 WITH patient_identity AS (
-    SELECT 
+    SELECT
         COALESCE(doctoralia_id, phone_normalized, public.normalize_name(patient_name)) as identity_key,
         doctoralia_id,
         phone_normalized,
@@ -24,7 +24,7 @@ WITH patient_identity AS (
         amount as doctoralia_amount
     FROM public.doctoralia_appointments_ingestion
 )
-SELECT 
+SELECT
     identity_key,
     MIN(COALESCE(created_date, appointment_date)) as first_seen_at,
     MIN(appointment_date) as first_appointment_at,
@@ -43,7 +43,7 @@ GROUP BY identity_key;
 -- Classifies each individual appointment based on its order and status.
 CREATE OR REPLACE VIEW public.v_doctoralia_patient_appointment_classification AS
 WITH ranked_appointments AS (
-    SELECT 
+    SELECT
         id,
         source_key,
         COALESCE(doctoralia_id, phone_normalized, public.normalize_name(patient_name)) as identity_key,
@@ -56,26 +56,26 @@ WITH ranked_appointments AS (
         is_cancelled,
         is_control,
         status,
-        -- Global rank including cancelled and controls
         ROW_NUMBER() OVER (
-            PARTITION BY COALESCE(doctoralia_id, phone_normalized, public.normalize_name(patient_name)) 
-            ORDER BY appointment_date ASC, created_date ASC, id ASC
+            PARTITION BY COALESCE(doctoralia_id, phone_normalized, public.normalize_name(patient_name))
+            ORDER BY appointment_date ASC NULLS LAST, created_date ASC NULLS LAST, id ASC
         ) as appointment_rank_global,
-        -- Effective rank (only non-cancelled, non-control)
-        CASE 
+        CASE
             WHEN is_cancelled IS NOT TRUE AND is_control IS NOT TRUE THEN
-                ROW_NUMBER() OVER (
-                    PARTITION BY COALESCE(doctoralia_id, phone_normalized, public.normalize_name(patient_name)) 
-                    FILTER (WHERE is_cancelled IS NOT TRUE AND is_control IS NOT TRUE)
-                    ORDER BY appointment_date ASC, created_date ASC, id ASC
+                SUM(
+                    CASE WHEN is_cancelled IS NOT TRUE AND is_control IS NOT TRUE THEN 1 ELSE 0 END
+                ) OVER (
+                    PARTITION BY COALESCE(doctoralia_id, phone_normalized, public.normalize_name(patient_name))
+                    ORDER BY appointment_date ASC NULLS LAST, created_date ASC NULLS LAST, id ASC
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
                 )
             ELSE NULL
         END as appointment_rank_effective
     FROM public.doctoralia_appointments_ingestion
 )
-SELECT 
+SELECT
     *,
-    CASE 
+    CASE
         WHEN is_cancelled IS TRUE THEN 'cancelled'
         WHEN is_control IS TRUE THEN 'control'
         WHEN appointment_date > CURRENT_DATE AND is_cancelled IS NOT TRUE THEN 'future_scheduled'
@@ -90,7 +90,7 @@ FROM ranked_appointments;
 DROP VIEW IF EXISTS public.v_patient_conversion_detail CASCADE;
 CREATE OR REPLACE VIEW public.v_patient_conversion_detail AS
 WITH lead_doctoralia_match AS (
-    SELECT 
+    SELECT
         l.id as lead_id,
         l.name as lead_name,
         l.phone_normalized as lead_phone,
@@ -110,18 +110,18 @@ WITH lead_doctoralia_match AS (
         dac.appointment_rank_effective,
         -- Ranked matches to avoid duplication (closest appointment to lead creation)
         ROW_NUMBER() OVER (
-            PARTITION BY l.id 
-            ORDER BY ABS(EXTRACT(EPOCH FROM (dac.appointment_date::timestamp - l.created_at))) ASC
+            PARTITION BY l.id
+            ORDER BY ABS(EXTRACT(EPOCH FROM (dac.appointment_date::timestamptz - l.created_at))) ASC
         ) as match_rank
     FROM public.leads l
-    LEFT JOIN public.v_doctoralia_patient_appointment_classification dac 
+    LEFT JOIN public.v_doctoralia_patient_appointment_classification dac
         ON dac.phone_normalized = l.phone_normalized
            OR dac.identity_key = public.normalize_name(l.name)
     WHERE l.deleted_at IS NULL
 ),
 revenue_summary AS (
     -- Revenue aggregated by phone to match leads (since lead_id is mostly empty)
-    SELECT 
+    SELECT
         phone_normalized,
         SUM(amount_net) as total_revenue,
         COUNT(*) as payment_count,
@@ -130,7 +130,7 @@ revenue_summary AS (
     WHERE amount_net > 0 AND cancelled_at IS NULL
     GROUP BY phone_normalized
 )
-SELECT 
+SELECT
     ldm.lead_id,
     ldm.lead_name,
     ldm.lead_phone,
@@ -139,26 +139,26 @@ SELECT
     ldm.lead_campaign,
     ldm.clinic_id,
     ldm.user_id,
-    COALESCE(ldm.patient_type, 
-        CASE 
+    COALESCE(ldm.patient_type,
+        CASE
             WHEN ldm.lead_appointment_date IS NOT NULL THEN 'scheduled'
             ELSE 'lead_only'
         END
     ) as status_detail,
-    CASE 
-        WHEN ldm.patient_type = 'new' THEN 1 ELSE 0 
+    CASE
+        WHEN ldm.patient_type = 'new' THEN 1 ELSE 0
     END as is_new_patient,
-    CASE 
-        WHEN ldm.patient_type = 'returning' THEN 1 ELSE 0 
+    CASE
+        WHEN ldm.patient_type = 'returning' THEN 1 ELSE 0
     END as is_returning_patient,
-    CASE 
-        WHEN ldm.patient_type = 'control' THEN 1 ELSE 0 
+    CASE
+        WHEN ldm.patient_type = 'control' THEN 1 ELSE 0
     END as is_control_patient,
-    CASE 
-        WHEN ldm.is_cancelled IS TRUE THEN 1 ELSE 0 
+    CASE
+        WHEN ldm.is_cancelled IS TRUE THEN 1 ELSE 0
     END as is_cancelled_appointment,
-    CASE 
-        WHEN rs.payment_count > 0 THEN 1 ELSE 0 
+    CASE
+        WHEN rs.payment_count > 0 THEN 1 ELSE 0
     END as is_paid_patient,
     COALESCE(rs.total_revenue, 0) as total_revenue,
     COALESCE(ldm.crm_verified_revenue, 0) as crm_verified_revenue,
@@ -169,7 +169,7 @@ WHERE ldm.match_rank = 1;
 
 -- 4. Replace v_patient_conversion_monthly
 CREATE OR REPLACE VIEW public.v_patient_conversion_monthly AS
-SELECT 
+SELECT
     TO_CHAR(lead_created_at, 'YYYY-MM') as month_key,
     clinic_id,
     user_id,
@@ -194,7 +194,7 @@ SELECT
     TO_CHAR(lead_created_at, 'YYYY-MM') as month_key,
     user_id,
     clinic_id,
-    CASE 
+    CASE
         WHEN lead_source ILIKE '%facebook%' OR lead_source ILIKE '%instagram%' OR lead_source ILIKE '%meta%' THEN 'social'
         WHEN lead_source ILIKE '%google%' OR lead_source ILIKE '%cpc%' THEN 'paid'
         ELSE 'other'
