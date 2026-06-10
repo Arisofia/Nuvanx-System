@@ -67,7 +67,7 @@ export default function Login() {
               <Input
                 id="login-email"
                 type="email"
-                placeholder="usuario@nuvanx.com"
+                autoComplete="email"
                 value={email}
                 onChange={(e: ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
                 className="input-field"
@@ -78,7 +78,7 @@ export default function Login() {
               <Input
                 id="login-password"
                 type="password"
-                placeholder="••••••••"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e: ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
                 className="input-field"
