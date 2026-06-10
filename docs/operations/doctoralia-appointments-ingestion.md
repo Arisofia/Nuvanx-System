@@ -6,41 +6,44 @@ Use this runbook to load Doctoralia appointment exports into `public.doctoralia_
 
 ## Supported Source Files
 
-The loader supports both of these local export formats:
+The loader supports these source formats:
 
-1. `doctoralia_appointments.csv` in the repository root.
-2. `Base Pacientes Nuvanx.xlsx` with the `Doctoralia` sheet.
-3. Google Sheets via `npm run doctoralia:appointments:sync`, which is now part of the daily sync orchestrator.
+1. Local CSV export, configured through `DOCTORALIA_APPOINTMENTS_INPUT_PATH`.
+2. Local XLSX workbook, configured through `DOCTORALIA_APPOINTMENTS_INPUT_PATH` and `DOCTORALIA_APPOINTMENTS_SHEET_NAME`.
+3. Google Sheets via `npm run doctoralia:appointments:sync`, which is part of the daily sync orchestrator.
 
 Override the input file when needed:
 
 ```bash
-DOCTORALIA_APPOINTMENTS_INPUT_PATH=./exports/doctoralia_appointments.csv npm run doctoralia:appointments:dry-run
+DOCTORALIA_APPOINTMENTS_INPUT_PATH="$DOCTORALIA_APPOINTMENTS_INPUT_PATH" npm run doctoralia:appointments:dry-run
 ```
 
 ## Required Environment Variables
 
-Create or update `.env.local` with production Supabase credentials:
+Configure these values outside the repository through `.env.local`, GitHub Actions secrets, Vercel env vars, or the deployment secret store:
 
-```env
-SUPABASE_URL=https://ssvvuuysgxyqvmovrlvk.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=<service-role-key-from-supabase-settings-api>
-DOCTORALIA_SHEET_ID=<google-sheet-id-for-appointments-sync>
-GOOGLE_DOCTORALIA_SERVICE_ACCOUNT=<service-account-json>
+```text
+SUPABASE_URL
+SUPABASE_SERVICE_ROLE_KEY
+DOCTORALIA_SHEET_ID
+GOOGLE_DOCTORALIA_SERVICE_ACCOUNT
+DOCTORALIA_APPOINTMENTS_SHEET_NAME
+DOCTORALIA_APPOINTMENTS_SHEET_RANGE
+DOCTORALIA_APPOINTMENTS_MIN_ROWS
 ```
 
 Do **not** commit `.env.local` or any Supabase service-role key. The service-role key is required because the staging table is protected by RLS and only grants write access to `service_role`.
 
 ## Accepted Columns
 
-The CSV/XLSX parser accepts the simplified Doctoralia export columns:
+The CSV/XLSX parser accepts simplified Doctoralia export columns:
 
 ```text
 appointment_id, patient_name, patient_email, patient_phone,
 appointment_date, appointment_type, status, notes
 ```
 
-It also accepts the richer operational Google Sheets headers used by NUVANX, including Spanish aliases such as `Estado`, `Fecha`, `Hora`, `Asunto`, `Agenda`, `Importe`, `ID`, `Nombre`, `Teléfono`, `Tratamiento`, and `Clínica`.
+It also accepts richer operational Google Sheets headers used by NUVANX, including Spanish aliases such as `Estado`, `Fecha`, `Hora`, `Asunto`, `Agenda`, `Importe`, `ID`, `Nombre`, `Teléfono`, `Tratamiento`, and `Clínica`.
 
 ## Production Load Procedure
 
@@ -56,7 +59,7 @@ It also accepts the richer operational Google Sheets headers used by NUVANX, inc
    npm run supabase:migration:push
    ```
 
-3. Place the export in the repo root as `doctoralia_appointments.csv`, or set `DOCTORALIA_APPOINTMENTS_INPUT_PATH`.
+3. Configure the input file or Google Sheets variables in the runtime environment.
 
 4. Validate local parsing without writing to Supabase:
 
@@ -76,14 +79,14 @@ It also accepts the richer operational Google Sheets headers used by NUVANX, inc
    npm run doctoralia:appointments:load
    ```
 
-7. For automated Google Sheets ingestion, validate and then sync directly from the Doctoralia appointments sheet:
+7. For automated Google Sheets ingestion, validate and then sync directly from the configured Doctoralia appointments sheet:
 
    ```bash
-   DOCTORALIA_APPOINTMENTS_MIN_ROWS=2200 npm run doctoralia:appointments:sync:dry-run
-   DOCTORALIA_APPOINTMENTS_MIN_ROWS=2200 npm run doctoralia:appointments:sync
+   npm run doctoralia:appointments:sync:dry-run
+   npm run doctoralia:appointments:sync
    ```
 
-The daily orchestrator validates required secrets, validates the `doctoralia_appointments_ingestion` schema, and also runs `sync-doctoralia-appointments` as a critical step, so production daily sync fails if the appointment agenda cannot be fetched, parsed, loaded, or validated against the configured minimum row count.
+The daily orchestrator validates required secrets, validates the `doctoralia_appointments_ingestion` schema, and runs `sync-doctoralia-appointments`. Production daily sync fails if the appointment agenda cannot be fetched, parsed, loaded, or validated against the configured minimum row count.
 
 ## Verification Queries
 
@@ -121,10 +124,9 @@ SELECT
 FROM public.doctoralia_appointments_ingestion;
 ```
 
-
 ## Security Verification Queries
 
-Use this catalog query to verify reporting views are actually running with `security_invoker=true` after migrations. It checks PostgreSQL `pg_class.reloptions` directly instead of relying on UI labels:
+Use this catalog query to verify reporting views are running with `security_invoker=true` after migrations:
 
 ```sql
 SELECT
@@ -146,35 +148,34 @@ WHERE n.nspname = 'public'
 ORDER BY c.relname;
 ```
 
-
 ## Merge-Conflict Resolution Notes
 
 When this branch is rebased or updated from `main`, keep these canonical decisions:
 
 - `supabase/migrations/20260608130000_create_doctoralia_appointments_ingestion.sql` must not include explicit `BEGIN;` / `COMMIT;` wrappers; Supabase tooling controls migration transactions.
 - `scripts/validate-sql-migrations.js` should flag only unguarded `ALTER TABLE financial_settlements` statements and should allow `ALTER TABLE IF EXISTS`.
-- This runbook should keep both local CSV/XLSX and automated Google Sheets paths because production uses both manual recovery and scheduled sync.
+- This runbook should keep local CSV/XLSX and automated Google Sheets paths because production uses both manual recovery and scheduled sync.
 
 ## Troubleshooting
 
 | Symptom | Resolution |
 | --- | --- |
-| `Missing SUPABASE_URL...` | Confirm `.env.local` contains `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. |
+| `Missing SUPABASE_URL...` | Confirm the runtime environment contains `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. |
 | `Invalid API key` | Re-copy the service-role key from Supabase Settings → API; do not use the anon key for ingestion. |
-| `Doctoralia appointments input not found` | Put `doctoralia_appointments.csv` in the repo root or set `DOCTORALIA_APPOINTMENTS_INPUT_PATH`. |
+| `Doctoralia appointments input not found` | Set `DOCTORALIA_APPOINTMENTS_INPUT_PATH` to a readable CSV/XLSX file. |
 | Google Sheets 403/404 during automated sync | Share the Doctoralia appointments spreadsheet with the service-account email stored in `GOOGLE_DOCTORALIA_SERVICE_ACCOUNT`. |
-| Parsed rows below `DOCTORALIA_APPOINTMENTS_MIN_ROWS` | Check that `DOCTORALIA_APPOINTMENTS_SHEET_NAME` and `DOCTORALIA_APPOINTMENTS_SHEET_RANGE` point to the full appointments agenda, not the financial/caja tab. |
+| Parsed rows below `DOCTORALIA_APPOINTMENTS_MIN_ROWS` | Check that `DOCTORALIA_APPOINTMENTS_SHEET_NAME` and `DOCTORALIA_APPOINTMENTS_SHEET_RANGE` point to the full appointments agenda. |
 | Daily sync preflight fails on missing secrets | Run `npm run validate:daily-sync-config` locally or inspect the workflow preflight output; it prints the exact missing secret names without exposing values. |
 | Doctoralia schema validation fails | Run `npm run validate:doctoralia-appointments`; the table must expose every column sent by the loader and `sheet_row`/`source_key` must be available for idempotent upserts. |
 | `Missing required Doctoralia headers` | Ensure the export includes at least status/estado, appointment date, appointment ID, and patient name columns. |
 | Upsert fails on `source_key` | Apply the latest migrations; the loader upserts against `ux_doctoralia_appointments_ingestion_source_key`. |
 | `cron.unschedule(...)` says the job does not exist | Re-run migrations after the pg_cron hardening patch; migrations now unschedule by `jobid` only after reading `cron.job`. |
-| SQL error at `... final schema ...` | Remove placeholder snippets before executing SQL. Repository migrations are expected to contain concrete schemas only; `...` is not valid PostgreSQL syntax. |
+| SQL error at `... final schema ...` | Remove non-SQL snippets before executing SQL. Repository migrations are expected to contain concrete schemas only; `...` is not valid PostgreSQL syntax. |
 | `relation public.financial_settlements does not exist` during early replay | Re-run after the migration safety patch; legacy `ALTER TABLE financial_settlements` statements now use `IF EXISTS` and CI blocks regressions. |
 
 ## Operational Notes
 
-- Default batch size is 500 rows. Override with `DOCTORALIA_APPOINTMENTS_CHUNK_SIZE=1000` for larger exports after testing.
+- Default batch size is 500 rows. Override with `DOCTORALIA_APPOINTMENTS_CHUNK_SIZE` after testing.
 - Phone numbers are normalized for Spanish local matching, preserving raw phone values in `phone` and `patient_phone`.
 - The table intentionally keeps direct table access restricted to `service_role` because it stores patient PII.
-- Production automation sets `DOCTORALIA_APPOINTMENTS_MIN_ROWS=2200` to guard against partial agenda loads and keep the JJRT → Enfermería/control funnel complete.
+- Production automation uses `DOCTORALIA_APPOINTMENTS_MIN_ROWS` to guard against partial agenda loads and keep the JJRT → Enfermería/control funnel complete.
