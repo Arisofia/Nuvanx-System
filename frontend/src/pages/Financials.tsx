@@ -7,12 +7,19 @@ import type { MonthlyTrend, FinancialsState } from '../types'
 import { SortableTable } from '../components/ui/SortableTable'
 import type { ColDef } from '../components/ui/SortableTable'
 
+function toLocalDateInputValue(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 export default function Financials() {
   const [from, setFrom] = useState<string>(() => {
     const d = new Date()
-    return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10)
+    return toLocalDateInputValue(new Date(d.getFullYear(), d.getMonth(), 1))
   })
-  const [to, setTo] = useState<string>(() => new Date().toISOString().slice(0, 10))
+  const [to, setTo] = useState<string>(() => toLocalDateInputValue(new Date()))
   const [state, setState] = useState<FinancialsState>({
     summary: null,
     monthly: [],
@@ -38,7 +45,7 @@ export default function Financials() {
           monthly: Array.isArray(data?.monthly) ? data.monthly : [],
           templateMix: Array.isArray(data?.templateMix) ? data.templateMix : [],
           loading: false,
-          error: data?.summary ? null : 'No financial data available yet.',
+          error: data?.summary ? null : 'Todavía no hay datos financieros disponibles.',
         })
       } catch (err: any) {
         if (cancelled) return
@@ -47,7 +54,7 @@ export default function Financials() {
           monthly: [],
           templateMix: [],
           loading: false,
-          error: err?.message || 'Failed to load financials.',
+          error: err?.message || 'No se pudieron cargar las finanzas.',
         })
       }
     }
@@ -60,12 +67,12 @@ export default function Financials() {
     n.toLocaleString('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
 
   const monthlyColumns: ColDef[] = [
-    { key: 'month', label: 'Month', align: 'left' },
-    { key: 'gross', label: 'Gross', align: 'right', format: (v) => v == null ? null : fmt(Number(v)) },
-    { key: 'net', label: 'Net', align: 'right', format: (v) => v == null ? null : fmt(Number(v)) },
-    { key: 'discount', label: 'Discount', align: 'right', format: (v) => v == null ? null : fmt(Number(v)) },
-    { key: 'count', label: 'Ops', align: 'right' },
-    { key: 'avgTicket', label: 'Avg Ticket', align: 'right', format: (v) => v == null ? null : fmt(Number(v)) },
+    { key: 'month', label: 'Mes', align: 'left' },
+    { key: 'gross', label: 'Bruto', align: 'right', format: (v) => v == null ? null : fmt(Number(v)) },
+    { key: 'net', label: 'Neto', align: 'right', format: (v) => v == null ? null : fmt(Number(v)) },
+    { key: 'discount', label: 'Descuento', align: 'right', format: (v) => v == null ? null : fmt(Number(v)) },
+    { key: 'count', label: 'Operaciones', align: 'right' },
+    { key: 'avgTicket', label: 'Ticket promedio', align: 'right', format: (v) => v == null ? null : fmt(Number(v)) },
   ]
 
   const monthlyRows = state.monthly.map((m: MonthlyTrend) => ({
@@ -77,12 +84,24 @@ export default function Financials() {
     avgTicket: m.count && m.count > 0 ? Math.round(m.net / m.count) : null,
   }))
 
+  const setThisMonth = () => {
+    const d = new Date()
+    setFrom(toLocalDateInputValue(new Date(d.getFullYear(), d.getMonth(), 1)))
+    setTo(toLocalDateInputValue(d))
+  }
+
+  const setLastMonth = () => {
+    const d = new Date()
+    setFrom(toLocalDateInputValue(new Date(d.getFullYear(), d.getMonth() - 1, 1)))
+    setTo(toLocalDateInputValue(new Date(d.getFullYear(), d.getMonth(), 0)))
+  }
+
   if (state.loading) {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-serif font-bold text-foreground">Verified Financials</h1>
-          <p className="text-muted mt-1">Doctoralia settlements, LTV, verified revenue</p>
+          <h1 className="text-3xl font-serif font-bold text-foreground">Finanzas verificadas</h1>
+          <p className="text-muted mt-1">Liquidaciones de Doctoralia, LTV e ingresos verificados</p>
         </div>
         <div className="animate-pulse space-y-4">
           <div className="h-24 bg-card rounded-lg" />
@@ -93,16 +112,13 @@ export default function Financials() {
   }
 
   const templateMixColumns: ColDef[] = [
-    { key: 'name', label: 'Template', align: 'left' },
-    { key: 'count', label: 'Ops', align: 'right' },
-    { key: 'net', label: 'Net Revenue', align: 'right', format: (v) => v == null ? null : fmt(Number(v)) },
-    { key: 'pct', label: 'Share %', align: 'right', format: (v) => v == null ? null : `${v}%` },
+    { key: 'name', label: 'Procedimiento', align: 'left' },
+    { key: 'count', label: 'Operaciones', align: 'right' },
+    { key: 'net', label: 'Ingreso neto', align: 'right', format: (v) => v == null ? null : fmt(Number(v)) },
+    { key: 'pct', label: 'Participación %', align: 'right', format: (v) => v == null ? null : `${v}%` },
   ]
 
-  const liquidationLabel =
-    state.summary?.avgLiquidationDays != null
-      ? `${state.summary.avgLiquidationDays}d`
-      : '0d'
+  const liquidationLabel = state.summary?.avgLiquidationDays != null ? `${state.summary.avgLiquidationDays}d` : '0d'
 
   return (
     <div className="space-y-6">
@@ -113,41 +129,13 @@ export default function Financials() {
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1 bg-card rounded-lg p-1">
-            <button
-              onClick={() => {
-                const d = new Date()
-                setFrom(new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10))
-                setTo(d.toISOString().slice(0, 10))
-              }}
-              className="px-3 py-1 rounded text-xs font-medium text-muted hover:text-foreground transition-colors"
-            >
-              Este mes
-            </button>
-            <button
-              onClick={() => {
-                const d = new Date()
-                setFrom(new Date(d.getFullYear(), d.getMonth() - 1, 1).toISOString().slice(0, 10))
-                setTo(new Date(d.getFullYear(), d.getMonth(), 0).toISOString().slice(0, 10))
-              }}
-              className="px-3 py-1 rounded text-xs font-medium text-muted hover:text-foreground transition-colors"
-            >
-              Mes pasado
-            </button>
+            <button onClick={setThisMonth} className="px-3 py-1 rounded text-xs font-medium text-muted hover:text-foreground transition-colors">Este mes</button>
+            <button onClick={setLastMonth} className="px-3 py-1 rounded text-xs font-medium text-muted hover:text-foreground transition-colors">Mes pasado</button>
           </div>
           <div className="flex items-center gap-2 text-xs text-muted">
-            <input
-              type="date"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-              className="bg-card border border-border rounded px-2 py-1 text-foreground text-xs focus:outline-none focus:border-muted"
-            />
+            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="bg-card border border-border rounded px-2 py-1 text-foreground text-xs focus:outline-none focus:border-muted" />
             <span>→</span>
-            <input
-              type="date"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-              className="bg-card border border-border rounded px-2 py-1 text-foreground text-xs focus:outline-none focus:border-muted"
-            />
+            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="bg-card border border-border rounded px-2 py-1 text-foreground text-xs focus:outline-none focus:border-muted" />
           </div>
         </div>
       </div>
@@ -160,119 +148,21 @@ export default function Financials() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Ingresos verificados (Neto)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{state.summary ? fmt(state.summary.totalNet) : '0 €'}</div>
-            <p className="text-xs text-muted mt-1">
-              {state.summary
-                ? `${state.summary.settledCount} liquidados · ${state.summary.cancelledCount} cancelados`
-                : 'De liquidaciones de Doctoralia'}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Ingresos brutos</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{state.summary ? fmt(state.summary.totalGross) : '0 €'}</div>
-            <p className="text-xs text-muted mt-1">Antes de descuentos</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Operaciones</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{state.summary ? state.summary.operationsCount : '0'}</div>
-            <p className="text-xs text-muted mt-1">Cantidad total de liquidaciones</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Ticket promedio</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{state.summary ? fmt(state.summary.avgTicket) : '0 €'}</div>
-            <p className="text-xs text-muted mt-1">Por transacción liquidada</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Tasa de descuento</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{state.summary ? `${state.summary.discountRate}%` : '0%'}</div>
-            <p className="text-xs text-muted mt-1">Descuento aplicado sobre ingresos brutos</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Tasa de cancelación</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{state.summary ? `${state.summary.cancelRate}%` : '0%'}</div>
-            <p className="text-xs text-muted mt-1">Porcentaje de citas canceladas</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Días de liquidación</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{liquidationLabel}</div>
-            <p className="text-xs text-muted mt-1">Tiempo promedio desde cita a cobro</p>
-          </CardContent>
-        </Card>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Ingresos verificados (neto)</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{state.summary ? fmt(state.summary.totalNet) : '0 €'}</div><p className="text-xs text-muted mt-1">{state.summary ? `${state.summary.settledCount} liquidados · ${state.summary.cancelledCount} cancelados` : 'De liquidaciones de Doctoralia'}</p></CardContent></Card>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Ingresos brutos</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{state.summary ? fmt(state.summary.totalGross) : '0 €'}</div><p className="text-xs text-muted mt-1">Antes de descuentos</p></CardContent></Card>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Operaciones</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{state.summary ? state.summary.operationsCount : '0'}</div><p className="text-xs text-muted mt-1">Cantidad total de liquidaciones</p></CardContent></Card>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Ticket promedio</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{state.summary ? fmt(state.summary.avgTicket) : '0 €'}</div><p className="text-xs text-muted mt-1">Por transacción liquidada</p></CardContent></Card>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Tasa de descuento</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{state.summary ? `${state.summary.discountRate}%` : '0%'}</div><p className="text-xs text-muted mt-1">Descuento aplicado sobre ingresos brutos</p></CardContent></Card>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Tasa de cancelación</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{state.summary ? `${state.summary.cancelRate}%` : '0%'}</div><p className="text-xs text-muted mt-1">Porcentaje de citas canceladas</p></CardContent></Card>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Días de liquidación</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{liquidationLabel}</div><p className="text-xs text-muted mt-1">Tiempo promedio desde cita a cobro</p></CardContent></Card>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Tendencia mensual de ingresos</CardTitle>
-          </CardHeader>
-          <CardContent className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={state.monthly}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" />
-                <YAxis />
-                <Tooltip formatter={(v: any) => fmt(Number(v))} />
-                <Legend />
-                <Line type="monotone" dataKey="net" stroke="#8884d8" name="Neto" strokeWidth={2} />
-                <Line type="monotone" dataKey="gross" stroke="#82ca9d" name="Bruto" strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Mix por Template / Procedimiento</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <SortableTable columns={templateMixColumns} rows={state.templateMix} />
-          </CardContent>
-        </Card>
+        <Card><CardHeader><CardTitle>Tendencia mensual de ingresos</CardTitle></CardHeader><CardContent className="h-80"><ResponsiveContainer width="100%" height="100%"><LineChart data={state.monthly}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="month" /><YAxis /><Tooltip formatter={(v: any) => fmt(Number(v))} /><Legend /><Line type="monotone" dataKey="net" stroke="#8884d8" name="Neto" strokeWidth={2} /><Line type="monotone" dataKey="gross" stroke="#82ca9d" name="Bruto" strokeWidth={2} /></LineChart></ResponsiveContainer></CardContent></Card>
+        <Card><CardHeader><CardTitle>Mix por procedimiento</CardTitle></CardHeader><CardContent><SortableTable columns={templateMixColumns} rows={state.templateMix} /></CardContent></Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Detalle por mes</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <SortableTable columns={monthlyColumns} rows={monthlyRows} />
-        </CardContent>
-      </Card>
+      <Card><CardHeader><CardTitle>Detalle por mes</CardTitle></CardHeader><CardContent><SortableTable columns={monthlyColumns} rows={monthlyRows} /></CardContent></Card>
     </div>
   )
 }
