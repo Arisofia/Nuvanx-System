@@ -1,5 +1,5 @@
-import { lazy, Suspense, useContext, useEffect } from 'react'
-import { Toaster } from './components/ui/sonner'
+﻿import { lazy, Suspense, useContext, useEffect } from 'react'
+import { Toaster } from './components/ui/toaster'
 import { TooltipProvider } from './components/ui/tooltip'
 import { useLocation } from 'wouter'
 import ErrorBoundary from './components/ErrorBoundary'
@@ -16,11 +16,11 @@ function ConfigurationError() {
   return (
     <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center p-6">
       <div className="text-center space-y-4 max-w-sm">
-        <p className="text-xs font-bold uppercase tracking-widest text-primary">Nuvanx · Control Centre</p>
-        <h1 className="text-xl font-serif font-bold text-[#2C2825]">Configuración incompleta</h1>
+        <p className="text-xs font-bold uppercase tracking-widest text-primary">Nuvanx Â· Control Centre</p>
+        <h1 className="text-xl font-serif font-bold text-[#2C2825]">ConfiguraciÃ³n incompleta</h1>
         <p className="text-sm text-[#5C5550]">
-          Las variables de entorno de Supabase no están configuradas.
-          Añade <code className="bg-[#F0ECE6] px-1 rounded text-xs">VITE_SUPABASE_URL</code> y{' '}
+          Las variables de entorno de Supabase no estÃ¡n configuradas.
+          AÃ±ade <code className="bg-[#F0ECE6] px-1 rounded text-xs">VITE_SUPABASE_URL</code> y{' '}
           <code className="bg-[#F0ECE6] px-1 rounded text-xs">VITE_SUPABASE_ANON_KEY</code> en
           el panel de Vercel y vuelve a desplegar.
         </p>
@@ -143,7 +143,7 @@ function Router() {
           fallback={
             <div className="min-h-screen bg-background flex items-center justify-center">
               <div className="max-w-lg text-center px-4">
-                <p className="text-base text-foreground">Ha ocurrido un error cargando esta sección.</p>
+                <p className="text-base text-foreground">Ha ocurrido un error cargando esta secciÃ³n.</p>
               </div>
             </div>
           }
@@ -189,3 +189,4 @@ export default function App() {
     </ErrorBoundary>
   )
 }
+
