@@ -161,7 +161,7 @@ INSERT INTO public.patient_classification (
 WITH lead_summary AS (
     SELECT 
         phone_normalized,
-        MIN(id) as lead_id,
+        (array_agg(id ORDER BY created_at ASC NULLS LAST, id::text ASC))[1] as lead_id,
         MIN(created_at) as first_seen,
         MAX(appointment_date) as last_appointment
     FROM public.leads
