@@ -41,7 +41,7 @@ export function SortableTable({
   pageSize = 200,
   exportFilename,
   loading,
-  emptyMessage = 'No data available.',
+  emptyMessage = 'Sin datos disponibles.',
   className = '',
   footerRow,
 }: Props) {
@@ -94,16 +94,15 @@ export function SortableTable({
   }
 
   if (loading) {
-    return <p className="text-muted text-sm py-8 text-center">Loading…</p>
+    return <p className="text-muted text-sm py-8 text-center">Cargando…</p>
   }
 
   return (
     <div className={`space-y-3 ${className}`}>
-      {/* Controls row */}
       <div className="flex items-center justify-between gap-2 print:hidden">
         <p className="text-xs text-muted">
-          {sorted.length.toLocaleString()} rows
-          {totalPages > 1 ? ` · page ${page + 1} / ${totalPages}` : ''}
+          {sorted.length.toLocaleString('es-ES')} filas
+          {totalPages > 1 ? ` · página ${page + 1} / ${totalPages}` : ''}
         </p>
         {exportFilename && (
           <ExportButton data={exportRows} filename={exportFilename} disabled={rows.length === 0} />
@@ -177,7 +176,6 @@ export function SortableTable({
         </table>
       </div>
 
-      {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-2 pt-1 print:hidden">
           <button
