@@ -23,7 +23,6 @@ export interface DashboardQuality {
   metaIsReal: boolean
   crmIsReal: boolean
   doctoraliaIsReal: boolean
-  isPartialAttribution: boolean
   metaAccountIds?: string[]
 }
 
@@ -86,18 +85,13 @@ function toSafeLabel(value: unknown, fallback = 'unknown') {
 }
 
 function asObject(value: unknown): Record<string, any> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, any>
-    : {}
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : {}
 }
 
 export function buildDashboardPaths(from: string, to: string) {
   const baseParams = `?from=${from}&to=${to}`
   const campaignsPath = `?from=${from}&to=${to}`
-  return {
-    baseParams,
-    campaignsPath,
-  }
+  return { baseParams, campaignsPath }
 }
 
 export function resolveInsightsTotals(insightsSummary: any, campaigns: any[]) {
@@ -107,10 +101,7 @@ export function resolveInsightsTotals(insightsSummary: any, campaigns: any[]) {
 
   const campaignsWithCpc = campaigns.filter((campaign: any) => Number(campaign.insights?.cpc ?? 0) > 0)
   const avgCpcRaw = insightsSummary?.cpc == null
-    ? Number(
-        campaigns.reduce((sum: number, campaign: any) => sum + Number(campaign.insights?.cpc ?? 0), 0) /
-          Math.max(campaignsWithCpc.length, 1),
-      )
+    ? Number(campaigns.reduce((sum: number, campaign: any) => sum + Number(campaign.insights?.cpc ?? 0), 0) / Math.max(campaignsWithCpc.length, 1))
     : Number(insightsSummary.cpc)
 
   const metaConversions = insightsSummary?.conversions == null
@@ -126,7 +117,7 @@ export function resolveInsightsTotals(insightsSummary: any, campaigns: any[]) {
 
 export function buildMetaFailureMessage(campaignsResult: PromiseSettledResult<any>, insightsResult: PromiseSettledResult<any>) {
   if (campaignsResult.status === 'rejected' || insightsResult.status === 'rejected') {
-    return (campaignsResult as any).reason?.message || (insightsResult as any).reason?.message || 'Meta API unavailable'
+    return (campaignsResult as any).reason?.message || (insightsResult as any).reason?.message || 'Meta API no disponible'
   }
   return null
 }
@@ -158,121 +149,37 @@ export function hasMultiAccountKpis(kpisResponse: any) {
 }
 
 export function buildDashboardState(options: DashboardStateOptions) {
-  const {
-    metricsData,
-    campaigns,
-    insightsResponse,
-    kpisResponse,
-    spend,
-    avgCpcRaw,
-    metaConversions,
-    spendDelta,
-  } = options
+  const { metricsData, campaigns, insightsResponse, kpisResponse, spend, avgCpcRaw, metaConversions, spendDelta } = options
 
   const kpisMeta = asObject(kpisResponse?.meta)
   const kpisCrm = asObject(kpisResponse?.crm)
   const kpisDoctoralia = asObject(kpisResponse?.doctoralia)
   const kpisDataQuality = asObject(kpisResponse?.data_quality)
 
-  const rawKpisMetaSpend = pick(
-    kpisMeta.spend,
-    kpisMeta.totalSpend,
-    kpisMeta.total_spend,
-    metricsData.spend,
-  )
+  const rawKpisMetaSpend = pick(kpisMeta.spend, kpisMeta.totalSpend, kpisMeta.total_spend, metricsData.spend)
+  const rawKpisMetaLeads = pick(kpisMeta.leads, kpisMeta.conversions, kpisMeta.metaConversions, kpisMeta.meta_conversions, metricsData.metaConversions, metricsData.meta_conversions, metaConversions)
 
-  const rawKpisMetaLeads = pick(
-    kpisMeta.leads,
-    kpisMeta.conversions,
-    kpisMeta.metaConversions,
-    kpisMeta.meta_conversions,
-    metricsData.metaConversions,
-    metricsData.meta_conversions,
-    metaConversions,
-  )
-
-  const canonicalMetaSpend = hasFiniteMetric(rawKpisMetaSpend) &&
-    (hasMultiAccountKpis(kpisResponse) || !hasCanonicalInsightsSpend(insightsResponse, campaigns))
-    ? Number(rawKpisMetaSpend)
-    : toNumber(spend)
-
+  const canonicalMetaSpend = hasFiniteMetric(rawKpisMetaSpend) && (hasMultiAccountKpis(kpisResponse) || !hasCanonicalInsightsSpend(insightsResponse, campaigns)) ? Number(rawKpisMetaSpend) : toNumber(spend)
   const canonicalMetaLeads = toNumber(rawKpisMetaLeads)
+  const canonicalAvgCpc = Number.isFinite(Number(avgCpcRaw)) && Number(avgCpcRaw) > 0 ? Number.parseFloat(Number(avgCpcRaw).toFixed(2)) : calculateRatio(canonicalMetaSpend, canonicalMetaLeads)
 
-  const canonicalAvgCpc = Number.isFinite(Number(avgCpcRaw)) && Number(avgCpcRaw) > 0
-    ? Number.parseFloat(Number(avgCpcRaw).toFixed(2))
-    : calculateRatio(canonicalMetaSpend, canonicalMetaLeads)
-
-  const doctoraliaPatients = toNumber(pick(
-    kpisDoctoralia.newVerifiedPatients,
-    kpisDoctoralia.new_verified_patients,
-    kpisDoctoralia.patientMatches,
-    kpisDoctoralia.patient_matches,
-    metricsData.patientMatches,
-    metricsData.patient_matches,
-  ))
-
-  const doctoraliaVerifiedRevenue = toNumber(pick(
-    kpisDoctoralia.verifiedRevenue,
-    kpisDoctoralia.verified_revenue,
-    metricsData.verifiedRevenue,
-    metricsData.verified_revenue,
-  ))
-
-  const totalLeads = toNullableNumber(pick(
-    metricsData.totalLeads,
-    metricsData.total_leads,
-    kpisCrm.totalLeads,
-    kpisCrm.total_leads,
-  ))
-
-  const conversionRate = toNullableNumber(pick(
-    metricsData.conversionRate,
-    metricsData.conversion_rate,
-    kpisCrm.conversionRate,
-    kpisCrm.conversion_rate,
-  ))
-
-  const patientConversionRate = toNullableNumber(pick(
-    metricsData.patientConversionRate,
-    metricsData.patient_conversion_rate,
-    kpisDoctoralia.patientConversionRate,
-    kpisDoctoralia.patient_conversion_rate,
-  ))
-
-  const totalRevenue = toNullableNumber(pick(
-    metricsData.totalRevenue,
-    metricsData.total_revenue,
-    kpisDoctoralia.totalRevenue,
-    kpisDoctoralia.total_revenue,
-  ))
-
-  const settledCount = toNullableNumber(pick(
-    metricsData.settledCount,
-    metricsData.settled_count,
-    kpisDoctoralia.settledCount,
-    kpisDoctoralia.settled_count,
-  ))
+  const doctoraliaPatients = toNumber(pick(kpisDoctoralia.newVerifiedPatients, kpisDoctoralia.new_verified_patients, kpisDoctoralia.patientMatches, kpisDoctoralia.patient_matches, metricsData.patientMatches, metricsData.patient_matches))
+  const doctoraliaVerifiedRevenue = toNumber(pick(kpisDoctoralia.verifiedRevenue, kpisDoctoralia.verified_revenue, metricsData.verifiedRevenue, metricsData.verified_revenue))
+  const totalLeads = toNullableNumber(pick(metricsData.totalLeads, metricsData.total_leads, kpisCrm.totalLeads, kpisCrm.total_leads))
+  const conversionRate = toNullableNumber(pick(metricsData.conversionRate, metricsData.conversion_rate, kpisCrm.conversionRate, kpisCrm.conversion_rate))
+  const patientConversionRate = toNullableNumber(pick(metricsData.patientConversionRate, metricsData.patient_conversion_rate, kpisDoctoralia.patientConversionRate, kpisDoctoralia.patient_conversion_rate))
+  const totalRevenue = toNullableNumber(pick(metricsData.totalRevenue, metricsData.total_revenue, kpisDoctoralia.totalRevenue, kpisDoctoralia.total_revenue))
+  const settledCount = toNullableNumber(pick(metricsData.settledCount, metricsData.settled_count, kpisDoctoralia.settledCount, kpisDoctoralia.settled_count))
 
   const metaCpl = calculateRatio(canonicalMetaSpend, canonicalMetaLeads)
   const cacDoctoralia = calculateRatio(canonicalMetaSpend, doctoraliaPatients)
   const revenuePerLead = calculateRatio(doctoraliaVerifiedRevenue, doctoraliaPatients)
-
   const accountIds = pick(kpisMeta.accountIds, kpisMeta.account_ids)
-
   const deltas = asObject(metricsData.deltas)
 
   const metaIsReal = toBoolean(pick(kpisMeta.is_real, kpisMeta.isReal))
   const crmIsReal = toBoolean(pick(kpisCrm.is_real, kpisCrm.isReal))
   const doctoraliaIsReal = toBoolean(pick(kpisDoctoralia.is_real, kpisDoctoralia.isReal))
-
-  const doctoraliaSettlementsReal = toBoolean(pick(
-    kpisDataQuality.doctoralia_settlements_real,
-    kpisDataQuality.doctoraliaSettlementsReal
-  ))
-
-  // Detectar estado de "Atribución Parcial": tenemos gasto o revenue real, 
-  // pero no hay coincidencia de identidad (match) entre ellos.
-  const isPartialAttribution = (metaIsReal || doctoraliaSettlementsReal || doctoraliaVerifiedRevenue > 0) && doctoraliaPatients === 0
 
   return {
     metrics: {
@@ -314,23 +221,17 @@ export function buildDashboardState(options: DashboardStateOptions) {
       doctoraliaPatients,
       cac: cacDoctoralia,
       cacConfidence: (() => {
-        const value = pick(
-          kpisDoctoralia.cac_confidence,
-          kpisDoctoralia.cacConfidence,
-          metricsData.cac_confidence,
-          metricsData.cacConfidence,
-        )
-
+        const value = pick(kpisDoctoralia.cac_confidence, kpisDoctoralia.cacConfidence, metricsData.cac_confidence, metricsData.cacConfidence)
         return typeof value === 'number' || typeof value === 'string' ? value : null
       })(),
     } satisfies RealFunnel,
+
     quality: {
       overallMode: toSafeLabel(pick(kpisDataQuality.overall_mode, kpisDataQuality.overallMode)),
       metaDataSource: toSafeLabel(pick(kpisMeta.data_source, kpisMeta.dataSource)),
       metaIsReal,
       crmIsReal,
       doctoraliaIsReal,
-      isPartialAttribution,
       metaAccountIds: toStringArray(accountIds),
     } satisfies DashboardQuality,
   }
