@@ -9,14 +9,14 @@ const navItems = [
   { label: 'Dashboard', href: '/dashboard', icon: Home },
   { label: 'Trazabilidad', href: '/traceability', icon: GitMerge },
   { label: 'Reportes', href: '/reports', icon: FileBarChart2 },
-  { label: 'Lead Audit', href: '/reports/lead-audit', icon: GitMerge },
+  { label: 'Auditoría leads', href: '/reports/lead-audit', icon: GitMerge },
   { label: 'Live', href: '/live', icon: Activity },
   { label: 'CRM', href: '/crm', icon: Users },
   { label: 'Marketing', href: '/marketing', icon: Megaphone },
-  { label: 'Financials', href: '/financials', icon: DollarSign },
-  { label: 'Intelligence', href: '/intelligence', icon: BarChart2 },
-  { label: 'Integrations', href: '/integrations', icon: Plug },
-  { label: 'AI', href: '/ai', icon: Sparkles },
+  { label: 'Finanzas', href: '/financials', icon: DollarSign },
+  { label: 'Inteligencia', href: '/intelligence', icon: BarChart2 },
+  { label: 'Integraciones', href: '/integrations', icon: Plug },
+  { label: 'IA', href: '/ai', icon: Sparkles },
 ]
 
 export default function Layout({ children }: Readonly<{ children: React.ReactNode }>) {
@@ -37,14 +37,14 @@ export default function Layout({ children }: Readonly<{ children: React.ReactNod
           {sidebarOpen ? (
             <div className="flex flex-col items-center text-center mt-4">
               <div className="bg-[#FAF7F2] p-4 rounded-[2rem] shadow-sm mb-6 border border-[#E5D5C5]/30">
-                <img src={logo} alt="Nuvanx Logo" className="h-14 w-auto" />
+                <img src={logo} alt="NUVANX" className="h-14 w-auto" />
               </div>
-              <p className="text-[9px] uppercase tracking-[0.4em] text-[#B08B5A] font-black">Control Centre</p>
+              <p className="text-[9px] uppercase tracking-[0.4em] text-[#B08B5A] font-black">Centro de control</p>
               <div className="h-[2px] w-8 bg-gradient-to-r from-transparent via-[#B08B5A]/30 to-transparent mt-5" />
             </div>
           ) : (
             <div className="mt-8 bg-[#FAF7F2] p-3 rounded-2xl border border-[#E5D5C5]/30 shadow-sm">
-              <img src={logo} alt="Logo" className="h-6 w-auto" />
+              <img src={logo} alt="NUVANX" className="h-6 w-auto" />
             </div>
           )}
         </div>
@@ -85,7 +85,7 @@ export default function Layout({ children }: Readonly<{ children: React.ReactNod
             }}
           >
             <LogOut className="w-4 h-4" />
-            {sidebarOpen && <span className="text-sm font-medium">Cerrar Sesión</span>}
+            {sidebarOpen && <span className="text-sm font-medium">Cerrar sesión</span>}
           </Button>
         </div>
       </aside>
