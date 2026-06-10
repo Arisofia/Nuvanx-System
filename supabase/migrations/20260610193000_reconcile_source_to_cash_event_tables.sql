@@ -130,7 +130,7 @@ CREATE TABLE IF NOT EXISTS public.patient_classification (
 );
 
 -- Truncate and Repopulate
-TRUNCATE TABLE public.patient_classification;
+DELETE FROM public.patient_classification;
 
 INSERT INTO public.patient_classification (
     lead_id,
