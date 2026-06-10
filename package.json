@@ -35,7 +35,8 @@
     "doctoralia:appointments:sync:dry-run": "node scripts/sync-doctoralia-appointments.js --dry-run",
     "validate:migrations": "node scripts/validate-sql-migrations.js",
     "validate:daily-sync-config": "node scripts/validate-daily-sync-config.js",
-    "validate:doctoralia-appointments": "node scripts/validate-doctoralia-appointments-ready.js"
+    "validate:doctoralia-appointments": "node scripts/validate-doctoralia-appointments-ready.js",
+    "meta:backfill": "node scripts/run-meta-backfill.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.107.0",
