@@ -1,0 +1,2 @@
+-- Empty local seed file.
+-- Required because supabase/config.toml has db.seed.enabled=true and sql_paths=["./seed.sql"].
