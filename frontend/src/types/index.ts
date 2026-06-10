@@ -274,7 +274,7 @@ export interface DoctoraliaAppointment {
   lead_id: string | null
   campaign_name: string | null
   match_class: string | null
-  match_confidence: string | number | null
+  match_confidence: number | null
 }
 
 export interface LiveEvent {
