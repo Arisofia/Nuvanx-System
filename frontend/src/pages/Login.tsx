@@ -46,8 +46,8 @@ export default function Login() {
       <Card className="w-full max-w-md card-panel z-10">
         <CardHeader className="text-center pt-12 pb-2 border-none">
           <div className="flex flex-col items-center">
-            <img src={logo} alt="Nuvanx Logo" className="h-16 w-auto mb-6" />
-            <p className="text-[10px] text-primary font-bold uppercase tracking-[0.4em]">Control Centre</p>
+            <img src={logo} alt="NUVANX" className="h-16 w-auto mb-6" />
+            <p className="text-[10px] text-primary font-bold uppercase tracking-[0.4em]">Centro de control</p>
           </div>
           
           <div className="diamond-separator my-10">
@@ -63,7 +63,7 @@ export default function Login() {
 
           <form onSubmit={handleLogin} className="space-y-6">
             <div className="space-y-2">
-              <label htmlFor="login-email" className="text-[10px] font-bold text-[#5C5550] uppercase tracking-widest ml-1">Correo Electrónico</label>
+              <label htmlFor="login-email" className="text-[10px] font-bold text-[#5C5550] uppercase tracking-widest ml-1">Correo electrónico</label>
               <Input
                 id="login-email"
                 type="email"
