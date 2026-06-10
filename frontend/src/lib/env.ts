@@ -1,8 +1,15 @@
-const invalidPublicEnvPattern = /your_supabase_project_ref|your-project\.supabase\.co|your-public-anon-key|your-anon-key|your-publishable-key|voerikxpncvrrhnxzbxm/i
-
 function sanitizeEnv(value: string | undefined) {
-  const normalized = value?.trim() ?? ''
-  return normalized && !invalidPublicEnvPattern.test(normalized) ? normalized : ''
+  return value?.trim() ?? ''
+}
+
+function sanitizeSupabaseUrl(value: string | undefined) {
+  const normalized = sanitizeEnv(value)
+  return /^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(normalized) ? normalized : ''
+}
+
+function sanitizeSupabaseKey(value: string | undefined) {
+  const normalized = sanitizeEnv(value)
+  return /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(normalized) ? normalized : ''
 }
 
 /**
@@ -18,10 +25,10 @@ export const isBrowser = (): boolean =>
  * production fallback here by design: binding a production build to a hardcoded
  * project or stale key makes audits unreliable and can hide misconfiguration.
  */
-export const supabaseUrl = sanitizeEnv(import.meta.env.VITE_SUPABASE_URL)
+export const supabaseUrl = sanitizeSupabaseUrl(import.meta.env.VITE_SUPABASE_URL)
 export const supabaseKey =
-  sanitizeEnv(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) ||
-  sanitizeEnv(import.meta.env.VITE_SUPABASE_ANON_KEY)
+  sanitizeSupabaseKey(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) ||
+  sanitizeSupabaseKey(import.meta.env.VITE_SUPABASE_ANON_KEY)
 
 export const metaAppId = sanitizeEnv(import.meta.env.VITE_META_APP_ID)
 export const metaPixelId = sanitizeEnv(import.meta.env.VITE_META_PIXEL_ID)
@@ -41,6 +48,6 @@ if (!isSupabaseConfigured) {
   )
 }
 
-if (import.meta.env.DEV && import.meta.env.VITE_SUPABASE_URL && !sanitizeEnv(import.meta.env.VITE_SUPABASE_URL)) {
-  console.warn('[env] Ignoring stale Supabase URL sample.')
+if (import.meta.env.DEV && import.meta.env.VITE_SUPABASE_URL && !sanitizeSupabaseUrl(import.meta.env.VITE_SUPABASE_URL)) {
+  console.warn('[env] Ignoring invalid Supabase URL format.')
 }
