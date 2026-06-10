@@ -90,8 +90,8 @@ function doPost(e) {
       record.telefono_original || "",         // O: Teléfono
       record.procedimiento_nombre || "",      // P: Tratamiento
       record.tipo_cliente || "",              // Q: Tipo de Cliente
-      record.email_hubspot || "",             // R: Email HubSpot
-      record.ejecutivo_asignado || "",        // S: EJECUTIVO ASIGNADO
+      "",                                     // R: Email (HubSpot Purged) 
+      record.ejecutivo_asignado || "",        // S: EJECUTIVO ASIGNADO 
       record.ingreso_lead || "",              // T: INGRESO DEL LEAD
       record.campana || ""                    // U: CAMPAÑA
     ];
@@ -163,7 +163,7 @@ function testDoPost() {
           telefono_original: "123456789",
           procedimiento_nombre: "TREATMENT",
           tipo_cliente: "New",
-          email_hubspot: "patient@example.com",
+          // email_hubspot: "patient@example.com", // HubSpot purged, no se usa
           ejecutivo_asignado: "ASSIGNED EXEC",
           ingreso_lead: "00000.00",
           campana: "Campaign"

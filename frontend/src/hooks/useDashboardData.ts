@@ -153,13 +153,12 @@ export function clearDashboardDataCache() {
 }
 
 export function useDashboardData(
-  days: number,
-  customFrom: string,
-  customTo: string,
+  from: string,
+  to: string,
   campaignId: string,
   sourceFilter: string,
   campaignsCount: number,
-  sourcesCount: number,
+  sourcesCount: number
 ) {
   const [funnelData, setFunnelData] = useState<Array<Record<string, unknown>>>([])
   const [metrics, setMetrics] = useState<DashboardMetrics>({
@@ -184,8 +183,7 @@ export function useDashboardData(
   useEffect(() => {
     let active = true
     const buildParams = () => {
-      const isCustomRange = Boolean(customFrom && customTo)
-      const { baseParams } = buildDashboardPaths(isCustomRange, customFrom, customTo, days)
+      const { baseParams } = buildDashboardPaths(from, to)
       const campaignParam = campaignId === 'ALL' ? '' : `&campaign_id=${encodeURIComponent(campaignId)}`
       const sourceParam = sourceFilter === 'ALL' ? '' : `&source=${encodeURIComponent(sourceFilter)}`
       const queryParams = `${baseParams}${campaignParam}`
@@ -317,7 +315,7 @@ export function useDashboardData(
           getCachedDashboardResource(`/api/dashboard/meta-trends${queryParams}`, cacheNamespace),
           getCachedDashboardResource(`/api/meta/campaigns${queryParams}`, cacheNamespace),
           getCachedDashboardResource(`/api/meta/insights${queryParams}`, cacheNamespace),
-          getCachedDashboardResource('/api/dashboard/lead-flow', cacheNamespace),
+          getCachedDashboardResource(`/api/dashboard/lead-flow${dashboardParams}`, cacheNamespace),
           getCachedDashboardResource(`/api/kpis${dashboardParams}`, cacheNamespace),
         ])
 
@@ -336,7 +334,7 @@ export function useDashboardData(
 
     fetchMetrics()
     return () => { active = false }
-  }, [days, customFrom, customTo, campaignId, sourceFilter, campaignsCount, sourcesCount])
+  }, [from, to, campaignId, sourceFilter, campaignsCount, sourcesCount])
 
   return {
     metrics,

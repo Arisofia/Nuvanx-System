@@ -10,9 +10,32 @@ interface DashboardHeaderProps {
   readonly campaignId: string
   readonly setCampaignId: (v: string) => void
   readonly campaignsList: { id: string, name: string }[]
-  readonly days: number
-  readonly setDays: (v: 7 | 14 | 30 | 90) => void
+  readonly dateRange: { from: string; to: string }
+  readonly setDateRange: (v: { from: string; to: string }) => void
   readonly metaAccountIds: string[]
+}
+
+function toLocalDateInputValue(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function formatDateLabel(dateValue: string) {
+  const [year, month, day] = dateValue.split('-')
+  return year && month && day ? `${day}/${month}/${year}` : dateValue
+}
+
+function calculateRangeDays(dateRange: { from: string; to: string }) {
+  const from = new Date(`${dateRange.from}T00:00:00`).getTime()
+  const to = new Date(`${dateRange.to}T00:00:00`).getTime()
+
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) {
+    return 0
+  }
+
+  return Math.max(1, Math.round((to - from) / 86_400_000) + 1)
 }
 
 export function DashboardHeader({
@@ -23,12 +46,29 @@ export function DashboardHeader({
   campaignId,
   setCampaignId,
   campaignsList,
-  days,
-  setDays,
+  dateRange,
+  setDateRange,
   metaAccountIds,
 }: DashboardHeaderProps) {
   const controlTextClass = 'text-[#5C5550] font-bold uppercase'
   const selectClass = 'bg-transparent border-none focus:ring-0 text-[10px] font-bold uppercase tracking-wider px-4 py-2 cursor-pointer outline-none appearance-none'
+  const days = calculateRangeDays(dateRange)
+
+  const setThisMonth = () => {
+    const d = new Date()
+    setDateRange({
+      from: toLocalDateInputValue(new Date(d.getFullYear(), d.getMonth(), 1)),
+      to: toLocalDateInputValue(d)
+    })
+  }
+
+  const setLastMonth = () => {
+    const d = new Date()
+    setDateRange({
+      from: toLocalDateInputValue(new Date(d.getFullYear(), d.getMonth() - 1, 1)),
+      to: toLocalDateInputValue(new Date(d.getFullYear(), d.getMonth(), 0))
+    })
+  }
 
   return (
     <div className="flex flex-col space-y-10 mb-12">
@@ -51,22 +91,38 @@ export function DashboardHeader({
           />
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-1.5 bg-white/80 backdrop-blur-xl p-2 rounded-[1.25rem] border border-[#E5D5C5]/60 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
-            {([7, 14, 30, 90] as const).map((d) => (
-              <button
-                type="button"
-                key={d}
-                onClick={() => setDays(d)}
-                className={`px-5 py-2.5 rounded-xl text-[10px] font-bold uppercase transition-all duration-300 ${
-                  days === d
-                    ? 'bg-[#84643B] text-white shadow-[0_4px_12px_rgba(132,100,59,0.3)]'
-                    : 'text-[#8E8680] hover:text-[#84643B] hover:bg-[#84643B]/5'
-                }`}
-              >
-                {d}d
-              </button>
-            ))}
+            <button
+              type="button"
+              onClick={setThisMonth}
+              className="px-5 py-2.5 rounded-xl text-[10px] font-bold uppercase transition-all duration-300 text-[#8E8680] hover:text-[#84643B] hover:bg-[#84643B]/5"
+            >
+              Este mes
+            </button>
+            <button
+              type="button"
+              onClick={setLastMonth}
+              className="px-5 py-2.5 rounded-xl text-[10px] font-bold uppercase transition-all duration-300 text-[#8E8680] hover:text-[#84643B] hover:bg-[#84643B]/5"
+            >
+              Mes pasado
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 bg-white/80 backdrop-blur-xl p-2 rounded-[1.25rem] border border-[#E5D5C5]/60 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+            <input
+              type="date"
+              value={dateRange.from}
+              onChange={(e) => setDateRange({ ...dateRange, from: e.target.value })}
+              className="bg-transparent border-none text-[10px] font-bold uppercase tracking-wider focus:ring-0 cursor-pointer outline-none"
+            />
+            <span className="text-[#B08B5A]/40 text-xs">→</span>
+            <input
+              type="date"
+              value={dateRange.to}
+              onChange={(e) => setDateRange({ ...dateRange, to: e.target.value })}
+              className="bg-transparent border-none text-[10px] font-bold uppercase tracking-wider focus:ring-0 cursor-pointer outline-none"
+            />
           </div>
         </div>
       </div>
@@ -111,7 +167,7 @@ export function DashboardHeader({
 
         <div className="flex justify-end">
           <div className="rounded-2xl bg-white/70 px-5 py-3 text-[10px] font-bold uppercase tracking-[0.18em] text-[#8E8680] border border-[#E5D5C5]/40">
-            Filtro global: últimos {days} días
+            Filtro global: {days > 0 ? `${formatDateLabel(dateRange.from)} al ${formatDateLabel(dateRange.to)}` : 'rango no válido'}
           </div>
         </div>
       </div>

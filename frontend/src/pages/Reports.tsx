@@ -289,10 +289,15 @@ export default function Reports() {
     let cancelled = false
     const load = async () => {
       setMetaExtraLoading(true)
+      const now = new Date()
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
+      const today = now.toISOString().slice(0, 10)
+      const qs = `?from=${firstDay}&to=${today}`
+
       try {
         const [orgRes, igRes] = await Promise.allSettled([
-          invokeApi<any>('/api/meta/organic/daily?days=30'),
-          invokeApi<any>('/api/meta/ig/daily?days=30'),
+          invokeApi<any>(`/api/meta/organic/daily${qs}`),
+          invokeApi<any>(`/api/meta/ig/daily${qs}`),
         ])
         if (!cancelled) {
           setOrganicSummary(orgRes.status === 'fulfilled' ? (orgRes.value?.summary || orgRes.value) : null)
@@ -311,7 +316,10 @@ export default function Reports() {
   // Fetch KPIs summary (exposes /kpis api data which aggregates Meta + other sources)
   useEffect(() => {
     let cancelled = false
-    invokeApi<any>('/api/kpis?days=30')
+    const now = new Date()
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
+    const today = now.toISOString().slice(0, 10)
+    invokeApi<any>(`/api/kpis?from=${firstDay}&to=${today}`)
       .then((d) => { if (!cancelled) setKpisSummary(d) })
       .catch(() => {})
       .finally(() => { if (!cancelled) setKpisLoading(false) })

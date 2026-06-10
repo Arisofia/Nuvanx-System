@@ -136,8 +136,10 @@ run_db_push_once() {
 
   # 2) Handle "Remote migration versions not found in local migrations directory"
   # This often happens when migrations are deleted locally but remain in schema_migrations remotely.
-  missing_remotes=$(echo "$output" | grep "Remote migration versions not found in local migrations directory" | sed 's/.*directory: //' | tr -d ' ' | tr ',' '\n' || true)
-  if [ -n "$missing_remotes" ]; then
+  # Extract versions from the suggested repair command line, which is more reliable.
+  missing_remotes_from_suggestion=$(echo "$output" | grep "supabase migration repair --status reverted" | grep -oE '[0-9]{8,}' | tr '\n' ' ' || true)
+  if [ -n "$missing_remotes_from_suggestion" ]; then
+    missing_remotes=$(echo "$missing_remotes_from_suggestion" | tr ' ' '\n') # Convert space-separated to newline-separated
     for version in $missing_remotes; do
       echo "::warning::Removing orphaned remote migration record: $version (missing locally)"
       printf '%s\n' "Removing orphaned remote migration record: $version" | append_migration_log

@@ -233,7 +233,8 @@ This keeps the "Doctoralia" sheet in sync with Supabase. The script writes only 
 
 - `leads.revenue` = **estimated** (entered manually in CRM, never verified)
 - `financial_settlements.amount_net` = **verified** (Doctoralia settled operations, financing-only)
-- Dashboard revenue KPI shows estimated CRM values. Verified revenue is under `/financials` only.
+- **`lead_events`**: The source of truth for lead attribution, funnel stages, and patient classification.
+- Dashboard revenue KPI shows estimated CRM values. Verified revenue is under `/financials` only, derived from `financial_settlements` and attributed via `lead_events`.
 - DNI is the deterministic reconciliation key between leads and settlements. Currently populated only from Doctoralia CSV uploads, not from Meta webhooks.
 
 ## Development
@@ -247,7 +248,8 @@ npm run dev:frontend  # Vite on http://localhost:5173
 ### Local Meta script credentials
 Para ejecutar los scripts locales de Meta y generar reportes, copia `.env.example` a `.env.local` o exporta estas variables en tu shell:
 
-### Environment Setup Hierarchy
+### Environment Setup Hierarchy and Dynamic Date Filters
+All reporting endpoints now accept `from=YYYY-MM-DD` and `to=YYYY-MM-DD` parameters. If not provided, they default to the current month.
 The system uses the following priority for loading environment variables:
 1. **`.env.tokens.local`**: Primary source for production-ready secrets and platform sync (Git-ignored).
 2. **`.env.local`**: Local frontend overrides.
@@ -258,7 +260,8 @@ The system uses the following priority for loading environment variables:
 ```bash
 export META_ACCESS_TOKEN=...
 export META_AD_ACCOUNT_ID=act_...
-export DATABASE_URL=postgresql://postgres.<PROJECT-REF>:<PASSWORD>@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require
+export FROM_DATE="YYYY-MM-DD" # For local testing of date-filtered reports
+export TO_DATE="YYYY-MM-DD"   # For local testing of date-filtered reports
 # IMPORTANT: Always use the Session Pooler host (not the direct db.<ref>.supabase.co which is IPv6-only for this project).
 export CLINIC_ID=...
 ```

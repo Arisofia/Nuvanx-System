@@ -57,6 +57,11 @@ const MATCH_LABELS: Record<string, string> = {
 }
 
 export default function Traceability() {
+  const [from, setFrom] = useState<string>(() => {
+    const d = new Date()
+    return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10)
+  })
+  const [to, setTo] = useState<string>(() => new Date().toISOString().slice(0, 10))
   const [rows, setRows] = useState<TraceRow[]>([])
   const [total, setTotal] = useState(0)
   const [matchedTotal, setMatchedTotal] = useState<number | null>(null)
@@ -77,6 +82,8 @@ export default function Traceability() {
       try {
         const params = new URLSearchParams({ limit: '500' })
         if (matchedOnly) params.set('matched', 'true')
+        if (from) params.set('from', from)
+        if (to) params.set('to', to)
         
         const [leadsData, campaignsData] = await Promise.all([
           invokeApi<any>(`/api/traceability/leads?${params}`),
@@ -102,7 +109,7 @@ export default function Traceability() {
     return () => {
       isActive = false
     }
-  }, [matchedOnly])
+  }, [matchedOnly, from, to])
 
   const filtered = rows.filter((r) => {
     if (search === '') return true
@@ -149,6 +156,45 @@ export default function Traceability() {
         <div className="space-y-2">
           <h1 className="text-5xl font-serif font-bold tracking-tight text-[#2C2825]">Trazabilidad</h1>
           <p className="text-[#5C5550] text-xs uppercase tracking-[0.4em] font-bold">Auditoría y Conversión Real</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1 bg-white/80 backdrop-blur-xl p-1 rounded-xl border border-[#E5D5C5]/60 shadow-sm">
+            <button
+              onClick={() => {
+                const d = new Date()
+                setFrom(new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10))
+                setTo(d.toISOString().slice(0, 10))
+              }}
+              className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all text-[#8E8680] hover:text-[#84643B] hover:bg-[#84643B]/5"
+            >
+              Este mes
+            </button>
+            <button
+              onClick={() => {
+                const d = new Date()
+                setFrom(new Date(d.getFullYear(), d.getMonth() - 1, 1).toISOString().slice(0, 10))
+                setTo(new Date(d.getFullYear(), d.getMonth(), 0).toISOString().slice(0, 10))
+              }}
+              className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all text-[#8E8680] hover:text-[#84643B] hover:bg-[#84643B]/5"
+            >
+              Mes pasado
+            </button>
+          </div>
+          <div className="flex items-center gap-2 bg-white/80 backdrop-blur-xl p-1.5 rounded-xl border border-[#E5D5C5]/60 shadow-sm">
+            <input
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              className="bg-transparent border-none text-[10px] font-bold uppercase tracking-wider focus:ring-0 cursor-pointer outline-none w-32"
+            />
+            <span className="text-[#B08B5A]/40 text-xs">→</span>
+            <input
+              type="date"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              className="bg-transparent border-none text-[10px] font-bold uppercase tracking-wider focus:ring-0 cursor-pointer outline-none w-32"
+            />
+          </div>
         </div>
       </div>
 

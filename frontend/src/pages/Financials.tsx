@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { AlertCircle } from 'lucide-react'
@@ -7,21 +7,12 @@ import type { MonthlyTrend, FinancialsState } from '../types'
 import { SortableTable } from '../components/ui/SortableTable'
 import type { ColDef } from '../components/ui/SortableTable'
 
-const PRESETS = [
-  { label: '30d', days: 30 },
-  { label: '90d', days: 90 },
-  { label: '180d', days: 180 },
-  { label: 'Todo', days: 0 },
-] as const
-
-function toISODate(d: Date) {
-  return d.toISOString().slice(0, 10)
-}
-
 export default function Financials() {
-  const [presetDays, setPresetDays] = useState<number>(0) // 0 = all time
-  const [fromDate, setFromDate] = useState('')
-  const [toDate, setToDate] = useState('')
+  const [from, setFrom] = useState<string>(() => {
+    const d = new Date()
+    return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10)
+  })
+  const [to, setTo] = useState<string>(() => new Date().toISOString().slice(0, 10))
   const [state, setState] = useState<FinancialsState>({
     summary: null,
     monthly: [],
@@ -34,13 +25,6 @@ export default function Financials() {
     let cancelled = false
 
     const load = async () => {
-      let from = fromDate
-      let to = toDate
-      if (presetDays > 0 && !fromDate && !toDate) {
-        from = toISODate(new Date(Date.now() - presetDays * 86_400_000))
-        to = toISODate(new Date())
-      }
-
       const params = new URLSearchParams()
       if (from) params.set('from', from)
       if (to) params.set('to', to)
@@ -70,7 +54,7 @@ export default function Financials() {
 
     load()
     return () => { cancelled = true }
-  }, [presetDays, fromDate, toDate])
+  }, [from, to])
 
   const fmt = (n: number) =>
     n.toLocaleString('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
@@ -127,35 +111,44 @@ export default function Financials() {
           <h1 className="text-3xl font-serif font-bold text-foreground">Finanzas verificadas</h1>
           <p className="text-muted mt-1">Liquidaciones de Doctoralia, LTV, ingresos verificados</p>
         </div>
-        <div className="flex items-center gap-1 bg-card rounded-lg p-1">
-          {PRESETS.map((p) => (
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1 bg-card rounded-lg p-1">
             <button
-              key={p.label}
-              onClick={() => { setPresetDays(p.days); setFromDate(''); setToDate('') }}
-              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                presetDays === p.days && !fromDate && !toDate
-                  ? 'bg-primary/15 text-foreground'
-                  : 'text-muted hover:text-foreground'
-              }`}
+              onClick={() => {
+                const d = new Date()
+                setFrom(new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10))
+                setTo(d.toISOString().slice(0, 10))
+              }}
+              className="px-3 py-1 rounded text-xs font-medium text-muted hover:text-foreground transition-colors"
             >
-              {p.label === 'Todo' ? 'Todo' : p.label}
+              Este mes
             </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-2 text-xs text-muted">
-          <input
-            type="date"
-            value={fromDate}
-            onChange={(e) => { setFromDate(e.target.value); setPresetDays(-1) }}
-            className="bg-card border border-border rounded px-2 py-1 text-foreground text-xs focus:outline-none focus:border-muted"
-          />
-          <span>→</span>
-          <input
-            type="date"
-            value={toDate}
-            onChange={(e) => { setToDate(e.target.value); setPresetDays(-1) }}
-            className="bg-card border border-border rounded px-2 py-1 text-foreground text-xs focus:outline-none focus:border-muted"
-          />
+            <button
+              onClick={() => {
+                const d = new Date()
+                setFrom(new Date(d.getFullYear(), d.getMonth() - 1, 1).toISOString().slice(0, 10))
+                setTo(new Date(d.getFullYear(), d.getMonth(), 0).toISOString().slice(0, 10))
+              }}
+              className="px-3 py-1 rounded text-xs font-medium text-muted hover:text-foreground transition-colors"
+            >
+              Mes pasado
+            </button>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-muted">
+            <input
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              className="bg-card border border-border rounded px-2 py-1 text-foreground text-xs focus:outline-none focus:border-muted"
+            />
+            <span>→</span>
+            <input
+              type="date"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              className="bg-card border border-border rounded px-2 py-1 text-foreground text-xs focus:outline-none focus:border-muted"
+            />
+          </div>
         </div>
       </div>
 
@@ -226,81 +219,60 @@ export default function Financials() {
             <CardTitle className="text-sm font-medium">Tasa de cancelación</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{state.summary ? `${state.summary.cancellationRate}%` : '0%'}</div>
-            <p className="text-xs text-muted mt-1">Porcentaje de liquidaciones canceladas</p>
+            <div className="text-2xl font-bold">{state.summary ? `${state.summary.cancelRate}%` : '0%'}</div>
+            <p className="text-xs text-muted mt-1">Porcentaje de citas canceladas</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Promedio de liquidación</CardTitle>
+            <CardTitle className="text-sm font-medium">Días de liquidación</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{liquidationLabel}</div>
-            <p className="text-xs text-muted mt-1">
-              {state.summary?.avgLiquidationDays === 0 ? 'Sin fecha de entrada' : 'Días desde entrada hasta liquidación'}
-            </p>
+            <p className="text-xs text-muted mt-1">Tiempo promedio desde cita a cobro</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Tendencia mensual de ingresos</CardTitle>
+          </CardHeader>
+          <CardContent className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={state.monthly}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="month" />
+                <YAxis />
+                <Tooltip formatter={(v: any) => fmt(Number(v))} />
+                <Legend />
+                <Line type="monotone" dataKey="net" stroke="#8884d8" name="Neto" strokeWidth={2} />
+                <Line type="monotone" dataKey="gross" stroke="#82ca9d" name="Bruto" strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Mix por Template / Procedimiento</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <SortableTable columns={templateMixColumns} rows={state.templateMix} />
           </CardContent>
         </Card>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Tendencia de ingresos mensuales</CardTitle>
+          <CardTitle>Detalle por mes</CardTitle>
         </CardHeader>
         <CardContent>
-          {state.monthly.length === 0 ? (
-            <p className="text-muted text-sm py-8 text-center">No hay datos de liquidación disponibles todavía.</p>
-          ) : (
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={state.monthly}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E6E2DE" vertical={false} />
-                <XAxis dataKey="month" tick={{ fill: '#7A7573', fontSize: 12 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: '#7A7573', fontSize: 12 }} axisLine={false} tickLine={false} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid #E6E2DE', fontSize: 12 }}
-                  formatter={(v: number) => fmt(v)}
-                />
-                <Legend />
-                <Line type="monotone" dataKey="net" name="Ingreso Neto" stroke="#C49A6C" dot={false} strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
-          )}
+          <SortableTable columns={monthlyColumns} rows={monthlyRows} />
         </CardContent>
       </Card>
-
-      {monthlyRows.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Monthly Revenue — Full Table</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <SortableTable
-              columns={monthlyColumns}
-              rows={monthlyRows}
-              exportFilename="financials-monthly"
-              pageSize={60}
-              emptyMessage="No monthly data available."
-            />
-          </CardContent>
-        </Card>
-      )}
-
-      {state.templateMix.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Revenue by Template</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <SortableTable
-              columns={templateMixColumns}
-              rows={state.templateMix}
-              exportFilename="financials-template-mix"
-              pageSize={200}
-            />
-          </CardContent>
-        </Card>
-      )}
     </div>
   )
 }

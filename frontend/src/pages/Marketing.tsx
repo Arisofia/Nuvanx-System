@@ -254,17 +254,10 @@ const mapCampaignRow = (c: any): CampaignRow => ({
   insights: c.insights ?? null,
 })
 
-const buildMarketingParams = (isCustomRange: boolean, customFrom: string, customTo: string, days: number, campaignId?: string) => {
+const buildMarketingParams = (from: string, to: string, campaignId?: string) => {
   const p = new URLSearchParams()
-  if (isCustomRange) {
-    if (customFrom) p.set('from', customFrom)
-    p.set('to', customTo || MARKETING_TODAY)
-    // If only `to` is provided, the backend uses `days` as the lookback
-    // window from `to` to derive `since`.
-    if (!customFrom) p.set('days', String(days))
-  } else {
-    p.set('days', String(days))
-  }
+  if (from) p.set('from', from)
+  p.set('to', to || MARKETING_TODAY)
   if (campaignId && campaignId !== 'ALL') {
     p.set('campaign_id', campaignId)
   }
@@ -393,7 +386,7 @@ function AdsTable({ adsState, currency, accountIds }: Readonly<{ adsState: any; 
   )
 }
 
-const useMarketingData = (days: number, campaignId: string, customFrom: string, customTo: string) => {
+const useMarketingData = (campaignId: string, from: string, to: string) => {
   const [state, setState] = useState<MarketingState>({
     summary: null,
     changes: null,
@@ -411,9 +404,8 @@ const useMarketingData = (days: number, campaignId: string, customFrom: string, 
     const load = async () => {
       setState((prev) => ({ ...prev, loading: true, error: null }))
       try {
-        const isCustomRange = Boolean(customFrom || customTo)
-        const iParams = buildMarketingParams(isCustomRange, customFrom, customTo, days, campaignId)
-        const cParams = buildMarketingParams(isCustomRange, customFrom, customTo, days)
+        const iParams = buildMarketingParams(from, to, campaignId)
+        const cParams = buildMarketingParams(from, to)
 
         const [insightsRes, campaignsRes] = await Promise.allSettled([
           invokeApi<Partial<MarketingState>>(`/api/meta/insights?${iParams}`),
@@ -455,21 +447,32 @@ const useMarketingData = (days: number, campaignId: string, customFrom: string, 
       }
     }
     load()
-  }, [days, campaignId, customFrom, customTo])
+  }, [campaignId, from, to])
 
   return state
 }
 
 function MarketingHeader({
   loading, periodLabel, accountIds, currency, campaigns, campaignId, setCampaignId,
-  days, setDays, customFrom, setCustomFrom, customTo, setCustomTo, since2025,
+  from, setFrom, to, setTo,
 }: Readonly<{
-  loading: boolean; periodLabel: string; accountIds: string[]; currency: string; campaigns: CampaignRow[];
-  campaignId: string; setCampaignId: (id: string) => void; days: number; setDays: (d: number) => void;
-  customFrom: string; setCustomFrom: (s: string) => void; customTo: string; setCustomTo: (s: string) => void;
-  since2025: string;
+  loading: boolean; periodLabel: string | null; accountIds: string[]; currency: string; campaigns: CampaignRow[];
+  campaignId: string; setCampaignId: (id: string) => void;
+  from: string; setFrom: (s: string) => void; to: string; setTo: (s: string) => void;
 }>) {
   const resolvedAccountIds = resolveMetaAccountIds(accountIds)
+
+  const setThisMonth = () => {
+    const d = new Date()
+    setFrom(new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10))
+    setTo(new Date().toISOString().slice(0, 10))
+  }
+
+  const setLastMonth = () => {
+    const d = new Date()
+    setFrom(new Date(d.getFullYear(), d.getMonth() - 1, 1).toISOString().slice(0, 10))
+    setTo(new Date(d.getFullYear(), d.getMonth(), 0).toISOString().slice(0, 10))
+  }
 
   return (
     <div className="flex flex-col sm:flex-row sm:items-end gap-4">
@@ -499,38 +502,31 @@ function MarketingHeader({
           </select>
         )}
         <div className="flex items-center gap-1 bg-card rounded-lg p-1">
-          {([7, 14, 30, 90, 365] as const).map((d) => (
-            <button
-              key={d}
-              onClick={() => { setDays(d); setCustomFrom(''); setCustomTo('') }}
-              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                !customFrom && !customTo && days === d ? 'bg-primary/15 text-foreground' : 'text-muted hover:text-foreground'
-              }`}
-            >
-              {d}d
-            </button>
-          ))}
           <button
-            onClick={() => { setCustomFrom(since2025); setCustomTo('') }}
-            className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-              customFrom === since2025 && !customTo ? 'bg-primary text-white' : 'text-muted hover:text-foreground'
-            }`}
+            onClick={setThisMonth}
+            className="px-3 py-1 rounded text-xs font-medium text-muted hover:text-foreground transition-colors"
           >
-            Desde 2025
+            Este mes
+          </button>
+          <button
+            onClick={setLastMonth}
+            className="px-3 py-1 rounded text-xs font-medium text-muted hover:text-foreground transition-colors"
+          >
+            Mes pasado
           </button>
         </div>
         <div className="flex items-center gap-1">
           <input
             type="date"
-            value={customFrom}
-            onChange={(e) => setCustomFrom(e.target.value)}
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
             className="bg-card text-foreground text-xs px-2 py-1.5 rounded-lg border border-border focus:ring-1 focus:ring-primary"
           />
           <span className="text-muted text-xs">→</span>
           <input
             type="date"
-            value={customTo}
-            onChange={(e) => setCustomTo(e.target.value)}
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
             className="bg-card text-foreground text-xs px-2 py-1.5 rounded-lg border border-border focus:ring-1 focus:ring-primary"
           />
         </div>
@@ -540,9 +536,11 @@ function MarketingHeader({
 }
 
 export default function Marketing() {
-  const [days, setDays] = useState(30)
-  const [customFrom, setCustomFrom] = useState<string>('')
-  const [customTo, setCustomTo] = useState<string>('')
+  const [from, setFrom] = useState<string>(() => {
+    const d = new Date()
+    return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10)
+  })
+  const [to, setTo] = useState<string>(() => new Date().toISOString().slice(0, 10))
   const [campaignId, setCampaignId] = useState<string>('ALL')
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'PAUSED' | 'ARCHIVED'>('ALL')
   const [search, setSearch] = useState('')
@@ -574,9 +572,8 @@ export default function Marketing() {
   const [igPosts, setIgPosts] = useState<Array<any>>([])
   const [igKeyword, setIgKeyword] = useState('')
 
-  const state = useMarketingData(days, campaignId, customFrom, customTo)
+  const state = useMarketingData(campaignId, from, to)
 
-  const since2025 = '2025-01-01'
   const mountedRef = useRef(true)
 
   useEffect(() => {
@@ -588,7 +585,7 @@ export default function Marketing() {
 
   const fetchAds = useCallback(async () => {
     adsDispatch({ type: 'start' })
-    const params = buildMarketingParams(Boolean(customFrom || customTo), customFrom, customTo, days)
+    const params = buildMarketingParams(from, to)
 
     try {
       const data = await invokeApi<{ ads?: any[] }>(`/api/meta/ads?${params}`)
@@ -598,20 +595,20 @@ export default function Marketing() {
       if (!mountedRef.current) return
       adsDispatch({ type: 'failure', error: err?.message ?? 'Error cargando anuncios.' })
     }
-  }, [customFrom, customTo, days])
+  }, [from, to])
 
-  // Fetch ads on demand when ads tab is first opened
+  // Fetch ads on demand when ads tab is first opened or range changes
   useEffect(() => {
-    if (activeTab !== 'ads' || adsState.loaded) return
+    if (activeTab !== 'ads') return
     fetchAds()
-  }, [activeTab, adsState.loaded, fetchAds])
+  }, [activeTab, from, to, fetchAds])
 
   // ── Fetch organic Page insights (daily series + posts) ────────────────
   const fetchOrganic = useCallback(async (kw: string = '') => {
     setOrganicLoading(true)
     setOrganicError(null)
     try {
-      const dailyParams = new URLSearchParams({ days: String(days) }).toString()
+      const dailyParams = new URLSearchParams({ from, to }).toString()
       const postsParams = new URLSearchParams({ limit: '50', ...(kw ? { keyword: kw } : {}) }).toString()
       const [dailyRes, postsRes]: any[] = await Promise.all([
         invokeApi(`/api/meta/organic/daily?${dailyParams}`),
@@ -627,14 +624,14 @@ export default function Marketing() {
     } finally {
       if (mountedRef.current) setOrganicLoading(false)
     }
-  }, [days])
+  }, [from, to])
 
   // ── Fetch Instagram organic insights ──────────────────────────────────
   const fetchIg = useCallback(async (kw: string = '') => {
     setIgLoading(true)
     setIgError(null)
     try {
-      const dailyParams = new URLSearchParams({ days: String(days) }).toString()
+      const dailyParams = new URLSearchParams({ from, to }).toString()
       const postsParams = new URLSearchParams({ limit: '50', ...(kw ? { keyword: kw } : {}) }).toString()
       const [dailyRes, postsRes]: any[] = await Promise.all([
         invokeApi(`/api/meta/ig/daily?${dailyParams}`),
@@ -650,9 +647,9 @@ export default function Marketing() {
     } finally {
       if (mountedRef.current) setIgLoading(false)
     }
-  }, [days])
+  }, [from, to])
 
-  // Fetch organic on demand + when days change while tab open
+  // Fetch organic on demand + when range changes while tab open
   useEffect(() => {
     if (activeTab !== 'organic') return
     const timer = setTimeout(() => {
@@ -664,7 +661,7 @@ export default function Marketing() {
     }, 0)
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, days, organicChannel])
+  }, [activeTab, from, to, organicChannel])
 
   const { summary, changes, daily, campaigns, currency, accountIds, period, loading, error } = state
   const resolvedAccountIds = resolveMetaAccountIds(accountIds)
@@ -705,7 +702,7 @@ export default function Marketing() {
 
   const periodLabel = period
     ? `${period.since} → ${period.until} (${period.days} días)`
-    : 'últimos 30 días'
+    : `${from} → ${to}`
 
   return (
     <div className="space-y-6">
@@ -717,13 +714,10 @@ export default function Marketing() {
         campaigns={campaigns}
         campaignId={effectiveCampaignId}
         setCampaignId={setCampaignId}
-        days={days}
-        setDays={setDays}
-        customFrom={customFrom}
-        setCustomFrom={setCustomFrom}
-        customTo={customTo}
-        setCustomTo={setCustomTo}
-        since2025={since2025}
+        from={from}
+        setFrom={setFrom}
+        to={to}
+        setTo={setTo}
       />
 
       {error && (
@@ -811,7 +805,7 @@ export default function Marketing() {
       {/* ── Daily spend + clicks chart ────────────────────────────── */}
       <Card>
         <CardHeader>
-          <CardTitle>Gasto diario · {days} días · ({currency})</CardTitle>
+          <CardTitle>Gasto diario · ({currency})</CardTitle>
         </CardHeader>
         <CardContent className="h-72">
           {loading && (
@@ -853,7 +847,7 @@ export default function Marketing() {
       {dailyRatesChart.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>CTR · CPC · CPM diario · {days} días</CardTitle>
+            <CardTitle>CTR · CPC · CPM diario</CardTitle>
           </CardHeader>
           <CardContent className="h-64">
             <ResponsiveContainer width="100%" height="100%">
