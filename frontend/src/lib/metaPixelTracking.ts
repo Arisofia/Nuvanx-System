@@ -31,7 +31,7 @@ export function canFireEvent(eventKey: string, throttleMs = THROTTLE_MS): boolea
  * Track WhatsApp contact event
  * Fires: Contact (Meta standard), WhatsAppClick (custom)
  */
-export function trackWhatsAppClick(phone: string, source: string = 'landing_nuvanx'): void {
+export function trackWhatsAppClick(phone: string, source: string = ''): void {
   if (!canFireEvent('whatsapp_click', 1000)) return
   
   // Meta standard event
@@ -54,7 +54,7 @@ export function trackWhatsAppClick(phone: string, source: string = 'landing_nuva
   if (typeof window !== 'undefined' && (window as any).gtag) {
     (window as any).gtag('event', 'whatsapp_click', {
       event_category: 'conversion',
-      event_label: 'nuvanx_whatsapp',
+      event_label: source || 'whatsapp_click',
       phone: phone,
       source: source,
       value: 1,
@@ -79,7 +79,7 @@ export function trackWhatsAppClick(phone: string, source: string = 'landing_nuva
  */
 export function trackHubSpotFormSubmit(
   formData?: Record<string, unknown>,
-  source: string = 'landing_nuvanx'
+  source: string = ''
 ): void {
   if (!canFireEvent('hubspot_form_submit', 2000)) return
   
@@ -102,7 +102,7 @@ export function trackHubSpotFormSubmit(
   if (typeof window !== 'undefined' && (window as any).gtag) {
     (window as any).gtag('event', 'generate_lead', {
       event_category: 'conversion',
-      event_label: 'nuvanx_hubspot_form',
+      event_label: source || 'hubspot_form_submit',
       source: source,
       value: 1,
     })
@@ -124,7 +124,7 @@ export function trackHubSpotFormSubmit(
  * Track calendar booking event
  * Fires: Programar (Meta standard)
  */
-export function trackCalendarBooking(source: string = 'landing_nuvanx'): void {
+export function trackCalendarBooking(source: string = ''): void {
   if (!canFireEvent('calendar_booking', 1000)) return
   
   trackMetaEvent('Programar', {
@@ -136,7 +136,7 @@ export function trackCalendarBooking(source: string = 'landing_nuvanx'): void {
   if (typeof window !== 'undefined' && (window as any).gtag) {
     (window as any).gtag('event', 'calendar_booking', {
       event_category: 'conversion',
-      event_label: 'nuvanx_calendar',
+      event_label: source || 'calendar_booking',
       source: source,
       value: 1,
     })
@@ -154,12 +154,12 @@ export function trackCalendarBooking(source: string = 'landing_nuvanx'): void {
 
 /**
  * Track Doctoralia profile view
- * Fires: Información de pago añadida (Meta standard)
+ * Fires: InformaciÃ³n de pago aÃ±adida (Meta standard)
  */
-export function trackDoctoraliClick(source: string = 'landing_nuvanx'): void {
+export function trackDoctoraliaClick(source: string = ''): void {
   if (!canFireEvent('doctoralia_click', 1000)) return
   
-  trackMetaEvent('Información de pago añadida', {
+  trackMetaEvent('InformaciÃ³n de pago aÃ±adida', {
     content_name: 'Doctoralia Profile',
     content_category: 'profile_view',
     source: source,
@@ -168,7 +168,7 @@ export function trackDoctoraliClick(source: string = 'landing_nuvanx'): void {
   if (typeof window !== 'undefined' && (window as any).gtag) {
     (window as any).gtag('event', 'doctoralia_click', {
       event_category: 'engagement',
-      event_label: 'nuvanx_doctoralia',
+      event_label: source || 'doctoralia_click',
       source: source,
       value: 1,
     })
