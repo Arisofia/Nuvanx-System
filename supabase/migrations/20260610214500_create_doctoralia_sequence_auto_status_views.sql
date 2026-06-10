@@ -3,13 +3,14 @@
 -- Rules:
 --   1st appointment -> agendado
 --   2nd appointment AND is_jjrt -> convertido
---   2nd appointment AND NOT is_jjrt -> pendiente_revision
+--   2nd appointment AND NOT is_jjrt -> agendado
 --   3rd+ appointment -> recurrente
 -- Identity Key: phone_normalized > patient_name normalized > doctoralia_id
 
 BEGIN;
 
 -- Ensure normalize_person_name exists as an alias for normalize_name if it doesn't already
+DROP FUNCTION IF EXISTS public.normalize_person_name(p_name TEXT);
 CREATE OR REPLACE FUNCTION public.normalize_person_name(p_name TEXT)
 RETURNS TEXT
 LANGUAGE plpgsql
@@ -109,15 +110,15 @@ SELECT
     WHEN s.is_cancelled IS TRUE THEN 'cancelado'
     WHEN v.valid_appointment_sequence_number >= 3 THEN 'recurrente'
     WHEN v.valid_appointment_sequence_number = 2 AND s.is_jjrt IS TRUE THEN 'convertido'
-    WHEN v.valid_appointment_sequence_number = 2 THEN 'pendiente_revision'
+    WHEN v.valid_appointment_sequence_number = 2 THEN 'agendado'
     WHEN v.valid_appointment_sequence_number = 1 THEN 'agendado'
     ELSE 'sin_clasificar'
   END AS auto_status,
   CASE
     WHEN s.is_cancelled IS TRUE THEN -1
-    WHEN v.valid_appointment_sequence_number >= 3 THEN 4
-    WHEN v.valid_appointment_sequence_number = 2 AND s.is_jjrt IS TRUE THEN 3
-    WHEN v.valid_appointment_sequence_number = 2 THEN 2
+    WHEN v.valid_appointment_sequence_number >= 3 THEN 3
+    WHEN v.valid_appointment_sequence_number = 2 AND s.is_jjrt IS TRUE THEN 2
+    WHEN v.valid_appointment_sequence_number = 2 THEN 1
     WHEN v.valid_appointment_sequence_number = 1 THEN 1
     ELSE 0
   END AS auto_status_rank,
@@ -125,7 +126,7 @@ SELECT
     WHEN s.is_cancelled IS TRUE THEN 'Cita anulada/cancelada: no avanza estado.'
     WHEN v.valid_appointment_sequence_number >= 3 THEN 'Tercera cita válida o posterior: recurrente.'
     WHEN v.valid_appointment_sequence_number = 2 AND s.is_jjrt IS TRUE THEN 'Segunda cita válida en agenda JJRT: convertido.'
-    WHEN v.valid_appointment_sequence_number = 2 THEN 'Segunda cita válida sin JJRT: pendiente de revisión.'
+    WHEN v.valid_appointment_sequence_number = 2 THEN 'Segunda cita válida sin JJRT: sigue agendado.'
     WHEN v.valid_appointment_sequence_number = 1 THEN 'Primera cita válida/primera aparición: agendado.'
     ELSE 'Sin identidad suficiente para secuencia.'
   END AS auto_status_reason
@@ -160,9 +161,8 @@ SELECT
   has_jjrt_appointment,
   has_control_appointment,
   CASE max_status_rank
-    WHEN 4 THEN 'recurrente'
-    WHEN 3 THEN 'convertido'
-    WHEN 2 THEN 'pendiente_revision'
+    WHEN 3 THEN 'recurrente'
+    WHEN 2 THEN 'convertido'
     WHEN 1 THEN 'agendado'
     WHEN 0 THEN 'sin_clasificar'
     ELSE 'cancelado'

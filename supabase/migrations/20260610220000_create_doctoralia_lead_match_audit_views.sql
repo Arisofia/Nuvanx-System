@@ -24,7 +24,7 @@ l AS (
     id as lead_id,
     name as lead_name,
     phone_normalized as lead_phone_normalized,
-    name_normalized as lead_name_norm,
+    public.normalize_person_name(name) as lead_name_norm,
     created_at as lead_created_at,
     campaign_id,
     campaign_name,
@@ -56,11 +56,12 @@ SELECT
       AND l.lead_name_norm IS NOT NULL
       AND d.doctoralia_name_norm = l.lead_name_norm
       AND l.lead_created_at::date <= d.doctoralia_appointment_date
+      AND (d.doctoralia_appointment_date - l.lead_created_at::date) <= 180
       THEN 'name_and_date_window'
     WHEN d.doctoralia_name_norm IS NOT NULL
       AND l.lead_name_norm IS NOT NULL
       AND d.doctoralia_name_norm = l.lead_name_norm
-      THEN 'name_exact_normalized'
+      THEN 'name_exact_requires_review'
     ELSE NULL
   END as match_type,
   CASE
@@ -72,11 +73,12 @@ SELECT
       AND l.lead_name_norm IS NOT NULL
       AND d.doctoralia_name_norm = l.lead_name_norm
       AND l.lead_created_at::date <= d.doctoralia_appointment_date
+      AND (d.doctoralia_appointment_date - l.lead_created_at::date) <= 180
       THEN 0.85
     WHEN d.doctoralia_name_norm IS NOT NULL
       AND l.lead_name_norm IS NOT NULL
       AND d.doctoralia_name_norm = l.lead_name_norm
-      THEN 0.80
+      THEN 0.60
     ELSE 0
   END as match_confidence,
   CASE
@@ -84,9 +86,10 @@ SELECT
       THEN 'Coincidencia exacta por teléfono normalizado.'
     WHEN d.doctoralia_name_norm = l.lead_name_norm
       AND l.lead_created_at::date <= d.doctoralia_appointment_date
-      THEN 'Coincidencia por nombre normalizado con lead anterior a cita.'
+      AND (d.doctoralia_appointment_date - l.lead_created_at::date) <= 180
+      THEN 'Coincidencia por nombre normalizado con lead anterior a cita (máx 180 días).'
     WHEN d.doctoralia_name_norm = l.lead_name_norm
-      THEN 'Coincidencia por nombre normalizado.'
+      THEN 'Coincidencia por nombre normalizado fuera de ventana o posterior: requiere revisión.'
     ELSE 'Sin match.'
   END as match_reason
 FROM d
@@ -105,9 +108,11 @@ WITH ranked_matches AS (
             PARTITION BY doctoralia_appointment_id
             ORDER BY 
                 match_confidence DESC, 
-                ABS(EXTRACT(EPOCH FROM (doctoralia_appointment_date - lead_created_at))) ASC
+                ABS(doctoralia_appointment_date - lead_created_at::date) ASC,
+                lead_created_at DESC
         ) as match_rank
     FROM public.v_doctoralia_lead_identity_candidates
+    WHERE match_type IN ('phone_exact', 'name_and_date_window')
 )
 SELECT 
     doctoralia_appointment_id,
@@ -142,10 +147,10 @@ WITH lead_best_doctoralia AS (
             PARTITION BY lead_id
             ORDER BY 
                 CASE 
-                    WHEN doctoralia_auto_status = 'recurrente' THEN 4
-                    WHEN doctoralia_auto_status = 'convertido' THEN 3
-                    WHEN doctoralia_auto_status = 'agendado' THEN 2
-                    ELSE 1
+                    WHEN doctoralia_auto_status = 'recurrente' THEN 3
+                    WHEN doctoralia_auto_status = 'convertido' THEN 2
+                    WHEN doctoralia_auto_status = 'agendado' THEN 1
+                    ELSE 0
                 END DESC,
                 doctoralia_appointment_date DESC
         ) as lead_match_rank
