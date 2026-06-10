@@ -11,6 +11,11 @@
 
 BEGIN;
 
+-- Drop existing Doctoralia sequence views before recreating them with a new column shape.
+DROP VIEW IF EXISTS public.v_lead_status_classification CASCADE;
+DROP VIEW IF EXISTS public.v_lead_auto_status_from_doctoralia CASCADE;
+DROP VIEW IF EXISTS public.v_doctoralia_appointment_sequence CASCADE;
+
 -- 1. Create or replace base view for appointment sequence
 -- This view calculates the sequence number for each patient's appointments.
 CREATE OR REPLACE VIEW public.v_doctoralia_appointment_sequence AS
