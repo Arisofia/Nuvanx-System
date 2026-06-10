@@ -53,8 +53,6 @@ export function FilterBar({
   const [to, setTo] = useState('')
   const [customMode, setCustomMode] = useState(false)
 
-  const since2025 = '2025-01-01'
-
   const setPreset = (days: number) => {
     setActiveDays(days)
     setCustomMode(false)
@@ -65,15 +63,6 @@ export function FilterBar({
     } else {
       onDateChange('', '')
     }
-  }
-
-  const setFrom2025 = () => {
-    const t = todayLocal()
-    setActiveDays(-1)
-    setCustomMode(true)
-    setFrom(since2025)
-    setTo(t)
-    onDateChange(since2025, t)
   }
 
   const handleFromChange = (v: string) => {
@@ -90,14 +79,13 @@ export function FilterBar({
     onDateChange(from || daysAgo(30), v)
   }
 
-  const is2025 = customMode && from === since2025
-
   return (
     <div className="flex flex-wrap items-center gap-2 print:hidden">
       <div className="flex items-center gap-1 bg-card rounded-lg p-1">
         {PRESETS.map((p) => (
           <button
             key={p.label}
+            type="button"
             onClick={() => setPreset(p.days)}
             className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
               !customMode && activeDays === p.days
@@ -108,14 +96,6 @@ export function FilterBar({
             {p.label}
           </button>
         ))}
-        <button
-          onClick={setFrom2025}
-          className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-            is2025 ? 'bg-primary text-white' : 'text-muted hover:text-foreground'
-          }`}
-        >
-          2025+
-        </button>
       </div>
 
       <div className="flex items-center gap-1">
