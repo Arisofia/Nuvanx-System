@@ -1,8 +1,8 @@
-const placeholderPattern = /your_supabase_project_ref|your-project\.supabase\.co|your-public-anon-key|your-anon-key|your-publishable-key|voerikxpncvrrhnxzbxm/i
+const invalidPublicEnvPattern = /your_supabase_project_ref|your-project\.supabase\.co|your-public-anon-key|your-anon-key|your-publishable-key|voerikxpncvrrhnxzbxm/i
 
 function sanitizeEnv(value: string | undefined) {
   const normalized = value?.trim() ?? ''
-  return normalized && !placeholderPattern.test(normalized) ? normalized : ''
+  return normalized && !invalidPublicEnvPattern.test(normalized) ? normalized : ''
 }
 
 /**
@@ -42,5 +42,5 @@ if (!isSupabaseConfigured) {
 }
 
 if (import.meta.env.DEV && import.meta.env.VITE_SUPABASE_URL && !sanitizeEnv(import.meta.env.VITE_SUPABASE_URL)) {
-  console.warn('[env] Ignoring stale or placeholder Supabase URL.')
+  console.warn('[env] Ignoring stale Supabase URL sample.')
 }
