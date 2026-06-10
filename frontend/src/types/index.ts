@@ -270,11 +270,11 @@ export interface DoctoraliaAppointment {
   confirmada: boolean
   timestamp_cita: string | null
   doc_patient_id: string | null
-  // Campaign attribution
+  // Campaign match
   lead_id: string | null
   campaign_name: string | null
   match_class: string | null
-  match_confidence: number | null
+  match_confidence: string | number | null
 }
 
 export interface LiveEvent {
