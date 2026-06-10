@@ -53,7 +53,7 @@ jobs:
           command: |
             set -euo pipefail
             node scripts/validate-sql-migrations.js
-            # Usar SESSION_URL si lo exporta la acción; si no, fallback a DATABASE_URL
+            # Usar SESSION_URL si lo exporta la acciÃ³n; si no, fallback a DATABASE_URL
             supabase db push --include-all --db-url "${SESSION_URL:-$DATABASE_URL}" --debug
 
       - name: List Supabase migrations
@@ -134,6 +134,7 @@ jobs:
           supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
           database_url: ${{ env.DATABASE_URL }}
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
-          skip_link: true
-          command: |
-            set -euo pipefail
+          skip_link: true            command: |
+              set -euo pipefail
+              export FALLBACK_META_AD_ACCOUNT_ID="$FALLBACK_META_AD_ACCOUNT_ID"
+              supabase functions deploy daily-aggregates --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
