@@ -38,7 +38,7 @@ export function ExportButton({ data, filename, disabled }: Props) {
       disabled={disabled || data.length === 0}
     >
       <Download className="w-4 h-4" />
-      Export CSV
+      Exportar CSV
     </Button>
   )
 }
