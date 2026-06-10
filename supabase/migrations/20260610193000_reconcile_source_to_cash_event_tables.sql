@@ -1,4 +1,4 @@
--- =============================================================================
+﻿-- =============================================================================
 -- Migration: Reconcile Source-to-Cash and Populate Event Tables
 -- Date: 2026-06-10
 -- =============================================================================
@@ -59,7 +59,11 @@ BEGIN
         COALESCE(l.created_at, now()), -- Assuming created_at_meta doesn't exist as per prompt
         'resolved'
     FROM public.leads l
-    ON CONFLICT (meta_lead_id) DO NOTHING;
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM public.lead_events existing
+    WHERE existing.meta_lead_id = COALESCE(l.external_id, 'legacy_' || l.id::text)
+);
 END;
 $$ LANGUAGE plpgsql;
 
@@ -207,3 +211,4 @@ BEGIN
 END $$;
 
 COMMIT;
+
