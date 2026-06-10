@@ -22,10 +22,16 @@ const exit = (code: number) => {
   }
 };
 
-const DEFAULT_SUPABASE_URL = 'https://ssvvuuysgxyqvmovrlvk.supabase.co';
-const SUPABASE_URL = (
-  getEnv('PRODUCTION_E2E_URL') || getEnv('VITE_SUPABASE_URL') || getEnv('SUPABASE_URL') || DEFAULT_SUPABASE_URL
-).replace(/\/$/, '');
+const configuredSupabaseUrl = (
+  getEnv('PRODUCTION_E2E_URL') || getEnv('VITE_SUPABASE_URL') || getEnv('SUPABASE_URL')
+)?.replace(/\/$/, '');
+
+if (!configuredSupabaseUrl) {
+  console.error('Missing health-check target. Set PRODUCTION_E2E_URL, VITE_SUPABASE_URL or SUPABASE_URL.');
+  exit(1);
+}
+
+const SUPABASE_URL = configuredSupabaseUrl;
 const MCP_API_KEY = getEnv('MCP_API_KEY')?.trim();
 const API_AUTH_TOKEN = (getEnv('PRODUCTION_E2E_TOKEN') || getEnv('HEALTH_CHECK_API_AUTH_TOKEN'))?.trim();
 
@@ -131,7 +137,6 @@ async function runHealthCheck() {
           `✅ ${ep.name.padEnd(20)}: OK (${res.status}, ${ep.healthyStatusLabel}) [${duration}ms]`,
         );
       } else {
-        // If MCP_API_KEY is missing and we get a 401, it's expected but we'll mark as warning
         if (res.status === 401 && !MCP_API_KEY) {
           console.warn(`⚠️ ${ep.name.padEnd(20)}: SKIPPED (401 - Missing MCP_API_KEY) [${duration}ms]`);
           continue;
