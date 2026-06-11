@@ -50,8 +50,8 @@ const HEADER_ALIASES = {
   estado: ['estado', 'status'],
   appointment_date: ['fecha', 'fecha cita', 'appointment date', 'appointment_date'],
   appointment_time: ['hora', 'hora cita', 'appointment time'],
-  created_date: ['fecha creacion', 'fecha creación', 'created date'],
-  created_time: ['hora creacion', 'hora creación', 'created time'],
+  created_date: ['fecha creacion', 'fecha creaciÃ³n', 'created date'],
+  created_time: ['hora creacion', 'hora creaciÃ³n', 'created time'],
   subject: ['asunto', 'subject'],
   agenda: ['agenda', 'calendario', 'doctor'],
   room: ['sala', 'box', 'room'],
@@ -62,13 +62,13 @@ const HEADER_ALIASES = {
   doctoralia_id: ['id', 'doctoralia id', 'id doctoralia', 'appointment id', 'appointment_id'],
   patient_name: ['nombre', 'paciente', 'patient name', 'patient_name'],
   patient_email: ['email', 'correo', 'patient email', 'patient_email'],
-  phone: ['telefono', 'teléfono', 'phone', 'movil', 'móvil', 'patient phone', 'patient_phone'],
+  phone: ['telefono', 'telÃ©fono', 'phone', 'movil', 'mÃ³vil', 'patient phone', 'patient_phone'],
   treatment: ['tratamiento', 'treatment', 'appointment type', 'appointment_type'],
   notes: ['notas', 'notes', 'observaciones'],
-  day_num: ['dia', 'día', 'day'],
+  day_num: ['dia', 'dÃ­a', 'day'],
   month_num: ['mes', 'month'],
-  year_num: ['ano', 'año', 'year'],
-  clinic: ['clinica', 'clínica', 'clinic'],
+  year_num: ['ano', 'aÃ±o', 'year'],
+  clinic: ['clinica', 'clÃ­nica', 'clinic'],
 };
 
 const REQUIRED_HEADERS = [
@@ -124,7 +124,7 @@ function parseAmount(value) {
   if (value === undefined || value === null || String(value).trim() === '') return 0;
   if (typeof value === 'number') return Math.round(value * 100) / 100;
 
-  let text = String(value).replace(/[€$\s\u00A0]/g, '');
+  let text = String(value).replace(/[â‚¬$\s\u00A0]/g, '');
 
   if (text.includes(',') && text.includes('.')) {
     text = text.lastIndexOf(',') > text.lastIndexOf('.')
@@ -406,7 +406,7 @@ async function upsertRecords(records) {
 
   console.log(
     `[doctoralia-appointments] Deduped records by source_key: ` +
-      `${records.length} → ${dedupedRecords.length}`
+      `${records.length} â†’ ${dedupedRecords.length}`
   );
 
   for (let index = 0; index < dedupedRecords.length; index += CHUNK_SIZE) {

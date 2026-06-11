@@ -4,13 +4,13 @@
  *
  * Actualiza la variable META_ACCESS_TOKEN en los archivos .env detectados,
  * y opcionalmente propaga el valor a GitHub, Supabase y Vercel si esos CLIs
- * están configurados.
+ * estÃ¡n configurados.
  *
  * Uso local:
- *   META_ACCESS_TOKEN_NEW=<new_token> node scripts/set-meta-token.js
+ *   Set META_ACCESS_TOKEN_NEW in your shell, then run: node scripts/set-meta-token.js
  *
  * Uso remoto:
- *   META_ACCESS_TOKEN_NEW=<new_token> node scripts/set-meta-token.js --github --supabase --vercel
+ *   Set META_ACCESS_TOKEN_NEW in your shell, then run: node scripts/set-meta-token.js --github --supabase --vercel
  *
  * Si no se pasa META_ACCESS_TOKEN_NEW, el script busca el token existente en
  * los archivos locales .env y backend/.env.
@@ -64,7 +64,7 @@ function readTokenFromEnvFiles() {
 const newToken = process.env.META_ACCESS_TOKEN_NEW || readTokenFromEnvFiles();
 if (!newToken) {
   console.error('ERROR: Debes exportar META_ACCESS_TOKEN_NEW con el nuevo token o tenerlo presente en un archivo .env local.');
-  console.error('Uso: META_ACCESS_TOKEN_NEW=<new_token> node scripts/set-meta-token.js [--local] [--github] [--supabase] [--vercel]');
+  console.error('Uso: define META_ACCESS_TOKEN_NEW en tu shell y ejecuta node scripts/set-meta-token.js [--local] [--github] [--supabase] [--vercel]');
   process.exit(1);
 }
 
@@ -121,7 +121,7 @@ function setVercelEnv(token) {
       execFileSync('vercel', ['env', 'add', 'META_ACCESS_TOKEN', 'production', '--value', token, '--force', '--yes'], { stdio: 'inherit' });
       return;
     } catch (addError) {
-      console.warn('No se pudo propagar META_ACCESS_TOKEN a Vercel. Asegúrate de que el proyecto está vinculado con `vercel link`.');
+      console.warn('No se pudo propagar META_ACCESS_TOKEN a Vercel. AsegÃºrate de que el proyecto estÃ¡ vinculado con `vercel link`.');
       console.warn(addError.message || addError);
     }
   }
