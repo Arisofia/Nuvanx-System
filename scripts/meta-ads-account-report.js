@@ -13,11 +13,11 @@ for (const envFile of ['.env.local', '.env']) {
   }
 }
 
-const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v20.0';
+const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v22.0';
 const MIN_NODE_MAJOR = 18;
 
 function fail(message) {
-  console.error('❌ Meta account report failed.');
+  console.error('Meta account report failed.');
   if (message) console.error(`Reason: ${safeMessage(message)}`);
   process.exit(1);
 }
@@ -55,13 +55,13 @@ function redactAccountId(accountId) {
   if (!value) return 'act_[redacted]';
   const withoutPrefix = value.replace(/^act_/i, '');
   if (withoutPrefix.length <= 8) return 'act_[redacted]';
-  return `act_${withoutPrefix.slice(0, 4)}…${withoutPrefix.slice(-4)}`;
+  return `act_${withoutPrefix.slice(0, 4)}...${withoutPrefix.slice(-4)}`;
 }
 
 function redactAccountRow(row) {
   return {
     id: redactAccountId(row.id),
-    name: row.name ? '[redacted-name]' : '<unnamed>',
+    name: row.name ? '[redacted-name]' : 'unknown',
     status: row.status,
     currency: row.currency ? '[redacted-currency]' : 'unknown',
     timezone: row.timezone ? '[redacted-timezone]' : 'unknown',
@@ -203,7 +203,7 @@ async function fetchAccountInsights(accessToken, accountId, days) {
 function formatAccountRow(row) {
   return {
     id: normalizeAdAccountId(row.id),
-    name: String(row.name || '').trim() || '<unnamed>',
+    name: String(row.name || '').trim() || 'unknown',
     status: row.account_status,
     currency: String(row.currency || '').trim() || 'unknown',
     timezone: String(row.time_zone_id || '').trim() || 'unknown',
@@ -283,9 +283,9 @@ async function main() {
           const details = await fetchAccountDetails(accessToken, accountId);
           console.log(`\nTarget ${index + 1} details:`);
           console.log(`  id: ${redactAccountId(accountId)}`);
-          console.log(`  name: ${details.name ? '[redacted-name]' : '<unknown>'}`);
+          console.log(`  name: ${details.name ? '[redacted-name]' : 'unknown'}`);
           console.log(`  status: ${details.account_status}`);
-          console.log(`  currency: ${details.currency ? '[redacted-currency]' : '<unknown>'}`);
+          console.log(`  currency: ${details.currency ? '[redacted-currency]' : 'unknown'}`);
           console.log(`  amount_spent_available: ${details.amount_spent != null}`);
         } catch (err) {
           console.error(`  Failed to fetch details for target ${index + 1}: ${safeMessage(err.message)}`);
@@ -294,7 +294,7 @@ async function main() {
     }
 
     if (opts.insightsDays > 0) {
-      console.log(`\nFetching account insights for the configured date window...`);
+      console.log('\nFetching account insights for the configured date window...');
       for (const [index, accountId] of targetIds.entries()) {
         try {
           const payload = await fetchAccountInsights(accessToken, accountId, opts.insightsDays);
