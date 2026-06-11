@@ -10,6 +10,14 @@ function sleep(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
+function requireProjectRefWhenDeploying() {
+  const ref = String(process.env.SUPABASE_PROJECT_REF || '').trim();
+  if (!ref) {
+    throw new Error('SUPABASE_PROJECT_REF is required when DAILY_SYNC_DEPLOY_FUNCTIONS=true.');
+  }
+  return ref;
+}
+
 const steps = [
   { name: 'scan-secrets', cmd: 'node scripts/scan-secrets.js', critical: true },
   { name: 'verify-meta-access', cmd: 'node scripts/verify-meta-access.js', critical: true },
@@ -17,27 +25,24 @@ const steps = [
   {
     name: 'sync-doctoralia-appointments',
     cmd: 'node scripts/sync-doctoralia-appointments.js',
-    // Non-critical: Doctoralia sheet sync failure must not block Meta insights or other steps.
-    // Google Sheets 403/row-count mismatches are data-quality issues, not infrastructure failures.
     critical: false,
+    skipReason: 'Doctoralia sheet sync failure must not block Meta insights or other operational steps.',
   },
   {
     name: 'deploy-daily-aggregates',
-    cmd: 'npx --yes supabase --yes functions deploy daily-aggregates --no-verify-jwt --project-ref '
-      + (() => { const ref = String(process.env.SUPABASE_PROJECT_REF || '').trim(); if (!ref) throw new Error('SUPABASE_PROJECT_REF is required when DAILY_SYNC_DEPLOY_FUNCTIONS=true.'); return ref; })(),
+    cmd: () => 'npx --yes supabase --yes functions deploy daily-aggregates --no-verify-jwt --project-ref ' + requireProjectRefWhenDeploying(),
     critical: true,
-    retry: 2, // retry up to 2 times for transient network issues
+    retry: 2,
     enabled: process.env.DAILY_SYNC_DEPLOY_FUNCTIONS === 'true',
-    skipReason: 'Edge Function deployment is handled by the Deploy Supabase workflow. '
-      + 'Set DAILY_SYNC_DEPLOY_FUNCTIONS=true to deploy from daily sync.',
+    skipReason: 'Edge Function deployment is handled by the Deploy Supabase workflow. Set DAILY_SYNC_DEPLOY_FUNCTIONS=true to deploy from daily sync.',
   },
 ];
 
-console.log('ðŸš€ Starting Nuvanx daily sync orchestrator...');
+console.log('Starting Nuvanx daily sync orchestrator...');
 
 for (const step of steps) {
   if (step.enabled === false) {
-    console.log(`â†· Skipping ${step.name}: ${step.skipReason || 'step disabled'}`);
+    console.log(Skipping : );
     continue;
   }
 
@@ -47,28 +52,32 @@ for (const step of steps) {
 
   while (attempt < maxAttempts && !success) {
     try {
-      attempt++;
+      attempt += 1;
+      const command = typeof step.cmd === 'function' ? step.cmd() : step.cmd;
+
       if (maxAttempts > 1) {
-        console.log(`â†’ Running ${step.name} (attempt ${attempt}/${maxAttempts})...`);
+        console.log(Running  (attempt /)...);
       } else {
-        console.log(`â†’ Running ${step.name}...`);
+        console.log(Running ...);
       }
-      execSync(step.cmd, { stdio: 'inherit' });
-      console.log(`âœ… ${step.name} completed`);
+
+      execSync(command, { stdio: 'inherit' });
+      console.log(${step.name} completed);
       success = true;
     } catch (error) {
-      console.error(`âŒ ${step.name} failed:`, error.message);
+      console.error(${step.name} failed:, error.message);
+
       if (attempt < maxAttempts) {
-        console.log(`âš ï¸ Retrying ${step.name} in 10s...`);
+        console.log(Retrying  in 10s...);
         sleep(10_000);
       } else if (step.critical) {
-        console.error('â›” Critical step failed after maximum attempts. Aborting daily sync.');
+        console.error('Critical step failed after maximum attempts. Aborting daily sync.');
         process.exit(1);
       } else {
-        console.warn('âš ï¸ Non-critical step failed. Continuing.');
+        console.warn('Non-critical step failed. Continuing.');
       }
     }
   }
 }
 
-console.log('ðŸŽ‰ Daily sync finished successfully');
+console.log('Daily sync finished successfully');

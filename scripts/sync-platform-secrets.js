@@ -144,6 +144,22 @@ function hasGhCli() {
   }
 }
 
+function resolveGitHubRepo(vars) {
+  if (vars.GITHUB_OWNER && vars.GITHUB_REPO) {
+    return { owner: vars.GITHUB_OWNER, repo: vars.GITHUB_REPO };
+  }
+
+  try {
+    const remote = cp.execFileSync('git', ['config', '--get', 'remote.origin.url'], { encoding: 'utf8' }).trim();
+    const match = remote.match(/github\.com[:/]([^/]+)\/([^/.]+)(?:\.git)?$/i);
+    if (match) return { owner: match[1], repo: match[2] };
+  } catch {
+    // Ignore and let caller skip GitHub secret sync.
+  }
+
+  return null;
+}
+
 function writeFrontendEnv(vars) {
   const target = path.join(ROOT, 'frontend', '.env.local');
   const existing = readEnvFile(target);
@@ -327,11 +343,13 @@ async function setVercelSecrets(vars) {
 
 function setGithubSecrets(vars) {
   console.log('[PHASE] Syncing secrets to GitHub Actions...');
-  const owner = vars.GITHUB_OWNER || 'Arisofia';
-  const repo = vars.GITHUB_REPO || 'Nuvanx-System';
+  const repoInfo = resolveGitHubRepo(vars);
   const token = vars.GH_TOKEN || vars.GITHUB_TOKEN;
 
   if (!hasGhCli()) return { skipped: true, reason: 'gh CLI not installed' };
+  if (!repoInfo) return { skipped: true, reason: 'GITHUB_OWNER/GITHUB_REPO missing and git remote could not be resolved' };
+
+  const { owner, repo } = repoInfo;
 
   const safeName = (value) => /^[A-Za-z0-9._-]+$/.test(value);
   if (!safeName(owner) || !safeName(repo)) {
