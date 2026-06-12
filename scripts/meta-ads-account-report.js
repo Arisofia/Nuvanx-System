@@ -24,17 +24,25 @@ function fail(message) {
 
 function safeMessage(message) {
   if (!message) return 'Unexpected error.';
-  const text = String(message);
-  if (/access token|token|secret|password|authorization|appsecret/i.test(text)) {
-    return 'Sensitive Meta credential or authorization error.';
-  }
-  if (/permission|access|denied|not authorized/i.test(text)) {
-    return 'Meta account access verification failed.';
-  }
-  return text
+  return String(message)
+    .replace(/Bearer\s+[a-zA-Z0-9._-]+/gi, 'Bearer [redacted-token]')
+    .replace(/access_token=[^&\s]+/gi, 'access_token=[redacted-token]')
+    .replace(/appsecret_proof=[^&\s]+/gi, 'appsecret_proof=[redacted-secret]')
     .replace(/act_\d{4,}/g, 'act_[redacted]')
     .replace(/\b\d{10,}\b/g, '[redacted-id]')
     .replace(/[a-zA-Z0-9_-]{32,}/g, '[redacted-secret]');
+}
+
+function formatMetaError(error) {
+  const parts = [];
+  if (error?.status) parts.push(`http=${error.status}`);
+  if (error?.metaCode) parts.push(`code=${error.metaCode}`);
+  if (error?.metaSubcode) parts.push(`subcode=${error.metaSubcode}`);
+  if (error?.metaType) parts.push(`type=${safeMessage(error.metaType)}`);
+  if (error?.fbtraceId) parts.push(`fbtrace_id=${safeMessage(error.fbtraceId)}`);
+
+  const message = safeMessage(error?.safeMetaMessage || error?.message || 'Meta API request failed.');
+  return parts.length ? `${message} (${parts.join(', ')})` : message;
 }
 
 function normalizeAdAccountId(raw) {
@@ -143,9 +151,15 @@ async function fetchJson(url) {
   const res = await fetch(url.toString());
   const body = await res.json().catch(() => ({}));
   if (!res.ok || body.error) {
-    const err = new Error('Meta API request failed.');
+    const metaError = body?.error || {};
+    const rawMessage = metaError.message || body?.message || `Meta API HTTP ${res.status}`;
+    const err = new Error(safeMessage(rawMessage));
     err.status = res.status;
-    err.metaCode = body?.error?.code ?? body?.error?.error_subcode;
+    err.metaCode = metaError.code ?? null;
+    err.metaSubcode = metaError.error_subcode ?? null;
+    err.metaType = metaError.type ?? null;
+    err.fbtraceId = metaError.fbtrace_id ?? null;
+    err.safeMetaMessage = safeMessage(rawMessage);
     throw err;
   }
   return body;
