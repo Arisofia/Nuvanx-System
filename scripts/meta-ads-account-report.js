@@ -236,7 +236,7 @@ async function main() {
   try {
     accounts = await listAccessibleAdAccounts(accessToken);
   } catch (err) {
-    fail(`Unable to list accessible ad accounts. Status: ${err.status || 'unknown'}`);
+    fail(`Unable to list accessible ad accounts. ${formatMetaError(err)}`);
   }
 
   const normalizedAccounts = accounts.map(formatAccountRow);
@@ -288,7 +288,7 @@ async function main() {
           console.log(`  currency: ${details.currency ? '[redacted-currency]' : 'unknown'}`);
           console.log(`  amount_spent_available: ${details.amount_spent != null}`);
         } catch (err) {
-          console.error(`  Failed to fetch details for target ${index + 1}: ${safeMessage(err.message)}`);
+          console.error(`  Failed to fetch details for target ${index + 1}: ${formatMetaError(err)}`);
         }
       }
     }
@@ -323,7 +323,7 @@ async function main() {
           console.log(`  messaging: ${totals.messaging}`);
           console.log(`  link clicks: ${totals.link_clicks}`);
         } catch (err) {
-          console.error(`  Failed to fetch insights for target ${index + 1}: ${safeMessage(err.message)}`);
+          console.error(`  Failed to fetch insights for target ${index + 1}: ${formatMetaError(err)}`);
         }
       }
     }

@@ -7,6 +7,8 @@ name: CI
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
 
 # Cancel any in-progress runs of this workflow for the same PR/branch
 concurrency:
@@ -130,7 +132,7 @@ jobs:
           RUBY
 
       - name: Run offline workflow validator
-        run: ruby scripts/validate-github-workflows.rb
+        run: node scripts/validate-github-workflows.js
 
       - name: Run actionlint
         uses: reviewdog/action-actionlint@v1
@@ -335,8 +337,8 @@ jobs:
 
       - name: Validate E2E secrets
         run: |
-          if [ -z "${{ secrets.PRODUCTION_E2E_URL }}" ] || [ -z "${{ secrets.E2E_EMAIL }}" ]; then
-            echo "::error::E2E smoke tests require PRODUCTION_E2E_URL and E2E_EMAIL secrets"
+          if [ -z "${{ secrets.PRODUCTION_E2E_URL }}" ] || [ -z "${{ secrets.E2E_EMAIL }}" ] || [ -z "${{ secrets.E2E_PASSWORD }}" ]; then
+            echo "::error::E2E smoke tests require PRODUCTION_E2E_URL, E2E_EMAIL and E2E_PASSWORD secrets"
             exit 1
           fi
 
