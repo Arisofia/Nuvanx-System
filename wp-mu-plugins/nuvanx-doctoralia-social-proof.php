@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: NUVANX · Doctoralia Social Proof
- * Description: Adds a compliance-safe Doctoralia public proof block to key NUVANX pages using the public 98-opinion Doctoralia source.
- * Version: 2.0.0
+ * Description: Adds a compliance-safe Doctoralia public proof block to key NUVANX pages using a configurable public Doctoralia opinion count.
+ * Version: 2.1.0
  */
 
 if (!defined('ABSPATH')) {
@@ -14,7 +14,8 @@ function nvx_doctoralia_social_proof_url(): string {
 }
 
 function nvx_doctoralia_social_proof_count(): int {
-    return 98;
+    $count = (int) get_option('nvx_doctoralia_social_proof_count', 98);
+    return $count > 0 ? $count : 98;
 }
 
 function nvx_doctoralia_social_proof_pages(): array {
@@ -56,7 +57,7 @@ function nvx_doctoralia_social_proof_html(string $variant = 'default'): string {
               Doctoralia muestra opiniones verificadas recientes asociadas a Técnica Endolift y al equipo NUVANX.
             </p>
             <p class="nvx-doctoralia-proof__meta">
-              Fuente pública: Doctoralia · Opiniones sobre especialistas · 98 opiniones
+              Fuente pública: Doctoralia · Opiniones sobre especialistas · <?php echo esc_html((string) $count); ?> opiniones
             </p>
           </article>
           <article class="nvx-doctoralia-proof__card">
@@ -71,7 +72,7 @@ function nvx_doctoralia_social_proof_html(string $variant = 'default'): string {
         </div>
         <div class="nvx-doctoralia-proof__actions">
           <a class="nvx-doctoralia-proof__button" href="<?php echo $doctoralia_url; ?>" target="_blank" rel="nofollow noopener external">
-            Ver 98 opiniones en Doctoralia
+            Ver <?php echo esc_html((string) $count); ?> opiniones en Doctoralia
           </a>
           <a class="nvx-doctoralia-proof__link" href="https://wa.me/34669319836" rel="nofollow noopener">
             Solicitar valoración médica gratuita
