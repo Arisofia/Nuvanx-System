@@ -1,0 +1,81 @@
+name: NUVANX Social Proof Audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_doctoralia_count:
+        description: "Doctoralia opinion count expected on NUVANX"
+        required: false
+        default: "98"
+      run_mode:
+        description: "audit_only or update_live_option"
+        required: false
+        default: "audit_only"
+        type: choice
+        options:
+          - audit_only
+          - update_live_option
+  schedule:
+    - cron: "0 7 1 * *"
+
+permissions:
+  contents: read
+
+jobs:
+  audit-social-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      EXPECTED_DOCTORALIA_COUNT: ${{ github.event.inputs.expected_doctoralia_count || '98' }}
+      OUT_DIR: tmp/social-proof-audit
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Audit public NUVANX social proof
+        run: node scripts/social-proof/nuvanx-social-proof-audit.mjs
+
+      - name: Upload audit artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuvanx-social-proof-audit
+          path: tmp/social-proof-audit
+
+  update-live-option:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_mode == 'update_live_option' }}
+    runs-on: ubuntu-latest
+    needs: audit-social-proof
+    timeout-minutes: 10
+    env:
+      EXPECTED_DOCTORALIA_COUNT: ${{ github.event.inputs.expected_doctoralia_count || '98' }}
+      NUVANX_SSH_HOST: ${{ secrets.NUVANX_SSH_HOST }}
+      NUVANX_SSH_PORT: ${{ secrets.NUVANX_SSH_PORT }}
+      NUVANX_SSH_USER: ${{ secrets.NUVANX_SSH_USER }}
+      NUVANX_SSH_KEY: ${{ secrets.NUVANX_SSH_KEY }}
+      NUVANX_WP_PATH: ${{ secrets.NUVANX_WP_PATH }}
+    steps:
+      - name: Validate SSH secrets
+        shell: bash
+        run: |
+          test -n "$NUVANX_SSH_HOST"
+          test -n "$NUVANX_SSH_PORT"
+          test -n "$NUVANX_SSH_USER"
+          test -n "$NUVANX_SSH_KEY"
+          test -n "$NUVANX_WP_PATH"
+
+      - name: Update WordPress Doctoralia count option and purge cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s' "$NUVANX_SSH_KEY" > ~/.ssh/nuvanx_key
+          chmod 600 ~/.ssh/nuvanx_key
+
+          ssh -i ~/.ssh/nuvanx_key -p "$NUVANX_SSH_PORT" -o StrictHostKeyChecking=no "$NUVANX_SSH_USER@$NUVANX_SSH_HOST" \
+            "cd '$NUVANX_WP_PATH' && /usr/local/bin/wp option update nvx_doctoralia_social_proof_count '$EXPECTED_DOCTORALIA_COUNT' && /usr/local/bin/wp cache flush && /usr/local/bin/wp sg purge || true && php -r 'if(function_exists(\"opcache_reset\")){opcache_reset();echo \"OPcache OK\\n\";}'"
