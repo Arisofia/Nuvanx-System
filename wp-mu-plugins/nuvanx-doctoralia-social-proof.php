@@ -2,7 +2,7 @@
 /**
  * Plugin Name: NUVANX · Doctoralia Social Proof
  * Description: Adds a compliance-safe Doctoralia public proof block to key NUVANX pages using a configurable public Doctoralia opinion count. Refreshes the count monthly when WordPress cron runs.
- * Version: 2.2.0
+ * Version: 2.3.0
  */
 
 if (!defined('ABSPATH')) {
@@ -25,21 +25,12 @@ function nvx_doctoralia_social_proof_pages(): array {
 function nvx_doctoralia_social_proof_parse_count(string $html): int {
     $plain = html_entity_decode(wp_strip_all_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8');
     $plain = preg_replace('/\s+/u', ' ', $plain ?: '');
-
-    $patterns = [
-        '/Opiniones sobre los especialistas\s*\((\d{1,4})\)/iu',
-        '/(\d{1,4})\s+opiniones/iu',
-    ];
-
-    foreach ($patterns as $pattern) {
+    foreach (['/Opiniones sobre los especialistas\s*\((\d{1,4})\)/iu', '/(\d{1,4})\s+opiniones/iu'] as $pattern) {
         if (preg_match($pattern, $plain, $m)) {
             $count = (int) ($m[1] ?? 0);
-            if ($count > 0 && $count < 10000) {
-                return $count;
-            }
+            if ($count > 0 && $count < 10000) return $count;
         }
     }
-
     return 0;
 }
 
@@ -49,45 +40,36 @@ function nvx_doctoralia_social_proof_refresh_count(): int {
         'timeout' => 12,
         'redirection' => 5,
         'headers' => [
-            'User-Agent' => 'Mozilla/5.0 NUVANX-Doctoralia-Count/2.2',
+            'User-Agent' => 'Mozilla/5.0 NUVANX-Doctoralia-Count/2.3',
             'Cache-Control' => 'no-cache',
         ],
     ]);
-
     if (is_wp_error($response)) {
         update_option('nvx_doctoralia_social_proof_last_refresh_status', 'error: ' . $response->get_error_message(), false);
         update_option('nvx_doctoralia_social_proof_last_refresh_at', gmdate('c'), false);
         return $current;
     }
-
     $status = (int) wp_remote_retrieve_response_code($response);
     $body = (string) wp_remote_retrieve_body($response);
     $parsed = nvx_doctoralia_social_proof_parse_count($body);
-
     update_option('nvx_doctoralia_social_proof_last_refresh_http', $status, false);
     update_option('nvx_doctoralia_social_proof_last_refresh_at', gmdate('c'), false);
-
     if ($status >= 200 && $status < 400 && $parsed > 0) {
         if ($parsed >= $current) {
             update_option('nvx_doctoralia_social_proof_count', $parsed, false);
             update_option('nvx_doctoralia_social_proof_last_refresh_status', 'updated', false);
             return $parsed;
         }
-
         update_option('nvx_doctoralia_social_proof_last_refresh_status', 'kept_current_lower_source_' . $parsed, false);
         return $current;
     }
-
     update_option('nvx_doctoralia_social_proof_last_refresh_status', 'no_count_parsed', false);
     return $current;
 }
 
 add_filter('cron_schedules', function ($schedules) {
     if (!isset($schedules['monthly'])) {
-        $schedules['monthly'] = [
-            'interval' => 30 * DAY_IN_SECONDS,
-            'display' => 'Once Monthly',
-        ];
+        $schedules['monthly'] = ['interval' => 30 * DAY_IN_SECONDS, 'display' => 'Once Monthly'];
     }
     return $schedules;
 });
@@ -103,21 +85,20 @@ add_action('nvx_doctoralia_social_proof_monthly_refresh', 'nvx_doctoralia_social
 function nvx_doctoralia_social_proof_html(string $variant = 'default'): string {
     $doctoralia_url = esc_url(nvx_doctoralia_social_proof_url());
     $count = nvx_doctoralia_social_proof_count();
-
     ob_start();
     ?>
     <!-- NVX_DOCTORALIA_SOCIAL_PROOF_V2_START -->
     <section class="nvx-doctoralia-proof nvx-doctoralia-proof--<?php echo esc_attr($variant); ?>" aria-labelledby="nvx-doctoralia-proof-title">
       <div class="nvx-doctoralia-proof__inner">
-        <p class="nvx-doctoralia-proof__kicker">Opiniones verificadas</p>
+        <p class="nvx-doctoralia-proof__kicker">Confianza clínica</p>
         <div class="nvx-doctoralia-proof__headline-row" data-visual-line="doctoralia-proof-count">
-          <h2 id="nvx-doctoralia-proof-title">Pacientes que han valorado NUVANX en Doctoralia</h2>
+          <h2 id="nvx-doctoralia-proof-title">Lo que otros pacientes destacan de NUVANX</h2>
           <span class="nvx-doctoralia-proof__stat" aria-label="<?php echo esc_attr($count); ?> opiniones verificadas en Doctoralia"><?php echo esc_html((string) $count); ?> opiniones verificadas</span>
         </div>
-        <p class="nvx-doctoralia-proof__lead">NUVANX cuenta con <?php echo esc_html((string) $count); ?> opiniones verificadas en Doctoralia. Las reseñas públicas incluyen experiencias recientes sobre Endolift®, atención médico-estética, explicación del procedimiento y trato del equipo antes de solicitar una valoración médica.</p>
+        <p class="nvx-doctoralia-proof__lead">Antes de reservar tu valoración, puedes consultar en Doctoralia las opiniones verificadas de pacientes que ya han visitado NUVANX. Reflejan experiencias sobre la atención recibida, la explicación médica y el acompañamiento del equipo.</p>
         <div class="nvx-doctoralia-proof__grid">
-          <article class="nvx-doctoralia-proof__card"><span class="nvx-doctoralia-proof__label">Endolift® · cita verificada</span><p>Doctoralia muestra opiniones verificadas recientes asociadas a Técnica Endolift y al equipo NUVANX.</p><p class="nvx-doctoralia-proof__meta">Fuente pública: Doctoralia · Opiniones sobre especialistas · <?php echo esc_html((string) $count); ?> opiniones</p></article>
-          <article class="nvx-doctoralia-proof__card"><span class="nvx-doctoralia-proof__label">Criterio médico</span><p>La ficha pública identifica como responsable sanitario al Dr. José Javier Rivera Tejeda y recoge equipamiento como LaseMaR1500/Endolift, Thermage®, DEKA y láser CO2 fraccionado.</p><p class="nvx-doctoralia-proof__meta">Registro sanitario Chamberí: CS20144</p></article>
+          <article class="nvx-doctoralia-proof__card"><span class="nvx-doctoralia-proof__label">Experiencia del paciente</span><p>Las valoraciones ayudan a conocer cómo se vive el proceso antes, durante y después de la visita, con una lectura externa a la clínica.</p><p class="nvx-doctoralia-proof__meta">Opiniones consultables en Doctoralia.</p></article>
+          <article class="nvx-doctoralia-proof__card"><span class="nvx-doctoralia-proof__label">Valoración médica previa</span><p>Cada tratamiento se indica después de revisar el caso, resolver dudas y explicar expectativas, tiempos y cuidados de forma individual.</p><p class="nvx-doctoralia-proof__meta">Consulta informativa sin compromiso.</p></article>
         </div>
         <div class="nvx-doctoralia-proof__actions"><a class="nvx-doctoralia-proof__button" href="<?php echo $doctoralia_url; ?>" target="_blank" rel="nofollow noopener external">Ver <?php echo esc_html((string) $count); ?> opiniones en Doctoralia</a><a class="nvx-doctoralia-proof__link" href="https://wa.me/34669319836" rel="nofollow noopener">Solicitar valoración médica gratuita</a></div>
       </div>
