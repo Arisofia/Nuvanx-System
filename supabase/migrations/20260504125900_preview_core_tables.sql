@@ -19,6 +19,49 @@ CREATE TABLE IF NOT EXISTS public.clinics (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Keep a minimal patients compatibility table available for preview/fresh
+-- databases. Several historical migrations intentionally join or policy-scope
+-- public.patients before the full CRM schema is present in reduced branches.
+CREATE TABLE IF NOT EXISTS public.patients (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  clinic_id UUID REFERENCES public.clinics(id) ON DELETE SET NULL,
+  name TEXT,
+  dni TEXT,
+  dni_hash TEXT,
+  phone TEXT,
+  phone_normalized TEXT,
+  total_ltv NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  last_visit TIMESTAMPTZ,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.patients
+  ADD COLUMN IF NOT EXISTS clinic_id UUID REFERENCES public.clinics(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS name TEXT,
+  ADD COLUMN IF NOT EXISTS dni TEXT,
+  ADD COLUMN IF NOT EXISTS dni_hash TEXT,
+  ADD COLUMN IF NOT EXISTS phone TEXT,
+  ADD COLUMN IF NOT EXISTS phone_normalized TEXT,
+  ADD COLUMN IF NOT EXISTS total_ltv NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS last_visit TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+CREATE INDEX IF NOT EXISTS idx_patients_clinic_id
+  ON public.patients (clinic_id)
+  WHERE clinic_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_patients_clinic_phone_normalized
+  ON public.patients (clinic_id, phone_normalized)
+  WHERE phone_normalized IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_patients_clinic_dni
+  ON public.patients (clinic_id, dni)
+  WHERE dni IS NOT NULL;
+
 DO $$
 BEGIN
   IF to_regclass('public.vw_lead_traceability') IS NULL THEN
