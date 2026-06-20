@@ -45,11 +45,11 @@ function validateCanonicalDoctoraliaSheet() {
   const appointmentsSheetId = String(process.env.DOCTORALIA_APPOINTMENTS_SHEET_ID || '').trim();
   const legacySheetId = String(process.env.DOCTORALIA_SHEET_ID || '').trim();
   if (appointmentsSheetId && appointmentsSheetId !== CANONICAL_DOCTORALIA_SHEET_ID) {
-    fail(`DOCTORALIA_APPOINTMENTS_SHEET_ID must point to canonical Doctoralia sheet ${CANONICAL_DOCTORALIA_SHEET_ID}; received ${appointmentsSheetId}.`);
+    fail(`DOCTORALIA_APPOINTMENTS_SHEET_ID must point to canonical Doctoralia sheet ${CANONICAL_DOCTORALIA_SHEET_ID}. Received value is redacted.`);
   }
 
   if (!appointmentsSheetId && legacySheetId && legacySheetId !== CANONICAL_DOCTORALIA_SHEET_ID) {
-    fail(`DOCTORALIA_SHEET_ID fallback must point to canonical Doctoralia sheet ${CANONICAL_DOCTORALIA_SHEET_ID}; received ${legacySheetId}.`);
+    fail(`DOCTORALIA_SHEET_ID fallback must point to canonical Doctoralia sheet ${CANONICAL_DOCTORALIA_SHEET_ID}. Received value is redacted.`);
   }
 
   if (hasValue('DOCTORALIA_APPOINTMENTS_MIN_ROWS')) {
