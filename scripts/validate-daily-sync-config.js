@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 
+const CANONICAL_DOCTORALIA_SHEET_ID = '1GAJoASGdjsKB7bTtC5hXPFkWbB7S4fVXhKD_cZoDwPw';
+
 const REQUIRED = [
   'SUPABASE_URL',
   'SUPABASE_SERVICE_ROLE_KEY',
@@ -37,6 +39,28 @@ function fail(message) {
 for (const key of REQUIRED) {
   if (!hasValue(key)) fail(`${key} secret is required for Daily Sync Orchestrator.`);
 }
+
+
+function validateCanonicalDoctoraliaSheet() {
+  const appointmentsSheetId = String(process.env.DOCTORALIA_APPOINTMENTS_SHEET_ID || '').trim();
+  const legacySheetId = String(process.env.DOCTORALIA_SHEET_ID || '').trim();
+  if (appointmentsSheetId && appointmentsSheetId !== CANONICAL_DOCTORALIA_SHEET_ID) {
+    fail(`DOCTORALIA_APPOINTMENTS_SHEET_ID must point to canonical Doctoralia sheet ${CANONICAL_DOCTORALIA_SHEET_ID}; received ${appointmentsSheetId}.`);
+  }
+
+  if (!appointmentsSheetId && legacySheetId && legacySheetId !== CANONICAL_DOCTORALIA_SHEET_ID) {
+    fail(`DOCTORALIA_SHEET_ID fallback must point to canonical Doctoralia sheet ${CANONICAL_DOCTORALIA_SHEET_ID}; received ${legacySheetId}.`);
+  }
+
+  if (hasValue('DOCTORALIA_APPOINTMENTS_MIN_ROWS')) {
+    const minRows = Number.parseInt(process.env.DOCTORALIA_APPOINTMENTS_MIN_ROWS, 10);
+    if (!Number.isFinite(minRows) || minRows < 1800) {
+      fail('DOCTORALIA_APPOINTMENTS_MIN_ROWS must be at least 1800 for complete Doctoralia daily sync loads.');
+    }
+  }
+}
+
+validateCanonicalDoctoraliaSheet();
 
 if (!hasValue('META_AD_ACCOUNT_ID') && !hasValue('META_AD_ACCOUNT_IDS') && !hasValue('FALLBACK_META_AD_ACCOUNT_ID')) {
   fail('META_AD_ACCOUNT_ID, META_AD_ACCOUNT_IDS, or FALLBACK_META_AD_ACCOUNT_ID secret is required.');
