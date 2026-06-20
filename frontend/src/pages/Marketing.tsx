@@ -522,7 +522,7 @@ function MarketingHeader({
             onChange={(e) => setFrom(e.target.value)}
             className="bg-card text-foreground text-xs px-2 py-1.5 rounded-lg border border-border focus:ring-1 focus:ring-primary"
           />
-          <span className="text-muted text-xs">Ã¢â€ â€™</span>
+          <span className="text-muted text-xs">→</span>
           <input
             type="date"
             value={to}
@@ -701,8 +701,8 @@ export default function Marketing() {
   }
 
   const periodLabel = period
-    ? `${period.since} Ã¢â€ â€™ ${period.until} (${period.days} dÃƒÂ­as)`
-    : `${from} Ã¢â€ â€™ ${to}`
+    ? `${period.since} → ${period.until} (${period.days} días)`
+    : `${from} → ${to}`
 
   return (
     <div className="space-y-6">
