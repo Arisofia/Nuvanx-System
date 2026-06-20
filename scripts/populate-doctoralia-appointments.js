@@ -5,6 +5,18 @@
  * Loads Doctoralia appointment exports from a local CSV or Excel workbook into
  * public.doctoralia_appointments_ingestion.
  *
+ * Daily sync rules:
+ *   - Doctoralia ID is a patient/client code, NOT an appointment identifier.
+ *   - source_key and appointment_id must be appointment-level keys so repeated
+ *     visits for the same Doctoralia patient are preserved.
+ *   - Operational views classify visits as:
+ *       1ra cita   = first real appointment for the patient
+ *       nuevo      = second real appointment for the patient
+ *       recurrente = third and later real appointments
+ *       churn_90d  = no later appointment within 90 days of a month-end visit
+ *   - Revisión/Revisión tratamiento is a real appointment type and must not be
+ *     treated as an internal control by default.
+ *
  * Required env vars (.env.local is loaded automatically):
  *   SUPABASE_URL or VITE_SUPABASE_URL
  *   SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY
@@ -14,6 +26,7 @@
  *   DOCTORALIA_APPOINTMENTS_XLSX_PATH (legacy alias for Excel-only runs)
  *   DOCTORALIA_APPOINTMENTS_SHEET_NAME (default: Doctoralia; Excel only)
  *   DOCTORALIA_APPOINTMENTS_CHUNK_SIZE (default: 500)
+ *   DOCTORALIA_APPOINTMENTS_REPLACE_MODE (default: true; replace table contents before load)
  *
  * Flags:
  *   --dry-run  Parse and summarize the input file without writing to Supabase.
@@ -42,6 +55,7 @@ const INPUT_PATH = path.resolve(
 const INPUT_EXT = path.extname(INPUT_PATH).toLowerCase();
 const SHEET_NAME = process.env.DOCTORALIA_APPOINTMENTS_SHEET_NAME || DEFAULT_SHEET;
 const CHUNK_SIZE = parsePositiveInt(process.env.DOCTORALIA_APPOINTMENTS_CHUNK_SIZE, DEFAULT_CHUNK_SIZE);
+const REPLACE_MODE = String(process.env.DOCTORALIA_APPOINTMENTS_REPLACE_MODE || 'true').toLowerCase() !== 'false';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
@@ -50,25 +64,25 @@ const HEADER_ALIASES = {
   estado: ['estado', 'status'],
   appointment_date: ['fecha', 'fecha cita', 'appointment date', 'appointment_date'],
   appointment_time: ['hora', 'hora cita', 'appointment time'],
-  created_date: ['fecha creacion', 'fecha creaciÃ³n', 'created date'],
-  created_time: ['hora creacion', 'hora creaciÃ³n', 'created time'],
+  created_date: ['fecha creacion', 'fecha creación', 'created date'],
+  created_time: ['hora creacion', 'hora creación', 'created time'],
   subject: ['asunto', 'subject'],
   agenda: ['agenda', 'calendario', 'doctor'],
-  room: ['sala', 'box', 'room'],
-  confirmed: ['confirmado', 'confirmed'],
-  origin: ['origen', 'origin', 'canal'],
+  room: ['sala', 'box', 'sala box', 'sala/box', 'room'],
+  confirmed: ['confirmada', 'confirmado', 'confirmed'],
+  origin: ['procedencia', 'origen', 'origin', 'canal'],
   amount: ['importe', 'amount', 'precio'],
-  normalized_date: ['fecha normalizada', 'normalized date'],
-  doctoralia_id: ['id', 'doctoralia id', 'id doctoralia', 'appointment id', 'appointment_id'],
+  normalized_date: ['fecha para normalizar', 'fecha normalizada', 'normalized date'],
+  doctoralia_id: ['id', 'doctoralia id', 'id doctoralia', 'codigo cliente', 'código cliente'],
   patient_name: ['nombre', 'paciente', 'patient name', 'patient_name'],
   patient_email: ['email', 'correo', 'patient email', 'patient_email'],
-  phone: ['telefono', 'telÃ©fono', 'phone', 'movil', 'mÃ³vil', 'patient phone', 'patient_phone'],
+  phone: ['telefono', 'teléfono', 'phone', 'movil', 'móvil', 'patient phone', 'patient_phone'],
   treatment: ['tratamiento', 'treatment', 'appointment type', 'appointment_type'],
   notes: ['notas', 'notes', 'observaciones'],
-  day_num: ['dia', 'dÃ­a', 'day'],
+  day_num: ['dia', 'día', 'day'],
   month_num: ['mes', 'month'],
-  year_num: ['ano', 'aÃ±o', 'year'],
-  clinic: ['clinica', 'clÃ­nica', 'clinic'],
+  year_num: ['ano', 'año', 'year'],
+  clinic: ['clinica', 'clínica', 'clinic'],
 };
 
 const REQUIRED_HEADERS = [
@@ -124,7 +138,7 @@ function parseAmount(value) {
   if (value === undefined || value === null || String(value).trim() === '') return 0;
   if (typeof value === 'number') return Math.round(value * 100) / 100;
 
-  let text = String(value).replace(/[â‚¬$\s\u00A0]/g, '');
+  let text = String(value).replace(/[€$\s\u00A0]/g, '');
 
   if (text.includes(',') && text.includes('.')) {
     text = text.lastIndexOf(',') > text.lastIndexOf('.')
@@ -152,8 +166,15 @@ function normalizePhone(value) {
   return phone;
 }
 
+function normalizeIdentityText(value) {
+  return String(value || '')
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
 function hasAny(value, tokens) {
-  const text = String(value || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const text = normalizeIdentityText(value);
   return tokens.some((token) => text.includes(token));
 }
 
@@ -197,7 +218,6 @@ function recordsFromRows(rows) {
     .map((row, index) => (isBlankRow(row) ? null : buildRecord(row, headerMap, index + 2)))
     .filter(Boolean);
 
-  // Log duplicate detection for diagnostics
   const sourceKeyCount = new Map();
   for (const record of records) {
     sourceKeyCount.set(record.source_key, (sourceKeyCount.get(record.source_key) || 0) + 1);
@@ -210,8 +230,8 @@ function recordsFromRows(rows) {
   if (duplicates.length > 0) {
     console.warn(
       `[doctoralia-appointments] Found ${duplicates.length} duplicate source_keys. ` +
-      `These will be deduplicated during upsert (keeping latest). ` +
-      `Sample: ${JSON.stringify(duplicates.slice(0, 5))}`
+        `These will be deduplicated during upsert (keeping latest). ` +
+        `Sample: ${JSON.stringify(duplicates.slice(0, 5))}`,
     );
   }
 
@@ -261,20 +281,44 @@ function parseCsv(content) {
   return rows;
 }
 
+function buildAppointmentSourceKey({ sheetRow, appointmentDate, appointmentTime, doctoraliaId, phone, treatment }) {
+  return [
+    'base_pacientes_doctoralia',
+    `row=${sheetRow}`,
+    `date=${appointmentDate || ''}`,
+    `time=${appointmentTime || ''}`,
+    `id=${doctoraliaId || ''}`,
+    `phone=${normalizePhone(phone) || ''}`,
+    `treatment=${treatment || ''}`,
+  ].join('|');
+}
+
 function buildRecord(row, headerMap, sheetRow) {
   const estado = clean(getCell(row, headerMap, 'estado'));
   const agenda = clean(getCell(row, headerMap, 'agenda'));
   const treatment = clean(getCell(row, headerMap, 'treatment'));
   const doctoraliaId = clean(getCell(row, headerMap, 'doctoralia_id'));
-  const sourceKey = doctoraliaId ? `doctoralia:${doctoraliaId}` : `source-row:${sheetRow}`;
+  const appointmentDate = parseDate(getCell(row, headerMap, 'appointment_date'));
+  const appointmentTime = clean(getCell(row, headerMap, 'appointment_time'));
+  const patientName = clean(getCell(row, headerMap, 'patient_name'));
+  const phone = clean(getCell(row, headerMap, 'phone'));
+  const sourceKey = buildAppointmentSourceKey({
+    sheetRow,
+    appointmentDate,
+    appointmentTime,
+    doctoraliaId,
+    phone,
+    treatment,
+  });
+  const controlText = `${patientName || ''} ${clean(getCell(row, headerMap, 'subject')) || ''} ${treatment || ''}`;
 
   return {
     source_key: sourceKey,
     sheet_row: sheetRow,
     estado,
     status: estado,
-    appointment_date: parseDate(getCell(row, headerMap, 'appointment_date')),
-    appointment_time: clean(getCell(row, headerMap, 'appointment_time')),
+    appointment_date: appointmentDate,
+    appointment_time: appointmentTime,
     created_date: parseDate(getCell(row, headerMap, 'created_date')),
     created_time: clean(getCell(row, headerMap, 'created_time')),
     subject: clean(getCell(row, headerMap, 'subject')),
@@ -283,14 +327,14 @@ function buildRecord(row, headerMap, sheetRow) {
     confirmed: clean(getCell(row, headerMap, 'confirmed')),
     origin: clean(getCell(row, headerMap, 'origin')),
     amount: parseAmount(getCell(row, headerMap, 'amount')),
-    normalized_date: parseDate(getCell(row, headerMap, 'normalized_date')),
+    normalized_date: parseDate(getCell(row, headerMap, 'normalized_date')) || appointmentDate,
     doctoralia_id: doctoraliaId,
-    appointment_id: doctoraliaId,
-    patient_name: clean(getCell(row, headerMap, 'patient_name')),
+    appointment_id: sourceKey,
+    patient_name: patientName,
     patient_email: clean(getCell(row, headerMap, 'patient_email')),
-    phone: clean(getCell(row, headerMap, 'phone')),
-    patient_phone: clean(getCell(row, headerMap, 'phone')),
-    phone_normalized: normalizePhone(getCell(row, headerMap, 'phone')),
+    phone,
+    patient_phone: phone,
+    phone_normalized: normalizePhone(phone),
     treatment,
     appointment_type: treatment,
     notes: clean(getCell(row, headerMap, 'notes')),
@@ -301,11 +345,13 @@ function buildRecord(row, headerMap, sheetRow) {
     is_cancelled: hasAny(estado, ['ANULAD', 'CANCEL', 'BAJA']),
     is_jjrt: hasAny(agenda, ['JJRT', 'MEDICINA EST']),
     is_nursing: hasAny(agenda, ['ENFERMER', 'DERMOCOSM']),
-    is_control: hasAny(treatment, ['REVISION', 'CONTROL', 'REPASO']),
+    is_control: hasAny(controlText, ['CAMBIAR', 'PRUEBA', 'TEST', 'MODELO', 'CONTROL']),
     raw_data: {
       source: path.basename(INPUT_PATH),
       sheet: SHEET_NAME,
       row: sheetRow,
+      doctoralia_id: doctoraliaId,
+      source_key_version: 2,
     },
     updated_at: new Date().toISOString(),
   };
@@ -318,6 +364,7 @@ function summarize(records) {
     nursing: records.filter((record) => record.is_nursing).length,
     paid: records.filter((record) => record.amount > 0).length,
     control: records.filter((record) => record.is_control).length,
+    cancelled: records.filter((record) => record.is_cancelled).length,
     withPhone: records.filter((record) => record.phone_normalized).length,
   };
 }
@@ -325,17 +372,18 @@ function summarize(records) {
 function validateRecordsForUpsert(records) {
   const invalid = records
     .map((record, index) => ({ record, index }))
-    .filter(({ record }) => !record.source_key || !Number.isInteger(record.sheet_row));
+    .filter(({ record }) => !record.source_key || !Number.isInteger(record.sheet_row) || !record.appointment_id);
 
   if (invalid.length > 0) {
     const sample = invalid.slice(0, 5).map(({ record, index }) => ({
       index,
       sheet_row: record.sheet_row,
       source_key: record.source_key,
+      appointment_id: record.appointment_id,
       doctoralia_id: record.doctoralia_id,
       patient_name: record.patient_name,
     }));
-    throw new Error(`Invalid Doctoralia appointment records before upsert: every row must include source_key and integer sheet_row. Sample: ${JSON.stringify(sample)}`);
+    throw new Error(`Invalid Doctoralia appointment records before upsert: every row must include source_key, appointment_id and integer sheet_row. Sample: ${JSON.stringify(sample)}`);
   }
 }
 
@@ -399,15 +447,29 @@ function dedupeRecordsBySourceKey(records) {
   return Array.from(dedupedMap.values());
 }
 
-async function upsertRecords(records) {
+async function replaceIngestionTable(supabase) {
+  const { error } = await supabase
+    .from('doctoralia_appointments_ingestion')
+    .delete()
+    .gte('sheet_row', 0);
+
+  if (error) throw new Error(`[doctoralia-appointments] Failed to replace existing ingestion rows: ${error.message}`);
+  console.log('[doctoralia-appointments] Existing ingestion rows cleared before full replacement load.');
+}
+
+async function upsertRecords(records, options = {}) {
   const supabase = getSupabaseClient();
 
   const dedupedRecords = dedupeRecordsBySourceKey(records);
 
   console.log(
-    `[doctoralia-appointments] Deduped records by source_key: ` +
-      `${records.length} â†’ ${dedupedRecords.length}`
+    `[doctoralia-appointments] Deduped records by appointment-level source_key: ` +
+      `${records.length} → ${dedupedRecords.length}`,
   );
+
+  if (options.replaceMode ?? REPLACE_MODE) {
+    await replaceIngestionTable(supabase);
+  }
 
   for (let index = 0; index < dedupedRecords.length; index += CHUNK_SIZE) {
     const chunk = dedupedRecords.slice(index, index + CHUNK_SIZE);
@@ -434,17 +496,16 @@ async function upsertRecords(records) {
         `[doctoralia-appointments] Failed to upsert chunk ` +
           `(index=${index}, size=${chunk.length}, ` +
           `first_sheet_row=${firstSheetRow}, last_sheet_row=${lastSheetRow}): ` +
-          error.message
+          error.message,
       );
 
       wrappedError.cause = error;
-
       throw wrappedError;
     }
 
     console.log(
       `[doctoralia-appointments] Upserted ${index + chunk.length}/${dedupedRecords.length} ` +
-        `(chunkSize=${chunk.length})`
+        `(chunkSize=${chunk.length})`,
     );
   }
 }
@@ -455,7 +516,7 @@ async function main() {
 
   console.log(
     `[doctoralia-appointments] Parsed ${records.length} rows from input file ` +
-      `(type=${INPUT_EXT || 'unknown'}${SHEET_NAME ? ', with sheet' : ''}).`
+      `(type=${INPUT_EXT || 'unknown'}${SHEET_NAME ? ', with sheet' : ''}).`,
   );
   console.table(totals);
 
@@ -470,14 +531,15 @@ async function main() {
 }
 
 if (require.main === module) {
-  main().catch(() => {
+  main().catch((error) => {
     console.error('[doctoralia-appointments] Load failed.');
-    console.error('[doctoralia-appointments] An internal error occurred during execution.');
+    console.error(error.message || error);
     process.exit(1);
   });
 }
 
 module.exports = {
+  buildAppointmentSourceKey,
   buildHeaderMap,
   parseCsv,
   buildRecord,
@@ -487,6 +549,7 @@ module.exports = {
   getSupabaseClient,
   recordsFromRows,
   readRecords,
+  replaceIngestionTable,
   upsertRecords,
   validateRecordsForUpsert,
   clean,
