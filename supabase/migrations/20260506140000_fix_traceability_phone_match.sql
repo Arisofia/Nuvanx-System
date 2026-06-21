@@ -53,6 +53,22 @@ ALTER TABLE public.leads
   ADD COLUMN IF NOT EXISTS lost_reason TEXT,
   ADD COLUMN IF NOT EXISTS dni_hash TEXT;
 
+CREATE TABLE IF NOT EXISTS public.financial_settlements (
+  id TEXT PRIMARY KEY,
+  clinic_id UUID,
+  patient_id UUID,
+  template_id TEXT,
+  template_name TEXT,
+  amount_net NUMERIC(14, 2),
+  amount_gross NUMERIC(14, 2),
+  settled_at TIMESTAMPTZ,
+  intake_at TIMESTAMPTZ,
+  source_system TEXT,
+  cancelled_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 DROP VIEW IF EXISTS public.vw_lead_traceability CASCADE;
 
 CREATE OR REPLACE VIEW public.vw_lead_traceability AS
