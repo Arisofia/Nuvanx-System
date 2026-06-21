@@ -15,6 +15,60 @@
 --      Uses leads.clinic_id for scoping phone-based joins so preview databases without public.users still compile.
 -- =============================================================================
 
+-- Preview safety: this migration is often the first historical migration that
+-- compiles a real vw_lead_traceability join against public.patients. Some
+-- reduced preview databases have not created the CRM patients table yet.
+CREATE TABLE IF NOT EXISTS public.patients (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  clinic_id UUID,
+  name TEXT,
+  dni TEXT,
+  dni_hash TEXT,
+  phone TEXT,
+  phone_normalized TEXT,
+  total_ltv NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  last_visit TIMESTAMPTZ,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.patients
+  ADD COLUMN IF NOT EXISTS clinic_id UUID,
+  ADD COLUMN IF NOT EXISTS name TEXT,
+  ADD COLUMN IF NOT EXISTS dni TEXT,
+  ADD COLUMN IF NOT EXISTS dni_hash TEXT,
+  ADD COLUMN IF NOT EXISTS phone TEXT,
+  ADD COLUMN IF NOT EXISTS phone_normalized TEXT,
+  ADD COLUMN IF NOT EXISTS total_ltv NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS last_visit TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+ALTER TABLE public.leads
+  ADD COLUMN IF NOT EXISTS first_outbound_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS first_inbound_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS reply_delay_minutes NUMERIC,
+  ADD COLUMN IF NOT EXISTS lost_reason TEXT,
+  ADD COLUMN IF NOT EXISTS dni_hash TEXT;
+
+CREATE TABLE IF NOT EXISTS public.financial_settlements (
+  id TEXT PRIMARY KEY,
+  clinic_id UUID,
+  patient_id UUID,
+  template_id TEXT,
+  template_name TEXT,
+  amount_net NUMERIC(14, 2),
+  amount_gross NUMERIC(14, 2),
+  settled_at TIMESTAMPTZ,
+  intake_at TIMESTAMPTZ,
+  source_system TEXT,
+  cancelled_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 DROP VIEW IF EXISTS public.vw_lead_traceability CASCADE;
 
 CREATE OR REPLACE VIEW public.vw_lead_traceability AS

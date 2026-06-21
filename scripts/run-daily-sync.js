@@ -1,10 +1,14 @@
 #!/usr/bin/env node
+'use strict';
+
 /**
  * Nuvanx Daily Sync Orchestrator
  * Runs core daily operational jobs with fail-fast semantics on critical steps.
  */
 
 const { execSync } = require('child_process');
+
+const CANONICAL_DOCTORALIA_SHEET_ID = '1GAJoASGdjsKB7bTtC5hXPFkWbB7S4fVXhKD_cZoDwPw';
 
 function sleep(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -18,15 +22,31 @@ function requireProjectRefWhenDeploying() {
   return ref;
 }
 
+function withEnv(command, env) {
+  const assignments = Object.entries(env)
+    .map(([key, value]) => `${key}=${JSON.stringify(String(value))}`)
+    .join(' ');
+  return `${assignments} ${command}`;
+}
+
+const doctoraliaAppointmentsEnv = {
+  DOCTORALIA_APPOINTMENTS_SHEET_ID: CANONICAL_DOCTORALIA_SHEET_ID,
+  DOCTORALIA_APPOINTMENTS_SHEET_NAME: 'Doctoralia',
+  DOCTORALIA_APPOINTMENTS_SHEET_RANGE: 'A1:T5000',
+  DOCTORALIA_APPOINTMENTS_MIN_ROWS: '1800',
+  DOCTORALIA_APPOINTMENTS_PERMISSION_MODE: 'fail',
+  DOCTORALIA_APPOINTMENTS_REPLACE_MODE: 'true',
+};
+
 const steps = [
   { name: 'scan-secrets', cmd: 'node scripts/scan-secrets.js', critical: true },
   { name: 'verify-meta-access', cmd: 'node scripts/verify-meta-access.js', critical: true },
   { name: 'sync-doctoralia', cmd: 'node scripts/sync-doctoralia.js', critical: false },
   {
     name: 'sync-doctoralia-appointments',
-    cmd: 'node scripts/sync-doctoralia-appointments.js',
-    critical: false,
-    skipReason: 'Doctoralia sheet sync failure must not block Meta insights or other operational steps.',
+    cmd: withEnv('node scripts/sync-doctoralia-appointments.js', doctoraliaAppointmentsEnv),
+    critical: true,
+    retry: 1,
   },
   {
     name: 'deploy-daily-aggregates',
@@ -42,7 +62,7 @@ console.log('Starting Nuvanx daily sync orchestrator...');
 
 for (const step of steps) {
   if (step.enabled === false) {
-    console.log(Skipping : );
+    console.log(`Skipping ${step.name}: ${step.skipReason}`);
     continue;
   }
 
@@ -56,19 +76,19 @@ for (const step of steps) {
       const command = typeof step.cmd === 'function' ? step.cmd() : step.cmd;
 
       if (maxAttempts > 1) {
-        console.log(Running  (attempt /)...);
+        console.log(`Running ${step.name} (attempt ${attempt}/${maxAttempts})...`);
       } else {
-        console.log(Running ...);
+        console.log(`Running ${step.name}...`);
       }
 
-      execSync(command, { stdio: 'inherit' });
-      console.log(${step.name} completed);
+      execSync(command, { stdio: 'inherit', shell: '/bin/bash' });
+      console.log(`${step.name} completed`);
       success = true;
     } catch (error) {
-      console.error(${step.name} failed:, error.message);
+      console.error(`${step.name} failed:`, error.message);
 
       if (attempt < maxAttempts) {
-        console.log(Retrying  in 10s...);
+        console.log(`Retrying ${step.name} in 10s...`);
         sleep(10_000);
       } else if (step.critical) {
         console.error('Critical step failed after maximum attempts. Aborting daily sync.');
