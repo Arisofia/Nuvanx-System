@@ -78,4 +78,4 @@ jobs:
           chmod 600 ~/.ssh/nuvanx_key
 
           ssh -i ~/.ssh/nuvanx_key -p "$NUVANX_SSH_PORT" -o StrictHostKeyChecking=no "$NUVANX_SSH_USER@$NUVANX_SSH_HOST" \
-            "cd '$NUVANX_WP_PATH' && /usr/local/bin/wp option update nvx_doctoralia_social_proof_count '$EXPECTED_DOCTORALIA_COUNT' && /usr/local/bin/wp cache flush && /usr/local/bin/wp sg purge || true && php -r 'if(function_exists(\"opcache_reset\")){opcache_reset();echo \"OPcache OK\\n\";}'"
+            "set -e; cd '$NUVANX_WP_PATH' && /usr/local/bin/wp option update nvx_doctoralia_social_proof_count '$EXPECTED_DOCTORALIA_COUNT' && /usr/local/bin/wp cache flush && if /usr/local/bin/wp sg purge; then echo 'SG cache purge OK'; else echo 'SG cache purge unavailable'; fi && php -r 'if(function_exists(\"opcache_reset\")){opcache_reset();echo \"OPcache OK\\n\";}'"

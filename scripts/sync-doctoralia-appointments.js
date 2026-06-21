@@ -7,14 +7,14 @@
  *
  * Required env vars:
  *   GOOGLE_SA_JSON / GOOGLE_DOCTORALIA_SERVICE_ACCOUNT / GOOGLE_SA_JSON_FILE / GOOGLE_API_KEY
- *   DOCTORALIA_APPOINTMENTS_SHEET_ID or DOCTORALIA_SHEET_ID or DOCTORALIA_DRIVE_FILE_ID
+ *   DOCTORALIA_APPOINTMENTS_SHEET_ID (canonical default enforced unless explicitly overridden)
  *   SUPABASE_URL or VITE_SUPABASE_URL
  *   SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY
  *
  * Optional env vars:
  *   DOCTORALIA_APPOINTMENTS_SHEET_NAME (default: SHEET_NAME or Doctoralia)
- *   DOCTORALIA_APPOINTMENTS_SHEET_RANGE (default: A1:Z5000)
- *   DOCTORALIA_APPOINTMENTS_MIN_ROWS (default: 1; use 2200 for production completeness checks)
+ *   DOCTORALIA_APPOINTMENTS_SHEET_RANGE (default: A1:T5000)
+ *   DOCTORALIA_APPOINTMENTS_MIN_ROWS (minimum/default: 1800)
  *   DOCTORALIA_APPOINTMENTS_PERMISSION_MODE (fail|warn; default: fail)
  *
  * Flags:
@@ -31,15 +31,18 @@ const {
 } = require('./populate-doctoralia-appointments');
 
 const DRY_RUN = process.argv.includes('--dry-run');
-const SHEET_ID = (
+const CANONICAL_SHEET_ID = '1GAJoASGdjsKB7bTtC5hXPFkWbB7S4fVXhKD_cZoDwPw';
+const ALLOW_NON_CANONICAL_SHEET = String(process.env.DOCTORALIA_ALLOW_NON_CANONICAL_SHEET || '').toLowerCase() === 'true';
+const CONFIGURED_SHEET_ID = (
   process.env.DOCTORALIA_APPOINTMENTS_SHEET_ID ||
   process.env.DOCTORALIA_SHEET_ID ||
   process.env.DOCTORALIA_DRIVE_FILE_ID ||
   ''
 ).trim();
+const SHEET_ID = ALLOW_NON_CANONICAL_SHEET && CONFIGURED_SHEET_ID ? CONFIGURED_SHEET_ID : CANONICAL_SHEET_ID;
 const SHEET_NAME = process.env.DOCTORALIA_APPOINTMENTS_SHEET_NAME || process.env.SHEET_NAME || 'Doctoralia';
-const SHEET_RANGE = process.env.DOCTORALIA_APPOINTMENTS_SHEET_RANGE || 'A1:Z5000';
-const MIN_ROWS = parsePositiveInt(process.env.DOCTORALIA_APPOINTMENTS_MIN_ROWS, 1);
+const SHEET_RANGE = process.env.DOCTORALIA_APPOINTMENTS_SHEET_RANGE || 'A1:T5000';
+const MIN_ROWS = Math.max(parsePositiveInt(process.env.DOCTORALIA_APPOINTMENTS_MIN_ROWS, 1800), 1800);
 const PERMISSION_MODE = (process.env.DOCTORALIA_APPOINTMENTS_PERMISSION_MODE || 'fail').toLowerCase();
 
 function parsePositiveInt(value, fallback) {
@@ -157,7 +160,7 @@ async function main() {
     return;
   }
 
-  await upsertRecords(records);
+  await upsertRecords(records, { replaceMode: true });
   const tableCount = await countIngestedRecords();
   console.log(`[sync-doctoralia-appointments] Sync completed. doctoralia_appointments_ingestion now has ${tableCount} rows.`);
 
@@ -176,6 +179,7 @@ if (require.main === module) {
 
 module.exports = {
   buildA1Range,
+  CANONICAL_SHEET_ID,
   fetchRows,
   getServiceAccountJson,
   getSheetsClient,
