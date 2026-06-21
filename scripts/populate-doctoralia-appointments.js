@@ -531,9 +531,9 @@ async function main() {
 }
 
 if (require.main === module) {
-  main().catch((error) => {
+  main().catch(() => {
     console.error('[doctoralia-appointments] Load failed.');
-    console.error(error.message || error);
+    console.error('[doctoralia-appointments] An internal error occurred.');
     process.exit(1);
   });
 }
