@@ -24,22 +24,29 @@ function getArg(name, fallback = '') {
   return fallback;
 }
 
+const HTML_ENTITY_MAP = {
+  amp: '&',
+  nbsp: ' ',
+  quot: '"',
+  '#39': "'",
+};
+
 function stripHtml(html) {
   return String(html || '')
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/&amp;/gi, '&')
+    .replace(/&(amp|nbsp|quot|#39);/gi, (_entity, name) => HTML_ENTITY_MAP[name.toLowerCase()] || ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
 function firstMatch(text, regex) {
   const m = String(text || '').match(regex);
-  return m ? m[1].trim() : '';
+  if (!m) return '';
+
+  const capture = m.slice(1).find((value) => value !== undefined);
+  return String(capture || '').trim();
 }
 
 function has(text, needle) {
