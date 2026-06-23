@@ -22,8 +22,8 @@ BEGIN
   LOOP
     IF EXISTS (
       SELECT 1
-      FROM pg_class c
-      JOIN pg_namespace n ON n.oid = c.relnamespace
+      FROM pg_catalog.pg_class c
+      JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
       WHERE n.nspname = 'public'
         AND c.relname = target_view
         AND c.relkind = 'v'
@@ -34,8 +34,8 @@ BEGIN
 
   SELECT array_agg(c.relname ORDER BY c.relname)
     INTO insecure_views
-  FROM pg_class c
-  JOIN pg_namespace n ON n.oid = c.relnamespace
+  FROM pg_catalog.pg_class c
+  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
   WHERE n.nspname = 'public'
     AND c.relname = ANY (target_views)
     AND c.relkind = 'v'
