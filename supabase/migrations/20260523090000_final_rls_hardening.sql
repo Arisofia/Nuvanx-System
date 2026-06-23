@@ -10,19 +10,24 @@ CREATE POLICY financial_settlements_service_role_only
   WITH CHECK (auth.role() = 'service_role');
 
 -- 2) agent_outputs
-ALTER TABLE IF EXISTS public.agent_outputs ENABLE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+  IF to_regclass('public.agent_outputs') IS NOT NULL THEN
+    ALTER TABLE public.agent_outputs ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS agent_outputs_read_service ON public.agent_outputs;
-CREATE POLICY agent_outputs_read_service
-  ON public.agent_outputs
-  FOR SELECT
-  USING (auth.role() = 'service_role');
+    DROP POLICY IF EXISTS agent_outputs_read_service ON public.agent_outputs;
+    CREATE POLICY agent_outputs_read_service
+      ON public.agent_outputs
+      FOR SELECT
+      USING (auth.role() = 'service_role');
 
-DROP POLICY IF EXISTS agent_outputs_insert_service ON public.agent_outputs;
-CREATE POLICY agent_outputs_insert_service
-  ON public.agent_outputs
-  FOR INSERT
-  WITH CHECK (auth.role() = 'service_role');
+    DROP POLICY IF EXISTS agent_outputs_insert_service ON public.agent_outputs;
+    CREATE POLICY agent_outputs_insert_service
+      ON public.agent_outputs
+      FOR INSERT
+      WITH CHECK (auth.role() = 'service_role');
+  END IF;
+END $$;
 
 -- 3) Reinforce leads and doctoralia_patients
 ALTER TABLE IF EXISTS public.leads ENABLE ROW LEVEL SECURITY;

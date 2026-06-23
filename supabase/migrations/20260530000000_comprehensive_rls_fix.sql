@@ -32,8 +32,7 @@ DECLARE
     'doctors', 'financial_settlements', 'integrations', 'patients', 
     'treatment_types', 'clinics', 'leads', 'meta_daily_insights', 
     'meta_ig_account_daily', 'meta_ig_media_performance', 'meta_organic_daily', 
-    'meta_post_performance', 'produccion_intermediarios', 'whatsapp_conversations',
-    'agent_outputs'
+    'meta_post_performance', 'produccion_intermediarios', 'whatsapp_conversations'
   ];
 BEGIN
   -- Drop the most common policy names we created in earlier migrations.
@@ -83,19 +82,24 @@ BEGIN
     );
 
   -- 4. agent_outputs (Special handling)
-  CREATE POLICY agent_outputs_select_clinic ON public.agent_outputs
-    FOR SELECT TO authenticated
-    USING (
-      clinic_id = (SELECT public.current_clinic_id())
-      AND (SELECT auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true'
-    );
+  IF to_regclass('public.agent_outputs') IS NOT NULL THEN
+    DROP POLICY IF EXISTS agent_outputs_select_clinic ON public.agent_outputs;
+    DROP POLICY IF EXISTS agent_outputs_insert_own ON public.agent_outputs;
 
-  CREATE POLICY agent_outputs_insert_own ON public.agent_outputs
-    FOR INSERT TO authenticated
-    WITH CHECK (
-      user_id = (SELECT auth.uid())
-      AND (SELECT auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true'
-    );
+    CREATE POLICY agent_outputs_select_clinic ON public.agent_outputs
+      FOR SELECT TO authenticated
+      USING (
+        clinic_id = (SELECT public.current_clinic_id())
+        AND (SELECT auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true'
+      );
+
+    CREATE POLICY agent_outputs_insert_own ON public.agent_outputs
+      FOR INSERT TO authenticated
+      WITH CHECK (
+        user_id = (SELECT auth.uid())
+        AND (SELECT auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true'
+      );
+  END IF;
 
   -- 5. Service Role policies (Shared pattern, strictly TO service_role)
   FOREACH t IN ARRAY ARRAY[
@@ -105,13 +109,19 @@ BEGIN
     'produccion_intermediarios'
   ]
   LOOP
-    EXECUTE format(
-      'CREATE POLICY %I_service_role_only ON public.%I ' ||
-      'FOR ALL TO service_role ' ||
-      'USING ((SELECT auth.role()) = ''service_role'') ' ||
-      'WITH CHECK ((SELECT auth.role()) = ''service_role'')',
-      t, t
-    );
+    IF to_regclass(format('public.%I', t)) IS NOT NULL THEN
+      EXECUTE format(
+        'DROP POLICY IF EXISTS %I_service_role_only ON public.%I',
+        t, t
+      );
+      EXECUTE format(
+        'CREATE POLICY %I_service_role_only ON public.%I ' ||
+        'FOR ALL TO service_role ' ||
+        'USING ((SELECT auth.role()) = ''service_role'') ' ||
+        'WITH CHECK ((SELECT auth.role()) = ''service_role'')',
+        t, t
+      );
+    END IF;
   END LOOP;
 
 END $$;

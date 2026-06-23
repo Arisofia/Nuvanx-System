@@ -42,6 +42,18 @@ jobs:
             exit 1
           fi
 
+      - name: Verify Supabase migration workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Working directory: $PWD"
+          test -d supabase/migrations
+          test -f supabase/config.toml
+          find supabase/migrations -maxdepth 1 -type f \
+            | rg '20260611130207|20260620122925|20260620125300|20260620133905|20260620134035|20260620140312|20260620140559|20260620144808|20260620154159|20260620154852|20260620155515' \
+            | sort
+          sed -n '/^\[db.migrations\]/,/^\[/p' supabase/config.toml
+
       - name: Supabase DB migrations
         uses: ./.github/actions/supabase-link-run
         with:
