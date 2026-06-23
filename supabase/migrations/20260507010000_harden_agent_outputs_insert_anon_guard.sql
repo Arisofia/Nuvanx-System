@@ -19,12 +19,17 @@
 --   the SELECT policy already uses.
 -- =============================================================================
 
-DROP POLICY IF EXISTS agent_outputs_insert_own ON public.agent_outputs;
-CREATE POLICY agent_outputs_insert_own
-  ON public.agent_outputs
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    COALESCE((auth.jwt() ->> 'is_anonymous')::boolean, false) = false
-    AND auth.uid() = user_id
-  );
+DO $$
+BEGIN
+  IF to_regclass('public.agent_outputs') IS NOT NULL THEN
+    DROP POLICY IF EXISTS agent_outputs_insert_own ON public.agent_outputs;
+    CREATE POLICY agent_outputs_insert_own
+      ON public.agent_outputs
+      FOR INSERT
+      TO authenticated
+      WITH CHECK (
+        COALESCE((auth.jwt() ->> 'is_anonymous')::boolean, false) = false
+        AND auth.uid() = user_id
+      );
+  END IF;
+END $$;

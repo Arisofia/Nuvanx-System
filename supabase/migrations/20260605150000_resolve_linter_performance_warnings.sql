@@ -21,25 +21,30 @@ CREATE POLICY clinics_select ON public.clinics
 
 -- 2. agent_outputs: Consolidate INSERT and fix SELECT initplan
 -- Fixes multiple_permissive_policies (agent_outputs_insert, agent_outputs_insert_own)
-DROP POLICY IF EXISTS agent_outputs_insert ON public.agent_outputs;
-DROP POLICY IF EXISTS agent_outputs_insert_own ON public.agent_outputs;
-CREATE POLICY agent_outputs_insert ON public.agent_outputs
-  FOR INSERT TO authenticated
-  WITH CHECK (
-    (SELECT (auth.jwt() ->> 'is_anonymous')) IS DISTINCT FROM 'true'
-    AND (
-      (SELECT auth.uid()) = user_id 
-      OR (SELECT auth.role()) = 'service_role'
-    )
-  );
+DO $$
+BEGIN
+  IF to_regclass('public.agent_outputs') IS NOT NULL THEN
+    DROP POLICY IF EXISTS agent_outputs_insert ON public.agent_outputs;
+    DROP POLICY IF EXISTS agent_outputs_insert_own ON public.agent_outputs;
+    CREATE POLICY agent_outputs_insert ON public.agent_outputs
+      FOR INSERT TO authenticated
+      WITH CHECK (
+        (SELECT (auth.jwt() ->> 'is_anonymous')) IS DISTINCT FROM 'true'
+        AND (
+          (SELECT auth.uid()) = user_id
+          OR (SELECT auth.role()) = 'service_role'
+        )
+      );
 
-DROP POLICY IF EXISTS agent_outputs_select_clinic ON public.agent_outputs;
-CREATE POLICY agent_outputs_select_clinic ON public.agent_outputs
-  FOR SELECT TO authenticated
-  USING (
-    (SELECT (auth.jwt() ->> 'is_anonymous')) IS DISTINCT FROM 'true'
-    AND clinic_id = (SELECT public.current_clinic_id())
-  );
+    DROP POLICY IF EXISTS agent_outputs_select_clinic ON public.agent_outputs;
+    CREATE POLICY agent_outputs_select_clinic ON public.agent_outputs
+      FOR SELECT TO authenticated
+      USING (
+        (SELECT (auth.jwt() ->> 'is_anonymous')) IS DISTINCT FROM 'true'
+        AND clinic_id = (SELECT public.current_clinic_id())
+      );
+  END IF;
+END $$;
 
 -- 3. api_call_log: Fix initplan
 DROP POLICY IF EXISTS api_call_log_select_own ON public.api_call_log;
