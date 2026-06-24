@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS public.leads (
   email TEXT,
   phone TEXT,
   phone_normalized TEXT,
+  notes TEXT,
   source TEXT,
   stage TEXT,
   campaign_id TEXT,
