@@ -33,7 +33,7 @@ other_financial as (
     fs.clinic_id,
     'other'::text as channel_group,
     coalesce(fs.source_system, 'doctoralia'::varchar)::text as channel_source,
-    coalesce(fs.agenda_name, fs.intermediary_name, fs.template_name, 'Doctoralia / otros'::varchar)::text as campaign_name,
+    coalesce(fs.template_name, fs.intermediary_name, 'Doctoralia / otros'::varchar)::text as campaign_name,
     coalesce(nullif(trim(fs.patient_name), ''), nullif(trim(fs.template_patient_name), ''), nullif(trim(fs.patient_phone), ''), 'Paciente sin nombre') as client_name,
     fs.phone_normalized,
     null::text as email_normalized,
