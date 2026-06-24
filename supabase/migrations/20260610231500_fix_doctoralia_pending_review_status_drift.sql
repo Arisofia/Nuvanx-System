@@ -18,6 +18,7 @@ WITH (security_invoker = true) AS
 WITH source_rows AS (
     SELECT
         id,
+        source_key,
         sheet_row,
         estado,
         appointment_date,
@@ -48,7 +49,6 @@ WITH source_rows AS (
         notes,
         patient_email,
         patient_phone,
-        source_key,
         status,
         COALESCE(
             NULLIF(phone_normalized, ''),
