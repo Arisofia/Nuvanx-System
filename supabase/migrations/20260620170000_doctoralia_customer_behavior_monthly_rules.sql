@@ -41,7 +41,7 @@ SELECT
   COALESCE(appointment_type, treatment) AS treatment,
   phone AS phone_primary,
   NULL::TEXT AS phone_secondary,
-  inserted_at AS created_at,
+  imported_at AS created_at,
   source_key,
   appointment_id,
   doctoralia_id,
@@ -68,7 +68,7 @@ SELECT
   is_nursing,
   is_control,
   raw_data,
-  inserted_at,
+  imported_at AS inserted_at,
   updated_at,
   amount AS revenue
 FROM public.doctoralia_appointments_ingestion
