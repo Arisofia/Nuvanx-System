@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS public.leads (
   notes TEXT,
   source TEXT,
   stage TEXT,
+  crm_stage TEXT,
   campaign_id TEXT,
   campaign_name TEXT,
   adset_id TEXT,
