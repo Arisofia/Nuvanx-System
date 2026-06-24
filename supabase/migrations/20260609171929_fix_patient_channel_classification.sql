@@ -1,3 +1,5 @@
+drop view if exists public.v_new_clients_by_channel_detail cascade;
+
 create or replace view public.v_new_clients_by_channel_detail as
 with social_leads as (
   select
