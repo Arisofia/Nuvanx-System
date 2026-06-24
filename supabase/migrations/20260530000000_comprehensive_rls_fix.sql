@@ -39,6 +39,11 @@ BEGIN
   -- (Simplified from the original very broad cleanup to reduce noise.)
   FOREACH t IN ARRAY tables
   LOOP
+    IF to_regclass(format('public.%I', t)) IS NULL THEN
+      RAISE NOTICE 'Skipping policy cleanup for public.%: table does not exist yet', t;
+      CONTINUE;
+    END IF;
+
     EXECUTE format('DROP POLICY IF EXISTS %I_select ON public.%I', t, t);
     EXECUTE format('DROP POLICY IF EXISTS %I_select_clinic ON public.%I', t, t);
     EXECUTE format('DROP POLICY IF EXISTS %I_select_own ON public.%I', t, t);
@@ -48,12 +53,14 @@ BEGIN
   -- Recreate policies with strict role scoping and initplan wrappers
 
   -- 1. api_call_log
-  CREATE POLICY api_call_log_select_own ON public.api_call_log
-    FOR SELECT TO authenticated
-    USING (
-      (SELECT auth.uid()) = user_id
-      AND (SELECT auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true'
-    );
+  IF to_regclass('public.api_call_log') IS NOT NULL THEN
+    CREATE POLICY api_call_log_select_own ON public.api_call_log
+      FOR SELECT TO authenticated
+      USING (
+        (SELECT auth.uid()) = user_id
+        AND (SELECT auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true'
+      );
+  END IF;
 
   -- 2. Clinic-scoped tables (SELECT only for authenticated)
   FOREACH t IN ARRAY ARRAY[
@@ -64,6 +71,11 @@ BEGIN
     'produccion_intermediarios', 'whatsapp_conversations'
   ]
   LOOP
+    IF to_regclass(format('public.%I', t)) IS NULL THEN
+      RAISE NOTICE 'Skipping clinic-scoped policy for public.%: table does not exist yet', t;
+      CONTINUE;
+    END IF;
+
     EXECUTE format(
       'CREATE POLICY %I_select_clinic ON public.%I ' ||
       'FOR SELECT TO authenticated ' ||
@@ -74,12 +86,14 @@ BEGIN
   END LOOP;
 
   -- 3. clinics (self-owned)
-  CREATE POLICY clinics_select ON public.clinics
-    FOR SELECT TO authenticated
-    USING (
-      id = (SELECT public.current_clinic_id())
-      AND (SELECT auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true'
-    );
+  IF to_regclass('public.clinics') IS NOT NULL THEN
+    CREATE POLICY clinics_select ON public.clinics
+      FOR SELECT TO authenticated
+      USING (
+        id = (SELECT public.current_clinic_id())
+        AND (SELECT auth.jwt() ->> 'is_anonymous') IS DISTINCT FROM 'true'
+      );
+  END IF;
 
   -- 4. agent_outputs (Special handling)
   IF to_regclass('public.agent_outputs') IS NOT NULL THEN
