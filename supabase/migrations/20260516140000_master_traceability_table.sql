@@ -80,7 +80,7 @@ WITH leads_clean AS (
   SELECT DISTINCT ON (phone_normalized)
     id,
     name,
-    email_normalized,
+    COALESCE(email, NULL)::TEXT AS email_normalized,
     phone_normalized,
     source,
     campaign_name,
