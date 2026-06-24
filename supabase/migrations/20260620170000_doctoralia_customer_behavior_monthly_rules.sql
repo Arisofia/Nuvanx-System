@@ -5,17 +5,17 @@
 DROP INDEX IF EXISTS public.doctoralia_appointments_ingestion_doctoralia_id_key;
 
 -- Support reporting filters on appointment_date / is_cancelled / is_control
-CREATE INDEX IF NOT EXISTS public.doctoralia_appointments_ingestion_appointment_dims_idx
+CREATE INDEX IF NOT EXISTS doctoralia_appointments_ingestion_appointment_dims_idx
   ON public.doctoralia_appointments_ingestion
   USING btree (appointment_date, is_cancelled, is_control);
 
 -- Support joining / deriving patient_key from doctoralia_id
-CREATE INDEX IF NOT EXISTS public.doctoralia_appointments_ingestion_doctoralia_id_idx
+CREATE INDEX IF NOT EXISTS doctoralia_appointments_ingestion_doctoralia_id_idx
   ON public.doctoralia_appointments_ingestion
   USING btree (doctoralia_id);
 
 -- Support joining / deriving patient_key from phone_normalized
-CREATE INDEX IF NOT EXISTS public.doctoralia_appointments_ingestion_phone_normalized_idx
+CREATE INDEX IF NOT EXISTS doctoralia_appointments_ingestion_phone_normalized_idx
   ON public.doctoralia_appointments_ingestion
   USING btree (phone_normalized);
 
