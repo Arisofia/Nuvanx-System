@@ -44,7 +44,7 @@ BEGIN
         l.revenue AS lead_revenue_estimated,
         l.verified_revenue AS lead_revenue_verified,
         COALESCE(
-          dr.estado::appointment_status,
+          dr.estado::TEXT,
           l.appointment_status
         ) AS appointment_status,
         COALESCE(dr.timestamp_cita, l.attended_at) AS attended_at,
@@ -89,7 +89,7 @@ BEGIN
         l.revenue AS lead_revenue_estimated,
         l.verified_revenue AS lead_revenue_verified,
         COALESCE(
-          dr.estado::appointment_status,
+          dr.estado::TEXT,
           l.appointment_status
         ) AS appointment_status,
         COALESCE(dr.timestamp_cita, l.attended_at) AS attended_at,
