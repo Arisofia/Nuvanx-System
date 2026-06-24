@@ -47,7 +47,7 @@ SELECT
   l.user_id               AS lead_user_id,
   p.name                  AS patient_name,
   p.dni                   AS patient_dni,
-  COALESCE(p.phone, fs.patient_phone, fs.phone_normalized)::VARCHAR(64) AS patient_phone,
+  COALESCE(p.phone, fs.patient_phone, fs.phone_normalized)::TEXT AS patient_phone,
   p.last_visit            AS patient_last_visit,
   dp.doc_patient_id,
   dp.match_confidence,

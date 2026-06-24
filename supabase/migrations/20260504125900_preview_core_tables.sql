@@ -105,7 +105,7 @@ BEGIN
       NULL::UUID        AS lead_user_id,
       NULL::TEXT        AS patient_name,
       NULL::TEXT        AS patient_dni,
-      NULL::VARCHAR(64) AS patient_phone,
+      NULL::TEXT AS patient_phone,
       NULL::TIMESTAMPTZ AS patient_last_visit,
       NULL::TEXT        AS doc_patient_id,
       NULL::NUMERIC     AS match_confidence,
