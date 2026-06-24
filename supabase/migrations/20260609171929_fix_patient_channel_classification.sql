@@ -34,14 +34,14 @@ other_financial as (
     'other'::text as channel_group,
     coalesce(fs.source_system, 'doctoralia'::varchar)::text as channel_source,
     coalesce(fs.template_name, 'Doctoralia / otros'::varchar)::text as campaign_name,
-    coalesce(nullif(trim(fs.patient_name), ''), nullif(trim(fs.template_patient_name), ''), nullif(trim(fs.patient_phone), ''), 'Paciente sin nombre') as client_name,
+    coalesce(nullif(trim(fs.patient_name), ''), nullif(trim(fs.patient_phone), ''), 'Paciente sin nombre') as client_name,
     fs.phone_normalized,
     null::text as email_normalized,
     fs.template_name::text as treatment_name,
     coalesce(fs.amount_net, 0::numeric) as revenue,
     true as is_attributable_patient,
     'financial_settlement'::text as source_record_type,
-    lower(coalesce(nullif(fs.phone_normalized, ''), nullif(regexp_replace(coalesce(fs.patient_phone, ''), '\D', '', 'g'), ''), nullif(fs.patient_dni::text, ''), nullif(fs.patient_name::text, ''), nullif(fs.template_patient_name, ''), fs.id::text)) as identity_key
+    lower(coalesce(nullif(fs.phone_normalized, ''), nullif(regexp_replace(coalesce(fs.patient_phone, ''), '\D', '', 'g'), ''), nullif(fs.patient_dni::text, ''), nullif(fs.patient_name::text, ''), fs.id::text)) as identity_key
   from public.financial_settlements fs
   where extract(year from fs.settled_at) >= 2024
     and fs.source_system::text = 'doctoralia'
