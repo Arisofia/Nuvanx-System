@@ -13,6 +13,11 @@ DECLARE
   selected_account TEXT;
   selected_page TEXT;
 BEGIN
+  IF to_regclass('public.integrations') IS NULL THEN
+    RAISE NOTICE 'Skipping Meta integration dedup v3: public.integrations does not exist yet.';
+    RETURN;
+  END IF;
+
   -- Prefer the row with page context, then connected status, then latest update.
   WITH ranked AS (
     SELECT
@@ -148,8 +153,24 @@ END $$;
 
 -- Remove cache records keyed with comma-joined account IDs so dashboards cannot
 -- serve stale aggregate results generated from polluted scalar account IDs.
-DELETE FROM public.meta_cache
-WHERE id ~ 'act_[0-9]+,act_[0-9]+';
+DO $$
+BEGIN
+  IF to_regclass('public.meta_cache') IS NULL THEN
+    RAISE NOTICE 'Skipping polluted Meta cache cleanup: public.meta_cache does not exist yet.';
+    RETURN;
+  END IF;
 
-CREATE UNIQUE INDEX IF NOT EXISTS integrations_user_service_unique_idx
-  ON public.integrations (user_id, service);
+  DELETE FROM public.meta_cache
+  WHERE id ~ 'act_[0-9]+,act_[0-9]+';
+END $$;
+
+DO $$
+BEGIN
+  IF to_regclass('public.integrations') IS NULL THEN
+    RAISE NOTICE 'Skipping integrations_user_service_unique_idx creation: public.integrations does not exist yet.';
+    RETURN;
+  END IF;
+
+  CREATE UNIQUE INDEX IF NOT EXISTS integrations_user_service_unique_idx
+    ON public.integrations (user_id, service);
+END $$;

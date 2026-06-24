@@ -65,7 +65,7 @@ LEFT JOIN LATERAL (
     (CASE
       WHEN sub_dp.lead_id = l.id THEN sub_dp.match_class
       ELSE 'exact_phone'
-    END)::VARCHAR(32) AS match_class
+    END)::TEXT AS match_class
   FROM   public.doctoralia_patients sub_dp
   WHERE  (sub_dp.lead_id = l.id)
     OR   (
