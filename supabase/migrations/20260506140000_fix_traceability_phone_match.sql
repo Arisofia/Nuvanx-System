@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS public.financial_settlements (
   patient_id UUID,
   lead_id UUID,
   patient_name TEXT,
+  patient_dni TEXT,
   template_id TEXT,
   template_name TEXT,
   amount_net NUMERIC(14, 2),

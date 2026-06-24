@@ -5,7 +5,8 @@
 -- Step 1: Add the column when the table exists (idempotent/order-safe).
 ALTER TABLE IF EXISTS public.financial_settlements
   ADD COLUMN IF NOT EXISTS patient_phone TEXT,
-  ADD COLUMN IF NOT EXISTS patient_name TEXT;
+  ADD COLUMN IF NOT EXISTS patient_name TEXT,
+  ADD COLUMN IF NOT EXISTS patient_dni TEXT;
 
 -- Step 2: Backfill patient_phone from patients.phone if that column exists.
 DO $$
