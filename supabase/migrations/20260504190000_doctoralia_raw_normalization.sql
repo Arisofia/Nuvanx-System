@@ -4,6 +4,7 @@
 ALTER TABLE public.doctoralia_raw
   ADD COLUMN IF NOT EXISTS timestamp_cita      TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS timestamp_creacion  TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS created_record_at   TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS lead_time_days      NUMERIC(8,3),
   ADD COLUMN IF NOT EXISTS lead_time_hours     NUMERIC(8,2),
   ADD COLUMN IF NOT EXISTS fecha_mes           TEXT,
