@@ -9,6 +9,7 @@ DO $$
 DECLARE
   target_views constant text[] := ARRAY[
     'vw_doctoralia_customer_behavior_monthly',
+    'v_new_clients_by_channel_detail',
     'vw_doctoralia_lead_traceability_unified',
     'v_figma_meta_signal_health',
     'vw_doctoralia_trazabilidad_360',
