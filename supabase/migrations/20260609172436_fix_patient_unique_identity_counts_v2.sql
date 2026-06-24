@@ -1,4 +1,5 @@
 drop view if exists public.v_new_clients_by_channel_monthly;
+drop view if exists public.v_new_clients_by_channel_detail cascade;
 
 create or replace view public.v_new_clients_by_channel_detail as
 with social_leads as (
@@ -35,15 +36,15 @@ other_financial as (
     fs.clinic_id,
     'other'::text as channel_group,
     coalesce(fs.source_system, 'doctoralia'::varchar)::text as channel_source,
-    coalesce(fs.agenda_name, fs.intermediary_name, fs.template_name, 'Doctoralia / otros'::varchar)::text as campaign_name,
-    coalesce(nullif(trim(fs.patient_name), ''), nullif(trim(fs.template_patient_name), ''), nullif(trim(fs.patient_phone), ''), 'Paciente sin nombre') as client_name,
+    coalesce(fs.template_name, 'Doctoralia / otros'::varchar)::text as campaign_name,
+    coalesce(nullif(trim(fs.patient_name), ''), nullif(trim(fs.patient_phone), ''), 'Paciente sin nombre') as client_name,
     fs.phone_normalized,
     null::text as email_normalized,
     fs.template_name::text as treatment_name,
     coalesce(fs.amount_net, 0::numeric) as revenue,
     true as is_attributable_patient,
     'financial_settlement'::text as source_record_type,
-    lower(coalesce(nullif(fs.phone_normalized, ''), nullif(regexp_replace(coalesce(fs.patient_phone, ''), '\D', '', 'g'), ''), nullif(fs.patient_dni::text, ''), nullif(fs.patient_name::text, ''), nullif(fs.template_patient_name, ''), fs.id::text)) as identity_key
+    lower(coalesce(nullif(fs.phone_normalized, ''), nullif(regexp_replace(coalesce(fs.patient_phone, ''), '\D', '', 'g'), ''), nullif(fs.patient_dni::text, ''), nullif(fs.patient_name::text, ''), fs.id::text)) as identity_key
   from public.financial_settlements fs
   where extract(year from fs.settled_at) >= 2024
     and fs.source_system::text = 'doctoralia'

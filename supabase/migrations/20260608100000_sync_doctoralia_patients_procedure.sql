@@ -3,6 +3,9 @@
 -- Purpose: Ensures doctoralia_patients is kept in sync with financial_settlements.
 -- =============================================================================
 
+ALTER TABLE IF EXISTS public.financial_settlements
+  ADD COLUMN IF NOT EXISTS patient_dni TEXT;
+
 -- 1. Create a function to sync doctoralia_patients from financial_settlements
 CREATE OR REPLACE FUNCTION public.sync_doctoralia_patients()
 RETURNS INTEGER

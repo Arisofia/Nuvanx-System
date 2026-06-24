@@ -12,7 +12,12 @@ DO $$
 DECLARE
   target_job RECORD;
 BEGIN
-  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+    RAISE NOTICE 'Skipping Meta daily insights schedule: pg_cron extension is not installed';
+    RETURN;
+  END IF;
+
+  BEGIN
     FOR target_job IN
       SELECT jobid
       FROM cron.job
@@ -49,6 +54,9 @@ BEGIN
       );
       $job$
     );
-  END IF;
+  EXCEPTION
+    WHEN insufficient_privilege THEN
+      RAISE NOTICE 'Skipping Meta daily insights schedule due to insufficient pg_cron privileges';
+  END;
 END;
 $$;

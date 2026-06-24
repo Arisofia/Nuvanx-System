@@ -8,6 +8,11 @@
 
 SET search_path TO public;
 
+-- Ensure fresh preview databases and legacy branches have the free-form notes column
+-- before the retroactive classifier references l2.notes.
+ALTER TABLE public.leads
+  ADD COLUMN IF NOT EXISTS notes TEXT;
+
 -- ─── 1. Replace function with extended treatment keyword list ─────────────────
 CREATE OR REPLACE FUNCTION public.classify_meta_lead_stage(
   p_raw_field_data  JSONB,

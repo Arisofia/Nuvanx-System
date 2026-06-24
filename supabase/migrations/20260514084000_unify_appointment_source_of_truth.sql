@@ -8,8 +8,12 @@ CREATE TABLE IF NOT EXISTS public.meta_attribution (
   ad_id TEXT,
   ad_name TEXT,
   captured_at TIMESTAMPTZ DEFAULT now(),
-  inserted_at TIMESTAMPTZ DEFAULT now()
+  inserted_at TIMESTAMPTZ DEFAULT now(),
+  created_at TIMESTAMPTZ DEFAULT now()
 );
+
+ALTER TABLE public.meta_attribution
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
 
 CREATE INDEX IF NOT EXISTS idx_meta_attribution_lead_id
   ON public.meta_attribution (lead_id);
@@ -44,7 +48,7 @@ BEGIN
         l.revenue AS lead_revenue_estimated,
         l.verified_revenue AS lead_revenue_verified,
         COALESCE(
-          dr.estado::appointment_status,
+          dr.estado::TEXT,
           l.appointment_status
         ) AS appointment_status,
         COALESCE(dr.timestamp_cita, l.attended_at) AS attended_at,
@@ -89,7 +93,7 @@ BEGIN
         l.revenue AS lead_revenue_estimated,
         l.verified_revenue AS lead_revenue_verified,
         COALESCE(
-          dr.estado::appointment_status,
+          dr.estado::TEXT,
           l.appointment_status
         ) AS appointment_status,
         COALESCE(dr.timestamp_cita, l.attended_at) AS attended_at,

@@ -11,6 +11,9 @@
 
 BEGIN;
 
+ALTER TABLE IF EXISTS public.financial_settlements
+  ADD COLUMN IF NOT EXISTS patient_name TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_financial_settlements_clinic_phone_any
   ON public.financial_settlements (clinic_id, phone_normalized)
   WHERE phone_normalized IS NOT NULL;

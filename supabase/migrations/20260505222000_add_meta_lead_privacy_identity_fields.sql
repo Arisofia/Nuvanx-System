@@ -18,6 +18,7 @@ ALTER TABLE public.leads
   ADD COLUMN IF NOT EXISTS telefono_hash      TEXT,
   ADD COLUMN IF NOT EXISTS email_hash         TEXT,
   ADD COLUMN IF NOT EXISTS raw_field_data     JSONB,
+  ADD COLUMN IF NOT EXISTS notes              TEXT,
   ADD COLUMN IF NOT EXISTS lead_quality_score INT;
 
 COMMENT ON COLUMN public.leads.meta_ad_id      IS 'Meta ad ID for asset tracking and ad-level attribution';
@@ -30,4 +31,5 @@ COMMENT ON COLUMN public.leads.asset_url       IS 'Creative asset URL (image or 
 COMMENT ON COLUMN public.leads.telefono_hash   IS 'SHA-256 hash of the lead telephone for privacy-preserving identity matching';
 COMMENT ON COLUMN public.leads.email_hash      IS 'SHA-256 hash of the lead email for privacy-preserving identity matching';
 COMMENT ON COLUMN public.leads.raw_field_data  IS 'Raw mapped Meta field_data values for future audit and custom questions';
+COMMENT ON COLUMN public.leads.notes           IS 'Free-form lead notes and Meta form answers used by CRM classification rules';
 COMMENT ON COLUMN public.leads.lead_quality_score IS 'Operational lead quality score; can be populated by business rules later';

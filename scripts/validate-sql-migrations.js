@@ -37,6 +37,11 @@ for (const file of walkSqlFiles(MIGRATIONS_DIR)) {
   for (const call of unsafeFinancialAlter) {
     failures.push(`${rel}: uses unsafe ${call}; use ALTER TABLE IF EXISTS or wrap in to_regclass('public.financial_settlements') guard.`);
   }
+
+  const schemaQualifiedCreateIndex = executableSql.match(/CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+NOT\s+EXISTS\s+)?[a-z_][\w$]*\.[a-z_][\w$]*/gi) || [];
+  for (const statement of schemaQualifiedCreateIndex) {
+    failures.push(`${rel}: uses schema-qualified index name in ${statement}; keep the index identifier unqualified and schema-qualify the target table instead.`);
+  }
 }
 
 if (failures.length > 0) {
@@ -44,4 +49,4 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log(`OK ${walkSqlFiles(MIGRATIONS_DIR).length} Supabase SQL migrations passed placeholder and pg_cron guards`);
+console.log(`OK ${walkSqlFiles(MIGRATIONS_DIR).length} Supabase SQL migrations passed placeholder, pg_cron, and index-name guards`);

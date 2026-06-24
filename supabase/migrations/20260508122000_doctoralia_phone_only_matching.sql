@@ -70,7 +70,8 @@ ALTER TABLE public.leads
   ADD COLUMN IF NOT EXISTS phone_normalized TEXT;
 
 ALTER TABLE IF EXISTS public.financial_settlements
-  ADD COLUMN IF NOT EXISTS phone_normalized TEXT;
+  ADD COLUMN IF NOT EXISTS phone_normalized TEXT,
+  ADD COLUMN IF NOT EXISTS patient_phone TEXT;
 
 DO $$
 BEGIN
@@ -93,16 +94,28 @@ WHERE phone IS NOT NULL
 
 DO $$
 BEGIN
-  IF to_regclass('public.financial_settlements') IS NOT NULL THEN
-    UPDATE public.financial_settlements
-    SET phone_normalized = public.normalize_phone(patient_phone)
-    WHERE source_system = 'doctoralia'
-      AND patient_phone IS NOT NULL
-      AND public.normalize_phone(patient_phone) IS NOT NULL
-      AND phone_normalized IS DISTINCT FROM public.normalize_phone(patient_phone);
-  ELSE
+  IF to_regclass('public.financial_settlements') IS NULL THEN
     RAISE NOTICE 'Skipping financial_settlements phone normalization backfill: table does not exist yet';
+    RETURN;
   END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'financial_settlements'
+      AND column_name = 'patient_phone'
+  ) THEN
+    RAISE NOTICE 'Skipping financial_settlements phone normalization backfill: patient_phone column does not exist yet';
+    RETURN;
+  END IF;
+
+  UPDATE public.financial_settlements
+  SET phone_normalized = public.normalize_phone(patient_phone)
+  WHERE source_system = 'doctoralia'
+    AND patient_phone IS NOT NULL
+    AND public.normalize_phone(patient_phone) IS NOT NULL
+    AND phone_normalized IS DISTINCT FROM public.normalize_phone(patient_phone);
 END $$;
 
 DO $$

@@ -11,6 +11,9 @@ BEGIN
     RETURN;
   END IF;
 
+  ALTER TABLE public.doctoralia_raw
+    ADD COLUMN IF NOT EXISTS created_record_at TIMESTAMPTZ;
+
   SELECT c.relkind
   INTO appointment_relkind
   FROM pg_class c

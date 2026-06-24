@@ -13,7 +13,7 @@
 
 drop view if exists public.v_figma_campaign_kpis;
 drop view if exists public.vw_campaign_performance_real;
-drop view if exists public.vw_doctor_performance_real;
+drop view if exists public.vw_doctor_performance_real cascade;
 
 create view public.vw_campaign_performance_real as
 select
@@ -89,29 +89,54 @@ set (security_invoker = true);
 grant select on public.vw_campaign_performance_real to service_role;
 grant select on public.vw_campaign_performance_real to authenticated;
 
-create view public.vw_doctor_performance_real as
-select
-  d.id as doctor_id,
-  d.name as doctor_name,
-  d.specialty,
-  d.is_active,
-  0::bigint as total_appointments,
-  0::bigint as attended_count,
-  0::bigint as no_show_count,
-  0::bigint as cancelled_count,
-  0::bigint as confirmed_count,
-  null::numeric as attended_rate_pct,
-  null::numeric as no_show_rate_pct,
-  0::numeric as estimated_revenue,
-  0::numeric as verified_revenue_crm,
-  d.clinic_id as clinic_id
-from public.doctors d;
+do $$
+begin
+  if to_regclass('public.doctors') is not null then
+    execute $view$
+      create view public.vw_doctor_performance_real as
+      select
+        d.id as doctor_id,
+        d.name as doctor_name,
+        d.specialty,
+        d.is_active,
+        0::bigint as total_appointments,
+        0::bigint as attended_count,
+        0::bigint as no_show_count,
+        0::bigint as cancelled_count,
+        0::bigint as confirmed_count,
+        null::numeric as attended_rate_pct,
+        null::numeric as no_show_rate_pct,
+        0::numeric as estimated_revenue,
+        0::numeric as verified_revenue_crm,
+        d.clinic_id as clinic_id
+      from public.doctors d
+    $view$;
+  else
+    execute $view$
+      create view public.vw_doctor_performance_real as
+      select
+        null::uuid as doctor_id,
+        null::text as doctor_name,
+        null::text as specialty,
+        null::boolean as is_active,
+        0::bigint as total_appointments,
+        0::bigint as attended_count,
+        0::bigint as no_show_count,
+        0::bigint as cancelled_count,
+        0::bigint as confirmed_count,
+        null::numeric as attended_rate_pct,
+        null::numeric as no_show_rate_pct,
+        0::numeric as estimated_revenue,
+        0::numeric as verified_revenue_crm,
+        null::uuid as clinic_id
+      where false
+    $view$;
+  end if;
 
-alter view public.vw_doctor_performance_real
-set (security_invoker = true);
-
-grant select on public.vw_doctor_performance_real to service_role;
-grant select on public.vw_doctor_performance_real to authenticated;
+  execute 'alter view public.vw_doctor_performance_real set (security_invoker = true)';
+  execute 'grant select on public.vw_doctor_performance_real to service_role';
+  execute 'grant select on public.vw_doctor_performance_real to authenticated';
+end $$;
 
 create view public.v_figma_campaign_kpis as
 select

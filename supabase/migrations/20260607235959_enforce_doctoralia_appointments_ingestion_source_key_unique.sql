@@ -1,19 +1,20 @@
 -- =============================================================================
 -- Enforce unique constraint on doctoralia_appointments_ingestion.source_key
--- 
--- CRITICAL FIX: The upsert operation in scripts/populate-doctoralia-appointments.js
--- requires a unique index/constraint on source_key. PostgreSQL error 42P10 indicates
--- the index doesn't exist in production despite being defined in earlier migrations.
 --
--- This migration ensures the unique index is applied.
+-- The ingestion table is created later in some preview migration replays. Keep
+-- this production repair migration order-safe by skipping when the table is not
+-- present; the table-creation migration also creates the same unique index.
 -- =============================================================================
 
 BEGIN;
 
--- First, verify no duplicate source_key values exist
--- If this query returns rows, we have a data quality issue that must be resolved first
 DO $$
 BEGIN
+  IF to_regclass('public.doctoralia_appointments_ingestion') IS NULL THEN
+    RAISE NOTICE 'Skipping Doctoralia ingestion source_key uniqueness repair: table does not exist yet';
+    RETURN;
+  END IF;
+
   IF EXISTS (
     SELECT 1
     FROM public.doctoralia_appointments_ingestion
@@ -23,24 +24,19 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'Cannot add unique constraint: duplicate source_key values detected. Run deduplication first.';
   END IF;
-END $$;
 
--- Create the unique index if it doesn't already exist
-CREATE UNIQUE INDEX IF NOT EXISTS ux_doctoralia_appointments_ingestion_source_key
-  ON public.doctoralia_appointments_ingestion (source_key);
+  EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS ux_doctoralia_appointments_ingestion_source_key ON public.doctoralia_appointments_ingestion (source_key)';
 
--- Verify the index was created
-DO $$
-BEGIN
   IF NOT EXISTS (
     SELECT 1
     FROM pg_indexes
-    WHERE tablename = 'doctoralia_appointments_ingestion'
+    WHERE schemaname = 'public'
+      AND tablename = 'doctoralia_appointments_ingestion'
       AND indexname = 'ux_doctoralia_appointments_ingestion_source_key'
   ) THEN
     RAISE EXCEPTION 'Failed to create unique index on source_key';
   END IF;
-  
+
   RAISE NOTICE 'Unique index ux_doctoralia_appointments_ingestion_source_key successfully created or verified';
 END $$;
 

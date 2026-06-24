@@ -1,3 +1,17 @@
+ALTER TABLE public.leads
+  ADD COLUMN IF NOT EXISTS crm_stage TEXT,
+  ADD COLUMN IF NOT EXISTS utm_source TEXT,
+  ADD COLUMN IF NOT EXISTS utm_medium TEXT,
+  ADD COLUMN IF NOT EXISTS utm_campaign TEXT;
+
+ALTER TABLE IF EXISTS public.financial_settlements
+  ADD COLUMN IF NOT EXISTS lead_id UUID,
+  ADD COLUMN IF NOT EXISTS amount NUMERIC(14, 2),
+  ADD COLUMN IF NOT EXISTS settlement_date TIMESTAMPTZ;
+
+ALTER TABLE IF EXISTS public.meta_attribution
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+
 -- Migration: create_figma_data_views
 -- Description: Create views for Figma presentations using existing NUVANX tables
 -- Date: 2026-06-07T18:00:00Z

@@ -60,7 +60,7 @@ SELECT
   -- ── patient details placeholders ─────────────────────────────────────────
   NULL::TEXT              AS patient_name,
   NULL::TEXT              AS patient_dni,
-  NULL::VARCHAR(64)       AS patient_phone,
+  NULL::TEXT              AS patient_phone,
   NULL::TIMESTAMPTZ       AS patient_last_visit,
   -- ── Doctoralia match quality placeholders ────────────────────────────────
   NULL::TEXT              AS doc_patient_id,
