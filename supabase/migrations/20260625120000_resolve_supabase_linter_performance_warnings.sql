@@ -9,26 +9,26 @@ BEGIN
     CREATE POLICY deck_progress_select_own ON public.deck_progress
       FOR SELECT
       TO authenticated
-      USING (user_id = (SELECT auth.uid()::text));
+      USING (user_id = auth.uid()::text);
 
     DROP POLICY IF EXISTS deck_progress_insert_own ON public.deck_progress;
     CREATE POLICY deck_progress_insert_own ON public.deck_progress
       FOR INSERT
       TO authenticated
-      WITH CHECK (user_id = (SELECT auth.uid()::text));
+      WITH CHECK (user_id = auth.uid()::text);
 
     DROP POLICY IF EXISTS deck_progress_update_own ON public.deck_progress;
     CREATE POLICY deck_progress_update_own ON public.deck_progress
       FOR UPDATE
       TO authenticated
-      USING (user_id = (SELECT auth.uid()::text))
-      WITH CHECK (user_id = (SELECT auth.uid()::text));
+      USING (user_id = auth.uid()::text)
+      WITH CHECK (user_id = auth.uid()::text);
 
     DROP POLICY IF EXISTS deck_progress_delete_own ON public.deck_progress;
     CREATE POLICY deck_progress_delete_own ON public.deck_progress
       FOR DELETE
       TO authenticated
-      USING (user_id = (SELECT auth.uid()::text));
+      USING (user_id = auth.uid()::text);
   ELSE
     RAISE NOTICE 'Skipping deck_progress linter policy rewrite: table does not exist';
   END IF;
@@ -51,8 +51,8 @@ BEGIN
         FOR INSERT
         TO authenticated
         WITH CHECK (
-          COALESCE(((SELECT auth.jwt()) ->> 'is_anonymous')::boolean, false) IS FALSE
-          AND user_id = (SELECT auth.uid())
+          COALESCE((auth.jwt() ->> 'is_anonymous')::boolean, false) IS FALSE
+          AND user_id = auth.uid()
         );
     END IF;
   ELSE
