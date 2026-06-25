@@ -1,4 +1,6 @@
 -- add_pixel_ids_and_actions_column
+-- Canonical Meta Pixel / Dataset: 1497940655079106
+-- Deprecated pixel 1405503384615251 must not be reintroduced by fresh database builds.
 DO $$
 BEGIN
   -- 1. Actualización de integrations
@@ -6,8 +8,14 @@ BEGIN
     UPDATE public.integrations
     SET metadata = jsonb_set(
       jsonb_set(
-        jsonb_set(metadata, '{pixelIdGoya}', '"1405503384615251"'),
-        '{pixelIdChamberi}', '"877262375461917"'
+        jsonb_set(
+          jsonb_set(
+            jsonb_set(metadata, '{pixelId}', '"1497940655079106"'),
+            '{pixel_id}', '"1497940655079106"'
+          ),
+          '{pixelIdGoya}', '"1497940655079106"'
+        ),
+        '{pixelIdChamberi}', '"1497940655079106"'
       ),
       '{adAccountIdGoya}', '"act_9523446201036125"'
     )
