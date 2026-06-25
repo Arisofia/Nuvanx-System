@@ -19,7 +19,12 @@ CREATE INDEX IF NOT EXISTS doctoralia_appointments_ingestion_phone_normalized_id
   ON public.doctoralia_appointments_ingestion
   USING btree (phone_normalized);
 
-CREATE OR REPLACE VIEW public.doctoralia_appointments
+-- Recreate dependent reporting views explicitly because PostgreSQL cannot
+-- change an existing view column type through CREATE OR REPLACE VIEW.
+DROP VIEW IF EXISTS public.vw_doctoralia_customer_behavior_monthly;
+DROP VIEW IF EXISTS public.doctoralia_appointments;
+
+CREATE VIEW public.doctoralia_appointments
 WITH (security_invoker = true) AS
 SELECT
   id,
