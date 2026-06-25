@@ -79,7 +79,7 @@ DECLARE
   );
   target_policy jsonb;
   pol record;
-  anonymous_guard constant text := 'COALESCE(((SELECT auth.jwt()) ->> ''is_anonymous'')::boolean, false) IS FALSE';
+  anonymous_guard constant text := 'COALESCE((auth.jwt() ->> ''is_anonymous'')::boolean, false) IS FALSE';
   new_qual text;
   new_with_check text;
 BEGIN
