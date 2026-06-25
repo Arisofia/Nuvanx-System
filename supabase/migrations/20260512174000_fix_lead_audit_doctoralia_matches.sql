@@ -51,7 +51,7 @@ SELECT
   p.last_visit            AS patient_last_visit,
   dp.doc_patient_id,
   dp.match_confidence,
-  dp.match_class,
+  dp.match_class::VARCHAR(32) AS match_class,
   fs_first.settled_at     AS first_settlement_at
 FROM public.leads l
 LEFT JOIN LATERAL (SELECT l.clinic_id) u(clinic_id) ON TRUE
@@ -65,7 +65,7 @@ LEFT JOIN LATERAL (
     (CASE
       WHEN sub_dp.lead_id = l.id THEN sub_dp.match_class
       ELSE 'exact_phone'
-    END)::TEXT AS match_class
+    END)::VARCHAR(32) AS match_class
   FROM   public.doctoralia_patients sub_dp
   WHERE  (sub_dp.lead_id = l.id)
     OR   (
