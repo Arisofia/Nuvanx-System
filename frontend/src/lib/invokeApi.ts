@@ -27,11 +27,12 @@ export async function invokeApi<T = unknown>(functionName: string, init?: Invoke
 
   const headers = new Headers(init?.headers ?? {})
   headers.set('Authorization', `Bearer ${accessToken}`)
+  headers.set('Accept', 'application/json; charset=utf-8')
 
   let body: string | undefined
   if (init?.body !== undefined) {
     if (!headers.has('Content-Type')) {
-      headers.set('Content-Type', 'application/json')
+      headers.set('Content-Type', 'application/json; charset=utf-8')
     }
     body = JSON.stringify(init.body)
   }
