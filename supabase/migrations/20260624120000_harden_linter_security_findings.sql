@@ -65,9 +65,10 @@ DECLARE
   );
   target_policy jsonb;
   pol record;
-  anonymous_guard constant text := 'COALESCE(((SELECT auth.jwt()) ->> ''is_anonymous'')::boolean, false) IS FALSE';
+  anonymous_guard constant text := 'COALESCE((auth.jwt() ->> ''is_anonymous'')::boolean, false) IS FALSE';
   new_qual text;
   new_with_check text;
+  needs_update boolean;
 BEGIN
   FOR target_policy IN SELECT * FROM jsonb_array_elements(target_policies)
   LOOP
@@ -90,12 +91,14 @@ BEGIN
 
     new_qual := NULL;
     new_with_check := NULL;
+    needs_update := false;
 
     IF pol.qual IS NOT NULL THEN
       IF pol.qual ILIKE '%is_anonymous%' THEN
         new_qual := pol.qual;
       ELSE
         new_qual := format('(%s) AND (%s)', anonymous_guard, pol.qual);
+        needs_update := true;
       END IF;
     END IF;
 
@@ -104,34 +107,42 @@ BEGIN
         new_with_check := pol.with_check;
       ELSE
         new_with_check := format('(%s) AND (%s)', anonymous_guard, pol.with_check);
+        needs_update := true;
       END IF;
     END IF;
 
-    IF new_qual IS NOT NULL AND new_with_check IS NOT NULL THEN
-      EXECUTE format(
-        'ALTER POLICY %I ON %I.%I USING (%s) WITH CHECK (%s)',
-        pol.policyname,
-        pol.schemaname,
-        pol.tablename,
-        new_qual,
-        new_with_check
-      );
-    ELSIF new_qual IS NOT NULL THEN
-      EXECUTE format(
-        'ALTER POLICY %I ON %I.%I USING (%s)',
-        pol.policyname,
-        pol.schemaname,
-        pol.tablename,
-        new_qual
-      );
-    ELSIF new_with_check IS NOT NULL THEN
-      EXECUTE format(
-        'ALTER POLICY %I ON %I.%I WITH CHECK (%s)',
-        pol.policyname,
-        pol.schemaname,
-        pol.tablename,
-        new_with_check
-      );
+    -- Only update if changes are needed
+    IF needs_update THEN
+      BEGIN
+        IF new_qual IS NOT NULL AND new_with_check IS NOT NULL THEN
+          EXECUTE format(
+            'ALTER POLICY %I ON %I.%I USING (%s) WITH CHECK (%s)',
+            pol.policyname,
+            pol.schemaname,
+            pol.tablename,
+            new_qual,
+            new_with_check
+          );
+        ELSIF new_qual IS NOT NULL THEN
+          EXECUTE format(
+            'ALTER POLICY %I ON %I.%I USING (%s)',
+            pol.policyname,
+            pol.schemaname,
+            pol.tablename,
+            new_qual
+          );
+        ELSIF new_with_check IS NOT NULL THEN
+          EXECUTE format(
+            'ALTER POLICY %I ON %I.%I WITH CHECK (%s)',
+            pol.policyname,
+            pol.schemaname,
+            pol.tablename,
+            new_with_check
+          );
+        END IF;
+      EXCEPTION WHEN OTHERS THEN
+        RAISE NOTICE 'Failed to update policy %I on %I.%I: %', pol.policyname, pol.schemaname, pol.tablename, SQLERRM;
+      END;
     END IF;
   END LOOP;
 END $$;
