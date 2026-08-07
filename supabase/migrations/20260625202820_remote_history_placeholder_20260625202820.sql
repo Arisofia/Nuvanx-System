@@ -1,0 +1,5 @@
+-- Remote history placeholder for migration 20260625202820
+-- This migration was applied to the remote database but was missing from the local repository
+-- after the repository was archived and reactivated.
+-- This placeholder ensures local and remote migration history are synchronized.
+-- No actual schema changes are needed as this migration was already applied remotely.
