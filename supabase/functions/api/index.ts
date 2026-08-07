@@ -1548,7 +1548,7 @@ async function handleRequest(req: Request): Promise<Response> {
   const sendJson = (data: unknown, status = 200, extraHeaders: Record<string, string> = {}) => {
     return new Response(JSON.stringify(data), {
       status,
-      headers: { ...corsHeaders, ...extraHeaders, 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, ...extraHeaders, 'Content-Type': 'application/json; charset=utf-8' },
     });
   };
 
