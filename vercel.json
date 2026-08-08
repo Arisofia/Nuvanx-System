@@ -7,6 +7,17 @@
       "source": "/api/:path*",
       "destination": "https://ssvvuuysgxyqvmovrlvk.supabase.co/functions/v1/api/:path*"
     }
+  ],
+  "headers": [
+    {
+      "source": "/index.html",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    }
   ]
 }
 
