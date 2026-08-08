@@ -1,5 +1,18 @@
 {
   "buildCommand": "cd frontend && npm run build",
   "outputDirectory": "frontend/dist",
-  "installCommand": "cd frontend && npm install --include=dev --legacy-peer-deps"
+  "installCommand": "cd frontend && npm install --include=dev --legacy-peer-deps",
+  "routes": [
+    {
+      "handle": "filesystem"
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "https://ssvvuuysgxyqvmovrlvk.supabase.co/functions/v1/api/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
 }
