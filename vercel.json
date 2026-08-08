@@ -1,20 +1,6 @@
 {
+  "framework": null,
   "buildCommand": "npm run build",
   "outputDirectory": "frontend/dist",
-  "installCommand": "npm run install:all",
-  "routes": [
-    {
-      "src": "/assets/(.*)",
-      "headers": {
-        "Cache-Control": "public, max-age=31536000, immutable"
-      }
-    },
-    {
-      "src": "/api/(.*)",
-      "dest": "https://ssvvuuysgxyqvmovrlvk.supabase.co/functions/v1/api/$1"
-    },
-    {
-      "handle": "filesystem"
-    }
-  ]
+  "installCommand": "npm run install:all"
 }
