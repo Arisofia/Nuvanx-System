@@ -24,7 +24,7 @@
       ]
     },
     {
-      "source": "/((?!api/|assets/).*)",
+      "source": "/index.html",
       "headers": [
         {
           "key": "Content-Type",
