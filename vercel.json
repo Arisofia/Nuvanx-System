@@ -1,19 +1,5 @@
 {
   "buildCommand": "cd frontend && rm -rf dist node_modules/.vite && npm run build",
   "outputDirectory": "frontend/dist",
-  "installCommand": "npm run install:all",
-  "rewrites": [
-    {
-      "source": "/assets/:match*",
-      "destination": "/assets/:match*"
-    },
-    {
-      "source": "/api/:path*",
-      "destination": "https://ssvvuuysgxyqvmovrlvk.supabase.co/functions/v1/api/:path*"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
-    }
-  ]
+  "installCommand": "npm run install:all"
 }
