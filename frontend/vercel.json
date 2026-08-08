@@ -9,7 +9,7 @@
       "destination": "https://ssvvuuysgxyqvmovrlvk.supabase.co/functions/v1/api/:path*"
     },
     {
-      "source": "/((?!api/|assets/).*)",
+      "source": "/(.*)",
       "destination": "/index.html"
     }
   ]
