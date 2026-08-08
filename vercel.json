@@ -1,6 +1,6 @@
 {
-  "buildCommand": "npm run build",
-  "outputDirectory": "frontend/dist",
+  "buildCommand": "npm run build && cp -r frontend/dist public",
+  "outputDirectory": "public",
   "installCommand": "npm run install:all",
   "rewrites": [
     {
