@@ -1,6 +1,6 @@
 {
-  "buildCommand": "echo \"Build timestamp: $(date)\" && npm run build",
-  "outputDirectory": "frontend/dist",
+  "buildCommand": "cd frontend && rm -rf dist node_modules/.vite && npm run build && mv dist dist-new",
+  "outputDirectory": "frontend/dist-new",
   "installCommand": "npm run install:all",
   "routes": [
     {
