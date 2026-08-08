@@ -44,6 +44,10 @@ export default ({ mode }) => {
     cssMinify: 'esbuild',
     rollupOptions: {
       output: {
+        // Add build timestamp to force new hashes
+        entryFileNames: `assets/[name]-[hash].js`,
+        chunkFileNames: `assets/[name]-[hash].js`,
+        assetFileNames: `assets/[name]-[hash].[ext]`,
         // Manual chunking to optimize bundle size
         manualChunks(id) {
           if (id.includes('recharts') || id.includes('d3-') || id.includes('victory')) {
