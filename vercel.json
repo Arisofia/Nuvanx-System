@@ -7,5 +7,16 @@
       "source": "/api/:path*",
       "destination": "https://ssvvuuysgxyqvmovrlvk.supabase.co/functions/v1/api/:path*"
     }
+  ],
+  "headers": [
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/javascript; charset=utf-8"
+        }
+      ]
+    }
   ]
 }
