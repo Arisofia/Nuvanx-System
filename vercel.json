@@ -2,10 +2,23 @@
   "buildCommand": "echo \"Build timestamp: $(date)\" && npm run build",
   "outputDirectory": "frontend/dist",
   "installCommand": "npm run install:all",
-  "rewrites": [
+  "routes": [
     {
-      "source": "/api/:path*",
-      "destination": "https://ssvvuuysgxyqvmovrlvk.supabase.co/functions/v1/api/:path*"
+      "src": "/assets/(.*)",
+      "headers": {
+        "Cache-Control": "public, max-age=31536000, immutable"
+      }
+    },
+    {
+      "src": "/api/(.*)",
+      "dest": "https://ssvvuuysgxyqvmovrlvk.supabase.co/functions/v1/api/$1"
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
     }
   ]
 }
