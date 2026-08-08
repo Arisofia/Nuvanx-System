@@ -1,5 +1,5 @@
 {
-  "buildCommand": "cd frontend && npm run build",
+  "buildCommand": "cd frontend && rm -rf node_modules dist && npm install --include=dev --legacy-peer-deps && npm run build",
   "outputDirectory": "frontend/dist",
   "installCommand": "cd frontend && npm install --include=dev --legacy-peer-deps",
   "rewrites": [
