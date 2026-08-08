@@ -2,5 +2,24 @@
   "buildCommand": "cd frontend && rm -rf dist node_modules/.vite && npm run build",
   "outputDirectory": "frontend/dist",
   "installCommand": "cd frontend && npm install --include=dev --legacy-peer-deps",
-  "framework": null
+  "framework": null,
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate, proxy-revalidate, max-age=0"
+        },
+        {
+          "key": "Pragma",
+          "value": "no-cache"
+        },
+        {
+          "key": "Expires",
+          "value": "0"
+        }
+      ]
+    }
+  ]
 }
