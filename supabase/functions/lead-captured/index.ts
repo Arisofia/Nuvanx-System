@@ -1,5 +1,7 @@
 // NUVANX canonical lead-captured ingestion.
-// WordPress signs timestamp.body with the verified HubSpot private-app token.
+// WordPress signs timestamp.body with a domain-separated HMAC key derived from
+// the verified HubSpot private-app token. The raw HubSpot token is never used
+// directly as the capture-signing key.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 declare const Deno: any;
@@ -11,6 +13,7 @@ const HUBSPOT_ACCESS_TOKEN_ENV = (Deno.env.get("HUBSPOT_ACCESS_TOKEN") || "").tr
 const CANONICAL_FORM_ID = "5042522a-0bc5-4381-ac3e-5aee8649b69c";
 const ALLOWED_ORIGINS = new Set(["https://nuvanx.com", "https://www.nuvanx.com", "https://staging2.nuvanx.com"]);
 const SIGNATURE_MAX_SKEW_SECONDS = 300;
+const CAPTURE_HMAC_CONTEXT = "nuvanx-lead-capture-hmac-key-v1";
 
 class ValidationError extends Error {
   status: number;
@@ -58,6 +61,10 @@ async function hmacHex(secret: string, message: string): Promise<string> {
   return Array.from(new Uint8Array(signature)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+async function deriveCaptureHmacKey(token: string): Promise<string> {
+  return await hmacHex(token, CAPTURE_HMAC_CONTEXT);
+}
+
 async function resolveHubspotToken(admin: any): Promise<string> {
   if (HUBSPOT_ACCESS_TOKEN_ENV) return HUBSPOT_ACCESS_TOKEN_ENV;
   const { data, error } = await admin.rpc("nvx_get_runtime_secret", { p_name: "HUBSPOT_ACCESS_TOKEN" });
@@ -75,7 +82,8 @@ async function authenticateSignedBody(req: Request, rawBody: string, admin: any)
 
   const token = await resolveHubspotToken(admin);
   if (!token) throw new ValidationError("Runtime bootstrap required", 503);
-  const expected = await hmacHex(token, `${timestampRaw}.${rawBody}`);
+  const hmacKey = await deriveCaptureHmacKey(token);
+  const expected = await hmacHex(hmacKey, `${timestampRaw}.${rawBody}`);
   return await timingSafeHexMatch(receivedSignature, expected);
 }
 
