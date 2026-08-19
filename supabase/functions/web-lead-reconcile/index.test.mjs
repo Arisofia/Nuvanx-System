@@ -33,7 +33,7 @@ describe("web lead reconciliation contract", () => {
     expect(source).toContain('source: "website_hubspot"');
     expect(source).toContain('external_id: `website:${nvxLeadId}`');
     const insertLead = source.indexOf('.from("leads").insert(leadPayload)');
-    const finalizer = source.indexOf('rpc("finalize_web_lead_reconciliation"');
+    const finalizer = source.indexOf("await finalizeReconciliation(", insertLead);
     expect(insertLead).toBeGreaterThan(-1);
     expect(finalizer).toBeGreaterThan(insertLead);
   });
