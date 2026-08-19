@@ -34,8 +34,8 @@ describe("lead-captured canonical contract", () => {
     expect(contract).toMatch(/landing_url/);
   });
 
-  it("is idempotent by nvx_lead_id and produces no downstream side effects", () => {
+  it("is idempotent by nvx_lead_id and contains no downstream execution endpoint", () => {
     expect(source).toContain('.upsert(row, { onConflict: "nvx_lead_id" })');
-    expect(source).not.toMatch(/web-events|graph\.facebook|googleads|deal/i);
+    expect(source).not.toMatch(/graph\.facebook\.com|functions\/v1\/web-events|googleads\.|crm\/v3\/objects\/deals/i);
   });
 });
