@@ -12,8 +12,8 @@ describe("RevOps dispatcher contract", () => {
     expect(source).toContain('message: "Forbidden"');
   });
 
-  it("allowlists only reconciliation and Deal Factory workers", () => {
-    expect(source).toContain('new Set(["web-lead-reconcile", "deal-factory"])');
+  it("allowlists only governed RevOps workers", () => {
+    expect(source).toContain('new Set(["web-lead-reconcile", "deal-factory", "google-data-manager-export"])');
     expect(source).toContain("if (!ALLOWED_WORKERS.has(worker))");
   });
 
