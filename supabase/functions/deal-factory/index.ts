@@ -4,13 +4,14 @@ declare const Deno: any;
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-const HUBSPOT_ACCESS_TOKEN = Deno.env.get("HUBSPOT_ACCESS_TOKEN") || "";
+const HUBSPOT_ACCESS_TOKEN_ENV = Deno.env.get("HUBSPOT_ACCESS_TOKEN") || "";
 const DEFAULT_OWNER_ID = (Deno.env.get("HUBSPOT_DEFAULT_DEAL_OWNER_ID") || "").trim();
 const HUBSPOT_BASE = "https://api.hubapi.com";
 const API_VERSION = "2026-03";
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
 let cachedDefaultDealContactAssociationTypeId: number | null = null;
+let runtimeHubspotToken = HUBSPOT_ACCESS_TOKEN_ENV.trim();
 
 const PIPELINE_ID = "3707782370";
 const STAGES = Object.freeze({
@@ -34,11 +35,40 @@ function json(body: Record<string, unknown>, status = 200) {
   });
 }
 
+async function sha256Bytes(raw: string): Promise<Uint8Array> {
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw)));
+}
+
+async function secretMatches(received: string, expected: string): Promise<boolean> {
+  if (!received || !expected) return false;
+  const a = await sha256Bytes(received);
+  const b = await sha256Bytes(expected);
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+
+async function requireServiceRole(req: Request): Promise<boolean> {
+  const auth = String(req.headers.get("Authorization") || "").trim();
+  const match = auth.match(/^Bearer\s+(.+)$/i);
+  return match ? await secretMatches(match[1], SERVICE_ROLE) : false;
+}
+
+async function resolveHubspotToken(admin: any): Promise<string> {
+  if (runtimeHubspotToken) return runtimeHubspotToken;
+  const { data, error } = await admin.rpc("nvx_get_runtime_secret", { p_name: "HUBSPOT_ACCESS_TOKEN" });
+  if (error || !data) throw new Error("HubSpot runtime credential unavailable");
+  runtimeHubspotToken = String(data).trim();
+  return runtimeHubspotToken;
+}
+
 async function hubspot(path: string, init: RequestInit = {}) {
+  if (!runtimeHubspotToken) throw new Error("HubSpot runtime credential unavailable");
   const response = await fetch(`${HUBSPOT_BASE}${path}`, {
     ...init,
     headers: {
-      Authorization: `Bearer ${HUBSPOT_ACCESS_TOKEN}`,
+      Authorization: `Bearer ${runtimeHubspotToken}`,
       "Content-Type": "application/json",
       ...(init.headers || {}),
     },
@@ -107,7 +137,6 @@ async function findExistingDeal(name: string) {
 
 async function defaultDealContactAssociationTypeId(): Promise<number> {
   if (cachedDefaultDealContactAssociationTypeId !== null) return cachedDefaultDealContactAssociationTypeId;
-
   const payload = await hubspot(`/crm/associations/${API_VERSION}/deals/contacts/labels`);
   const results = Array.isArray(payload?.results) ? payload.results : [];
   const defaultType = results.find((item: any) => item?.category === "HUBSPOT_DEFINED" && (item?.label === null || item?.label === ""));
@@ -210,12 +239,20 @@ async function processProjection(admin: any, projection: any) {
 
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ success: false, message: "Method not allowed" }, 405);
-  if (!SUPABASE_URL || !SERVICE_ROLE || !HUBSPOT_ACCESS_TOKEN) return json({ success: false, message: "Server configuration error" }, 500);
+  if (!SUPABASE_URL || !SERVICE_ROLE) return json({ success: false, message: "Server configuration error" }, 500);
+  if (!(await requireServiceRole(req))) return json({ success: false, message: "Forbidden" }, 403);
 
   const body = await req.json().catch(() => ({}));
   const requestedLimit = Number(body?.limit || DEFAULT_LIMIT);
   const limit = Math.max(1, Math.min(MAX_LIMIT, Number.isFinite(requestedLimit) ? Math.trunc(requestedLimit) : DEFAULT_LIMIT));
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
+
+  try {
+    await resolveHubspotToken(admin);
+  } catch (error: any) {
+    console.error("[deal-factory]", error?.message || error);
+    return json({ success: false, message: "Server configuration error" }, 500);
+  }
 
   const { data: rows, error } = await admin
     .from("hubspot_deal_projections")
