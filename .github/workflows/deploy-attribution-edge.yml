@@ -15,6 +15,7 @@ on:
           - google-click-attribution
           - runtime-bootstrap
           - lead-captured
+          - revops-dispatcher
           - web-lead-reconcile
           - deal-factory
       confirm_production:
@@ -53,6 +54,7 @@ jobs:
           supabase/functions/web-events/index.test.mjs
           supabase/functions/lead-captured/index.test.mjs
           supabase/functions/runtime-bootstrap/index.test.mjs
+          supabase/functions/revops-dispatcher/index.test.mjs
           supabase/functions/web-lead-reconcile/index.test.mjs
           supabase/functions/deal-factory/index.test.mjs
 
@@ -63,6 +65,7 @@ jobs:
           supabase/functions/google-click-attribution/index.ts
           supabase/functions/runtime-bootstrap/index.ts
           supabase/functions/lead-captured/index.ts
+          supabase/functions/revops-dispatcher/index.ts
           supabase/functions/web-lead-reconcile/index.ts
           supabase/functions/deal-factory/index.ts
 
@@ -90,7 +93,7 @@ jobs:
           [ -n "${SUPABASE_ACCESS_TOKEN:-}" ] || { echo "::error::SUPABASE_ACCESS_TOKEN is required"; exit 1; }
           [ -n "${SUPABASE_PROJECT_REF:-}" ] || { echo "::error::SUPABASE_PROJECT_REF is required"; exit 1; }
           [[ "${SUPABASE_PROJECT_REF:-}" =~ ^[a-z0-9]{20}$ ]] || { echo "::error::SUPABASE_PROJECT_REF format is invalid"; exit 1; }
-          [[ "$DEPLOY_FUNCTION" =~ ^(all|web-events|google-click-attribution|runtime-bootstrap|lead-captured|web-lead-reconcile|deal-factory)$ ]] || { echo "::error::Unsupported function selection"; exit 1; }
+          [[ "$DEPLOY_FUNCTION" =~ ^(all|web-events|google-click-attribution|runtime-bootstrap|lead-captured|revops-dispatcher|web-lead-reconcile|deal-factory)$ ]] || { echo "::error::Unsupported function selection"; exit 1; }
           if [ -z "${DATABASE_URL:-}" ] && [ -z "${SUPABASE_DB_PASSWORD:-}" ]; then
             echo "::error::DATABASE_URL or SUPABASE_DB_PASSWORD is required"
             exit 1
@@ -121,8 +124,8 @@ jobs:
       - name: Apply canonical attribution/RevOps migrations
         if: >-
           ${{ inputs.function == 'all' || inputs.function == 'runtime-bootstrap' ||
-              inputs.function == 'lead-captured' || inputs.function == 'web-lead-reconcile' ||
-              inputs.function == 'deal-factory' }}
+              inputs.function == 'lead-captured' || inputs.function == 'revops-dispatcher' ||
+              inputs.function == 'web-lead-reconcile' || inputs.function == 'deal-factory' }}
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
@@ -177,6 +180,17 @@ jobs:
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           skip_link: true
           command: supabase functions deploy lead-captured --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+
+      - name: Deploy revops-dispatcher
+        if: ${{ inputs.function == 'all' || inputs.function == 'revops-dispatcher' }}
+        uses: ./.github/actions/supabase-link-run
+        with:
+          project_ref: ${{ env.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ env.DATABASE_URL }}
+          supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
+          skip_link: true
+          command: supabase functions deploy revops-dispatcher --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
 
       - name: Deploy web-lead-reconcile
         if: ${{ inputs.function == 'all' || inputs.function == 'web-lead-reconcile' }}
