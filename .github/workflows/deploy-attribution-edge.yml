@@ -1,0 +1,114 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
+name: Deploy Attribution Edge Functions
+
+on:
+  workflow_dispatch:
+    inputs:
+      function:
+        description: Attribution function to deploy
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - web-events
+          - google-click-attribution
+      confirm_production:
+        description: Type DEPLOY to authorize production deployment
+        required: true
+        type: string
+
+concurrency:
+  group: deploy-attribution-edge-production
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate attribution contracts
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Gate web-events P0 contract
+        run: npx vitest run supabase/functions/web-events/index.test.ts
+
+      - name: Type-check Edge Functions
+        run: npm run validate:edge-deno
+
+  deploy:
+    name: Deploy attribution functions
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      DEPLOY_FUNCTION: ${{ inputs.function }}
+      CONFIRM_PRODUCTION: ${{ inputs.confirm_production }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Fail closed unless production deployment is explicit
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$CONFIRM_PRODUCTION" = "DEPLOY" ] || { echo "::error::confirm_production must equal DEPLOY"; exit 1; }
+          [ -n "${SUPABASE_ACCESS_TOKEN:-}" ] || { echo "::error::SUPABASE_ACCESS_TOKEN is required"; exit 1; }
+          [ -n "${SUPABASE_PROJECT_REF:-}" ] || { echo "::error::SUPABASE_PROJECT_REF is required"; exit 1; }
+          [[ "${SUPABASE_PROJECT_REF:-}" =~ ^[a-z0-9]{20}$ ]] || { echo "::error::SUPABASE_PROJECT_REF format is invalid"; exit 1; }
+          [[ "$DEPLOY_FUNCTION" =~ ^(all|web-events|google-click-attribution)$ ]] || { echo "::error::Unsupported function selection"; exit 1; }
+          if [ -z "${DATABASE_URL:-}" ] && [ -z "${SUPABASE_DB_PASSWORD:-}" ]; then
+            echo "::error::DATABASE_URL or SUPABASE_DB_PASSWORD is required"
+            exit 1
+          fi
+
+      - name: Deploy google-click-attribution
+        if: ${{ inputs.function == 'all' || inputs.function == 'google-click-attribution' }}
+        uses: ./.github/actions/supabase-link-run
+        with:
+          project_ref: ${{ env.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ env.DATABASE_URL }}
+          supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
+          skip_link: true
+          command: |
+            set -euo pipefail
+            supabase functions deploy google-click-attribution --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+
+      - name: Deploy web-events
+        if: ${{ inputs.function == 'all' || inputs.function == 'web-events' }}
+        uses: ./.github/actions/supabase-link-run
+        with:
+          project_ref: ${{ env.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ env.DATABASE_URL }}
+          supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
+          skip_link: true
+          command: |
+            set -euo pipefail
+            supabase functions deploy web-events --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+
+      - name: Verify deployed attribution function inventory
+        uses: ./.github/actions/supabase-link-run
+        with:
+          project_ref: ${{ env.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ env.DATABASE_URL }}
+          supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
+          skip_link: true
+          command: |
+            set -euo pipefail
+            supabase functions list --project-ref "$SUPABASE_PROJECT_REF"
