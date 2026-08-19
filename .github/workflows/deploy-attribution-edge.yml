@@ -36,14 +36,18 @@ jobs:
           node-version: 22
           cache: npm
 
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
       - name: Install workspace dependencies
         run: npm ci
 
       - name: Gate web-events P0 contract
         run: npx vitest run supabase/functions/web-events/index.test.ts
 
-      - name: Type-check Edge Functions
-        run: npm run validate:edge-deno
+      - name: Type-check attribution Edge Functions
+        run: deno check --config=supabase/functions/deno.json supabase/functions/web-events/index.ts supabase/functions/google-click-attribution/index.ts
 
   deploy:
     name: Deploy attribution functions
