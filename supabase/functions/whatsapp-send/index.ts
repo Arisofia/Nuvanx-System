@@ -21,7 +21,7 @@ function bearerToken(req: Request): string | null {
   return token || null;
 }
 
-async function trackFirstOutbound(req: Request, leadId: string | null, messageId: string | null) {
+async function trackFirstHumanResponse(req: Request, leadId: string | null, messageId: string | null) {
   if (!leadId) return { tracked: false, reason: "lead_id_not_provided" };
   if (!SUPABASE_URL || !SERVICE_ROLE) return { tracked: false, reason: "tracking_not_configured" };
 
@@ -44,29 +44,35 @@ async function trackFirstOutbound(req: Request, leadId: string | null, messageId
       .maybeSingle();
     if (leadError || !lead?.id) return { tracked: false, reason: "lead_not_owned" };
 
-    const now = new Date().toISOString();
-    const { error: updateError } = await admin
-      .from("leads")
-      .update({ first_outbound_at: now, updated_at: now })
-      .eq("id", leadId)
-      .eq("user_id", userId)
-      .is("first_outbound_at", null);
-    if (updateError) return { tracked: false, reason: "lead_update_failed" };
+    const sentAt = new Date().toISOString();
+    const { data: slaRows, error: slaError } = await admin.rpc("mark_lead_human_first_response", {
+      p_lead_id: leadId,
+      p_user_id: userId,
+      p_sent_at: sentAt,
+    });
+    if (slaError || !Array.isArray(slaRows) || slaRows.length !== 1) {
+      return { tracked: false, reason: "lead_update_failed" };
+    }
 
+    const firstResponseAt = String(slaRows[0]?.first_response_at || "") || null;
     const { error: eventError } = await admin.from("lead_events").insert({
       lead_id: leadId,
       source_platform: "whatsapp",
       source_channel: "direct",
       channel_label: "WhatsApp",
       event_type: "outbound_response",
-      event_created_at: now,
-      captured_at: now,
+      event_created_at: sentAt,
+      captured_at: sentAt,
       resolution_status: "resolved",
-      raw_payload: messageId ? { message_id: messageId } : {},
+      raw_payload: {
+        ...(messageId ? { message_id: messageId } : {}),
+        actor: "human_authenticated",
+        sla_first_response_at: firstResponseAt,
+      },
     });
-    if (eventError) return { tracked: true, event_recorded: false, reason: "event_insert_failed" };
+    if (eventError) return { tracked: true, event_recorded: false, reason: "event_insert_failed", first_response_at: firstResponseAt };
 
-    return { tracked: true, event_recorded: true };
+    return { tracked: true, event_recorded: true, first_response_at: firstResponseAt };
   } catch {
     return { tracked: false, reason: "tracking_failed" };
   }
@@ -122,7 +128,7 @@ Deno.serve(async (req: Request) => {
   }
 
   const messageId = String(waData?.messages?.[0]?.id || "") || null;
-  const sla = await trackFirstOutbound(req, leadId, messageId);
+  const sla = await trackFirstHumanResponse(req, leadId, messageId);
 
   return json({
     success: true,
@@ -130,6 +136,7 @@ Deno.serve(async (req: Request) => {
     to,
     slaTracked: sla.tracked,
     slaEventRecorded: sla.event_recorded === true,
+    slaFirstResponseAt: sla.first_response_at || null,
     slaTrackingReason: sla.tracked && sla.event_recorded !== false ? null : sla.reason || null,
   });
 });
