@@ -5,6 +5,16 @@ import { fileURLToPath } from "node:url";
 const source = readFileSync(fileURLToPath(new URL("./index.ts", import.meta.url)), "utf8");
 
 describe("Google Data Manager exporter contract", () => {
+  it("requires the exact Supabase service-role credential before outbox access", () => {
+    expect(source).toContain("async function requireServiceRole");
+    expect(source).toContain("secretMatches(match[1], SERVICE_ROLE)");
+    expect(source).toContain('message: "Forbidden"');
+    const guard = source.indexOf("await requireServiceRole(req)");
+    const outbox = source.indexOf('from("google_data_manager_outbox")', guard);
+    expect(guard).toBeGreaterThan(-1);
+    expect(outbox).toBeGreaterThan(guard);
+  });
+
   it("uses the v1 event ingestion and request-status APIs", () => {
     expect(source).toContain('const INGEST_URL = "https://datamanager.googleapis.com/v1/events:ingest"');
     expect(source).toContain('const STATUS_URL = "https://datamanager.googleapis.com/v1/requestStatus:retrieve"');
