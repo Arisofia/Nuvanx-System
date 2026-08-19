@@ -1,6 +1,7 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
 name: Manual Maintenance
-run-name: Manual Maintenance · ${{ inputs.operation }}
+run-name: >-
+  Manual Maintenance · ${{ github.event_name == 'workflow_run' && 'master-release' || inputs.operation }}
 
 on:
   workflow_dispatch:
@@ -56,18 +57,35 @@ on:
         required: false
         default: '98'
         type: string
+  workflow_run:
+    workflows:
+      - Master System
+    types:
+      - completed
+    branches:
+      - main
 
 permissions:
   contents: read
 
 concurrency:
-  group: manual-maintenance-${{ inputs.operation }}
+  group: manual-maintenance-${{ github.event_name }}-${{ inputs.operation || github.event.workflow_run.id || github.run_id }}
   cancel-in-progress: false
 
 jobs:
   deploy-edge:
     name: Manual · Attribution and RevOps Edge deploy
-    if: ${{ inputs.operation == 'deploy_edge' }}
+    if: >-
+      ${{
+        inputs.operation == 'deploy_edge' ||
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_repository.full_name == github.repository &&
+          contains(github.event.workflow_run.head_commit.message, '[deploy-all]')
+        )
+      }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -75,8 +93,8 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-      DEPLOY_FUNCTION: ${{ inputs.function }}
-      CONFIRMATION: ${{ inputs.confirmation }}
+      DEPLOY_FUNCTION: ${{ github.event_name == 'workflow_run' && 'all' || inputs.function }}
+      CONFIRMATION: ${{ github.event_name == 'workflow_run' && 'DEPLOY' || inputs.confirmation }}
       NUVANX_SSH_HOST: ${{ secrets.NUVANX_SSH_HOST }}
       NUVANX_SSH_PORT: ${{ secrets.NUVANX_SSH_PORT }}
       NUVANX_SSH_USER: ${{ secrets.NUVANX_SSH_USER }}
@@ -86,6 +104,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -141,7 +162,7 @@ jobs:
             supabase/functions/deal-factory/index.ts
 
       - name: Rotate and synchronize first-party relay secrets
-        if: ${{ inputs.function == 'all' || inputs.function == 'web-events' || inputs.function == 'lead-captured' }}
+        if: ${{ env.DEPLOY_FUNCTION == 'all' || env.DEPLOY_FUNCTION == 'web-events' || env.DEPLOY_FUNCTION == 'lead-captured' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -201,7 +222,7 @@ jobs:
           echo 'RUNTIME_SECRET_SYNC=PASS stores=wordpress-production,wordpress-staging2,supabase-pending'
 
       - name: Synchronize relay secrets to Supabase
-        if: ${{ inputs.function == 'all' || inputs.function == 'web-events' || inputs.function == 'lead-captured' }}
+        if: ${{ env.DEPLOY_FUNCTION == 'all' || env.DEPLOY_FUNCTION == 'web-events' || env.DEPLOY_FUNCTION == 'lead-captured' }}
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
@@ -219,7 +240,7 @@ jobs:
               --project-ref "$SUPABASE_PROJECT_REF"
 
       - name: Preflight web-events secret
-        if: ${{ inputs.function == 'all' || inputs.function == 'web-events' }}
+        if: ${{ env.DEPLOY_FUNCTION == 'all' || env.DEPLOY_FUNCTION == 'web-events' }}
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
