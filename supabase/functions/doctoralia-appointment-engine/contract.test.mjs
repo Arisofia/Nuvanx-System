@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 
 const runner = readFileSync("scripts/refresh-doctoralia-appointment-engine.js", "utf8");
 const orchestrator = readFileSync("scripts/run-daily-sync.js", "utf8");
-const migration = readFileSync("supabase/migrations/20260819183000_revops_operating_contract.sql", "utf8");
+const migration = readFileSync("supabase/migrations/20260819171218_revops_operating_contract.sql", "utf8");
 
 describe("Doctoralia Appointment Engine contract", () => {
   it("runs only after canonical Doctoralia appointment ingestion", () => {
