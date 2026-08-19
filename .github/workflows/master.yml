@@ -500,3 +500,24 @@ jobs:
       function: all
       confirmation: DEPLOY
     secrets: inherit
+
+  probe-release-maintenance:
+    name: Probe · governed Edge maintenance
+    needs: [quality-backend, frontend, frontend-e2e, deploy-supabase]
+    if: >-
+      ${{
+        always() &&
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.head_ref == 'release/execute-maintenance-probe-20260819' &&
+        needs.quality-backend.result == 'success' &&
+        needs.frontend.result == 'success' &&
+        needs.frontend-e2e.result == 'success' &&
+        needs.deploy-supabase.result == 'skipped'
+      }}
+    uses: ./.github/workflows/manual-maintenance.yml
+    with:
+      operation: deploy_edge
+      function: all
+      confirmation: DEPLOY
+    secrets: inherit
