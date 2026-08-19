@@ -25,9 +25,17 @@ describe("runtime bootstrap contract", () => {
     expect(source).toContain("missingScopes.length");
   });
 
-  it("can persist only the allowlisted HubSpot runtime credential through the vault RPC", () => {
+  it("persists the allowlisted HubSpot credential only through the vault RPC", () => {
     expect(source).toContain('rpc("nvx_set_runtime_secret"');
     expect(source).toContain('p_name: "HUBSPOT_ACCESS_TOKEN"');
     expect(source).not.toMatch(/vault\.create_secret|vault\.update_secret/);
+  });
+
+  it("seeds the dispatcher with this runtime's own Supabase URL", () => {
+    expect(source).toContain('const SUPABASE_URL = (Deno.env.get("SUPABASE_URL") || "").trim()');
+    expect(source).toContain('rpc("nvx_set_revops_project_url"');
+    expect(source).toContain("p_value: SUPABASE_URL");
+    expect(source).toContain('project_route: "environment_local"');
+    expect(source).not.toContain("ssvvuuysgxyqvmovrlvk.supabase.co");
   });
 });
