@@ -24,6 +24,26 @@ function json(body: Record<string, unknown>, status = 200) {
   });
 }
 
+async function sha256Bytes(raw: string): Promise<Uint8Array> {
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw)));
+}
+
+async function secretMatches(received: string, expected: string): Promise<boolean> {
+  if (!received || !expected) return false;
+  const a = await sha256Bytes(received);
+  const b = await sha256Bytes(expected);
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+
+async function requireServiceRole(req: Request): Promise<boolean> {
+  const auth = String(req.headers.get("Authorization") || "").trim();
+  const match = auth.match(/^Bearer\s+(.+)$/i);
+  return match ? await secretMatches(match[1], SERVICE_ROLE) : false;
+}
+
 function digits(value: unknown): string {
   return String(value || "").replace(/\D/g, "");
 }
@@ -248,6 +268,7 @@ async function pollOne(admin: any, row: any, token: string) {
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ success: false, message: "Method not allowed" }, 405);
   if (!SUPABASE_URL || !SERVICE_ROLE) return json({ success: false, message: "Server configuration error" }, 500);
+  if (!(await requireServiceRole(req))) return json({ success: false, message: "Forbidden" }, 403);
 
   const body = await req.json().catch(() => ({}));
   const mode = body?.mode === "poll" ? "poll" : "deliver";

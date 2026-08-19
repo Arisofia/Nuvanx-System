@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       function:
-        description: Attribution function to deploy
+        description: Attribution/RevOps function to deploy
         required: true
         default: all
         type: choice
@@ -13,7 +13,12 @@ on:
           - all
           - web-events
           - google-click-attribution
+          - google-data-manager-export
+          - runtime-bootstrap
           - lead-captured
+          - revops-dispatcher
+          - web-lead-reconcile
+          - deal-factory
       confirm_production:
         description: Type DEPLOY to authorize production deployment
         required: true
@@ -25,7 +30,7 @@ concurrency:
 
 jobs:
   validate:
-    name: Validate attribution contracts
+    name: Validate attribution and RevOps contracts
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -44,14 +49,31 @@ jobs:
       - name: Install workspace dependencies
         run: npm ci
 
-      - name: Gate attribution contracts
-        run: npx vitest run supabase/functions/web-events/index.test.mjs supabase/functions/lead-captured/index.test.mjs
+      - name: Gate attribution and RevOps contracts
+        run: >-
+          npx vitest run
+          supabase/functions/web-events/index.test.mjs
+          supabase/functions/lead-captured/index.test.mjs
+          supabase/functions/runtime-bootstrap/index.test.mjs
+          supabase/functions/revops-dispatcher/index.test.mjs
+          supabase/functions/web-lead-reconcile/index.test.mjs
+          supabase/functions/deal-factory/index.test.mjs
+          supabase/functions/google-data-manager-export/index.test.mjs
 
-      - name: Type-check attribution Edge Functions
-        run: deno check --config=supabase/functions/deno.json supabase/functions/web-events/index.ts supabase/functions/google-click-attribution/index.ts supabase/functions/lead-captured/index.ts
+      - name: Type-check governed Edge Functions
+        run: >-
+          deno check --config=supabase/functions/deno.json
+          supabase/functions/web-events/index.ts
+          supabase/functions/google-click-attribution/index.ts
+          supabase/functions/google-data-manager-export/index.ts
+          supabase/functions/runtime-bootstrap/index.ts
+          supabase/functions/lead-captured/index.ts
+          supabase/functions/revops-dispatcher/index.ts
+          supabase/functions/web-lead-reconcile/index.ts
+          supabase/functions/deal-factory/index.ts
 
   deploy:
-    name: Deploy attribution functions
+    name: Deploy attribution and RevOps functions
     needs: validate
     runs-on: ubuntu-latest
     permissions:
@@ -74,13 +96,14 @@ jobs:
           [ -n "${SUPABASE_ACCESS_TOKEN:-}" ] || { echo "::error::SUPABASE_ACCESS_TOKEN is required"; exit 1; }
           [ -n "${SUPABASE_PROJECT_REF:-}" ] || { echo "::error::SUPABASE_PROJECT_REF is required"; exit 1; }
           [[ "${SUPABASE_PROJECT_REF:-}" =~ ^[a-z0-9]{20}$ ]] || { echo "::error::SUPABASE_PROJECT_REF format is invalid"; exit 1; }
-          [[ "$DEPLOY_FUNCTION" =~ ^(all|web-events|google-click-attribution|lead-captured)$ ]] || { echo "::error::Unsupported function selection"; exit 1; }
+          [[ "$DEPLOY_FUNCTION" =~ ^(all|web-events|google-click-attribution|google-data-manager-export|runtime-bootstrap|lead-captured|revops-dispatcher|web-lead-reconcile|deal-factory)$ ]] || { echo "::error::Unsupported function selection"; exit 1; }
           if [ -z "${DATABASE_URL:-}" ] && [ -z "${SUPABASE_DB_PASSWORD:-}" ]; then
             echo "::error::DATABASE_URL or SUPABASE_DB_PASSWORD is required"
             exit 1
           fi
 
-      - name: Preflight required Edge Function secrets
+      - name: Preflight legacy web-events secret only when CAPI is selected
+        if: ${{ inputs.function == 'all' || inputs.function == 'web-events' }}
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
@@ -96,19 +119,16 @@ jobs:
                 | tr '│|' '  ' \
                 | awk '{ for (i = 1; i <= NF; i += 1) if ($i ~ /^[A-Z][A-Z0-9_]+$/) { print $i; break } }'
             } | sort -u)"
-            require_secret() {
-              local name="$1"
-              grep -Fxq "$name" <<<"$secret_names" || { echo "::error::$name is not configured in Supabase"; exit 1; }
+            grep -Fxq 'NUVANX_WEB_EVENT_SECRET' <<<"$secret_names" || {
+              echo "::error::NUVANX_WEB_EVENT_SECRET is not configured in Supabase; web-events deploy remains blocked"
+              exit 1
             }
-            if [[ "$DEPLOY_FUNCTION" == "all" || "$DEPLOY_FUNCTION" == "web-events" ]]; then
-              require_secret 'NUVANX_WEB_EVENT_SECRET'
-            fi
-            if [[ "$DEPLOY_FUNCTION" == "all" || "$DEPLOY_FUNCTION" == "lead-captured" ]]; then
-              require_secret 'NUVANX_LEAD_CAPTURE_SECRET'
-            fi
 
-      - name: Apply canonical attribution migrations
-        if: ${{ inputs.function == 'all' || inputs.function == 'lead-captured' }}
+      - name: Apply canonical attribution/RevOps migrations
+        if: >-
+          ${{ inputs.function == 'all' || inputs.function == 'runtime-bootstrap' ||
+              inputs.function == 'lead-captured' || inputs.function == 'revops-dispatcher' ||
+              inputs.function == 'web-lead-reconcile' || inputs.function == 'deal-factory' }}
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
@@ -129,9 +149,18 @@ jobs:
           database_url: ${{ env.DATABASE_URL }}
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           skip_link: true
-          command: |
-            set -euo pipefail
-            supabase functions deploy google-click-attribution --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+          command: supabase functions deploy google-click-attribution --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+
+      - name: Deploy google-data-manager-export
+        if: ${{ inputs.function == 'all' || inputs.function == 'google-data-manager-export' }}
+        uses: ./.github/actions/supabase-link-run
+        with:
+          project_ref: ${{ env.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ env.DATABASE_URL }}
+          supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
+          skip_link: true
+          command: supabase functions deploy google-data-manager-export --project-ref "$SUPABASE_PROJECT_REF"
 
       - name: Deploy web-events
         if: ${{ inputs.function == 'all' || inputs.function == 'web-events' }}
@@ -142,9 +171,18 @@ jobs:
           database_url: ${{ env.DATABASE_URL }}
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           skip_link: true
-          command: |
-            set -euo pipefail
-            supabase functions deploy web-events --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+          command: supabase functions deploy web-events --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+
+      - name: Deploy runtime-bootstrap
+        if: ${{ inputs.function == 'all' || inputs.function == 'runtime-bootstrap' }}
+        uses: ./.github/actions/supabase-link-run
+        with:
+          project_ref: ${{ env.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ env.DATABASE_URL }}
+          supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
+          skip_link: true
+          command: supabase functions deploy runtime-bootstrap --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
 
       - name: Deploy lead-captured
         if: ${{ inputs.function == 'all' || inputs.function == 'lead-captured' }}
@@ -155,11 +193,10 @@ jobs:
           database_url: ${{ env.DATABASE_URL }}
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           skip_link: true
-          command: |
-            set -euo pipefail
-            supabase functions deploy lead-captured --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+          command: supabase functions deploy lead-captured --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
 
-      - name: Verify deployed attribution function inventory
+      - name: Deploy revops-dispatcher
+        if: ${{ inputs.function == 'all' || inputs.function == 'revops-dispatcher' }}
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
@@ -167,6 +204,36 @@ jobs:
           database_url: ${{ env.DATABASE_URL }}
           supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
           skip_link: true
-          command: |
-            set -euo pipefail
-            supabase functions list --project-ref "$SUPABASE_PROJECT_REF"
+          command: supabase functions deploy revops-dispatcher --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+
+      - name: Deploy web-lead-reconcile
+        if: ${{ inputs.function == 'all' || inputs.function == 'web-lead-reconcile' }}
+        uses: ./.github/actions/supabase-link-run
+        with:
+          project_ref: ${{ env.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ env.DATABASE_URL }}
+          supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
+          skip_link: true
+          command: supabase functions deploy web-lead-reconcile --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Deploy deal-factory
+        if: ${{ inputs.function == 'all' || inputs.function == 'deal-factory' }}
+        uses: ./.github/actions/supabase-link-run
+        with:
+          project_ref: ${{ env.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ env.DATABASE_URL }}
+          supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
+          skip_link: true
+          command: supabase functions deploy deal-factory --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Verify deployed function inventory
+        uses: ./.github/actions/supabase-link-run
+        with:
+          project_ref: ${{ env.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ env.DATABASE_URL }}
+          supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
+          skip_link: true
+          command: supabase functions list --project-ref "$SUPABASE_PROJECT_REF"
