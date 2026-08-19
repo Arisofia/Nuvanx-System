@@ -13,6 +13,7 @@ on:
           - all
           - web-events
           - google-click-attribution
+          - lead-captured
       confirm_production:
         description: Type DEPLOY to authorize production deployment
         required: true
@@ -43,11 +44,11 @@ jobs:
       - name: Install workspace dependencies
         run: npm ci
 
-      - name: Gate web-events P0 contract
-        run: npx vitest run supabase/functions/web-events/index.test.mjs
+      - name: Gate attribution contracts
+        run: npx vitest run supabase/functions/web-events/index.test.mjs supabase/functions/lead-captured/index.test.mjs
 
       - name: Type-check attribution Edge Functions
-        run: deno check --config=supabase/functions/deno.json supabase/functions/web-events/index.ts supabase/functions/google-click-attribution/index.ts
+        run: deno check --config=supabase/functions/deno.json supabase/functions/web-events/index.ts supabase/functions/google-click-attribution/index.ts supabase/functions/lead-captured/index.ts
 
   deploy:
     name: Deploy attribution functions
@@ -73,11 +74,42 @@ jobs:
           [ -n "${SUPABASE_ACCESS_TOKEN:-}" ] || { echo "::error::SUPABASE_ACCESS_TOKEN is required"; exit 1; }
           [ -n "${SUPABASE_PROJECT_REF:-}" ] || { echo "::error::SUPABASE_PROJECT_REF is required"; exit 1; }
           [[ "${SUPABASE_PROJECT_REF:-}" =~ ^[a-z0-9]{20}$ ]] || { echo "::error::SUPABASE_PROJECT_REF format is invalid"; exit 1; }
-          [[ "$DEPLOY_FUNCTION" =~ ^(all|web-events|google-click-attribution)$ ]] || { echo "::error::Unsupported function selection"; exit 1; }
+          [[ "$DEPLOY_FUNCTION" =~ ^(all|web-events|google-click-attribution|lead-captured)$ ]] || { echo "::error::Unsupported function selection"; exit 1; }
           if [ -z "${DATABASE_URL:-}" ] && [ -z "${SUPABASE_DB_PASSWORD:-}" ]; then
             echo "::error::DATABASE_URL or SUPABASE_DB_PASSWORD is required"
             exit 1
           fi
+
+      - name: Preflight required Edge Function secrets
+        uses: ./.github/actions/supabase-link-run
+        with:
+          project_ref: ${{ env.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ env.DATABASE_URL }}
+          supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
+          skip_link: true
+          command: |
+            set -euo pipefail
+            secrets="$(supabase secrets list --project-ref "$SUPABASE_PROJECT_REF")"
+            if [[ "$DEPLOY_FUNCTION" == "all" || "$DEPLOY_FUNCTION" == "web-events" ]]; then
+              grep -q 'NUVANX_WEB_EVENT_SECRET' <<<"$secrets" || { echo "::error::NUVANX_WEB_EVENT_SECRET is not configured in Supabase"; exit 1; }
+            fi
+            if [[ "$DEPLOY_FUNCTION" == "all" || "$DEPLOY_FUNCTION" == "lead-captured" ]]; then
+              grep -q 'NUVANX_LEAD_CAPTURE_SECRET' <<<"$secrets" || { echo "::error::NUVANX_LEAD_CAPTURE_SECRET is not configured in Supabase"; exit 1; }
+            fi
+
+      - name: Apply canonical attribution migrations
+        if: ${{ inputs.function == 'all' || inputs.function == 'lead-captured' }}
+        uses: ./.github/actions/supabase-link-run
+        with:
+          project_ref: ${{ env.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ env.DATABASE_URL }}
+          supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
+          skip_link: false
+          command: |
+            set -euo pipefail
+            bash scripts/supabase-migrate.sh
 
       - name: Deploy google-click-attribution
         if: ${{ inputs.function == 'all' || inputs.function == 'google-click-attribution' }}
@@ -104,6 +136,19 @@ jobs:
           command: |
             set -euo pipefail
             supabase functions deploy web-events --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+
+      - name: Deploy lead-captured
+        if: ${{ inputs.function == 'all' || inputs.function == 'lead-captured' }}
+        uses: ./.github/actions/supabase-link-run
+        with:
+          project_ref: ${{ env.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ env.DATABASE_URL }}
+          supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
+          skip_link: true
+          command: |
+            set -euo pipefail
+            supabase functions deploy lead-captured --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
 
       - name: Verify deployed attribution function inventory
         uses: ./.github/actions/supabase-link-run
