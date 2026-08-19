@@ -29,18 +29,23 @@ describe("web lead reconciliation contract", () => {
     expect(source).toContain("if (isTruthy(props.nvx_is_test_lead))");
   });
 
-  it("creates a dedicated website_hubspot episode and only then writes applied_lead_id", () => {
+  it("creates a dedicated website_hubspot episode before calling the atomic finalizer", () => {
     expect(source).toContain('source: "website_hubspot"');
     expect(source).toContain('external_id: `website:${nvxLeadId}`');
     const insertLead = source.indexOf('.from("leads").insert(leadPayload)');
-    const appliedUpdate = source.indexOf("applied_lead_id: lead.id");
+    const finalizer = source.indexOf('rpc("finalize_web_lead_reconciliation"');
     expect(insertLead).toBeGreaterThan(-1);
-    expect(appliedUpdate).toBeGreaterThan(insertLead);
+    expect(finalizer).toBeGreaterThan(insertLead);
   });
 
-  it("queues downstream projections only after verified reconciliation", () => {
-    const appliedUpdate = source.indexOf("applied_lead_id: lead.id");
-    expect(source.indexOf('from("hubspot_deal_projections")', appliedUpdate)).toBeGreaterThan(appliedUpdate);
-    expect(source.indexOf('rpc("queue_google_data_manager_event"', appliedUpdate)).toBeGreaterThan(appliedUpdate);
+  it("does not write the reconciled FK or downstream queues in separate client-side transactions", () => {
+    expect(source).not.toContain("applied_lead_id: lead.id");
+    expect(source).not.toContain('from("hubspot_deal_projections").upsert');
+    expect(source).not.toContain('rpc("queue_google_data_manager_event"');
+    expect(source).toContain("async function finalizeReconciliation");
+  });
+
+  it("never marks an already-applied attribution as failed from a retry path", () => {
+    expect(source).toContain('.is("applied_lead_id", null)');
   });
 });
