@@ -17,6 +17,16 @@ const CANONICAL_EVENT_SOURCE_URL = "https://nuvanx.com/";
 
 const ALLOWED_ORIGINS = new Set(["https://nuvanx.com", "https://www.nuvanx.com"]);
 
+class RequestValidationError extends Error {
+  status: number;
+
+  constructor(message: string, status = 422) {
+    super(message);
+    this.name = "RequestValidationError";
+    this.status = status;
+  }
+}
+
 function cors(origin: string | null) {
   const headers: Record<string, string> = {
     "Access-Control-Allow-Headers": "content-type,x-nvx-web-event-secret",
@@ -134,9 +144,12 @@ async function resolveOwnerAndMeta(admin: any) {
     .select("metadata,status,updated_at")
     .eq("user_id", userId)
     .eq("service", "meta")
+    .eq("status", "connected")
     .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+
+  if (!integration) throw new Error("Connected Meta integration not found");
 
   const { data: cred } = await admin
     .from("credentials")
@@ -147,7 +160,7 @@ async function resolveOwnerAndMeta(admin: any) {
 
   if (!cred?.encrypted_key) throw new Error("Meta credential not found");
 
-  const metadata = integration?.metadata || {};
+  const metadata = integration.metadata || {};
   const pixelId = normalizeDigits(metadata.pixelId || metadata.pixel_id || META_PIXEL_ID);
   if (!pixelId) throw new Error("Meta Pixel ID not configured");
 
@@ -193,13 +206,13 @@ async function buildUserData(body: any, req: Request) {
 function sanitizeEventName(raw: unknown): string {
   const allowed = new Set(["PageView", "ViewContent", "Contact", "Lead"]);
   const value = String(raw || "").trim();
-  if (!allowed.has(value)) throw new Error("Unsupported event_name");
+  if (!allowed.has(value)) throw new RequestValidationError("Unsupported event_name");
   return value;
 }
 
 function sanitizeEventId(raw: unknown): string {
   const value = String(raw || "").trim();
-  if (!/^[A-Za-z0-9._:-]{8,128}$/.test(value)) throw new Error("Valid event_id is required");
+  if (!/^[A-Za-z0-9._:-]{8,128}$/.test(value)) throw new RequestValidationError("Valid event_id is required");
   return value;
 }
 
@@ -220,7 +233,7 @@ async function sendMetaCapi(params: { pixelId: string; accessToken: string; body
   const eventName = sanitizeEventName(body.event_name || body.eventName);
   const eventId = sanitizeEventId(body.event_id || body.eventId);
   const userData = await buildUserData(body, req);
-  if (Object.keys(userData).length === 0) throw new Error("No user_data available for CAPI event");
+  if (Object.keys(userData).length === 0) throw new RequestValidationError("No user_data available for CAPI event");
 
   const event: Record<string, unknown> = {
     event_name: eventName,
@@ -245,15 +258,11 @@ async function sendMetaCapi(params: { pixelId: string; accessToken: string; body
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  const text = await res.text();
-  let data: any = null;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    data = { text };
+  if (!res.ok) {
+    // Meta failures are an internal integration concern; do not leak provider details.
+    throw new Error(`Meta API failure ${res.status}`);
   }
-  if (!res.ok) throw new Error(data?.error?.message || data?.message || `Meta API ${res.status}`);
-  return { eventName, eventId, data };
+  return { eventName, eventId };
 }
 
 Deno.serve(async (req: Request) => {
@@ -296,6 +305,8 @@ Deno.serve(async (req: Request) => {
     return json({ success: true, eventName: result.eventName, eventId: result.eventId }, 200, origin);
   } catch (error: any) {
     console.error("[web-events] error", error?.message || error);
-    return json({ success: false, message: error?.message || "Internal error" }, 500, origin);
+    const status = error instanceof RequestValidationError ? error.status : 500;
+    const message = status >= 500 ? "Internal error" : error?.message || "Invalid request";
+    return json({ success: false, message }, status, origin);
   }
 });
