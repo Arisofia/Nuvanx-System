@@ -10,6 +10,7 @@ const HUBSPOT_BASE = "https://api.hubapi.com";
 const API_VERSION = "2026-03";
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
+let cachedDefaultDealContactAssociationTypeId: number | null = null;
 
 const PIPELINE_ID = "3707782370";
 const STAGES = Object.freeze({
@@ -105,12 +106,15 @@ async function findExistingDeal(name: string) {
 }
 
 async function defaultDealContactAssociationTypeId(): Promise<number> {
+  if (cachedDefaultDealContactAssociationTypeId !== null) return cachedDefaultDealContactAssociationTypeId;
+
   const payload = await hubspot(`/crm/associations/${API_VERSION}/deals/contacts/labels`);
   const results = Array.isArray(payload?.results) ? payload.results : [];
   const defaultType = results.find((item: any) => item?.category === "HUBSPOT_DEFINED" && (item?.label === null || item?.label === ""));
   const fallback = defaultType || results.find((item: any) => item?.category === "HUBSPOT_DEFINED");
   const id = Number(fallback?.typeId);
   if (!Number.isInteger(id) || id <= 0) throw new Error("Default deal-contact association unavailable");
+  cachedDefaultDealContactAssociationTypeId = id;
   return id;
 }
 
