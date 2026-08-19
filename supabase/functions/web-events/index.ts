@@ -10,7 +10,9 @@ const ENCRYPTION_KEY = Deno.env.get("ENCRYPTION_KEY") || "";
 const META_APP_SECRET = Deno.env.get("META_APP_SECRET") || "";
 const META_PIXEL_ID = Deno.env.get("META_PIXEL_ID") || "";
 const DEFAULT_LANDING_USER_EMAIL = Deno.env.get("DEFAULT_LANDING_USER_EMAIL") || Deno.env.get("LANDING_USER_EMAIL") || "";
-const SHARED_SECRET = (Deno.env.get("NUVANX_WEB_EVENT_SECRET") || "").trim();
+// One canonical first-party server relay secret is shared by lead-captured and web-events.
+// Keeping one runtime-only secret avoids configuration drift between the lineage ledger and CAPI relay.
+const SHARED_SECRET = (Deno.env.get("NUVANX_LEAD_CAPTURE_SECRET") || "").trim();
 const META_TEST_EVENT_CODE = (Deno.env.get("META_TEST_EVENT_CODE") || "").trim();
 const META_GRAPH = "https://graph.facebook.com/v22.0";
 const CANONICAL_EVENT_SOURCE_URL = "https://nuvanx.com/";
@@ -280,7 +282,7 @@ Deno.serve(async (req: Request) => {
   }
 
   if (!SHARED_SECRET) {
-    console.error("[web-events] NUVANX_WEB_EVENT_SECRET not configured");
+    console.error("[web-events] NUVANX_LEAD_CAPTURE_SECRET not configured");
     return json({ success: false, message: "Server configuration error" }, 500, origin);
   }
 
