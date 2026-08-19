@@ -12,7 +12,7 @@ declare
   v_limit integer;
   v_request_id bigint;
 begin
-  if p_worker not in ('web-lead-reconcile','deal-factory') then
+  if p_worker not in ('web-lead-reconcile','deal-factory','google-data-manager-export') then
     raise exception 'Unsupported RevOps worker';
   end if;
   v_limit := greatest(1, least(coalesce(p_limit, 25), 100));
