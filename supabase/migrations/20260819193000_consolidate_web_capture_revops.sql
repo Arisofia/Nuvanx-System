@@ -1,6 +1,10 @@
 -- Consolidate web capture -> lead -> Deal/Google reconciliation around web_lead_captures.
 -- Google attribution is optional; a successful HubSpot web capture can become an
 -- operational lead even when no Google click record exists.
+--
+-- IMPORTANT: this base migration intentionally creates no outbound pg_net route
+-- and no cron job. Environment-specific routing is installed by the following
+-- migration only after a runtime project URL can be provisioned into Vault.
 
 alter table public.web_lead_captures
   add column if not exists reconciliation_status text not null default 'pending',
@@ -186,94 +190,3 @@ $$;
 
 revoke all on function public.finalize_web_capture_reconciliation(uuid,uuid,bigint,text) from public, anon, authenticated;
 grant execute on function public.finalize_web_capture_reconciliation(uuid,uuid,bigint,text) to service_role;
-
--- Internal worker dispatcher. pg_net receives only a least-privilege Vault secret;
--- the Supabase service-role credential is never persisted in Postgres.
-create or replace function public.nvx_dispatch_revops_worker(p_worker text, p_limit integer default 25)
-returns bigint
-language plpgsql
-security definer
-set search_path = ''
-as $$
-declare
-  v_secret text;
-  v_url text;
-  v_limit integer;
-  v_request_id bigint;
-begin
-  if p_worker not in ('web-lead-reconcile','deal-factory') then
-    raise exception 'Unsupported RevOps worker';
-  end if;
-  v_limit := greatest(1, least(coalesce(p_limit, 25), 100));
-  select decrypted_secret into v_secret
-  from vault.decrypted_secrets
-  where name = 'REVOPS_INTERNAL_SECRET'
-  limit 1;
-  if v_secret is null or length(v_secret) < 32 then
-    raise exception 'Internal worker credential unavailable';
-  end if;
-
-  v_url := 'https://ssvvuuysgxyqvmovrlvk.supabase.co/functions/v1/' || p_worker;
-  select net.http_post(
-    url := v_url,
-    headers := pg_catalog.jsonb_build_object(
-      'Content-Type', 'application/json',
-      'x-nvx-internal-secret', v_secret
-    ),
-    body := pg_catalog.jsonb_build_object('limit', v_limit),
-    timeout_milliseconds := 5000
-  ) into v_request_id;
-  return v_request_id;
-end;
-$$;
-
-revoke all on function public.nvx_dispatch_revops_worker(text,integer) from public, anon, authenticated;
--- service_role may invoke it for diagnostics; cron/trigger execute under owner context.
-grant execute on function public.nvx_dispatch_revops_worker(text,integer) to service_role;
-
--- Immediate Deal Factory wake-up when a real reconciliation queues a projection.
-create or replace function public.nvx_wake_deal_factory_on_pending_projection()
-returns trigger
-language plpgsql
-security definer
-set search_path = ''
-as $$
-begin
-  if new.projection_status = 'pending'
-     and (tg_op = 'INSERT' or old.projection_status is distinct from 'pending') then
-    perform public.nvx_dispatch_revops_worker('deal-factory', 20);
-  end if;
-  return new;
-end;
-$$;
-
-revoke all on function public.nvx_wake_deal_factory_on_pending_projection() from public, anon, authenticated;
-
-drop trigger if exists hubspot_deal_projection_wake_worker on public.hubspot_deal_projections;
-create trigger hubspot_deal_projection_wake_worker
-after insert or update of projection_status on public.hubspot_deal_projections
-for each row execute function public.nvx_wake_deal_factory_on_pending_projection();
-
--- Recovery schedules: immediate paths remain primary, these recover transient
--- failures without human intervention. Re-creating by name is idempotent.
-do $$
-declare
-  v_job record;
-begin
-  for v_job in select jobid from cron.job where jobname in ('nvx-web-lead-reconcile','nvx-deal-factory') loop
-    perform cron.unschedule(v_job.jobid);
-  end loop;
-end;
-$$;
-
-select cron.schedule(
-  'nvx-web-lead-reconcile',
-  '*/5 * * * *',
-  $cron$select public.nvx_dispatch_revops_worker('web-lead-reconcile', 50);$cron$
-);
-
-select cron.schedule(
-  'nvx-deal-factory',
-  '*/5 * * * *',
-  $cron$select public.nvx_dispatch_revops_worker('deal-factory', 50);$cron$
-);
