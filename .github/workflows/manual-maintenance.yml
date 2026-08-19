@@ -136,30 +136,6 @@ jobs:
             supabase/functions/web-lead-reconcile/index.ts \
             supabase/functions/deal-factory/index.ts
 
-      - name: Preflight canonical first-party relay secret
-        if: ${{ env.DEPLOY_FUNCTION == 'all' || env.DEPLOY_FUNCTION == 'web-events' || env.DEPLOY_FUNCTION == 'lead-captured' }}
-        uses: ./.github/actions/supabase-link-run
-        with:
-          project_ref: ${{ env.SUPABASE_PROJECT_REF }}
-          supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
-          database_url: ${{ env.DATABASE_URL }}
-          supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
-          skip_link: true
-          command: |
-            set -euo pipefail
-            secrets="$(supabase secrets list --project-ref "$SUPABASE_PROJECT_REF")"
-            secret_names="$(
-              printf '%s\n' "$secrets" \
-                | tr '│|' '  ' \
-                | awk '{ for (i = 1; i <= NF; i += 1) if ($i ~ /^[A-Z][A-Z0-9_]+$/) { print $i; break } }' \
-                | sort -u
-            )"
-            grep -Fxq NUVANX_LEAD_CAPTURE_SECRET <<<"$secret_names" || {
-              echo '::error::NUVANX_LEAD_CAPTURE_SECRET is required by both lead-captured and web-events'
-              exit 1
-            }
-            echo 'CANONICAL_RELAY_SECRET=PASS'
-
       - name: Apply canonical migrations
         uses: ./.github/actions/supabase-link-run
         with:
@@ -185,7 +161,7 @@ jobs:
 
             deploy_one() {
               case "$1" in
-                web-events) supabase functions deploy web-events --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt ;;
+                web-events) supabase functions deploy web-events --project-ref "$SUPABASE_PROJECT_REF" ;;
                 google-click-attribution) supabase functions deploy google-click-attribution --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt ;;
                 google-data-manager-export) supabase functions deploy google-data-manager-export --project-ref "$SUPABASE_PROJECT_REF" ;;
                 runtime-bootstrap) supabase functions deploy runtime-bootstrap --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt ;;
