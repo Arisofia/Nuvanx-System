@@ -228,7 +228,7 @@ async function reconcileOne(admin: any, systemUser: any, hubspotToken: string, c
     }
 
     const phoneHash = await normalizedPhoneHash(admin, props.phone);
-    const google = await googleAttributionForLead(admin, nvxLeadId);
+    const google = capture.marketing_consent === true ? await googleAttributionForLead(admin, nvxLeadId) : null;
     if (google?.email_hash && expectedEmailHash && String(google.email_hash).toLowerCase() !== expectedEmailHash) {
       throw new Error("Google attribution email hash mismatch");
     }
@@ -336,7 +336,7 @@ Deno.serve(async (req: Request) => {
     ]);
     const { data: rows, error } = await admin
       .from("web_lead_captures")
-      .select("id,nvx_lead_id,form_id,hubspot_contact_id,email_hash,is_test_lead,test_run_id,first_attribution,conversion_attribution,captured_at,reconciliation_status,applied_lead_id")
+      .select("id,nvx_lead_id,form_id,hubspot_contact_id,email_hash,is_test_lead,test_run_id,marketing_consent,first_attribution,conversion_attribution,captured_at,reconciliation_status,applied_lead_id")
       .is("applied_lead_id", null)
       .in("reconciliation_status", ["pending", "failed", "qa_suppressed"])
       .order("captured_at", { ascending: true })
