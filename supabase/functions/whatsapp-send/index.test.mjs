@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const source = readFileSync(fileURLToPath(new URL("./index.ts", import.meta.url)), "utf8");
 const migration = readFileSync(
-  fileURLToPath(new URL("../../migrations/20260819190500_sla_human_first_response.sql", import.meta.url)),
+  fileURLToPath(new URL("../../migrations/20260819185655_sla_human_first_response.sql", import.meta.url)),
   "utf8",
 );
 
