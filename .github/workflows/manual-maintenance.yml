@@ -1,7 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
 name: Manual Maintenance
-run-name: >-
-  Manual Maintenance · ${{ github.event_name == 'workflow_run' && 'master-release' || inputs.operation }}
+run-name: Manual Maintenance · ${{ inputs.operation }}
 
 on:
   workflow_dispatch:
@@ -57,34 +56,18 @@ on:
         required: false
         default: '98'
         type: string
-  workflow_run:
-    workflows:
-      - Master System
-    types:
-      - completed
-    branches:
-      - main
 
 permissions:
   contents: read
 
 concurrency:
-  group: manual-maintenance-${{ github.event_name }}-${{ inputs.operation || github.event.workflow_run.id || github.run_id }}
+  group: manual-maintenance-${{ inputs.operation }}
   cancel-in-progress: false
 
 jobs:
   deploy-edge:
     name: Manual · Attribution and RevOps Edge deploy
-    if: >-
-      ${{
-        inputs.operation == 'deploy_edge' ||
-        (
-          github.event_name == 'workflow_run' &&
-          github.event.workflow_run.conclusion == 'success' &&
-          github.event.workflow_run.event == 'push' &&
-          github.event.workflow_run.head_repository.full_name == github.repository
-        )
-      }}
+    if: ${{ inputs.operation == 'deploy_edge' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -92,31 +75,18 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-      DEPLOY_FUNCTION: ${{ github.event_name == 'workflow_run' && 'all' || inputs.function }}
-      CONFIRMATION: ${{ github.event_name == 'workflow_run' && 'DEPLOY' || inputs.confirmation }}
+      DEPLOY_FUNCTION: ${{ inputs.function }}
+      CONFIRMATION: ${{ inputs.confirmation }}
     steps:
       - name: Checkout exact candidate
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
 
-      - name: Authorize maintenance release
-        id: authorize
+      - name: Validate explicit production authorization
         shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          if [[ "$EVENT_NAME" == 'workflow_run' ]]; then
-            message="$(git log -1 --pretty=%B)"
-            if [[ "$message" != *'[deploy-all]'* ]]; then
-              echo 'authorized=false' >> "$GITHUB_OUTPUT"
-              echo 'MANUAL_MAINTENANCE=SKIP no_deploy_all_marker'
-              exit 0
-            fi
-          fi
-
           test "$CONFIRMATION" = DEPLOY
           test -n "${SUPABASE_ACCESS_TOKEN:-}"
           test -n "${SUPABASE_PROJECT_REF:-}"
@@ -126,28 +96,22 @@ jobs:
             echo "::error::DATABASE_URL or SUPABASE_DB_PASSWORD is required"
             exit 1
           fi
-          echo 'authorized=true' >> "$GITHUB_OUTPUT"
-          echo "MANUAL_MAINTENANCE=AUTHORIZED function=$DEPLOY_FUNCTION"
 
       - name: Setup Node.js
-        if: steps.authorize.outputs.authorized == 'true'
         uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
 
       - name: Setup Deno
-        if: steps.authorize.outputs.authorized == 'true'
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
 
       - name: Install workspace dependencies
-        if: steps.authorize.outputs.authorized == 'true'
         run: npm ci
 
       - name: Validate attribution and RevOps contracts
-        if: steps.authorize.outputs.authorized == 'true'
         run: >-
           npx vitest run
           supabase/functions/web-events/index.test.mjs
@@ -159,7 +123,6 @@ jobs:
           supabase/functions/google-data-manager-export/index.test.mjs
 
       - name: Type-check governed Edge Functions
-        if: steps.authorize.outputs.authorized == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -174,9 +137,7 @@ jobs:
             supabase/functions/deal-factory/index.ts
 
       - name: Preflight canonical first-party relay secret
-        if: >-
-          steps.authorize.outputs.authorized == 'true' &&
-          (env.DEPLOY_FUNCTION == 'all' || env.DEPLOY_FUNCTION == 'web-events' || env.DEPLOY_FUNCTION == 'lead-captured')
+        if: ${{ env.DEPLOY_FUNCTION == 'all' || env.DEPLOY_FUNCTION == 'web-events' || env.DEPLOY_FUNCTION == 'lead-captured' }}
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
@@ -200,7 +161,6 @@ jobs:
             echo 'CANONICAL_RELAY_SECRET=PASS'
 
       - name: Apply canonical migrations
-        if: steps.authorize.outputs.authorized == 'true'
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
@@ -213,7 +173,6 @@ jobs:
             bash scripts/supabase-migrate.sh
 
       - name: Deploy selected Edge Function set
-        if: steps.authorize.outputs.authorized == 'true'
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
@@ -226,34 +185,15 @@ jobs:
 
             deploy_one() {
               case "$1" in
-                web-events)
-                  supabase functions deploy web-events --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
-                  ;;
-                google-click-attribution)
-                  supabase functions deploy google-click-attribution --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
-                  ;;
-                google-data-manager-export)
-                  supabase functions deploy google-data-manager-export --project-ref "$SUPABASE_PROJECT_REF"
-                  ;;
-                runtime-bootstrap)
-                  supabase functions deploy runtime-bootstrap --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
-                  ;;
-                lead-captured)
-                  supabase functions deploy lead-captured --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
-                  ;;
-                revops-dispatcher)
-                  supabase functions deploy revops-dispatcher --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
-                  ;;
-                web-lead-reconcile)
-                  supabase functions deploy web-lead-reconcile --project-ref "$SUPABASE_PROJECT_REF"
-                  ;;
-                deal-factory)
-                  supabase functions deploy deal-factory --project-ref "$SUPABASE_PROJECT_REF"
-                  ;;
-                *)
-                  echo "::error::Unsupported Edge Function: $1"
-                  exit 1
-                  ;;
+                web-events) supabase functions deploy web-events --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt ;;
+                google-click-attribution) supabase functions deploy google-click-attribution --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt ;;
+                google-data-manager-export) supabase functions deploy google-data-manager-export --project-ref "$SUPABASE_PROJECT_REF" ;;
+                runtime-bootstrap) supabase functions deploy runtime-bootstrap --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt ;;
+                lead-captured) supabase functions deploy lead-captured --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt ;;
+                revops-dispatcher) supabase functions deploy revops-dispatcher --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt ;;
+                web-lead-reconcile) supabase functions deploy web-lead-reconcile --project-ref "$SUPABASE_PROJECT_REF" ;;
+                deal-factory) supabase functions deploy deal-factory --project-ref "$SUPABASE_PROJECT_REF" ;;
+                *) echo "::error::Unsupported Edge Function: $1"; exit 1 ;;
               esac
             }
 
@@ -279,7 +219,7 @@ jobs:
 
   update-social-proof:
     name: Manual · Update WordPress social proof
-    if: ${{ github.event_name != 'workflow_run' && inputs.operation == 'update_social_proof' }}
+    if: ${{ inputs.operation == 'update_social_proof' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
