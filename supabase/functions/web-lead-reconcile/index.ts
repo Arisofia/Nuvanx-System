@@ -108,8 +108,19 @@ async function markAttribution(admin: any, id: string, patch: Record<string, unk
   const { error } = await admin
     .from("google_click_attributions")
     .update({ ...patch, last_reconciliation_attempt_at: new Date().toISOString() })
-    .eq("id", id);
+    .eq("id", id)
+    .is("applied_lead_id", null);
   if (error) throw new Error("Attribution state update failed");
+}
+
+async function finalizeReconciliation(admin: any, attributionId: string, leadId: string, hubspotContactId: string, ownerId: string | null) {
+  const { error } = await admin.rpc("finalize_web_lead_reconciliation", {
+    p_attribution_id: attributionId,
+    p_lead_id: leadId,
+    p_hubspot_contact_id: hubspotContactId,
+    p_owner_id: ownerId,
+  });
+  if (error) throw new Error("Atomic reconciliation finalization failed");
 }
 
 async function reconcileOne(admin: any, systemUser: any, attribution: any) {
@@ -202,40 +213,13 @@ async function reconcileOne(admin: any, systemUser: any, attribution: any) {
       throw new Error("HubSpot contact already mapped to different lead episode");
     }
 
-    const { error: attributionUpdateError } = await admin
-      .from("google_click_attributions")
-      .update({
-        applied_lead_id: lead.id,
-        applied_at: new Date().toISOString(),
-        reconciliation_status: "reconciled",
-        reconciliation_error: null,
-        reconciled_at: new Date().toISOString(),
-        last_reconciliation_attempt_at: new Date().toISOString(),
-      })
-      .eq("id", attribution.id)
-      .is("applied_lead_id", null);
-    if (attributionUpdateError) throw new Error("Attribution FK update failed");
-
-    const { error: projectionError } = await admin.from("hubspot_deal_projections").upsert({
-      lead_id: lead.id,
-      hubspot_contact_id: hubspotContactId,
-      owner_id: cleanText(props.hubspot_owner_id, 80),
-      pipeline_id: "3707782370",
-      stage_id: "5159669951",
-      currency_code: "EUR",
-      projection_status: "pending",
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "lead_id", ignoreDuplicates: true });
-    if (projectionError) throw new Error("Deal projection queue failed");
-
-    const { error: queueError } = await admin.rpc("queue_google_data_manager_event", {
-      p_lead_id: lead.id,
-      p_event_name: "lead",
-      p_event_timestamp: attribution.captured_at,
-      p_conversion_value: null,
-      p_transaction_id: `lead:${lead.id}`,
-    });
-    if (queueError) throw new Error("Google event queue failed");
+    await finalizeReconciliation(
+      admin,
+      attribution.id,
+      lead.id,
+      hubspotContactId,
+      cleanText(props.hubspot_owner_id, 80),
+    );
 
     return { id: attribution.id, lead_id: lead.id, outcome: "reconciled" };
   } catch (error: any) {
