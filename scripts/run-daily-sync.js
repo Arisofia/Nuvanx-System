@@ -49,6 +49,12 @@ const steps = [
     retry: 1,
   },
   {
+    name: 'refresh-doctoralia-appointment-engine',
+    cmd: 'node scripts/refresh-doctoralia-appointment-engine.js',
+    critical: true,
+    retry: 1,
+  },
+  {
     name: 'deploy-daily-aggregates',
     cmd: () => 'npx --yes supabase --yes functions deploy daily-aggregates --no-verify-jwt --project-ref ' + requireProjectRefWhenDeploying(),
     critical: true,

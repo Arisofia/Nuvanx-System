@@ -5,10 +5,11 @@ declare const Deno: any;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const FORM_ID = "5042522a-0bc5-4381-ac3e-5aee8649b69c";
+const STAGING_ORIGIN = "https://staging2.nuvanx.com";
 const ALLOWED_ORIGINS = new Set([
   "https://nuvanx.com",
   "https://www.nuvanx.com",
-  "https://staging2.nuvanx.com",
+  STAGING_ORIGIN,
 ]);
 const ALLOWED_LANDING_HOSTS = new Set([
   "nuvanx.com",
@@ -56,15 +57,34 @@ function cleanLanding(value: unknown): string | null {
   }
 }
 
-async function attachLineageIfMissing(admin: any, rowId: string, existingLeadId: string | null, nvxLeadId: string | null) {
-  if (!nvxLeadId || existingLeadId) return false;
-  const { error } = await admin
-    .from("google_click_attributions")
-    .update({ nvx_lead_id: nvxLeadId })
-    .eq("id", rowId)
-    .is("nvx_lead_id", null);
+function qaContext(origin: string, rawTestRunId: unknown) {
+  const isTestLead = origin === STAGING_ORIGIN;
+  if (!isTestLead) return { is_test_lead: false, test_run_id: null };
+  const candidate = String(rawTestRunId || "").trim();
+  const testRunId = /^staging2-sha-[A-Za-z0-9._:-]{4,80}$/.test(candidate) ? candidate : "staging2-origin";
+  return { is_test_lead: true, test_run_id: testRunId };
+}
+
+async function attachLineageIfMissing(
+  admin: any,
+  rowId: string,
+  existingLeadId: string | null,
+  nvxLeadId: string | null,
+  qa: { is_test_lead: boolean; test_run_id: string | null },
+) {
+  const updates: Record<string, unknown> = {};
+  if (nvxLeadId && !existingLeadId) updates.nvx_lead_id = nvxLeadId;
+  if (qa.is_test_lead) {
+    updates.is_test_lead = true;
+    updates.test_run_id = qa.test_run_id;
+  }
+  if (Object.keys(updates).length === 0) return false;
+
+  let query = admin.from("google_click_attributions").update(updates).eq("id", rowId);
+  if (updates.nvx_lead_id) query = query.is("nvx_lead_id", null);
+  const { error } = await query;
   if (error) {
-    console.error("[google-click-attribution] lineage update failed", error.message);
+    console.error("[google-click-attribution] lineage/qa update failed", error.message);
     return false;
   }
   return true;
@@ -78,7 +98,7 @@ async function findDedupeRow(admin: any, params: {
 }) {
   let query = admin
     .from("google_click_attributions")
-    .select("id,nvx_lead_id")
+    .select("id,nvx_lead_id,is_test_lead,test_run_id")
     .eq("email_hash", params.emailHash)
     .eq("form_id", FORM_ID);
 
@@ -143,15 +163,13 @@ Deno.serve(async (req: Request) => {
   }
 
   const landingUrl = cleanLanding((body as any).landing_url);
+  const qa = qaContext(origin, (body as any).nvx_test_run_id);
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
 
-  // One submission UUID owns one collector row. A retry may backfill nvx_lead_id,
-  // but never writes applied_lead_id: that column references public.leads(id) and
-  // is reserved for the downstream reconciliation step.
   if (submissionId) {
     const { data: duplicateRow, error: duplicateError } = await admin
       .from("google_click_attributions")
-      .select("id,nvx_lead_id")
+      .select("id,nvx_lead_id,is_test_lead,test_run_id")
       .eq("submission_id", submissionId)
       .limit(1)
       .maybeSingle();
@@ -161,8 +179,14 @@ Deno.serve(async (req: Request) => {
       return reply(origin, 500, { success: false, message: "Server error" });
     }
     if (duplicateRow) {
-      const lineageStored = await attachLineageIfMissing(admin, duplicateRow.id, duplicateRow.nvx_lead_id, nvxLeadId);
-      return reply(origin, 200, { success: true, stored: false, duplicate: true, lineage_stored: lineageStored || Boolean(duplicateRow.nvx_lead_id) });
+      const updated = await attachLineageIfMissing(admin, duplicateRow.id, duplicateRow.nvx_lead_id, nvxLeadId, qa);
+      return reply(origin, 200, {
+        success: true,
+        stored: false,
+        duplicate: true,
+        lineage_stored: updated || Boolean(duplicateRow.nvx_lead_id),
+        qa_suppressed: qa.is_test_lead,
+      });
     }
   }
 
@@ -190,6 +214,9 @@ Deno.serve(async (req: Request) => {
     form_id: FORM_ID,
     landing_url: landingUrl,
     source: "hubspot_web",
+    is_test_lead: qa.is_test_lead,
+    test_run_id: qa.test_run_id,
+    reconciliation_status: qa.is_test_lead ? "qa_suppressed" : "pending",
   });
 
   if (error) {
@@ -198,14 +225,25 @@ Deno.serve(async (req: Request) => {
       if (lookupError) {
         console.error("[google-click-attribution] duplicate lookup failed", lookupError.message);
       }
-      const lineageStored = existingRow
-        ? await attachLineageIfMissing(admin, existingRow.id, existingRow.nvx_lead_id, nvxLeadId)
+      const updated = existingRow
+        ? await attachLineageIfMissing(admin, existingRow.id, existingRow.nvx_lead_id, nvxLeadId, qa)
         : false;
-      return reply(origin, 200, { success: true, stored: false, duplicate: true, lineage_stored: lineageStored || Boolean(existingRow?.nvx_lead_id) });
+      return reply(origin, 200, {
+        success: true,
+        stored: false,
+        duplicate: true,
+        lineage_stored: updated || Boolean(existingRow?.nvx_lead_id),
+        qa_suppressed: qa.is_test_lead,
+      });
     }
     console.error("[google-click-attribution] insert failed", error.message);
     return reply(origin, 500, { success: false, message: "Server error" });
   }
 
-  return reply(origin, 200, { success: true, stored: true, lineage_stored: Boolean(nvxLeadId) });
+  return reply(origin, 200, {
+    success: true,
+    stored: true,
+    lineage_stored: Boolean(nvxLeadId),
+    qa_suppressed: qa.is_test_lead,
+  });
 });
