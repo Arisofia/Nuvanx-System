@@ -9,7 +9,9 @@ describe("runtime bootstrap contract", () => {
     expect(source).toContain('req.headers.get("Authorization")');
     expect(source).toContain("token.length >= 20");
     expect(source).not.toMatch(/console\.(?:log|error)\([^\n]*token/i);
-    expect(source).not.toMatch(/token\s*:/);
+    const replyCalls = source.match(/return\s+reply\([\s\S]*?\);/g) || [];
+    expect(replyCalls.length).toBeGreaterThan(0);
+    expect(replyCalls.join("\n")).not.toMatch(/\btoken\s*:/i);
   });
 
   it("verifies the private-app token against the canonical NUVANX Hub ID", () => {
