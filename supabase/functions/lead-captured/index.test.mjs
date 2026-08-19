@@ -24,6 +24,13 @@ describe("lead-captured canonical contract", () => {
     expect(source).toContain('throw new ValidationError("Production lead cannot carry test_run_id")');
   });
 
+  it("persists explicit marketing consent with a fail-closed missing-value path", () => {
+    expect(source).toContain("const marketingConsent = booleanValue((body as any).marketing_consent)");
+    expect(source).toContain("marketing_consent: marketingConsent");
+    expect(source).toContain("Missing/legacy senders are deliberately fail-closed as false");
+    expect(source).toContain("metadata: { schema_version: 2 }");
+  });
+
   it("stores only allowlisted non-clinical attribution", () => {
     const attrStart = source.indexOf("const ATTR_KEYS");
     const handlerStart = source.indexOf("Deno.serve");
