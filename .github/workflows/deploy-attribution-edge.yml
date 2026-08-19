@@ -44,7 +44,7 @@ jobs:
         run: npm ci
 
       - name: Gate web-events P0 contract
-        run: npx vitest run supabase/functions/web-events/index.test.ts
+        run: npx vitest run supabase/functions/web-events/index.test.mjs
 
       - name: Type-check attribution Edge Functions
         run: deno check --config=supabase/functions/deno.json supabase/functions/web-events/index.ts supabase/functions/google-click-attribution/index.ts
