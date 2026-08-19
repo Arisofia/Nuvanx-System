@@ -102,31 +102,6 @@ $$;
 revoke all on function public.nvx_dispatch_revops_worker(text,integer,text) from public, anon, authenticated;
 grant execute on function public.nvx_dispatch_revops_worker(text,integer,text) to service_role;
 
--- Trigger/cron wakeups must never make the underlying business transaction fail.
--- The strict dispatcher above remains available for explicit service-role calls;
--- this wrapper converts missing bootstrap/config/transport into a no-op wakeup.
-create or replace function public.nvx_try_dispatch_revops_worker(
-  p_worker text,
-  p_limit integer default 25,
-  p_mode text default null
-)
-returns bigint
-language plpgsql
-security definer
-set search_path = ''
-as $$
-begin
-  return public.nvx_dispatch_revops_worker(p_worker, p_limit, p_mode);
-exception
-  when others then
-    raise warning 'NUVANX RevOps worker wakeup skipped for %', p_worker;
-    return null;
-end;
-$$;
-
-revoke all on function public.nvx_try_dispatch_revops_worker(text,integer,text) from public, anon, authenticated;
-grant execute on function public.nvx_try_dispatch_revops_worker(text,integer,text) to service_role;
-
 -- Immediate Deal Factory wake-up when a real reconciliation queues a projection.
 create or replace function public.nvx_wake_deal_factory_on_pending_projection()
 returns trigger
@@ -137,7 +112,7 @@ as $$
 begin
   if new.projection_status = 'pending'
      and (tg_op = 'INSERT' or old.projection_status is distinct from 'pending') then
-    perform public.nvx_try_dispatch_revops_worker('deal-factory', 20, null);
+    perform public.nvx_dispatch_revops_worker('deal-factory', 20, null);
   end if;
   return new;
 end;
@@ -161,7 +136,7 @@ begin
   if coalesce(new.is_test_lead, false) = false
      and new.delivery_status = 'pending'
      and (tg_op = 'INSERT' or old.delivery_status is distinct from 'pending') then
-    perform public.nvx_try_dispatch_revops_worker('google-data-manager-export', 20, 'deliver');
+    perform public.nvx_dispatch_revops_worker('google-data-manager-export', 20, 'deliver');
   end if;
   return new;
 end;
@@ -175,7 +150,7 @@ after insert or update of delivery_status on public.google_data_manager_outbox
 for each row execute function public.nvx_wake_google_data_manager_on_pending_outbox();
 
 -- Recovery schedules. Before runtime bootstrap seeds REVOPS_PROJECT_URL they fail
--- closed as successful no-op wakeups. Once bootstrapped they recover transient worker
+-- closed without an outbound request. Once bootstrapped they recover transient worker
 -- failures without human intervention.
 do $$
 declare
@@ -198,23 +173,23 @@ $$;
 select cron.schedule(
   'nvx-web-lead-reconcile',
   '*/5 * * * *',
-  $cron$select public.nvx_try_dispatch_revops_worker('web-lead-reconcile', 50, null);$cron$
+  $cron$select public.nvx_dispatch_revops_worker('web-lead-reconcile', 50, null);$cron$
 );
 
 select cron.schedule(
   'nvx-deal-factory',
   '*/5 * * * *',
-  $cron$select public.nvx_try_dispatch_revops_worker('deal-factory', 50, null);$cron$
+  $cron$select public.nvx_dispatch_revops_worker('deal-factory', 50, null);$cron$
 );
 
 select cron.schedule(
   'nvx-google-data-manager-deliver',
   '*/5 * * * *',
-  $cron$select public.nvx_try_dispatch_revops_worker('google-data-manager-export', 50, 'deliver');$cron$
+  $cron$select public.nvx_dispatch_revops_worker('google-data-manager-export', 50, 'deliver');$cron$
 );
 
 select cron.schedule(
   'nvx-google-data-manager-poll',
   '2-59/5 * * * *',
-  $cron$select public.nvx_try_dispatch_revops_worker('google-data-manager-export', 50, 'poll');$cron$
+  $cron$select public.nvx_dispatch_revops_worker('google-data-manager-export', 50, 'poll');$cron$
 );
