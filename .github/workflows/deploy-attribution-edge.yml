@@ -91,11 +91,20 @@ jobs:
           command: |
             set -euo pipefail
             secrets="$(supabase secrets list --project-ref "$SUPABASE_PROJECT_REF")"
+            secret_names="$({
+              printf '%s\n' "$secrets" \
+                | tr '│|' '  ' \
+                | awk '{ for (i = 1; i <= NF; i += 1) if ($i ~ /^[A-Z][A-Z0-9_]+$/) { print $i; break } }'
+            } | sort -u)"
+            require_secret() {
+              local name="$1"
+              grep -Fxq "$name" <<<"$secret_names" || { echo "::error::$name is not configured in Supabase"; exit 1; }
+            }
             if [[ "$DEPLOY_FUNCTION" == "all" || "$DEPLOY_FUNCTION" == "web-events" ]]; then
-              grep -q 'NUVANX_WEB_EVENT_SECRET' <<<"$secrets" || { echo "::error::NUVANX_WEB_EVENT_SECRET is not configured in Supabase"; exit 1; }
+              require_secret 'NUVANX_WEB_EVENT_SECRET'
             fi
             if [[ "$DEPLOY_FUNCTION" == "all" || "$DEPLOY_FUNCTION" == "lead-captured" ]]; then
-              grep -q 'NUVANX_LEAD_CAPTURE_SECRET' <<<"$secrets" || { echo "::error::NUVANX_LEAD_CAPTURE_SECRET is not configured in Supabase"; exit 1; }
+              require_secret 'NUVANX_LEAD_CAPTURE_SECRET'
             fi
 
       - name: Apply canonical attribution migrations
