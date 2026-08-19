@@ -41,6 +41,23 @@ function cleanActionMap(): Record<string, string> {
   }
 }
 
+function safeProviderDiagnostics(result: any) {
+  if (!result || typeof result !== "object") return null;
+  const diagnostics: Record<string, unknown> = {};
+  if (result.error && typeof result.error === "object") {
+    diagnostics.error = {
+      code: result.error.code ?? null,
+      status: result.error.status ?? null,
+      message: String(result.error.message || "").slice(0, 500) || null,
+      details: Array.isArray(result.error.details) ? result.error.details.slice(0, 20) : null,
+    };
+  }
+  if (result.errorInfo) diagnostics.errorInfo = result.errorInfo;
+  if (Array.isArray(result.fieldWarnings)) diagnostics.fieldWarnings = result.fieldWarnings.slice(0, 50);
+  if (result.requestId) diagnostics.requestId = String(result.requestId).slice(0, 200);
+  return Object.keys(diagnostics).length ? diagnostics : null;
+}
+
 async function accessToken(): Promise<string> {
   if (!OAUTH_CLIENT_ID || !OAUTH_CLIENT_SECRET || !OAUTH_REFRESH_TOKEN) {
     throw new Error("Data Manager OAuth configuration missing");
@@ -175,7 +192,11 @@ async function deliverOne(admin: any, row: any, token: string, customer: string,
   const result = await response.json().catch(() => ({}));
   if (!response.ok || !result?.requestId) {
     const message = `Data Manager ingest failed ${response.status}`;
-    await mark(admin, row.id, { delivery_status: "failed", last_error: message, diagnostics: null });
+    await mark(admin, row.id, {
+      delivery_status: "failed",
+      last_error: message,
+      diagnostics: safeProviderDiagnostics(result),
+    });
     return { id: row.id, outcome: "failed", error: message };
   }
 
@@ -183,7 +204,7 @@ async function deliverOne(admin: any, row: any, token: string, customer: string,
   await mark(admin, row.id, {
     delivery_status: "sent",
     provider_request_id: String(result.requestId),
-    diagnostics: { fieldWarnings: warnings },
+    diagnostics: { fieldWarnings: warnings.slice(0, 50) },
     last_error: null,
   });
   return { id: row.id, outcome: "accepted", request_id: String(result.requestId) };
@@ -198,7 +219,7 @@ async function pollOne(admin: any, row: any, token: string) {
   const result = await response.json().catch(() => ({}));
   if (!response.ok) {
     const message = `Data Manager status failed ${response.status}`;
-    await mark(admin, row.id, { last_error: message });
+    await mark(admin, row.id, { last_error: message, diagnostics: safeProviderDiagnostics(result) });
     return { id: row.id, outcome: "status_failed", error: message };
   }
 
