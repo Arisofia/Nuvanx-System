@@ -5,13 +5,18 @@ import { fileURLToPath } from "node:url";
 const source = readFileSync(fileURLToPath(new URL("./index.ts", import.meta.url)), "utf8");
 
 describe("lead-captured canonical contract", () => {
-  it("authenticates timestamp.body with HubSpot-backed HMAC and fails closed before bootstrap", () => {
+  it("authenticates timestamp.body with the same domain-separated HubSpot-backed HMAC contract as WordPress", () => {
     expect(source).toContain('req.headers.get("x-nvx-timestamp")');
     expect(source).toContain('req.headers.get("x-nvx-signature")');
     expect(source).toContain("SIGNATURE_MAX_SKEW_SECONDS = 300");
+    expect(source).toContain('const CAPTURE_HMAC_CONTEXT = "nuvanx-lead-capture-hmac-key-v1"');
     expect(source).toContain('rpc("nvx_get_runtime_secret", { p_name: "HUBSPOT_ACCESS_TOKEN" })');
     expect(source).toContain('throw new ValidationError("Runtime bootstrap required", 503)');
-    expect(source).toContain('await hmacHex(token, `${timestampRaw}.${rawBody}`)');
+    expect(source).toContain("async function deriveCaptureHmacKey(token: string)");
+    expect(source).toContain("return await hmacHex(token, CAPTURE_HMAC_CONTEXT)");
+    expect(source).toContain("const hmacKey = await deriveCaptureHmacKey(token)");
+    expect(source).toContain('await hmacHex(hmacKey, `${timestampRaw}.${rawBody}`)');
+    expect(source).not.toContain('await hmacHex(token, `${timestampRaw}.${rawBody}`)');
     expect(source).not.toContain("NUVANX_LEAD_CAPTURE_SECRET");
   });
 
