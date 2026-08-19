@@ -87,7 +87,7 @@ SELECT
   END AS sla_status,
   CASE
     WHEN l.first_response_at IS NULL THEN NULL
-    ELSE ROUND(EXTRACT(EPOCH FROM (l.first_response_at - l.created_at)) / 60.0, 2)
+    ELSE ROUND((EXTRACT(EPOCH FROM (l.first_response_at - l.created_at)) / 60.0)::numeric, 2)
   END AS first_response_minutes
 FROM public.leads l
 WHERE l.deleted_at IS NULL;
@@ -97,7 +97,8 @@ ALTER TABLE public.google_click_attributions
   ADD COLUMN IF NOT EXISTS test_run_id TEXT,
   ADD COLUMN IF NOT EXISTS reconciliation_status TEXT NOT NULL DEFAULT 'pending',
   ADD COLUMN IF NOT EXISTS reconciliation_error TEXT,
-  ADD COLUMN IF NOT EXISTS reconciled_at TIMESTAMPTZ;
+  ADD COLUMN IF NOT EXISTS reconciled_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS last_reconciliation_attempt_at TIMESTAMPTZ;
 
 DO $$
 BEGIN
@@ -202,6 +203,10 @@ ALTER TABLE public.lead_appointment_matches ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.lead_appointment_matches FROM PUBLIC, anon, authenticated;
 GRANT ALL ON public.lead_appointment_matches TO service_role;
 
+-- Doctoralia Appointment Engine. Matching is deterministic and uses the existing
+-- normalized phone/hash model. It preserves the live stage vocabulary
+-- (lead / appointment / convertido); attendance and no-show state live in their
+-- dedicated appointment fields rather than inventing extra lead stages.
 CREATE OR REPLACE FUNCTION public.refresh_doctoralia_appointment_engine(p_user_id UUID)
 RETURNS INTEGER
 LANGUAGE plpgsql
@@ -238,8 +243,6 @@ BEGIN
       a.appointment_date,
       a.appointment_time,
       a.estado,
-      a.is_cancelled,
-      a.is_control,
       a.source_key,
       ROW_NUMBER() OVER (
         PARTITION BY l.id
@@ -272,7 +275,7 @@ BEGIN
          l.telefono_hash IS NOT NULL
          AND l.telefono_hash <> ''
          AND a.phone_normalized IS NOT NULL
-         AND encode(extensions.digest(regexp_replace(a.phone_normalized, '[^0-9]', '', 'g'), 'sha256'), 'hex') = l.telefono_hash
+         AND encode(extensions.digest(public.normalize_phone(a.phone_normalized), 'sha256'), 'hex') = l.telefono_hash
        )
      )
     WHERE l.deleted_at IS NULL
@@ -297,7 +300,6 @@ BEGIN
   primary_match AS (
     SELECT
       cm.lead_id,
-      cm.appointment_id,
       cm.appointment_date,
       cm.appointment_time,
       cm.estado,
@@ -332,9 +334,8 @@ BEGIN
       appointment_external_id = pm.source_key,
       appointment_matched_at = now(),
       stage = CASE
-        WHEN l.stage = 'closed' THEN l.stage
-        WHEN lower(pm.estado) IN ('realizada','pagada') THEN 'appointment_attended'
-        WHEN l.stage IN ('lead','whatsapp') THEN 'appointment'
+        WHEN l.stage = 'convertido' THEN l.stage
+        WHEN l.stage = 'lead' THEN 'appointment'
         ELSE l.stage
       END,
       updated_at = now()
