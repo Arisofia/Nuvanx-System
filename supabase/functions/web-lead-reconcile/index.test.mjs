@@ -26,7 +26,7 @@ describe("web lead reconciliation contract", () => {
     expect(source).toContain('cleanUuidV4(props.nvx_lead_id) !== nvxLeadId');
   });
 
-  it("checks capture email identity when a consented hash exists", () => {
+  it("checks capture email identity without using raw email as reconciliation key", () => {
     const verifyHash = source.indexOf('HubSpot email hash mismatch');
     const insertLead = source.indexOf('.from("leads").insert(leadPayload)');
     expect(verifyHash).toBeGreaterThan(-1);
@@ -55,10 +55,12 @@ describe("web lead reconciliation contract", () => {
     expect(source).toContain('rpc("finalize_web_capture_reconciliation"');
   });
 
-  it("treats Google attribution as optional enrichment rather than the lead source", () => {
+  it("treats Google as consent-gated optional enrichment rather than the lead source", () => {
     expect(source).toContain("googleAttributionForLead");
+    expect(source).toContain("capture.marketing_consent === true ? await googleAttributionForLead(admin, nvxLeadId) : null");
     expect(source).toContain("google_attribution: Boolean(google)");
     expect(source).toContain('gclid: attrValue(capture, "gclid") || google?.gclid || null');
+    expect(source).toContain("marketing_consent,first_attribution");
   });
 
   it("does not write downstream Deal/Data Manager queues client-side", () => {
