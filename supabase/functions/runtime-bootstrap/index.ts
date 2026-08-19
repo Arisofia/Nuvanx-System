@@ -2,8 +2,8 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 declare const Deno: any;
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
-const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+const SUPABASE_URL = (Deno.env.get("SUPABASE_URL") || "").trim();
+const SERVICE_ROLE = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
 const EXPECTED_HUB_ID = "147416356";
 const TOKEN_INFO_URL = "https://api.hubapi.com/oauth/v2/private-apps/get/access-token-info";
 const REQUIRED_SCOPES = new Set([
@@ -63,16 +63,24 @@ Deno.serve(async (req: Request) => {
     }
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
-    const { data, error } = await admin.rpc("nvx_set_runtime_secret", {
+    const secretWrite = await admin.rpc("nvx_set_runtime_secret", {
       p_name: "HUBSPOT_ACCESS_TOKEN",
       p_value: token,
     });
-    if (error || data !== true) throw new Error("Runtime secret persistence failed");
+    if (secretWrite.error || secretWrite.data !== true) throw new Error("Runtime secret persistence failed");
+
+    // Persist only this Edge runtime's own project URL. Preview branches therefore
+    // route to themselves if explicitly bootstrapped and never inherit production.
+    const urlWrite = await admin.rpc("nvx_set_revops_project_url", {
+      p_value: SUPABASE_URL,
+    });
+    if (urlWrite.error || urlWrite.data !== true) throw new Error("Runtime project URL persistence failed");
 
     return reply(200, {
       success: true,
       hub_id: EXPECTED_HUB_ID,
       scope_check: "pass",
+      project_route: "environment_local",
     });
   } catch (error: any) {
     console.error("[runtime-bootstrap] verification/persistence failed", String(error?.message || "error").slice(0, 200));
