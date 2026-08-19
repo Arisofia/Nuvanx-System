@@ -5,11 +5,14 @@ import { fileURLToPath } from "node:url";
 const source = readFileSync(fileURLToPath(new URL("./index.ts", import.meta.url)), "utf8");
 
 describe("web-events P0 contract", () => {
-  it("uses the canonical first-party relay secret exclusively from runtime configuration", () => {
-    expect(source).toContain('Deno.env.get("NUVANX_LEAD_CAPTURE_SECRET") || ""');
-    expect(source).not.toContain('Deno.env.get("NUVANX_WEB_EVENT_SECRET")');
-    expect(source).not.toMatch(/NUVANX_LEAD_CAPTURE_SECRET[^\n]+\|\|\s*["'][^"']{16,}["']/);
-    expect(source).toContain("if (!SHARED_SECRET)");
+  it("requires the Supabase service-role bearer token and no bespoke relay secret", () => {
+    expect(source).toContain('Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")');
+    expect(source).toContain("async function requireServiceRole");
+    expect(source).toContain('req.headers.get("authorization")');
+    expect(source).toContain("constantTimeMatch(token, SUPABASE_SERVICE_ROLE_KEY)");
+    expect(source).not.toContain("NUVANX_WEB_EVENT_SECRET");
+    expect(source).not.toContain("NUVANX_LEAD_CAPTURE_SECRET");
+    expect(source).not.toContain("x-nvx-web-event-secret");
   });
 
   it("resolves only a connected Meta integration", () => {
