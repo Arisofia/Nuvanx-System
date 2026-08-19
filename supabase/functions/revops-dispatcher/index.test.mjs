@@ -52,11 +52,22 @@ describe("RevOps dispatcher contract", () => {
     expect(routingMigration).toContain("v_project_url || '/functions/v1/revops-dispatcher'");
   });
 
-  it("schedules both Google delivery and provider-status polling", () => {
+  it("keeps trigger and cron wakeups non-blocking before runtime bootstrap", () => {
+    expect(routingMigration).toContain("create or replace function public.nvx_try_dispatch_revops_worker");
+    expect(routingMigration).toContain("exception\n  when others then");
+    expect(routingMigration).toContain("return null;");
+    expect(routingMigration).toContain("perform public.nvx_try_dispatch_revops_worker('deal-factory', 20, null)");
+    expect(routingMigration).toContain("perform public.nvx_try_dispatch_revops_worker('google-data-manager-export', 20, 'deliver')");
+    expect(routingMigration).not.toMatch(/perform public\.nvx_dispatch_revops_worker\('(?:deal-factory|google-data-manager-export)'/);
+  });
+
+  it("schedules both Google delivery and provider-status polling through the safe wakeup wrapper", () => {
     expect(routingMigration).toContain("nvx-google-data-manager-deliver");
     expect(routingMigration).toContain("nvx-google-data-manager-poll");
-    expect(routingMigration).toContain("'google-data-manager-export', 50, 'deliver'");
-    expect(routingMigration).toContain("'google-data-manager-export', 50, 'poll'");
+    expect(routingMigration).toContain("nvx_try_dispatch_revops_worker('google-data-manager-export', 50, 'deliver')");
+    expect(routingMigration).toContain("nvx_try_dispatch_revops_worker('google-data-manager-export', 50, 'poll')");
     expect(routingMigration).toContain("google_data_manager_outbox_wake_worker");
+    expect(routingMigration).toContain("nvx_try_dispatch_revops_worker('web-lead-reconcile', 50, null)");
+    expect(routingMigration).toContain("nvx_try_dispatch_revops_worker('deal-factory', 50, null)");
   });
 });
