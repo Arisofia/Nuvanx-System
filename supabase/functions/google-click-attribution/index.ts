@@ -1,0 +1,211 @@
+import { createClient } from "jsr:@supabase/supabase-js@2";
+
+declare const Deno: any;
+
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
+const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+const FORM_ID = "5042522a-0bc5-4381-ac3e-5aee8649b69c";
+const ALLOWED_ORIGINS = new Set([
+  "https://nuvanx.com",
+  "https://www.nuvanx.com",
+  "https://staging2.nuvanx.com",
+]);
+const ALLOWED_LANDING_HOSTS = new Set([
+  "nuvanx.com",
+  "www.nuvanx.com",
+  "staging2.nuvanx.com",
+]);
+
+function headers(origin: string) {
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Headers": "content-type",
+    "Access-Control-Allow-Methods": "POST,OPTIONS",
+    "Vary": "Origin",
+    "Content-Type": "application/json",
+    "Cache-Control": "no-store",
+  };
+}
+
+function reply(origin: string, status: number, body: Record<string, unknown>) {
+  return new Response(JSON.stringify(body), { status, headers: headers(origin) });
+}
+
+function cleanClickId(value: unknown, max = 512): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  const v = String(value).trim();
+  if (!v || v.length > max) return null;
+  if (!/^[A-Za-z0-9._~:+-]+$/.test(v)) return null;
+  return v;
+}
+
+function cleanUuidV4(value: unknown): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  const v = String(value).trim().toLowerCase();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(v) ? v : null;
+}
+
+function cleanLanding(value: unknown): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(String(value));
+    if (url.protocol !== "https:" || !ALLOWED_LANDING_HOSTS.has(url.hostname.toLowerCase())) return null;
+    return `${url.origin}${url.pathname}`.slice(0, 1000);
+  } catch {
+    return null;
+  }
+}
+
+async function attachLineageIfMissing(admin: any, rowId: string, existingLeadId: string | null, nvxLeadId: string | null) {
+  if (!nvxLeadId || existingLeadId) return false;
+  const { error } = await admin
+    .from("google_click_attributions")
+    .update({ nvx_lead_id: nvxLeadId })
+    .eq("id", rowId)
+    .is("nvx_lead_id", null);
+  if (error) {
+    console.error("[google-click-attribution] lineage update failed", error.message);
+    return false;
+  }
+  return true;
+}
+
+async function findDedupeRow(admin: any, params: {
+  emailHash: string;
+  gclid: string | null;
+  gbraid: string | null;
+  wbraid: string | null;
+}) {
+  let query = admin
+    .from("google_click_attributions")
+    .select("id,nvx_lead_id")
+    .eq("email_hash", params.emailHash)
+    .eq("form_id", FORM_ID);
+
+  query = params.gclid ? query.eq("gclid", params.gclid) : query.is("gclid", null);
+  query = params.gbraid ? query.eq("gbraid", params.gbraid) : query.is("gbraid", null);
+  query = params.wbraid ? query.eq("wbraid", params.wbraid) : query.is("wbraid", null);
+
+  return await query.limit(1).maybeSingle();
+}
+
+Deno.serve(async (req: Request) => {
+  const origin = req.headers.get("Origin") || "";
+  if (!ALLOWED_ORIGINS.has(origin)) {
+    return new Response(JSON.stringify({ success: false, message: "Origin not allowed" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    });
+  }
+
+  if (req.method === "OPTIONS") return new Response("ok", { headers: headers(origin) });
+  if (req.method !== "POST") return reply(origin, 405, { success: false, message: "Method not allowed" });
+
+  const length = Number(req.headers.get("content-length") || "0");
+  if (Number.isFinite(length) && length > 8192) {
+    return reply(origin, 413, { success: false, message: "Payload too large" });
+  }
+
+  if (!SUPABASE_URL || !SERVICE_ROLE) {
+    console.error("[google-click-attribution] missing Supabase runtime config");
+    return reply(origin, 500, { success: false, message: "Server configuration error" });
+  }
+
+  const body = await req.json().catch(() => null);
+  if (!body || typeof body !== "object") return reply(origin, 400, { success: false, message: "Invalid JSON" });
+
+  const emailHash = String((body as any).email_hash || "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(emailHash)) {
+    return reply(origin, 400, { success: false, message: "Invalid email hash" });
+  }
+
+  const formId = String((body as any).form_id || "").trim();
+  if (formId !== FORM_ID) return reply(origin, 400, { success: false, message: "Unsupported form" });
+
+  const rawSubmissionId = (body as any).submission_id;
+  const submissionId = cleanUuidV4(rawSubmissionId);
+  if (rawSubmissionId !== undefined && rawSubmissionId !== null && rawSubmissionId !== "" && !submissionId) {
+    return reply(origin, 400, { success: false, message: "Invalid submission id" });
+  }
+
+  const rawNvxLeadId = (body as any).nvx_lead_id;
+  const nvxLeadId = cleanUuidV4(rawNvxLeadId);
+  if (rawNvxLeadId !== undefined && rawNvxLeadId !== null && rawNvxLeadId !== "" && !nvxLeadId) {
+    return reply(origin, 400, { success: false, message: "Invalid NUVANX lead id" });
+  }
+
+  const gclid = cleanClickId((body as any).gclid);
+  const gbraid = cleanClickId((body as any).gbraid);
+  const wbraid = cleanClickId((body as any).wbraid);
+  const gclsrc = cleanClickId((body as any).gclsrc, 128);
+  if (!gclid && !gbraid && !wbraid) {
+    return reply(origin, 400, { success: false, message: "No Google click identifier" });
+  }
+
+  const landingUrl = cleanLanding((body as any).landing_url);
+  const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
+
+  // One submission UUID owns one collector row. A retry may backfill nvx_lead_id,
+  // but never writes applied_lead_id: that column references public.leads(id) and
+  // is reserved for the downstream reconciliation step.
+  if (submissionId) {
+    const { data: duplicateRow, error: duplicateError } = await admin
+      .from("google_click_attributions")
+      .select("id,nvx_lead_id")
+      .eq("submission_id", submissionId)
+      .limit(1)
+      .maybeSingle();
+
+    if (duplicateError) {
+      console.error("[google-click-attribution] idempotency query failed", duplicateError.message);
+      return reply(origin, 500, { success: false, message: "Server error" });
+    }
+    if (duplicateRow) {
+      const lineageStored = await attachLineageIfMissing(admin, duplicateRow.id, duplicateRow.nvx_lead_id, nvxLeadId);
+      return reply(origin, 200, { success: true, stored: false, duplicate: true, lineage_stored: lineageStored || Boolean(duplicateRow.nvx_lead_id) });
+    }
+  }
+
+  const since = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  const { count, error: countError } = await admin
+    .from("google_click_attributions")
+    .select("id", { count: "exact", head: true })
+    .eq("email_hash", emailHash)
+    .gte("captured_at", since);
+
+  if (countError) {
+    console.error("[google-click-attribution] rate query failed", countError.message);
+    return reply(origin, 500, { success: false, message: "Server error" });
+  }
+  if ((count || 0) >= 5) return reply(origin, 429, { success: false, message: "Rate limit" });
+
+  const { error } = await admin.from("google_click_attributions").insert({
+    submission_id: submissionId,
+    nvx_lead_id: nvxLeadId,
+    email_hash: emailHash,
+    gclid,
+    gbraid,
+    wbraid,
+    gclsrc,
+    form_id: FORM_ID,
+    landing_url: landingUrl,
+    source: "hubspot_web",
+  });
+
+  if (error) {
+    if (error.code === "23505") {
+      const { data: existingRow, error: lookupError } = await findDedupeRow(admin, { emailHash, gclid, gbraid, wbraid });
+      if (lookupError) {
+        console.error("[google-click-attribution] duplicate lookup failed", lookupError.message);
+      }
+      const lineageStored = existingRow
+        ? await attachLineageIfMissing(admin, existingRow.id, existingRow.nvx_lead_id, nvxLeadId)
+        : false;
+      return reply(origin, 200, { success: true, stored: false, duplicate: true, lineage_stored: lineageStored || Boolean(existingRow?.nvx_lead_id) });
+    }
+    console.error("[google-click-attribution] insert failed", error.message);
+    return reply(origin, 500, { success: false, message: "Server error" });
+  }
+
+  return reply(origin, 200, { success: true, stored: true, lineage_stored: Boolean(nvxLeadId) });
+});
