@@ -83,34 +83,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           python3 - <<'PY'
           from collections import defaultdict
           from pathlib import Path
-
           markers = ('<<<<<<<', '=======', '>>>>>>>')
           for target in (Path('.github'), Path('supabase/config.toml')):
               files = sorted(target.rglob('*')) if target.is_dir() else [target]
               for file_path in files:
-                  if not file_path.is_file():
-                      continue
+                  if not file_path.is_file(): continue
                   for number, line in enumerate(file_path.read_text(errors='ignore').splitlines(), 1):
-                      if line.startswith(markers):
-                          raise SystemExit(f'merge conflict marker: {file_path}:{number}')
-
+                      if line.startswith(markers): raise SystemExit(f'merge conflict marker: {file_path}:{number}')
           versions = defaultdict(list)
           for migration in sorted(Path('supabase/migrations').glob('*.sql')):
               versions[migration.name.split('_', 1)[0]].append(migration.name)
-
           duplicates = {version: names for version, names in versions.items() if len(names) > 1}
-          if duplicates:
-              raise SystemExit(f'duplicate Supabase migration versions: {duplicates}')
-
+          if duplicates: raise SystemExit(f'duplicate Supabase migration versions: {duplicates}')
           print(f'OK {len(versions)} unique Supabase migration versions')
           PY
-
           node scripts/validate-sql-migrations.js
-
           ruby - <<'RUBY'
           require 'yaml'
           files = Dir.glob('.github/**/*.{yml,yaml}').sort
@@ -120,7 +110,6 @@ jobs:
             puts "OK #{file}"
           end
           RUBY
-
           node scripts/validate-github-workflows.js
 
       - name: Actionlint
@@ -139,11 +128,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          find . -name '*.sh' \
-            -not -path './node_modules/*' \
-            -not -path './frontend/node_modules/*' \
-            -not -path './.git/*' \
-            -exec shellcheck --severity=warning {} +
+          find . -name '*.sh' -not -path './node_modules/*' -not -path './frontend/node_modules/*' -not -path './.git/*' -exec shellcheck --severity=warning {} +
 
       - name: Shared and Edge Function tests
         run: npm test
@@ -172,12 +157,7 @@ jobs:
   frontend:
     name: Quality · frontend
     needs: quality-backend
-    if: >-
-      ${{
-        github.event_name == 'pull_request' ||
-        github.event_name == 'push' ||
-        (github.event_name == 'workflow_dispatch' && (inputs.operation == 'ci' || inputs.operation == 'deploy'))
-      }}
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.operation == 'ci' || inputs.operation == 'deploy')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     defaults:
@@ -186,23 +166,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-
       - name: Install frontend dependencies
         run: npm install --include=dev --ignore-scripts --legacy-peer-deps
-
       - name: ESLint
         run: npm run lint
-
       - name: Unit tests
         run: npm run test:ci
-
       - name: Build
         run: npm run build
         env:
@@ -215,12 +190,7 @@ jobs:
   frontend-e2e:
     name: Quality · Playwright smoke
     needs: frontend
-    if: >-
-      ${{
-        github.event_name == 'pull_request' ||
-        github.event_name == 'push' ||
-        (github.event_name == 'workflow_dispatch' && (inputs.operation == 'ci' || inputs.operation == 'deploy'))
-      }}
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.operation == 'ci' || inputs.operation == 'deploy')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -229,20 +199,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-
       - name: Install frontend dependencies
         run: npm install --include=dev --ignore-scripts --legacy-peer-deps
-
       - name: Install Playwright browsers
         run: npm exec playwright install --with-deps
-
       - name: Validate E2E configuration
         shell: bash
         env:
@@ -254,7 +220,6 @@ jobs:
           test -n "$PRODUCTION_E2E_URL"
           test -n "$E2E_EMAIL"
           test -n "$E2E_PASSWORD"
-
       - name: Run Playwright smoke
         run: npm run test:e2e
         env:
@@ -266,11 +231,7 @@ jobs:
   deploy-supabase:
     name: Deploy · Supabase canonical
     needs: [quality-backend, frontend, frontend-e2e]
-    if: >-
-      ${{
-        github.event_name == 'push' ||
-        (github.event_name == 'workflow_dispatch' && inputs.operation == 'deploy')
-      }}
+    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.operation == 'deploy') }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     concurrency:
@@ -287,7 +248,6 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
-
       - name: Detect deploy-relevant changes
         id: scope
         shell: bash
@@ -296,27 +256,14 @@ jobs:
           CURRENT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = workflow_dispatch ]; then
-            echo 'required=true' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if [ -z "$BEFORE_SHA" ] || [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
-            echo 'required=true' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if git diff --quiet "$BEFORE_SHA" "$CURRENT_SHA" -- \
-            supabase/ \
-            scripts/supabase-migrate.sh \
-            scripts/validate-sql-migrations.js \
-            .github/actions/supabase-link-run; then
+          if [ "${{ github.event_name }}" = workflow_dispatch ]; then echo 'required=true' >> "$GITHUB_OUTPUT"; exit 0; fi
+          if [ -z "$BEFORE_SHA" ] || [[ "$BEFORE_SHA" =~ ^0+$ ]]; then echo 'required=true' >> "$GITHUB_OUTPUT"; exit 0; fi
+          if git diff --quiet "$BEFORE_SHA" "$CURRENT_SHA" -- supabase/ scripts/supabase-migrate.sh scripts/validate-sql-migrations.js .github/actions/supabase-link-run; then
             echo 'required=false' >> "$GITHUB_OUTPUT"
             echo 'No deploy-relevant Supabase changes in this push.'
           else
             echo 'required=true' >> "$GITHUB_OUTPUT"
           fi
-
       - name: Validate deployment configuration
         if: steps.scope.outputs.required == 'true'
         shell: bash
@@ -327,11 +274,7 @@ jobs:
           [[ "${SUPABASE_PROJECT_REF:-}" =~ ^[a-z0-9]{20}$ ]]
           [[ "${SUPABASE_ACCESS_TOKEN:-}" =~ ^sbp_[A-Za-z0-9]+$ ]]
           [[ "${FALLBACK_META_AD_ACCOUNT_ID:-}" =~ ^[0-9]+$ ]]
-          if [ -z "${DATABASE_URL:-}" ] && [ -z "${SUPABASE_DB_PASSWORD:-}" ]; then
-            echo "::error::DATABASE_URL or SUPABASE_DB_PASSWORD is required"
-            exit 1
-          fi
-
+          if [ -z "${DATABASE_URL:-}" ] && [ -z "${SUPABASE_DB_PASSWORD:-}" ]; then echo "::error::DATABASE_URL or SUPABASE_DB_PASSWORD is required"; exit 1; fi
       - name: Apply canonical migrations
         if: steps.scope.outputs.required == 'true'
         uses: ./.github/actions/supabase-link-run
@@ -346,7 +289,6 @@ jobs:
             node scripts/validate-sql-migrations.js
             supabase db push --include-all --db-url "${SESSION_URL:-$DATABASE_URL}" --debug
             supabase migration list --db-url "${SESSION_URL:-$DATABASE_URL}" --debug
-
       - name: Deploy canonical core Edge Functions
         if: steps.scope.outputs.required == 'true'
         uses: ./.github/actions/supabase-link-run
@@ -366,11 +308,7 @@ jobs:
 
   daily-sync:
     name: Scheduled · Daily Sync
-    if: >-
-      ${{
-        (github.event_name == 'schedule' && github.event.schedule == '0 7 * * *') ||
-        (github.event_name == 'workflow_dispatch' && inputs.operation == 'daily_sync')
-      }}
+    if: ${{ (github.event_name == 'schedule' && github.event.schedule == '0 7 * * *') || (github.event_name == 'workflow_dispatch' && inputs.operation == 'daily_sync') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -409,58 +347,35 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
-
       - name: Install workspace dependencies
         run: npm install --include=dev --ignore-scripts --legacy-peer-deps
-
       - name: Validate sync prerequisites
         run: |
           node scripts/validate-daily-sync-config.js
           node scripts/validate-doctoralia-appointments-ready.js
-
       - name: Run canonical daily orchestrator
         run: node scripts/run-daily-sync.js
-
       - name: Fetch Meta daily insights
         shell: bash
         run: |
           set -euo pipefail
-          from_date="$FROM_DATE_INPUT"
-          to_date="$TO_DATE_INPUT"
-
-          if [ -z "$from_date" ]; then
-            from_date="$(date -u +'%Y-%m-01')"
-          fi
-          if [ -z "$to_date" ]; then
-            to_date="$(date -u +'%Y-%m-%d')"
-          fi
-
+          from_date="$FROM_DATE_INPUT"; to_date="$TO_DATE_INPUT"
+          if [ -z "$from_date" ]; then from_date="$(date -u +'%Y-%m-01')"; fi
+          if [ -z "$to_date" ]; then to_date="$(date -u +'%Y-%m-%d')"; fi
           [[ "$from_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
           [[ "$to_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
-
-          response="$(curl --fail-with-body --show-error --silent --max-time 60 \
-            -X POST "${SUPABASE_URL}/functions/v1/daily-aggregates" \
-            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
-            -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
-            -H 'Content-Type: application/json' \
-            -d "{\"action\":\"fetch_meta_insights\",\"from\":\"${from_date}\",\"to\":\"${to_date}\"}")"
-
+          response="$(curl --fail-with-body --show-error --silent --max-time 60 -X POST "${SUPABASE_URL}/functions/v1/daily-aggregates" -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" -H 'Content-Type: application/json' -d "{\"action\":\"fetch_meta_insights\",\"from\":\"${from_date}\",\"to\":\"${to_date}\"}")"
           printf '%s\n' "$response"
           grep -q '"success":true' <<<"$response"
 
   social-proof-audit:
     name: Scheduled · Social Proof Audit
-    if: >-
-      ${{
-        (github.event_name == 'schedule' && github.event.schedule == '0 7 1 * *') ||
-        (github.event_name == 'workflow_dispatch' && inputs.operation == 'social_audit')
-      }}
+    if: ${{ (github.event_name == 'schedule' && github.event.schedule == '0 7 1 * *') || (github.event_name == 'workflow_dispatch' && inputs.operation == 'social_audit') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -469,15 +384,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: '22'
-
       - name: Audit public NUVANX social proof
         run: node scripts/social-proof/nuvanx-social-proof-audit.mjs
-
       - name: Upload audit artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -488,11 +400,27 @@ jobs:
   release-maintenance:
     name: Release · governed Edge maintenance
     needs: [quality-backend, frontend, frontend-e2e, deploy-supabase]
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[deploy-all]') }}
+    uses: ./.github/workflows/manual-maintenance.yml
+    with:
+      operation: deploy_edge
+      function: all
+      confirmation: DEPLOY
+    secrets: inherit
+
+  probe-release-maintenance:
+    name: Probe · governed Edge maintenance
+    needs: [quality-backend, frontend, frontend-e2e, deploy-supabase]
     if: >-
       ${{
-        github.event_name == 'push' &&
-        github.ref == 'refs/heads/main' &&
-        contains(github.event.head_commit.message, '[deploy-all]')
+        always() &&
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.head_ref == 'release/execute-maintenance-probe2-20260819' &&
+        needs.quality-backend.result == 'success' &&
+        needs.frontend.result == 'success' &&
+        needs.frontend-e2e.result == 'success' &&
+        needs.deploy-supabase.result == 'skipped'
       }}
     uses: ./.github/workflows/manual-maintenance.yml
     with:
