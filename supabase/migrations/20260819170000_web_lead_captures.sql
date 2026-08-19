@@ -52,5 +52,38 @@ create index if not exists web_lead_captures_applied_lead_id_idx
 create index if not exists web_lead_captures_captured_at_idx
   on public.web_lead_captures (captured_at desc);
 
+create or replace function public.nvx_web_lead_capture_preserve_lineage()
+returns trigger
+language plpgsql
+set search_path = pg_catalog, public
+as $$
+begin
+  new.nvx_lead_id := old.nvx_lead_id;
+  new.captured_at := old.captured_at;
+  new.source := old.source;
+
+  -- First touch may be backfilled once if the original capture had no consented
+  -- attribution, but once non-empty it is immutable across retries/re-submits.
+  if old.first_attribution <> '{}'::jsonb then
+    new.first_attribution := old.first_attribution;
+  end if;
+
+  -- QA may never be downgraded to production by a later upsert.
+  if old.is_test_lead then
+    new.is_test_lead := true;
+    new.test_run_id := old.test_run_id;
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke all on function public.nvx_web_lead_capture_preserve_lineage() from public;
+
+drop trigger if exists web_lead_captures_preserve_lineage on public.web_lead_captures;
+create trigger web_lead_captures_preserve_lineage
+before update on public.web_lead_captures
+for each row execute function public.nvx_web_lead_capture_preserve_lineage();
+
 alter table public.web_lead_captures enable row level security;
 -- Deliberately no public/authenticated policies. service_role/internal functions only.
