@@ -12,6 +12,17 @@ describe("Deal Factory contract", () => {
     }
   });
 
+  it("requires the exact Supabase service-role credential before queue processing", () => {
+    expect(source).toContain("async function requireServiceRole");
+    expect(source).toContain("secretMatches(match[1], SERVICE_ROLE)");
+    expect(source).toContain('message: "Forbidden"');
+  });
+
+  it("loads HubSpot from env or the service-role-only runtime vault RPC", () => {
+    expect(source).toContain('Deno.env.get("HUBSPOT_ACCESS_TOKEN")');
+    expect(source).toContain('rpc("nvx_get_runtime_secret", { p_name: "HUBSPOT_ACCESS_TOKEN" })');
+  });
+
   it("has provider-side idempotency before create", () => {
     expect(source).toContain('return `NUVANX · ${leadId}`');
     const search = source.indexOf("findExistingDeal(name)");

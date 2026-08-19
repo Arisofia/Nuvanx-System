@@ -1,14 +1,19 @@
 // NUVANX canonical lead-captured ingestion.
-// Authenticated server-to-server only. Persists lineage; produces no Deal/CAPI/Google side effects.
+// WordPress signs timestamp.body with a domain-separated HMAC key derived from
+// the verified HubSpot private-app token. The raw HubSpot token is never used
+// directly as the capture-signing key.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 declare const Deno: any;
+declare const EdgeRuntime: any;
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-const SHARED_SECRET = (Deno.env.get("NUVANX_LEAD_CAPTURE_SECRET") || "").trim();
+const HUBSPOT_ACCESS_TOKEN_ENV = (Deno.env.get("HUBSPOT_ACCESS_TOKEN") || "").trim();
 const CANONICAL_FORM_ID = "5042522a-0bc5-4381-ac3e-5aee8649b69c";
 const ALLOWED_ORIGINS = new Set(["https://nuvanx.com", "https://www.nuvanx.com", "https://staging2.nuvanx.com"]);
+const SIGNATURE_MAX_SKEW_SECONDS = 300;
+const CAPTURE_HMAC_CONTEXT = "nuvanx-lead-capture-hmac-key-v1";
 
 class ValidationError extends Error {
   status: number;
@@ -21,7 +26,7 @@ class ValidationError extends Error {
 
 function headers(origin: string | null) {
   const out: Record<string, string> = {
-    "Access-Control-Allow-Headers": "content-type,x-nvx-lead-capture-secret",
+    "Access-Control-Allow-Headers": "content-type,x-nvx-timestamp,x-nvx-signature",
     "Access-Control-Allow-Methods": "POST,OPTIONS",
     "Content-Type": "application/json",
     "Cache-Control": "no-store",
@@ -35,18 +40,51 @@ function reply(origin: string | null, status: number, body: Record<string, unkno
   return new Response(JSON.stringify(body), { status, headers: headers(origin) });
 }
 
-async function sha256(raw: string): Promise<Uint8Array> {
-  return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw)));
+async function timingSafeHexMatch(received: string, expected: string): Promise<boolean> {
+  const a = String(received || "").trim().toLowerCase();
+  const b = String(expected || "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(a) || !/^[0-9a-f]{64}$/.test(b)) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
 }
 
-async function secretMatches(received: string, expected: string): Promise<boolean> {
-  if (!received || !expected) return false;
-  const a = await sha256(received);
-  const b = await sha256(expected);
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i += 1) diff |= a[i] ^ b[i];
-  return diff === 0;
+async function hmacHex(secret: string, message: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
+  return Array.from(new Uint8Array(signature)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function deriveCaptureHmacKey(token: string): Promise<string> {
+  return await hmacHex(token, CAPTURE_HMAC_CONTEXT);
+}
+
+async function resolveHubspotToken(admin: any): Promise<string> {
+  if (HUBSPOT_ACCESS_TOKEN_ENV) return HUBSPOT_ACCESS_TOKEN_ENV;
+  const { data, error } = await admin.rpc("nvx_get_runtime_secret", { p_name: "HUBSPOT_ACCESS_TOKEN" });
+  if (error || !data) return "";
+  return String(data).trim();
+}
+
+async function authenticateSignedBody(req: Request, rawBody: string, admin: any): Promise<boolean> {
+  const timestampRaw = String(req.headers.get("x-nvx-timestamp") || "").trim();
+  const receivedSignature = String(req.headers.get("x-nvx-signature") || "").trim();
+  if (!/^\d{10}$/.test(timestampRaw)) return false;
+  const timestamp = Number(timestampRaw);
+  const now = Math.floor(Date.now() / 1000);
+  if (!Number.isFinite(timestamp) || Math.abs(now - timestamp) > SIGNATURE_MAX_SKEW_SECONDS) return false;
+
+  const token = await resolveHubspotToken(admin);
+  if (!token) throw new ValidationError("Runtime bootstrap required", 503);
+  const hmacKey = await deriveCaptureHmacKey(token);
+  const expected = await hmacHex(hmacKey, `${timestampRaw}.${rawBody}`);
+  return await timingSafeHexMatch(receivedSignature, expected);
 }
 
 function uuidV4(raw: unknown): string {
@@ -102,6 +140,19 @@ function cleanAttribution(raw: unknown): Record<string, string> {
   return out;
 }
 
+function triggerReconciliation() {
+  const url = `${SUPABASE_URL}/functions/v1/web-lead-reconcile`;
+  const request = fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${SERVICE_ROLE}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ limit: 10 }),
+  }).catch((error) => console.error("[lead-captured] reconciliation trigger failed", String(error?.message || "error").slice(0, 160)));
+  if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) EdgeRuntime.waitUntil(request);
+}
+
 Deno.serve(async (req: Request) => {
   const origin = req.headers.get("Origin");
   if (req.method === "OPTIONS") {
@@ -113,60 +164,59 @@ Deno.serve(async (req: Request) => {
 
   const length = Number(req.headers.get("content-length") || "0");
   if (Number.isFinite(length) && length > 32768) return reply(origin, 413, { success: false, message: "Payload too large" });
+  if (!SUPABASE_URL || !SERVICE_ROLE) return reply(origin, 500, { success: false, message: "Server configuration error" });
 
-  if (!SHARED_SECRET || !SUPABASE_URL || !SERVICE_ROLE) {
-    console.error("[lead-captured] required runtime configuration missing");
-    return reply(origin, 500, { success: false, message: "Server configuration error" });
-  }
-  const receivedSecret = req.headers.get("x-nvx-lead-capture-secret") || "";
-  if (!(await secretMatches(receivedSecret, SHARED_SECRET))) return reply(origin, 401, { success: false, message: "Unauthorized" });
-
+  const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
   try {
-    const body = await req.json().catch(() => null);
+    const rawBody = await req.text();
+    if (!(await authenticateSignedBody(req, rawBody, admin))) return reply(origin, 401, { success: false, message: "Unauthorized" });
+
+    let body: any = null;
+    try { body = JSON.parse(rawBody); } catch { body = null; }
     if (!body || typeof body !== "object" || Array.isArray(body)) throw new ValidationError("Invalid JSON", 400);
 
-    const leadId = uuidV4((body as any).nvx_lead_id);
-    const formId = String((body as any).form_id || "").trim().toLowerCase();
+    const leadId = uuidV4(body.nvx_lead_id);
+    const formId = String(body.form_id || "").trim().toLowerCase();
     if (formId !== CANONICAL_FORM_ID) throw new ValidationError("Unsupported form_id");
 
-    const isTest = booleanValue((body as any).nvx_is_test_lead);
-    const testRunId = bounded((body as any).nvx_test_run_id, 128);
+    const isTest = booleanValue(body.nvx_is_test_lead);
+    const testRunId = bounded(body.nvx_test_run_id, 128);
     if (isTest && (!testRunId || !testRunId.startsWith("staging2-"))) {
       throw new ValidationError("Test lead requires server-owned staging2 test_run_id");
     }
     if (!isTest && testRunId) throw new ValidationError("Production lead cannot carry test_run_id");
 
     // Missing/legacy senders are deliberately fail-closed as false.
-    const marketingConsent = booleanValue((body as any).marketing_consent);
+    const marketingConsent = booleanValue(body.marketing_consent);
 
     const row = {
       nvx_lead_id: leadId,
       form_id: formId,
-      hubspot_contact_id: hubspotContactId((body as any).hubspot_contact_id),
-      hubspot_submission_id: bounded((body as any).hubspot_submission_id, 180),
-      email_hash: emailHash((body as any).email_hash),
+      hubspot_contact_id: hubspotContactId(body.hubspot_contact_id),
+      hubspot_submission_id: bounded(body.hubspot_submission_id, 180),
+      email_hash: emailHash(body.email_hash),
       is_test_lead: isTest,
       test_run_id: testRunId,
       marketing_consent: marketingConsent,
-      first_attribution: cleanAttribution((body as any).first_attribution),
-      conversion_attribution: cleanAttribution((body as any).conversion_attribution),
+      first_attribution: marketingConsent ? cleanAttribution(body.first_attribution) : {},
+      conversion_attribution: marketingConsent ? cleanAttribution(body.conversion_attribution) : {},
       source: "hubspot_web",
       last_seen_at: new Date().toISOString(),
-      metadata: { schema_version: 2 },
+      metadata: { schema_version: 2, auth: "hubspot_hmac_sha256" },
     };
 
-    const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
     const { data, error } = await admin
       .from("web_lead_captures")
       .upsert(row, { onConflict: "nvx_lead_id" })
-      .select("id,nvx_lead_id,is_test_lead,marketing_consent,applied_lead_id,captured_at,last_seen_at")
+      .select("id,nvx_lead_id,is_test_lead,marketing_consent,applied_lead_id,captured_at,last_seen_at,reconciliation_status")
       .single();
 
     if (error) throw new Error(error.message);
+    triggerReconciliation();
     return reply(origin, 200, { success: true, capture: data });
   } catch (error: any) {
-    console.error("[lead-captured] error", error?.message || error);
+    console.error("[lead-captured] error", String(error?.message || "error").slice(0, 200));
     const status = error instanceof ValidationError ? error.status : 500;
-    return reply(origin, status, { success: false, message: status >= 500 ? "Internal error" : error?.message || "Invalid request" });
+    return reply(origin, status, { success: false, message: status >= 500 ? (status === 503 ? "Runtime bootstrap required" : "Internal error") : error?.message || "Invalid request" });
   }
 });
