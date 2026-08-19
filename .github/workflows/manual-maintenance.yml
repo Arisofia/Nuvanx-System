@@ -82,8 +82,7 @@ jobs:
           github.event_name == 'workflow_run' &&
           github.event.workflow_run.conclusion == 'success' &&
           github.event.workflow_run.event == 'push' &&
-          github.event.workflow_run.head_repository.full_name == github.repository &&
-          contains(github.event.workflow_run.head_commit.message, '[deploy-all]')
+          github.event.workflow_run.head_repository.full_name == github.repository
         )
       }}
     runs-on: ubuntu-latest
@@ -95,48 +94,60 @@ jobs:
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       DEPLOY_FUNCTION: ${{ github.event_name == 'workflow_run' && 'all' || inputs.function }}
       CONFIRMATION: ${{ github.event_name == 'workflow_run' && 'DEPLOY' || inputs.confirmation }}
-      NUVANX_SSH_HOST: ${{ secrets.NUVANX_SSH_HOST }}
-      NUVANX_SSH_PORT: ${{ secrets.NUVANX_SSH_PORT }}
-      NUVANX_SSH_USER: ${{ secrets.NUVANX_SSH_USER }}
-      NUVANX_SSH_KEY: ${{ secrets.NUVANX_SSH_KEY }}
-      NUVANX_WP_PATH: ${{ secrets.NUVANX_WP_PATH }}
-      STAGING_WP_PATH: /home/customer/www/staging2.nuvanx.com/public_html
     steps:
-      - name: Checkout
+      - name: Checkout exact candidate
         uses: actions/checkout@v5
         with:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
 
+      - name: Authorize maintenance release
+        id: authorize
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == 'workflow_run' ]]; then
+            message="$(git log -1 --pretty=%B)"
+            if [[ "$message" != *'[deploy-all]'* ]]; then
+              echo 'authorized=false' >> "$GITHUB_OUTPUT"
+              echo 'MANUAL_MAINTENANCE=SKIP no_deploy_all_marker'
+              exit 0
+            fi
+          fi
+
+          test "$CONFIRMATION" = DEPLOY
+          test -n "${SUPABASE_ACCESS_TOKEN:-}"
+          test -n "${SUPABASE_PROJECT_REF:-}"
+          [[ "${SUPABASE_PROJECT_REF:-}" =~ ^[a-z0-9]{20}$ ]]
+          [[ "$DEPLOY_FUNCTION" =~ ^(all|web-events|google-click-attribution|google-data-manager-export|runtime-bootstrap|lead-captured|revops-dispatcher|web-lead-reconcile|deal-factory)$ ]]
+          if [[ -z "${DATABASE_URL:-}" && -z "${SUPABASE_DB_PASSWORD:-}" ]]; then
+            echo "::error::DATABASE_URL or SUPABASE_DB_PASSWORD is required"
+            exit 1
+          fi
+          echo 'authorized=true' >> "$GITHUB_OUTPUT"
+          echo "MANUAL_MAINTENANCE=AUTHORIZED function=$DEPLOY_FUNCTION"
+
       - name: Setup Node.js
+        if: steps.authorize.outputs.authorized == 'true'
         uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
 
       - name: Setup Deno
+        if: steps.authorize.outputs.authorized == 'true'
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
 
-      - name: Validate explicit production authorization
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$CONFIRMATION" = DEPLOY
-          test -n "${SUPABASE_ACCESS_TOKEN:-}"
-          test -n "${SUPABASE_PROJECT_REF:-}"
-          [[ "${SUPABASE_PROJECT_REF:-}" =~ ^[a-z0-9]{20}$ ]]
-          [[ "$DEPLOY_FUNCTION" =~ ^(all|web-events|google-click-attribution|google-data-manager-export|runtime-bootstrap|lead-captured|revops-dispatcher|web-lead-reconcile|deal-factory)$ ]]
-          if [ -z "${DATABASE_URL:-}" ] && [ -z "${SUPABASE_DB_PASSWORD:-}" ]; then
-            echo "::error::DATABASE_URL or SUPABASE_DB_PASSWORD is required"
-            exit 1
-          fi
-
       - name: Install workspace dependencies
+        if: steps.authorize.outputs.authorized == 'true'
         run: npm ci
 
       - name: Validate attribution and RevOps contracts
+        if: steps.authorize.outputs.authorized == 'true'
         run: >-
           npx vitest run
           supabase/functions/web-events/index.test.mjs
@@ -148,6 +159,7 @@ jobs:
           supabase/functions/google-data-manager-export/index.test.mjs
 
       - name: Type-check governed Edge Functions
+        if: steps.authorize.outputs.authorized == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -161,86 +173,10 @@ jobs:
             supabase/functions/web-lead-reconcile/index.ts \
             supabase/functions/deal-factory/index.ts
 
-      - name: Rotate and synchronize first-party relay secrets
-        if: ${{ env.DEPLOY_FUNCTION == 'all' || env.DEPLOY_FUNCTION == 'web-events' || env.DEPLOY_FUNCTION == 'lead-captured' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          for key in NUVANX_SSH_HOST NUVANX_SSH_PORT NUVANX_SSH_USER NUVANX_SSH_KEY NUVANX_WP_PATH; do
-            value="${!key:-}"
-            test -n "$value" || { echo "::error::$key is required for runtime secret synchronization"; exit 1; }
-          done
-          [[ "$NUVANX_SSH_PORT" =~ ^[0-9]{1,5}$ ]]
-          [[ "$NUVANX_WP_PATH" == /home/customer/www/*/public_html ]]
-          [[ "$STAGING_WP_PATH" == /home/customer/www/*/public_html ]]
-
-          web_secret="$(openssl rand -hex 32)"
-          lead_secret="$(openssl rand -hex 32)"
-          test "${#web_secret}" -eq 64
-          test "${#lead_secret}" -eq 64
-          echo "::add-mask::$web_secret"
-          echo "::add-mask::$lead_secret"
-
-          mkdir -p "$HOME/.ssh"
-          chmod 700 "$HOME/.ssh"
-          printf '%s' "$NUVANX_SSH_KEY" > "$HOME/.ssh/nuvanx_key"
-          chmod 600 "$HOME/.ssh/nuvanx_key"
-          printf '%s' "$web_secret" > "$RUNNER_TEMP/nvx-web-event-secret"
-          printf '%s' "$lead_secret" > "$RUNNER_TEMP/nvx-lead-capture-secret"
-          chmod 600 "$RUNNER_TEMP/nvx-web-event-secret" "$RUNNER_TEMP/nvx-lead-capture-secret"
-
-          scp -q -i "$HOME/.ssh/nuvanx_key" -P "$NUVANX_SSH_PORT" -o StrictHostKeyChecking=no \
-            "$RUNNER_TEMP/nvx-web-event-secret" "$RUNNER_TEMP/nvx-lead-capture-secret" \
-            "$NUVANX_SSH_USER@$NUVANX_SSH_HOST:/tmp/"
-
-          ssh -i "$HOME/.ssh/nuvanx_key" -p "$NUVANX_SSH_PORT" -o StrictHostKeyChecking=no \
-            "$NUVANX_SSH_USER@$NUVANX_SSH_HOST" \
-            "PROD_ROOT='$NUVANX_WP_PATH' STAGING_ROOT='$STAGING_WP_PATH' bash -se" <<'REMOTE'
-          set -euo pipefail
-          web_secret="$(cat /tmp/nvx-web-event-secret)"
-          lead_secret="$(cat /tmp/nvx-lead-capture-secret)"
-          test "${#web_secret}" -eq 64
-          test "${#lead_secret}" -eq 64
-          test -d "$PROD_ROOT"
-          test -d "$STAGING_ROOT"
-          test "$(cd "$PROD_ROOT" && /usr/local/bin/wp option get home)" = 'https://nuvanx.com'
-          test "$(cd "$STAGING_ROOT" && /usr/local/bin/wp option get home)" = 'https://staging2.nuvanx.com'
-          cd "$PROD_ROOT"
-          /usr/local/bin/wp config set NUVANX_WEB_EVENT_SECRET "$web_secret" --quiet
-          /usr/local/bin/wp config set NUVANX_LEAD_CAPTURE_SECRET "$lead_secret" --quiet
-          cd "$STAGING_ROOT"
-          /usr/local/bin/wp config set NUVANX_WEB_EVENT_SECRET "$web_secret" --quiet
-          /usr/local/bin/wp config set NUVANX_LEAD_CAPTURE_SECRET "$lead_secret" --quiet
-          rm -f /tmp/nvx-web-event-secret /tmp/nvx-lead-capture-secret
-          REMOTE
-
-          {
-            echo "NUVANX_WEB_EVENT_SECRET=$web_secret"
-            echo "NUVANX_LEAD_CAPTURE_SECRET=$lead_secret"
-          } >> "$GITHUB_ENV"
-          rm -f "$RUNNER_TEMP/nvx-web-event-secret" "$RUNNER_TEMP/nvx-lead-capture-secret" "$HOME/.ssh/nuvanx_key"
-          echo 'RUNTIME_SECRET_SYNC=PASS stores=wordpress-production,wordpress-staging2,supabase-pending'
-
-      - name: Synchronize relay secrets to Supabase
-        if: ${{ env.DEPLOY_FUNCTION == 'all' || env.DEPLOY_FUNCTION == 'web-events' || env.DEPLOY_FUNCTION == 'lead-captured' }}
-        uses: ./.github/actions/supabase-link-run
-        with:
-          project_ref: ${{ env.SUPABASE_PROJECT_REF }}
-          supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
-          database_url: ${{ env.DATABASE_URL }}
-          supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
-          skip_link: true
-          command: |
-            set -euo pipefail
-            test -n "${NUVANX_WEB_EVENT_SECRET:-}"
-            test -n "${NUVANX_LEAD_CAPTURE_SECRET:-}"
-            supabase secrets set \
-              NUVANX_WEB_EVENT_SECRET="$NUVANX_WEB_EVENT_SECRET" \
-              NUVANX_LEAD_CAPTURE_SECRET="$NUVANX_LEAD_CAPTURE_SECRET" \
-              --project-ref "$SUPABASE_PROJECT_REF"
-
-      - name: Preflight web-events secret
-        if: ${{ env.DEPLOY_FUNCTION == 'all' || env.DEPLOY_FUNCTION == 'web-events' }}
+      - name: Preflight canonical first-party relay secret
+        if: >-
+          steps.authorize.outputs.authorized == 'true' &&
+          (env.DEPLOY_FUNCTION == 'all' || env.DEPLOY_FUNCTION == 'web-events' || env.DEPLOY_FUNCTION == 'lead-captured')
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
@@ -257,10 +193,14 @@ jobs:
                 | awk '{ for (i = 1; i <= NF; i += 1) if ($i ~ /^[A-Z][A-Z0-9_]+$/) { print $i; break } }' \
                 | sort -u
             )"
-            grep -Fxq NUVANX_WEB_EVENT_SECRET <<<"$secret_names"
-            grep -Fxq NUVANX_LEAD_CAPTURE_SECRET <<<"$secret_names"
+            grep -Fxq NUVANX_LEAD_CAPTURE_SECRET <<<"$secret_names" || {
+              echo '::error::NUVANX_LEAD_CAPTURE_SECRET is required by both lead-captured and web-events'
+              exit 1
+            }
+            echo 'CANONICAL_RELAY_SECRET=PASS'
 
       - name: Apply canonical migrations
+        if: steps.authorize.outputs.authorized == 'true'
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
@@ -273,6 +213,7 @@ jobs:
             bash scripts/supabase-migrate.sh
 
       - name: Deploy selected Edge Function set
+        if: steps.authorize.outputs.authorized == 'true'
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
@@ -316,7 +257,7 @@ jobs:
               esac
             }
 
-            if [ "$DEPLOY_FUNCTION" = all ]; then
+            if [[ "$DEPLOY_FUNCTION" == all ]]; then
               for function_name in \
                 google-click-attribution \
                 google-data-manager-export \
@@ -334,10 +275,11 @@ jobs:
             fi
 
             supabase functions list --project-ref "$SUPABASE_PROJECT_REF"
+            echo "EDGE_DEPLOY=PASS selection=$DEPLOY_FUNCTION"
 
   update-social-proof:
     name: Manual · Update WordPress social proof
-    if: ${{ inputs.operation == 'update_social_proof' }}
+    if: ${{ github.event_name != 'workflow_run' && inputs.operation == 'update_social_proof' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
