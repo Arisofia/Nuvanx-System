@@ -136,6 +136,9 @@ Deno.serve(async (req: Request) => {
     }
     if (!isTest && testRunId) throw new ValidationError("Production lead cannot carry test_run_id");
 
+    // Missing/legacy senders are deliberately fail-closed as false.
+    const marketingConsent = booleanValue((body as any).marketing_consent);
+
     const row = {
       nvx_lead_id: leadId,
       form_id: formId,
@@ -144,18 +147,19 @@ Deno.serve(async (req: Request) => {
       email_hash: emailHash((body as any).email_hash),
       is_test_lead: isTest,
       test_run_id: testRunId,
+      marketing_consent: marketingConsent,
       first_attribution: cleanAttribution((body as any).first_attribution),
       conversion_attribution: cleanAttribution((body as any).conversion_attribution),
       source: "hubspot_web",
       last_seen_at: new Date().toISOString(),
-      metadata: { schema_version: 1 },
+      metadata: { schema_version: 2 },
     };
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
     const { data, error } = await admin
       .from("web_lead_captures")
       .upsert(row, { onConflict: "nvx_lead_id" })
-      .select("id,nvx_lead_id,is_test_lead,applied_lead_id,captured_at,last_seen_at")
+      .select("id,nvx_lead_id,is_test_lead,marketing_consent,applied_lead_id,captured_at,last_seen_at")
       .single();
 
     if (error) throw new Error(error.message);
