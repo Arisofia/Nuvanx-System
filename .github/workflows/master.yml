@@ -288,7 +288,37 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Detect deploy-relevant changes
+        id: scope
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before || '' }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = workflow_dispatch ]; then
+            echo 'required=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -z "$BEFORE_SHA" ] || [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
+            echo 'required=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git diff --quiet "$BEFORE_SHA" "$CURRENT_SHA" -- \
+            supabase/ \
+            scripts/supabase-migrate.sh \
+            scripts/validate-sql-migrations.js \
+            .github/actions/supabase-link-run; then
+            echo 'required=false' >> "$GITHUB_OUTPUT"
+            echo 'No deploy-relevant Supabase changes in this push.'
+          else
+            echo 'required=true' >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Validate deployment configuration
+        if: steps.scope.outputs.required == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -303,6 +333,7 @@ jobs:
           fi
 
       - name: Apply canonical migrations
+        if: steps.scope.outputs.required == 'true'
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
@@ -317,6 +348,7 @@ jobs:
             supabase migration list --db-url "${SESSION_URL:-$DATABASE_URL}" --debug
 
       - name: Deploy canonical core Edge Functions
+        if: steps.scope.outputs.required == 'true'
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
