@@ -76,13 +76,19 @@ async function decryptCred(encoded: string): Promise<string> {
   combined.set(tag, ct.length);
   const km = await crypto.subtle.importKey("raw", new TextEncoder().encode(ENCRYPTION_KEY), "PBKDF2", false, ["deriveKey"]);
   const aesKey = await crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" },
+    { name: "PBKDF2", salt: salt.buffer as ArrayBuffer, iterations: 100000, hash: "SHA-256" },
     km,
     { name: "AES-GCM", length: 256 },
     false,
     ["decrypt"],
   );
-  return new TextDecoder().decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv }, aesKey, combined));
+  return new TextDecoder().decode(
+    await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: iv.buffer as ArrayBuffer },
+      aesKey,
+      combined.buffer as ArrayBuffer,
+    ),
+  );
 }
 
 async function appsecretProof(accessToken: string): Promise<string | null> {
