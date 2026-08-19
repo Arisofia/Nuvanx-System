@@ -1,0 +1,33 @@
+import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+const source = readFileSync(fileURLToPath(new URL("./index.ts", import.meta.url)), "utf8");
+
+describe("runtime bootstrap contract", () => {
+  it("accepts only a bounded bearer token and never logs or returns it", () => {
+    expect(source).toContain('req.headers.get("Authorization")');
+    expect(source).toContain("token.length >= 20");
+    expect(source).not.toMatch(/console\.(?:log|error)\([^\n]*token/i);
+    expect(source).not.toMatch(/token\s*:/);
+  });
+
+  it("verifies the private-app token against the canonical NUVANX Hub ID", () => {
+    expect(source).toContain('const EXPECTED_HUB_ID = "147416356"');
+    expect(source).toContain("/oauth/v2/private-apps/get/access-token-info");
+    expect(source).toContain("verified.hubId !== EXPECTED_HUB_ID");
+  });
+
+  it("requires contacts read and deal read/write scopes", () => {
+    expect(source).toContain('"crm.objects.contacts.read"');
+    expect(source).toContain('"crm.objects.deals.read"');
+    expect(source).toContain('"crm.objects.deals.write"');
+    expect(source).toContain("missingScopes.length");
+  });
+
+  it("can persist only the allowlisted HubSpot runtime credential through the vault RPC", () => {
+    expect(source).toContain('rpc("nvx_set_runtime_secret"');
+    expect(source).toContain('p_name: "HUBSPOT_ACCESS_TOKEN"');
+    expect(source).not.toMatch(/vault\.create_secret|vault\.update_secret/);
+  });
+});
