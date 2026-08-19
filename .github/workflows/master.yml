@@ -484,3 +484,19 @@ jobs:
         with:
           name: nuvanx-social-proof-audit
           path: tmp/social-proof-audit
+
+  release-maintenance:
+    name: Release · governed Edge maintenance
+    needs: [quality-backend, frontend, frontend-e2e, deploy-supabase]
+    if: >-
+      ${{
+        github.event_name == 'push' &&
+        github.ref == 'refs/heads/main' &&
+        contains(github.event.head_commit.message, '[deploy-all]')
+      }}
+    uses: ./.github/workflows/manual-maintenance.yml
+    with:
+      operation: deploy_edge
+      function: all
+      confirmation: DEPLOY
+    secrets: inherit
