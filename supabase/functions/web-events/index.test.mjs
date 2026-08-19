@@ -5,9 +5,10 @@ import { fileURLToPath } from "node:url";
 const source = readFileSync(fileURLToPath(new URL("./index.ts", import.meta.url)), "utf8");
 
 describe("web-events P0 contract", () => {
-  it("requires the shared secret exclusively from runtime configuration", () => {
-    expect(source).toContain('Deno.env.get("NUVANX_WEB_EVENT_SECRET") || ""');
-    expect(source).not.toMatch(/NUVANX_WEB_EVENT_SECRET[^\n]+\|\|\s*["'][^"']{16,}["']/);
+  it("uses the canonical first-party relay secret exclusively from runtime configuration", () => {
+    expect(source).toContain('Deno.env.get("NUVANX_LEAD_CAPTURE_SECRET") || ""');
+    expect(source).not.toContain('Deno.env.get("NUVANX_WEB_EVENT_SECRET")');
+    expect(source).not.toMatch(/NUVANX_LEAD_CAPTURE_SECRET[^\n]+\|\|\s*["'][^"']{16,}["']/);
     expect(source).toContain("if (!SHARED_SECRET)");
   });
 
