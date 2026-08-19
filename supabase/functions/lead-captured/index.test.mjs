@@ -28,6 +28,15 @@ describe("lead-captured canonical contract", () => {
     expect(source).toContain('throw new ValidationError("Production lead cannot carry test_run_id")');
   });
 
+  it("persists explicit marketing consent and strips attribution when consent is absent", () => {
+    expect(source).toContain("const marketingConsent = booleanValue(body.marketing_consent)");
+    expect(source).toContain("marketing_consent: marketingConsent");
+    expect(source).toContain("Missing/legacy senders are deliberately fail-closed as false");
+    expect(source).toContain("first_attribution: marketingConsent ? cleanAttribution(body.first_attribution) : {}");
+    expect(source).toContain("conversion_attribution: marketingConsent ? cleanAttribution(body.conversion_attribution) : {}");
+    expect(source).toContain('metadata: { schema_version: 2, auth: "hubspot_hmac_sha256" }');
+  });
+
   it("stores only allowlisted non-clinical attribution", () => {
     const attrStart = source.indexOf("const ATTR_KEYS");
     const triggerStart = source.indexOf("function triggerReconciliation");
