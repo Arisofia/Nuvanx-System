@@ -1,23 +1,19 @@
-// NUVANX Web Events Bridge v2: authenticated server-side Meta CAPI relay.
-// Public browser code must not call this function directly.
+// NUVANX Web Events Bridge v3: internal server-side Meta CAPI relay.
+// No browser or public caller is allowed. The Supabase gateway verifies JWT and
+// the function additionally requires the exact service-role bearer token.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 declare const Deno: any;
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+const SUPABASE_SERVICE_ROLE_KEY = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
 const ENCRYPTION_KEY = Deno.env.get("ENCRYPTION_KEY") || "";
 const META_APP_SECRET = Deno.env.get("META_APP_SECRET") || "";
 const META_PIXEL_ID = Deno.env.get("META_PIXEL_ID") || "";
 const DEFAULT_LANDING_USER_EMAIL = Deno.env.get("DEFAULT_LANDING_USER_EMAIL") || Deno.env.get("LANDING_USER_EMAIL") || "";
-// One canonical first-party server relay secret is shared by lead-captured and web-events.
-// Keeping one runtime-only secret avoids configuration drift between the lineage ledger and CAPI relay.
-const SHARED_SECRET = (Deno.env.get("NUVANX_LEAD_CAPTURE_SECRET") || "").trim();
 const META_TEST_EVENT_CODE = (Deno.env.get("META_TEST_EVENT_CODE") || "").trim();
 const META_GRAPH = "https://graph.facebook.com/v22.0";
 const CANONICAL_EVENT_SOURCE_URL = "https://nuvanx.com/";
-
-const ALLOWED_ORIGINS = new Set(["https://nuvanx.com", "https://www.nuvanx.com"]);
 
 class RequestValidationError extends Error {
   status: number;
@@ -29,20 +25,15 @@ class RequestValidationError extends Error {
   }
 }
 
-function cors(origin: string | null) {
-  const headers: Record<string, string> = {
-    "Access-Control-Allow-Headers": "content-type,x-nvx-web-event-secret",
-    "Access-Control-Allow-Methods": "POST,OPTIONS",
+function headers() {
+  return {
     "Content-Type": "application/json",
     "Cache-Control": "no-store",
-    "Vary": "Origin",
   };
-  if (origin && ALLOWED_ORIGINS.has(origin)) headers["Access-Control-Allow-Origin"] = origin;
-  return headers;
 }
 
-function json(data: unknown, status = 200, origin: string | null = null) {
-  return new Response(JSON.stringify(data), { status, headers: cors(origin) });
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), { status, headers: headers() });
 }
 
 function bytesToHex(bytes: Uint8Array): string {
@@ -64,7 +55,7 @@ async function sha256Hex(raw: string): Promise<string> {
   return bytesToHex(await sha256Bytes(String(raw).trim().toLowerCase()));
 }
 
-async function secretMatches(received: string, expected: string): Promise<boolean> {
+async function constantTimeMatch(received: string, expected: string): Promise<boolean> {
   if (!received || !expected) return false;
   const a = await sha256Bytes(received);
   const b = await sha256Bytes(expected);
@@ -72,6 +63,13 @@ async function secretMatches(received: string, expected: string): Promise<boolea
   let diff = 0;
   for (let i = 0; i < a.length; i += 1) diff |= a[i] ^ b[i];
   return diff === 0;
+}
+
+async function requireServiceRole(req: Request): Promise<boolean> {
+  const authorization = String(req.headers.get("authorization") || "").trim();
+  if (!authorization.toLowerCase().startsWith("bearer ")) return false;
+  const token = authorization.slice(7).trim();
+  return await constantTimeMatch(token, SUPABASE_SERVICE_ROLE_KEY);
 }
 
 async function decryptCred(encoded: string): Promise<string> {
@@ -225,8 +223,8 @@ function isTestLead(body: any): boolean {
 
 function safeCustomData() {
   return {
-    source: "nuvanx_wordpress",
-    schema_version: "2",
+    source: "nuvanx_server",
+    schema_version: "3",
   };
 }
 
@@ -260,55 +258,42 @@ async function sendMetaCapi(params: { pixelId: string; accessToken: string; body
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) {
-    // Meta failures are an internal integration concern; do not leak provider details.
-    throw new Error(`Meta API failure ${res.status}`);
-  }
+  if (!res.ok) throw new Error(`Meta API failure ${res.status}`);
   return { eventName, eventId };
 }
 
 Deno.serve(async (req: Request) => {
-  const origin = req.headers.get("Origin");
-  if (req.method === "OPTIONS") {
-    if (origin && !ALLOWED_ORIGINS.has(origin)) return json({ success: false, message: "Origin not allowed" }, 403, origin);
-    return new Response("ok", { headers: cors(origin) });
-  }
-  if (req.method !== "POST") return json({ success: false, message: "Method not allowed" }, 405, origin);
-  if (origin && !ALLOWED_ORIGINS.has(origin)) return json({ success: false, message: "Origin not allowed" }, 403, origin);
+  if (req.method !== "POST") return json({ success: false, message: "Method not allowed" }, 405);
 
   const contentLength = Number(req.headers.get("content-length") || "0");
   if (Number.isFinite(contentLength) && contentLength > 16384) {
-    return json({ success: false, message: "Payload too large" }, 413, origin);
+    return json({ success: false, message: "Payload too large" }, 413);
   }
 
-  if (!SHARED_SECRET) {
-    console.error("[web-events] NUVANX_LEAD_CAPTURE_SECRET not configured");
-    return json({ success: false, message: "Server configuration error" }, 500, origin);
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    console.error("[web-events] Supabase service configuration missing");
+    return json({ success: false, message: "Server configuration error" }, 500);
   }
 
-  const receivedSecret = req.headers.get("x-nvx-web-event-secret") || "";
-  if (!(await secretMatches(receivedSecret, SHARED_SECRET))) {
-    return json({ success: false, message: "Unauthorized" }, 401, origin);
-  }
+  if (!(await requireServiceRole(req))) return json({ success: false, message: "Unauthorized" }, 401);
 
   try {
     const body = await req.json().catch(() => null);
-    if (!body || typeof body !== "object") return json({ success: false, message: "Invalid JSON" }, 400, origin);
+    if (!body || typeof body !== "object") return json({ success: false, message: "Invalid JSON" }, 400);
 
     // QA traffic is deliberately suppressed before resolving Meta credentials or building an event.
     if (isTestLead(body)) {
-      return json({ success: true, suppressed: true, reason: "qa_lead" }, 200, origin);
+      return json({ success: true, suppressed: true, reason: "qa_lead" }, 200);
     }
 
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) throw new Error("Supabase service config missing");
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
     const meta = await resolveOwnerAndMeta(admin);
     const result = await sendMetaCapi({ pixelId: meta.pixelId, accessToken: meta.accessToken, body, req });
-    return json({ success: true, eventName: result.eventName, eventId: result.eventId }, 200, origin);
+    return json({ success: true, eventName: result.eventName, eventId: result.eventId }, 200);
   } catch (error: any) {
     console.error("[web-events] error", error?.message || error);
     const status = error instanceof RequestValidationError ? error.status : 500;
     const message = status >= 500 ? "Internal error" : error?.message || "Invalid request";
-    return json({ success: false, message }, status, origin);
+    return json({ success: false, message }, status);
   }
 });
