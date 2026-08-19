@@ -11,6 +11,17 @@ describe("web-events P0 contract", () => {
     expect(source).toContain("if (!SHARED_SECRET)");
   });
 
+  it("resolves only a connected Meta integration", () => {
+    const resolvedOwnerStart = source.indexOf('const { data: integration } = await admin');
+    const credentialStart = source.indexOf('const { data: cred } = await admin', resolvedOwnerStart);
+    const resolvedOwnerQuery = source.slice(resolvedOwnerStart, credentialStart);
+    expect(resolvedOwnerStart).toBeGreaterThan(-1);
+    expect(resolvedOwnerQuery).toContain('.eq("user_id", userId)');
+    expect(resolvedOwnerQuery).toContain('.eq("service", "meta")');
+    expect(resolvedOwnerQuery).toContain('.eq("status", "connected")');
+    expect(source).toContain('throw new Error("Connected Meta integration not found")');
+  });
+
   it("suppresses QA before Meta delivery", () => {
     expect(source).toContain("function isTestLead");
     expect(source).toContain('reason: "qa_lead"');
@@ -33,8 +44,18 @@ describe("web-events P0 contract", () => {
 
   it("requires a caller-owned event_id and never creates a random fallback", () => {
     expect(source).toContain("function sanitizeEventId");
-    expect(source).toContain('throw new Error("Valid event_id is required")');
+    expect(source).toContain('throw new RequestValidationError("Valid event_id is required")');
     expect(source).not.toMatch(/eventId\s*=.*crypto\.randomUUID/);
+  });
+
+  it("maps caller contract violations to 4xx while keeping internal failures generic", () => {
+    expect(source).toContain("class RequestValidationError extends Error");
+    expect(source).toContain("constructor(message: string, status = 422)");
+    expect(source).toContain('throw new RequestValidationError("Unsupported event_name")');
+    expect(source).toContain('throw new RequestValidationError("Valid event_id is required")');
+    expect(source).toContain('throw new RequestValidationError("No user_data available for CAPI event")');
+    expect(source).toContain("const status = error instanceof RequestValidationError ? error.status : 500");
+    expect(source).toContain('const message = status >= 500 ? "Internal error"');
   });
 
   it("does not allow the request body to select Meta test mode", () => {
