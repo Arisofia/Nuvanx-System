@@ -38,14 +38,20 @@ jobs:
             exit 2
           fi
 
-      - name: Inspect Page subscribed_apps for leadgen with GitHub Meta token
-        continue-on-error: true
+      - name: Inspect Page subscribed_apps for leadgen via System User to Page token
+        shell: bash
         env:
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
           META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
+          META_SYSTEM_USER_ID: '61569256954284'
           META_PAGE_ID: '685010274687129'
           META_GRAPH_VERSION: 'v22.0'
-        run: node scripts/verify-meta-leadgen-subscription.js
+        run: |
+          set +e
+          node scripts/verify-meta-leadgen-subscription.js
+          rc=$?
+          echo "META_LEADGEN_DIAGNOSTIC_EXIT=${rc}"
+          exit 0
 
       - name: Inspect live API Meta health routing
         shell: bash
@@ -91,7 +97,6 @@ jobs:
           NODE
 
       - name: Probe live Meta campaigns with dedicated Supabase auth
-        continue-on-error: true
         shell: bash
         env:
           NUVANX_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
