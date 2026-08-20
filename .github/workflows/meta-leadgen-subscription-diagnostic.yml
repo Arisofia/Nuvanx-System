@@ -50,26 +50,22 @@ jobs:
       - name: Inspect live API Meta health with Supabase stored credential
         shell: bash
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           NUVANX_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
           REPORT_USER_ID: ${{ secrets.REPORT_USER_ID }}
         run: |
           set -euo pipefail
           node <<'NODE'
-          const base = String(process.env.SUPABASE_URL || '').replace(/\/+$/, '');
-          const serviceRole = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '');
-          const authKey = String(process.env.NUVANX_SUPABASE_SERVICE_ROLE_KEY || '') || serviceRole;
+          const base = 'https://ssvvuuysgxyqvmovrlvk.supabase.co';
+          const authKey = String(process.env.NUVANX_SUPABASE_SERVICE_ROLE_KEY || '');
           const reportUserId = String(process.env.REPORT_USER_ID || '');
-          if (!base || !serviceRole || !authKey || !reportUserId) {
-            console.error('META_RUNTIME_HEALTH_STATUS=UNVERIFIABLE_MISSING_SUPABASE_DIAGNOSTIC_SECRET');
+          if (!authKey || !reportUserId) {
+            console.error('META_RUNTIME_HEALTH_STATUS=UNVERIFIABLE_MISSING_INTERNAL_AUTH');
             process.exit(6);
           }
           const response = await fetch(`${base}/functions/v1/api/health/meta`, {
             method: 'GET',
             headers: {
               Authorization: `Bearer ${authKey}`,
-              apikey: serviceRole,
               'x-user-id': reportUserId,
               Accept: 'application/json',
             },
