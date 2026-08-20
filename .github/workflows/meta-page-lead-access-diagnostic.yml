@@ -1,0 +1,80 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
+name: Meta Page Lead Access Diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  lead-access:
+    name: Read-only · Page has_lead_access
+    if: ${{ github.head_ref == 'diagnostic/meta-leadgen-subscription-20260820' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Inspect current Page lead-access fields
+        env:
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          META_APP_ID: ${{ secrets.META_APP_ID }}
+          META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const crypto = await import('node:crypto');
+          const graphVersion = 'v22.0';
+          const systemUserId = '61569256954284';
+          const pageId = '685010274687129';
+          const token = String(process.env.META_ACCESS_TOKEN || '').trim();
+          const appId = String(process.env.META_APP_ID || '').trim();
+          const secret = String(process.env.META_APP_SECRET || '').trim();
+          if (!token || !appId || !secret) process.exit(2);
+          const proof = (value) => crypto.createHmac('sha256', secret).update(value).digest('hex');
+
+          async function get(path, params, accessToken) {
+            const url = new URL(`https://graph.facebook.com/${graphVersion}${path}`);
+            for (const [key, value] of Object.entries(params || {})) url.searchParams.set(key, String(value));
+            url.searchParams.set('access_token', accessToken);
+            url.searchParams.set('appsecret_proof', proof(accessToken));
+            const response = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(20000) });
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok || body?.error) {
+              const e = body?.error || {};
+              const err = new Error(String(e.message || `HTTP ${response.status}`).replace(/[A-Za-z0-9_-]{32,}/g, '[masked]'));
+              err.status = response.status;
+              err.code = e.code ?? null;
+              throw err;
+            }
+            return body;
+          }
+
+          const accounts = await get(`/${systemUserId}/accounts`, { fields: 'id,name,access_token,tasks' }, token);
+          const page = (Array.isArray(accounts.data) ? accounts.data : []).find((item) => String(item?.id || '') === pageId);
+          const pageToken = String(page?.access_token || '').trim();
+          if (!pageToken) throw new Error('Page token unavailable');
+
+          const fields = ['has_lead_access','has_added_app','is_webhooks_subscribed','leadgen_tos_accepted'];
+          for (const field of fields) {
+            try {
+              const result = await get(`/${pageId}`, { fields: field }, pageToken);
+              console.log(`META_PAGE_${field.toUpperCase()}=${JSON.stringify(result?.[field] ?? null)}`);
+            } catch (error) {
+              console.log(`META_PAGE_${field.toUpperCase()}_ERROR code=${error?.code ?? 'unknown'} http=${error?.status ?? 'unknown'} message=${String(error?.message || error)}`);
+            }
+          }
+
+          try {
+            const app = await get(`/${appId}`, { fields: 'id,name,app_type,owner_business,business,protected_mode_rules' }, `${appId}|${secret}`);
+            console.log(`META_APP_ID_MATCH=${String(app?.id || '') === appId}`);
+            console.log(`META_APP_NAME=${JSON.stringify(String(app?.name || ''))}`);
+            console.log(`META_APP_TYPE=${JSON.stringify(app?.app_type ?? null)}`);
+            console.log(`META_APP_OWNER_BUSINESS_ID=${JSON.stringify(String(app?.owner_business?.id || app?.business?.id || ''))}`);
+            console.log(`META_APP_PROTECTED_MODE_RULES_PRESENT=${Boolean(app?.protected_mode_rules)}`);
+          } catch (error) {
+            console.log(`META_APP_MODE_FIELDS_ERROR code=${error?.code ?? 'unknown'} http=${error?.status ?? 'unknown'} message=${String(error?.message || error)}`);
+          }
+          NODE
