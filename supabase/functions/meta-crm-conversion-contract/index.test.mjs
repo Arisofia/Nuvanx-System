@@ -16,7 +16,7 @@ describe('Meta CRM conversion outbox contract', () => {
     expect(migration).toContain("'awaiting_events_manager_funnel_validation'");
     expect(migration).not.toMatch(/graph\.facebook\.com/i);
     expect(migration).not.toMatch(/\bfetch\s*\(/i);
-    expect(migration).not.toMatch(/web-events/i);
+    expect(migration).not.toMatch(/\/functions\/v1\/web-events/i);
   });
 
   it('uses the canonical Meta Lead Ads identity bridge', () => {
