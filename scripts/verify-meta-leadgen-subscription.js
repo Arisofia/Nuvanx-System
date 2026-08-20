@@ -26,24 +26,35 @@ function getGraphVersion(env = process.env) {
 }
 
 function buildAppSecretProof(accessToken, appSecret) {
+  const token = String(accessToken || '').trim();
   const secret = String(appSecret || '').trim();
-  if (!secret) return '';
-  return crypto.createHmac('sha256', secret).update(accessToken).digest('hex');
+  if (!token || !secret) return '';
+  return crypto.createHmac('sha256', secret).update(token).digest('hex');
 }
 
-function createSubscribedAppsUrl({ accessToken, pageId, appSecret, graphVersion = DEFAULT_META_GRAPH_VERSION }) {
-  const normalizedToken = String(accessToken || '').trim();
-  const normalizedPageId = String(pageId || '').trim();
-  if (!normalizedToken) throw new MetaSubscriptionError('META_ACCESS_TOKEN is required.');
-  if (!normalizedPageId) throw new MetaSubscriptionError('META_PAGE_ID is required.');
-
-  const url = new URL(`https://graph.facebook.com/${graphVersion}/${encodeURIComponent(normalizedPageId)}/subscribed_apps`);
-  url.searchParams.set('fields', 'id,name,subscribed_fields');
-  url.searchParams.set('access_token', normalizedToken);
-
-  const proof = buildAppSecretProof(normalizedToken, appSecret);
+function addTokenAndProof(url, accessToken, appSecret) {
+  const token = String(accessToken || '').trim();
+  if (!token) throw new MetaSubscriptionError('Access token is required.');
+  url.searchParams.set('access_token', token);
+  const proof = buildAppSecretProof(token, appSecret);
   if (proof) url.searchParams.set('appsecret_proof', proof);
   return url;
+}
+
+function createSystemUserAccountsUrl({ systemUserAccessToken, systemUserId, appSecret, graphVersion = DEFAULT_META_GRAPH_VERSION }) {
+  const normalizedSystemUserId = String(systemUserId || '').trim();
+  if (!normalizedSystemUserId) throw new MetaSubscriptionError('META_SYSTEM_USER_ID is required.');
+  const url = new URL(`https://graph.facebook.com/${graphVersion}/${encodeURIComponent(normalizedSystemUserId)}/accounts`);
+  url.searchParams.set('fields', 'id,name,access_token');
+  return addTokenAndProof(url, systemUserAccessToken, appSecret);
+}
+
+function createSubscribedAppsUrl({ pageAccessToken, pageId, appSecret, graphVersion = DEFAULT_META_GRAPH_VERSION }) {
+  const normalizedPageId = String(pageId || '').trim();
+  if (!normalizedPageId) throw new MetaSubscriptionError('META_PAGE_ID is required.');
+  const url = new URL(`https://graph.facebook.com/${graphVersion}/${encodeURIComponent(normalizedPageId)}/subscribed_apps`);
+  url.searchParams.set('fields', 'id,name,subscribed_fields');
+  return addTokenAndProof(url, pageAccessToken, appSecret);
 }
 
 function normalizeSubscribedFields(value) {
@@ -58,11 +69,9 @@ function classifySubscription(payload, expectedAppId = '') {
     name: String(app?.name ?? '').trim(),
     subscribed_fields: normalizeSubscribedFields(app?.subscribed_fields),
   }));
-
   const leadgenApps = normalized.filter((app) => app.subscribed_fields.includes(REQUIRED_FIELD));
   const expected = String(expectedAppId || '').trim();
   const expectedApp = expected ? normalized.find((app) => app.id === expected) ?? null : null;
-
   return {
     apps: normalized,
     leadgenApps,
@@ -70,6 +79,24 @@ function classifySubscription(payload, expectedAppId = '') {
     expectedAppId: expected || null,
     expectedAppFound: expected ? Boolean(expectedApp) : null,
     expectedAppLeadgenSubscribed: expected ? Boolean(expectedApp?.subscribed_fields.includes(REQUIRED_FIELD)) : null,
+  };
+}
+
+function selectPageAccessToken(payload, pageId) {
+  const normalizedPageId = String(pageId || '').trim();
+  const pages = Array.isArray(payload?.data) ? payload.data : [];
+  const page = pages.find((item) => String(item?.id ?? '').trim() === normalizedPageId);
+  if (!page) {
+    throw new MetaSubscriptionError(`System user does not expose Page ${normalizedPageId} in /accounts.`);
+  }
+  const pageAccessToken = String(page?.access_token || '').trim();
+  if (!pageAccessToken) {
+    throw new MetaSubscriptionError(`Page ${normalizedPageId} was returned without a Page access token.`);
+  }
+  return {
+    id: normalizedPageId,
+    name: String(page?.name ?? '').trim(),
+    accessToken: pageAccessToken,
   };
 }
 
@@ -90,25 +117,51 @@ async function fetchJson(url, fetchImpl = global.fetch) {
   return body;
 }
 
-async function inspectLeadgenSubscription({ accessToken, pageId, appSecret = '', expectedAppId = '', graphVersion, fetchImpl = global.fetch }) {
-  const url = createSubscribedAppsUrl({
-    accessToken,
+async function inspectLeadgenSubscription({
+  systemUserAccessToken,
+  systemUserId,
+  pageId,
+  appSecret = '',
+  expectedAppId = '',
+  graphVersion,
+  fetchImpl = global.fetch,
+}) {
+  const version = graphVersion || DEFAULT_META_GRAPH_VERSION;
+  const accountsUrl = createSystemUserAccountsUrl({
+    systemUserAccessToken,
+    systemUserId,
+    appSecret,
+    graphVersion: version,
+  });
+  const accountsPayload = await fetchJson(accountsUrl, fetchImpl);
+  const page = selectPageAccessToken(accountsPayload, pageId);
+
+  const subscribedAppsUrl = createSubscribedAppsUrl({
+    pageAccessToken: page.accessToken,
     pageId,
     appSecret,
-    graphVersion: graphVersion || DEFAULT_META_GRAPH_VERSION,
+    graphVersion: version,
   });
-  const payload = await fetchJson(url, fetchImpl);
-  return classifySubscription(payload, expectedAppId);
+  const subscriptionPayload = await fetchJson(subscribedAppsUrl, fetchImpl);
+  return {
+    page: { id: page.id, name: page.name },
+    ...classifySubscription(subscriptionPayload, expectedAppId),
+  };
 }
 
 async function main() {
-  const accessToken = String(process.env.META_ACCESS_TOKEN || '').trim();
+  const systemUserAccessToken = String(process.env.META_ACCESS_TOKEN || '').trim();
+  const systemUserId = String(process.env.META_SYSTEM_USER_ID || '').trim();
   const pageId = String(process.env.META_PAGE_ID || '').trim();
   const appSecret = String(process.env.META_APP_SECRET || '').trim();
   const expectedAppId = String(process.env.META_EXPECTED_APP_ID || '').trim();
 
-  if (!accessToken) {
-    console.error('META_LEADGEN_SUBSCRIPTION_STATUS=UNVERIFIABLE_MISSING_TOKEN');
+  if (!systemUserAccessToken) {
+    console.error('META_LEADGEN_SUBSCRIPTION_STATUS=UNVERIFIABLE_MISSING_SYSTEM_USER_TOKEN');
+    process.exit(2);
+  }
+  if (!systemUserId) {
+    console.error('META_LEADGEN_SUBSCRIPTION_STATUS=UNVERIFIABLE_MISSING_SYSTEM_USER_ID');
     process.exit(2);
   }
   if (!pageId) {
@@ -118,14 +171,18 @@ async function main() {
 
   try {
     const result = await inspectLeadgenSubscription({
-      accessToken,
+      systemUserAccessToken,
+      systemUserId,
       pageId,
       appSecret,
       expectedAppId,
       graphVersion: getGraphVersion(),
     });
 
-    console.log(`META_PAGE_ID=${pageId}`);
+    console.log(`META_SYSTEM_USER_ID=${systemUserId}`);
+    console.log(`META_PAGE_ID=${result.page.id}`);
+    console.log(`META_PAGE_NAME=${JSON.stringify(result.page.name)}`);
+    console.log('META_PAGE_ACCESS_TOKEN_RESOLVED=true');
     console.log(`META_SUBSCRIBED_APPS_COUNT=${result.apps.length}`);
     console.log(`META_LEADGEN_APPS_COUNT=${result.leadgenApps.length}`);
     for (const app of result.apps) {
@@ -156,19 +213,20 @@ async function main() {
   }
 }
 
-if (require.main === module) {
-  main();
-}
+if (require.main === module) main();
 
 module.exports = {
   DEFAULT_META_GRAPH_VERSION,
   REQUIRED_FIELD,
   MetaSubscriptionError,
+  addTokenAndProof,
   buildAppSecretProof,
   classifySubscription,
   createSubscribedAppsUrl,
+  createSystemUserAccountsUrl,
   fetchJson,
   getGraphVersion,
   inspectLeadgenSubscription,
   normalizeSubscribedFields,
+  selectPageAccessToken,
 };
