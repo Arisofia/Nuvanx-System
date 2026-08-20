@@ -1,0 +1,206 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
+name: Meta Leadgen Delivery Permissions Diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-delivery-permissions:
+    name: Read-only · Lead Ads delivery permissions
+    if: ${{ github.head_ref == 'diagnostic/meta-leadgen-subscription-20260820' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Inspect token scopes, Page Lead Ads state, and Lead Access
+        env:
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          META_APP_ID: ${{ secrets.META_APP_ID }}
+          META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const crypto = await import('node:crypto');
+
+          const graphVersion = 'v22.0';
+          const systemUserId = '61569256954284';
+          const pageId = '685010274687129';
+          const systemUserToken = String(process.env.META_ACCESS_TOKEN || '').trim();
+          const appId = String(process.env.META_APP_ID || '').trim();
+          const appSecret = String(process.env.META_APP_SECRET || '').trim();
+
+          if (!systemUserToken || !appId || !appSecret) {
+            console.error('META_DELIVERY_DIAG_STATUS=ABORT_MISSING_REQUIRED_SECRET');
+            process.exit(2);
+          }
+
+          const appAccessToken = `${appId}|${appSecret}`;
+          const appSecretProof = (token) => crypto.createHmac('sha256', appSecret).update(token).digest('hex');
+          const mask = (value) => String(value ?? '').replace(/[A-Za-z0-9_-]{32,}/g, '[masked]');
+
+          async function requestJson(path, params = {}, token = systemUserToken, useProof = true) {
+            const url = new URL(`https://graph.facebook.com/${graphVersion}${path}`);
+            for (const [key, value] of Object.entries(params)) url.searchParams.set(key, String(value));
+            url.searchParams.set('access_token', token);
+            if (useProof && token !== appAccessToken) url.searchParams.set('appsecret_proof', appSecretProof(token));
+            const response = await fetch(url, {
+              method: 'GET',
+              headers: { Accept: 'application/json' },
+              signal: AbortSignal.timeout(20000),
+            });
+            const text = await response.text();
+            let payload = null;
+            try { payload = JSON.parse(text); } catch {}
+            if (!response.ok || payload?.error) {
+              const e = payload?.error || {};
+              const err = new Error(mask(e.message || text || `HTTP ${response.status}`));
+              err.status = response.status;
+              err.code = e.code ?? null;
+              err.subcode = e.error_subcode ?? null;
+              throw err;
+            }
+            return payload ?? {};
+          }
+
+          async function safeProbe(label, fn) {
+            try {
+              const value = await fn();
+              console.log(`${label}_STATUS=OK`);
+              return { ok: true, value };
+            } catch (error) {
+              console.log(`${label}_STATUS=ERROR code=${error?.code ?? 'unknown'} subcode=${error?.subcode ?? 'unknown'} http=${error?.status ?? 'unknown'}`);
+              console.log(`${label}_ERROR=${mask(error?.message || error)}`);
+              return { ok: false, error };
+            }
+          }
+
+          function summarizeDebugToken(name, payload) {
+            const data = payload?.data || {};
+            const scopes = Array.isArray(data.scopes) ? data.scopes.map(String).sort() : [];
+            const granular = Array.isArray(data.granular_scopes)
+              ? data.granular_scopes.map((item) => ({
+                  scope: String(item?.scope || ''),
+                  target_ids: Array.isArray(item?.target_ids) ? item.target_ids.map(String) : [],
+                }))
+              : [];
+            const required = ['leads_retrieval', 'pages_show_list', 'pages_read_engagement', 'pages_manage_ads', 'business_management'];
+            console.log(`${name}_IS_VALID=${Boolean(data.is_valid)}`);
+            console.log(`${name}_APP_ID_MATCH=${String(data.app_id || '') === appId}`);
+            console.log(`${name}_TYPE=${JSON.stringify(String(data.type || ''))}`);
+            console.log(`${name}_EXPIRES_AT=${data.expires_at ?? null}`);
+            console.log(`${name}_DATA_ACCESS_EXPIRES_AT=${data.data_access_expires_at ?? null}`);
+            console.log(`${name}_SCOPES=${scopes.join(',') || 'none'}`);
+            for (const scope of required) {
+              console.log(`${name}_HAS_${scope.toUpperCase()}=${scopes.includes(scope)}`);
+            }
+            for (const item of granular) {
+              const containsPage = item.target_ids.includes(pageId);
+              console.log(`${name}_GRANULAR scope=${item.scope || 'unknown'} targets=${item.target_ids.length} includes_page=${containsPage}`);
+            }
+          }
+
+          async function debugToken(label, inputToken) {
+            const result = await safeProbe(label, () => requestJson('/debug_token', { input_token: inputToken }, appAccessToken, false));
+            if (result.ok) summarizeDebugToken(label, result.value);
+          }
+
+          console.log(`META_DELIVERY_DIAG_SYSTEM_USER_ID=${systemUserId}`);
+          console.log(`META_DELIVERY_DIAG_PAGE_ID=${pageId}`);
+
+          await debugToken('META_SYSTEM_TOKEN', systemUserToken);
+
+          const accountsResult = await safeProbe('META_SYSTEM_ACCOUNTS', () => requestJson(`/${systemUserId}/accounts`, { fields: 'id,name,access_token,tasks' }));
+          let pageToken = '';
+          let pageTasks = [];
+          if (accountsResult.ok) {
+            const pages = Array.isArray(accountsResult.value?.data) ? accountsResult.value.data : [];
+            const target = pages.find((item) => String(item?.id || '') === pageId);
+            pageToken = String(target?.access_token || '').trim();
+            pageTasks = Array.isArray(target?.tasks) ? target.tasks.map(String).sort() : [];
+            console.log(`META_PAGE_FOUND_IN_SYSTEM_ACCOUNTS=${Boolean(target)}`);
+            console.log(`META_PAGE_ACCESS_TOKEN_RESOLVED=${Boolean(pageToken)}`);
+            console.log(`META_PAGE_TASKS=${pageTasks.join(',') || 'none'}`);
+          }
+
+          if (pageToken) await debugToken('META_PAGE_TOKEN', pageToken);
+
+          const pageFieldNames = [
+            'id',
+            'name',
+            'is_published',
+            'is_webhooks_subscribed',
+            'leadgen_tos_accepted',
+            'leadgen_tos_acceptance_time',
+          ];
+
+          if (pageToken) {
+            for (const field of pageFieldNames) {
+              const result = await safeProbe(`META_PAGE_FIELD_${field.toUpperCase()}`, () => requestJson(`/${pageId}`, { fields: field }, pageToken));
+              if (result.ok) {
+                const value = result.value?.[field];
+                console.log(`META_PAGE_${field.toUpperCase()}=${JSON.stringify(value ?? null)}`);
+              }
+            }
+          } else {
+            console.log('META_PAGE_FIELD_PROBES=SKIPPED_NO_PAGE_TOKEN');
+          }
+
+          const appResult = await safeProbe('META_APP_NODE', () => requestJson(`/${appId}`, { fields: 'id,name,namespace,link,app_domains,category' }, appAccessToken, false));
+          if (appResult.ok) {
+            const app = appResult.value || {};
+            console.log(`META_APP_NODE_ID_MATCH=${String(app.id || '') === appId}`);
+            console.log(`META_APP_NODE_NAME=${JSON.stringify(String(app.name || ''))}`);
+            console.log(`META_APP_NODE_NAMESPACE=${JSON.stringify(String(app.namespace || ''))}`);
+            console.log(`META_APP_NODE_CATEGORY=${JSON.stringify(String(app.category || ''))}`);
+          }
+
+          const subscriptionResult = await safeProbe('META_PAGE_SUBSCRIBED_APPS', () => requestJson(`/${pageId}/subscribed_apps`, { fields: 'id,name,subscribed_fields' }, pageToken || systemUserToken));
+          if (subscriptionResult.ok) {
+            const apps = Array.isArray(subscriptionResult.value?.data) ? subscriptionResult.value.data : [];
+            const own = apps.find((item) => String(item?.id || '') === appId) || null;
+            console.log(`META_PAGE_SUBSCRIBED_APPS_COUNT=${apps.length}`);
+            console.log(`META_PAGE_EXPECTED_APP_PRESENT=${Boolean(own)}`);
+            console.log(`META_PAGE_EXPECTED_APP_LEADGEN=${Boolean(Array.isArray(own?.subscribed_fields) && own.subscribed_fields.includes('leadgen'))}`);
+          }
+
+          const appSubsResult = await safeProbe('META_APP_SUBSCRIPTIONS', () => requestJson(`/${appId}/subscriptions`, {}, appAccessToken, false));
+          if (appSubsResult.ok) {
+            const subs = Array.isArray(appSubsResult.value?.data) ? appSubsResult.value.data : [];
+            for (const sub of subs) {
+              const fields = Array.isArray(sub?.fields)
+                ? sub.fields.map((field) => typeof field === 'string' ? field : String(field?.name || '')).filter(Boolean)
+                : [];
+              console.log(`META_APP_SUB object=${String(sub?.object || '')} active=${sub?.active ?? null} fields=${fields.join(',') || 'none'} callback=${JSON.stringify(String(sub?.callback_url || ''))}`);
+            }
+          }
+
+          if (pageToken) {
+            const leadAccessEndpoints = [
+              ['META_LEAD_ACCESS_USERS', `/${pageId}/leadgen_whitelisted_users`],
+              ['META_LEAD_ACCESS_CRM', `/${pageId}/leadgen_whitelisted_crm`],
+              ['META_LEAD_ACCESS_CRMS', `/${pageId}/leadgen_whitelisted_crms`],
+            ];
+            for (const [label, path] of leadAccessEndpoints) {
+              const result = await safeProbe(label, () => requestJson(path, { fields: 'id,name' }, pageToken));
+              if (result.ok) {
+                const rows = Array.isArray(result.value?.data) ? result.value.data : [];
+                console.log(`${label}_COUNT=${rows.length}`);
+                console.log(`${label}_IDS=${rows.map((row) => String(row?.id || '')).filter(Boolean).join(',') || 'none'}`);
+              }
+            }
+          }
+
+          const formsResult = await safeProbe('META_LEADGEN_FORMS_READ', () => requestJson(`/${pageId}/leadgen_forms`, { fields: 'id,name,status,created_time', limit: '100' }, pageToken || systemUserToken));
+          if (formsResult.ok) {
+            const forms = Array.isArray(formsResult.value?.data) ? formsResult.value.data : [];
+            console.log(`META_LEADGEN_FORMS_READ_COUNT=${forms.length}`);
+            console.log(`META_LEADGEN_ACTIVE_FORMS=${forms.filter((form) => String(form?.status || '').toUpperCase() === 'ACTIVE').length}`);
+          }
+
+          console.log('META_DELIVERY_DIAG_STATUS=COMPLETE_READ_ONLY');
+          NODE
