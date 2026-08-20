@@ -59,7 +59,7 @@ jobs:
           console.log(`META_PAGE_SYSTEM_USER_TASKS=${Array.isArray(page?.tasks) ? page.tasks.join(',') : 'none'}`);
 
           try {
-            const result = await get(`/${pageId}`, { fields: 'has_lead_access', user_id: systemUserId }, pageToken);
+            const result = await get(`/${pageId}`, { fields: `has_lead_access(user_id:${systemUserId})` }, pageToken);
             console.log(`META_PAGE_HAS_LEAD_ACCESS_FOR_SYSTEM_USER=${JSON.stringify(result?.has_lead_access ?? null)}`);
           } catch (error) {
             console.log(`META_PAGE_HAS_LEAD_ACCESS_FOR_SYSTEM_USER_ERROR code=${error?.code ?? 'unknown'} http=${error?.status ?? 'unknown'} message=${String(error?.message || error)}`);
