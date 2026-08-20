@@ -47,7 +47,7 @@ jobs:
           META_GRAPH_VERSION: 'v22.0'
         run: node scripts/verify-meta-leadgen-subscription.js
 
-      - name: Inspect live API Meta health with Supabase stored credential
+      - name: Inspect live API Meta health routing
         shell: bash
         env:
           NUVANX_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
@@ -87,9 +87,58 @@ jobs:
           } : { body: text.slice(0, 500) };
           console.log(`META_RUNTIME_HEALTH_HTTP=${response.status}`);
           console.log(`META_RUNTIME_HEALTH_SAFE=${JSON.stringify(safe)}`);
-          if (!response.ok || payload?.success === false) {
-            console.error('META_RUNTIME_HEALTH_STATUS=FAILED');
-            process.exit(7);
+          console.log('META_RUNTIME_HEALTH_NOTE=public_health_router_intercepts_health_meta_before_authenticated_handler');
+          NODE
+
+      - name: Probe live Meta campaigns with Supabase stored credential
+        shell: bash
+        env:
+          NUVANX_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
+          REPORT_USER_ID: ${{ secrets.REPORT_USER_ID }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const base = 'https://ssvvuuysgxyqvmovrlvk.supabase.co';
+          const authKey = String(process.env.NUVANX_SUPABASE_SERVICE_ROLE_KEY || '');
+          const reportUserId = String(process.env.REPORT_USER_ID || '');
+          if (!authKey || !reportUserId) {
+            console.error('META_RUNTIME_CAMPAIGNS_STATUS=UNVERIFIABLE_MISSING_INTERNAL_AUTH');
+            process.exit(8);
           }
-          console.log('META_RUNTIME_HEALTH_STATUS=OK');
+          const response = await fetch(`${base}/functions/v1/api/meta/campaigns?from=2026-08-13&to=2026-08-20`, {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${authKey}`,
+              'x-user-id': reportUserId,
+              Accept: 'application/json',
+            },
+            signal: AbortSignal.timeout(45000),
+          });
+          const text = await response.text();
+          let payload = null;
+          try { payload = JSON.parse(text); } catch {}
+          const campaigns = Array.isArray(payload?.campaigns) ? payload.campaigns : [];
+          const safe = payload && typeof payload === 'object' ? {
+            success: payload.success,
+            source: payload.source ?? null,
+            cached: payload.cached ?? null,
+            accountId: payload.accountId ?? null,
+            accountIds: payload.accountIds ?? null,
+            currency: payload.currency ?? null,
+            campaignCount: campaigns.length,
+            warning: payload.warning ?? null,
+            message: payload.message ?? null,
+            metaApiError: payload.metaApiError ?? null,
+          } : { body: text.slice(0, 500) };
+          console.log(`META_RUNTIME_CAMPAIGNS_HTTP=${response.status}`);
+          console.log(`META_RUNTIME_CAMPAIGNS_SAFE=${JSON.stringify(safe)}`);
+          if (!response.ok || payload?.success === false) {
+            console.error('META_RUNTIME_CAMPAIGNS_STATUS=FAILED');
+            process.exit(9);
+          }
+          if (payload?.source === 'live') {
+            console.log('META_RUNTIME_CAMPAIGNS_STATUS=LIVE_META_CONFIRMED');
+          } else {
+            console.log(`META_RUNTIME_CAMPAIGNS_STATUS=NON_LIVE_SOURCE:${String(payload?.source ?? 'unknown')}`);
+          }
           NODE
