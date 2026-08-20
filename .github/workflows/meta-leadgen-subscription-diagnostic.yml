@@ -1,0 +1,47 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
+name: Meta Leadgen Subscription Diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  subscribed-apps-read-only:
+    name: Read-only · Page leadgen subscription
+    if: ${{ github.head_ref == 'diagnostic/meta-leadgen-subscription-20260820' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Unit-test diagnostic transport
+        run: node scripts/verify-meta-leadgen-subscription.test.js
+
+      - name: Validate read-only credentials are available
+        shell: bash
+        env:
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${META_ACCESS_TOKEN:-}" ]; then
+            echo '::error::META_ACCESS_TOKEN secret is unavailable to this PR workflow.'
+            exit 2
+          fi
+
+      - name: Inspect Page subscribed_apps for leadgen
+        env:
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
+          META_PAGE_ID: '685010274687129'
+          META_GRAPH_VERSION: 'v22.0'
+        run: node scripts/verify-meta-leadgen-subscription.js
