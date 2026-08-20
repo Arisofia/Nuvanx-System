@@ -26,7 +26,7 @@ jobs:
         run: |
           set -euo pipefail
           node <<'NODE'
-          const crypto = require('node:crypto');
+          const crypto = await import('node:crypto');
 
           const graphVersion = 'v22.0';
           const systemUserId = '61569256954284';
