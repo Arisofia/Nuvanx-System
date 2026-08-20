@@ -130,7 +130,7 @@ BEGIN
   -- is NOT treated as a purchase; closed_won requires verified revenue > 0.
   IF p_stage_key = 'appointment_scheduled' AND v_lead.appointment_date IS NULL THEN
     RETURN false;
-  ELSIF p_stage_key = 'qualified' AND v_lead.stage::text <> 'convertido' THEN
+  ELSIF p_stage_key = 'qualified' AND v_lead.stage::text IS DISTINCT FROM 'convertido' THEN
     RETURN false;
   ELSIF p_stage_key = 'closed_won' AND COALESCE(v_lead.verified_revenue, 0) <= 0 THEN
     RETURN false;
@@ -190,9 +190,18 @@ SECURITY DEFINER
 SET search_path = 'public', 'pg_catalog'
 AS $$
 BEGIN
-  IF NEW.lead_id IS NOT NULL
-     AND NULLIF(trim(NEW.leadgen_id), '') IS NOT NULL
-     AND (TG_OP = 'INSERT' OR OLD.lead_id IS DISTINCT FROM NEW.lead_id) THEN
+  IF NEW.lead_id IS NULL OR NULLIF(trim(NEW.leadgen_id), '') IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  IF TG_OP = 'INSERT' THEN
+    PERFORM public.nvx_enqueue_meta_crm_stage(
+      NEW.lead_id,
+      'lead',
+      COALESCE(NEW.captured_at, now()),
+      'meta_attribution_linked'
+    );
+  ELSIF OLD.lead_id IS DISTINCT FROM NEW.lead_id THEN
     PERFORM public.nvx_enqueue_meta_crm_stage(
       NEW.lead_id,
       'lead',
@@ -200,6 +209,7 @@ BEGIN
       'meta_attribution_linked'
     );
   END IF;
+
   RETURN NEW;
 END;
 $$;
