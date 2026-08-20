@@ -1,0 +1,199 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
+name: Meta Leadgen E2E Test Once
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  meta-leadgen-e2e:
+    name: E2E · Meta test lead → Supabase lineage
+    if: ${{ github.head_ref == 'diagnostic/meta-leadgen-subscription-20260820' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Create one Meta test lead and prove ingestion
+        env:
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
+          NUVANX_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const crypto = await import('node:crypto');
+
+          const graphVersion = 'v22.0';
+          const systemUserId = '61569256954284';
+          const pageId = '685010274687129';
+          const supabaseBase = 'https://ssvvuuysgxyqvmovrlvk.supabase.co';
+          const systemUserToken = String(process.env.META_ACCESS_TOKEN || '').trim();
+          const appSecret = String(process.env.META_APP_SECRET || '').trim();
+          const serviceKey = String(process.env.NUVANX_SUPABASE_SERVICE_ROLE_KEY || '').trim();
+
+          if (!systemUserToken || !appSecret || !serviceKey) {
+            console.error('META_E2E_STATUS=ABORT_MISSING_REQUIRED_SECRET');
+            process.exit(2);
+          }
+
+          const proof = (token) => crypto.createHmac('sha256', appSecret).update(token).digest('hex');
+
+          async function readJson(response) {
+            const text = await response.text();
+            let payload = null;
+            try { payload = JSON.parse(text); } catch {}
+            if (!response.ok || payload?.error) {
+              const e = payload?.error || {};
+              const message = String(e.message || text || `HTTP ${response.status}`).replace(/[A-Za-z0-9_-]{32,}/g, '[masked]');
+              const err = new Error(message);
+              err.status = response.status;
+              err.code = e.code ?? null;
+              throw err;
+            }
+            return payload ?? {};
+          }
+
+          async function graphGet(path, params, token) {
+            const url = new URL(`https://graph.facebook.com/${graphVersion}${path}`);
+            for (const [key, value] of Object.entries(params || {})) url.searchParams.set(key, value);
+            url.searchParams.set('access_token', token);
+            url.searchParams.set('appsecret_proof', proof(token));
+            return readJson(await fetch(url, { method: 'GET', headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(20000) }));
+          }
+
+          async function graphPostForm(path, params, token) {
+            const url = new URL(`https://graph.facebook.com/${graphVersion}${path}`);
+            url.searchParams.set('access_token', token);
+            url.searchParams.set('appsecret_proof', proof(token));
+            const body = new URLSearchParams(params || {});
+            return readJson(await fetch(url, {
+              method: 'POST',
+              headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
+              body,
+              signal: AbortSignal.timeout(20000),
+            }));
+          }
+
+          async function resolvePageToken() {
+            const payload = await graphGet(`/${systemUserId}/accounts`, { fields: 'id,name,access_token' }, systemUserToken);
+            const page = (Array.isArray(payload.data) ? payload.data : []).find((item) => String(item?.id || '') === pageId);
+            const token = String(page?.access_token || '').trim();
+            if (!token) throw new Error('Target Page access token was not resolved.');
+            return token;
+          }
+
+          async function supabaseRows(table, query) {
+            const url = new URL(`${supabaseBase}/rest/v1/${table}`);
+            for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
+            const response = await fetch(url, {
+              method: 'GET',
+              headers: {
+                Authorization: `Bearer ${serviceKey}`,
+                apikey: serviceKey,
+                Accept: 'application/json',
+              },
+              signal: AbortSignal.timeout(15000),
+            });
+            return readJson(response);
+          }
+
+          try {
+            const pageToken = await resolvePageToken();
+            console.log('META_E2E_PAGE_TOKEN_RESOLVED=true');
+
+            const subscription = await graphGet(`/${pageId}/subscribed_apps`, { fields: 'id,name,subscribed_fields' }, pageToken);
+            const subscribed = Array.isArray(subscription.data) && subscription.data.some((app) => Array.isArray(app?.subscribed_fields) && app.subscribed_fields.includes('leadgen'));
+            console.log(`META_E2E_LEADGEN_SUBSCRIBED=${subscribed}`);
+            if (!subscribed) throw new Error('Page is not subscribed to leadgen; refusing to create test lead.');
+
+            const formsPayload = await graphGet(`/${pageId}/leadgen_forms`, { fields: 'id,name,status,created_time,locale', limit: '100' }, pageToken);
+            const forms = (Array.isArray(formsPayload.data) ? formsPayload.data : [])
+              .filter((form) => String(form?.status || '').toUpperCase() === 'ACTIVE')
+              .sort((a, b) => String(b?.created_time || '').localeCompare(String(a?.created_time || '')));
+            console.log(`META_E2E_ACTIVE_FORMS=${forms.length}`);
+            if (forms.length === 0) throw new Error('No ACTIVE Meta leadgen form found.');
+
+            let selected = null;
+            for (const form of forms) {
+              const existing = await graphGet(`/${form.id}/test_leads`, { fields: 'id,created_time', limit: '10' }, pageToken);
+              const count = Array.isArray(existing.data) ? existing.data.length : 0;
+              console.log(`META_E2E_FORM_CANDIDATE id=${form.id} name=${JSON.stringify(String(form.name || ''))} existing_test_leads=${count}`);
+              if (count === 0) {
+                selected = form;
+                break;
+              }
+            }
+            if (!selected) throw new Error('Every ACTIVE form already has a Meta test lead; refusing to delete existing tests automatically.');
+
+            const marker = `qa.meta.e2e.${Date.now()}@nuvanx.com`;
+            const fieldData = JSON.stringify([
+              { name: 'full_name', values: ['NUVANX QA Meta E2E'] },
+              { name: 'email', values: [marker] },
+            ]);
+
+            const created = await graphPostForm(`/${selected.id}/test_leads`, { field_data: fieldData }, pageToken);
+            const leadgenId = String(created?.id || '').trim();
+            if (!leadgenId) throw new Error('Meta did not return a test lead id.');
+
+            console.log(`META_E2E_FORM_ID=${selected.id}`);
+            console.log(`META_E2E_FORM_NAME=${JSON.stringify(String(selected.name || ''))}`);
+            console.log(`META_E2E_TEST_EMAIL=${marker}`);
+            console.log(`META_E2E_LEADGEN_ID=${leadgenId}`);
+            console.log('META_E2E_TEST_LEAD_CREATED=true');
+
+            let attribution = null;
+            let lead = null;
+            for (let attempt = 1; attempt <= 15; attempt += 1) {
+              const attrRows = await supabaseRows('meta_attribution', {
+                leadgen_id: `eq.${leadgenId}`,
+                select: 'lead_id,leadgen_id,page_id,form_id,campaign_id,ad_id,captured_at',
+                limit: '1',
+              });
+              if (Array.isArray(attrRows) && attrRows.length === 1) {
+                attribution = attrRows[0];
+                const leadRows = await supabaseRows('leads', {
+                  id: `eq.${attribution.lead_id}`,
+                  select: 'id,external_id,email,source,created_at,form_id,meta_form_id,campaign_id,ad_id',
+                  limit: '1',
+                });
+                if (Array.isArray(leadRows) && leadRows.length === 1) {
+                  lead = leadRows[0];
+                  break;
+                }
+              }
+              console.log(`META_E2E_POLL_ATTEMPT=${attempt}`);
+              await new Promise((resolve) => setTimeout(resolve, 3000));
+            }
+
+            if (!attribution || !lead) {
+              console.error('META_E2E_STATUS=FAILED_NO_SUPABASE_LINEAGE');
+              process.exit(10);
+            }
+
+            const lineageOk = String(attribution.leadgen_id) === leadgenId
+              && String(lead.external_id) === leadgenId
+              && String(attribution.lead_id) === String(lead.id)
+              && String(lead.source) === 'meta_leadgen';
+
+            console.log(`META_E2E_ATTRIBUTION_LEAD_ID=${attribution.lead_id}`);
+            console.log(`META_E2E_ATTRIBUTION_CAPTURED_AT=${attribution.captured_at}`);
+            console.log(`META_E2E_DB_EXTERNAL_ID=${lead.external_id}`);
+            console.log(`META_E2E_DB_SOURCE=${lead.source}`);
+            console.log(`META_E2E_DB_EMAIL_MATCH=${String(lead.email || '') === marker}`);
+            console.log(`META_E2E_LINEAGE_MATCH=${lineageOk}`);
+
+            if (!lineageOk) {
+              console.error('META_E2E_STATUS=FAILED_LINEAGE_MISMATCH');
+              process.exit(11);
+            }
+            console.log('META_E2E_STATUS=SUCCESS');
+          } catch (error) {
+            console.error(`META_E2E_STATUS=ABORTED code=${error?.code ?? 'unknown'} status=${error?.status ?? 'unknown'}`);
+            console.error(`META_E2E_ERROR=${String(error?.message || error).replace(/[A-Za-z0-9_-]{32,}/g, '[masked]')}`);
+            process.exit(12);
+          }
+          NODE
