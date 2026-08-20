@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
+name: Meta Verify Token Presence Diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  verify-token-presence:
+    if: ${{ github.head_ref == 'diagnostic/meta-leadgen-subscription-20260820' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Report secret presence without values
+        env:
+          META_WEBHOOK_VERIFY_TOKEN: ${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}
+          META_VERIFY_TOKEN: ${{ secrets.META_VERIFY_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${META_WEBHOOK_VERIFY_TOKEN:-}" ]; then
+            echo 'META_WEBHOOK_VERIFY_TOKEN_STATUS=PRESENT'
+          else
+            echo 'META_WEBHOOK_VERIFY_TOKEN_STATUS=MISSING'
+          fi
+          if [ -n "${META_VERIFY_TOKEN:-}" ]; then
+            echo 'META_VERIFY_TOKEN_STATUS=PRESENT'
+          else
+            echo 'META_VERIFY_TOKEN_STATUS=MISSING'
+          fi
