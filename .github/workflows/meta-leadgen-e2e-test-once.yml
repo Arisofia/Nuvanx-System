@@ -11,12 +11,12 @@ permissions:
 
 jobs:
   meta-leadgen-e2e:
-    name: E2E · Meta test lead → Supabase lineage
+    name: E2E · existing Meta test lead → signed webhook → Supabase
     if: ${{ github.head_ref == 'diagnostic/meta-leadgen-subscription-20260820' }}
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - name: Create one Meta test lead and prove ingestion
+      - name: Replay one existing Meta test lead and prove exact lineage
         env:
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
           META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
@@ -30,52 +30,43 @@ jobs:
           const graphVersion = 'v22.0';
           const systemUserId = '61569256954284';
           const pageId = '685010274687129';
+          const callbackUrl = 'https://ssvvuuysgxyqvmovrlvk.supabase.co/functions/v1/api/webhooks/meta';
           const supabaseBase = 'https://ssvvuuysgxyqvmovrlvk.supabase.co';
           const systemUserToken = String(process.env.META_ACCESS_TOKEN || '').trim();
           const appSecret = String(process.env.META_APP_SECRET || '').trim();
           const serviceKey = String(process.env.NUVANX_SUPABASE_SERVICE_ROLE_KEY || '').trim();
 
           if (!systemUserToken || !appSecret || !serviceKey) {
-            console.error('META_E2E_STATUS=ABORT_MISSING_REQUIRED_SECRET');
+            console.error('META_REPLAY_STATUS=ABORT_MISSING_REQUIRED_SECRET');
             process.exit(2);
           }
 
-          const proof = (token) => crypto.createHmac('sha256', appSecret).update(token).digest('hex');
+          const appSecretProof = (token) => crypto.createHmac('sha256', appSecret).update(token).digest('hex');
 
-          async function readJson(response) {
+          async function parseResponse(response) {
             const text = await response.text();
             let payload = null;
             try { payload = JSON.parse(text); } catch {}
             if (!response.ok || payload?.error) {
               const e = payload?.error || {};
-              const message = String(e.message || text || `HTTP ${response.status}`).replace(/[A-Za-z0-9_-]{32,}/g, '[masked]');
-              const err = new Error(message);
+              const err = new Error(String(e.message || text || `HTTP ${response.status}`).replace(/[A-Za-z0-9_-]{32,}/g, '[masked]'));
               err.status = response.status;
               err.code = e.code ?? null;
               throw err;
             }
-            return payload ?? {};
+            return { payload: payload ?? {}, text, status: response.status };
           }
 
           async function graphGet(path, params, token) {
             const url = new URL(`https://graph.facebook.com/${graphVersion}${path}`);
-            for (const [key, value] of Object.entries(params || {})) url.searchParams.set(key, value);
+            for (const [key, value] of Object.entries(params || {})) url.searchParams.set(key, String(value));
             url.searchParams.set('access_token', token);
-            url.searchParams.set('appsecret_proof', proof(token));
-            return readJson(await fetch(url, { method: 'GET', headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(20000) }));
-          }
-
-          async function graphPostForm(path, params, token) {
-            const url = new URL(`https://graph.facebook.com/${graphVersion}${path}`);
-            url.searchParams.set('access_token', token);
-            url.searchParams.set('appsecret_proof', proof(token));
-            const body = new URLSearchParams(params || {});
-            return readJson(await fetch(url, {
-              method: 'POST',
-              headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
-              body,
+            url.searchParams.set('appsecret_proof', appSecretProof(token));
+            return (await parseResponse(await fetch(url, {
+              method: 'GET',
+              headers: { Accept: 'application/json' },
               signal: AbortSignal.timeout(20000),
-            }));
+            }))).payload;
           }
 
           async function resolvePageToken() {
@@ -86,112 +77,143 @@ jobs:
             return token;
           }
 
-          async function supabaseRows(table, query) {
+          async function restRows(table, query) {
             const url = new URL(`${supabaseBase}/rest/v1/${table}`);
-            for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
+            for (const [key, value] of Object.entries(query || {})) url.searchParams.set(key, String(value));
             const response = await fetch(url, {
               method: 'GET',
+              headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey, Accept: 'application/json' },
+              signal: AbortSignal.timeout(15000),
+            });
+            return (await parseResponse(response)).payload;
+          }
+
+          async function restDelete(table, query) {
+            const url = new URL(`${supabaseBase}/rest/v1/${table}`);
+            for (const [key, value] of Object.entries(query || {})) url.searchParams.set(key, String(value));
+            const response = await fetch(url, {
+              method: 'DELETE',
               headers: {
                 Authorization: `Bearer ${serviceKey}`,
                 apikey: serviceKey,
+                Prefer: 'return=representation',
                 Accept: 'application/json',
               },
               signal: AbortSignal.timeout(15000),
             });
-            return readJson(response);
+            return (await parseResponse(response)).payload;
           }
 
-          function fieldValue(lead, fieldName) {
-            const fields = Array.isArray(lead?.field_data) ? lead.field_data : [];
-            const item = fields.find((field) => String(field?.name || '') === fieldName);
-            return Array.isArray(item?.values) ? String(item.values[0] || '') : '';
+          async function postSignedWebhook(rawBody) {
+            const signature = 'sha256=' + crypto.createHmac('sha256', appSecret).update(rawBody).digest('hex');
+            const response = await fetch(callbackUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Hub-Signature-256': signature,
+              },
+              body: rawBody,
+              signal: AbortSignal.timeout(30000),
+            });
+            const text = await response.text();
+            console.log(`META_REPLAY_WEBHOOK_HTTP=${response.status}`);
+            console.log(`META_REPLAY_WEBHOOK_BODY=${JSON.stringify(text.slice(0, 300))}`);
+            if (!response.ok) throw Object.assign(new Error(`Webhook returned HTTP ${response.status}`), { status: response.status });
           }
 
           try {
             const pageToken = await resolvePageToken();
-            console.log('META_E2E_PAGE_TOKEN_RESOLVED=true');
+            console.log('META_REPLAY_PAGE_TOKEN_RESOLVED=true');
 
-            const subscription = await graphGet(`/${pageId}/subscribed_apps`, { fields: 'id,name,subscribed_fields' }, pageToken);
-            const subscribed = Array.isArray(subscription.data) && subscription.data.some((app) => Array.isArray(app?.subscribed_fields) && app.subscribed_fields.includes('leadgen'));
-            console.log(`META_E2E_LEADGEN_SUBSCRIBED=${subscribed}`);
-            if (!subscribed) throw new Error('Page is not subscribed to leadgen; refusing to create test lead.');
+            const subscribed = await graphGet(`/${pageId}/subscribed_apps`, { fields: 'id,name,subscribed_fields' }, pageToken);
+            const leadgenOk = Array.isArray(subscribed.data) && subscribed.data.some((app) => Array.isArray(app?.subscribed_fields) && app.subscribed_fields.includes('leadgen'));
+            console.log(`META_REPLAY_LEADGEN_SUBSCRIBED=${leadgenOk}`);
+            if (!leadgenOk) throw new Error('Page lost leadgen subscription; refusing replay.');
 
-            const formsPayload = await graphGet(`/${pageId}/leadgen_forms`, { fields: 'id,name,status,created_time,locale', limit: '100' }, pageToken);
-            const forms = (Array.isArray(formsPayload.data) ? formsPayload.data : [])
-              .filter((form) => String(form?.status || '').toUpperCase() === 'ACTIVE')
-              .sort((a, b) => String(b?.created_time || '').localeCompare(String(a?.created_time || '')));
-            console.log(`META_E2E_ACTIVE_FORMS=${forms.length}`);
-            if (forms.length === 0) throw new Error('No ACTIVE Meta leadgen form found.');
+            const formsPayload = await graphGet(`/${pageId}/leadgen_forms`, { fields: 'id,name,status,created_time', limit: '100' }, pageToken);
+            const forms = Array.isArray(formsPayload.data) ? formsPayload.data : [];
+            console.log(`META_REPLAY_FORMS_SCANNED=${forms.length}`);
 
-            const emptyForms = [];
+            const candidates = [];
             for (const form of forms) {
-              const existing = await graphGet(`/${form.id}/test_leads`, { fields: 'id,created_time,field_data', limit: '10' }, pageToken);
-              const count = Array.isArray(existing.data) ? existing.data.length : 0;
-              console.log(`META_E2E_FORM_CANDIDATE id=${form.id} name=${JSON.stringify(String(form.name || ''))} existing_test_leads=${count}`);
-              if (count === 0) emptyForms.push(form);
-              if (emptyForms.length >= 3) break;
-            }
-            if (emptyForms.length === 0) throw new Error('Every ACTIVE form checked already has a Meta test lead; refusing to delete existing tests automatically.');
-
-            const marker = `qa.meta.e2e.${Date.now()}@nuvanx.com`;
-            const fieldData = JSON.stringify([
-              { name: 'full_name', values: ['NUVANX QA Meta E2E'] },
-              { name: 'email', values: [marker] },
-            ]);
-
-            let selected = null;
-            let leadgenId = '';
-            let lastCreateError = null;
-
-            for (const form of emptyForms) {
-              for (let attempt = 1; attempt <= 3; attempt += 1) {
-                try {
-                  const created = await graphPostForm(`/${form.id}/test_leads`, { field_data: fieldData }, pageToken);
-                  leadgenId = String(created?.id || '').trim();
-                  if (!leadgenId) throw new Error('Meta did not return a test lead id.');
-                  selected = form;
-                  break;
-                } catch (error) {
-                  lastCreateError = error;
-                  console.log(`META_E2E_CREATE_RETRY form=${form.id} attempt=${attempt} code=${error?.code ?? 'unknown'} status=${error?.status ?? 'unknown'}`);
-                  const afterError = await graphGet(`/${form.id}/test_leads`, { fields: 'id,created_time,field_data', limit: '10' }, pageToken);
-                  const recovered = (Array.isArray(afterError.data) ? afterError.data : []).find((lead) => fieldValue(lead, 'email') === marker);
-                  if (recovered?.id) {
-                    leadgenId = String(recovered.id);
-                    selected = form;
-                    console.log('META_E2E_CREATE_RECOVERED_AFTER_ERROR=true');
-                    break;
-                  }
-                  if (Number(error?.code) !== 2 || attempt === 3) break;
-                  await new Promise((resolve) => setTimeout(resolve, 3000 * attempt));
-                }
+              let testPayload;
+              try {
+                testPayload = await graphGet(`/${form.id}/test_leads`, { fields: 'id,created_time,field_data', limit: '10' }, pageToken);
+              } catch (error) {
+                console.log(`META_REPLAY_TEST_LEADS_READ_ERROR form=${form.id} code=${error?.code ?? 'unknown'} status=${error?.status ?? 'unknown'}`);
+                continue;
               }
-              if (leadgenId) break;
+              const tests = Array.isArray(testPayload.data) ? testPayload.data : [];
+              console.log(`META_REPLAY_FORM id=${form.id} test_leads=${tests.length}`);
+              for (const test of tests) {
+                const id = String(test?.id || '').trim();
+                if (!id) continue;
+                let graphLead;
+                try {
+                  graphLead = await graphGet(`/${id}`, {
+                    fields: 'field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,campaign_name,adset_id,adset_name,page_id,is_organic,platform',
+                  }, pageToken);
+                } catch (error) {
+                  console.log(`META_REPLAY_TEST_LEAD_UNREADABLE id=${id} code=${error?.code ?? 'unknown'} status=${error?.status ?? 'unknown'}`);
+                  continue;
+                }
+                const existing = await restRows('meta_attribution', { leadgen_id: `eq.${id}`, select: 'lead_id,leadgen_id,captured_at', limit: '1' });
+                candidates.push({
+                  id,
+                  formId: String(graphLead?.form_id || form.id),
+                  createdTime: String(graphLead?.created_time || test?.created_time || ''),
+                  alreadyInDb: Array.isArray(existing) && existing.length > 0,
+                });
+              }
             }
 
-            if (!selected || !leadgenId) {
-              throw lastCreateError || new Error('Meta test lead creation failed on all safe candidate forms.');
+            console.log(`META_REPLAY_EXISTING_TEST_LEADS=${candidates.length}`);
+            if (candidates.length === 0) {
+              console.log('META_REPLAY_STATUS=UNVERIFIABLE_NO_EXISTING_TEST_LEAD');
+              process.exit(20);
             }
 
-            console.log(`META_E2E_FORM_ID=${selected.id}`);
-            console.log(`META_E2E_FORM_NAME=${JSON.stringify(String(selected.name || ''))}`);
-            console.log(`META_E2E_TEST_EMAIL=${marker}`);
-            console.log(`META_E2E_LEADGEN_ID=${leadgenId}`);
-            console.log('META_E2E_TEST_LEAD_CREATED=true');
+            candidates.sort((a, b) => Number(a.alreadyInDb) - Number(b.alreadyInDb));
+            const chosen = candidates[0];
+            console.log(`META_REPLAY_SELECTED_LEADGEN_ID=${chosen.id}`);
+            console.log(`META_REPLAY_SELECTED_FORM_ID=${chosen.formId}`);
+            console.log(`META_REPLAY_SELECTED_PREEXISTED_IN_DB=${chosen.alreadyInDb}`);
+
+            const beforeAttr = await restRows('meta_attribution', { leadgen_id: `eq.${chosen.id}`, select: 'lead_id,leadgen_id,captured_at', limit: '1' });
+            const beforeLeadId = Array.isArray(beforeAttr) && beforeAttr[0]?.lead_id ? String(beforeAttr[0].lead_id) : '';
+
+            const webhookPayload = {
+              object: 'page',
+              entry: [{
+                id: pageId,
+                time: Math.floor(Date.now() / 1000),
+                changes: [{
+                  field: 'leadgen',
+                  value: {
+                    leadgen_id: chosen.id,
+                    page_id: pageId,
+                    form_id: chosen.formId,
+                    created_time: chosen.createdTime || undefined,
+                  },
+                }],
+              }],
+            };
+            const rawBody = JSON.stringify(webhookPayload);
+            await postSignedWebhook(rawBody);
 
             let attribution = null;
             let lead = null;
-            for (let attempt = 1; attempt <= 15; attempt += 1) {
-              const attrRows = await supabaseRows('meta_attribution', {
-                leadgen_id: `eq.${leadgenId}`,
+            for (let attempt = 1; attempt <= 12; attempt += 1) {
+              const attrRows = await restRows('meta_attribution', {
+                leadgen_id: `eq.${chosen.id}`,
                 select: 'lead_id,leadgen_id,page_id,form_id,campaign_id,ad_id,captured_at',
                 limit: '1',
               });
               if (Array.isArray(attrRows) && attrRows.length === 1) {
                 attribution = attrRows[0];
-                const leadRows = await supabaseRows('leads', {
+                const leadRows = await restRows('leads', {
                   id: `eq.${attribution.lead_id}`,
-                  select: 'id,external_id,email,source,created_at,form_id,meta_form_id,campaign_id,ad_id',
+                  select: 'id,external_id,email,source,created_at,updated_at,form_id,meta_form_id,campaign_id,ad_id',
                   limit: '1',
                 });
                 if (Array.isArray(leadRows) && leadRows.length === 1) {
@@ -199,35 +221,52 @@ jobs:
                   break;
                 }
               }
-              console.log(`META_E2E_POLL_ATTEMPT=${attempt}`);
-              await new Promise((resolve) => setTimeout(resolve, 3000));
+              console.log(`META_REPLAY_POLL_ATTEMPT=${attempt}`);
+              await new Promise((resolve) => setTimeout(resolve, 2500));
             }
 
             if (!attribution || !lead) {
-              console.error('META_E2E_STATUS=FAILED_NO_SUPABASE_LINEAGE');
-              process.exit(10);
+              console.error('META_REPLAY_STATUS=FAILED_NO_SUPABASE_LINEAGE');
+              process.exit(21);
             }
 
-            const lineageOk = String(attribution.leadgen_id) === leadgenId
-              && String(lead.external_id) === leadgenId
+            const lineageOk = String(attribution.leadgen_id) === chosen.id
               && String(attribution.lead_id) === String(lead.id)
+              && String(lead.external_id) === chosen.id
               && String(lead.source) === 'meta_leadgen';
 
-            console.log(`META_E2E_ATTRIBUTION_LEAD_ID=${attribution.lead_id}`);
-            console.log(`META_E2E_ATTRIBUTION_CAPTURED_AT=${attribution.captured_at}`);
-            console.log(`META_E2E_DB_EXTERNAL_ID=${lead.external_id}`);
-            console.log(`META_E2E_DB_SOURCE=${lead.source}`);
-            console.log(`META_E2E_DB_EMAIL_MATCH=${String(lead.email || '') === marker}`);
-            console.log(`META_E2E_LINEAGE_MATCH=${lineageOk}`);
+            console.log(`META_REPLAY_ATTRIBUTION_LEAD_ID=${attribution.lead_id}`);
+            console.log(`META_REPLAY_ATTRIBUTION_CAPTURED_AT=${attribution.captured_at}`);
+            console.log(`META_REPLAY_LEAD_EXTERNAL_ID=${lead.external_id}`);
+            console.log(`META_REPLAY_LEAD_SOURCE=${lead.source}`);
+            console.log(`META_REPLAY_LINEAGE_MATCH=${lineageOk}`);
 
             if (!lineageOk) {
-              console.error('META_E2E_STATUS=FAILED_LINEAGE_MISMATCH');
-              process.exit(11);
+              console.error('META_REPLAY_STATUS=FAILED_LINEAGE_MISMATCH');
+              process.exit(22);
             }
-            console.log('META_E2E_STATUS=SUCCESS');
+
+            if (!chosen.alreadyInDb) {
+              const insertedLeadId = String(attribution.lead_id);
+              await restDelete('meta_attribution', { leadgen_id: `eq.${chosen.id}` });
+              await restDelete('leads', { id: `eq.${insertedLeadId}`, external_id: `eq.${chosen.id}`, source: 'eq.meta_leadgen' });
+              const remainingAttr = await restRows('meta_attribution', { leadgen_id: `eq.${chosen.id}`, select: 'leadgen_id', limit: '1' });
+              const remainingLead = await restRows('leads', { id: `eq.${insertedLeadId}`, select: 'id', limit: '1' });
+              const cleanupOk = Array.isArray(remainingAttr) && remainingAttr.length === 0 && Array.isArray(remainingLead) && remainingLead.length === 0;
+              console.log(`META_REPLAY_QA_DB_CLEANUP=${cleanupOk}`);
+              if (!cleanupOk) {
+                console.error('META_REPLAY_STATUS=FAILED_QA_CLEANUP');
+                process.exit(23);
+              }
+            } else {
+              console.log(`META_REPLAY_PREEXISTING_LEAD_ID_STABLE=${beforeLeadId === String(attribution.lead_id)}`);
+              console.log('META_REPLAY_QA_DB_CLEANUP=NOT_REQUIRED_PREEXISTING_ROW');
+            }
+
+            console.log('META_REPLAY_STATUS=SUCCESS');
           } catch (error) {
-            console.error(`META_E2E_STATUS=ABORTED code=${error?.code ?? 'unknown'} status=${error?.status ?? 'unknown'}`);
-            console.error(`META_E2E_ERROR=${String(error?.message || error).replace(/[A-Za-z0-9_-]{32,}/g, '[masked]')}`);
-            process.exit(12);
+            console.error(`META_REPLAY_STATUS=ABORTED code=${error?.code ?? 'unknown'} status=${error?.status ?? 'unknown'}`);
+            console.error(`META_REPLAY_ERROR=${String(error?.message || error).replace(/[A-Za-z0-9_-]{32,}/g, '[masked]')}`);
+            process.exit(24);
           }
           NODE
