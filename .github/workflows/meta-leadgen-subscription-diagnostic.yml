@@ -53,6 +53,71 @@ jobs:
           echo "META_LEADGEN_DIAGNOSTIC_EXIT=${rc}"
           exit 0
 
+      - name: Inspect app-level Page leadgen webhook
+        shell: bash
+        env:
+          META_APP_ID: ${{ secrets.META_APP_ID }}
+          META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
+        run: |
+          set +e
+          node <<'NODE'
+          const appId = String(process.env.META_APP_ID || '').trim();
+          const appSecret = String(process.env.META_APP_SECRET || '').trim();
+          const graphVersion = 'v22.0';
+          const expectedCallback = 'https://ssvvuuysgxyqvmovrlvk.supabase.co/functions/v1/api/webhooks/meta';
+          if (!appId || !appSecret) {
+            console.log('META_APP_WEBHOOK_STATUS=UNVERIFIABLE_MISSING_APP_CREDENTIALS');
+            process.exit(0);
+          }
+          const appAccessToken = `${appId}|${appSecret}`;
+          const url = new URL(`https://graph.facebook.com/${graphVersion}/${encodeURIComponent(appId)}/subscriptions`);
+          url.searchParams.set('access_token', appAccessToken);
+          const response = await fetch(url, {
+            method: 'GET',
+            headers: { Accept: 'application/json' },
+            signal: AbortSignal.timeout(20000),
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok || payload?.error) {
+            const error = payload?.error || {};
+            console.log(`META_APP_ID=${appId}`);
+            console.log(`META_APP_WEBHOOK_HTTP=${response.status}`);
+            console.log(`META_APP_WEBHOOK_STATUS=UNVERIFIABLE_GRAPH_ERROR code=${error.code ?? 'unknown'}`);
+            console.log(`META_APP_WEBHOOK_ERROR=${String(error.message || 'Graph error').replace(/[A-Za-z0-9_-]{32,}/g, '[masked]')}`);
+            process.exit(0);
+          }
+          const subscriptions = Array.isArray(payload?.data) ? payload.data : [];
+          const normalized = subscriptions.map((subscription) => ({
+            object: String(subscription?.object || ''),
+            callback_url: String(subscription?.callback_url || ''),
+            active: subscription?.active ?? null,
+            fields: Array.isArray(subscription?.fields)
+              ? subscription.fields.map((field) => typeof field === 'string' ? field : String(field?.name || '')).filter(Boolean)
+              : [],
+          }));
+          const pageSubscriptions = normalized.filter((subscription) => subscription.object === 'page');
+          const leadgenSubscriptions = pageSubscriptions.filter((subscription) => subscription.fields.includes('leadgen'));
+          const canonicalLeadgen = leadgenSubscriptions.find((subscription) => subscription.callback_url === expectedCallback) || null;
+          console.log(`META_APP_ID=${appId}`);
+          console.log(`META_APP_SUBSCRIPTIONS_COUNT=${normalized.length}`);
+          console.log(`META_APP_PAGE_SUBSCRIPTIONS_COUNT=${pageSubscriptions.length}`);
+          console.log(`META_APP_LEADGEN_SUBSCRIPTIONS_COUNT=${leadgenSubscriptions.length}`);
+          for (const subscription of pageSubscriptions) {
+            console.log(`META_APP_PAGE_WEBHOOK active=${subscription.active} callback=${JSON.stringify(subscription.callback_url)} fields=${subscription.fields.join(',') || 'none'}`);
+          }
+          console.log(`META_APP_EXPECTED_CALLBACK=${expectedCallback}`);
+          console.log(`META_APP_CANONICAL_LEADGEN_CALLBACK=${Boolean(canonicalLeadgen)}`);
+          if (pageSubscriptions.length === 0) {
+            console.log('META_APP_WEBHOOK_STATUS=MISSING_PAGE_WEBHOOK');
+          } else if (leadgenSubscriptions.length === 0) {
+            console.log('META_APP_WEBHOOK_STATUS=MISSING_LEADGEN_FIELD');
+          } else if (!canonicalLeadgen) {
+            console.log('META_APP_WEBHOOK_STATUS=LEADGEN_CALLBACK_MISMATCH');
+          } else {
+            console.log('META_APP_WEBHOOK_STATUS=OK');
+          }
+          NODE
+
       - name: Inspect live API Meta health routing
         shell: bash
         env:
