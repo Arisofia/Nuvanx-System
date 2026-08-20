@@ -101,6 +101,12 @@ jobs:
             return readJson(response);
           }
 
+          function fieldValue(lead, fieldName) {
+            const fields = Array.isArray(lead?.field_data) ? lead.field_data : [];
+            const item = fields.find((field) => String(field?.name || '') === fieldName);
+            return Array.isArray(item?.values) ? String(item.values[0] || '') : '';
+          }
+
           try {
             const pageToken = await resolvePageToken();
             console.log('META_E2E_PAGE_TOKEN_RESOLVED=true');
@@ -117,17 +123,15 @@ jobs:
             console.log(`META_E2E_ACTIVE_FORMS=${forms.length}`);
             if (forms.length === 0) throw new Error('No ACTIVE Meta leadgen form found.');
 
-            let selected = null;
+            const emptyForms = [];
             for (const form of forms) {
-              const existing = await graphGet(`/${form.id}/test_leads`, { fields: 'id,created_time', limit: '10' }, pageToken);
+              const existing = await graphGet(`/${form.id}/test_leads`, { fields: 'id,created_time,field_data', limit: '10' }, pageToken);
               const count = Array.isArray(existing.data) ? existing.data.length : 0;
               console.log(`META_E2E_FORM_CANDIDATE id=${form.id} name=${JSON.stringify(String(form.name || ''))} existing_test_leads=${count}`);
-              if (count === 0) {
-                selected = form;
-                break;
-              }
+              if (count === 0) emptyForms.push(form);
+              if (emptyForms.length >= 3) break;
             }
-            if (!selected) throw new Error('Every ACTIVE form already has a Meta test lead; refusing to delete existing tests automatically.');
+            if (emptyForms.length === 0) throw new Error('Every ACTIVE form checked already has a Meta test lead; refusing to delete existing tests automatically.');
 
             const marker = `qa.meta.e2e.${Date.now()}@nuvanx.com`;
             const fieldData = JSON.stringify([
@@ -135,9 +139,39 @@ jobs:
               { name: 'email', values: [marker] },
             ]);
 
-            const created = await graphPostForm(`/${selected.id}/test_leads`, { field_data: fieldData }, pageToken);
-            const leadgenId = String(created?.id || '').trim();
-            if (!leadgenId) throw new Error('Meta did not return a test lead id.');
+            let selected = null;
+            let leadgenId = '';
+            let lastCreateError = null;
+
+            for (const form of emptyForms) {
+              for (let attempt = 1; attempt <= 3; attempt += 1) {
+                try {
+                  const created = await graphPostForm(`/${form.id}/test_leads`, { field_data: fieldData }, pageToken);
+                  leadgenId = String(created?.id || '').trim();
+                  if (!leadgenId) throw new Error('Meta did not return a test lead id.');
+                  selected = form;
+                  break;
+                } catch (error) {
+                  lastCreateError = error;
+                  console.log(`META_E2E_CREATE_RETRY form=${form.id} attempt=${attempt} code=${error?.code ?? 'unknown'} status=${error?.status ?? 'unknown'}`);
+                  const afterError = await graphGet(`/${form.id}/test_leads`, { fields: 'id,created_time,field_data', limit: '10' }, pageToken);
+                  const recovered = (Array.isArray(afterError.data) ? afterError.data : []).find((lead) => fieldValue(lead, 'email') === marker);
+                  if (recovered?.id) {
+                    leadgenId = String(recovered.id);
+                    selected = form;
+                    console.log('META_E2E_CREATE_RECOVERED_AFTER_ERROR=true');
+                    break;
+                  }
+                  if (Number(error?.code) !== 2 || attempt === 3) break;
+                  await new Promise((resolve) => setTimeout(resolve, 3000 * attempt));
+                }
+              }
+              if (leadgenId) break;
+            }
+
+            if (!selected || !leadgenId) {
+              throw lastCreateError || new Error('Meta test lead creation failed on all safe candidate forms.');
+            }
 
             console.log(`META_E2E_FORM_ID=${selected.id}`);
             console.log(`META_E2E_FORM_NAME=${JSON.stringify(String(selected.name || ''))}`);
