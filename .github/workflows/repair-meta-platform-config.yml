@@ -1,0 +1,87 @@
+name: Repair Meta platform config once
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    if: github.head_ref == 'diagnostic/meta-leadgen-subscription-20260820'
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      SUPABASE_PROJECT_REF: ssvvuuysgxyqvmovrlvk
+      VERCEL_PROJECT_ID: prj_IAOBlV17HeS22KuEfsdkDrGMV9Ze
+      VERCEL_TEAM_ID: team_R0GOR4jvw1c1gnyBRWYu32O7
+      META_APP_ID_CANONICAL: '1451306619299617'
+      META_PIXEL_ID_CANONICAL: '1497940655079106'
+      META_PAGE_ID_CANONICAL: '685010274687129'
+      META_AD_ACCOUNT_IDS_CANONICAL: '9523446201036125,4172099716404860'
+      META_BUSINESS_ID_CANONICAL: '878822511043717'
+    steps:
+      - name: Validate repair credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "${SUPABASE_ACCESS_TOKEN:-}" ]] || { echo 'REPAIR_SUPABASE_CREDENTIAL=MISSING'; exit 11; }
+          [[ -n "${VERCEL_TOKEN:-}" ]] || { echo 'REPAIR_VERCEL_CREDENTIAL=MISSING'; exit 12; }
+          echo 'REPAIR_CREDENTIALS=PRESENT'
+
+      - name: Repair Supabase META_APP_ID
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload=$(jq -cn --arg value "$META_APP_ID_CANONICAL" '[{name:"META_APP_ID",value:$value}]')
+          code=$(curl -sS -o /tmp/supabase.json -w '%{http_code}' \
+            -X POST "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/secrets" \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            -H 'Content-Type: application/json' \
+            --data "$payload")
+          echo "SUPABASE_META_APP_ID_HTTP=${code}"
+          [[ "$code" =~ ^2 ]] || { jq -c '{message:(.message // .error // "management api error")}' /tmp/supabase.json 2>/dev/null || true; exit 21; }
+          echo 'SUPABASE_META_APP_ID_REPAIR=SUCCESS'
+
+      - name: Repair Vercel public Meta environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload=$(jq -cn \
+            --arg app "$META_APP_ID_CANONICAL" \
+            --arg pixel "$META_PIXEL_ID_CANONICAL" \
+            --arg page "$META_PAGE_ID_CANONICAL" \
+            --arg accounts "$META_AD_ACCOUNT_IDS_CANONICAL" \
+            --arg business "$META_BUSINESS_ID_CANONICAL" \
+            '[
+              {key:"VITE_META_APP_ID",value:$app,type:"encrypted",target:["production","preview","development"]},
+              {key:"VITE_META_PIXEL_ID",value:$pixel,type:"encrypted",target:["production","preview","development"]},
+              {key:"VITE_META_PAGE_ID",value:$page,type:"encrypted",target:["production","preview","development"]},
+              {key:"VITE_META_AD_ACCOUNT_IDS",value:$accounts,type:"encrypted",target:["production","preview","development"]},
+              {key:"VITE_META_BUSINESS_PORTFOLIO_NUVANX_ID",value:$business,type:"encrypted",target:["production","preview","development"]}
+            ]')
+          code=$(curl -sS -o /tmp/vercel-env.json -w '%{http_code}' \
+            -X POST "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?upsert=true&teamId=${VERCEL_TEAM_ID}" \
+            -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+            -H 'Content-Type: application/json' \
+            --data "$payload")
+          echo "VERCEL_ENV_HTTP=${code}"
+          [[ "$code" =~ ^2 ]] || { jq -c '{error:(.error.code // .error.message // "vercel env error")}' /tmp/vercel-env.json 2>/dev/null || true; exit 31; }
+          echo 'VERCEL_META_ENV_REPAIR=SUCCESS'
+
+      - name: Trigger clean Vercel main rebuild
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload=$(jq -cn '{name:"frontend",project:"prj_IAOBlV17HeS22KuEfsdkDrGMV9Ze",gitSource:{type:"github",org:"Arisofia",repo:"Nuvanx-System",ref:"main"}}')
+          code=$(curl -sS -o /tmp/vercel-deploy.json -w '%{http_code}' \
+            -X POST "https://api.vercel.com/v13/deployments?forceNew=1&teamId=${VERCEL_TEAM_ID}" \
+            -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+            -H 'Content-Type: application/json' \
+            --data "$payload")
+          echo "VERCEL_DEPLOY_HTTP=${code}"
+          [[ "$code" =~ ^2 ]] || { jq -c '{error:(.error.code // .error.message // "vercel deploy error")}' /tmp/vercel-deploy.json 2>/dev/null || true; exit 41; }
+          jq -r '"VERCEL_DEPLOYMENT_ID=" + (.id // "") + "\nVERCEL_DEPLOYMENT_URL=" + (.url // "")' /tmp/vercel-deploy.json
+          echo 'VERCEL_MAIN_REBUILD=REQUESTED'
