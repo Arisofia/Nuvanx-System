@@ -11,9 +11,10 @@ const tableBlock = migration.match(
 )?.[1] || '';
 
 describe('Meta CRM conversion outbox contract', () => {
-  it('is hold-only and contains no outbound Meta transport', () => {
+  it('is hold-only, unmapped and contains no outbound Meta transport', () => {
     expect(migration).toContain("status text NOT NULL DEFAULT 'held'");
-    expect(migration).toContain("'awaiting_events_manager_funnel_validation'");
+    expect(migration).toContain("mapping_status text NOT NULL DEFAULT 'unmapped'");
+    expect(migration).toContain("'awaiting_capi_v2_stage_mapping_validation'");
     expect(migration).not.toMatch(/graph\.facebook\.com/i);
     expect(migration).not.toMatch(/\bfetch\s*\(/i);
     expect(migration).not.toMatch(/\/functions\/v1\/web-events/i);
@@ -26,14 +27,18 @@ describe('Meta CRM conversion outbox contract', () => {
     expect(migration).toContain('UNIQUE (leadgen_id, stage_key)');
   });
 
-  it('keeps the proposed funnel semantics explicit', () => {
-    expect(migration).toContain("WHEN 'lead' THEN 'Lead'");
-    expect(migration).toContain("WHEN 'appointment_scheduled' THEN 'Schedule'");
-    expect(migration).toContain("WHEN 'qualified' THEN 'QualifiedLead'");
-    expect(migration).toContain("WHEN 'closed_won' THEN 'Purchase'");
+  it('keeps provider naming decoupled from NUVANX lifecycle semantics', () => {
+    expect(migration).toContain("CHECK (stage_key IN ('lead', 'appointment_scheduled', 'qualified', 'closed_won'))");
+    expect(migration).toContain('provider_event_name text');
+    expect(migration).toContain("mapping_status = 'unmapped' AND provider_event_name IS NULL");
+    expect(migration).toContain("'unmapped'");
+    expect(migration).not.toMatch(/proposed_event_name/i);
+    expect(migration).not.toMatch(/QualifiedLead/);
+    expect(migration).not.toMatch(/WHEN 'appointment_scheduled' THEN 'Schedule'/);
+    expect(migration).not.toMatch(/WHEN 'closed_won' THEN 'Purchase'/);
   });
 
-  it('never treats convertido alone as a purchase', () => {
+  it('never treats convertido alone as a sale', () => {
     expect(migration).toContain("p_stage_key = 'qualified' AND v_lead.stage::text IS DISTINCT FROM 'convertido'");
     expect(migration).toContain("p_stage_key = 'closed_won' AND COALESCE(v_lead.verified_revenue, 0) <= 0");
     expect(migration).toContain("'closed_won'");
