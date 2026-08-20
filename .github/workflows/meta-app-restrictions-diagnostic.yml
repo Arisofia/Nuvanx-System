@@ -1,0 +1,85 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
+name: Meta App Restrictions Diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  app-restrictions:
+    name: Read-only · app restrictions and roles
+    if: ${{ github.head_ref == 'diagnostic/meta-leadgen-subscription-20260820' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Inspect app restrictions and read-only edges
+        env:
+          META_APP_ID: ${{ secrets.META_APP_ID }}
+          META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const appId = String(process.env.META_APP_ID || '').trim();
+          const appSecret = String(process.env.META_APP_SECRET || '').trim();
+          if (!appId || !appSecret) process.exit(2);
+          const appToken = `${appId}|${appSecret}`;
+          const graphVersion = 'v22.0';
+
+          function sanitize(value, depth = 0) {
+            if (depth > 5) return '[max-depth]';
+            if (value == null || typeof value === 'boolean' || typeof value === 'number') return value;
+            if (typeof value === 'string') {
+              if (value.length > 80) return `[string:${value.length}]`;
+              return value.replace(/[A-Za-z0-9_-]{32,}/g, '[masked]');
+            }
+            if (Array.isArray(value)) return value.map((v) => sanitize(v, depth + 1));
+            if (typeof value === 'object') {
+              const out = {};
+              for (const [k, v] of Object.entries(value)) out[k] = sanitize(v, depth + 1);
+              return out;
+            }
+            return String(value);
+          }
+
+          async function get(path, params = {}) {
+            const url = new URL(`https://graph.facebook.com/${graphVersion}${path}`);
+            for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
+            url.searchParams.set('access_token', appToken);
+            const res = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(20000) });
+            const text = await res.text();
+            let body = {};
+            try { body = JSON.parse(text); } catch {}
+            if (!res.ok || body?.error) {
+              const e = body?.error || {};
+              throw new Error(`http=${res.status} code=${e.code ?? 'unknown'} subcode=${e.error_subcode ?? 'unknown'} message=${String(e.message || text || 'Graph error').replace(/[A-Za-z0-9_-]{32,}/g, '[masked]')}`);
+            }
+            return body;
+          }
+
+          async function probe(label, path, params = {}) {
+            try {
+              const body = await get(path, params);
+              console.log(`${label}_STATUS=OK`);
+              console.log(`${label}_RESULT=${JSON.stringify(sanitize(body))}`);
+            } catch (error) {
+              console.log(`${label}_STATUS=ERROR`);
+              console.log(`${label}_ERROR=${String(error.message || error)}`);
+            }
+          }
+
+          console.log(`META_APP_ID_PRESENT=${Boolean(appId)}`);
+          await probe('META_APP_CORE', `/${appId}`, {
+            fields: 'id,name,category,app_type,link,namespace,restrictions,protected_mode_rules,privacy_policy_url,terms_of_service_url,auth_dialog_data_help_url'
+          });
+          await probe('META_APP_RESTRICTIONS_ONLY', `/${appId}`, { fields: 'restrictions' });
+          await probe('META_APP_ROLES_EDGE', `/${appId}/roles`, { limit: '100' });
+          await probe('META_APP_PERMISSIONS_EDGE', `/${appId}/permissions`, { limit: '100' });
+          await probe('META_APP_REVIEWABLE_FEATURES_EDGE', `/${appId}/reviewable_features`, { limit: '100' });
+          await probe('META_APP_SUBSCRIPTIONS', `/${appId}/subscriptions`);
+          console.log('META_APP_RESTRICTIONS_DIAG_STATUS=COMPLETE_READ_ONLY');
+          NODE
