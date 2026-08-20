@@ -35,11 +35,11 @@ jobs:
           if (!token || !appId || !secret) process.exit(2);
           const proof = (value) => crypto.createHmac('sha256', secret).update(value).digest('hex');
 
-          async function get(path, params, accessToken) {
+          async function get(path, params, accessToken, withProof = true) {
             const url = new URL(`https://graph.facebook.com/${graphVersion}${path}`);
             for (const [key, value] of Object.entries(params || {})) url.searchParams.set(key, String(value));
             url.searchParams.set('access_token', accessToken);
-            url.searchParams.set('appsecret_proof', proof(accessToken));
+            if (withProof) url.searchParams.set('appsecret_proof', proof(accessToken));
             const response = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(20000) });
             const body = await response.json().catch(() => ({}));
             if (!response.ok || body?.error) {
@@ -56,9 +56,16 @@ jobs:
           const page = (Array.isArray(accounts.data) ? accounts.data : []).find((item) => String(item?.id || '') === pageId);
           const pageToken = String(page?.access_token || '').trim();
           if (!pageToken) throw new Error('Page token unavailable');
+          console.log(`META_PAGE_SYSTEM_USER_TASKS=${Array.isArray(page?.tasks) ? page.tasks.join(',') : 'none'}`);
 
-          const fields = ['has_lead_access','has_added_app','is_webhooks_subscribed','leadgen_tos_accepted'];
-          for (const field of fields) {
+          try {
+            const result = await get(`/${pageId}`, { fields: 'has_lead_access', user_id: systemUserId }, pageToken);
+            console.log(`META_PAGE_HAS_LEAD_ACCESS_FOR_SYSTEM_USER=${JSON.stringify(result?.has_lead_access ?? null)}`);
+          } catch (error) {
+            console.log(`META_PAGE_HAS_LEAD_ACCESS_FOR_SYSTEM_USER_ERROR code=${error?.code ?? 'unknown'} http=${error?.status ?? 'unknown'} message=${String(error?.message || error)}`);
+          }
+
+          for (const field of ['has_added_app','is_webhooks_subscribed','leadgen_tos_accepted','leadgen_tos_accepting_user']) {
             try {
               const result = await get(`/${pageId}`, { fields: field }, pageToken);
               console.log(`META_PAGE_${field.toUpperCase()}=${JSON.stringify(result?.[field] ?? null)}`);
@@ -67,14 +74,20 @@ jobs:
             }
           }
 
-          try {
-            const app = await get(`/${appId}`, { fields: 'id,name,app_type,owner_business,business,protected_mode_rules' }, `${appId}|${secret}`);
-            console.log(`META_APP_ID_MATCH=${String(app?.id || '') === appId}`);
-            console.log(`META_APP_NAME=${JSON.stringify(String(app?.name || ''))}`);
-            console.log(`META_APP_TYPE=${JSON.stringify(app?.app_type ?? null)}`);
-            console.log(`META_APP_OWNER_BUSINESS_ID=${JSON.stringify(String(app?.owner_business?.id || app?.business?.id || ''))}`);
-            console.log(`META_APP_PROTECTED_MODE_RULES_PRESENT=${Boolean(app?.protected_mode_rules)}`);
-          } catch (error) {
-            console.log(`META_APP_MODE_FIELDS_ERROR code=${error?.code ?? 'unknown'} http=${error?.status ?? 'unknown'} message=${String(error?.message || error)}`);
+          const appAccessToken = `${appId}|${secret}`;
+          for (const field of ['id','name','app_type','business','protected_mode_rules','restrictions']) {
+            try {
+              const result = await get(`/${appId}`, { fields: field }, appAccessToken, false);
+              const value = result?.[field];
+              if (field === 'business') {
+                console.log(`META_APP_BUSINESS_ID=${JSON.stringify(String(value?.id || ''))}`);
+              } else if (field === 'protected_mode_rules' || field === 'restrictions') {
+                console.log(`META_APP_${field.toUpperCase()}_PRESENT=${Boolean(value && (typeof value !== 'object' || Object.keys(value).length > 0))}`);
+              } else {
+                console.log(`META_APP_${field.toUpperCase()}=${JSON.stringify(value ?? null)}`);
+              }
+            } catch (error) {
+              console.log(`META_APP_${field.toUpperCase()}_ERROR code=${error?.code ?? 'unknown'} http=${error?.status ?? 'unknown'} message=${String(error?.message || error)}`);
+            }
           }
           NODE
