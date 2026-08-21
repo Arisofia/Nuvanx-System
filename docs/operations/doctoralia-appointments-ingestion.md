@@ -7,7 +7,7 @@ Use this runbook to load the canonical NUVANX Doctoralia appointments sheet into
 Canonical source:
 
 ```text
-Base Pacientes Nuvanx > Doctoralia
+Base Pacientes Nuvanx > Base Completa Doctoralia
 ```
 
 Doctoralia `ID` is a patient/client code, not an appointment identifier. The loader therefore writes appointment-level keys using row/date/time/patient-code/phone/treatment so repeated visits for the same Doctoralia patient are preserved.
@@ -72,9 +72,15 @@ Do **not** commit `.env.local` or any Supabase service-role key. The service-rol
 
 ## Accepted Columns
 
-The parser accepts richer operational Google Sheets headers used by NUVANX, including:
+The parser accepts both the canonical raw export headers from Base Completa Doctoralia and the derived compatibility headers from Doctoralia. The canonical raw export includes:
 
 ```text
+Nº Historia, Paciente, Teléfono paciente, Estado, Fecha, Hora,
+Fecha creación, Concepto cita, Agenda, Sala/Box, Confirmada,
+Procedencia, Importe
+
+The derived Doctoralia compatibility tab keeps its original headers:
+
 Estado, Fecha, Hora, Fecha creación, Hora creación, Asunto, Agenda,
 Sala/Box, Confirmada, Procedencia, Importe, Fecha para normalizar,
 ID, Nombre, Teléfono, Tratamiento, Día, Mes, Año, Clínica

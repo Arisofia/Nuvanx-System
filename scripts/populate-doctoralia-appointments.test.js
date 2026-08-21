@@ -5,6 +5,8 @@ const assert = require('node:assert/strict');
 const {
   buildRecord,
   dedupeRecordsBySourceKey,
+  findHeaderRowIndex,
+  recordsFromRows,
 } = require('./populate-doctoralia-appointments.js');
 
 const duplicateRecords = [
@@ -58,5 +60,20 @@ assert.equal(firstVisit.appointment_id, firstVisit.source_key);
 assert.equal(secondVisitSameDoctoraliaCode.appointment_id, secondVisitSameDoctoraliaCode.source_key);
 assert.equal(firstVisit.doctoralia_id, '48');
 assert.equal(firstVisit.is_control, false, 'Revisión tratamiento is a real appointment, not an internal control');
+
+const baseCompletaRows = [
+  ['CITAS CLINIC CLOUD'],
+  ['Nº Historia', 'Paciente', 'Teléfono paciente', 'Estado', 'Fecha', 'Hora', 'Fecha creación', 'Concepto cita', 'Agenda', 'Sala/Box', 'Confirmada', 'Procedencia', 'Importe'],
+  ['99', 'PACIENTE DE PRUEBA', '600000000', 'Pendiente', '21/08/2026', '10:00 - 10:30', '20/08/2026', 'BOTOX', 'MEDICINA ESTÉTICA JJRT', 'Sin asignar', '', '-', '270.00'],
+];
+
+assert.equal(findHeaderRowIndex(baseCompletaRows), 1);
+const baseCompletaRecords = recordsFromRows(baseCompletaRows);
+assert.equal(baseCompletaRecords.length, 1);
+assert.equal(baseCompletaRecords[0].doctoralia_id, '99');
+assert.equal(baseCompletaRecords[0].patient_name, 'PACIENTE DE PRUEBA');
+assert.equal(baseCompletaRecords[0].treatment, 'BOTOX');
+assert.equal(baseCompletaRecords[0].amount, 270);
+assert.equal(baseCompletaRecords[0].sheet_row, 3);
 
 console.log('populate-doctoralia-appointments tests passed');

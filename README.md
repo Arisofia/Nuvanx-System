@@ -45,17 +45,17 @@ Nuvanx-System es una plataforma de inteligencia empresarial (BI) y automatizaci�
 ### Doctoralia Integration Configuration
 
 - **Spreadsheet ID**: `1GAJoASGdjsKB7bTtC5hXPFkWbB7S4fVXhKD_cZoDwPw`
-- **Sheet Name**: `Produccion Intermediarios` (gid: `2048254065`)
-- **Column Mapping (0-indexed)**:
-  - `0`: Estado | `1`: Fecha
-  - `5`: Asunto (Source of ID, Name, Phone, and Treatment)
-  - `6`: Agenda
-  - `9`: Procedencia (Lead Source)
-  - `10`: Importe
+- **Canonical Sheet Name**: `Base Completa Doctoralia` (gid: `2114796827`)
+- **Compatibility Sheet Name**: `Doctoralia` (gid: `719224281`), maintained with its original headers for downstream compatibility
+- **Canonical Column Mapping (0-indexed)**:
+  - `0`: Nº Historia | `1`: Paciente | `2`: Teléfono paciente
+  - `3`: Estado | `4`: Fecha | `5`: Hora | `6`: Fecha creación
+  - `7`: Concepto cita | `8`: Agenda | `9`: Sala/Box
+  - `10`: Confirmada | `11`: Procedencia | `12`: Importe
 
 ### Doctoralia Sheet Structure (for SQL integration and webhook sync)
 
-The Google Sheets document also contains a "Doctoralia" tab (raw export) and "Listado" (patient master) for direct mapping to SQL tables.
+The Google Sheets document contains `Base Completa Doctoralia` as the source of truth, `Doctoralia` as the compatibility projection consumed by legacy mappings, and `Listado` as the patient master. The appointment synchronizer reads `Base Completa Doctoralia` directly and preserves the original `Doctoralia` headers for downstream compatibility.
 
 #### 1. Tabla: `Doctoralia`
 This table contains the detailed record of patient appointments and treatments.

@@ -24,7 +24,7 @@
  * Optional env vars:
  *   DOCTORALIA_APPOINTMENTS_INPUT_PATH (default: ./doctoralia_appointments.csv when present, otherwise ./Base Pacientes Nuvanx.xlsx)
  *   DOCTORALIA_APPOINTMENTS_XLSX_PATH (legacy alias for Excel-only runs)
- *   DOCTORALIA_APPOINTMENTS_SHEET_NAME (default: Doctoralia; Excel only)
+ *   DOCTORALIA_APPOINTMENTS_SHEET_NAME (default: Base Completa Doctoralia; Excel only)
  *   DOCTORALIA_APPOINTMENTS_CHUNK_SIZE (default: 500)
  *   DOCTORALIA_APPOINTMENTS_REPLACE_MODE (default: true; replace table contents before load)
  *
@@ -41,7 +41,7 @@ require('dotenv').config({ path: '.env.local' });
 
 const DEFAULT_CSV = 'doctoralia_appointments.csv';
 const DEFAULT_WORKBOOK = 'Base Pacientes Nuvanx.xlsx';
-const DEFAULT_SHEET = 'Doctoralia';
+const DEFAULT_SHEET = 'Base Completa Doctoralia';
 const DEFAULT_CHUNK_SIZE = 500;
 const DRY_RUN = process.argv.includes('--dry-run');
 
@@ -73,11 +73,11 @@ const HEADER_ALIASES = {
   origin: ['procedencia', 'origen', 'origin', 'canal'],
   amount: ['importe', 'amount', 'precio'],
   normalized_date: ['fecha para normalizar', 'fecha normalizada', 'normalized date'],
-  doctoralia_id: ['id', 'doctoralia id', 'id doctoralia', 'codigo cliente', 'código cliente'],
+  doctoralia_id: ['id', 'doctoralia id', 'id doctoralia', 'nº historia', 'n historia', 'numero historia', 'número historia', 'historia', 'codigo cliente', 'código cliente'],
   patient_name: ['nombre', 'paciente', 'patient name', 'patient_name'],
   patient_email: ['email', 'correo', 'patient email', 'patient_email'],
   phone: ['telefono', 'teléfono', 'phone', 'movil', 'móvil', 'patient phone', 'patient_phone'],
-  treatment: ['tratamiento', 'treatment', 'appointment type', 'appointment_type'],
+  treatment: ['tratamiento', 'concepto cita', 'concepto', 'treatment', 'appointment type', 'appointment_type'],
   notes: ['notas', 'notes', 'observaciones'],
   day_num: ['dia', 'día', 'day'],
   month_num: ['mes', 'month'],
@@ -207,15 +207,30 @@ function ensureRequiredHeaders(headerMap) {
   }
 }
 
+function findHeaderRowIndex(rows) {
+  if (!Array.isArray(rows)) return -1;
+
+  return rows.findIndex((row) => {
+    if (!Array.isArray(row)) return false;
+    const headerMap = buildHeaderMap(row);
+    return REQUIRED_HEADERS.every((field) => headerMap[field] !== undefined);
+  });
+}
+
 function recordsFromRows(rows) {
   if (!rows || rows.length < 2) return [];
 
-  const headerMap = buildHeaderMap(rows[0]);
+  const headerRowIndex = findHeaderRowIndex(rows);
+  if (headerRowIndex < 0) {
+    throw new Error('Missing Doctoralia header row');
+  }
+
+  const headerMap = buildHeaderMap(rows[headerRowIndex]);
   ensureRequiredHeaders(headerMap);
 
   const records = rows
-    .slice(1)
-    .map((row, index) => (isBlankRow(row) ? null : buildRecord(row, headerMap, index + 2)))
+    .slice(headerRowIndex + 1)
+    .map((row, index) => (isBlankRow(row) ? null : buildRecord(row, headerMap, index + headerRowIndex + 2)))
     .filter(Boolean);
 
   const sourceKeyCount = new Map();
@@ -558,4 +573,5 @@ module.exports = {
   parseAmount,
   parseDate,
   summarize,
+  findHeaderRowIndex,
 };
