@@ -5198,7 +5198,27 @@ async function handleIntegrationsPatch(ctx: AuthenticatedRouteContext): Promise<
     const service = String(body.service ?? '').trim();
     if (!service) return sendJson({ success: false, message: 'service is required' }, 400);
     const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
-    if (body.metadata !== undefined) updates.metadata = body.metadata;
+    if (body.metadata !== undefined) {
+      if (!body.metadata || typeof body.metadata !== 'object' || Array.isArray(body.metadata)) {
+        return sendJson({ success: false, message: 'metadata must be an object' }, 400);
+      }
+      const { data: current, error: currentError } = await adminClient
+        .from('integrations')
+        .select('metadata')
+        .eq('user_id', userId)
+        .eq('service', service)
+        .maybeSingle();
+      if (currentError) throw currentError;
+      if (!current) return sendJson({ success: false, message: `Integration '${service}' is not connected` }, 404);
+
+      // PATCH requests often contain only a new account list. Merge it with the
+      // established page/pixel/portfolio metadata so adding an account cannot
+      // erase routing fields, then normalize and validate the complete contract.
+      const mergedMetadata = { ...(current.metadata ?? {}), ...body.metadata };
+      const normalized = validateAndNormalizeMetadata(service, mergedMetadata);
+      if (!normalized.ok) return sendJson({ success: false, message: normalized.message }, 400);
+      updates.metadata = normalized.metadata;
+    }
     if (body.status !== undefined) updates.status = body.status;
     const { error } = await adminClient.from('integrations')
       .update(updates)
@@ -7074,6 +7094,18 @@ function daysBetweenDates(fromDate: string | null, toDate: string): number | nul
 async function loadMetaFreshness(adminClient: any, userId: string, clinicId: string | null) {
   const today = new Date().toISOString().slice(0, 10);
 
+  // `/api/meta/insights` caches successful live responses independently from the
+  // daily backfill table. Freshness must recognize that authoritative source;
+  // otherwise the Dashboard incorrectly marks live spend as stale whenever the
+  // optional daily materialization lags behind.
+  const liveInsightsQ = adminClient
+    .from('meta_cache')
+    .select('updated_at, data')
+    .eq('user_id', userId)
+    .like('id', 'meta:insights:%')
+    .order('updated_at', { ascending: false })
+    .limit(1);
+
   let adsQ = adminClient
     .from('meta_daily_insights')
     .select('date')
@@ -7096,11 +7128,25 @@ async function loadMetaFreshness(adminClient: any, userId: string, clinicId: str
   igDailyQ = applyClinicOrUserScope(igDailyQ, clinicId, userId);
   igMediaQ = applyClinicOrUserScope(igMediaQ, clinicId, userId);
 
-  const [adsRes, igDailyRes, igMediaRes] = await Promise.allSettled([
+  const [liveInsightsRes, adsRes, igDailyRes, igMediaRes] = await Promise.allSettled([
+    liveInsightsQ,
     adsQ,
     igDailyQ,
     igMediaQ,
   ]);
+
+  const liveInsightsData = liveInsightsRes.status === 'fulfilled' ? liveInsightsRes.value?.data ?? [] : [];
+  const latestLiveInsights = liveInsightsData?.[0] ?? null;
+  const liveInsightSource = String(latestLiveInsights?.data?.source ?? '').toLowerCase();
+  const liveInsightUpdatedAt = latestLiveInsights?.updated_at ? new Date(latestLiveInsights.updated_at) : null;
+  const liveInsightAgeHours = liveInsightUpdatedAt && Number.isFinite(liveInsightUpdatedAt.getTime())
+    ? (Date.now() - liveInsightUpdatedAt.getTime()) / 3_600_000
+    : null;
+  const liveInsightsFresh = (liveInsightSource === 'live' || liveInsightSource === 'live+db')
+    && latestLiveInsights?.data?.degraded !== true
+    && liveInsightAgeHours !== null
+    && liveInsightAgeHours >= 0
+    && liveInsightAgeHours <= 6;
 
   const adsData = adsRes.status === 'fulfilled' ? adsRes.value?.data ?? [] : [];
   const igDailyData = igDailyRes.status === 'fulfilled' ? igDailyRes.value?.data ?? [] : [];
@@ -7114,13 +7160,16 @@ async function loadMetaFreshness(adminClient: any, userId: string, clinicId: str
   const igDailyAgeDays = daysBetweenDates(igDailyLastDate, today);
   const igMediaAgeDays = daysBetweenDates(igMediaLastDate, today);
 
-  const metaAdsFresh = metaAgeDays !== null && metaAgeDays <= 2;
+  const metaDailyFresh = metaAgeDays !== null && metaAgeDays <= 2;
+  const metaAdsFresh = liveInsightsFresh || metaDailyFresh;
   const igDailyFresh = igDailyAgeDays !== null && igDailyAgeDays <= 3;
   const igMediaFresh = igMediaAgeDays !== null && igMediaAgeDays <= 4;
 
   let metaStatus = 'META_NO_DATA';
-  if (metaAdsFresh) {
-    metaStatus = 'META_LIVE';
+  if (liveInsightsFresh) {
+    metaStatus = 'META_API_LIVE';
+  } else if (metaDailyFresh) {
+    metaStatus = 'META_DAILY_LIVE';
   } else if (metaLastDate) {
     metaStatus = 'META_STALE';
   }
@@ -7161,6 +7210,10 @@ async function loadMetaFreshness(adminClient: any, userId: string, clinicId: str
     ig_daily_age_days: igDailyAgeDays,
     ig_media_age_days: igMediaAgeDays,
     meta_ads_fresh: metaAdsFresh,
+    meta_daily_fresh: metaDailyFresh,
+    meta_live_insights_fresh: liveInsightsFresh,
+    meta_live_insights_updated_at: liveInsightUpdatedAt?.toISOString() ?? null,
+    meta_live_insights_age_hours: liveInsightAgeHours === null ? null : Number(liveInsightAgeHours.toFixed(2)),
     ig_daily_fresh: igDailyFresh,
     ig_media_fresh: igMediaFresh,
   };
