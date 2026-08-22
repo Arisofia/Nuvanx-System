@@ -303,6 +303,9 @@ function parseAmount(val) {
     }
   } else if (normalized.includes(',')) {
     normalized = normalized.replaceAll(',', '.');
+  } else if (/^-?\d{1,3}\.\d{3}$/.test(normalized)) {
+    // Spanish thousands notation without decimal cents: 1.234 means 1234.
+    normalized = normalized.replace('.', '');
   }
   if (!/^-?\d+(?:\.\d+)?$/.test(normalized)) return null;
   const n = Number.parseFloat(normalized);
@@ -477,6 +480,17 @@ function buildHeaderConfig(headers) {
     useHashId: !hasColId,
     colSettledEff: hasColSettled ? colSettled : colFecha,
   };
+}
+
+function validateHeaderConfig(config) {
+  const errors = [];
+  if (config.colSettledEff === -1) errors.push('fecha de liquidación/fecha');
+  if (!config.hasColNet && !config.hasColGross) errors.push('importe neto o importe bruto');
+  if (!config.hasColName && !config.hasColTemplate) errors.push('nombre o asunto/plantilla');
+  if (errors.length > 0) {
+    throw new Error(`Encabezados Doctoralia incompletos o no reconocidos: ${errors.join(', ')}`);
+  }
+  return config;
 }
 
 function getRowId(row, config) {
@@ -740,7 +754,7 @@ async function main() {
 
   // ── 2. Map headers ────────────────────────────────────────────────────────
   const headers = rows[0];
-  const config = buildHeaderConfig(headers);
+  const config = validateHeaderConfig(buildHeaderConfig(headers));
 
   if (config.colSettledEff === -1) {
     console.error('[sync-doctoralia] Could not find a date column (liquidaci / fecha). Aborting.');
@@ -944,6 +958,7 @@ module.exports = {
   getStatusInfo,
   getAmountValues,
   getOptionalTextValue,
+  validateHeaderConfig,
 };
 
 if (require.main === module) {
