@@ -20,7 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      # La URL de proyecto no es un secreto; se declara aquí para no depender de un secret ausente.
+      SUPABASE_URL: https://ssvvuuysgxyqvmovrlvk.supabase.co
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       NUVANX_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
       REPORT_USER_ID: ${{ secrets.REPORT_USER_ID }}
@@ -48,4 +49,6 @@ jobs:
           DAYS: ${{ inputs.days }}
         run: |
           set -euo pipefail
+          # Conserva el contrato del script sin revelar la clave; usa el secreto NUVANX ya disponible como respaldo.
+          export SUPABASE_SERVICE_ROLE_KEY="${SUPABASE_SERVICE_ROLE_KEY:-${NUVANX_SUPABASE_SERVICE_ROLE_KEY:-}}"
           node scripts/run-meta-backfill.js --days="$DAYS" --attempts=3
