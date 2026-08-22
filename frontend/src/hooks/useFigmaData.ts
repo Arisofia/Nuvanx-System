@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabaseClient'
 
 // Hook for SEO metrics (replaces hardcoded ~25 DR, ~200 visitas/mes)
 export function useSeoMetrics() {

@@ -4,7 +4,7 @@
  *
  * Actualiza la variable META_ACCESS_TOKEN en los archivos .env detectados,
  * y opcionalmente propaga el valor a GitHub, Supabase y Vercel si esos CLIs
- * estÃ¡n configurados.
+ * están configurados.
  *
  * Uso local:
  *   Set META_ACCESS_TOKEN_NEW in your shell, then run: node scripts/set-meta-token.js
@@ -121,7 +121,7 @@ function setVercelEnv(token) {
       execFileSync('vercel', ['env', 'add', 'META_ACCESS_TOKEN', 'production', '--value', token, '--force', '--yes'], { stdio: 'inherit' });
       return;
     } catch (addError) {
-      console.warn('No se pudo propagar META_ACCESS_TOKEN a Vercel. AsegÃºrate de que el proyecto estÃ¡ vinculado con `vercel link`.');
+      console.warn('No se pudo propagar META_ACCESS_TOKEN a Vercel. Asegúrate de que el proyecto está vinculado con `vercel link`.');
       console.warn(addError.message || addError);
     }
   }

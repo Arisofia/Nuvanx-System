@@ -134,7 +134,7 @@ function CampaignTable({ campaigns, filteredCampaigns, currency, summary, accoun
             <th className="text-right px-3 py-3">CPM</th>
             <th className="text-right px-3 py-3">Conversiones</th>
             <th className="text-right px-3 py-3">CPP</th>
-            <th className="text-right px-3 py-3" title="Customer Acquisition Cost = Gasto ÃƒÂ· Conversiones">CAC</th>
+            <th className="text-right px-3 py-3" title="Customer Acquisition Cost = Gasto ÷ Conversiones">CAC</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
@@ -547,7 +547,7 @@ export default function Marketing() {
   const [activeTab, setActiveTab] = useState<'campaigns' | 'ads' | 'organic'>('campaigns')
   const [adsState, adsDispatch] = useReducer(adsReducer, initialAdsState)
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Organic (Page) data Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // -- Organic (Page) data -----------------------------------------------
   const [organicLoading, setOrganicLoading] = useState(false)
   const [organicError, setOrganicError] = useState<string | null>(null)
   const [organicSummary, setOrganicSummary] = useState<{
@@ -558,10 +558,10 @@ export default function Marketing() {
   const [organicPosts, setOrganicPosts] = useState<Array<any>>([])
   const [organicKeyword, setOrganicKeyword] = useState('')
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Sub-toggle FB / IG (within Organic tab) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // -- Sub-toggle FB / IG (within Organic tab) --------------------------
   const [organicChannel, setOrganicChannel] = useState<'facebook' | 'instagram'>('facebook')
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Instagram organic data Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // -- Instagram organic data -------------------------------------------
   const [igLoading, setIgLoading] = useState(false)
   const [igError, setIgError] = useState<string | null>(null)
   const [igSummary, setIgSummary] = useState<{
@@ -603,7 +603,7 @@ export default function Marketing() {
     fetchAds()
   }, [activeTab, from, to, fetchAds])
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Fetch organic Page insights (daily series + posts) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // -- Fetch organic Page insights (daily series + posts) ----------------
   const fetchOrganic = useCallback(async (kw: string = '') => {
     setOrganicLoading(true)
     setOrganicError(null)
@@ -626,7 +626,7 @@ export default function Marketing() {
     }
   }, [from, to])
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Fetch Instagram organic insights Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // -- Fetch Instagram organic insights ----------------------------------
   const fetchIg = useCallback(async (kw: string = '') => {
     setIgLoading(true)
     setIgError(null)
@@ -741,7 +741,7 @@ export default function Marketing() {
         </div>
       )}
 
-      {/* Ã¢â€â‚¬Ã¢â€â‚¬ KPI cards Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */}
+      {/* -- KPI cards ----------------------------------------------- */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard
           label="Gasto total"
@@ -802,7 +802,7 @@ export default function Marketing() {
         />
       </div>
 
-      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Daily spend + clicks chart Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */}
+      {/* -- Daily spend + clicks chart ------------------------------ */}
       <Card>
         <CardHeader>
           <CardTitle>Gasto diario · ({currency})</CardTitle>
@@ -843,7 +843,7 @@ export default function Marketing() {
         </CardContent>
       </Card>
 
-      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Daily CTR / CPC / CPM chart Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */}
+      {/* -- Daily CTR / CPC / CPM chart ---------------------------- */}
       {dailyRatesChart.length > 0 && (
         <Card>
           <CardHeader>
@@ -883,7 +883,7 @@ export default function Marketing() {
         </Card>
       )}
 
-      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Per-campaign bar chart Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */}
+      {/* -- Per-campaign bar chart ---------------------------------- */}
       {campaignChart.length > 0 && (
         <Card>
           <CardHeader>
@@ -918,7 +918,7 @@ export default function Marketing() {
         </Card>
       )}
 
-      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Tab switcher: Campañas / Anuncios / Orgánico Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */}
+      {/* -- Tab switcher: Campañas / Anuncios / Orgánico ------------ */}
       <div className="flex gap-1 bg-card border border-border rounded-lg p-1 w-fit">
         {(['campaigns', 'ads', 'organic'] as const).map((tab) => (
           <button
@@ -933,7 +933,7 @@ export default function Marketing() {
         ))}
       </div>
 
-      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Campaign detail table Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */}
+      {/* -- Campaign detail table ----------------------------------- */}
       {activeTab === 'campaigns' && (
       <Card>
         <CardHeader>
@@ -1018,7 +1018,7 @@ export default function Marketing() {
       </Card>
       )} {/* end campaigns tab */}
 
-      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Ads breakdown table Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */}
+      {/* -- Ads breakdown table ------------------------------------ */}
       {activeTab === 'ads' && (
         <Card>
           <CardHeader>
