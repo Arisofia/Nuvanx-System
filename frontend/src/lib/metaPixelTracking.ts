@@ -154,12 +154,12 @@ export function trackCalendarBooking(source: string = ''): void {
 
 /**
  * Track Doctoralia profile view
- * Fires: InformaciÃ³n de pago aÃ±adida (Meta standard)
+ * Fires: Información de pago añadida (Meta standard)
  */
 export function trackDoctoraliaClick(source: string = ''): void {
   if (!canFireEvent('doctoralia_click', 1000)) return
   
-  trackMetaEvent('InformaciÃ³n de pago aÃ±adida', {
+  trackMetaEvent('Información de pago añadida', {
     content_name: 'Doctoralia Profile',
     content_category: 'profile_view',
     source: source,
@@ -197,7 +197,7 @@ export function captureUTMParameters(): Record<string, string> {
 /**
  * Track page scroll depth
  */
-export function trackScrollDepth(threshold = 0.75): void {
+export function trackScrollDepth(threshold = 0.75): (() => void) | undefined {
   if (typeof window === 'undefined') return
   
   let hasTracked = false

@@ -14,7 +14,7 @@ export interface RealFunnel {
   doctoraliaRevenue: number | null
   doctoraliaPatients: number | null
   cac: number | null
-  cacConfidence: number | string | null
+  cacConfidence: number | null
 }
 
 export interface DashboardQuality {
@@ -222,7 +222,7 @@ export function buildDashboardState(options: DashboardStateOptions) {
       cac: cacDoctoralia,
       cacConfidence: (() => {
         const value = pick(kpisDoctoralia.cac_confidence, kpisDoctoralia.cacConfidence, metricsData.cac_confidence, metricsData.cacConfidence)
-        return typeof value === 'number' || typeof value === 'string' ? value : null
+        return toNullableNumber(value)
       })(),
     } satisfies RealFunnel,
 
