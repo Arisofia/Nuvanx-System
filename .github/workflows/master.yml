@@ -428,6 +428,8 @@ jobs:
           test -n "${META_REPORTING_AD_ACCOUNT_ID:-}"
           echo "META_ACCESS_TOKEN=${META_REPORTING_TOKEN_60D}" >> "$GITHUB_ENV"
           echo "META_AD_ACCOUNT_IDS=${META_REPORTING_AD_ACCOUNT_ID}" >> "$GITHUB_ENV"
+          echo "META_AD_ACCOUNT_ID=" >> "$GITHUB_ENV"
+          echo "FALLBACK_META_AD_ACCOUNT_ID=" >> "$GITHUB_ENV"
 
       - name: Validate sync prerequisites
         run: |
