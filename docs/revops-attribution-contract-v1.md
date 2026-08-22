@@ -177,3 +177,22 @@ El escaneo de secretos de `Nuvanx-System` pasó sobre 384 archivos versionados. 
 | `scripts/sync-doctoralia.test.js` | PASS |
 | `scripts/validate-doctoralia-appointments-ready.js` | BLOQUEADO por credenciales runtime locales ausentes |
 | `scripts/scan-secrets.js` en Nuvanx-System | PASS — 384 archivos versionados |
+
+## 16. Verificación runtime en Supabase — proyecto correcto
+
+La verificación runtime se realizó en el proyecto productivo correcto **`nuvanx-prod`** (`ssvvuuysgxyqvmovrlvk`, región Central EU/Frankfurt), no en el proyecto `NUVANX 2026` que estaba pausado. El panel informa estado **Healthy**, enlaza el repositorio `Arisofia/Nuvanx-System` y registra como rama reciente `fix/meta-crm-conversion-contract-20260820`.
+
+La auditoría de solo lectura en Table Editor confirmó la presencia de las tablas operativas de atribución y RevOps con las convenciones actuales de producción: `lead_events`, `google_click_attributions`, `hubspot_deal_projections`, `google_data_manager_outbox`, `doctoralia_appointments`, `doctoralia_appointments_ingestion`, `lead_appointment_matches`, `leads` y sus tablas de soporte. Los nombres efectivos difieren de los alias tempranos del documento, por lo que las integraciones nuevas deben referenciar exclusivamente la nomenclatura desplegada.
+
+El inventario de Edge Functions muestra 27 funciones, incluidas `deal-factory`, `lead-captured`, `revops-dispatcher`, `web-lead-reconcile`, `google-click-attribution`, `google-data-manager-export`, `p0a-staging-submit` y `meta-runtime-credential-diagnostic`. Todas fueron desplegadas o actualizadas recientemente y el panel no mostraba errores 5xx en la ventana actual para esas funciones.
+
+La configuración de Edge Functions contiene secretos de ejecución para Google Ads/Doctoralia, Meta, HubSpot-compatible infrastructure, Supabase service role, cifrado y webhook. Esta comprobación se limitó a la presencia y fecha de actualización; **no se consultaron, revelaron ni copiaron valores de secretos**. La configuración también incluye al menos dos secretos con digest de valor vacío, que deben tratarse como configuración no utilizable hasta ser reemplazados por un propietario autorizado.
+
+| Control runtime | Resultado |
+|---|---|
+| Proyecto productivo correcto | PASS — `nuvanx-prod`, Healthy |
+| Tablas RevOps/atribución | PASS — tablas desplegadas con nomenclatura de producción |
+| Edge Functions relevantes | PASS — 27 funciones, incluidas las de Deal Factory, reconciliación y exportación |
+| Errores 5xx observables | Sin errores en la ventana de la interfaz |
+| Secretos de ejecución | Presencia verificada; valores no inspeccionados |
+| Higiene de secretos | Seguimiento requerido para valores configurados vacíos |
