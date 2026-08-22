@@ -106,3 +106,21 @@ La implementación local contiene los contratos estructurales principales, pero 
 - rotación de credenciales históricas y necesidad de purga de refs Git.
 
 Estas dependencias son verificaciones externas. No se deben sustituir por inferencias derivadas del código fuente.
+
+## 11. Verificación directa de HubSpot — 2026-08-23
+
+La revisión se realizó en el portal HubSpot `147416356` mediante el navegador autenticado y con consultas de solo lectura.
+
+| Control | Resultado verificado | Implicación |
+|---|---|---|
+| Propiedad `nvx_lead_id` | Existe como **NUVANX Lead ID**, objeto Contacto, tipo **Texto de una sola línea**. Su descripción indica que es un identificador first-party de lineage, sin PII ni información clínica. | Es compatible con un UUID v4 de episodio y con el reconciliador de Supabase. |
+| Propiedades de atribución | La búsqueda de esquema identifica `nvx_first_*`, `nvx_conversion_*`, `nvx_google_click_id`, `nvx_google_gbraid`, `nvx_google_wbraid`, `nvx_is_test_lead` y `nvx_test_run_id`. | Los nombres internos requeridos por el contrato existen en el portal. |
+| Formularios publicados | Hay tres formularios visibles: **Endolift**, **Formulario laser CO2** y el formulario no-HubSpot **`.nvx-hs-lead-form`**. | El flujo web canónico puede estar capturado como formulario no-HubSpot; no se debe asumir que el identificador citado en documentación previa corresponde a un formulario HubSpot publicado. |
+| Pipelines de Deals | El tablero visible usa las etapas: **Cita programada**, **Calificado para comprar**, **Presentación programada**, **Responsable de decisiones convencido**, **Contrato enviado**, **Cierre ganado** y **Cierre perdido**. Todas están vacías al momento de la revisión. | Los IDs de pipeline/etapa almacenados como valores por defecto en Supabase aún necesitan comprobación de API o de configuración avanzada antes de habilitar creación de Deals. |
+| Workflows avanzados | El panel redirige a una pantalla de plan que indica Marketing Hub Starter y ofrece upgrade a Marketing Hub Pro. | No hay evidencia accesible de workflows avanzados activos. Debe evitarse un diseño que dependa de workflows Pro; el worker server-side de Supabase sigue siendo la fuente primaria de Deal Factory. |
+
+La página de formularios no mostró el UUID de un formulario HubSpot canónico ni la lista de campos del formulario no-HubSpot. Por tanto, la presencia exacta de todos los hidden fields debe validarse desde el markup publicado de WordPress y mediante un envío QA suprimido, nunca por inferencia desde la lista de formularios.
+
+## 12. Acciones de implementación que permanecen bloqueadas por configuración externa
+
+No deben aplicarse cambios automáticos de Deal Factory, pipelines, etapas, formularios, HubSpot workflows, credenciales de HubSpot, Meta o Google sin una operación verificada y autorización explícita. La base de código puede continuar validándose y desplegándose con los contratos existentes, pero esas acciones necesitan evidencias de configuración real y permisos de producción.
