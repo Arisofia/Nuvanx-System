@@ -3096,12 +3096,17 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
       console.warn('[Metrics] Reconciliation failed, proceeding:', reconcileErr);
     }
 
+    const sourceFilter = url.searchParams.get('source')?.trim() ?? '';
+    const campaignId = url.searchParams.get('campaign_id')?.trim() ?? '';
+
     let leadsQ = adminClient.from('leads')
-      .select('id, stage, created_at, source, utm_source, landing_url, converted_patient_id')
+      .select('id, stage, created_at, source, utm_source, landing_url, campaign_id, converted_patient_id')
       .is('deleted_at', null)
       .neq('source', 'doctoralia')
       .gte('created_at', since)
       .lte('created_at', untilFullDay);
+    if (sourceFilter && sourceFilter !== 'ALL') leadsQ = leadsQ.eq('source', sourceFilter);
+    if (campaignId && campaignId !== 'ALL') leadsQ = leadsQ.eq('campaign_id', campaignId);
 
     let metaQ = adminClient.from('meta_daily_insights')
       .select('spend, impressions, clicks, date')
