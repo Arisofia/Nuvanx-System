@@ -8,11 +8,19 @@ const {
   parseDate,
   parseStatus,
   detectHeaderRowIndex,
+  resolveSheetTitle,
 } = require('./sync-doctoralia');
 
 const validHeaders = ['ID', 'Fecha', 'Hora', 'Plantilla', 'Fecha liquidación', 'Importe neto', 'Estado', 'Nombre'];
 const config = validateHeaderConfig(buildHeaderConfig(validHeaders));
 assert.equal(config.hasColNet, true);
+assert.equal(resolveSheetTitle([
+  { properties: { title: 'Base Completa Doctoralia' } },
+  { properties: { title: 'Doctoralia' } },
+], 'Doctoralia'), 'Doctoralia');
+assert.equal(resolveSheetTitle([
+  { properties: { title: 'Base Completa Doctoralia' } },
+], 'Doctoralia'), 'Base Completa Doctoralia');
 assert.equal(detectHeaderRowIndex([
   ['Listado de citas'],
   [null, 'Estado', null, 'Hora', 'Fecha creación', null, 'Asunto', 'Agenda', 'Importe'],

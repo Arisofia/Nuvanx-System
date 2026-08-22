@@ -635,6 +635,23 @@ async function setupGoogleSheetsAuth() {
   process.exit(1);
 }
 
+function resolveSheetTitle(sheetsList, configuredName) {
+  if (!Array.isArray(sheetsList) || sheetsList.length === 0) return null;
+
+  const normalized = normalizeField(configuredName).toLowerCase();
+  if (!normalized) return sheetsList[0]?.properties?.title || null;
+
+  const exactMatch = sheetsList.find((sheet) =>
+    normalizeField(sheet?.properties?.title).toLowerCase() === normalized,
+  );
+  if (exactMatch) return exactMatch.properties.title;
+
+  const partialMatch = sheetsList.find((sheet) =>
+    normalizeField(sheet?.properties?.title).toLowerCase().includes(normalized),
+  );
+  return partialMatch?.properties?.title || null;
+}
+
 async function fetchSheetRows(sheets, saObject) {
   console.log(`[sync-doctoralia] Fetching spreadsheet metadata (id: ${SHEET_ID.slice(0, 4)}...${SHEET_ID.slice(-4)})`);
 
@@ -655,12 +672,7 @@ async function fetchSheetRows(sheets, saObject) {
     console.log(`[sync-doctoralia] Available sheets in spreadsheet: ${availableSheets.join(' | ')}`);
 
     if (SHEET_NAME) {
-      const normalized = SHEET_NAME.trim().toLowerCase();
-      const found = sheetsList.find(s => 
-        s.properties.title.toLowerCase() === normalized ||
-        s.properties.title.toLowerCase().includes(normalized)
-      );
-      if (found) targetSheetTitle = found.properties.title;
+      targetSheetTitle = resolveSheetTitle(sheetsList, SHEET_NAME);
     }
 
     if (!targetSheetTitle && sheetsList.length > 0) {
@@ -997,6 +1009,7 @@ module.exports = {
   getOptionalTextValue,
   validateHeaderConfig,
   detectHeaderRowIndex,
+  resolveSheetTitle,
 };
 
 if (require.main === module) {
