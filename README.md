@@ -46,8 +46,8 @@ Nuvanx-System es una plataforma de inteligencia empresarial (BI) y automatizaci�
 
 - **Identificadores de hoja**: se obtienen de los secretos `DOCTORALIA_SHEET_ID`, `DOCTORALIA_DRIVE_FILE_ID` y `DOCTORALIA_APPOINTMENTS_SHEET_ID` del entorno `Production`; los tres deben referirse al mismo archivo de Google Sheets.
 - **Carpeta de exportaciones Looker**: se conserva separada en `DOCTORALIA_LOOKER_FOLDER_ID` y no puede utilizarse como identificador de hoja.
-- **Canonical Sheet Name**: `Base Completa Doctoralia`
-- **Compatibility Sheet Name**: `Doctoralia` (gid: `719224281`), maintained with its original headers for downstream compatibility
+- **Pestaña fuente de citas**: se define mediante el secreto `DOCTORALIA_APPOINTMENTS_SHEET_NAME` del entorno `Production`. La configuración actual apunta a `Doctoralia` (gid: `719224281`), según la URL operativa indicada.
+- **Pestaña de referencia**: `Base Completa Doctoralia` permanece disponible en el mismo archivo para usos de compatibilidad y auditoría.
 - **Canonical Column Mapping (0-indexed)**:
   - `0`: Nº Historia | `1`: Paciente | `2`: Teléfono paciente
   - `3`: Estado | `4`: Fecha | `5`: Hora | `6`: Fecha creación
@@ -56,7 +56,7 @@ Nuvanx-System es una plataforma de inteligencia empresarial (BI) y automatizaci�
 
 ### Doctoralia Sheet Structure (for SQL integration and webhook sync)
 
-The Google Sheets document contains `Base Completa Doctoralia` as the source of truth, `Doctoralia` as the compatibility projection consumed by legacy mappings, and `Listado` as the patient master. The appointment synchronizer reads `Base Completa Doctoralia` directly and preserves the original `Doctoralia` headers for downstream compatibility.
+El documento de Google Sheets contiene las pestañas `Doctoralia`, configurada como fuente de la sincronización de citas mediante el entorno `Production`; `Base Completa Doctoralia`, disponible como referencia operativa; y `Listado`, que funciona como maestro de pacientes. El sincronizador obtiene el nombre de pestaña desde `DOCTORALIA_APPOINTMENTS_SHEET_NAME`, por lo que no depende de un nombre codificado en el repositorio.
 
 #### 1. Tabla: `Doctoralia`
 This table contains the detailed record of patient appointments and treatments.
@@ -345,6 +345,7 @@ The repository uses GitHub Actions secrets for Supabase and production validatio
 - `PRODUCTION_E2E_TOKEN` — Auth token used by `scripts/production-e2e.js`.
 - `GOOGLE_ADS_SERVICE_ACCOUNT` — Google Sheets service account JSON for Doctoralia sync.
 - `DOCTORALIA_SHEET_ID`, `DOCTORALIA_DRIVE_FILE_ID` y `DOCTORALIA_APPOINTMENTS_SHEET_ID` — Deben coincidir y referirse a la hoja de Google Sheets usada para la ingesta de Doctoralia.
+- `DOCTORALIA_APPOINTMENTS_SHEET_NAME` — Nombre de la pestaña fuente de citas dentro de esa hoja; se valida como requisito del flujo diario y se configura en el entorno `Production`.
 - `DOCTORALIA_LOOKER_FOLDER_ID` — Carpeta auxiliar de exportaciones Looker; no sustituye a un identificador de hoja.
 - `DOCTORALIA_SYNC_PERMISSION_MODE` — Debe ser `fail` en producción para interrumpir el flujo si la cuenta de servicio pierde acceso a la hoja.
 - `MCP_API_KEY` — API key for authenticating to /mcp Edge Function (and scripts/health-check-nuvanx.ts).
