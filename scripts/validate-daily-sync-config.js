@@ -30,6 +30,22 @@ function hasValue(key) {
   return String(process.env[key] || '').trim().length > 0;
 }
 
+function readServiceAccountEmail() {
+  const rawCredential = String(
+    process.env.GOOGLE_DOCTORALIA_SERVICE_ACCOUNT ||
+    process.env.GOOGLE_ADS_SERVICE_ACCOUNT ||
+    '',
+  ).trim();
+  if (!rawCredential) return '';
+
+  try {
+    const credentials = JSON.parse(rawCredential);
+    return typeof credentials.client_email === 'string' ? credentials.client_email.trim() : '';
+  } catch {
+    return '';
+  }
+}
+
 const ERROR_MESSAGES = {
   DOCTORALIA_APPOINTMENTS_SHEET_MISMATCH: 'DOCTORALIA_APPOINTMENTS_SHEET_ID must match DOCTORALIA_SHEET_ID. Values are redacted.',
   DOCTORALIA_DRIVE_FILE_MISMATCH: 'DOCTORALIA_DRIVE_FILE_ID must match DOCTORALIA_SHEET_ID for the Google Sheets sync. Values are redacted.',
@@ -92,6 +108,14 @@ if (!hasValue('META_AD_ACCOUNT_ID') && !hasValue('META_AD_ACCOUNT_IDS') && !hasV
 
 if (!hasValue('GOOGLE_DOCTORALIA_SERVICE_ACCOUNT') && !hasValue('GOOGLE_ADS_SERVICE_ACCOUNT')) {
   failCode('GOOGLE_SERVICE_ACCOUNT_MISSING');
+} else {
+  const serviceAccountEmail = readServiceAccountEmail();
+  if (!serviceAccountEmail) {
+    console.error('::error::Configured Google service account is not valid JSON with a client_email field.');
+    process.exitCode = 1;
+  } else {
+    console.log(`[daily-sync] Google service account configured: ${serviceAccountEmail}`);
+  }
 }
 
 if (hasValue('SUPABASE_ACCESS_TOKEN') && !/^sbp_[A-Za-z0-9]+$/.test(process.env.SUPABASE_ACCESS_TOKEN)) {
