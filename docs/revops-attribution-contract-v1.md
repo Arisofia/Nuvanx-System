@@ -124,3 +124,28 @@ La página de formularios no mostró el UUID de un formulario HubSpot canónico 
 ## 12. Acciones de implementación que permanecen bloqueadas por configuración externa
 
 No deben aplicarse cambios automáticos de Deal Factory, pipelines, etapas, formularios, HubSpot workflows, credenciales de HubSpot, Meta o Google sin una operación verificada y autorización explícita. La base de código puede continuar validándose y desplegándose con los contratos existentes, pero esas acciones necesitan evidencias de configuración real y permisos de producción.
+
+## 13. Dependencias externas verificadas
+
+Doctoralia/Docplanner publica una API REST de integraciones para instalaciones autorizadas, con OAuth2, recursos de agenda y reservas, y callbacks/webhooks. La documentación establece además que las integraciones deben operar sobre HTTPS y que los clientes deben contemplar el allowlist actualizado de direcciones IP de Docplanner. La página de Doctoralia Pro describe la integración como una API bidireccional para sincronización de agendas y exige una validación técnica de compatibilidad. Por ello, el motor de matching local puede mantenerse como fallback de ingestión, pero el uso de la API requiere alta/autorización de partner, credenciales OAuth2, identificadores de facility/doctor/address y un endpoint público validado para callbacks. [1] [2]
+
+Meta CAPI permite enviar eventos server-side y requiere consentimiento antes de enviar información cuando aplique. Meta prohíbe compartir datos de salud o información sensible mediante Business Tools; el outbox debe excluir diagnóstico, tratamiento, zona corporal, notas, mensajes y demás campos clínicos. Cuando el mismo evento se envía por Pixel y CAPI, la deduplicación recomendada exige que `event_name` y el `event_id` del navegador/servidor coincidan. [3] [4] [5]
+
+Google documenta que desde el 15 de junio de 2026 determinados flujos de `UploadClickConversion` deben usar Data Manager API. Para conversiones offline/enhanced conversions, exige disponer de la configuración de conversiones y términos de datos aceptados, y recomienda datos de usuario normalizados y con SHA-256 cuando se usen identificadores mejorados. Además, un identificador de transacción único y dinámico por conversión evita duplicados; no puede contener PII. [6] [7] [8]
+
+| Integración | Requisito de activación | Control implementado o requerido |
+|---|---|---|
+| Doctoralia/Docplanner | Partner/OAuth2, IDs de instalación y callback HTTPS | Mantener `source_key`; registrar credenciales únicamente en secretos server-side; validar callbacks y allowlist. |
+| Meta CAPI | Dataset, token server-side, consentimiento y verificación en Events Manager | Cola separada con `event_id` estable, exclusión de datos clínicos, deduplicación Pixel+CAPI y estado observable. |
+| Google Data Manager | Acceso API, conversion action/destination, consentimiento y configuración de enhanced conversions cuando corresponda | `transaction_id` único, GCLID/GBRAID/WBRAID cuando existan, hashes normalizados solo con consentimiento y outbox idempotente. |
+
+## Referencias
+
+[1]: https://integrations.docplanner.com/docs/ "Docplanner Integrations API"
+[2]: https://pro.doctoralia.es/integraciones "Doctoralia Pro: Integraciones Agenda online"
+[3]: https://developers.facebook.com/documentation/ads-commerce/conversions-api "Meta Conversions API"
+[4]: https://developers.facebook.com/documentation/ads-commerce/conversions-api/deduplicate-pixel-and-server-events "Meta: Handling Duplicate Pixel and Conversions API Events"
+[5]: https://www.facebook.com/business/help/363303621411154 "Meta: Privacy and data use requirements for Meta Business Tools"
+[6]: https://developers.google.com/google-ads/api/docs/conversions/upload-offline "Google Ads API: Manage offline conversions"
+[7]: https://developers.google.com/data-manager/api "Google Data Manager API"
+[8]: https://support.google.com/google-ads/answer/6386790?hl=en "Google Ads Help: Use a transaction ID to minimize duplicate conversions"
