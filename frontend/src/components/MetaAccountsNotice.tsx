@@ -108,11 +108,12 @@ export function MetaAccountsInline({
   className = '',
 }: Readonly<{ accountIds?: readonly unknown[]; context?: string; className?: string }>) {
   const entities = useMetaEntities()
-  const configuredRuntimeAccounts = entities.find((entity) => entity.label === 'Ad Accounts')?.value ?? ''
-  const scopedAccounts = Array.from(new Set([
-    ...resolveMetaAccountIds(accountIds),
-    ...normalizeAccountIds(configuredRuntimeAccounts),
-  ]))
+  const configuredRuntimeAccounts = normalizeAccountIds(
+    entities.find((entity) => entity.label === 'Ad Accounts')?.value ?? '',
+  )
+  const scopedAccounts = configuredRuntimeAccounts.length > 0
+    ? configuredRuntimeAccounts
+    : normalizeAccountIds(resolveMetaAccountIds(accountIds))
 
   return (
     <div className={`rounded-2xl border border-primary/15 bg-white/70 px-4 py-3 shadow-sm ${className}`}>
