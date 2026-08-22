@@ -44,8 +44,9 @@ Nuvanx-System es una plataforma de inteligencia empresarial (BI) y automatizaci�
 
 ### Doctoralia Integration Configuration
 
-- **Spreadsheet ID**: `1GAJoASGdjsKB7bTtC5hXPFkWbB7S4fVXhKD_cZoDwPw`
-- **Canonical Sheet Name**: `Base Completa Doctoralia` (gid: `2114796827`)
+- **Identificadores de hoja**: se obtienen de los secretos `DOCTORALIA_SHEET_ID`, `DOCTORALIA_DRIVE_FILE_ID` y `DOCTORALIA_APPOINTMENTS_SHEET_ID` del entorno `Production`; los tres deben referirse al mismo archivo de Google Sheets.
+- **Carpeta de exportaciones Looker**: se conserva separada en `DOCTORALIA_LOOKER_FOLDER_ID` y no puede utilizarse como identificador de hoja.
+- **Canonical Sheet Name**: `Base Completa Doctoralia`
 - **Compatibility Sheet Name**: `Doctoralia` (gid: `719224281`), maintained with its original headers for downstream compatibility
 - **Canonical Column Mapping (0-indexed)**:
   - `0`: Nº Historia | `1`: Paciente | `2`: Teléfono paciente
@@ -343,7 +344,9 @@ The repository uses GitHub Actions secrets for Supabase and production validatio
 - `PRODUCTION_E2E_URL` — Production API base URL used by automated smoke tests.
 - `PRODUCTION_E2E_TOKEN` — Auth token used by `scripts/production-e2e.js`.
 - `GOOGLE_ADS_SERVICE_ACCOUNT` — Google Sheets service account JSON for Doctoralia sync.
-- `DOCTORALIA_SHEET_ID` / `DOCTORALIA_DRIVE_FILE_ID` — Spreadsheet ID used for Doctoralia ingestion.
+- `DOCTORALIA_SHEET_ID`, `DOCTORALIA_DRIVE_FILE_ID` y `DOCTORALIA_APPOINTMENTS_SHEET_ID` — Deben coincidir y referirse a la hoja de Google Sheets usada para la ingesta de Doctoralia.
+- `DOCTORALIA_LOOKER_FOLDER_ID` — Carpeta auxiliar de exportaciones Looker; no sustituye a un identificador de hoja.
+- `DOCTORALIA_SYNC_PERMISSION_MODE` — Debe ser `fail` en producción para interrumpir el flujo si la cuenta de servicio pierde acceso a la hoja.
 - `MCP_API_KEY` — API key for authenticating to /mcp Edge Function (and scripts/health-check-nuvanx.ts).
 - `FALLBACK_META_AD_ACCOUNT_ID` — Required fallback Meta ad account ID (numeric or act_ form) for lead attribution paths. No longer has hardcoded default; must be set in Supabase Dashboard (Edge Function secrets) after fix #6. Use `supabase secrets set FALLBACK_META_AD_ACCOUNT_ID="..."`.
 

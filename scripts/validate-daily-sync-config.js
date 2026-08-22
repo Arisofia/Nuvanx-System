@@ -1,8 +1,6 @@
 #!/usr/bin/env node
 'use strict';
 
-const CANONICAL_DOCTORALIA_SHEET_ID = '1GAJoASGdjsKB7bTtC5hXPFkWbB7S4fVXhKD_cZoDwPw';
-
 const REQUIRED = [
   'SUPABASE_URL',
   'SUPABASE_SERVICE_ROLE_KEY',
@@ -13,6 +11,7 @@ const REQUIRED = [
   'META_ACCESS_TOKEN',
   'CLINIC_ID',
   'DOCTORALIA_SHEET_ID',
+  'DOCTORALIA_DRIVE_FILE_ID',
   'ENCRYPTION_KEY',
   'REPORT_USER_ID',
 ];
@@ -32,8 +31,9 @@ function hasValue(key) {
 }
 
 const ERROR_MESSAGES = {
-  DOCTORALIA_APPOINTMENTS_SHEET_NOT_CANONICAL: `DOCTORALIA_APPOINTMENTS_SHEET_ID must point to canonical Doctoralia sheet ${CANONICAL_DOCTORALIA_SHEET_ID}. Received value is redacted.`,
-  DOCTORALIA_SHEET_NOT_CANONICAL: `DOCTORALIA_SHEET_ID fallback must point to canonical Doctoralia sheet ${CANONICAL_DOCTORALIA_SHEET_ID}. Received value is redacted.`,
+  DOCTORALIA_APPOINTMENTS_SHEET_MISMATCH: 'DOCTORALIA_APPOINTMENTS_SHEET_ID must match DOCTORALIA_SHEET_ID. Values are redacted.',
+  DOCTORALIA_DRIVE_FILE_MISMATCH: 'DOCTORALIA_DRIVE_FILE_ID must match DOCTORALIA_SHEET_ID for the Google Sheets sync. Values are redacted.',
+  DOCTORALIA_PERMISSION_MODE_INVALID: 'DOCTORALIA_SYNC_PERMISSION_MODE and DOCTORALIA_APPOINTMENTS_PERMISSION_MODE must be fail or warn.',
   DOCTORALIA_MIN_ROWS_TOO_LOW: 'DOCTORALIA_APPOINTMENTS_MIN_ROWS must be at least 1800 for complete Doctoralia daily sync loads.',
   META_ACCOUNT_MISSING: 'META_AD_ACCOUNT_ID, META_AD_ACCOUNT_IDS, or FALLBACK_META_AD_ACCOUNT_ID secret is required.',
   GOOGLE_SERVICE_ACCOUNT_MISSING: 'GOOGLE_DOCTORALIA_SERVICE_ACCOUNT or GOOGLE_ADS_SERVICE_ACCOUNT secret is required for Doctoralia appointments sync.',
@@ -63,16 +63,18 @@ for (const key of REQUIRED) {
 }
 
 
-function validateCanonicalDoctoraliaSheet() {
-  const appointmentsSheetId = String(process.env.DOCTORALIA_APPOINTMENTS_SHEET_ID || '').trim();
-  const legacySheetId = String(process.env.DOCTORALIA_SHEET_ID || '').trim();
-  if (appointmentsSheetId && appointmentsSheetId !== CANONICAL_DOCTORALIA_SHEET_ID) {
-    failCode('DOCTORALIA_APPOINTMENTS_SHEET_NOT_CANONICAL');
-  }
+function validateDoctoraliaSheetConfiguration() {
+  const sheetId = String(process.env.DOCTORALIA_SHEET_ID || '').trim();
+  const appointmentsSheetId = String(process.env.DOCTORALIA_APPOINTMENTS_SHEET_ID || sheetId).trim();
+  const driveFileId = String(process.env.DOCTORALIA_DRIVE_FILE_ID || sheetId).trim();
+  const permissionModes = [
+    String(process.env.DOCTORALIA_SYNC_PERMISSION_MODE || 'fail').trim().toLowerCase(),
+    String(process.env.DOCTORALIA_APPOINTMENTS_PERMISSION_MODE || process.env.DOCTORALIA_SYNC_PERMISSION_MODE || 'fail').trim().toLowerCase(),
+  ];
 
-  if (!appointmentsSheetId && legacySheetId && legacySheetId !== CANONICAL_DOCTORALIA_SHEET_ID) {
-    failCode('DOCTORALIA_SHEET_NOT_CANONICAL');
-  }
+  if (appointmentsSheetId !== sheetId) failCode('DOCTORALIA_APPOINTMENTS_SHEET_MISMATCH');
+  if (driveFileId !== sheetId) failCode('DOCTORALIA_DRIVE_FILE_MISMATCH');
+  if (permissionModes.some((mode) => !['fail', 'warn'].includes(mode))) failCode('DOCTORALIA_PERMISSION_MODE_INVALID');
 
   if (hasValue('DOCTORALIA_APPOINTMENTS_MIN_ROWS')) {
     const minRows = Number.parseInt(process.env.DOCTORALIA_APPOINTMENTS_MIN_ROWS, 10);
@@ -82,7 +84,7 @@ function validateCanonicalDoctoraliaSheet() {
   }
 }
 
-validateCanonicalDoctoraliaSheet();
+validateDoctoraliaSheetConfiguration();
 
 if (!hasValue('META_AD_ACCOUNT_ID') && !hasValue('META_AD_ACCOUNT_IDS') && !hasValue('FALLBACK_META_AD_ACCOUNT_ID')) {
   failCode('META_ACCOUNT_MISSING');

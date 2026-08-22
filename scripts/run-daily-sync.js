@@ -8,7 +8,20 @@
 
 const { execSync } = require('child_process');
 
-const CANONICAL_DOCTORALIA_SHEET_ID = '1GAJoASGdjsKB7bTtC5hXPFkWbB7S4fVXhKD_cZoDwPw';
+function resolveDoctoraliaAppointmentsSheetId() {
+  const sheetId = String(
+    process.env.DOCTORALIA_APPOINTMENTS_SHEET_ID ||
+    process.env.DOCTORALIA_SHEET_ID ||
+    process.env.DOCTORALIA_DRIVE_FILE_ID ||
+    '',
+  ).trim();
+
+  if (!sheetId) {
+    throw new Error('DOCTORALIA_APPOINTMENTS_SHEET_ID, DOCTORALIA_SHEET_ID, or DOCTORALIA_DRIVE_FILE_ID is required.');
+  }
+
+  return sheetId;
+}
 
 function sleep(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -30,12 +43,12 @@ function withEnv(command, env) {
 }
 
 const doctoraliaAppointmentsEnv = {
-  DOCTORALIA_APPOINTMENTS_SHEET_ID: CANONICAL_DOCTORALIA_SHEET_ID,
-  DOCTORALIA_APPOINTMENTS_SHEET_NAME: 'Base Completa Doctoralia',
-  DOCTORALIA_APPOINTMENTS_SHEET_RANGE: 'A1:T5000',
-  DOCTORALIA_APPOINTMENTS_MIN_ROWS: '1800',
-  DOCTORALIA_APPOINTMENTS_PERMISSION_MODE: 'fail',
-  DOCTORALIA_APPOINTMENTS_REPLACE_MODE: 'true',
+  DOCTORALIA_APPOINTMENTS_SHEET_ID: resolveDoctoraliaAppointmentsSheetId(),
+  DOCTORALIA_APPOINTMENTS_SHEET_NAME: String(process.env.DOCTORALIA_APPOINTMENTS_SHEET_NAME || 'Base Completa Doctoralia').trim(),
+  DOCTORALIA_APPOINTMENTS_SHEET_RANGE: String(process.env.DOCTORALIA_APPOINTMENTS_SHEET_RANGE || 'A1:T5000').trim(),
+  DOCTORALIA_APPOINTMENTS_MIN_ROWS: String(process.env.DOCTORALIA_APPOINTMENTS_MIN_ROWS || '1800').trim(),
+  DOCTORALIA_APPOINTMENTS_PERMISSION_MODE: String(process.env.DOCTORALIA_APPOINTMENTS_PERMISSION_MODE || process.env.DOCTORALIA_SYNC_PERMISSION_MODE || 'fail').trim().toLowerCase(),
+  DOCTORALIA_APPOINTMENTS_REPLACE_MODE: String(process.env.DOCTORALIA_APPOINTMENTS_REPLACE_MODE || 'true').trim(),
 };
 
 const steps = [
