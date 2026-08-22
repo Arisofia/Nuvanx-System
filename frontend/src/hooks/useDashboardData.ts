@@ -310,17 +310,10 @@ export function useDashboardData(
       try {
         const { queryParams, dashboardParams } = buildParams()
         const cacheNamespace = session.user?.id ?? 'anonymous'
-        const funnelRequest = supabase.functions.invoke('operational-funnel', {
-          body: {
-            from,
-            to,
-            source: sourceFilter,
-            campaign_id: campaignId,
-          }
-        }).then(({ data, error }) => {
-          if (error) throw error
-          return data
-        })
+        const funnelRequest = getCachedDashboardResource<{ success?: boolean; funnel?: Array<Record<string, unknown>> }>(
+          `/api/traceability/funnel?lead_from=${encodeURIComponent(from)}&lead_to=${encodeURIComponent(to)}`,
+          cacheNamespace,
+        )
         const [metricsResult, metaTrendsResult, campaignsResult, insightsResult, funnelResult, kpisResult] = await Promise.allSettled([
           getCachedDashboardResource(`/api/dashboard/metrics${dashboardParams}`, cacheNamespace),
           getCachedDashboardResource(`/api/dashboard/meta-trends${queryParams}`, cacheNamespace),

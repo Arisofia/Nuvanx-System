@@ -93,6 +93,28 @@ export function normalizeTrendData(value: unknown): MetaTrendPoint[] {
   return Array.isArray(value) ? value.map(normalizeTrendPoint).filter((item): item is MetaTrendPoint => Boolean(item)) : []
 }
 
+function isAttendedAppointment(value: unknown) {
+  const status = toSafeString(value).trim().toLowerCase()
+  return ['realizada', 'pagada', 'showed', 'attended', 'completed'].some((token) => status === token || status.includes(token))
+}
+
+export function normalizeFunnelData(value: unknown): Array<Record<string, unknown>> {
+  const rows = asRecordArray(value)
+  const totalLeads = rows.length
+  const booked = rows.filter((row) => row.cita_valoracion != null && row.cita_valoracion !== '').length
+  const attended = rows.filter((row) => isAttendedAppointment(row.estado)).length
+  const closedWithCash = rows.filter((row) => toSafeNumber(row.revenue, 0) > 0).length
+  const percentage = (count: number) => totalLeads > 0 ? Number(((count / totalLeads) * 100).toFixed(1)) : 0
+
+  return [
+    { stage: 'total_leads', label: 'Leads', count: totalLeads, percentage: percentage(totalLeads) },
+    { stage: 'booked', label: 'Agendados', count: booked, percentage: percentage(booked) },
+    { stage: 'attended', label: 'Asistidos', count: attended, percentage: percentage(attended) },
+    { stage: 'closed_won', label: 'Cerrados con caja', count: closedWithCash, percentage: percentage(closedWithCash) },
+    { stage: 'settled_revenue', label: 'Operaciones con caja', count: closedWithCash, percentage: percentage(closedWithCash) },
+  ]
+}
+
 export function validateDashboardBundle(input: {
   readonly metricsResponse: unknown
   readonly campaignsResponse: unknown
@@ -122,7 +144,7 @@ export function validateDashboardBundle(input: {
     errors.push('dashboard.meta-trends payload is not an array')
   }
 
-  const funnelRows = asRecordArray(funnelResponse.funnel)
+  const funnelRows = normalizeFunnelData(funnelResponse.funnel)
   if (funnelResponse.funnel != null && !Array.isArray(funnelResponse.funnel)) {
     errors.push('operational funnel payload is not an array')
   }

@@ -99,9 +99,11 @@ export function resolveInsightsTotals(insightsSummary: any, campaigns: any[]) {
     ? Number(campaigns.reduce((sum: number, campaign: any) => sum + Number(campaign.insights?.spend ?? 0), 0))
     : Number(insightsSummary.spend)
 
-  const campaignsWithCpc = campaigns.filter((campaign: any) => Number(campaign.insights?.cpc ?? 0) > 0)
+  const clicks = insightsSummary?.clicks == null
+    ? campaigns.reduce((sum: number, campaign: any) => sum + Number(campaign.insights?.clicks ?? 0), 0)
+    : Number(insightsSummary.clicks)
   const avgCpcRaw = insightsSummary?.cpc == null
-    ? Number(campaigns.reduce((sum: number, campaign: any) => sum + Number(campaign.insights?.cpc ?? 0), 0) / Math.max(campaignsWithCpc.length, 1))
+    ? (clicks > 0 ? spend / clicks : Number.NaN)
     : Number(insightsSummary.cpc)
 
   const metaConversions = insightsSummary?.conversions == null
@@ -159,9 +161,14 @@ export function buildDashboardState(options: DashboardStateOptions) {
   const rawKpisMetaSpend = pick(kpisMeta.spend, kpisMeta.totalSpend, kpisMeta.total_spend, metricsData.spend)
   const rawKpisMetaLeads = pick(kpisMeta.leads, kpisMeta.conversions, kpisMeta.metaConversions, kpisMeta.meta_conversions, metricsData.metaConversions, metricsData.meta_conversions, metaConversions)
 
-  const canonicalMetaSpend = hasFiniteMetric(rawKpisMetaSpend) && (hasMultiAccountKpis(kpisResponse) || !hasCanonicalInsightsSpend(insightsResponse, campaigns)) ? Number(rawKpisMetaSpend) : toNumber(spend)
-  const canonicalMetaLeads = toNumber(rawKpisMetaLeads)
-  const canonicalAvgCpc = Number.isFinite(Number(avgCpcRaw)) && Number(avgCpcRaw) > 0 ? Number.parseFloat(Number(avgCpcRaw).toFixed(2)) : calculateRatio(canonicalMetaSpend, canonicalMetaLeads)
+  const hasCanonicalMetaInsights = hasCanonicalInsightsSpend(insightsResponse, campaigns)
+  const canonicalMetaSpend = hasCanonicalMetaInsights
+    ? toNumber(spend)
+    : hasFiniteMetric(rawKpisMetaSpend) ? Number(rawKpisMetaSpend) : 0
+  const canonicalMetaLeads = hasCanonicalMetaInsights ? toNumber(metaConversions) : toNumber(rawKpisMetaLeads)
+  const canonicalAvgCpc = Number.isFinite(Number(avgCpcRaw)) && Number(avgCpcRaw) >= 0
+    ? Number.parseFloat(Number(avgCpcRaw).toFixed(2))
+    : null
 
   const doctoraliaPatients = toNumber(pick(kpisDoctoralia.newVerifiedPatients, kpisDoctoralia.new_verified_patients, kpisDoctoralia.patientMatches, kpisDoctoralia.patient_matches, metricsData.patientMatches, metricsData.patient_matches))
   const doctoraliaVerifiedRevenue = toNumber(pick(kpisDoctoralia.verifiedRevenue, kpisDoctoralia.verified_revenue, metricsData.verifiedRevenue, metricsData.verified_revenue))
@@ -173,7 +180,9 @@ export function buildDashboardState(options: DashboardStateOptions) {
 
   const metaCpl = calculateRatio(canonicalMetaSpend, canonicalMetaLeads)
   const cacDoctoralia = calculateRatio(canonicalMetaSpend, doctoraliaPatients)
-  const revenuePerLead = calculateRatio(doctoraliaVerifiedRevenue, doctoraliaPatients)
+  const revenuePerLead = totalLeads != null
+    ? calculateRatio(doctoraliaVerifiedRevenue, totalLeads)
+    : null
   const accountIds = pick(kpisMeta.accountIds, kpisMeta.account_ids)
   const deltas = asObject(metricsData.deltas)
 

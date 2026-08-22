@@ -37,7 +37,7 @@ export function MetricsGrid({ metrics, quality }: MetricsGridProps) {
         <CardContent className="relative z-10">
           <div className="flex items-baseline gap-4 mt-6">
             <div className="text-5xl font-serif font-bold tracking-tight text-[#2C2825]">
-              {(metrics.metaConversions ?? 0).toLocaleString('es-ES')}
+              {metrics.metaConversions == null ? '—' : metrics.metaConversions.toLocaleString('es-ES')}
             </div>
             {metrics.deltas && <MetricDelta value={metrics.deltas.conversions} />}
           </div>
@@ -64,7 +64,7 @@ export function MetricsGrid({ metrics, quality }: MetricsGridProps) {
         <CardContent className="relative z-10">
           <div className="flex items-baseline gap-4 mt-6">
             <div className="text-5xl font-serif font-bold tracking-tight text-[#2C2825]">
-              {(metrics.totalLeads ?? 0).toLocaleString('es-ES')}
+              {metrics.totalLeads == null ? '—' : metrics.totalLeads.toLocaleString('es-ES')}
             </div>
             {metrics.deltas && <MetricDelta value={metrics.deltas.leads} />}
           </div>
@@ -91,7 +91,7 @@ export function MetricsGrid({ metrics, quality }: MetricsGridProps) {
         <CardContent className="relative z-10">
           <div className="flex items-baseline gap-4 mt-6">
             <div className="text-5xl font-serif font-bold tracking-tight text-[#2C2825]">
-              {`€${(metrics.verifiedRevenue ?? 0).toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+              {metrics.verifiedRevenue == null ? '—' : `€${metrics.verifiedRevenue.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
             </div>
             {metrics.deltas && <MetricDelta value={metrics.deltas.revenue} />}
           </div>
@@ -108,7 +108,7 @@ export function MetricsGrid({ metrics, quality }: MetricsGridProps) {
         </div>
         <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 relative z-10">
           <div className="flex flex-col gap-3">
-            <CardTitle className="text-[10px] font-bold text-[#8E8680] uppercase tracking-[0.25em]">Tasa de Cierre</CardTitle>
+            <CardTitle className="text-[10px] font-bold text-[#8E8680] uppercase tracking-[0.25em]">Conversión a paciente</CardTitle>
             {renderIsReal(quality?.doctoraliaIsReal)}
           </div>
           <div className="bg-[#FAF7F2] p-3.5 rounded-2xl group-hover:bg-[#B08B5A] transition-all duration-500 group-hover:translate-y-[-4px]">
@@ -117,11 +117,11 @@ export function MetricsGrid({ metrics, quality }: MetricsGridProps) {
         </CardHeader>
         <CardContent className="relative z-10">
           <div className="text-5xl font-serif font-bold tracking-tight text-[#2C2825] mt-6">
-            {`${(metrics.conversionRate ?? 0).toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}%`}
+            {metrics.conversionRate == null ? '—' : `${metrics.conversionRate.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}%`}
           </div>
           <div className="mt-6 flex items-center gap-2">
             <div className="h-[1px] w-4 bg-[#B08B5A]/40" />
-            <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest">Lead → Caja</p>
+            <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest">Lead → paciente</p>
           </div>
         </CardContent>
       </Card>
