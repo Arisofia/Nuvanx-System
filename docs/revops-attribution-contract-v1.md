@@ -149,3 +149,18 @@ Google documenta que desde el 15 de junio de 2026 determinados flujos de `Upload
 [6]: https://developers.google.com/google-ads/api/docs/conversions/upload-offline "Google Ads API: Manage offline conversions"
 [7]: https://developers.google.com/data-manager/api "Google Data Manager API"
 [8]: https://support.google.com/google-ads/answer/6386790?hl=en "Google Ads Help: Use a transaction ID to minimize duplicate conversions"
+
+## 14. Validación de implementación — 2026-08-23
+
+Tras instalar PHP CLI en el entorno de validación, se ejecutaron correctamente los contratos locales de SiteGround/WordPress. El contrato de regresión de release pasó sus 15 aserciones, incluyendo retirada de ownership de Meta browser, entrega CSS LCP, ownership SEO, identidad de despliegue y límites estructurales del formulario de valoración. También pasaron el contrato de formulario directo de valoración, el contrato de landing prioritaria y el test de contraste WCAG del hero.
+
+| Validación | Resultado |
+|---|---|
+| `scripts/ci/test-release-regression-contract.sh` | PASS — 15 aserciones |
+| `scripts/lint/test-valoracion-direct-form-contract.php` | PASS |
+| `scripts/lint/test-priority-landing-contract.php` | PASS |
+| `scripts/lint/test-hero-wcag-contrast.mjs` | PASS |
+| `scripts/validate-sql-migrations.js` | PASS — 191 migraciones SQL con guards estructurales |
+| `scripts/validate-github-workflows.js` | PASS — 6 workflows validados |
+
+El proyecto Supabase de producción `NUVANX 2026` fue reanudado mediante autorización expresa. A la hora de esta actualización, el panel informa **Restoration in progress** y mantiene el proyecto offline hasta que finalice la restauración. Las verificaciones runtime de tablas, funciones, Vault, Edge Functions y E2E deben ejecutarse solo cuando el panel informe que el proyecto está disponible.
