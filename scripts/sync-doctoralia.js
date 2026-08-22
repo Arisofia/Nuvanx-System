@@ -399,28 +399,59 @@ function getOptionalTextValue(row, col, enabled) {
   return enabled ? normalizeField(row[col]) || null : null;
 }
 
-function buildHeaderConfig(headers) {
-  // Optimized for the exact "Produccion Intermediarios" sheet structure (as of June 2026 inspection)
-  const colId           = findCol(headers, '=id', '=num', 'id op', 'id_op', 'num op', 'operacion', 'operation', 'm');
-  const colTemplate     = findCol(headers, 'plantilladescr', 'plantilla descr', 'plantilla', 'template descr', 'template', 'asunto', 'f');
+function detectHeaderRowIndex(rows) {
+  if (!Array.isArray(rows)) return -1;
+  const semanticHints = ['estado', 'hora', 'fecha', 'asunto', 'agenda', 'importe', 'procedencia', 'liquidacion', 'plantilla', 'nombre'];
+  let bestIndex = -1;
+  let bestScore = 0;
+  rows.slice(0, 25).forEach((row, index) => {
+    const normalized = (row ?? []).map(norm);
+    const score = semanticHints.reduce((sum, hint) => sum + (normalized.some(value => value === hint || value.includes(hint)) ? 1 : 0), 0);
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = index;
+    }
+  });
+  return bestScore >= 2 ? bestIndex : -1;
+}
+
+function inferDateColumn(headers, sampleRows, excluded = new Set()) {
+  if (!Array.isArray(sampleRows) || sampleRows.length === 0) return -1;
+  const scores = headers.map((_, index) => {
+    if (excluded.has(index)) return -1;
+    return sampleRows.reduce((score, row) => score + (parseDate(row?.[index]) ? 1 : 0), 0);
+  });
+  const bestScore = Math.max(...scores);
+  if (bestScore <= 0) return -1;
+  // Prefer the rightmost date column when the export has an unlabeled settled date
+  // after the creation/intake date (as in the current Doctoralia sheet).
+  return scores.reduce((best, score, index) => score >= bestScore ? index : best, -1);
+}
+
+function buildHeaderConfig(headers, sampleRows = []) {
+  const colId           = findCol(headers, '=id', '=num', 'id op', 'id_op', 'num op', 'operacion', 'operation');
+  const colTemplate     = findCol(headers, 'plantilladescr', 'plantilla descr', 'plantilla', 'template descr', 'template', 'asunto');
   const colTemplateId   = findCol(headers, 'id plantilla', 'template_id', 'id_plantilla', 'cod plantilla');
-  const colFecha        = findCol(headers, 'fecha', 'b');
-  const colHora         = findCol(headers, 'hora', 'c');
-  const colIntake       = findCol(headers, 'fecha ingreso', 'fecha inicio', 'ingreso', 'inicio', 'intake', 'alta', 'desde', 'fecha creacion', 'fecha creaci', 'd');
-  const colSettled      = findCol(headers, 'fecha liquidaci', 'liquidaci', 'fecha liq', 'settled', 'f. liq', 'b'); // B is the main date
+  const colFecha        = findCol(headers, 'fecha', 'fecha creacion', 'fecha creaci');
+  const colHora         = findCol(headers, 'hora');
+  const colIntake       = findCol(headers, 'fecha ingreso', 'fecha inicio', 'ingreso', 'inicio', 'intake', 'alta', 'desde');
+  const namedSettled    = findCol(headers, 'fecha liquidaci', 'liquidaci', 'fecha liq', 'settled');
+  const colSettled      = namedSettled !== -1
+    ? namedSettled
+    : inferDateColumn(headers, sampleRows, new Set([colFecha, colIntake]));
   const colGross        = findCol(headers, 'importe bruto', 'bruto', 'gross', 'financiad', 'capital');
   const colDiscount     = findCol(headers, 'descuento', 'discount', 'bonific');
-  const colNet          = findCol(headers, 'importe neto', 'importe liq', 'neto', 'net', 'liquidado', 'importe', 'k'); // K = Importe
-  const colPayment      = findCol(headers, 'metodo pago', 'metodo de pago', 'pago', 'payment', 'forma pago', 'procedencia');
-  const colIntermediary = findCol(headers, 'intermediario', 'mediador', 'financiera', 'entidad', 'agenda', 'g');
-  const colStatus       = findCol(headers, 'estado', 'status', 'situacion', 'a');
-  const colOrigin       = findCol(headers, 'procedencia', 'origen', 'source', 'origin', 'j');
-  const colAgenda       = findCol(headers, 'agenda', 'calendario', 'doctor', 'g');
-  const colRoom         = findCol(headers, 'sala', 'habitacion', 'room', 'box', 'h');
-  const colPhone        = findCol(headers, 'telefono', 'tel', 'movil', 'celular', 'phone', 'contact', 'o'); // O = Teléfono
-  const colCampaign     = findCol(headers, 'campaña', 'campaign', 'u'); // U = CAMPAÑA
-  const colName         = findCol(headers, 'nombre', 'name', 'n'); // N = Nombre
-  const colTratamiento  = findCol(headers, 'tratamiento', 'p'); // P = Tratamiento
+  const colNet          = findCol(headers, 'importe neto', 'importe liq', 'neto', 'net', 'liquidado', 'importe');
+  const colPayment      = findCol(headers, 'metodo pago', 'metodo de pago', 'pago', 'payment', 'forma pago');
+  const colIntermediary = findCol(headers, 'intermediario', 'mediador', 'financiera', 'entidad');
+  const colStatus       = findCol(headers, 'estado', 'status', 'situacion');
+  const colOrigin       = findCol(headers, 'procedencia', 'origen', 'source', 'origin');
+  const colAgenda       = findCol(headers, 'agenda', 'calendario', 'doctor');
+  const colRoom         = findCol(headers, 'sala', 'habitacion', 'room', 'box');
+  const colPhone        = findCol(headers, 'telefono', 'tel', 'movil', 'celular', 'phone', 'contact');
+  const colCampaign     = findCol(headers, 'campaña', 'campaign');
+  const colName         = findCol(headers, 'nombre', 'name');
+  const colTratamiento  = findCol(headers, 'tratamiento');
 
   const hasColId           = colId !== -1;
   const hasColTemplate     = colTemplate !== -1;
@@ -478,7 +509,7 @@ function buildHeaderConfig(headers) {
     colName,
     colTratamiento,
     useHashId: !hasColId,
-    colSettledEff: hasColSettled ? colSettled : colFecha,
+    colSettledEff: colSettled,
   };
 }
 
@@ -753,8 +784,14 @@ async function main() {
   console.log(`[sync-doctoralia] Data rows after trimming trailing empties: ${rows.length - 1}`);
 
   // ── 2. Map headers ────────────────────────────────────────────────────────
-  const headers = rows[0];
-  const config = validateHeaderConfig(buildHeaderConfig(headers));
+  const headerIndex = detectHeaderRowIndex(rows);
+  if (headerIndex === -1) {
+    console.error('[sync-doctoralia] Could not identify the Doctoralia header row. Aborting without modifying settlements.');
+    process.exit(1);
+  }
+  const headers = rows[headerIndex];
+  const dataRows = rows.slice(headerIndex + 1);
+  const config = validateHeaderConfig(buildHeaderConfig(headers, dataRows.slice(0, 10)));
 
   if (config.colSettledEff === -1) {
     console.error('[sync-doctoralia] Could not find a date column (liquidaci / fecha). Aborting.');
@@ -774,8 +811,8 @@ async function main() {
     console.log('[sync-doctoralia] Connected to database.');
 
     // ── 4. Upsert rows ────────────────────────────────────────────────────────
-    for (let i = 1; i < rows.length; i++) {
-      const success = await upsertDoctoraliaRow(rows[i], i, {
+    for (let i = 0; i < dataRows.length; i++) {
+      const success = await upsertDoctoraliaRow(dataRows[i], i + headerIndex + 1, {
         db,
         cols: config,
         hasColName: config.hasColName,
@@ -959,6 +996,7 @@ module.exports = {
   getAmountValues,
   getOptionalTextValue,
   validateHeaderConfig,
+  detectHeaderRowIndex,
 };
 
 if (require.main === module) {

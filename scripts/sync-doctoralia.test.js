@@ -7,11 +7,17 @@ const {
   parseAmount,
   parseDate,
   parseStatus,
+  detectHeaderRowIndex,
 } = require('./sync-doctoralia');
 
 const validHeaders = ['ID', 'Fecha', 'Hora', 'Plantilla', 'Fecha liquidación', 'Importe neto', 'Estado', 'Nombre'];
 const config = validateHeaderConfig(buildHeaderConfig(validHeaders));
 assert.equal(config.hasColNet, true);
+assert.equal(detectHeaderRowIndex([
+  ['Listado de citas'],
+  [null, 'Estado', null, 'Hora', 'Fecha creación', null, 'Asunto', 'Agenda', 'Importe'],
+  [null, 'Pendiente', null, '12:00', '22/05/2026', null, '578. NOMBRE [612345678]', 'Agenda', '350'],
+]), 1);
 assert.notEqual(config.colSettledEff, -1);
 assert.equal(parseAmount('1.234'), 1234);
 assert.equal(parseAmount('1.234,56'), 1234.56);
