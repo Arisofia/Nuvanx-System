@@ -373,6 +373,8 @@ jobs:
       }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    environment:
+      name: Production
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -390,9 +392,8 @@ jobs:
       CLINIC_ID: ${{ secrets.CLINIC_ID }}
       ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
       REPORT_USER_ID: ${{ secrets.REPORT_USER_ID }}
-      META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
-      META_AD_ACCOUNT_IDS: ${{ secrets.META_AD_ACCOUNT_IDS }}
-      META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
+      META_REPORTING_TOKEN_60D: ${{ secrets.META_REPORTING_TOKEN_60D }}
+      META_REPORTING_AD_ACCOUNT_ID: ${{ secrets.META_REPORTING_AD_ACCOUNT_ID }}
       FALLBACK_META_AD_ACCOUNT_ID: ${{ secrets.FALLBACK_META_AD_ACCOUNT_ID }}
       SHEETS_WEBHOOK_URL_DOCTORALIA: ${{ secrets.SHEETS_WEBHOOK_URL_DOCTORALIA }}
       SHEETS_WEBHOOK_SECRET_DOCTORALIA: ${{ secrets.SHEETS_WEBHOOK_SECRET_DOCTORALIA }}
@@ -418,6 +419,15 @@ jobs:
 
       - name: Install workspace dependencies
         run: npm install --include=dev --ignore-scripts --legacy-peer-deps
+
+      - name: Activate read-only Meta reporting token
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${META_REPORTING_TOKEN_60D:-}"
+          test -n "${META_REPORTING_AD_ACCOUNT_ID:-}"
+          echo "META_ACCESS_TOKEN=${META_REPORTING_TOKEN_60D}" >> "$GITHUB_ENV"
+          echo "META_AD_ACCOUNT_IDS=${META_REPORTING_AD_ACCOUNT_ID}" >> "$GITHUB_ENV"
 
       - name: Validate sync prerequisites
         run: |
