@@ -164,3 +164,16 @@ Tras instalar PHP CLI en el entorno de validación, se ejecutaron correctamente 
 | `scripts/validate-github-workflows.js` | PASS — 6 workflows validados |
 
 El proyecto Supabase de producción `NUVANX 2026` fue reanudado mediante autorización expresa. A la hora de esta actualización, el panel informa **Restoration in progress** y mantiene el proyecto offline hasta que finalice la restauración. Las verificaciones runtime de tablas, funciones, Vault, Edge Functions y E2E deben ejecutarse solo cuando el panel informe que el proyecto está disponible.
+
+## 15. Controles adicionales de calidad — 2026-08-23
+
+Las pruebas unitarias de población y sincronización de Doctoralia pasan una vez instaladas las dependencias declaradas en el lockfile. La validación de preparación contra runtime queda bloqueada exclusivamente por la ausencia local de `SUPABASE_URL` y una clave service-role; no se introdujeron credenciales de sustitución ni se debilitó la validación.
+
+El escaneo de secretos de `Nuvanx-System` pasó sobre 384 archivos versionados. La comprobación local de `nuvanx-siteground` no identificó un script equivalente en el checkout actual; el cierre de ese repositorio permanece respaldado por el commit de retirada de archivos operativos y por los contratos de release ejecutados.
+
+| Control | Resultado |
+|---|---|
+| `scripts/populate-doctoralia-appointments.test.js` | PASS |
+| `scripts/sync-doctoralia.test.js` | PASS |
+| `scripts/validate-doctoralia-appointments-ready.js` | BLOQUEADO por credenciales runtime locales ausentes |
+| `scripts/scan-secrets.js` en Nuvanx-System | PASS — 384 archivos versionados |
