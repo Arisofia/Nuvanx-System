@@ -5198,7 +5198,27 @@ async function handleIntegrationsPatch(ctx: AuthenticatedRouteContext): Promise<
     const service = String(body.service ?? '').trim();
     if (!service) return sendJson({ success: false, message: 'service is required' }, 400);
     const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
-    if (body.metadata !== undefined) updates.metadata = body.metadata;
+    if (body.metadata !== undefined) {
+      if (!body.metadata || typeof body.metadata !== 'object' || Array.isArray(body.metadata)) {
+        return sendJson({ success: false, message: 'metadata must be an object' }, 400);
+      }
+      const { data: current, error: currentError } = await adminClient
+        .from('integrations')
+        .select('metadata')
+        .eq('user_id', userId)
+        .eq('service', service)
+        .maybeSingle();
+      if (currentError) throw currentError;
+      if (!current) return sendJson({ success: false, message: `Integration '${service}' is not connected` }, 404);
+
+      // PATCH requests often contain only a new account list. Merge it with the
+      // established page/pixel/portfolio metadata so adding an account cannot
+      // erase routing fields, then normalize and validate the complete contract.
+      const mergedMetadata = { ...(current.metadata ?? {}), ...body.metadata };
+      const normalized = validateAndNormalizeMetadata(service, mergedMetadata);
+      if (!normalized.ok) return sendJson({ success: false, message: normalized.message }, 400);
+      updates.metadata = normalized.metadata;
+    }
     if (body.status !== undefined) updates.status = body.status;
     const { error } = await adminClient.from('integrations')
       .update(updates)
