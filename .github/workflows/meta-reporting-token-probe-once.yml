@@ -17,7 +17,7 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL || secrets.NUVANX_SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
     steps:
-      - name: Inspect reporting token identity and app
+      - name: Inspect published RSV26 hierarchy
         shell: bash
         run: |
           set -euo pipefail
@@ -29,10 +29,10 @@ jobs:
           const sbUrl = String(process.env.SUPABASE_URL || '').replace(/\/$/, '');
           const service = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
           const graph = 'https://graph.facebook.com/v22.0';
-          const target = 'act_718120894191565';
-          const canonicalBusiness = '897835716596010';
-          const canonicalApp = '1836302544001572';
-          const canonicalSystemUser = '61593654929650';
+          const account = 'act_718120894191565';
+          const campaign = '120249780276630419';
+          const requestedAdset = '120249784103200419';
+          const requestedAd = '120249780276610419';
 
           async function meta(path, params = {}) {
             const url = new URL(`${graph}${path}`);
@@ -42,22 +42,20 @@ jobs:
             const b = await r.json().catch(() => ({}));
             if (!r.ok || b?.error) {
               const e = b?.error || {};
-              return { ok:false, status:r.status, error:{ code:e.code ?? null, subcode:e.error_subcode ?? null, type:e.type ?? null, message:String(e.message || `Meta ${r.status}`).slice(0,400) } };
+              return { ok:false, status:r.status, error:{ code:e.code ?? null, subcode:e.error_subcode ?? null, type:e.type ?? null, message:String(e.message || `Meta ${r.status}`).slice(0,500) } };
             }
             return { ok:true, status:r.status, data:b };
           }
 
           const result = {
-            identity: await meta('/me', { fields:'id,name' }),
-            permissions: await meta('/me/permissions'),
-            debug_self: await meta('/debug_token', { input_token:token }),
-            app_alias: await meta('/app', { fields:'id,name' }),
-            target: await meta(`/${target}`, { fields:'id,name,account_status,currency,timezone_name' }),
-            target_campaigns: await meta(`/${target}/campaigns`, { fields:'id,name,status,effective_status,objective,created_time,updated_time', limit:500 }),
-            canonical_business: await meta(`/${canonicalBusiness}`, { fields:'id,name' }),
-            canonical_system_users: await meta(`/${canonicalBusiness}/system_users`, { fields:'id,name,role', limit:100 }),
-            canonical_app: await meta(`/${canonicalApp}`, { fields:'id,name' }),
-            canonical_system_user: await meta(`/${canonicalSystemUser}`, { fields:'id,name' }),
+            campaign: await meta(`/${campaign}`, { fields:'id,name,status,effective_status,objective,buying_type,daily_budget,lifetime_budget,bid_strategy,special_ad_categories,created_time,updated_time' }),
+            campaign_adsets: await meta(`/${campaign}/adsets`, { fields:'id,name,status,effective_status,campaign_id,daily_budget,lifetime_budget,billing_event,optimization_goal,bid_strategy,bid_amount,attribution_spec,start_time,end_time,created_time,updated_time,promoted_object,targeting', limit:100 }),
+            campaign_ads: await meta(`/${campaign}/ads`, { fields:'id,name,status,effective_status,campaign_id,adset_id,created_time,updated_time,tracking_specs,conversion_specs,creative{id,name,effective_object_story_id,object_story_spec,asset_feed_spec,url_tags,call_to_action_type}', limit:200 }),
+            requested_adset: await meta(`/${requestedAdset}`, { fields:'id,name,status,effective_status,campaign_id,daily_budget,lifetime_budget,billing_event,optimization_goal,bid_strategy,bid_amount,attribution_spec,start_time,end_time,created_time,updated_time,promoted_object,targeting' }),
+            requested_ad: await meta(`/${requestedAd}`, { fields:'id,name,status,effective_status,campaign_id,adset_id,created_time,updated_time,tracking_specs,conversion_specs,creative{id,name,effective_object_story_id,object_story_spec,asset_feed_spec,url_tags,call_to_action_type}' }),
+            campaign_insights: await meta(`/${campaign}/insights`, { fields:'date_start,date_stop,impressions,reach,frequency,spend,clicks,inline_link_clicks,ctr,cpc,cpm,actions,cost_per_action_type', date_preset:'maximum', level:'campaign' }),
+            adset_insights: await meta(`/${campaign}/insights`, { fields:'adset_id,adset_name,date_start,date_stop,impressions,reach,frequency,spend,clicks,inline_link_clicks,ctr,cpc,cpm,actions,cost_per_action_type', date_preset:'maximum', level:'adset', limit:100 }),
+            ad_insights: await meta(`/${campaign}/insights`, { fields:'ad_id,ad_name,adset_id,adset_name,date_start,date_stop,impressions,reach,frequency,spend,clicks,inline_link_clicks,ctr,cpc,cpm,actions,cost_per_action_type', date_preset:'maximum', level:'ad', limit:200 }),
           };
 
           const userRes = await fetch(`${sbUrl}/rest/v1/integrations?service=eq.meta&status=eq.connected&select=user_id&order=updated_at.desc&limit=1`, { headers:{ apikey:service, Authorization:`Bearer ${service}` } });
@@ -68,8 +66,8 @@ jobs:
           const persist = await fetch(`${sbUrl}/rest/v1/agent_outputs`, {
             method:'POST',
             headers:{ apikey:service, Authorization:`Bearer ${service}`, 'Content-Type':'application/json', Prefer:'return=minimal' },
-            body:JSON.stringify({ user_id:userId, agent_type:'meta-reporting-token-debug-probe-20260824', input_context:{ target, canonical_business:canonicalBusiness, canonical_app:canonicalApp, canonical_system_user:canonicalSystemUser }, output_text:JSON.stringify(result), model_used:'github-actions-reporting-token-probe-v1', status:'completed', output:result, metadata:{ source:'github_actions', read_only:true, one_time:true, graph_version:'v22.0' } })
+            body:JSON.stringify({ user_id:userId, agent_type:'meta-rsv26-published-hierarchy-probe-20260824', input_context:{ account,campaign,requested_adset:requestedAdset,requested_ad:requestedAd }, output_text:JSON.stringify(result), model_used:'github-actions-rsv26-hierarchy-probe-v1', status:'completed', output:result, metadata:{ source:'github_actions', read_only:true, one_time:true, graph_version:'v22.0' } })
           });
           if (!persist.ok) throw new Error(`Supabase persist ${persist.status}`);
-          console.log('META_REPORTING_TOKEN_PROBE=PASS');
+          console.log('META_RSV26_HIERARCHY_PROBE=PASS');
           NODE
