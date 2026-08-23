@@ -1,0 +1,235 @@
+name: Final hardening one-shot
+
+on:
+  push:
+    branches:
+      - fix/final-security-ci-hardening-20260823
+    paths:
+      - '.github/workflows/final-hardening-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  remediate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout hardening branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '22'
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
+        with:
+          deno-version: v2.x
+
+      - name: Apply deterministic hardening patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          CHECKOUT = 'fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09'
+          ACTION_PINS = {
+              'actions/checkout@v5': f'actions/checkout@{CHECKOUT}',
+              'actions/checkout@v4': f'actions/checkout@{CHECKOUT}',
+              'actions/setup-node@v6': 'actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e',
+              'denoland/setup-deno@v2': 'denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed',
+              'reviewdog/action-actionlint@v1': 'reviewdog/action-actionlint@dbe5299849118fd6f099ba563d263d770955a64a',
+              'ludeeus/action-shellcheck@2.0.0': 'ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38',
+              'actions/upload-artifact@v4': 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02',
+              'supabase/setup-cli@v2': 'supabase/setup-cli@52a446718e4edd1a9f1e2631186019c87e329f60',
+          }
+
+          def read(path):
+              return Path(path).read_text()
+
+          def write(path, text):
+              Path(path).write_text(text)
+
+          def replace_required(text, old, new, label):
+              if old not in text:
+                  raise SystemExit(f'missing expected pattern: {label}')
+              return text.replace(old, new)
+
+          # 1) Composite action: pin setup-cli and stop persisting DB URL credentials in GITHUB_ENV.
+          path = '.github/actions/supabase-link-run/action.yml'
+          text = read(path)
+          text = replace_required(text, 'uses: supabase/setup-cli@v2', ACTION_PINS['supabase/setup-cli@v2'], 'setup-cli mutable ref')
+          text = replace_required(text, '          echo "SESSION_URL=$SESSION_URL" >> "$GITHUB_ENV"\n', '', 'SESSION_URL GITHUB_ENV write')
+          text = replace_required(
+              text,
+              '        SUPABASE_DB_PASSWORD_INPUT: ${{ steps.creds.outputs.resolved_db_password }}\n        SCRIPT_PATH: ${{ steps.write-script.outputs.script_path }}\n',
+              '        SUPABASE_DB_PASSWORD_INPUT: ${{ steps.creds.outputs.resolved_db_password }}\n        SESSION_URL: ${{ steps.resolve-url.outputs.session_url }}\n        SCRIPT_PATH: ${{ steps.write-script.outputs.script_path }}\n',
+              'Execute command env block',
+          )
+          write(path, text)
+
+          # 2) Doctoralia DB TLS must verify the server certificate.
+          path = 'scripts/sync-doctoralia.js'
+          text = read(path)
+          text = replace_required(
+              text,
+              'const db = new Client({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });',
+              'const db = new Client({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: true } });',
+              'Doctoralia rejectUnauthorized=false',
+          )
+          write(path, text)
+
+          # 3) Escape dynamic RegExp input even though current caller is a literal.
+          path = 'scripts/validate-doctoralia-appointments-ready.js'
+          text = read(path)
+          old = "function missingColumnError(column) {\n  return new RegExp(`(?:column|field)[^\\\\n]*${column}|${column}[^\\\\n]*(?:does not exist|not found)`, 'i');\n}"
+          new = "function escapeRegExp(value) {\n  return String(value).replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');\n}\n\nfunction missingColumnError(column) {\n  const escapedColumn = escapeRegExp(column);\n  return new RegExp(`(?:column|field)[^\\\\n]*${escapedColumn}|${escapedColumn}[^\\\\n]*(?:does not exist|not found)`, 'i');\n}"
+          text = replace_required(text, old, new, 'dynamic RegExp helper')
+          write(path, text)
+
+          # 4) Playwright launcher: execute the JS CLI through Node; never enable a shell.
+          path = 'frontend/scripts/run-playwright-e2e.mjs'
+          text = read(path)
+          text = replace_required(
+              text,
+              "import { spawnSync } from 'node:child_process';",
+              "import { spawnSync } from 'node:child_process';\nimport { fileURLToPath } from 'node:url';",
+              'Playwright imports',
+          )
+          old = "const result = spawnSync('playwright', ['test'], {\n  encoding: 'utf8',\n  shell: process.platform === 'win32',\n  stdio: 'inherit',\n});"
+          new = "const playwrightCli = fileURLToPath(new URL('../node_modules/playwright/cli.js', import.meta.url));\nconst result = spawnSync(process.execPath, [playwrightCli, 'test'], {\n  encoding: 'utf8',\n  shell: false,\n  stdio: 'inherit',\n});"
+          text = replace_required(text, old, new, 'Playwright spawn shell')
+          write(path, text)
+
+          # 5) Workflow validator: resolve executables through PATH without invoking a shell.
+          path = 'scripts/validate-github-workflows.js'
+          text = read(path)
+          old = "function commandExists(command) {\n  const checker = process.platform === 'win32' ? 'where' : 'command';\n  const args = process.platform === 'win32' ? [command] : ['-v', command];\n  const result = cp.spawnSync(checker, args, { stdio: 'ignore', shell: process.platform !== 'win32' });\n  return result.status === 0;\n}"
+          new = "function commandExists(command) {\n  const pathEntries = (process.env.PATH || '').split(path.delimiter).filter(Boolean);\n  const extensions = process.platform === 'win32'\n    ? (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';')\n    : [''];\n\n  for (const directory of pathEntries) {\n    for (const extension of extensions) {\n      const candidate = path.join(directory, `${command}${extension}`);\n      try {\n        fs.accessSync(candidate, process.platform === 'win32' ? fs.constants.F_OK : fs.constants.X_OK);\n        return true;\n      } catch {\n        // Keep searching PATH.\n      }\n    }\n  }\n  return false;\n}"
+          text = replace_required(text, old, new, 'workflow validator shell lookup')
+          write(path, text)
+
+          # 6) Native Supabase Git integration owns automatic production deploys.
+          # GitHub deploy job remains only as an explicit manual recovery path.
+          path = '.github/workflows/master.yml'
+          text = read(path)
+          text = replace_required(text, 'name: Deploy · Supabase canonical', 'name: Deploy · Supabase manual fallback', 'deploy job name')
+          old = "    if: >-\n      ${{\n        github.event_name == 'push' ||\n        (github.event_name == 'workflow_dispatch' && inputs.operation == 'deploy')\n      }}\n    runs-on: ubuntu-latest\n    timeout-minutes: 45\n    concurrency:\n      group: nuvanx-system-supabase-production"
+          new = "    # Automatic production deploy ownership belongs to Supabase Git Branching.\n    # Keep this job only for an explicit manual recovery dispatch.\n    if: >-\n      ${{\n        github.event_name == 'workflow_dispatch' &&\n        inputs.operation == 'deploy'\n      }}\n    runs-on: ubuntu-latest\n    timeout-minutes: 45\n    concurrency:\n      group: nuvanx-system-supabase-production"
+          text = replace_required(text, old, new, 'automatic GitHub Supabase deploy condition')
+          text, removed = re.subn(r'\n  release-maintenance:\n.*\Z', '\n', text, flags=re.S)
+          if removed != 1:
+              raise SystemExit('expected exactly one release-maintenance job to remove')
+          write(path, text)
+
+          # 7) Manual maintenance is manual-only; remove unused reusable-workflow call surface.
+          path = '.github/workflows/manual-maintenance.yml'
+          text = read(path)
+          text, removed = re.subn(r'\n  workflow_call:\n.*?\n\npermissions:', '\n\npermissions:', text, count=1, flags=re.S)
+          if removed != 1:
+              raise SystemExit('expected workflow_call block in manual-maintenance.yml')
+          write(path, text)
+
+          # 8) Remove the workflow that could write directly back to main.
+          guard = Path('.github/workflows/vercel-author-guard.yml')
+          if not guard.exists():
+              raise SystemExit('expected Vercel author guard workflow')
+          guard.unlink()
+
+          # 9) Pin every known external GitHub Action to an immutable SHA.
+          for yaml_path in sorted(Path('.github').rglob('*.yml')) + sorted(Path('.github').rglob('*.yaml')):
+              if yaml_path.name == 'final-hardening-once.yml':
+                  continue
+              text = yaml_path.read_text()
+              for old_ref, pinned_ref in ACTION_PINS.items():
+                  text = text.replace(old_ref, pinned_ref)
+              yaml_path.write_text(text)
+
+          # 10) Disable checkout credential persistence everywhere in durable workflows.
+          for yaml_path in sorted(Path('.github').rglob('*.yml')) + sorted(Path('.github').rglob('*.yaml')):
+              if yaml_path.name == 'final-hardening-once.yml':
+                  continue
+              lines = yaml_path.read_text().splitlines()
+              out = []
+              i = 0
+              while i < len(lines):
+                  line = lines[i]
+                  out.append(line)
+                  if f'uses: actions/checkout@{CHECKOUT}' in line:
+                      indent = line[:len(line) - len(line.lstrip())]
+                      if i + 1 < len(lines) and lines[i + 1].strip() == 'with:':
+                          out.append(lines[i + 1])
+                          out.append(f'{indent}  persist-credentials: false')
+                          i += 2
+                          continue
+                      out.append(f'{indent}with:')
+                      out.append(f'{indent}  persist-credentials: false')
+                  i += 1
+              yaml_path.write_text('\n'.join(out) + '\n')
+
+          # Remove this one-shot workflow from the resulting commit.
+          Path('.github/workflows/final-hardening-once.yml').unlink()
+
+          # Durable validation: all external uses refs must now be 40-char SHAs.
+          mutable = []
+          for yaml_path in sorted(Path('.github').rglob('*.yml')) + sorted(Path('.github').rglob('*.yaml')):
+              for number, line in enumerate(yaml_path.read_text().splitlines(), 1):
+                  match = re.match(r'^\s*uses:\s*([^\s#]+)', line)
+                  if not match:
+                      continue
+                  action = match.group(1)
+                  if action.startswith('./') or action.startswith('docker://'):
+                      continue
+                  if '@' not in action or not re.fullmatch(r'[0-9a-f]{40}', action.rsplit('@', 1)[1]):
+                      mutable.append(f'{yaml_path}:{number}:{action}')
+          if mutable:
+              raise SystemExit('mutable action refs remain:\n' + '\n'.join(mutable))
+
+          # No durable secret inheritance or TLS bypasses may remain.
+          corpus = '\n'.join(p.read_text(errors='ignore') for p in Path('.').rglob('*') if p.is_file() and '.git' not in p.parts)
+          if 'secrets: inherit' in corpus:
+              raise SystemExit('secrets: inherit remains')
+          if 'rejectUnauthorized: false' in corpus:
+              raise SystemExit('TLS verification bypass remains')
+          PY
+
+      - name: Apply safe Deno mechanical fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          deno fmt supabase/functions
+          deno lint --fix supabase/functions || true
+          deno fmt --check supabase/functions
+          mapfile -t sources < <(find supabase/functions -name '*.ts' -type f | sort)
+          deno check --config=supabase/functions/deno.json "${sources[@]}"
+          if ! deno lint --compact supabase/functions; then
+            echo '::warning::Residual Deno lint diagnostics remain and require semantic/manual remediation.'
+          fi
+
+      - name: Validate repository contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/validate-github-workflows.js
+          node scripts/validate-sql-migrations.js
+          ! grep -R --line-number --fixed-strings 'secrets: inherit' .github
+          ! grep -R --line-number --fixed-strings 'rejectUnauthorized: false' scripts frontend supabase
+          ! grep -R --line-number -E 'uses: [^#[:space:]]+@(v[0-9]+|main|master|latest|[0-9]+\.[0-9]+\.[0-9]+)' .github
+
+      - name: Commit hardening result
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Arisofia'
+          git config user.email 'jenineferderas@hotmail.com'
+          git add -A
+          git diff --cached --check
+          git status --short
+          git commit -m 'fix(security): close CI supply-chain and transport hardening debt'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
