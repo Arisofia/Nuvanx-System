@@ -1,3 +1,21 @@
+-- Fix repository migration drift: add production-only columns to meta_attribution
+ALTER TABLE public.meta_attribution 
+  ADD COLUMN IF NOT EXISTS leadgen_id TEXT,
+  ADD COLUMN IF NOT EXISTS page_id TEXT,
+  ADD COLUMN IF NOT EXISTS form_id TEXT;
+
+-- Create unique constraint if not exists (inferred from business logic)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint 
+    WHERE conrelid = 'public.meta_attribution'::regclass 
+      AND conname = 'meta_attribution_leadgen_id_key'
+  ) THEN
+    ALTER TABLE public.meta_attribution ADD CONSTRAINT meta_attribution_leadgen_id_key UNIQUE (leadgen_id);
+  END IF;
+END $$;
+
 -- =============================================================================
 -- Meta CRM Conversion Leads: hold-only stage outbox contract
 -- Date: 2026-08-20
@@ -23,7 +41,7 @@ BEGIN;
 
 CREATE TABLE IF NOT EXISTS public.meta_crm_conversion_outbox (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    lead_id uuid NOT NULL REFERENCES public.leads(id),
+    lead_id uuid NOT NULL REFERENCES public.leads(id) ON DELETE CASCADE,
     leadgen_id text NOT NULL,
     stage_key text NOT NULL,
     provider_event_name text,
