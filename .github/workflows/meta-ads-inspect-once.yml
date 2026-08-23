@@ -1,4 +1,5 @@
 # One-shot read-only inspection for the explicitly selected Meta Ads objects.
+# Probe v2 uses internal service-role authentication inside the Edge Function.
 name: Meta Ads Inspect Once
 
 on:
