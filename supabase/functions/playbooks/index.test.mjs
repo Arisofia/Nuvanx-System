@@ -20,7 +20,7 @@ describe('playbooks execution counter contract', () => {
   it('serializes execution increments in PostgreSQL for both Edge paths', () => {
     expect(apiSource).toMatch(/update\(\{ run_count: \(pb\.run_count \|\| 0\) \+ 1, last_run_at:/);
     expect(migration).toContain('BEFORE UPDATE OF last_run_at ON public.playbooks');
-    expect(migration).toContain('NEW.run_count := OLD.run_count + 1');
+    expect(migration).toContain('NEW.run_count := COALESCE(OLD.run_count, 0) + 1');
     expect(migration).not.toContain('IS DISTINCT FROM');
   });
 
