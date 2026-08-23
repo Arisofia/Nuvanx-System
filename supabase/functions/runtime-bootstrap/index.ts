@@ -1,7 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-declare const Deno: any;
-
 const SUPABASE_URL = (Deno.env.get("SUPABASE_URL") || "").trim();
 const SERVICE_ROLE = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
 const EXPECTED_HUB_ID = "147416356";
@@ -24,6 +22,14 @@ function bearer(req: Request): string {
   const match = auth.match(/^Bearer\s+(.+)$/i);
   const token = String(match?.[1] || "").trim();
   return token.length >= 20 && token.length <= 4096 ? token : "";
+}
+
+function safeErrorMessage(error: unknown): string {
+  try {
+    return error instanceof Error ? String(error.message) : String(error);
+  } catch {
+    return "error";
+  }
 }
 
 async function inspectPrivateAppToken(token: string) {
@@ -82,8 +88,9 @@ Deno.serve(async (req: Request) => {
       scope_check: "pass",
       project_route: "environment_local",
     });
-  } catch (error: any) {
-    console.error("[runtime-bootstrap] verification/persistence failed", String(error?.message || "error").slice(0, 200));
+  } catch (error: unknown) {
+    const message = safeErrorMessage(error);
+    console.error("[runtime-bootstrap] verification/persistence failed", message.slice(0, 200));
     return reply(502, { success: false, message: "Runtime bootstrap failed" });
   }
 });
