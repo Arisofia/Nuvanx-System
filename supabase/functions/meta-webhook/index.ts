@@ -94,7 +94,6 @@ Deno.serve(async (req: Request) => {
     const errors: string[] = [];
 
     for (const entry of entries) {
-      const pageId = entry?.id ?? null;
       const changes: any[] = entry?.changes ?? [];
 
       for (const change of changes) {
