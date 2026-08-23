@@ -44,7 +44,7 @@ runs:
   using: 'composite'
   steps:
     - name: Setup Supabase CLI
-      uses: supabase/setup-cli@v2
+      uses: supabase/setup-cli@52a446718e4edd1a9f1e2631186019c87e329f60
       with:
         version: ${{ inputs.supabase_cli_version }}
 
@@ -233,7 +233,6 @@ runs:
         if [ -n "$SESSION_URL" ]; then
           echo "::add-mask::$SESSION_URL"
           echo "session_url=$SESSION_URL" >> "$GITHUB_OUTPUT"
-          echo "SESSION_URL=$SESSION_URL" >> "$GITHUB_ENV"
         fi
 
     - name: Link Supabase project
@@ -280,6 +279,7 @@ runs:
       env:
         SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
         SUPABASE_DB_PASSWORD_INPUT: ${{ steps.creds.outputs.resolved_db_password }}
+        SESSION_URL: ${{ steps.resolve-url.outputs.session_url }}
         SCRIPT_PATH: ${{ steps.write-script.outputs.script_path }}
       run: |
         set -euo pipefail
