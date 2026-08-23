@@ -32,6 +32,7 @@ jobs:
           skip_link: 'true'
           command: |
             set -euo pipefail
+            export SUPABASE_PROJECT_REF="${{ secrets.SUPABASE_PROJECT_REF }}"
 
             PROJECT_REF="${{ secrets.SUPABASE_PROJECT_REF }}"
             test -n "$PROJECT_REF"
