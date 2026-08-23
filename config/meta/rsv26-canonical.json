@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "graph_version": "v22.0",
+  "business_id": "897835716596010",
+  "ad_account_id": "act_718120894191565",
+  "campaign": {
+    "id": "120249780276630419",
+    "name": "RSV26/Valoración gratuita/Meta/Madrid",
+    "status": "ACTIVE",
+    "objective": "OUTCOME_LEADS"
+  },
+  "defaults": {
+    "daily_budget_minor": 500,
+    "currency": "EUR",
+    "attribution_spec": [
+      { "event_type": "CLICK_THROUGH", "window_days": 7 },
+      { "event_type": "VIEW_THROUGH", "window_days": 1 }
+    ],
+    "optimization_goal": "LEAD_GENERATION",
+    "billing_event": "IMPRESSIONS",
+    "bid_strategy": "LOWEST_COST_WITHOUT_CAP",
+    "targeting": {
+      "age_min": 25,
+      "age_max": 50,
+      "genders": [2],
+      "interest_id": "664130153728886",
+      "interest_name": "Cuidado de la piel (cosméticos)",
+      "location_key": "179388135937540",
+      "location_name": "Parque El Retiro, Madrid España",
+      "radius_km": 10
+    },
+    "page_id": "1329458703573874",
+    "instagram_user_id": "17841474094610850",
+    "lead_gen_form_id": "1493697602775666",
+    "cta_type": "APPLY_NOW"
+  },
+  "adsets": [
+    {
+      "key": "skin_quality",
+      "adset_id": "120249780276620419",
+      "adset_name": "TOFU | Piel y rejuvenecimiento | Madrid",
+      "ad_id": "120249780276610419",
+      "ad_name": "RSV26 | Piel y rejuvenecimiento | V1",
+      "source_creative_id": "2070344224367581",
+      "body": "Si buscas mejorar luminosidad, firmeza y calidad de la piel, en NUVANX realizamos una valoración médica para diseñar un protocolo adaptado a tus objetivos. Según tu caso podemos combinar tecnologías como EXION, EMFUSION, IPL-EXILITE o láser CO₂. Valoración médica gratuita en Madrid.",
+      "headline": "Recupera calidad y luminosidad",
+      "description": "Plan médico para mejorar la calidad de la piel"
+    },
+    {
+      "key": "pigmentation",
+      "adset_id": "120249784103200419",
+      "adset_name": "TOFU | Pigmentación y tono | Madrid",
+      "ad_id": "120249784103190419",
+      "ad_name": "RSV26 | Pigmentación y tono | V1",
+      "source_creative_id": "2550302458739059",
+      "body": "Manchas solares, tono irregular o aspecto apagado no requieren el mismo protocolo en todas las pieles. En NUVANX valoramos las características de la pigmentación antes de recomendar opciones de luz, láser o renovación cutánea según el caso. Solicita tu valoración médica gratuita en Madrid.",
+      "headline": "Mejora manchas y tono irregular",
+      "description": "Valoración de manchas y tono irregular"
+    },
+    {
+      "key": "texture",
+      "adset_id": "120249789017420419",
+      "adset_name": "TOFU | Textura, poros y marcas | Madrid",
+      "ad_id": "120249789017430419",
+      "ad_name": "RSV26 | Textura, poros y marcas | V1",
+      "source_creative_id": "1981483249231784",
+      "body": "Poros visibles, textura irregular, marcas o cicatrices requieren un abordaje específico. En NUVANX realizamos valoración médica y seleccionamos el protocolo según profundidad, tipo de piel y objetivo, con opciones como láser CO₂ o EXION cuando están indicadas. Valoración médica gratuita en Madrid.",
+      "headline": "Mejora textura, poros y marcas",
+      "description": "Valoración de textura, poros y marcas"
+    },
+    {
+      "key": "hydration_expression",
+      "adset_id": "120249789256740419",
+      "adset_name": "TOFU | Hidratación y calidad cutánea | Madrid",
+      "ad_id": "120249789256750419",
+      "ad_name": "RSV26 | Hidratación y calidad cutánea | V1",
+      "source_creative_id": "3183323615191790",
+      "body": "Para mejorar hidratación, elasticidad y calidad cutánea, el enfoque debe adaptarse a cada rostro. En NUVANX valoramos la piel y diseñamos un plan orientado a un aspecto más fresco y cuidado, con opciones como EMFUSION o EXION según indicación médica. Valoración médica gratuita en Madrid.",
+      "headline": "Hidratación y aspecto descansado",
+      "description": "Valoración de hidratación y calidad cutánea"
+    }
+  ]
+}
