@@ -23,4 +23,27 @@ describe('Control Centre marketing contract', () => {
     expect(marketing).toContain('Conversiones')
     expect(marketing).toContain('CPC promedio')
   })
+
+  it('prevents stale range responses and timezone-dependent month starts', () => {
+    const marketing = read('../src/pages/MarketingUnified.tsx')
+    expect(marketing).toContain('requestSequenceRef')
+    expect(marketing).toContain('requestSequence !== requestSequenceRef.current')
+    expect(marketing).toContain('firstDayOfCurrentMonth')
+    expect(marketing).toContain("String(now.getMonth() + 1).padStart(2, '0')")
+    expect(marketing).not.toContain('new Date(now.getFullYear(), now.getMonth(), 1).toISOString()')
+  })
+
+  it('does not claim an unverified currency or unbounded campaign totals', () => {
+    const marketing = read('../src/pages/MarketingUnified.tsx')
+    expect(marketing).not.toContain("currency: 'EUR'")
+    expect(marketing).toContain('moneda configurada en la cuenta de Google Ads')
+    expect(marketing).toContain('Campañas activas cargadas')
+    expect(marketing).toContain('máximo 50 por consulta')
+  })
+
+  it('shows CPP only when conversions exist', () => {
+    const marketing = read('../src/pages/MarketingUnified.tsx')
+    expect(marketing).toContain('hasSummaryConversions')
+    expect(marketing).toContain('campaign.insights.conversions > 0')
+  })
 })
