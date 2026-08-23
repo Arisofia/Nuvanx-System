@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { BarChart3, DollarSign, Eye, MousePointerClick, Search, Target, TrendingUp } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { invokeApi } from '../lib/invokeApi'
@@ -62,11 +62,16 @@ type GoogleState = {
   error: string | null
 }
 
-const fmtCurrency = (value: number | null | undefined) =>
-  Number(value ?? 0).toLocaleString('es-ES', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2 })
+const fmtMoneyAmount = (value: number | null | undefined) =>
+  Number(value ?? 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 const fmtNumber = (value: number | null | undefined, decimals = 0) =>
   Number(value ?? 0).toLocaleString('es-ES', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+
+const firstDayOfCurrentMonth = () => {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+}
 
 function Delta({ value }: Readonly<{ value?: number }>) {
   if (value == null || !Number.isFinite(value) || value === 0) return null
@@ -104,12 +109,10 @@ function MetricCard({
 }
 
 function GoogleAdsPanel() {
-  const [from, setFrom] = useState(() => {
-    const now = new Date()
-    return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
-  })
+  const [from, setFrom] = useState(firstDayOfCurrentMonth)
   const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10))
   const [query, setQuery] = useState('')
+  const requestSequenceRef = useRef(0)
   const [state, setState] = useState<GoogleState>({
     summary: null,
     changes: {},
@@ -120,6 +123,7 @@ function GoogleAdsPanel() {
   })
 
   const load = useCallback(async () => {
+    const requestSequence = ++requestSequenceRef.current
     setState((prev) => ({ ...prev, loading: true, error: null }))
     const params = new URLSearchParams({ from, to }).toString()
     try {
@@ -134,6 +138,7 @@ function GoogleAdsPanel() {
       if (!campaigns.success) {
         throw new Error(campaigns.message || 'No se pudieron cargar las campañas de Google Ads.')
       }
+      if (requestSequence !== requestSequenceRef.current) return
 
       setState({
         summary: insights.summary ?? null,
@@ -144,6 +149,7 @@ function GoogleAdsPanel() {
         error: null,
       })
     } catch (error: unknown) {
+      if (requestSequence !== requestSequenceRef.current) return
       const message = error instanceof Error ? error.message : 'Error cargando Google Ads.'
       setState((prev) => ({ ...prev, loading: false, error: message }))
     }
@@ -159,17 +165,19 @@ function GoogleAdsPanel() {
     return state.campaigns.filter((campaign) => campaign.name.toLowerCase().includes(normalized))
   }, [query, state.campaigns])
 
-  const activeCampaigns = state.campaigns.filter((campaign) => campaign.status === 'ENABLED').length
+  const activeCampaignsLoaded = state.campaigns.filter((campaign) => campaign.status === 'ENABLED').length
   const periodLabel = state.period
     ? `${state.period.since} → ${state.period.until}`
     : `${from} → ${to}`
+  const hasSummaryConversions = Number(state.summary?.conversions ?? 0) > 0
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-3xl font-serif font-bold text-foreground">Marketing · Google Ads</h1>
-          <p className="mt-1 text-sm text-muted">Datos directos de Google Ads · {periodLabel} · EUR</p>
+          <p className="mt-1 text-sm text-muted">Datos directos de Google Ads · {periodLabel}</p>
+          <p className="mt-1 text-xs text-muted">Los importes se muestran en la moneda configurada en la cuenta de Google Ads.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <input
@@ -206,8 +214,8 @@ function GoogleAdsPanel() {
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <MetricCard
           label="Gasto total"
-          value={state.loading ? '…' : fmtCurrency(state.summary?.spend)}
-          detail={periodLabel}
+          value={state.loading ? '…' : fmtMoneyAmount(state.summary?.spend)}
+          detail={`${periodLabel} · moneda de la cuenta`}
           icon={<DollarSign className="h-4 w-4 text-emerald-500" />}
           delta={state.changes.spend}
         />
@@ -227,20 +235,20 @@ function GoogleAdsPanel() {
         <MetricCard
           label="Conversiones"
           value={state.loading ? '…' : fmtNumber(state.summary?.conversions, 2)}
-          detail={`CPP: ${state.summary?.cpp == null ? '—' : fmtCurrency(state.summary.cpp)}`}
+          detail={`CPP: ${hasSummaryConversions && state.summary?.cpp != null ? fmtMoneyAmount(state.summary.cpp) : '—'}`}
           icon={<TrendingUp className="h-4 w-4 text-lime-500" />}
           delta={state.changes.conversions}
         />
         <MetricCard
           label="CPC promedio"
-          value={state.loading ? '…' : fmtCurrency(state.summary?.cpc)}
-          detail={`CPM: ${fmtCurrency(state.summary?.cpm)}`}
+          value={state.loading ? '…' : fmtMoneyAmount(state.summary?.cpc)}
+          detail={`CPM: ${fmtMoneyAmount(state.summary?.cpm)} · moneda de la cuenta`}
           icon={<Target className="h-4 w-4 text-amber-500" />}
         />
         <MetricCard
-          label="Campañas activas"
-          value={state.loading ? '…' : String(activeCampaigns)}
-          detail={`${state.campaigns.length} campañas en total`}
+          label="Campañas activas cargadas"
+          value={state.loading ? '…' : String(activeCampaignsLoaded)}
+          detail={`${state.campaigns.length} campañas cargadas · máximo 50 por consulta`}
           icon={<BarChart3 className="h-4 w-4 text-rose-500" />}
         />
       </div>
@@ -292,14 +300,14 @@ function GoogleAdsPanel() {
                       </td>
                       <td className="px-3 py-3 text-center text-xs">{campaign.status || '—'}</td>
                       <td className="px-3 py-3 text-center text-xs text-muted">{campaign.type || '—'}</td>
-                      <td className="px-3 py-3 text-right">{campaign.budget == null ? '—' : fmtCurrency(campaign.budget)}</td>
-                      <td className="px-3 py-3 text-right font-semibold text-[#28A745]">{fmtCurrency(campaign.insights.spend)}</td>
+                      <td className="px-3 py-3 text-right">{campaign.budget == null ? '—' : fmtMoneyAmount(campaign.budget)}</td>
+                      <td className="px-3 py-3 text-right font-semibold text-[#28A745]">{fmtMoneyAmount(campaign.insights.spend)}</td>
                       <td className="px-3 py-3 text-right">{fmtNumber(campaign.insights.impressions)}</td>
                       <td className="px-3 py-3 text-right">{fmtNumber(campaign.insights.clicks)}</td>
                       <td className="px-3 py-3 text-right">{fmtNumber(campaign.insights.ctr, 2)}%</td>
-                      <td className="px-3 py-3 text-right">{campaign.insights.cpc == null ? '—' : fmtCurrency(campaign.insights.cpc)}</td>
+                      <td className="px-3 py-3 text-right">{campaign.insights.cpc == null ? '—' : fmtMoneyAmount(campaign.insights.cpc)}</td>
                       <td className="px-3 py-3 text-right">{fmtNumber(campaign.insights.conversions, 2)}</td>
-                      <td className="px-3 py-3 text-right">{campaign.insights.cpp == null ? '—' : fmtCurrency(campaign.insights.cpp)}</td>
+                      <td className="px-3 py-3 text-right">{campaign.insights.conversions > 0 && campaign.insights.cpp != null ? fmtMoneyAmount(campaign.insights.cpp) : '—'}</td>
                     </tr>
                   ))}
                 </tbody>
