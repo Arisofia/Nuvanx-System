@@ -32,12 +32,10 @@ function ConfigurationError() {
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Live = lazy(() => import('./pages/Live'))
 const CrmPage = lazy(() => import('./pages/CRM'))
-const Marketing = lazy(() => import('./pages/Marketing'))
+const Marketing = lazy(() => import('./pages/MarketingUnified'))
 const Traceability = lazy(() => import('./pages/Traceability'))
 const Financials = lazy(() => import('./pages/Financials'))
 const Intelligence = lazy(() => import('./pages/Intelligence'))
-const Playbooks = lazy(() => import('./pages/Playbooks'))
-const SalesPlaybook = lazy(() => import('./pages/SalesPlaybook'))
 const Integrations = lazy(() => import('./pages/Integrations'))
 const AiPage = lazy(() => import('./pages/AI'))
 const Reports = lazy(() => import('./pages/Reports'))
@@ -89,8 +87,6 @@ function Router() {
     if (location === '/traceability') return <Traceability />
     if (location === '/financials') return <Financials />
     if (location === '/intelligence') return <Intelligence />
-    if (location === '/playbooks') return <Playbooks />
-    if (location === '/sales-playbook') return <SalesPlaybook />
     if (location === '/integrations') return <Integrations />
     if (location === '/ai') return <AiPage />
     if (location === '/reports') return <Reports />
