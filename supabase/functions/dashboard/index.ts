@@ -19,7 +19,6 @@ const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
 const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const anonKey     = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 
-type SupabaseClientLike = ReturnType<typeof createClient>;
 type TemplateBreakdown = Record<string, { count: number; revenue: number }>;
 
 async function getAuthUser(req: Request) {
@@ -28,11 +27,6 @@ async function getAuthUser(req: Request) {
   const client = createClient(supabaseUrl, anonKey, { global: { headers: { Authorization: authHeader } } });
   const { data: { user } } = await client.auth.getUser();
   return user;
-}
-
-async function resolveClinicId(adminClient: SupabaseClientLike, userId: string): Promise<string | null> {
-  const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
-  return usr?.clinic_id ?? null;
 }
 
 Deno.serve(async (req: Request) => {
@@ -47,7 +41,8 @@ Deno.serve(async (req: Request) => {
   const supabase = createClient(supabaseUrl, serviceKey);
   const userId   = user.id;
 
-  const clinicId = await resolveClinicId(supabase, userId);
+  const { data: owner } = await supabase.from('users').select('clinic_id').eq('id', userId).single();
+  const clinicId = owner?.clinic_id ?? null;
 
   // === REAL DATA ONLY - proper multi-tenant scoping (matching main api router patterns) ===
   let leadsQuery = supabase.from('leads')
