@@ -6,7 +6,6 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/meta-ads-inspect-once.yml'
-      - 'scripts/meta-api-inspect.js'
 
 permissions:
   contents: read
@@ -21,18 +20,18 @@ jobs:
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL || secrets.NUVANX_SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
-      TARGET_AD_ACCOUNT_ID: act_718120894191565
-      TARGET_CAMPAIGN_ID: '120249780276630419'
-      TARGET_ADSET_ID: '120249784103200419'
-      TARGET_AD_ID: '120249780276610419'
     steps:
-      - name: Checkout exact main
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-        with:
-          persist-credentials: false
-
-      - name: Validate API inspector syntax
-        run: node --check scripts/meta-api-inspect.js
-
-      - name: Inspect selected Meta objects through deployed API
-        run: node scripts/meta-api-inspect.js
+      - name: Invoke protected Supabase Meta Ads probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${SUPABASE_URL:-}"
+          test -n "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          response="$(curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+            --header "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+            --header 'Content-Type: application/json' \
+            --data '{}' \
+            "${SUPABASE_URL%/}/functions/v1/meta-ads-admin-probe")"
+          printf '%s\n' "$response" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);if(j.success!==true||j.persisted!==true)process.exit(1);console.log('META_ADS_ADMIN_PROBE=PASS')})"
