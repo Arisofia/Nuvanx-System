@@ -1,24 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
-const baseline = readFileSync(
-  fileURLToPath(new URL('../../migrations/20260504125950_reconcile_agent_outputs_schema_baseline.sql', import.meta.url)),
-  'utf8',
-);
-const shim = readFileSync(
-  fileURLToPath(new URL('../../migrations/20260523115000_prepare_agent_outputs_policy_replay.sql', import.meta.url)),
-  'utf8',
-);
-const historical = readFileSync(
-  fileURLToPath(new URL('../../migrations/20260523120000_resolve_remaining_rls_performance_warnings.sql', import.meta.url)),
-  'utf8',
-);
+const migrationsDir = fileURLToPath(new URL('../../migrations/', import.meta.url));
+const baselineFile = '20260504125950_reconcile_agent_outputs_schema_baseline.sql';
+const shimFile = '20260523115000_prepare_agent_outputs_policy_replay.sql';
+const historicalFile = '20260523120000_resolve_remaining_rls_performance_warnings.sql';
+const migrationFiles = readdirSync(migrationsDir)
+  .filter((filename) => filename.endsWith('.sql'))
+  .sort();
+const baseline = readFileSync(join(migrationsDir, baselineFile), 'utf8');
+const shim = readFileSync(join(migrationsDir, shimFile), 'utf8');
+const historical = readFileSync(join(migrationsDir, historicalFile), 'utf8');
 
 describe('agent_outputs policy replay compatibility', () => {
   it('places the compatibility shim immediately before the historical policy rewrite', () => {
-    expect('20260523115000_prepare_agent_outputs_policy_replay.sql' < '20260523120000_resolve_remaining_rls_performance_warnings.sql').toBe(true);
-    expect('20260523115000_prepare_agent_outputs_policy_replay.sql' > '20260523101000_add_leads_performance_indexes.sql').toBe(true);
+    const shimIndex = migrationFiles.indexOf(shimFile);
+    expect(shimIndex).toBeGreaterThan(-1);
+    expect(migrationFiles[shimIndex + 1]).toBe(historicalFile);
+    expect(shimFile > '20260523101000_add_leads_performance_indexes.sql').toBe(true);
   });
 
   it('keeps the already-applied baseline immutable and acknowledges the real name collision', () => {
