@@ -1,15 +1,24 @@
 name: Meta Backfill
 
-run-name: Meta Backfill · ${{ inputs.days }} días
+run-name: Meta Backfill · ${{ github.event_name == 'push' && '90' || inputs.days || '7' }} días · ${{ github.event_name }}
 
 on:
   workflow_dispatch:
     inputs:
       days:
-        description: Días reales de Meta Ads a persistir (1–90)
+        description: Días reales de Meta Ads y activos sociales a persistir (1–90)
         required: true
         default: '90'
         type: string
+  schedule:
+    # Daily after the canonical 07:00 UTC Doctoralia/paid-data sync window.
+    - cron: '20 7 * * *'
+  push:
+    branches:
+      - main
+    paths:
+      # Run one 90-day recovery immediately when this automation itself changes.
+      - '.github/workflows/meta-backfill.yml'
 
 permissions:
   contents: read
@@ -19,12 +28,15 @@ jobs:
     name: Backfill · Meta Ads y activos Meta
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    environment:
+      name: Production
     env:
-      # La URL de proyecto no es un secreto; se declara aquí para no depender de un secret ausente.
+      # Project URL is public configuration. Credentials remain GitHub Production secrets.
       SUPABASE_URL: https://ssvvuuysgxyqvmovrlvk.supabase.co
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       NUVANX_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
       REPORT_USER_ID: ${{ secrets.REPORT_USER_ID }}
+      BACKFILL_DAYS: ${{ github.event_name == 'push' && '90' || inputs.days || '7' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -36,19 +48,16 @@ jobs:
 
       - name: Validate requested range
         shell: bash
-        env:
-          DAYS: ${{ inputs.days }}
         run: |
           set -euo pipefail
-          [[ "$DAYS" =~ ^[0-9]+$ ]]
-          (( DAYS >= 1 && DAYS <= 90 ))
+          [[ "$BACKFILL_DAYS" =~ ^[0-9]+$ ]]
+          (( BACKFILL_DAYS >= 1 && BACKFILL_DAYS <= 90 ))
+          test -n "${SUPABASE_SERVICE_ROLE_KEY:-${NUVANX_SUPABASE_SERVICE_ROLE_KEY:-}}"
+          test -n "${REPORT_USER_ID:-}"
 
       - name: Persist real Meta data only
         shell: bash
-        env:
-          DAYS: ${{ inputs.days }}
         run: |
           set -euo pipefail
-          # Conserva el contrato del script sin revelar la clave; usa el secreto NUVANX ya disponible como respaldo.
           export SUPABASE_SERVICE_ROLE_KEY="${SUPABASE_SERVICE_ROLE_KEY:-${NUVANX_SUPABASE_SERVICE_ROLE_KEY:-}}"
-          node scripts/run-meta-backfill.js --days="$DAYS" --attempts=3
+          node scripts/run-meta-backfill.js --days="$BACKFILL_DAYS" --attempts=3
