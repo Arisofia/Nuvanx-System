@@ -19,6 +19,9 @@ const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
 const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const anonKey     = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 
+type SupabaseClientLike = ReturnType<typeof createClient>;
+type TemplateBreakdown = Record<string, { count: number; revenue: number }>;
+
 async function getAuthUser(req: Request) {
   const authHeader = req.headers.get('Authorization') ?? '';
   if (!authHeader) return null;
@@ -27,7 +30,7 @@ async function getAuthUser(req: Request) {
   return user;
 }
 
-async function resolveClinicId(adminClient: any, userId: string): Promise<string | null> {
+async function resolveClinicId(adminClient: SupabaseClientLike, userId: string): Promise<string | null> {
   const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
   return usr?.clinic_id ?? null;
 }
@@ -90,7 +93,7 @@ Deno.serve(async (req: Request) => {
   const conversions  = leads.filter(l => l.stage === 'treatment' || l.stage === 'closed').length;
   const conversionRate = totalLeads > 0 ? Number.parseFloat(((conversions / totalLeads) * 100).toFixed(1)) : 0;
   const STAGES       = ['lead','whatsapp','appointment','treatment','closed'];
-  const byStage      = STAGES.reduce((acc, s) => { acc[s] = leads.filter(l => l.stage === s).length; return acc; }, {} as any);
+  const byStage      = STAGES.reduce<Record<string, number>>((acc, s) => { acc[s] = leads.filter(l => l.stage === s).length; return acc; }, {});
   const connectedIntegrations = integrations.filter(i => i.status === 'connected').length;
 
   // ── Doctoralia metrics (from financial_settlements - real data)
@@ -101,7 +104,7 @@ Deno.serve(async (req: Request) => {
   const uniquePatients = patients.length;
 
   // Template breakdown
-  const templateBreakdown = settlements.reduce((acc: any, s) => {
+  const templateBreakdown = settlements.reduce<TemplateBreakdown>((acc, s) => {
     const key = s.template_name ?? 'Unknown';
     if (!acc[key]) acc[key] = { count: 0, revenue: 0 };
     acc[key].count++;
