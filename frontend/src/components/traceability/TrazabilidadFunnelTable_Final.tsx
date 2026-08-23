@@ -78,9 +78,7 @@ export default function TrazabilidadFunnelTableFinal() {
   }, [])
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      void loadRows(EMPTY_FILTERS)
-    }, 0)
+    const timer = setTimeout(() => { void loadRows(EMPTY_FILTERS) }, 0)
     return () => clearTimeout(timer)
   }, [loadRows])
 
@@ -88,8 +86,8 @@ export default function TrazabilidadFunnelTableFinal() {
     const leads = rows.length
     const valoraciones = rows.filter((row) => row.cita_valoracion).length
     const posteriores = rows.filter((row) => row.cita_posterior).length
-    const revenue = rows.reduce((sum, row) => sum + Number(row.revenue ?? 0), 0)
-    return { leads, valoraciones, posteriores, revenue }
+    const conversiones = rows.filter((row) => row.conversion_date).length
+    return { leads, valoraciones, posteriores, conversiones }
   }, [rows])
 
   const columns: ColDef[] = [
@@ -99,8 +97,7 @@ export default function TrazabilidadFunnelTableFinal() {
     { key: 'cita_posterior', label: 'Cita posterior', sortable: true, format: formatDate },
     { key: 'fuente', label: 'Fuente' },
     { key: 'estado', label: 'Estado' },
-    { key: 'revenue', label: 'Revenue', align: 'right', sortable: true, format: (value) => `€${Number(value ?? 0).toLocaleString('es-ES')}` },
-    { key: 'conversion_date', label: 'Conversión', sortable: true, format: formatDate },
+    { key: 'conversion_date', label: 'Conversión registrada', sortable: true, format: formatDate },
   ]
 
   const updateFilter = (key: keyof FunnelFilters, value: string) => {
@@ -109,7 +106,7 @@ export default function TrazabilidadFunnelTableFinal() {
 
   const resetFilters = () => {
     setFilters(EMPTY_FILTERS)
-    loadRows(EMPTY_FILTERS)
+    void loadRows(EMPTY_FILTERS)
   }
 
   return (
@@ -117,64 +114,35 @@ export default function TrazabilidadFunnelTableFinal() {
       <CardHeader className="space-y-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <CardTitle className="flex items-center gap-2">
-              <CalendarDays className="h-5 w-5 text-primary" />
-              Trazabilidad Funnel Real
-            </CardTitle>
-            <p className="mt-1 text-xs font-medium text-[#5C5550]">
-              Leads de captación → primera cita de valoración → cita posterior → revenue verificado.
-            </p>
+            <CardTitle className="flex items-center gap-2"><CalendarDays className="h-5 w-5 text-primary" />Trazabilidad Funnel Real</CardTitle>
+            <p className="mt-1 text-xs font-medium text-[#5C5550]">Leads de captación → primera cita de valoración → cita posterior → conversión registrada.</p>
           </div>
-          <Button onClick={() => loadRows(filters)} disabled={loading} className="gap-2">
-            <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Actualizar
-          </Button>
+          <Button onClick={() => loadRows(filters)} disabled={loading} className="gap-2"><RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />Actualizar</Button>
         </div>
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-6">
-          <Input type="date" value={filters.lead_from} onChange={(e) => updateFilter('lead_from', e.target.value)} aria-label="Lead desde" />
-          <Input type="date" value={filters.lead_to} onChange={(e) => updateFilter('lead_to', e.target.value)} aria-label="Lead hasta" />
-          <Input type="date" value={filters.valoracion_from} onChange={(e) => updateFilter('valoracion_from', e.target.value)} aria-label="Valoración desde" />
-          <Input type="date" value={filters.valoracion_to} onChange={(e) => updateFilter('valoracion_to', e.target.value)} aria-label="Valoración hasta" />
-          <Input type="date" value={filters.posterior_from} onChange={(e) => updateFilter('posterior_from', e.target.value)} aria-label="Posterior desde" />
-          <Input type="date" value={filters.posterior_to} onChange={(e) => updateFilter('posterior_to', e.target.value)} aria-label="Posterior hasta" />
+          <Input type="date" value={filters.lead_from} onChange={(event) => updateFilter('lead_from', event.target.value)} aria-label="Lead desde" />
+          <Input type="date" value={filters.lead_to} onChange={(event) => updateFilter('lead_to', event.target.value)} aria-label="Lead hasta" />
+          <Input type="date" value={filters.valoracion_from} onChange={(event) => updateFilter('valoracion_from', event.target.value)} aria-label="Valoración desde" />
+          <Input type="date" value={filters.valoracion_to} onChange={(event) => updateFilter('valoracion_to', event.target.value)} aria-label="Valoración hasta" />
+          <Input type="date" value={filters.posterior_from} onChange={(event) => updateFilter('posterior_from', event.target.value)} aria-label="Posterior desde" />
+          <Input type="date" value={filters.posterior_to} onChange={(event) => updateFilter('posterior_to', event.target.value)} aria-label="Posterior hasta" />
         </div>
 
-        <div className="flex flex-wrap gap-3">
-          <Button onClick={() => loadRows(filters)} disabled={loading}>Aplicar filtros</Button>
-          <Button variant="outline" onClick={resetFilters} disabled={loading}>Limpiar</Button>
-        </div>
+        <div className="flex flex-wrap gap-3"><Button onClick={() => loadRows(filters)} disabled={loading}>Aplicar filtros</Button><Button variant="outline" onClick={resetFilters} disabled={loading}>Limpiar</Button></div>
       </CardHeader>
 
       <CardContent className="space-y-5">
         {error && <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</p>}
 
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <div className="rounded-2xl bg-[#FAF7F2] p-4">
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#5C5550]">Leads</p>
-            <p className="mt-2 text-2xl font-serif font-bold text-[#2C2825]">{summary.leads}</p>
-          </div>
-          <div className="rounded-2xl bg-[#FAF7F2] p-4">
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#5C5550]">Valoraciones</p>
-            <p className="mt-2 text-2xl font-serif font-bold text-[#2C2825]">{summary.valoraciones}</p>
-          </div>
-          <div className="rounded-2xl bg-[#FAF7F2] p-4">
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#5C5550]">Posteriores</p>
-            <p className="mt-2 text-2xl font-serif font-bold text-[#2C2825]">{summary.posteriores}</p>
-          </div>
-          <div className="rounded-2xl bg-[#FAF7F2] p-4">
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#5C5550]">Revenue</p>
-            <p className="mt-2 text-2xl font-serif font-bold text-primary">€{summary.revenue.toLocaleString('es-ES')}</p>
-          </div>
+          <div className="rounded-2xl bg-[#FAF7F2] p-4"><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#5C5550]">Leads</p><p className="mt-2 text-2xl font-serif font-bold text-[#2C2825]">{summary.leads}</p></div>
+          <div className="rounded-2xl bg-[#FAF7F2] p-4"><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#5C5550]">Valoraciones</p><p className="mt-2 text-2xl font-serif font-bold text-[#2C2825]">{summary.valoraciones}</p></div>
+          <div className="rounded-2xl bg-[#FAF7F2] p-4"><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#5C5550]">Posteriores</p><p className="mt-2 text-2xl font-serif font-bold text-[#2C2825]">{summary.posteriores}</p></div>
+          <div className="rounded-2xl bg-[#FAF7F2] p-4"><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#5C5550]">Conversiones registradas</p><p className="mt-2 text-2xl font-serif font-bold text-primary">{summary.conversiones}</p></div>
         </div>
 
-        <SortableTable
-          columns={columns}
-          rows={rows}
-          loading={loading}
-          emptyMessage="No hay filas de funnel para los filtros seleccionados."
-          exportFilename="trazabilidad-funnel-real"
-        />
+        <SortableTable columns={columns} rows={rows} loading={loading} emptyMessage="No hay filas de funnel para los filtros seleccionados." exportFilename="trazabilidad-funnel-real" />
       </CardContent>
     </Card>
   )
