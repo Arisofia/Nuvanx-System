@@ -1,0 +1,221 @@
+name: Deep forensic repository audit
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deep-forensic-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    if: github.event.pull_request.head.ref == 'audit/deep-forensic-20260823'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout audit branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Gate report-only commits
+        id: gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          message="$(git log -1 --pretty=%B)"
+          if [[ "$message" == *"[skip deep audit]"* ]]; then
+            echo 'run=false' >> "$GITHUB_OUTPUT"
+            echo 'Report-only commit: deep audit intentionally skipped.'
+          else
+            echo 'run=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node.js
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Setup Deno
+        if: steps.gate.outputs.run == 'true'
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
+        with:
+          deno-version: v2.x
+
+      - name: Exact-SHA whole-tree line scan
+        if: steps.gate.outputs.run == 'true'
+        env:
+          AUDIT_REF: ${{ github.event.pull_request.base.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf audit-output
+          mkdir -p audit-output
+          python3 scripts/audit/deep_repo_audit.py | tee audit-output/scanner.log
+          python3 - <<'PY'
+          import csv, json
+          from pathlib import Path
+          out = Path('audit-output')
+          rows=[]
+          with (out/'findings.jsonl').open(encoding='utf-8') as fh:
+              for line in fh:
+                  item=json.loads(line)
+                  if str(item.get('rule','')).startswith('secret_'):
+                      item['excerpt']='[REDACTED]'
+                  rows.append(item)
+          with (out/'findings.jsonl').open('w',encoding='utf-8') as fh:
+              for item in rows:
+                  fh.write(json.dumps(item,ensure_ascii=False)+'\n')
+          with (out/'findings.csv').open('w',newline='',encoding='utf-8') as fh:
+              fields=['severity','rule','message','path','line','excerpt']
+              w=csv.DictWriter(fh,fieldnames=fields); w.writeheader(); w.writerows(rows)
+          PY
+
+      - name: Install workspace dependencies
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --legacy-peer-deps || npm install --include=dev --ignore-scripts --legacy-peer-deps
+          npm --prefix frontend ci --ignore-scripts --legacy-peer-deps || npm --prefix frontend install --include=dev --ignore-scripts --legacy-peer-deps
+
+      - name: Run canonical and extended checks
+        if: steps.gate.outputs.run == 'true'
+        env:
+          NODE_ENV: test
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+          MCP_API_KEY: ${{ secrets.MCP_API_KEY }}
+          FALLBACK_META_AD_ACCOUNT_ID: ${{ secrets.FALLBACK_META_AD_ACCOUNT_ID }}
+          SHEETS_WEBHOOK_URL_DOCTORALIA: ${{ secrets.SHEETS_WEBHOOK_URL_DOCTORALIA }}
+          SHEETS_WEBHOOK_SECRET_DOCTORALIA: ${{ secrets.SHEETS_WEBHOOK_SECRET_DOCTORALIA }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p audit-output/tools
+          printf 'tool,exit_code\n' > audit-output/tool-status.csv
+
+          capture() {
+            local name="$1"; shift
+            local tmp="audit-output/tools/${name}.tmp"
+            echo "=== $name ==="
+            set +e
+            timeout 20m "$@" >"$tmp" 2>&1
+            local ec=$?
+            set -e
+            python3 - "$tmp" "audit-output/tools/${name}.txt" <<'PY'
+          import sys
+          from pathlib import Path
+          src=Path(sys.argv[1]); dst=Path(sys.argv[2])
+          data=src.read_bytes() if src.exists() else b''
+          limit=2_000_000
+          if len(data)>limit:
+              data=data[:limit]+b'\n[TRUNCATED_AT_2MB]\n'
+          dst.write_bytes(data)
+          src.unlink(missing_ok=True)
+          PY
+            printf '%s,%s\n' "$name" "$ec" >> audit-output/tool-status.csv
+            echo "$name exit=$ec"
+            return 0
+          }
+
+          set -e
+          capture root_tests npm test
+          capture sql_migration_validator node scripts/validate-sql-migrations.js
+          capture secret_scanner node scripts/scan-secrets.js
+          capture workflow_validator node scripts/validate-github-workflows.js
+          capture deno_check bash -lc "deno check --config=supabase/functions/deno.json \$(find supabase/functions -name '*.ts' -type f | sort)"
+          capture deno_lint bash -lc "deno lint \$(find supabase/functions -name '*.ts' -type f | sort)"
+          capture deno_fmt_check bash -lc 'bad=0; while IFS= read -r f; do if ! deno fmt --check "$f" >/dev/null 2>&1; then echo "$f"; bad=1; fi; done < <(find supabase/functions -name "*.ts" -type f | sort); exit "$bad"'
+          capture frontend_lint npm --prefix frontend run lint
+          capture frontend_unit npm --prefix frontend run test:ci
+          capture frontend_build npm --prefix frontend run build
+          capture root_npm_audit bash -lc "npm audit --json"
+          capture frontend_npm_audit bash -lc "cd frontend && npm audit --json"
+          capture root_npm_outdated bash -lc "npm outdated --json"
+          capture frontend_npm_outdated bash -lc "cd frontend && npm outdated --json"
+          capture npm_tree bash -lc "npm ls --all"
+          capture frontend_npm_tree bash -lc "cd frontend && npm ls --all"
+          capture actionlint bash -lc "go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 .github/workflows/*.yml"
+          capture shellcheck_all bash -lc 'files=$(find . -type f -name "*.sh" -not -path "./node_modules/*" -not -path "./frontend/node_modules/*"); [ -z "$files" ] || shellcheck $files'
+          capture php_syntax bash -lc 'files=$(find . -type f -name "*.php" -not -path "./node_modules/*" -not -path "./frontend/node_modules/*"); for f in $files; do php -l "$f" || exit 1; done'
+          capture json_parse python3 -c "import json,pathlib; [json.load(p.open()) for p in pathlib.Path('.').rglob('*.json') if 'node_modules' not in p.parts and 'audit-output' not in p.parts]"
+          capture toml_parse python3 -c "import pathlib,tomllib; [tomllib.loads(p.read_text()) for p in pathlib.Path('.').rglob('*.toml') if 'node_modules' not in p.parts]"
+          capture yaml_parse ruby -e "require 'yaml'; Dir.glob('**/*.{yml,yaml}', File::FNM_DOTMATCH).reject{|f| f.include?('node_modules/')}.each{|f| YAML.safe_load(File.read(f), permitted_classes: [], permitted_symbols: [], aliases: true)}"
+          capture circular_frontend bash -lc "npx --yes madge@8.0.0 --circular --extensions ts,tsx frontend/src"
+          capture duplication bash -lc "npx --yes jscpd@4.0.5 --min-lines 8 --min-tokens 60 --reporters console frontend/src supabase/functions scripts wp-mu-plugins"
+          capture depcheck_frontend bash -lc "npx --yes depcheck@1.4.7 frontend --json"
+          capture license_inventory bash -lc "npx --yes license-checker@25.0.1 --json"
+          capture gitleaks bash -lc "go run github.com/zricethezav/gitleaks/v8@v8.24.2 detect --source . --no-git --redact --report-format json --report-path audit-output/gitleaks-redacted.json --exit-code 0"
+          capture semgrep bash -lc "pipx run semgrep scan --config auto --json --exclude node_modules --exclude frontend/node_modules --exclude audit-output ."
+          capture zizmor bash -lc "pipx run zizmor --format=json .github"
+          capture frontend_dist_sizes bash -lc "test -d frontend/dist && find frontend/dist -type f -printf '%s %p\n' | sort -nr"
+
+          python3 - <<'PY'
+          import csv,json
+          from pathlib import Path
+          rows=list(csv.DictReader((Path('audit-output')/'tool-status.csv').open()))
+          summary={r['tool']:int(r['exit_code']) for r in rows}
+          (Path('audit-output')/'tool-status.json').write_text(json.dumps(summary,indent=2)+'\n')
+          print(json.dumps(summary,indent=2))
+          PY
+
+      - name: Build cross-tool finding index
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import csv,json
+          from pathlib import Path
+          out=Path('audit-output')
+          summary=json.loads((out/'summary.json').read_text())
+          status=json.loads((out/'tool-status.json').read_text())
+          failing=[k for k,v in status.items() if v!=0]
+          manifest=list(csv.DictReader((out/'manifest.csv').open()))
+          largest=sorted(manifest,key=lambda r:int(r['lines']),reverse=True)[:50]
+          report={
+            'audited_sha':summary['audited_sha'],
+            'coverage':summary['coverage_contract'],
+            'tracked_files':summary['tracked_files'],
+            'total_text_lines':summary['total_text_lines'],
+            'heuristic_findings_by_severity':summary['findings_by_severity'],
+            'heuristic_findings_by_rule':summary['findings_by_rule'],
+            'tools_with_nonzero_exit':failing,
+            'tool_status':status,
+            'largest_tracked_text_files':[
+              {'path':r['path'],'lines':int(r['lines']),'bytes':int(r['bytes'])} for r in largest
+            ],
+          }
+          (out/'cross-tool-summary.json').write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n')
+          print(json.dumps(report,indent=2,ensure_ascii=False))
+          print('=== NONZERO TOOL DETAILS ===')
+          for name in failing:
+              path=out/'tools'/f'{name}.txt'
+              print(f'--- {name} ---')
+              if path.exists():
+                  print(path.read_text(errors='replace')[:300000])
+          PY
+
+      - name: Upload audit evidence
+        if: always() && steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: deep-forensic-${{ github.event.pull_request.base.sha }}
+          path: audit-output
+          if-no-files-found: warn
+          retention-days: 30
