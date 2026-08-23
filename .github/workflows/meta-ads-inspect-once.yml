@@ -1,4 +1,4 @@
-# Temporary one-shot read-only probe for the existing GitHub Meta reporting credential.
+# Temporary one-shot read-only hierarchy probe for the existing Meta reporting credential.
 name: Meta Ads Inspect Once
 
 on:
@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   inspect:
-    name: Probe Meta reporting credential with ads_read only
+    name: Enumerate target Meta hierarchy read-only
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
@@ -22,11 +22,8 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
       META_REPORTING_TOKEN_60D: ${{ secrets.META_REPORTING_TOKEN_60D }}
       TARGET_AD_ACCOUNT_ID: act_718120894191565
-      TARGET_CAMPAIGN_ID: '120249780276630419'
-      TARGET_ADSET_ID: '120249784103200419'
-      TARGET_AD_ID: '120249780276610419'
     steps:
-      - name: Probe Meta visibility and persist sanitized evidence
+      - name: Enumerate campaign, ad set and ad hierarchy
         shell: bash
         run: |
           set -euo pipefail
@@ -38,16 +35,13 @@ jobs:
           const service = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
           const token = String(process.env.META_REPORTING_TOKEN_60D || '').trim();
           const account = String(process.env.TARGET_AD_ACCOUNT_ID || '').trim();
-          const campaign = String(process.env.TARGET_CAMPAIGN_ID || '').trim();
-          const adset = String(process.env.TARGET_ADSET_ID || '').trim();
-          const ad = String(process.env.TARGET_AD_ID || '').trim();
           const graph = 'https://graph.facebook.com/v22.0';
 
           async function meta(path, params = {}) {
             const url = new URL(`${graph}${path}`);
             url.searchParams.set('access_token', token);
             for (const [key, value] of Object.entries(params)) url.searchParams.set(key, String(value));
-            const response = await fetch(url, { signal: AbortSignal.timeout(20000) });
+            const response = await fetch(url, { signal: AbortSignal.timeout(25000) });
             const body = await response.json().catch(() => ({}));
             if (!response.ok || body?.error) {
               const e = body?.error || {};
@@ -69,22 +63,20 @@ jobs:
           const userId = integrations?.[0]?.user_id;
           if (!userId) throw new Error('Connected Meta integration owner missing');
 
-          const permissionsRaw = await meta('/me/permissions');
-          const permissionRows = permissionsRaw.ok && Array.isArray(permissionsRaw.data?.data) ? permissionsRaw.data.data : [];
-          const permissions = Object.fromEntries(permissionRows.map((row) => [row.permission, row.status]));
           const result = {
-            identity: await meta('/me', { fields: 'id,name' }),
-            permissions: {
-              ads_read: permissions.ads_read || 'not_granted',
-              ads_management: permissions.ads_management || 'not_granted',
-              business_management: permissions.business_management || 'not_granted',
-            },
-            ad_accounts_minimal: await meta('/me/adaccounts', { fields: 'id,name,account_status,currency,timezone_name', limit: 200 }),
-            target_account_minimal: await meta(`/${account}`, { fields: 'id,name,account_status,currency,timezone_name' }),
-            target_campaigns: await meta(`/${account}/campaigns`, { fields: 'id,name,status,effective_status,objective', limit: 200 }),
-            campaign: await meta(`/${campaign}`, { fields: 'id,name,status,effective_status,objective,account_id' }),
-            adset: await meta(`/${adset}`, { fields: 'id,name,status,effective_status,campaign_id,account_id' }),
-            ad: await meta(`/${ad}`, { fields: 'id,name,status,effective_status,campaign_id,adset_id,account_id' }),
+            account: await meta(`/${account}`, { fields: 'id,name,account_status,currency,timezone_name' }),
+            campaigns: await meta(`/${account}/campaigns`, {
+              fields: 'id,name,status,effective_status,objective,buying_type,daily_budget,lifetime_budget,bid_strategy,created_time,updated_time',
+              limit: 500,
+            }),
+            adsets: await meta(`/${account}/adsets`, {
+              fields: 'id,name,status,effective_status,campaign_id,daily_budget,lifetime_budget,billing_event,optimization_goal,bid_strategy,bid_amount,attribution_spec,start_time,end_time,created_time,updated_time',
+              limit: 500,
+            }),
+            ads: await meta(`/${account}/ads`, {
+              fields: 'id,name,status,effective_status,campaign_id,adset_id,creative{id,name,effective_object_story_id},created_time,updated_time',
+              limit: 500,
+            }),
           };
 
           await sb('agent_outputs', {
@@ -92,14 +84,14 @@ jobs:
             headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
             body: JSON.stringify({
               user_id: userId,
-              agent_type: 'meta-reporting-credential-probe-minimal',
-              input_context: { account_id: account, campaign_id: campaign, adset_id: adset, ad_id: ad },
+              agent_type: 'meta-target-hierarchy-probe',
+              input_context: { account_id: account },
               output_text: JSON.stringify(result),
-              model_used: 'github-actions-meta-reporting-probe-v2',
+              model_used: 'github-actions-meta-hierarchy-probe-v1',
               status: 'completed',
               output: result,
               metadata: { source: 'github_actions', read_only: true, one_time: true, graph_version: 'v22.0' },
             }),
           });
-          console.log('META_REPORTING_PROBE_MINIMAL=PASS');
+          console.log('META_TARGET_HIERARCHY_PROBE=PASS');
           NODE
