@@ -1,0 +1,49 @@
+name: Patch Meta Handler Export Once
+
+on:
+  push:
+    branches: [test/meta-stack-behavior-20260824]
+    paths:
+      - '.github/workflows/patch-meta-handler-export-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: true
+
+      - name: Export handler for executable test
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('supabase/functions/api/index.ts')
+          text = path.read_text()
+          old = 'async function handleMetaWebhookPost(ctx: PublicRouteContext): Promise<Response | null> {'
+          new = 'export async function handleMetaWebhookPost(ctx: PublicRouteContext): Promise<Response | null> {'
+          if new not in text:
+              if old not in text:
+                  raise SystemExit('expected handleMetaWebhookPost declaration not found')
+              text = text.replace(old, new, 1)
+              path.write_text(text)
+          PY
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add supabase/functions/api/index.ts
+          git commit -m 'test(meta): export webhook handler for behavior coverage'
+          git push origin HEAD:test/meta-stack-behavior-20260824
