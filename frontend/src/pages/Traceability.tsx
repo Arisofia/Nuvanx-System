@@ -1,51 +1,29 @@
 import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
-import { GitMerge, Search, CheckCircle2, XCircle, TrendingUp, MessageCircle } from 'lucide-react'
+import { GitMerge, Search, CheckCircle2, XCircle, TrendingUp, MessageCircle, Info } from 'lucide-react'
 import { invokeApi } from '../lib/invokeApi'
 import { SortableTable, type ColDef } from '../components/ui/SortableTable'
 import TrazabilidadFunnelTableFinal from '../components/traceability/TrazabilidadFunnelTable_Final'
-
-interface TraceabilitySummary {
-  totalLeads: number
-  matchedTotal: number
-  verifiedSales: number
-  totalRevenue: number
-}
 
 interface TraceRow {
   lead_id: string
   lead_name: string | null
   source: string | null
   campaign_name: string | null
-  ad_name: string | null
   stage: string | null
   lead_created_at: string | null
   appointment_date: string | null
-  cita_valoracion: string | null
-  cita_posterior: string | null
   patient_id: string | null
   patient_name: string | null
-  patient_dni: string | null
-  patient_phone: string | null
-  patient_last_visit: string | null
-  patient_ltv: number | null
   phone_normalized: string | null
   doc_patient_id: string | null
   match_confidence: number | null
   match_class: string | null
-  first_settlement_at: string | null
   doctoralia_net: number | null
   doctoralia_template_name: string | null
   days_to_settlement: number | null
   settlement_date: string | null
-}
-
-const EMPTY_TRACEABILITY_SUMMARY: TraceabilitySummary = {
-  totalLeads: 0,
-  matchedTotal: 0,
-  verifiedSales: 0,
-  totalRevenue: 0,
 }
 
 const MATCH_LABELS: Record<string, string> = {
@@ -72,7 +50,6 @@ export default function Traceability() {
   const [rows, setRows] = useState<TraceRow[]>([])
   const [total, setTotal] = useState(0)
   const [matchedTotal, setMatchedTotal] = useState<number | null>(null)
-  const [summary, setSummary] = useState<TraceabilitySummary>(EMPTY_TRACEABILITY_SUMMARY)
   const [campaigns, setCampaigns] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -85,13 +62,12 @@ export default function Traceability() {
     const loadData = async () => {
       setLoading(true)
       setError(null)
-
       try {
         const params = new URLSearchParams({ limit: '500' })
         if (matchedOnly) params.set('matched', 'true')
         if (from) params.set('from', from)
         if (to) params.set('to', to)
-        
+
         const [leadsData, campaignsData] = await Promise.all([
           invokeApi<any>(`/api/traceability/leads?${params}`),
           invokeApi<any>(`/api/traceability/campaigns?${params}`),
@@ -101,7 +77,6 @@ export default function Traceability() {
         setRows(leadsData?.leads ?? [])
         setTotal(leadsData?.total ?? 0)
         setMatchedTotal(leadsData?.matchedTotal ?? null)
-        setSummary({ ...EMPTY_TRACEABILITY_SUMMARY, ...(leadsData?.summary ?? {}) })
         setCampaigns(campaignsData?.campaigns ?? [])
       } catch (err: any) {
         if (!isActive) return
@@ -111,38 +86,28 @@ export default function Traceability() {
       }
     }
 
-    loadData()
-
-    return () => {
-      isActive = false
-    }
+    void loadData()
+    return () => { isActive = false }
   }, [matchedOnly, from, to])
 
-  const filtered = rows.filter((r) => {
+  const filtered = rows.filter((row) => {
     if (search === '') return true
-    const q = search.toLowerCase()
-    return (
-      r.lead_name?.toLowerCase().includes(q) ||
-      r.patient_name?.toLowerCase().includes(q) ||
-      r.campaign_name?.toLowerCase().includes(q) ||
-      r.doc_patient_id?.toLowerCase().includes(q)
-    )
+    const query = search.toLowerCase()
+    return row.lead_name?.toLowerCase().includes(query)
+      || row.patient_name?.toLowerCase().includes(query)
+      || row.campaign_name?.toLowerCase().includes(query)
+      || row.doc_patient_id?.toLowerCase().includes(query)
   })
 
-  const matchedCount = matchedTotal ?? summary.matchedTotal ?? rows.filter((r) => r.patient_id || r.doc_patient_id || r.doctoralia_template_name).length
-  const withRevenueCount = summary.verifiedSales || rows.filter((r) => r.doctoralia_net && r.doctoralia_net > 0).length
-  const totalRevenue = summary.totalRevenue || rows.reduce((s, r) => s + (r.doctoralia_net ?? 0), 0)
+  const matchedCount = matchedTotal ?? rows.filter((row) => row.patient_id || row.doc_patient_id || row.doctoralia_template_name).length
+  const withSourceAmountCount = rows.filter((row) => row.doctoralia_net != null && Number(row.doctoralia_net) !== 0).length
+  const appointmentCount = rows.filter((row) => row.appointment_date).length
 
-  const renderPatientInfo = (r: any) => {
-    if (r.patient_name) {
-      return <p className="text-foreground">{r.patient_name}</p>
-    }
-    if (r.doc_patient_id) {
-      return <p className="text-muted text-[10px]">ID: {r.doc_patient_id}</p>
-    }
-    if (r.doctoralia_template_name && !r.doc_patient_id) {
-      const label = r.phone_normalized ? 'Cruzado por teléfono' : 'Cruzado por nombre'
-      return <p className="text-muted text-[10px] truncate max-w-[160px]">{label}</p>
+  const renderPatientInfo = (row: TraceRow) => {
+    if (row.patient_name) return <p className="text-foreground">{row.patient_name}</p>
+    if (row.doc_patient_id) return <p className="text-muted text-[10px]">ID: {row.doc_patient_id}</p>
+    if (row.doctoralia_template_name) {
+      return <p className="text-muted text-[10px]">{row.phone_normalized ? 'Cruzado por teléfono' : 'Cruzado por nombre'}</p>
     }
     return <span className="text-muted">—</span>
   }
@@ -151,10 +116,9 @@ export default function Traceability() {
     { key: 'campaign_name', label: 'Campaña' },
     { key: 'source', label: 'Fuente' },
     { key: 'total_leads', label: 'Leads', align: 'right', sortable: true },
-    { key: 'booked', label: 'Cruzados', align: 'right', sortable: true },
-    { key: 'closed', label: 'Caja', align: 'right', sortable: true },
-    { key: 'lead_to_close_rate_pct', label: '% Conv.', align: 'right', sortable: true, format: (v) => `${v}%` },
-    { key: 'verified_revenue_crm', label: 'Revenue Doctoralia', align: 'right', sortable: true, format: (v) => `€${Number(v).toLocaleString('es-ES')}` },
+    { key: 'booked', label: 'Agendados', align: 'right', sortable: true },
+    { key: 'attended', label: 'Asistidos', align: 'right', sortable: true },
+    { key: 'no_shows', label: 'No show', align: 'right', sortable: true },
   ]
 
   const setThisMonth = () => {
@@ -174,7 +138,7 @@ export default function Traceability() {
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8">
         <div className="space-y-2">
           <h1 className="text-5xl font-serif font-bold tracking-tight text-[#2C2825]">Trazabilidad</h1>
-          <p className="text-[#5C5550] text-xs uppercase tracking-[0.4em] font-bold">Cruce operativo de leads, citas y caja</p>
+          <p className="text-[#5C5550] text-xs uppercase tracking-[0.4em] font-bold">Cruce operativo de leads y citas</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1 bg-white/80 backdrop-blur-xl p-1 rounded-xl border border-[#E5D5C5]/60 shadow-sm">
@@ -182,18 +146,23 @@ export default function Traceability() {
             <button onClick={setLastMonth} className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all text-[#8E8680] hover:text-[#84643B] hover:bg-[#84643B]/5">Mes pasado</button>
           </div>
           <div className="flex items-center gap-2 bg-white/80 backdrop-blur-xl p-1.5 rounded-xl border border-[#E5D5C5]/60 shadow-sm">
-            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="bg-transparent border-none text-[10px] font-bold uppercase tracking-wider focus:ring-0 cursor-pointer outline-none w-32" />
+            <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} className="bg-transparent border-none text-[10px] font-bold uppercase tracking-wider focus:ring-0 cursor-pointer outline-none w-32" />
             <span className="text-[#B08B5A]/40 text-xs">→</span>
-            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="bg-transparent border-none text-[10px] font-bold uppercase tracking-wider focus:ring-0 cursor-pointer outline-none w-32" />
+            <input type="date" value={to} onChange={(event) => setTo(event.target.value)} className="bg-transparent border-none text-[10px] font-bold uppercase tracking-wider focus:ring-0 cursor-pointer outline-none w-32" />
           </div>
         </div>
       </div>
 
+      <div className="rounded-2xl border border-[#E0A020]/30 bg-[#E0A020]/10 p-4 flex gap-3">
+        <Info className="h-5 w-5 text-[#E0A020] flex-shrink-0 mt-0.5" />
+        <p className="text-sm text-[#5C5550]">Los importes procedentes de Doctoralia se identifican como datos fuente de cita y no como cobro, ingreso o caja reconciliada.</p>
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card className="hover:shadow-xl transition-all duration-500 border-none shadow-sm bg-white"><CardContent className="pt-8"><p className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em]">Total leads</p><p className="text-4xl font-serif font-bold mt-4 tracking-tight text-[#2C2825]">{total > 0 ? total : rows.length}</p></CardContent></Card>
-        <Card className="hover:shadow-xl transition-all duration-500 border-none shadow-sm bg-white"><CardContent className="pt-8"><p className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em]">Cruces Doctoralia</p><div className="flex items-center gap-3 mt-4"><p className="text-4xl font-serif font-bold tracking-tight text-green-600">{matchedCount}</p><CheckCircle2 className="h-5 w-5 text-green-600/30" /></div></CardContent></Card>
-        <Card className="hover:shadow-xl transition-all duration-500 border-none shadow-sm bg-white"><CardContent className="pt-8"><p className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em]">Cierres con caja</p><div className="flex items-center gap-3 mt-4"><p className="text-4xl font-serif font-bold tracking-tight text-primary">{withRevenueCount}</p><TrendingUp className="h-5 w-5 text-primary/30" /></div></CardContent></Card>
-        <Card className="hover:shadow-xl transition-all duration-500 border-none shadow-sm bg-white"><CardContent className="pt-8"><p className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em]">Caja liquidada</p><p className="text-4xl font-serif font-bold mt-4 tracking-tight text-primary">{totalRevenue > 0 ? `€${totalRevenue.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : '—'}</p></CardContent></Card>
+        <Card className="border-none shadow-sm bg-white"><CardContent className="pt-8"><p className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em]">Total leads</p><p className="text-4xl font-serif font-bold mt-4 text-[#2C2825]">{total > 0 ? total : rows.length}</p></CardContent></Card>
+        <Card className="border-none shadow-sm bg-white"><CardContent className="pt-8"><p className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em]">Cruces Doctoralia</p><div className="flex items-center gap-3 mt-4"><p className="text-4xl font-serif font-bold text-green-600">{matchedCount}</p><CheckCircle2 className="h-5 w-5 text-green-600/30" /></div></CardContent></Card>
+        <Card className="border-none shadow-sm bg-white"><CardContent className="pt-8"><p className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em]">Leads con cita</p><p className="text-4xl font-serif font-bold mt-4 text-primary">{appointmentCount}</p></CardContent></Card>
+        <Card className="border-none shadow-sm bg-white"><CardContent className="pt-8"><p className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em]">Con importe fuente</p><p className="text-4xl font-serif font-bold mt-4 text-primary">{withSourceAmountCount}</p><p className="text-[10px] text-[#8E8680] mt-2">No conciliado como cobro</p></CardContent></Card>
       </div>
 
       <Tabs defaultValue="leads" className="w-full">
@@ -205,23 +174,47 @@ export default function Traceability() {
 
         <TabsContent value="leads" className="mt-4">
           <Card className="border-none shadow-md bg-white overflow-hidden">
-            <CardHeader className="flex flex-col sm:flex-row items-center justify-between space-y-4 sm:space-y-0 pb-6 border-b border-border/10">
-              <div><CardTitle className="flex items-center gap-2 font-serif text-2xl text-[#2C2825]"><GitMerge className="h-5 w-5 text-primary" />Listado de trazabilidad</CardTitle><p className="text-xs text-[#5C5550] font-medium mt-1">Cruce directo de leads y registros de clínica</p></div>
+            <CardHeader className="flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-border/10">
+              <div><CardTitle className="font-serif text-2xl text-[#2C2825]">Listado de trazabilidad</CardTitle><p className="text-xs text-[#5C5550] mt-1">Cruce directo de leads y registros de clínica</p></div>
               <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-                <button onClick={() => setMatchedOnly((v) => !v)} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm border ${matchedOnly ? 'bg-green-600 text-white border-green-700' : 'bg-white text-[#5C5550] hover:text-[#2C2825] border-border/40 hover:border-primary/40'}`}><CheckCircle2 className={`h-3.5 w-3.5 ${matchedOnly ? 'text-white' : 'text-[#8E8680]'}`} />Solo cruzados</button>
-                <div className="relative flex-1 sm:flex-none"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#8E8680] pointer-events-none" /><input type="text" placeholder="Buscar lead o paciente…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10 pr-4 py-2.5 text-sm bg-[#FAF7F2]/40 border border-border/30 rounded-xl w-full sm:w-64 text-[#2C2825] placeholder:text-[#8E8680] focus:outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary transition-all" /></div>
+                <button onClick={() => setMatchedOnly((value) => !value)} className={`px-4 py-2 rounded-xl text-xs font-bold border ${matchedOnly ? 'bg-green-600 text-white border-green-700' : 'bg-white text-[#5C5550] border-border/40'}`}><CheckCircle2 className="h-3.5 w-3.5 inline mr-2" />Solo cruzados</button>
+                <div className="relative flex-1 sm:flex-none"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#8E8680]" /><input type="text" placeholder="Buscar lead o paciente…" value={search} onChange={(event) => setSearch(event.target.value)} className="pl-10 pr-4 py-2.5 text-sm bg-[#FAF7F2]/40 border border-border/30 rounded-xl w-full sm:w-64" /></div>
               </div>
             </CardHeader>
             <CardContent className="pt-6">
-              {loading && <p className="text-sm text-[#8E8680] py-12 text-center animate-pulse italic">Cargando trazabilidad…</p>}
-              {!loading && error && <p className="text-sm text-[#D9534F] py-12 text-center font-medium bg-red-50/50 rounded-2xl">{error}</p>}
-              {!loading && !error && filtered.length === 0 && <div className="py-16 text-center space-y-3"><div className="bg-[#FAF7F2] w-16 h-16 rounded-full flex items-center justify-center mx-auto border border-border/20"><GitMerge className="h-8 w-8 text-[#C9B9A8]" /></div><p className="text-sm font-medium text-[#5C5550]">{rows.length === 0 ? 'Aún no hay leads registrados.' : 'Ningún resultado para la búsqueda actual.'}</p></div>}
-              {!loading && !error && filtered.length > 0 && <div className="overflow-x-auto"><table className="w-full text-xs border-collapse"><thead><tr className="border-b border-border/10 text-[#5C5550] uppercase tracking-[0.15em] text-[10px] font-bold"><th className="text-left py-4 pr-4 pl-2 font-bold">Lead</th><th className="text-left py-4 pr-4 font-bold">Fuente / Campaña</th><th className="text-left py-4 pr-4 font-bold">Fecha cita</th><th className="text-left py-4 pr-4 font-bold">Estado cruce</th><th className="text-left py-4 pr-4 font-bold">Paciente Doctoralia</th><th className="text-right py-4 pr-4 font-bold">Ingreso €</th><th className="text-right py-4 pr-2 font-bold">Liquidación</th></tr></thead><tbody className="divide-y divide-border/5">{filtered.map((r, idx) => { const matched = Boolean(r.patient_id || r.doc_patient_id || r.doctoralia_template_name); const hasRevenue = r.doctoralia_net && r.doctoralia_net > 0; let matchLabel = 'Cruzado'; if (r.match_class) { matchLabel = MATCH_LABELS[r.match_class] ?? r.match_class } else if (r.doctoralia_template_name && r.doc_patient_id == null) { matchLabel = r.phone_normalized ? 'Por teléfono' : 'Por nombre' } return (<tr key={r.lead_id} className={`group hover:bg-[#FAF7F2]/60 transition-colors ${idx % 2 === 0 ? 'bg-transparent' : 'bg-[#FAF7F2]/20'}`}><td className="py-5 pr-4 pl-2"><p className="font-serif font-bold text-[#2C2825] text-sm">{r.lead_name ?? '—'}</p>{r.stage && <span className="text-[9px] font-bold text-primary uppercase bg-primary/5 px-2 py-0.5 rounded mt-1.5 inline-block border border-primary/10 tracking-widest">{r.stage}</span>}</td><td className="py-5 pr-4"><p className="text-[#2C2825] font-semibold">{r.source ?? '—'}</p>{r.campaign_name && <p className="text-[#5C5550] text-[10px] font-medium truncate max-w-[180px] mt-1.5" title={r.campaign_name}>{r.campaign_name}</p>}</td><td className="py-5 pr-4 text-[#5C5550] font-bold whitespace-nowrap">{r.appointment_date ? <div className="flex flex-col gap-1"><span>{new Date(r.appointment_date).toLocaleDateString('es-ES')}</span>{r.lead_created_at && <span className="text-[9px] text-[#8E8680] font-bold uppercase tracking-wider">Lead {new Date(r.lead_created_at).toLocaleDateString('es-ES')}</span>}</div> : <span className="text-[#C9B9A8] font-medium opacity-60">Sin cita</span>}</td><td className="py-5 pr-4">{matched ? <div className="flex flex-col gap-1.5"><div className="flex items-center gap-1.5 text-green-600 font-bold tracking-tight"><CheckCircle2 className="h-3.5 w-3.5" /><span>{matchLabel}</span></div>{r.match_confidence != null && <div className="w-24 bg-border/20 h-1 rounded-full overflow-hidden mt-0.5"><div className="bg-green-600 h-full rounded-full transition-all" style={{ width: `${Math.round(r.match_confidence * 100)}%` }} /></div>}</div> : <div className="flex items-center gap-1.5 text-[#C9B9A8] font-bold"><XCircle className="h-3.5 w-3.5 opacity-40" /><span>Sin cruce</span></div>}</td><td className="py-5 pr-4"><div className="flex flex-col gap-1.5"><div className="font-serif font-bold text-[#2C2825]">{renderPatientInfo(r)}</div>{r.doctoralia_template_name && <p className="text-[#5C5550] text-[10px] font-medium truncate max-w-[140px] italic border-l-2 border-primary/20 pl-2 leading-tight">{r.doctoralia_template_name}</p>}</div></td><td className="py-5 pr-4 text-right">{hasRevenue ? <span className="text-[#2C2825] font-serif font-bold text-base tracking-tight">€{r.doctoralia_net.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span> : <span className="text-[#C9B9A8] font-medium opacity-40">—</span>}</td><td className="py-5 text-right pr-2">{r.days_to_settlement == null ? <span className="text-[#C9B9A8] font-medium opacity-40">—</span> : <div className="flex flex-col items-end gap-1.5"><span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${r.days_to_settlement <= 30 ? 'bg-green-600/5 text-green-600 border-green-600/20' : 'bg-[#FAF7F2] text-[#8E8680] border-border/40'}`}>{r.days_to_settlement}d</span><span className="text-[9px] text-[#8E8680] font-bold uppercase tracking-wider">tras lead</span></div>}</td></tr>) })}</tbody></table></div>}
+              {loading && <p className="text-sm text-[#8E8680] py-12 text-center">Cargando trazabilidad…</p>}
+              {!loading && error && <p className="text-sm text-[#D9534F] py-12 text-center">{error}</p>}
+              {!loading && !error && filtered.length === 0 && <p className="text-sm text-[#5C5550] py-12 text-center">{rows.length === 0 ? 'Aún no hay leads registrados.' : 'Ningún resultado para la búsqueda actual.'}</p>}
+              {!loading && !error && filtered.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs border-collapse">
+                    <thead><tr className="border-b border-border/10 text-[#5C5550] uppercase tracking-[0.15em] text-[10px] font-bold"><th className="text-left py-4 pr-4">Lead</th><th className="text-left py-4 pr-4">Fuente / Campaña</th><th className="text-left py-4 pr-4">Fecha cita</th><th className="text-left py-4 pr-4">Estado cruce</th><th className="text-left py-4 pr-4">Paciente Doctoralia</th><th className="text-right py-4 pr-4">Importe cita (fuente)</th><th className="text-right py-4">Días desde lead</th></tr></thead>
+                    <tbody className="divide-y divide-border/5">
+                      {filtered.map((row) => {
+                        const matched = Boolean(row.patient_id || row.doc_patient_id || row.doctoralia_template_name)
+                        const hasSourceAmount = row.doctoralia_net != null && Number(row.doctoralia_net) !== 0
+                        const matchLabel = row.match_class ? (MATCH_LABELS[row.match_class] ?? row.match_class) : 'Cruzado'
+                        return (
+                          <tr key={row.lead_id} className="hover:bg-[#FAF7F2]/60 transition-colors">
+                            <td className="py-5 pr-4"><p className="font-serif font-bold text-[#2C2825] text-sm">{row.lead_name ?? '—'}</p>{row.stage && <span className="text-[9px] text-primary uppercase">{row.stage}</span>}</td>
+                            <td className="py-5 pr-4"><p className="font-semibold">{row.source ?? '—'}</p>{row.campaign_name && <p className="text-[#5C5550] text-[10px] mt-1">{row.campaign_name}</p>}</td>
+                            <td className="py-5 pr-4">{row.appointment_date ? new Date(row.appointment_date).toLocaleDateString('es-ES') : '—'}</td>
+                            <td className="py-5 pr-4">{matched ? <span className="text-green-600 font-bold"><CheckCircle2 className="h-3.5 w-3.5 inline mr-1" />{matchLabel}</span> : <span className="text-[#8E8680]"><XCircle className="h-3.5 w-3.5 inline mr-1" />Sin cruce</span>}</td>
+                            <td className="py-5 pr-4">{renderPatientInfo(row)}{row.doctoralia_template_name && <p className="text-[#5C5550] text-[10px] mt-1">{row.doctoralia_template_name}</p>}</td>
+                            <td className="py-5 pr-4 text-right">{hasSourceAmount ? <span title="Importe de la fuente Doctoralia; no equivale a un cobro conciliado">€{Number(row.doctoralia_net).toLocaleString('es-ES', { maximumFractionDigits: 2 })}</span> : '—'}</td>
+                            <td className="py-5 text-right">{row.days_to_settlement == null ? '—' : `${row.days_to_settlement}d`}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="campaigns" className="mt-4"><Card><CardHeader><CardTitle>Rendimiento por campaña</CardTitle></CardHeader><CardContent><SortableTable columns={campaignColumns} rows={campaigns} loading={loading} emptyMessage="No hay datos de rendimiento de campañas todavía." exportFilename="rendimiento-campanas" /></CardContent></Card></TabsContent>
+        <TabsContent value="campaigns" className="mt-4"><Card><CardHeader><CardTitle>Rendimiento operativo por campaña</CardTitle></CardHeader><CardContent><SortableTable columns={campaignColumns} rows={campaigns} loading={loading} emptyMessage="No hay datos de rendimiento de campañas todavía." exportFilename="rendimiento-campanas-operativo" /></CardContent></Card></TabsContent>
         <TabsContent value="funnel" className="mt-4"><TrazabilidadFunnelTableFinal /></TabsContent>
       </Tabs>
     </div>
