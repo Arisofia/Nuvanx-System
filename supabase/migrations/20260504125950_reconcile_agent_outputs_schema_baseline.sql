@@ -2,14 +2,22 @@
 -- Restore the missing canonical baseline for public.agent_outputs.
 --
 -- Production already contains this relation, but its original CREATE TABLE is
--- absent from the versioned migration history. The later playbooks baseline
--- (20260823213000) references agent_outputs from a foreign key, so a clean
--- preview/replay must create this table first.
+-- absent from the versioned migration history. Fresh Supabase Preview/replay
+-- databases therefore need the table before historical migrations and the later
+-- playbooks baseline can reference it.
 --
--- This migration is intentionally versioned before 20260823213000. Production
--- uses `supabase db push --include-all`, so it can record this late-added earlier
--- version safely; CREATE/INDEX operations are idempotent and existing data is
--- never rewritten.
+-- Ordering is deliberate:
+--   * 20260501090000 provides the preview-compatible public.users table;
+--   * 20260501190000 provides public.current_clinic_id();
+--   * 20260504125900 provides the preview-compatible public.clinics table;
+--   * this migration then creates agent_outputs before every later versioned
+--     migration that references it.
+--
+-- Production uses `supabase db push --include-all`, so this late-added earlier
+-- version can be recorded without rewriting an already-applied migration.
+-- Existing rows are preserved. `output_data` is restored only as a compatibility
+-- column because the currently deployed agent-run v106 and the repository caller
+-- still read/write it, while `output` + `metadata` remain the canonical fields.
 -- =============================================================================
 
 BEGIN;
@@ -22,6 +30,7 @@ CREATE TABLE IF NOT EXISTS public.agent_outputs (
   prompt_hash varchar,
   input_context jsonb DEFAULT '{}'::jsonb,
   output_text text DEFAULT ''::text,
+  output_data jsonb NOT NULL DEFAULT '{}'::jsonb,
   model_used varchar,
   tokens_used integer DEFAULT 0,
   status varchar DEFAULT 'completed'::varchar,
@@ -39,8 +48,30 @@ CREATE TABLE IF NOT EXISTS public.agent_outputs (
     ])::text[]))
 );
 
+-- Production currently lacks this legacy compatibility column even though the
+-- deployed standalone agent-run still uses it. Adding it is idempotent and keeps
+-- the canonical output/metadata fields unchanged.
+ALTER TABLE public.agent_outputs
+  ADD COLUMN IF NOT EXISTS output_data jsonb NOT NULL DEFAULT '{}'::jsonb;
+
 DO $do$
 BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conrelid = 'public.agent_outputs'::regclass
+      AND conname = 'agent_outputs_status_check'
+  ) THEN
+    ALTER TABLE public.agent_outputs
+      ADD CONSTRAINT agent_outputs_status_check
+      CHECK ((status)::text = ANY ((ARRAY[
+        'pending'::varchar,
+        'running'::varchar,
+        'completed'::varchar,
+        'failed'::varchar
+      ])::text[]));
+  END IF;
+
   IF NOT EXISTS (
     SELECT 1
     FROM pg_constraint
@@ -98,7 +129,7 @@ CREATE POLICY agent_outputs_select_clinic
   TO authenticated
   USING (
     COALESCE((((SELECT auth.jwt()) ->> 'is_anonymous'))::boolean, false) = false
-    AND clinic_id = (SELECT current_clinic_id())
+    AND clinic_id = (SELECT public.current_clinic_id())
   );
 
 DROP POLICY IF EXISTS agent_outputs_service_all ON public.agent_outputs;
@@ -120,6 +151,7 @@ CREATE POLICY agent_outputs_service_role_only
 DROP POLICY IF EXISTS deny_anonymous_authenticated ON public.agent_outputs;
 CREATE POLICY deny_anonymous_authenticated
   ON public.agent_outputs
+  AS RESTRICTIVE
   FOR ALL
   TO authenticated
   USING (COALESCE((((SELECT auth.jwt()) ->> 'is_anonymous'))::boolean, false) = false)
