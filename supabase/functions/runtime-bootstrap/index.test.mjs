@@ -44,7 +44,12 @@ describe("runtime bootstrap contract", () => {
   it("uses repository Deno typings and treats caught failures as unknown", () => {
     expect(source).not.toContain("declare const Deno: any");
     expect(source).toContain("catch (error: unknown)");
-    expect(source).toContain("error instanceof Error ? error.message : String(error)");
     expect(source).not.toContain("catch (error: any)");
+  });
+
+  it("keeps error reporting fail-safe even when string coercion throws", () => {
+    expect(source).toContain("function safeErrorMessage(error: unknown): string");
+    expect(source).toMatch(/function safeErrorMessage\(error: unknown\): string \{[\s\S]*?try \{[\s\S]*?String\(error\)[\s\S]*?catch \{[\s\S]*?return "error";[\s\S]*?\}/);
+    expect(source).toContain("const message = safeErrorMessage(error)");
   });
 });
