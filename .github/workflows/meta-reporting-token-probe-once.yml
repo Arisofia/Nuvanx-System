@@ -1,11 +1,8 @@
 name: Meta Reporting Token Probe Once
-
 on:
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   inspect:
     runs-on: ubuntu-latest
@@ -17,57 +14,30 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL || secrets.NUVANX_SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
     steps:
-      - name: Inspect published RSV26 hierarchy
+      - name: Inspect form and conversion wiring
         shell: bash
         run: |
           set -euo pipefail
-          test -n "${META_REPORTING_TOKEN_60D:-}"
-          test -n "${SUPABASE_URL:-}"
-          test -n "${SUPABASE_SERVICE_ROLE_KEY:-}"
           node <<'NODE'
-          const token = String(process.env.META_REPORTING_TOKEN_60D || '').trim();
-          const sbUrl = String(process.env.SUPABASE_URL || '').replace(/\/$/, '');
-          const service = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
-          const graph = 'https://graph.facebook.com/v22.0';
-          const account = 'act_718120894191565';
-          const campaign = '120249780276630419';
-          const requestedAdset = '120249784103200419';
-          const requestedAd = '120249780276610419';
-
-          async function meta(path, params = {}) {
-            const url = new URL(`${graph}${path}`);
-            url.searchParams.set('access_token', token);
-            for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
-            const r = await fetch(url, { signal: AbortSignal.timeout(20000) });
-            const b = await r.json().catch(() => ({}));
-            if (!r.ok || b?.error) {
-              const e = b?.error || {};
-              return { ok:false, status:r.status, error:{ code:e.code ?? null, subcode:e.error_subcode ?? null, type:e.type ?? null, message:String(e.message || `Meta ${r.status}`).slice(0,500) } };
-            }
-            return { ok:true, status:r.status, data:b };
+          const token=String(process.env.META_REPORTING_TOKEN_60D||'').trim();
+          const sbUrl=String(process.env.SUPABASE_URL||'').replace(/\/$/,'');
+          const service=String(process.env.SUPABASE_SERVICE_ROLE_KEY||'').trim();
+          if(!token||!sbUrl||!service) throw new Error('required secret missing');
+          const graph='https://graph.facebook.com/v22.0';
+          async function meta(id,fields){
+            const u=new URL(`${graph}/${id}`);u.searchParams.set('access_token',token);u.searchParams.set('fields',fields);
+            const r=await fetch(u,{signal:AbortSignal.timeout(20000)});const b=await r.json().catch(()=>({}));
+            if(!r.ok||b?.error){const e=b?.error||{};return{ok:false,status:r.status,error:{code:e.code??null,subcode:e.error_subcode??null,type:e.type??null,message:String(e.message||`Meta ${r.status}`).slice(0,500)}}}
+            return{ok:true,status:r.status,data:b};
           }
-
-          const result = {
-            campaign: await meta(`/${campaign}`, { fields:'id,name,status,effective_status,objective,buying_type,daily_budget,lifetime_budget,bid_strategy,special_ad_categories,created_time,updated_time' }),
-            campaign_adsets: await meta(`/${campaign}/adsets`, { fields:'id,name,status,effective_status,campaign_id,daily_budget,lifetime_budget,billing_event,optimization_goal,bid_strategy,bid_amount,attribution_spec,start_time,end_time,created_time,updated_time,promoted_object,targeting', limit:100 }),
-            campaign_ads: await meta(`/${campaign}/ads`, { fields:'id,name,status,effective_status,campaign_id,adset_id,created_time,updated_time,tracking_specs,conversion_specs,creative{id,name,effective_object_story_id,object_story_spec,asset_feed_spec,url_tags,call_to_action_type}', limit:200 }),
-            requested_adset: await meta(`/${requestedAdset}`, { fields:'id,name,status,effective_status,campaign_id,daily_budget,lifetime_budget,billing_event,optimization_goal,bid_strategy,bid_amount,attribution_spec,start_time,end_time,created_time,updated_time,promoted_object,targeting' }),
-            requested_ad: await meta(`/${requestedAd}`, { fields:'id,name,status,effective_status,campaign_id,adset_id,created_time,updated_time,tracking_specs,conversion_specs,creative{id,name,effective_object_story_id,object_story_spec,asset_feed_spec,url_tags,call_to_action_type}' }),
-            campaign_insights: await meta(`/${campaign}/insights`, { fields:'date_start,date_stop,impressions,reach,frequency,spend,clicks,inline_link_clicks,ctr,cpc,cpm,actions,cost_per_action_type', date_preset:'maximum', level:'campaign' }),
-            adset_insights: await meta(`/${campaign}/insights`, { fields:'adset_id,adset_name,date_start,date_stop,impressions,reach,frequency,spend,clicks,inline_link_clicks,ctr,cpc,cpm,actions,cost_per_action_type', date_preset:'maximum', level:'adset', limit:100 }),
-            ad_insights: await meta(`/${campaign}/insights`, { fields:'ad_id,ad_name,adset_id,adset_name,date_start,date_stop,impressions,reach,frequency,spend,clicks,inline_link_clicks,ctr,cpc,cpm,actions,cost_per_action_type', date_preset:'maximum', level:'ad', limit:200 }),
+          const result={
+            cta_form:await meta('1493697602775666','id,name,status,locale,created_time'),
+            conversion_spec_leadgen:await meta('1329736270212784','id,name,status,locale,created_time'),
+            conversion_object:await meta('28513036711646979','id,name'),
+            page:await meta('1329458703573874','id,name'),
+            instagram:await meta('17841474094610850','id,username,name')
           };
-
-          const userRes = await fetch(`${sbUrl}/rest/v1/integrations?service=eq.meta&status=eq.connected&select=user_id&order=updated_at.desc&limit=1`, { headers:{ apikey:service, Authorization:`Bearer ${service}` } });
-          if (!userRes.ok) throw new Error(`Supabase owner lookup ${userRes.status}`);
-          const rows = await userRes.json();
-          const userId = rows?.[0]?.user_id;
-          if (!userId) throw new Error('Meta integration owner missing');
-          const persist = await fetch(`${sbUrl}/rest/v1/agent_outputs`, {
-            method:'POST',
-            headers:{ apikey:service, Authorization:`Bearer ${service}`, 'Content-Type':'application/json', Prefer:'return=minimal' },
-            body:JSON.stringify({ user_id:userId, agent_type:'meta-rsv26-published-hierarchy-probe-20260824', input_context:{ account,campaign,requested_adset:requestedAdset,requested_ad:requestedAd }, output_text:JSON.stringify(result), model_used:'github-actions-rsv26-hierarchy-probe-v1', status:'completed', output:result, metadata:{ source:'github_actions', read_only:true, one_time:true, graph_version:'v22.0' } })
-          });
-          if (!persist.ok) throw new Error(`Supabase persist ${persist.status}`);
-          console.log('META_RSV26_HIERARCHY_PROBE=PASS');
+          const ur=await fetch(`${sbUrl}/rest/v1/integrations?service=eq.meta&status=eq.connected&select=user_id&order=updated_at.desc&limit=1`,{headers:{apikey:service,Authorization:`Bearer ${service}`}});const rows=await ur.json();const userId=rows?.[0]?.user_id;if(!userId)throw new Error('owner missing');
+          const pr=await fetch(`${sbUrl}/rest/v1/agent_outputs`,{method:'POST',headers:{apikey:service,Authorization:`Bearer ${service}`,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({user_id:userId,agent_type:'meta-rsv26-form-wiring-probe-20260824',input_context:{cta_form:'1493697602775666',conversion_spec_leadgen:'1329736270212784',conversion_object:'28513036711646979'},output_text:JSON.stringify(result),model_used:'github-actions-rsv26-form-probe-v1',status:'completed',output:result,metadata:{source:'github_actions',read_only:true,one_time:true,graph_version:'v22.0'}})});if(!pr.ok)throw new Error(`persist ${pr.status}`);
+          console.log('META_RSV26_FORM_PROBE=PASS');
           NODE
