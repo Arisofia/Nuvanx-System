@@ -3,24 +3,26 @@ name: Deep forensic repository audit
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [audit/deep-forensic-20260823]
 
 permissions:
   contents: read
 
 concurrency:
-  group: deep-forensic-${{ github.event.pull_request.number }}
+  group: deep-forensic-${{ github.event.pull_request.number || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
   audit:
-    if: github.event.pull_request.head.ref == 'audit/deep-forensic-20260823'
+    if: github.event_name == 'push' || github.event.pull_request.head.ref == 'audit/deep-forensic-20260823'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - name: Checkout audit branch
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -53,7 +55,7 @@ jobs:
       - name: Exact-SHA whole-tree line scan
         if: steps.gate.outputs.run == 'true'
         env:
-          AUDIT_REF: ${{ github.event.pull_request.base.sha }}
+          AUDIT_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '6496827f9c4438f2d82a3f4461418347dcc03488' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -215,7 +217,7 @@ jobs:
         if: always() && steps.gate.outputs.run == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: deep-forensic-${{ github.event.pull_request.base.sha }}
+          name: deep-forensic-${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '6496827f9c4438f2d82a3f4461418347dcc03488' }}
           path: audit-output
           if-no-files-found: warn
           retention-days: 30
