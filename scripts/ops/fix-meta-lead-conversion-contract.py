@@ -96,18 +96,18 @@ replace_once(
 'full DB fallback fields',
 )
 replace_once(
-"      conversions: Math.round(sumN(dbRows, 'conversions')),
-      messagingConversationStarted: Math.round(sumN(dbRows, 'messaging_conversations')),",
-"      conversions: Math.round(dbRows.reduce((sum: number, row: any) => sum + resolveMetaLeadConversions(row), 0)),
-      messagingConversationStarted: Math.round(sumN(dbRows, 'messaging_conversations')),",
+"""      conversions: Math.round(sumN(dbRows, 'conversions')),
+      messagingConversationStarted: Math.round(sumN(dbRows, 'messaging_conversations')),""",
+"""      conversions: Math.round(dbRows.reduce((sum: number, row: any) => sum + resolveMetaLeadConversions(row), 0)),
+      messagingConversationStarted: Math.round(sumN(dbRows, 'messaging_conversations')),""",
 'full DB fallback summary',
 )
 replace_once(
-"        cpm: Number(r.cpm),
-        messagingConversationStarted: Number(r.messaging_conversations),",
-"        cpm: Number(r.cpm),
+"""        cpm: Number(r.cpm),
+        messagingConversationStarted: Number(r.messaging_conversations),""",
+"""        cpm: Number(r.cpm),
         conversions: Math.round(resolveMetaLeadConversions(r)),
-        messagingConversationStarted: Number(r.messaging_conversations),",
+        messagingConversationStarted: Number(r.messaging_conversations),""",
 'full DB fallback daily',
 )
 
