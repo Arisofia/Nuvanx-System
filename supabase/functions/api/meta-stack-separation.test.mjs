@@ -23,13 +23,26 @@ beforeEach(() => {
 
 function createAdminClient(integrations, credentialByService = {}) {
   const credentialServices = [];
+  const integrationQuery = { inCalls: [], eqCalls: [] };
   const from = vi.fn((table) => {
     if (table === 'integrations') {
       return {
         select: () => ({
-          in: () => ({
-            eq: async () => ({ data: integrations }),
-          }),
+          in: (field, values) => {
+            integrationQuery.inCalls.push({ field, values });
+            const serviceFiltered = field === 'service'
+              ? integrations.filter((integration) => values.includes(integration.service))
+              : [];
+            return {
+              eq: async (eqField, eqValue) => {
+                integrationQuery.eqCalls.push({ field: eqField, value: eqValue });
+                const data = eqField === 'status' && eqValue === 'connected'
+                  ? serviceFiltered.filter((integration) => (integration.status ?? 'connected') === 'connected')
+                  : [];
+                return { data };
+              },
+            };
+          },
         }),
       };
     }
@@ -51,7 +64,20 @@ function createAdminClient(integrations, credentialByService = {}) {
     }
     throw new Error(`unexpected table: ${table}`);
   });
-  return { from, credentialServices };
+  return { from, credentialServices, integrationQuery };
+}
+
+function webhookRequest(body, secret) {
+  const rawBody = JSON.stringify(body);
+  const signature = `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`;
+  return new Request('https://example.test/api/webhooks/meta', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Hub-Signature-256': signature,
+    },
+    body: rawBody,
+  });
 }
 
 describe('Meta canonical stack routing behavior', () => {
@@ -64,10 +90,11 @@ describe('Meta canonical stack routing behavior', () => {
     })).toEqual(['111', '222', '333', '444']);
   });
 
-  it('selects the canonical integration, credential and app secret by incoming Page ID', async () => {
-    const { from, credentialServices } = createAdminClient([
-      { user_id: 'legacy-user', service: 'meta', metadata: { pageId: '111' } },
-      { user_id: 'canonical-user', service: 'meta_ads', metadata: { pageIds: ['222', '333'], pixelId: '' } },
+  it('queries connected legacy + canonical integrations and routes canonical Page correctly', async () => {
+    const { from, credentialServices, integrationQuery } = createAdminClient([
+      { user_id: 'legacy-user', service: 'meta', status: 'connected', metadata: { pageId: '111' } },
+      { user_id: 'canonical-user', service: 'meta_ads', status: 'connected', metadata: { pageIds: ['222', '333'], pixelId: '' } },
+      { user_id: 'ignored-user', service: 'meta_ads', status: 'disconnected', metadata: { pageId: '333' } },
     ], { meta_ads: 'encrypted-canonical', meta: 'encrypted-legacy' });
 
     const decrypt = vi.spyOn(api.publicRouteHelpers, 'decryptCred').mockResolvedValue('canonical-token');
@@ -83,6 +110,8 @@ describe('Meta canonical stack routing behavior', () => {
       value: { leadgen_id: 'lead-1', page_id: '333' },
     });
 
+    expect(integrationQuery.inCalls).toEqual([{ field: 'service', values: ['meta', 'meta_ads'] }]);
+    expect(integrationQuery.eqCalls).toEqual([{ field: 'status', value: 'connected' }]);
     expect(credentialServices).toEqual(['meta_ads']);
     expect(decrypt).toHaveBeenCalledWith('encrypted-canonical');
     expect(fetch).toHaveBeenCalledWith(
@@ -96,8 +125,8 @@ describe('Meta canonical stack routing behavior', () => {
 
   it('keeps legacy Page routing on the legacy credential and secret', async () => {
     const { from, credentialServices } = createAdminClient([
-      { user_id: 'legacy-user', service: 'meta', metadata: { page_id: '111', pixelId: '' } },
-      { user_id: 'canonical-user', service: 'meta_ads', metadata: { pageId: '222' } },
+      { user_id: 'legacy-user', service: 'meta', status: 'connected', metadata: { page_id: '111', pixelId: '' } },
+      { user_id: 'canonical-user', service: 'meta_ads', status: 'connected', metadata: { pageId: '222' } },
     ], { meta: 'encrypted-legacy', meta_ads: 'encrypted-canonical' });
 
     vi.spyOn(api.publicRouteHelpers, 'decryptCred').mockResolvedValue('legacy-token');
@@ -114,18 +143,13 @@ describe('Meta canonical stack routing behavior', () => {
     });
 
     expect(credentialServices).toEqual(['meta']);
-    expect(fetch).toHaveBeenCalledWith(
-      '/lead-2',
-      expect.any(Object),
-      'legacy-token',
-      'legacy-secret',
-    );
+    expect(fetch).toHaveBeenCalledWith('/lead-2', expect.any(Object), 'legacy-token', 'legacy-secret');
   });
 
   it('does not fall back across integrations when Page ID is unmatched', async () => {
     const { from, credentialServices } = createAdminClient([
-      { user_id: 'legacy-user', service: 'meta', metadata: { pageId: '111' } },
-      { user_id: 'canonical-user', service: 'meta_ads', metadata: { pageId: '222' } },
+      { user_id: 'legacy-user', service: 'meta', status: 'connected', metadata: { pageId: '111' } },
+      { user_id: 'canonical-user', service: 'meta_ads', status: 'connected', metadata: { pageId: '222' } },
     ], { meta: 'encrypted-legacy', meta_ads: 'encrypted-canonical' });
     const fetch = vi.spyOn(api.publicRouteHelpers, 'metaFetch');
 
@@ -138,13 +162,16 @@ describe('Meta canonical stack routing behavior', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('verifies webhook HMAC against each configured secret independently', async () => {
-    const body = JSON.stringify({ object: 'page', entry: [] });
-    const canonicalSignature = `sha256=${createHmac('sha256', 'canonical-secret').update(body).digest('hex')}`;
-    const legacySignature = `sha256=${createHmac('sha256', 'legacy-secret').update(body).digest('hex')}`;
+  it('accepts both canonical- and legacy-signed requests through the webhook handler', async () => {
+    vi.spyOn(api.supabaseClientFactory, 'create').mockReturnValue({ from: vi.fn() });
+    const payload = { object: 'page', entry: [] };
 
-    await expect(api.metaWebhookSignatureMatches(body, canonicalSignature, 'canonical-secret')).resolves.toBe(true);
-    await expect(api.metaWebhookSignatureMatches(body, canonicalSignature, 'legacy-secret')).resolves.toBe(false);
-    await expect(api.metaWebhookSignatureMatches(body, legacySignature, 'legacy-secret')).resolves.toBe(true);
+    const canonicalResponse = await api.handleMetaWebhookPost({ req: webhookRequest(payload, 'canonical-secret') });
+    const legacyResponse = await api.handleMetaWebhookPost({ req: webhookRequest(payload, 'legacy-secret') });
+    const invalidResponse = await api.handleMetaWebhookPost({ req: webhookRequest(payload, 'wrong-secret') });
+
+    expect(canonicalResponse.status).toBe(200);
+    expect(legacyResponse.status).toBe(200);
+    expect(invalidResponse.status).toBe(403);
   });
 });
