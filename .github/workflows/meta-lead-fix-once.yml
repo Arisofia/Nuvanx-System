@@ -4,14 +4,13 @@ on:
   push:
     branches:
       - fix/meta-lead-conversion-contract-20260823
-    paths:
-      - .nvx-meta-lead-fix-trigger
 
 permissions:
   contents: write
 
 jobs:
   patch:
+    if: ${{ contains(github.event.head_commit.message, 'run-meta-lead-patch') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
