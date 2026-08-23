@@ -1,6 +1,3 @@
-/** @ts-ignore: Deno global is provided by Supabase Edge Runtime */
-declare const Deno: any;
-
 export function getEnv(name: string): string {
   const value = Deno.env.get(name);
   return typeof value === 'string' ? value.trim() : '';
