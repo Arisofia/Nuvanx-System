@@ -8,7 +8,7 @@ const CONTROL_CENTRE_ROUTES = [
   { path: '/live', label: 'Live', heading: 'Panel en vivo' },
   { path: '/crm', label: 'CRM', heading: 'CRM' },
   { path: '/marketing', label: 'Marketing', heading: 'Marketing · Meta Ads' },
-  { path: '/financials', label: 'Finanzas', heading: 'Finanzas verificadas' },
+  { path: '/financials', label: 'Finanzas', heading: 'Auditoría operativa Doctoralia' },
   { path: '/intelligence', label: 'Inteligencia', heading: 'Inteligencia' },
   { path: '/integrations', label: 'Integraciones', heading: 'Integraciones' },
   { path: '/ai', label: 'IA', heading: 'Capa IA' },
@@ -35,9 +35,7 @@ test('authenticated Control Centre routes load without runtime or server errors'
 
   page.on('response', (response) => {
     if (response.status() >= 500) {
-      if (!response.url().includes('/api/reports/campaign-performance')) {
-        serverErrors.push(`${response.status()} ${response.url()}`);
-      }
+      serverErrors.push(`${response.status()} ${response.url()}`);
     }
   });
 
