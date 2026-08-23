@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { invokeApi, supabase } from '../lib/supabaseClient'
+import { supabase } from '../lib/supabaseClient'
+import { invokeApi } from '../lib/invokeApi'
 import { supabaseKey, supabaseUrl } from '../lib/env'
 import type { DashboardMetrics, MetaTrendPoint } from '../types'
 import {

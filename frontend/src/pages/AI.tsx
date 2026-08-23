@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Textarea } from '../components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Sparkles, BarChart2, Lightbulb, History, Copy, Check, RefreshCw } from 'lucide-react'
-import { invokeApi } from '../lib/supabaseClient'
+import { invokeApi } from '../lib/invokeApi'
 import { TemplateGallery } from '../components/ai/TemplateGallery'
 
 function getOutputContent(output: any): string {

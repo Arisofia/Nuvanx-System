@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
-import { invokeApi } from '../lib/supabaseClient'
+import { invokeApi } from '../lib/invokeApi'
 import type { Lead } from '../types'
 
 export function useLeads() {

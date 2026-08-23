@@ -12,7 +12,3 @@ function createSupabaseClient() {
 }
 
 export const supabase = createSupabaseClient()
-
-// Backward-compatible re-export for legacy imports:
-// import { invokeApi } from '../lib/supabaseClient'
-export { invokeApi } from './invokeApi'
