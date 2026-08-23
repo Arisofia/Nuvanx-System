@@ -8,7 +8,6 @@ const cp = require('node:child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const GITHUB_DIR = path.join(ROOT, '.github');
-const FORBIDDEN_ACTION_REFS = new Set(['master', 'main', 'latest']);
 const FORBIDDEN_RUNTIME_FLAGS = [
   'FORCE_JAVASCRIPT_ACTIONS_TO_NODE20',
   'FORCE_JAVASCRIPT_ACTIONS_TO_NODE22',
@@ -20,6 +19,7 @@ const FORBIDDEN_TEXT_PATTERNS = [
   [/continue-on-error:\s*true/i, 'continue-on-error is forbidden for production workflow gates'],
   [/skip_.*=true|skipped.*missing secrets|warning::.*skipped/i, 'skip-on-missing-secrets pattern detected'],
   [/\|\|\s*true/, 'command failure swallowed with || true'],
+  [/secrets:\s*inherit/i, 'blanket reusable-workflow secret inheritance is forbidden'],
 ];
 
 const errors = [];
@@ -39,10 +39,23 @@ function walk(dir, out = []) {
 }
 
 function commandExists(command) {
-  const checker = process.platform === 'win32' ? 'where' : 'command';
-  const args = process.platform === 'win32' ? [command] : ['-v', command];
-  const result = cp.spawnSync(checker, args, { stdio: 'ignore', shell: process.platform !== 'win32' });
-  return result.status === 0;
+  const pathEntries = (process.env.PATH || '').split(path.delimiter).filter(Boolean);
+  const extensions = process.platform === 'win32'
+    ? (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';')
+    : [''];
+
+  for (const directory of pathEntries) {
+    for (const extension of extensions) {
+      const candidate = path.join(directory, `${command}${extension}`);
+      try {
+        fs.accessSync(candidate, process.platform === 'win32' ? fs.constants.F_OK : fs.constants.X_OK);
+        return true;
+      } catch {
+        // Keep searching PATH.
+      }
+    }
+  }
+  return false;
 }
 
 function sanitizeGithubExpressions(script) {
@@ -54,7 +67,7 @@ function validateBashSyntax(script, label) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'workflow-bash-'));
   const scriptPath = path.join(tempDir, 'script.sh');
   fs.writeFileSync(scriptPath, `#!/usr/bin/env bash\n${sanitizeGithubExpressions(script)}\n`, 'utf8');
-  const result = cp.spawnSync('bash', ['-n', scriptPath], { encoding: 'utf8' });
+  const result = cp.spawnSync('bash', ['-n', scriptPath], { encoding: 'utf8', shell: false });
   fs.rmSync(tempDir, { recursive: true, force: true });
   if (result.status !== 0) {
     errors.push(`${label}: bash syntax check failed: ${(result.stderr || '').trim()}`);
@@ -120,8 +133,8 @@ function validateWorkflowFile(file) {
       return;
     }
     const ref = action.split('@').pop();
-    if (FORBIDDEN_ACTION_REFS.has(ref)) {
-      errors.push(`${rel}: line ${index + 1} uses unstable action ref '${action}'`);
+    if (!/^[0-9a-f]{40}$/i.test(ref)) {
+      errors.push(`${rel}: line ${index + 1} external action must be pinned to an immutable 40-char commit SHA: '${action}'`);
     }
   });
 
@@ -142,4 +155,4 @@ if (errors.length > 0) {
   process.exit(1);
 }
 
-console.log(`OK ${workflowFiles.length} GitHub YAML files validated without placeholder/fake-data gates`);
+console.log(`OK ${workflowFiles.length} GitHub YAML files validated with immutable action refs and without placeholder/fake-data gates`);
