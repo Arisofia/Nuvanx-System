@@ -5,7 +5,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
 import { TrendingUp, TrendingDown, Eye, MousePointerClick, DollarSign, Target, Megaphone, Activity } from 'lucide-react'
-import { invokeApi } from '../lib/supabaseClient'
+import { invokeApi } from '../lib/invokeApi'
 import type { CampaignRow, MarketingState } from '../types'
 import { ExportButton } from '../components/reports/ExportButton'
 import { MetaAccountsInline } from '../components/MetaAccountsNotice'

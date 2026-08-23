@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Play, Plus, AlertCircle } from 'lucide-react'
-import { invokeApi } from '../lib/supabaseClient'
+import { invokeApi } from '../lib/invokeApi'
 import type { Playbook, RunResult } from '../types'
 
 export default function Playbooks() {

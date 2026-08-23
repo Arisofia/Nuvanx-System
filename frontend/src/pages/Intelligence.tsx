@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
-import { invokeApi } from '../lib/supabaseClient'
+import { invokeApi } from '../lib/invokeApi'
 import type { FunnelRow, CampaignPerformance as Campaign, Conversation, TraceabilityLead } from '../types'
 import { FilterBar } from '../components/ui/FilterBar'
 import { SortableTable } from '../components/ui/SortableTable'

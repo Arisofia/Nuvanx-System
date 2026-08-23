@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CalendarDays, RefreshCcw } from 'lucide-react'
-import { invokeApi } from '../../lib/supabaseClient'
+import { invokeApi } from '../../lib/invokeApi'
 import { Button } from '../ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import { Input } from '../ui/input'

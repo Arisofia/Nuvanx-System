@@ -4,7 +4,7 @@ import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { CheckCircle2, AlertCircle, Plus, X, Loader2 } from 'lucide-react'
-import { invokeApi } from '../lib/supabaseClient'
+import { invokeApi } from '../lib/invokeApi'
 import type { IntegrationRow, ConnectForm } from '../types'
 
 const serviceIcons: Record<string, string> = {
