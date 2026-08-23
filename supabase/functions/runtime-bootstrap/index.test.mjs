@@ -40,4 +40,11 @@ describe("runtime bootstrap contract", () => {
     expect(source).toContain('project_route: "environment_local"');
     expect(source).not.toContain("ssvvuuysgxyqvmovrlvk.supabase.co");
   });
+
+  it("uses repository Deno typings and treats caught failures as unknown", () => {
+    expect(source).not.toContain("declare const Deno: any");
+    expect(source).toContain("catch (error: unknown)");
+    expect(source).toContain("error instanceof Error ? error.message : String(error)");
+    expect(source).not.toContain("catch (error: any)");
+  });
 });
