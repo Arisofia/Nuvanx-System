@@ -3487,7 +3487,9 @@ function mapMetaDailyRowsToInsightsPayload(rows: any[]): any[] {
     cpm: Number(row.cpm ?? 0),
     conversions: Number(row.conversions ?? 0),
     messaging_conversations: Number(row.messaging_conversations ?? 0),
-    actions: [],
+    actions: Number(row.lead_actions ?? 0) > 0
+      ? [{ action_type: 'lead', value: String(Number(row.lead_actions ?? 0)) }]
+      : [],
   }));
 }
 
