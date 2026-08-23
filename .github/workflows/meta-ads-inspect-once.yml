@@ -1,4 +1,4 @@
-# Temporary one-shot ownership probe for the existing Meta reporting credential.
+# Temporary one-shot access probe for the existing Meta reporting credential.
 name: Meta Ads Inspect Once
 
 on:
@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   inspect:
-    name: Inspect target Meta ownership read-only
+    name: Inspect target Meta user tasks read-only
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
@@ -23,7 +23,7 @@ jobs:
       META_REPORTING_TOKEN_60D: ${{ secrets.META_REPORTING_TOKEN_60D }}
       TARGET_AD_ACCOUNT_ID: act_718120894191565
     steps:
-      - name: Read owner fields and persist sanitized evidence
+      - name: Read personal status and user tasks
         shell: bash
         run: |
           set -euo pipefail
@@ -64,10 +64,10 @@ jobs:
           if (!userId) throw new Error('Connected Meta integration owner missing');
 
           const result = {
-            base: await meta('id,name,account_status,is_personal,owner'),
-            owner_business: await meta('id,owner_business'),
-            viewable_business: await meta('id,viewable_business'),
-            business: await meta('id,business'),
+            is_personal: await meta('id,is_personal'),
+            user_tasks: await meta('id,user_tasks'),
+            capabilities: await meta('id,capabilities,all_capabilities'),
+            account_status: await meta('id,name,account_status,currency,timezone_name'),
           };
 
           await sb('agent_outputs', {
@@ -75,14 +75,14 @@ jobs:
             headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
             body: JSON.stringify({
               user_id: userId,
-              agent_type: 'meta-target-ownership-probe',
+              agent_type: 'meta-target-user-tasks-probe',
               input_context: { account_id: account },
               output_text: JSON.stringify(result),
-              model_used: 'github-actions-meta-ownership-probe-v1',
+              model_used: 'github-actions-meta-user-tasks-probe-v1',
               status: 'completed',
               output: result,
               metadata: { source: 'github_actions', read_only: true, one_time: true, graph_version: 'v22.0' },
             }),
           });
-          console.log('META_TARGET_OWNERSHIP_PROBE=PASS');
+          console.log('META_TARGET_USER_TASKS_PROBE=PASS');
           NODE
