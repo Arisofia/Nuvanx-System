@@ -17,7 +17,6 @@ for path in sorted(p for p in ROOT.rglob('*') if p.is_file() and p.suffix in TAR
     original = text
 
     def repl(match: re.Match[str]) -> str:
-        nonlocal_rewrites = None
         global rewrites
         names = [part.strip() for part in match.group('names').split(',') if part.strip()]
         invoke = [n for n in names if re.match(r'^invokeApi(?:\s+as\s+\w+)?$', n)]
@@ -33,8 +32,7 @@ for path in sorted(p for p in ROOT.rglob('*') if p.is_file() and p.suffix in TAR
         lines = []
         if remaining:
             lines.append(f"{indent}import {{ {', '.join(remaining)} }} from {q}{old_path}{q}")
-        alias = invoke[0]
-        lines.append(f"{indent}import {{ {alias} }} from {q}{new_path}{q}")
+        lines.append(f"{indent}import {{ {invoke[0]} }} from {q}{new_path}{q}")
         rewrites += 1
         return '\n'.join(lines)
 
@@ -54,7 +52,7 @@ text = re.sub(
 )
 if text == original:
     raise SystemExit('supabaseClient legacy invokeApi re-export not found exactly once')
-client.write_text(text, encoding='utf-8')
+client.write_text(text.rstrip() + '\n', encoding='utf-8')
 changed.append(str(client))
 
 # Contract: no source import or re-export may route invokeApi through supabaseClient.
