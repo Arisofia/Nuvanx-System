@@ -19,20 +19,21 @@ describe('dashboard formula contracts', () => {
     expect(calculateRatio(251.17, 0)).toBeNull()
   })
 
-  it('aggregates traceability rows into explicit funnel stages', () => {
+  it('aggregates traceability rows into operational funnel stages without cash semantics', () => {
     const funnel = normalizeFunnelData([
-      { cita_valoracion: '2026-08-03', estado: 'realizada', revenue: 150 },
-      { cita_valoracion: '2026-08-04', estado: 'no acude', revenue: 0 },
-      { cita_valoracion: null, estado: 'scheduled', revenue: 0 },
+      { cita_valoracion: '2026-08-03', estado: 'realizada', cita_posterior: '2026-08-20', conversion_date: '2026-08-20', revenue: 150 },
+      { cita_valoracion: '2026-08-04', estado: 'no acude', cita_posterior: null, conversion_date: null, revenue: 0 },
+      { cita_valoracion: null, estado: 'scheduled', cita_posterior: null, conversion_date: null, revenue: 0 },
     ])
     expect(funnel.map((stage) => stage.count)).toEqual([3, 2, 1, 1, 1])
     expect(funnel[1]?.percentage).toBe(66.7)
-    expect(funnel[3]?.label).toBe('Cerrados con caja')
+    expect(funnel[3]?.label).toBe('Cita posterior')
+    expect(funnel[4]?.label).toBe('Conversión registrada')
   })
 
-  it('uses CRM leads as the denominator for revenue per lead', () => {
+  it('suppresses unreconciled Doctoralia revenue while preserving operational acquisition metrics', () => {
     const result = buildDashboardState({
-      metricsData: { totalLeads: 10, conversionRate: 20 },
+      metricsData: { totalLeads: 10, conversionRate: 20, verifiedRevenue: 999999 },
       campaigns: [],
       insightsResponse: { summary: { spend: 251.17, clicks: 1200, conversions: 5 } },
       kpisResponse: {
@@ -45,7 +46,11 @@ describe('dashboard formula contracts', () => {
       metaConversions: 5,
       spendDelta: null,
     })
-    expect(result.combined.revenuePerLead).toBe(50)
+    expect(result.metrics.verifiedRevenue).toBeNull()
+    expect(result.combined.verifiedRevenue).toBeNull()
+    expect(result.combined.revenuePerLead).toBeNull()
+    expect(result.funnel.doctoraliaRevenue).toBeNull()
     expect(result.funnel.cac).toBe(125.58)
+    expect(result.combined.metaCpl).toBe(50.23)
   })
 })
