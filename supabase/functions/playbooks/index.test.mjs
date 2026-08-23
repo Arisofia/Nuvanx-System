@@ -29,4 +29,10 @@ describe('playbooks execution counter contract', () => {
     expect(migration).not.toContain('BEFORE UPDATE OF run_count ON public.playbooks');
     expect(migration).toContain('RETURN NEW;');
   });
+
+  it('keeps migration replay non-fatal when the historical playbooks table is absent', () => {
+    expect(migration).toContain("to_regclass('public.playbooks') IS NULL");
+    expect(migration).toContain('Skipping playbook run counter trigger');
+    expect(migration).toContain("EXECUTE 'DROP TRIGGER IF EXISTS trg_playbooks_atomic_run_increment ON public.playbooks'");
+  });
 });
