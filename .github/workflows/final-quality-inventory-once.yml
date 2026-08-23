@@ -1,0 +1,158 @@
+name: Final residual quality inventory
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: final-quality-inventory-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  inventory:
+    if: ${{ github.head_ref == 'audit/final-quality-inventory-20260823' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
+        with:
+          deno-version: v2.x
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --include=dev --ignore-scripts --legacy-peer-deps
+          npm --prefix frontend install --include=dev --ignore-scripts --legacy-peer-deps
+
+      - name: Exact repository inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, subprocess
+          from pathlib import Path
+
+          files = subprocess.check_output(['git','ls-files','-z']).split(b'\0')
+          files = [p.decode() for p in files if p]
+          text_files = 0
+          binary_files = 0
+          total_lines = 0
+          total_bytes = 0
+          for name in files:
+              data = Path(name).read_bytes()
+              total_bytes += len(data)
+              if b'\0' in data:
+                  binary_files += 1
+                  continue
+              text_files += 1
+              total_lines += data.count(b'\n') + (1 if data and not data.endswith(b'\n') else 0)
+          result = {
+              'sha': subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip(),
+              'tracked_files': len(files),
+              'text_files': text_files,
+              'binary_files': binary_files,
+              'total_lines': total_lines,
+              'total_bytes': total_bytes,
+          }
+          Path('tmp/final-audit').mkdir(parents=True, exist_ok=True)
+          Path('tmp/final-audit/repository.json').write_text(json.dumps(result, indent=2) + '\n')
+          print(json.dumps(result, indent=2))
+          PY
+
+      - name: Deno lint format and type inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tmp/final-audit
+          mapfile -t sources < <(find supabase/functions -name '*.ts' -type f | sort)
+          printf 'sources=%s\n' "${#sources[@]}"
+
+          set +e
+          deno lint --compact "${sources[@]}" >tmp/final-audit/deno-lint.log 2>&1
+          lint_rc=$?
+          deno fmt --check "${sources[@]}" >tmp/final-audit/deno-fmt.log 2>&1
+          fmt_rc=$?
+          deno check --config=supabase/functions/deno.json "${sources[@]}" >tmp/final-audit/deno-check.log 2>&1
+          check_rc=$?
+          set -e
+
+          printf 'deno_lint_rc=%s\ndeno_fmt_rc=%s\ndeno_check_rc=%s\n' "$lint_rc" "$fmt_rc" "$check_rc" | tee tmp/final-audit/deno-status.txt
+          echo '--- DENO LINT ---'; cat tmp/final-audit/deno-lint.log
+          echo '--- DENO FMT ---'; cat tmp/final-audit/deno-fmt.log
+          echo '--- DENO CHECK ---'; cat tmp/final-audit/deno-check.log
+
+      - name: Dependency and cycle inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tmp/final-audit
+          set +e
+          npm audit --json >tmp/final-audit/npm-audit-root.json 2>&1; root_audit=$?
+          npm --prefix frontend audit --json >tmp/final-audit/npm-audit-frontend.json 2>&1; front_audit=$?
+          npm ls --all --json >tmp/final-audit/npm-tree-root.json 2>&1; root_tree=$?
+          npm --prefix frontend ls --all --json >tmp/final-audit/npm-tree-frontend.json 2>&1; front_tree=$?
+          npm --prefix frontend exec madge -- --circular --extensions ts,tsx src >tmp/final-audit/madge.log 2>&1; madge_rc=$?
+          set -e
+          printf 'root_audit_rc=%s\nfrontend_audit_rc=%s\nroot_tree_rc=%s\nfrontend_tree_rc=%s\nmadge_rc=%s\n' "$root_audit" "$front_audit" "$root_tree" "$front_tree" "$madge_rc" | tee tmp/final-audit/dependency-status.txt
+          cat tmp/final-audit/madge.log
+
+      - name: Residual security heuristic inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tmp/final-audit
+          python3 - <<'PY'
+          import json, re, subprocess
+          from pathlib import Path
+
+          files = [p.decode() for p in subprocess.check_output(['git','ls-files','-z']).split(b'\0') if p]
+          patterns = {
+            'ts_ignore_directive': re.compile(r'^\s*//\s*@ts-ignore\b', re.M),
+            'tls_reject_unauthorized_false': re.compile(r'rejectUnauthorized\s*:\s*false'),
+            'secrets_inherit': re.compile(r'\bsecrets\s*:\s*inherit\b'),
+            'mutable_action_ref': re.compile(r'^\s*uses:\s*(?!\./|docker://)([^\s#]+)@(?![0-9a-f]{40}\b)([^\s#]+)', re.M),
+            'shell_true': re.compile(r'\bshell\s*:\s*true\b'),
+            'strict_host_key_no': re.compile(r'StrictHostKeyChecking\s*=\s*no'),
+          }
+          findings = []
+          for name in files:
+              try:
+                  text = Path(name).read_text(errors='strict')
+              except (UnicodeDecodeError, OSError):
+                  continue
+              for rule, pattern in patterns.items():
+                  for match in pattern.finditer(text):
+                      line = text.count('\n', 0, match.start()) + 1
+                      findings.append({'rule': rule, 'path': name, 'line': line, 'match': match.group(0)[:180]})
+          Path('tmp/final-audit/security-heuristics.json').write_text(json.dumps(findings, indent=2) + '\n')
+          print(json.dumps({'finding_count': len(findings), 'by_rule': {r: sum(1 for f in findings if f['rule']==r) for r in patterns}}, indent=2))
+          for finding in findings:
+              print(f"{finding['rule']} {finding['path']}:{finding['line']} {finding['match']}")
+          PY
+
+      - name: Upload inventory evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: final-quality-inventory-${{ github.event.pull_request.head.sha }}
+          path: tmp/final-audit
+          if-no-files-found: error
+          retention-days: 7
