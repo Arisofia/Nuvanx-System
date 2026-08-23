@@ -10,7 +10,7 @@
 BEGIN;
 
 ALTER TABLE public.doctoralia_raw
-  ALTER COLUMN phone_primary TYPE varchar(32),
-  ALTER COLUMN phone_secondary TYPE varchar(32);
+  ALTER COLUMN phone_primary TYPE TEXT,
+  ALTER COLUMN phone_secondary TYPE TEXT;
 
 COMMIT;
