@@ -7,6 +7,7 @@ const ACCOUNT_ID = String(process.env.TARGET_AD_ACCOUNT_ID || '').trim();
 const CAMPAIGN_ID = String(process.env.TARGET_CAMPAIGN_ID || '').trim();
 const ADSET_ID = String(process.env.TARGET_ADSET_ID || '').trim();
 const AD_ID = String(process.env.TARGET_AD_ID || '').trim();
+let apiUserId = '';
 
 function assertConfig() {
   if (!SUPABASE_URL || !SERVICE_KEY) throw new Error('Supabase service configuration missing');
@@ -19,6 +20,7 @@ function headers(extra = {}) {
     apikey: SERVICE_KEY,
     Authorization: `Bearer ${SERVICE_KEY}`,
     Accept: 'application/json',
+    ...(apiUserId ? { 'x-user-id': apiUserId } : {}),
     ...extra,
   };
 }
@@ -76,6 +78,7 @@ async function main() {
     ...(Array.isArray(integration.metadata?.ad_account_ids) ? integration.metadata.ad_account_ids : []),
   ];
   if (!accounts.includes(ACCOUNT_ID)) throw new Error('Target account is not allowlisted');
+  apiUserId = String(integration.user_id);
 
   const result = {
     health_meta: await requestApi('health/meta', { adAccountId: ACCOUNT_ID }),
