@@ -20,8 +20,10 @@ describe('agent-run typing contract', () => {
     expect(source).toContain('return json({ success: false, message, output_id: failOutput?.id }, 500)');
   });
 
-  it('keeps error coercion fail-safe', () => {
+  it('keeps error coercion fail-safe while preserving object-shaped messages', () => {
     expect(source).toContain('function safeErrorMessage(error: unknown): string');
-    expect(source).toMatch(/function safeErrorMessage\(error: unknown\): string \{[\s\S]*?try \{[\s\S]*?String\(error\)[\s\S]*?catch \{[\s\S]*?return 'AI provider request failed';[\s\S]*?\}/);
+    expect(source).toContain("error !== null && typeof error === 'object' && 'message' in error");
+    expect(source).toContain("String((error as { message: unknown }).message)");
+    expect(source).toMatch(/function safeErrorMessage\(error: unknown\): string \{[\s\S]*?try \{[\s\S]*?catch \{[\s\S]*?return 'AI provider request failed';[\s\S]*?\}/);
   });
 });
