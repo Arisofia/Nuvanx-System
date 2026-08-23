@@ -40,7 +40,7 @@ function reply(origin: string | null, status: number, body: Record<string, unkno
   return new Response(JSON.stringify(body), { status, headers: headers(origin) });
 }
 
-async function timingSafeHexMatch(received: string, expected: string): Promise<boolean> {
+function timingSafeHexMatch(received: string, expected: string): boolean {
   const a = String(received || "").trim().toLowerCase();
   const b = String(expected || "").trim().toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(a) || !/^[0-9a-f]{64}$/.test(b)) return false;
@@ -84,7 +84,7 @@ async function authenticateSignedBody(req: Request, rawBody: string, admin: any)
   if (!token) throw new ValidationError("Runtime bootstrap required", 503);
   const hmacKey = await deriveCaptureHmacKey(token);
   const expected = await hmacHex(hmacKey, `${timestampRaw}.${rawBody}`);
-  return await timingSafeHexMatch(receivedSignature, expected);
+  return timingSafeHexMatch(receivedSignature, expected);
 }
 
 function uuidV4(raw: unknown): string {
