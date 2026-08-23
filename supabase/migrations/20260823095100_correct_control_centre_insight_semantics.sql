@@ -157,9 +157,10 @@ BEGIN
       agent_type,
       input_context,
       output_text,
-      model,
-      latency_ms,
-      tokens_used
+      model_used,
+      status,
+      output,
+      metadata
     ) VALUES (
       v_user.id,
       v_user.clinic_id,
@@ -171,8 +172,16 @@ BEGIN
       ),
       v_payload::text,
       'deterministic-control-centre-v2',
-      0,
-      0
+      'completed',
+      v_payload,
+      jsonb_build_object(
+        'source', 'postgres-canonical',
+        'generated_for_date', v_today::text,
+        'semantics', 'operational_facts_no_unreconciled_cash',
+        'doctoralia_imported_at', v_latest_doctoralia_import,
+        'meta_latest_date', v_latest_meta_date,
+        'crm_latest_lead_at', v_latest_crm_lead
+      )
     );
 
     v_inserted := v_inserted + 1;
