@@ -63,6 +63,9 @@ export default function Financials() {
     return () => { cancelled = true }
   }, [from, to])
 
+  // The legacy API builds monthly/templateMix from rows without cancelled_at.
+  // Keep the UI explicit about that denominator until the API contract itself is
+  // split into all-imported and non-cancelled operational series.
   const monthlyRows = state.monthly.map((month) => ({
     month: month.month,
     count: month.count ?? 0,
@@ -77,12 +80,12 @@ export default function Financials() {
 
   const monthlyColumns: ColDef[] = [
     { key: 'month', label: 'Mes', align: 'left' },
-    { key: 'count', label: 'Registros', align: 'right', sortable: true },
+    { key: 'count', label: 'Registros sin cancelación', align: 'right', sortable: true },
   ]
 
   const templateMixColumns: ColDef[] = [
     { key: 'name', label: 'Procedimiento', align: 'left' },
-    { key: 'count', label: 'Registros', align: 'right', sortable: true },
+    { key: 'count', label: 'Registros sin cancelación', align: 'right', sortable: true },
     { key: 'pct', label: 'Participación %', align: 'right', sortable: true, format: (v) => v == null ? null : `${v}%` },
   ]
 
@@ -164,14 +167,14 @@ export default function Financials() {
           <CardContent><div className="text-2xl font-bold">{state.summary?.cancelledCount ?? 0}</div><p className="text-xs text-muted mt-1">Registros con cancelación</p></CardContent>
         </Card>
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Procedimientos</CardTitle></CardHeader>
-          <CardContent><div className="text-2xl font-bold">{state.templateMix.length}</div><p className="text-xs text-muted mt-1">Categorías presentes en el período</p></CardContent>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Procedimientos sin cancelación</CardTitle></CardHeader>
+          <CardContent><div className="text-2xl font-bold">{state.templateMix.length}</div><p className="text-xs text-muted mt-1">Categorías presentes entre registros no cancelados</p></CardContent>
         </Card>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <Card>
-          <CardHeader><CardTitle>Volumen mensual de registros</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Volumen mensual sin cancelación registrada</CardTitle></CardHeader>
           <CardContent className="h-80">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={monthlyRows}>
@@ -179,19 +182,19 @@ export default function Financials() {
                 <XAxis dataKey="month" />
                 <YAxis allowDecimals={false} />
                 <Tooltip />
-                <Line type="monotone" dataKey="count" name="Registros" strokeWidth={2} />
+                <Line type="monotone" dataKey="count" name="Registros sin cancelación" strokeWidth={2} />
               </LineChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle>Mix operativo por procedimiento</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Mix por procedimiento · sin cancelación registrada</CardTitle></CardHeader>
           <CardContent><SortableTable columns={templateMixColumns} rows={templateRows} /></CardContent>
         </Card>
       </div>
 
       <Card>
-        <CardHeader><CardTitle>Detalle mensual de volumen</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Detalle mensual · sin cancelación registrada</CardTitle></CardHeader>
         <CardContent><SortableTable columns={monthlyColumns} rows={monthlyRows} /></CardContent>
       </Card>
     </div>
