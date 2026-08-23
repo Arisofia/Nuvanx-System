@@ -24,6 +24,8 @@ export interface TrazabilidadFunnelRow {
   fuente: string | null
   estado: string | null
   revenue: number
+  // Legacy RPC field: this is MIN(financial_settlements.settled_at) for a
+  // matched positive Doctoralia source amount. It is not a CRM conversion event.
   conversion_date: string | null
 }
 
@@ -86,8 +88,8 @@ export default function TrazabilidadFunnelTableFinal() {
     const leads = rows.length
     const valoraciones = rows.filter((row) => row.cita_valoracion).length
     const posteriores = rows.filter((row) => row.cita_posterior).length
-    const conversiones = rows.filter((row) => row.conversion_date).length
-    return { leads, valoraciones, posteriores, conversiones }
+    const sourceDates = rows.filter((row) => row.conversion_date).length
+    return { leads, valoraciones, posteriores, sourceDates }
   }, [rows])
 
   const columns: ColDef[] = [
@@ -97,7 +99,7 @@ export default function TrazabilidadFunnelTableFinal() {
     { key: 'cita_posterior', label: 'Cita posterior', sortable: true, format: formatDate },
     { key: 'fuente', label: 'Fuente' },
     { key: 'estado', label: 'Estado' },
-    { key: 'conversion_date', label: 'Conversión registrada', sortable: true, format: formatDate },
+    { key: 'conversion_date', label: 'Fecha registro fuente', sortable: true, format: formatDate },
   ]
 
   const updateFilter = (key: keyof FunnelFilters, value: string) => {
@@ -115,7 +117,7 @@ export default function TrazabilidadFunnelTableFinal() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <CardTitle className="flex items-center gap-2"><CalendarDays className="h-5 w-5 text-primary" />Trazabilidad Funnel Real</CardTitle>
-            <p className="mt-1 text-xs font-medium text-[#5C5550]">Leads de captación → primera cita de valoración → cita posterior → conversión registrada.</p>
+            <p className="mt-1 text-xs font-medium text-[#5C5550]">Leads de captación → primera cita de valoración → cita posterior. La fecha de registro fuente procede del campo legacy de Doctoralia y no implica una conversión CRM.</p>
           </div>
           <Button onClick={() => loadRows(filters)} disabled={loading} className="gap-2"><RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />Actualizar</Button>
         </div>
@@ -139,7 +141,7 @@ export default function TrazabilidadFunnelTableFinal() {
           <div className="rounded-2xl bg-[#FAF7F2] p-4"><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#5C5550]">Leads</p><p className="mt-2 text-2xl font-serif font-bold text-[#2C2825]">{summary.leads}</p></div>
           <div className="rounded-2xl bg-[#FAF7F2] p-4"><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#5C5550]">Valoraciones</p><p className="mt-2 text-2xl font-serif font-bold text-[#2C2825]">{summary.valoraciones}</p></div>
           <div className="rounded-2xl bg-[#FAF7F2] p-4"><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#5C5550]">Posteriores</p><p className="mt-2 text-2xl font-serif font-bold text-[#2C2825]">{summary.posteriores}</p></div>
-          <div className="rounded-2xl bg-[#FAF7F2] p-4"><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#5C5550]">Conversiones registradas</p><p className="mt-2 text-2xl font-serif font-bold text-primary">{summary.conversiones}</p></div>
+          <div className="rounded-2xl bg-[#FAF7F2] p-4"><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#5C5550]">Con fecha fuente</p><p className="mt-2 text-2xl font-serif font-bold text-primary">{summary.sourceDates}</p></div>
         </div>
 
         <SortableTable columns={columns} rows={rows} loading={loading} emptyMessage="No hay filas de funnel para los filtros seleccionados." exportFilename="trazabilidad-funnel-real" />
