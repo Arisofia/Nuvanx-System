@@ -36,26 +36,6 @@ on:
         required: false
         default: '98'
         type: string
-  workflow_call:
-    inputs:
-      operation:
-        description: Explicit maintenance operation
-        required: true
-        type: string
-      function:
-        description: Edge Function selection when deploy_edge is chosen
-        required: false
-        default: all
-        type: string
-      confirmation:
-        description: DEPLOY for Edge deployment or UPDATE for WordPress mutation
-        required: true
-        type: string
-      expected_doctoralia_count:
-        description: Doctoralia count used only for update_social_proof
-        required: false
-        default: '98'
-        type: string
 
 permissions:
   contents: read
@@ -79,9 +59,10 @@ jobs:
       CONFIRMATION: ${{ inputs.confirmation }}
     steps:
       - name: Checkout exact candidate
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Validate explicit production authorization
         shell: bash
@@ -98,13 +79,13 @@ jobs:
           fi
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: '22'
           cache: npm
 
       - name: Setup Deno
-        uses: denoland/setup-deno@v2
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
         with:
           deno-version: v2.x
 
@@ -209,10 +190,12 @@ jobs:
       NUVANX_WP_PATH: ${{ secrets.NUVANX_WP_PATH }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: '22'
 
@@ -241,6 +224,7 @@ jobs:
           chmod 600 ~/.ssh/nuvanx_key
           ssh -i ~/.ssh/nuvanx_key \
             -p "$NUVANX_SSH_PORT" \
-            -o StrictHostKeyChecking=no \
+            -o StrictHostKeyChecking=accept-new \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
             "$NUVANX_SSH_USER@$NUVANX_SSH_HOST" \
             "set -e; cd '$NUVANX_WP_PATH' && /usr/local/bin/wp option update nvx_doctoralia_social_proof_count '$EXPECTED_DOCTORALIA_COUNT' && /usr/local/bin/wp cache flush && /usr/local/bin/wp sg purge"
