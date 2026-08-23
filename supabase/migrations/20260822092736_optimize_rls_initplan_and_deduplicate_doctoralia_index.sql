@@ -5,6 +5,18 @@
 -- scalar SELECT, rather than once for every candidate row. This migration also
 -- removes the redundant, non-constraint phone_normalized index detected by the
 -- Supabase database linter.
+--
+-- Production already had the nullable lineage columns below when this migration
+-- was originally applied. They were schema drift rather than reproducible local
+-- history, so restore them idempotently here before policies reference them.
+-- On production this version is already applied and the columns already exist;
+-- on a fresh preview this makes the historical migration self-contained.
+ALTER TABLE public.lead_events
+  ADD COLUMN IF NOT EXISTS lead_id uuid,
+  ADD COLUMN IF NOT EXISTS patient_id uuid;
+
+ALTER TABLE public.patient_classification
+  ADD COLUMN IF NOT EXISTS patient_id uuid;
 
 DO $$
 BEGIN
