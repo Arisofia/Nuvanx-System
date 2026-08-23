@@ -3,6 +3,111 @@
 import { createClient } from '@supabase/supabase-js'
 import { ENCRYPTION_KEY, META_APP_SECRET, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from '../_shared/config.ts'
 
+type MetaAction = {
+  action_type?: string;
+  value?: string | number;
+};
+
+type MetaInsightRow = {
+  date_start: string;
+  impressions?: string | number;
+  reach?: string | number;
+  clicks?: string | number;
+  spend?: string | number;
+  ctr?: string | number;
+  cpc?: string | number;
+  cpm?: string | number;
+  actions?: MetaAction[];
+};
+
+type MetaInsightsResponse = {
+  data: MetaInsightRow[];
+};
+
+type CampaignSettlement = {
+  campaign_name?: string | null;
+  amount_net?: string | number | null;
+};
+
+type CampaignRankingEntry = {
+  campaign_name: string;
+  revenue: number;
+};
+
+type DoctoraliaSummary = {
+  total_revenue: number;
+  total_patients: number;
+};
+
+type DailyInsights = {
+  date: string;
+  risk_leads: number;
+  top_campaigns: CampaignRankingEntry[];
+  doctoralia_summary: DoctoraliaSummary;
+  recommendations: string[];
+  ai_summary?: string;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function numberInput(value: unknown): string | number | undefined {
+  return typeof value === 'string' || typeof value === 'number' ? value : undefined;
+}
+
+function normalizeMetaAction(value: unknown): MetaAction | null {
+  if (!isRecord(value)) return null;
+  const actionType = typeof value.action_type === 'string' ? value.action_type : undefined;
+  const actionValue = numberInput(value.value);
+  if (actionType === undefined && actionValue === undefined) return null;
+  return { action_type: actionType, value: actionValue };
+}
+
+function normalizeMetaInsightRow(value: unknown): MetaInsightRow | null {
+  if (!isRecord(value) || typeof value.date_start !== 'string') return null;
+
+  const actions = Array.isArray(value.actions)
+    ? value.actions
+      .map(normalizeMetaAction)
+      .filter((action): action is MetaAction => action !== null)
+    : undefined;
+
+  return {
+    date_start: value.date_start,
+    impressions: numberInput(value.impressions),
+    reach: numberInput(value.reach),
+    clicks: numberInput(value.clicks),
+    spend: numberInput(value.spend),
+    ctr: numberInput(value.ctr),
+    cpc: numberInput(value.cpc),
+    cpm: numberInput(value.cpm),
+    actions,
+  };
+}
+
+function normalizeMetaInsightsResponse(value: unknown): MetaInsightsResponse {
+  if (!isRecord(value) || !Array.isArray(value.data)) return { data: [] };
+  return {
+    data: value.data
+      .map(normalizeMetaInsightRow)
+      .filter((row): row is MetaInsightRow => row !== null),
+  };
+}
+
+function externalErrorMessage(value: unknown): string | undefined {
+  if (!isRecord(value) || !isRecord(value.error)) return undefined;
+  return typeof value.error.message === 'string' ? value.error.message : undefined;
+}
+
+function geminiText(value: unknown): string | undefined {
+  if (!isRecord(value) || !Array.isArray(value.candidates)) return undefined;
+  const candidate = value.candidates[0];
+  if (!isRecord(candidate) || !isRecord(candidate.content) || !Array.isArray(candidate.content.parts)) return undefined;
+  const part = candidate.content.parts[0];
+  return isRecord(part) && typeof part.text === 'string' ? part.text : undefined;
+}
+
 /**
  * Creates and returns a Supabase admin client bound to the service role key.
  *
@@ -132,7 +237,7 @@ async function computeAppsecretProof(accessToken: string, appSecret: string): Pr
   return bytesToHex(sig);
 }
 
-async function metaFetch(path: string, params: Record<string, string>, token: string) {
+async function metaFetch(path: string, params: Record<string, string>, token: string): Promise<MetaInsightsResponse> {
   const url = new URL(`${META_GRAPH}${path}`);
   url.searchParams.set('access_token', token);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
@@ -140,16 +245,16 @@ async function metaFetch(path: string, params: Record<string, string>, token: st
     url.searchParams.set('appsecret_proof', await computeAppsecretProof(token, META_APP_SECRET));
   }
   const r = await fetch(url.toString());
+  const payload: unknown = await r.json().catch(() => ({}));
   if (!r.ok) {
-    const d = await r.json().catch(() => ({}));
-    throw new Error(d.error?.message || `Meta API ${r.status}`);
+    throw new Error(externalErrorMessage(payload) || `Meta API ${r.status}`);
   }
-  return await r.json();
+  return normalizeMetaInsightsResponse(payload);
 }
 
-function actionValue(actions: any[], matcher: (t: string) => boolean): number {
+function actionValue(actions: readonly MetaAction[] | null | undefined, matcher: (t: string) => boolean): number {
   if (!Array.isArray(actions)) return 0;
-  return actions.reduce((sum, a) => matcher(a.action_type || '') ? sum + Number(a.value || 0) : sum, 0);
+  return actions.reduce((sum, action) => matcher(action.action_type || '') ? sum + Number(action.value || 0) : sum, 0);
 }
 
 // ── Core Logic ──────────────────────────────────────────────────────────[...]
@@ -182,20 +287,20 @@ async function fetchAllClinicsMetaInsights(days: number) {
           limit: '1000',
         }, accessToken);
 
-        const rows = (insights.data || []).map((r: any) => ({
+        const rows = insights.data.map((row) => ({
           user_id: cred.user_id,
           clinic_id: cred.clinic_id,
           ad_account_id: adAccountId,
-          date: r.date_start,
-          impressions: Math.round(Number(r.impressions || 0)),
-          reach: Math.round(Number(r.reach || 0)),
-          clicks: Math.round(Number(r.clicks || 0)),
-          spend: Number(r.spend || 0),
-          conversions: actionValue(r.actions, (t) => t.includes('lead') || t.includes('conversion') || t.includes('complete_registration')),
-          ctr: Number(r.ctr || 0),
-          cpc: Number(r.cpc || 0),
-          cpm: Number(r.cpm || 0),
-          messaging_conversations: actionValue(r.actions, (t) => t.includes('messaging') || t.includes('conversation')),
+          date: row.date_start,
+          impressions: Math.round(Number(row.impressions || 0)),
+          reach: Math.round(Number(row.reach || 0)),
+          clicks: Math.round(Number(row.clicks || 0)),
+          spend: Number(row.spend || 0),
+          conversions: actionValue(row.actions, (t) => t.includes('lead') || t.includes('conversion') || t.includes('complete_registration')),
+          ctr: Number(row.ctr || 0),
+          cpc: Number(row.cpc || 0),
+          cpm: Number(row.cpm || 0),
+          messaging_conversations: actionValue(row.actions, (t) => t.includes('messaging') || t.includes('conversation')),
           updated_at: new Date().toISOString(),
         }));
 
@@ -231,8 +336,8 @@ async function fetchAllClinicsMetaInsights(days: number) {
               })
             });
             if (gRes.ok) {
-              const gData = await gRes.json();
-              aiInsight = gData.candidates?.[0]?.content?.parts?.[0]?.text || aiInsight;
+              const gData: unknown = await gRes.json();
+              aiInsight = geminiText(gData) || aiInsight;
             }
           }
 
@@ -321,9 +426,10 @@ Deno.serve(async (req: Request) => {
     .gte('settled_at', new Date(Date.now() - 7 * 86400000).toISOString())
     .neq('source_system', 'doctoralia') // solo campañas de marketing (real acquisition, no doctoralia)
 
-  let processedRanking: any[] = []
+  let processedRanking: CampaignRankingEntry[] = []
   if (campaignRanking) {
-    const revenueByCampaign = campaignRanking.reduce((acc: Record<string, number>, curr: any) => {
+    const rankingRows: CampaignSettlement[] = campaignRanking;
+    const revenueByCampaign = rankingRows.reduce((acc: Record<string, number>, curr: CampaignSettlement) => {
       const name = curr.campaign_name || 'Sin nombre'
       acc[name] = (acc[name] || 0) + Number(curr.amount_net || 0)
       return acc
@@ -331,7 +437,7 @@ Deno.serve(async (req: Request) => {
 
     processedRanking = Object.entries(revenueByCampaign)
       .map(([campaign_name, revenue]) => ({ campaign_name, revenue }))
-      .sort((a, b) => (b.revenue as number) - (a.revenue as number))
+      .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 5)
   }
 
@@ -345,20 +451,20 @@ Deno.serve(async (req: Request) => {
     .eq('source_system', 'doctoralia')
     .gte('settled_at', today)
 
-  const doctoraliaSummary = {
+  const doctoraliaSummary: DoctoraliaSummary = {
     total_revenue: settlementsToday?.reduce((sum, s) => sum + Number(s.amount_net || 0), 0) || 0,
     total_patients: settlementsToday?.length || 0
   }
 
   // Daily insights (rule-based + AI agent if key available in secrets)
-  const dailyInsights: any = {
+  const dailyInsights: DailyInsights = {
     date: today,
     risk_leads: riskLeads?.length || 0,
     top_campaigns: processedRanking,
     doctoralia_summary: doctoraliaSummary,
     recommendations: [
       riskLeads && riskLeads.length > 0 ? `Atender los ${riskLeads.length} leads en riesgo (>14d en Nuevo).` : 'Sin leads en riesgo alto.',
-      processedRanking.length > 0 ? `Priorizar campañas top revenue: ${processedRanking.slice(0, 3).map((c: any) => c.campaign_name).join(', ')}.` : '',
+      processedRanking.length > 0 ? `Priorizar campañas top revenue: ${processedRanking.slice(0, 3).map((campaign) => campaign.campaign_name).join(', ')}.` : '',
       `Doctoralia hoy: €${doctoraliaSummary.total_revenue} (${doctoraliaSummary.total_patients} pacientes verificados).`
     ].filter(Boolean)
   };
@@ -373,8 +479,8 @@ Deno.serve(async (req: Request) => {
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { maxOutputTokens: 350 } })
       });
       if (gRes.ok) {
-        const gData = await gRes.json();
-        dailyInsights.ai_summary = gData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const gData: unknown = await gRes.json();
+        dailyInsights.ai_summary = geminiText(gData) || '';
       }
     }
     // Persist as daily agent output (system or first user for visibility)
