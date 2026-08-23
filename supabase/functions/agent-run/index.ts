@@ -28,9 +28,16 @@ const ANTHROPIC_KEY = Deno.env.get('ANTHROPIC_API_KEY') ?? '';
 const OPENAI_KEY    = Deno.env.get('OPENAI_API_KEY') ?? '';
 const GEMINI_KEY    = Deno.env.get('GEMINI_API_KEY') ?? '';
 
-async function resolveClinicId(adminClient: any, userId: string): Promise<string | null> {
-  const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
-  return usr?.clinic_id ?? null;
+function safeErrorMessage(error: unknown): string {
+  try {
+    if (error instanceof Error) return String(error.message);
+    if (error !== null && typeof error === 'object' && 'message' in error) {
+      return String((error as { message: unknown }).message);
+    }
+    return String(error);
+  } catch {
+    return 'AI provider request failed';
+  }
 }
 
 async function callAnthropicAPI(prompt: string, context: string): Promise<{ text: string; model: string; tokens: number }> {
@@ -144,7 +151,8 @@ Deno.serve(async (req: Request) => {
 
     // Enrich context with REAL user-specific clinic + financial data (consistent with main api + fixed dashboard)
     let context = '';
-    const clinicId = await resolveClinicId(supabase, user.id);
+    const { data: owner } = await supabase.from('users').select('clinic_id').eq('id', user.id).single();
+    const clinicId = owner?.clinic_id ?? null;
 
     let clinicQuery = supabase.from('clinics').select('name, timezone, plan');
     if (clinicId) clinicQuery = clinicQuery.eq('id', clinicId);
@@ -204,18 +212,19 @@ Deno.serve(async (req: Request) => {
         : availableKey === 'anthropic'
         ? await callAnthropicAPI(prompt, context)
         : await callOpenAIAPI(prompt, context);
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = safeErrorMessage(err);
       const { data: failOutput } = await supabase.from('agent_outputs').insert({
         user_id: user.id,
         agent_type,
         input_context: { prompt: prompt.slice(0, 500) },
         output_text: '',
         status: 'failed',
-        error_message: err.message,
+        error_message: message,
         model_used: availableKey,
         tokens_used: 0
       }).select().single();
-      return json({ success: false, message: err.message, output_id: failOutput?.id }, 500);
+      return json({ success: false, message, output_id: failOutput?.id }, 500);
     }
 
     // Persist successful output
