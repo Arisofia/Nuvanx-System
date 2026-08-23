@@ -170,13 +170,16 @@ export function buildDashboardState(options: DashboardStateOptions) {
     ? Number.parseFloat(Number(avgCpcRaw).toFixed(2))
     : null
 
+  // Identity linkage is the canonical Doctoralia match signal. Legacy
+  // newVerifiedPatients fields are settlement-derived and may only be used as a
+  // compatibility fallback when no identity-match metric is available.
   const doctoraliaPatients = toNumber(pick(
-    kpisDoctoralia.newVerifiedPatients,
-    kpisDoctoralia.new_verified_patients,
-    kpisDoctoralia.patientMatches,
-    kpisDoctoralia.patient_matches,
     metricsData.patientMatches,
     metricsData.patient_matches,
+    kpisDoctoralia.patientMatches,
+    kpisDoctoralia.patient_matches,
+    kpisDoctoralia.newVerifiedPatients,
+    kpisDoctoralia.new_verified_patients,
   ))
   const totalLeads = toNullableNumber(pick(metricsData.totalLeads, metricsData.total_leads, kpisCrm.totalLeads, kpisCrm.total_leads))
   const conversionRate = toNullableNumber(pick(metricsData.conversionRate, metricsData.conversion_rate, kpisCrm.conversionRate, kpisCrm.conversion_rate))
