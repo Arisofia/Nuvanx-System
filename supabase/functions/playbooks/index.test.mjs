@@ -10,23 +10,23 @@ const migration = readFileSync(
 );
 
 describe('playbooks execution counter contract', () => {
-  it('removes the unsafe any fallback in the standalone Edge path', () => {
-    expect(source).toContain(".from('playbooks').select('id, title, run_count')");
-    expect(source).toContain('run_count: Number(pb.run_count ?? 0) + 1');
+  it('keeps the standalone Edge path free of a stale read-modify-write counter', () => {
+    expect(source).toContain(".from('playbooks').select('id, title')");
+    expect(source).toContain(".update({ last_run_at: new Date().toISOString() })");
     expect(source).not.toContain('(pb as any).run_count');
-    expect(source).not.toContain('run_count + 1 || 1');
+    expect(source).not.toMatch(/update\(\{[^}]*run_count/);
   });
 
   it('serializes execution increments in PostgreSQL for both Edge paths', () => {
-    expect(source).toMatch(/update\(\{ run_count: Number\(pb\.run_count \?\? 0\) \+ 1, last_run_at:/);
     expect(apiSource).toMatch(/update\(\{ run_count: \(pb\.run_count \|\| 0\) \+ 1, last_run_at:/);
-    expect(migration).toContain('BEFORE UPDATE OF run_count ON public.playbooks');
-    expect(migration).toContain('NEW.last_run_at IS DISTINCT FROM OLD.last_run_at');
+    expect(migration).toContain('BEFORE UPDATE OF last_run_at ON public.playbooks');
     expect(migration).toContain('NEW.run_count := OLD.run_count + 1');
+    expect(migration).not.toContain('IS DISTINCT FROM');
   });
 
   it('keeps explicit run_count-only administrative repairs outside the trigger rewrite', () => {
-    expect(migration).toContain('IF NEW.last_run_at IS DISTINCT FROM OLD.last_run_at THEN');
+    expect(migration).toContain('BEFORE UPDATE OF last_run_at ON public.playbooks');
+    expect(migration).not.toContain('BEFORE UPDATE OF run_count ON public.playbooks');
     expect(migration).toContain('RETURN NEW;');
   });
 });
