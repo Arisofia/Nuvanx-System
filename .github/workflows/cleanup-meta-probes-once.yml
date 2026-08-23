@@ -1,0 +1,44 @@
+# One-shot cleanup. Delete this workflow after the temporary probes are removed.
+name: Cleanup Meta Probes Once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/cleanup-meta-probes-once.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    name: Delete temporary Meta diagnostic functions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: Production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+
+      - name: Delete temporary functions
+        uses: ./.github/actions/supabase-link-run
+        with:
+          project_ref: ${{ secrets.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          skip_link: 'true'
+          command: |
+            set -euo pipefail
+            for fn in \
+              meta-ads-admin-probe \
+              meta-ads-probe-once \
+              meta-credential-scope-probe \
+              meta-business-assignment-probe \
+              meta-assign-nuvanx-adaccount-once \
+              meta-business-pending-probe \
+              meta-ad-account-info-probe; do
+              supabase functions delete "$fn" --project-ref "$SUPABASE_PROJECT_REF" --yes
+            done
+            supabase functions list --project-ref "$SUPABASE_PROJECT_REF"
