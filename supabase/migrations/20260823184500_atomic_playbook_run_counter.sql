@@ -7,10 +7,14 @@
 -- overwrite each other with the same counter.
 --
 -- PostgreSQL is the authoritative counter owner. A BEFORE UPDATE OF last_run_at
--- trigger always rewrites run_count as OLD.run_count + 1 while the row is locked.
--- UPDATE OF is based on the target column list, so even two executions carrying
--- the same timestamp still increment independently. Administrative repairs that
--- update run_count without targeting last_run_at are deliberately unaffected.
+-- trigger always rewrites run_count from the locked OLD row. UPDATE OF is based
+-- on the target column list, so even two executions carrying the same timestamp
+-- increment independently. Administrative repairs that update run_count without
+-- targeting last_run_at are deliberately unaffected.
+--
+-- Production enforces run_count NOT NULL DEFAULT 0. COALESCE is retained here
+-- only for drifted databases where a historical playbooks table may exist with a
+-- weaker nullable contract before the missing baseline migration is reconciled.
 --
 -- The repository currently does not contain the historical migration that
 -- creates public.playbooks. Keep clean/preview migration replay non-fatal by
@@ -25,7 +29,7 @@ SECURITY INVOKER
 SET search_path = public, pg_catalog
 AS $function$
 BEGIN
-  NEW.run_count := OLD.run_count + 1;
+  NEW.run_count := COALESCE(OLD.run_count, 0) + 1;
   RETURN NEW;
 END;
 $function$;
