@@ -104,7 +104,6 @@ export function normalizeFunnelData(value: unknown): Array<Record<string, unknow
   const booked = rows.filter((row) => row.cita_valoracion != null && row.cita_valoracion !== '').length
   const attended = rows.filter((row) => isAttendedAppointment(row.estado)).length
   const followUp = rows.filter((row) => row.cita_posterior != null && row.cita_posterior !== '').length
-  const converted = rows.filter((row) => row.conversion_date != null && row.conversion_date !== '').length
   const percentage = (count: number) => totalLeads > 0 ? Number(((count / totalLeads) * 100).toFixed(1)) : 0
 
   return [
@@ -112,7 +111,6 @@ export function normalizeFunnelData(value: unknown): Array<Record<string, unknow
     { stage: 'booked', label: 'Agendados', count: booked, percentage: percentage(booked) },
     { stage: 'attended', label: 'Asistidos', count: attended, percentage: percentage(attended) },
     { stage: 'follow_up', label: 'Cita posterior', count: followUp, percentage: percentage(followUp) },
-    { stage: 'converted', label: 'Conversión registrada', count: converted, percentage: percentage(converted) },
   ]
 }
 
