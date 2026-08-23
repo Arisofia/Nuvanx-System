@@ -35,6 +35,31 @@ describe('agent_runs schema baseline', () => {
     expect(early).not.toContain('REFERENCES public.playbooks');
   });
 
+  it('fails closed or fully restores required constraints on an existing partial table', () => {
+    expect(early).toContain('ADD COLUMN IF NOT EXISTS id uuid');
+    expect(early).toContain('FROM information_schema.columns c');
+    expect(early).toContain('actual_udt IS DISTINCT FROM expected.udt_name');
+    for (const column of ['id', 'execution_id', 'user_id', 'status', 'metadata', 'created_at']) {
+      expect(early).toContain(`WHERE ${column} IS NULL`);
+      expect(early).toContain(`required ${column} contains NULL values`);
+    }
+    expect(early).toContain('duplicate id values prevent canonical primary key');
+    expect(early).toContain('ADD CONSTRAINT agent_runs_pkey PRIMARY KEY (id)');
+    expect(early).toContain("primary_key_definition <> 'PRIMARY KEY (id)'");
+    expect(early).toContain('ALTER COLUMN id SET DEFAULT gen_random_uuid()');
+    expect(early).toContain('ALTER COLUMN id SET NOT NULL');
+    expect(early).toContain('ALTER COLUMN execution_id SET NOT NULL');
+    expect(early).toContain('ALTER COLUMN user_id SET NOT NULL');
+    expect(early).toContain("ALTER COLUMN status SET DEFAULT 'running'::text");
+    expect(early).toContain('ALTER COLUMN status SET NOT NULL');
+    expect(early).toContain("ALTER COLUMN metadata SET DEFAULT '{}'::jsonb");
+    expect(early).toContain('ALTER COLUMN metadata SET NOT NULL');
+    expect(early).toContain('ALTER COLUMN created_at SET DEFAULT now()');
+    expect(early).toContain('ALTER COLUMN created_at SET NOT NULL');
+    expect(early).toContain('status contains values outside the production contract');
+    expect(early).toContain('agent_runs_status_check differs from production contract');
+  });
+
   it('restores production indexes, RLS and service-role policy without inventing user access policies', () => {
     expect(early).toContain('agent_runs_created_at_idx');
     expect(early).toContain('agent_runs_user_id_idx');
