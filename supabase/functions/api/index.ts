@@ -134,7 +134,7 @@ export const META_GRAPH = 'https://graph.facebook.com/v22.0';
 const LEAD_TRACEABILITY_VIEW = 'vw_lead_traceability';
 const META_CANONICAL_APP_SECRET = Deno.env.get('META_CANONICAL_APP_SECRET') ?? Deno.env.get('META_REPORTING_APP_SECRET') ?? '';
 
-function metaIntegrationPageIds(metadata: any): string[] {
+export function metaIntegrationPageIds(metadata: any): string[] {
   const values = [
     metadata?.pageId,
     metadata?.page_id,
@@ -144,7 +144,7 @@ function metaIntegrationPageIds(metadata: any): string[] {
   return [...new Set(values.map((value) => String(value ?? '').trim()).filter(Boolean))];
 }
 
-function metaAppSecretForService(service: string): string | null | undefined {
+export function metaAppSecretForService(service: string): string | null | undefined {
   return service === 'meta_ads' ? META_CANONICAL_APP_SECRET : META_APP_SECRET;
 }
 
@@ -1718,7 +1718,7 @@ function handleMetaWebhookGet(ctx: PublicRouteContext): Response | null {
   return new Response('Forbidden', { status: 403 });
 }
 
-async function processMetaLeadChange(adminClient: any, change: any): Promise<void> {
+export async function processMetaLeadChange(adminClient: any, change: any): Promise<void> {
   if (change.field !== 'leadgen') return;
   const val = change.value ?? {};
   const { leadgen_id, page_id } = val;
@@ -1832,7 +1832,7 @@ async function fireMetaLeadCapi(accessToken: string, leadgenId: string, leadData
   }
 }
 
-async function metaWebhookSignatureMatches(rawBody: string, signature: string, secret: string): Promise<boolean> {
+export async function metaWebhookSignatureMatches(rawBody: string, signature: string, secret: string): Promise<boolean> {
   if (!secret || !signature) return false;
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey(
