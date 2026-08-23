@@ -56,7 +56,7 @@ Deno.serve(async (req: Request) => {
     if (execError) return json({ success: false, message: execError.message }, 500);
 
     await supabase.from('playbooks')
-      .update({ run_count: (pb as any).run_count + 1 || 1, last_run_at: new Date().toISOString() })
+      .update({ last_run_at: new Date().toISOString() })
       .eq('id', playbookId);
 
     return json({
