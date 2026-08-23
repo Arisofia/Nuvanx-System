@@ -1,7 +1,8 @@
-# One-shot cleanup. Delete this workflow after the temporary probes are removed.
-name: Cleanup Meta Probes Once
+# One-shot cleanup. Delete this workflow after the temporary functions are removed.
+name: Cleanup Temporary Edge Functions Once
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
@@ -12,7 +13,7 @@ permissions:
 
 jobs:
   cleanup:
-    name: Delete temporary Meta diagnostic functions
+    name: Delete verified temporary diagnostic functions
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
@@ -23,7 +24,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Delete temporary functions
+      - name: Delete temporary functions and verify absence
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ secrets.SUPABASE_PROJECT_REF }}
@@ -31,14 +32,47 @@ jobs:
           skip_link: 'true'
           command: |
             set -euo pipefail
-            for fn in \
-              meta-ads-admin-probe \
-              meta-ads-probe-once \
-              meta-credential-scope-probe \
-              meta-business-assignment-probe \
-              meta-assign-nuvanx-adaccount-once \
-              meta-business-pending-probe \
-              meta-ad-account-info-probe; do
-              supabase functions delete "$fn" --project-ref "$SUPABASE_PROJECT_REF" --yes
+            export SUPABASE_PROJECT_REF="${{ secrets.SUPABASE_PROJECT_REF }}"
+
+            PROJECT_REF="${{ secrets.SUPABASE_PROJECT_REF }}"
+            test -n "$PROJECT_REF"
+
+            temporary_functions=(
+              meta-ads-admin-probe
+              meta-ads-probe-once
+              meta-credential-scope-probe
+              meta-business-assignment-probe
+              meta-assign-nuvanx-adaccount-once
+              meta-business-pending-probe
+              meta-ad-account-info-probe
+              meta-runtime-credential-diagnostic
+              github-repo-writer-once
+              github-production-dispatch-once
+            )
+
+            before="$(supabase functions list --project-ref "$PROJECT_REF")"
+            printf '%s\n' "$before"
+
+            for fn in "${temporary_functions[@]}"; do
+              if printf '%s\n' "$before" | grep -Fq -- "$fn"; then
+                echo "Deleting temporary function: $fn"
+                supabase functions delete "$fn" --project-ref "$PROJECT_REF" --yes
+              else
+                echo "Already absent: $fn"
+              fi
             done
-            supabase functions list --project-ref "$SUPABASE_PROJECT_REF"
+
+            after="$(supabase functions list --project-ref "$PROJECT_REF")"
+            printf '%s\n' "$after"
+
+            remaining=0
+            for fn in "${temporary_functions[@]}"; do
+              if printf '%s\n' "$after" | grep -Fq -- "$fn"; then
+                echo "::error::Temporary function still present after cleanup: $fn"
+                remaining=1
+              fi
+            done
+
+            if (( remaining != 0 )); then
+              exit 1
+            fi
