@@ -1,5 +1,4 @@
-# One-shot read-only inspection for the explicitly selected Meta Ads objects.
-# Probe v2 uses internal service-role authentication inside the Edge Function.
+# Temporary one-shot read-only probe for the existing GitHub Meta reporting credential.
 name: Meta Ads Inspect Once
 
 on:
@@ -13,7 +12,7 @@ permissions:
 
 jobs:
   inspect:
-    name: Inspect selected Meta Ads objects once
+    name: Probe existing Meta reporting credential
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
@@ -21,18 +20,89 @@ jobs:
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL || secrets.NUVANX_SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
+      META_REPORTING_TOKEN_60D: ${{ secrets.META_REPORTING_TOKEN_60D }}
+      TARGET_AD_ACCOUNT_ID: act_718120894191565
+      TARGET_CAMPAIGN_ID: '120249780276630419'
+      TARGET_ADSET_ID: '120249784103200419'
+      TARGET_AD_ID: '120249780276610419'
     steps:
-      - name: Invoke protected Supabase Meta Ads probe
+      - name: Probe Meta visibility and persist sanitized evidence
         shell: bash
         run: |
           set -euo pipefail
           test -n "${SUPABASE_URL:-}"
           test -n "${SUPABASE_SERVICE_ROLE_KEY:-}"
-          response="$(curl --fail-with-body --silent --show-error \
-            --request POST \
-            --header "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
-            --header "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
-            --header 'Content-Type: application/json' \
-            --data '{}' \
-            "${SUPABASE_URL%/}/functions/v1/meta-ads-admin-probe")"
-          printf '%s\n' "$response" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);if(j.success!==true||j.persisted!==true)process.exit(1);console.log('META_ADS_ADMIN_PROBE=PASS')})"
+          test -n "${META_REPORTING_TOKEN_60D:-}"
+          node <<'NODE'
+          const base = String(process.env.SUPABASE_URL || '').replace(/\/$/, '');
+          const service = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+          const token = String(process.env.META_REPORTING_TOKEN_60D || '').trim();
+          const account = String(process.env.TARGET_AD_ACCOUNT_ID || '').trim();
+          const campaign = String(process.env.TARGET_CAMPAIGN_ID || '').trim();
+          const adset = String(process.env.TARGET_ADSET_ID || '').trim();
+          const ad = String(process.env.TARGET_AD_ID || '').trim();
+          const graph = 'https://graph.facebook.com/v22.0';
+
+          async function meta(path, params = {}) {
+            const url = new URL(`${graph}${path}`);
+            url.searchParams.set('access_token', token);
+            for (const [key, value] of Object.entries(params)) url.searchParams.set(key, String(value));
+            const response = await fetch(url, { signal: AbortSignal.timeout(20000) });
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok || body?.error) {
+              const e = body?.error || {};
+              return { ok: false, status: response.status, error: { code: e.code ?? null, subcode: e.error_subcode ?? null, type: e.type ?? null, message: String(e.message || `Meta ${response.status}`).slice(0, 500) } };
+            }
+            return { ok: true, status: response.status, data: body };
+          }
+
+          async function sb(path, init = {}) {
+            const response = await fetch(`${base}/rest/v1/${path}`, {
+              ...init,
+              headers: {
+                apikey: service,
+                Authorization: `Bearer ${service}`,
+                ...(init.headers || {}),
+              },
+            });
+            if (!response.ok) throw new Error(`Supabase REST ${response.status}`);
+            return response.status === 204 ? null : await response.json();
+          }
+
+          const integrations = await sb('integrations?service=eq.meta&status=eq.connected&select=user_id&order=updated_at.desc&limit=1');
+          const userId = integrations?.[0]?.user_id;
+          if (!userId) throw new Error('Connected Meta integration owner missing');
+
+          const permissionsRaw = await meta('/me/permissions');
+          const permissionRows = permissionsRaw.ok && Array.isArray(permissionsRaw.data?.data) ? permissionsRaw.data.data : [];
+          const permissions = Object.fromEntries(permissionRows.map((row) => [row.permission, row.status]));
+          const result = {
+            identity: await meta('/me', { fields: 'id,name' }),
+            permissions: {
+              ads_read: permissions.ads_read || 'not_granted',
+              ads_management: permissions.ads_management || 'not_granted',
+              business_management: permissions.business_management || 'not_granted',
+            },
+            ad_accounts: await meta('/me/adaccounts', { fields: 'id,name,account_status,business', limit: 200 }),
+            target_account: await meta(`/${account}`, { fields: 'id,name,account_status,currency,timezone_name,business' }),
+            campaign: await meta(`/${campaign}`, { fields: 'id,name,status,effective_status,objective,account_id' }),
+            adset: await meta(`/${adset}`, { fields: 'id,name,status,effective_status,campaign_id,account_id' }),
+            ad: await meta(`/${ad}`, { fields: 'id,name,status,effective_status,campaign_id,adset_id,account_id' }),
+          };
+
+          await sb('agent_outputs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify({
+              user_id: userId,
+              agent_type: 'meta-reporting-credential-probe',
+              input_context: { account_id: account, campaign_id: campaign, adset_id: adset, ad_id: ad },
+              output_text: JSON.stringify(result),
+              model_used: 'github-actions-meta-reporting-probe-v1',
+              status: 'completed',
+              output: result,
+              metadata: { source: 'github_actions', read_only: true, one_time: true, graph_version: 'v22.0' },
+            }),
+          });
+          console.log('META_REPORTING_PROBE=PASS');
+          NODE
