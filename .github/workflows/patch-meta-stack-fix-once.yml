@@ -1,0 +1,70 @@
+name: Patch Canonical Meta Stack Type Fix Once
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.head_ref == 'fix/meta-stack-separation-rsv26-20260824'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: fix/meta-stack-separation-rsv26-20260824
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
+        with:
+          deno-version: v2.x
+
+      - name: Reuse patch script with type-safe error narrowing
+        shell: python
+        run: |
+          import subprocess
+          import textwrap
+
+          workflow = subprocess.check_output(
+              ['git', 'show', 'origin/main:.github/workflows/patch-meta-stack-once.yml'],
+              text=True,
+          )
+          section = workflow.split('      - name: Apply surgical Meta stack separation patch\n', 1)[1]
+          section = section.split('      - name: Validate focused tests and type-check\n', 1)[0]
+          lines = section.splitlines()
+          start = next(i for i, line in enumerate(lines) if line.strip() == 'run: |') + 1
+          script = textwrap.dedent('\n'.join(lines[start:]))
+          script = script.replace(
+              'error: maskSensitive(error),',
+              'error: maskSensitive(error instanceof Error ? error.message : String(error)),',
+          )
+          exec(compile(script, '<meta-stack-patch>', 'exec'))
+
+      - name: Validate focused tests and type-check
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --include=dev --ignore-scripts --legacy-peer-deps
+          npm exec vitest run supabase/functions/api/meta-stack-separation.test.mjs
+          deno check --config=supabase/functions/deno.json supabase/functions/api/index.ts
+
+      - name: Commit patch to isolated branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo 'No changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add supabase/functions/api/index.ts supabase/functions/api/meta-stack-separation.test.mjs
+          git commit -m 'fix(meta): separate canonical RSV26 stack'
+          git push origin HEAD:fix/meta-stack-separation-rsv26-20260824
