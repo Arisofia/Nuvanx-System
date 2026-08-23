@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Deploy Standalone Edge Functions
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/functions/dashboard/**'
+      - 'supabase/functions/agent-run/**'
+      - 'supabase/functions/runtime-bootstrap/**'
+      - 'supabase/functions/_shared/**'
+      - '.github/workflows/deploy-standalone-edge-functions.yml'
+      - '.github/actions/supabase-link-run/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nuvanx-standalone-edge-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy · dashboard + agent-run + runtime-bootstrap
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: Production
+    env:
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+
+    steps:
+      - name: Checkout exact main candidate
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+
+      - name: Validate production deployment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${SUPABASE_PROJECT_REF:-}"
+          test -n "${SUPABASE_ACCESS_TOKEN:-}"
+          [[ "$SUPABASE_PROJECT_REF" =~ ^[a-z0-9]{20}$ ]]
+          [[ "$SUPABASE_ACCESS_TOKEN" =~ ^sbp_[A-Za-z0-9]+$ ]]
+
+      - name: Deploy standalone functions
+        uses: ./.github/actions/supabase-link-run
+        with:
+          project_ref: ${{ env.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ env.DATABASE_URL }}
+          supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
+          skip_link: true
+          command: |
+            set -euo pipefail
+            test -n "${SUPABASE_PROJECT_REF:-}"
+            supabase functions deploy dashboard --project-ref "$SUPABASE_PROJECT_REF"
+            supabase functions deploy agent-run --project-ref "$SUPABASE_PROJECT_REF"
+            supabase functions deploy runtime-bootstrap --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+            supabase functions list --project-ref "$SUPABASE_PROJECT_REF"
