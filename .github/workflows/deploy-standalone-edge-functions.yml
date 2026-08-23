@@ -2,27 +2,32 @@
 name: Deploy Standalone Edge Functions
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'supabase/functions/dashboard/**'
-      - 'supabase/functions/agent-run/**'
-      - 'supabase/functions/runtime-bootstrap/**'
-      - 'supabase/functions/_shared/**'
-      - '.github/workflows/deploy-standalone-edge-functions.yml'
-      - '.github/actions/supabase-link-run/**'
+  workflow_run:
+    workflows: ['Master System']
+    types: [completed]
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# Match Manual Maintenance when operation=deploy_edge so runtime-bootstrap and
+# the standalone owner can never race each other in production.
 concurrency:
-  group: nuvanx-standalone-edge-production
+  group: manual-maintenance-deploy_edge
   cancel-in-progress: false
 
 jobs:
   deploy:
     name: Deploy · dashboard + agent-run + runtime-bootstrap
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_branch == 'main'
+        )
+      }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:
@@ -34,9 +39,11 @@ jobs:
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
 
     steps:
-      - name: Checkout exact main candidate
+      - name: Checkout exact quality-approved candidate
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Validate production deployment configuration
@@ -47,6 +54,28 @@ jobs:
           test -n "${SUPABASE_ACCESS_TOKEN:-}"
           [[ "$SUPABASE_PROJECT_REF" =~ ^[a-z0-9]{20}$ ]]
           [[ "$SUPABASE_ACCESS_TOKEN" =~ ^sbp_[A-Za-z0-9]+$ ]]
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
+        with:
+          deno-version: v2.x
+
+      - name: Revalidate standalone candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --include=dev --ignore-scripts --legacy-peer-deps
+          npm test
+          deno check --config=supabase/functions/deno.json \
+            supabase/functions/dashboard/index.ts \
+            supabase/functions/agent-run/index.ts \
+            supabase/functions/runtime-bootstrap/index.ts
 
       - name: Deploy standalone functions
         uses: ./.github/actions/supabase-link-run
