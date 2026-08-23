@@ -55,7 +55,7 @@ BEGIN
         'Serializes playbook execution counters for every UPDATE targeting last_run_at; run_count-only administrative repairs remain explicit.'
     $sql$;
   END IF;
-END
+END;
 $do$;
 
 COMMENT ON FUNCTION public.nvx_atomic_playbook_run_increment() IS
