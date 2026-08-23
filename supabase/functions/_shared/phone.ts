@@ -1,3 +1,19 @@
+type RuntimeEnvironment = {
+  Deno?: {
+    env?: {
+      get?: (name: string) => string | undefined;
+    };
+  };
+  process?: {
+    env?: Record<string, string | undefined>;
+  };
+};
+
+function getDefaultPhoneCountryCode(): string | undefined {
+  const runtime = globalThis as typeof globalThis & RuntimeEnvironment;
+  return runtime.Deno?.env?.get?.('DEFAULT_PHONE_COUNTRY_CODE') ?? runtime.process?.env?.DEFAULT_PHONE_COUNTRY_CODE;
+}
+
 export function normalizePhoneToE164(input: string | null | undefined, countryCode?: string): string {
   const raw = String(input ?? '').trim();
   if (!raw) return '';
@@ -5,7 +21,7 @@ export function normalizePhoneToE164(input: string | null | undefined, countryCo
   const cleaned = raw.replaceAll(/\u00A0|\s|\(|\)|\.|-/g, '').replaceAll(/ext\.?\s*\d+$/gi, '');
   if (!cleaned) return '';
 
-  let candidate = cleaned.startsWith('00') ? `+${cleaned.slice(2)}` : cleaned;
+  const candidate = cleaned.startsWith('00') ? `+${cleaned.slice(2)}` : cleaned;
 
   if (candidate.startsWith('+')) {
     const digits = candidate.slice(1).replaceAll(/\D/g, '');
@@ -16,7 +32,7 @@ export function normalizePhoneToE164(input: string | null | undefined, countryCo
   const digits = candidate.replaceAll(/\D/g, '');
   if (digits.length < 8 || digits.length > 15) return '';
 
-  const countryCodeRaw = countryCode ?? (globalThis as any).Deno?.env?.get('DEFAULT_PHONE_COUNTRY_CODE') ?? (globalThis as any).process?.env?.DEFAULT_PHONE_COUNTRY_CODE;
+  const countryCodeRaw = countryCode ?? getDefaultPhoneCountryCode();
   const fallbackCountryCode = String(countryCodeRaw ?? '').replaceAll(/\D/g, '');
 
   if (!fallbackCountryCode) throw new Error('DEFAULT_PHONE_COUNTRY_CODE environment variable is not set');
@@ -45,7 +61,7 @@ export function getPhoneNormalizationFailureReason(input: string | null | undefi
   const cleaned = raw.replaceAll(/\u00A0|\s|\(|\)|\.|-/g, '').replaceAll(/ext\.?\s*\d+$/gi, '');
   if (!cleaned) return 'invalid-format';
 
-  let candidate = cleaned.startsWith('00') ? `+${cleaned.slice(2)}` : cleaned;
+  const candidate = cleaned.startsWith('00') ? `+${cleaned.slice(2)}` : cleaned;
   if (candidate.startsWith('+')) {
     const digits = candidate.slice(1).replaceAll(/\D/g, '');
     return digits.length < 8 || digits.length > 15 ? 'invalid-format' : null;
@@ -54,7 +70,7 @@ export function getPhoneNormalizationFailureReason(input: string | null | undefi
   const digits = candidate.replaceAll(/\D/g, '');
   if (digits.length < 8 || digits.length > 15) return 'invalid-format';
 
-  const countryCodeRaw = (globalThis as any).Deno?.env?.get('DEFAULT_PHONE_COUNTRY_CODE') ?? (globalThis as any).process?.env?.DEFAULT_PHONE_COUNTRY_CODE;
+  const countryCodeRaw = getDefaultPhoneCountryCode();
   const fallbackCountryCode = String(countryCodeRaw ?? '').replaceAll(/\D/g, '');
 
   return fallbackCountryCode ? null : 'missing-default-country-code';
