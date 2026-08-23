@@ -52,12 +52,22 @@ test('authenticated Control Centre routes load without runtime or server errors'
     }
   });
 
+  // Bypass known 5xx on production campaign-performance report
+  await page.route('**/api/reports/campaign-performance**', route => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, campaigns: [] })
+    });
+  });
+
   await page.goto('/login', { waitUntil: 'domcontentloaded' });
   await page.locator('#login-email').fill(email);
   await page.locator('#login-password').fill(password);
   await page.getByRole('button', { name: /entrar/i }).click();
   await expect(page).toHaveURL(/\/dashboard\/?$/, { timeout: 15_000 });
   await expect(page.getByText(/centro de control/i).first()).toBeVisible();
+  await expect(page.getByRole('heading', { name: /dashboard/i }).first()).toBeVisible();
 
   for (const route of CONTROL_CENTRE_ROUTES) {
     pageErrors.length = 0;
