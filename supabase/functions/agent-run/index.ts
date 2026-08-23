@@ -28,19 +28,12 @@ const ANTHROPIC_KEY = Deno.env.get('ANTHROPIC_API_KEY') ?? '';
 const OPENAI_KEY    = Deno.env.get('OPENAI_API_KEY') ?? '';
 const GEMINI_KEY    = Deno.env.get('GEMINI_API_KEY') ?? '';
 
-type SupabaseClientLike = ReturnType<typeof createClient>;
-
 function safeErrorMessage(error: unknown): string {
   try {
     return error instanceof Error ? String(error.message) : String(error);
   } catch {
     return 'AI provider request failed';
   }
-}
-
-async function resolveClinicId(adminClient: SupabaseClientLike, userId: string): Promise<string | null> {
-  const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
-  return usr?.clinic_id ?? null;
 }
 
 async function callAnthropicAPI(prompt: string, context: string): Promise<{ text: string; model: string; tokens: number }> {
@@ -154,7 +147,8 @@ Deno.serve(async (req: Request) => {
 
     // Enrich context with REAL user-specific clinic + financial data (consistent with main api + fixed dashboard)
     let context = '';
-    const clinicId = await resolveClinicId(supabase, user.id);
+    const { data: owner } = await supabase.from('users').select('clinic_id').eq('id', user.id).single();
+    const clinicId = owner?.clinic_id ?? null;
 
     let clinicQuery = supabase.from('clinics').select('name, timezone, plan');
     if (clinicId) clinicQuery = clinicQuery.eq('id', clinicId);
