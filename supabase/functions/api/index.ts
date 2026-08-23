@@ -132,6 +132,21 @@ export async function decryptCred(encoded: string): Promise<string> {
 // ── Meta Graph API ────────────────────────────────────────────────────────────
 export const META_GRAPH = 'https://graph.facebook.com/v22.0';
 const LEAD_TRACEABILITY_VIEW = 'vw_lead_traceability';
+const META_CANONICAL_APP_SECRET = Deno.env.get('META_CANONICAL_APP_SECRET') ?? Deno.env.get('META_REPORTING_APP_SECRET') ?? '';
+
+function metaIntegrationPageIds(metadata: any): string[] {
+  const values = [
+    metadata?.pageId,
+    metadata?.page_id,
+    ...(Array.isArray(metadata?.pageIds) ? metadata.pageIds : []),
+    ...(Array.isArray(metadata?.page_ids) ? metadata.page_ids : []),
+  ];
+  return [...new Set(values.map((value) => String(value ?? '').trim()).filter(Boolean))];
+}
+
+function metaAppSecretForService(service: string): string | null | undefined {
+  return service === 'meta_ads' ? META_CANONICAL_APP_SECRET : META_APP_SECRET;
+}
 
 async function computeAppsecretProof(accessToken: string, appSecret: string): Promise<string> {
   const key = await crypto.subtle.importKey(
@@ -145,11 +160,11 @@ async function computeAppsecretProof(accessToken: string, appSecret: string): Pr
   return bytesToHex(sig);
 }
 
-export async function metaFetch(path: string, params: Record<string, string>, token: string) {
+export async function metaFetch(path: string, params: Record<string, string>, token: string, appSecretOverride?: string | null) {
   const url = new URL(`${META_GRAPH}${path}`);
   url.searchParams.set('access_token', token);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  const appSecret = META_APP_SECRET;
+  const appSecret = appSecretOverride === undefined ? META_APP_SECRET : appSecretOverride;
   if (appSecret) {
     url.searchParams.set('appsecret_proof', await computeAppsecretProof(token, appSecret));
   }
@@ -1710,35 +1725,43 @@ async function processMetaLeadChange(adminClient: any, change: any): Promise<voi
   if (!leadgen_id) return;
 
   const { data: intgs } = await adminClient.from('integrations')
-    .select('user_id, metadata')
-    .eq('service', 'meta')
+    .select('user_id, service, metadata')
+    .in('service', ['meta', 'meta_ads'])
     .eq('status', 'connected');
 
   const connected = intgs ?? [];
-  let matchingIntg = connected.find((i: any) => {
-    const m = i.metadata ?? {};
-    return m.pageId === page_id || m.page_id === page_id;
-  });
+  let matchingIntg = connected.find((integration: any) =>
+    metaIntegrationPageIds(integration?.metadata ?? {}).includes(String(page_id ?? '').trim())
+  );
 
   if (matchingIntg == null) {
-    const noPageIdSet = connected.every((i: any) => !i.metadata?.pageId && !i.metadata?.page_id);
-    if (noPageIdSet && connected.length === 1) {
-      matchingIntg = connected[0];
+    const withoutPageRouting = connected.filter(
+      (integration: any) => metaIntegrationPageIds(integration?.metadata ?? {}).length === 0,
+    );
+    if (withoutPageRouting.length === 1 && connected.length === 1) {
+      matchingIntg = withoutPageRouting[0];
     }
   }
 
-  if (matchingIntg == null) return;
+  if (matchingIntg == null) {
+    console.warn('[meta-webhook] No connected integration matches incoming page_id', { page_id, leadgen_id });
+    return;
+  }
 
   const webhookUserId = matchingIntg.user_id;
+  const credentialService = matchingIntg.service === 'meta_ads' ? 'meta_ads' : 'meta';
   const intgMetadata = matchingIntg.metadata ?? {};
   const pixelId = intgMetadata.pixelId ?? intgMetadata.pixel_id ?? '';
 
   const { data: credRow } = await adminClient.from('credentials')
     .select('encrypted_key')
     .eq('user_id', webhookUserId)
-    .eq('service', 'meta')
+    .eq('service', credentialService)
     .single();
-  if (!credRow) return;
+  if (!credRow) {
+    console.warn('[meta-webhook] Matching integration has no credential', { page_id, credentialService });
+    return;
+  }
 
   let accessToken: string;
   try {
@@ -1751,8 +1774,13 @@ async function processMetaLeadChange(adminClient: any, change: any): Promise<voi
   try {
     leadData = await publicRouteHelpers.metaFetch(`/${leadgen_id}`, {
       fields: 'field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,campaign_name,adset_id,adset_name,page_id,is_organic,platform',
-    }, accessToken);
-  } catch {
+    }, accessToken, metaAppSecretForService(credentialService));
+  } catch (error) {
+    console.warn('[meta-webhook] Lead retrieval failed', {
+      page_id,
+      credentialService,
+      error: maskSensitive(error instanceof Error ? error.message : String(error)),
+    });
     return;
   }
 
@@ -1804,24 +1832,34 @@ async function fireMetaLeadCapi(accessToken: string, leadgenId: string, leadData
   }
 }
 
+async function metaWebhookSignatureMatches(rawBody: string, signature: string, secret: string): Promise<boolean> {
+  if (!secret || !signature) return false;
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(rawBody));
+  const expectedSig = 'sha256=' + Array.from(new Uint8Array(sig))
+    .map((b) => b.toString(16).padStart(2, '0')).join('');
+  return signature === expectedSig;
+}
+
 async function handleMetaWebhookPost(ctx: PublicRouteContext): Promise<Response | null> {
   const { req } = ctx;
-  const appSecret = META_APP_SECRET;
   const rawBody = await req.text();
+  const signature = req.headers.get('X-Hub-Signature-256') ?? '';
+  const configuredSecrets = [META_APP_SECRET, META_CANONICAL_APP_SECRET]
+    .filter((secret): secret is string => Boolean(secret));
 
-  if (!appSecret && !IS_DEVELOPMENT) {
+  if (configuredSecrets.length === 0 && !IS_DEVELOPMENT) {
     return new Response('Meta App Secret not configured', { status: 500 });
   }
 
-  if (appSecret) {
-    const signature = req.headers.get('X-Hub-Signature-256') ?? '';
-    const enc = new TextEncoder();
-    const key = await crypto.subtle.importKey(
-      'raw', enc.encode(appSecret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
+  if (configuredSecrets.length > 0) {
+    const checks = await Promise.all(
+      configuredSecrets.map((secret) => metaWebhookSignatureMatches(rawBody, signature, secret)),
     );
-    const sig = await crypto.subtle.sign('HMAC', key, enc.encode(rawBody));
-    const expectedSig = 'sha256=' + Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, '0')).join('');
-    if (signature !== expectedSig) return new Response('Unauthorized', { status: 403 });
+    if (!checks.some(Boolean)) return new Response('Unauthorized', { status: 403 });
   }
 
   let payload: any;
