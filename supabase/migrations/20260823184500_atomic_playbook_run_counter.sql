@@ -11,6 +11,11 @@
 -- UPDATE OF is based on the target column list, so even two executions carrying
 -- the same timestamp still increment independently. Administrative repairs that
 -- update run_count without targeting last_run_at are deliberately unaffected.
+--
+-- The repository currently does not contain the historical migration that
+-- creates public.playbooks. Keep clean/preview migration replay non-fatal by
+-- installing the trigger only when that relation exists; canonicalizing the
+-- missing playbooks baseline is a separate schema-parity fix.
 -- =============================================================================
 
 CREATE OR REPLACE FUNCTION public.nvx_atomic_playbook_run_increment()
@@ -29,14 +34,25 @@ REVOKE EXECUTE ON FUNCTION public.nvx_atomic_playbook_run_increment() FROM PUBLI
 REVOKE EXECUTE ON FUNCTION public.nvx_atomic_playbook_run_increment() FROM anon;
 REVOKE EXECUTE ON FUNCTION public.nvx_atomic_playbook_run_increment() FROM authenticated;
 
-DROP TRIGGER IF EXISTS trg_playbooks_atomic_run_increment ON public.playbooks;
-CREATE TRIGGER trg_playbooks_atomic_run_increment
-BEFORE UPDATE OF last_run_at ON public.playbooks
-FOR EACH ROW
-EXECUTE FUNCTION public.nvx_atomic_playbook_run_increment();
+DO $do$
+BEGIN
+  IF to_regclass('public.playbooks') IS NULL THEN
+    RAISE NOTICE 'Skipping playbook run counter trigger: public.playbooks does not exist in this database';
+  ELSE
+    EXECUTE 'DROP TRIGGER IF EXISTS trg_playbooks_atomic_run_increment ON public.playbooks';
+    EXECUTE $sql$
+      CREATE TRIGGER trg_playbooks_atomic_run_increment
+      BEFORE UPDATE OF last_run_at ON public.playbooks
+      FOR EACH ROW
+      EXECUTE FUNCTION public.nvx_atomic_playbook_run_increment()
+    $sql$;
+    EXECUTE $sql$
+      COMMENT ON TRIGGER trg_playbooks_atomic_run_increment ON public.playbooks IS
+        'Serializes playbook execution counters for every UPDATE targeting last_run_at; run_count-only administrative repairs remain explicit.'
+    $sql$;
+  END IF;
+END
+$do$;
 
 COMMENT ON FUNCTION public.nvx_atomic_playbook_run_increment() IS
   'Internal trigger helper: increments playbooks.run_count from the locked OLD row whenever an execution advances last_run_at.';
-
-COMMENT ON TRIGGER trg_playbooks_atomic_run_increment ON public.playbooks IS
-  'Serializes playbook execution counters for every UPDATE targeting last_run_at; run_count-only administrative repairs remain explicit.';
