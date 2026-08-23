@@ -1844,7 +1844,7 @@ export async function metaWebhookSignatureMatches(rawBody: string, signature: st
   return signature === expectedSig;
 }
 
-async function handleMetaWebhookPost(ctx: PublicRouteContext): Promise<Response | null> {
+export async function handleMetaWebhookPost(ctx: PublicRouteContext): Promise<Response | null> {
   const { req } = ctx;
   const rawBody = await req.text();
   const signature = req.headers.get('X-Hub-Signature-256') ?? '';
