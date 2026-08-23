@@ -1,0 +1,40 @@
+# One-shot read-only inspection for the explicitly selected Meta Ads objects.
+name: Meta Ads Inspect Once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/meta-ads-inspect-once.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: Inspect selected Meta Ads objects once
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: Production
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL || secrets.NUVANX_SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
+      ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+      META_APP_SECRET: ${{ secrets.META_APP_SECRET || '' }}
+      META_GRAPH_VERSION: v22.0
+      TARGET_AD_ACCOUNT_ID: act_718120894191565
+      TARGET_CAMPAIGN_ID: '120249780276630419'
+      TARGET_ADSET_ID: '120249784103200419'
+      TARGET_AD_ID: '120249780276610419'
+    steps:
+      - name: Checkout exact main
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+
+      - name: Validate inspector syntax
+        run: node --check scripts/meta-ads-inspect.js
+
+      - name: Inspect Meta permissions and selected objects
+        run: node scripts/meta-ads-inspect.js
