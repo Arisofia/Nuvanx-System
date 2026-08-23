@@ -119,9 +119,7 @@ export default function Traceability() {
     { key: 'campaign_name', label: 'Campaña' },
     { key: 'source', label: 'Fuente' },
     { key: 'total_leads', label: 'Leads', align: 'right', sortable: true },
-    { key: 'booked', label: 'Agendados', align: 'right', sortable: true },
-    { key: 'attended', label: 'Asistidos', align: 'right', sortable: true },
-    { key: 'no_shows', label: 'No show', align: 'right', sortable: true },
+    { key: 'booked', label: 'Cruces Doctoralia', align: 'right', sortable: true },
   ]
 
   const setThisMonth = () => {
@@ -171,7 +169,7 @@ export default function Traceability() {
       <Tabs defaultValue="leads" className="w-full">
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="leads" className="gap-2"><GitMerge className="h-4 w-4" />Cruces Doctoralia</TabsTrigger>
-          <TabsTrigger value="campaigns" className="gap-2"><TrendingUp className="h-4 w-4" />Rendimiento campañas</TabsTrigger>
+          <TabsTrigger value="campaigns" className="gap-2"><TrendingUp className="h-4 w-4" />Cruce por campaña</TabsTrigger>
           <TabsTrigger value="funnel" className="gap-2"><MessageCircle className="h-4 w-4" />Funnel operativo</TabsTrigger>
         </TabsList>
 
@@ -217,7 +215,7 @@ export default function Traceability() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="campaigns" className="mt-4"><Card><CardHeader><CardTitle>Rendimiento operativo por campaña</CardTitle></CardHeader><CardContent><SortableTable columns={campaignColumns} rows={campaigns} loading={loading} emptyMessage="No hay datos de rendimiento de campañas todavía." exportFilename="rendimiento-campanas-operativo" /></CardContent></Card></TabsContent>
+        <TabsContent value="campaigns" className="mt-4"><Card><CardHeader><CardTitle>Cruces Doctoralia por campaña</CardTitle></CardHeader><CardContent><SortableTable columns={campaignColumns} rows={campaigns} loading={loading} emptyMessage="No hay datos de cruce por campaña todavía." exportFilename="cruces-doctoralia-por-campana" /></CardContent></Card></TabsContent>
         <TabsContent value="funnel" className="mt-4"><TrazabilidadFunnelTableFinal /></TabsContent>
       </Tabs>
     </div>
