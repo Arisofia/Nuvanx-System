@@ -33,6 +33,9 @@ jobs:
           command: |
             set -euo pipefail
 
+            PROJECT_REF="${{ secrets.SUPABASE_PROJECT_REF }}"
+            test -n "$PROJECT_REF"
+
             temporary_functions=(
               meta-ads-admin-probe
               meta-ads-probe-once
@@ -46,19 +49,19 @@ jobs:
               github-production-dispatch-once
             )
 
-            before="$(supabase functions list --project-ref "$SUPABASE_PROJECT_REF")"
+            before="$(supabase functions list --project-ref "$PROJECT_REF")"
             printf '%s\n' "$before"
 
             for fn in "${temporary_functions[@]}"; do
               if printf '%s\n' "$before" | grep -Fq -- "$fn"; then
                 echo "Deleting temporary function: $fn"
-                supabase functions delete "$fn" --project-ref "$SUPABASE_PROJECT_REF" --yes
+                supabase functions delete "$fn" --project-ref "$PROJECT_REF" --yes
               else
                 echo "Already absent: $fn"
               fi
             done
 
-            after="$(supabase functions list --project-ref "$SUPABASE_PROJECT_REF")"
+            after="$(supabase functions list --project-ref "$PROJECT_REF")"
             printf '%s\n' "$after"
 
             remaining=0
