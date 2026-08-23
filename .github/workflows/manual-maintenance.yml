@@ -187,6 +187,7 @@ jobs:
       NUVANX_SSH_PORT: ${{ secrets.NUVANX_SSH_PORT }}
       NUVANX_SSH_USER: ${{ secrets.NUVANX_SSH_USER }}
       NUVANX_SSH_KEY: ${{ secrets.NUVANX_SSH_KEY }}
+      NUVANX_SSH_KNOWN_HOSTS: ${{ secrets.NUVANX_SSH_KNOWN_HOSTS }}
       NUVANX_WP_PATH: ${{ secrets.NUVANX_WP_PATH }}
     steps:
       - name: Checkout
@@ -210,6 +211,7 @@ jobs:
           test -n "$NUVANX_SSH_PORT"
           test -n "$NUVANX_SSH_USER"
           test -n "$NUVANX_SSH_KEY"
+          test -n "$NUVANX_SSH_KNOWN_HOSTS"
           test -n "$NUVANX_WP_PATH"
 
       - name: Audit public NUVANX social proof before mutation
@@ -221,10 +223,11 @@ jobs:
           set -euo pipefail
           mkdir -p ~/.ssh
           printf '%s' "$NUVANX_SSH_KEY" > ~/.ssh/nuvanx_key
-          chmod 600 ~/.ssh/nuvanx_key
+          printf '%s\n' "$NUVANX_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/nuvanx_key ~/.ssh/known_hosts
           ssh -i ~/.ssh/nuvanx_key \
             -p "$NUVANX_SSH_PORT" \
-            -o StrictHostKeyChecking=accept-new \
+            -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             "$NUVANX_SSH_USER@$NUVANX_SSH_HOST" \
             "set -e; cd '$NUVANX_WP_PATH' && /usr/local/bin/wp option update nvx_doctoralia_social_proof_count '$EXPECTED_DOCTORALIA_COUNT' && /usr/local/bin/wp cache flush && /usr/local/bin/wp sg purge"
