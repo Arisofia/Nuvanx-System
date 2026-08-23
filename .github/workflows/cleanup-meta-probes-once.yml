@@ -1,4 +1,5 @@
 # One-shot cleanup. Delete this workflow after the temporary functions are removed.
+# Retry after GitHub Actions runner provisioning recovered on 2026-08-24.
 name: Cleanup Temporary Edge Functions Once
 
 on:
