@@ -1,22 +1,21 @@
 name: Meta lead conversion contract patch once
 
 on:
-  push:
-    branches:
-      - fix/meta-lead-conversion-contract-20260823
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
 
 jobs:
   patch:
-    if: ${{ contains(github.event.head_commit.message, 'run-meta-lead-patch') }}
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'fix/meta-lead-conversion-contract-20260823' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: fix/meta-lead-conversion-contract-20260823
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
       - name: Require exact base ancestry
         shell: bash
