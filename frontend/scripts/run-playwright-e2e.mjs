@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const requireBrowsers = process.env.CI === 'true' || process.env.PLAYWRIGHT_REQUIRE_BROWSERS === 'true';
 
@@ -35,9 +36,10 @@ if (!hasChromium && !requireBrowsers) {
   process.exit(0);
 }
 
-const result = spawnSync('playwright', ['test'], {
+const playwrightCli = fileURLToPath(new URL('../node_modules/playwright/cli.js', import.meta.url));
+const result = spawnSync(process.execPath, [playwrightCli, 'test'], {
   encoding: 'utf8',
-  shell: process.platform === 'win32',
+  shell: false,
   stdio: 'inherit',
 });
 

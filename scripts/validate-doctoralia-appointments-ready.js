@@ -47,8 +47,13 @@ const LEGACY_IMPORTED_AT_COLUMNS = REQUIRED_COLUMNS.map((column) => (
   column === 'imported_at' ? 'inserted_at' : column
 ));
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function missingColumnError(column) {
-  return new RegExp(`(?:column|field)[^\\n]*${column}|${column}[^\\n]*(?:does not exist|not found)`, 'i');
+  const escapedColumn = escapeRegExp(column);
+  return new RegExp(`(?:column|field)[^\\n]*${escapedColumn}|${escapedColumn}[^\\n]*(?:does not exist|not found)`, 'i');
 }
 
 async function assertSelectableColumns(supabase, columns) {
