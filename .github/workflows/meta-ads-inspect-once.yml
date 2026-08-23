@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   inspect:
-    name: Probe existing Meta reporting credential
+    name: Probe Meta reporting credential with ads_read only
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
@@ -59,11 +59,7 @@ jobs:
           async function sb(path, init = {}) {
             const response = await fetch(`${base}/rest/v1/${path}`, {
               ...init,
-              headers: {
-                apikey: service,
-                Authorization: `Bearer ${service}`,
-                ...(init.headers || {}),
-              },
+              headers: { apikey: service, Authorization: `Bearer ${service}`, ...(init.headers || {}) },
             });
             if (!response.ok) throw new Error(`Supabase REST ${response.status}`);
             return response.status === 204 ? null : await response.json();
@@ -83,8 +79,9 @@ jobs:
               ads_management: permissions.ads_management || 'not_granted',
               business_management: permissions.business_management || 'not_granted',
             },
-            ad_accounts: await meta('/me/adaccounts', { fields: 'id,name,account_status,business', limit: 200 }),
-            target_account: await meta(`/${account}`, { fields: 'id,name,account_status,currency,timezone_name,business' }),
+            ad_accounts_minimal: await meta('/me/adaccounts', { fields: 'id,name,account_status,currency,timezone_name', limit: 200 }),
+            target_account_minimal: await meta(`/${account}`, { fields: 'id,name,account_status,currency,timezone_name' }),
+            target_campaigns: await meta(`/${account}/campaigns`, { fields: 'id,name,status,effective_status,objective', limit: 200 }),
             campaign: await meta(`/${campaign}`, { fields: 'id,name,status,effective_status,objective,account_id' }),
             adset: await meta(`/${adset}`, { fields: 'id,name,status,effective_status,campaign_id,account_id' }),
             ad: await meta(`/${ad}`, { fields: 'id,name,status,effective_status,campaign_id,adset_id,account_id' }),
@@ -95,14 +92,14 @@ jobs:
             headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
             body: JSON.stringify({
               user_id: userId,
-              agent_type: 'meta-reporting-credential-probe',
+              agent_type: 'meta-reporting-credential-probe-minimal',
               input_context: { account_id: account, campaign_id: campaign, adset_id: adset, ad_id: ad },
               output_text: JSON.stringify(result),
-              model_used: 'github-actions-meta-reporting-probe-v1',
+              model_used: 'github-actions-meta-reporting-probe-v2',
               status: 'completed',
               output: result,
               metadata: { source: 'github_actions', read_only: true, one_time: true, graph_version: 'v22.0' },
             }),
           });
-          console.log('META_REPORTING_PROBE=PASS');
+          console.log('META_REPORTING_PROBE_MINIMAL=PASS');
           NODE
