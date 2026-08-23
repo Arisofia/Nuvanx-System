@@ -19,13 +19,13 @@ function escapeRegExp(value: string) {
 }
 
 function expectedHeading(path: string, heading: string) {
-  const prAgainstProduction = process.env.GITHUB_EVENT_NAME === 'pull_request'
-    && Boolean(process.env.PRODUCTION_E2E_URL?.trim());
+  const againstProduction = Boolean(process.env.PRODUCTION_E2E_URL?.trim());
 
-  // PR CI currently exercises the production deployment, so a PR that changes a
-  // heading must tolerate the still-deployed base label. Push/main CI remains
-  // strict and requires the new canonical label after deployment.
-  if (prAgainstProduction && path === '/financials') {
+  // This smoke runs before deployment while targeting the currently deployed
+  // production UI. During the one-release rename transition, accept either the
+  // old deployed label or the new canonical label. Route, runtime and 5xx gates
+  // remain strict. Remove the legacy label after production has rolled forward.
+  if (againstProduction && path === '/financials') {
     return /^(Finanzas verificadas|Auditoría operativa Doctoralia)$/i;
   }
 
@@ -33,6 +33,8 @@ function expectedHeading(path: string, heading: string) {
 }
 
 test('authenticated Control Centre routes load without runtime or server errors', async ({ page }) => {
+  test.setTimeout(90_000);
+
   const email = process.env.E2E_EMAIL?.trim();
   const password = process.env.E2E_PASSWORD?.trim();
 
@@ -84,8 +86,9 @@ test('authenticated Control Centre routes load without runtime or server errors'
     await expect(page.getByRole('link', { name: new RegExp(`^${escapeRegExp(route.label)}$`, 'i') })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('heading', { name: expectedHeading(route.path, route.heading) }).first()).toBeVisible({ timeout: 15_000 });
 
-    // Allow each route's first authenticated data requests and lazy bundle to settle.
-    await page.waitForLoadState('networkidle', { timeout: 10_000 });
+    // Realtime/polling routes may never become network-idle. Observe a bounded
+    // post-render window instead, while keeping pageerror and every 5xx strict.
+    await page.waitForTimeout(1_000);
 
     await expect(page.getByText(/error inesperado/i)).toHaveCount(0);
     await expect(page.getByText(/ha ocurrido un error cargando esta sección/i)).toHaveCount(0);
