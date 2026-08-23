@@ -8,6 +8,10 @@ const SUPABASE_URL = String(process.env.SUPABASE_URL || '').replace(/\/$/, '');
 const SERVICE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
 const ENCRYPTION_KEY = String(process.env.ENCRYPTION_KEY || '').trim();
 const META_APP_SECRET = String(process.env.META_APP_SECRET || '').trim();
+const PERSIST_RESULT = /^(1|true)$/i.test(String(process.env.PERSIST_META_INSPECT || '').trim());
+
+let auditUserId = '';
+let auditInput = {};
 
 function required(name) {
   const value = String(process.env[name] || '').trim();
@@ -25,16 +29,52 @@ function normalizeAccountId(value) {
   return raw.startsWith('act_') ? raw : `act_${raw}`;
 }
 
+function supabaseHeaders(extra = {}) {
+  return {
+    apikey: SERVICE_KEY,
+    Authorization: `Bearer ${SERVICE_KEY}`,
+    Accept: 'application/json',
+    ...extra,
+  };
+}
+
 async function supabaseGet(path) {
   const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    headers: {
-      apikey: SERVICE_KEY,
-      Authorization: `Bearer ${SERVICE_KEY}`,
-      Accept: 'application/json',
-    },
+    headers: supabaseHeaders(),
   });
   if (!response.ok) throw new Error(`Supabase REST ${response.status}`);
   return await response.json();
+}
+
+async function supabasePost(path, body) {
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    method: 'POST',
+    headers: supabaseHeaders({
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal',
+    }),
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(`Supabase REST POST ${response.status}`);
+}
+
+async function persistAudit(status, output = {}, errorMessage = null) {
+  if (!PERSIST_RESULT || !auditUserId) return;
+  await supabasePost('agent_outputs', {
+    user_id: auditUserId,
+    agent_type: 'meta-ads-inspect',
+    input_context: auditInput,
+    output_text: JSON.stringify(output),
+    model_used: 'github-actions-meta-inspector-v1',
+    status,
+    error_message: errorMessage,
+    output,
+    metadata: {
+      source: 'github_actions',
+      graph_version: GRAPH_VERSION,
+      read_only: true,
+    },
+  });
 }
 
 function decryptCredential(encoded) {
@@ -103,12 +143,14 @@ async function main() {
   const campaignId = validateId('TARGET_CAMPAIGN_ID', required('TARGET_CAMPAIGN_ID'), /^\d+$/);
   const adsetId = validateId('TARGET_ADSET_ID', required('TARGET_ADSET_ID'), /^\d+$/);
   const adId = validateId('TARGET_AD_ID', required('TARGET_AD_ID'), /^\d+$/);
+  auditInput = { account_id: accountId, campaign_id: campaignId, adset_id: adsetId, ad_id: adId };
 
   const integrations = await supabaseGet(
     'integrations?service=eq.meta&status=eq.connected&select=user_id,metadata,updated_at&order=updated_at.desc&limit=1',
   );
   const integration = integrations?.[0];
   if (!integration?.user_id) throw new Error('Connected Meta integration not found');
+  auditUserId = String(integration.user_id);
 
   const metadata = integration.metadata || {};
   const configuredAccounts = [
@@ -178,12 +220,19 @@ async function main() {
     ad,
   };
 
+  await persistAudit('completed', output, null);
   console.log('META_ADS_INSPECT=PASS');
   console.log(JSON.stringify(output, null, 2));
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
+  const message = String(error?.message || error);
+  try {
+    await persistAudit('failed', {}, message);
+  } catch (persistError) {
+    console.error(`META_ADS_AUDIT_PERSIST=FAIL ${String(persistError?.message || persistError)}`);
+  }
   console.error('META_ADS_INSPECT=FAIL');
-  console.error(String(error?.message || error));
+  console.error(message);
   process.exit(1);
 });
