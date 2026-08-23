@@ -1,0 +1,55 @@
+name: Fix invokeApi cycle once
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.pull_request.head.ref == 'fix/frontend-invoke-api-cycle-20260823'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repair branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Apply deterministic import repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ops/fix-invoke-api-cycle.py
+
+      - name: Validate frontend graph and behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --prefix frontend ci --legacy-peer-deps
+          npx --yes madge@8.0.0 --circular --extensions ts,tsx frontend/src
+          npm --prefix frontend run lint
+          npm --prefix frontend run test:ci
+          npm --prefix frontend run build
+
+      - name: Commit repaired source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name 'Nuvanx Repair Bot'
+          git config user.email 'repair@nuvanx.com'
+          git add frontend/src
+          git diff --cached --quiet && { echo 'No source changes produced' >&2; exit 1; }
+          git commit -m 'fix(frontend): break invokeApi client import cycle'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
