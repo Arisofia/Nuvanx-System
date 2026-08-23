@@ -2,6 +2,11 @@
 -- migration with a contract that reports only what the persisted sources prove.
 -- Doctoralia appointment "Importe" is not a reconciled payment ledger, so this
 -- function deliberately emits no revenue/cash metric from that source.
+--
+-- Campaign ranking is computed directly from public.leads. The legacy
+-- vw_campaign_performance_real view currently fails on production PostgreSQL
+-- because of a non-mergeable FULL JOIN condition and is therefore not a safe
+-- runtime dependency for the daily job.
 
 CREATE OR REPLACE FUNCTION public.nvx_generate_daily_control_centre_insights()
 RETURNS integer
@@ -44,8 +49,8 @@ BEGIN
     FROM public.users u
     WHERE u.clinic_id IS NOT NULL
   LOOP
-    SELECT count(*)::integer, max(l.created_at)
-      INTO v_risk_leads, v_latest_crm_lead
+    SELECT count(*)::integer
+      INTO v_risk_leads
     FROM public.leads l
     WHERE l.user_id = v_user.id
       AND l.deleted_at IS NULL
@@ -53,8 +58,6 @@ BEGIN
       AND l.created_at < now() - interval '14 days'
       AND lower(COALESCE(l.source::text, '')) <> 'doctoralia';
 
-    -- max(created_at) above is scoped to risk rows; retrieve actual CRM freshness
-    -- separately so the freshness signal reflects every lead for this user.
     SELECT max(l.created_at)
       INTO v_latest_crm_lead
     FROM public.leads l
@@ -71,25 +74,32 @@ BEGIN
         jsonb_build_object(
           'campaign_name', ranked.campaign_name,
           'total_leads', ranked.total_leads,
-          'booked', ranked.booked,
-          'closed_won', ranked.closed_won,
+          'appointments', ranked.appointments,
+          'converted_stage', ranked.converted_stage,
           'last_lead_at', ranked.last_lead_at
         )
-        ORDER BY ranked.total_leads DESC NULLS LAST, ranked.last_lead_at DESC NULLS LAST
+        ORDER BY ranked.total_leads DESC, ranked.last_lead_at DESC NULLS LAST
       ),
       '[]'::jsonb
     )
       INTO v_top_campaigns
     FROM (
       SELECT
-        c.campaign_name,
-        c.total_leads,
-        c.booked,
-        c.closed_won,
-        c.last_lead_at
-      FROM public.vw_campaign_performance_real c
-      WHERE c.user_id = v_user.id
-      ORDER BY c.total_leads DESC NULLS LAST, c.last_lead_at DESC NULLS LAST
+        COALESCE(NULLIF(trim(l.campaign_name::text), ''), 'Sin campaña') AS campaign_name,
+        count(*)::integer AS total_leads,
+        count(*) FILTER (
+          WHERE l.appointment_date IS NOT NULL
+             OR lower(COALESCE(l.stage::text, '')) = 'appointment'
+        )::integer AS appointments,
+        count(*) FILTER (
+          WHERE lower(COALESCE(l.stage::text, '')) = 'convertido'
+        )::integer AS converted_stage,
+        max(l.created_at) AS last_lead_at
+      FROM public.leads l
+      WHERE l.user_id = v_user.id
+        AND l.deleted_at IS NULL
+      GROUP BY COALESCE(NULLIF(trim(l.campaign_name::text), ''), 'Sin campaña')
+      ORDER BY total_leads DESC, last_lead_at DESC NULLS LAST
       LIMIT 5
     ) ranked;
 
@@ -97,6 +107,10 @@ BEGIN
       'date', v_today::text,
       'risk_leads', v_risk_leads,
       'top_campaigns', v_top_campaigns,
+      'campaign_semantics', jsonb_build_object(
+        'appointments', 'appointment_date_present_or_stage_appointment',
+        'converted_stage', 'literal_crm_stage_convertido_not_cash'
+      ),
       'doctoralia_operations', jsonb_build_object(
         'appointments_today', v_doctoralia_today,
         'realized_today', v_doctoralia_realized,
