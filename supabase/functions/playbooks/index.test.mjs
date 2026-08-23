@@ -34,5 +34,6 @@ describe('playbooks execution counter contract', () => {
     expect(migration).toContain("to_regclass('public.playbooks') IS NULL");
     expect(migration).toContain('Skipping playbook run counter trigger');
     expect(migration).toContain("EXECUTE 'DROP TRIGGER IF EXISTS trg_playbooks_atomic_run_increment ON public.playbooks'");
+    expect(migration).toMatch(/END IF;\s*END;\s*\$do\$;/);
   });
 });
