@@ -28,7 +28,17 @@ const ANTHROPIC_KEY = Deno.env.get('ANTHROPIC_API_KEY') ?? '';
 const OPENAI_KEY    = Deno.env.get('OPENAI_API_KEY') ?? '';
 const GEMINI_KEY    = Deno.env.get('GEMINI_API_KEY') ?? '';
 
-async function resolveClinicId(adminClient: any, userId: string): Promise<string | null> {
+type SupabaseClientLike = ReturnType<typeof createClient>;
+
+function safeErrorMessage(error: unknown): string {
+  try {
+    return error instanceof Error ? String(error.message) : String(error);
+  } catch {
+    return 'AI provider request failed';
+  }
+}
+
+async function resolveClinicId(adminClient: SupabaseClientLike, userId: string): Promise<string | null> {
   const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
   return usr?.clinic_id ?? null;
 }
@@ -204,18 +214,19 @@ Deno.serve(async (req: Request) => {
         : availableKey === 'anthropic'
         ? await callAnthropicAPI(prompt, context)
         : await callOpenAIAPI(prompt, context);
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = safeErrorMessage(err);
       const { data: failOutput } = await supabase.from('agent_outputs').insert({
         user_id: user.id,
         agent_type,
         input_context: { prompt: prompt.slice(0, 500) },
         output_text: '',
         status: 'failed',
-        error_message: err.message,
+        error_message: message,
         model_used: availableKey,
         tokens_used: 0
       }).select().single();
-      return json({ success: false, message: err.message, output_id: failOutput?.id }, 500);
+      return json({ success: false, message, output_id: failOutput?.id }, 500);
     }
 
     // Persist successful output
