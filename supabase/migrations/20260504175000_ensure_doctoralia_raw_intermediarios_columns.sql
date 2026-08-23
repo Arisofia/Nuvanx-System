@@ -53,8 +53,8 @@ ALTER TABLE public.doctoralia_raw
   ADD COLUMN IF NOT EXISTS confirmada      BOOLEAN DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS procedencia     TEXT,
   ADD COLUMN IF NOT EXISTS patient_name_norm TEXT,
-  ADD COLUMN IF NOT EXISTS phone_primary   TEXT,
-  ADD COLUMN IF NOT EXISTS phone_secondary TEXT;
+  ADD COLUMN IF NOT EXISTS phone_primary   VARCHAR(32),
+  ADD COLUMN IF NOT EXISTS phone_secondary VARCHAR(32);
 
 CREATE INDEX IF NOT EXISTS doctoralia_raw_clinic_id_idx
   ON public.doctoralia_raw(clinic_id);
