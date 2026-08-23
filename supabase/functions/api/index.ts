@@ -610,6 +610,19 @@ function isLeadAction(type: string): boolean {
   );
 }
 
+export function resolveMetaLeadConversions(row: any): number {
+  const rawConversions = parseMetaMetric(row?.conversions);
+  const leadActions = Math.max(
+    actionValue(row?.actions, isLeadAction),
+    parseMetaMetric(row?.lead_actions),
+  );
+  const messaging = Math.max(
+    actionValue(row?.actions, isMessagingConversationAction),
+    parseMetaMetric(row?.messaging_conversations),
+  );
+  return Math.max(rawConversions, leadActions, messaging);
+}
+
 
 
 async function resolveClinicId(adminClient: any, userId: string): Promise<string | null> {
@@ -2931,7 +2944,7 @@ function aggregateDashboardResults(leads: any[], prevLeads: any[], settlements: 
 
   const totalSpend = metaData.reduce((s: number, r: any) => s + Number(r.spend || 0), 0);
   const prevTotalSpend = prevMetaData.reduce((s: number, r: any) => s + Number(r.spend || 0), 0);
-  const totalMetaConversions = metaData.reduce((s: number, r: any) => s + Number(r.conversions || 0), 0);
+  const totalMetaConversions = metaData.reduce((s: number, r: any) => s + resolveMetaLeadConversions(r), 0);
   const totalMetaClicks = metaData.reduce((s: number, r: any) => s + Number(r.clicks || 0), 0);
 
   const conversions = filteredLeads.filter((l: any) => l.stage === 'treatment' || l.stage === 'closed').length;
@@ -3376,14 +3389,14 @@ function buildMetaInsightsParams(fields: string, since: string, until: string, c
 function aggregateMetaInsightsSummary(daily: any[]) {
   const sumN = (arr: any[], k: string) => arr.reduce((s: number, d: any) => s + Number.parseFloat(d[k] || 0), 0);
   const messaging = daily.reduce((sum: number, day: any) => sum + actionValue(day.actions, isMessagingConversationAction), 0);
-  const rawConversions = Math.round(sumN(daily, 'conversions'));
+  const conversions = Math.round(daily.reduce((sum: number, day: any) => sum + resolveMetaLeadConversions(day), 0));
   
   return {
     impressions: Math.round(sumN(daily, 'impressions')),
     reach: Math.round(sumN(daily, 'reach')),
     clicks: Math.round(sumN(daily, 'clicks')),
     spend: Number.parseFloat(sumN(daily, 'spend').toFixed(2)),
-    conversions: rawConversions || messaging,
+    conversions,
     messagingConversationStarted: messaging,
   };
 }
@@ -3399,7 +3412,7 @@ function aggregateMetaDailySummary(daily: any[]) {
     reach: s('reach'),
     clicks: s('clicks'),
     spend,
-    conversions: s('conversions'),
+    conversions: Math.round(daily.reduce((sum: number, row: any) => sum + resolveMetaLeadConversions(row), 0)),
     ctr: a('ctr'),
     cpc: a('cpc'),
     cpm: a('cpm'),
@@ -3485,11 +3498,17 @@ function mapMetaDailyRowsToInsightsPayload(rows: any[]): any[] {
     ctr: Number(row.ctr ?? 0),
     cpc: Number(row.cpc ?? 0),
     cpm: Number(row.cpm ?? 0),
-    conversions: Number(row.conversions ?? 0),
+    conversions: Math.round(resolveMetaLeadConversions(row)),
     messaging_conversations: Number(row.messaging_conversations ?? 0),
-    actions: Number(row.lead_actions ?? 0) > 0
-      ? [{ action_type: 'lead', value: String(Number(row.lead_actions ?? 0)) }]
-      : [],
+    lead_actions: Number(row.lead_actions ?? 0),
+    actions: [
+      ...(Number(row.lead_actions ?? 0) > 0
+        ? [{ action_type: 'lead', value: String(Number(row.lead_actions ?? 0)) }]
+        : []),
+      ...(Number(row.messaging_conversations ?? 0) > 0
+        ? [{ action_type: 'messaging_conversation_started_7d', value: String(Number(row.messaging_conversations ?? 0)) }]
+        : []),
+    ],
   }));
 }
 
@@ -3552,7 +3571,7 @@ function calculateMetaInsightsPrev(prevData: any[]) {
     reach: sumField('reach'),
     clicks: sumField('clicks'),
     spend: sumField('spend'),
-    conversions: sumField('conversions'),
+    conversions: prevData.reduce((sum: number, row: any) => sum + resolveMetaLeadConversions(row), 0),
   };
 }
 
@@ -3569,7 +3588,7 @@ async function fetchMetaInsightsFallbackFromDb(params: {
   const { adminClient, userId, creds, since, until, days, sendJson, e } = params;
   const clinicId = await resolveClinicId(adminClient, userId);
   let dbQuery = adminClient.from('meta_daily_insights')
-    .select('date,impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,messaging_conversations')
+    .select('date,impressions,reach,clicks,spend,ctr,cpc,cpm,conversions,messaging_conversations,lead_actions,actions')
     .in('ad_account_id', creds.adAccountIds)
     .gte('date', since)
     .lte('date', until)
@@ -3584,7 +3603,7 @@ async function fetchMetaInsightsFallbackFromDb(params: {
       reach: Math.round(sumN(dbRows, 'reach')),
       clicks: Math.round(sumN(dbRows, 'clicks')),
       spend: Number.parseFloat(sumN(dbRows, 'spend').toFixed(2)),
-      conversions: Math.round(sumN(dbRows, 'conversions')),
+      conversions: Math.round(dbRows.reduce((sum: number, row: any) => sum + resolveMetaLeadConversions(row), 0)),
       messagingConversationStarted: Math.round(sumN(dbRows, 'messaging_conversations')),
       ctr: dbRows.length ? Number.parseFloat((sumN(dbRows, 'ctr') / dbRows.length).toFixed(2)) : 0,
       cpc: dbRows.length ? Number.parseFloat((sumN(dbRows, 'cpc') / dbRows.length).toFixed(2)) : 0,
@@ -3611,6 +3630,7 @@ async function fetchMetaInsightsFallbackFromDb(params: {
         ctr: Number(r.ctr),
         cpc: Number(r.cpc),
         cpm: Number(r.cpm),
+        conversions: Math.round(resolveMetaLeadConversions(r)),
         messagingConversationStarted: Number(r.messaging_conversations),
       })),
       message: `Meta API unavailable. Showing ${dbRows.length} days from local DB (last backfill). Run POST /meta/backfill to refresh.`,
@@ -3644,7 +3664,7 @@ async function processMetaInsightsGet(adminClient: any, userId: string, url: URL
 
   try {
     const params = buildMetaInsightsParams(fields, since, until, campaignId);
-    const prevFields = campaignId ? 'impressions,reach,clicks,spend,conversions,campaign_id' : 'impressions,reach,clicks,spend,conversions';
+    const prevFields = campaignId ? 'impressions,reach,clicks,spend,conversions,actions,campaign_id' : 'impressions,reach,clicks,spend,conversions,actions';
     const prevParams = buildMetaInsightsParams(prevFields, prevSince, since, campaignId);
     delete prevParams.time_increment;
 
@@ -3772,8 +3792,9 @@ async function persistMetaDailyInsights(adminClient: any, userId: string, adAcco
     const actionValuesArr = Array.isArray(r.action_values) ? r.action_values : [];
 
     const messagingConversations = actionValue(actionsArr, isMessagingConversationAction);
+    const leadActions = actionValue(actionsArr, isLeadAction);
     const rawConversions = parseMetaMetric(r.conversions);
-    const conversions = rawConversions || messagingConversations;
+    const conversions = Math.max(rawConversions, leadActions, messagingConversations);
 
     return {
       user_id: userId,
@@ -4606,7 +4627,7 @@ function isFulfilled<T>(result: PromiseSettledResult<T>): result is PromiseFulfi
 
 function mapMetaCampaign(c: any) {
   const ins = c?.insights?.data?.[0];
-  const conversions = parseMetaMetric(ins?.conversions);
+  const conversions = resolveMetaLeadConversions(ins);
   const cpp: number | null = conversions > 0 ? Number.parseFloat((Number.parseFloat(ins?.spend ?? 0) / conversions).toFixed(2)) : null;
   return {
     id: c.id,
@@ -6934,7 +6955,7 @@ function sumCachedRowsForAccount(cachedRows: any[], accountId: string) {
   const rows = cachedRows.filter((r: any) => r.ad_account_id === accountId);
   return {
     spend: rows.reduce((s: number, r: any) => s + Number(r.spend ?? 0), 0),
-    conversions: rows.reduce((s: number, r: any) => s + Number(r.conversions ?? 0), 0),
+    conversions: rows.reduce((s: number, r: any) => s + resolveMetaLeadConversions(r), 0),
     impressions: rows.reduce((s: number, r: any) => s + Number(r.impressions ?? 0), 0),
     clicks: rows.reduce((s: number, r: any) => s + Number(r.clicks ?? 0), 0),
     rows: rows.length,
@@ -6945,7 +6966,7 @@ function sumLiveAccountRows(account: any) {
   const rows: any[] = Array.isArray(account?.data) ? account.data : [];
   return {
     spend: rows.reduce((s: number, row: any) => s + parseMetaMetric(row.spend), 0),
-    conversions: rows.reduce((s: number, row: any) => s + parseMetaMetric(row.conversions), 0),
+    conversions: rows.reduce((s: number, row: any) => s + resolveMetaLeadConversions(row), 0),
     impressions: rows.reduce((s: number, row: any) => s + parseMetaMetric(row.impressions), 0),
     clicks: rows.reduce((s: number, row: any) => s + parseMetaMetric(row.clicks), 0),
   };
@@ -6972,7 +6993,7 @@ async function loadMetaKpis(adminClient: any, userId: string, url: URL, since: s
 
     const accountResults = await Promise.allSettled(creds.adAccountIds.map(async (accountId: string) => {
       const live = await metaFetch(`/${accountId}/insights`, {
-        fields: 'date_start,spend,impressions,clicks,ctr,cpc,conversions',
+        fields: 'date_start,spend,impressions,clicks,ctr,cpc,conversions,actions',
         time_range: JSON.stringify({ since, until }),
         time_increment: '1',
         limit: '1000',
@@ -7291,7 +7312,7 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
     .lte('settled_at', untilFullDay);
 
   let metaDailyInsightsQ = adminClient.from('meta_daily_insights')
-    .select('spend, impressions, clicks, conversions')
+    .select('spend, impressions, clicks, conversions, lead_actions, messaging_conversations')
     .gte('date', since)
     .lte('date', until);
 
