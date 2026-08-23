@@ -56,7 +56,7 @@ test('authenticated Control Centre routes load without runtime or server errors'
     await expect(page.getByRole('link', { name: new RegExp(`^${escapeRegExp(route.label)}$`, 'i') })).toBeVisible();
 
     // Allow each route's first authenticated data requests and lazy bundle to settle.
-    await page.waitForTimeout(1_500);
+    await page.waitForLoadState('networkidle', { timeout: 10_000 });
 
     await expect(page.getByText(/error inesperado/i)).toHaveCount(0);
     await expect(page.getByText(/ha ocurrido un error cargando esta sección/i)).toHaveCount(0);
