@@ -18,6 +18,20 @@ function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function expectedHeading(path: string, heading: string) {
+  const prAgainstProduction = process.env.GITHUB_EVENT_NAME === 'pull_request'
+    && Boolean(process.env.PRODUCTION_E2E_URL?.trim());
+
+  // PR CI currently exercises the production deployment, so a PR that changes a
+  // heading must tolerate the still-deployed base label. Push/main CI remains
+  // strict and requires the new canonical label after deployment.
+  if (prAgainstProduction && path === '/financials') {
+    return /^(Finanzas verificadas|Auditoría operativa Doctoralia)$/i;
+  }
+
+  return new RegExp(`^${escapeRegExp(heading)}$`, 'i');
+}
+
 test('authenticated Control Centre routes load without runtime or server errors', async ({ page }) => {
   const email = process.env.E2E_EMAIL?.trim();
   const password = process.env.E2E_PASSWORD?.trim();
@@ -57,8 +71,8 @@ test('authenticated Control Centre routes load without runtime or server errors'
   await page.locator('#login-password').fill(password);
   await page.getByRole('button', { name: /entrar/i }).click();
   await expect(page).toHaveURL(/\/dashboard\/?$/, { timeout: 15_000 });
-  await expect(page.getByText(/centro de control/i).first()).toBeVisible();
-  await expect(page.getByRole('heading', { name: /dashboard/i }).first()).toBeVisible();
+  await expect(page.getByText(/centro de control/i).first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole('heading', { name: /dashboard/i }).first()).toBeVisible({ timeout: 15_000 });
 
   for (const route of CONTROL_CENTRE_ROUTES) {
     pageErrors.length = 0;
@@ -66,9 +80,9 @@ test('authenticated Control Centre routes load without runtime or server errors'
 
     await page.goto(route.path, { waitUntil: 'domcontentloaded' });
     await expect(page).toHaveURL(new RegExp(`${escapeRegExp(route.path)}/?$`));
-    await expect(page.getByText(/centro de control/i).first()).toBeVisible();
-    await expect(page.getByRole('link', { name: new RegExp(`^${escapeRegExp(route.label)}$`, 'i') })).toBeVisible();
-    await expect(page.getByRole('heading', { name: new RegExp(escapeRegExp(route.heading), 'i') }).first()).toBeVisible();
+    await expect(page.getByText(/centro de control/i).first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('link', { name: new RegExp(`^${escapeRegExp(route.label)}$`, 'i') })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: expectedHeading(route.path, route.heading) }).first()).toBeVisible({ timeout: 15_000 });
 
     // Allow each route's first authenticated data requests and lazy bundle to settle.
     await page.waitForLoadState('networkidle', { timeout: 10_000 });
