@@ -47,9 +47,11 @@ describe("runtime bootstrap contract", () => {
     expect(source).not.toContain("catch (error: any)");
   });
 
-  it("keeps error reporting fail-safe even when string coercion throws", () => {
+  it("keeps error reporting fail-safe while preserving object-shaped messages", () => {
     expect(source).toContain("function safeErrorMessage(error: unknown): string");
-    expect(source).toMatch(/function safeErrorMessage\(error: unknown\): string \{[\s\S]*?try \{[\s\S]*?String\(error\)[\s\S]*?catch \{[\s\S]*?return "error";[\s\S]*?\}/);
+    expect(source).toContain('error !== null && typeof error === "object" && "message" in error');
+    expect(source).toContain("String((error as { message: unknown }).message)");
+    expect(source).toMatch(/function safeErrorMessage\(error: unknown\): string \{[\s\S]*?try \{[\s\S]*?catch \{[\s\S]*?return "error";[\s\S]*?\}/);
     expect(source).toContain("const message = safeErrorMessage(error)");
   });
 });
