@@ -46,7 +46,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'POST' && path.endsWith('/run')) {
     const playbookId = path.replace('/run', '');
     const { data: pb, error: pbError } = await supabase
-      .from('playbooks').select('id, title, run_count').eq('id', playbookId).single();
+      .from('playbooks').select('id, title').eq('id', playbookId).single();
     if (pbError || !pb) return json({ success: false, message: 'Playbook not found' }, 404);
 
     const execId = crypto.randomUUID();
@@ -56,7 +56,7 @@ Deno.serve(async (req: Request) => {
     if (execError) return json({ success: false, message: execError.message }, 500);
 
     await supabase.from('playbooks')
-      .update({ run_count: Number(pb.run_count ?? 0) + 1, last_run_at: new Date().toISOString() })
+      .update({ last_run_at: new Date().toISOString() })
       .eq('id', playbookId);
 
     return json({
