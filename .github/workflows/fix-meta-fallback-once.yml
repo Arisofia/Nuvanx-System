@@ -1,0 +1,57 @@
+name: Fix Meta DB Fallback Once
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/fix-meta-fallback-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Preserve canonical Meta leads in DB fallback
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('supabase/functions/api/index.ts')
+          text = path.read_text(encoding='utf-8')
+          start = text.index('function mapMetaDailyRowsToInsightsPayload(rows: any[]): any[] {')
+          end = text.index('\n}\n', start) + 3
+          block = text[start:end]
+          old = '    actions: [],\n'
+          new = "    actions: Number(row.lead_actions ?? 0) > 0\n      ? [{ action_type: 'lead', value: String(Number(row.lead_actions ?? 0)) }]\n      : [],\n"
+          if block.count(old) != 1:
+              raise SystemExit('Expected exactly one empty actions mapping in Meta DB fallback')
+          block = block.replace(old, new, 1)
+          text = text[:start] + block + text[end:]
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          grep -F "action_type: 'lead'" supabase/functions/api/index.ts
+          git diff --check
+
+      - name: Commit validated fallback patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/fix-meta-fallback-once.yml
+          git config user.name "Jeninefer Deras"
+          git config user.email "jenineferderas@hotmail.com"
+          git add supabase/functions/api/index.ts .github/workflows/fix-meta-fallback-once.yml
+          git diff --cached --check
+          git commit -m "fix(meta): preserve lead actions in DB fallback"
+          git push origin HEAD:main
