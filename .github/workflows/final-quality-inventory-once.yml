@@ -109,7 +109,7 @@ jobs:
           npm --prefix frontend audit --json >tmp/final-audit/npm-audit-frontend.json 2>&1; front_audit=$?
           npm ls --all --json >tmp/final-audit/npm-tree-root.json 2>&1; root_tree=$?
           npm --prefix frontend ls --all --json >tmp/final-audit/npm-tree-frontend.json 2>&1; front_tree=$?
-          npm --prefix frontend exec madge -- --circular --extensions ts,tsx src >tmp/final-audit/madge.log 2>&1; madge_rc=$?
+          (cd frontend && npm exec madge -- --circular --extensions ts,tsx src) >tmp/final-audit/madge.log 2>&1; madge_rc=$?
           set -e
           printf 'root_audit_rc=%s\nfrontend_audit_rc=%s\nroot_tree_rc=%s\nfrontend_tree_rc=%s\nmadge_rc=%s\n' "$root_audit" "$front_audit" "$root_tree" "$front_tree" "$madge_rc" | tee tmp/final-audit/dependency-status.txt
           cat tmp/final-audit/madge.log
