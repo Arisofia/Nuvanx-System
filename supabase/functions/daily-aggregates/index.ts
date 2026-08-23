@@ -5,18 +5,18 @@ import { ENCRYPTION_KEY, META_APP_SECRET, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_UR
 
 type MetaAction = {
   action_type?: string;
-  value?: string | number;
+  value?: number;
 };
 
 type MetaInsightRow = {
   date_start: string;
-  impressions?: string | number;
-  reach?: string | number;
-  clicks?: string | number;
-  spend?: string | number;
-  ctr?: string | number;
-  cpc?: string | number;
-  cpm?: string | number;
+  impressions?: number;
+  reach?: number;
+  clicks?: number;
+  spend?: number;
+  ctr?: number;
+  cpc?: number;
+  cpm?: number;
   actions?: MetaAction[];
 };
 
@@ -52,9 +52,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function numberInput(value: unknown): string | number | undefined {
-  return typeof value === 'string' || typeof value === 'number' ? value : undefined;
-}
+import { numberInput } from './normalize.ts';
 
 function normalizeMetaAction(value: unknown): MetaAction | null {
   if (!isRecord(value)) return null;
