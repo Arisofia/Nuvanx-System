@@ -24,6 +24,14 @@ function bearer(req: Request): string {
   return token.length >= 20 && token.length <= 4096 ? token : "";
 }
 
+function safeErrorMessage(error: unknown): string {
+  try {
+    return error instanceof Error ? String(error.message) : String(error);
+  } catch {
+    return "error";
+  }
+}
+
 async function inspectPrivateAppToken(token: string) {
   const response = await fetch(TOKEN_INFO_URL, {
     method: "POST",
@@ -81,7 +89,7 @@ Deno.serve(async (req: Request) => {
       project_route: "environment_local",
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = safeErrorMessage(error);
     console.error("[runtime-bootstrap] verification/persistence failed", message.slice(0, 200));
     return reply(502, { success: false, message: "Runtime bootstrap failed" });
   }
