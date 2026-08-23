@@ -62,10 +62,24 @@ CREATE TABLE IF NOT EXISTS public.playbook_executions (
   CONSTRAINT playbook_executions_status_check
     CHECK (status = ANY (ARRAY['triggered'::text, 'running'::text, 'success'::text, 'failed'::text, 'skipped'::text])),
   CONSTRAINT playbook_executions_playbook_id_fkey
-    FOREIGN KEY (playbook_id) REFERENCES public.playbooks(id) ON DELETE CASCADE,
-  CONSTRAINT playbook_executions_agent_output_id_fkey
-    FOREIGN KEY (agent_output_id) REFERENCES public.agent_outputs(id)
+    FOREIGN KEY (playbook_id) REFERENCES public.playbooks(id) ON DELETE CASCADE
 );
+
+DO $do$
+BEGIN
+  IF to_regclass('public.agent_outputs') IS NOT NULL
+     AND NOT EXISTS (
+       SELECT 1
+       FROM pg_constraint
+       WHERE conrelid = 'public.playbook_executions'::regclass
+         AND conname = 'playbook_executions_agent_output_id_fkey'
+     ) THEN
+    ALTER TABLE public.playbook_executions
+      ADD CONSTRAINT playbook_executions_agent_output_id_fkey
+      FOREIGN KEY (agent_output_id) REFERENCES public.agent_outputs(id);
+  END IF;
+END;
+$do$;
 
 CREATE INDEX IF NOT EXISTS playbook_executions_created_at_idx
   ON public.playbook_executions (created_at DESC);
