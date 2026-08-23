@@ -99,9 +99,12 @@ export default function Traceability() {
       || row.doc_patient_id?.toLowerCase().includes(query)
   })
 
+  // Summary cards must not be derived from the paginated rows array (max 500).
+  // The API already returns exact period-level counts for total and matchedTotal.
+  const exactTotal = total > 0 ? total : rows.length
   const matchedCount = matchedTotal ?? rows.filter((row) => row.patient_id || row.doc_patient_id || row.doctoralia_template_name).length
-  const withSourceAmountCount = rows.filter((row) => row.doctoralia_net != null && Number(row.doctoralia_net) !== 0).length
-  const appointmentCount = rows.filter((row) => row.appointment_date).length
+  const unmatchedCount = Math.max(exactTotal - matchedCount, 0)
+  const matchCoverage = exactTotal > 0 ? (matchedCount / exactTotal) * 100 : 0
 
   const renderPatientInfo = (row: TraceRow) => {
     if (row.patient_name) return <p className="text-foreground">{row.patient_name}</p>
@@ -159,10 +162,10 @@ export default function Traceability() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card className="border-none shadow-sm bg-white"><CardContent className="pt-8"><p className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em]">Total leads</p><p className="text-4xl font-serif font-bold mt-4 text-[#2C2825]">{total > 0 ? total : rows.length}</p></CardContent></Card>
+        <Card className="border-none shadow-sm bg-white"><CardContent className="pt-8"><p className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em]">Total leads</p><p className="text-4xl font-serif font-bold mt-4 text-[#2C2825]">{exactTotal}</p></CardContent></Card>
         <Card className="border-none shadow-sm bg-white"><CardContent className="pt-8"><p className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em]">Cruces Doctoralia</p><div className="flex items-center gap-3 mt-4"><p className="text-4xl font-serif font-bold text-green-600">{matchedCount}</p><CheckCircle2 className="h-5 w-5 text-green-600/30" /></div></CardContent></Card>
-        <Card className="border-none shadow-sm bg-white"><CardContent className="pt-8"><p className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em]">Leads con cita</p><p className="text-4xl font-serif font-bold mt-4 text-primary">{appointmentCount}</p></CardContent></Card>
-        <Card className="border-none shadow-sm bg-white"><CardContent className="pt-8"><p className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em]">Con importe fuente</p><p className="text-4xl font-serif font-bold mt-4 text-primary">{withSourceAmountCount}</p><p className="text-[10px] text-[#8E8680] mt-2">No conciliado como cobro</p></CardContent></Card>
+        <Card className="border-none shadow-sm bg-white"><CardContent className="pt-8"><p className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em]">Leads sin cruce</p><p className="text-4xl font-serif font-bold mt-4 text-primary">{unmatchedCount}</p></CardContent></Card>
+        <Card className="border-none shadow-sm bg-white"><CardContent className="pt-8"><p className="text-[10px] font-bold text-[#5C5550] uppercase tracking-[0.2em]">Cobertura de cruce</p><p className="text-4xl font-serif font-bold mt-4 text-primary">{matchCoverage.toFixed(1)}%</p><p className="text-[10px] text-[#8E8680] mt-2">Sobre el periodo completo</p></CardContent></Card>
       </div>
 
       <Tabs defaultValue="leads" className="w-full">
