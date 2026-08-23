@@ -61,18 +61,19 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: '22'
           cache: npm
 
       - name: Setup Deno
-        uses: denoland/setup-deno@v2
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
         with:
           deno-version: v2.x
 
@@ -124,12 +125,12 @@ jobs:
           node scripts/validate-github-workflows.js
 
       - name: Actionlint
-        uses: reviewdog/action-actionlint@v1
+        uses: reviewdog/action-actionlint@dbe5299849118fd6f099ba563d263d770955a64a
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: ShellCheck
-        uses: ludeeus/action-shellcheck@2.0.0
+        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38
         with:
           scandir: '.github'
         env:
@@ -185,10 +186,12 @@ jobs:
         working-directory: frontend
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: '22'
           cache: npm
@@ -228,10 +231,12 @@ jobs:
         working-directory: frontend
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: '22'
           cache: npm
@@ -264,12 +269,14 @@ jobs:
           PLAYWRIGHT_REQUIRE_BROWSERS: 'true'
 
   deploy-supabase:
-    name: Deploy · Supabase canonical
+    name: Deploy · Supabase manual fallback
     needs: [quality-backend, frontend, frontend-e2e]
+    # Supabase Git Branching is the automatic production deploy owner for pushes to main.
+    # This job is retained only as an explicit manual recovery path.
     if: >-
       ${{
-        github.event_name == 'push' ||
-        (github.event_name == 'workflow_dispatch' && inputs.operation == 'deploy')
+        github.event_name == 'workflow_dispatch' &&
+        inputs.operation == 'deploy'
       }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -284,9 +291,10 @@ jobs:
       FALLBACK_META_AD_ACCOUNT_ID: ${{ secrets.FALLBACK_META_AD_ACCOUNT_ID }}
     steps:
       - name: Checkout exact candidate
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Detect deploy-relevant changes
         id: scope
@@ -411,10 +419,12 @@ jobs:
       TO_DATE_INPUT: ${{ inputs.to_date || '' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: '22'
           cache: npm
@@ -482,10 +492,12 @@ jobs:
       OUT_DIR: tmp/social-proof-audit
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: '22'
 
@@ -494,23 +506,7 @@ jobs:
 
       - name: Upload audit artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: nuvanx-social-proof-audit
           path: tmp/social-proof-audit
-
-  release-maintenance:
-    name: Release · governed Edge maintenance
-    needs: [quality-backend, frontend, frontend-e2e, deploy-supabase]
-    if: >-
-      ${{
-        github.event_name == 'push' &&
-        github.ref == 'refs/heads/main' &&
-        contains(github.event.head_commit.message, '[deploy-all]')
-      }}
-    uses: ./.github/workflows/manual-maintenance.yml
-    with:
-      operation: deploy_edge
-      function: all
-      confirmation: DEPLOY
-    secrets: inherit
