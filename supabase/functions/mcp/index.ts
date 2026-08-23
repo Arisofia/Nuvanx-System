@@ -1,4 +1,4 @@
-/** @ts-ignore: Deno global is provided by Supabase Edge Runtime */
+/** Deno global is provided by Supabase Edge Runtime. */
 declare const Deno: any;
 
 import { createClient } from '@supabase/supabase-js'
@@ -8,14 +8,21 @@ import { z } from 'zod'
 import { zodToJsonSchema } from 'zod-to-json-schema'
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, MCP_API_KEY } from '../_shared/config.ts'
 
+type JsonSchemaRecord = Record<string, unknown>
+type ZodSchemaAdapter = (
+  schema: z.ZodTypeAny,
+  options: { target: 'jsonSchema7'; $refStrategy: 'none' },
+) => JsonSchemaRecord
+
+const convertZodSchema = zodToJsonSchema as unknown as ZodSchemaAdapter
+
 const app = new Hono()
 
 const mcp = new McpServer({
   name: 'nuvanx-mcp',
   version: '1.0.0',
-  schemaAdapter: (schema: any) =>
-    // @ts-ignore: zodToJsonSchema type instantiation can be excessively deep with current esm.sh types + Deno TS
-    zodToJsonSchema(schema as z.ZodType<any, z.ZodTypeDef, any>, {
+  schemaAdapter: (schema: unknown) =>
+    convertZodSchema(schema as z.ZodTypeAny, {
       target: 'jsonSchema7',
       $refStrategy: 'none',
     }),
