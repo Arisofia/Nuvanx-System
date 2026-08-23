@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/meta-ads-inspect-once.yml'
+      - 'scripts/meta-api-inspect.js'
 
 permissions:
   contents: read
