@@ -22,8 +22,7 @@ function daysAgoLocal(days: number) {
 }
 
 function getTraceabilityStage(row: TraceabilityLead) {
-  if ((row as any).doctoralia_net != null) return 'Con caja'
-  if ((row as any).patient_id) return 'Paciente cruzado'
+  if ((row as any).patient_id || (row as any).doc_patient_id || (row as any).doctoralia_template_name) return 'Paciente cruzado'
   return 'Solo lead'
 }
 
@@ -47,9 +46,7 @@ function renderDailyInsightCard(ins: any, idx: number) {
   return (
     <div key={getInsightKey(ins, idx)} className="p-4 border rounded-lg bg-surface">
       <div className="flex justify-between text-xs text-muted mb-2">
-        <span className="font-medium uppercase tracking-widest">
-          {ins.agent_type?.replace('daily-', '').replace('-', ' ')}
-        </span>
+        <span className="font-medium uppercase tracking-widest">{ins.agent_type?.replace('daily-', '').replace('-', ' ')}</span>
         <span>{ins.created_at ? new Date(ins.created_at).toLocaleDateString('es-ES') : ''}</span>
       </div>
       {parsed && typeof parsed === 'object' ? (
@@ -57,14 +54,16 @@ function renderDailyInsightCard(ins: any, idx: number) {
           {parsed.recommendations && Array.isArray(parsed.recommendations) && (
             <div>
               <div className="font-semibold text-xs uppercase text-primary mb-1">Recomendaciones accionables:</div>
-              <ul className="list-disc pl-5">
-                {parsed.recommendations.map((r: string, j: number) => <li key={`${getInsightKey(ins, idx)}-rec-${j}`}>{r}</li>)}
-              </ul>
+              <ul className="list-disc pl-5">{parsed.recommendations.map((recommendation: string, j: number) => <li key={`${getInsightKey(ins, idx)}-rec-${j}`}>{recommendation}</li>)}</ul>
             </div>
           )}
           {parsed.ai_summary && <div><span className="font-semibold text-xs uppercase">Resumen IA:</span> {parsed.ai_summary}</div>}
           {parsed.risk_leads != null && <div>Riesgo leads: {parsed.risk_leads}</div>}
-          {parsed.doctoralia_summary && <div>Doctoralia: €{parsed.doctoralia_summary.total_revenue} ({parsed.doctoralia_summary.total_patients} pacientes)</div>}
+          {parsed.doctoralia_operations && (
+            <div>
+              Doctoralia hoy: {parsed.doctoralia_operations.appointments_today ?? 0} citas · {parsed.doctoralia_operations.realized_today ?? 0} realizadas · {parsed.doctoralia_operations.cancelled_today ?? 0} canceladas
+            </div>
+          )}
         </div>
       ) : (
         <div className="text-sm whitespace-pre-wrap">{content || JSON.stringify(ins.output_data || {})}</div>
@@ -76,11 +75,7 @@ function renderDailyInsightCard(ins: any, idx: number) {
 
 function getDailyInsightsContent(dailyLoading: boolean, dailyInsights: any[]) {
   if (dailyLoading) return <p className="text-muted text-sm">Cargando insights del día...</p>
-
-  if (dailyInsights.length === 0) {
-    return <p className="text-muted text-sm">Aún no hay insights diarios generados. El proceso diario los creará automáticamente.</p>
-  }
-
+  if (dailyInsights.length === 0) return <p className="text-muted text-sm">Aún no hay insights diarios generados. El proceso diario los creará automáticamente.</p>
   return <div className="space-y-4">{dailyInsights.map((ins, idx) => renderDailyInsightCard(ins, idx))}</div>
 }
 
@@ -97,20 +92,12 @@ export default function Intelligence() {
   const [traceFrom, setTraceFrom] = useState<string>(() => daysAgoLocal(90))
   const [traceTo, setTraceTo] = useState<string>(() => toLocalDateInputValue(new Date()))
   const [traceSource, setTraceSource] = useState<string>('')
-
   const [performanceFrom, setPerformanceFrom] = useState<string>(() => daysAgoLocal(90))
   const [performanceTo, setPerformanceTo] = useState<string>(() => toLocalDateInputValue(new Date()))
   const [performanceSource, setPerformanceSource] = useState<string>('')
 
-  const traceSources = useMemo(
-    () => [...new Set(traceability.map((l: any) => l.source).filter(Boolean))] as string[],
-    [traceability],
-  )
-
-  const performanceSources = useMemo(
-    () => [...new Set(campaigns.map((c: any) => c.source).filter(Boolean))] as string[],
-    [campaigns],
-  )
+  const traceSources = useMemo(() => [...new Set(traceability.map((lead: any) => lead.source).filter(Boolean))] as string[], [traceability])
+  const performanceSources = useMemo(() => [...new Set(campaigns.map((campaign: any) => campaign.source).filter(Boolean))] as string[], [campaigns])
 
   const performanceColumns: ColDef[] = [
     { key: 'source', label: 'Fuente', align: 'left' },
@@ -119,52 +106,45 @@ export default function Intelligence() {
     { key: 'contacted', label: 'Contactados', align: 'right', sortable: true },
     { key: 'replied', label: 'Respondieron', align: 'right', sortable: true },
     { key: 'booked', label: 'Agendados', align: 'right', sortable: true },
-    { key: 'closed_won', label: 'Cerrados', align: 'right', sortable: true },
-    { key: 'reply_rate_pct', label: 'Respuesta %', align: 'right', sortable: true, format: (v) => v === null || v === undefined ? null : `${v}%` },
-    { key: 'lead_to_close_rate_pct', label: 'Cierre %', align: 'right', sortable: true, format: (v) => v === null || v === undefined ? null : `${v}%` },
-    { key: 'verified_revenue_crm', label: 'Caja', align: 'right', sortable: true, format: (v) => v === null || v === undefined ? null : Number(v).toLocaleString('es-ES', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 }) },
-    { key: 'avg_reply_delay_min', label: 'Resp. min', align: 'right', sortable: true, format: (v) => v === null || v === undefined ? null : String(v) },
+    { key: 'attended', label: 'Asistidos', align: 'right', sortable: true },
+    { key: 'no_shows', label: 'No show', align: 'right', sortable: true },
+    { key: 'reply_rate_pct', label: 'Respuesta %', align: 'right', sortable: true, format: (value) => value == null ? null : `${value}%` },
+    { key: 'avg_reply_delay_min', label: 'Resp. min', align: 'right', sortable: true, format: (value) => value == null ? null : String(value) },
   ]
 
-  const traceabilityRows = useMemo(
-    () => traceability.map((row: TraceabilityLead) => ({ ...row, _stage: getTraceabilityStage(row) })),
-    [traceability],
-  )
-
+  const traceabilityRows = useMemo(() => traceability.map((row: TraceabilityLead) => ({ ...row, _stage: getTraceabilityStage(row) })), [traceability])
   const traceabilityColumns: ColDef[] = [
     { key: 'source', label: 'Fuente', align: 'left' },
     { key: 'campaign_name', label: 'Campaña', align: 'left' },
-    { key: 'lead_created_at', label: 'Lead creado', align: 'left', format: (v) => v ? new Date(v).toLocaleDateString('es-ES') : null },
+    { key: 'lead_created_at', label: 'Lead creado', align: 'left', format: (value) => value ? new Date(value).toLocaleDateString('es-ES') : null },
     { key: '_stage', label: 'Etapa', align: 'left' },
     { key: 'patient_name', label: 'Paciente', align: 'left' },
     { key: 'patient_dni', label: 'DNI', align: 'left' },
     { key: 'patient_phone', label: 'Teléfono', align: 'left' },
-    { key: 'patient_ltv', label: 'LTV', align: 'right', format: (v) => v === null || v === undefined ? null : Number(v).toLocaleString('es-ES', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 }) },
-    { key: 'first_settlement_at', label: '1ª liquidación', align: 'left', format: (v) => v ? new Date(v).toLocaleDateString('es-ES') : null },
-    { key: 'settlement_date', label: 'Últ. liquidación', align: 'left', format: (v) => v ? new Date(v).toLocaleDateString('es-ES') : null },
-    { key: 'match_confidence', label: 'Confianza', align: 'right', format: (v) => v === null || v === undefined ? null : `${(Number(v) * 100).toFixed(0)}%` },
-    { key: 'match_class', label: 'Cruce', align: 'left', format: (v) => v ? String(v).replaceAll('_', ' ') : null },
+    { key: 'doctoralia_template_name', label: 'Registro Doctoralia', align: 'left' },
+    { key: 'match_confidence', label: 'Confianza', align: 'right', format: (value) => value == null ? null : `${(Number(value) * 100).toFixed(0)}%` },
+    { key: 'match_class', label: 'Cruce', align: 'left', format: (value) => value ? String(value).replaceAll('_', ' ') : null },
   ]
 
   useEffect(() => {
     invokeApi('/api/traceability/funnel')
       .then((data: any) => {
         setFunnel(Array.isArray(data?.funnel) ? data.funnel : [])
-        setLoading((prev) => ({ ...prev, funnel: false }))
+        setLoading((previous) => ({ ...previous, funnel: false }))
       })
       .catch((err: any) => {
-        setError((prev) => ({ ...prev, funnel: err?.message || 'No se pudo cargar el embudo.' }))
-        setLoading((prev) => ({ ...prev, funnel: false }))
+        setError((previous) => ({ ...previous, funnel: err?.message || 'No se pudo cargar el embudo.' }))
+        setLoading((previous) => ({ ...previous, funnel: false }))
       })
 
     invokeApi('/api/conversations')
       .then((data: any) => {
         setConversations(Array.isArray(data?.conversations) ? data.conversations.slice(0, 20) : [])
-        setLoading((prev) => ({ ...prev, conversations: false }))
+        setLoading((previous) => ({ ...previous, conversations: false }))
       })
       .catch((err: any) => {
-        setError((prev) => ({ ...prev, conversations: err?.message || 'No se pudieron cargar las conversaciones.' }))
-        setLoading((prev) => ({ ...prev, conversations: false }))
+        setError((previous) => ({ ...previous, conversations: err?.message || 'No se pudieron cargar las conversaciones.' }))
+        setLoading((previous) => ({ ...previous, conversations: false }))
       })
   }, [])
 
@@ -177,11 +157,11 @@ export default function Intelligence() {
     invokeApi(`/api/traceability/campaigns${qs}`)
       .then((data: any) => {
         setCampaigns(Array.isArray(data?.campaigns) ? data.campaigns : [])
-        setLoading((prev) => ({ ...prev, campaigns: false }))
+        setLoading((previous) => ({ ...previous, campaigns: false }))
       })
       .catch((err: any) => {
-        setError((prev) => ({ ...prev, campaigns: err?.message || 'No se pudieron cargar las campañas.' }))
-        setLoading((prev) => ({ ...prev, campaigns: false }))
+        setError((previous) => ({ ...previous, campaigns: err?.message || 'No se pudieron cargar las campañas.' }))
+        setLoading((previous) => ({ ...previous, campaigns: false }))
       })
   }, [performanceFrom, performanceTo, performanceSource])
 
@@ -193,11 +173,11 @@ export default function Intelligence() {
     invokeApi(`/api/traceability/leads?${params.join('&')}`)
       .then((data: any) => {
         setTraceability(Array.isArray(data?.leads) ? data.leads : [])
-        setLoading((prev) => ({ ...prev, traceability: false }))
+        setLoading((previous) => ({ ...previous, traceability: false }))
       })
       .catch((err: any) => {
-        setError((prev) => ({ ...prev, traceability: err?.message || 'No se pudo cargar la trazabilidad.' }))
-        setLoading((prev) => ({ ...prev, traceability: false }))
+        setError((previous) => ({ ...previous, traceability: err?.message || 'No se pudo cargar la trazabilidad.' }))
+        setLoading((previous) => ({ ...previous, traceability: false }))
       })
   }, [traceFrom, traceTo, traceSource])
 
@@ -208,7 +188,7 @@ export default function Intelligence() {
       try {
         const data: any = await invokeApi('/api/ai/outputs?limit=20')
         if (!active) return
-        const daily = (data?.outputs || []).filter((o: any) => o.agent_type && (o.agent_type.includes('daily') || o.agent_type.includes('insight')))
+        const daily = (data?.outputs || []).filter((output: any) => output.agent_type && (output.agent_type.includes('daily') || output.agent_type.includes('insight')))
         setDailyInsights(daily)
       } catch {
         void 0
@@ -216,82 +196,48 @@ export default function Intelligence() {
         if (active) setDailyLoading(false)
       }
     }
-    load()
+    void load()
     return () => { active = false }
   }, [])
 
   let performanceContent
-  if (loading.campaigns) {
-    performanceContent = <p className="text-muted text-sm">Cargando rendimiento de campañas…</p>
-  } else if (error.campaigns) {
-    performanceContent = <p className="text-sm text-[#D9534F]">{error.campaigns}</p>
-  } else {
-    performanceContent = (
-      <SortableTable
-        columns={performanceColumns}
-        rows={campaigns}
-        exportFilename="rendimiento-campanas"
-        pageSize={200}
-        emptyMessage="No hay rendimiento de campañas para el período seleccionado."
-      />
-    )
-  }
+  if (loading.campaigns) performanceContent = <p className="text-muted text-sm">Cargando rendimiento de campañas…</p>
+  else if (error.campaigns) performanceContent = <p className="text-sm text-[#D9534F]">{error.campaigns}</p>
+  else performanceContent = <SortableTable columns={performanceColumns} rows={campaigns} exportFilename="rendimiento-campanas" pageSize={200} emptyMessage="No hay rendimiento de campañas para el período seleccionado." />
 
   let funnelContent
-  if (loading.funnel) {
-    funnelContent = <p className="text-muted text-sm">Cargando datos del embudo…</p>
-  } else if (error.funnel) {
-    funnelContent = <p className="text-sm text-[#D9534F]">{error.funnel}</p>
-  } else if (funnel.length === 0) {
-    funnelContent = <p className="text-muted text-sm">No hay datos del embudo disponibles todavía.</p>
-  } else {
-    funnelContent = <div className="space-y-2">{funnel.map((row) => <div key={row.stage} className="flex justify-between items-center p-3 rounded-lg bg-surface border border-border"><span className="capitalize text-sm text-[#d7c5ae]">{String(row.stage).replaceAll('_', ' ')}</span><span className="font-bold text-sm">{(row.count ?? 0).toLocaleString()}{row.pct !== null && row.pct !== undefined ? ` (${row.pct}%)` : ''}</span></div>)}</div>
-  }
+  if (loading.funnel) funnelContent = <p className="text-muted text-sm">Cargando datos del embudo…</p>
+  else if (error.funnel) funnelContent = <p className="text-sm text-[#D9534F]">{error.funnel}</p>
+  else if (funnel.length === 0) funnelContent = <p className="text-muted text-sm">No hay datos del embudo disponibles todavía.</p>
+  else funnelContent = <div className="space-y-2">{funnel.map((row) => <div key={row.stage} className="flex justify-between items-center p-3 rounded-lg bg-surface border border-border"><span className="capitalize text-sm text-[#d7c5ae]">{String(row.stage).replaceAll('_', ' ')}</span><span className="font-bold text-sm">{(row.count ?? 0).toLocaleString()}{row.pct != null ? ` (${row.pct}%)` : ''}</span></div>)}</div>
 
   let conversationsContent
-  if (loading.conversations) {
-    conversationsContent = <p className="text-muted text-sm">Cargando conversaciones…</p>
-  } else if (error.conversations) {
-    conversationsContent = <p className="text-sm text-[#D9534F]">{error.conversations}</p>
-  } else if (conversations.length === 0) {
-    conversationsContent = <p className="text-muted text-sm">No se encontraron conversaciones.</p>
-  } else {
-    conversationsContent = <div className="space-y-3">{conversations.map((conv) => <div key={conv.id} className="p-3 bg-surface rounded-lg border border-border"><div className="flex justify-between"><p className="text-sm font-medium">{conv.phone ?? conv.id}</p><span className="text-xs text-muted capitalize">{conv.direction}</span></div>{conv.message_preview && <p className="text-xs text-muted mt-1 truncate">{conv.message_preview}</p>}{conv.sent_at && <p className="text-xs text-muted mt-1">{new Date(conv.sent_at).toLocaleString('es-ES')}</p>}</div>)}</div>
-  }
+  if (loading.conversations) conversationsContent = <p className="text-muted text-sm">Cargando conversaciones…</p>
+  else if (error.conversations) conversationsContent = <p className="text-sm text-[#D9534F]">{error.conversations}</p>
+  else if (conversations.length === 0) conversationsContent = <p className="text-muted text-sm">No se encontraron conversaciones.</p>
+  else conversationsContent = <div className="space-y-3">{conversations.map((conversation) => <div key={conversation.id} className="p-3 bg-surface rounded-lg border border-border"><div className="flex justify-between"><p className="text-sm font-medium">{conversation.phone ?? conversation.id}</p><span className="text-xs text-muted capitalize">{conversation.direction}</span></div>{conversation.message_preview && <p className="text-xs text-muted mt-1 truncate">{conversation.message_preview}</p>}{conversation.sent_at && <p className="text-xs text-muted mt-1">{new Date(conversation.sent_at).toLocaleString('es-ES')}</p>}</div>)}</div>
 
   let traceabilityContent
-  if (loading.traceability) {
-    traceabilityContent = <p className="text-muted text-sm">Cargando trazabilidad…</p>
-  } else if (error.traceability) {
-    traceabilityContent = <p className="text-sm text-[#D9534F]">{error.traceability}</p>
-  } else if (traceability.length === 0) {
-    traceabilityContent = <div className="flex flex-col items-center justify-center py-12 text-center gap-3"><p className="text-[#d7c5ae] font-medium">No hay datos de trazabilidad todavía</p><p className="text-muted text-sm max-w-md">Cuando el sistema cruce Doctoralia por DNI, nombre o teléfono, cada lead se vinculará a su paciente y a sus liquidaciones.</p></div>
-  } else {
-    traceabilityContent = <SortableTable columns={traceabilityColumns} rows={traceabilityRows} exportFilename="trazabilidad-leads" pageSize={200} emptyMessage="No hay datos de trazabilidad todavía." />
-  }
+  if (loading.traceability) traceabilityContent = <p className="text-muted text-sm">Cargando trazabilidad…</p>
+  else if (error.traceability) traceabilityContent = <p className="text-sm text-[#D9534F]">{error.traceability}</p>
+  else if (traceability.length === 0) traceabilityContent = <div className="flex flex-col items-center justify-center py-12 text-center gap-3"><p className="text-[#d7c5ae] font-medium">No hay datos de trazabilidad todavía</p><p className="text-muted text-sm max-w-md">Cuando el sistema cruce Doctoralia por DNI, nombre o teléfono, cada lead se vinculará al registro de paciente correspondiente.</p></div>
+  else traceabilityContent = <SortableTable columns={traceabilityColumns} rows={traceabilityRows} exportFilename="trazabilidad-leads" pageSize={200} emptyMessage="No hay datos de trazabilidad todavía." />
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-serif font-bold text-foreground">Inteligencia</h1>
-        <p className="text-muted mt-1">Rendimiento de campañas, embudo WhatsApp y registro de conversaciones</p>
+        <p className="text-muted mt-1">Rendimiento operativo de campañas, embudo WhatsApp, conversaciones y trazabilidad</p>
         <MetaAccountsInline context="Inteligencia de campañas, conversaciones y trazabilidad asociada a estas cuentas Meta." className="mt-4 max-w-2xl" />
       </div>
 
       <Tabs defaultValue="performance" className="w-full">
-        <TabsList>
-          <TabsTrigger value="performance">Rendimiento</TabsTrigger>
-          <TabsTrigger value="funnel">Embudo WhatsApp</TabsTrigger>
-          <TabsTrigger value="conversations">Conversaciones</TabsTrigger>
-          <TabsTrigger value="traceability">Trazabilidad</TabsTrigger>
-          <TabsTrigger value="daily-insights">Insights diarios</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="performance"><Card><CardHeader><CardTitle>Rendimiento de campañas</CardTitle></CardHeader><CardContent className="space-y-4"><FilterBar onDateChange={(from, to) => { setPerformanceFrom(from); setPerformanceTo(to) }} sources={performanceSources} sourceValue={performanceSource} onSourceChange={setPerformanceSource} />{performanceContent}</CardContent></Card></TabsContent>
+        <TabsList><TabsTrigger value="performance">Rendimiento</TabsTrigger><TabsTrigger value="funnel">Embudo WhatsApp</TabsTrigger><TabsTrigger value="conversations">Conversaciones</TabsTrigger><TabsTrigger value="traceability">Trazabilidad</TabsTrigger><TabsTrigger value="daily-insights">Insights diarios</TabsTrigger></TabsList>
+        <TabsContent value="performance"><Card><CardHeader><CardTitle>Rendimiento operativo de campañas</CardTitle></CardHeader><CardContent className="space-y-4"><FilterBar onDateChange={(from, to) => { setPerformanceFrom(from); setPerformanceTo(to) }} sources={performanceSources} sourceValue={performanceSource} onSourceChange={setPerformanceSource} />{performanceContent}</CardContent></Card></TabsContent>
         <TabsContent value="funnel"><Card><CardHeader><CardTitle>Embudo de conversión WhatsApp</CardTitle></CardHeader><CardContent>{funnelContent}</CardContent></Card></TabsContent>
         <TabsContent value="conversations"><Card><CardHeader><CardTitle>Conversaciones recientes</CardTitle></CardHeader><CardContent>{conversationsContent}</CardContent></Card></TabsContent>
-        <TabsContent value="traceability"><Card><CardHeader><CardTitle>Lead → paciente → caja</CardTitle></CardHeader><CardContent className="space-y-4"><FilterBar onDateChange={(from, to) => { setTraceFrom(from); setTraceTo(to) }} sources={traceSources} sourceValue={traceSource} onSourceChange={setTraceSource} />{traceabilityContent}</CardContent></Card></TabsContent>
-        <TabsContent value="daily-insights"><Card><CardHeader><CardTitle>Insights diarios de agentes</CardTitle><p className="text-xs text-muted">Generados automáticamente por daily-aggregates y agentes IA.</p></CardHeader><CardContent>{getDailyInsightsContent(dailyLoading, dailyInsights)}</CardContent></Card></TabsContent>
+        <TabsContent value="traceability"><Card><CardHeader><CardTitle>Lead → paciente</CardTitle><p className="text-xs text-muted">Sin métricas de caja hasta disponer de una fuente de cobros reconciliada.</p></CardHeader><CardContent className="space-y-4"><FilterBar onDateChange={(from, to) => { setTraceFrom(from); setTraceTo(to) }} sources={traceSources} sourceValue={traceSource} onSourceChange={setTraceSource} />{traceabilityContent}</CardContent></Card></TabsContent>
+        <TabsContent value="daily-insights"><Card><CardHeader><CardTitle>Insights diarios de agentes</CardTitle><p className="text-xs text-muted">Generados automáticamente sobre datos operativos persistidos.</p></CardHeader><CardContent>{getDailyInsightsContent(dailyLoading, dailyInsights)}</CardContent></Card></TabsContent>
       </Tabs>
     </div>
   )

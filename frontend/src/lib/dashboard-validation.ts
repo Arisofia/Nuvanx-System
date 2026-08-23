@@ -103,15 +103,14 @@ export function normalizeFunnelData(value: unknown): Array<Record<string, unknow
   const totalLeads = rows.length
   const booked = rows.filter((row) => row.cita_valoracion != null && row.cita_valoracion !== '').length
   const attended = rows.filter((row) => isAttendedAppointment(row.estado)).length
-  const closedWithCash = rows.filter((row) => toSafeNumber(row.revenue, 0) > 0).length
+  const followUp = rows.filter((row) => row.cita_posterior != null && row.cita_posterior !== '').length
   const percentage = (count: number) => totalLeads > 0 ? Number(((count / totalLeads) * 100).toFixed(1)) : 0
 
   return [
     { stage: 'total_leads', label: 'Leads', count: totalLeads, percentage: percentage(totalLeads) },
     { stage: 'booked', label: 'Agendados', count: booked, percentage: percentage(booked) },
     { stage: 'attended', label: 'Asistidos', count: attended, percentage: percentage(attended) },
-    { stage: 'closed_won', label: 'Cerrados con caja', count: closedWithCash, percentage: percentage(closedWithCash) },
-    { stage: 'settled_revenue', label: 'Operaciones con caja', count: closedWithCash, percentage: percentage(closedWithCash) },
+    { stage: 'follow_up', label: 'Cita posterior', count: followUp, percentage: percentage(followUp) },
   ]
 }
 

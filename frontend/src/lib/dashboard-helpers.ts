@@ -2,7 +2,7 @@ import type { DashboardMetrics } from '../types'
 
 export interface CombinedMetrics {
   metaEstimatedLeads: number
-  verifiedRevenue: number
+  verifiedRevenue: number | null
   metaCpl: number | null
   revenuePerLead: number | null
 }
@@ -39,7 +39,7 @@ export interface DashboardStateOptions {
 
 export const EMPTY_COMBINED_METRICS: CombinedMetrics = {
   metaEstimatedLeads: 0,
-  verifiedRevenue: 0,
+  verifiedRevenue: null,
   metaCpl: null,
   revenuePerLead: null,
 }
@@ -48,7 +48,7 @@ export const EMPTY_FUNNEL: RealFunnel = {
   metaSpend: 0,
   metaLeads: 0,
   crmLeads: 0,
-  doctoraliaRevenue: 0,
+  doctoraliaRevenue: null,
   doctoraliaPatients: 0,
   cac: 0,
   cacConfidence: 0,
@@ -170,19 +170,28 @@ export function buildDashboardState(options: DashboardStateOptions) {
     ? Number.parseFloat(Number(avgCpcRaw).toFixed(2))
     : null
 
-  const doctoraliaPatients = toNumber(pick(kpisDoctoralia.newVerifiedPatients, kpisDoctoralia.new_verified_patients, kpisDoctoralia.patientMatches, kpisDoctoralia.patient_matches, metricsData.patientMatches, metricsData.patient_matches))
-  const doctoraliaVerifiedRevenue = toNumber(pick(kpisDoctoralia.verifiedRevenue, kpisDoctoralia.verified_revenue, metricsData.verifiedRevenue, metricsData.verified_revenue))
+  // Identity linkage is the canonical Doctoralia match signal. Legacy
+  // newVerifiedPatients fields are settlement-derived and may only be used as a
+  // compatibility fallback when no identity-match metric is available.
+  const doctoraliaPatients = toNumber(pick(
+    metricsData.patientMatches,
+    metricsData.patient_matches,
+    kpisDoctoralia.patientMatches,
+    kpisDoctoralia.patient_matches,
+    kpisDoctoralia.newVerifiedPatients,
+    kpisDoctoralia.new_verified_patients,
+  ))
   const totalLeads = toNullableNumber(pick(metricsData.totalLeads, metricsData.total_leads, kpisCrm.totalLeads, kpisCrm.total_leads))
   const conversionRate = toNullableNumber(pick(metricsData.conversionRate, metricsData.conversion_rate, kpisCrm.conversionRate, kpisCrm.conversion_rate))
   const patientConversionRate = toNullableNumber(pick(metricsData.patientConversionRate, metricsData.patient_conversion_rate, kpisDoctoralia.patientConversionRate, kpisDoctoralia.patient_conversion_rate))
-  const totalRevenue = toNullableNumber(pick(metricsData.totalRevenue, metricsData.total_revenue, kpisDoctoralia.totalRevenue, kpisDoctoralia.total_revenue))
-  const settledCount = toNullableNumber(pick(metricsData.settledCount, metricsData.settled_count, kpisDoctoralia.settledCount, kpisDoctoralia.settled_count))
+
+  // financial_settlements currently contains Doctoralia operational appointment
+  // amounts, not a reconciled cash/payment ledger. Never surface those legacy API
+  // fields as verified revenue in the dashboard until a canonical cash source exists.
+  const doctoraliaVerifiedRevenue: number | null = null
 
   const metaCpl = calculateRatio(canonicalMetaSpend, canonicalMetaLeads)
   const cacDoctoralia = calculateRatio(canonicalMetaSpend, doctoraliaPatients)
-  const revenuePerLead = totalLeads != null
-    ? calculateRatio(doctoraliaVerifiedRevenue, totalLeads)
-    : null
   const accountIds = pick(kpisMeta.accountIds, kpisMeta.account_ids)
   const deltas = asObject(metricsData.deltas)
 
@@ -196,16 +205,16 @@ export function buildDashboardState(options: DashboardStateOptions) {
       conversionRate,
       patientMatches: doctoraliaPatients,
       patientConversionRate,
-      verifiedRevenue: toNullableNumber(doctoraliaVerifiedRevenue),
-      totalRevenue,
-      settledCount,
+      verifiedRevenue: doctoraliaVerifiedRevenue,
+      totalRevenue: null,
+      settledCount: null,
       activeCampaigns: campaigns.filter((campaign: any) => campaign.status === 'ACTIVE').length,
       spend: canonicalMetaSpend,
       averageCpc: canonicalAvgCpc,
       metaConversions: canonicalMetaLeads,
       deltas: {
         leads: toNullableNumber(pick(deltas.leads, deltas.totalLeads, deltas.total_leads)),
-        revenue: toNullableNumber(pick(deltas.revenue, deltas.verifiedRevenue, deltas.verified_revenue)),
+        revenue: null,
         conversions: toNullableNumber(pick(deltas.conversions, deltas.metaConversions, deltas.meta_conversions)),
         patientMatches: toNullableNumber(pick(deltas.patientMatches, deltas.patient_matches)),
         spend: toNullableNumber(spendDelta),
@@ -219,7 +228,7 @@ export function buildDashboardState(options: DashboardStateOptions) {
       metaEstimatedLeads: canonicalMetaLeads,
       verifiedRevenue: doctoraliaVerifiedRevenue,
       metaCpl,
-      revenuePerLead,
+      revenuePerLead: null,
     } satisfies CombinedMetrics,
 
     funnel: {
