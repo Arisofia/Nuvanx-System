@@ -7,9 +7,11 @@ const migrationsDir = fileURLToPath(new URL('../../migrations/', import.meta.url
 const earlyFile = '20260504125960_reconcile_agent_runs_schema_baseline.sql';
 const playbooksFile = '20260823213000_reconcile_playbooks_schema_baseline.sql';
 const finalizerFile = '20260823214000_finalize_agent_runs_schema_baseline.sql';
+const cleanupFile = '20260823214100_cleanup_agent_runs_replay_indexes.sql';
 const early = readFileSync(join(migrationsDir, earlyFile), 'utf8');
 const playbooks = readFileSync(join(migrationsDir, playbooksFile), 'utf8');
 const finalizer = readFileSync(join(migrationsDir, finalizerFile), 'utf8');
+const cleanup = readFileSync(join(migrationsDir, cleanupFile), 'utf8');
 
 describe('agent_runs schema baseline', () => {
   it('orders the early relation before historical advisor and playbooks references', () => {
@@ -17,6 +19,7 @@ describe('agent_runs schema baseline', () => {
     expect(earlyFile < '20260508120000_fix_remaining_advisor_fk_indexes.sql').toBe(true);
     expect(earlyFile < playbooksFile).toBe(true);
     expect(finalizerFile > playbooksFile).toBe(true);
+    expect(cleanupFile > finalizerFile).toBe(true);
   });
 
   it('restores the production table contract before circular FK targets exist', () => {
@@ -59,5 +62,16 @@ describe('agent_runs schema baseline', () => {
     expect(finalizer).toContain('FOREIGN KEY (playbook_id)');
     expect(finalizer).toContain('REFERENCES public.playbooks(id)');
     expect(finalizer).toContain('ON DELETE SET NULL');
+  });
+
+  it('removes only the known replay-created duplicate indexes after canonical indexes and FKs exist', () => {
+    expect(cleanup).toContain('DROP INDEX IF EXISTS public.adv_fk_agent_runs_execution_id');
+    expect(cleanup).toContain('DROP INDEX IF EXISTS public.adv_fk_agent_runs_playbook_id');
+    expect(cleanup).toContain('DROP INDEX IF EXISTS public.idx_agent_runs_execution_id_fk');
+    expect(cleanup).toContain('DROP INDEX IF EXISTS public.idx_agent_runs_playbook_id_fk');
+    expect(cleanup).not.toContain('DROP INDEX IF EXISTS public.idx_agent_runs_execution_id;');
+    expect(cleanup).not.toContain('DROP INDEX IF EXISTS public.idx_agent_runs_playbook_id;');
+    expect(cleanup).not.toContain('DROP INDEX IF EXISTS public.agent_runs_created_at_idx;');
+    expect(cleanup).not.toContain('DROP INDEX IF EXISTS public.agent_runs_user_id_idx;');
   });
 });
