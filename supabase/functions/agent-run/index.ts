@@ -30,7 +30,11 @@ const GEMINI_KEY    = Deno.env.get('GEMINI_API_KEY') ?? '';
 
 function safeErrorMessage(error: unknown): string {
   try {
-    return error instanceof Error ? String(error.message) : String(error);
+    if (error instanceof Error) return String(error.message);
+    if (error !== null && typeof error === 'object' && 'message' in error) {
+      return String((error as { message: unknown }).message);
+    }
+    return String(error);
   } catch {
     return 'AI provider request failed';
   }
