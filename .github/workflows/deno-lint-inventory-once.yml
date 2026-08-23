@@ -1,0 +1,58 @@
+name: Deno lint inventory once
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    if: github.event.pull_request.head.ref == 'fix/deno-lint-format-20260823'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact head
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Complete lint and format inventory
+        shell: bash
+        run: |
+          set -uo pipefail
+          mapfile -t sources < <(find supabase/functions -type f -name '*.ts' | sort)
+          printf 'DENO_SOURCE_COUNT=%s\n' "${#sources[@]}"
+
+          echo '=== DENO LINT COMPACT ==='
+          deno lint --compact "${sources[@]}"
+          lint_ec=$?
+          echo "DENO_LINT_EXIT=$lint_ec"
+
+          echo '=== DENO FORMAT FAILING FILES ==='
+          fmt_bad=0
+          fmt_count=0
+          for file in "${sources[@]}"; do
+            if ! deno fmt --check "$file" >/dev/null 2>&1; then
+              echo "$file"
+              fmt_bad=1
+              fmt_count=$((fmt_count + 1))
+            fi
+          done
+          echo "DENO_FMT_FAILING_FILES=$fmt_count"
+          echo "DENO_FMT_EXIT=$fmt_bad"
+
+          echo '=== DENO TYPE CHECK ==='
+          deno check --config=supabase/functions/deno.json "${sources[@]}"
+          echo "DENO_CHECK_EXIT=$?"
+
+          # This is an inventory job. Non-zero lint/format is expected until the
+          # corrective source patch is applied; type-check still appears above.
+          exit 0
