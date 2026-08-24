@@ -1,0 +1,216 @@
+name: Meta App Use-Case Audit Once
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: meta-app-usecase-audit-once
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: >-
+      github.event.pull_request.head.ref == 'ops/meta-app-usecase-audit-once-20260824' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    environment: Production
+    timeout-minutes: 8
+    env:
+      META_CANONICAL_ACCESS_TOKEN: ${{ secrets.META_CANONICAL_ACCESS_TOKEN }}
+      META_CANONICAL_APP_SECRET: ${{ secrets.META_CANONICAL_APP_SECRET }}
+
+    steps:
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 22
+
+      - name: Audit Meta app use cases read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module - <<'NODE'
+          import { createHmac } from 'node:crypto';
+
+          const token = String(process.env.META_CANONICAL_ACCESS_TOKEN || '').trim();
+          const secret = String(process.env.META_CANONICAL_APP_SECRET || '').trim();
+          if (!token || !secret) throw new Error('Canonical Meta credentials missing');
+
+          const APP_ID = '1836302544001572';
+          const BUSINESS_ID = '897835716596010';
+          const AD_ACCOUNT_ID = 'act_718120894191565';
+          const CAMPAIGN_ID = '120249780276630419';
+          const PAGE_ID = '1329458703573874';
+          const IG_ID = '17841474094610850';
+          const FORM_ID = '1493697602775666';
+          const VERSION = 'v22.0';
+          const base = `https://graph.facebook.com/${VERSION}`;
+          const proof = createHmac('sha256', secret).update(token).digest('hex');
+          const appToken = `${APP_ID}|${secret}`;
+
+          function errSummary(response, json) {
+            const e = json?.error ?? {};
+            return {
+              ok: false,
+              http: response.status,
+              code: e.code ?? null,
+              subcode: e.error_subcode ?? null,
+              type: e.type ?? null,
+              message: String(e.message ?? response.statusText ?? '').replace(/\s+/g, ' ').slice(0, 180),
+            };
+          }
+
+          async function get(path, params = {}, accessToken = token, includeProof = accessToken === token) {
+            const url = new URL(`${base}/${String(path).replace(/^\//, '')}`);
+            url.searchParams.set('access_token', accessToken);
+            if (includeProof) url.searchParams.set('appsecret_proof', proof);
+            for (const [key, value] of Object.entries(params)) {
+              if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
+            }
+            const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+            const json = await response.json().catch(() => ({}));
+            if (!response.ok || json?.error) return { ...errSummary(response, json), json: null };
+            return { ok: true, http: response.status, json };
+          }
+
+          function emit(name, payload) {
+            console.log(`META_USECASE_${name}=${JSON.stringify(payload)}`);
+          }
+
+          const debug = await get('debug_token', { input_token: token }, appToken, false);
+          emit('TOKEN_IDENTITY', debug.ok ? {
+            ok: true,
+            app_id: debug.json?.data?.app_id ?? null,
+            user_id: debug.json?.data?.user_id ?? null,
+            type: debug.json?.data?.type ?? null,
+            is_valid: debug.json?.data?.is_valid === true,
+            scopes: Array.isArray(debug.json?.data?.scopes) ? [...debug.json.data.scopes].sort() : [],
+            granular_scopes: Array.isArray(debug.json?.data?.granular_scopes)
+              ? debug.json.data.granular_scopes.map((row) => ({ scope: row?.scope ?? null, target_count: Array.isArray(row?.target_ids) ? row.target_ids.length : 0 }))
+              : [],
+          } : debug);
+
+          const permissions = await get('me/permissions');
+          const granted = permissions.ok && Array.isArray(permissions.json?.data)
+            ? permissions.json.data.filter((row) => row?.status === 'granted').map((row) => String(row.permission)).sort()
+            : [];
+          emit('PERMISSIONS', permissions.ok ? { ok: true, granted } : permissions);
+
+          const app = await get(APP_ID, { fields: 'id,name,link,namespace,app_domains,privacy_policy_url,terms_of_service_url' }, appToken, false);
+          emit('APP_PROFILE', app.ok ? {
+            ok: true,
+            id: app.json?.id ?? null,
+            name: app.json?.name ?? null,
+            has_namespace: Boolean(app.json?.namespace),
+            app_domains_count: Array.isArray(app.json?.app_domains) ? app.json.app_domains.length : 0,
+            has_privacy_policy_url: Boolean(app.json?.privacy_policy_url),
+            has_terms_url: Boolean(app.json?.terms_of_service_url),
+          } : app);
+
+          const ads = await get(AD_ACCOUNT_ID, { fields: 'id,account_status,currency,timezone_name' });
+          emit('MARKETING_ADS', ads.ok ? { ok: true, account_status: ads.json?.account_status ?? null, currency: ads.json?.currency ?? null, timezone: ads.json?.timezone_name ?? null } : ads);
+
+          const insights = await get(`${CAMPAIGN_ID}/insights`, { fields: 'campaign_id,impressions', limit: '1', date_preset: 'last_7d' });
+          emit('MARKETING_INSIGHTS', insights.ok ? { ok: true, rows: Array.isArray(insights.json?.data) ? insights.json.data.length : 0 } : insights);
+
+          const form = await get(FORM_ID, { fields: 'id,name,status,page' });
+          const leads = await get(`${FORM_ID}/leads`, { fields: 'id', limit: '1' });
+          emit('LEAD_ADS', {
+            form_read: form.ok ? { ok: true, status: form.json?.status ?? null } : form,
+            leads_read: leads.ok ? { ok: true, rows: Array.isArray(leads.json?.data) ? leads.json.data.length : 0 } : leads,
+            has_leads_retrieval_scope: granted.includes('leads_retrieval'),
+          });
+
+          const page = await get(PAGE_ID, { fields: 'id,name' });
+          const subscribedApps = await get(`${PAGE_ID}/subscribed_apps`, { fields: 'id,name', limit: '5' });
+          emit('PAGE_MANAGEMENT', {
+            page_read: page.ok ? { ok: true } : page,
+            subscribed_apps_read: subscribedApps.ok ? { ok: true, rows: Array.isArray(subscribedApps.json?.data) ? subscribedApps.json.data.length : 0 } : subscribedApps,
+            relevant_scopes: granted.filter((s) => s.startsWith('pages_')),
+          });
+
+          const messenger = await get(`${PAGE_ID}/conversations`, { fields: 'id', limit: '1' });
+          emit('MESSENGER', {
+            conversations_read: messenger.ok ? { ok: true, rows: Array.isArray(messenger.json?.data) ? messenger.json.data.length : 0 } : messenger,
+            has_pages_messaging_scope: granted.includes('pages_messaging'),
+          });
+
+          const instagram = await get(IG_ID, { fields: 'id,username,media_count' });
+          const igConversations = await get(`${IG_ID}/conversations`, { fields: 'id', limit: '1', platform: 'instagram' });
+          emit('INSTAGRAM', {
+            account_read: instagram.ok ? { ok: true, username: instagram.json?.username ?? null, media_count: instagram.json?.media_count ?? null } : instagram,
+            conversations_read: igConversations.ok ? { ok: true, rows: Array.isArray(igConversations.json?.data) ? igConversations.json.data.length : 0 } : igConversations,
+            relevant_scopes: granted.filter((s) => s.startsWith('instagram_')),
+          });
+
+          const wabas = await get(`${BUSINESS_ID}/owned_whatsapp_business_accounts`, { fields: 'id,name', limit: '100' });
+          emit('WHATSAPP', {
+            owned_waba_read: wabas.ok ? { ok: true, count: Array.isArray(wabas.json?.data) ? wabas.json.data.length : 0 } : wabas,
+            has_management_scope: granted.includes('whatsapp_business_management'),
+            has_messaging_scope: granted.includes('whatsapp_business_messaging'),
+          });
+
+          const catalogs = await get(`${BUSINESS_ID}/owned_product_catalogs`, { fields: 'id,name', limit: '100' });
+          emit('CATALOGS', {
+            owned_catalogs_read: catalogs.ok ? { ok: true, count: Array.isArray(catalogs.json?.data) ? catalogs.json.data.length : 0 } : catalogs,
+            has_catalog_management_scope: granted.includes('catalog_management'),
+          });
+
+          const liveVideos = await get(`${PAGE_ID}/live_videos`, { fields: 'id,status', limit: '1' });
+          emit('LIVE_VIDEO', {
+            live_videos_read: liveVideos.ok ? { ok: true, rows: Array.isArray(liveVideos.json?.data) ? liveVideos.json.data.length : 0 } : liveVideos,
+            relevant_scopes: granted.filter((s) => ['pages_manage_posts','pages_read_engagement','publish_video'].includes(s)),
+          });
+
+          const fundraisers = await get(`${PAGE_ID}/fundraisers`, { fields: 'id', limit: '1' });
+          emit('FUNDRAISERS', {
+            endpoint_read: fundraisers.ok ? { ok: true, rows: Array.isArray(fundraisers.json?.data) ? fundraisers.json.data.length : 0 } : fundraisers,
+            relevant_scopes: granted.filter((s) => s.includes('fundraiser') || s.includes('charitable')),
+          });
+
+          let igEmbed = { ok: false, reason: 'no_media_permalink' };
+          const igMedia = await get(`${IG_ID}/media`, { fields: 'permalink', limit: '1' });
+          if (igMedia.ok && Array.isArray(igMedia.json?.data) && igMedia.json.data[0]?.permalink) {
+            const probe = await get('instagram_oembed', { url: igMedia.json.data[0].permalink, omitscript: 'true' }, appToken, false);
+            igEmbed = probe.ok ? { ok: true } : probe;
+          }
+          let fbEmbed = { ok: false, reason: 'no_post_permalink' };
+          const fbPosts = await get(`${PAGE_ID}/feed`, { fields: 'permalink_url', limit: '1' });
+          if (fbPosts.ok && Array.isArray(fbPosts.json?.data) && fbPosts.json.data[0]?.permalink_url) {
+            const probe = await get('oembed_post', { url: fbPosts.json.data[0].permalink_url, omitscript: 'true' }, appToken, false);
+            fbEmbed = probe.ok ? { ok: true } : probe;
+          }
+          emit('EMBEDS', { instagram_oembed: igEmbed, facebook_oembed: fbEmbed });
+
+          emit('THREADS', {
+            token_has_threads_scopes: granted.filter((s) => s.startsWith('threads_')),
+            testable_with_system_user_token: false,
+            reason: 'Threads requires Threads user authorization/token; canonical token is a Meta Business system-user token.',
+          });
+
+          emit('APP_ADS', {
+            testable_with_current_web_only_assets: false,
+            reason: 'App-ads use case requires a mobile app/app-store asset and app events; none are part of the canonical NUVANX web/ads stack under test.',
+          });
+
+          emit('ADS_AGENT', {
+            has_ads_mcp_management_scope: granted.includes('ads_mcp_management'),
+            matching_scopes: granted.filter((s) => s.includes('mcp') || s.includes('agent')),
+          });
+
+          emit('AUDIENCE_NETWORK', {
+            testable_with_current_assets: false,
+            reason: 'Audience Network requires a monetizable mobile app/property/placement and Monetization Manager review; current stack is not a publisher app.',
+          });
+
+          emit('FACEBOOK_LOGIN_FOR_BUSINESS', {
+            system_user_token_validates_business_api: debug.ok && debug.json?.data?.is_valid === true,
+            interactive_oauth_flow_tested: false,
+            reason: 'Business Login is an interactive user authorization flow and cannot be certified by a system-user token alone.',
+          });
+          NODE
