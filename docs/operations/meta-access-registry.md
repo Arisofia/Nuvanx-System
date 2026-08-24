@@ -144,6 +144,24 @@ The operator subsequently reported in the Meta UI that **Business Verification i
 
 After Business Verification completes, verify whether Meta actually requires **Access Verification / Technology Provider verification** for this first-party NUVANX-only asset model before making any such declaration. Do not describe NUVANX as a technology provider for third-party businesses unless the product model actually changes.
 
+## Application-layer Meta integration state
+
+A direct Production Supabase inspection on 2026-08-24 confirmed two distinct integration layers for the primary application user:
+
+- legacy `service=meta`: `connected`, pointing to historical ad accounts `act_9523446201036125` and `act_4172099716404860`, with a stored encrypted per-user credential;
+- canonical `service=meta_ads`: App `1836302544001572`, Business `897835716596010`, Ad Account `act_718120894191565`, Page `1329458703573874`.
+
+The canonical `meta_ads` row was reconciled in Production on 2026-08-24 so both `systemUserId` metadata forms now use `122098243371455164`. The stale `61593654929650` value was removed from that canonical row.
+
+The canonical row intentionally remains:
+
+- `status=disconnected`;
+- `credential_state=missing_management_token`.
+
+This is accurate. A credentials-table inventory found **two encrypted `service=meta` credentials and zero `service=meta_ads` credentials**. Both existing `meta` credentials are tagged to the historical account pair. No credential was copied, relabelled or fabricated during cleanup.
+
+The current `resolveMetaCreds()` application path still reads a per-user `service=meta` credential and `service=meta` integration metadata. Therefore the internal frontend must **not** be treated as canonical for `act_718120894191565` until a canonical credential is provisioned and the resolver is explicitly wired/tested for `meta_ads`. This application-layer gap does not invalidate the independently verified server-to-server System User App Review path.
+
 ## Current RSV26 publication blocker
 
 The canonical app can read and manage existing ad objects, but creation of a **new ad creative** was rejected while the app remained in Development mode with `code=100 / subcode=1885183`:
