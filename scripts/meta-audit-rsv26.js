@@ -2,6 +2,14 @@
 
 import { readFile } from 'node:fs/promises';
 import process from 'node:process';
+import {
+  adsetDrift,
+  buildAdsetContract,
+  buildDesiredCreative,
+  creativeContract,
+  creativeMatches,
+  normalizeOwnedTargeting,
+} from './lib/meta-rsv26.js';
 
 const config = JSON.parse(
   await readFile(new URL('../config/meta/rsv26-canonical.json', import.meta.url), 'utf8'),
@@ -35,41 +43,6 @@ async function graphGet(path, params = {}) {
   return body;
 }
 
-function stable(value) {
-  if (Array.isArray(value)) return value.map(stable);
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, stable(value[key])]));
-  }
-  return value;
-}
-
-function same(left, right) {
-  return JSON.stringify(stable(left)) === JSON.stringify(stable(right));
-}
-
-function firstText(items) {
-  const item = Array.isArray(items) ? items[0] : null;
-  return typeof item?.text === 'string' ? item.text.trim() : '';
-}
-
-function leadFormId(assetFeedSpec) {
-  const calls = Array.isArray(assetFeedSpec?.call_to_actions) ? assetFeedSpec.call_to_actions : [];
-  return String(calls[0]?.value?.lead_gen_form_id ?? '');
-}
-
-function targetingSummary(targeting = {}) {
-  const interest = targeting?.flexible_spec?.[0]?.interests?.[0] ?? {};
-  const place = targeting?.geo_locations?.places?.[0] ?? {};
-  return {
-    age_min: Number(targeting?.age_min ?? 0),
-    age_max: Number(targeting?.age_max ?? 0),
-    genders: Array.isArray(targeting?.genders) ? targeting.genders.map(Number) : [],
-    interest_id: String(interest?.id ?? ''),
-    location_key: String(place?.key ?? ''),
-    radius_km: Number(place?.radius ?? 0),
-  };
-}
-
 const report = {
   generated_at: new Date().toISOString(),
   campaign: null,
@@ -93,71 +66,70 @@ for (const [field, expected] of Object.entries({
   }
 }
 
-const expectedTargeting = {
-  age_min: config.defaults.targeting.age_min,
-  age_max: config.defaults.targeting.age_max,
-  genders: config.defaults.targeting.genders,
-  interest_id: config.defaults.targeting.interest_id,
-  location_key: config.defaults.targeting.location_key,
-  radius_km: config.defaults.targeting.radius_km,
-};
-
 for (const item of config.adsets) {
-  const [adset, ad] = await Promise.all([
+  const [adset, ad, sourceCreative] = await Promise.all([
     graphGet(item.adset_id, {
       fields: 'id,name,status,effective_status,daily_budget,attribution_spec,optimization_goal,billing_event,bid_strategy,targeting',
     }),
     graphGet(item.ad_id, {
-      fields: 'id,name,status,effective_status,adset_id,creative{id,name,asset_feed_spec,object_story_spec}',
+      fields: 'id,name,status,effective_status,adset_id,creative{id,name,asset_feed_spec,object_story_spec,degrees_of_freedom_spec,url_tags}',
+    }),
+    graphGet(item.source_creative_id, {
+      fields: 'id,name,asset_feed_spec,object_story_spec,degrees_of_freedom_spec,url_tags',
     }),
   ]);
 
-  const creative = ad?.creative ?? {};
-  const asset = creative?.asset_feed_spec ?? {};
-  const actual = {
-    adset_name: adset.name ?? '',
-    daily_budget_minor: Number(adset.daily_budget ?? 0),
-    attribution_spec: adset.attribution_spec ?? [],
-    optimization_goal: adset.optimization_goal ?? '',
-    billing_event: adset.billing_event ?? '',
-    bid_strategy: adset.bid_strategy ?? '',
-    targeting: targetingSummary(adset.targeting),
-    ad_name: ad.name ?? '',
-    body: firstText(asset.bodies),
-    headline: firstText(asset.titles),
-    description: firstText(asset.descriptions),
-    lead_gen_form_id: leadFormId(asset),
-    page_id: String(creative?.object_story_spec?.page_id ?? ''),
-    instagram_user_id: String(creative?.object_story_spec?.instagram_user_id ?? ''),
-    creative_id: String(creative?.id ?? ''),
-  };
-
-  const expected = {
-    adset_name: item.adset_name,
-    daily_budget_minor: config.defaults.daily_budget_minor,
-    attribution_spec: config.defaults.attribution_spec,
-    optimization_goal: config.defaults.optimization_goal,
-    billing_event: config.defaults.billing_event,
-    bid_strategy: config.defaults.bid_strategy,
-    targeting: expectedTargeting,
-    ad_name: item.ad_name,
-    body: item.body,
-    headline: item.headline,
-    description: item.description,
-    lead_gen_form_id: config.defaults.lead_gen_form_id,
-    page_id: config.defaults.page_id,
-    instagram_user_id: config.defaults.instagram_user_id,
-  };
-
-  const itemDrift = [];
-  for (const [field, expectedValue] of Object.entries(expected)) {
-    if (!same(actual[field], expectedValue)) {
-      itemDrift.push({ field, expected: expectedValue, actual: actual[field] });
-      report.drift.push({ scope: item.key, id: item.adset_id, field, expected: expectedValue, actual: actual[field] });
-    }
+  if (String(ad?.adset_id ?? '') !== String(item.adset_id)) {
+    report.drift.push({
+      scope: item.key,
+      id: item.ad_id,
+      field: 'adset_id',
+      expected: item.adset_id,
+      actual: ad?.adset_id ?? null,
+    });
   }
 
-  report.adsets.push({ key: item.key, adset_id: item.adset_id, ad_id: item.ad_id, actual, drift: itemDrift });
+  const adsetContract = buildAdsetContract(adset, item, config.defaults);
+  const desiredCreative = buildDesiredCreative(sourceCreative, item, config.defaults);
+  const currentCreative = ad?.creative ?? {};
+  const itemDrift = [];
+
+  for (const field of adsetDrift(adsetContract)) {
+    const expected = field === 'targeting'
+      ? normalizeOwnedTargeting(adsetContract.desired.targeting)
+      : adsetContract.desired[field];
+    const actual = field === 'targeting'
+      ? normalizeOwnedTargeting(adsetContract.actual.targeting)
+      : adsetContract.actual[field];
+    const drift = { field: `adset.${field}`, expected, actual };
+    itemDrift.push(drift);
+    report.drift.push({ scope: item.key, id: item.adset_id, ...drift });
+  }
+
+  if (String(ad?.name ?? '') !== String(item.ad_name)) {
+    const drift = { field: 'ad.name', expected: item.ad_name, actual: ad?.name ?? '' };
+    itemDrift.push(drift);
+    report.drift.push({ scope: item.key, id: item.ad_id, ...drift });
+  }
+
+  if (!creativeMatches(currentCreative, desiredCreative)) {
+    const drift = {
+      field: 'ad.creative',
+      expected: creativeContract(desiredCreative),
+      actual: creativeContract(currentCreative),
+    };
+    itemDrift.push(drift);
+    report.drift.push({ scope: item.key, id: item.ad_id, ...drift });
+  }
+
+  report.adsets.push({
+    key: item.key,
+    adset_id: item.adset_id,
+    ad_id: item.ad_id,
+    source_creative_id: item.source_creative_id,
+    current_creative_id: String(currentCreative?.id ?? ''),
+    drift: itemDrift,
+  });
 }
 
 report.drift_count = report.drift.length;
