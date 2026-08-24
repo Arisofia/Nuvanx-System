@@ -165,7 +165,7 @@ function metaGraphSecretCandidates(appSecretOverride?: string | null): Array<str
   const values = [META_CANONICAL_APP_SECRET, META_APP_SECRET]
     .map((value) => String(value ?? '').trim())
     .filter(Boolean);
-  return [...new Set(values)].map((value) => value || null).concat(values.length === 0 ? [null] : []);
+  return [...new Set(values)].map((value) => value || null).concat([null]);
 }
 
 function isInvalidAppsecretProof(body: any): boolean {
