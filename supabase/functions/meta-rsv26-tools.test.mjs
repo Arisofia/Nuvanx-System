@@ -1,3 +1,5 @@
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   adsetApplyParams,
@@ -5,8 +7,10 @@ import {
   buildAdsetContract,
   buildDesiredCreative,
   buildDesiredTargeting,
+  classifyAdsetDrift,
   creativeMatches,
   normalizeOwnedTargeting,
+  selectedAdsetDrift,
   targetingMatches,
 } from '../../scripts/lib/meta-rsv26.js';
 
@@ -175,5 +179,66 @@ describe('RSV26 ad-set convergence', () => {
     });
     expect(params.attribution_spec).toHaveLength(2);
     expect(normalizeOwnedTargeting(params.targeting).interests).toEqual(['interest-canonical']);
+  });
+
+  it('partitions drift into explicit mutation families', () => {
+    const drift = [
+      'name',
+      'attribution_spec',
+      'daily_budget',
+      'optimization_goal',
+      'billing_event',
+      'bid_strategy',
+      'targeting',
+    ];
+    expect(classifyAdsetDrift(drift)).toEqual({
+      names: ['name'],
+      attribution: ['attribution_spec'],
+      settings: ['daily_budget', 'optimization_goal', 'billing_event', 'bid_strategy', 'targeting'],
+    });
+    expect(selectedAdsetDrift(drift, { names: true, attribution: false, settings: false })).toEqual(['name']);
+    expect(selectedAdsetDrift(drift, { names: false, attribution: true, settings: false })).toEqual(['attribution_spec']);
+    expect(selectedAdsetDrift(drift, { names: false, attribution: false, settings: true })).toEqual([
+      'daily_budget',
+      'optimization_goal',
+      'billing_event',
+      'bid_strategy',
+      'targeting',
+    ]);
+    expect(selectedAdsetDrift(drift, { names: true, attribution: true, settings: false })).toEqual(['name', 'attribution_spec']);
+  });
+});
+
+describe('RSV26 apply CLI safety gates', () => {
+  const script = fileURLToPath(new URL('../../scripts/meta-apply-rsv26.js', import.meta.url));
+  const baseEnv = { ...process.env, META_REPORTING_TOKEN_60D: 'read-only-dummy' };
+  delete baseEnv.META_ADS_MANAGEMENT_TOKEN;
+  delete baseEnv.META_CANONICAL_ACCESS_TOKEN;
+  delete baseEnv.META_CANONICAL_APP_SECRET;
+
+  function run(args, env = baseEnv) {
+    return spawnSync(process.execPath, [script, ...args], {
+      env,
+      encoding: 'utf8',
+      timeout: 5000,
+    });
+  }
+
+  it('rejects --apply without an explicit mutation family before network access', () => {
+    const result = run(['--apply']);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('--apply requires at least one explicit mutation family');
+  });
+
+  it('rejects a mutation-family flag without --apply before network access', () => {
+    const result = run(['--apply-names']);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('Mutation-family flags are only valid together with --apply');
+  });
+
+  it('rejects creative apply when no management credential is present before network access', () => {
+    const result = run(['--apply', '--apply-creatives']);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('Apply mode requires META_ADS_MANAGEMENT_TOKEN or META_CANONICAL_ACCESS_TOKEN');
   });
 });
