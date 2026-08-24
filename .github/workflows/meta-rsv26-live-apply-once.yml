@@ -171,5 +171,5 @@ jobs:
           set -euo pipefail
           node scripts/meta-creative-diff-rsv26.js | tee "$RUNNER_TEMP/rsv26-creative-diff.log"
           grep -Fq '"drifting":0' "$RUNNER_TEMP/rsv26-creative-diff.log"
-          grep -Fq '"semantic_diffs":0' "$RUNNER_TEMP/rsv26-creative-diff.log"
+          grep -Fq '"semantic_diffs": 0' "$RUNNER_TEMP/rsv26-creative-diff.log"
           echo 'RSV26_CREATIVE_CONTRACTS=PASS'
