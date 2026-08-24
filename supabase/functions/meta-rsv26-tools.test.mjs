@@ -5,8 +5,10 @@ import {
   buildAdsetContract,
   buildDesiredCreative,
   buildDesiredTargeting,
+  classifyAdsetDrift,
   creativeMatches,
   normalizeOwnedTargeting,
+  selectedAdsetDrift,
   targetingMatches,
 } from '../../scripts/lib/meta-rsv26.js';
 
@@ -175,5 +177,32 @@ describe('RSV26 ad-set convergence', () => {
     });
     expect(params.attribution_spec).toHaveLength(2);
     expect(normalizeOwnedTargeting(params.targeting).interests).toEqual(['interest-canonical']);
+  });
+
+  it('partitions drift into explicit mutation families', () => {
+    const drift = [
+      'name',
+      'attribution_spec',
+      'daily_budget',
+      'optimization_goal',
+      'billing_event',
+      'bid_strategy',
+      'targeting',
+    ];
+    expect(classifyAdsetDrift(drift)).toEqual({
+      names: ['name'],
+      attribution: ['attribution_spec'],
+      settings: ['daily_budget', 'optimization_goal', 'billing_event', 'bid_strategy', 'targeting'],
+    });
+    expect(selectedAdsetDrift(drift, { names: true, attribution: false, settings: false })).toEqual(['name']);
+    expect(selectedAdsetDrift(drift, { names: false, attribution: true, settings: false })).toEqual(['attribution_spec']);
+    expect(selectedAdsetDrift(drift, { names: false, attribution: false, settings: true })).toEqual([
+      'daily_budget',
+      'optimization_goal',
+      'billing_event',
+      'bid_strategy',
+      'targeting',
+    ]);
+    expect(selectedAdsetDrift(drift, { names: true, attribution: true, settings: false })).toEqual(['name', 'attribution_spec']);
   });
 });
