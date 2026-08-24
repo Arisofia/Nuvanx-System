@@ -160,25 +160,45 @@ async function computeAppsecretProof(accessToken: string, appSecret: string): Pr
   return bytesToHex(sig);
 }
 
+function metaGraphSecretCandidates(appSecretOverride?: string | null): Array<string | null> {
+  if (appSecretOverride !== undefined) return [appSecretOverride || null];
+  const values = [META_CANONICAL_APP_SECRET, META_APP_SECRET]
+    .map((value) => String(value ?? '').trim())
+    .filter(Boolean);
+  return [...new Set(values)].map((value) => value || null).concat(values.length === 0 ? [null] : []);
+}
+
+function isInvalidAppsecretProof(body: any): boolean {
+  const message = String(body?.error?.message ?? body?.message ?? '').toLowerCase();
+  return message.includes('appsecret_proof') || message.includes('app secret proof');
+}
+
 export async function metaFetch(path: string, params: Record<string, string>, token: string, appSecretOverride?: string | null) {
-  const url = new URL(`${META_GRAPH}${path}`);
-  url.searchParams.set('access_token', token);
-  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  const appSecret = appSecretOverride === undefined ? META_APP_SECRET : appSecretOverride;
-  if (appSecret) {
-    url.searchParams.set('appsecret_proof', await computeAppsecretProof(token, appSecret));
+  const candidates = metaGraphSecretCandidates(appSecretOverride);
+  let lastError: { status: number; body: any; text: string } | null = null;
+
+  for (let index = 0; index < candidates.length; index += 1) {
+    const url = new URL(`${META_GRAPH}${path}`);
+    url.searchParams.set('access_token', token);
+    for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+    const appSecret = candidates[index];
+    if (appSecret) url.searchParams.set('appsecret_proof', await computeAppsecretProof(token, appSecret));
+
+    const response = await fetch(url.toString(), { signal: AbortSignal.timeout(20_000) });
+    const { data, text } = await parseJsonOrText(response);
+    if (response.ok) return data;
+
+    lastError = { status: response.status, body: data, text };
+    const canRetrySecret = index + 1 < candidates.length && isInvalidAppsecretProof(data);
+    if (!canRetrySecret) break;
   }
-  const r = await fetch(url.toString(), { signal: AbortSignal.timeout(20_000) });
-  const { data: d, text } = await parseJsonOrText(r);
-  if (!r.ok) {
-    const e = d?.error ?? {};
-    const errorMessageFromD = d?.message;
-    const textValue = typeof text === 'string' ? text : '';
-    const metaErrorMessage = e.message ?? errorMessageFromD ?? (textValue.trim() ? textValue : `Meta API ${r.status}`); // Already uses ??
-    const msg = `${metaErrorMessage} (code=${e.code ?? '?'}, sub=${e.error_subcode ?? '?'}, type=${e.type ?? '?'})`;
-    throw new Error(msg);
-  }
-  return d;
+
+  const errorBody = lastError?.body ?? {};
+  const e = errorBody?.error ?? {};
+  const errorMessageFromBody = errorBody?.message;
+  const textValue = typeof lastError?.text === 'string' ? lastError.text : '';
+  const metaErrorMessage = e.message ?? errorMessageFromBody ?? (textValue.trim() ? textValue : `Meta API ${lastError?.status ?? 502}`);
+  throw new Error(`${metaErrorMessage} (code=${e.code ?? '?'}, sub=${e.error_subcode ?? '?'}, type=${e.type ?? '?'})`);
 }
 
 async function metaFetchAll(path: string, params: Record<string, string>, token: string) {
@@ -286,37 +306,43 @@ async function hashMetaUserData(userData: Record<string, string[]>): Promise<Rec
   return hashed;
 }
 
-async function metaPost(path: string, body: any, token: string) {
-  const url = new URL(`${META_GRAPH}${path}`);
-  url.searchParams.set('access_token', token);
-  const appSecret = META_APP_SECRET;
-  if (appSecret) {
-    url.searchParams.set('appsecret_proof', await computeAppsecretProof(token, appSecret));
-  }
+async function metaPost(path: string, body: any, token: string, appSecretOverride?: string | null) {
+  const candidates = metaGraphSecretCandidates(appSecretOverride);
+  let lastError: { status: number; statusText: string; data: any; text: string } | null = null;
 
-  const response = await fetch(url.toString(), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(20_000),
-  });
+  for (let index = 0; index < candidates.length; index += 1) {
+    const url = new URL(`${META_GRAPH}${path}`);
+    url.searchParams.set('access_token', token);
+    const appSecret = candidates[index];
+    if (appSecret) url.searchParams.set('appsecret_proof', await computeAppsecretProof(token, appSecret));
 
-  const { data, text } = await parseJsonOrText(response);
-  if (!response.ok) {
-    const err = data?.error ?? {};
-    const message = err.message ?? data?.message ?? text ?? `Meta API ${response.status}`;
-    console.error('[CAPI] Meta Graph API error', {
-      path,
-      status: response.status,
-      statusText: response.statusText,
-      message,
-      code: err?.code ?? null,
-      type: err?.type ?? null,
-      fbtrace_id: err?.fbtrace_id ?? null,
+    const response = await fetch(url.toString(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(20_000),
     });
-    throw new Error(message);
+
+    const { data, text } = await parseJsonOrText(response);
+    if (response.ok) return data;
+
+    lastError = { status: response.status, statusText: response.statusText, data, text };
+    const canRetrySecret = index + 1 < candidates.length && isInvalidAppsecretProof(data);
+    if (!canRetrySecret) break;
   }
-  return data;
+
+  const err = lastError?.data?.error ?? {};
+  const message = err.message ?? lastError?.data?.message ?? lastError?.text ?? `Meta API ${lastError?.status ?? 502}`;
+  console.error('[CAPI] Meta Graph API error', {
+    path,
+    status: lastError?.status ?? 502,
+    statusText: lastError?.statusText ?? '',
+    message,
+    code: err?.code ?? null,
+    type: err?.type ?? null,
+    fbtrace_id: err?.fbtrace_id ?? null,
+  });
+  throw new Error(message);
 }
 
 async function trackMetaWhatsappConversion(
@@ -1184,8 +1210,39 @@ async function resolveClinicMetadata(adminClient: any, userId: string) {
 
 // ── Meta credential resolver ──────────────────────────────────────────────────
 async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: string) {
-  const { data: credRow } = await adminClient.from('credentials').select('encrypted_key').eq('user_id', userId).eq('service', 'meta').single();
-  if (!credRow) return { notConnected: true, accessToken: '', adAccountIds: [] as string[], adAccountId: '', decryptionError: '' };
+  const { data: integrations } = await adminClient
+    .from('integrations')
+    .select('service, metadata, status, updated_at')
+    .eq('user_id', userId)
+    .in('service', ['meta_ads', 'meta'])
+    .eq('status', 'connected');
+
+  const connected = integrations ?? [];
+  const requestedAccountIds = normalizeMetaAccountIds(qAccountId);
+  const matchingRows = requestedAccountIds.length > 0
+    ? connected.filter((row: any) => {
+        const metadata = row?.metadata ?? {};
+        const ids = normalizeMetaAccountIds(
+          metadata.adAccountIds ?? metadata.ad_account_ids ?? metadata.adAccountId ?? metadata.ad_account_id ?? '',
+        );
+        return requestedAccountIds.some((id) => ids.includes(id));
+      })
+    : connected;
+
+  const intg = selectCanonicalMetaIntegration(matchingRows);
+  if (!intg) {
+    return { notConnected: true, accessToken: '', adAccountIds: [] as string[], adAccountId: '', decryptionError: '' };
+  }
+
+  const credentialService = intg.service === 'meta_ads' ? 'meta_ads' : 'meta';
+  const { data: credRow } = await adminClient.from('credentials')
+    .select('encrypted_key')
+    .eq('user_id', userId)
+    .eq('service', credentialService)
+    .maybeSingle();
+  if (!credRow?.encrypted_key) {
+    return { notConnected: true, accessToken: '', adAccountIds: [] as string[], adAccountId: '', decryptionError: '' };
+  }
 
   let accessToken = '';
   let decryptionError = '';
@@ -1195,46 +1252,32 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
     decryptionError = err?.message ?? 'Failed to decrypt Meta credential';
   }
 
-  const { data: integrations } = await adminClient
-    .from('integrations')
-    .select('metadata, status, updated_at')
-    .eq('user_id', userId)
-    .eq('service', 'meta');
-
-  const intg = selectCanonicalMetaIntegration(integrations ?? []);
-  const metadata = intg?.metadata ?? {};
+  const metadata = intg.metadata ?? {};
   const metadataRawAccountIds = metadata.adAccountIds ?? metadata.ad_account_ids ?? metadata.adAccountId ?? metadata.ad_account_id ?? '';
   const metadataAccountIds = normalizeMetaAccountIds(metadataRawAccountIds);
-  const qAccountIds = normalizeMetaAccountIds(qAccountId);
+  const adAccountIds = requestedAccountIds.length > 0 ? requestedAccountIds : metadataAccountIds;
 
-  const adAccountIds = qAccountIds.length > 0
-    ? qAccountIds
-    : metadataAccountIds;
-
-  // Dynamic routing: use mapping from environment if available
   let pixelId = metadata.pixelId ?? metadata.pixel_id ?? '';
   const activeAccountId = adAccountIds[0] ?? '';
-  
   const mappingStr = Deno.env.get('META_PIXEL_MAPPING');
   if (mappingStr) {
     try {
       const mapping = JSON.parse(mappingStr);
-      // mapping should be { "act_id": "pixel_id", ... }
-      if (mapping[activeAccountId]) {
-        pixelId = mapping[activeAccountId];
-      }
+      if (mapping[activeAccountId]) pixelId = mapping[activeAccountId];
     } catch (e) {
       console.error('[CAPI-ROUTING] Error parsing META_PIXEL_MAPPING:', e);
     }
   }
 
   if (!pixelId && !mappingStr) {
-     // Default/Fallback logic: if no pixel is provided in metadata or mapping,
-     // we log a warning but don't use hardcoded fallbacks in production source.
-     console.warn(`[CAPI-ROUTING] No pixel mapping found for account ${activeAccountId}`);
+    console.warn(`[CAPI-ROUTING] No pixel mapping found for account ${activeAccountId}`);
   }
 
-  console.log(`[CAPI-ROUTING] Cuenta: ${activeAccountId} -> Usando Píxel: ${pixelId}`);
+  console.log('[CAPI-ROUTING] Meta stack selected', {
+    service: credentialService,
+    accountId: activeAccountId,
+    hasPixel: Boolean(pixelId),
+  });
 
   return {
     notConnected: false,
@@ -1244,18 +1287,24 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
     pixelId,
     pageId: metadata.pageId ?? metadata.page_id ?? '',
     igId: metadata.igBusinessAccountId ?? metadata.ig_business_account_id ?? '',
+    credentialService,
     decryptionError,
   } as const;
 }
 
 function selectCanonicalMetaIntegration(rows: any[]) {
   return [...rows].sort((a: any, b: any) => {
-    const aMeta = a?.metadata ?? {};
-    const bMeta = b?.metadata ?? {};
-    const aHasPage = Boolean(String(aMeta.pageId ?? aMeta.page_id ?? '').trim());
-    const bHasPage = Boolean(String(bMeta.pageId ?? bMeta.page_id ?? '').trim());
-    if (aHasPage !== bHasPage) return aHasPage ? -1 : 1;
-    if ((a?.status === 'connected') !== (b?.status === 'connected')) return a?.status === 'connected' ? -1 : 1;
+    const score = (row: any) => {
+      const metadata = row?.metadata ?? {};
+      let value = 0;
+      if (row?.status === 'connected') value += 100;
+      if (row?.service === 'meta_ads') value += 50;
+      if (row?.service === 'meta_ads' && metadata?.canonical === true) value += 100;
+      if (String(metadata.pageId ?? metadata.page_id ?? '').trim()) value += 5;
+      return value;
+    };
+    const scoreDelta = score(b) - score(a);
+    if (scoreDelta !== 0) return scoreDelta;
     return String(b?.updated_at ?? '').localeCompare(String(a?.updated_at ?? ''));
   })[0] ?? null;
 }
@@ -2106,25 +2155,18 @@ async function processWhatsappWebhookMessage(adminClient: any, userId: string, v
     },
   );
 
-  // Trigger Meta CAPI Contact event
+  // Trigger Meta CAPI Contact event using the same canonical/legacy resolver as the rest of the runtime.
   (async () => {
     try {
-      const { data: credRow } = await adminClient.from('credentials')
-        .select('encrypted_key')
-        .eq('user_id', userId)
-        .eq('service', 'meta')
-        .single();
-      
-      if (credRow) {
-        const accessToken = await publicRouteHelpers.decryptCred(credRow.encrypted_key);
-        // For WhatsApp webhooks we don't have IP/UA context, but we have phone
-        await trackMetaConversion('contact', accessToken, {
-          pixelId: pixelId || undefined,
-          eventId: `wa_${message.id}`,
-          phone: phone || null,
-          externalId: userId,
-        });
-      }
+      const creds = await resolveMetaCreds(adminClient, userId, '');
+      const validation = validateMetaCredentialResult(creds);
+      if (!validation.ok || !creds.accessToken) return;
+      await trackMetaConversion('contact', creds.accessToken, {
+        pixelId: pixelId || creds.pixelId || undefined,
+        eventId: `wa_${message.id}`,
+        phone: phone || null,
+        externalId: userId,
+      });
     } catch (err) {
       console.error('[CAPI] WhatsApp webhook tracking failed:', err);
     }
@@ -4248,12 +4290,13 @@ async function handleMetaOrganicGet(ctx: AuthenticatedRouteContext): Promise<Res
   if (resource !== 'meta' || sub !== 'organic' || req.method !== 'GET') return null;
 
   // Resolve pageId from integrations.metadata
-  const { data: integ } = await adminClient.from('integrations')
-    .select('metadata')
+  const { data: integrations } = await adminClient.from('integrations')
+    .select('service, metadata, status, updated_at')
     .eq('user_id', userId)
-    .eq('service', 'meta')
-    .maybeSingle();
+    .in('service', ['meta_ads', 'meta'])
+    .eq('status', 'connected');
 
+  const integ = selectCanonicalMetaIntegration(integrations ?? []);
   const meta = (integ?.metadata ?? {}) as Record<string, any>;
   const pageId = meta.pageId ?? meta.page_id ?? null;
   if (!pageId) {
@@ -4319,12 +4362,13 @@ async function handleMetaIgGet(ctx: AuthenticatedRouteContext): Promise<Response
   const { adminClient, userId, resource, sub, sub2, req, url, sendJson } = ctx;
   if (resource !== 'meta' || sub !== 'ig' || req.method !== 'GET') return null;
 
-  const { data: integ } = await adminClient.from('integrations')
-    .select('metadata')
+  const { data: integrations } = await adminClient.from('integrations')
+    .select('service, metadata, status, updated_at')
     .eq('user_id', userId)
-    .eq('service', 'meta')
-    .maybeSingle();
+    .in('service', ['meta_ads', 'meta'])
+    .eq('status', 'connected');
 
+  const integ = selectCanonicalMetaIntegration(integrations ?? []);
   const meta = (integ?.metadata ?? {}) as Record<string, any>;
   let igId: string | null = meta.igBusinessAccountId ?? meta.ig_business_account_id ?? null;
 

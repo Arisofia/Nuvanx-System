@@ -15,14 +15,16 @@ describe("web-events P0 contract", () => {
     expect(source).not.toContain("x-nvx-web-event-secret");
   });
 
-  it("resolves only a connected Meta integration", () => {
-    const resolvedOwnerStart = source.indexOf('const { data: integration } = await admin');
+  it("resolves connected canonical and legacy Meta integrations with canonical preference", () => {
+    const resolvedOwnerStart = source.indexOf('let rows: any[] = []');
     const credentialStart = source.indexOf('const { data: cred } = await admin', resolvedOwnerStart);
     const resolvedOwnerQuery = source.slice(resolvedOwnerStart, credentialStart);
     expect(resolvedOwnerStart).toBeGreaterThan(-1);
     expect(resolvedOwnerQuery).toContain('.eq("user_id", userId)');
-    expect(resolvedOwnerQuery).toContain('.eq("service", "meta")');
+    expect(resolvedOwnerQuery).toContain('.in("service", ["meta_ads", "meta"])');
     expect(resolvedOwnerQuery).toContain('.eq("status", "connected")');
+    expect(source).toContain('row?.service === "meta_ads" && metadata?.canonical === true');
+    expect(source).toContain('const service = integration.service === "meta_ads" ? "meta_ads" : "meta"');
     expect(source).toContain('throw new Error("Connected Meta integration not found")');
   });
 
