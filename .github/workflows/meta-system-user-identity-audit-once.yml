@@ -1,0 +1,79 @@
+name: Meta System User Identity Audit Once
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: meta-system-user-identity-audit-once
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: >-
+      github.event.pull_request.head.ref == 'ops/meta-system-user-identity-audit-once-20260824' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    environment: Production
+    timeout-minutes: 5
+    env:
+      META_CANONICAL_ACCESS_TOKEN: ${{ secrets.META_CANONICAL_ACCESS_TOKEN }}
+      META_CANONICAL_APP_SECRET: ${{ secrets.META_CANONICAL_APP_SECRET }}
+
+    steps:
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 22
+
+      - name: Reconcile token identity with Business system users
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module - <<'NODE'
+          const APP_ID = '1836302544001572';
+          const BUSINESS_ID = '897835716596010';
+          const token = String(process.env.META_CANONICAL_ACCESS_TOKEN || '').trim();
+          const secret = String(process.env.META_CANONICAL_APP_SECRET || '').trim();
+          if (!token || !secret) throw new Error('Canonical Meta credentials missing');
+          const appToken = `${APP_ID}|${secret}`;
+
+          async function read(url) {
+            const response = await fetch(url, { signal: AbortSignal.timeout(20000) });
+            const json = await response.json().catch(() => ({}));
+            if (!response.ok || json?.error) {
+              const e = json?.error ?? {};
+              throw new Error(`${e.message ?? response.statusText} (code=${e.code ?? response.status}, sub=${e.error_subcode ?? 'n/a'})`);
+            }
+            return json;
+          }
+
+          const debugUrl = new URL('https://graph.facebook.com/v22.0/debug_token');
+          debugUrl.searchParams.set('input_token', token);
+          debugUrl.searchParams.set('access_token', appToken);
+          const debug = await read(debugUrl);
+          const tokenUserId = String(debug?.data?.user_id ?? '');
+
+          const usersUrl = new URL(`https://graph.facebook.com/v22.0/${BUSINESS_ID}/system_users`);
+          usersUrl.searchParams.set('fields', 'id,name,role');
+          usersUrl.searchParams.set('limit', '100');
+          usersUrl.searchParams.set('access_token', token);
+          const users = await read(usersUrl);
+          const rows = Array.isArray(users?.data) ? users.data.map((row) => ({ id: String(row.id), name: row.name ?? null, role: row.role ?? null })) : [];
+          const tokenRow = rows.find((row) => row.id === tokenUserId) ?? null;
+          const legacyUiRow = rows.find((row) => row.id === '61593654929650') ?? null;
+
+          console.log(`META_SYSTEM_USER_IDENTITY_AUDIT=${JSON.stringify({
+            token_user_id: tokenUserId || null,
+            token_user_present_in_business: Boolean(tokenRow),
+            token_user: tokenRow,
+            ui_reported_user_61593654929650_present: Boolean(legacyUiRow),
+            ui_reported_user_61593654929650: legacyUiRow,
+            system_users: rows,
+          })}`);
+          if (!tokenUserId || !tokenRow) process.exitCode = 2;
+          NODE
