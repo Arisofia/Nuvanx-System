@@ -37,7 +37,8 @@ These are variable names only. Values belong in managed secret stores and must n
 | Variable | Purpose | Current contract |
 | --- | --- | --- |
 | `META_CANONICAL_ACCESS_TOKEN` | Canonical Meta management/runtime token | Must belong to App `1836302544001572` and System User `122098243371455164`; management scope validated |
-| `META_CANONICAL_APP_SECRET` | App Secret for `NUVANX Reporting` | Used for `appsecret_proof`, token debugging, webhook/app separation |
+| `META_CANONICAL_APP_SECRET` | Preferred App Secret for `NUVANX Reporting` | Used for `appsecret_proof`, token debugging, webhook/app separation |
+| `META_REPORTING_APP_SECRET` | Supported reporting/canonical App Secret fallback | `api` and `daily-aggregates` fall back to this variable when `META_CANONICAL_APP_SECRET` is unset; include it in secret-store maintenance/rotation while the fallback remains supported |
 | `META_APP_SECRET` | Legacy Meta stack App Secret | Keep separate; do not overwrite with canonical secret |
 | `META_REPORTING_TOKEN_60D` | Read-oriented/reporting compatibility token | Not the canonical write credential |
 
