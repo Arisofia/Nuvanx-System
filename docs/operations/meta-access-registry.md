@@ -123,9 +123,9 @@ Production audit `32762760660` after the App Domain update confirmed:
 - User-support URL absent.
 - Website URL absent.
 
-The absence of the optional/support fields above must not be interpreted as a publication blocker without checking the current Meta App Dashboard requirement for the specific enabled use cases.
+On 2026-08-24 the Meta App Dashboard Basic Settings UI was saved with **User Data Deletion → Data deletion instructions URL** set to `https://nuvanx.com/politica-privacidad/`. The live WordPress page is published and includes the user's right to erasure and the NUVANX contact channel. This setting is confirmed from the Dashboard save state supplied during the operational session; the prior Graph metadata audit did not expose a field that independently certified the saved deletion URL.
 
-The user-data-deletion URL/status is a Dashboard requirement and was not exposed/verified by the Graph metadata audit; verify it in App Dashboard before final publication.
+The absence of the optional/support fields above must not be interpreted as a publication blocker without checking the current Meta App Dashboard requirement for the specific enabled use cases.
 
 ## Current RSV26 publication blocker
 
@@ -143,5 +143,6 @@ Therefore the final RSV26 migration remains pending App publication/required acc
 - `32761521018` — Page-token / Messenger / Instagram / WhatsApp detail audit.
 - `32762760660` — publication metadata/App Domain audit after adding `nuvanx.com`.
 - `32763162619` — current Business System User inventory + token identity reconciliation.
+- 2026-08-24 App Dashboard save confirmation — User Data Deletion instructions URL set to `https://nuvanx.com/politica-privacidad/`.
 
 Temporary audit PRs must be closed without merge after evidence capture. Permanent operational knowledge belongs in this document and canonical config/tests, not in one-shot workflows.
