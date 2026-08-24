@@ -123,9 +123,19 @@ Production audit `32762760660` after the App Domain update confirmed:
 - User-support URL absent.
 - Website URL absent.
 
+On 2026-08-24, the Meta App Dashboard Basic Settings UI was saved with **User Data Deletion → Data deletion instructions URL** set to `https://nuvanx.com/politica-privacidad/`.
+
+A dedicated public WordPress page was then published as page `3631` at `https://nuvanx.com/eliminacion-datos-meta/`. It provides Meta-specific deletion instructions: request steps, covered Meta-originated interactions, the `info@nuvanx.com` contact channel, identity details needed to locate the request, prohibited credential/clinical oversharing, expected confirmation/resolution, and lawful-retention caveats. The Dashboard must be updated to this dedicated URL before the App Review submission is finalized; until that UI save occurs, the previously saved privacy-policy URL remains the Dashboard-confirmed value.
+
+Read-only audit `32768146699` / job `97562196706` queried `GET https://graph.facebook.com/v22.0/1836302544001572` with each of the tested `fields` values `data_deletion_url`, `data_deletion_callback_url`, `status`, `app_mode`, `is_live`, and `mode`. Those tested queries returned HTTP 400 / Graph `code=100` with no `error_subcode` in the captured log; the fields were therefore **not returned by the tested Graph v22 queries**. The audit separately confirmed that `app_domains`, `privacy_policy_url`, and `terms_of_service_url` are returned. Do not generalize this result into a claim that Meta exposes no supported publication/deletion surface elsewhere; the Dashboard/UI remains the evidence source for the saved deletion URL and Development/Live state.
+
 The absence of the optional/support fields above must not be interpreted as a publication blocker without checking the current Meta App Dashboard requirement for the specific enabled use cases.
 
-The user-data-deletion URL/status is a Dashboard requirement and was not exposed/verified by the Graph metadata audit; verify it in App Dashboard before final publication.
+## App Review / business verification state
+
+On 2026-08-24, App Review submission `1836338617331298` showed the business-verification step for **NUVANX Medicina Estética Láser** as **En revisión**. The Dashboard states that Meta will update the verification status after review and estimates approximately two business days. This is a current external review state, not a repository or credential failure.
+
+The App Review request is still **No enviada** and currently contains a broad permission/feature set. Do not submit it unchanged merely to unblock RSV26: permissions without a real, reproducible user experience should be removed or left for a later review rather than justified with hypothetical use.
 
 ## Current RSV26 publication blocker
 
@@ -143,5 +153,9 @@ Therefore the final RSV26 migration remains pending App publication/required acc
 - `32761521018` — Page-token / Messenger / Instagram / WhatsApp detail audit.
 - `32762760660` — publication metadata/App Domain audit after adding `nuvanx.com`.
 - `32763162619` — current Business System User inventory + token identity reconciliation.
+- `32768146699` / job `97562196706` — App object Graph v22 field probes; tested deletion/app-mode fields returned Graph `code=100` and were not returned by those queries.
+- 2026-08-24 Dashboard save confirmation — User Data Deletion instructions URL saved as `https://nuvanx.com/politica-privacidad/`.
+- WordPress page `3631` — dedicated replacement instructions published at `https://nuvanx.com/eliminacion-datos-meta/`; Dashboard URL switch still pending.
+- App Review submission `1836338617331298` — business verification shown as **En revisión**; App Review request itself still **No enviada**.
 
 Temporary audit PRs must be closed without merge after evidence capture. Permanent operational knowledge belongs in this document and canonical config/tests, not in one-shot workflows.
