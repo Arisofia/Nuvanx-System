@@ -2,25 +2,43 @@
 
 import { readFile } from 'node:fs/promises';
 import process from 'node:process';
+import {
+  adsetApplyParams,
+  adsetDrift,
+  adsetRollbackParams,
+  buildAdsetContract,
+  buildDesiredCreative,
+  creativeMatches,
+  same,
+} from './lib/meta-rsv26.js';
 
 const config = JSON.parse(
   await readFile(new URL('../config/meta/rsv26-canonical.json', import.meta.url), 'utf8'),
 );
 const apply = process.argv.includes('--apply');
-const token = String(
+const managementToken = String(
   process.env.META_ADS_MANAGEMENT_TOKEN
   || process.env.META_CANONICAL_ACCESS_TOKEN
   || '',
 ).trim();
+const readToken = String(
+  managementToken
+  || process.env.META_REPORTING_TOKEN_60D
+  || '',
+).trim();
 
-if (!token) {
-  console.error('Missing META_ADS_MANAGEMENT_TOKEN or META_CANONICAL_ACCESS_TOKEN. No writes performed.');
+if (!readToken) {
+  console.error('Missing META_REPORTING_TOKEN_60D or canonical Meta token. No writes performed.');
+  process.exit(2);
+}
+if (apply && !managementToken) {
+  console.error('Apply mode requires META_ADS_MANAGEMENT_TOKEN or META_CANONICAL_ACCESS_TOKEN. No writes performed.');
   process.exit(2);
 }
 
 const graphBase = `https://graph.facebook.com/${config.graph_version}`;
 
-async function graphRequest(path, { method = 'GET', params = {} } = {}) {
+async function graphRequest(path, { method = 'GET', params = {}, token = readToken } = {}) {
   const url = new URL(`${graphBase}/${String(path).replace(/^\//, '')}`);
   const payload = new URLSearchParams();
   const target = method === 'GET' ? url.searchParams : payload;
@@ -45,124 +63,289 @@ async function graphRequest(path, { method = 'GET', params = {} } = {}) {
 }
 
 async function requireManagementScope() {
-  const debug = await graphRequest('debug_token', { params: { input_token: token } });
+  const debug = await graphRequest('debug_token', {
+    params: { input_token: managementToken },
+    token: managementToken,
+  });
   const data = debug?.data ?? {};
   const scopes = new Set(Array.isArray(data.scopes) ? data.scopes : []);
   if (!data.is_valid || !scopes.has('ads_management')) {
     throw new Error('Canonical Meta token is invalid or does not include ads_management. No writes performed.');
   }
-  return { app_id: data.app_id ?? null, user_id: data.user_id ?? null, scopes: [...scopes].sort() };
-}
-
-function firstText(items) {
-  const item = Array.isArray(items) ? items[0] : null;
-  return typeof item?.text === 'string' ? item.text.trim() : '';
-}
-
-function replaceCreativeText(assetFeedSpec, item) {
-  const cloned = structuredClone(assetFeedSpec ?? {});
-  if (!Array.isArray(cloned.bodies) || cloned.bodies.length === 0) {
-    throw new Error(`${item.key}: source creative has no asset_feed_spec.bodies`);
+  if (String(data.app_id ?? '') !== String(config.app_id)) {
+    throw new Error(`Management token belongs to app ${data.app_id ?? 'unknown'}, expected canonical app ${config.app_id}. No writes performed.`);
   }
-  if (!Array.isArray(cloned.titles) || cloned.titles.length === 0) {
-    throw new Error(`${item.key}: source creative has no asset_feed_spec.titles`);
+  const identity = {
+    app_id: data.app_id ?? null,
+    user_id: data.user_id ?? null,
+    scopes: [...scopes].sort(),
+  };
+  if (config.preferred_system_user_id && String(identity.user_id ?? '') !== String(config.preferred_system_user_id)) {
+    console.warn(`Management token user_id=${identity.user_id ?? 'unknown'} differs from preferred system user ${config.preferred_system_user_id}.`);
   }
-  for (const body of cloned.bodies) body.text = item.body;
-  for (const title of cloned.titles) title.text = item.headline;
-  if (Array.isArray(cloned.descriptions) && cloned.descriptions.length > 0) {
-    for (const description of cloned.descriptions) description.text = item.description;
-  } else {
-    cloned.descriptions = [{ text: item.description }];
-  }
-  return cloned;
+  return identity;
 }
 
-function creativeMatches(creative, item) {
-  const asset = creative?.asset_feed_spec ?? {};
-  return firstText(asset.bodies) === item.body
-    && firstText(asset.titles) === item.headline
-    && firstText(asset.descriptions) === item.description;
+async function readCampaign(token = readToken) {
+  return graphRequest(config.campaign.id, {
+    params: { fields: 'id,name,status,effective_status,objective' },
+    token,
+  });
 }
 
-const identity = await requireManagementScope();
-const snapshot = [];
-
-for (const item of config.adsets) {
-  const [adset, ad] = await Promise.all([
+async function readItem(item, token = readToken) {
+  const [adset, ad, sourceCreative] = await Promise.all([
     graphRequest(item.adset_id, {
-      params: { fields: 'id,name,status,effective_status,daily_budget,attribution_spec' },
+      params: {
+        fields: 'id,name,status,effective_status,daily_budget,attribution_spec,optimization_goal,billing_event,bid_strategy,targeting',
+      },
+      token,
     }),
     graphRequest(item.ad_id, {
-      params: { fields: 'id,name,status,effective_status,adset_id,creative{id,name,asset_feed_spec,object_story_spec}' },
+      params: {
+        fields: 'id,name,status,effective_status,adset_id,creative{id,name,asset_feed_spec,object_story_spec,degrees_of_freedom_spec,url_tags}',
+      },
+      token,
+    }),
+    graphRequest(item.source_creative_id, {
+      params: {
+        fields: 'id,name,asset_feed_spec,object_story_spec,degrees_of_freedom_spec,url_tags',
+      },
+      token,
     }),
   ]);
-  snapshot.push({ item, adset, ad });
+
+  if (String(ad?.adset_id ?? '') !== String(item.adset_id)) {
+    throw new Error(`${item.key}: ad ${item.ad_id} belongs to adset ${ad?.adset_id ?? 'unknown'}, expected ${item.adset_id}`);
+  }
+  const desiredCreative = buildDesiredCreative(sourceCreative, item, config.defaults);
+  const adsetContract = buildAdsetContract(adset, item, config.defaults);
+  return { item, adset, ad, sourceCreative, desiredCreative, adsetContract };
 }
 
-const plan = snapshot.map(({ item, adset, ad }) => ({
-  key: item.key,
-  adset_id: item.adset_id,
-  ad_id: item.ad_id,
-  budget: { current: Number(adset.daily_budget ?? 0), desired: config.defaults.daily_budget_minor },
-  attribution: { current: adset.attribution_spec ?? [], desired: config.defaults.attribution_spec },
-  adset_name: { current: adset.name ?? '', desired: item.adset_name },
-  ad_name: { current: ad.name ?? '', desired: item.ad_name },
-  copy_matches: creativeMatches(ad?.creative ?? {}, item),
-  current_creative_id: ad?.creative?.id ?? null,
-}));
+async function readSnapshot(token = readToken) {
+  const campaign = await readCampaign(token);
+  const items = [];
+  for (const item of config.adsets) items.push(await readItem(item, token));
+  return { campaign, items };
+}
 
-console.log(JSON.stringify({ mode: apply ? 'apply' : 'dry-run', identity, plan }, null, 2));
+function campaignDrift(campaign, { ignoreStatus = false } = {}) {
+  const drift = [];
+  if (String(campaign?.name ?? '') !== String(config.campaign.name)) drift.push('name');
+  if (!ignoreStatus && String(campaign?.status ?? '') !== String(config.campaign.status)) drift.push('status');
+  if (String(campaign?.objective ?? '') !== String(config.campaign.objective)) drift.push('objective');
+  return drift;
+}
+
+function itemDrift(entry) {
+  const drift = adsetDrift(entry.adsetContract).map((field) => `adset.${field}`);
+  if (String(entry.ad?.name ?? '') !== String(entry.item.ad_name)) drift.push('ad.name');
+  if (!creativeMatches(entry.ad?.creative ?? {}, entry.desiredCreative)) drift.push('ad.creative');
+  return drift;
+}
+
+function buildPlan(snapshot, options = {}) {
+  return {
+    campaign: {
+      id: config.campaign.id,
+      current_status: snapshot.campaign?.status ?? null,
+      drift: campaignDrift(snapshot.campaign, options),
+    },
+    adsets: snapshot.items.map((entry) => ({
+      key: entry.item.key,
+      adset_id: entry.item.adset_id,
+      ad_id: entry.item.ad_id,
+      source_creative_id: entry.item.source_creative_id,
+      current_creative_id: entry.ad?.creative?.id ?? null,
+      drift: itemDrift(entry),
+    })),
+  };
+}
+
+function planHasDrift(plan) {
+  return plan.campaign.drift.length > 0 || plan.adsets.some((item) => item.drift.length > 0);
+}
+
+function creativeCreateParams(entry, runId) {
+  const desired = entry.desiredCreative;
+  return {
+    name: `RSV26 | ${entry.item.key} | canonical | ${runId}`,
+    asset_feed_spec: desired.asset_feed_spec,
+    object_story_spec: desired.object_story_spec,
+    degrees_of_freedom_spec: desired.degrees_of_freedom_spec || undefined,
+    url_tags: desired.url_tags || undefined,
+  };
+}
+
+async function deleteStagedCreative(creativeId) {
+  try {
+    await graphRequest(creativeId, { method: 'DELETE', token: managementToken });
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
+const initialSnapshot = await readSnapshot();
+const initialPlan = buildPlan(initialSnapshot);
+console.log(JSON.stringify({ mode: apply ? 'apply' : 'dry-run', plan: initialPlan }, null, 2));
+
 if (!apply) {
-  console.log('Dry-run only. Re-run with --apply after reviewing the plan.');
+  console.log('Dry-run completed with read-only access. Re-run with --apply only after reviewing the plan.');
   process.exit(0);
 }
 
-// Stage every replacement creative first. Creating a creative does not change live delivery.
+if (initialPlan.campaign.drift.includes('objective')) {
+  throw new Error(`Campaign objective is ${initialSnapshot.campaign?.objective ?? 'unknown'}, expected ${config.campaign.objective}; objective reconciliation is not attempted in-place.`);
+}
+
+const identity = await requireManagementScope();
+if (!planHasDrift(initialPlan)) {
+  console.log(JSON.stringify({ success: true, changed: false, identity, message: 'RSV26 is already canonical.' }, null, 2));
+  process.exit(0);
+}
+
+const runId = new Date().toISOString().replace(/[:.]/g, '-');
 const stagedCreatives = new Map();
-for (const { item, ad } of snapshot) {
-  const currentCreative = ad?.creative ?? {};
-  if (creativeMatches(currentCreative, item)) continue;
+const rollbackOps = [];
+const originalCampaign = {
+  name: initialSnapshot.campaign?.name ?? config.campaign.name,
+  status: initialSnapshot.campaign?.status ?? config.campaign.status,
+};
 
-  const assetFeedSpec = replaceCreativeText(currentCreative.asset_feed_spec, item);
-  const objectStorySpec = structuredClone(currentCreative.object_story_spec ?? {});
-  objectStorySpec.page_id = config.defaults.page_id;
-  objectStorySpec.instagram_user_id = config.defaults.instagram_user_id;
+try {
+  // Stage from the configured source creatives. No live delivery changes yet.
+  for (const entry of initialSnapshot.items) {
+    if (creativeMatches(entry.ad?.creative ?? {}, entry.desiredCreative)) continue;
+    const created = await graphRequest(`${config.ad_account_id}/adcreatives`, {
+      method: 'POST',
+      params: creativeCreateParams(entry, runId),
+      token: managementToken,
+    });
+    if (!created?.id) throw new Error(`${entry.item.key}: Meta did not return a staged creative id`);
+    stagedCreatives.set(entry.item.key, String(created.id));
+  }
 
-  const created = await graphRequest(`${config.ad_account_id}/adcreatives`, {
+  // Prevent mixed live delivery while the multi-object reconciliation is in progress.
+  if (String(initialSnapshot.campaign?.status ?? '') !== 'PAUSED') {
+    await graphRequest(config.campaign.id, {
+      method: 'POST',
+      params: { status: 'PAUSED' },
+      token: managementToken,
+    });
+  }
+
+  if (String(initialSnapshot.campaign?.name ?? '') !== String(config.campaign.name)) {
+    await graphRequest(config.campaign.id, {
+      method: 'POST',
+      params: { name: config.campaign.name },
+      token: managementToken,
+    });
+  }
+
+  // Reconcile all canonical ad-set fields. Rollback snapshots are captured before writes.
+  for (const entry of initialSnapshot.items) {
+    const drift = adsetDrift(entry.adsetContract);
+    if (drift.length === 0) continue;
+    await graphRequest(entry.item.adset_id, {
+      method: 'POST',
+      params: adsetApplyParams(entry.adsetContract),
+      token: managementToken,
+    });
+    rollbackOps.push({
+      type: 'adset',
+      id: entry.item.adset_id,
+      params: adsetRollbackParams(entry.adsetContract),
+    });
+  }
+
+  // Normalize ad names and swap only to staged creatives built from canonical source media.
+  for (const entry of initialSnapshot.items) {
+    const creativeId = stagedCreatives.get(entry.item.key);
+    const nameDrift = String(entry.ad?.name ?? '') !== String(entry.item.ad_name);
+    if (!creativeId && !nameDrift) continue;
+    const params = { name: entry.item.ad_name };
+    if (creativeId) params.creative = { creative_id: creativeId };
+    await graphRequest(entry.item.ad_id, { method: 'POST', params, token: managementToken });
+    rollbackOps.push({
+      type: 'ad',
+      id: entry.item.ad_id,
+      params: {
+        name: entry.ad?.name ?? entry.item.ad_name,
+        creative: entry.ad?.creative?.id ? { creative_id: String(entry.ad.creative.id) } : undefined,
+      },
+    });
+  }
+
+  // Verify the complete contract while delivery remains paused.
+  const pausedSnapshot = await readSnapshot(managementToken);
+  const pausedPlan = buildPlan(pausedSnapshot, { ignoreStatus: true });
+  if (planHasDrift(pausedPlan)) {
+    throw new Error(`Post-apply verification failed before reactivation: ${JSON.stringify(pausedPlan)}`);
+  }
+
+  await graphRequest(config.campaign.id, {
     method: 'POST',
-    params: {
-      name: `RSV26 | ${item.key} | canonical | ${new Date().toISOString()}`,
-      asset_feed_spec: assetFeedSpec,
-      object_story_spec: objectStorySpec,
-    },
+    params: { status: config.campaign.status },
+    token: managementToken,
   });
-  if (!created?.id) throw new Error(`${item.key}: Meta did not return a creative id`);
-  stagedCreatives.set(item.key, String(created.id));
-}
 
-// Reconcile adsets first: budget, attribution and naming.
-for (const { item } of snapshot) {
-  await graphRequest(item.adset_id, {
-    method: 'POST',
-    params: {
-      name: item.adset_name,
-      daily_budget: String(config.defaults.daily_budget_minor),
-      attribution_spec: config.defaults.attribution_spec,
-    },
-  });
-}
+  const finalSnapshot = await readSnapshot(managementToken);
+  const finalPlan = buildPlan(finalSnapshot);
+  if (planHasDrift(finalPlan)) {
+    throw new Error(`Final verification failed after reactivation: ${JSON.stringify(finalPlan)}`);
+  }
 
-// Swap ads to the staged creatives and normalize naming.
-for (const { item } of snapshot) {
-  const params = { name: item.ad_name };
-  const creativeId = stagedCreatives.get(item.key);
-  if (creativeId) params.creative = { creative_id: creativeId };
-  await graphRequest(item.ad_id, { method: 'POST', params });
-}
+  console.log(JSON.stringify({
+    success: true,
+    changed: true,
+    identity,
+    campaign_id: config.campaign.id,
+    staged_creatives: Object.fromEntries(stagedCreatives),
+    daily_budget_total_minor: config.defaults.daily_budget_minor * config.adsets.length,
+    final_plan: finalPlan,
+  }, null, 2));
+} catch (error) {
+  const rollbackErrors = [];
+  for (const operation of rollbackOps.reverse()) {
+    try {
+      const params = Object.fromEntries(Object.entries(operation.params).filter(([, value]) => value !== undefined));
+      await graphRequest(operation.id, { method: 'POST', params, token: managementToken });
+    } catch (rollbackError) {
+      rollbackErrors.push({
+        type: operation.type,
+        id: operation.id,
+        error: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+      });
+    }
+  }
 
-console.log(JSON.stringify({
-  success: true,
-  campaign_id: config.campaign.id,
-  staged_creatives: Object.fromEntries(stagedCreatives),
-  daily_budget_total_minor: config.defaults.daily_budget_minor * config.adsets.length,
-}, null, 2));
+  try {
+    await graphRequest(config.campaign.id, {
+      method: 'POST',
+      params: { name: originalCampaign.name, status: originalCampaign.status },
+      token: managementToken,
+    });
+  } catch (rollbackError) {
+    rollbackErrors.push({
+      type: 'campaign',
+      id: config.campaign.id,
+      error: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+    });
+  }
+
+  const stagedCleanup = [];
+  for (const [key, creativeId] of stagedCreatives) {
+    const cleanupError = await deleteStagedCreative(creativeId);
+    stagedCleanup.push({ key, creative_id: creativeId, deleted: cleanupError === null, error: cleanupError });
+  }
+
+  console.error(JSON.stringify({
+    success: false,
+    error: error instanceof Error ? error.message : String(error),
+    rollback_errors: rollbackErrors,
+    staged_cleanup: stagedCleanup,
+  }, null, 2));
+  process.exit(1);
+}
