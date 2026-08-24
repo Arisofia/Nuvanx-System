@@ -1,4 +1,4 @@
-name: Meta RSV26 Restore Active Once
+name: Meta RSV26 Existing Creative Capability Probe
 
 on:
   pull_request:
@@ -8,18 +8,18 @@ permissions:
   contents: read
 
 concurrency:
-  group: meta-rsv26-restore-active-once
+  group: meta-rsv26-existing-creative-probe
   cancel-in-progress: false
 
 jobs:
-  restore-active:
+  probe-existing-creative:
     if: >-
       github.event.pull_request.head.ref == 'ops/rsv26-live-apply-once-20260824' &&
       github.event.pull_request.base.ref == 'main' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     environment: Production
-    timeout-minutes: 6
+    timeout-minutes: 8
     env:
       META_CANONICAL_ACCESS_TOKEN: ${{ secrets.META_CANONICAL_ACCESS_TOKEN }}
       META_CANONICAL_APP_SECRET: ${{ secrets.META_CANONICAL_APP_SECRET }}
@@ -33,22 +33,26 @@ jobs:
       - name: Respect Meta mutation rate window
         run: sleep 40
 
-      - name: Restore campaign ACTIVE with one isolated write
+      - name: Create one PAUSED probe ad using existing canonical creative
         shell: bash
         run: |
           set -euo pipefail
           node --input-type=module - <<'NODE'
           import { createHmac } from 'node:crypto';
+          import { writeFile } from 'node:fs/promises';
           const token = process.env.META_CANONICAL_ACCESS_TOKEN;
           const secret = process.env.META_CANONICAL_APP_SECRET;
           if (!token || !secret) throw new Error('Canonical Meta credentials missing');
           const proof = createHmac('sha256', secret).update(token).digest('hex');
           const body = new URLSearchParams({
-            status: 'ACTIVE',
+            name: 'RSV26 | existing-creative capability probe | DELETE',
+            adset_id: '120249780276620419',
+            creative: JSON.stringify({ creative_id: '2070344224367581' }),
+            status: 'PAUSED',
             access_token: token,
             appsecret_proof: proof,
           });
-          const response = await fetch('https://graph.facebook.com/v22.0/120249780276630419', {
+          const response = await fetch('https://graph.facebook.com/v22.0/act_718120894191565/ads', {
             method: 'POST',
             headers: { 'content-type': 'application/x-www-form-urlencoded' },
             body,
@@ -56,36 +60,36 @@ jobs:
           const json = await response.json();
           if (!response.ok || json?.error) {
             const e = json?.error ?? {};
-            throw new Error(`Meta restore failed: ${e.message ?? response.statusText} (code=${e.code ?? response.status}, sub=${e.error_subcode ?? 'n/a'})`);
+            console.log(`META_EXISTING_CREATIVE_PROBE supported=false code=${e.code ?? response.status} sub=${e.error_subcode ?? 'n/a'} message=${String(e.message ?? response.statusText).replace(/\s+/g, ' ')}`);
+            process.exit(0);
           }
-          console.log(`META_RSV26_RESTORE_WRITE=PASS success=${json?.success === true}`);
+          if (!json?.id) throw new Error('Meta returned success without an ad id');
+          await writeFile('/tmp/meta-probe-ad-id', String(json.id), 'utf8');
+          console.log(`META_EXISTING_CREATIVE_PROBE supported=true created_paused_ad=true ad_id=${json.id}`);
           NODE
 
-      - name: Respect Meta verification rate window
+      - name: Respect Meta cleanup rate window
+        if: ${{ hashFiles('/tmp/meta-probe-ad-id') != '' }}
         run: sleep 40
 
-      - name: Verify campaign ACTIVE with one isolated read
+      - name: Delete probe ad if it was created
+        if: ${{ hashFiles('/tmp/meta-probe-ad-id') != '' }}
         shell: bash
         run: |
           set -euo pipefail
           node --input-type=module - <<'NODE'
           import { createHmac } from 'node:crypto';
+          import { readFile } from 'node:fs/promises';
           const token = process.env.META_CANONICAL_ACCESS_TOKEN;
           const secret = process.env.META_CANONICAL_APP_SECRET;
+          const adId = (await readFile('/tmp/meta-probe-ad-id', 'utf8')).trim();
           const proof = createHmac('sha256', secret).update(token).digest('hex');
-          const params = new URLSearchParams({
-            fields: 'id,status,effective_status',
-            access_token: token,
-            appsecret_proof: proof,
-          });
-          const response = await fetch(`https://graph.facebook.com/v22.0/120249780276630419?${params}`);
+          const params = new URLSearchParams({ access_token: token, appsecret_proof: proof });
+          const response = await fetch(`https://graph.facebook.com/v22.0/${adId}?${params}`, { method: 'DELETE' });
           const json = await response.json();
-          if (!response.ok || json?.error) {
+          if (!response.ok || json?.error || json?.success !== true) {
             const e = json?.error ?? {};
-            throw new Error(`Meta verify failed: ${e.message ?? response.statusText} (code=${e.code ?? response.status}, sub=${e.error_subcode ?? 'n/a'})`);
+            throw new Error(`Probe cleanup failed: ${e.message ?? response.statusText} (code=${e.code ?? response.status}, sub=${e.error_subcode ?? 'n/a'})`);
           }
-          console.log(`META_RSV26_RESTORE_VERIFY status=${json.status} effective_status=${json.effective_status}`);
-          if (json.status !== 'ACTIVE' || json.effective_status !== 'ACTIVE') {
-            throw new Error(`Campaign did not return ACTIVE/ACTIVE: ${json.status}/${json.effective_status}`);
-          }
+          console.log(`META_EXISTING_CREATIVE_PROBE_CLEANUP=PASS ad_id=${adId}`);
           NODE
