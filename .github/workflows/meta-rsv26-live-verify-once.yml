@@ -45,6 +45,31 @@ jobs:
             fi
           done
 
+      - name: Discover canonical Pixel/Dataset IDs read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          const token = process.env.META_REPORTING_TOKEN_60D;
+          const version = 'v22.0';
+          const endpoints = [
+            ['ad_account_pixels', 'act_718120894191565/adspixels', 'id,name,last_fired_time'],
+            ['business_owned_pixels', '897835716596010/owned_pixels', 'id,name,last_fired_time'],
+          ];
+          for (const [label, path, fields] of endpoints) {
+            const url = new URL(`https://graph.facebook.com/${version}/${path}`);
+            url.searchParams.set('access_token', token);
+            url.searchParams.set('fields', fields);
+            url.searchParams.set('limit', '100');
+            const response = await fetch(url, { signal: AbortSignal.timeout(20000) });
+            const body = await response.json().catch(() => ({}));
+            const rows = Array.isArray(body?.data)
+              ? body.data.map(({ id, name, last_fired_time }) => ({ id, name, last_fired_time: last_fired_time ?? null }))
+              : [];
+            console.log(`${label}=${JSON.stringify({ status: response.status, rows, error: body?.error?.message ?? null })}`);
+          }
+          NODE
+
       - name: Audit live drift with ads_read only
         shell: bash
         run: |
