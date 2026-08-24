@@ -123,9 +123,11 @@ Production audit `32762760660` after the App Domain update confirmed:
 - User-support URL absent.
 - Website URL absent.
 
-The absence of the optional/support fields above must not be interpreted as a publication blocker without checking the current Meta App Dashboard requirement for the specific enabled use cases.
+On 2026-08-24, the Meta App Dashboard Basic Settings UI was saved with **User Data Deletion → Data deletion instructions URL** set to `https://nuvanx.com/politica-privacidad/`. The live WordPress page is published and contains the right to erasure and the NUVANX contact channel.
 
-The user-data-deletion URL/status is a Dashboard requirement and was not exposed/verified by the Graph metadata audit; verify it in App Dashboard before final publication.
+Read-only audit `32768146699` independently confirmed that Graph v22 exposes the App Domain, Privacy Policy and Terms, but does **not** expose the tested data-deletion fields (`data_deletion_url`, `data_deletion_callback_url`) or tested app-mode fields (`status`, `app_mode`, `is_live`, `mode`); those return Graph `code=100`. Therefore the saved data-deletion URL and Development/Live state must be treated as Dashboard/UI evidence unless Meta exposes another supported surface.
+
+The absence of the optional/support fields above must not be interpreted as a publication blocker without checking the current Meta App Dashboard requirement for the specific enabled use cases.
 
 ## Current RSV26 publication blocker
 
@@ -143,5 +145,7 @@ Therefore the final RSV26 migration remains pending App publication/required acc
 - `32761521018` — Page-token / Messenger / Instagram / WhatsApp detail audit.
 - `32762760660` — publication metadata/App Domain audit after adding `nuvanx.com`.
 - `32763162619` — current Business System User inventory + token identity reconciliation.
+- `32768146699` — App object metadata surface: deletion URL and app mode are not exposed through the tested Graph v22 fields.
+- 2026-08-24 Dashboard save confirmation — User Data Deletion instructions URL set to `https://nuvanx.com/politica-privacidad/`.
 
 Temporary audit PRs must be closed without merge after evidence capture. Permanent operational knowledge belongs in this document and canonical config/tests, not in one-shot workflows.
