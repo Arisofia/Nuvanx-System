@@ -1,0 +1,67 @@
+name: Meta App Publication Audit Once
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: meta-app-publication-audit-once
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: >-
+      github.event.pull_request.head.ref == 'ops/meta-app-publication-audit-once-20260824' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    environment: Production
+    timeout-minutes: 5
+    env:
+      META_CANONICAL_APP_SECRET: ${{ secrets.META_CANONICAL_APP_SECRET }}
+
+    steps:
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 22
+
+      - name: Read app publication metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module - <<'NODE'
+          const APP_ID = '1836302544001572';
+          const secret = String(process.env.META_CANONICAL_APP_SECRET || '').trim();
+          if (!secret) throw new Error('META_CANONICAL_APP_SECRET missing');
+          const appToken = `${APP_ID}|${secret}`;
+          const url = new URL(`https://graph.facebook.com/v22.0/${APP_ID}`);
+          url.searchParams.set('access_token', appToken);
+          url.searchParams.set('fields', 'id,name,app_domains,privacy_policy_url,terms_of_service_url,namespace,contact_email,deauth_callback_url,user_support_email,user_support_url,website_url');
+          const response = await fetch(url, { signal: AbortSignal.timeout(20000) });
+          const json = await response.json();
+          if (!response.ok || json?.error) {
+            const e = json?.error ?? {};
+            throw new Error(`App metadata read failed: ${e.message ?? response.statusText} (code=${e.code ?? response.status})`);
+          }
+          const domains = Array.isArray(json.app_domains) ? json.app_domains.map(String).sort() : [];
+          const result = {
+            app_id: json.id ?? null,
+            name: json.name ?? null,
+            app_domains: domains,
+            has_nuvanx_domain: domains.includes('nuvanx.com'),
+            has_privacy_policy: Boolean(json.privacy_policy_url),
+            has_terms: Boolean(json.terms_of_service_url),
+            has_namespace: Boolean(json.namespace),
+            has_contact_email: Boolean(json.contact_email),
+            has_deauth_callback: Boolean(json.deauth_callback_url),
+            has_user_support_email: Boolean(json.user_support_email),
+            has_user_support_url: Boolean(json.user_support_url),
+            has_website_url: Boolean(json.website_url),
+          };
+          console.log(`META_APP_PUBLICATION_AUDIT=${JSON.stringify(result)}`);
+          if (!result.has_nuvanx_domain) process.exitCode = 2;
+          NODE
