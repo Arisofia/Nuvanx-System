@@ -1,0 +1,175 @@
+name: Meta RSV26 One-Shot Live Reconciliation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: meta-rsv26-live-apply-once
+  cancel-in-progress: false
+
+env:
+  TRUSTED_SHA: 2341a95f107448d60efb0fe23335a5e2ce40963f
+
+jobs:
+  preflight:
+    name: RSV26 read-only preflight
+    if: >-
+      github.event.action != 'ready_for_review' &&
+      github.event.pull_request.head.ref == 'ops/rsv26-live-apply-once-20260824-r2' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    environment: Production
+    timeout-minutes: 12
+    env:
+      META_CANONICAL_ACCESS_TOKEN: ${{ secrets.META_CANONICAL_ACCESS_TOKEN }}
+      META_CANONICAL_APP_SECRET: ${{ secrets.META_CANONICAL_APP_SECRET }}
+      META_ACCESS_AUDIT_REQUIRED_SOURCE: META_CANONICAL_ACCESS_TOKEN
+      META_ACCESS_AUDIT_REQUIRE_CRITICAL: 'true'
+      META_ACCESS_AUDIT_REQUIRE_APP_MATCH: 'true'
+      META_ACCESS_AUDIT_REQUIRE_CRITICAL_ASSETS: 'true'
+
+    steps:
+      - name: Checkout exact trusted main
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.TRUSTED_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify trusted SHA is still current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$TRUSTED_SHA"
+          git fetch --no-tags origin main
+          current_main="$(git rev-parse origin/main)"
+          test "$current_main" = "$TRUSTED_SHA" || {
+            echo "RSV26_PREFLIGHT=FAIL reason=trusted_sha_not_current_main trusted=$TRUSTED_SHA current_main=$current_main" >&2
+            exit 1
+          }
+          echo "RSV26_TRUSTED_SHA=PASS sha=$TRUSTED_SHA"
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 22
+
+      - name: Validate reconciler safety contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check scripts/meta-apply-rsv26.js
+          node --check scripts/meta-access-audit.js
+          node --check scripts/meta-system-user-audit.js
+          node --check scripts/meta-audit-rsv26.js
+          node --check scripts/meta-creative-diff-rsv26.js
+          node scripts/meta-apply-rsv26.concurrency.test.mjs
+          echo 'RSV26_SAFETY_CONTRACT=PASS'
+
+      - name: Validate canonical Meta access and assets
+        shell: bash
+        run: node scripts/meta-access-audit.js
+
+      - name: Validate canonical System User
+        shell: bash
+        run: node scripts/meta-system-user-audit.js
+
+      - name: Capture live read-only reconciliation plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/meta-apply-rsv26.js | tee "$RUNNER_TEMP/rsv26-preflight.log"
+          grep -Fq 'Dry-run completed with read-only access.' "$RUNNER_TEMP/rsv26-preflight.log"
+          echo 'RSV26_PREFLIGHT=PASS mutation=false'
+
+  apply:
+    name: RSV26 guarded live apply
+    if: >-
+      github.event.action == 'ready_for_review' &&
+      github.event.pull_request.head.ref == 'ops/rsv26-live-apply-once-20260824-r2' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    environment: Production
+    timeout-minutes: 20
+    env:
+      META_CANONICAL_ACCESS_TOKEN: ${{ secrets.META_CANONICAL_ACCESS_TOKEN }}
+      META_CANONICAL_APP_SECRET: ${{ secrets.META_CANONICAL_APP_SECRET }}
+      META_ACCESS_AUDIT_REQUIRED_SOURCE: META_CANONICAL_ACCESS_TOKEN
+      META_ACCESS_AUDIT_REQUIRE_CRITICAL: 'true'
+      META_ACCESS_AUDIT_REQUIRE_APP_MATCH: 'true'
+      META_ACCESS_AUDIT_REQUIRE_CRITICAL_ASSETS: 'true'
+
+    steps:
+      - name: Checkout exact trusted main
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.TRUSTED_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Refuse stale or moved main
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$TRUSTED_SHA"
+          git fetch --no-tags origin main
+          current_main="$(git rev-parse origin/main)"
+          test "$current_main" = "$TRUSTED_SHA" || {
+            echo "RSV26_APPLY=FAIL reason=trusted_sha_not_current_main trusted=$TRUSTED_SHA current_main=$current_main" >&2
+            exit 1
+          }
+          echo "RSV26_APPLY_SHA=PASS sha=$TRUSTED_SHA"
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 22
+
+      - name: Re-run safety and identity preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check scripts/meta-apply-rsv26.js
+          node scripts/meta-apply-rsv26.concurrency.test.mjs
+          node scripts/meta-access-audit.js
+          node scripts/meta-system-user-audit.js
+          node scripts/meta-apply-rsv26.js | tee "$RUNNER_TEMP/rsv26-apply-preflight.log"
+          grep -Fq 'Dry-run completed with read-only access.' "$RUNNER_TEMP/rsv26-apply-preflight.log"
+          echo 'RSV26_APPLY_PREFLIGHT=PASS mutation=false'
+
+      - name: Apply complete canonical RSV26 reconciliation
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/meta-apply-rsv26.js \
+            --apply \
+            --apply-names \
+            --apply-attribution \
+            --apply-adset-settings \
+            --apply-creatives \
+            | tee "$RUNNER_TEMP/rsv26-live-apply.log"
+          grep -Fq '"success": true' "$RUNNER_TEMP/rsv26-live-apply.log"
+          echo 'RSV26_LIVE_APPLY=PASS'
+
+      - name: Require zero canonical drift after write
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/meta-audit-rsv26.js | tee "$RUNNER_TEMP/rsv26-post-audit.log"
+          grep -Fq '"drift_count": 0' "$RUNNER_TEMP/rsv26-post-audit.log"
+          echo 'RSV26_POST_AUDIT=PASS drift_count=0'
+
+      - name: Re-check creative contracts after write
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/meta-creative-diff-rsv26.js | tee "$RUNNER_TEMP/rsv26-creative-diff.log"
+          grep -Fq '"drifting":0' "$RUNNER_TEMP/rsv26-creative-diff.log"
+          grep -Fq '"semantic_diffs":0' "$RUNNER_TEMP/rsv26-creative-diff.log"
+          echo 'RSV26_CREATIVE_CONTRACTS=PASS'
