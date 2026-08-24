@@ -286,18 +286,36 @@ for (const [label, path, params, mode] of probes) {
 const pageToken = await resolvePageAccessToken(ids.page);
 console.log(`META_PAGE_ACCESS_TOKEN=${JSON.stringify({ available: Boolean(pageToken.token), source: pageToken.source, page_id_match: pageToken.page_id_match, error: pageToken.error })}`);
 if (pageToken.token) {
-  const { response, body } = await graphGetWithToken(`${ids.page}/leadgen_forms`, { fields: 'id,name,status', limit: 100 }, pageToken.token);
-  const forms = Array.isArray(body?.data) ? body.data : [];
-  const targetFormPresent = forms.some((form) => String(form?.id ?? '') === ids.leadForm);
+  let allForms = [];
+  let nextCursor = null;
+  let targetFormPresent = false;
+  let lastResponse = null;
+  let lastBody = null;
+
+  do {
+    const params = { fields: 'id,name,status', limit: 100 };
+    if (nextCursor) params.after = nextCursor;
+    const { response, body } = await graphGetWithToken(`${ids.page}/leadgen_forms`, params, pageToken.token);
+    lastResponse = response;
+    lastBody = body;
+    
+    const forms = Array.isArray(body?.data) ? body.data : [];
+    allForms.push(...forms);
+    targetFormPresent = forms.some((form) => String(form?.id ?? '') === ids.leadForm);
+    
+    if (targetFormPresent || !body?.paging?.cursors?.after) break;
+    nextCursor = body.paging.cursors.after;
+  } while (nextCursor);
+
   const result = {
-    status: response.status,
-    ok: response.ok,
-    rows: forms.length,
+    status: lastResponse?.status,
+    ok: lastResponse?.ok,
+    rows: allForms.length,
     target_form_present: targetFormPresent,
-    error: safeError(body),
+    error: safeError(lastBody),
   };
   console.log(`META_PAGE_LEADGEN_FORMS=${JSON.stringify(result)}`);
-  if (!response.ok || !targetFormPresent) criticalAssetFailures.push('page_leadgen_forms');
+  if (!result.ok || !targetFormPresent) criticalAssetFailures.push('page_leadgen_forms');
 } else {
   console.log(`META_PAGE_LEADGEN_FORMS=${JSON.stringify({ status: null, ok: false, rows: null, target_form_present: false, error: pageToken.error })}`);
   criticalAssetFailures.push('page_leadgen_forms');
