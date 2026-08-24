@@ -20,7 +20,7 @@ async function main() {
 
   const webmasters = google.webmasters({ version: 'v3', auth });
 
-  const siteUrl = 'sc-domain:nuvanx.com';
+  const siteUrl = 'https://nuvanx.com/';
   console.log(`\nQuerying searchanalytics for site: ${siteUrl}`);
   
   // Date range: last 30 days
