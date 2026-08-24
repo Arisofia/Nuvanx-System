@@ -56,7 +56,7 @@ console.log(`META_TOKEN_IDENTITY=${JSON.stringify({ status: identity.response.st
 console.log(`META_BUSINESS_SYSTEM_USERS=${JSON.stringify({ status: systemUsers.response.status, ok: systemUsers.response.ok, rows: safeRows, error: errorSummary(systemUsers.body) })}`);
 console.log(`META_SYSTEM_USER_RESOLUTION=${JSON.stringify({ token_user_in_business: Boolean(tokenUser), preferred_user_in_business: Boolean(preferredUser), preferred_id_match: preferredIdMatch, token_user: tokenUser, preferred_user: preferredUser })}`);
 
-if (!systemUsers.response.ok || !tokenUser) {
+if (!systemUsers.response.ok || !tokenUser || tokenUserId !== preferredId) {
   console.error('META_SYSTEM_USER_AUDIT=FAIL reason=token_system_user_not_owned_by_business');
   process.exit(1);
 }
