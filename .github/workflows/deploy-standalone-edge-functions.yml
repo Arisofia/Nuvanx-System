@@ -37,16 +37,35 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      QUALITY_APPROVED_SHA: ${{ github.event.workflow_run.head_sha }}
 
     steps:
-      - name: Checkout exact quality-approved candidate
+      - name: Checkout trusted main
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          ref: main
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Verify current main is the quality-approved candidate
+        id: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT_SHA="$(git rev-parse HEAD)"
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_run" ]]; then
+            test -n "${QUALITY_APPROVED_SHA:-}"
+            if [[ "$CURRENT_SHA" != "$QUALITY_APPROVED_SHA" ]]; then
+              echo "deploy=false" >> "$GITHUB_OUTPUT"
+              echo "Current main $CURRENT_SHA advanced beyond approved candidate $QUALITY_APPROVED_SHA; a newer Master System run will own deployment."
+              exit 0
+            fi
+          fi
+          echo "deploy=true" >> "$GITHUB_OUTPUT"
+          echo "candidate_sha=$CURRENT_SHA" >> "$GITHUB_OUTPUT"
+
       - name: Validate production deployment configuration
+        if: ${{ steps.candidate.outputs.deploy == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -56,17 +75,20 @@ jobs:
           [[ "$SUPABASE_ACCESS_TOKEN" =~ ^sbp_[A-Za-z0-9]+$ ]]
 
       - name: Setup Node.js
+        if: ${{ steps.candidate.outputs.deploy == 'true' }}
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: '22'
           cache: npm
 
       - name: Setup Deno
+        if: ${{ steps.candidate.outputs.deploy == 'true' }}
         uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
         with:
           deno-version: v2.x
 
       - name: Revalidate standalone candidate
+        if: ${{ steps.candidate.outputs.deploy == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -78,6 +100,7 @@ jobs:
             supabase/functions/runtime-bootstrap/index.ts
 
       - name: Deploy standalone functions
+        if: ${{ steps.candidate.outputs.deploy == 'true' }}
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
