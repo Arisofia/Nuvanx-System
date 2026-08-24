@@ -9,6 +9,7 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
 const ENCRYPTION_KEY = Deno.env.get("ENCRYPTION_KEY") || "";
 const META_APP_SECRET = Deno.env.get("META_APP_SECRET") || "";
+const META_CANONICAL_APP_SECRET = Deno.env.get("META_CANONICAL_APP_SECRET") || Deno.env.get("META_REPORTING_APP_SECRET") || "";
 const META_PIXEL_ID = Deno.env.get("META_PIXEL_ID") || "";
 const DEFAULT_LANDING_USER_EMAIL = Deno.env.get("DEFAULT_LANDING_USER_EMAIL") || Deno.env.get("LANDING_USER_EMAIL") || "";
 const META_TEST_EVENT_CODE = (Deno.env.get("META_TEST_EVENT_CODE") || "").trim();
@@ -101,11 +102,11 @@ async function decryptCred(encoded: string): Promise<string> {
   );
 }
 
-async function appsecretProof(accessToken: string): Promise<string | null> {
-  if (!META_APP_SECRET) return null;
+async function appsecretProof(accessToken: string, appSecret: string): Promise<string | null> {
+  if (!appSecret) return null;
   const key = await crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(META_APP_SECRET),
+    new TextEncoder().encode(appSecret),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"],
@@ -125,46 +126,56 @@ async function resolveOwnerAndMeta(admin: any) {
     userId = userByEmail?.id || "";
   }
 
-  if (!userId) {
-    const { data: integrationFallback } = await admin
+  const scoreIntegration = (row: any) => {
+    const metadata = row?.metadata ?? {};
+    if (row?.service === "meta_ads" && metadata?.canonical === true) return 2;
+    if (row?.service === "meta_ads") return 1;
+    return 0;
+  };
+
+  let rows: any[] = [];
+  if (userId) {
+    const { data } = await admin
       .from("integrations")
-      .select("user_id")
-      .eq("service", "meta")
+      .select("user_id,service,metadata,status,updated_at")
+      .eq("user_id", userId)
+      .in("service", ["meta_ads", "meta"])
+      .eq("status", "connected");
+    rows = data || [];
+  } else {
+    const { data } = await admin
+      .from("integrations")
+      .select("user_id,service,metadata,status,updated_at")
+      .in("service", ["meta_ads", "meta"])
       .eq("status", "connected")
       .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    userId = integrationFallback?.user_id || "";
+      .limit(20);
+    rows = data || [];
   }
 
-  if (!userId) throw new Error("No Meta owner user resolved");
-
-  const { data: integration } = await admin
-    .from("integrations")
-    .select("metadata,status,updated_at")
-    .eq("user_id", userId)
-    .eq("service", "meta")
-    .eq("status", "connected")
-    .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const integration = [...rows].sort((a: any, b: any) =>
+    scoreIntegration(b) - scoreIntegration(a) || String(b?.updated_at || "").localeCompare(String(a?.updated_at || ""))
+  )[0];
 
   if (!integration) throw new Error("Connected Meta integration not found");
+  userId = integration.user_id || userId;
+  if (!userId) throw new Error("No Meta owner user resolved");
 
+  const service = integration.service === "meta_ads" ? "meta_ads" : "meta";
   const { data: cred } = await admin
     .from("credentials")
     .select("encrypted_key")
     .eq("user_id", userId)
-    .eq("service", "meta")
+    .eq("service", service)
     .maybeSingle();
-
   if (!cred?.encrypted_key) throw new Error("Meta credential not found");
 
   const metadata = integration.metadata || {};
   const pixelId = normalizeDigits(metadata.pixelId || metadata.pixel_id || META_PIXEL_ID);
   if (!pixelId) throw new Error("Meta Pixel ID not configured");
 
-  return { pixelId, accessToken: await decryptCred(cred.encrypted_key) };
+  const appSecret = service === "meta_ads" ? META_CANONICAL_APP_SECRET : META_APP_SECRET;
+  return { pixelId, accessToken: await decryptCred(cred.encrypted_key), appSecret };
 }
 
 function getHeaderIp(req: Request): string | null {
@@ -228,8 +239,8 @@ function safeCustomData() {
   };
 }
 
-async function sendMetaCapi(params: { pixelId: string; accessToken: string; body: any; req: Request }) {
-  const { pixelId, accessToken, body, req } = params;
+async function sendMetaCapi(params: { pixelId: string; accessToken: string; appSecret: string; body: any; req: Request }) {
+  const { pixelId, accessToken, appSecret, body, req } = params;
   const eventName = sanitizeEventName(body.event_name || body.eventName);
   const eventId = sanitizeEventId(body.event_id || body.eventId);
   const userData = await buildUserData(body, req);
@@ -250,7 +261,7 @@ async function sendMetaCapi(params: { pixelId: string; accessToken: string; body
 
   const url = new URL(`${META_GRAPH}/${pixelId}/events`);
   url.searchParams.set("access_token", accessToken);
-  const proof = await appsecretProof(accessToken);
+  const proof = await appsecretProof(accessToken, appSecret);
   if (proof) url.searchParams.set("appsecret_proof", proof);
 
   const res = await fetch(url.toString(), {
@@ -288,7 +299,7 @@ Deno.serve(async (req: Request) => {
 
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
     const meta = await resolveOwnerAndMeta(admin);
-    const result = await sendMetaCapi({ pixelId: meta.pixelId, accessToken: meta.accessToken, body, req });
+    const result = await sendMetaCapi({ pixelId: meta.pixelId, accessToken: meta.accessToken, appSecret: meta.appSecret, body, req });
     return json({ success: true, eventName: result.eventName, eventId: result.eventId }, 200);
   } catch (error: any) {
     console.error("[web-events] error", error?.message || error);
