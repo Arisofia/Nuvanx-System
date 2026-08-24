@@ -6,6 +6,7 @@ on:
       - fix/meta-runtime-routing-20260824
     paths:
       - '.github/workflows/meta-runtime-routing-build-artifact.yml'
+      - 'supabase/functions/web-events/index.test.mjs'
 
 permissions:
   contents: write
