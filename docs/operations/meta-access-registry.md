@@ -19,7 +19,7 @@ This document is the non-secret operational registry for the canonical NUVANX Me
 | Instagram business user | `17841474094610850` | `nuvanx_`; account read verified |
 | Lead form | `1493697602775666` | Active; lead retrieval verified |
 | App Domain | `nuvanx.com` | Verified via Graph on 2026-08-24 |
-| Pixel / Dataset | `NUVANX | Web | CAPI | RSV26` | Name previously confirmed in Business Settings; numeric ID remains to be independently recorded before treating it as canonical |
+| Pixel / Dataset | `NUVANX | Web | CAPI | RSV26` | Name confirmed; numeric ID still requires an independent canonical read before it is recorded here |
 
 ### System User identity reconciliation
 
@@ -28,7 +28,7 @@ A prior Business Settings screen showed `61593654929650` for the user labelled *
 - `122096106543457614` — `jenineferderas` — `ADMIN`.
 - `122098243371455164` — `Conversions API System User` — `EMPLOYEE`.
 
-`/debug_token` resolves the canonical Production token to `122098243371455164`, and that ID is present in the Business inventory. `61593654929650` is **not present** in the current Graph inventory and must not be used as the canonical runtime System User unless it is independently re-established by a later Meta audit.
+`/debug_token` resolves the canonical Production token to `122098243371455164`, and that ID is present in the Business inventory. `61593654929650` is **not present** in the current Graph inventory and is non-canonical historical metadata.
 
 ## Secret-variable ownership
 
@@ -37,15 +37,17 @@ These are variable names only. Values belong in managed secret stores and must n
 | Variable | Purpose | Current contract |
 | --- | --- | --- |
 | `META_CANONICAL_ACCESS_TOKEN` | Canonical Meta management/runtime token | Must belong to App `1836302544001572` and System User `122098243371455164`; management scope validated |
-| `META_ADS_MANAGEMENT_TOKEN` | Supported explicit management-token alias for Meta audit/apply scripts | When set, RSV26 management tooling gives this variable precedence over `META_CANONICAL_ACCESS_TOKEN`; provision/rotate it only when intentionally using the separate alias |
+| `META_ADS_MANAGEMENT_TOKEN` | Supported explicit management-token alias for Meta audit/apply scripts | When set, RSV26 management tooling gives this variable precedence over `META_CANONICAL_ACCESS_TOKEN` |
 | `META_CANONICAL_APP_SECRET` | Preferred App Secret for `NUVANX Reporting` | Used for `appsecret_proof`, token debugging, webhook/app separation |
-| `META_REPORTING_APP_SECRET` | Supported reporting/canonical App Secret fallback | `api` and `daily-aggregates` fall back to this variable when `META_CANONICAL_APP_SECRET` is unset; include it in secret-store maintenance/rotation while the fallback remains supported |
+| `META_REPORTING_APP_SECRET` | Supported reporting/canonical App Secret fallback | `api` and `daily-aggregates` fall back to this variable when `META_CANONICAL_APP_SECRET` is unset |
 | `META_APP_SECRET` | Legacy Meta stack App Secret | Keep separate; do not overwrite with canonical secret |
 | `META_REPORTING_TOKEN_60D` | Read-oriented/reporting compatibility token | Not the canonical write credential |
 
 ## Granted scopes verified on the canonical token
 
-Verified in Production read-only audit `32761212623`:
+Production audits confirm a broader set of scopes on the canonical token than are being requested in the first App Review. Token grants and App Review scope are deliberately tracked separately.
+
+Verified token scopes include:
 
 - `ads_management`
 - `ads_read`
@@ -81,10 +83,25 @@ Verified in Production read-only audit `32761212623`:
 - `whatsapp_business_management`
 - `whatsapp_business_messaging`
 
-Not granted / still pending for the displayed Meta use cases:
+Not granted / still pending for displayed Meta use cases:
 
 - `ads_mcp_management` — Ads Agent case remains pending.
-- fundraiser/charitable management scope — Fundraisers case not configured and not currently applicable.
+- fundraiser/charitable management scope — not configured and not currently applicable.
+
+## First App Review scope
+
+Submission `1836338617331298` uses a **server-to-server / Meta Business System User** reviewer model. The intended first-review scope is exactly:
+
+1. Marketing API Access Tier
+2. `ads_management`
+3. `ads_read`
+4. `business_management`
+5. `pages_show_list`
+6. `pages_read_engagement`
+7. `pages_manage_ads`
+8. `leads_retrieval`
+
+Everything else is deferred from the first review, including `pages_manage_metadata`, messaging, catalog, Threads, oEmbed, Live Video, WhatsApp and Ads Agent permissions/features unless a later product requirement independently justifies them.
 
 ## Asset/capability verification
 
@@ -94,19 +111,14 @@ Not granted / still pending for the displayed Meta use cases:
 | Marketing Insights | Campaign insights read | PASS |
 | Lead Ads | Active form read and `/{form}/leads` real read | PASS |
 | Page | Basic read; canonical Page Access Token derivation; `/subscribed_apps` with Page token | PASS |
-| Messenger | `/conversations` with Page Access Token | PASS; zero rows at audit time |
-| Instagram account/content | Account read and content-related scopes | PASS |
-| Instagram messaging | `/conversations` with Page Access Token | PENDING — Meta returns `code=3`, app lacks capability despite scope |
-| WhatsApp | 2 owned WABAs readable; both phone-number reads succeed; message-template reads succeed | PASS for management/read; outbound production message not tested |
-| Catalog API | `catalog_management` and owned-catalog endpoint | PASS; zero owned catalogs at audit time |
-| Live Video | `/live_videos` read; posting/video scopes present | PASS for read; no broadcast created solely for testing |
-| Threads | `threads_business_basic` granted | PENDING — requires Threads user authorization/token flow |
-| Meta Ads Agent | No `ads_mcp_management` | PENDING |
-| Facebook Login for Business | System-user business access works | PENDING — interactive OAuth not configured/tested |
-| oEmbed | Runtime probes not certified | PENDING — resolve separately before claiming support |
-| App Ads | No mobile app/store/App Events asset in canonical stack | NOT APPLICABLE CURRENTLY |
-| Audience Network | No publisher/mobile monetization property | NOT APPLICABLE CURRENTLY |
-| Fundraisers | No relevant scope/use case; tested legacy Page edge unavailable | NOT APPLICABLE CURRENTLY |
+| Messenger | `/conversations` with Page Access Token | PASS; zero rows at audit time, not part of first review |
+| Instagram account/content | Account read and content-related scopes | PASS; not part of first review |
+| Instagram messaging | `/conversations` with Page Access Token | PENDING — Meta returns `code=3`; not part of first review |
+| WhatsApp | Owned WABAs/read paths verified | PASS for management/read; not part of first review |
+| Catalog API | `catalog_management` and owned-catalog endpoint | PASS; not part of first review |
+| Live Video | `/live_videos` read | PASS for read; not part of first review |
+| Threads | `threads_business_basic` granted | PENDING; not part of first review |
+| Meta Ads Agent | No `ads_mcp_management` | PENDING; not part of first review |
 
 ## Publication metadata
 
@@ -117,35 +129,32 @@ Production audit `32762760660` after the App Domain update confirmed:
 - Privacy Policy URL present.
 - Terms of Service URL present.
 - Contact email present.
-- Namespace absent.
-- Deauthorization callback absent.
-- User-support email absent.
-- User-support URL absent.
-- Website URL absent.
 
-On 2026-08-24, the Meta App Dashboard Basic Settings UI was saved with **User Data Deletion → Data deletion instructions URL** set to `https://nuvanx.com/politica-privacidad/`.
+A dedicated public Meta deletion-instructions page exists at:
 
-A dedicated public WordPress page was then published as page `3631` at `https://nuvanx.com/eliminacion-datos-meta/`. It provides Meta-specific deletion instructions: request steps, covered Meta-originated interactions, the `info@nuvanx.com` contact channel, identity details needed to locate the request, prohibited credential/clinical oversharing, expected confirmation/resolution, and lawful-retention caveats. The Dashboard must be updated to this dedicated URL before the App Review submission is finalized; until that UI save occurs, the previously saved privacy-policy URL remains the Dashboard-confirmed value.
+- `https://nuvanx.com/eliminacion-datos-meta/`
 
-Read-only audit `32768146699` / job `97562196706` queried `GET https://graph.facebook.com/v22.0/1836302544001572` with each of the tested `fields` values `data_deletion_url`, `data_deletion_callback_url`, `status`, `app_mode`, `is_live`, and `mode`. Those tested queries returned HTTP 400 / Graph `code=100` with no `error_subcode` in the captured log; the fields were therefore **not returned by the tested Graph v22 queries**. The audit separately confirmed that `app_domains`, `privacy_policy_url`, and `terms_of_service_url` are returned. Do not generalize this result into a claim that Meta exposes no supported publication/deletion surface elsewhere; the Dashboard/UI remains the evidence source for the saved deletion URL and Development/Live state.
-
-The absence of the optional/support fields above must not be interpreted as a publication blocker without checking the current Meta App Dashboard requirement for the specific enabled use cases.
+Historical Dashboard evidence had previously saved the privacy-policy URL in the User Data Deletion field. The dedicated deletion page is the canonical target. Dashboard/UI state remains authoritative for confirming the final saved value because the tested Graph v22 app-object fields did not expose deletion/app-mode state in audit `32768146699` / job `97562196706`.
 
 ## App Review / business verification state
 
-On 2026-08-24, App Review submission `1836338617331298` showed the business-verification step for **NUVANX Medicina Estética Láser** as **En revisión**. The Dashboard states that Meta will update the verification status after review and estimates approximately two business days. This is a current external review state, not a repository or credential failure.
+On 2026-08-24, submission `1836338617331298` showed Business Portfolio `897835716596010` as **En revisión** for Business Verification.
 
-The App Review request is still **No enviada** and currently contains a broad permission/feature set. Do not submit it unchanged merely to unblock RSV26: permissions without a real, reproducible user experience should be removed or left for a later review rather than justified with hypothetical use.
+The operator subsequently reported in the Meta UI that **Business Verification is the only remaining publication blocker**. This operator/UI report is not independently readable through the repository or Graph probes, so it must remain distinguished from API-verified facts.
+
+After Business Verification completes, verify whether Meta actually requires **Access Verification / Technology Provider verification** for this first-party NUVANX-only asset model before making any such declaration. Do not describe NUVANX as a technology provider for third-party businesses unless the product model actually changes.
 
 ## Current RSV26 publication blocker
 
-The canonical app can read and manage existing ad objects, but creation of a **new ad creative** is currently rejected by Meta with `code=100 / subcode=1885183` while the app remains in Development mode. Three creation paths were tested:
+The canonical app can read and manage existing ad objects, but creation of a **new ad creative** was rejected while the app remained in Development mode with `code=100 / subcode=1885183`:
 
 1. `POST /adcreatives` — blocked with `1885183`.
 2. `POST /ads` with an inline new creative — blocked with `1885183`.
-3. `POST /ads` using an existing `creative_id` — works, but the account has no existing creative matching the four final RSV26 copy contracts exactly.
+3. `POST /ads` using an existing `creative_id` — works, but no existing creative matches all final RSV26 copy contracts exactly.
 
-Therefore the final RSV26 migration remains pending App publication/required access. Do not report the live campaign copy or attribution as reconciled until a post-publication apply and zero-drift audit pass.
+Therefore final RSV26 creative reconciliation must wait until publication/access is cleared and a post-publication creation probe succeeds.
+
+PR `#267` was closed without merge on 2026-08-24. Its implementation was superseded because it pinned a stale trusted SHA and allowed a production apply path to be retriggered through PR ready-for-review transitions. Any replacement must execute from trusted `main`, use an explicit protected dispatch, require production approval, persist a one-shot claim, and perform zero-drift post-validation.
 
 ## Evidence runs
 
@@ -153,9 +162,8 @@ Therefore the final RSV26 migration remains pending App publication/required acc
 - `32761521018` — Page-token / Messenger / Instagram / WhatsApp detail audit.
 - `32762760660` — publication metadata/App Domain audit after adding `nuvanx.com`.
 - `32763162619` — current Business System User inventory + token identity reconciliation.
-- `32768146699` / job `97562196706` — App object Graph v22 field probes; tested deletion/app-mode fields returned Graph `code=100` and were not returned by those queries.
-- 2026-08-24 Dashboard save confirmation — User Data Deletion instructions URL saved as `https://nuvanx.com/politica-privacidad/`.
-- WordPress page `3631` — dedicated replacement instructions published at `https://nuvanx.com/eliminacion-datos-meta/`; Dashboard URL switch still pending.
-- App Review submission `1836338617331298` — business verification shown as **En revisión**; App Review request itself still **No enviada**.
+- `32768146699` / job `97562196706` — App object Graph v22 field probes.
+- `32773483796` / job `97579047819` — App Review core-call audit: `ads_read`, `business_management`, `pages_show_list`, `pages_read_engagement`, `pages_manage_ads`, `leads_retrieval` and Marketing API read all PASS.
+- App Review submission `1836338617331298` — Business Verification shown as **En revisión** on 2026-08-24.
 
-Temporary audit PRs must be closed without merge after evidence capture. Permanent operational knowledge belongs in this document and canonical config/tests, not in one-shot workflows.
+Temporary audit PRs must be closed without merge after evidence capture. Permanent operational knowledge belongs in this document and canonical config/tests, not in disposable one-shot workflows.
