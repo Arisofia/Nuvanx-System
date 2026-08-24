@@ -19,7 +19,7 @@ This document is the non-secret operational registry for the canonical NUVANX Me
 | Instagram business user | `17841474094610850` | `nuvanx_`; account read verified |
 | Lead form | `1493697602775666` | Active; lead retrieval verified |
 | App Domain | `nuvanx.com` | Verified via Graph on 2026-08-24 |
-| Pixel / Dataset | `NUVANX | Web | CAPI | RSV26` | Name confirmed; numeric ID still requires an independent canonical read before it is recorded here |
+| Pixel / Dataset | `1037346649192028` · `NUVANX | Web | CAPI | RSV26` | Canonical ID/name pair verified independently via Business `/owned_pixels` and Ad Account `/adspixels` |
 
 ### System User identity reconciliation
 
@@ -182,6 +182,7 @@ PR `#267` was closed without merge on 2026-08-24. Its implementation was superse
 - `32763162619` — current Business System User inventory + token identity reconciliation.
 - `32768146699` / job `97562196706` — App object Graph v22 field probes.
 - `32773483796` / job `97579047819` — App Review core-call audit: `ads_read`, `business_management`, `pages_show_list`, `pages_read_engagement`, `pages_manage_ads`, `leads_retrieval` and Marketing API read all PASS.
+- `32779652968` / job `97598665896` — canonical Pixel/Dataset read-only audit: Business `/owned_pixels` and Ad Account `/adspixels` each returned the unique object `1037346649192028` / `NUVANX | Web | CAPI | RSV26`; PASS.
 - App Review submission `1836338617331298` — Business Verification shown as **En revisión** on 2026-08-24.
 
 Temporary audit PRs must be closed without merge after evidence capture. Permanent operational knowledge belongs in this document and canonical config/tests, not in disposable one-shot workflows.
