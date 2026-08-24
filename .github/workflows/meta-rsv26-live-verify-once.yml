@@ -19,6 +19,8 @@ jobs:
     name: Meta · RSV26 read-only live contract
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment:
+      name: Production
     env:
       META_REPORTING_TOKEN_60D: ${{ secrets.META_REPORTING_TOKEN_60D }}
       META_ADS_MANAGEMENT_TOKEN: ${{ secrets.META_ADS_MANAGEMENT_TOKEN }}
