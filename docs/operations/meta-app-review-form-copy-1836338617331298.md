@@ -1,288 +1,46 @@
-# Meta App Review — exact form copy
+# Meta App Review — final server-to-server submission copy
 
 Submission: `1836338617331298`
 App: `NUVANX Reporting` (`1836302544001572`)
-Business: `897835716596010`
+Business Portfolio: `897835716596010`
 Prepared: 2026-08-24
 
-This file contains non-secret text prepared for the Meta App Review UI. Reviewer passwords, access tokens and App Secrets must never be committed.
+This is the canonical non-secret preparation record for the first Meta App Review submission. Do not commit reviewer passwords, access tokens or App Secrets.
 
-## Core positioning used consistently throughout the submission
+## 1. Final review model
 
-**Short description**
+**NUVANX Reporting is submitted as a server-to-server / System User business application.**
 
-NUVANX Reporting is an internal hybrid business application for NUVANX Medicina Estética Láser. Its authenticated web interface is used for Meta Ads reporting and Lead Ads/CRM workflows. Meta Ads management operations are executed server-to-server from the backend with a System User token belonging to the NUVANX Business Portfolio. The application accesses only NUVANX-owned business assets in this first review.
+The requested Meta permissions are exercised by backend processes using the canonical NUVANX Business System User. A separate internal web dashboard exists for NUVANX reporting/CRM, but it is **not** the authentication mechanism for Meta Marketing API management calls and it is **not** the canonical reviewer path for this submission.
 
-**Important reviewer note**
+This distinction is intentional:
 
-This app uses a Meta Business System User token for server-to-server Marketing API operations. Therefore, there is no frontend Facebook Login flow for the `ads_management` server-side operation. The web login is the application's own Supabase email/password authentication. The submission screencast for `ads_management` must show the real server-side operation and the resulting Meta object state.
+- Meta Marketing API supports System User access tokens for server-to-server operation.
+- The NUVANX canonical App Review evidence was generated with the canonical app/System User stack.
+- The current production web dashboard still contains historical per-user Meta integration metadata and must not be presented to reviewers as if it were the canonical `act_718120894191565` path until that application-layer integration is reconciled.
+- A fictitious Facebook Login flow or nonexistent ad-management UI must never be described.
 
-## Reviewer website
+### Canonical System User
 
-`https://frontend-arisofias-projects-c2217452.vercel.app/`
+`122098243371455164` — `Conversions API System User`
 
-## Reviewer credentials
+### Canonical assets
 
-Email: **PENDING — dedicated reviewer account**
-
-Password: **PENDING — Meta reviewer credential field only; never commit**
-
-No dedicated Meta/reviewer production account existed when this dossier was prepared.
-
-## Reviewer instructions — paste-ready draft
-
-> NUVANX Reporting es una aplicación interna híbrida utilizada por NUVANX Medicina Estética Láser. La interfaz web autenticada se utiliza para consultar campañas y anuncios de Meta y para trabajar con los leads procedentes de Meta Lead Ads. Las operaciones de gestión de anuncios se ejecutan server-to-server desde el backend mediante un System User del Business Portfolio de NUVANX; por ese motivo no existe un flujo visible de Facebook Login para esas llamadas de Marketing API.
->
-> ACCESO WEB
-> 1. Abra https://frontend-arisofias-projects-c2217452.vercel.app/.
-> 2. Introduzca el correo y la contraseña de la cuenta de revisión proporcionados en esta solicitud.
-> 3. Pulse “Entrar”. La aplicación redirige a “Centro de control” (/dashboard).
-> 4. Abra “Marketing” y seleccione “Meta Ads”.
-> 5. En “Campañas” puede consultar las campañas de la cuenta Meta de NUVANX y sus datos de rendimiento: estado, objetivo, presupuesto, gasto, impresiones, alcance, clics, CTR, CPC, CPM y conversiones.
-> 6. Abra “Por anuncio” para consultar los anuncios y sus métricas.
-> 7. Abra “CRM” para revisar los leads procedentes de Meta Lead Ads y su contexto de atribución.
->
-> OPERACIONES SERVER-TO-SERVER
-> 8. Para `ads_management`, esta app utiliza un Meta Business System User token en el backend y no un Facebook Login visible en el frontend. Consulte el screencast adjunto: muestra la validación del System User contra la app NUVANX Reporting, el acceso a la cuenta publicitaria NUVANX, una operación real de gestión limitada a un activo publicitario propiedad de NUVANX en estado seguro/PAUSED y la relectura del objeto resultante desde Meta. La prueba no requiere activos personales del revisor y no debe activar gasto publicitario inesperado.
->
-> ACTIVOS DE PRUEBA NUVANX
-> - Business Portfolio: 897835716596010
-> - Meta App: NUVANX Reporting
-> - App ID: 1836302544001572
-> - Ad Account: act_718120894191565
-> - Facebook Page: 1329458703573874
-> - Lead Form: 1493697602775666
-> - Campaign: 120249780276630419
->
-> Todas las pruebas deben realizarse únicamente con activos comerciales de NUVANX. No se necesitan activos personales del revisor.
-
-Do not submit the draft until the reviewer account exists and the `ads_management` screencast corresponds to an actual test executed on the current production/canonical stack.
-
-# Permission / feature answers
-
-## Marketing API Access Tier
-
-### Why do you need this feature?
-
-> NUVANX Reporting uses the Meta Marketing API as the control plane for NUVANX-owned advertising assets. Authenticated NUVANX users use the web application to monitor campaign/ad performance, while controlled ad-management operations run server-to-server from the backend using the canonical NUVANX Business System User token. The application is used for NUVANX's own Business Portfolio and advertising account in this first review.
-
-### How does the app use it?
-
-> The application reads the NUVANX ad account, campaigns, ads, creatives and insights for reporting. The backend also performs controlled management operations against NUVANX-owned ad objects using `ads_management`. The Marketing API is not used as the Conversions API measurement pipeline; those two technical planes are kept separate.
-
-### Reviewer evidence
-
-> Web: Login → Marketing → Meta Ads → Campañas / Por anuncio. Server-to-server: attached `ads_management` screencast showing the System User authenticated backend operation and the resulting Meta state.
-
-## `ads_read`
-
-### Why do you need this permission?
-
-> NUVANX Reporting needs `ads_read` to retrieve advertising objects and performance metrics for the NUVANX Meta ad account and display them to authenticated NUVANX users in the internal Marketing dashboard.
-
-### How is the data used?
-
-> The app displays NUVANX campaign/ad identifiers and names, status, objective, budget and reporting metrics including spend, impressions, reach, clicks, CTR, CPC, CPM and conversions. The data is used for internal performance monitoring and decision support.
-
-### Reviewer path
-
-> Login → Marketing → Meta Ads → Campañas. Then open “Por anuncio”. The reviewer will see data retrieved from the NUVANX ad account `act_718120894191565`.
-
-### Technical evidence
-
-> Production App Review core-call run `32773483796` recorded `APP_REVIEW_ads_read=PASS` and `APP_REVIEW_marketing_api_read=PASS`.
-
-## `ads_management`
-
-### Why do you need this permission?
-
-> NUVANX uses server-to-server automation to manage advertising objects belonging to its own Meta ad account. The backend requires `ads_management` for controlled create/update operations on campaigns, ad sets, ads and creatives used by NUVANX. The canonical management workflow validates that the access token belongs to App `1836302544001572`, contains `ads_management`, and resolves to the approved NUVANX System User before any write is allowed.
-
-### Important authentication explanation
-
-> This is a server-to-server/System User token use case. There is no frontend Meta Login authentication flow for the management calls. The end user signs into the NUVANX web application with the application's own authentication, while Meta Marketing API management calls are made from the backend using the NUVANX Business System User token.
-
-### Existing real capability
-
-> The production stack has successfully managed existing NUVANX ad objects and has successfully created a PAUSED ad by referencing an existing `creative_id`. New creative creation is currently restricted while the app remains in Development mode, so the review demonstration must use a management action that is valid in the current app state and does not create unintended spend.
-
-### Screencast contract
-
-The recording must show, without exposing secrets:
-
-1. The NUVANX Reporting application/context.
-2. That the operation is server-to-server using the NUVANX System User, not a frontend Facebook Login flow.
-3. The target asset belongs to NUVANX.
-4. A real bounded `ads_management` mutation in a safe state such as PAUSED/no-spend.
-5. The successful Meta response/object ID or state.
-6. A re-read of the Meta object confirming the result.
-7. Cleanup/rollback where applicable.
-
-Do not show access-token or App Secret values.
-
-## `business_management`
-
-### Why do you need this permission?
-
-> NUVANX Reporting uses `business_management` to resolve and validate the NUVANX Business Portfolio context and the business assets assigned to the canonical NUVANX System User. This ensures that Marketing API operations are bound to the NUVANX business and its owned advertising assets.
-
-### Assets
-
-> Business Portfolio `897835716596010`; System User `122098243371455164`; Ad Account `act_718120894191565`.
-
-### Evidence
-
-> Production App Review core-call run `32773483796` recorded `APP_REVIEW_business_management=PASS`.
-
-## `pages_show_list`
-
-### Why do you need this permission?
-
-> The application needs to identify and validate the NUVANX Facebook Page associated with the business's Lead Ads workflow and Page-scoped advertising context.
-
-### Page
-
-> `1329458703573874`.
-
-### Evidence
-
-> Production App Review core-call run `32773483796` recorded `APP_REVIEW_pages_show_list=PASS`.
-
-## `pages_read_engagement`
-
-### Why do you need this permission?
-
-> The application uses authorized Page context for the NUVANX Lead Ads workflow and Page-associated business data required by the advertising/lead retrieval integration.
-
-### Page
-
-> `1329458703573874`.
-
-### Evidence
-
-> Production App Review core-call run `32773483796` recorded `APP_REVIEW_pages_read_engagement=PASS`.
-
-## `pages_manage_ads`
-
-### Why do you need this permission?
-
-> NUVANX Reporting uses the NUVANX Facebook Page in its advertising and Lead Ads workflow. `pages_manage_ads` supports the Page/ad relationship required to operate the NUVANX Page's advertising assets. The app does not use this permission to manage unrelated Pages.
-
-### Page
-
-> `1329458703573874`.
-
-### Evidence
-
-> Production App Review core-call run `32773483796` recorded `APP_REVIEW_pages_manage_ads=PASS`.
-
-## `leads_retrieval`
-
-### Why do you need this permission?
-
-> NUVANX uses Meta Lead Ads to receive requests for medical-aesthetic valuation. The backend receives the Meta `leadgen_id`, retrieves the authorized lead record from Meta, stores the lead and its advertising attribution, and exposes the resulting record in the authenticated NUVANX CRM workflow.
-
-### Data retrieved
-
-> The backend requests the authorized Meta lead fields `field_data`, `created_time`, `ad_id`, `ad_name`, `form_id`, `form_name`, `campaign_id`, `campaign_name`, `adset_id`, `adset_name`, `page_id`, `is_organic` and `platform`.
-
-### Reviewer path
-
-> Login → CRM. Review the Meta-originated lead and its attribution context. The canonical form is `1493697602775666`.
-
-### Evidence
-
-> Production App Review core-call run `32773483796` recorded `APP_REVIEW_leads_retrieval=PASS`. Production auditing has also completed a real read of the active NUVANX Lead Form's leads endpoint.
-
-# Allowed-usage consistency statement
-
-Use this where the review asks for the allowed use case or how requested access benefits users:
-
-> The requested access is used only for NUVANX's internal advertising and Lead Ads operations. Authenticated NUVANX users use campaign/ad performance data to monitor advertising performance and use Meta Lead Ads data to process valuation requests in the CRM. Server-side advertising management automation operates only on assets owned by the NUVANX Business Portfolio. The application does not sell Platform Data, does not use it to build unrelated user profiles, and does not request access to unrelated businesses or personal reviewer assets for this first review.
-
-# Data handling — technically supported answers
-
-Meta's legal/data-handling attestations must reflect actual organizational practice. The following answers separate verified technical facts from attestations that require the data controller/legal owner.
-
-## Data processors/service providers
-
-### Question
-
-Do you have data processors or service providers, including your own companies, that will have access to Platform Data obtained from Meta?
-
-### Recommended answer
-
-**YES.**
-
-### Directly verified processor
-
-**Supabase**
-
-Purpose:
-
-> Supabase provides the production database, authentication and Edge Function/API infrastructure used by NUVANX Reporting. Meta Lead Ads data and advertising attribution can be processed/stored through this backend on behalf of NUVANX.
-
-Primary production project region: `eu-central-1` (Frankfurt, Germany).
-
-### Vercel handling note
-
-The production React/Vite frontend is hosted by Vercel. Current code routes Meta API/business data through the authenticated browser-to-Supabase application API; no Vercel server-side Meta API route has been identified in the current repository. If the Meta questionnaire treats static web hosting/request telemetry as processor access to Platform Data, list Vercel as well; otherwise Supabase is the directly verified Platform Data processor in this application's backend data path.
-
-Do not automatically copy every vendor from the general NUVANX privacy policy into this Meta-specific processor answer unless that vendor actually receives the Meta Platform Data covered by the requested permissions.
-
-## Entity responsible for Platform Data
-
-Recommended entry, subject to matching the exact legal entity shown by Meta Business Verification:
-
-> NUVANX Medicina Estética Láser
-
-Country:
-
-> Spain
-
-Before submission, use the exact verified legal entity name from the Business Verification record if it differs from the public trading name.
-
-## Public-authority / national-security requests in the previous 12 months
-
-**PENDING LEGAL ATTESTATION.**
-
-This cannot be inferred from application code or technical logs. The business/data controller must answer the Meta question truthfully. Do not select “No” merely because no such request appears in the repository.
-
-## Policies/processes for public-authority requests
-
-**PENDING LEGAL ATTESTATION.**
-
-Only select policy/process checkboxes that NUVANX actually has in place and can stand behind (for example legality review, challenge of unlawful requests, data minimization, and documentation, if applicable). Do not create a false compliance attestation solely to complete App Review.
-
-# App settings — values to verify/save in Meta Dashboard
-
-| Field | Value / action |
+| Asset | Value |
 | --- | --- |
-| Display name | `NUVANX Reporting` |
+| Business Portfolio | `897835716596010` |
+| Meta App | `NUVANX Reporting` |
+| App ID | `1836302544001572` |
+| Ad Account | `act_718120894191565` |
+| Campaign | `120249780276630419` |
+| Facebook Page | `1329458703573874` |
+| Lead Form | `1493697602775666` |
+| Instagram business user | `17841474094610850` (`nuvanx_`) |
 | App Domain | `nuvanx.com` |
-| Privacy Policy URL | `https://nuvanx.com/politica-privacidad/` |
-| Data deletion instructions URL | **CHANGE TO** `https://nuvanx.com/eliminacion-datos-meta/` |
-| Reviewer website | `https://frontend-arisofias-projects-c2217452.vercel.app/` |
-| Contact/support | Keep the currently verified Meta contact email; web login UI shows `support@nuvanx.com` |
-| Website platform URL | Verify in Dashboard; if a Website platform URL is required for the hybrid web app, use the stable production frontend URL unless the existing Meta product configuration requires another canonical URL |
 
-The production audit previously confirmed App Domain, Privacy Policy URL, Terms of Service URL and a contact email on the app object. It did not confirm a Website URL. The Dashboard must be treated as canonical for fields that Graph v22 did not return in the audit.
+## 2. Scope for the first review
 
-# Data deletion
-
-Meta Dashboard must use:
-
-`https://nuvanx.com/eliminacion-datos-meta/`
-
-The previously saved value was:
-
-`https://nuvanx.com/politica-privacidad/`
-
-Do not submit until the dedicated deletion-instructions URL is visibly saved in Meta Dashboard.
-
-# Permission scope for this submission
-
-## Keep
+### Keep
 
 1. Marketing API Access Tier
 2. `ads_management`
@@ -293,7 +51,7 @@ Do not submit until the dedicated deletion-instructions URL is visibly saved in 
 7. `pages_manage_ads`
 8. `leads_retrieval`
 
-## Remove/defer
+### Remove / defer
 
 - Threads oEmbed Read
 - Meta oEmbed Read
@@ -313,33 +71,312 @@ Do not submit until the dedicated deletion-instructions URL is visibly saved in 
 - `public_profile`
 - `whatsapp_business_management`
 
-`pages_manage_metadata` is deferred because automated Page webhook subscription management is not part of the first review. This does not invalidate the separately proven `leads_retrieval` use case.
+`pages_manage_metadata` is deliberately deferred. The backend contains a real `leadgen` webhook handler, but automated Page webhook subscription management is not part of this first review and the Page subscription had not been established as canonical. This does not invalidate the independently proven `leads_retrieval` use case.
 
-# Submission blockers / manual-only gates
+## 3. App Review short description
 
-1. **Business Verification** — status was `En revisión` on 2026-08-24. Meta controls this state.
-2. **Data deletion URL** — must be changed/saved in the authenticated Meta Dashboard to `https://nuvanx.com/eliminacion-datos-meta/`.
-3. **Reviewer account** — create and test a dedicated production Supabase email/password account; no such account currently exists.
-4. **Reviewer account data access** — because Meta credentials are resolved per authenticated application user, verify the reviewer account has the required NUVANX integration access without copying secrets insecurely.
-5. **`ads_management` screencast** — record a real server-to-server/System User management operation and resulting Meta state; do not fake a frontend Meta Login or a nonexistent management button.
-6. **Legal data-handling attestations** — confirm the exact legal entity and the public-authority/national-security answers with the data controller/legal owner.
-7. **Final Submit button** — only an authenticated Meta Dashboard session can save/submit the review form.
+Paste-ready:
 
-# Evidence inventory
+> NUVANX Reporting is an internal server-to-server business application used by NUVANX Medicina Estética Láser to read and manage its own Meta advertising assets and retrieve leads generated by its own Meta Lead Ads forms. The application authenticates Meta API calls with a System User token assigned to the NUVANX Business Portfolio. There is no frontend Facebook Login flow for these operations. The first review is limited to NUVANX-owned business assets.
 
-- `32773483796` — App Review core calls PASS for ads_read, business_management, pages_show_list, pages_read_engagement, pages_manage_ads, leads_retrieval and Marketing API read.
-- `32761212623` — full Meta app use-case read-only audit.
-- `32761521018` — Page-token/Messenger/Instagram/WhatsApp detail audit.
+## 4. Reviewer instructions / `instructions-web-2`
+
+### Final text
+
+> NUVANX Reporting uses a server-to-server integration with Meta APIs and a Meta Business System User token. There is no frontend Facebook Login flow for the requested permissions. The reviewer does not need to provide or connect any personal Facebook account, Page, Business Portfolio or ad account.
+>
+> Please use the attached screencast as the end-to-end reviewer flow. The recording shows the application identifying the canonical Meta App and NUVANX System User, reading the NUVANX Business Portfolio and advertising assets, retrieving Marketing API data, exercising the requested Lead Ads read flow, and performing a bounded `ads_management` operation against an asset owned by NUVANX. The management operation is kept in a PAUSED/no-spend-safe state and the resulting Meta object is re-read to confirm the write.
+>
+> Canonical test assets:
+> - Business Portfolio: 897835716596010
+> - Meta App: NUVANX Reporting
+> - App ID: 1836302544001572
+> - System User: 122098243371455164
+> - Ad Account: act_718120894191565
+> - Facebook Page: 1329458703573874
+> - Lead Form: 1493697602775666
+> - Campaign: 120249780276630419
+>
+> Public company website: https://nuvanx.com/
+> Privacy Policy: https://nuvanx.com/politica-privacidad/
+> Data deletion instructions: https://nuvanx.com/eliminacion-datos-meta/
+>
+> This is an internal NUVANX server-to-server workflow. No reviewer credentials are required for the Meta API authentication flow and no personal reviewer assets are used.
+
+### If the Meta UI forces an “App URL / Website URL” field
+
+Use:
+
+`https://nuvanx.com/`
+
+Do **not** use the internal Vercel dashboard as the primary review URL for this submission while its per-user Meta integration layer remains historically mixed.
+
+## 5. Screencast contract
+
+The screencast is the principal reviewer evidence for the server-to-server submission. It must show the real current stack, not slides alone.
+
+Required sequence:
+
+1. Show App name/ID and explain: “server-to-server using a Meta Business System User; no frontend Facebook Login”.
+2. Show or print the canonical IDs, but never tokens/secrets.
+3. Validate the management token identity server-side without exposing the token value:
+   - App ID = `1836302544001572`;
+   - System User = `122098243371455164`;
+   - requested scopes present.
+4. Read Business/Ad Account context for `897835716596010` / `act_718120894191565`.
+5. Demonstrate `ads_read` / Marketing API read on the canonical campaign/account.
+6. Demonstrate `business_management` asset context.
+7. Demonstrate Page context for `1329458703573874` covering `pages_show_list`, `pages_read_engagement` and `pages_manage_ads` as supported by the production core-call audit.
+8. Demonstrate `leads_retrieval` using the canonical form `1493697602775666` or a valid test lead belonging to that form; show the API result only to the extent necessary and redact personal lead values in the recording.
+9. Demonstrate one real bounded `ads_management` write on a NUVANX-owned test object in a PAUSED/no-spend-safe state.
+10. Re-read the modified object from Meta and show the resulting ID/state.
+11. Restore/delete the temporary test object where applicable and show cleanup.
+12. End by restating that all assets belong to NUVANX and no personal reviewer assets are required.
+
+### Secret-handling rules for the video
+
+Never expose:
+
+- System User access-token value;
+- App Secret;
+- Supabase service role key;
+- private lead contact data;
+- any unrelated business asset.
+
+## 6. Permission / feature form copy
+
+### Marketing API Access Tier
+
+**Why is it needed?**
+
+> NUVANX Reporting uses the Meta Marketing API as the control plane for NUVANX-owned advertising assets. The backend uses a NUVANX Business System User token to read campaign/ad performance and to execute controlled management operations against the NUVANX ad account. The first review does not request access to unrelated third-party businesses.
+
+**How is it used?**
+
+> The application reads the NUVANX ad account, campaigns, ad sets, ads, creatives and insights and performs controlled advertising-object management through the backend. Marketing API control operations are kept separate from the Meta Conversions API measurement pipeline.
+
+### `ads_read`
+
+**Why is it needed?**
+
+> `ads_read` is used to retrieve NUVANX advertising objects and performance metrics from `act_718120894191565` for internal reporting, audit and optimization workflows.
+
+**Data used**
+
+> Campaign/ad identifiers and names, status, objective, budget and reporting metrics such as spend, impressions, reach, clicks, CTR, CPC, CPM and conversions.
+
+**Evidence**
+
+> Production run `32773483796`: `APP_REVIEW_ads_read=PASS`, `APP_REVIEW_marketing_api_read=PASS`.
+
+### `ads_management`
+
+**Why is it needed?**
+
+> NUVANX uses controlled server-to-server automation to manage advertising objects belonging to its own Meta ad account. The backend requires `ads_management` for create/update operations on campaigns, ad sets, ads and creatives used by NUVANX. Before writes, the canonical workflow validates the token, App ID, granted permissions and canonical System User identity.
+
+**Authentication model**
+
+> This is a server-to-server/System User use case. There is no frontend Meta Login authentication flow for the management calls.
+
+**Existing real capability**
+
+> Production testing has demonstrated successful writes to NUVANX-owned advertising objects, including successful creation of a PAUSED ad when referencing an existing `creative_id`. New creative creation is currently restricted while the app remains in Development mode, so the App Review screencast must use a write that is valid in the current app state and cannot accidentally activate spend.
+
+### `business_management`
+
+**Why is it needed?**
+
+> `business_management` is used to resolve and validate the NUVANX Business Portfolio context and the business assets assigned to the canonical NUVANX System User, ensuring Marketing API operations are bound to NUVANX-owned assets.
+
+**Evidence**
+
+> Production run `32773483796`: `APP_REVIEW_business_management=PASS`.
+
+### `pages_show_list`
+
+**Why is it needed?**
+
+> The application uses the permission to identify and validate the NUVANX Facebook Page associated with the business's Lead Ads and advertising workflow.
+
+**Page**
+
+> `1329458703573874`.
+
+**Evidence**
+
+> Production run `32773483796`: `APP_REVIEW_pages_show_list=PASS`.
+
+### `pages_read_engagement`
+
+**Why is it needed?**
+
+> The application uses authorized NUVANX Page context required by its Page-associated advertising and Lead Ads data workflow.
+
+**Evidence**
+
+> Production run `32773483796`: `APP_REVIEW_pages_read_engagement=PASS`.
+
+### `pages_manage_ads`
+
+**Why is it needed?**
+
+> The permission supports the Page/ad relationship used by the NUVANX advertising and Lead Ads workflow. The application uses only the NUVANX Page and its advertising assets.
+
+**Evidence**
+
+> Production run `32773483796`: `APP_REVIEW_pages_manage_ads=PASS`.
+
+### `leads_retrieval`
+
+**Why is it needed?**
+
+> NUVANX uses Meta Lead Ads to receive requests for medical-aesthetic valuation. The backend receives a Meta `leadgen_id`, retrieves the authorized lead record from Meta, persists the lead and its advertising attribution, and makes the resulting record available to the NUVANX CRM process.
+
+**Fields requested by the backend**
+
+> `field_data`, `created_time`, `ad_id`, `ad_name`, `form_id`, `form_name`, `campaign_id`, `campaign_name`, `adset_id`, `adset_name`, `page_id`, `is_organic`, `platform`.
+
+**Evidence**
+
+> Production run `32773483796`: `APP_REVIEW_leads_retrieval=PASS`. Production auditing also exercised a real `/{form}/leads` read for the active NUVANX Lead Ads flow.
+
+## 7. Allowed-usage statement
+
+Paste-ready:
+
+> The requested access is used only for NUVANX's own advertising and Lead Ads operations. Advertising data is used for internal reporting, audit and campaign management. Lead Ads data is used to process the valuation request submitted by the lead and preserve advertising attribution. The application does not sell Meta Platform Data, does not use the requested permissions to build unrelated profiles, and does not request access to unrelated businesses or personal reviewer assets in this first review.
+
+## 8. Data handling
+
+Meta's Data Handling section contains legal attestations. Technical facts are recorded here; attestations that cannot be proven from the system must be answered by the data controller/legal owner.
+
+### Data processors/service providers with access to Platform Data
+
+**Answer: YES.**
+
+Directly verified processor in the canonical backend data path:
+
+**Supabase**
+
+Purpose:
+
+> Production database, authentication and Edge Function/API infrastructure. Meta Lead Ads data and advertising attribution can be processed and stored through this backend on behalf of NUVANX.
+
+Production project region:
+
+`eu-central-1` — Frankfurt, Germany.
+
+### Vercel
+
+The current React/Vite frontend is hosted by Vercel. Current application code sends Meta business data through the browser to the Supabase API; no Vercel server-side Meta API route has been identified in the repository. If Meta's questionnaire defines static hosting/request telemetry as processor access to Platform Data, list Vercel as well. Do not list it as a confirmed server-side processor of Meta API payloads without that qualification.
+
+### Responsible person/entity for Platform Data
+
+The public NUVANX legal notice states:
+
+- trade name: `NUVANX. Medicina estética láser`;
+- legal denomination: `NUVANX`;
+- Madrid, Spain.
+
+**Use the exact entity name shown in Meta Business Verification.** If Meta's verified legal entity is `NUVANX`, enter `NUVANX` and country `Spain`.
+
+Do not invent an `S.L.` / `S.L.U.` suffix unless the Business Verification record actually contains it.
+
+### Public-authority / national-security requests in the previous 12 months
+
+**PENDING LEGAL ATTESTATION.**
+
+Application code and repository history cannot establish whether the business has received such a request. The data controller/legal owner must answer truthfully in Meta's UI.
+
+### Policies/processes for public-authority requests
+
+**PENDING LEGAL ATTESTATION.**
+
+Only select controls that NUVANX actually has in place and can substantiate. Do not tick compliance statements merely to pass App Review.
+
+## 9. Privacy and deletion settings
+
+### Privacy Policy
+
+`https://nuvanx.com/politica-privacidad/`
+
+The current public policy states that NUVANX is the data controller, may use technology providers for CRM/analytics/advertising/automation, limits supplier access to what is necessary, applies retention limits and uses appropriate transfer mechanisms when data is processed outside the EEA.
+
+### Dedicated Meta data-deletion instructions
+
+Required URL:
+
+`https://nuvanx.com/eliminacion-datos-meta/`
+
+The Meta Dashboard had previously been saved with the general privacy-policy URL in the Data Deletion field. **Change the Dashboard field to the dedicated URL above and save it before submission.**
+
+Graph v22 probes used by the audit did not return the tested deletion/app-mode fields; the authenticated Meta Dashboard is the canonical evidence for the saved setting.
+
+## 10. Current application-layer integration finding
+
+This finding is operational and must not be hidden from the final acceptance checklist:
+
+- Production Supabase contains Meta credentials for existing application users.
+- One connected per-user integration currently points to historical ad accounts/business metadata, not the canonical App Review ad account/business.
+- A separate metadata row for `act_718120894191565` / Business `897835716596010` exists but is marked disconnected and records `missing_management_token`.
+- The frontend credential resolver selects a per-user integration before exposing Marketing data.
+- Therefore the internal web dashboard is **not presently suitable as the canonical reviewer path** for App `1836302544001572` without a separate reconciliation of the application-layer integration.
+
+This does **not** invalidate the canonical server-to-server App Review evidence, which uses the separately verified canonical App/System User stack.
+
+## 11. Evidence inventory
+
+Canonical production evidence:
+
+- `32773483796` — App Review core calls:
+  - `APP_REVIEW_ads_read=PASS`
+  - `APP_REVIEW_business_management=PASS`
+  - `APP_REVIEW_pages_show_list=PASS`
+  - `APP_REVIEW_pages_read_engagement=PASS`
+  - `APP_REVIEW_pages_manage_ads=PASS`
+  - `APP_REVIEW_leads_retrieval=PASS`
+  - `APP_REVIEW_marketing_api_read=PASS`
+  - `APP_REVIEW_CORE_READ_CALLS=PASS`
+- `32761212623` — full Meta use-case read-only audit.
+- `32761521018` — Page-token / Messenger / Instagram / WhatsApp detail audit.
 - `32762760660` — app-domain/publication metadata audit.
 - `32763162619` — Business System User inventory/token identity reconciliation.
 - `32768146699` / job `97562196706` — Graph v22 app-object field probes.
 
-# Architecture wording
+## 12. Architecture boundary
 
-Use consistently:
+Use consistently in the review:
 
-> Control plane: NUVANX Reporting → Meta Marketing API → Campaigns / Ad Sets / Ads / Creatives / Insights / Lead Ads.
+> **Control plane:** NUVANX Reporting → Meta Marketing API → Campaigns / Ad Sets / Ads / Creatives / Insights / Lead Ads.
 >
-> Measurement plane: WordPress → Supabase `web-events` → Meta Conversions API → Pixel/Dataset.
->
-> These are separate flows. Marketing API permissions in this App Review are requested for the control plane; Conversions API operation is not being used to justify unrelated Marketing API permissions.
+> **Measurement plane:** WordPress → Supabase `web-events` → Meta Conversions API → Pixel/Dataset.
+
+Do not justify Marketing API permissions with Conversions API functionality. They are separate permission/data-flow concerns even though parts of the backend coexist in the same repository.
+
+## 13. Final pre-submit gates
+
+### Can be completed technically / with existing evidence
+
+- [x] Canonical App, Business, System User, Ad Account, Page and Lead Form identified.
+- [x] Core read permissions exercised in production.
+- [x] `ads_management` is a real server-to-server capability, not a hypothetical feature.
+- [x] Dedicated Meta deletion-instructions page exists.
+- [x] First-review permission scope reduced to eight items.
+- [x] Server-to-server reviewer narrative prepared.
+- [x] Data-handling processor path documented without inventing legal attestations.
+
+### External/manual gates before pressing Submit
+
+- [ ] **Business Verification**: Meta status must move from `En revisión` to completed/verified.
+- [ ] **Data Deletion URL**: authenticated Meta Dashboard must be changed and visibly saved as `https://nuvanx.com/eliminacion-datos-meta/`.
+- [ ] **Scope cleanup**: remove all deferred permissions/features from submission `1836338617331298` in the authenticated Meta UI.
+- [ ] **Screencast**: capture one genuine end-to-end server-to-server recording following section 5.
+- [ ] **Legal Data Handling**: responsible owner must attest the public-authority/national-security questions and exact verified legal entity.
+- [ ] **Final save/Submit**: requires an authenticated Meta Developers session; do not claim it was submitted unless the UI confirms it.
+
+## 14. Go / no-go
+
+**NO-GO for final Submit until the six external/manual gates above are green.**
+
+The remaining blockers are no longer missing technical explanations or permission evidence. They are Meta-controlled state, authenticated Dashboard configuration, the required screencast, and legal attestations that must not be fabricated.
