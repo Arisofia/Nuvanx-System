@@ -11,14 +11,24 @@ This document is the non-secret operational registry for the canonical NUVANX Me
 | Business Portfolio | `897835716596010` | Canonical business |
 | Meta App | `NUVANX Reporting` | Canonical app |
 | App ID | `1836302544001572` | Token/app match verified |
-| System User | `122098243371455164` | Canonical `SYSTEM_USER`; token identity verified |
+| System User | `122098243371455164` | `Conversions API System User` · `EMPLOYEE`; token identity and Business membership verified |
+| Business admin system user | `122096106543457614` | `jenineferderas` · `ADMIN`; present in current Business system-user inventory |
 | Ad Account | `act_718120894191565` | Active · EUR · `Europe/Madrid` |
 | RSV26 Campaign | `120249780276630419` | `RSV26/Valoración gratuita/Meta/Madrid` |
 | Facebook Page | `1329458703573874` | Accessible; Page Access Token derivation verified |
 | Instagram business user | `17841474094610850` | `nuvanx_`; account read verified |
 | Lead form | `1493697602775666` | Active; lead retrieval verified |
 | App Domain | `nuvanx.com` | Verified via Graph on 2026-08-24 |
-| Pixel / Dataset | `NUVANX | Web | CAPI | RSV26` | Assigned to canonical System User with full asset access in Business Settings; numeric ID not recorded here until independently verified |
+| Pixel / Dataset | `NUVANX | Web | CAPI | RSV26` | Name previously confirmed in Business Settings; numeric ID remains to be independently recorded before treating it as canonical |
+
+### System User identity reconciliation
+
+A prior Business Settings screen showed `61593654929650` for the user labelled **Conversions API System User**. Production audit `32763162619` subsequently queried the current Business system-user inventory directly and found only:
+
+- `122096106543457614` — `jenineferderas` — `ADMIN`.
+- `122098243371455164` — `Conversions API System User` — `EMPLOYEE`.
+
+`/debug_token` resolves the canonical Production token to `122098243371455164`, and that ID is present in the Business inventory. `61593654929650` is **not present** in the current Graph inventory and must not be used as the canonical runtime System User unless it is independently re-established by a later Meta audit.
 
 ## Secret-variable ownership
 
@@ -26,7 +36,7 @@ These are variable names only. Values belong in managed secret stores and must n
 
 | Variable | Purpose | Current contract |
 | --- | --- | --- |
-| `META_CANONICAL_ACCESS_TOKEN` | Canonical Meta management/runtime token | Must belong to App `1836302544001572`; management scope validated |
+| `META_CANONICAL_ACCESS_TOKEN` | Canonical Meta management/runtime token | Must belong to App `1836302544001572` and System User `122098243371455164`; management scope validated |
 | `META_CANONICAL_APP_SECRET` | App Secret for `NUVANX Reporting` | Used for `appsecret_proof`, token debugging, webhook/app separation |
 | `META_APP_SECRET` | Legacy Meta stack App Secret | Keep separate; do not overwrite with canonical secret |
 | `META_REPORTING_TOKEN_60D` | Read-oriented/reporting compatibility token | Not the canonical write credential |
@@ -130,5 +140,6 @@ Therefore the final RSV26 migration remains pending App publication/required acc
 - `32761212623` — full Meta app use-case read-only audit.
 - `32761521018` — Page-token / Messenger / Instagram / WhatsApp detail audit.
 - `32762760660` — publication metadata/App Domain audit after adding `nuvanx.com`.
+- `32763162619` — current Business System User inventory + token identity reconciliation.
 
 Temporary audit PRs must be closed without merge after evidence capture. Permanent operational knowledge belongs in this document and canonical config/tests, not in one-shot workflows.
