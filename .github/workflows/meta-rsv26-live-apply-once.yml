@@ -1,4 +1,4 @@
-name: Meta RSV26 Exact Creative Inventory Once
+name: Meta RSV26 Inline Creative Capability Probe
 
 on:
   pull_request:
@@ -8,18 +8,18 @@ permissions:
   contents: read
 
 concurrency:
-  group: meta-rsv26-exact-creative-inventory
+  group: meta-rsv26-inline-creative-probe
   cancel-in-progress: false
 
 jobs:
-  inventory-exact-creatives:
+  probe-inline-creative:
     if: >-
       github.event.pull_request.head.ref == 'ops/rsv26-live-apply-once-20260824' &&
       github.event.pull_request.base.ref == 'main' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     environment: Production
-    timeout-minutes: 8
+    timeout-minutes: 12
     env:
       META_CANONICAL_ACCESS_TOKEN: ${{ secrets.META_CANONICAL_ACCESS_TOKEN }}
       META_CANONICAL_APP_SECRET: ${{ secrets.META_CANONICAL_APP_SECRET }}
@@ -36,25 +36,30 @@ jobs:
         with:
           node-version: 22
 
-      - name: Search existing account creatives for exact desired contracts
+      - name: Respect Meta mutation rate window
+        run: sleep 40
+
+      - name: Create one PAUSED ad with canonical creative inline
+        id: probe
         shell: bash
         run: |
           set -euo pipefail
           node --input-type=module - <<'NODE'
           import { createHmac } from 'node:crypto';
           import { readFile } from 'node:fs/promises';
-          import { buildDesiredCreative, creativeMatches } from './scripts/lib/meta-rsv26.js';
+          import { buildDesiredCreative } from './scripts/lib/meta-rsv26.js';
+          import process from 'node:process';
 
           const config = JSON.parse(await readFile('./config/meta/rsv26-canonical.json', 'utf8'));
+          const item = config.adsets.find((row) => row.key === 'skin_quality');
           const token = process.env.META_CANONICAL_ACCESS_TOKEN;
           const secret = process.env.META_CANONICAL_APP_SECRET;
-          if (!token || !secret) throw new Error('Canonical Meta credentials missing');
+          if (!item || !token || !secret) throw new Error('Probe prerequisites missing');
           const proof = createHmac('sha256', secret).update(token).digest('hex');
-          const fields = 'id,name,asset_feed_spec,object_story_spec,degrees_of_freedom_spec,url_tags';
 
-          async function graph(path, params = {}) {
-            const query = new URLSearchParams({ ...params, access_token: token, appsecret_proof: proof });
-            const response = await fetch(`https://graph.facebook.com/${config.graph_version}/${path}?${query}`);
+          async function get(path, fields) {
+            const params = new URLSearchParams({ fields, access_token: token, appsecret_proof: proof });
+            const response = await fetch(`https://graph.facebook.com/${config.graph_version}/${path}?${params}`);
             const json = await response.json();
             if (!response.ok || json?.error) {
               const e = json?.error ?? {};
@@ -63,34 +68,128 @@ jobs:
             return json;
           }
 
-          const desired = new Map();
-          for (const item of config.adsets) {
-            const source = await graph(item.source_creative_id, { fields });
-            desired.set(item.key, buildDesiredCreative(source, item, config.defaults));
-          }
+          const source = await get(item.source_creative_id, 'id,name,asset_feed_spec,object_story_spec,degrees_of_freedom_spec,url_tags');
+          const desired = buildDesiredCreative(source, item, config.defaults);
+          const inlineCreative = Object.fromEntries(Object.entries({
+            asset_feed_spec: desired.asset_feed_spec,
+            object_story_spec: desired.object_story_spec,
+            degrees_of_freedom_spec: desired.degrees_of_freedom_spec,
+            url_tags: desired.url_tags,
+          }).filter(([, value]) => value !== undefined && value !== null));
 
-          const matches = Object.fromEntries(config.adsets.map((item) => [item.key, []]));
-          let after = null;
-          let scanned = 0;
-          for (let page = 0; page < 10; page += 1) {
-            const params = { fields, limit: '100' };
-            if (after) params.after = after;
-            const response = await graph('act_718120894191565/adcreatives', params);
-            const rows = Array.isArray(response?.data) ? response.data : [];
-            scanned += rows.length;
-            for (const candidate of rows) {
-              for (const item of config.adsets) {
-                if (matches[item.key].length >= 5) continue;
-                if (creativeMatches(candidate, desired.get(item.key))) {
-                  matches[item.key].push({ id: String(candidate.id), name: candidate.name ?? null });
-                }
-              }
+          const body = new URLSearchParams({
+            name: 'RSV26 | inline-canonical capability probe | DELETE',
+            adset_id: item.adset_id,
+            creative: JSON.stringify(inlineCreative),
+            status: 'PAUSED',
+            access_token: token,
+            appsecret_proof: proof,
+          });
+          const response = await fetch(`https://graph.facebook.com/${config.graph_version}/act_718120894191565/ads`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/x-www-form-urlencoded' },
+            body,
+          });
+          const json = await response.json();
+          if (!response.ok || json?.error) {
+            const e = json?.error ?? {};
+            console.log(`META_INLINE_CREATIVE_PROBE supported=false code=${e.code ?? response.status} sub=${e.error_subcode ?? 'n/a'} message=${String(e.message ?? response.statusText).replace(/\s+/g, ' ')}`);
+            process.exit(0);
+          }
+          if (!json?.id) throw new Error('Meta returned success without ad id');
+          console.log(`META_INLINE_CREATIVE_PROBE supported=true created_paused_ad=true ad_id=${json.id}`);
+          await import('node:fs/promises').then(({ appendFile }) => appendFile(process.env.GITHUB_OUTPUT, `ad_id=${json.id}\n`, 'utf8'));
+          NODE
+
+      - name: Read generated creative and verify canonical contract
+        id: verify
+        if: ${{ steps.probe.outputs.ad_id != '' }}
+        shell: bash
+        env:
+          PROBE_AD_ID: ${{ steps.probe.outputs.ad_id }}
+        run: |
+          set -euo pipefail
+          sleep 5
+          node --input-type=module - <<'NODE'
+          import { createHmac } from 'node:crypto';
+          import { readFile, appendFile } from 'node:fs/promises';
+          import { buildDesiredCreative, creativeMatches } from './scripts/lib/meta-rsv26.js';
+          const config = JSON.parse(await readFile('./config/meta/rsv26-canonical.json', 'utf8'));
+          const item = config.adsets.find((row) => row.key === 'skin_quality');
+          const token = process.env.META_CANONICAL_ACCESS_TOKEN;
+          const secret = process.env.META_CANONICAL_APP_SECRET;
+          const proof = createHmac('sha256', secret).update(token).digest('hex');
+          async function get(path, fields) {
+            const params = new URLSearchParams({ fields, access_token: token, appsecret_proof: proof });
+            const response = await fetch(`https://graph.facebook.com/${config.graph_version}/${path}?${params}`);
+            const json = await response.json();
+            if (!response.ok || json?.error) {
+              const e = json?.error ?? {};
+              throw new Error(`GET ${path} failed: ${e.message ?? response.statusText} (code=${e.code ?? response.status}, sub=${e.error_subcode ?? 'n/a'})`);
             }
-            after = response?.paging?.cursors?.after ?? null;
-            if (!after || rows.length === 0) break;
+            return json;
           }
+          const source = await get(item.source_creative_id, 'id,name,asset_feed_spec,object_story_spec,degrees_of_freedom_spec,url_tags');
+          const desired = buildDesiredCreative(source, item, config.defaults);
+          const ad = await get(process.env.PROBE_AD_ID, 'id,status,effective_status,creative{id,name,asset_feed_spec,object_story_spec,degrees_of_freedom_spec,url_tags}');
+          const creative = ad?.creative ?? {};
+          const canonical = creativeMatches(creative, desired);
+          console.log(`META_INLINE_CREATIVE_VERIFY canonical=${canonical} ad_status=${ad.status} effective_status=${ad.effective_status} creative_id=${creative.id ?? 'unknown'}`);
+          if (!creative.id) throw new Error('Probe ad has no generated creative id');
+          await appendFile(process.env.GITHUB_OUTPUT, `creative_id=${creative.id}\ncanonical=${canonical}\n`, 'utf8');
+          NODE
 
-          console.log(`META_RSV26_EXACT_CREATIVE_INVENTORY=${JSON.stringify({ scanned, matches })}`);
-          const missing = Object.entries(matches).filter(([, rows]) => rows.length === 0).map(([key]) => key);
-          console.log(`META_RSV26_EXACT_CREATIVE_SUMMARY all_found=${missing.length === 0} missing=${JSON.stringify(missing)}`);
+      - name: Respect Meta ad cleanup rate window
+        if: ${{ steps.probe.outputs.ad_id != '' }}
+        run: sleep 40
+
+      - name: Delete PAUSED probe ad
+        if: ${{ steps.probe.outputs.ad_id != '' }}
+        shell: bash
+        env:
+          PROBE_AD_ID: ${{ steps.probe.outputs.ad_id }}
+        run: |
+          set -euo pipefail
+          node --input-type=module - <<'NODE'
+          import { createHmac } from 'node:crypto';
+          const token = process.env.META_CANONICAL_ACCESS_TOKEN;
+          const secret = process.env.META_CANONICAL_APP_SECRET;
+          const proof = createHmac('sha256', secret).update(token).digest('hex');
+          const params = new URLSearchParams({ access_token: token, appsecret_proof: proof });
+          const response = await fetch(`https://graph.facebook.com/v22.0/${process.env.PROBE_AD_ID}?${params}`, { method: 'DELETE' });
+          const json = await response.json();
+          if (!response.ok || json?.error || json?.success !== true) {
+            const e = json?.error ?? {};
+            throw new Error(`Probe ad cleanup failed: ${e.message ?? response.statusText} (code=${e.code ?? response.status}, sub=${e.error_subcode ?? 'n/a'})`);
+          }
+          console.log(`META_INLINE_CREATIVE_PROBE_AD_CLEANUP=PASS ad_id=${process.env.PROBE_AD_ID}`);
+          NODE
+
+      - name: Report reusable canonical creative
+        if: ${{ steps.verify.outputs.canonical == 'true' }}
+        env:
+          CREATIVE_ID: ${{ steps.verify.outputs.creative_id }}
+        run: echo "META_INLINE_CANONICAL_CREATIVE_AVAILABLE=true creative_id=${CREATIVE_ID}"
+
+      - name: Clean noncanonical generated creative after rate window
+        if: ${{ steps.verify.outputs.creative_id != '' && steps.verify.outputs.canonical != 'true' }}
+        shell: bash
+        env:
+          CREATIVE_ID: ${{ steps.verify.outputs.creative_id }}
+        run: |
+          set -euo pipefail
+          sleep 40
+          node --input-type=module - <<'NODE'
+          import { createHmac } from 'node:crypto';
+          const token = process.env.META_CANONICAL_ACCESS_TOKEN;
+          const secret = process.env.META_CANONICAL_APP_SECRET;
+          const proof = createHmac('sha256', secret).update(token).digest('hex');
+          const params = new URLSearchParams({ access_token: token, appsecret_proof: proof });
+          const response = await fetch(`https://graph.facebook.com/v22.0/${process.env.CREATIVE_ID}?${params}`, { method: 'DELETE' });
+          const json = await response.json();
+          if (!response.ok || json?.error || json?.success !== true) {
+            const e = json?.error ?? {};
+            throw new Error(`Generated creative cleanup failed: ${e.message ?? response.statusText} (code=${e.code ?? response.status}, sub=${e.error_subcode ?? 'n/a'})`);
+          }
+          console.log(`META_INLINE_NONCANONICAL_CREATIVE_CLEANUP=PASS creative_id=${process.env.CREATIVE_ID}`);
           NODE
