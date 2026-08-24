@@ -1,0 +1,90 @@
+name: Meta App Review Core Calls Once
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: meta-app-review-core-calls-once
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: >-
+      github.event.pull_request.head.ref == 'ops/meta-app-review-core-calls-once-20260824' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    environment: Production
+    timeout-minutes: 8
+    env:
+      META_CANONICAL_ACCESS_TOKEN: ${{ secrets.META_CANONICAL_ACCESS_TOKEN }}
+      META_CANONICAL_APP_SECRET: ${{ secrets.META_CANONICAL_APP_SECRET }}
+
+    steps:
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 22
+
+      - name: Exercise core App Review read calls
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module - <<'NODE'
+          import { createHmac } from 'node:crypto';
+
+          const token = String(process.env.META_CANONICAL_ACCESS_TOKEN || '').trim();
+          const secret = String(process.env.META_CANONICAL_APP_SECRET || '').trim();
+          if (!token || !secret) throw new Error('Canonical Meta credentials missing');
+
+          const BASE = 'https://graph.facebook.com/v22.0';
+          const BUSINESS_ID = '897835716596010';
+          const PAGE_ID = '1329458703573874';
+          const LEAD_FORM_ID = '1493697602775666';
+          const AD_ACCOUNT_ID = 'act_718120894191565';
+          const proof = createHmac('sha256', secret).update(token).digest('hex');
+
+          async function get(path, params = {}, accessToken = token, useProof = accessToken === token) {
+            const url = new URL(`${BASE}/${path}`);
+            url.searchParams.set('access_token', accessToken);
+            if (useProof) url.searchParams.set('appsecret_proof', proof);
+            for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
+            const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+            const json = await response.json().catch(() => ({}));
+            if (!response.ok || json?.error) {
+              const e = json?.error ?? {};
+              throw new Error(`${path}: HTTP ${response.status} code=${e.code ?? 'n/a'} subcode=${e.error_subcode ?? 'n/a'} ${String(e.message ?? '').slice(0, 180)}`);
+            }
+            return json;
+          }
+
+          const account = await get(AD_ACCOUNT_ID, { fields: 'id,name,account_status,currency,timezone_name' });
+          console.log(`APP_REVIEW_ads_read=PASS id=${account.id} status=${account.account_status}`);
+
+          const business = await get(BUSINESS_ID, { fields: 'id,name' });
+          const sysUsers = await get(`${BUSINESS_ID}/system_users`, { fields: 'id,name,role', limit: 10 });
+          console.log(`APP_REVIEW_business_management=PASS id=${business.id} system_users=${Array.isArray(sysUsers.data) ? sysUsers.data.length : 0}`);
+
+          const page = await get(PAGE_ID, { fields: 'id,name,access_token' });
+          const pageToken = String(page.access_token || '');
+          if (!pageToken) throw new Error('Page Access Token not returned');
+          console.log(`APP_REVIEW_pages_show_list=PASS page_id=${page.id}`);
+
+          const engagement = await get(PAGE_ID, { fields: 'id,name,fan_count,followers_count' }, pageToken, false);
+          console.log(`APP_REVIEW_pages_read_engagement=PASS page_id=${engagement.id}`);
+
+          const adsPosts = await get(`${PAGE_ID}/ads_posts`, { fields: 'id', limit: 1 }, pageToken, false);
+          console.log(`APP_REVIEW_pages_manage_ads=PASS rows=${Array.isArray(adsPosts.data) ? adsPosts.data.length : 0}`);
+
+          const leads = await get(`${LEAD_FORM_ID}/leads`, { fields: 'id,created_time', limit: 1 });
+          console.log(`APP_REVIEW_leads_retrieval=PASS rows=${Array.isArray(leads.data) ? leads.data.length : 0}`);
+
+          const campaigns = await get(`${AD_ACCOUNT_ID}/campaigns`, { fields: 'id,name,status,effective_status', limit: 1 });
+          console.log(`APP_REVIEW_marketing_api_read=PASS campaigns=${Array.isArray(campaigns.data) ? campaigns.data.length : 0}`);
+
+          console.log('APP_REVIEW_CORE_READ_CALLS=PASS');
+          NODE
