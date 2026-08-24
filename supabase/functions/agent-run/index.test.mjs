@@ -12,15 +12,17 @@ describe('agent-run typing contract', () => {
     expect(source).not.toContain('adminClient: any');
   });
 
-  it('keeps provider failures on the existing persisted 500 path without any casts', () => {
+  it('persists provider diagnostics while returning a generic 500 message to clients', () => {
     expect(source).toContain('catch (err: unknown)');
     expect(source).not.toContain('catch (err: any)');
     expect(source).toContain('const message = safeErrorMessage(err)');
+    expect(source).toContain("const clientMessage = 'AI provider request failed'");
     expect(source).toContain('error_message: message');
-    expect(source).toContain('return json({ success: false, message, output_id: failOutput?.id }, 500)');
+    expect(source).toContain('return json({ success: false, message: clientMessage, output_id: failOutput?.id }, 500)');
+    expect(source).not.toContain("console.error('agent-run provider call failed:', err)");
   });
 
-  it('keeps error coercion fail-safe while preserving object-shaped messages', () => {
+  it('keeps error coercion fail-safe while preserving object-shaped messages for internal diagnostics', () => {
     expect(source).toContain('function safeErrorMessage(error: unknown): string');
     expect(source).toContain("error !== null && typeof error === 'object' && 'message' in error");
     expect(source).toContain("String((error as { message: unknown }).message)");
