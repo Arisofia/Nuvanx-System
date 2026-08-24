@@ -1,0 +1,137 @@
+name: Meta App Use-Case Audit 2 Once
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: meta-app-usecase-audit2-once
+  cancel-in-progress: false
+
+jobs:
+  audit2:
+    if: >-
+      github.event.pull_request.head.ref == 'ops/meta-app-usecase-audit2-once-20260824' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    environment: Production
+    timeout-minutes: 8
+    env:
+      META_CANONICAL_ACCESS_TOKEN: ${{ secrets.META_CANONICAL_ACCESS_TOKEN }}
+      META_CANONICAL_APP_SECRET: ${{ secrets.META_CANONICAL_APP_SECRET }}
+
+    steps:
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 22
+
+      - name: Audit Page token, messaging, WhatsApp and current oEmbed read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module - <<'NODE'
+          import { createHmac } from 'node:crypto';
+
+          const token = String(process.env.META_CANONICAL_ACCESS_TOKEN || '').trim();
+          const secret = String(process.env.META_CANONICAL_APP_SECRET || '').trim();
+          if (!token || !secret) throw new Error('Canonical Meta credentials missing');
+
+          const APP_ID = '1836302544001572';
+          const BUSINESS_ID = '897835716596010';
+          const PAGE_ID = '1329458703573874';
+          const IG_ID = '17841474094610850';
+          const V22 = 'https://graph.facebook.com/v22.0';
+          const V26 = 'https://graph.facebook.com/v26.0';
+          const proof = createHmac('sha256', secret).update(token).digest('hex');
+          const appToken = `${APP_ID}|${secret}`;
+
+          function summary(response, json) {
+            if (response.ok && !json?.error) return { ok: true, http: response.status, json };
+            const e = json?.error ?? {};
+            return {
+              ok: false,
+              http: response.status,
+              code: e.code ?? null,
+              subcode: e.error_subcode ?? null,
+              type: e.type ?? null,
+              message: String(e.message ?? response.statusText ?? '').replace(/\s+/g, ' ').slice(0, 180),
+              json: null,
+            };
+          }
+
+          async function get(base, path, params = {}, accessToken = token, withProof = accessToken === token) {
+            const url = new URL(`${base}/${String(path).replace(/^\//, '')}`);
+            if (accessToken) url.searchParams.set('access_token', accessToken);
+            if (withProof && accessToken === token) url.searchParams.set('appsecret_proof', proof);
+            for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
+            const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+            const json = await response.json().catch(() => ({}));
+            return summary(response, json);
+          }
+
+          function emit(name, payload) {
+            console.log(`META_USECASE2_${name}=${JSON.stringify(payload)}`);
+          }
+
+          const pageTokenResult = await get(V22, PAGE_ID, { fields: 'id,access_token' });
+          const pageToken = pageTokenResult.ok ? String(pageTokenResult.json?.access_token || '') : '';
+          emit('PAGE_TOKEN', pageToken ? { ok: true, obtained: true } : { ok: false, obtained: false, error: pageTokenResult.ok ? 'missing_access_token_field' : pageTokenResult });
+
+          if (pageToken) {
+            const subscribed = await get(V22, `${PAGE_ID}/subscribed_apps`, { fields: 'id,name', limit: '5' }, pageToken, false);
+            emit('PAGE_SUBSCRIBED_APPS', subscribed.ok ? { ok: true, rows: Array.isArray(subscribed.json?.data) ? subscribed.json.data.length : 0 } : subscribed);
+
+            const messenger = await get(V22, `${PAGE_ID}/conversations`, { fields: 'id', limit: '1' }, pageToken, false);
+            emit('MESSENGER_PAGE_TOKEN', messenger.ok ? { ok: true, rows: Array.isArray(messenger.json?.data) ? messenger.json.data.length : 0 } : messenger);
+
+            const igConversations = await get(V22, `${IG_ID}/conversations`, { fields: 'id', limit: '1', platform: 'instagram' }, pageToken, false);
+            emit('INSTAGRAM_CONVERSATIONS_PAGE_TOKEN', igConversations.ok ? { ok: true, rows: Array.isArray(igConversations.json?.data) ? igConversations.json.data.length : 0 } : igConversations);
+
+            const fbPosts = await get(V22, `${PAGE_ID}/feed`, { fields: 'permalink_url', limit: '1' }, pageToken, false);
+            let fbEmbed = { ok: false, reason: 'no_post_permalink' };
+            const permalink = fbPosts.ok && Array.isArray(fbPosts.json?.data) ? fbPosts.json.data[0]?.permalink_url : null;
+            if (permalink) {
+              const current = await get(V26, 'oembed_post', { url: permalink, omitscript: 'true' }, '', false);
+              fbEmbed = current.ok ? { ok: true, tokenless: true } : current;
+            }
+            emit('FACEBOOK_OEMBED_V26_TOKENLESS', fbEmbed);
+          }
+
+          const igMedia = await get(V22, `${IG_ID}/media`, { fields: 'permalink', limit: '1' });
+          let igEmbed = { ok: false, reason: 'no_media_permalink' };
+          const igPermalink = igMedia.ok && Array.isArray(igMedia.json?.data) ? igMedia.json.data[0]?.permalink : null;
+          if (igPermalink) {
+            const current = await get(V26, 'instagram_oembed', { url: igPermalink, omitscript: 'true' }, '', false);
+            igEmbed = current.ok ? { ok: true, tokenless: true } : current;
+          }
+          emit('INSTAGRAM_OEMBED_V26_TOKENLESS', igEmbed);
+
+          const wabas = await get(V22, `${BUSINESS_ID}/owned_whatsapp_business_accounts`, { fields: 'id,name', limit: '100' });
+          const wabaResults = [];
+          if (wabas.ok && Array.isArray(wabas.json?.data)) {
+            for (const row of wabas.json.data) {
+              const id = String(row.id || '');
+              if (!id) continue;
+              const phones = await get(V22, `${id}/phone_numbers`, { fields: 'id,display_phone_number,verified_name', limit: '100' });
+              const templates = await get(V22, `${id}/message_templates`, { fields: 'id,name,status', limit: '1' });
+              wabaResults.push({
+                phone_numbers_read: phones.ok ? { ok: true, count: Array.isArray(phones.json?.data) ? phones.json.data.length : 0 } : phones,
+                message_templates_read: templates.ok ? { ok: true, count: Array.isArray(templates.json?.data) ? templates.json.data.length : 0 } : templates,
+              });
+            }
+          }
+          emit('WHATSAPP_DETAIL', wabas.ok ? { ok: true, waba_count: Array.isArray(wabas.json?.data) ? wabas.json.data.length : 0, wabas: wabaResults } : wabas);
+
+          const appBasic = await get(V22, APP_ID, { fields: 'id,name,app_domains,privacy_policy_url,terms_of_service_url' }, appToken, false);
+          emit('APP_PUBLICATION_FIELDS', appBasic.ok ? {
+            ok: true,
+            app_domains_count: Array.isArray(appBasic.json?.app_domains) ? appBasic.json.app_domains.length : 0,
+            privacy_policy: Boolean(appBasic.json?.privacy_policy_url),
+            terms: Boolean(appBasic.json?.terms_of_service_url),
+          } : appBasic);
+          NODE
