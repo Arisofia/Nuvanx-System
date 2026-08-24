@@ -61,6 +61,7 @@ if (apply && !appSecret) {
 }
 
 const graphBase = `https://graph.facebook.com/${config.graph_version}`;
+const SOURCE_CREATIVE_FIELDS = 'id,name,asset_feed_spec,object_story_spec,degrees_of_freedom_spec,url_tags';
 
 async function graphRequest(path, { method = 'GET', params = {}, token = readToken } = {}) {
   const url = new URL(`${graphBase}/${String(path).replace(/^\//, '')}`);
@@ -140,16 +141,18 @@ async function readAd(item, token = readToken) {
   return graphRequest(item.ad_id, { params: { fields: AD_FIELDS }, token });
 }
 
+async function readSourceCreative(item, token = readToken) {
+  return graphRequest(item.source_creative_id, {
+    params: { fields: SOURCE_CREATIVE_FIELDS },
+    token,
+  });
+}
+
 async function readItem(item, token = readToken) {
   const [adset, ad, sourceCreative] = await Promise.all([
     readAdset(item, token),
     readAd(item, token),
-    graphRequest(item.source_creative_id, {
-      params: {
-        fields: 'id,name,asset_feed_spec,object_story_spec,degrees_of_freedom_spec,url_tags',
-      },
-      token,
-    }),
+    readSourceCreative(item, token),
   ]);
 
   if (String(ad?.adset_id ?? '') !== String(item.adset_id)) {
@@ -272,8 +275,16 @@ async function assertAdUnchanged(entry, { checkName, checkCreative }) {
   }
 }
 
-function creativeCreateParams(entry, runId) {
-  const desired = entry.desiredCreative;
+async function assertSourceCreativeUnchanged(entry, expectedDesired, phase) {
+  const freshSource = await readSourceCreative(entry.item, managementToken);
+  const freshDesired = buildDesiredCreative(freshSource, entry.item, config.defaults);
+  if (!same(freshDesired, expectedDesired)) {
+    throw new Error(`${entry.item.key}: concurrent source creative change detected ${phase}; aborting before live exposure.`);
+  }
+  return freshDesired;
+}
+
+function creativeCreateParams(entry, desired, runId) {
   return {
     name: `RSV26 | ${entry.item.key} | canonical | ${runId}`,
     asset_feed_spec: desired.asset_feed_spec,
@@ -361,6 +372,7 @@ if (selectedInitialDrift.length === 0) {
 
 const runId = new Date().toISOString().replace(/[:.]/g, '-');
 const stagedCreatives = new Map();
+const stagedCreativeDesired = new Map();
 const rollbackOps = [];
 const originalCampaign = {
   name: initialSnapshot.campaign?.name ?? config.campaign.name,
@@ -371,20 +383,6 @@ const temporarilyPause = materialMutationSelected && String(originalCampaign.sta
 let statusPauseOwned = false;
 
 try {
-  if (selection.creatives) {
-    for (const entry of initialSnapshot.items) {
-      if (creativeMatches(entry.ad?.creative ?? {}, entry.desiredCreative)) continue;
-      await assertAdUnchanged(entry, { checkName: false, checkCreative: true });
-      const created = await graphRequest(`${config.ad_account_id}/adcreatives`, {
-        method: 'POST',
-        params: creativeCreateParams(entry, runId),
-        token: managementToken,
-      });
-      if (!created?.id) throw new Error(`${entry.item.key}: Meta did not return a staged creative id`);
-      stagedCreatives.set(entry.item.key, String(created.id));
-    }
-  }
-
   if (temporarilyPause) {
     const freshCampaign = await readCampaign(managementToken);
     if (String(freshCampaign?.status ?? '') !== String(originalCampaign.status)) {
@@ -396,6 +394,23 @@ try {
       token: managementToken,
     });
     statusPauseOwned = true;
+  }
+
+  if (selection.creatives) {
+    for (const entry of initialSnapshot.items) {
+      if (creativeMatches(entry.ad?.creative ?? {}, entry.desiredCreative)) continue;
+      await assertAdUnchanged(entry, { checkName: false, checkCreative: true });
+      const freshDesired = await assertSourceCreativeUnchanged(entry, entry.desiredCreative, 'before staging');
+      const created = await graphRequest(`${config.ad_account_id}/adcreatives`, {
+        method: 'POST',
+        params: creativeCreateParams(entry, freshDesired, runId),
+        token: managementToken,
+      });
+      if (!created?.id) throw new Error(`${entry.item.key}: Meta did not return a staged creative id`);
+      stagedCreatives.set(entry.item.key, String(created.id));
+      stagedCreativeDesired.set(entry.item.key, freshDesired);
+      await assertSourceCreativeUnchanged(entry, freshDesired, 'after staging');
+    }
   }
 
   if (selection.names && String(initialSnapshot.campaign?.name ?? '') !== String(config.campaign.name)) {
@@ -433,9 +448,14 @@ try {
 
   for (const entry of initialSnapshot.items) {
     const creativeId = selection.creatives ? stagedCreatives.get(entry.item.key) : null;
+    const expectedDesired = selection.creatives ? stagedCreativeDesired.get(entry.item.key) : null;
     const nameDrift = selection.names && String(entry.ad?.name ?? '') !== String(entry.item.ad_name);
     if (!creativeId && !nameDrift) continue;
     await assertAdUnchanged(entry, { checkName: nameDrift, checkCreative: Boolean(creativeId) });
+    if (creativeId) {
+      if (!expectedDesired) throw new Error(`${entry.item.key}: staged creative is missing its source revision fence.`);
+      await assertSourceCreativeUnchanged(entry, expectedDesired, 'before ad assignment');
+    }
     const params = {};
     if (nameDrift) params.name = entry.item.ad_name;
     if (creativeId) params.creative = { creative_id: creativeId };
@@ -449,6 +469,9 @@ try {
         creative: creativeId && entry.ad?.creative?.id ? { creative_id: String(entry.ad.creative.id) } : undefined,
       },
     });
+    if (creativeId) {
+      await assertSourceCreativeUnchanged(entry, expectedDesired, 'after ad assignment');
+    }
   }
 
   const pausedSnapshot = await readSnapshot(managementToken);
@@ -456,6 +479,14 @@ try {
   const selectedPausedDrift = selectedPlanDrift(pausedPlan);
   if (selectedPausedDrift.length > 0) {
     throw new Error(`Selected mutation families failed verification before status restoration: ${JSON.stringify(selectedPausedDrift)}`);
+  }
+
+  if (selection.creatives) {
+    for (const entry of initialSnapshot.items) {
+      const expectedDesired = stagedCreativeDesired.get(entry.item.key);
+      if (!expectedDesired) continue;
+      await assertSourceCreativeUnchanged(entry, expectedDesired, 'before status restoration');
+    }
   }
 
   if (statusPauseOwned) {
