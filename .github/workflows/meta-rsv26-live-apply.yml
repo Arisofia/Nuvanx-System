@@ -48,7 +48,7 @@ jobs:
       META_ACCESS_AUDIT_REQUIRE_CRITICAL: 'true'
       META_ACCESS_AUDIT_REQUIRE_APP_MATCH: 'true'
       META_ACCESS_AUDIT_REQUIRE_CRITICAL_ASSETS: 'true'
-      CLAIM_TITLE: meta-rsv26-one-shot:${{ inputs.operation_key }}:${{ inputs.trusted_sha }}
+      CLAIM_TITLE: meta-rsv26-one-shot:${{ inputs.operation_key }}
       GH_TOKEN: ${{ github.token }}
 
     steps:
@@ -120,7 +120,6 @@ jobs:
           echo 'RSV26_PREFLIGHT=PASS mutation=false'
 
       - name: Refuse previously claimed operation
-        id: claim_check
         shell: bash
         run: |
           set -euo pipefail
@@ -136,7 +135,7 @@ jobs:
           fi
           echo 'RSV26_ONE_SHOT_AVAILABLE=PASS'
 
-      - name: Persist atomic one-shot claim
+      - name: Persist one-shot claim before mutation
         id: claim
         shell: bash
         run: |
@@ -144,13 +143,13 @@ jobs:
           body=$(cat <<EOF
           Persistent production one-shot claim created before Meta mutation.
 
-          - operation_key: `${{ inputs.operation_key }}`
-          - trusted_sha: `${{ inputs.trusted_sha }}`
-          - workflow_run: `${GITHUB_RUN_ID}`
-          - actor: `${GITHUB_ACTOR}`
+          - operation_key: ${{ inputs.operation_key }}
+          - trusted_sha: ${{ inputs.trusted_sha }}
+          - workflow_run: ${GITHUB_RUN_ID}
+          - actor: ${GITHUB_ACTOR}
           - state: CLAIMED
 
-          This marker is intentionally permanent. Reusing the same operation key + SHA is refused even if this issue is later closed.
+          This marker is intentionally permanent. Reusing the same operation key is refused even if this issue is later closed.
           EOF
           )
           response="$(gh api --method POST "repos/${GITHUB_REPOSITORY}/issues" -f title="$CLAIM_TITLE" -f body="$body")"
@@ -205,5 +204,5 @@ jobs:
           set -euo pipefail
           issue='${{ steps.claim.outputs.issue_number }}'
           gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${issue}/comments" \
-            -f body="RSV26 one-shot completed successfully for SHA `${GITHUB_SHA}`. Post-audit: zero canonical drift; creative contracts: zero drift/semantic diffs."
+            -f body="RSV26 one-shot completed successfully for SHA ${GITHUB_SHA}. Post-audit: zero canonical drift; creative contracts: zero drift/semantic diffs."
           echo "RSV26_ONE_SHOT_COMPLETE=PASS issue=$issue"
