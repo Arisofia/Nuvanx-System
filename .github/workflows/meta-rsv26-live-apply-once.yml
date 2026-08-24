@@ -1,4 +1,4 @@
-name: Meta RSV26 State Audit Once
+name: Meta RSV26 Restore Active Once
 
 on:
   pull_request:
@@ -8,54 +8,84 @@ permissions:
   contents: read
 
 concurrency:
-  group: meta-rsv26-state-audit-once
+  group: meta-rsv26-restore-active-once
   cancel-in-progress: false
 
 jobs:
-  audit-state:
+  restore-active:
     if: >-
       github.event.pull_request.head.ref == 'ops/rsv26-live-apply-once-20260824' &&
       github.event.pull_request.base.ref == 'main' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     environment: Production
-    timeout-minutes: 8
+    timeout-minutes: 6
     env:
       META_CANONICAL_ACCESS_TOKEN: ${{ secrets.META_CANONICAL_ACCESS_TOKEN }}
       META_CANONICAL_APP_SECRET: ${{ secrets.META_CANONICAL_APP_SECRET }}
 
     steps:
-      - name: Checkout exact reviewed main
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-        with:
-          ref: 6e44a9d49a8584c978db6eb3c6dcdfc6517eb513
-          persist-credentials: false
-
       - name: Set up Node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 22
-          cache: npm
 
-      - name: Install dependencies
-        run: npm ci --ignore-scripts --legacy-peer-deps
+      - name: Respect Meta mutation rate window
+        run: sleep 40
 
-      - name: Audit live RSV26 state read-only
+      - name: Restore campaign ACTIVE with one isolated write
         shell: bash
         run: |
           set -euo pipefail
-          set +e
-          node scripts/meta-audit-rsv26.js > /tmp/rsv26-state.json
-          status=$?
-          set -e
-          cat /tmp/rsv26-state.json
-          echo "META_RSV26_STATE_AUDIT_EXIT=$status"
-          test "$status" -eq 0 -o "$status" -eq 1
-
-      - name: Emit campaign safety state
-        run: |
           node --input-type=module - <<'NODE'
-          import { readFile } from 'node:fs/promises';
-          const audit = JSON.parse(await readFile('/tmp/rsv26-state.json', 'utf8'));
-          console.log(`META_RSV26_CAMPAIGN_STATE status=${audit?.campaign?.status ?? 'unknown'} effective_status=${audit?.campaign?.effective_status ?? 'unknown'} drift_count=${audit?.drift_count ?? 'unknown'}`);
+          import { createHmac } from 'node:crypto';
+          const token = process.env.META_CANONICAL_ACCESS_TOKEN;
+          const secret = process.env.META_CANONICAL_APP_SECRET;
+          if (!token || !secret) throw new Error('Canonical Meta credentials missing');
+          const proof = createHmac('sha256', secret).update(token).digest('hex');
+          const body = new URLSearchParams({
+            status: 'ACTIVE',
+            access_token: token,
+            appsecret_proof: proof,
+          });
+          const response = await fetch('https://graph.facebook.com/v22.0/120249780276630419', {
+            method: 'POST',
+            headers: { 'content-type': 'application/x-www-form-urlencoded' },
+            body,
+          });
+          const json = await response.json();
+          if (!response.ok || json?.error) {
+            const e = json?.error ?? {};
+            throw new Error(`Meta restore failed: ${e.message ?? response.statusText} (code=${e.code ?? response.status}, sub=${e.error_subcode ?? 'n/a'})`);
+          }
+          console.log(`META_RSV26_RESTORE_WRITE=PASS success=${json?.success === true}`);
+          NODE
+
+      - name: Respect Meta verification rate window
+        run: sleep 40
+
+      - name: Verify campaign ACTIVE with one isolated read
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module - <<'NODE'
+          import { createHmac } from 'node:crypto';
+          const token = process.env.META_CANONICAL_ACCESS_TOKEN;
+          const secret = process.env.META_CANONICAL_APP_SECRET;
+          const proof = createHmac('sha256', secret).update(token).digest('hex');
+          const params = new URLSearchParams({
+            fields: 'id,status,effective_status',
+            access_token: token,
+            appsecret_proof: proof,
+          });
+          const response = await fetch(`https://graph.facebook.com/v22.0/120249780276630419?${params}`);
+          const json = await response.json();
+          if (!response.ok || json?.error) {
+            const e = json?.error ?? {};
+            throw new Error(`Meta verify failed: ${e.message ?? response.statusText} (code=${e.code ?? response.status}, sub=${e.error_subcode ?? 'n/a'})`);
+          }
+          console.log(`META_RSV26_RESTORE_VERIFY status=${json.status} effective_status=${json.effective_status}`);
+          if (json.status !== 'ACTIVE' || json.effective_status !== 'ACTIVE') {
+            throw new Error(`Campaign did not return ACTIVE/ACTIVE: ${json.status}/${json.effective_status}`);
+          }
           NODE
