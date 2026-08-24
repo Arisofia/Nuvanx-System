@@ -19,7 +19,10 @@ describe('agent-run typing contract', () => {
     expect(source).toContain("const clientMessage = 'AI provider request failed'");
     expect(source).toContain('error_message: message');
     expect(source).toContain('return json({ success: false, message: clientMessage, output_id: failOutput?.id }, 500)');
-    expect(source).not.toContain("console.error('agent-run provider call failed:', err)");
+
+    const providerCatch = source.match(/catch \(err: unknown\) \{([\s\S]*?)\n    \}\n\n    \/\/ Persist successful output/)?.[1] ?? '';
+    expect(providerCatch).not.toBe('');
+    expect(providerCatch).not.toMatch(/\bconsole\.(?:error|warn|log|info|debug)\s*\(/);
   });
 
   it('keeps error coercion fail-safe while preserving object-shaped messages for internal diagnostics', () => {
