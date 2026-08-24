@@ -1,16 +1,58 @@
-import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { describe, expect, it, vi } from 'vitest';
+import {
+  buildMetaAppSecretCandidates,
+  isInvalidMetaAppSecretProof,
+  shouldRetryMetaAppSecretProof,
+} from '../_shared/meta-appsecret.mjs';
 
-const source = readFileSync(fileURLToPath(new URL("./index.ts", import.meta.url)), "utf8");
+async function runFallback({ canonical, legacy, override, responses }) {
+  const candidates = buildMetaAppSecretCandidates(canonical, legacy, override);
+  const attempt = vi.fn(async (candidate, index) => responses[index]);
+  let last;
+  for (let index = 0; index < candidates.length; index += 1) {
+    last = await attempt(candidates[index], index);
+    if (last.ok) return { result: last, candidates, attempt };
+    if (!shouldRetryMetaAppSecretProof(index, candidates, last.body)) break;
+  }
+  return { result: last, candidates, attempt };
+}
 
-describe("Meta appsecret proof routing", () => {
-  it("falls back to a bare access token only after configured app secrets are exhausted", () => {
-    expect(source).toContain("return [...new Set(values)].map((value) => value || null).concat([null]);");
-    expect(source).toContain("const canRetrySecret = index + 1 < candidates.length && isInvalidAppsecretProof(data);");
+describe('Meta appsecret proof routing', () => {
+  it('orders canonical, legacy and bare-token fallback deterministically', () => {
+    expect(buildMetaAppSecretCandidates(' canonical ', 'legacy')).toEqual(['canonical', 'legacy', null]);
+    expect(buildMetaAppSecretCandidates('same', 'same')).toEqual(['same', null]);
+    expect(buildMetaAppSecretCandidates('', '')).toEqual([null]);
   });
 
-  it("keeps explicit service-specific overrides strict", () => {
-    expect(source).toContain("if (appSecretOverride !== undefined) return [appSecretOverride || null];");
+  it('keeps explicit overrides strict, including explicit no-proof mode', () => {
+    expect(buildMetaAppSecretCandidates('canonical', 'legacy', 'override')).toEqual(['override']);
+    expect(buildMetaAppSecretCandidates('canonical', 'legacy', null)).toEqual([null]);
+  });
+
+  it('retries only invalid appsecret_proof failures and reaches bare-token success', async () => {
+    const outcome = await runFallback({
+      canonical: 'canonical',
+      legacy: 'legacy',
+      responses: [
+        { ok: false, body: { error: { message: 'Invalid appsecret_proof provided' } } },
+        { ok: false, body: { error: { message: 'Invalid App Secret Proof' } } },
+        { ok: true, body: { data: [{ id: 'ok' }] } },
+      ],
+    });
+    expect(outcome.candidates).toEqual(['canonical', 'legacy', null]);
+    expect(outcome.attempt.mock.calls.map(([secret]) => secret)).toEqual(['canonical', 'legacy', null]);
+    expect(outcome.result.ok).toBe(true);
+  });
+
+  it('does not retry unrelated Meta errors', async () => {
+    const body = { error: { message: 'Unsupported get request' } };
+    expect(isInvalidMetaAppSecretProof(body)).toBe(false);
+    const outcome = await runFallback({
+      canonical: 'canonical',
+      legacy: 'legacy',
+      responses: [{ ok: false, body }, { ok: true, body: {} }],
+    });
+    expect(outcome.attempt).toHaveBeenCalledTimes(1);
+    expect(outcome.result.ok).toBe(false);
   });
 });

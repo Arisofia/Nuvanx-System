@@ -19,6 +19,7 @@ import {
   requireRuntimeSecret,
 } from '../_shared/config.ts';
 import { getPhoneNormalizationFailureReason, normalizePhoneForMeta } from '../_shared/phone.ts';
+import { buildMetaAppSecretCandidates, shouldRetryMetaAppSecretProof } from '../_shared/meta-appsecret.mjs';
 
 // ── Core Helpers ─────────────────────────────────────────────────────────────
 
@@ -160,21 +161,8 @@ async function computeAppsecretProof(accessToken: string, appSecret: string): Pr
   return bytesToHex(sig);
 }
 
-function metaGraphSecretCandidates(appSecretOverride?: string | null): Array<string | null> {
-  if (appSecretOverride !== undefined) return [appSecretOverride || null];
-  const values = [META_CANONICAL_APP_SECRET, META_APP_SECRET]
-    .map((value) => String(value ?? '').trim())
-    .filter(Boolean);
-  return [...new Set(values)].map((value) => value || null).concat([null]);
-}
-
-function isInvalidAppsecretProof(body: any): boolean {
-  const message = String(body?.error?.message ?? body?.message ?? '').toLowerCase();
-  return message.includes('appsecret_proof') || message.includes('app secret proof');
-}
-
 export async function metaFetch(path: string, params: Record<string, string>, token: string, appSecretOverride?: string | null) {
-  const candidates = metaGraphSecretCandidates(appSecretOverride);
+  const candidates = buildMetaAppSecretCandidates(META_CANONICAL_APP_SECRET, META_APP_SECRET, appSecretOverride);
   let lastError: { status: number; body: any; text: string } | null = null;
 
   for (let index = 0; index < candidates.length; index += 1) {
@@ -189,7 +177,7 @@ export async function metaFetch(path: string, params: Record<string, string>, to
     if (response.ok) return data;
 
     lastError = { status: response.status, body: data, text };
-    const canRetrySecret = index + 1 < candidates.length && isInvalidAppsecretProof(data);
+    const canRetrySecret = shouldRetryMetaAppSecretProof(index, candidates, data);
     if (!canRetrySecret) break;
   }
 
@@ -307,7 +295,7 @@ async function hashMetaUserData(userData: Record<string, string[]>): Promise<Rec
 }
 
 async function metaPost(path: string, body: any, token: string, appSecretOverride?: string | null) {
-  const candidates = metaGraphSecretCandidates(appSecretOverride);
+  const candidates = buildMetaAppSecretCandidates(META_CANONICAL_APP_SECRET, META_APP_SECRET, appSecretOverride);
   let lastError: { status: number; statusText: string; data: any; text: string } | null = null;
 
   for (let index = 0; index < candidates.length; index += 1) {
@@ -327,7 +315,7 @@ async function metaPost(path: string, body: any, token: string, appSecretOverrid
     if (response.ok) return data;
 
     lastError = { status: response.status, statusText: response.statusText, data, text };
-    const canRetrySecret = index + 1 < candidates.length && isInvalidAppsecretProof(data);
+    const canRetrySecret = shouldRetryMetaAppSecretProof(index, candidates, data);
     if (!canRetrySecret) break;
   }
 
