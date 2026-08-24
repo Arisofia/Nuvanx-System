@@ -9,7 +9,21 @@ const candidates = [
   ['META_CANONICAL_ACCESS_TOKEN', process.env.META_CANONICAL_ACCESS_TOKEN],
   ['META_REPORTING_TOKEN_60D', process.env.META_REPORTING_TOKEN_60D],
 ];
-const selected = candidates.find(([, value]) => typeof value === 'string' && value.trim());
+const requiredSource = String(process.env.META_ACCESS_AUDIT_REQUIRED_SOURCE || '').trim();
+const requireCritical = String(process.env.META_ACCESS_AUDIT_REQUIRE_CRITICAL || '').trim().toLowerCase() === 'true';
+const requireAll = String(process.env.META_ACCESS_AUDIT_REQUIRE_ALL || '').trim().toLowerCase() === 'true';
+
+let selected;
+if (requiredSource) {
+  selected = candidates.find(([name, value]) => name === requiredSource && typeof value === 'string' && value.trim());
+  if (!selected) {
+    console.error(`META_ACCESS_AUDIT=FAIL reason=required_token_missing source=${requiredSource}`);
+    process.exit(1);
+  }
+} else {
+  selected = candidates.find(([, value]) => typeof value === 'string' && value.trim());
+}
+
 if (!selected) {
   console.error('META_ACCESS_AUDIT=FAIL reason=no_token');
   process.exit(1);
@@ -92,6 +106,9 @@ function summarizeRows(body) {
 
 console.log(`META_ACCESS_AUDIT_TOKEN_SOURCE=${tokenSource}`);
 console.log(`META_ACCESS_AUDIT_GRAPH_VERSION=${graphVersion}`);
+console.log(`META_ACCESS_AUDIT_REQUIRED_SOURCE=${requiredSource || 'none'}`);
+console.log(`META_ACCESS_AUDIT_REQUIRE_CRITICAL=${requireCritical}`);
+console.log(`META_ACCESS_AUDIT_REQUIRE_ALL=${requireAll}`);
 
 const permissionProbe = await graphGet('me/permissions');
 const permissionRows = Array.isArray(permissionProbe.body?.data) ? permissionProbe.body.data : [];
@@ -161,5 +178,15 @@ for (const [label, path, params, mode] of probes) {
   }
 }
 
-console.log(`META_PERMISSION_SELECTION_MATCH=${missing.length === 0 ? 'PASS' : 'FAIL'} expected=${expectedPermissions.length} missing=${missing.length}`);
-if (permissionProbe.response.status !== 200) process.exitCode = 1;
+const selectionMatch = missing.length === 0;
+console.log(`META_PERMISSION_SELECTION_MATCH=${selectionMatch ? 'PASS' : 'FAIL'} expected=${expectedPermissions.length} missing=${missing.length}`);
+
+let exitCode = permissionProbe.response.status === 200 ? 0 : 1;
+if (requireCritical && criticalMissing.length > 0) exitCode = 1;
+if (requireAll && !selectionMatch) exitCode = 1;
+if (exitCode !== 0) {
+  console.error(`META_ACCESS_AUDIT=FAIL source=${tokenSource} http=${permissionProbe.response.status} critical_missing=${criticalMissing.length} all_missing=${missing.length}`);
+} else {
+  console.log(`META_ACCESS_AUDIT=PASS source=${tokenSource}`);
+}
+process.exitCode = exitCode;
