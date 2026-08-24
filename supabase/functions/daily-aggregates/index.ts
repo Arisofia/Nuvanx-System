@@ -53,6 +53,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 import { numberInput } from './normalize.ts';
+import { resolveMetaDateRange, type MetaDateRangeInput } from './date-range.ts';
 
 function normalizeMetaAction(value: unknown): MetaAction | null {
   if (!isRecord(value)) return null;
@@ -224,6 +225,11 @@ async function decryptCred(encoded: string): Promise<string> {
 // ── Meta Fetch Helpers ──────────────────────────────────────────────────────
 const META_GRAPH_VERSION = Deno.env.get('META_GRAPH_VERSION') || 'v22.0';
 const META_GRAPH = `https://graph.facebook.com/${META_GRAPH_VERSION}`;
+const META_CANONICAL_APP_SECRET = Deno.env.get('META_CANONICAL_APP_SECRET') ?? Deno.env.get('META_REPORTING_APP_SECRET') ?? '';
+
+function metaAppSecretForService(service: string): string | null | undefined {
+  return service === 'meta_ads' ? META_CANONICAL_APP_SECRET : META_APP_SECRET;
+}
 
 function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -235,12 +241,18 @@ async function computeAppsecretProof(accessToken: string, appSecret: string): Pr
   return bytesToHex(sig);
 }
 
-async function metaFetch(path: string, params: Record<string, string>, token: string): Promise<MetaInsightsResponse> {
+async function metaFetch(
+  path: string,
+  params: Record<string, string>,
+  token: string,
+  appSecretOverride?: string | null,
+): Promise<MetaInsightsResponse> {
   const url = new URL(`${META_GRAPH}${path}`);
   url.searchParams.set('access_token', token);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  if (META_APP_SECRET) {
-    url.searchParams.set('appsecret_proof', await computeAppsecretProof(token, META_APP_SECRET));
+  const appSecret = appSecretOverride === undefined ? META_APP_SECRET : appSecretOverride;
+  if (appSecret) {
+    url.searchParams.set('appsecret_proof', await computeAppsecretProof(token, appSecret));
   }
   const r = await fetch(url.toString());
   const payload: unknown = await r.json().catch(() => ({}));
@@ -256,23 +268,26 @@ function actionValue(actions: readonly MetaAction[] | null | undefined, matcher:
 }
 
 // ── Core Logic ──────────────────────────────────────────────────────────[...]
-async function fetchAllClinicsMetaInsights(days: number) {
+async function fetchAllClinicsMetaInsights(range: { since: string; until: string }) {
   const sb = getSupabase();
-  const { data: credentials } = await sb
+  const { data: credentials, error: credentialsError } = await sb
     .from('credentials')
-    .select('*')
-    .eq('service', 'meta')
-    .is('deleted_at', null);
+    .select('user_id,clinic_id,service,encrypted_key,metadata')
+    .in('service', ['meta', 'meta_ads']);
 
-  if (!credentials) return { rowsInserted: 0 };
+  if (credentialsError) {
+    throw new Error(`Failed to load Meta credentials: ${credentialsError.message}`);
+  }
+  if (!credentials?.length) return { rowsInserted: 0 };
 
   let totalRows = 0;
-  const untilDate = new Date().toISOString().slice(0, 10);
-  const sinceDate = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+  const sinceDate = range.since;
+  const untilDate = range.until;
 
   for (const cred of credentials) {
     try {
       const accessToken = await decryptCred(cred.encrypted_key);
+      const appSecret = metaAppSecretForService(String(cred.service ?? 'meta'));
       const adAccountIds = cred.metadata?.ad_account_ids || (cred.metadata?.ad_account_id ? [cred.metadata.ad_account_id] : []);
       
       let totalRowsForClinic = 0;
@@ -283,7 +298,7 @@ async function fetchAllClinicsMetaInsights(days: number) {
           time_range: JSON.stringify({ since: sinceDate, until: untilDate }),
           time_increment: '1',
           limit: '1000',
-        }, accessToken);
+        }, accessToken, appSecret);
 
         const rows = insights.data.map((row) => ({
           user_id: cred.user_id,
@@ -361,17 +376,17 @@ async function fetchAllClinicsMetaInsights(days: number) {
 }
 
 
-async function handleMetaDailyInsights(daysInput: number = 2) {
+async function handleMetaDailyInsights(input: MetaDateRangeInput = {}) {
   try {
-    const days = typeof daysInput === 'number' && Number.isFinite(daysInput) ? daysInput : 2;
-
-    console.log(`[Daily] Fetching Meta insights for last ${days} days`);
-    const result = await fetchAllClinicsMetaInsights(days);
+    const range = resolveMetaDateRange(input);
+    console.log(`[Daily] Fetching Meta insights ${range.since} → ${range.until} (${range.mode})`);
+    const result = await fetchAllClinicsMetaInsights(range);
 
     return new Response(JSON.stringify({
       success: true,
       message: `Meta insights updated: ${result.rowsInserted} rows`,
       rowsInserted: result.rowsInserted,
+      range,
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (error) {
     console.error('Meta Daily Insights error:', error);
@@ -382,17 +397,16 @@ async function handleMetaDailyInsights(daysInput: number = 2) {
   }
 }
 
-type DailyAggregatesRequest = {
+type DailyAggregatesRequest = MetaDateRangeInput & {
   action?: string;
-  days?: number;
 };
 
 Deno.serve(async (req: Request) => {
   const body = (await req.json().catch((): DailyAggregatesRequest => ({}))) as DailyAggregatesRequest;
-  const { action, days = 2 } = body;
+  const { action } = body;
 
   if (action === 'fetch_meta_insights' || action === 'meta-daily-insights') {
-    return await handleMetaDailyInsights(days);
+    return await handleMetaDailyInsights(body);
   }
 
   // Fallback to existing logic if no action is provided (for legacy compatibility)
