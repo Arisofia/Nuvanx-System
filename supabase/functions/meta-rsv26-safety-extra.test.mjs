@@ -34,6 +34,13 @@ describe('RSV26 source creative media guard', () => {
       .toThrow('configured source creative has no image or video assets');
   });
 
+  it('rejects non-array media shapes even when they expose a positive length', () => {
+    expect(() => buildDesiredCreative(sourceWith({ images: 'x', videos: [] }), item, defaults))
+      .toThrow('configured source creative has no image or video assets');
+    expect(() => buildDesiredCreative(sourceWith({ images: [], videos: { length: 1 } }), item, defaults))
+      .toThrow('configured source creative has no image or video assets');
+  });
+
   it('accepts a non-empty image array', () => {
     expect(buildDesiredCreative(sourceWith({ images: [{ hash: 'image' }], videos: [] }), item, defaults).asset_feed_spec.images)
       .toEqual([{ hash: 'image' }]);
