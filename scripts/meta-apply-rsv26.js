@@ -230,6 +230,7 @@ const originalCampaign = {
 };
 
 try {
+  // Creative changes are separately gated because they replace the live ad payload.
   if (applyCreatives) {
     for (const entry of initialSnapshot.items) {
       if (creativeMatches(entry.ad?.creative ?? {}, entry.desiredCreative)) continue;
@@ -243,6 +244,7 @@ try {
     }
   }
 
+  // Prevent mixed live delivery while the multi-object reconciliation is in progress.
   if (String(initialSnapshot.campaign?.status ?? '') !== 'PAUSED') {
     await graphRequest(config.campaign.id, {
       method: 'POST',
@@ -259,6 +261,7 @@ try {
     });
   }
 
+  // Reconcile only fields proven to be in drift. Do not resend unchanged budget/targeting/etc.
   for (const entry of initialSnapshot.items) {
     const drift = adsetDrift(entry.adsetContract);
     if (drift.length === 0) continue;
@@ -276,6 +279,7 @@ try {
     });
   }
 
+  // Normalize ad names and, only with explicit creative opt-in, swap to staged creatives.
   for (const entry of initialSnapshot.items) {
     const creativeId = stagedCreatives.get(entry.item.key);
     const nameDrift = String(entry.ad?.name ?? '') !== String(entry.item.ad_name);
@@ -293,6 +297,7 @@ try {
     });
   }
 
+  // Verify the complete contract while delivery remains paused.
   const pausedSnapshot = await readSnapshot(managementToken);
   const pausedPlan = buildPlan(pausedSnapshot, { ignoreStatus: true });
   if (planHasDrift(pausedPlan)) {
