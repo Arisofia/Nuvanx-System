@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { buildDesiredCreative } from '../../scripts/lib/meta-rsv26.js';
 
@@ -49,5 +50,13 @@ describe('RSV26 source creative media guard', () => {
   it('accepts a non-empty video array', () => {
     expect(buildDesiredCreative(sourceWith({ images: [], videos: [{ video_id: 'video' }] }), item, defaults).asset_feed_spec.videos)
       .toEqual([{ video_id: 'video' }]);
+  });
+});
+
+describe('RSV26 live asset audit fail-closed contract', () => {
+  it('treats a critical object without a proven matching id as failure', () => {
+    const source = readFileSync('scripts/meta-access-audit.js', 'utf8');
+    expect(source).toContain("const objectMismatch = mode === 'object' && result.id_match !== true");
+    expect(source).not.toContain("const objectMismatch = mode === 'object' && result.id_match === false");
   });
 });
