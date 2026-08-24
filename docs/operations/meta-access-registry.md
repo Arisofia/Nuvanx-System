@@ -37,6 +37,7 @@ These are variable names only. Values belong in managed secret stores and must n
 | Variable | Purpose | Current contract |
 | --- | --- | --- |
 | `META_CANONICAL_ACCESS_TOKEN` | Canonical Meta management/runtime token | Must belong to App `1836302544001572` and System User `122098243371455164`; management scope validated |
+| `META_ADS_MANAGEMENT_TOKEN` | Supported explicit management-token alias for Meta audit/apply scripts | When set, RSV26 management tooling gives this variable precedence over `META_CANONICAL_ACCESS_TOKEN`; provision/rotate it only when intentionally using the separate alias |
 | `META_CANONICAL_APP_SECRET` | Preferred App Secret for `NUVANX Reporting` | Used for `appsecret_proof`, token debugging, webhook/app separation |
 | `META_REPORTING_APP_SECRET` | Supported reporting/canonical App Secret fallback | `api` and `daily-aggregates` fall back to this variable when `META_CANONICAL_APP_SECRET` is unset; include it in secret-store maintenance/rotation while the fallback remains supported |
 | `META_APP_SECRET` | Legacy Meta stack App Secret | Keep separate; do not overwrite with canonical secret |
@@ -128,7 +129,7 @@ The user-data-deletion URL/status is a Dashboard requirement and was not exposed
 
 ## Current RSV26 publication blocker
 
-The canonical app can read and manage existing ad objects, but creation of a **new ad creative** is currently rejected by Meta with `code=100 / subcode=1885183` while the app remains in Development mode. Both creation paths were tested:
+The canonical app can read and manage existing ad objects, but creation of a **new ad creative** is currently rejected by Meta with `code=100 / subcode=1885183` while the app remains in Development mode. Three creation paths were tested:
 
 1. `POST /adcreatives` — blocked with `1885183`.
 2. `POST /ads` with an inline new creative — blocked with `1885183`.
