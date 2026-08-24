@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/meta-rsv26-live-verify-once.yml'
       - 'config/meta/rsv26-canonical.json'
+      - 'scripts/meta-access-audit.js'
       - 'scripts/meta-audit-rsv26.js'
       - 'scripts/meta-apply-rsv26.js'
       - 'scripts/lib/meta-rsv26.js'
@@ -44,6 +45,12 @@ jobs:
               echo "${name}_PRESENT=false"
             fi
           done
+
+      - name: Audit token scopes and effective asset access read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/meta-access-audit.js
 
       - name: Discover canonical Pixel/Dataset IDs read-only
         shell: bash
