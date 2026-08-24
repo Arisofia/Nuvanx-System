@@ -1,5 +1,11 @@
 const OWNED_GEO_KEYS = ['places', 'cities', 'regions', 'zips', 'countries', 'custom_locations', 'geo_markets', 'electoral_districts'];
 
+export const RSV26_ADSET_MUTATION_FAMILIES = Object.freeze({
+  names: Object.freeze(['name']),
+  attribution: Object.freeze(['attribution_spec']),
+  settings: Object.freeze(['daily_budget', 'optimization_goal', 'billing_event', 'bid_strategy', 'targeting']),
+});
+
 export function stable(value) {
   if (Array.isArray(value)) return value.map(stable);
   if (value && typeof value === 'object') {
@@ -222,6 +228,24 @@ export function adsetDrift(contract) {
   }
   if (!targetingMatches(contract.actual.targeting, contract.desired.targeting)) drift.push('targeting');
   return drift;
+}
+
+export function classifyAdsetDrift(fields = []) {
+  const fieldSet = new Set(fields);
+  return {
+    names: RSV26_ADSET_MUTATION_FAMILIES.names.filter((field) => fieldSet.has(field)),
+    attribution: RSV26_ADSET_MUTATION_FAMILIES.attribution.filter((field) => fieldSet.has(field)),
+    settings: RSV26_ADSET_MUTATION_FAMILIES.settings.filter((field) => fieldSet.has(field)),
+  };
+}
+
+export function selectedAdsetDrift(fields = [], selection = {}) {
+  const classified = classifyAdsetDrift(fields);
+  return [
+    ...(selection.names ? classified.names : []),
+    ...(selection.attribution ? classified.attribution : []),
+    ...(selection.settings ? classified.settings : []),
+  ];
 }
 
 export function adsetApplyParams(contract) {
