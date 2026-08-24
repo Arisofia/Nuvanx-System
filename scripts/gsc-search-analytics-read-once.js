@@ -26,7 +26,7 @@ async function main() {
   // Date range: last 30 days
   const endDate = new Date();
   const startDate = new Date();
-  startDate.setDate(endDate.getDate() - 30);
+  startDate.setDate(endDate.getDate() - 29);
   
   const formatDate = (d) => d.toISOString().split('T')[0];
 
