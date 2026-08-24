@@ -1,4 +1,4 @@
-name: Meta Runtime Routing Build Artifact
+name: Meta Runtime Routing Commit Once
 
 on:
   push:
@@ -6,24 +6,31 @@ on:
       - fix/meta-runtime-routing-20260824
     paths:
       - '.github/workflows/meta-runtime-routing-build-artifact.yml'
-      - 'scripts/meta-runtime-routing-build-artifact.cjs'
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: meta-runtime-routing-build-artifact
-  cancel-in-progress: true
+  group: meta-runtime-routing-commit-once
+  cancel-in-progress: false
 
 jobs:
-  build:
+  patch-validate-commit:
+    if: github.actor == 'Arisofia'
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
-      - name: Checkout branch
+      - name: Checkout exact branch head
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind to expected branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'fix/meta-runtime-routing-20260824'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
 
       - name: Setup Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
@@ -35,16 +42,19 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: Build deterministic patched files
+      - name: Apply deterministic runtime patch
         shell: bash
         run: |
           set -euo pipefail
-          node scripts/meta-runtime-routing-build-artifact.cjs
+          python3 scripts/meta-runtime-routing-commit.py
           git diff --check
           git diff -- supabase/functions/api/index.ts supabase/functions/web-events/index.ts > /tmp/meta-runtime-routing.diff
           test -s /tmp/meta-runtime-routing.diff
+          grep -q "service, metadata, status, updated_at" supabase/functions/api/index.ts
+          grep -q "credentialService" supabase/functions/api/index.ts
+          grep -q "META_CANONICAL_APP_SECRET" supabase/functions/web-events/index.ts
 
-      - name: Validate patched runtime
+      - name: Validate repository and runtime
         shell: bash
         run: |
           set -euo pipefail
@@ -52,19 +62,17 @@ jobs:
           npm test
           deno check --config=supabase/functions/deno.json supabase/functions/api/index.ts supabase/functions/web-events/index.ts
 
-      - name: Prepare artifact
+      - name: Remove one-shot builder and commit only runtime result
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p /tmp/meta-routing/supabase/functions/api /tmp/meta-routing/supabase/functions/web-events
-          cp supabase/functions/api/index.ts /tmp/meta-routing/supabase/functions/api/index.ts
-          cp supabase/functions/web-events/index.ts /tmp/meta-routing/supabase/functions/web-events/index.ts
-          cp /tmp/meta-runtime-routing.diff /tmp/meta-routing/meta-runtime-routing.diff
-
-      - name: Upload patched runtime artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: meta-runtime-routing-patched-files
-          path: /tmp/meta-routing
-          if-no-files-found: error
-          retention-days: 1
+          git rm .github/workflows/meta-runtime-routing-build-artifact.yml
+          git rm scripts/meta-runtime-routing-build-artifact.cjs
+          git rm scripts/meta-runtime-routing-commit.py
+          git diff --check
+          git status --short
+          git config user.name 'Nuvanx Engineering'
+          git config user.email 'admin@nuvanx.com'
+          git add supabase/functions/api/index.ts supabase/functions/web-events/index.ts
+          git commit -m 'fix(meta): route canonical and legacy stacks explicitly'
+          git push origin HEAD:fix/meta-runtime-routing-20260824
