@@ -1,0 +1,48 @@
+name: Verify Meta Canonical Access Read-Only
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/meta-canonical-access-verify-once.yml'
+      - 'config/meta/rsv26-canonical.json'
+      - 'scripts/meta-access-audit.js'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-canonical-access:
+    name: Meta · canonical token + assets read-only
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: Production
+    env:
+      META_CANONICAL_ACCESS_TOKEN: ${{ secrets.META_CANONICAL_ACCESS_TOKEN }}
+      META_CANONICAL_APP_SECRET: ${{ secrets.META_CANONICAL_APP_SECRET }}
+      META_ACCESS_AUDIT_REQUIRED_SOURCE: META_CANONICAL_ACCESS_TOKEN
+      META_ACCESS_AUDIT_REQUIRE_CRITICAL: 'true'
+      META_ACCESS_AUDIT_REQUIRE_ALL: 'false'
+      META_ACCESS_AUDIT_REQUIRE_APP_MATCH: 'true'
+      META_ACCESS_AUDIT_REQUIRE_CRITICAL_ASSETS: 'true'
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+
+      - name: Verify secret presence without revealing values
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${META_CANONICAL_ACCESS_TOKEN:-}"
+          test -n "${META_CANONICAL_APP_SECRET:-}"
+          echo 'META_CANONICAL_ACCESS_TOKEN_PRESENT=true'
+          echo 'META_CANONICAL_APP_SECRET_PRESENT=true'
+
+      - name: Verify permissions, app ownership and effective assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/meta-access-audit.js
