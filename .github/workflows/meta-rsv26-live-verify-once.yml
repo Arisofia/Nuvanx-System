@@ -1,0 +1,62 @@
+name: Verify RSV26 Live Read-Only Once
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/meta-rsv26-live-verify-once.yml'
+      - 'config/meta/rsv26-canonical.json'
+      - 'scripts/meta-audit-rsv26.js'
+      - 'scripts/meta-apply-rsv26.js'
+      - 'scripts/lib/meta-rsv26.js'
+      - 'supabase/functions/meta-rsv26-tools.test.mjs'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-live:
+    name: Meta · RSV26 read-only live contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      META_REPORTING_TOKEN_60D: ${{ secrets.META_REPORTING_TOKEN_60D }}
+      META_ADS_MANAGEMENT_TOKEN: ${{ secrets.META_ADS_MANAGEMENT_TOKEN }}
+      META_CANONICAL_ACCESS_TOKEN: ${{ secrets.META_CANONICAL_ACCESS_TOKEN }}
+      META_CANONICAL_APP_SECRET: ${{ secrets.META_CANONICAL_APP_SECRET }}
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+
+      - name: Verify secret presence without revealing values
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${META_REPORTING_TOKEN_60D:-}"
+          for name in META_ADS_MANAGEMENT_TOKEN META_CANONICAL_ACCESS_TOKEN META_CANONICAL_APP_SECRET; do
+            if [ -n "${!name:-}" ]; then
+              echo "${name}_PRESENT=true"
+            else
+              echo "${name}_PRESENT=false"
+            fi
+          done
+
+      - name: Audit live drift with ads_read only
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          node scripts/meta-audit-rsv26.js
+          audit_status=$?
+          set -e
+          echo "RSV26_AUDIT_EXIT=$audit_status"
+          test "$audit_status" -eq 0 -o "$audit_status" -eq 1
+
+      - name: Execute reconciler dry-run with read-only token
+        shell: bash
+        run: |
+          set -euo pipefail
+          unset META_ADS_MANAGEMENT_TOKEN META_CANONICAL_ACCESS_TOKEN
+          node scripts/meta-apply-rsv26.js
