@@ -1,4 +1,4 @@
-name: Meta RSV26 Clone Contract Audit Once
+name: Meta RSV26 Exact Creative Inventory Once
 
 on:
   pull_request:
@@ -8,48 +8,53 @@ permissions:
   contents: read
 
 concurrency:
-  group: meta-rsv26-clone-contract-audit
+  group: meta-rsv26-exact-creative-inventory
   cancel-in-progress: false
 
 jobs:
-  audit-clone-contract:
+  inventory-exact-creatives:
     if: >-
       github.event.pull_request.head.ref == 'ops/rsv26-live-apply-once-20260824' &&
       github.event.pull_request.base.ref == 'main' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     environment: Production
-    timeout-minutes: 6
+    timeout-minutes: 8
     env:
       META_CANONICAL_ACCESS_TOKEN: ${{ secrets.META_CANONICAL_ACCESS_TOKEN }}
       META_CANONICAL_APP_SECRET: ${{ secrets.META_CANONICAL_APP_SECRET }}
 
     steps:
+      - name: Checkout exact reviewed reconciler
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: 6e44a9d49a8584c978db6eb3c6dcdfc6517eb513
+          persist-credentials: false
+
       - name: Set up Node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 22
 
-      - name: Read exact live ad-set clone fields
+      - name: Search existing account creatives for exact desired contracts
         shell: bash
         run: |
           set -euo pipefail
           node --input-type=module - <<'NODE'
           import { createHmac } from 'node:crypto';
+          import { readFile } from 'node:fs/promises';
+          import { buildDesiredCreative, creativeMatches } from './scripts/lib/meta-rsv26.js';
+
+          const config = JSON.parse(await readFile('./config/meta/rsv26-canonical.json', 'utf8'));
           const token = process.env.META_CANONICAL_ACCESS_TOKEN;
           const secret = process.env.META_CANONICAL_APP_SECRET;
           if (!token || !secret) throw new Error('Canonical Meta credentials missing');
           const proof = createHmac('sha256', secret).update(token).digest('hex');
-          const items = [
-            ['skin_quality','120249780276620419','120249780276610419','2070344224367581'],
-            ['pigmentation','120249784103200419','120249784103190419','2550302458739059'],
-            ['texture','120249789017420419','120249789017430419','1981483249231784'],
-            ['hydration_expression','120249789256740419','120249789256750419','3183323615191790'],
-          ];
-          const fields = 'id,name,campaign_id,status,effective_status,daily_budget,lifetime_budget,attribution_spec,optimization_goal,billing_event,bid_strategy,bid_amount,targeting,promoted_object,destination_type,is_dynamic_creative,start_time,end_time,configured_status,optimization_sub_event,recurring_budget_semantics';
-          async function get(path, fieldsValue) {
-            const params = new URLSearchParams({ fields: fieldsValue, access_token: token, appsecret_proof: proof });
-            const response = await fetch(`https://graph.facebook.com/v22.0/${path}?${params}`);
+          const fields = 'id,name,asset_feed_spec,object_story_spec,degrees_of_freedom_spec,url_tags';
+
+          async function graph(path, params = {}) {
+            const query = new URLSearchParams({ ...params, access_token: token, appsecret_proof: proof });
+            const response = await fetch(`https://graph.facebook.com/${config.graph_version}/${path}?${query}`);
             const json = await response.json();
             if (!response.ok || json?.error) {
               const e = json?.error ?? {};
@@ -57,11 +62,35 @@ jobs:
             }
             return json;
           }
-          for (const [key, adsetId, adId, sourceCreativeId] of items) {
-            const adset = await get(adsetId, fields);
-            const ad = await get(adId, 'id,name,status,effective_status,adset_id,creative{id,name}');
-            console.log(`META_RSV26_CLONE_CONTRACT=${JSON.stringify({ key, source_creative_id: sourceCreativeId, adset, ad })}`);
+
+          const desired = new Map();
+          for (const item of config.adsets) {
+            const source = await graph(item.source_creative_id, { fields });
+            desired.set(item.key, buildDesiredCreative(source, item, config.defaults));
           }
-          const campaign = await get('120249780276630419', 'id,name,status,effective_status,objective,special_ad_categories,bid_strategy,daily_budget,lifetime_budget');
-          console.log(`META_RSV26_CAMPAIGN_CONTRACT=${JSON.stringify(campaign)}`);
+
+          const matches = Object.fromEntries(config.adsets.map((item) => [item.key, []]));
+          let after = null;
+          let scanned = 0;
+          for (let page = 0; page < 10; page += 1) {
+            const params = { fields, limit: '100' };
+            if (after) params.after = after;
+            const response = await graph('act_718120894191565/adcreatives', params);
+            const rows = Array.isArray(response?.data) ? response.data : [];
+            scanned += rows.length;
+            for (const candidate of rows) {
+              for (const item of config.adsets) {
+                if (matches[item.key].length >= 5) continue;
+                if (creativeMatches(candidate, desired.get(item.key))) {
+                  matches[item.key].push({ id: String(candidate.id), name: candidate.name ?? null });
+                }
+              }
+            }
+            after = response?.paging?.cursors?.after ?? null;
+            if (!after || rows.length === 0) break;
+          }
+
+          console.log(`META_RSV26_EXACT_CREATIVE_INVENTORY=${JSON.stringify({ scanned, matches })}`);
+          const missing = Object.entries(matches).filter(([, rows]) => rows.length === 0).map(([key]) => key);
+          console.log(`META_RSV26_EXACT_CREATIVE_SUMMARY all_found=${missing.length === 0} missing=${JSON.stringify(missing)}`);
           NODE
