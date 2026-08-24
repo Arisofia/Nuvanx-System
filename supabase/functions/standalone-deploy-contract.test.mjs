@@ -10,7 +10,14 @@ describe('standalone Edge deployment ownership', () => {
     expect(workflow).toContain("github.event.workflow_run.conclusion == 'success'");
     expect(workflow).toContain("github.event.workflow_run.event == 'push'");
     expect(workflow).toContain("github.event.workflow_run.head_branch == 'main'");
-    expect(workflow).toContain('github.event.workflow_run.head_sha');
+  });
+
+  it('checks out only trusted main and requires it to equal the quality-approved SHA', () => {
+    expect(workflow).toContain('ref: main');
+    expect(workflow).toContain('QUALITY_APPROVED_SHA: ${{ github.event.workflow_run.head_sha }}');
+    expect(workflow).toContain('if [[ "$CURRENT_SHA" != "$QUALITY_APPROVED_SHA" ]]');
+    expect(workflow).toContain('echo "deploy=false" >> "$GITHUB_OUTPUT"');
+    expect(workflow).not.toContain("ref: ${{ github.event_name == 'workflow_run'");
   });
 
   it('serializes against Manual Maintenance deploy_edge', () => {
