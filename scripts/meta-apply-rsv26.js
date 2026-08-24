@@ -272,6 +272,17 @@ async function assertAdUnchanged(entry, { checkName, checkCreative }) {
   }
 }
 
+async function assertSourceCreativeUnchanged(entry) {
+  const freshSource = await graphRequest(entry.item.source_creative_id, {
+    params: { fields: 'id,name,asset_feed_spec,object_story_spec,degrees_of_freedom_spec,url_tags' },
+    token: managementToken,
+  });
+  const freshDesired = buildDesiredCreative(freshSource, entry.item, config.defaults);
+  if (!creativeMatches(freshDesired, entry.desiredCreative)) {
+    throw new Error(`${entry.item.key}: concurrent source creative change detected; aborting before overwrite.`);
+  }
+}
+
 function creativeCreateParams(entry, runId) {
   const desired = entry.desiredCreative;
   return {
@@ -375,6 +386,7 @@ try {
     for (const entry of initialSnapshot.items) {
       if (creativeMatches(entry.ad?.creative ?? {}, entry.desiredCreative)) continue;
       await assertAdUnchanged(entry, { checkName: false, checkCreative: true });
+      await assertSourceCreativeUnchanged(entry);
       const created = await graphRequest(`${config.ad_account_id}/adcreatives`, {
         method: 'POST',
         params: creativeCreateParams(entry, runId),
