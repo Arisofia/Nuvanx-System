@@ -25,5 +25,9 @@
       "phone": "647 50 51 07",
       "discarded_phone": "649 23 22 67"
     }
-  ]
+  ],
+  "review_policy": {
+    "status": "all_19_reviews_replied_via_windsor",
+    "last_replied_at": "2026-08-24T20:42:22.551Z"
+  }
 }
