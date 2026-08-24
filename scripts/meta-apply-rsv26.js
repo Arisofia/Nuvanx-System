@@ -9,13 +9,13 @@ import {
   buildAdsetContract,
   buildDesiredCreative,
   creativeMatches,
-  same,
 } from './lib/meta-rsv26.js';
 
 const config = JSON.parse(
   await readFile(new URL('../config/meta/rsv26-canonical.json', import.meta.url), 'utf8'),
 );
 const apply = process.argv.includes('--apply');
+const applyCreatives = process.argv.includes('--apply-creatives');
 const managementToken = String(
   process.env.META_ADS_MANAGEMENT_TOKEN
   || process.env.META_CANONICAL_ACCESS_TOKEN
@@ -29,6 +29,10 @@ const readToken = String(
 
 if (!readToken) {
   console.error('Missing META_REPORTING_TOKEN_60D or canonical Meta token. No writes performed.');
+  process.exit(2);
+}
+if (!apply && applyCreatives) {
+  console.error('--apply-creatives is only valid together with --apply. No writes performed.');
   process.exit(2);
 }
 if (apply && !managementToken) {
@@ -167,6 +171,14 @@ function planHasDrift(plan) {
   return plan.campaign.drift.length > 0 || plan.adsets.some((item) => item.drift.length > 0);
 }
 
+function planHasCreativeDrift(plan) {
+  return plan.adsets.some((item) => item.drift.includes('ad.creative'));
+}
+
+function selectFields(params, fields) {
+  return Object.fromEntries(fields.filter((field) => Object.hasOwn(params, field)).map((field) => [field, params[field]]));
+}
+
 function creativeCreateParams(entry, runId) {
   const desired = entry.desiredCreative;
   return {
@@ -189,15 +201,18 @@ async function deleteStagedCreative(creativeId) {
 
 const initialSnapshot = await readSnapshot();
 const initialPlan = buildPlan(initialSnapshot);
-console.log(JSON.stringify({ mode: apply ? 'apply' : 'dry-run', plan: initialPlan }, null, 2));
+console.log(JSON.stringify({ mode: apply ? 'apply' : 'dry-run', apply_creatives: applyCreatives, plan: initialPlan }, null, 2));
 
 if (!apply) {
-  console.log('Dry-run completed with read-only access. Re-run with --apply only after reviewing the plan.');
+  console.log('Dry-run completed with read-only access. Re-run with --apply only after reviewing the plan. Creative swaps additionally require --apply-creatives.');
   process.exit(0);
 }
 
 if (initialPlan.campaign.drift.includes('objective')) {
   throw new Error(`Campaign objective is ${initialSnapshot.campaign?.objective ?? 'unknown'}, expected ${config.campaign.objective}; objective reconciliation is not attempted in-place.`);
+}
+if (planHasCreativeDrift(initialPlan) && !applyCreatives) {
+  throw new Error('Creative drift is present. Refusing all writes until the creative differences are reviewed and --apply-creatives is explicitly supplied together with --apply.');
 }
 
 const identity = await requireManagementScope();
@@ -215,16 +230,18 @@ const originalCampaign = {
 };
 
 try {
-  // Stage from the configured source creatives. No live delivery changes yet.
-  for (const entry of initialSnapshot.items) {
-    if (creativeMatches(entry.ad?.creative ?? {}, entry.desiredCreative)) continue;
-    const created = await graphRequest(`${config.ad_account_id}/adcreatives`, {
-      method: 'POST',
-      params: creativeCreateParams(entry, runId),
-      token: managementToken,
-    });
-    if (!created?.id) throw new Error(`${entry.item.key}: Meta did not return a staged creative id`);
-    stagedCreatives.set(entry.item.key, String(created.id));
+  // Creative changes are separately gated because they replace the live ad payload.
+  if (applyCreatives) {
+    for (const entry of initialSnapshot.items) {
+      if (creativeMatches(entry.ad?.creative ?? {}, entry.desiredCreative)) continue;
+      const created = await graphRequest(`${config.ad_account_id}/adcreatives`, {
+        method: 'POST',
+        params: creativeCreateParams(entry, runId),
+        token: managementToken,
+      });
+      if (!created?.id) throw new Error(`${entry.item.key}: Meta did not return a staged creative id`);
+      stagedCreatives.set(entry.item.key, String(created.id));
+    }
   }
 
   // Prevent mixed live delivery while the multi-object reconciliation is in progress.
@@ -244,23 +261,25 @@ try {
     });
   }
 
-  // Reconcile all canonical ad-set fields. Rollback snapshots are captured before writes.
+  // Reconcile only fields proven to be in drift. Do not resend unchanged budget/targeting/etc.
   for (const entry of initialSnapshot.items) {
     const drift = adsetDrift(entry.adsetContract);
     if (drift.length === 0) continue;
+    const desiredParams = adsetApplyParams(entry.adsetContract);
+    const rollbackParams = adsetRollbackParams(entry.adsetContract);
     await graphRequest(entry.item.adset_id, {
       method: 'POST',
-      params: adsetApplyParams(entry.adsetContract),
+      params: selectFields(desiredParams, drift),
       token: managementToken,
     });
     rollbackOps.push({
       type: 'adset',
       id: entry.item.adset_id,
-      params: adsetRollbackParams(entry.adsetContract),
+      params: selectFields(rollbackParams, drift),
     });
   }
 
-  // Normalize ad names and swap only to staged creatives built from canonical source media.
+  // Normalize ad names and, only with explicit creative opt-in, swap to staged creatives.
   for (const entry of initialSnapshot.items) {
     const creativeId = stagedCreatives.get(entry.item.key);
     const nameDrift = String(entry.ad?.name ?? '') !== String(entry.item.ad_name);
@@ -273,7 +292,7 @@ try {
       id: entry.item.ad_id,
       params: {
         name: entry.ad?.name ?? entry.item.ad_name,
-        creative: entry.ad?.creative?.id ? { creative_id: String(entry.ad.creative.id) } : undefined,
+        creative: creativeId && entry.ad?.creative?.id ? { creative_id: String(entry.ad.creative.id) } : undefined,
       },
     });
   }
