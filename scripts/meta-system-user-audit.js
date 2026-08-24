@@ -50,14 +50,19 @@ const tokenUserId = String(identity.body.id);
 const preferredId = String(config.preferred_system_user_id || '');
 const tokenUser = safeRows.find((row) => row.id === tokenUserId) ?? null;
 const preferredUser = safeRows.find((row) => row.id === preferredId) ?? null;
+const preferredIdMatch = Boolean(preferredId) && tokenUserId === preferredId;
 
 console.log(`META_TOKEN_IDENTITY=${JSON.stringify({ status: identity.response.status, ok: true, id: tokenUserId, name: identity.body?.name ?? null })}`);
 console.log(`META_BUSINESS_SYSTEM_USERS=${JSON.stringify({ status: systemUsers.response.status, ok: systemUsers.response.ok, rows: safeRows, error: errorSummary(systemUsers.body) })}`);
-console.log(`META_SYSTEM_USER_RESOLUTION=${JSON.stringify({ token_user_in_business: Boolean(tokenUser), preferred_user_in_business: Boolean(preferredUser), preferred_id_match: tokenUserId === preferredId, token_user: tokenUser, preferred_user: preferredUser })}`);
+console.log(`META_SYSTEM_USER_RESOLUTION=${JSON.stringify({ token_user_in_business: Boolean(tokenUser), preferred_user_in_business: Boolean(preferredUser), preferred_id_match: preferredIdMatch, token_user: tokenUser, preferred_user: preferredUser })}`);
 
 if (!systemUsers.response.ok || !tokenUser) {
   console.error('META_SYSTEM_USER_AUDIT=FAIL reason=token_system_user_not_owned_by_business');
   process.exit(1);
 }
+if (!preferredUser || !preferredIdMatch) {
+  console.error(`META_SYSTEM_USER_AUDIT=FAIL reason=canonical_system_user_mismatch token_user=${tokenUserId} preferred_user=${preferredId || 'unset'}`);
+  process.exit(1);
+}
 
-console.log('META_SYSTEM_USER_AUDIT=PASS read_only=true');
+console.log('META_SYSTEM_USER_AUDIT=PASS read_only=true preferred_id_match=true');
