@@ -7,6 +7,10 @@ on:
       - '.github/workflows/meta-canonical-access-verify-once.yml'
       - 'config/meta/rsv26-canonical.json'
       - 'scripts/meta-access-audit.js'
+      - 'scripts/meta-system-user-audit.js'
+      - 'scripts/meta-audit-rsv26.js'
+      - 'scripts/meta-creative-diff-rsv26.js'
+      - 'scripts/lib/meta-rsv26.js'
 
 permissions:
   contents: read
@@ -46,3 +50,26 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/meta-access-audit.js
+
+      - name: Resolve canonical System User identity read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/meta-system-user-audit.js
+
+      - name: Audit live RSV26 drift read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          node scripts/meta-audit-rsv26.js
+          status=$?
+          set -e
+          echo "META_RSV26_AUDIT_EXIT=$status"
+          test "$status" -eq 0 -o "$status" -eq 1
+
+      - name: Diff live creative contracts read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/meta-creative-diff-rsv26.js
