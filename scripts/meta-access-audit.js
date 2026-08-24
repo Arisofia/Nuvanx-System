@@ -270,7 +270,7 @@ for (const [label, path, params, mode] of probes) {
     console.log(`META_ASSET_PROBE ${label}=${JSON.stringify(result)}`);
 
     if (criticalProbeLabels.has(label)) {
-      const objectMismatch = mode === 'object' && result.id_match === false;
+      const objectMismatch = mode === 'object' && result.id_match !== true;
       const pageInstagramMismatch = label === 'page' && result.instagram_business_account_match !== true;
       const requiredRowsMissing = ['business_owned_ad_accounts', 'business_owned_pages', 'business_owned_pixels', 'business_owned_wabas'].includes(label)
         && !(Number(result.rows) > 0);
