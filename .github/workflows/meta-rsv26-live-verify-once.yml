@@ -16,42 +16,8 @@ permissions:
   contents: read
 
 jobs:
-  verify-repository-scope:
-    name: Meta · repository-scope credential probe
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    env:
-      META_REPORTING_TOKEN_60D: ${{ secrets.META_REPORTING_TOKEN_60D }}
-      META_ADS_MANAGEMENT_TOKEN: ${{ secrets.META_ADS_MANAGEMENT_TOKEN }}
-      META_CANONICAL_ACCESS_TOKEN: ${{ secrets.META_CANONICAL_ACCESS_TOKEN }}
-      META_CANONICAL_APP_SECRET: ${{ secrets.META_CANONICAL_APP_SECRET }}
-    steps:
-      - name: Checkout candidate
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-        with:
-          persist-credentials: false
-
-      - name: Verify repository secret presence without revealing values
-        shell: bash
-        run: |
-          set -euo pipefail
-          for name in META_REPORTING_TOKEN_60D META_ADS_MANAGEMENT_TOKEN META_CANONICAL_ACCESS_TOKEN META_CANONICAL_APP_SECRET; do
-            if [ -n "${!name:-}" ]; then
-              echo "REPOSITORY_${name}_PRESENT=true"
-            else
-              echo "REPOSITORY_${name}_PRESENT=false"
-            fi
-          done
-          test -n "${META_REPORTING_TOKEN_60D:-}${META_ADS_MANAGEMENT_TOKEN:-}${META_CANONICAL_ACCESS_TOKEN:-}"
-
-      - name: Audit repository-scope token read-only
-        shell: bash
-        run: |
-          set -euo pipefail
-          node scripts/meta-access-audit.js
-
   verify-live:
-    name: Meta · Production environment read-only contract
+    name: Meta · Production read-only diagnostic
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
@@ -67,7 +33,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Verify Production secret presence without revealing values
+      - name: Report Production credential presence without revealing values
         shell: bash
         run: |
           set -euo pipefail
@@ -80,7 +46,7 @@ jobs:
             fi
           done
 
-      - name: Audit token scopes and effective asset access read-only
+      - name: Audit available token scopes and effective asset access read-only
         shell: bash
         run: |
           set -euo pipefail
@@ -129,3 +95,36 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/meta-apply-rsv26.js
+
+  verify-management-token:
+    name: Meta · canonical management credential gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: Production
+    env:
+      META_ADS_MANAGEMENT_TOKEN: ${{ secrets.META_ADS_MANAGEMENT_TOKEN }}
+      META_ACCESS_AUDIT_REQUIRED_SOURCE: META_ADS_MANAGEMENT_TOKEN
+      META_ACCESS_AUDIT_REQUIRE_CRITICAL: 'true'
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+
+      - name: Require dedicated management credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${META_ADS_MANAGEMENT_TOKEN:-}" ]; then
+            echo 'META_MANAGEMENT_GATE=FAIL reason=META_ADS_MANAGEMENT_TOKEN_missing_in_Production'
+            exit 1
+          fi
+          echo 'META_MANAGEMENT_GATE_TOKEN_PRESENT=true'
+
+      - name: Require critical scopes and effective read access
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/meta-access-audit.js
+          echo 'META_MANAGEMENT_GATE=PASS'
