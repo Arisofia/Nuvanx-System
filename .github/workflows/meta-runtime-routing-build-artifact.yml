@@ -1,0 +1,70 @@
+name: Meta Runtime Routing Build Artifact
+
+on:
+  push:
+    branches:
+      - fix/meta-runtime-routing-20260824
+    paths:
+      - '.github/workflows/meta-runtime-routing-build-artifact.yml'
+      - 'scripts/meta-runtime-routing-build-artifact.cjs'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: meta-runtime-routing-build-artifact
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 22
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
+        with:
+          deno-version: v2.x
+
+      - name: Build deterministic patched files
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/meta-runtime-routing-build-artifact.cjs
+          git diff --check
+          git diff -- supabase/functions/api/index.ts supabase/functions/web-events/index.ts > /tmp/meta-runtime-routing.diff
+          test -s /tmp/meta-runtime-routing.diff
+
+      - name: Validate patched runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --include=dev --ignore-scripts --legacy-peer-deps
+          npm test
+          deno check --config=supabase/functions/deno.json supabase/functions/api/index.ts supabase/functions/web-events/index.ts
+
+      - name: Prepare artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/meta-routing/supabase/functions/api /tmp/meta-routing/supabase/functions/web-events
+          cp supabase/functions/api/index.ts /tmp/meta-routing/supabase/functions/api/index.ts
+          cp supabase/functions/web-events/index.ts /tmp/meta-routing/supabase/functions/web-events/index.ts
+          cp /tmp/meta-runtime-routing.diff /tmp/meta-routing/meta-runtime-routing.diff
+
+      - name: Upload patched runtime artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: meta-runtime-routing-patched-files
+          path: /tmp/meta-routing
+          if-no-files-found: error
+          retention-days: 1
