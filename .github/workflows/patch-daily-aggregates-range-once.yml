@@ -1,0 +1,91 @@
+name: Patch Daily Aggregates Range Once
+
+on:
+  push:
+    branches: [fix/daily-automation-ownership-20260824]
+    paths:
+      - '.github/workflows/patch-daily-aggregates-range-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: true
+
+      - name: Patch daily-aggregates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('supabase/functions/daily-aggregates/index.ts')
+          text = p.read_text()
+
+          def replace_once(old, new, label):
+              global text
+              if new in text:
+                  return
+              if old not in text:
+                  raise SystemExit(f'expected block not found: {label}')
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              "import { numberInput } from './normalize.ts';\n",
+              "import { numberInput } from './normalize.ts';\nimport { resolveMetaDateRange, type MetaDateRangeInput } from './date-range.ts';\n",
+              'date-range import',
+          )
+
+          replace_once(
+              "const META_GRAPH_VERSION = Deno.env.get('META_GRAPH_VERSION') || 'v22.0';\nconst META_GRAPH = `https://graph.facebook.com/${META_GRAPH_VERSION}`;\n",
+              "const META_GRAPH_VERSION = Deno.env.get('META_GRAPH_VERSION') || 'v22.0';\nconst META_GRAPH = `https://graph.facebook.com/${META_GRAPH_VERSION}`;\nconst META_CANONICAL_APP_SECRET = Deno.env.get('META_CANONICAL_APP_SECRET') ?? Deno.env.get('META_REPORTING_APP_SECRET') ?? '';\n\nfunction metaAppSecretForService(service: string): string | null | undefined {\n  return service === 'meta_ads' ? META_CANONICAL_APP_SECRET : META_APP_SECRET;\n}\n",
+              'canonical app secret',
+          )
+
+          replace_once(
+              "async function metaFetch(path: string, params: Record<string, string>, token: string): Promise<MetaInsightsResponse> {\n  const url = new URL(`${META_GRAPH}${path}`);\n  url.searchParams.set('access_token', token);\n  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);\n  if (META_APP_SECRET) {\n    url.searchParams.set('appsecret_proof', await computeAppsecretProof(token, META_APP_SECRET));\n  }",
+              "async function metaFetch(\n  path: string,\n  params: Record<string, string>,\n  token: string,\n  appSecretOverride?: string | null,\n): Promise<MetaInsightsResponse> {\n  const url = new URL(`${META_GRAPH}${path}`);\n  url.searchParams.set('access_token', token);\n  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);\n  const appSecret = appSecretOverride === undefined ? META_APP_SECRET : appSecretOverride;\n  if (appSecret) {\n    url.searchParams.set('appsecret_proof', await computeAppsecretProof(token, appSecret));\n  }",
+              'metaFetch app secret',
+          )
+
+          replace_once(
+              "async function fetchAllClinicsMetaInsights(days: number) {\n  const sb = getSupabase();\n  const { data: credentials } = await sb\n    .from('credentials')\n    .select('*')\n    .eq('service', 'meta')\n    .is('deleted_at', null);\n\n  if (!credentials) return { rowsInserted: 0 };\n\n  let totalRows = 0;\n  const untilDate = new Date().toISOString().slice(0, 10);\n  const sinceDate = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);",
+              "async function fetchAllClinicsMetaInsights(range: { since: string; until: string }) {\n  const sb = getSupabase();\n  const { data: credentials, error: credentialsError } = await sb\n    .from('credentials')\n    .select('user_id,clinic_id,service,encrypted_key,metadata')\n    .in('service', ['meta', 'meta_ads']);\n\n  if (credentialsError) {\n    throw new Error(`Failed to load Meta credentials: ${credentialsError.message}`);\n  }\n  if (!credentials?.length) return { rowsInserted: 0 };\n\n  let totalRows = 0;\n  const sinceDate = range.since;\n  const untilDate = range.until;",
+              'credential query and range',
+          )
+
+          replace_once(
+              "      const accessToken = await decryptCred(cred.encrypted_key);\n      const adAccountIds = cred.metadata?.ad_account_ids || (cred.metadata?.ad_account_id ? [cred.metadata.ad_account_id] : []);",
+              "      const accessToken = await decryptCred(cred.encrypted_key);\n      const appSecret = metaAppSecretForService(String(cred.service ?? 'meta'));\n      const adAccountIds = cred.metadata?.ad_account_ids || (cred.metadata?.ad_account_id ? [cred.metadata.ad_account_id] : []);",
+              'credential service secret',
+          )
+
+          replace_once(
+              "        }, accessToken);",
+              "        }, accessToken, appSecret);",
+              'metaFetch call secret',
+          )
+
+          old_handler = '''async function handleMetaDailyInsights(daysInput: number = 2) {\n  try {\n    const days = typeof daysInput === 'number' && Number.isFinite(daysInput) ? daysInput : 2;\n\n    console.log(`[Daily] Fetching Meta insights for last ${days} days`);\n    const result = await fetchAllClinicsMetaInsights(days);\n\n    return new Response(JSON.stringify({\n      success: true,\n      message: `Meta insights updated: ${result.rowsInserted} rows`,\n      rowsInserted: result.rowsInserted,\n    }), { status: 200, headers: { 'Content-Type': 'application/json' } });\n  } catch (error) {\n    console.error('Meta Daily Insights error:', error);\n    return new Response(JSON.stringify({\n      success: false,\n      error: error instanceof Error ? error.message : 'Unknown error',\n    }), { status: 500, headers: { 'Content-Type': 'application/json' } });\n  }\n}\n\ntype DailyAggregatesRequest = {\n  action?: string;\n  days?: number;\n};\n\nDeno.serve(async (req: Request) => {\n  const body = (await req.json().catch((): DailyAggregatesRequest => ({}))) as DailyAggregatesRequest;\n  const { action, days = 2 } = body;\n\n  if (action === 'fetch_meta_insights' || action === 'meta-daily-insights') {\n    return await handleMetaDailyInsights(days);\n  }'''
+          new_handler = '''async function handleMetaDailyInsights(input: MetaDateRangeInput = {}) {\n  try {\n    const range = resolveMetaDateRange(input);\n    console.log(`[Daily] Fetching Meta insights ${range.since} → ${range.until} (${range.mode})`);\n    const result = await fetchAllClinicsMetaInsights(range);\n\n    return new Response(JSON.stringify({\n      success: true,\n      message: `Meta insights updated: ${result.rowsInserted} rows`,\n      rowsInserted: result.rowsInserted,\n      range,\n    }), { status: 200, headers: { 'Content-Type': 'application/json' } });\n  } catch (error) {\n    console.error('Meta Daily Insights error:', error);\n    return new Response(JSON.stringify({\n      success: false,\n      error: error instanceof Error ? error.message : 'Unknown error',\n    }), { status: 500, headers: { 'Content-Type': 'application/json' } });\n  }\n}\n\ntype DailyAggregatesRequest = MetaDateRangeInput & {\n  action?: string;\n};\n\nDeno.serve(async (req: Request) => {\n  const body = (await req.json().catch((): DailyAggregatesRequest => ({}))) as DailyAggregatesRequest;\n  const { action } = body;\n\n  if (action === 'fetch_meta_insights' || action === 'meta-daily-insights') {\n    return await handleMetaDailyInsights(body);\n  }'''
+          replace_once(old_handler, new_handler, 'request date range handler')
+
+          p.write_text(text)
+          PY
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add supabase/functions/daily-aggregates/index.ts
+          git commit -m 'fix(edge): honor Meta reconciliation range and canonical credentials'
+          git push origin HEAD:fix/daily-automation-ownership-20260824
