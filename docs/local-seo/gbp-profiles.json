@@ -1,0 +1,29 @@
+{
+  "account_id": "accounts/101783512211091393233",
+  "locations": [
+    {
+      "name": "Chamberí",
+      "place_id": "ChIJ6R9LvsQpQg0Rj9Ioei_Xwsg",
+      "primary_category": "medical_center",
+      "primary_category_status": "confirmed_via_gbp_api_2026-08-24",
+      "additional_categories": [
+        "beauty_salon"
+      ],
+      "review_url": "https://search.google.com/local/writereview?placeid=ChIJ6R9LvsQpQg0Rj9Ioei_Xwsg",
+      "phone": "669 31 98 36"
+    },
+    {
+      "name": "Goya",
+      "place_id": "ChIJlZAA78cpQg0RXFxu-B2lgQI",
+      "primary_category": "public_medical_center",
+      "primary_category_status": "confirmed_via_gbp_api_2026-08-24",
+      "additional_categories": [
+        "medical_center",
+        "beauty_salon"
+      ],
+      "review_url": "https://search.google.com/local/writereview?placeid=ChIJlZAA78cpQg0RXFxu-B2lgQI",
+      "phone": "647 50 51 07",
+      "discarded_phone": "649 23 22 67"
+    }
+  ]
+}

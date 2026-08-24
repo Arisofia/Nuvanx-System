@@ -14,7 +14,7 @@ function nvx_google_review_v2_chamberi_url(): string {
         return esc_url_raw((string) NVX_GOOGLE_REVIEW_CHAMBERI_URL);
     }
 
-    return esc_url_raw((string) get_option('nvx_google_review_chamberi_url', ''));
+    return esc_url_raw((string) get_option('nvx_google_review_chamberi_url', 'https://search.google.com/local/writereview?placeid=ChIJ6R9LvsQpQg0Rj9Ioei_Xwsg'));
 }
 
 function nvx_google_review_v2_goya_url(): string {
@@ -22,7 +22,7 @@ function nvx_google_review_v2_goya_url(): string {
         return esc_url_raw((string) NVX_GOOGLE_REVIEW_GOYA_URL);
     }
 
-    return esc_url_raw((string) get_option('nvx_google_review_goya_url', ''));
+    return esc_url_raw((string) get_option('nvx_google_review_goya_url', 'https://search.google.com/local/writereview?placeid=ChIJlZAA78cpQg0RXFxu-B2lgQI'));
 }
 
 function nvx_google_review_v2_has_any_link(): bool {
