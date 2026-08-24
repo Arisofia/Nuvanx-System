@@ -271,9 +271,10 @@ for (const [label, path, params, mode] of probes) {
 
     if (criticalProbeLabels.has(label)) {
       const objectMismatch = mode === 'object' && result.id_match === false;
+      const pageInstagramMismatch = label === 'page' && result.instagram_business_account_match !== true;
       const requiredRowsMissing = ['business_owned_ad_accounts', 'business_owned_pages', 'business_owned_pixels', 'business_owned_wabas'].includes(label)
         && !(Number(result.rows) > 0);
-      if (!response.ok || objectMismatch || requiredRowsMissing) criticalAssetFailures.push(label);
+      if (!response.ok || objectMismatch || pageInstagramMismatch || requiredRowsMissing) criticalAssetFailures.push(label);
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
