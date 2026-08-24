@@ -1,4 +1,4 @@
-name: Meta RSV26 Existing Creative Capability Probe
+name: Meta RSV26 Probe Cleanup Once
 
 on:
   pull_request:
@@ -8,18 +8,18 @@ permissions:
   contents: read
 
 concurrency:
-  group: meta-rsv26-existing-creative-probe
+  group: meta-rsv26-probe-cleanup-once
   cancel-in-progress: false
 
 jobs:
-  probe-existing-creative:
+  cleanup-probe:
     if: >-
       github.event.pull_request.head.ref == 'ops/rsv26-live-apply-once-20260824' &&
       github.event.pull_request.base.ref == 'main' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     environment: Production
-    timeout-minutes: 8
+    timeout-minutes: 6
     env:
       META_CANONICAL_ACCESS_TOKEN: ${{ secrets.META_CANONICAL_ACCESS_TOKEN }}
       META_CANONICAL_APP_SECRET: ${{ secrets.META_CANONICAL_APP_SECRET }}
@@ -33,63 +33,56 @@ jobs:
       - name: Respect Meta mutation rate window
         run: sleep 40
 
-      - name: Create one PAUSED probe ad using existing canonical creative
+      - name: Delete PAUSED probe ad
         shell: bash
         run: |
           set -euo pipefail
           node --input-type=module - <<'NODE'
           import { createHmac } from 'node:crypto';
-          import { writeFile } from 'node:fs/promises';
           const token = process.env.META_CANONICAL_ACCESS_TOKEN;
           const secret = process.env.META_CANONICAL_APP_SECRET;
           if (!token || !secret) throw new Error('Canonical Meta credentials missing');
           const proof = createHmac('sha256', secret).update(token).digest('hex');
-          const body = new URLSearchParams({
-            name: 'RSV26 | existing-creative capability probe | DELETE',
-            adset_id: '120249780276620419',
-            creative: JSON.stringify({ creative_id: '2070344224367581' }),
-            status: 'PAUSED',
-            access_token: token,
-            appsecret_proof: proof,
-          });
-          const response = await fetch('https://graph.facebook.com/v22.0/act_718120894191565/ads', {
-            method: 'POST',
-            headers: { 'content-type': 'application/x-www-form-urlencoded' },
-            body,
-          });
-          const json = await response.json();
-          if (!response.ok || json?.error) {
-            const e = json?.error ?? {};
-            console.log(`META_EXISTING_CREATIVE_PROBE supported=false code=${e.code ?? response.status} sub=${e.error_subcode ?? 'n/a'} message=${String(e.message ?? response.statusText).replace(/\s+/g, ' ')}`);
-            process.exit(0);
-          }
-          if (!json?.id) throw new Error('Meta returned success without an ad id');
-          await writeFile('/tmp/meta-probe-ad-id', String(json.id), 'utf8');
-          console.log(`META_EXISTING_CREATIVE_PROBE supported=true created_paused_ad=true ad_id=${json.id}`);
-          NODE
-
-      - name: Respect Meta cleanup rate window
-        if: ${{ hashFiles('/tmp/meta-probe-ad-id') != '' }}
-        run: sleep 40
-
-      - name: Delete probe ad if it was created
-        if: ${{ hashFiles('/tmp/meta-probe-ad-id') != '' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          node --input-type=module - <<'NODE'
-          import { createHmac } from 'node:crypto';
-          import { readFile } from 'node:fs/promises';
-          const token = process.env.META_CANONICAL_ACCESS_TOKEN;
-          const secret = process.env.META_CANONICAL_APP_SECRET;
-          const adId = (await readFile('/tmp/meta-probe-ad-id', 'utf8')).trim();
-          const proof = createHmac('sha256', secret).update(token).digest('hex');
           const params = new URLSearchParams({ access_token: token, appsecret_proof: proof });
-          const response = await fetch(`https://graph.facebook.com/v22.0/${adId}?${params}`, { method: 'DELETE' });
+          const response = await fetch(`https://graph.facebook.com/v22.0/120249823437100419?${params}`, { method: 'DELETE' });
           const json = await response.json();
           if (!response.ok || json?.error || json?.success !== true) {
             const e = json?.error ?? {};
             throw new Error(`Probe cleanup failed: ${e.message ?? response.statusText} (code=${e.code ?? response.status}, sub=${e.error_subcode ?? 'n/a'})`);
           }
-          console.log(`META_EXISTING_CREATIVE_PROBE_CLEANUP=PASS ad_id=${adId}`);
+          console.log('META_EXISTING_CREATIVE_PROBE_CLEANUP=PASS ad_id=120249823437100419');
+          NODE
+
+      - name: Respect Meta verification rate window
+        run: sleep 40
+
+      - name: Verify probe is not deliverable
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module - <<'NODE'
+          import { createHmac } from 'node:crypto';
+          const token = process.env.META_CANONICAL_ACCESS_TOKEN;
+          const secret = process.env.META_CANONICAL_APP_SECRET;
+          const proof = createHmac('sha256', secret).update(token).digest('hex');
+          const params = new URLSearchParams({
+            fields: 'id,status,effective_status',
+            access_token: token,
+            appsecret_proof: proof,
+          });
+          const response = await fetch(`https://graph.facebook.com/v22.0/120249823437100419?${params}`);
+          const json = await response.json();
+          if (response.ok && !json?.error) {
+            console.log(`META_EXISTING_CREATIVE_PROBE_VERIFY residual=true status=${json.status ?? 'unknown'} effective_status=${json.effective_status ?? 'unknown'}`);
+            if (!['DELETED','ARCHIVED'].includes(String(json.status ?? '')) && !['DELETED','ARCHIVED'].includes(String(json.effective_status ?? ''))) {
+              throw new Error(`Probe remains deliverable: ${json.status}/${json.effective_status}`);
+            }
+            process.exit(0);
+          }
+          const e = json?.error ?? {};
+          if (Number(e.code) === 100 || Number(e.code) === 803) {
+            console.log('META_EXISTING_CREATIVE_PROBE_VERIFY residual=false');
+            process.exit(0);
+          }
+          throw new Error(`Probe verification failed unexpectedly: ${e.message ?? response.statusText} (code=${e.code ?? response.status}, sub=${e.error_subcode ?? 'n/a'})`);
           NODE
