@@ -9,6 +9,7 @@ on:
       - 'scripts/meta-access-audit.js'
       - 'scripts/meta-audit-rsv26.js'
       - 'scripts/meta-apply-rsv26.js'
+      - 'scripts/meta-creative-diff-rsv26.js'
       - 'scripts/lib/meta-rsv26.js'
       - 'supabase/functions/meta-rsv26-tools.test.mjs'
 
@@ -89,6 +90,12 @@ jobs:
           set -e
           echo "RSV26_AUDIT_EXIT=$audit_status"
           test "$audit_status" -eq 0 -o "$audit_status" -eq 1
+
+      - name: Decompose creative drift read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/meta-creative-diff-rsv26.js
 
       - name: Execute reconciler dry-run only
         shell: bash
