@@ -1,0 +1,95 @@
+name: Meta App Mode Metadata Audit Once
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: meta-app-mode-metadata-audit-once
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'ops/meta-app-mode-metadata-audit-once-20260824'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: Production
+    env:
+      META_CANONICAL_APP_SECRET: ${{ secrets.META_CANONICAL_APP_SECRET }}
+    steps:
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '22'
+
+      - name: Read app metadata surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module - <<'NODE'
+          const APP_ID = '1836302544001572';
+          const EXPECTED_DELETION_URL = 'https://nuvanx.com/politica-privacidad/';
+          const secret = String(process.env.META_CANONICAL_APP_SECRET || '').trim();
+          if (!secret) throw new Error('META_CANONICAL_APP_SECRET missing');
+          const token = `${APP_ID}|${secret}`;
+          const base = `https://graph.facebook.com/v22.0/${APP_ID}`;
+
+          async function get(params) {
+            const url = new URL(base);
+            url.searchParams.set('access_token', token);
+            for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
+            const response = await fetch(url, { signal: AbortSignal.timeout(20000) });
+            const json = await response.json().catch(() => ({}));
+            return { response, json };
+          }
+
+          const meta = await get({ fields: 'id,name', metadata: 1 });
+          if (!meta.response.ok || meta.json?.error) {
+            const e = meta.json?.error ?? {};
+            throw new Error(`metadata read failed: ${e.message ?? meta.response.statusText}`);
+          }
+          const fieldNames = Array.isArray(meta.json?.metadata?.fields)
+            ? meta.json.metadata.fields.map((f) => String(f?.name || '')).filter(Boolean).sort()
+            : [];
+          const relevant = fieldNames.filter((name) => /(status|mode|live|delet|privacy|terms|support|domain|contact|review|verif)/i.test(name));
+          console.log(`META_APP_METADATA_FIELD_COUNT=${fieldNames.length}`);
+          console.log(`META_APP_METADATA_RELEVANT_FIELDS=${JSON.stringify(relevant)}`);
+
+          const candidates = [
+            'app_domains',
+            'privacy_policy_url',
+            'terms_of_service_url',
+            'data_deletion_url',
+            'data_deletion_callback_url',
+            'deauth_callback_url',
+            'user_support_url',
+            'website_url',
+            'status',
+            'app_mode',
+            'is_live',
+            'mode',
+          ];
+
+          for (const field of candidates) {
+            const { response, json } = await get({ fields: field });
+            if (!response.ok || json?.error) {
+              const e = json?.error ?? {};
+              console.log(`META_APP_FIELD ${field}=${JSON.stringify({ supported: false, status: response.status, code: e.code ?? null, subcode: e.error_subcode ?? null })}`);
+              continue;
+            }
+            const value = json?.[field];
+            const result = { supported: true, present: value !== undefined && value !== null && value !== '' };
+            if (field === 'data_deletion_url' || field === 'data_deletion_callback_url') {
+              result.matches_expected = String(value || '') === EXPECTED_DELETION_URL;
+            } else if (['status', 'app_mode', 'mode', 'is_live'].includes(field)) {
+              result.value = value ?? null;
+            } else if (field === 'app_domains') {
+              result.has_nuvanx = Array.isArray(value) && value.map(String).includes('nuvanx.com');
+            }
+            console.log(`META_APP_FIELD ${field}=${JSON.stringify(result)}`);
+          }
+          NODE
