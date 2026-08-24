@@ -1,0 +1,209 @@
+name: Meta RSV26 Protected Live Apply
+
+on:
+  workflow_dispatch:
+    inputs:
+      trusted_sha:
+        description: Exact current main SHA approved for the production operation
+        required: true
+        type: string
+      operation_key:
+        description: Persistent one-shot key; reuse is refused forever
+        required: true
+        default: rsv26-post-publication-v1
+        type: string
+      meta_publication_verified:
+        description: Confirm Meta App publication/access is already green
+        required: true
+        default: false
+        type: boolean
+      confirmation:
+        description: Type APPLY-RSV26-LIVE exactly
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: meta-rsv26-live-apply-${{ inputs.operation_key }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    name: Protected RSV26 live reconciliation
+    if: >-
+      github.repository == 'Arisofia/Nuvanx-System' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.meta_publication_verified == true &&
+      inputs.confirmation == 'APPLY-RSV26-LIVE'
+    runs-on: ubuntu-24.04
+    environment: Production
+    timeout-minutes: 25
+    env:
+      META_CANONICAL_ACCESS_TOKEN: ${{ secrets.META_CANONICAL_ACCESS_TOKEN }}
+      META_CANONICAL_APP_SECRET: ${{ secrets.META_CANONICAL_APP_SECRET }}
+      META_ACCESS_AUDIT_REQUIRED_SOURCE: META_CANONICAL_ACCESS_TOKEN
+      META_ACCESS_AUDIT_REQUIRE_CRITICAL: 'true'
+      META_ACCESS_AUDIT_REQUIRE_APP_MATCH: 'true'
+      META_ACCESS_AUDIT_REQUIRE_CRITICAL_ASSETS: 'true'
+      CLAIM_TITLE: meta-rsv26-one-shot:${{ inputs.operation_key }}:${{ inputs.trusted_sha }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout exact dispatched main
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Refuse moved or unapproved main
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ inputs.trusted_sha }}" = "$GITHUB_SHA" || {
+            echo "RSV26_SHA_GATE=FAIL reason=input_does_not_match_dispatch_sha input=${{ inputs.trusted_sha }} dispatched=$GITHUB_SHA" >&2
+            exit 1
+          }
+          git fetch --no-tags origin main
+          current_main="$(git rev-parse origin/main)"
+          test "$current_main" = "$GITHUB_SHA" || {
+            echo "RSV26_SHA_GATE=FAIL reason=main_moved dispatched=$GITHUB_SHA current_main=$current_main" >&2
+            exit 1
+          }
+          echo "RSV26_SHA_GATE=PASS sha=$GITHUB_SHA"
+
+      - name: Validate operation key
+        shell: bash
+        run: |
+          set -euo pipefail
+          key='${{ inputs.operation_key }}'
+          [[ "$key" =~ ^[a-z0-9][a-z0-9._-]{5,79}$ ]] || {
+            echo 'RSV26_OPERATION_KEY=FAIL reason=invalid_format' >&2
+            exit 1
+          }
+          echo "RSV26_OPERATION_KEY=PASS key=$key"
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 22
+
+      - name: Validate reconciler safety contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check scripts/meta-apply-rsv26.js
+          node --check scripts/meta-access-audit.js
+          node --check scripts/meta-system-user-audit.js
+          node --check scripts/meta-audit-rsv26.js
+          node --check scripts/meta-creative-diff-rsv26.js
+          node scripts/meta-apply-rsv26.concurrency.test.mjs
+          echo 'RSV26_SAFETY_CONTRACT=PASS'
+
+      - name: Validate canonical Meta identity and assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/meta-access-audit.js
+          node scripts/meta-system-user-audit.js
+          echo 'RSV26_CANONICAL_IDENTITY=PASS'
+
+      - name: Capture fresh read-only reconciliation plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/meta-apply-rsv26.js | tee "$RUNNER_TEMP/rsv26-preflight.log"
+          grep -Fq 'Dry-run completed with read-only access.' "$RUNNER_TEMP/rsv26-preflight.log"
+          echo 'RSV26_PREFLIGHT=PASS mutation=false'
+
+      - name: Refuse previously claimed operation
+        id: claim_check
+        shell: bash
+        run: |
+          set -euo pipefail
+          existing="$(
+            gh api --paginate --method GET \
+              "repos/${GITHUB_REPOSITORY}/issues?state=all&per_page=100" \
+              | jq -r --arg title "$CLAIM_TITLE" '.[] | select(.title == $title) | .number' \
+              | head -n1
+          )"
+          if [ -n "$existing" ]; then
+            echo "RSV26_ONE_SHOT=REFUSED existing_issue=$existing title=$CLAIM_TITLE" >&2
+            exit 1
+          fi
+          echo 'RSV26_ONE_SHOT_AVAILABLE=PASS'
+
+      - name: Persist atomic one-shot claim
+        id: claim
+        shell: bash
+        run: |
+          set -euo pipefail
+          body=$(cat <<EOF
+          Persistent production one-shot claim created before Meta mutation.
+
+          - operation_key: `${{ inputs.operation_key }}`
+          - trusted_sha: `${{ inputs.trusted_sha }}`
+          - workflow_run: `${GITHUB_RUN_ID}`
+          - actor: `${GITHUB_ACTOR}`
+          - state: CLAIMED
+
+          This marker is intentionally permanent. Reusing the same operation key + SHA is refused even if this issue is later closed.
+          EOF
+          )
+          response="$(gh api --method POST "repos/${GITHUB_REPOSITORY}/issues" -f title="$CLAIM_TITLE" -f body="$body")"
+          issue_number="$(printf '%s' "$response" | jq -r '.number')"
+          test -n "$issue_number" && test "$issue_number" != null
+          echo "issue_number=$issue_number" >> "$GITHUB_OUTPUT"
+          echo "RSV26_ONE_SHOT_CLAIM=PASS issue=$issue_number"
+
+      - name: Apply complete canonical RSV26 reconciliation
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/meta-apply-rsv26.js \
+            --apply \
+            --apply-names \
+            --apply-attribution \
+            --apply-adset-settings \
+            --apply-creatives \
+            | tee "$RUNNER_TEMP/rsv26-live-apply.log"
+          grep -Fq '"success": true' "$RUNNER_TEMP/rsv26-live-apply.log"
+          echo 'RSV26_LIVE_APPLY=PASS'
+
+      - name: Require zero canonical drift after write
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/meta-audit-rsv26.js | tee "$RUNNER_TEMP/rsv26-post-audit.log"
+          node - "$RUNNER_TEMP/rsv26-post-audit.log" <<'NODE'
+          const fs = require('node:fs');
+          const text = fs.readFileSync(process.argv[2], 'utf8');
+          if (!/"drift_count"\s*:\s*0\b/.test(text)) process.exit(1);
+          NODE
+          echo 'RSV26_POST_AUDIT=PASS drift_count=0'
+
+      - name: Re-check creative contracts after write
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/meta-creative-diff-rsv26.js | tee "$RUNNER_TEMP/rsv26-creative-diff.log"
+          node - "$RUNNER_TEMP/rsv26-creative-diff.log" <<'NODE'
+          const fs = require('node:fs');
+          const text = fs.readFileSync(process.argv[2], 'utf8');
+          if (!/"drifting"\s*:\s*0\b/.test(text)) process.exit(1);
+          if (!/"semantic_diffs"\s*:\s*0\b/.test(text)) process.exit(1);
+          NODE
+          echo 'RSV26_CREATIVE_CONTRACTS=PASS'
+
+      - name: Mark persistent claim completed
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          issue='${{ steps.claim.outputs.issue_number }}'
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${issue}/comments" \
+            -f body="RSV26 one-shot completed successfully for SHA `${GITHUB_SHA}`. Post-audit: zero canonical drift; creative contracts: zero drift/semantic diffs."
+          echo "RSV26_ONE_SHOT_COMPLETE=PASS issue=$issue"
