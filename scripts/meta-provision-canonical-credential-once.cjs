@@ -141,7 +141,7 @@ async function main() {
     if (String(m.systemUserId || '') !== E.CANONICAL_SYSTEM_USER_ID) throw new Error('System User post-check failed');
     if (String(m.pixelId || '') !== E.CANONICAL_PIXEL_ID) throw new Error('Pixel post-check failed');
 
-    console.log(`META_CREDENTIAL_PROVISION=PASS service=meta_ads user=${userId} integration=${integrationId} account=${E.CANONICAL_AD_ACCOUNT_ID} system_user=${E.CANONICAL_SYSTEM_USER_ID} pixel=${E.CANONICAL_PIXEL_ID}`);
+    console.log('META_CREDENTIAL_PROVISION=PASS service=meta_ads canonical_state=verified');
   } catch (error) {
     if (integrationPatched) {
       try {
