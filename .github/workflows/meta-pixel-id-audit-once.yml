@@ -1,0 +1,82 @@
+name: Meta Canonical Pixel ID Audit Once
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Canonical Pixel/Dataset read-only audit
+    if: >-
+      github.event.pull_request.head.ref == 'ops/meta-pixel-id-audit-20260824' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    environment: Production
+    timeout-minutes: 10
+    env:
+      META_CANONICAL_ACCESS_TOKEN: ${{ secrets.META_CANONICAL_ACCESS_TOKEN }}
+      CANONICAL_BUSINESS_ID: '897835716596010'
+      CANONICAL_AD_ACCOUNT_ID: 'act_718120894191565'
+      CANONICAL_PIXEL_NAME: 'NUVANX | Web | CAPI | RSV26'
+
+    steps:
+      - name: Require canonical token
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${META_CANONICAL_ACCESS_TOKEN:-}"
+          echo 'META_PIXEL_AUDIT_TOKEN=PASS present=true'
+
+      - name: Query canonical Business and Ad Account pixel surfaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const graph = 'https://graph.facebook.com/v22.0';
+          const token = process.env.META_CANONICAL_ACCESS_TOKEN;
+          const businessId = process.env.CANONICAL_BUSINESS_ID;
+          const adAccountId = process.env.CANONICAL_AD_ACCOUNT_ID;
+          const expectedName = process.env.CANONICAL_PIXEL_NAME;
+
+          async function graphGet(path) {
+            const url = new URL(`${graph}${path}`);
+            url.searchParams.set('access_token', token);
+            url.searchParams.set('fields', 'id,name');
+            url.searchParams.set('limit', '100');
+            const response = await fetch(url, { signal: AbortSignal.timeout(20000) });
+            const text = await response.text();
+            let body;
+            try { body = JSON.parse(text); } catch { body = null; }
+            if (!response.ok) {
+              const err = body?.error ?? {};
+              throw new Error(`${path} failed HTTP ${response.status} code=${err.code ?? '?'} sub=${err.error_subcode ?? '?'} message=${err.message ?? 'unknown'}`);
+            }
+            return Array.isArray(body?.data) ? body.data : [];
+          }
+
+          const businessPixels = await graphGet(`/${businessId}/owned_pixels`);
+          const accountPixels = await graphGet(`/${adAccountId}/adspixels`);
+          const all = [...businessPixels, ...accountPixels];
+          const byId = new Map();
+          for (const item of all) {
+            if (item?.id) byId.set(String(item.id), { id: String(item.id), name: String(item.name ?? '') });
+          }
+          const unique = [...byId.values()];
+          const exact = unique.filter((item) => item.name.trim() === expectedName);
+
+          console.log(`META_PIXEL_AUDIT_BUSINESS_COUNT=${businessPixels.length}`);
+          console.log(`META_PIXEL_AUDIT_ACCOUNT_COUNT=${accountPixels.length}`);
+          console.log(`META_PIXEL_AUDIT_UNIQUE_COUNT=${unique.length}`);
+          console.log(`META_PIXEL_AUDIT_CANDIDATES=${JSON.stringify(unique)}`);
+
+          if (exact.length !== 1) {
+            console.error(`META_PIXEL_CANONICAL_ID=FAIL exact_name_matches=${exact.length} expected_name=${expectedName}`);
+            process.exit(1);
+          }
+
+          console.log(`META_PIXEL_CANONICAL_ID=PASS id=${exact[0].id} name=${exact[0].name}`);
+          NODE
