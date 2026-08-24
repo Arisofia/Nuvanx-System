@@ -115,7 +115,7 @@ if (!hasValue('GOOGLE_DOCTORALIA_SERVICE_ACCOUNT') && !hasValue('GOOGLE_ADS_SERV
     console.error('::error::Configured Google service account is not valid JSON with a client_email field.');
     process.exitCode = 1;
   } else {
-    console.log(`[daily-sync] Google service account configured: ${serviceAccountEmail}`);
+    console.log('[daily-sync] Google service account configured.');
   }
 }
 
