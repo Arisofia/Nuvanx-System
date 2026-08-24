@@ -214,6 +214,7 @@ Deno.serve(async (req: Request) => {
         : await callOpenAIAPI(prompt, context);
     } catch (err: unknown) {
       const message = safeErrorMessage(err);
+      const clientMessage = 'AI provider request failed';
       const { data: failOutput } = await supabase.from('agent_outputs').insert({
         user_id: user.id,
         agent_type,
@@ -224,7 +225,7 @@ Deno.serve(async (req: Request) => {
         model_used: availableKey,
         tokens_used: 0
       }).select().single();
-      return json({ success: false, message, output_id: failOutput?.id }, 500);
+      return json({ success: false, message: clientMessage, output_id: failOutput?.id }, 500);
     }
 
     // Persist successful output

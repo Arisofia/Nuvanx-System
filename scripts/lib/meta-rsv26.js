@@ -121,7 +121,9 @@ function canonicalizeStoryCta(storyPart, defaults) {
 
 export function buildDesiredCreative(sourceCreative, item, defaults) {
   const sourceAsset = structuredClone(sourceCreative?.asset_feed_spec ?? {});
-  if (!(sourceAsset.images?.length > 0 || sourceAsset.videos?.length > 0)) {
+  const hasImages = Array.isArray(sourceAsset.images) && sourceAsset.images.length > 0;
+  const hasVideos = Array.isArray(sourceAsset.videos) && sourceAsset.videos.length > 0;
+  if (!(hasImages || hasVideos)) {
     throw new Error(`${item.key}: configured source creative has no image or video assets`);
   }
   sourceAsset.bodies = replaceAllText(sourceAsset.bodies, item.body, 'bodies');

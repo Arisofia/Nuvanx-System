@@ -499,6 +499,15 @@ try {
     }
   }
 
+  if (temporarilyPause && !statusPauseOwned) {
+    try {
+      const freshCampaign = await readCampaign(managementToken);
+      if (String(freshCampaign?.status ?? '') === 'PAUSED') {
+        statusPauseOwned = true;
+      }
+    } catch (ignore) {}
+  }
+
   if (statusPauseOwned) {
     try {
       const restoration = await restoreOriginalStatusSafely(originalCampaign.status);

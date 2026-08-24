@@ -212,6 +212,9 @@ describe('RSV26 ad-set convergence', () => {
 describe('RSV26 apply CLI safety gates', () => {
   const script = fileURLToPath(new URL('../../scripts/meta-apply-rsv26.js', import.meta.url));
   const baseEnv = { ...process.env, META_REPORTING_TOKEN_60D: 'read-only-dummy' };
+  delete baseEnv.META_ADS_MANAGEMENT_TOKEN;
+  delete baseEnv.META_CANONICAL_ACCESS_TOKEN;
+  delete baseEnv.META_CANONICAL_APP_SECRET;
 
   function run(args, env = baseEnv) {
     return spawnSync(process.execPath, [script, ...args], {
