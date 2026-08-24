@@ -52,9 +52,11 @@ describe('daily automation ownership', () => {
 
   it('keeps GitHub at 07:00 UTC as the explicit reconciliation owner with a real date range', () => {
     expect(master).toContain("- cron: '0 7 * * *'");
-    expect(master).toContain('"action":"fetch_meta_insights"');
-    expect(master).toContain('"from":"${from_date}"');
-    expect(master).toContain('"to":"${to_date}"');
+    expect(master).toContain('fetch_meta_insights');
+    expect(master).toContain('from_date="$FROM_DATE_INPUT"');
+    expect(master).toContain('to_date="$TO_DATE_INPUT"');
+    expect(master).toContain('${from_date}');
+    expect(master).toContain('${to_date}');
     expect(aggregates).toContain('type DailyAggregatesRequest = MetaDateRangeInput &');
     expect(aggregates).toContain('resolveMetaDateRange(input)');
     expect(ownership).toContain('Reconciliation/backfill — GitHub Master System');
