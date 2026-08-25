@@ -15,6 +15,7 @@ describe('daily-aggregates dual auth contract', () => {
     expect(bodyParse).toBeGreaterThan(internalSecretCheck);
     expect(index).toContain("p_name: 'REVOPS_INTERNAL_SECRET'");
     expect(index).toContain("req.headers.get('x-nvx-internal-secret')");
+    expect(index).toContain('if (!authorizedByServiceRole && internalSecretHeader)');
   });
 
   it('alters the existing scheduler in place instead of creating another owner', () => {

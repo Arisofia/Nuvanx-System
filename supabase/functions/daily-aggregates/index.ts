@@ -404,9 +404,10 @@ type DailyAggregatesRequest = MetaDateRangeInput & {
 
 Deno.serve(async (req: Request) => {
   const authorizedByServiceRole = hasServiceRoleBearer(req, SUPABASE_SERVICE_ROLE_KEY);
+  const internalSecretHeader = String(req.headers.get('x-nvx-internal-secret') || '').trim();
   let authorizedByInternalSecret = false;
 
-  if (!authorizedByServiceRole) {
+  if (!authorizedByServiceRole && internalSecretHeader) {
     const { data: expectedInternalSecret, error: internalSecretError } = await getSupabase().rpc('nvx_get_runtime_secret', {
       p_name: 'REVOPS_INTERNAL_SECRET',
     });
@@ -419,7 +420,7 @@ Deno.serve(async (req: Request) => {
     }
 
     authorizedByInternalSecret = await secretMatches(
-      String(req.headers.get('x-nvx-internal-secret') || ''),
+      internalSecretHeader,
       String(expectedInternalSecret),
     );
   }
