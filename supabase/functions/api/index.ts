@@ -1700,6 +1700,7 @@ export const AUTHENTICATED_ROUTE_HANDLERS = new Map<string, RouteHandler>([
   ['ai|analyze-campaign|POST', handleAiAnalyzeCampaignPost],
   ['ai|suggestions|POST', handleAiSuggestionsPost],
   ['ai|outputs|GET', handleAiOutputsGet],
+  ['google-ads|status|GET', handleGoogleAdsStatusGet],
   ['google-ads|insights|GET', handleGoogleAdsInsightsGet],
   ['google-ads|campaigns|GET', handleGoogleAdsCampaignsGet],
   ['financials|summary|*', handleFinancialsSummary],
@@ -5927,6 +5928,52 @@ function aggregateGoogleAdsInsights(daily: any[], prevData: any[]) {
     prevImp, prevClicks, prevSpend, prevConv,
     ctr, cpc, cpm, cpp
   };
+}
+
+async function handleGoogleAdsStatusGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
+  const { adminClient, userId, resource, sub, req, sendJson } = ctx;
+  if (resource !== 'google-ads' || sub !== 'status' || req.method !== 'GET') return null;
+
+  const { data: row, error } = await adminClient
+    .from('vw_google_ads_connection_status')
+    .select('status, customer_id, credential_present, credential_created_at, credential_last_used, last_sync, last_error, updated_at')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) throw error;
+
+  if (!row) {
+    return sendJson({
+      success: true,
+      connected: false,
+      status: 'not_configured',
+      customerId: null,
+      credentialPresent: false,
+      credentialCreatedAt: null,
+      credentialLastUsed: null,
+      lastSync: null,
+      lastErrorPresent: false,
+      updatedAt: null,
+    });
+  }
+
+  const customerId = typeof row.customer_id === 'string' && row.customer_id.trim()
+    ? row.customer_id.trim()
+    : null;
+  const credentialPresent = row.credential_present === true;
+  const connected = row.status === 'connected' && credentialPresent && Boolean(customerId);
+
+  return sendJson({
+    success: true,
+    connected,
+    status: row.status ?? 'unknown',
+    customerId,
+    credentialPresent,
+    credentialCreatedAt: row.credential_created_at ?? null,
+    credentialLastUsed: row.credential_last_used ?? null,
+    lastSync: row.last_sync ?? null,
+    lastErrorPresent: Boolean(row.last_error),
+    updatedAt: row.updated_at ?? null,
+  });
 }
 
 async function handleGoogleAdsInsightsGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {

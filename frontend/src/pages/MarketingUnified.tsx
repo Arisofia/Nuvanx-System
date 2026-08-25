@@ -53,7 +53,21 @@ type GoogleCampaignsResponse = {
   campaigns?: GoogleCampaign[]
 }
 
+type GoogleStatusResponse = {
+  success: boolean
+  connected: boolean
+  status: string
+  customerId: string | null
+  credentialPresent: boolean
+  credentialCreatedAt: string | null
+  credentialLastUsed: string | null
+  lastSync: string | null
+  lastErrorPresent: boolean
+  updatedAt: string | null
+}
+
 type GoogleState = {
+  connection: GoogleStatusResponse | null
   summary: GoogleSummary | null
   changes: GoogleChanges
   campaigns: GoogleCampaign[]
@@ -114,6 +128,7 @@ function GoogleAdsPanel() {
   const [query, setQuery] = useState('')
   const requestSequenceRef = useRef(0)
   const [state, setState] = useState<GoogleState>({
+    connection: null,
     summary: null,
     changes: {},
     campaigns: [],
@@ -127,10 +142,17 @@ function GoogleAdsPanel() {
     setState((prev) => ({ ...prev, loading: true, error: null }))
     const params = new URLSearchParams({ from, to }).toString()
     try {
-      const [insights, campaigns] = await Promise.all([
+      const [connection, insights, campaigns] = await Promise.all([
+        invokeApi<GoogleStatusResponse>('/api/google-ads/status'),
         invokeApi<GoogleInsightsResponse>(`/api/google-ads/insights?${params}`),
         invokeApi<GoogleCampaignsResponse>(`/api/google-ads/campaigns?${params}`),
       ])
+
+      if (!connection.success) {
+        throw new Error('No se pudo comprobar el estado de Google Ads.')
+      }
+      if (requestSequence !== requestSequenceRef.current) return
+      setState((prev) => ({ ...prev, connection }))
 
       if (!insights.success) {
         throw new Error(insights.message || 'Google Ads no está disponible.')
@@ -141,6 +163,7 @@ function GoogleAdsPanel() {
       if (requestSequence !== requestSequenceRef.current) return
 
       setState({
+        connection,
         summary: insights.summary ?? null,
         changes: insights.changes ?? {},
         campaigns: Array.isArray(campaigns.campaigns) ? campaigns.campaigns : [],
@@ -208,6 +231,25 @@ function GoogleAdsPanel() {
       {state.error && (
         <div className="rounded-lg border border-[#D9534F]/30 bg-[#D9534F]/8 px-4 py-3 text-sm text-[#D9534F]">
           {state.error}
+        </div>
+      )}
+
+      {state.connection && (
+        <div data-testid="google-ads-connection-status" className="rounded-lg border border-border bg-card px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-sm font-semibold text-foreground">
+                {state.connection.connected ? 'Conexión Google Ads operativa' : 'Conexión Google Ads incompleta'}
+              </p>
+              <p className="mt-1 text-xs text-muted">
+                Customer ID: {state.connection.customerId ?? 'no configurado'} · Credencial: {state.connection.credentialPresent ? 'configurada' : 'ausente'} · Última sincronización: {state.connection.lastSync ? new Date(state.connection.lastSync).toLocaleString('es-ES') : 'sin sincronización registrada'}
+              </p>
+            </div>
+            <span className="text-xs font-semibold text-muted">{state.connection.status}</span>
+          </div>
+          {state.connection.lastErrorPresent && (
+            <p className="mt-2 text-xs text-red-600">La integración tiene un error registrado y requiere revisión.</p>
+          )}
         </div>
       )}
 
