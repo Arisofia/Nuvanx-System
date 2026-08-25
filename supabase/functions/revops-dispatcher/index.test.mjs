@@ -25,6 +25,19 @@ describe("RevOps dispatcher contract", () => {
     expect(source).toContain('SUPABASE_SERVICE_ROLE_KEY") || "").trim()');
   });
 
+  it("rejects a missing internal-secret header before privileged client or Vault access", () => {
+    const handler = source.slice(source.indexOf("Deno.serve(async (req: Request) =>"));
+    const readHeader = handler.indexOf('req.headers.get("x-nvx-internal-secret")');
+    const missingHeaderReject = handler.indexOf("if (!received)");
+    const createAdmin = handler.indexOf("createClient(SUPABASE_URL, SERVICE_ROLE");
+    const readVault = handler.indexOf('p_name: "REVOPS_INTERNAL_SECRET"');
+
+    expect(readHeader).toBeGreaterThanOrEqual(0);
+    expect(missingHeaderReject).toBeGreaterThan(readHeader);
+    expect(createAdmin).toBeGreaterThan(missingHeaderReject);
+    expect(readVault).toBeGreaterThan(createAdmin);
+  });
+
   it("allowlists only governed RevOps workers", () => {
     expect(source).toContain('new Set(["web-lead-reconcile", "deal-factory", "google-data-manager-export"])');
     expect(source).toContain("if (!ALLOWED_WORKERS.has(worker))");
