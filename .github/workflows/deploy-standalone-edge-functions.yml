@@ -92,7 +92,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npm install --include=dev --ignore-scripts --legacy-peer-deps
+          npm install --include=dev --ignore-scripts
           npm test
           deno check --config=supabase/functions/deno.json \
             supabase/functions/dashboard/index.ts \
