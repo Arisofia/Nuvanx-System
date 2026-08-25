@@ -7,6 +7,10 @@ on:
       - cleanup/repo-hygiene-live-20260825
     paths:
       - .github/workflows/repo-hygiene-live-builder-once.yml
+  pull_request:
+    branches:
+      - main
+    types: [opened, reopened]
 
 permissions:
   contents: write
@@ -17,6 +21,11 @@ concurrency:
 
 jobs:
   build:
+    if: >-
+      ${{
+        github.event_name == 'push' ||
+        github.event.pull_request.head.ref == 'cleanup/repo-hygiene-live-20260825'
+      }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
