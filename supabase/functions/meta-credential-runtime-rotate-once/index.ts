@@ -18,13 +18,18 @@ function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-function hexToBytes(hex: string): Uint8Array {
-  const out = new Uint8Array(hex.length >>> 1);
+function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
+  const buffer = new ArrayBuffer(hex.length >>> 1);
+  const out = new Uint8Array(buffer);
   for (let i = 0; i < hex.length; i += 2) out[i >>> 1] = Number.parseInt(hex.slice(i, i + 2), 16);
   return out;
 }
 
-async function deriveKey(masterKey: string, salt: Uint8Array, usage: KeyUsage[]) {
+async function deriveKey(
+  masterKey: string,
+  salt: Uint8Array<ArrayBuffer>,
+  usage: KeyUsage[],
+) {
   const material = await crypto.subtle.importKey(
     'raw',
     new TextEncoder().encode(masterKey),
@@ -42,8 +47,10 @@ async function deriveKey(masterKey: string, salt: Uint8Array, usage: KeyUsage[])
 }
 
 async function encryptCredential(raw: string, masterKey: string): Promise<string> {
-  const salt = crypto.getRandomValues(new Uint8Array(32));
-  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const salt = new Uint8Array(new ArrayBuffer(32));
+  crypto.getRandomValues(salt);
+  const iv = new Uint8Array(new ArrayBuffer(12));
+  crypto.getRandomValues(iv);
   const key = await deriveKey(masterKey, salt, ['encrypt']);
   const ciphertextWithTag = new Uint8Array(
     await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(raw)),
@@ -61,7 +68,7 @@ async function decryptCredential(encoded: string, masterKey: string): Promise<st
   const iv = hexToBytes(ivHex);
   const tag = hexToBytes(tagHex);
   const ciphertext = hexToBytes(ciphertextHex);
-  const combined = new Uint8Array(ciphertext.length + tag.length);
+  const combined = new Uint8Array(new ArrayBuffer(ciphertext.length + tag.length));
   combined.set(ciphertext);
   combined.set(tag, ciphertext.length);
   const key = await deriveKey(masterKey, salt, ['decrypt']);
