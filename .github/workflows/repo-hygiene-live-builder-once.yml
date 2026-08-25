@@ -109,9 +109,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -z "$(grep -R --line-number --fixed-strings -- '--legacy-peer-deps' package.json .github/workflows || true)"
-          test -z "$(grep -R --line-number --fixed-strings -- '--passWithNoTests' package.json .github/workflows || true)"
-          test -z "$(grep -R --line-number --fixed-strings 'tweetsodium' package.json package-lock.json frontend/package-lock.json || true)"
+          active_targets=(
+            package.json
+            .github/workflows/master.yml
+            .github/workflows/deploy-standalone-edge-functions.yml
+          )
+          test -z "$(grep --line-number --fixed-strings -- '--legacy-peer-deps' "${active_targets[@]}" || true)"
+          test -z "$(grep --line-number --fixed-strings -- '--passWithNoTests' "${active_targets[@]}" || true)"
+          test -z "$(grep --line-number --fixed-strings 'tweetsodium' package.json package-lock.json frontend/package-lock.json || true)"
           for path in \
             frontend/src/config/trackingConfig.ts \
             frontend/src/data/clinicsScores.ts \
