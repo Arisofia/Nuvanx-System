@@ -17,7 +17,7 @@ permissions:
 
 concurrency:
   group: repo-hygiene-live-builder-once
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -128,15 +128,18 @@ jobs:
           done
           git diff --check
 
-      - name: Remove builder and commit final hygiene delta
+      - name: Commit non-workflow hygiene delta
         shell: bash
         run: |
           set -euo pipefail
-          rm .github/workflows/repo-hygiene-live-builder-once.yml
+          git restore --source=HEAD -- \
+            .github/workflows/master.yml \
+            .github/workflows/deploy-standalone-edge-functions.yml \
+            .github/workflows/repo-hygiene-live-builder-once.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
           git diff --cached --check
           git status --short
-          git commit -m 'chore(repo): remove verified hygiene debt'
+          git commit -m 'chore(repo): remove verified non-workflow hygiene debt'
           git push origin HEAD:cleanup/repo-hygiene-live-20260825
