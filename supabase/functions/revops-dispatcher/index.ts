@@ -31,6 +31,13 @@ async function secretMatches(received: string, expected: string): Promise<boolea
 
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return reply(405, { success: false, message: "Method not allowed" });
+
+  // Reject anonymous/malformed calls before creating a privileged client or
+  // touching Vault. Wrong-but-present secrets still use the constant-time
+  // comparison below so the authentication contract is unchanged.
+  const received = String(req.headers.get("x-nvx-internal-secret") || "").trim();
+  if (!received) return reply(403, { success: false, message: "Forbidden" });
+
   if (!SUPABASE_URL || !SERVICE_ROLE) return reply(500, { success: false, message: "Server configuration error" });
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
@@ -39,7 +46,6 @@ Deno.serve(async (req: Request) => {
   });
   if (secretError || !expected) return reply(500, { success: false, message: "Server configuration error" });
 
-  const received = String(req.headers.get("x-nvx-internal-secret") || "").trim();
   if (!(await secretMatches(received, String(expected)))) return reply(403, { success: false, message: "Forbidden" });
 
   const body = await req.json().catch(() => ({}));
