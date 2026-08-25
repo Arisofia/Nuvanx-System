@@ -78,7 +78,7 @@ jobs:
           deno-version: v2.x
 
       - name: Install workspace dependencies
-        run: npm install --include=dev --ignore-scripts --legacy-peer-deps
+        run: npm install --include=dev --ignore-scripts
 
       - name: Repository and migration gates
         shell: bash
@@ -198,7 +198,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install frontend dependencies
-        run: npm install --include=dev --ignore-scripts --legacy-peer-deps
+        run: npm install --include=dev --ignore-scripts
 
       - name: ESLint
         run: npm run lint
@@ -243,7 +243,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install frontend dependencies
-        run: npm install --include=dev --ignore-scripts --legacy-peer-deps
+        run: npm install --include=dev --ignore-scripts
 
       - name: Install Playwright browsers
         run: npm exec playwright install --with-deps
@@ -430,7 +430,7 @@ jobs:
           cache: npm
 
       - name: Install workspace dependencies
-        run: npm install --include=dev --ignore-scripts --legacy-peer-deps
+        run: npm install --include=dev --ignore-scripts
 
       - name: Activate read-only Meta reporting token
         shell: bash
