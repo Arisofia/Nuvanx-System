@@ -1,0 +1,90 @@
+name: Daily Aggregates Auth Builder
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  build-auth-hardening:
+    if: github.head_ref == 'fix/daily-aggregates-auth-20260825'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.head_ref }}
+          persist-credentials: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+        with:
+          deno-version: v2.x
+
+      - name: Apply daily-aggregates auth hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          index = Path('supabase/functions/daily-aggregates/index.ts')
+          text = index.read_text()
+
+          import_anchor = "import { resolveMetaDateRange, type MetaDateRangeInput } from './date-range.ts';\n"
+          import_line = "import { hasServiceRoleBearer } from './service-auth.ts';\n"
+          if import_line not in text:
+              if import_anchor not in text:
+                  raise SystemExit('date-range import anchor not found')
+              text = text.replace(import_anchor, import_anchor + import_line, 1)
+
+          serve_anchor = "Deno.serve(async (req: Request) => {\n  const body = (await req.json().catch((): DailyAggregatesRequest => ({}))) as DailyAggregatesRequest;"
+          serve_replacement = "Deno.serve(async (req: Request) => {\n  if (!hasServiceRoleBearer(req, SUPABASE_SERVICE_ROLE_KEY)) {\n    return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), {\n      status: 401,\n      headers: { 'Content-Type': 'application/json' },\n    });\n  }\n\n  const body = (await req.json().catch((): DailyAggregatesRequest => ({}))) as DailyAggregatesRequest;"
+          if "if (!hasServiceRoleBearer(req, SUPABASE_SERVICE_ROLE_KEY))" not in text:
+              if serve_anchor not in text:
+                  raise SystemExit('Deno.serve anchor not found')
+              text = text.replace(serve_anchor, serve_replacement, 1)
+
+          index.write_text(text)
+
+          Path('supabase/functions/daily-aggregates/service-auth.ts').write_text("""export function hasServiceRoleBearer(request: Request, serviceRoleKey: string): boolean {\n  const expectedToken = serviceRoleKey.trim();\n  if (!expectedToken) return false;\n\n  const authorization = request.headers.get('authorization');\n  if (!authorization) return false;\n\n  const match = /^Bearer\\s+(.+)$/i.exec(authorization.trim());\n  if (!match) return false;\n\n  return match[1].trim() === expectedToken;\n}\n""")
+
+          Path('supabase/functions/daily-aggregates/service-auth.test.mjs').write_text("""import { describe, expect, it } from 'vitest';\nimport { hasServiceRoleBearer } from './service-auth.ts';\n\nfunction requestWithAuthorization(authorization) {\n  const headers = authorization === undefined ? {} : { Authorization: authorization };\n  return new Request('https://example.test/functions/v1/daily-aggregates', {\n    method: 'POST',\n    headers,\n    body: '{}',\n  });\n}\n\ndescribe('daily-aggregates service-role authorization', () => {\n  it('rejects requests with no Authorization header', () => {\n    expect(hasServiceRoleBearer(requestWithAuthorization(undefined), 'service-role-secret')).toBe(false);\n  });\n\n  it('rejects non-Bearer and incorrect Bearer credentials', () => {\n    expect(hasServiceRoleBearer(requestWithAuthorization('Basic service-role-secret'), 'service-role-secret')).toBe(false);\n    expect(hasServiceRoleBearer(requestWithAuthorization('Bearer wrong-secret'), 'service-role-secret')).toBe(false);\n  });\n\n  it('rejects all requests when the configured service-role key is empty', () => {\n    expect(hasServiceRoleBearer(requestWithAuthorization('Bearer service-role-secret'), '   ')).toBe(false);\n  });\n\n  it('accepts only the exact configured Bearer service-role key', () => {\n    expect(hasServiceRoleBearer(requestWithAuthorization('Bearer service-role-secret'), 'service-role-secret')).toBe(true);\n    expect(hasServiceRoleBearer(requestWithAuthorization('bearer   service-role-secret'), 'service-role-secret')).toBe(true);\n  });\n});\n""")
+          PY
+
+      - name: Install dependencies
+        run: npm install --include=dev --ignore-scripts
+
+      - name: Run tests
+        run: npm test
+
+      - name: Deno type-check
+        run: |
+          deno check --config=supabase/functions/deno.json \
+            supabase/functions/daily-aggregates/service-auth.ts \
+            supabase/functions/daily-aggregates/index.ts
+
+      - name: Commit validated source changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add \
+            supabase/functions/daily-aggregates/index.ts \
+            supabase/functions/daily-aggregates/service-auth.ts \
+            supabase/functions/daily-aggregates/service-auth.test.mjs
+          if git diff --cached --quiet; then
+            echo 'No source changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(security): require service-role auth for daily aggregates'
+          git push origin HEAD:${{ github.head_ref }}
