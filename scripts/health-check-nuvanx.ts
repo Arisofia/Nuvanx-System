@@ -93,8 +93,8 @@ const endpoints: Endpoint[] = [
   {
     name: 'Daily Aggregates',
     url: `${SUPABASE_URL}/functions/v1/daily-aggregates`,
-    expectedStatuses: [200],
-    healthyStatusLabel: 'job endpoint ok',
+    expectedStatuses: [403],
+    healthyStatusLabel: 'auth guard enforced without executing job',
   },
 ];
 
@@ -113,6 +113,7 @@ async function runHealthCheck() {
     );
   }
 
+  console.log('ℹ️ Daily Aggregates is probed without credentials and must return 403 without running aggregation work.');
   console.log('');
 
   let failed = 0;
