@@ -54,7 +54,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 import { numberInput } from './normalize.ts';
 import { resolveMetaDateRange, type MetaDateRangeInput } from './date-range.ts';
-import { hasServiceRoleBearer } from './service-auth.ts';
+import { hasServiceRoleBearer, secretMatches } from './request-auth.ts';
 
 function normalizeMetaAction(value: unknown): MetaAction | null {
   if (!isRecord(value)) return null;
@@ -403,9 +403,30 @@ type DailyAggregatesRequest = MetaDateRangeInput & {
 };
 
 Deno.serve(async (req: Request) => {
-  if (!hasServiceRoleBearer(req, SUPABASE_SERVICE_ROLE_KEY)) {
-    return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), {
-      status: 401,
+  const authorizedByServiceRole = hasServiceRoleBearer(req, SUPABASE_SERVICE_ROLE_KEY);
+  let authorizedByInternalSecret = false;
+
+  if (!authorizedByServiceRole) {
+    const { data: expectedInternalSecret, error: internalSecretError } = await getSupabase().rpc('nvx_get_runtime_secret', {
+      p_name: 'REVOPS_INTERNAL_SECRET',
+    });
+
+    if (internalSecretError || !expectedInternalSecret) {
+      return new Response(JSON.stringify({ success: false, error: 'Server configuration error' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    authorizedByInternalSecret = await secretMatches(
+      String(req.headers.get('x-nvx-internal-secret') || ''),
+      String(expectedInternalSecret),
+    );
+  }
+
+  if (!authorizedByServiceRole && !authorizedByInternalSecret) {
+    return new Response(JSON.stringify({ success: false, error: 'Forbidden' }), {
+      status: 403,
       headers: { 'Content-Type': 'application/json' },
     });
   }
