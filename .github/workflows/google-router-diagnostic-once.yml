@@ -1,0 +1,30 @@
+name: Google Router Diagnostic Once
+on:
+  push:
+    branches: [feat/google-ads-status-output-20260825]
+    paths: ['.github/workflows/google-router-diagnostic-once.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    if: github.actor == 'Arisofia'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: Print bounded router contexts
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          lines=Path('supabase/functions/api/index.ts').read_text().splitlines()
+          needles=['handleGoogleAdsInsightsGet','handleGoogleAdsCampaignsGet','handleRequest','AuthenticatedRouteContext']
+          for needle in needles:
+              hits=[i for i,line in enumerate(lines) if needle in line]
+              print(f'===== {needle} hits={len(hits)} =====')
+              for i in hits:
+                  start=max(0,i-12); end=min(len(lines),i+13)
+                  print(f'--- hit line {i+1} ---')
+                  for j in range(start,end): print(f'{j+1:05d}: {lines[j]}')
+          PY
