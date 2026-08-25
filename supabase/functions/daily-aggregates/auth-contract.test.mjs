@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 const index = readFileSync('supabase/functions/daily-aggregates/index.ts', 'utf8');
 const migration = readFileSync('supabase/migrations/20260825184500_harden_daily_aggregates_internal_auth.sql', 'utf8');
+const healthCheck = readFileSync('scripts/health-check-nuvanx.ts', 'utf8');
 
 describe('daily-aggregates dual auth contract', () => {
   it('authorizes before request body parsing and preserves both legitimate owners', () => {
@@ -21,5 +22,12 @@ describe('daily-aggregates dual auth contract', () => {
     expect(migration).toContain('cron.alter_job');
     expect(migration).toContain('REVOPS_INTERNAL_SECRET');
     expect(migration).not.toContain('cron.schedule(');
+  });
+
+  it('keeps the production health probe non-destructive by expecting the auth guard', () => {
+    const dailyAggregatesBlock = healthCheck.slice(healthCheck.indexOf("name: 'Daily Aggregates'"));
+    expect(dailyAggregatesBlock).toContain('expectedStatuses: [403]');
+    expect(dailyAggregatesBlock).toContain('auth guard enforced without executing job');
+    expect(dailyAggregatesBlock).not.toContain('Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`');
   });
 });
