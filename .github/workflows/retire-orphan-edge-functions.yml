@@ -1,7 +1,10 @@
 name: Retire Orphan Edge Functions
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/retire-orphan-edge-functions.yml'
 
 permissions:
   contents: read
