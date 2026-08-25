@@ -12,7 +12,7 @@ const app = new Hono()
 const mcp = new McpServer({
   name: 'nuvanx-mcp',
   version: '1.0.0',
-  schemaAdapter: (schema: unknown) => z.toJSONSchema(schema as z.ZodType),
+  schemaAdapter: (schema: unknown) => z.toJSONSchema(schema as z.ZodType, { io: 'input' }),
 })
 
 // Lazy Supabase client (getSupabase) to avoid top-level throws on missing envs.

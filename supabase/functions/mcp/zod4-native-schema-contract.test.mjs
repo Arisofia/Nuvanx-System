@@ -7,7 +7,7 @@ const rootConfig = readFileSync('supabase/functions/deno.json', 'utf8');
 
 describe('MCP native Zod 4 schema contract', () => {
   it('uses Zod native JSON Schema conversion', () => {
-    expect(source).toContain('z.toJSONSchema(schema as z.ZodType)');
+    expect(source).toContain("z.toJSONSchema(schema as z.ZodType, { io: 'input' })");
     expect(source).not.toContain('zod-to-json-schema');
     expect(source).not.toContain('ZodTypeAny');
   });
