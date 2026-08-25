@@ -17,11 +17,18 @@ describe('Control Centre marketing contract', () => {
     const marketing = read('../src/pages/MarketingUnified.tsx')
     expect(marketing).toContain('/api/google-ads/insights?')
     expect(marketing).toContain('/api/google-ads/campaigns?')
+    expect(marketing).toContain('/api/google-ads/status')
+    expect(marketing).toContain('google-ads-connection-status')
+    expect(marketing).toContain('Conexión Google Ads operativa')
     expect(marketing).toContain('Meta Ads')
     expect(marketing).toContain('Google Ads')
     expect(marketing).toContain('Campañas Google Ads')
     expect(marketing).toContain('Conversiones')
     expect(marketing).toContain('CPC promedio')
+    const connectionSave = marketing.indexOf('setState((prev) => ({ ...prev, connection }))')
+    const dependentValidation = marketing.indexOf('if (!insights.success)')
+    expect(connectionSave).toBeGreaterThan(-1)
+    expect(dependentValidation).toBeGreaterThan(connectionSave)
   })
 
   it('prevents stale range responses and timezone-dependent month starts', () => {
