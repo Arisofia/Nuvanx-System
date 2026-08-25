@@ -1,26 +1,35 @@
-# Supabase Migration Drift Audit — 2026-06-10
+# Supabase migration drift audit — 2026-06-10
 
 ## Status
-Remote Supabase contains applied migration versions that are not present as local migration files.
 
-## Remote-only versions
+**CLOSED / HISTORICAL RECORD**
 
-- 20260610195903
-- 20260610195923
-- 20260610200006
-- 20260610200018
-- 20260610200148
+This file is retained as an incident/audit record, not as a current remediation plan.
 
-## Resolved local-only version
+## Historical finding
 
-- Removed invalid local migration: 20260610_create_figma_data_views.sql
+The 2026-06-10 audit identified five migration versions that were present in the remote migration ledger without matching migration files in the repository at that time:
 
-## Decision
-Do not run supabase migration repair blindly.
-Do not delete remote migration history.
-Do not edit historical migrations already applied in production.
+- `20260610195903`
+- `20260610195923`
+- `20260610200006`
+- `20260610200018`
+- `20260610200148`
 
-## Required resolution
-1. Recover original SQL for remote-only migrations if available from prior local history, branches, CI artifacts, or Supabase logs.
-2. If SQL cannot be recovered, create explicit audit stubs only after confirming they represent already-applied remote changes and are not needed for replay.
-3. Future schema corrections must be forward-only migrations.
+The original risk was that a fresh replay from repository files alone could not explain those remote-only ledger entries.
+
+## Current verification
+
+On 2026-08-26 the production project `ssvvuuysgxyqvmovrlvk` migration ledger was re-read through the connected Supabase project API. None of the five versions above is present in the current production migration list.
+
+Therefore the specific remote-only drift described by the 2026-06-10 audit is no longer an active migration-ledger divergence.
+
+## Closure rule
+
+Do **not** recreate these historical versions as new migration files merely to match this audit record. Applied/current schema changes remain governed by the repository's forward-only migration history and `scripts/validate-sql-migrations.js`.
+
+If any of these versions appears again in a future production ledger comparison, open a new drift incident and compare repository migration history, the remote ledger and effective schema before making changes.
+
+## Provenance
+
+This record intentionally preserves the historical version identifiers after closure so future operators can distinguish a previously reconciled incident from a newly introduced drift.
