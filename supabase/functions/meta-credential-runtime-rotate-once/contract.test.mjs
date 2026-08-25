@@ -10,8 +10,20 @@ describe('canonical Meta runtime credential rotation contract', () => {
     expect(source).toContain("const EXPECTED_AD_ACCOUNT_ID = 'act_718120894191565'");
     expect(source).toContain("const EXPECTED_APP_ID = '1836302544001572'");
     expect(source).toContain(".eq('service', 'meta_ads')");
-    expect(source).toContain('metadata.canonical !== true');
+    expect(source).toContain('metadata.canonical === true');
     expect(source).not.toContain(".eq('service', 'meta')");
+  });
+
+  it('selects exactly one canonical meta_ads integration instead of assuming service-level uniqueness', () => {
+    const integrationStart = source.indexOf('const { data: integrations, error: integrationError }');
+    const credentialStart = source.indexOf('const { data: credential, error: credentialError }');
+    const integrationSelection = source.slice(integrationStart, credentialStart);
+    expect(integrationStart).toBeGreaterThan(-1);
+    expect(credentialStart).toBeGreaterThan(integrationStart);
+    expect(integrationSelection).toContain(".eq('service', 'meta_ads')");
+    expect(integrationSelection).toContain('(integrations ?? []).filter(canonicalIntegrationMatches)');
+    expect(integrationSelection).toContain('canonicalIntegrations.length !== 1');
+    expect(integrationSelection).not.toContain('.maybeSingle()');
   });
 
   it('accepts the canonical token only through Authorization and keeps the App Secret inside Supabase runtime', () => {
@@ -44,12 +56,18 @@ describe('canonical Meta runtime credential rotation contract', () => {
     const markerCheck = source.indexOf("previousMarker.state === 'COMPLETED'");
     const update = source.indexOf(".update({\n      encrypted_key: encrypted,");
     expect(markerCheck).toBeGreaterThan(-1);
-    expect(source).toContain("runtime_reencrypt: {");
+    expect(source).toContain('runtime_reencrypt: {');
     expect(source).toContain("state: 'COMPLETED'");
     expect(source).toContain('operation_marked_completed: true');
     expect(update).toBeGreaterThan(markerCheck);
     expect(source).toContain(".eq('service', 'meta_ads')");
     expect(source).not.toContain(".from('integrations')\n    .update(");
+  });
+
+  it('treats workflow_dispatch trusted_sha as data rather than shell source', () => {
+    expect(workflow).toContain('TRUSTED_SHA: ${{ inputs.trusted_sha }}');
+    expect(workflow).toContain('test "$TRUSTED_SHA" = "$GITHUB_SHA"');
+    expect(workflow).not.toContain('test "${{ inputs.trusted_sha }}"');
   });
 
   it('makes GitHub claim state retry-safe and deletes the temporary Edge Function on every deployed run', () => {
