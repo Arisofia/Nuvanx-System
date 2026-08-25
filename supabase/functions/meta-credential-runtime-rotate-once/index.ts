@@ -131,6 +131,23 @@ function objectValue(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function canonicalIntegrationMatches(row: any): boolean {
+  const metadata = objectValue(row?.metadata);
+  const systemUserId = String(metadata.systemUserId ?? metadata.system_user_id ?? '').trim();
+  const adAccountId = normalizeAdAccountId(
+    metadata.adAccountId ?? metadata.ad_account_id ??
+      (Array.isArray(metadata.adAccountIds) ? metadata.adAccountIds[0] : ''),
+  );
+  const appId = String(metadata.appId ?? metadata.app_id ?? '').trim();
+  return (
+    metadata.canonical === true &&
+    row?.status === 'connected' &&
+    systemUserId === EXPECTED_SYSTEM_USER_ID &&
+    adAccountId === EXPECTED_AD_ACCOUNT_ID &&
+    appId === EXPECTED_APP_ID
+  );
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return json({ success: false, message: 'method_not_allowed' }, 405);
   if (req.headers.get('x-nuvanx-operation') !== EXPECTED_OPERATION) {
@@ -180,30 +197,20 @@ Deno.serve(async (req: Request) => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const { data: integration, error: integrationError } = await admin
+  const { data: integrations, error: integrationError } = await admin
     .from('integrations')
     .select('id,user_id,status,metadata')
-    .eq('service', 'meta_ads')
-    .maybeSingle();
+    .eq('service', 'meta_ads');
   if (integrationError) return json({ success: false, message: 'integration_read_failed' }, 500);
-  if (!integration) return json({ success: false, message: 'canonical_integration_missing' }, 409);
 
-  const metadata = objectValue(integration.metadata);
-  const systemUserId = String(metadata.systemUserId ?? metadata.system_user_id ?? '').trim();
-  const adAccountId = normalizeAdAccountId(
-    metadata.adAccountId ?? metadata.ad_account_id ??
-      (Array.isArray(metadata.adAccountIds) ? metadata.adAccountIds[0] : ''),
-  );
-  const appId = String(metadata.appId ?? metadata.app_id ?? '').trim();
-  if (
-    metadata.canonical !== true ||
-    integration.status !== 'connected' ||
-    systemUserId !== EXPECTED_SYSTEM_USER_ID ||
-    adAccountId !== EXPECTED_AD_ACCOUNT_ID ||
-    appId !== EXPECTED_APP_ID
-  ) {
-    return json({ success: false, message: 'canonical_contract_mismatch' }, 409);
+  const canonicalIntegrations = (integrations ?? []).filter(canonicalIntegrationMatches);
+  if (canonicalIntegrations.length === 0) {
+    return json({ success: false, message: 'canonical_integration_missing' }, 409);
   }
+  if (canonicalIntegrations.length !== 1) {
+    return json({ success: false, message: 'canonical_integration_ambiguous' }, 409);
+  }
+  const integration = canonicalIntegrations[0];
 
   const { data: credential, error: credentialError } = await admin
     .from('credentials')
