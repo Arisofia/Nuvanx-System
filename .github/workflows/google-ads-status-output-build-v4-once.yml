@@ -1,4 +1,5 @@
 name: Google Ads Status Output Build V4 Once
+# Re-triggered after removing superseded malformed one-shot workflows.
 
 on:
   push:
