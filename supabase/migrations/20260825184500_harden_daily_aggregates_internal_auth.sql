@@ -1,6 +1,8 @@
 -- Harden the existing daily Meta scheduler without creating a second owner.
 -- The 05:00 pg_cron job authenticates with the environment-local Vault secret;
 -- GitHub reconciliation continues to use the service-role Bearer path.
+-- The Vault secret is resolved only when the cron command runs, so migration
+-- replay remains environment-safe and missing runtime secrets fail closed.
 
 do $$
 declare
@@ -12,15 +14,6 @@ begin
   if not exists (select 1 from pg_extension where extname = 'pg_cron') then
     raise notice 'Skipping daily-aggregates auth hardening: pg_cron is unavailable';
     return;
-  end if;
-
-  if not exists (
-    select 1
-    from vault.decrypted_secrets
-    where name = 'REVOPS_INTERNAL_SECRET'
-      and length(trim(decrypted_secret)) >= 32
-  ) then
-    raise exception 'REVOPS_INTERNAL_SECRET is unavailable; refusing to leave daily-aggregates scheduler unauthenticated';
   end if;
 
   for v_job in
