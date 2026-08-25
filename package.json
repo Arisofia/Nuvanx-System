@@ -36,7 +36,8 @@
     "validate:migrations": "node scripts/validate-sql-migrations.js",
     "validate:daily-sync-config": "node scripts/validate-daily-sync-config.js",
     "validate:doctoralia-appointments": "node scripts/validate-doctoralia-appointments-ready.js",
-    "meta:backfill": "node scripts/run-meta-backfill.js"
+    "meta:backfill": "node scripts/run-meta-backfill.js",
+    "google-ads:status": "node scripts/check-google-ads-db.js --json"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.107.0",
