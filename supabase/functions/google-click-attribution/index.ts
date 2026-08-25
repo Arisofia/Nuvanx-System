@@ -4,8 +4,11 @@ declare const Deno: any;
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+const HUBSPOT_ACCESS_TOKEN = Deno.env.get("HUBSPOT_ACCESS_TOKEN") || "";
 const FORM_ID = "5042522a-0bc5-4381-ac3e-5aee8649b69c";
 const STAGING_ORIGIN = "https://staging2.nuvanx.com";
+const HMAC_CONTEXT = "nuvanx-google-click-attribution-hmac-key-v1";
+const MAX_SIGNATURE_SKEW_SECONDS = 300;
 const ALLOWED_ORIGINS = new Set([
   "https://nuvanx.com",
   "https://www.nuvanx.com",
@@ -20,7 +23,7 @@ const ALLOWED_LANDING_HOSTS = new Set([
 function headers(origin: string) {
   return {
     "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Headers": "content-type",
+    "Access-Control-Allow-Headers": "content-type,x-nvx-timestamp,x-nvx-signature",
     "Access-Control-Allow-Methods": "POST,OPTIONS",
     "Vary": "Origin",
     "Content-Type": "application/json",
@@ -30,6 +33,62 @@ function headers(origin: string) {
 
 function reply(origin: string, status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), { status, headers: headers(origin) });
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function hmacHex(keyText: string, message: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(keyText),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(message));
+  return bytesToHex(new Uint8Array(signature));
+}
+
+function timingSafeHexEqual(left: string, right: string): boolean {
+  if (!/^[0-9a-f]{64}$/i.test(left) || !/^[0-9a-f]{64}$/i.test(right)) return false;
+  const a = left.toLowerCase();
+  const b = right.toLowerCase();
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+async function authenticateRelay(req: Request, rawBody: string): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
+  if (!HUBSPOT_ACCESS_TOKEN) {
+    console.error("[google-click-attribution] missing HMAC signing credential");
+    return { ok: false, status: 503, message: "Authentication unavailable" };
+  }
+
+  const timestampRaw = (req.headers.get("x-nvx-timestamp") || "").trim();
+  const signature = (req.headers.get("x-nvx-signature") || "").trim().toLowerCase();
+  if (!/^\d{10}$/.test(timestampRaw) || !/^[0-9a-f]{64}$/.test(signature)) {
+    return { ok: false, status: 401, message: "Missing or invalid authentication" };
+  }
+
+  const timestamp = Number(timestampRaw);
+  const now = Math.floor(Date.now() / 1000);
+  if (!Number.isSafeInteger(timestamp) || Math.abs(now - timestamp) > MAX_SIGNATURE_SKEW_SECONDS) {
+    return { ok: false, status: 403, message: "Stale authentication" };
+  }
+
+  // Match the WordPress sender exactly:
+  // 1) HMAC-SHA256(context, HUBSPOT_ACCESS_TOKEN) -> lowercase hex string.
+  // 2) HMAC-SHA256(`${timestamp}.${rawBody}`, derived hex string) -> signature.
+  const derivedKey = await hmacHex(HUBSPOT_ACCESS_TOKEN, HMAC_CONTEXT);
+  const expected = await hmacHex(derivedKey, `${timestampRaw}.${rawBody}`);
+  if (!timingSafeHexEqual(expected, signature)) {
+    return { ok: false, status: 403, message: "Invalid authentication" };
+  }
+
+  return { ok: true };
 }
 
 function cleanClickId(value: unknown, max = 512): string | null {
@@ -126,12 +185,29 @@ Deno.serve(async (req: Request) => {
     return reply(origin, 413, { success: false, message: "Payload too large" });
   }
 
+  const rawBody = await req.text();
+  if (new TextEncoder().encode(rawBody).byteLength > 8192) {
+    return reply(origin, 413, { success: false, message: "Payload too large" });
+  }
+
+  // Authentication is intentionally completed before JSON parsing, service-role
+  // client creation, or any database access. Origin remains defense-in-depth.
+  const authentication = await authenticateRelay(req, rawBody);
+  if (!authentication.ok) {
+    return reply(origin, authentication.status, { success: false, message: authentication.message });
+  }
+
   if (!SUPABASE_URL || !SERVICE_ROLE) {
     console.error("[google-click-attribution] missing Supabase runtime config");
     return reply(origin, 500, { success: false, message: "Server configuration error" });
   }
 
-  const body = await req.json().catch(() => null);
+  let body: unknown = null;
+  try {
+    body = JSON.parse(rawBody);
+  } catch {
+    return reply(origin, 400, { success: false, message: "Invalid JSON" });
+  }
   if (!body || typeof body !== "object") return reply(origin, 400, { success: false, message: "Invalid JSON" });
 
   const emailHash = String((body as any).email_hash || "").trim().toLowerCase();
