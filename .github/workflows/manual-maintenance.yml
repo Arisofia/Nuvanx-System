@@ -11,6 +11,7 @@ on:
         type: choice
         options:
           - deploy_edge
+          - prune_retired_edge
           - update_social_proof
       function:
         description: Edge Function selection when deploy_edge is chosen
@@ -28,8 +29,13 @@ on:
           - web-lead-reconcile
           - deal-factory
       confirmation:
-        description: Type DEPLOY for Edge deployment or UPDATE for WordPress mutation
+        description: Type DEPLOY for Edge deployment, PRUNE for retired Edge cleanup, or UPDATE for WordPress mutation
         required: true
+        type: string
+      trusted_sha:
+        description: Exact current main SHA required only for prune_retired_edge
+        required: false
+        default: ''
         type: string
       expected_doctoralia_count:
         description: Doctoralia count used only for update_social_proof
@@ -173,6 +179,102 @@ jobs:
 
             supabase functions list --project-ref "$SUPABASE_PROJECT_REF"
             echo "EDGE_DEPLOY=PASS selection=$DEPLOY_FUNCTION"
+
+  prune-retired-edge:
+    name: Manual · Prune retired Edge Functions
+    if: ${{ inputs.operation == 'prune_retired_edge' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: Production
+    env:
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      CONFIRMATION: ${{ inputs.confirmation }}
+      TRUSTED_SHA: ${{ inputs.trusted_sha }}
+    steps:
+      - name: Checkout exact main
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate destructive maintenance authorization
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$CONFIRMATION" = PRUNE
+          test -n "${SUPABASE_ACCESS_TOKEN:-}"
+          test -n "${SUPABASE_PROJECT_REF:-}"
+          test -n "$TRUSTED_SHA"
+          [[ "$SUPABASE_PROJECT_REF" =~ ^[a-z0-9]{20}$ ]]
+          test "$TRUSTED_SHA" = "$GITHUB_SHA"
+          git fetch --no-tags origin main
+          current_main="$(git rev-parse origin/main)"
+          test "$current_main" = "$GITHUB_SHA"
+          echo 'EDGE_PRUNE_SHA_GATE=PASS'
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@52a446718e4edd1a9f1e2631186019c87e329f60
+        with:
+          version: 2.102.0
+
+      - name: Delete proven retired Edge Functions
+        shell: bash
+        run: |
+          set -euo pipefail
+          retired=(
+            meta-credential-inventory-probe
+            github-meta-probe-dispatch-once
+            meta-legacy-credential-probe-once
+            github-meta-stack-patch-once
+            meta-runtime-secret-inventory-once
+            github-runtime-token-presence-once
+            github-master-deploy-dispatch-once
+            github-master-deploy-status-once
+            github-meta-runtime-reencrypt-dispatch-once
+            meta-runtime-repair-config-probe-once
+            github-master-ci-dispatch-once
+            github-master-ci-status-once
+            p0a-staging-submit
+            integrations
+          )
+
+          function_is_present() {
+            local function_name="$1"
+            local inventory_json="$2"
+            jq -e --arg slug "$function_name" \
+              'any(.[]; ((.slug // .name // "") == $slug))' \
+              <<< "$inventory_json" >/dev/null
+          }
+
+          before_json="$(supabase functions list \
+            --project-ref "$SUPABASE_PROJECT_REF" \
+            --output json)"
+          jq . <<< "$before_json"
+
+          for function_name in "${retired[@]}"; do
+            if function_is_present "$function_name" "$before_json"; then
+              supabase functions delete "$function_name" \
+                --project-ref "$SUPABASE_PROJECT_REF" \
+                --yes
+              echo "EDGE_PRUNE_DELETED=$function_name"
+            else
+              echo "EDGE_PRUNE_ALREADY_ABSENT=$function_name"
+            fi
+          done
+
+          after_json="$(supabase functions list \
+            --project-ref "$SUPABASE_PROJECT_REF" \
+            --output json)"
+          jq . <<< "$after_json"
+          for function_name in "${retired[@]}"; do
+            if function_is_present "$function_name" "$after_json"; then
+              echo "::error::Retired Edge Function still registered: $function_name"
+              exit 1
+            fi
+          done
+          echo "EDGE_PRUNE=PASS retired_count=${#retired[@]}"
 
   update-social-proof:
     name: Manual · Update WordPress social proof
