@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
+name: Dispatch Retired Edge Prune Once
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/dispatch-retired-edge-prune-once.yml
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: dispatch-retired-edge-prune-once
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    name: Dispatch reviewed Manual Maintenance prune
+    if: ${{ github.repository == 'Arisofia/Nuvanx-System' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch SHA-gated prune
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRUSTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test -n "$TRUSTED_SHA"
+          [[ "$TRUSTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          gh workflow run manual-maintenance.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f operation=prune_retired_edge \
+            -f confirmation=PRUNE \
+            -f trusted_sha="$TRUSTED_SHA"
+          echo 'EDGE_PRUNE_DISPATCH=PASS'
