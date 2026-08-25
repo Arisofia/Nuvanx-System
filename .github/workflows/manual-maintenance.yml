@@ -240,11 +240,21 @@ jobs:
             integrations
           )
 
-          before="$(supabase functions list --project-ref "$SUPABASE_PROJECT_REF")"
-          printf '%s\n' "$before"
+          function_is_present() {
+            local function_name="$1"
+            local inventory_json="$2"
+            jq -e --arg slug "$function_name" \
+              'any(.[]; ((.slug // .name // "") == $slug))' \
+              <<< "$inventory_json" >/dev/null
+          }
+
+          before_json="$(supabase functions list \
+            --project-ref "$SUPABASE_PROJECT_REF" \
+            --output json)"
+          jq . <<< "$before_json"
 
           for function_name in "${retired[@]}"; do
-            if grep -Fq "$function_name" <<< "$before"; then
+            if function_is_present "$function_name" "$before_json"; then
               supabase functions delete "$function_name" \
                 --project-ref "$SUPABASE_PROJECT_REF" \
                 --yes
@@ -254,10 +264,12 @@ jobs:
             fi
           done
 
-          after="$(supabase functions list --project-ref "$SUPABASE_PROJECT_REF")"
-          printf '%s\n' "$after"
+          after_json="$(supabase functions list \
+            --project-ref "$SUPABASE_PROJECT_REF" \
+            --output json)"
+          jq . <<< "$after_json"
           for function_name in "${retired[@]}"; do
-            if grep -Fq "$function_name" <<< "$after"; then
+            if function_is_present "$function_name" "$after_json"; then
               echo "::error::Retired Edge Function still registered: $function_name"
               exit 1
             fi
