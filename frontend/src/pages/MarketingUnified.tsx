@@ -151,6 +151,9 @@ function GoogleAdsPanel() {
       if (!connection.success) {
         throw new Error('No se pudo comprobar el estado de Google Ads.')
       }
+      if (requestSequence !== requestSequenceRef.current) return
+      setState((prev) => ({ ...prev, connection }))
+
       if (!insights.success) {
         throw new Error(insights.message || 'Google Ads no está disponible.')
       }

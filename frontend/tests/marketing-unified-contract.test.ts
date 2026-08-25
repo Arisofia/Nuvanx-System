@@ -25,6 +25,10 @@ describe('Control Centre marketing contract', () => {
     expect(marketing).toContain('Campañas Google Ads')
     expect(marketing).toContain('Conversiones')
     expect(marketing).toContain('CPC promedio')
+    const connectionSave = marketing.indexOf('setState((prev) => ({ ...prev, connection }))')
+    const dependentValidation = marketing.indexOf('if (!insights.success)')
+    expect(connectionSave).toBeGreaterThan(-1)
+    expect(dependentValidation).toBeGreaterThan(connectionSave)
   })
 
   it('prevents stale range responses and timezone-dependent month starts', () => {
