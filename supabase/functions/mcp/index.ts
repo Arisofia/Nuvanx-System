@@ -5,27 +5,14 @@ import { createClient } from '@supabase/supabase-js'
 import { Hono, type Context } from 'hono'
 import { McpServer, StreamableHttpTransport } from 'mcp-lite'
 import { z } from 'zod'
-import { zodToJsonSchema } from 'zod-to-json-schema'
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, MCP_API_KEY } from '../_shared/config.ts'
-
-type JsonSchemaRecord = Record<string, unknown>
-type ZodSchemaAdapter = (
-  schema: z.ZodTypeAny,
-  options: { target: 'jsonSchema7'; $refStrategy: 'none' },
-) => JsonSchemaRecord
-
-const convertZodSchema = zodToJsonSchema as unknown as ZodSchemaAdapter
 
 const app = new Hono()
 
 const mcp = new McpServer({
   name: 'nuvanx-mcp',
   version: '1.0.0',
-  schemaAdapter: (schema: unknown) =>
-    convertZodSchema(schema as z.ZodTypeAny, {
-      target: 'jsonSchema7',
-      $refStrategy: 'none',
-    }),
+  schemaAdapter: (schema: unknown) => z.toJSONSchema(schema as z.ZodType, { io: 'input' }),
 })
 
 // Lazy Supabase client (getSupabase) to avoid top-level throws on missing envs.
