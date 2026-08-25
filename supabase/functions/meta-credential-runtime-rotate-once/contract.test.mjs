@@ -26,6 +26,21 @@ describe('canonical Meta runtime credential rotation contract', () => {
     expect(integrationSelection).not.toContain('.maybeSingle()');
   });
 
+  it('validates the GitHub App Secret against canonical Meta identity before promoting it to shared Supabase runtime', () => {
+    const preflight = workflow.indexOf('Validate canonical App Secret before runtime promotion');
+    const claim = workflow.indexOf('Acquire persistent retry-safe claim');
+    const sync = workflow.indexOf('Sync validated canonical Meta App Secret into Supabase runtime');
+    expect(preflight).toBeGreaterThan(-1);
+    expect(claim).toBeGreaterThan(preflight);
+    expect(sync).toBeGreaterThan(claim);
+    expect(workflow).toContain("'https://graph.facebook.com/v22.0/debug_token'");
+    expect(workflow).toContain('app_access_token="1836302544001572|${META_CANONICAL_APP_SECRET}"');
+    expect(workflow).toContain('.data.is_valid == true');
+    expect(workflow).toContain('(.data.app_id | tostring) == "1836302544001572"');
+    expect(workflow).toContain('(.data.user_id | tostring) == "122098243371455164"');
+    expect(workflow).toContain('META_RUNTIME_APP_SECRET_PREFLIGHT=PASS');
+  });
+
   it('keeps the App Secret in managed secret stores and never transports it to the rotator request', () => {
     expect(source).toContain("req.headers.get('authorization')");
     expect(source).toContain("req.headers.get('x-nuvanx-operation')");
