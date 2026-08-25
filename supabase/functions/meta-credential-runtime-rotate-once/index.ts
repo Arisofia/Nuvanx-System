@@ -4,6 +4,7 @@ const EXPECTED_SYSTEM_USER_ID = '122098243371455164';
 const EXPECTED_AD_ACCOUNT_ID = 'act_718120894191565';
 const EXPECTED_APP_ID = '1836302544001572';
 const EXPECTED_OPERATION = 'meta-runtime-credential-reencrypt-v1';
+const MAX_REQUEST_AGE_MS = 5 * 60 * 1000;
 const GRAPH = 'https://graph.facebook.com/v22.0';
 
 function json(data: unknown, status = 200) {
@@ -70,8 +71,9 @@ async function decryptCredential(encoded: string, masterKey: string): Promise<st
 }
 
 function normalizeAdAccountId(raw: unknown): string {
-  const digits = String(raw ?? '').replace(/^act_/i, '').replace(/\D/g, '');
-  return digits ? `act_${digits}` : '';
+  const value = String(raw ?? '').trim();
+  if (!/^(?:act_)?\d+$/i.test(value)) return '';
+  return `act_${value.replace(/^act_/i, '')}`;
 }
 
 function bearerToken(req: Request): string {
@@ -79,6 +81,11 @@ function bearerToken(req: Request): string {
   return authorization.toLowerCase().startsWith('bearer ')
     ? authorization.slice(7).trim()
     : '';
+}
+
+function requestIsFresh(req: Request): boolean {
+  const issuedAt = Number(req.headers.get('x-nuvanx-issued-at') ?? '');
+  return Number.isSafeInteger(issuedAt) && Math.abs(Date.now() - issuedAt) <= MAX_REQUEST_AGE_MS;
 }
 
 async function appSecretProof(token: string, appSecret: string): Promise<string> {
@@ -95,11 +102,21 @@ async function appSecretProof(token: string, appSecret: string): Promise<string>
   return bytesToHex(signature);
 }
 
+async function debugToken(token: string, appSecret: string) {
+  const url = new URL(`${GRAPH}/debug_token`);
+  url.searchParams.set('input_token', token);
+  url.searchParams.set('access_token', `${EXPECTED_APP_ID}|${appSecret}`);
+  const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(`Meta token debug failed (${response.status})`);
+  return body?.data ?? null;
+}
+
 async function graph(path: string, token: string, appSecret: string) {
   const url = new URL(`${GRAPH}${path}`);
   url.searchParams.set('access_token', token);
   url.searchParams.set('fields', 'id');
-  if (appSecret) url.searchParams.set('appsecret_proof', await appSecretProof(token, appSecret));
+  url.searchParams.set('appsecret_proof', await appSecretProof(token, appSecret));
   const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(`Graph validation failed (${response.status})`);
@@ -111,16 +128,43 @@ Deno.serve(async (req: Request) => {
   if (req.headers.get('x-nuvanx-operation') !== EXPECTED_OPERATION) {
     return json({ success: false, message: 'operation_mismatch' }, 403);
   }
+  if (!requestIsFresh(req)) {
+    return json({ success: false, message: 'request_expired' }, 403);
+  }
 
   const token = bearerToken(req);
+  const appSecret = String(req.headers.get('x-meta-app-secret') ?? '').trim();
   if (!token) return json({ success: false, message: 'canonical_token_required' }, 401);
+  if (!appSecret) return json({ success: false, message: 'canonical_app_secret_required' }, 401);
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   const encryptionKey = Deno.env.get('ENCRYPTION_KEY') ?? '';
-  const appSecret = Deno.env.get('META_CANONICAL_APP_SECRET') ?? Deno.env.get('META_REPORTING_APP_SECRET') ?? '';
   if (!supabaseUrl || !serviceRoleKey || !encryptionKey) {
     return json({ success: false, message: 'runtime_configuration_missing' }, 500);
+  }
+
+  let debug;
+  let me;
+  let account;
+  try {
+    debug = await debugToken(token, appSecret);
+    me = await graph('/me', token, appSecret);
+    account = await graph(`/${EXPECTED_AD_ACCOUNT_ID}`, token, appSecret);
+  } catch {
+    return json({ success: false, message: 'graph_validation_failed' }, 403);
+  }
+  if (debug?.is_valid !== true || String(debug?.app_id ?? '') !== EXPECTED_APP_ID) {
+    return json({ success: false, message: 'app_id_mismatch' }, 403);
+  }
+  if (String(debug?.user_id ?? '') !== EXPECTED_SYSTEM_USER_ID) {
+    return json({ success: false, message: 'debug_system_user_mismatch' }, 403);
+  }
+  if (String(me?.id ?? '') !== EXPECTED_SYSTEM_USER_ID) {
+    return json({ success: false, message: 'system_user_mismatch' }, 403);
+  }
+  if (normalizeAdAccountId(account?.id) !== EXPECTED_AD_ACCOUNT_ID) {
+    return json({ success: false, message: 'ad_account_mismatch' }, 403);
   }
 
   const admin = createClient(supabaseUrl, serviceRoleKey, {
@@ -150,21 +194,6 @@ Deno.serve(async (req: Request) => {
     appId !== EXPECTED_APP_ID
   ) {
     return json({ success: false, message: 'canonical_contract_mismatch' }, 409);
-  }
-
-  let me;
-  let account;
-  try {
-    me = await graph('/me', token, appSecret);
-    account = await graph(`/${EXPECTED_AD_ACCOUNT_ID}`, token, appSecret);
-  } catch {
-    return json({ success: false, message: 'graph_validation_failed' }, 403);
-  }
-  if (String(me?.id ?? '') !== EXPECTED_SYSTEM_USER_ID) {
-    return json({ success: false, message: 'system_user_mismatch' }, 403);
-  }
-  if (normalizeAdAccountId(account?.id) !== EXPECTED_AD_ACCOUNT_ID) {
-    return json({ success: false, message: 'ad_account_mismatch' }, 403);
   }
 
   const { data: credential, error: credentialError } = await admin
@@ -216,6 +245,7 @@ Deno.serve(async (req: Request) => {
     before_decryptable: beforeDecryptable,
     rotated: !alreadyMatches,
     roundtrip_verified: true,
+    app_id_verified: true,
     system_user_verified: true,
     ad_account_verified: true,
   });
