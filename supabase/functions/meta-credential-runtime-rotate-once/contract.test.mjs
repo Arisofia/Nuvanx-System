@@ -26,7 +26,7 @@ describe('canonical Meta runtime credential rotation contract', () => {
     expect(integrationSelection).not.toContain('.maybeSingle()');
   });
 
-  it('accepts the canonical token only through Authorization and keeps the App Secret inside Supabase runtime', () => {
+  it('keeps the App Secret in managed secret stores and never transports it to the rotator request', () => {
     expect(source).toContain("req.headers.get('authorization')");
     expect(source).toContain("req.headers.get('x-nuvanx-operation')");
     expect(source).toContain("Deno.env.get('META_CANONICAL_APP_SECRET')");
@@ -35,7 +35,10 @@ describe('canonical Meta runtime credential rotation contract', () => {
     expect(source).not.toContain("searchParams.get('token')");
     expect(source).not.toContain('token: token');
     expect(source).not.toContain('access_token: token');
-    expect(workflow).not.toContain('META_CANONICAL_APP_SECRET: ${{ secrets.META_CANONICAL_APP_SECRET }}');
+    expect(workflow).toContain('META_CANONICAL_APP_SECRET: ${{ secrets.META_CANONICAL_APP_SECRET }}');
+    expect(workflow).toContain('test -n "${META_CANONICAL_APP_SECRET:-}"');
+    expect(workflow).toContain('supabase secrets set \\\n            --project-ref "$SUPABASE_PROJECT_REF" \\\n            META_CANONICAL_APP_SECRET="$META_CANONICAL_APP_SECRET"');
+    expect(workflow).not.toContain('--header "x-meta-app-secret:');
   });
 
   it('requires a fresh request and validates App, System User and Ad Account before encryption', () => {
