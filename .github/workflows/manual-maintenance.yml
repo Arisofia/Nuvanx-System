@@ -60,6 +60,7 @@ jobs:
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       DEPLOY_FUNCTION: ${{ inputs.function }}
       CONFIRMATION: ${{ inputs.confirmation }}
@@ -134,6 +135,24 @@ jobs:
           command: |
             set -euo pipefail
             bash scripts/supabase-migrate.sh
+
+      - name: Inject HubSpot Credential
+        if: ${{ inputs.confirmation == 'DEPLOY' && (env.DEPLOY_FUNCTION == 'google-click-attribution' || env.DEPLOY_FUNCTION == 'all') }}
+        uses: ./.github/actions/supabase-link-run
+        with:
+          project_ref: ${{ env.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ env.DATABASE_URL }}
+          supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
+          skip_link: true
+          command: |
+            set -euo pipefail
+            if [ -n "${HUBSPOT_ACCESS_TOKEN:-}" ]; then
+              supabase secrets set HUBSPOT_ACCESS_TOKEN="$HUBSPOT_ACCESS_TOKEN" --project-ref "$SUPABASE_PROJECT_REF"
+            else
+              echo "::error::HUBSPOT_ACCESS_TOKEN secret is missing from GitHub environment"
+              exit 1
+            fi
 
       - name: Deploy selected Edge Function set
         uses: ./.github/actions/supabase-link-run
