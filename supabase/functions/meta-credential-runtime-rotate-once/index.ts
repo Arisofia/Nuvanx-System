@@ -85,7 +85,9 @@ function bearerToken(req: Request): string {
 
 function requestIsFresh(req: Request): boolean {
   const issuedAt = Number(req.headers.get('x-nuvanx-issued-at') ?? '');
-  return Number.isSafeInteger(issuedAt) && Math.abs(Date.now() - issuedAt) <= MAX_REQUEST_AGE_MS;
+  if (!Number.isSafeInteger(issuedAt)) return false;
+  const ageMs = Date.now() - issuedAt;
+  return ageMs >= 0 && ageMs <= MAX_REQUEST_AGE_MS;
 }
 
 async function appSecretProof(token: string, appSecret: string): Promise<string> {
@@ -123,6 +125,12 @@ async function graph(path: string, token: string, appSecret: string) {
   return body;
 }
 
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return json({ success: false, message: 'method_not_allowed' }, 405);
   if (req.headers.get('x-nuvanx-operation') !== EXPECTED_OPERATION) {
@@ -133,14 +141,15 @@ Deno.serve(async (req: Request) => {
   }
 
   const token = bearerToken(req);
-  const appSecret = String(req.headers.get('x-meta-app-secret') ?? '').trim();
   if (!token) return json({ success: false, message: 'canonical_token_required' }, 401);
-  if (!appSecret) return json({ success: false, message: 'canonical_app_secret_required' }, 401);
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   const encryptionKey = Deno.env.get('ENCRYPTION_KEY') ?? '';
-  if (!supabaseUrl || !serviceRoleKey || !encryptionKey) {
+  const appSecret = Deno.env.get('META_CANONICAL_APP_SECRET')
+    ?? Deno.env.get('META_REPORTING_APP_SECRET')
+    ?? '';
+  if (!supabaseUrl || !serviceRoleKey || !encryptionKey || !appSecret) {
     return json({ success: false, message: 'runtime_configuration_missing' }, 500);
   }
 
@@ -179,7 +188,7 @@ Deno.serve(async (req: Request) => {
   if (integrationError) return json({ success: false, message: 'integration_read_failed' }, 500);
   if (!integration) return json({ success: false, message: 'canonical_integration_missing' }, 409);
 
-  const metadata = integration.metadata ?? {};
+  const metadata = objectValue(integration.metadata);
   const systemUserId = String(metadata.systemUserId ?? metadata.system_user_id ?? '').trim();
   const adAccountId = normalizeAdAccountId(
     metadata.adAccountId ?? metadata.ad_account_id ??
@@ -198,13 +207,22 @@ Deno.serve(async (req: Request) => {
 
   const { data: credential, error: credentialError } = await admin
     .from('credentials')
-    .select('id,user_id,encrypted_key')
+    .select('id,user_id,encrypted_key,metadata')
     .eq('user_id', integration.user_id)
     .eq('service', 'meta_ads')
     .maybeSingle();
   if (credentialError) return json({ success: false, message: 'credential_read_failed' }, 500);
   if (!credential?.id || !credential.encrypted_key) {
     return json({ success: false, message: 'canonical_credential_missing' }, 409);
+  }
+
+  const credentialMetadata = objectValue(credential.metadata);
+  const previousMarker = objectValue(credentialMetadata.runtime_reencrypt);
+  if (
+    previousMarker.operation === EXPECTED_OPERATION &&
+    previousMarker.state === 'COMPLETED'
+  ) {
+    return json({ success: false, message: 'operation_already_completed' }, 409);
   }
 
   let beforeDecryptable = false;
@@ -217,27 +235,41 @@ Deno.serve(async (req: Request) => {
     beforeDecryptable = false;
   }
 
+  let encrypted = String(credential.encrypted_key);
   if (!alreadyMatches) {
-    const encrypted = await encryptCredential(token, encryptionKey);
+    encrypted = await encryptCredential(token, encryptionKey);
     const roundTrip = await decryptCredential(encrypted, encryptionKey);
     if (roundTrip !== token) return json({ success: false, message: 'roundtrip_failed' }, 500);
-
-    const { error: updateError } = await admin
-      .from('credentials')
-      .update({ encrypted_key: encrypted, last_used: new Date().toISOString() })
-      .eq('id', credential.id)
-      .eq('user_id', integration.user_id)
-      .eq('service', 'meta_ads');
-    if (updateError) return json({ success: false, message: 'credential_update_failed' }, 500);
   }
 
-  const { error: integrationUpdateError } = await admin
-    .from('integrations')
-    .update({ status: 'connected', last_error: null, updated_at: new Date().toISOString() })
-    .eq('id', integration.id)
+  const completedAt = new Date().toISOString();
+  const updatedMetadata = {
+    ...credentialMetadata,
+    runtime_reencrypt: {
+      operation: EXPECTED_OPERATION,
+      state: 'COMPLETED',
+      completed_at: completedAt,
+      app_id: EXPECTED_APP_ID,
+      system_user_id: EXPECTED_SYSTEM_USER_ID,
+      ad_account_id: EXPECTED_AD_ACCOUNT_ID,
+    },
+  };
+
+  const { data: updatedCredential, error: updateError } = await admin
+    .from('credentials')
+    .update({
+      encrypted_key: encrypted,
+      metadata: updatedMetadata,
+      last_used: completedAt,
+    })
+    .eq('id', credential.id)
     .eq('user_id', integration.user_id)
-    .eq('service', 'meta_ads');
-  if (integrationUpdateError) return json({ success: false, message: 'integration_update_failed' }, 500);
+    .eq('service', 'meta_ads')
+    .select('id')
+    .single();
+  if (updateError || updatedCredential?.id !== credential.id) {
+    return json({ success: false, message: 'credential_update_failed' }, 500);
+  }
 
   return json({
     success: true,
@@ -248,5 +280,6 @@ Deno.serve(async (req: Request) => {
     app_id_verified: true,
     system_user_verified: true,
     ad_account_verified: true,
+    operation_marked_completed: true,
   });
 });
