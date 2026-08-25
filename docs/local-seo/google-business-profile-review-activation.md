@@ -77,10 +77,10 @@ No hace falta que menciones datos médicos personales. Solo tu experiencia real 
 
 ## Web activation
 
-Archivo preparado:
+Implementación canónica conservada:
 
 ```text
-wp-mu-plugins/nuvanx-google-review-request.php
+wp-mu-plugins/nuvanx-google-review-request-v2.php
 ```
 
 El MU plugin añade:
