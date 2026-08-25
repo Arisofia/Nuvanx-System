@@ -1,0 +1,125 @@
+name: Integrations Contract Fix Builder
+
+on:
+  pull_request:
+    types: [synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    if: github.head_ref == 'cleanup/remove-legacy-integrations-20260825'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.head_ref }}
+          persist-credentials: true
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Setup Deno
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
+        with:
+          deno-version: v2.x
+      - name: Apply review fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          api = Path('supabase/functions/api/index.ts')
+          text = api.read_text()
+          old = 'async function encryptCred(raw: string): Promise<string> {'
+          new = 'export async function encryptCred(raw: string): Promise<string> {'
+          if old not in text:
+              raise SystemExit('encryptCred export anchor not found')
+          api.write_text(text.replace(old, new, 1))
+
+          test = Path('supabase/functions/integrations-routing-contract.test.mjs')
+          test.write_text(r'''import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+
+const legacyStandalonePath = 'supabase/functions/integrations/index.ts';
+const apiSource = readFileSync('supabase/functions/api/index.ts', 'utf8');
+const integrationsPage = readFileSync('frontend/src/pages/Integrations.tsx', 'utf8');
+
+function frontendSources(dir = 'frontend/src') {
+  const files = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) files.push(...frontendSources(path));
+    else if (/\.(?:ts|tsx|js|jsx)$/.test(entry.name)) files.push(path);
+  }
+  return files;
+}
+
+const env = new Map([['ENCRYPTION_KEY', 'integration-contract-test-master-key']]);
+globalThis.Deno = {
+  env: { get: (key) => env.get(key) },
+  serve: vi.fn(),
+};
+
+let api;
+beforeAll(async () => {
+  api = await import('./api/index.ts');
+});
+
+describe('integrations credential ownership', () => {
+  it('keeps the plaintext legacy standalone handler removed', () => {
+    expect(existsSync(legacyStandalonePath)).toBe(false);
+  });
+
+  it('routes every frontend integration caller through the canonical API Edge Function', () => {
+    expect(integrationsPage).toContain("invokeApi('/api/integrations')");
+    expect(integrationsPage).toContain("invokeApi('/api/integrations/connect'");
+    expect(integrationsPage).toContain("invokeApi('/api/integrations/test'");
+
+    const forbidden = frontendSources()
+      .filter((path) => readFileSync(path, 'utf8').includes('/functions/v1/integrations'));
+    expect(forbidden).toEqual([]);
+  });
+
+  it('uses real AES-GCM ciphertext and persists only the encryptCred result', async () => {
+    const token = 'meta-secret-token-that-must-never-be-stored-plaintext';
+    const encrypted = await api.encryptCred(token);
+
+    expect(encrypted).not.toBe(token);
+    expect(encrypted).toMatch(/^[0-9a-f]{64}:[0-9a-f]{24}:[0-9a-f]{32}:[0-9a-f]+$/);
+    await expect(api.decryptCred(encrypted)).resolves.toBe(token);
+
+    const encryptionCall = apiSource.indexOf('const encryptedKey = await encryptCred(String(reqToken).trim())');
+    const credentialWrite = apiSource.indexOf('encrypted_key: encryptedKey', encryptionCall);
+    expect(encryptionCall).toBeGreaterThan(-1);
+    expect(credentialWrite).toBeGreaterThan(encryptionCall);
+    expect(apiSource).not.toContain('encrypted_key: apiKey');
+    expect(apiSource).not.toContain('encrypted_key: reqToken');
+  });
+});
+''')
+          PY
+      - name: Install dependencies
+        run: npm install --include=dev --ignore-scripts
+      - name: Run backend tests
+        env:
+          NODE_ENV: test
+          ENCRYPTION_KEY: integration-contract-test-master-key
+        run: npm test
+      - name: Deno type-check API
+        run: deno check --config=supabase/functions/deno.json supabase/functions/api/index.ts
+      - name: Commit validated permanent changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add supabase/functions/api/index.ts supabase/functions/integrations-routing-contract.test.mjs
+          git diff --cached --quiet && exit 0
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'test(security): strengthen integrations encryption contract'
+          git push origin HEAD:${{ github.head_ref }}
