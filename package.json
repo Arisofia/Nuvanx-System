@@ -20,7 +20,6 @@
     "secrets:scan": "node scripts/scan-secrets.js",
     "production:e2e": "node scripts/production-e2e.js",
     "verify:doctoralia-config": "node -e 'const req=[\"DOCTORALIA_SHEET_ID\",\"DATABASE_URL\",\"CLINIC_ID\",\"GOOGLE_ADS_SERVICE_ACCOUNT\",\"SHEET_NAME\"]; console.log(\"Verificando configuración de Doctoralia...\"); req.forEach(v=>process.env[v]?console.log(`✅ ${v} configurada`):console.error(`❌ Falta variable: ${v}`))'",
-    "ops:meta-capi-checklist": "cat docs/codex/meta-capi-operational-checklist.md",
     "daily:sync": "node scripts/run-daily-sync.js",
     "meta:token": "node scripts/set-meta-token.js",
     "meta:audit": "node scripts/meta-ads-account-report.js",
