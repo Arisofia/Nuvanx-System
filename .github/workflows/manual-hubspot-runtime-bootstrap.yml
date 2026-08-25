@@ -1,0 +1,110 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
+name: Manual HubSpot Runtime Bootstrap
+run-name: Manual HubSpot Runtime Bootstrap
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type BOOTSTRAP to provision the existing WordPress HubSpot credential into the production runtime Vault
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: manual-hubspot-runtime-bootstrap-production
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    name: Bootstrap HubSpot runtime secret
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: Production
+    env:
+      CONFIRMATION: ${{ inputs.confirmation }}
+      NUVANX_SSH_HOST: ${{ secrets.NUVANX_SSH_HOST }}
+      NUVANX_SSH_PORT: ${{ secrets.NUVANX_SSH_PORT }}
+      NUVANX_SSH_USER: ${{ secrets.NUVANX_SSH_USER }}
+      NUVANX_SSH_KEY: ${{ secrets.NUVANX_SSH_KEY }}
+      NUVANX_SSH_KNOWN_HOSTS: ${{ secrets.NUVANX_SSH_KNOWN_HOSTS }}
+      NUVANX_WP_PATH: ${{ secrets.NUVANX_WP_PATH }}
+    steps:
+      - name: Validate explicit production authorization
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$CONFIRMATION" = BOOTSTRAP
+          test -n "$NUVANX_SSH_HOST"
+          test -n "$NUVANX_SSH_PORT"
+          test -n "$NUVANX_SSH_USER"
+          test -n "$NUVANX_SSH_KEY"
+          test -n "$NUVANX_SSH_KNOWN_HOSTS"
+          test -n "$NUVANX_WP_PATH"
+          [[ "$NUVANX_SSH_PORT" =~ ^[0-9]{1,5}$ ]]
+          [[ "$NUVANX_WP_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]]
+
+      - name: Configure strict WordPress SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          printf '%s' "$NUVANX_SSH_KEY" > "$HOME/.ssh/nuvanx_key"
+          printf '%s\n' "$NUVANX_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/nuvanx_key" "$HOME/.ssh/known_hosts"
+          test -s "$HOME/.ssh/nuvanx_key"
+          test -s "$HOME/.ssh/known_hosts"
+          cat > "$HOME/.ssh/config" <<EOF
+          Host nuvanx-wordpress-bootstrap
+            HostName $NUVANX_SSH_HOST
+            User $NUVANX_SSH_USER
+            Port $NUVANX_SSH_PORT
+            IdentityFile $HOME/.ssh/nuvanx_key
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile $HOME/.ssh/known_hosts
+            ConnectTimeout 15
+            ConnectionAttempts 1
+            ServerAliveInterval 15
+            ServerAliveCountMax 2
+          EOF
+          chmod 600 "$HOME/.ssh/config"
+
+      - name: Provision validated HubSpot credential into runtime Vault
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh nuvanx-wordpress-bootstrap "NUVANX_WP_PATH='$NUVANX_WP_PATH' bash -se" <<'REMOTE'
+          set -Eeuo pipefail
+          cd "$NUVANX_WP_PATH"
+          test -f wp-config.php
+          command -v /usr/local/bin/wp >/dev/null
+          /usr/local/bin/wp eval '
+          if ( ! function_exists( "nvx_lead_captured_hubspot_token" ) || ! function_exists( "nvx_lead_captured_bootstrap_runtime" ) ) {
+              fwrite( STDERR, "HUBSPOT_RUNTIME_BOOTSTRAP=FAIL reason=theme_bootstrap_unavailable\n" );
+              exit( 2 );
+          }
+          $token = nvx_lead_captured_hubspot_token();
+          if ( "" === $token ) {
+              fwrite( STDERR, "HUBSPOT_RUNTIME_BOOTSTRAP=FAIL reason=wordpress_credential_missing\n" );
+              exit( 3 );
+          }
+          $ok = nvx_lead_captured_bootstrap_runtime( $token, true );
+          $token = "";
+          if ( ! $ok ) {
+              fwrite( STDERR, "HUBSPOT_RUNTIME_BOOTSTRAP=FAIL reason=remote_verification_or_persistence\n" );
+              exit( 4 );
+          }
+          echo "HUBSPOT_RUNTIME_BOOTSTRAP=PASS\n";
+          '
+          REMOTE
+
+      - name: Cleanup SSH material
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$HOME/.ssh/nuvanx_key" "$HOME/.ssh/known_hosts" "$HOME/.ssh/config"
