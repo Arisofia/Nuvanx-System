@@ -1,0 +1,72 @@
+name: Daily Aggregates Cheap Reject Builder
+
+on:
+  pull_request:
+    types: [synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  build-cheap-reject:
+    if: github.head_ref == 'fix/daily-aggregates-auth-20260825'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.head_ref }}
+          persist-credentials: true
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Setup Deno
+        uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+        with:
+          deno-version: v2.x
+      - name: Apply cheap anonymous rejection
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          index = Path('supabase/functions/daily-aggregates/index.ts')
+          text = index.read_text()
+          old = """  const authorizedByServiceRole = hasServiceRoleBearer(req, SUPABASE_SERVICE_ROLE_KEY);\n  let authorizedByInternalSecret = false;\n\n  if (!authorizedByServiceRole) {\n    const { data: expectedInternalSecret, error: internalSecretError } = await getSupabase().rpc('nvx_get_runtime_secret', {\n      p_name: 'REVOPS_INTERNAL_SECRET',\n    });\n\n    if (internalSecretError || !expectedInternalSecret) {\n      return new Response(JSON.stringify({ success: false, error: 'Server configuration error' }), {\n        status: 500,\n        headers: { 'Content-Type': 'application/json' },\n      });\n    }\n\n    authorizedByInternalSecret = await secretMatches(\n      String(req.headers.get('x-nvx-internal-secret') || ''),\n      String(expectedInternalSecret),\n    );\n  }\n\n"""
+          new = """  const authorizedByServiceRole = hasServiceRoleBearer(req, SUPABASE_SERVICE_ROLE_KEY);\n  const internalSecretHeader = String(req.headers.get('x-nvx-internal-secret') || '').trim();\n  let authorizedByInternalSecret = false;\n\n  if (!authorizedByServiceRole && internalSecretHeader) {\n    const { data: expectedInternalSecret, error: internalSecretError } = await getSupabase().rpc('nvx_get_runtime_secret', {\n      p_name: 'REVOPS_INTERNAL_SECRET',\n    });\n\n    if (internalSecretError || !expectedInternalSecret) {\n      return new Response(JSON.stringify({ success: false, error: 'Server configuration error' }), {\n        status: 500,\n        headers: { 'Content-Type': 'application/json' },\n      });\n    }\n\n    authorizedByInternalSecret = await secretMatches(\n      internalSecretHeader,\n      String(expectedInternalSecret),\n    );\n  }\n\n"""
+          if old not in text:
+              raise SystemExit('dual-auth guard anchor not found')
+          index.write_text(text.replace(old, new, 1))
+
+          test = Path('supabase/functions/daily-aggregates/auth-contract.test.mjs')
+          source = test.read_text()
+          needle = "    expect(index).toContain(\"req.headers.get('x-nvx-internal-secret')\");\n"
+          replacement = needle + "    expect(index).toContain('if (!authorizedByServiceRole && internalSecretHeader)');\n"
+          if replacement not in source:
+              if needle not in source:
+                  raise SystemExit('auth contract anchor not found')
+              source = source.replace(needle, replacement, 1)
+          test.write_text(source)
+          PY
+      - name: Install dependencies
+        run: npm install --include=dev --ignore-scripts
+      - name: Run tests
+        run: npm test
+      - name: Deno type-check
+        run: |
+          deno check --config=supabase/functions/deno.json \
+            supabase/functions/daily-aggregates/request-auth.ts \
+            supabase/functions/daily-aggregates/index.ts
+      - name: Commit validated permanent changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add supabase/functions/daily-aggregates/index.ts supabase/functions/daily-aggregates/auth-contract.test.mjs
+          git diff --cached --quiet && exit 0
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(security): reject anonymous aggregate probes before RPC'
+          git push origin HEAD:${{ github.head_ref }}
