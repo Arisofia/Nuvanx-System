@@ -238,6 +238,13 @@ jobs:
             github-master-ci-status-once
             p0a-staging-submit
             integrations
+            meta-asset-audit-temp
+            meta-legacy-retire-temp
+            google-gtm-audit-temp
+            google-gtm-sa-audit-temp
+            google-sa-shape-temp
+            google-gtm-enable-temp
+            meta-qa-suppression-proof-temp
           )
 
           function_is_present() {
