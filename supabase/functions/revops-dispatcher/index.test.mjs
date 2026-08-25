@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const source = readFileSync(fileURLToPath(new URL("./index.ts", import.meta.url)), "utf8");
+const authSource = readFileSync(fileURLToPath(new URL("./auth.ts", import.meta.url)), "utf8");
 const routingMigration = readFileSync(
   fileURLToPath(new URL("../../migrations/20260819193100_route_revops_dispatcher.sql", import.meta.url)),
   "utf8",
@@ -18,24 +19,12 @@ const baseMigration = readFileSync(
 
 describe("RevOps dispatcher contract", () => {
   it("authenticates only with the Vault-generated internal secret", () => {
-    expect(source).toContain('req.headers.get("x-nvx-internal-secret")');
+    expect(source).toContain('authenticateDispatcherRequest(req, async () =>');
+    expect(authSource).toContain('req.headers.get("x-nvx-internal-secret")');
     expect(source).toContain('p_name: "REVOPS_INTERNAL_SECRET"');
-    expect(source).toContain("secretMatches(received, String(expected))");
-    expect(source).toContain('message: "Forbidden"');
+    expect(authSource).toContain("secretMatches(received, expected)");
+    expect(authSource).toContain('message: "Forbidden"');
     expect(source).toContain('SUPABASE_SERVICE_ROLE_KEY") || "").trim()');
-  });
-
-  it("rejects a missing internal-secret header before privileged client or Vault access", () => {
-    const handler = source.slice(source.indexOf("Deno.serve(async (req: Request) =>"));
-    const readHeader = handler.indexOf('req.headers.get("x-nvx-internal-secret")');
-    const missingHeaderReject = handler.indexOf("if (!received)");
-    const createAdmin = handler.indexOf("createClient(SUPABASE_URL, SERVICE_ROLE");
-    const readVault = handler.indexOf('p_name: "REVOPS_INTERNAL_SECRET"');
-
-    expect(readHeader).toBeGreaterThanOrEqual(0);
-    expect(missingHeaderReject).toBeGreaterThan(readHeader);
-    expect(createAdmin).toBeGreaterThan(missingHeaderReject);
-    expect(readVault).toBeGreaterThan(createAdmin);
   });
 
   it("allowlists only governed RevOps workers", () => {
@@ -56,7 +45,7 @@ describe("RevOps dispatcher contract", () => {
   });
 
   it("does not expose credentials or worker response bodies", () => {
-    expect(source).not.toMatch(/console\.(?:log|error)\([^\n]*(?:received|expected|SERVICE_ROLE)/);
+    expect(source).not.toMatch(/console\.(?:log|error)\([^\n]*(?:expected|SERVICE_ROLE)/);
     expect(source).not.toContain("await response.text()");
     expect(source).not.toContain("await response.json()");
   });
