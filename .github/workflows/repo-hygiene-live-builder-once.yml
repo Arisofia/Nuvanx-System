@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
-name: Repo Hygiene Live Builder Once
+name: Repo Hygiene Workflow Blob Builder Once
 
 on:
   push:
@@ -7,10 +7,6 @@ on:
       - cleanup/repo-hygiene-live-20260825
     paths:
       - .github/workflows/repo-hygiene-live-builder-once.yml
-  pull_request:
-    branches:
-      - main
-    types: [opened, reopened]
 
 permissions:
   contents: write
@@ -21,13 +17,8 @@ concurrency:
 
 jobs:
   build:
-    if: >-
-      ${{
-        github.event_name == 'push' ||
-        github.event.pull_request.head.ref == 'cleanup/repo-hygiene-live-20260825'
-      }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - name: Checkout hygiene branch
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -35,111 +26,40 @@ jobs:
           ref: cleanup/repo-hygiene-live-20260825
           fetch-depth: 0
 
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            frontend/package-lock.json
-
-      - name: Setup Deno
-        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
-        with:
-          deno-version: v2.x
-
-      - name: Apply verified hygiene edits
+      - name: Build corrected workflow blobs
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import json
           from pathlib import Path
 
-          package_path = Path('package.json')
-          package = json.loads(package_path.read_text())
-          package['scripts']['test'] = package['scripts']['test'].replace(' --passWithNoTests', '')
-          package['scripts']['build'] = package['scripts']['build'].replace(' --legacy-peer-deps', '')
-          package['devDependencies'].pop('tweetsodium', None)
-          package_path.write_text(json.dumps(package, indent=2, ensure_ascii=False) + '\n')
-
-          for workflow_name in (
-              '.github/workflows/master.yml',
-              '.github/workflows/deploy-standalone-edge-functions.yml',
-          ):
-              path = Path(workflow_name)
-              text = path.read_text()
-              text = text.replace(' --legacy-peer-deps', '')
-              path.write_text(text)
-
-          dead_files = (
-              'frontend/src/config/trackingConfig.ts',
-              'frontend/src/data/clinicsScores.ts',
-              'frontend/src/hooks/useFigmaData.ts',
-              'frontend/src/lib/metaPixelTracking.ts',
-              'frontend/src/components/ui/index.ts',
+          targets = (
+              Path('.github/workflows/master.yml'),
+              Path('.github/workflows/deploy-standalone-edge-functions.yml'),
           )
-          for file_name in dead_files:
-              path = Path(file_name)
-              if not path.is_file():
-                  raise SystemExit(f'expected dead file missing: {file_name}')
-              path.unlink()
+          out_dir = Path('.hygiene-artifacts')
+          out_dir.mkdir(exist_ok=True)
+
+          for source in targets:
+              text = source.read_text()
+              count = text.count(' --legacy-peer-deps')
+              if count == 0:
+                  raise SystemExit(f'expected legacy peer bypass not found in {source}')
+              cleaned = text.replace(' --legacy-peer-deps', '')
+              if '--legacy-peer-deps' in cleaned:
+                  raise SystemExit(f'legacy peer bypass survived in {source}')
+              (out_dir / source.name).write_text(cleaned)
+              print(f'{source}: removed {count} occurrence(s)')
           PY
+          git diff --check -- .hygiene-artifacts
 
-      - name: Regenerate npm lockfiles mechanically
+      - name: Commit ordinary blob artifacts
         shell: bash
         run: |
           set -euo pipefail
-          npm install --package-lock-only --ignore-scripts
-          npm --prefix frontend install --package-lock-only --ignore-scripts
-
-      - name: Validate installs without legacy peer bypass
-        shell: bash
-        run: |
-          set -euo pipefail
-          npm ci --ignore-scripts
-          npm --prefix frontend ci --ignore-scripts
-          npm test
-          npm --prefix frontend run lint
-          npm --prefix frontend run test:ci
-          npm --prefix frontend run build
-
-      - name: Validate hygiene contract
-        shell: bash
-        run: |
-          set -euo pipefail
-          active_targets=(
-            package.json
-            .github/workflows/master.yml
-            .github/workflows/deploy-standalone-edge-functions.yml
-          )
-          test -z "$(grep --line-number --fixed-strings -- '--legacy-peer-deps' "${active_targets[@]}" || true)"
-          test -z "$(grep --line-number --fixed-strings -- '--passWithNoTests' "${active_targets[@]}" || true)"
-          test -z "$(grep --line-number --fixed-strings 'tweetsodium' package.json package-lock.json frontend/package-lock.json || true)"
-          for path in \
-            frontend/src/config/trackingConfig.ts \
-            frontend/src/data/clinicsScores.ts \
-            frontend/src/hooks/useFigmaData.ts \
-            frontend/src/lib/metaPixelTracking.ts \
-            frontend/src/components/ui/index.ts
-          do
-            test ! -e "$path"
-          done
-          git diff --check
-
-      - name: Commit non-workflow hygiene delta
-        shell: bash
-        run: |
-          set -euo pipefail
-          git restore --source=HEAD -- \
-            .github/workflows/master.yml \
-            .github/workflows/deploy-standalone-edge-functions.yml \
-            .github/workflows/repo-hygiene-live-builder-once.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
+          git add .hygiene-artifacts/master.yml .hygiene-artifacts/deploy-standalone-edge-functions.yml
           git diff --cached --check
-          git status --short
-          git commit -m 'chore(repo): remove verified non-workflow hygiene debt'
+          git commit -m 'chore(repo): stage corrected workflow blobs'
           git push origin HEAD:cleanup/repo-hygiene-live-20260825
