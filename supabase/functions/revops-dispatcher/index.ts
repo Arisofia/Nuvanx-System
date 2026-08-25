@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { authenticateDispatcherRequest } from "./auth.ts";
 
 declare const Deno: any;
 
@@ -13,40 +14,20 @@ function reply(status: number, body: Record<string, unknown>) {
   });
 }
 
-async function sha256Bytes(raw: string): Promise<Uint8Array> {
-  return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw)));
-}
-
-async function secretMatches(received: string, expected: string): Promise<boolean> {
-  const normalizedReceived = String(received || "").trim();
-  const normalizedExpected = String(expected || "").trim();
-  if (!normalizedReceived || !normalizedExpected) return false;
-  const a = await sha256Bytes(normalizedReceived);
-  const b = await sha256Bytes(normalizedExpected);
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i += 1) diff |= a[i] ^ b[i];
-  return diff === 0;
-}
-
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return reply(405, { success: false, message: "Method not allowed" });
 
-  // Reject anonymous/malformed calls before creating a privileged client or
-  // touching Vault. Wrong-but-present secrets still use the constant-time
-  // comparison below so the authentication contract is unchanged.
-  const received = String(req.headers.get("x-nvx-internal-secret") || "").trim();
-  if (!received) return reply(403, { success: false, message: "Forbidden" });
+  const auth = await authenticateDispatcherRequest(req, async () => {
+    if (!SUPABASE_URL || !SERVICE_ROLE) throw new Error("runtime configuration unavailable");
 
-  if (!SUPABASE_URL || !SERVICE_ROLE) return reply(500, { success: false, message: "Server configuration error" });
-
-  const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
-  const { data: expected, error: secretError } = await admin.rpc("nvx_get_runtime_secret", {
-    p_name: "REVOPS_INTERNAL_SECRET",
+    const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
+    const { data: expected, error: secretError } = await admin.rpc("nvx_get_runtime_secret", {
+      p_name: "REVOPS_INTERNAL_SECRET",
+    });
+    if (secretError || !expected) throw new Error("runtime secret unavailable");
+    return String(expected);
   });
-  if (secretError || !expected) return reply(500, { success: false, message: "Server configuration error" });
-
-  if (!(await secretMatches(received, String(expected)))) return reply(403, { success: false, message: "Forbidden" });
+  if (!auth.ok) return reply(auth.status, { success: false, message: auth.message });
 
   const body = await req.json().catch(() => ({}));
   const worker = String(body?.worker || "").trim();
