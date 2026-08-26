@@ -214,6 +214,14 @@ jobs:
           test "$current_main" = "$GITHUB_SHA"
           echo 'EDGE_PRUNE_SHA_GATE=PASS'
 
+      - name: Setup Node.js for prune contract
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '22'
+
+      - name: Validate retired Edge inventory contract
+        run: node scripts/validate-retired-edge-inventory.mjs
+
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@52a446718e4edd1a9f1e2631186019c87e329f60
         with:
@@ -238,6 +246,13 @@ jobs:
             github-master-ci-status-once
             p0a-staging-submit
             integrations
+            meta-asset-audit-temp
+            meta-legacy-retire-temp
+            google-gtm-audit-temp
+            google-gtm-sa-audit-temp
+            google-sa-shape-temp
+            google-gtm-enable-temp
+            meta-qa-suppression-proof-temp
           )
 
           function_is_present() {
