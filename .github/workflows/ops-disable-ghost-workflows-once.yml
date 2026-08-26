@@ -31,7 +31,7 @@ jobs:
 
           current_path='.github/workflows/ops-disable-ghost-workflows-once.yml'
 
-          current_main="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          current_main="$(gh api "/repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)"
           if [[ "$current_main" != "${{ github.sha }}" ]]; then
             echo "GHOST_WORKFLOW_RETIREMENT=SKIPPED reason=main_advanced current_main=$current_main sha=${{ github.sha }}"
             exit 0
