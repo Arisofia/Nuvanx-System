@@ -19,10 +19,9 @@ concurrency:
 jobs:
   dispatch:
     name: Dispatch reviewed Manual Maintenance prune
-    # GitHub merge commits do not reliably populate head_commit.added for files
-    # introduced through a PR. This corrective one-shot intentionally runs only
-    # when the bridge file is modified, while a later removal is skipped.
-    if: ${{ github.repository == 'Arisofia/Nuvanx-System' && contains(github.event.head_commit.modified, '.github/workflows/dispatch-residual-edge-prune-once.yml') && !contains(github.event.head_commit.removed, '.github/workflows/dispatch-residual-edge-prune-once.yml') }}
+    # The paths filter already evaluates the complete push diff. Use the full
+    # commit list only to ensure a later bridge-removal push cannot dispatch.
+    if: ${{ github.repository == 'Arisofia/Nuvanx-System' && !contains(toJson(github.event.commits.*.removed), '.github/workflows/dispatch-residual-edge-prune-once.yml') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
