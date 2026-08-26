@@ -52,11 +52,16 @@ jobs:
             exit 1
           }
 
-          current_main="$(gh api "/repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)"
-          if [[ "$current_main" != "$current_sha" ]]; then
-            echo "GHOST_REGISTRATION_CLEANUP=SKIPPED reason=main_advanced current_main=$current_main sha=$current_sha"
-            exit 0
-          fi
+          assert_main_unchanged() {
+            local latest_main
+            latest_main="$(gh api "/repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)"
+            if [[ "$latest_main" != "$current_sha" ]]; then
+              echo "GHOST_REGISTRATION_CLEANUP=ABORT reason=main_advanced current_main=$latest_main sha=$current_sha" >&2
+              exit 75
+            fi
+          }
+
+          assert_main_unchanged
 
           inventory="$(mktemp)"
           final_inventory="$(mktemp)"
@@ -124,9 +129,13 @@ jobs:
             }
           done
 
+          # No destructive action is allowed on an inventory derived from a stale checkout.
+          assert_main_unchanged
+
           disabled_ghosts=0
           while IFS=$'\t' read -r id path state name; do
             if [[ "$path" == .github/workflows/* && ! -f "$path" && "$state" == 'active' ]]; then
+              assert_main_unchanged
               echo "Disabling ghost registration id=$id path=$path name=$name"
               gh api --method PUT \
                 -H 'Accept: application/vnd.github+json' \
@@ -140,6 +149,7 @@ jobs:
           for retired_path in "$superseded_one" "$superseded_two"; do
             while IFS=$'\t' read -r id path state name; do
               if [[ "$path" == "$retired_path" && "$state" == 'active' ]]; then
+                assert_main_unchanged
                 echo "Disabling superseded one-shot id=$id path=$path name=$name"
                 gh api --method PUT \
                   -H 'Accept: application/vnd.github+json' \
@@ -185,6 +195,7 @@ jobs:
             }
           done
 
+          assert_main_unchanged
           gh api --method PUT \
             -H 'Accept: application/vnd.github+json' \
             -H 'X-GitHub-Api-Version: 2022-11-28' \
