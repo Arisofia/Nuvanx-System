@@ -1,0 +1,217 @@
+name: Actions hygiene once
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/ops-actions-hygiene-once.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: nuvanx-actions-hygiene-once
+  cancel-in-progress: false
+
+jobs:
+  actions-hygiene:
+    name: Cancel stale queue and disable ghost registrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out exact main
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Validate inventory, cancel stale queued runs, and disable ghosts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          current_path='.github/workflows/ops-actions-hygiene-once.yml'
+          current_sha='${{ github.sha }}'
+
+          [[ "$current_sha" =~ ^[0-9a-f]{40}$ ]] || {
+            echo 'ACTIONS_HYGIENE=FAIL reason=invalid_current_sha' >&2
+            exit 1
+          }
+
+          current_main="$(gh api "/repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)"
+          if [[ "$current_main" != "$current_sha" ]]; then
+            echo "ACTIONS_HYGIENE=SKIPPED reason=main_advanced current_main=$current_main sha=$current_sha"
+            exit 0
+          fi
+
+          workflow_inventory="$(mktemp)"
+          queued_inventory="$(mktemp)"
+          final_workflows="$(mktemp)"
+          final_queued="$(mktemp)"
+          trap 'rm -f "$workflow_inventory" "$queued_inventory" "$final_workflows" "$final_queued"' EXIT
+
+          gh api --paginate \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "/repos/${GITHUB_REPOSITORY}/actions/workflows?per_page=100" \
+            --jq '.workflows[] | [.id,.path,.state,.name] | @tsv' > "$workflow_inventory"
+
+          [[ -s "$workflow_inventory" ]] || {
+            echo 'ACTIONS_HYGIENE=FAIL reason=empty_workflow_inventory' >&2
+            exit 1
+          }
+
+          current_id=''
+          registered=0
+          current_owners=0
+          dynamic_managed=0
+          ghosts=0
+
+          # Pass 1 is validation only. Do not mutate until the complete inventory is safe.
+          while IFS=$'\t' read -r id path state name; do
+            [[ "$id" =~ ^[0-9]+$ ]] || {
+              echo "ACTIONS_HYGIENE=FAIL reason=invalid_workflow_id path=$path" >&2
+              exit 1
+            }
+            registered=$((registered + 1))
+
+            if [[ "$path" == "$current_path" ]]; then
+              current_id="$id"
+            fi
+
+            if [[ -f "$path" ]]; then
+              current_owners=$((current_owners + 1))
+              if [[ "$state" != 'active' ]]; then
+                echo "ACTIONS_HYGIENE=FAIL reason=current_owner_not_active id=$id path=$path state=$state" >&2
+                exit 1
+              fi
+            elif [[ "$path" == dynamic/* ]]; then
+              # GitHub-managed workflows (for example CodeQL default setup) have no repository YAML owner.
+              # They are not ghosts and must never be disabled by repository hygiene.
+              dynamic_managed=$((dynamic_managed + 1))
+            elif [[ "$path" == .github/workflows/* ]]; then
+              ghosts=$((ghosts + 1))
+            else
+              echo "ACTIONS_HYGIENE=FAIL reason=unknown_registration_path id=$id path=$path state=$state" >&2
+              exit 1
+            fi
+          done < "$workflow_inventory"
+
+          [[ -n "$current_id" ]] || {
+            echo 'ACTIONS_HYGIENE=FAIL reason=current_registration_missing' >&2
+            exit 1
+          }
+
+          gh api --paginate \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "/repos/${GITHUB_REPOSITORY}/actions/runs?status=queued&per_page=100" \
+            --jq '.workflow_runs[] | [.id,.head_sha,.path,.name] | @tsv' > "$queued_inventory"
+
+          stale_queued=0
+          if [[ -s "$queued_inventory" ]]; then
+            while IFS=$'\t' read -r run_id head_sha path name; do
+              [[ "$run_id" =~ ^[0-9]+$ ]] || {
+                echo "ACTIONS_HYGIENE=FAIL reason=invalid_run_id path=$path" >&2
+                exit 1
+              }
+              [[ -z "$head_sha" || "$head_sha" =~ ^[0-9a-f]{40}$ ]] || {
+                echo "ACTIONS_HYGIENE=FAIL reason=invalid_run_sha run_id=$run_id" >&2
+                exit 1
+              }
+              if [[ "$head_sha" != "$current_sha" ]]; then
+                stale_queued=$((stale_queued + 1))
+              fi
+            done < "$queued_inventory"
+          fi
+
+          # Pass 2: all validation succeeded, so mutations may begin.
+          cancelled_now=0
+          if [[ -s "$queued_inventory" ]]; then
+            while IFS=$'\t' read -r run_id head_sha path name; do
+              if [[ "$head_sha" != "$current_sha" ]]; then
+                echo "Cancelling stale queued run id=$run_id sha=$head_sha path=$path name=$name"
+                gh api --method POST \
+                  -H 'Accept: application/vnd.github+json' \
+                  -H 'X-GitHub-Api-Version: 2022-11-28' \
+                  "/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/cancel" >/dev/null
+                cancelled_now=$((cancelled_now + 1))
+              fi
+            done < "$queued_inventory"
+          fi
+
+          disabled_now=0
+          already_disabled=0
+          while IFS=$'\t' read -r id path state name; do
+            if [[ ! -f "$path" && "$path" == .github/workflows/* ]]; then
+              if [[ "$state" == 'active' ]]; then
+                echo "Disabling retired workflow registration id=$id path=$path name=$name"
+                gh api --method PUT \
+                  -H 'Accept: application/vnd.github+json' \
+                  -H 'X-GitHub-Api-Version: 2022-11-28' \
+                  "/repos/${GITHUB_REPOSITORY}/actions/workflows/${id}/disable" >/dev/null
+                disabled_now=$((disabled_now + 1))
+              else
+                already_disabled=$((already_disabled + 1))
+              fi
+            fi
+          done < "$workflow_inventory"
+
+          gh api --paginate \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "/repos/${GITHUB_REPOSITORY}/actions/workflows?per_page=100" \
+            --jq '.workflows[] | [.id,.path,.state,.name] | @tsv' > "$final_workflows"
+
+          residual_active_ghosts=0
+          while IFS=$'\t' read -r id path state name; do
+            if [[ ! -f "$path" && "$path" == .github/workflows/* && "$state" == 'active' ]]; then
+              echo "Residual active ghost id=$id path=$path name=$name" >&2
+              residual_active_ghosts=$((residual_active_ghosts + 1))
+            fi
+          done < "$final_workflows"
+
+          [[ "$residual_active_ghosts" -eq 0 ]] || {
+            echo "ACTIONS_HYGIENE=FAIL reason=residual_active_ghosts count=$residual_active_ghosts" >&2
+            exit 1
+          }
+
+          # Queue cancellation is eventually consistent. Recheck briefly without cancelling current-SHA work.
+          residual_stale_queued=999
+          for attempt in 1 2 3 4 5; do
+            gh api --paginate \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "/repos/${GITHUB_REPOSITORY}/actions/runs?status=queued&per_page=100" \
+              --jq '.workflow_runs[] | [.id,.head_sha,.path,.name] | @tsv' > "$final_queued"
+
+            residual_stale_queued=0
+            if [[ -s "$final_queued" ]]; then
+              while IFS=$'\t' read -r run_id head_sha path name; do
+                if [[ "$head_sha" != "$current_sha" ]]; then
+                  residual_stale_queued=$((residual_stale_queued + 1))
+                fi
+              done < "$final_queued"
+            fi
+
+            [[ "$residual_stale_queued" -eq 0 ]] && break
+            sleep 2
+          done
+
+          [[ "$residual_stale_queued" -eq 0 ]] || {
+            echo "ACTIONS_HYGIENE=FAIL reason=residual_stale_queued count=$residual_stale_queued" >&2
+            exit 1
+          }
+
+          # Disable this one-shot registration only after queue + ghost verification pass.
+          gh api --method PUT \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "/repos/${GITHUB_REPOSITORY}/actions/workflows/${current_id}/disable" >/dev/null
+
+          echo "ACTIONS_HYGIENE=PASS registered=$registered current_owners=$current_owners dynamic_managed=$dynamic_managed ghosts=$ghost stale_queued=$stale_queued cancelled_now=$cancelled_now disabled_now=$disabled_now already_disabled=$already_disabled self_disabled=1"
