@@ -30,6 +30,12 @@ jobs:
           set -Eeuo pipefail
 
           current_path='.github/workflows/ops-disable-ghost-workflows-once.yml'
+
+          current_main="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          if [[ "$current_main" != "${{ github.sha }}" ]]; then
+            echo "GHOST_WORKFLOW_RETIREMENT=SKIPPED reason=main_advanced current_main=$current_main sha=${{ github.sha }}"
+            exit 0
+          fi
           inventory="$(mktemp)"
           final_inventory="$(mktemp)"
           trap 'rm -f "$inventory" "$final_inventory"' EXIT
@@ -49,6 +55,7 @@ jobs:
           disabled_now=0
           already_disabled=0
 
+          # Pass 1: Validate all canonical/current registrations before mutations
           while IFS=$'\t' read -r id path state name; do
             [[ "$id" =~ ^[0-9]+$ ]] || { echo "GHOST_WORKFLOW_RETIREMENT=FAIL reason=invalid_id path=$path" >&2; exit 1; }
             registered=$((registered + 1))
@@ -63,23 +70,28 @@ jobs:
                 echo "GHOST_WORKFLOW_RETIREMENT=FAIL reason=current_owner_not_active id=$id path=$path state=$state" >&2
                 exit 1
               fi
-              continue
-            fi
-
-            ghost=$((ghost + 1))
-            if [[ "$state" == 'active' ]]; then
-              echo "Disabling retired registration id=$id path=$path name=$name"
-              gh api --method PUT \
-                -H 'Accept: application/vnd.github+json' \
-                -H 'X-GitHub-Api-Version: 2022-11-28' \
-                "/repos/${GITHUB_REPOSITORY}/actions/workflows/${id}/disable" >/dev/null
-              disabled_now=$((disabled_now + 1))
             else
-              already_disabled=$((already_disabled + 1))
+              ghost=$((ghost + 1))
             fi
           done < "$inventory"
 
           [[ -n "$current_id" ]] || { echo 'GHOST_WORKFLOW_RETIREMENT=FAIL reason=current_registration_missing' >&2; exit 1; }
+
+          # Pass 2: Safely disable ghosts knowing the inventory validates perfectly
+          while IFS=$'\t' read -r id path state name; do
+            if [[ ! -f "$path" ]]; then
+              if [[ "$state" == 'active' ]]; then
+                echo "Disabling retired registration id=$id path=$path name=$name"
+                gh api --method PUT \
+                  -H 'Accept: application/vnd.github+json' \
+                  -H 'X-GitHub-Api-Version: 2022-11-28' \
+                  "/repos/${GITHUB_REPOSITORY}/actions/workflows/${id}/disable" >/dev/null
+                disabled_now=$((disabled_now + 1))
+              else
+                already_disabled=$((already_disabled + 1))
+              fi
+            fi
+          done < "$inventory"
 
           gh api --paginate \
             -H 'Accept: application/vnd.github+json' \
