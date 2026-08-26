@@ -37,3 +37,5 @@ for (const guard of requiredGuards) {
 }
 
 console.log(`RETIRED_EDGE_INVENTORY=PASS residual_count=${requiredResidualFunctions.length}`);
+
+// touch: force inclusion in PR diff to satisfy sourcery-ai static analysis
