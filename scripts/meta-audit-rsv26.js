@@ -43,18 +43,42 @@ async function graphGet(path, params = {}) {
   return body;
 }
 
+async function graphGetAll(path, params = {}) {
+  const rows = [];
+  let after = null;
+  do {
+    const page = await graphGet(path, after ? { ...params, after } : params);
+    if (!Array.isArray(page?.data)) {
+      throw new Error(`${path}: campaign inventory response must contain a data array.`);
+    }
+    rows.push(...page.data);
+    const nextAfter = String(page?.paging?.cursors?.after ?? '').trim();
+    const hasNext = Boolean(page?.paging?.next && nextAfter);
+    after = hasNext ? nextAfter : null;
+  } while (after);
+  return rows;
+}
+
 const report = {
   generated_at: new Date().toISOString(),
   campaign: null,
+  campaign_ads: [],
   adsets: [],
   drift_count: 0,
   drift: [],
 };
 
-const campaign = await graphGet(config.campaign.id, {
-  fields: 'id,name,status,effective_status,objective',
-});
+const [campaign, campaignAds] = await Promise.all([
+  graphGet(config.campaign.id, {
+    fields: 'id,name,status,effective_status,objective',
+  }),
+  graphGetAll(`${config.campaign.id}/ads`, {
+    fields: 'id,name,status,effective_status,adset_id',
+    limit: 500,
+  }),
+]);
 report.campaign = campaign;
+report.campaign_ads = campaignAds;
 
 for (const [field, expected] of Object.entries({
   name: config.campaign.name,
@@ -64,6 +88,28 @@ for (const [field, expected] of Object.entries({
   if (String(campaign[field] ?? '') !== String(expected)) {
     report.drift.push({ scope: 'campaign', id: config.campaign.id, field, expected, actual: campaign[field] ?? null });
   }
+}
+
+const governedAdIds = new Set(config.adsets.map((item) => String(item.ad_id)));
+const retiredStatuses = new Set(['ARCHIVED', 'DELETED']);
+for (const ad of report.campaign_ads) {
+  const adId = String(ad?.id ?? '');
+  if (!adId || governedAdIds.has(adId)) continue;
+  const status = String(ad?.status ?? '').toUpperCase();
+  const effectiveStatus = String(ad?.effective_status ?? '').toUpperCase();
+  if (retiredStatuses.has(status) || retiredStatuses.has(effectiveStatus)) continue;
+  report.drift.push({
+    scope: 'campaign_inventory',
+    id: adId,
+    field: 'unexpected_ad',
+    expected: [...governedAdIds].sort(),
+    actual: {
+      name: ad?.name ?? null,
+      status: ad?.status ?? null,
+      effective_status: ad?.effective_status ?? null,
+      adset_id: ad?.adset_id ?? null,
+    },
+  });
 }
 
 for (const item of config.adsets) {
