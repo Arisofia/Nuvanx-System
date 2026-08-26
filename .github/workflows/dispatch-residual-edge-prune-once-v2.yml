@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
+name: Dispatch Residual Edge Prune Once v2
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/dispatch-residual-edge-prune-once-v2.yml
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: dispatch-residual-edge-prune-once-v2
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    name: Dispatch reviewed Manual Maintenance prune
+    if: ${{ github.repository == 'Arisofia/Nuvanx-System' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Prove first introduction and dispatch SHA-gated prune
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRUSTED_SHA: ${{ github.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          BRIDGE_PATH: .github/workflows/dispatch-residual-edge-prune-once-v2.yml
+        run: |
+          set -euo pipefail
+          test -n "$TRUSTED_SHA"
+          test -n "$BEFORE_SHA"
+          [[ "$TRUSTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$BEFORE_SHA" =~ ^[0-9a-f]{40}$ ]]
+
+          # Fail closed unless this exact push introduces the bridge for the first time.
+          if gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "repos/$GITHUB_REPOSITORY/contents/$BRIDGE_PATH?ref=$BEFORE_SHA" \
+            >/dev/null 2>&1; then
+            echo '::error::Bridge already existed before this push; refusing redispatch.'
+            exit 1
+          fi
+
+          gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "repos/$GITHUB_REPOSITORY/contents/$BRIDGE_PATH?ref=$TRUSTED_SHA" \
+            >/dev/null
+
+          gh workflow run manual-maintenance.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f operation=prune_retired_edge \
+            -f confirmation=PRUNE \
+            -f trusted_sha="$TRUSTED_SHA"
+
+          echo "EDGE_PRUNE_DISPATCH=PASS trusted_sha=$TRUSTED_SHA"
