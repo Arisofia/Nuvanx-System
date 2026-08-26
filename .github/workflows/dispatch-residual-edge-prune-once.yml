@@ -19,7 +19,7 @@ concurrency:
 jobs:
   dispatch:
     name: Dispatch reviewed Manual Maintenance prune
-    if: ${{ github.repository == 'Arisofia/Nuvanx-System' }}
+    if: ${{ github.repository == 'Arisofia/Nuvanx-System' && contains(github.event.head_commit.added, '.github/workflows/dispatch-residual-edge-prune-once.yml') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
