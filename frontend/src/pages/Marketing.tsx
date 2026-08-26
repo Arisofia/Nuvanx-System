@@ -577,6 +577,8 @@ export default function Marketing() {
   const mountedRef = useRef(true)
   const organicAppliedKeywordRef = useRef('')
   const igAppliedKeywordRef = useRef('')
+  const organicRequestGenerationRef = useRef(0)
+  const igRequestGenerationRef = useRef(0)
 
   useEffect(() => {
     mountedRef.current = true
@@ -607,6 +609,7 @@ export default function Marketing() {
 
   // -- Fetch organic Page insights (daily series + posts) ----------------
   const fetchOrganic = useCallback(async (kw: string = '') => {
+    const generation = ++organicRequestGenerationRef.current
     setOrganicLoading(true)
     setOrganicError(null)
     try {
@@ -616,20 +619,21 @@ export default function Marketing() {
         invokeApi(`/api/meta/organic/daily?${dailyParams}`),
         invokeApi(`/api/meta/organic/posts?${postsParams}`),
       ])
-      if (!mountedRef.current) return
+      if (!mountedRef.current || generation !== organicRequestGenerationRef.current) return
       setOrganicSummary(dailyRes?.summary ?? null)
       setOrganicDaily(Array.isArray(dailyRes?.daily) ? dailyRes.daily : [])
       setOrganicPosts(Array.isArray(postsRes?.posts) ? postsRes.posts : [])
     } catch (err: any) {
-      if (!mountedRef.current) return
+      if (!mountedRef.current || generation !== organicRequestGenerationRef.current) return
       setOrganicError(err?.message ?? 'Error cargando datos orgánicos.')
     } finally {
-      if (mountedRef.current) setOrganicLoading(false)
+      if (mountedRef.current && generation === organicRequestGenerationRef.current) setOrganicLoading(false)
     }
   }, [from, to])
 
   // -- Fetch Instagram organic insights ----------------------------------
   const fetchIg = useCallback(async (kw: string = '') => {
+    const generation = ++igRequestGenerationRef.current
     setIgLoading(true)
     setIgError(null)
     try {
@@ -639,15 +643,15 @@ export default function Marketing() {
         invokeApi(`/api/meta/ig/daily?${dailyParams}`),
         invokeApi(`/api/meta/ig/posts?${postsParams}`),
       ])
-      if (!mountedRef.current) return
+      if (!mountedRef.current || generation !== igRequestGenerationRef.current) return
       setIgSummary(dailyRes?.summary ?? null)
       setIgDaily(Array.isArray(dailyRes?.daily) ? dailyRes.daily : [])
       setIgPosts(Array.isArray(postsRes?.posts) ? postsRes.posts : [])
     } catch (err: any) {
-      if (!mountedRef.current) return
+      if (!mountedRef.current || generation !== igRequestGenerationRef.current) return
       setIgError(err?.message ?? 'Error cargando datos de Instagram.')
     } finally {
-      if (mountedRef.current) setIgLoading(false)
+      if (mountedRef.current && generation === igRequestGenerationRef.current) setIgLoading(false)
     }
   }, [from, to])
 
