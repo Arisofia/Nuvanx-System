@@ -575,6 +575,10 @@ export default function Marketing() {
   const state = useMarketingData(campaignId, from, to)
 
   const mountedRef = useRef(true)
+  const organicAppliedKeywordRef = useRef('')
+  const igAppliedKeywordRef = useRef('')
+  const organicRequestGenerationRef = useRef(0)
+  const igRequestGenerationRef = useRef(0)
 
   useEffect(() => {
     mountedRef.current = true
@@ -605,6 +609,7 @@ export default function Marketing() {
 
   // -- Fetch organic Page insights (daily series + posts) ----------------
   const fetchOrganic = useCallback(async (kw: string = '') => {
+    const generation = ++organicRequestGenerationRef.current
     setOrganicLoading(true)
     setOrganicError(null)
     try {
@@ -614,20 +619,21 @@ export default function Marketing() {
         invokeApi(`/api/meta/organic/daily?${dailyParams}`),
         invokeApi(`/api/meta/organic/posts?${postsParams}`),
       ])
-      if (!mountedRef.current) return
+      if (!mountedRef.current || generation !== organicRequestGenerationRef.current) return
       setOrganicSummary(dailyRes?.summary ?? null)
       setOrganicDaily(Array.isArray(dailyRes?.daily) ? dailyRes.daily : [])
       setOrganicPosts(Array.isArray(postsRes?.posts) ? postsRes.posts : [])
     } catch (err: any) {
-      if (!mountedRef.current) return
+      if (!mountedRef.current || generation !== organicRequestGenerationRef.current) return
       setOrganicError(err?.message ?? 'Error cargando datos orgánicos.')
     } finally {
-      if (mountedRef.current) setOrganicLoading(false)
+      if (mountedRef.current && generation === organicRequestGenerationRef.current) setOrganicLoading(false)
     }
   }, [from, to])
 
   // -- Fetch Instagram organic insights ----------------------------------
   const fetchIg = useCallback(async (kw: string = '') => {
+    const generation = ++igRequestGenerationRef.current
     setIgLoading(true)
     setIgError(null)
     try {
@@ -637,31 +643,43 @@ export default function Marketing() {
         invokeApi(`/api/meta/ig/daily?${dailyParams}`),
         invokeApi(`/api/meta/ig/posts?${postsParams}`),
       ])
-      if (!mountedRef.current) return
+      if (!mountedRef.current || generation !== igRequestGenerationRef.current) return
       setIgSummary(dailyRes?.summary ?? null)
       setIgDaily(Array.isArray(dailyRes?.daily) ? dailyRes.daily : [])
       setIgPosts(Array.isArray(postsRes?.posts) ? postsRes.posts : [])
     } catch (err: any) {
-      if (!mountedRef.current) return
+      if (!mountedRef.current || generation !== igRequestGenerationRef.current) return
       setIgError(err?.message ?? 'Error cargando datos de Instagram.')
     } finally {
-      if (mountedRef.current) setIgLoading(false)
+      if (mountedRef.current && generation === igRequestGenerationRef.current) setIgLoading(false)
     }
   }, [from, to])
 
-  // Fetch organic on demand + when range changes while tab open
+  const applyOrganicKeyword = useCallback(() => {
+    const keyword = organicKeyword.trim()
+    organicAppliedKeywordRef.current = keyword
+    void fetchOrganic(keyword)
+  }, [organicKeyword, fetchOrganic])
+
+  const applyIgKeyword = useCallback(() => {
+    const keyword = igKeyword.trim()
+    igAppliedKeywordRef.current = keyword
+    void fetchIg(keyword)
+  }, [igKeyword, fetchIg])
+
+  // Fetch organic on demand + when range/channel changes while tab open.
+  // Draft keyword changes do not trigger requests; reloads reuse the last applied keyword per channel.
   useEffect(() => {
     if (activeTab !== 'organic') return
     const timer = setTimeout(() => {
       if (organicChannel === 'facebook') {
-        void fetchOrganic(organicKeyword)
+        void fetchOrganic(organicAppliedKeywordRef.current)
       } else {
-        void fetchIg(igKeyword)
+        void fetchIg(igAppliedKeywordRef.current)
       }
     }, 0)
     return () => clearTimeout(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, from, to, organicChannel])
+  }, [activeTab, organicChannel, fetchOrganic, fetchIg])
 
   const { summary, changes, daily, campaigns, currency, accountIds, period, loading, error } = state
   const resolvedAccountIds = resolveMetaAccountIds(accountIds)
@@ -1117,11 +1135,11 @@ export default function Marketing() {
                     placeholder="Filtrar por palabra (ej. co2)…"
                     value={organicKeyword}
                     onChange={(e) => setOrganicKeyword(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') fetchOrganic(organicKeyword) }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') applyOrganicKeyword() }}
                     className="bg-card border border-border text-sm text-foreground placeholder-muted rounded-lg px-3 py-1.5 w-56 focus:outline-none focus:border-muted"
                   />
                   <button
-                    onClick={() => fetchOrganic(organicKeyword)}
+                    onClick={applyOrganicKeyword}
                     className="px-3 py-1.5 rounded-lg bg-primary/15 text-foreground text-sm hover:bg-primary/25"
                   >Filtrar</button>
                 </div>
@@ -1238,11 +1256,11 @@ export default function Marketing() {
                     placeholder="Filtrar caption…"
                     value={igKeyword}
                     onChange={(e) => setIgKeyword(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') fetchIg(igKeyword) }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') applyIgKeyword() }}
                     className="bg-card border border-border text-sm text-foreground placeholder-muted rounded-lg px-3 py-1.5 w-56 focus:outline-none focus:border-muted"
                   />
                   <button
-                    onClick={() => fetchIg(igKeyword)}
+                    onClick={applyIgKeyword}
                     className="px-3 py-1.5 rounded-lg bg-primary/15 text-foreground text-sm hover:bg-primary/25"
                   >Filtrar</button>
                 </div>
