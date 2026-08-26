@@ -1,0 +1,199 @@
+name: Disable ghost workflow registrations final once
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/ops-disable-ghost-registrations-final-once.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: nuvanx-disable-ghost-registrations-final-once
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Disable retired file-backed workflow registrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out exact main
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Validate owners, disable ghosts, and retire one-shots
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          current_sha='${{ github.sha }}'
+          current_path='.github/workflows/ops-disable-ghost-registrations-final-once.yml'
+          superseded_one='.github/workflows/ops-actions-hygiene-once.yml'
+          superseded_two='.github/workflows/ops-actions-hygiene-force-v2-once.yml'
+          canonical_paths=(
+            '.github/workflows/deploy-standalone-edge-functions.yml'
+            '.github/workflows/manual-maintenance.yml'
+            '.github/workflows/master.yml'
+            '.github/workflows/meta-backfill.yml'
+            '.github/workflows/meta-rsv26-live-apply.yml'
+          )
+
+          [[ "$current_sha" =~ ^[0-9a-f]{40}$ ]] || {
+            echo 'GHOST_REGISTRATION_CLEANUP=FAIL reason=invalid_current_sha' >&2
+            exit 1
+          }
+
+          current_main="$(gh api "/repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)"
+          if [[ "$current_main" != "$current_sha" ]]; then
+            echo "GHOST_REGISTRATION_CLEANUP=SKIPPED reason=main_advanced current_main=$current_main sha=$current_sha"
+            exit 0
+          fi
+
+          inventory="$(mktemp)"
+          final_inventory="$(mktemp)"
+          trap 'rm -f "$inventory" "$final_inventory"' EXIT
+
+          gh api --paginate \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "/repos/${GITHUB_REPOSITORY}/actions/workflows?per_page=100" \
+            --jq '.workflows[] | [.id,.path,.state,.name] | @tsv' > "$inventory"
+
+          [[ -s "$inventory" ]] || {
+            echo 'GHOST_REGISTRATION_CLEANUP=FAIL reason=empty_inventory' >&2
+            exit 1
+          }
+
+          current_id=''
+          registered=0
+          dynamic_managed=0
+          file_backed=0
+          ghosts=0
+
+          while IFS=$'\t' read -r id path state name; do
+            [[ "$id" =~ ^[0-9]+$ ]] || {
+              echo "GHOST_REGISTRATION_CLEANUP=FAIL reason=invalid_id path=$path" >&2
+              exit 1
+            }
+            registered=$((registered + 1))
+
+            if [[ "$path" == "$current_path" ]]; then
+              current_id="$id"
+            fi
+
+            if [[ "$path" == dynamic/* ]]; then
+              dynamic_managed=$((dynamic_managed + 1))
+              continue
+            fi
+
+            if [[ "$path" != .github/workflows/* ]]; then
+              echo "GHOST_REGISTRATION_CLEANUP=FAIL reason=unknown_registration_path id=$id path=$path state=$state" >&2
+              exit 1
+            fi
+
+            if [[ -f "$path" ]]; then
+              file_backed=$((file_backed + 1))
+            else
+              ghosts=$((ghosts + 1))
+            fi
+          done < "$inventory"
+
+          [[ -n "$current_id" ]] || {
+            echo 'GHOST_REGISTRATION_CLEANUP=FAIL reason=current_registration_missing' >&2
+            exit 1
+          }
+
+          for path in "${canonical_paths[@]}"; do
+            [[ -f "$path" ]] || {
+              echo "GHOST_REGISTRATION_CLEANUP=FAIL reason=canonical_file_missing path=$path" >&2
+              exit 1
+            }
+            active_count="$(awk -F '\t' -v p="$path" '$2 == p && $3 == "active" {count++} END {print count+0}' "$inventory")"
+            [[ "$active_count" -ge 1 ]] || {
+              echo "GHOST_REGISTRATION_CLEANUP=FAIL reason=canonical_owner_not_active path=$path" >&2
+              exit 1
+            }
+          done
+
+          disabled_ghosts=0
+          while IFS=$'\t' read -r id path state name; do
+            if [[ "$path" == .github/workflows/* && ! -f "$path" && "$state" == 'active' ]]; then
+              echo "Disabling ghost registration id=$id path=$path name=$name"
+              gh api --method PUT \
+                -H 'Accept: application/vnd.github+json' \
+                -H 'X-GitHub-Api-Version: 2022-11-28' \
+                "/repos/${GITHUB_REPOSITORY}/actions/workflows/${id}/disable" >/dev/null
+              disabled_ghosts=$((disabled_ghosts + 1))
+            fi
+          done < "$inventory"
+
+          retired_one_shots=0
+          for retired_path in "$superseded_one" "$superseded_two"; do
+            while IFS=$'\t' read -r id path state name; do
+              if [[ "$path" == "$retired_path" && "$state" == 'active' ]]; then
+                echo "Disabling superseded one-shot id=$id path=$path name=$name"
+                gh api --method PUT \
+                  -H 'Accept: application/vnd.github+json' \
+                  -H 'X-GitHub-Api-Version: 2022-11-28' \
+                  "/repos/${GITHUB_REPOSITORY}/actions/workflows/${id}/disable" >/dev/null
+                retired_one_shots=$((retired_one_shots + 1))
+              fi
+            done < "$inventory"
+          done
+
+          gh api --paginate \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "/repos/${GITHUB_REPOSITORY}/actions/workflows?per_page=100" \
+            --jq '.workflows[] | [.id,.path,.state,.name] | @tsv' > "$final_inventory"
+
+          residual_active_ghosts=0
+          while IFS=$'\t' read -r id path state name; do
+            if [[ "$path" == .github/workflows/* && ! -f "$path" && "$state" == 'active' ]]; then
+              echo "Residual active ghost id=$id path=$path name=$name" >&2
+              residual_active_ghosts=$((residual_active_ghosts + 1))
+            fi
+          done < "$final_inventory"
+
+          [[ "$residual_active_ghosts" -eq 0 ]] || {
+            echo "GHOST_REGISTRATION_CLEANUP=FAIL reason=residual_active_ghosts count=$residual_active_ghosts" >&2
+            exit 1
+          }
+
+          for path in "${canonical_paths[@]}"; do
+            active_count="$(awk -F '\t' -v p="$path" '$2 == p && $3 == "active" {count++} END {print count+0}' "$final_inventory")"
+            [[ "$active_count" -ge 1 ]] || {
+              echo "GHOST_REGISTRATION_CLEANUP=FAIL reason=canonical_owner_lost path=$path" >&2
+              exit 1
+            }
+          done
+
+          for retired_path in "$superseded_one" "$superseded_two"; do
+            active_count="$(awk -F '\t' -v p="$retired_path" '$2 == p && $3 == "active" {count++} END {print count+0}' "$final_inventory")"
+            [[ "$active_count" -eq 0 ]] || {
+              echo "GHOST_REGISTRATION_CLEANUP=FAIL reason=superseded_one_shot_still_active path=$retired_path count=$active_count" >&2
+              exit 1
+            }
+          done
+
+          gh api --method PUT \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "/repos/${GITHUB_REPOSITORY}/actions/workflows/${current_id}/disable" >/dev/null
+
+          current_state="$(gh api "/repos/${GITHUB_REPOSITORY}/actions/workflows/${current_id}" --jq .state)"
+          [[ "$current_state" != 'active' ]] || {
+            echo 'GHOST_REGISTRATION_CLEANUP=FAIL reason=self_disable_not_effective' >&2
+            exit 1
+          }
+
+          echo "GHOST_REGISTRATION_CLEANUP=PASS registered=$registered file_backed=$file_backed dynamic_managed=$dynamic_managed ghosts=$ghosts disabled_ghosts=$disabled_ghosts retired_one_shots=$retired_one_shots self_state=$current_state"
