@@ -8,6 +8,7 @@ describe("Google Ads provider health contract", () => {
   it("uses a currently supported Google Ads API version and never v17", () => {
     expect(source).toContain('const API_VERSION = "v25"');
     expect(source).toContain('https://googleads.googleapis.com/${API_VERSION}/customers/${customerId}/googleAds:search');
+    expect(source).toContain('api_version: API_VERSION');
     expect(source).not.toContain("googleads.googleapis.com/v17");
   });
 
