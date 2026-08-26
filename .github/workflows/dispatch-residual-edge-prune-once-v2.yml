@@ -38,11 +38,24 @@ jobs:
           [[ "$BEFORE_SHA" =~ ^[0-9a-f]{40}$ ]]
 
           # Fail closed unless this exact push introduces the bridge for the first time.
-          if gh api \
+          set +e
+          before_headers="$(gh api \
+            --include \
+            --silent \
             -H 'Accept: application/vnd.github+json' \
             "repos/$GITHUB_REPOSITORY/contents/$BRIDGE_PATH?ref=$BEFORE_SHA" \
-            >/dev/null 2>&1; then
+            2>&1)"
+          before_rc=$?
+          set -e
+
+          if [[ "$before_rc" -eq 0 ]]; then
             echo '::error::Bridge already existed before this push; refusing redispatch.'
+            exit 1
+          fi
+
+          before_status="$(printf '%s\n' "$before_headers" | awk '/^HTTP\/[0-9.]+ [0-9]{3}/ { status=$2 } END { print status }')"
+          if [[ "$before_status" != '404' ]]; then
+            echo "::error::Could not prove bridge absence at previous SHA (HTTP ${before_status:-unknown}); refusing dispatch."
             exit 1
           fi
 
