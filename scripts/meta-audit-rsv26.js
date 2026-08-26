@@ -43,6 +43,22 @@ async function graphGet(path, params = {}) {
   return body;
 }
 
+async function graphGetAll(path, params = {}) {
+  const rows = [];
+  let after = null;
+  do {
+    const page = await graphGet(path, after ? { ...params, after } : params);
+    if (!Array.isArray(page?.data)) {
+      throw new Error(`${path}: campaign inventory response must contain a data array.`);
+    }
+    rows.push(...page.data);
+    const nextAfter = String(page?.paging?.cursors?.after ?? '').trim();
+    const hasNext = Boolean(page?.paging?.next && nextAfter);
+    after = hasNext ? nextAfter : null;
+  } while (after);
+  return rows;
+}
+
 const report = {
   generated_at: new Date().toISOString(),
   campaign: null,
@@ -52,17 +68,17 @@ const report = {
   drift: [],
 };
 
-const [campaign, campaignAdsPage] = await Promise.all([
+const [campaign, campaignAds] = await Promise.all([
   graphGet(config.campaign.id, {
     fields: 'id,name,status,effective_status,objective',
   }),
-  graphGet(`${config.campaign.id}/ads`, {
+  graphGetAll(`${config.campaign.id}/ads`, {
     fields: 'id,name,status,effective_status,adset_id',
     limit: 500,
   }),
 ]);
 report.campaign = campaign;
-report.campaign_ads = Array.isArray(campaignAdsPage?.data) ? campaignAdsPage.data : [];
+report.campaign_ads = campaignAds;
 
 for (const [field, expected] of Object.entries({
   name: config.campaign.name,
