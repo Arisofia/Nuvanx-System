@@ -4,7 +4,9 @@
 -- sheet-row-derived source_key.
 --
 -- Identity/audit fields intentionally excluded from duplicate equivalence:
--- id, sheet_row, source_key, appointment_id, raw_data, imported_at, updated_at.
+-- id, sheet_row, source_key, appointment_id, raw_data, inserted_at,
+-- imported_at, updated_at. `inserted_at` is absent from the current Production
+-- schema but is ignored defensively for replay/legacy schema compatibility.
 
 begin;
 
@@ -23,6 +25,7 @@ with ranked as (
             'source_key',
             'appointment_id',
             'raw_data',
+            'inserted_at',
             'imported_at',
             'updated_at'
           ]::text[]
@@ -65,15 +68,28 @@ declare
     'source_key',
     'appointment_id',
     'raw_data',
+    'inserted_at',
     'imported_at',
     'updated_at'
   ];
+  v_business_payload jsonb;
+  v_lock_key bigint;
 begin
+  v_business_payload := to_jsonb(new) - v_ignored_fields;
+
+  -- Serialize writers for the same business payload. Without this lock, two
+  -- READ COMMITTED transactions can both observe no duplicate and commit the
+  -- same appointment under different row-derived source_key values. A hash
+  -- collision can only over-serialize unrelated writes; the exact JSONB check
+  -- below remains the authority for duplicate equivalence.
+  v_lock_key := pg_catalog.hashtextextended(v_business_payload::text, 0);
+  perform pg_catalog.pg_advisory_xact_lock(v_lock_key);
+
   if exists (
     select 1
     from public.doctoralia_appointments_ingestion as existing
     where existing.id is distinct from new.id
-      and (to_jsonb(existing) - v_ignored_fields) = (to_jsonb(new) - v_ignored_fields)
+      and (to_jsonb(existing) - v_ignored_fields) = v_business_payload
   ) then
     if tg_op = 'INSERT' then
       -- The canonical Doctoralia source occasionally contains adjacent,
@@ -117,6 +133,7 @@ begin
           'source_key',
           'appointment_id',
           'raw_data',
+          'inserted_at',
           'imported_at',
           'updated_at'
         ]::text[]
