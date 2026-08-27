@@ -34,10 +34,36 @@ describe("Google Ads provider health contract", () => {
   it("fails closed unless the canonical conversion exists, is enabled, and is primary for goal", () => {
     expect(source).toContain('const CANONICAL_CONVERSION_ACTION_ID = "7713427085"');
     expect(source).toContain("conversion_action.primary_for_goal");
-    expect(source).toContain('if (conversionRows.length !== 1) throw new Error("Canonical Google Ads conversion action missing")');
-    expect(source).toContain('if (conversion.primaryForGoal !== true) throw new Error("Canonical Google Ads conversion is not primary_for_goal")');
+    expect(source).toContain('new HealthFailure("validation", 424, "Canonical Google Ads conversion action missing")');
+    expect(source).toContain('new HealthFailure("validation", 424, "Canonical Google Ads conversion is not primary_for_goal")');
     expect(source).toContain('String(conversion.status || "").toUpperCase() !== "ENABLED"');
     expect(source).not.toContain("conversion_action.include_in_conversions_metric");
+  });
+
+  it("bounds request bodies and provider pagination", () => {
+    expect(source).toContain("const MAX_BODY_BYTES = 8192");
+    expect(source).toContain("new TextEncoder().encode(rawBody).byteLength > MAX_BODY_BYTES");
+    expect(source).toContain("const MAX_PROVIDER_PAGES = 20");
+    expect(source).toContain("const MAX_PROVIDER_ROWS = 10_000");
+    expect(source).toContain("const seenPageTokens = new Set<string>()");
+    expect(source).toContain("Google Ads repeated a pagination token");
+  });
+
+  it("requires exactly one explicit connected-integration selector", () => {
+    expect(source).toContain('["integration_id", cleanSelector(body.integration_id)]');
+    expect(source).toContain('["user_id", cleanSelector(body.user_id)]');
+    expect(source).toContain('["clinic_id", cleanSelector(body.clinic_id)]');
+    expect(source).toContain("Exactly one of integration_id, user_id or clinic_id is required");
+    expect(source).toContain("Google Ads integration selector did not resolve exactly one connected integration");
+    expect(source).not.toContain('.order("updated_at", { ascending: false })');
+  });
+
+  it("classifies local, OAuth, provider and validation failures separately", () => {
+    expect(source).toContain('type FailureKind = "request" | "configuration" | "oauth" | "provider" | "validation" | "persistence"');
+    expect(source).toContain('new HealthFailure("oauth", 424');
+    expect(source).toContain('"provider",\n    502');
+    expect(source).toContain('new HealthFailure("configuration", 500');
+    expect(source).toContain('new HealthFailure("validation", 424');
   });
 
   it("returns success only after both provider-proof timestamps persist", () => {
