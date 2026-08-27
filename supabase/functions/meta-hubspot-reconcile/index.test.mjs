@@ -51,8 +51,9 @@ describe('Meta → HubSpot commercial reconciliation', () => {
     expect(migration).toContain('and attempt_count < 6');
   });
 
-  it('does not enqueue ordinary stage or revenue changes', () => {
-    expect(migration).toContain('after insert or update of email, phone, hubspot_contact_id, source, deleted_at');
+  it('does not enqueue its own contact-link write or ordinary stage/revenue changes', () => {
+    expect(migration).toContain('after insert or update of email, phone, source, deleted_at');
+    expect(migration).not.toContain('update of email, phone, hubspot_contact_id');
     expect(migration).not.toContain('update of stage');
     expect(migration).not.toContain('update of revenue');
   });
