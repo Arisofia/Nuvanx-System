@@ -14,6 +14,7 @@ let cachedDefaultDealContactAssociationTypeId: number | null = null;
 let runtimeHubspotToken = HUBSPOT_ACCESS_TOKEN_ENV.trim();
 
 const PIPELINE_ID = "3707782370";
+const SUPPORTED_LEAD_SOURCES = new Set(["website_hubspot", "meta_leadgen"]);
 const STAGES = Object.freeze({
   newLead: "5159669951",
   contacted: "5159669952",
@@ -119,6 +120,24 @@ async function verifyContact(contactId: string) {
   return payload;
 }
 
+async function verifyLeadSourceRouting(admin: any, lead: any, projection: any) {
+  if (!SUPPORTED_LEAD_SOURCES.has(String(lead.source || ""))) {
+    throw new Error("Deal Factory received unsupported lead source");
+  }
+  if (lead.source === "website_hubspot") return;
+
+  const { data: reconciliation, error } = await admin
+    .from("meta_hubspot_reconciliations")
+    .select("status,hubspot_contact_id")
+    .eq("lead_id", lead.id)
+    .maybeSingle();
+  if (error || !reconciliation) throw new Error("Meta-HubSpot reconciliation missing");
+  if (reconciliation.status !== "reconciled") throw new Error("Meta-HubSpot reconciliation incomplete");
+  if (String(reconciliation.hubspot_contact_id || "") !== String(projection.hubspot_contact_id || "")) {
+    throw new Error("Meta-HubSpot reconciliation contact mismatch");
+  }
+}
+
 async function findExistingDeal(name: string) {
   const payload = await hubspot(`/crm/objects/${API_VERSION}/deals/search`, {
     method: "POST",
@@ -188,7 +207,7 @@ async function processProjection(admin: any, projection: any) {
     .is("deleted_at", null)
     .single();
   if (leadError || !lead) throw new Error("Projection lead missing");
-  if (lead.source !== "website_hubspot") throw new Error("Deal Factory only accepts website_hubspot leads");
+  await verifyLeadSourceRouting(admin, lead, projection);
   if (String(lead.hubspot_contact_id || "") !== String(projection.hubspot_contact_id || "")) throw new Error("Contact projection mismatch");
 
   try {
