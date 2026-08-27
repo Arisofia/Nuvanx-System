@@ -32,6 +32,7 @@ describe('standalone Edge deployment ownership', () => {
     expect(workflow).toContain('supabase/functions/runtime-bootstrap/index.ts');
     expect(workflow).toContain('supabase/functions/google-ads-health/index.ts');
     expect(workflow).toContain('supabase/functions/meta-lead-backfill/index.ts');
+    expect(workflow).toContain('supabase/functions/meta-hubspot-reconcile/index.ts');
   });
 
   it('preserves the production JWT policies while deploying each standalone function', () => {
@@ -40,6 +41,8 @@ describe('standalone Edge deployment ownership', () => {
     expect(workflow).toContain('supabase functions deploy runtime-bootstrap --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
     expect(workflow).toContain('supabase functions deploy google-ads-health --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
     expect(workflow).toContain('supabase functions deploy meta-lead-backfill --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
+    expect(workflow).toContain('supabase functions deploy meta-hubspot-reconcile --project-ref "$SUPABASE_PROJECT_REF"');
+    expect(workflow).not.toContain('supabase functions deploy meta-hubspot-reconcile --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
     expect(workflow).not.toContain('supabase functions deploy dashboard --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
     expect(workflow).not.toContain('supabase functions deploy agent-run --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
   });
