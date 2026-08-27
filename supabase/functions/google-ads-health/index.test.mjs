@@ -3,6 +3,10 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const source = readFileSync(fileURLToPath(new URL("./index.ts", import.meta.url)), "utf8");
+const deployWorkflow = readFileSync(
+  fileURLToPath(new URL("../../../.github/workflows/deploy-standalone-edge-functions.yml", import.meta.url)),
+  "utf8",
+);
 
 describe("Google Ads provider health contract", () => {
   it("uses a currently supported Google Ads API version and never v17", () => {
@@ -47,5 +51,12 @@ describe("Google Ads provider health contract", () => {
     expect(syncIndex).toBeGreaterThan(readIndex);
     expect(persistenceGate).toBeGreaterThan(syncIndex);
     expect(successIndex).toBeGreaterThan(persistenceGate);
+  });
+
+  it("has one governed automatic deployment owner with gateway JWT disabled", () => {
+    expect(deployWorkflow).toContain("supabase/functions/google-ads-health/index.ts");
+    expect(deployWorkflow).toContain(
+      'supabase functions deploy google-ads-health --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt',
+    );
   });
 });
