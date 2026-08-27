@@ -59,12 +59,12 @@ function Router() {
     if (!auth || auth.loading) return
 
     if (isAuthPage && auth.isAuthenticated) {
-      setLocation('/dashboard')
+      setLocation('/dashboard', { replace: true })
       return
     }
 
     if (!isAuthPage && !auth.isAuthenticated) {
-      setLocation('/login')
+      setLocation('/login', { replace: true })
     }
   }, [auth, isAuthPage, setLocation])
 
