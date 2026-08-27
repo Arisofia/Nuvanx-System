@@ -62,11 +62,12 @@ $$;
 
 revoke all on function public.nvx_queue_meta_hubspot_reconciliation() from public, anon, authenticated;
 
--- Only identity/linkage mutations can enqueue the worker. Ordinary CRM stage/revenue
--- updates do not cause a Meta-HubSpot reconciliation loop.
+-- Only acquisition identity mutations can enqueue the worker. The worker's own
+-- hubspot_contact_id write, plus ordinary CRM stage/revenue changes, must not
+-- self-wake another reconciliation cycle.
 drop trigger if exists meta_lead_hubspot_reconcile_wake_worker on public.leads;
 create trigger meta_lead_hubspot_reconcile_wake_worker
-after insert or update of email, phone, hubspot_contact_id, source, deleted_at
+after insert or update of email, phone, source, deleted_at
 on public.leads
 for each row
 when (new.source = 'meta_leadgen' and new.deleted_at is null)
@@ -82,7 +83,7 @@ where l.source = 'meta_leadgen'
   and l.created_at >= now() - interval '30 days'
 on conflict (lead_id) do nothing;
 
--- Preserve the user's current low-consumption fallback cadence: three times/day,
+-- Preserve the current low-consumption fallback cadence: three times/day,
 -- and only when durable work is actually due.
 do $$
 declare
