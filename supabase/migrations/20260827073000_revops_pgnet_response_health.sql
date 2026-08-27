@@ -1,7 +1,7 @@
 -- Make asynchronous pg_net delivery outcomes observable without making business
--- transactions wait on HTTP. The dispatcher records only request metadata; a
--- separate cron reconciles net._http_response and fails closed on downstream
--- transport/provider errors.
+-- transactions wait on HTTP. The dispatcher records only request metadata.
+-- Reconciliation and fail-closed health run in separate cron transactions so a
+-- health exception can never roll back durable delivery evidence.
 
 create table if not exists public.revops_dispatch_attempts (
   request_id bigint primary key,
@@ -9,7 +9,7 @@ create table if not exists public.revops_dispatch_attempts (
   mode text null check (mode is null or mode in ('deliver','poll')),
   requested_at timestamptz not null default now(),
   responded_at timestamptz null,
-  outcome text not null default 'pending' check (outcome in ('pending','succeeded','failed','missing_response')),
+  outcome text not null default 'pending' check (outcome in ('pending','succeeded','failed','timed_out','missing_response')),
   response_status integer null,
   timed_out boolean not null default false,
   error_message text null,
@@ -113,6 +113,7 @@ returns table (
   pending_count bigint,
   succeeded_count bigint,
   failed_count bigint,
+  timed_out_count bigint,
   missing_response_count bigint
 )
 language plpgsql
@@ -130,7 +131,7 @@ begin
       else left(r.error_msg, 240)
     end,
     outcome = case
-      when coalesce(r.timed_out, false) then 'failed'
+      when coalesce(r.timed_out, false) then 'timed_out'
       when r.error_msg is not null then 'failed'
       when r.status_code between 200 and 299 then 'succeeded'
       else 'failed'
@@ -156,6 +157,7 @@ begin
     count(*) filter (where a.outcome = 'pending')::bigint,
     count(*) filter (where a.outcome = 'succeeded')::bigint,
     count(*) filter (where a.outcome = 'failed')::bigint,
+    count(*) filter (where a.outcome = 'timed_out')::bigint,
     count(*) filter (where a.outcome = 'missing_response')::bigint
   from public.revops_dispatch_attempts as a
   where a.requested_at >= now() - interval '15 minutes';
@@ -176,18 +178,56 @@ declare
   v_missing bigint;
   v_latest_status integer;
 begin
-  perform public.nvx_reconcile_revops_dispatch_attempts();
-
+  -- Read-only assertion. It deliberately does not call the reconciler: if this
+  -- function raises, no persisted reconciliation work can be rolled back.
   select
-    count(*) filter (where outcome = 'failed'),
-    count(*) filter (where outcome = 'missing_response'),
-    max(response_status) filter (where outcome = 'failed')
-  into v_failed, v_missing, v_latest_status
-  from public.revops_dispatch_attempts
-  where requested_at >= now() - interval '10 minutes';
+    count(*) filter (
+      where a.outcome in ('failed','timed_out')
+         or (
+           a.outcome = 'pending'
+           and r.id is not null
+           and (
+             coalesce(r.timed_out, false)
+             or r.error_msg is not null
+             or r.status_code is null
+             or r.status_code < 200
+             or r.status_code >= 300
+           )
+         )
+    ),
+    count(*) filter (
+      where a.outcome = 'missing_response'
+         or (a.outcome = 'pending' and r.id is null and a.requested_at < now() - interval '10 minutes')
+    )
+  into v_failed, v_missing
+  from public.revops_dispatch_attempts as a
+  left join net._http_response as r on r.id = a.request_id
+  where a.requested_at >= now() - interval '15 minutes';
+
+  select coalesce(a.response_status, r.status_code)
+  into v_latest_status
+  from public.revops_dispatch_attempts as a
+  left join net._http_response as r on r.id = a.request_id
+  where a.requested_at >= now() - interval '15 minutes'
+    and (
+      a.outcome in ('failed','timed_out')
+      or (
+        a.outcome = 'pending'
+        and r.id is not null
+        and (
+          coalesce(r.timed_out, false)
+          or r.error_msg is not null
+          or r.status_code is null
+          or r.status_code < 200
+          or r.status_code >= 300
+        )
+      )
+    )
+  order by coalesce(a.responded_at, r.created, a.requested_at) desc, a.request_id desc
+  limit 1;
 
   if coalesce(v_failed, 0) > 0 or coalesce(v_missing, 0) > 0 then
-    raise exception 'RevOps async dispatch health failed: failed=%, missing_response=%, latest_status=%',
+    raise exception 'RevOps async dispatch health failed: failed_or_timeout=%, missing_response=%, latest_status=%',
       coalesce(v_failed, 0),
       coalesce(v_missing, 0),
       coalesce(v_latest_status::text, 'none');
@@ -207,12 +247,19 @@ begin
   for v_job in
     select jobid
     from cron.job
-    where jobname = 'nvx-revops-dispatch-health'
+    where jobname in ('nvx-revops-dispatch-reconcile','nvx-revops-dispatch-health')
   loop
     perform cron.unschedule(v_job.jobid);
   end loop;
 end;
 $$;
+
+-- Reconciliation must commit independently of the fail-closed assertion.
+select cron.schedule(
+  'nvx-revops-dispatch-reconcile',
+  '* * * * *',
+  $cron$select * from public.nvx_reconcile_revops_dispatch_attempts();$cron$
+);
 
 select cron.schedule(
   'nvx-revops-dispatch-health',
