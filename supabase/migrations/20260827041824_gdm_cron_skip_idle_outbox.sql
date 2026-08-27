@@ -32,6 +32,7 @@ select cron.schedule(
       select 1
       from public.google_data_manager_outbox
       where delivery_status in ('pending', 'failed', 'configuration_required')
+        and is_test_lead = false
       limit 1
     );
   $cron$
@@ -48,6 +49,7 @@ select cron.schedule(
       where delivery_status = 'sent'
         and provider_request_id is not null
         and delivered_at is null
+        and is_test_lead = false
       limit 1
     );
   $cron$
