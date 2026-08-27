@@ -295,9 +295,6 @@ async function persistLead(admin: any, userId: string, clinicId: string | null, 
   if (leadId) {
     const attribution = {
       lead_id: leadId,
-      leadgen_id: leadgenId,
-      page_id: raw.page_id || null,
-      form_id: raw.form_id || null,
       campaign_id: raw.campaign_id || null,
       campaign_name: raw.campaign_name || null,
       adset_id: raw.adset_id || null,

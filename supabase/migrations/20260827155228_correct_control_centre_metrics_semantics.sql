@@ -5,7 +5,19 @@
 -- 2) get_campaign_roi must not repeat account-level monthly spend on every campaign,
 --    and Doctoralia appointment amounts are not reconciled cash/revenue.
 
-CREATE OR REPLACE VIEW public.vw_campaign_performance_real AS
+DO $$
+BEGIN
+  -- Drop relational dependents first so the target view can be rebuilt with
+  -- the explicit security_invoker option and column contract without Postgres
+  -- signature replacement errors.
+  DROP VIEW IF EXISTS public.v_figma_campaign_kpis;
+  DROP VIEW IF EXISTS public.vw_campaign_performance_real CASCADE;
+END
+$$;
+
+CREATE OR REPLACE VIEW public.vw_campaign_performance_real
+WITH (security_invoker = true)
+AS
 WITH doctoralia_per_lead AS (
   SELECT
     u.lead_id,
@@ -85,6 +97,49 @@ GROUP BY
     NULLIF(l.source::text, ''),
     CASE WHEN ma.lead_id IS NOT NULL THEN 'meta'::text ELSE 'unknown'::text END
   );
+
+CREATE OR REPLACE VIEW public.v_figma_campaign_kpis
+WITH (security_invoker = true)
+AS
+SELECT
+  campaign_name,
+  min(campaign_id) AS campaign_id,
+  sum(total_leads) AS total_leads,
+  sum(booked) AS booked,
+  sum(attended) AS attended,
+  sum(no_shows) AS no_shows,
+  sum(closed) AS closed_won,
+  COALESCE(sum(verified_revenue_crm), 0::numeric) AS verified_revenue,
+  round(
+    CASE
+      WHEN sum(total_leads) > 0::numeric THEN sum(booked) / sum(total_leads) * 100::numeric
+      ELSE 0::numeric
+    END,
+    2
+  ) AS booking_rate_pct,
+  round(
+    CASE
+      WHEN sum(total_leads) > 0::numeric THEN sum(closed) / sum(total_leads) * 100::numeric
+      ELSE 0::numeric
+    END,
+    2
+  ) AS close_rate_pct,
+  round(
+    CASE
+      WHEN sum(booked) > 0::numeric THEN sum(no_shows) / sum(booked) * 100::numeric
+      ELSE 0::numeric
+    END,
+    2
+  ) AS no_show_rate_pct,
+  min(first_lead_at) AS first_lead_at,
+  max(last_lead_at) AS last_lead_at
+FROM public.vw_campaign_performance_real
+WHERE campaign_name IS NOT NULL
+GROUP BY campaign_name
+ORDER BY sum(total_leads) DESC;
+
+GRANT SELECT ON public.vw_campaign_performance_real TO authenticated, service_role;
+GRANT SELECT ON public.v_figma_campaign_kpis TO authenticated, service_role;
 
 CREATE OR REPLACE FUNCTION public.get_campaign_roi(
   p_user_id uuid,
