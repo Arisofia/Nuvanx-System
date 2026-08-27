@@ -19,7 +19,7 @@ const DEFAULT_LOOKBACK_DAYS = 180;
 const MAX_LOOKBACK_DAYS = 730;
 const MAX_FORMS = 200;
 const MAX_LEADS = 5000;
-const LEAD_MATCH_FIELDS = "id,user_id,external_id,source,campaign_id,campaign_name,meta_form_id,meta_ad_id,meta_ad_name,ad_account_id";
+const LEAD_MATCH_FIELDS = "id,user_id,external_id,source,campaign_id,campaign_name,form_name,meta_form_id,meta_ad_id,meta_ad_name,ad_account_id";
 
 type MetaLead = {
   id?: string;
@@ -257,6 +257,7 @@ async function persistLead(admin: any, userId: string, clinicId: string | null, 
       external_id: existing.external_id || leadgenId,
       campaign_id: existing.campaign_id || raw.campaign_id || null,
       campaign_name: existing.campaign_name || raw.campaign_name || null,
+      form_name: existing.form_name || raw.form_name || null,
       meta_form_id: existing.meta_form_id || raw.form_id || null,
       meta_ad_id: existing.meta_ad_id || raw.ad_id || null,
       meta_ad_name: existing.meta_ad_name || raw.ad_name || null,
@@ -276,6 +277,7 @@ async function persistLead(admin: any, userId: string, clinicId: string | null, 
       phone: mapped.phone,
       campaign_id: raw.campaign_id || null,
       campaign_name: raw.campaign_name || null,
+      form_name: raw.form_name || null,
       meta_form_id: raw.form_id || null,
       meta_ad_id: raw.ad_id || null,
       meta_ad_name: raw.ad_name || null,
@@ -327,7 +329,7 @@ Deno.serve(async (req: Request) => {
     try { body = await req.json(); } catch { body = {}; }
 
     const requestedUserId = String(body?.user_id || "").trim().toLowerCase();
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestedUserId)) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/.test(requestedUserId)) {
       return json(422, { success: false, message: "Valid user_id is required" });
     }
 
