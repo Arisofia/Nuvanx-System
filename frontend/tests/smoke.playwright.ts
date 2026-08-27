@@ -45,11 +45,24 @@ test('authenticated Control Centre routes load without runtime or server errors'
   const pageErrors: string[] = [];
   const serverErrors: string[] = [];
 
+  page.on('console', msg => {
+    if (msg.type() === 'error' || msg.type() === 'warning') {
+      console.log(`[BROWSER CONSOLE ${msg.type().toUpperCase()}] ${msg.text()}`);
+    }
+  });
+
+  page.on('requestfailed', request => {
+    console.log(`[REQUEST FAILED] ${request.url()} - ${request.failure()?.errorText}`);
+  });
+
   page.on('pageerror', (error) => {
     pageErrors.push(error.message);
   });
 
   page.on('response', (response) => {
+    if (response.status() >= 400) {
+      console.log(`[HTTP ${response.status()}] ${response.url()}`);
+    }
     if (response.status() >= 500) {
       serverErrors.push(`${response.status()} ${response.url()}`);
     }
@@ -72,7 +85,16 @@ test('authenticated Control Centre routes load without runtime or server errors'
   await page.locator('#login-email').fill(email);
   await page.locator('#login-password').fill(password);
   await page.getByRole('button', { name: /entrar/i }).click();
-  await expect(page).toHaveURL(/\/dashboard\/?$/, { timeout: 15_000 });
+
+  try {
+    await expect(page).toHaveURL(/\/dashboard\/?$/, { timeout: 15_000 });
+  } catch (error) {
+    const errorText = await page.locator('.bg-red-50').textContent().catch(() => null);
+    if (errorText) {
+      console.error(`[LOGIN FORM ERROR]: ${errorText.trim()}`);
+    }
+    throw error;
+  }
   await expect(page.getByText(/centro de control/i).first()).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole('heading', { name: /dashboard/i }).first()).toBeVisible({ timeout: 15_000 });
 
