@@ -239,6 +239,51 @@ async function markLedger(admin: any, leadId: string, patch: Record<string, unkn
   if (error) throw new Error("Meta-HubSpot ledger update failed");
 }
 
+async function existingLeadForContact(admin: any, leadId: string, contactId: string) {
+  const { data, error } = await admin
+    .from("leads")
+    .select("id,source,hubspot_deal_id")
+    .eq("hubspot_contact_id", Number(contactId))
+    .neq("id", leadId)
+    .is("deleted_at", null)
+    .limit(2);
+  if (error) throw new Error("Existing HubSpot contact lineage lookup failed");
+  const rows = Array.isArray(data) ? data : [];
+  if (rows.length > 1) throw new Error("Multiple active leads share HubSpot contact conflict");
+  return rows[0] || null;
+}
+
+async function markDuplicateSuppressed(
+  admin: any,
+  lead: any,
+  ledger: any,
+  contactId: string,
+  ownerId: string,
+  duplicateLeadId: string,
+  treatmentName: string | null,
+) {
+  const now = new Date().toISOString();
+  if (!lead.treatment_name && treatmentName) {
+    const { error } = await admin
+      .from("leads")
+      .update({ treatment_name: treatmentName, updated_at: now })
+      .eq("id", lead.id)
+      .is("deleted_at", null);
+    if (error) throw new Error("Duplicate lead treatment update failed");
+  }
+  await markLedger(admin, lead.id, {
+    status: "duplicate_suppressed",
+    hubspot_contact_id: Number(contactId),
+    owner_id: ownerId,
+    duplicate_of_lead_id: duplicateLeadId,
+    attempt_count: Number(ledger.attempt_count || 0) + 1,
+    last_error: null,
+    reconciled_at: now,
+    next_attempt_at: now,
+  });
+  return { lead_id: lead.id, outcome: "duplicate_suppressed" };
+}
+
 async function queueProjection(admin: any, lead: any, contactId: string, ownerId: string) {
   const { data: existingProjection, error: projectionLookupError } = await admin
     .from("hubspot_deal_projections")
@@ -320,6 +365,13 @@ async function processOne(admin: any, token: string, ledger: any) {
 
   const ownerId = await ensureOwner(token, contact);
   const treatmentName = await ensureInterest(token, contact, lead);
+  const existingContactLead = await existingLeadForContact(admin, lead.id, contactId);
+  if (existingContactLead?.id) {
+    return await markDuplicateSuppressed(
+      admin, lead, ledger, contactId, ownerId, String(existingContactLead.id), treatmentName,
+    );
+  }
+
   const leadPatch: Record<string, unknown> = {
     hubspot_contact_id: Number(contactId),
     updated_at: now,
@@ -330,11 +382,28 @@ async function processOne(admin: any, token: string, ledger: any) {
     .update(leadPatch)
     .eq("id", lead.id)
     .is("deleted_at", null);
-  if (linkError) throw new Error(linkError.code === "23505" ? "HubSpot contact already linked to another lead" : "Meta lead contact link failed");
+  if (linkError) {
+    if (linkError.code === "23505") {
+      const racedDuplicate = await existingLeadForContact(admin, lead.id, contactId);
+      if (racedDuplicate?.id) {
+        return await markDuplicateSuppressed(
+          admin, lead, ledger, contactId, ownerId, String(racedDuplicate.id), treatmentName,
+        );
+      }
+    }
+    throw new Error("Meta lead contact link failed");
+  }
 
   const projectionStatus = await queueProjection(admin, lead, contactId, ownerId);
   if (projectionStatus === "suppressed") {
-    await markLedger(admin, lead.id, { status: "suppressed", hubspot_contact_id: Number(contactId), owner_id: ownerId, last_error: null, reconciled_at: now });
+    await markLedger(admin, lead.id, {
+      status: "suppressed",
+      hubspot_contact_id: Number(contactId),
+      owner_id: ownerId,
+      duplicate_of_lead_id: null,
+      last_error: null,
+      reconciled_at: now,
+    });
     return { lead_id: lead.id, outcome: "suppressed" };
   }
 
@@ -342,6 +411,7 @@ async function processOne(admin: any, token: string, ledger: any) {
     status: "reconciled",
     hubspot_contact_id: Number(contactId),
     owner_id: ownerId,
+    duplicate_of_lead_id: null,
     attempt_count: Number(ledger.attempt_count || 0) + 1,
     last_error: null,
     reconciled_at: now,
@@ -406,6 +476,7 @@ Deno.serve(async (req: Request) => {
     success: true,
     processed: results.length,
     reconciled: results.filter((item) => item.outcome === "reconciled").length,
+    duplicates_suppressed: results.filter((item) => item.outcome === "duplicate_suppressed").length,
     unmatched: results.filter((item) => item.outcome === "unmatched" || item.outcome === "unmatched_terminal").length,
     suppressed: results.filter((item) => item.outcome === "suppressed").length,
     conflicts: results.filter((item) => item.outcome === "conflict").length,
