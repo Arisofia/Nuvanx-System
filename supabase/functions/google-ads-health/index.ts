@@ -5,7 +5,6 @@ declare const Deno: any;
 const SUPABASE_URL = (Deno.env.get("SUPABASE_URL") || "").trim();
 const SERVICE_ROLE = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
 const ENCRYPTION_KEY = (Deno.env.get("ENCRYPTION_KEY") || "").trim();
-const INTERNAL_SECRET = (Deno.env.get("REVOPS_INTERNAL_SECRET") || "").trim();
 const SERVICE_ACCOUNT_RAW = (Deno.env.get("GOOGLE_ADS_SERVICE_ACCOUNT") || "").trim();
 const LOGIN_CUSTOMER_ID_ENV = (Deno.env.get("GOOGLE_ADS_LOGIN_CUSTOMER_ID") || "").replace(/\D/g, "");
 const API_VERSION = "v25";
@@ -138,8 +137,8 @@ async function googleAccessToken(serviceAccount: Record<string, any>): Promise<s
     }).toString(),
     signal: AbortSignal.timeout(20_000),
   });
-  const payloadJson = await response.json().catch(() => ({}));
-  const token = String(payloadJson?.access_token || "").trim();
+  const tokenPayload = await response.json().catch(() => ({}));
+  const token = String(tokenPayload?.access_token || "").trim();
   if (!response.ok || !token) throw new Error(`Google OAuth failed ${response.status}`);
   return token;
 }
@@ -161,8 +160,8 @@ async function googleAdsSearch(
   const rows: any[] = [];
   let pageToken = "";
   do {
-    const body: Record<string, unknown> = { query, pageSize: 1000 };
-    if (pageToken) body.pageToken = pageToken;
+    const requestBody: Record<string, unknown> = { query, pageSize: 1000 };
+    if (pageToken) requestBody.pageToken = pageToken;
     const headers: Record<string, string> = {
       Authorization: `Bearer ${accessToken}`,
       "developer-token": developerToken,
@@ -174,7 +173,7 @@ async function googleAdsSearch(
       {
         method: "POST",
         headers,
-        body: JSON.stringify(body),
+        body: JSON.stringify(requestBody),
         signal: AbortSignal.timeout(30_000),
       },
     );
@@ -210,9 +209,15 @@ function micros(value: unknown): number {
 
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return reply(405, { success: false, message: "Method not allowed" });
-  if (!SUPABASE_URL || !SERVICE_ROLE || !INTERNAL_SECRET) return reply(500, { success: false, message: "Server configuration error" });
+  if (!SUPABASE_URL || !SERVICE_ROLE) return reply(500, { success: false, message: "Server configuration error" });
+
+  const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
+  const { data: expectedSecret, error: secretError } = await admin.rpc("nvx_get_runtime_secret", {
+    p_name: "REVOPS_INTERNAL_SECRET",
+  });
+  if (secretError || !expectedSecret) return reply(503, { success: false, message: "Runtime secret unavailable" });
   const receivedSecret = String(req.headers.get("x-nvx-internal-secret") || "").trim();
-  if (!(await secretMatches(receivedSecret, INTERNAL_SECRET))) return reply(403, { success: false, message: "Forbidden" });
+  if (!(await secretMatches(receivedSecret, String(expectedSecret)))) return reply(403, { success: false, message: "Forbidden" });
   if (Number(req.headers.get("content-length") || "0") > 8192) return reply(413, { success: false, message: "Payload too large" });
 
   const body = await req.json().catch(() => ({}));
@@ -224,7 +229,6 @@ Deno.serve(async (req: Request) => {
     return reply(422, { success: false, message: String(error?.message || "Invalid date range") });
   }
 
-  const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
   let integrationId = "";
   try {
     if (!SERVICE_ACCOUNT_RAW) throw new Error("Google Ads service account not configured");
@@ -292,6 +296,17 @@ Deno.serve(async (req: Request) => {
       `, loginCustomerId),
     ]);
 
+    const customer = customerRows[0]?.customer || null;
+    if (!customer || String(customer.id || "") !== customerId) throw new Error("Google Ads customer identity validation failed");
+
+    if (conversionRows.length !== 1) throw new Error("Canonical Google Ads conversion action missing");
+    const conversion = conversionRows[0]?.conversionAction || null;
+    if (!conversion || String(conversion.id || "") !== CANONICAL_CONVERSION_ACTION_ID) {
+      throw new Error("Canonical Google Ads conversion identity mismatch");
+    }
+    if (conversion.primaryForGoal !== true) throw new Error("Canonical Google Ads conversion is not primary_for_goal");
+    if (String(conversion.status || "").toUpperCase() !== "ENABLED") throw new Error("Canonical Google Ads conversion is not enabled");
+
     const performance = new Map<string, any>();
     for (const row of performanceRows) performance.set(String(row?.campaign?.id || ""), row?.metrics || {});
     const campaigns = campaignRows.map((row) => {
@@ -314,13 +329,14 @@ Deno.serve(async (req: Request) => {
     });
 
     const now = new Date().toISOString();
-    await Promise.all([
+    const [credentialUpdate, integrationUpdate] = await Promise.all([
       admin.from("credentials").update({ last_used: now }).eq("id", credential.id),
       admin.from("integrations").update({ last_sync: now, last_error: null, updated_at: now }).eq("id", integration.id),
     ]);
+    if (credentialUpdate.error || integrationUpdate.error) {
+      throw new Error("Google Ads provider proof persistence failed");
+    }
 
-    const customer = customerRows[0]?.customer || {};
-    const conversion = conversionRows[0]?.conversionAction || null;
     return reply(200, {
       success: true,
       provider: "google_ads",
@@ -328,28 +344,29 @@ Deno.serve(async (req: Request) => {
       verified_at: now,
       date_range: range,
       customer: {
-        id: String(customer?.id || customerId),
-        descriptive_name: customer?.descriptiveName ?? null,
-        currency_code: customer?.currencyCode ?? null,
-        time_zone: customer?.timeZone ?? null,
+        id: String(customer.id),
+        descriptive_name: customer.descriptiveName ?? null,
+        currency_code: customer.currencyCode ?? null,
+        time_zone: customer.timeZone ?? null,
       },
       campaigns,
-      canonical_conversion: conversion ? {
-        id: String(conversion.id || CANONICAL_CONVERSION_ACTION_ID),
+      canonical_conversion: {
+        id: String(conversion.id),
         name: conversion.name ?? null,
         status: conversion.status ?? null,
         type: conversion.type ?? null,
         category: conversion.category ?? null,
         origin: conversion.origin ?? null,
-        primary_for_goal: conversion.primaryForGoal ?? null,
-      } : null,
+        primary_for_goal: conversion.primaryForGoal,
+      },
     });
   } catch (error: any) {
     const message = String(error?.message || "Google Ads health check failed").replace(/\s+/g, " ").slice(0, 500);
     if (integrationId) {
-      await admin.from("integrations")
+      const { error: persistError } = await admin.from("integrations")
         .update({ last_error: message, updated_at: new Date().toISOString() })
         .eq("id", integrationId);
+      if (persistError) console.error("[google-ads-health] failed to persist bounded provider error");
     }
     console.error("[google-ads-health]", message);
     return reply(502, {
