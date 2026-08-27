@@ -1,13 +1,13 @@
-import { useState, ChangeEvent, SyntheticEvent } from 'react'
-import { useLocation } from 'wouter'
+import { useContext, useState, ChangeEvent, SyntheticEvent } from 'react'
 import { Card, CardContent, CardHeader } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
-import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { AuthContext } from '../contexts/AuthContext'
+import { isSupabaseConfigured } from '../lib/supabaseClient'
 import logo from '../assets/logo.png'
 
 export default function Login() {
-  const [, setLocation] = useLocation()
+  const auth = useContext(AuthContext)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -26,16 +26,19 @@ export default function Login() {
       return
     }
 
-    setLoading(true)
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    setLoading(false)
-
-    if (error) {
-      setMessage(error.message || 'Error al acceder. Revisa tus credenciales.')
+    if (!auth) {
+      setMessage('El contexto de autenticación no está disponible.')
       return
     }
 
-    setLocation('/dashboard')
+    setLoading(true)
+    try {
+      await auth.signIn(email.trim(), password)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Error al acceder. Revisa tus credenciales.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
