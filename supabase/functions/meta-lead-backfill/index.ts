@@ -4,6 +4,10 @@
 // owned by a Facebook Page, so this function resolves the canonical meta_ads
 // integration, queries /{page-id}/leadgen_forms and reconciles each lead by
 // strongest available identity before inserting anything.
+//
+// This is an internal maintenance endpoint. It is authenticated with the same
+// REVOPS_INTERNAL_SECRET used by server-to-server maintenance jobs, so it does
+// not depend on a frontend user session or any periodic cron.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 declare const Deno: any;
@@ -38,20 +42,13 @@ function json(status: number, body: Record<string, unknown>) {
   });
 }
 
-function decodeJwtSub(req: Request): string | null {
-  const auth = String(req.headers.get("authorization") || "");
-  if (!auth.toLowerCase().startsWith("bearer ")) return null;
-  const token = auth.slice(7).trim();
-  const parts = token.split(".");
-  if (parts.length !== 3) return null;
-  try {
-    const normalized = parts[1].replaceAll("-", "+").replaceAll("_", "/");
-    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
-    const payload = JSON.parse(atob(padded));
-    return typeof payload?.sub === "string" && payload.sub ? payload.sub : null;
-  } catch {
-    return null;
-  }
+function timingSafeTextMatch(received: string, expected: string): boolean {
+  const a = String(received || "");
+  const b = String(expected || "");
+  if (!a || !b || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
 }
 
 function parseDateInput(value: unknown, fallback: Date): Date {
@@ -173,8 +170,8 @@ async function fetchLeads(form: { id: string; name?: string }, token: string, si
 async function findExistingLead(admin: any, userId: string, leadgenId: string, phone: string | null, email: string | null) {
   const { data: attr } = await admin.from("meta_attribution").select("lead_id").eq("leadgen_id", leadgenId).maybeSingle();
   if (attr?.lead_id) {
-    const { data: row } = await admin.from("leads").select("id,user_id,external_id,source,campaign_id,campaign_name,meta_form_id,meta_ad_id,meta_ad_name,ad_account_id").eq("id", attr.lead_id).eq("user_id", userId).is("deleted_at", null).maybeSingle();
-    if (row) return { row, conflict: false };
+    const { data: row } = await admin.from("leads").select("id,user_id,external_id,source,campaign_id,campaign_name,meta_form_id,meta_ad_id,meta_ad_name,ad_account_id").eq("id", attr.lead_id).is("deleted_at", null).maybeSingle();
+    if (row) return String(row.user_id) === userId ? { row, conflict: false } : { row: null, conflict: true };
   }
 
   const { data: external } = await admin.from("leads").select("id,user_id,external_id,source,campaign_id,campaign_name,meta_form_id,meta_ad_id,meta_ad_name,ad_account_id").eq("user_id", userId).eq("external_id", leadgenId).is("deleted_at", null).maybeSingle();
@@ -274,13 +271,15 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json(405, { success: false, message: "Method not allowed" });
   if (!SUPABASE_URL || !SERVICE_ROLE) return json(500, { success: false, message: "Server configuration error" });
 
-  // Supabase verify_jwt validates the bearer signature before invocation. We only
-  // use the verified JWT sub to scope the canonical integration and all writes.
-  const userId = decodeJwtSub(req);
-  if (!userId) return json(401, { success: false, message: "Authenticated user required" });
-
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
   try {
+    const receivedSecret = String(req.headers.get("x-nvx-internal-secret") || "");
+    const { data: expectedSecret, error: secretError } = await admin.rpc("nvx_get_runtime_secret", { p_name: "REVOPS_INTERNAL_SECRET" });
+    if (secretError) throw secretError;
+    if (!timingSafeTextMatch(receivedSecret, String(expectedSecret || ""))) {
+      return json(401, { success: false, message: "Unauthorized" });
+    }
+
     let body: any = {};
     try { body = await req.json(); } catch { body = {}; }
 
@@ -294,16 +293,18 @@ Deno.serve(async (req: Request) => {
       return json(422, { success: false, message: `Date window must be between 0 and ${MAX_LOOKBACK_DAYS} days` });
     }
 
-    const { data: integration, error: integrationError } = await admin
+    const { data: integrations, error: integrationError } = await admin
       .from("integrations")
       .select("user_id,clinic_id,service,status,metadata")
-      .eq("user_id", userId)
       .eq("service", "meta_ads")
-      .eq("status", "connected")
-      .limit(1)
-      .maybeSingle();
+      .eq("status", "connected");
     if (integrationError) throw integrationError;
-    if (!integration) return json(409, { success: false, message: "Canonical meta_ads integration not connected" });
+    if (!Array.isArray(integrations) || integrations.length !== 1) {
+      return json(409, { success: false, message: "Expected exactly one connected canonical meta_ads integration" });
+    }
+    const integration = integrations[0];
+    const userId = String(integration.user_id || "").trim();
+    if (!userId) return json(409, { success: false, message: "Canonical Meta owner missing" });
 
     const pageId = String(integration.metadata?.pageId ?? integration.metadata?.page_id ?? "").trim();
     const adAccountId = String(integration.metadata?.adAccountId ?? integration.metadata?.ad_account_id ?? "").trim() || null;
