@@ -90,10 +90,33 @@ function dealName(leadId: string) {
 }
 
 function chooseStage(lead: any): string {
+  const canonicalStage = String(lead.stage_canonical || "").toLowerCase();
+  const appointmentStatus = String(lead.appointment_status || "").toLowerCase();
+  const lostReason = String(lead.lost_reason || "").toLowerCase();
+
   if (Number(lead.verified_revenue || 0) > 0) return STAGES.won;
-  if (lead.attended_at) return STAGES.valuationAttended;
-  if (lead.appointment_date) return STAGES.valuationScheduled;
-  if (lead.first_response_at || lead.first_outbound_at) return STAGES.contacted;
+  if (lostReason === "no_response") return STAGES.lostNoResponse;
+  if (lostReason === "location") return STAGES.lostLocation;
+  if (lostReason) return STAGES.lostOther;
+  if (lead.attended_at || appointmentStatus === "showed" || canonicalStage === "asistio") {
+    return STAGES.valuationAttended;
+  }
+  if (
+    lead.appointment_date
+    || appointmentStatus === "scheduled"
+    || appointmentStatus === "confirmed"
+    || canonicalStage === "valoracion_aceptada"
+  ) {
+    return STAGES.valuationScheduled;
+  }
+  if (
+    lead.first_response_at
+    || lead.first_outbound_at
+    || lead.first_inbound_at
+    || canonicalStage === "contacto"
+  ) {
+    return STAGES.contacted;
+  }
   return STAGES.newLead;
 }
 
@@ -202,7 +225,7 @@ async function processProjection(admin: any, projection: any) {
   const now = new Date().toISOString();
   const { data: lead, error: leadError } = await admin
     .from("leads")
-    .select("id,source,stage,revenue,verified_revenue,appointment_date,attended_at,first_response_at,first_outbound_at,hubspot_contact_id,hubspot_deal_id")
+    .select("id,source,stage,stage_canonical,revenue,verified_revenue,appointment_date,appointment_status,attended_at,first_response_at,first_outbound_at,first_inbound_at,lost_reason,hubspot_contact_id,hubspot_deal_id")
     .eq("id", projection.lead_id)
     .is("deleted_at", null)
     .single();
