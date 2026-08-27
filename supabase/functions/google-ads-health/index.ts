@@ -10,6 +10,24 @@ const LOGIN_CUSTOMER_ID_ENV = (Deno.env.get("GOOGLE_ADS_LOGIN_CUSTOMER_ID") || "
 const API_VERSION = "v25";
 const CANONICAL_CONVERSION_ACTION_ID = "7713427085";
 const MAX_RANGE_DAYS = 92;
+const MAX_BODY_BYTES = 8192;
+const MAX_PROVIDER_PAGES = 20;
+const MAX_PROVIDER_ROWS = 10_000;
+const PROVIDER_PAGE_SIZE = 1000;
+
+type FailureKind = "request" | "configuration" | "oauth" | "provider" | "validation" | "persistence";
+
+class HealthFailure extends Error {
+  kind: FailureKind;
+  status: number;
+
+  constructor(kind: FailureKind, status: number, message: string) {
+    super(message);
+    this.name = "HealthFailure";
+    this.kind = kind;
+    this.status = status;
+  }
+}
 
 function reply(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), {
@@ -24,6 +42,10 @@ function isRecord(value: unknown): value is Record<string, any> {
 
 function digits(value: unknown): string {
   return String(value ?? "").replace(/\D/g, "");
+}
+
+function cleanSelector(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 async function sha256(raw: string): Promise<Uint8Array> {
@@ -41,16 +63,18 @@ async function secretMatches(received: string, expected: string): Promise<boolea
 }
 
 function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
-  if (!hex || hex.length % 2 !== 0 || !/^[0-9a-f]+$/i.test(hex)) throw new Error("Malformed encrypted credential");
+  if (!hex || hex.length % 2 !== 0 || !/^[0-9a-f]+$/i.test(hex)) {
+    throw new HealthFailure("configuration", 500, "Malformed encrypted Google Ads credential");
+  }
   const bytes = new Uint8Array(new ArrayBuffer(hex.length / 2));
   for (let i = 0; i < hex.length; i += 2) bytes[i / 2] = Number.parseInt(hex.slice(i, i + 2), 16);
   return bytes;
 }
 
 async function decryptCredential(encoded: string): Promise<string> {
-  if (!ENCRYPTION_KEY) throw new Error("Credential encryption key unavailable");
+  if (!ENCRYPTION_KEY) throw new HealthFailure("configuration", 500, "Credential encryption key unavailable");
   const parts = String(encoded || "").split(":");
-  if (parts.length !== 4) throw new Error("Malformed encrypted credential");
+  if (parts.length !== 4) throw new HealthFailure("configuration", 500, "Malformed encrypted Google Ads credential");
   const [saltHex, ivHex, tagHex, ciphertextHex] = parts;
   const salt = hexToBytes(saltHex);
   const iv = hexToBytes(ivHex);
@@ -73,8 +97,12 @@ async function decryptCredential(encoded: string): Promise<string> {
     false,
     ["decrypt"],
   );
-  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, aesKey, combined);
-  return new TextDecoder().decode(plain).trim();
+  try {
+    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, aesKey, combined);
+    return new TextDecoder().decode(plain).trim();
+  } catch {
+    throw new HealthFailure("configuration", 500, "Google Ads developer credential decryption failed");
+  }
 }
 
 function base64Url(bytes: Uint8Array): string {
@@ -92,7 +120,7 @@ function pemBytes(pem: string): Uint8Array<ArrayBuffer> {
     .replace(/-----BEGIN PRIVATE KEY-----/g, "")
     .replace(/-----END PRIVATE KEY-----/g, "")
     .replace(/\s+/g, "");
-  if (!clean) throw new Error("Google Ads service-account private key unavailable");
+  if (!clean) throw new HealthFailure("configuration", 500, "Google Ads service-account private key unavailable");
   const binary = atob(clean);
   const bytes = new Uint8Array(new ArrayBuffer(binary.length));
   for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
@@ -103,7 +131,7 @@ async function googleAccessToken(serviceAccount: Record<string, any>): Promise<s
   const email = String(serviceAccount.client_email || "").trim();
   const tokenUri = String(serviceAccount.token_uri || "https://oauth2.googleapis.com/token").trim();
   const privateKey = String(serviceAccount.private_key || "");
-  if (!email || !privateKey) throw new Error("Google Ads service account is incomplete");
+  if (!email || !privateKey) throw new HealthFailure("configuration", 500, "Google Ads service account is incomplete");
 
   const now = Math.floor(Date.now() / 1000);
   const header = base64UrlText(JSON.stringify({ alg: "RS256", typ: "JWT" }));
@@ -139,15 +167,19 @@ async function googleAccessToken(serviceAccount: Record<string, any>): Promise<s
   });
   const tokenPayload = await response.json().catch(() => ({}));
   const token = String(tokenPayload?.access_token || "").trim();
-  if (!response.ok || !token) throw new Error(`Google OAuth failed ${response.status}`);
+  if (!response.ok || !token) throw new HealthFailure("oauth", 424, `Google OAuth failed ${response.status}`);
   return token;
 }
 
-function providerError(status: number, payload: unknown): Error {
+function providerError(status: number, payload: unknown): HealthFailure {
   const value = isRecord(payload) && isRecord(payload.error) ? payload.error : {};
   const providerStatus = String(value.status || "").slice(0, 80);
   const message = String(value.message || "").replace(/\s+/g, " ").slice(0, 300);
-  return new Error(`Google Ads API ${status}${providerStatus ? ` ${providerStatus}` : ""}${message ? `: ${message}` : ""}`);
+  return new HealthFailure(
+    "provider",
+    502,
+    `Google Ads API ${status}${providerStatus ? ` ${providerStatus}` : ""}${message ? `: ${message}` : ""}`,
+  );
 }
 
 async function googleAdsSearch(
@@ -158,9 +190,21 @@ async function googleAdsSearch(
   loginCustomerId: string,
 ): Promise<any[]> {
   const rows: any[] = [];
+  const seenPageTokens = new Set<string>();
   let pageToken = "";
+  let pageCount = 0;
+
   do {
-    const requestBody: Record<string, unknown> = { query, pageSize: 1000 };
+    pageCount += 1;
+    if (pageCount > MAX_PROVIDER_PAGES) {
+      throw new HealthFailure("provider", 502, `Google Ads pagination exceeded ${MAX_PROVIDER_PAGES} pages`);
+    }
+    if (pageToken) {
+      if (seenPageTokens.has(pageToken)) throw new HealthFailure("provider", 502, "Google Ads repeated a pagination token");
+      seenPageTokens.add(pageToken);
+    }
+
+    const requestBody: Record<string, unknown> = { query, pageSize: PROVIDER_PAGE_SIZE };
     if (pageToken) requestBody.pageToken = pageToken;
     const headers: Record<string, string> = {
       Authorization: `Bearer ${accessToken}`,
@@ -179,8 +223,11 @@ async function googleAdsSearch(
     );
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload?.error) throw providerError(response.status, payload);
-    if (!Array.isArray(payload?.results)) throw new Error("Google Ads API returned malformed results");
+    if (!Array.isArray(payload?.results)) throw new HealthFailure("provider", 502, "Google Ads API returned malformed results");
     rows.push(...payload.results);
+    if (rows.length > MAX_PROVIDER_ROWS) {
+      throw new HealthFailure("provider", 502, `Google Ads result set exceeded ${MAX_PROVIDER_ROWS} rows`);
+    }
     pageToken = String(payload?.nextPageToken || "").trim();
   } while (pageToken);
   return rows;
@@ -198,13 +245,20 @@ function resolveRange(body: Record<string, any>): { from: string; to: string } {
   const start = Date.parse(`${from}T00:00:00Z`);
   const end = Date.parse(`${to}T00:00:00Z`);
   const days = Math.floor((end - start) / 86_400_000) + 1;
-  if (!Number.isFinite(days) || days < 1 || days > MAX_RANGE_DAYS) throw new Error("Invalid Google Ads date range");
+  if (!Number.isFinite(days) || days < 1 || days > MAX_RANGE_DAYS) {
+    throw new HealthFailure("request", 422, "Invalid Google Ads date range");
+  }
   return { from, to };
 }
 
 function micros(value: unknown): number {
   const raw = Number(value ?? 0);
   return Number.isFinite(raw) ? raw / 1_000_000 : 0;
+}
+
+function normalizeFailure(error: unknown): HealthFailure {
+  if (error instanceof HealthFailure) return error;
+  return new HealthFailure("configuration", 500, String((error as any)?.message || "Google Ads health check failed"));
 }
 
 Deno.serve(async (req: Request) => {
@@ -218,40 +272,74 @@ Deno.serve(async (req: Request) => {
   if (secretError || !expectedSecret) return reply(503, { success: false, message: "Runtime secret unavailable" });
   const receivedSecret = String(req.headers.get("x-nvx-internal-secret") || "").trim();
   if (!(await secretMatches(receivedSecret, String(expectedSecret)))) return reply(403, { success: false, message: "Forbidden" });
-  if (Number(req.headers.get("content-length") || "0") > 8192) return reply(413, { success: false, message: "Payload too large" });
 
-  const body = await req.json().catch(() => ({}));
-  if (!isRecord(body)) return reply(400, { success: false, message: "Invalid JSON" });
+  const declaredLength = Number(req.headers.get("content-length") || "0");
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
+    return reply(413, { success: false, message: "Payload too large" });
+  }
+  const rawBody = await req.text();
+  if (new TextEncoder().encode(rawBody).byteLength > MAX_BODY_BYTES) {
+    return reply(413, { success: false, message: "Payload too large" });
+  }
+  let body: Record<string, any>;
+  try {
+    const parsed = rawBody.trim() ? JSON.parse(rawBody) : {};
+    if (!isRecord(parsed)) return reply(400, { success: false, message: "Invalid JSON" });
+    body = parsed;
+  } catch {
+    return reply(400, { success: false, message: "Invalid JSON" });
+  }
+
   let range: { from: string; to: string };
   try {
     range = resolveRange(body);
-  } catch (error: any) {
-    return reply(422, { success: false, message: String(error?.message || "Invalid date range") });
+  } catch (error) {
+    const failure = normalizeFailure(error);
+    return reply(failure.status, { success: false, kind: failure.kind, message: failure.message });
+  }
+
+  const selectors = [
+    ["integration_id", cleanSelector(body.integration_id)],
+    ["user_id", cleanSelector(body.user_id)],
+    ["clinic_id", cleanSelector(body.clinic_id)],
+  ].filter(([, value]) => value);
+  if (selectors.length !== 1) {
+    return reply(422, {
+      success: false,
+      kind: "request",
+      message: "Exactly one of integration_id, user_id or clinic_id is required",
+    });
   }
 
   let integrationId = "";
   try {
-    if (!SERVICE_ACCOUNT_RAW) throw new Error("Google Ads service account not configured");
+    if (!SERVICE_ACCOUNT_RAW) throw new HealthFailure("configuration", 500, "Google Ads service account not configured");
     let serviceAccount: Record<string, any>;
     try {
       serviceAccount = JSON.parse(SERVICE_ACCOUNT_RAW);
     } catch {
-      throw new Error("Google Ads service account is malformed");
+      throw new HealthFailure("configuration", 500, "Google Ads service account is malformed");
     }
 
-    const { data: integration, error: integrationError } = await admin
+    let integrationQuery = admin
       .from("integrations")
-      .select("id,user_id,metadata,status")
+      .select("id,user_id,clinic_id,metadata,status")
       .eq("service", "google_ads")
-      .eq("status", "connected")
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (integrationError || !integration) throw new Error("Google Ads connected integration not found");
+      .eq("status", "connected");
+    const [selectorKey, selectorValue] = selectors[0];
+    if (selectorKey === "integration_id") integrationQuery = integrationQuery.eq("id", selectorValue);
+    if (selectorKey === "user_id") integrationQuery = integrationQuery.eq("user_id", selectorValue);
+    if (selectorKey === "clinic_id") integrationQuery = integrationQuery.eq("clinic_id", selectorValue);
+    const { data: integrations, error: integrationError } = await integrationQuery.limit(2);
+    if (integrationError) throw new HealthFailure("configuration", 500, "Google Ads integration lookup failed");
+    if (!Array.isArray(integrations) || integrations.length !== 1) {
+      throw new HealthFailure("validation", 424, "Google Ads integration selector did not resolve exactly one connected integration");
+    }
+    const integration = integrations[0];
     integrationId = String(integration.id || "");
 
     const customerId = digits(integration?.metadata?.customerId || integration?.metadata?.customer_id);
-    if (!customerId) throw new Error("Google Ads customer id missing");
+    if (!customerId) throw new HealthFailure("configuration", 500, "Google Ads customer id missing");
     const loginCustomerId = digits(
       LOGIN_CUSTOMER_ID_ENV
       || integration?.metadata?.loginCustomerId
@@ -264,9 +352,11 @@ Deno.serve(async (req: Request) => {
       .eq("user_id", integration.user_id)
       .eq("service", "google_ads")
       .maybeSingle();
-    if (credentialError || !credential?.encrypted_key) throw new Error("Google Ads developer credential not found");
+    if (credentialError || !credential?.encrypted_key) {
+      throw new HealthFailure("configuration", 500, "Google Ads developer credential not found");
+    }
     const developerToken = await decryptCredential(String(credential.encrypted_key));
-    if (!developerToken) throw new Error("Google Ads developer credential is empty");
+    if (!developerToken) throw new HealthFailure("configuration", 500, "Google Ads developer credential is empty");
 
     const accessToken = await googleAccessToken(serviceAccount);
     const [customerRows, campaignRows, performanceRows, conversionRows] = await Promise.all([
@@ -297,15 +387,23 @@ Deno.serve(async (req: Request) => {
     ]);
 
     const customer = customerRows[0]?.customer || null;
-    if (!customer || String(customer.id || "") !== customerId) throw new Error("Google Ads customer identity validation failed");
+    if (!customer || String(customer.id || "") !== customerId) {
+      throw new HealthFailure("validation", 424, "Google Ads customer identity validation failed");
+    }
 
-    if (conversionRows.length !== 1) throw new Error("Canonical Google Ads conversion action missing");
+    if (conversionRows.length !== 1) {
+      throw new HealthFailure("validation", 424, "Canonical Google Ads conversion action missing");
+    }
     const conversion = conversionRows[0]?.conversionAction || null;
     if (!conversion || String(conversion.id || "") !== CANONICAL_CONVERSION_ACTION_ID) {
-      throw new Error("Canonical Google Ads conversion identity mismatch");
+      throw new HealthFailure("validation", 424, "Canonical Google Ads conversion identity mismatch");
     }
-    if (conversion.primaryForGoal !== true) throw new Error("Canonical Google Ads conversion is not primary_for_goal");
-    if (String(conversion.status || "").toUpperCase() !== "ENABLED") throw new Error("Canonical Google Ads conversion is not enabled");
+    if (conversion.primaryForGoal !== true) {
+      throw new HealthFailure("validation", 424, "Canonical Google Ads conversion is not primary_for_goal");
+    }
+    if (String(conversion.status || "").toUpperCase() !== "ENABLED") {
+      throw new HealthFailure("validation", 424, "Canonical Google Ads conversion is not enabled");
+    }
 
     const performance = new Map<string, any>();
     for (const row of performanceRows) performance.set(String(row?.campaign?.id || ""), row?.metrics || {});
@@ -334,7 +432,7 @@ Deno.serve(async (req: Request) => {
       admin.from("integrations").update({ last_sync: now, last_error: null, updated_at: now }).eq("id", integration.id),
     ]);
     if (credentialUpdate.error || integrationUpdate.error) {
-      throw new Error("Google Ads provider proof persistence failed");
+      throw new HealthFailure("persistence", 500, "Google Ads provider proof persistence failed");
     }
 
     return reply(200, {
@@ -343,6 +441,7 @@ Deno.serve(async (req: Request) => {
       api_version: API_VERSION,
       verified_at: now,
       date_range: range,
+      integration_id: integrationId,
       customer: {
         id: String(customer.id),
         descriptive_name: customer.descriptiveName ?? null,
@@ -360,19 +459,21 @@ Deno.serve(async (req: Request) => {
         primary_for_goal: conversion.primaryForGoal,
       },
     });
-  } catch (error: any) {
-    const message = String(error?.message || "Google Ads health check failed").replace(/\s+/g, " ").slice(0, 500);
+  } catch (error) {
+    const failure = normalizeFailure(error);
+    const message = failure.message.replace(/\s+/g, " ").slice(0, 500);
     if (integrationId) {
       const { error: persistError } = await admin.from("integrations")
         .update({ last_error: message, updated_at: new Date().toISOString() })
         .eq("id", integrationId);
-      if (persistError) console.error("[google-ads-health] failed to persist bounded provider error");
+      if (persistError) console.error("[google-ads-health] failed to persist bounded health error");
     }
-    console.error("[google-ads-health]", message);
-    return reply(502, {
+    console.error("[google-ads-health]", failure.kind, message);
+    return reply(failure.status, {
       success: false,
       provider: "google_ads",
       api_version: API_VERSION,
+      kind: failure.kind,
       message,
     });
   }
