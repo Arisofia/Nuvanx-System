@@ -283,6 +283,11 @@ Deno.serve(async (req: Request) => {
     let body: any = {};
     try { body = await req.json(); } catch { body = {}; }
 
+    const requestedUserId = String(body?.user_id || "").trim().toLowerCase();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestedUserId)) {
+      return json(422, { success: false, message: "Valid user_id is required" });
+    }
+
     const now = new Date();
     const defaultSince = new Date(now.getTime() - DEFAULT_LOOKBACK_DAYS * 86_400_000);
     const since = parseDateInput(body?.since, defaultSince);
@@ -296,15 +301,17 @@ Deno.serve(async (req: Request) => {
     const { data: integrations, error: integrationError } = await admin
       .from("integrations")
       .select("user_id,clinic_id,service,status,metadata")
+      .eq("user_id", requestedUserId)
       .eq("service", "meta_ads")
       .eq("status", "connected");
     if (integrationError) throw integrationError;
-    if (!Array.isArray(integrations) || integrations.length !== 1) {
-      return json(409, { success: false, message: "Expected exactly one connected canonical meta_ads integration" });
+
+    const canonicalIntegrations = (Array.isArray(integrations) ? integrations : []).filter((row: any) => row?.metadata?.canonical === true);
+    if (canonicalIntegrations.length !== 1) {
+      return json(409, { success: false, message: "Expected exactly one canonical connected meta_ads integration for user" });
     }
-    const integration = integrations[0];
-    const userId = String(integration.user_id || "").trim();
-    if (!userId) return json(409, { success: false, message: "Canonical Meta owner missing" });
+    const integration = canonicalIntegrations[0];
+    const userId = requestedUserId;
 
     const pageId = String(integration.metadata?.pageId ?? integration.metadata?.page_id ?? "").trim();
     const adAccountId = String(integration.metadata?.adAccountId ?? integration.metadata?.ad_account_id ?? "").trim() || null;
@@ -336,6 +343,7 @@ Deno.serve(async (req: Request) => {
     return json(200, {
       success: counts.failed === 0,
       source: "meta_page_leadgen_forms",
+      userId,
       pageId,
       adAccountId,
       period: { since: since.toISOString(), until: until.toISOString() },
