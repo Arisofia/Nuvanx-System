@@ -14,12 +14,12 @@ describe('Control Centre authentication routing contract', () => {
     expect(loginSource).not.toMatch(/\b(?:useLocation|setLocation|navigate)\b|window\.location/)
   })
 
-  it('redirects authenticated login routes only after AuthContext state is ready', () => {
+  it('redirects only from settled AuthContext state and replaces guard history entries', () => {
     expect(appSource).toContain('if (!auth || auth.loading) return')
     expect(appSource).toContain('if (isAuthPage && auth.isAuthenticated)')
-    expect(appSource).toContain("setLocation('/dashboard')")
+    expect(appSource).toContain("setLocation('/dashboard', { replace: true })")
     expect(appSource).toContain('if (!isAuthPage && !auth.isAuthenticated)')
-    expect(appSource).toContain("setLocation('/login')")
+    expect(appSource).toContain("setLocation('/login', { replace: true })")
     expect(appSource).toContain('if (auth?.loading || (isAuthPage && auth?.isAuthenticated))')
   })
 })
