@@ -11,7 +11,7 @@ describe('Control Centre authentication routing contract', () => {
     expect(loginSource).toContain('const auth = useContext(AuthContext)')
     expect(loginSource).toContain('await auth.signIn(email.trim(), password)')
     expect(loginSource).not.toContain('supabase.auth.signInWithPassword')
-    expect(loginSource).not.toContain("setLocation('/dashboard')")
+    expect(loginSource).not.toMatch(/\b(?:useLocation|setLocation|navigate)\b|window\.location/)
   })
 
   it('redirects authenticated login routes only after AuthContext state is ready', () => {
