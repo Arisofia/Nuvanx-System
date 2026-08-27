@@ -37,6 +37,15 @@ describe('Meta → HubSpot commercial reconciliation', () => {
     expect(source).not.toContain('campaign_name');
   });
 
+  it('suppresses repeat-contact opportunities instead of creating duplicate Deals', () => {
+    expect(source).toContain('existingLeadForContact');
+    expect(source).toContain('status: "duplicate_suppressed"');
+    expect(source).toContain('duplicate_of_lead_id: duplicateLeadId');
+    expect(source).toContain('duplicates_suppressed: results.filter');
+    expect(migration).toContain("'duplicate_suppressed'");
+    expect(migration).toContain('duplicate_of_lead_id uuid references public.leads(id)');
+  });
+
   it('uses the existing governed owner and idempotent deal projection key', () => {
     expect(source).toContain('HUBSPOT_DEFAULT_DEAL_OWNER_ID');
     expect(source).toContain('hubspot_deal_projections');
@@ -51,10 +60,33 @@ describe('Meta → HubSpot commercial reconciliation', () => {
     expect(migration).toContain('and attempt_count < 6');
   });
 
-  it('does not enqueue its own contact-link write or ordinary stage/revenue changes', () => {
+  it('keeps acquisition wakeups narrow while re-queuing existing Deals on real commercial changes', () => {
     expect(migration).toContain('after insert or update of email, phone, source, deleted_at');
-    expect(migration).not.toContain('update of email, phone, hubspot_contact_id');
-    expect(migration).not.toContain('update of stage');
-    expect(migration).not.toContain('update of revenue');
+    expect(migration).not.toContain('after insert or update of email, phone, hubspot_contact_id');
+    expect(migration).toContain('create or replace function public.nvx_requeue_deal_on_commercial_change()');
+    expect(migration).toContain('lead_commercial_change_requeue_deal');
+    expect(migration).toContain("set projection_status = 'pending'");
+    expect(migration).toContain('first_response_at, first_outbound_at, first_inbound_at');
+    expect(migration).toContain('verified_revenue, revenue, lost_reason, stage_canonical');
+  });
+
+  it('persists an append-only non-PII commercial event ledger and service-role funnel views', () => {
+    expect(migration).toContain('create table if not exists public.lead_commercial_events');
+    expect(migration).toContain('event_key text not null unique');
+    expect(migration).toContain('grant select, insert on table public.lead_commercial_events to service_role');
+    expect(migration).not.toContain('grant select, insert, update, delete on table public.lead_commercial_events');
+    expect(migration).toContain('public.vw_meta_commercial_funnel');
+    expect(migration).toContain('public.vw_meta_commercial_funnel_metrics');
+    expect(migration).toContain("'synced'");
+    expect(migration).toContain("'routed'");
+    expect(migration).toContain("'deal_created'");
+    expect(migration).toContain("'valuation_scheduled'");
+    expect(migration).toContain("'valuation_attended'");
+  });
+
+  it('uses the existing per-lead response SLA for routing observability instead of inventing another SLA', () => {
+    expect(migration).toContain('coalesce(l.first_response_sla_minutes, 30) as routing_sla_minutes');
+    expect(migration).toContain('routing_sla_breached');
+    expect(migration).toContain('routing_latency_minutes');
   });
 });
