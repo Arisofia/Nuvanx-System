@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy · dashboard + agent-run + runtime-bootstrap
+    name: Deploy · dashboard + agent-run + runtime-bootstrap + google-ads-health
     if: >-
       ${{
         github.event_name == 'workflow_dispatch' ||
@@ -97,7 +97,8 @@ jobs:
           deno check --config=supabase/functions/deno.json \
             supabase/functions/dashboard/index.ts \
             supabase/functions/agent-run/index.ts \
-            supabase/functions/runtime-bootstrap/index.ts
+            supabase/functions/runtime-bootstrap/index.ts \
+            supabase/functions/google-ads-health/index.ts
 
       - name: Deploy standalone functions
         if: ${{ steps.candidate.outputs.deploy == 'true' }}
@@ -114,4 +115,5 @@ jobs:
             supabase functions deploy dashboard --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy agent-run --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy runtime-bootstrap --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+            supabase functions deploy google-ads-health --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions list --project-ref "$SUPABASE_PROJECT_REF"
