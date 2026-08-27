@@ -55,4 +55,23 @@ describe("Deal Factory contract", () => {
     expect(source).toContain("projection.owner_id || DEFAULT_OWNER_ID");
     expect(source).toContain('deal_currency_code: projection.currency_code || "EUR"');
   });
+
+  it("projects only evidence-based commercial stages and does not synthesize qualification", () => {
+    expect(source).toContain('lostReason === "no_response"');
+    expect(source).toContain('lostReason === "location"');
+    expect(source).toContain('appointmentStatus === "showed"');
+    expect(source).toContain('canonicalStage === "asistio"');
+    expect(source).toContain('canonicalStage === "valoracion_aceptada"');
+    expect(source).toContain('lead.first_inbound_at');
+    expect(source).toContain('canonicalStage === "contacto"');
+    expect(source).not.toContain('return STAGES.qualified;');
+    expect(source).not.toContain('return STAGES.budgetAccepted;');
+  });
+
+  it("reads all commercial evidence needed for re-projection", () => {
+    expect(source).toContain('stage_canonical');
+    expect(source).toContain('appointment_status');
+    expect(source).toContain('first_inbound_at');
+    expect(source).toContain('lost_reason');
+  });
 });
