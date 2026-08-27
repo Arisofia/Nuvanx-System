@@ -8,6 +8,13 @@ import type { Lead, LeadStage } from '../types'
 import { MetaAccountsInline } from '../components/MetaAccountsNotice'
 
 const ALL_STAGES = ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'] as const
+const APPOINTMENT_EVIDENCE_STAGES = new Set(['appointment', 'treatment'])
+const STALE_LEADS_AFTER_DAYS = 7
+
+function hasAppointmentEvidence(lead: Lead) {
+  const stage = String(lead.status ?? '').toLowerCase()
+  return Boolean(lead.appointment_date) || APPOINTMENT_EVIDENCE_STAGES.has(stage)
+}
 
 export default function CRM() {
   const { leads, loading, error, updateLead, deleteLead } = useLeads()
@@ -59,9 +66,26 @@ export default function CRM() {
     return counts
   }, [leads])
 
-  const conversionRate = stageStats.lead > 0
-    ? Number.parseFloat(((stageStats.appointment / stageStats.lead) * 100).toFixed(1))
-    : null
+  const appointmentCoverage = useMemo(() => {
+    if (leads.length === 0) return null
+    const withAppointmentEvidence = leads.filter(hasAppointmentEvidence).length
+    return Number.parseFloat(((withAppointmentEvidence / leads.length) * 100).toFixed(1))
+  }, [leads])
+
+  const dataFreshness = useMemo(() => {
+    const timestamps = leads
+      .map((lead) => lead.created_at ? Date.parse(lead.created_at) : Number.NaN)
+      .filter(Number.isFinite)
+    if (timestamps.length === 0) return null
+
+    const latestTimestamp = Math.max(...timestamps)
+    const ageDays = Math.floor((Date.now() - latestTimestamp) / 86_400_000)
+    return {
+      latestDate: new Date(latestTimestamp).toLocaleDateString('es-ES'),
+      ageDays,
+      stale: ageDays > STALE_LEADS_AFTER_DAYS,
+    }
+  }, [leads])
 
   return (
     <div className="space-y-6">
@@ -72,6 +96,12 @@ export default function CRM() {
           <MetaAccountsInline context="Los leads de Meta Ads se trazan contra estas cuentas antes de entrar al CRM." className="mt-4 max-w-2xl" />
         </div>
       </div>
+
+      {!loading && dataFreshness?.stale && (
+        <div className="rounded-xl border border-[#E0A020]/30 bg-[#E0A020]/10 px-4 py-3 text-sm text-foreground">
+          Datos CRM desactualizados: el último lead cargado es del {dataFreshness.latestDate}. Las métricas de este panel no deben interpretarse como actividad actual hasta recuperar la ingestión.
+        </div>
+      )}
 
       {/* Funnel stage stats bar */}
       {!loading && leads.length > 0 && (
@@ -104,9 +134,10 @@ export default function CRM() {
         </div>
       )}
 
-      {conversionRate !== null && !loading && (
+      {appointmentCoverage !== null && !loading && (
         <p className="text-xs text-muted">
-          Conversión lead → cita: <span className="text-foreground font-medium">{conversionRate}%</span>
+          Cobertura de evidencia de cita: <span className="text-foreground font-medium">{appointmentCoverage}%</span>
+          {' '}· leads con fecha de cita o etapa cita/tratamiento ÷ total de leads cargados. No es una tasa de conversión de cohort.
         </p>
       )}
 
@@ -154,10 +185,10 @@ export default function CRM() {
               <p className="text-muted">Cargando embudo...</p>
             </div>
           ) : (
-            <KanbanBoard 
-              leads={filteredLeads} 
-              onStageChange={handleStageChange} 
-              onLeadClick={handleLeadClick} 
+            <KanbanBoard
+              leads={filteredLeads}
+              onStageChange={handleStageChange}
+              onLeadClick={handleLeadClick}
             />
           )}
         </TabsContent>
@@ -198,9 +229,9 @@ export default function CRM() {
         </TabsContent>
       </Tabs>
 
-      <LeadDetailSheet 
-        lead={selectedLead} 
-        isOpen={isDetailOpen} 
+      <LeadDetailSheet
+        lead={selectedLead}
+        isOpen={isDetailOpen}
         onClose={() => setIsDetailOpen(false)}
         onUpdate={handleUpdate}
         onDelete={handleDelete}
