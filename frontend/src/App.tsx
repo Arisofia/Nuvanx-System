@@ -56,25 +56,24 @@ function Router() {
   useMetaContextCapture()
 
   useEffect(() => {
-    if (!isAuthPage && auth && !auth.loading && !auth.isAuthenticated) {
-      setLocation('/login')
-    }
-  }, [auth?.loading, auth?.isAuthenticated, isAuthPage, setLocation, auth])
+    if (!auth || auth.loading) return
 
-  if (!isAuthPage && auth?.loading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    )
+    if (isAuthPage && auth.isAuthenticated) {
+      setLocation('/dashboard', { replace: true })
+      return
+    }
+
+    if (!isAuthPage && !auth.isAuthenticated) {
+      setLocation('/login', { replace: true })
+    }
+  }, [auth, isAuthPage, setLocation])
+
+  if (auth?.loading || (isAuthPage && auth?.isAuthenticated)) {
+    return <PageLoader />
   }
 
-  if (!isAuthPage && !auth?.loading && !auth?.isAuthenticated) {
-    return (
-      <Suspense fallback={<PageLoader />}>
-        <Login />
-      </Suspense>
-    )
+  if (!isAuthPage && !auth?.isAuthenticated) {
+    return <PageLoader />
   }
 
   const pageContent = (() => {
