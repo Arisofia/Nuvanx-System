@@ -31,6 +31,7 @@ select cron.schedule(
       from public.web_lead_captures
       where applied_lead_id is null
         and reconciliation_status in ('pending', 'failed')
+        and coalesce(is_test_lead, false) = false
       limit 1
     );
   $cron$
@@ -44,7 +45,7 @@ select cron.schedule(
     where exists (
       select 1
       from public.hubspot_deal_projections
-      where projection_status = 'pending'
+      where projection_status in ('pending', 'failed')
       limit 1
     );
   $cron$
