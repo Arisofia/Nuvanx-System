@@ -40,9 +40,9 @@ async function secretMatches(received: string, expected: string): Promise<boolea
   return diff === 0;
 }
 
-function hexToBytes(hex: string): Uint8Array {
+function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
   if (!hex || hex.length % 2 !== 0 || !/^[0-9a-f]+$/i.test(hex)) throw new Error("Malformed encrypted credential");
-  const bytes = new Uint8Array(hex.length / 2);
+  const bytes = new Uint8Array(new ArrayBuffer(hex.length / 2));
   for (let i = 0; i < hex.length; i += 2) bytes[i / 2] = Number.parseInt(hex.slice(i, i + 2), 16);
   return bytes;
 }
@@ -56,7 +56,7 @@ async function decryptCredential(encoded: string): Promise<string> {
   const iv = hexToBytes(ivHex);
   const tag = hexToBytes(tagHex);
   const ciphertext = hexToBytes(ciphertextHex);
-  const combined = new Uint8Array(ciphertext.length + tag.length);
+  const combined = new Uint8Array(new ArrayBuffer(ciphertext.length + tag.length));
   combined.set(ciphertext);
   combined.set(tag, ciphertext.length);
   const keyMaterial = await crypto.subtle.importKey(
@@ -87,14 +87,14 @@ function base64UrlText(value: string): string {
   return base64Url(new TextEncoder().encode(value));
 }
 
-function pemBytes(pem: string): Uint8Array {
+function pemBytes(pem: string): Uint8Array<ArrayBuffer> {
   const clean = String(pem || "")
     .replace(/-----BEGIN PRIVATE KEY-----/g, "")
     .replace(/-----END PRIVATE KEY-----/g, "")
     .replace(/\s+/g, "");
   if (!clean) throw new Error("Google Ads service-account private key unavailable");
   const binary = atob(clean);
-  const bytes = new Uint8Array(binary.length);
+  const bytes = new Uint8Array(new ArrayBuffer(binary.length));
   for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
   return bytes;
 }
