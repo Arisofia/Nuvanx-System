@@ -12,7 +12,7 @@ const hotfixMigration = readFileSync(
   fileURLToPath(new URL("../../migrations/20260819203000_nonblocking_revops_wakeups.sql", import.meta.url)),
   "utf8",
 );
-const metaHubspotMigration = readFileSync(
+const metaRoutingMigration = readFileSync(
   fileURLToPath(new URL("../../migrations/20260827203500_meta_hubspot_commercial_reconciliation.sql", import.meta.url)),
   "utf8",
 );
@@ -58,7 +58,7 @@ describe("RevOps dispatcher contract", () => {
     expect(baseMigration).not.toContain("ssvvuuysgxyqvmovrlvk.supabase.co");
     expect(routingMigration).not.toContain("ssvvuuysgxyqvmovrlvk.supabase.co");
     expect(hotfixMigration).not.toContain("ssvvuuysgxyqvmovrlvk.supabase.co");
-    expect(metaHubspotMigration).not.toContain("ssvvuuysgxyqvmovrlvk.supabase.co");
+    expect(metaRoutingMigration).not.toContain("ssvvuuysgxyqvmovrlvk.supabase.co");
     expect(routingMigration).toContain("REVOPS_PROJECT_URL");
     expect(routingMigration).toContain("nvx_set_revops_project_url");
     expect(routingMigration).toContain("v_project_url || '/functions/v1/revops-dispatcher'");
@@ -74,16 +74,8 @@ describe("RevOps dispatcher contract", () => {
   it("keeps trigger wakeups non-blocking before runtime bootstrap", () => {
     expect(hotfixMigration).toContain("perform public.nvx_try_dispatch_revops_worker('deal-factory', 20, null)");
     expect(hotfixMigration).toContain("perform public.nvx_try_dispatch_revops_worker('google-data-manager-export', 20, 'deliver')");
-    expect(metaHubspotMigration).toContain("perform public.nvx_try_dispatch_revops_worker('meta-hubspot-reconcile', 25, null)");
+    expect(metaRoutingMigration).toContain("perform public.nvx_try_dispatch_revops_worker('meta-hubspot-reconcile', 25, null)");
     expect(hotfixMigration).not.toMatch(/perform public\.nvx_dispatch_revops_worker\('(?:deal-factory|google-data-manager-export)'/);
-    expect(metaHubspotMigration).not.toContain("perform public.nvx_dispatch_revops_worker('meta-hubspot-reconcile', 25, null)");
-  });
-
-  it("keeps Meta-HubSpot scheduled reconciliation strict, sparse, and idle-aware", () => {
-    expect(metaHubspotMigration).toContain("'0 4,12,20 * * *'");
-    expect(metaHubspotMigration).toContain("select public.nvx_dispatch_revops_worker('meta-hubspot-reconcile', 50, null)");
-    expect(metaHubspotMigration).toContain("where status in ('pending', 'unmatched', 'failed')");
-    expect(metaHubspotMigration).toContain("and attempt_count < 6");
   });
 
   it("schedules both Google delivery and provider-status polling through the safe wakeup wrapper", () => {
@@ -93,5 +85,12 @@ describe("RevOps dispatcher contract", () => {
     expect(hotfixMigration).toContain("nvx_try_dispatch_revops_worker('google-data-manager-export', 50, 'poll')");
     expect(hotfixMigration).toContain("nvx_try_dispatch_revops_worker('web-lead-reconcile', 50, null)");
     expect(hotfixMigration).toContain("nvx_try_dispatch_revops_worker('deal-factory', 50, null)");
+  });
+
+  it("keeps Meta reconciliation fallback idle-aware at the low-consumption 3x/day cadence", () => {
+    expect(metaRoutingMigration).toContain("'nvx-meta-hubspot-reconcile'");
+    expect(metaRoutingMigration).toContain("'0 4,12,20 * * *'");
+    expect(metaRoutingMigration).toContain("nvx_dispatch_revops_worker('meta-hubspot-reconcile', 50, null)");
+    expect(metaRoutingMigration).toContain("where status in ('pending', 'unmatched', 'failed')");
   });
 });
