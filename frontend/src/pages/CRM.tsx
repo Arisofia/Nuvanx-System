@@ -10,6 +10,7 @@ import { MetaAccountsInline } from '../components/MetaAccountsNotice'
 const ALL_STAGES = ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'] as const
 const APPOINTMENT_EVIDENCE_STAGES = new Set(['appointment', 'treatment'])
 const STALE_LEADS_AFTER_DAYS = 7
+const CRM_LOADED_AT_MS = Date.now()
 
 function hasAppointmentEvidence(lead: Lead) {
   const stage = String(lead.status ?? '').toLowerCase()
@@ -79,7 +80,7 @@ export default function CRM() {
     if (timestamps.length === 0) return null
 
     const latestTimestamp = Math.max(...timestamps)
-    const ageDays = Math.floor((Date.now() - latestTimestamp) / 86_400_000)
+    const ageDays = Math.floor((CRM_LOADED_AT_MS - latestTimestamp) / 86_400_000)
     return {
       latestDate: new Date(latestTimestamp).toLocaleDateString('es-ES'),
       ageDays,
