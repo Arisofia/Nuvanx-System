@@ -19,6 +19,7 @@ const DEFAULT_LOOKBACK_DAYS = 180;
 const MAX_LOOKBACK_DAYS = 730;
 const MAX_FORMS = 200;
 const MAX_LEADS = 5000;
+const LEAD_MATCH_FIELDS = "id,user_id,external_id,source,campaign_id,campaign_name,meta_form_id,meta_ad_id,meta_ad_name,ad_account_id";
 
 type MetaLead = {
   id?: string;
@@ -33,6 +34,11 @@ type MetaLead = {
   adset_id?: string;
   adset_name?: string;
   page_id?: string;
+};
+
+type ExistingLeadResolution = {
+  row: any | null;
+  conflict: boolean;
 };
 
 function json(status: number, body: Record<string, unknown>) {
@@ -63,9 +69,19 @@ function normalizePhone(raw: unknown): string | null {
   if (!text || /dummy data|test lead/i.test(text)) return null;
   const digits = text.replaceAll(/\D/g, "");
   if (digits.length === 9 && /^[6789]/.test(digits)) return `+34${digits}`;
-  if (digits.length >= 11 && digits.startsWith("34")) return `+${digits}`;
+  if (digits.length === 11 && digits.startsWith("34")) return `+${digits}`;
   if (text.startsWith("+") && digits.length >= 8 && digits.length <= 15) return `+${digits}`;
   return digits.length >= 8 && digits.length <= 15 ? `+${digits}` : null;
+}
+
+// Mirrors public.normalize_phone for the Spanish numbers currently used by the
+// CRM. The database trigger remains the source of truth on writes; this helper
+// exists only to query the already-normalized identity column before insertion.
+function phoneLookupKey(phone: string | null): string | null {
+  if (!phone) return null;
+  const digits = phone.replaceAll(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("34")) return digits.slice(2);
+  return digits || null;
 }
 
 function normalizeEmail(raw: unknown): string | null {
@@ -167,28 +183,58 @@ async function fetchLeads(form: { id: string; name?: string }, token: string, si
   return leads;
 }
 
-async function findExistingLead(admin: any, userId: string, leadgenId: string, phone: string | null, email: string | null) {
-  const { data: attr } = await admin.from("meta_attribution").select("lead_id").eq("leadgen_id", leadgenId).maybeSingle();
+async function fetchIdentityCandidate(admin: any, userId: string, column: "phone_normalized" | "email_normalized", value: string | null): Promise<ExistingLeadResolution> {
+  if (!value) return { row: null, conflict: false };
+  const { data, error } = await admin
+    .from("leads")
+    .select(LEAD_MATCH_FIELDS)
+    .eq("user_id", userId)
+    .eq(column, value)
+    .is("deleted_at", null)
+    .limit(2);
+  if (error) throw error;
+  const rows = Array.isArray(data) ? data : [];
+  if (rows.length > 1) return { row: null, conflict: true };
+  return { row: rows[0] ?? null, conflict: false };
+}
+
+async function findExistingLead(admin: any, userId: string, leadgenId: string, phone: string | null, email: string | null): Promise<ExistingLeadResolution> {
+  const { data: attr, error: attrError } = await admin
+    .from("meta_attribution")
+    .select("lead_id")
+    .eq("leadgen_id", leadgenId)
+    .maybeSingle();
+  if (attrError) throw attrError;
   if (attr?.lead_id) {
-    const { data: row } = await admin.from("leads").select("id,user_id,external_id,source,campaign_id,campaign_name,meta_form_id,meta_ad_id,meta_ad_name,ad_account_id").eq("id", attr.lead_id).is("deleted_at", null).maybeSingle();
+    const { data: row, error: rowError } = await admin
+      .from("leads")
+      .select(LEAD_MATCH_FIELDS)
+      .eq("id", attr.lead_id)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (rowError) throw rowError;
     if (row) return String(row.user_id) === userId ? { row, conflict: false } : { row: null, conflict: true };
   }
 
-  const { data: external } = await admin.from("leads").select("id,user_id,external_id,source,campaign_id,campaign_name,meta_form_id,meta_ad_id,meta_ad_name,ad_account_id").eq("user_id", userId).eq("external_id", leadgenId).is("deleted_at", null).maybeSingle();
+  const { data: external, error: externalError } = await admin
+    .from("leads")
+    .select(LEAD_MATCH_FIELDS)
+    .eq("user_id", userId)
+    .eq("external_id", leadgenId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (externalError) throw externalError;
   if (external) return { row: external, conflict: false };
 
-  let phoneRow: any = null;
-  let emailRow: any = null;
-  if (phone) {
-    const { data } = await admin.from("leads").select("id,user_id,external_id,source,campaign_id,campaign_name,meta_form_id,meta_ad_id,meta_ad_name,ad_account_id").eq("user_id", userId).eq("phone", phone).is("deleted_at", null).limit(1).maybeSingle();
-    phoneRow = data ?? null;
+  const phoneCandidate = await fetchIdentityCandidate(admin, userId, "phone_normalized", phoneLookupKey(phone));
+  if (phoneCandidate.conflict) return phoneCandidate;
+  const emailCandidate = await fetchIdentityCandidate(admin, userId, "email_normalized", email);
+  if (emailCandidate.conflict) return emailCandidate;
+
+  if (phoneCandidate.row && emailCandidate.row && phoneCandidate.row.id !== emailCandidate.row.id) {
+    return { row: null, conflict: true };
   }
-  if (email) {
-    const { data } = await admin.from("leads").select("id,user_id,external_id,source,campaign_id,campaign_name,meta_form_id,meta_ad_id,meta_ad_name,ad_account_id").eq("user_id", userId).eq("email", email).is("deleted_at", null).limit(1).maybeSingle();
-    emailRow = data ?? null;
-  }
-  if (phoneRow && emailRow && phoneRow.id !== emailRow.id) return { row: null, conflict: true };
-  return { row: phoneRow ?? emailRow ?? null, conflict: false };
+  return { row: phoneCandidate.row ?? emailCandidate.row ?? null, conflict: false };
 }
 
 async function persistLead(admin: any, userId: string, clinicId: string | null, adAccountId: string | null, raw: MetaLead) {
@@ -306,7 +352,8 @@ Deno.serve(async (req: Request) => {
       .eq("status", "connected");
     if (integrationError) throw integrationError;
 
-    const canonicalIntegrations = (Array.isArray(integrations) ? integrations : []).filter((row: any) => row?.metadata?.canonical === true);
+    const canonicalIntegrations = (Array.isArray(integrations) ? integrations : [])
+      .filter((row: any) => row?.metadata?.canonical === true || String(row?.metadata?.canonical || "").toLowerCase() === "true");
     if (canonicalIntegrations.length !== 1) {
       return json(409, { success: false, message: "Expected exactly one canonical connected meta_ads integration for user" });
     }
