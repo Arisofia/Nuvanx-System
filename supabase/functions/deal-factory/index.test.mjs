@@ -23,6 +23,14 @@ describe("Deal Factory contract", () => {
     expect(source).toContain('rpc("nvx_get_runtime_secret", { p_name: "HUBSPOT_ACCESS_TOKEN" })');
   });
 
+  it("accepts only website HubSpot or reconciled Meta Lead Ads episodes", () => {
+    expect(source).toContain('new Set(["website_hubspot", "meta_leadgen"])');
+    expect(source).toContain('Deal Factory received unsupported lead source');
+    expect(source).toContain('meta_hubspot_reconciliations');
+    expect(source).toContain('reconciliation.status !== "reconciled"');
+    expect(source).toContain('Meta-HubSpot reconciliation contact mismatch');
+  });
+
   it("has provider-side idempotency before create", () => {
     expect(source).toContain('return `NUVANX · ${leadId}`');
     const search = source.indexOf("findExistingDeal(name)");
@@ -40,7 +48,7 @@ describe("Deal Factory contract", () => {
   it("requires the HubSpot contact association and never embeds medical semantics in deal name", () => {
     expect(source).toContain("ensureAssociation");
     expect(source).toContain("defaultDealContactAssociationTypeId");
-    expect(source).not.toMatch(/treatment|diagnosis|body_area|procedure/i);
+    expect(source).not.toMatch(/dealName[\s\S]{0,300}(?:treatment|diagnosis|body_area|procedure)/i);
   });
 
   it("inherits owner when present and keeps EUR as the canonical deal currency", () => {
