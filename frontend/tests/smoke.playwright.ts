@@ -90,10 +90,8 @@ test('authenticated Control Centre routes load without runtime or server errors'
     await expect(page).toHaveURL(/\/dashboard\/?$/, { timeout: 15_000 });
   } catch (error) {
     const errorText = await page.locator('.bg-red-50').textContent().catch(() => null);
-    if (errorText) {
-      console.error(`[LOGIN FORM ERROR]: ${errorText.trim()}`);
-    }
-    throw error;
+    const bodyText = await page.locator('body').innerText().catch(() => '');
+    throw new Error(`Control Centre login failed to redirect to /dashboard. Visible error: "${errorText?.trim() || 'none'}". Page summary: ${bodyText.replace(/\s+/g, ' ').slice(0, 300)}`);
   }
   await expect(page.getByText(/centro de control/i).first()).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole('heading', { name: /dashboard/i }).first()).toBeVisible({ timeout: 15_000 });
