@@ -9,7 +9,8 @@ describe('Control Centre provider gateway contract', () => {
     expect(source).toContain("nvx_control_centre_provider_finish_success");
     expect(source).toContain("nvx_control_centre_provider_finish_failure");
     expect(source).toContain("reason === 'fresh_cache'");
-    expect(source).toContain("'breaker_open'");
+    expect(source).toContain('breaker_open_until');
+    expect(source).toContain('failure_count');
   });
 
   it('routes Google through the canonical v25 health owner instead of legacy GAQL', () => {
