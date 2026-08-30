@@ -25,7 +25,7 @@ const ALLOWED_ORIGINS = new Set(
 
 const PROVIDERS = new Set(['meta', 'google', 'agenda']);
 const TTL_SECONDS: Record<string, number> = { meta: 300, google: 300, agenda: 120 };
-const PROVIDER_TIMEOUT_MS = 30_000;
+const PROVIDER_TIMEOUT_MS = 15_000;
 
 type CacheState = {
   refresh?: boolean;
