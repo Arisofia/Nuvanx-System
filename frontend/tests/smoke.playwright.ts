@@ -1,17 +1,17 @@
 import { test, expect } from '@playwright/test';
 
 const CONTROL_CENTRE_ROUTES = [
-  { path: '/dashboard', label: 'Dashboard', heading: 'Dashboard' },
+  { path: '/dashboard', label: 'Centro', heading: 'Centro operativo de la clínica' },
   { path: '/traceability', label: 'Trazabilidad', heading: 'Trazabilidad' },
-  { path: '/reports', label: 'Reportes', heading: 'Reportes' },
+  { path: '/reports', label: 'Analítica', heading: 'Reportes' },
   { path: '/reports/lead-audit', label: 'Auditoría leads', heading: 'Auditoría de leads' },
-  { path: '/live', label: 'Live', heading: 'Panel en vivo' },
-  { path: '/crm', label: 'CRM', heading: 'CRM' },
-  { path: '/marketing', label: 'Marketing', heading: 'Marketing · Meta Ads' },
+  { path: '/live', label: 'Agenda', heading: 'Panel en vivo' },
+  { path: '/crm', label: 'Pacientes', heading: 'CRM' },
+  { path: '/marketing', label: 'Adquisición', heading: 'Marketing · Meta Ads' },
   { path: '/financials', label: 'Finanzas', heading: 'Auditoría operativa Doctoralia' },
   { path: '/intelligence', label: 'Inteligencia', heading: 'Inteligencia' },
   { path: '/integrations', label: 'Integraciones', heading: 'Integraciones' },
-  { path: '/ai', label: 'IA', heading: 'Capa IA' },
+  { path: '/ai', label: 'Asistente IA', heading: 'Capa IA' },
 ] as const;
 
 function escapeRegExp(value: string) {
@@ -22,9 +22,10 @@ function expectedHeading(path: string, heading: string) {
   const againstProduction = Boolean(process.env.PRODUCTION_E2E_URL?.trim());
 
   // This smoke runs before deployment while targeting the currently deployed
-  // production UI. During the one-release rename transition, accept either the
-  // old deployed label or the new canonical label. Route, runtime and 5xx gates
-  // remain strict. Remove the legacy label after production has rolled forward.
+  // production UI. During the one-release finance rename transition, accept
+  // either the old deployed label or the new canonical label. Route, runtime
+  // and 5xx gates remain strict. Remove the legacy label after production has
+  // fully rolled forward.
   if (againstProduction && path === '/financials') {
     return /^(Finanzas verificadas|Auditoría operativa Doctoralia)$/i;
   }
@@ -68,7 +69,7 @@ test('authenticated Control Centre routes load without runtime or server errors'
     }
   });
 
-  // Prevent production mutations and costs on the AI route
+  // Prevent production mutations and costs on the AI route.
   await page.route('**/api/ai/**', route => {
     if (route.request().method() === 'POST') {
       route.fulfill({
@@ -93,8 +94,10 @@ test('authenticated Control Centre routes load without runtime or server errors'
     const bodyText = await page.locator('body').innerText().catch(() => '');
     throw new Error(`Control Centre login failed to redirect to /dashboard. Visible error: "${errorText?.trim() || 'none'}". Page summary: ${bodyText.replace(/\s+/g, ' ').slice(0, 300)}`, { cause: error });
   }
-  await expect(page.getByText(/centro de control/i).first()).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByRole('heading', { name: /dashboard/i }).first()).toBeVisible({ timeout: 15_000 });
+
+  await expect(page.getByRole('navigation', { name: /navegación principal/i })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('control-centre-overview')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole('heading', { name: /^Centro operativo de la clínica$/i })).toBeVisible({ timeout: 15_000 });
 
   for (const route of CONTROL_CENTRE_ROUTES) {
     pageErrors.length = 0;
@@ -102,9 +105,13 @@ test('authenticated Control Centre routes load without runtime or server errors'
 
     await page.goto(route.path, { waitUntil: 'domcontentloaded' });
     await expect(page).toHaveURL(new RegExp(`${escapeRegExp(route.path)}/?$`));
-    await expect(page.getByText(/centro de control/i).first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('navigation', { name: /navegación principal/i })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('link', { name: new RegExp(`^${escapeRegExp(route.label)}$`, 'i') })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('heading', { name: expectedHeading(route.path, route.heading) }).first()).toBeVisible({ timeout: 15_000 });
+
+    if (route.path === '/dashboard') {
+      await expect(page.getByTestId('control-centre-overview')).toBeVisible({ timeout: 15_000 });
+    }
 
     // Realtime/polling routes may never become network-idle. Observe a bounded
     // post-render window instead, while keeping pageerror and every 5xx strict.
