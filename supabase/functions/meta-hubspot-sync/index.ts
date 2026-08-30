@@ -113,6 +113,15 @@ async function searchHubspotByEmail(token: string, email: string) {
   return Array.isArray(payload?.results) ? payload.results : [];
 }
 
+async function hubspotContactById(token: string, contactId: string) {
+  if (!/^\d+$/.test(contactId)) throw new Error("Invalid linked HubSpot contact id");
+  return await hubspotRequest(
+    token,
+    "GET",
+    `/crm/v3/objects/contacts/${contactId}?properties=email,nvx_lead_id&archived=false`,
+  );
+}
+
 function desiredProperties(lead: any, attr: any): Record<string, string> {
   const fields = fieldMap(lead?.raw_field_data || {});
   const fullName = clean(lead?.name, 255) || answer(fields, ["full_name"]);
@@ -129,13 +138,13 @@ function desiredProperties(lead: any, attr: any): Record<string, string> {
   put("email", email);
   put("phone", phone);
   put("nombre", fullName);
-  put("nvx_lead_id", lead?.nvx_lead_id);
+  put("nvx_lead_id", lead?.nvx_lead_id || lead?.id);
   put("nvx_utm_source", lead?.utm_source || "facebook");
   put("nvx_utm_medium", lead?.utm_medium || "paid_social");
   put("nvx_utm_campaign", lead?.utm_campaign || lead?.campaign_name || attr?.campaign_id);
   put("nvx_utm_content", lead?.utm_content || attr?.ad_id);
   put("nvx_attribution_captured_at", attr?.captured_at || lead?.created_at_meta);
-  put("qu_te_gustara_mejorar_principalmente", improve);
+  put("qu_te_gustara_mejor_principalmente", improve);
   put("cundo_prefieres_que_te_contactemos", contactWhen);
   return props;
 }
@@ -146,6 +155,32 @@ function missingOnly(existing: Record<string, unknown>, desired: Record<string, 
     if (!String(existing?.[key] ?? "").trim() && value) patch[key] = value;
   }
   return patch;
+}
+
+async function linkLocalLead(admin: any, lead: any, contactId: string) {
+  const lineageId = clean(lead?.nvx_lead_id, 64) || clean(lead?.id, 64);
+  const patch: Record<string, unknown> = {
+    hubspot_contact_id: Number(contactId),
+    updated_at: new Date().toISOString(),
+  };
+  if (lineageId) patch.nvx_lead_id = lineageId;
+  const { error } = await admin
+    .from("leads")
+    .update(patch)
+    .eq("id", lead.id)
+    .is("hubspot_contact_id", null);
+  if (error) throw new Error("Local HubSpot lineage update failed");
+}
+
+async function syncExistingContact(admin: any, token: string, lead: any, contact: any, desired: Record<string, string>) {
+  const contactId = String(contact?.id || "").trim();
+  if (!/^\d+$/.test(contactId)) throw new Error("Invalid HubSpot contact id");
+  const patch = missingOnly(contact?.properties || {}, desired);
+  if (Object.keys(patch).length) {
+    await hubspotRequest(token, "PATCH", `/crm/v3/objects/contacts/${contactId}`, { properties: patch });
+  }
+  await linkLocalLead(admin, lead, contactId);
+  return contactId;
 }
 
 Deno.serve(async (req: Request) => {
@@ -165,6 +200,7 @@ Deno.serve(async (req: Request) => {
 
     const body = await req.json().catch(() => ({}));
     const mode = String(body?.mode || "audit").toLowerCase() === "sync" ? "sync" : "audit";
+    const verifyLinked = mode === "audit" && body?.verifyLinked === true;
     const campaignId = clean(body?.campaignId ?? body?.campaign_id, 64);
     const lookbackDaysRaw = Number(body?.lookbackDays ?? body?.lookback_days ?? DEFAULT_LOOKBACK_DAYS);
     const lookbackDays = Math.max(1, Math.min(90, Number.isFinite(lookbackDaysRaw) ? Math.trunc(lookbackDaysRaw) : DEFAULT_LOOKBACK_DAYS));
@@ -199,7 +235,14 @@ Deno.serve(async (req: Request) => {
         continue;
       }
       if (lead.hubspot_contact_id) {
-        results.push({ leadgen_id: attr.leadgen_id, hubspot_contact_id: String(lead.hubspot_contact_id), outcome: "already_linked" });
+        const contactId = String(lead.hubspot_contact_id);
+        if (verifyLinked) {
+          const contact = await hubspotContactById(token, contactId);
+          if (String(contact?.id || "") !== contactId) throw new Error("Linked HubSpot contact verification mismatch");
+          results.push({ leadgen_id: attr.leadgen_id, hubspot_contact_id: contactId, outcome: "linked_verified" });
+        } else {
+          results.push({ leadgen_id: attr.leadgen_id, hubspot_contact_id: contactId, outcome: "already_linked" });
+        }
         continue;
       }
 
@@ -219,13 +262,11 @@ Deno.serve(async (req: Request) => {
       if (matches.length === 1) {
         const contact = matches[0];
         if (mode === "sync") {
-          const patch = missingOnly(contact?.properties || {}, desired);
-          if (Object.keys(patch).length) {
-            await hubspotRequest(token, "PATCH", `/crm/v3/objects/contacts/${contact.id}`, { properties: patch });
-          }
-          await admin.from("leads").update({ hubspot_contact_id: Number(contact.id), updated_at: new Date().toISOString() }).eq("id", lead.id).is("hubspot_contact_id", null);
+          const contactId = await syncExistingContact(admin, token, lead, contact, desired);
+          results.push({ leadgen_id: attr.leadgen_id, hubspot_contact_id: contactId, outcome: "linked_existing" });
+        } else {
+          results.push({ leadgen_id: attr.leadgen_id, hubspot_contact_id: String(contact.id), outcome: "would_link_existing" });
         }
-        results.push({ leadgen_id: attr.leadgen_id, hubspot_contact_id: String(contact.id), outcome: mode === "sync" ? "linked_existing" : "would_link_existing" });
         continue;
       }
 
@@ -240,21 +281,32 @@ Deno.serve(async (req: Request) => {
         continue;
       }
 
-      const created = await hubspotRequest(token, "POST", "/crm/v3/objects/contacts", { properties: desired });
-      const contactId = String(created?.id || "");
-      if (!/^\d+$/.test(contactId)) throw new Error("HubSpot create returned invalid contact id");
-      await admin.from("leads").update({ hubspot_contact_id: Number(contactId), updated_at: new Date().toISOString() }).eq("id", lead.id).is("hubspot_contact_id", null);
-      results.push({ leadgen_id: attr.leadgen_id, hubspot_contact_id: contactId, outcome: "created_fallback" });
+      try {
+        const created = await hubspotRequest(token, "POST", "/crm/v3/objects/contacts", { properties: desired });
+        const contactId = String(created?.id || "");
+        if (!/^\d+$/.test(contactId)) throw new Error("HubSpot create returned invalid contact id");
+        await linkLocalLead(admin, lead, contactId);
+        results.push({ leadgen_id: attr.leadgen_id, hubspot_contact_id: contactId, outcome: "created_fallback" });
+      } catch (error: any) {
+        if (Number(error?.status) !== 409) throw error;
+        const raceMatches = await searchHubspotByEmail(token, email);
+        if (raceMatches.length !== 1) throw new Error("HubSpot create race could not resolve a unique contact");
+        const contactId = await syncExistingContact(admin, token, lead, raceMatches[0], desired);
+        results.push({ leadgen_id: attr.leadgen_id, hubspot_contact_id: contactId, outcome: "linked_race" });
+      }
     }
 
     return reply(200, {
       success: true,
       mode,
+      verifyLinked,
       campaignId,
       lookbackDays,
       processed: results.length,
       already_linked: results.filter((row) => row.outcome === "already_linked").length,
+      linked_verified: results.filter((row) => row.outcome === "linked_verified").length,
       linked_existing: results.filter((row) => row.outcome === "linked_existing").length,
+      linked_race: results.filter((row) => row.outcome === "linked_race").length,
       created_fallback: results.filter((row) => row.outcome === "created_fallback").length,
       native_sync_grace: results.filter((row) => row.outcome === "native_sync_grace").length,
       conflicts: results.filter((row) => String(row.outcome).includes("conflict")).length,
