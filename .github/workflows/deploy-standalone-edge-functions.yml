@@ -103,7 +103,8 @@ jobs:
             supabase/functions/meta-daily-insights/index.ts \
             supabase/functions/meta-routing-audit/index.ts \
             supabase/functions/meta-leadgen-subscribe/index.ts \
-            supabase/functions/meta-hubspot-sync/index.ts
+            supabase/functions/meta-hubspot-sync/index.ts \
+            supabase/functions/meta-capi-dispatch/index.ts
 
       - name: Deploy standalone functions
         if: ${{ steps.candidate.outputs.deploy == 'true' }}
@@ -126,4 +127,5 @@ jobs:
             supabase functions deploy meta-routing-audit --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy meta-leadgen-subscribe --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy meta-hubspot-sync --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+            supabase functions deploy meta-capi-dispatch --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions list --project-ref "$SUPABASE_PROJECT_REF"

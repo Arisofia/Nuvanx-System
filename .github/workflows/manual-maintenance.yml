@@ -31,6 +31,7 @@ on:
           - meta-lead-backfill
           - meta-daily-insights
           - google-ads-health
+          - meta-capi-dispatch
       confirmation:
         description: Type DEPLOY for Edge deployment, PRUNE for retired Edge cleanup, or UPDATE for WordPress mutation
         required: true
@@ -166,6 +167,7 @@ jobs:
                 meta-lead-backfill) supabase functions deploy meta-lead-backfill --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt ;;
                 meta-daily-insights) supabase functions deploy meta-daily-insights --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt ;;
                 google-ads-health) supabase functions deploy google-ads-health --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt ;;
+                meta-capi-dispatch) supabase functions deploy meta-capi-dispatch --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt ;;
                 *) echo "::error::Unsupported Edge Function: $1"; exit 1 ;;
               esac
             }
@@ -179,7 +181,8 @@ jobs:
                 revops-dispatcher \
                 web-lead-reconcile \
                 deal-factory \
-                web-events
+                web-events \
+                meta-capi-dispatch
               do
                 deploy_one "$function_name"
               done

@@ -33,6 +33,7 @@ describe('standalone Edge deployment ownership', () => {
     expect(workflow).toContain('supabase/functions/google-ads-health/index.ts');
     expect(workflow).toContain('supabase/functions/meta-lead-backfill/index.ts');
     expect(workflow).toContain('supabase/functions/meta-daily-insights/index.ts');
+    expect(workflow).toContain('supabase/functions/meta-capi-dispatch/index.ts');
   });
 
   it('preserves the production JWT policies while deploying each standalone function', () => {
@@ -42,6 +43,7 @@ describe('standalone Edge deployment ownership', () => {
     expect(workflow).toContain('supabase functions deploy google-ads-health --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
     expect(workflow).toContain('supabase functions deploy meta-lead-backfill --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
     expect(workflow).toContain('supabase functions deploy meta-daily-insights --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
+    expect(workflow).toContain('supabase functions deploy meta-capi-dispatch --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
     expect(workflow).not.toContain('supabase functions deploy dashboard --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
     expect(workflow).not.toContain('supabase functions deploy agent-run --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
   });
