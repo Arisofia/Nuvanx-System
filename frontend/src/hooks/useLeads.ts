@@ -53,6 +53,18 @@ async function fetchCanonicalPipeline(): Promise<PipelineRow[]> {
   return rows
 }
 
+async function fetchOptionalLeadMetadata(): Promise<Map<string, Record<string, unknown>>> {
+  try {
+    const response = await invokeApi<{ leads?: Record<string, unknown>[] }>('/api/leads')
+    const rawLeads = Array.isArray(response.leads) ? response.leads : []
+    return new Map(rawLeads.map((item) => [String(item.id ?? item.lead_id ?? ''), item]))
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'metadata endpoint unavailable'
+    console.warn('Legacy lead metadata unavailable; canonical CRM remains active:', message)
+    return new Map()
+  }
+}
+
 export function useLeads() {
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
@@ -62,14 +74,8 @@ export function useLeads() {
     setLoading(true)
     setError(null)
     try {
-      const [response, pipelineRows] = await Promise.all([
-        invokeApi<{ leads?: Record<string, unknown>[] }>('/api/leads'),
-        fetchCanonicalPipeline(),
-      ])
-      const rawLeads = Array.isArray(response.leads) ? response.leads : []
-      const rawById = new Map(
-        rawLeads.map((item) => [String(item.id ?? item.lead_id ?? ''), item]),
-      )
+      const pipelineRows = await fetchCanonicalPipeline()
+      const rawById = await fetchOptionalLeadMetadata()
 
       if (activeFlag && !activeFlag.active) return
 
