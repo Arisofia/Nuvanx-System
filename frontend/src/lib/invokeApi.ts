@@ -44,6 +44,7 @@ export async function invokeApi<T = unknown>(functionName: string, init?: Invoke
     method: init?.method || (body ? 'POST' : 'GET'),
     headers,
     body,
+    signal: init?.signal,
   })
 
   const text = await response.text()
