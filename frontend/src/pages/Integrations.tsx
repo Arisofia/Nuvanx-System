@@ -297,10 +297,10 @@ export default function Integrations() {
     setTesting(service)
     setTestResult((prev) => ({ ...prev, [service]: '' }))
     try {
-      const res: { message?: string; success?: boolean } = await invokeApi(
-        '/api/integrations/test',
-        { method: 'POST', body: { service } }
-      )
+      const res: { message?: string; success?: boolean } = await invokeApi('/api/integrations/test', {
+        method: 'POST',
+        body: { service },
+      })
       setTestResult((prev) => ({
         ...prev,
         [service]: res?.message ?? (res?.success ? 'OK' : 'Error'),
