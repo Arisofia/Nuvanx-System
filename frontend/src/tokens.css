@@ -4,8 +4,13 @@
   --bg-marfil: #FFFFFF;
   --accent-gold: #B08B5A;
   --accent-gold-light: #C9B08E;
+  --accent-gold-dark: #84643B;
+  --accent-gold-warm: #D4B37D;
+  --accent-gold-pale: #D7C5AE;
   --text-dark: #2C2825;
   --text-muted: #8E8680;
+  --text-subtle: #5C5550;
+  --warning: #E0A020;
   --whatsapp: #25D366;
   --danger: #D9534F;
   --success: #28A745;

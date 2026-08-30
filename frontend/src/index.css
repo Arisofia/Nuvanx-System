@@ -11,14 +11,14 @@
   --color-bg-primary: var(--bg-champagne);
   --color-bg-secondary: var(--bg-marfil);
   --color-bg-card: var(--surface);
-  --color-border: #E6E2DE;
+  --color-border: var(--border-gold);
   --color-text-primary: var(--text-dark);
   --color-text-secondary: var(--text-muted);
   --color-accent: var(--accent-gold);
-  --color-accent-hover: #B08B5A;
+  --color-accent-hover: var(--accent-gold);
   --color-success: var(--success);
   --color-error: var(--danger);
-  --color-warning: #E0A020;
+  --color-warning: var(--warning);
   --color-muted: var(--text-muted);
   --font-heading: var(--font-serif);
   --font-body: var(--font-sans);
@@ -51,16 +51,16 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #E6E2DE;
+  background: var(--color-border);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #C9B9A8;
+  background: var(--accent-gold-pale);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #C49A6C;
+  background: var(--accent-gold);
 }
 
 @layer components {
@@ -71,7 +71,7 @@ body {
 
   .btn-primary {
     @apply text-white shadow-[0_10px_20px_rgba(176,139,90,0.2)] hover:shadow-[0_15px_40px_rgba(176,139,90,0.4)] active:scale-95 transition-all duration-700 relative overflow-hidden border border-white/20;
-    background: linear-gradient(135deg, #84643B 0%, #D4B37D 50%, #84643B 100%);
+    background: linear-gradient(135deg, var(--accent-gold-dark) 0%, var(--accent-gold-warm) 50%, var(--accent-gold-dark) 100%);
     background-size: 200% auto;
   }
 
@@ -203,7 +203,7 @@ body {
   }
 
   .text-premium-gradient {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-[#84643B] via-[#B08B5A] to-[#84643B];
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-gold-dark via-primary to-gold-dark;
     background-size: 200% auto;
     animation: shine 4s linear infinite;
   }
