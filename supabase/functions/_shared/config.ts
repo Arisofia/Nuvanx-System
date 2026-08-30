@@ -32,7 +32,7 @@ export function normalizeFrontendUrl(url: string): string | null {
   try {
     const parsed = new URL(url);
     if (parsed.protocol !== 'https:') return null;
-    return parsed.toString().replace(/\/$/, '');
+    return parsed.origin;
   } catch {
     return null;
   }
@@ -42,18 +42,22 @@ export const RAW_FRONTEND_URL = getEnv('FRONTEND_URL');
 export const NORMALIZED_FRONTEND_URL = normalizeFrontendUrl(RAW_FRONTEND_URL);
 
 // Production Vercel URL as a CORS safety-net in case FRONTEND_URL secret is misconfigured.
-export const PRODUCTION_FALLBACK_URL = getEnv('PRODUCTION_FALLBACK_URL');
+// Store only a normalized HTTPS origin so browser Origin headers compare exactly.
+export const PRODUCTION_FALLBACK_URL = normalizeFrontendUrl(getEnv('PRODUCTION_FALLBACK_URL')) || '';
 export const FRONTEND_URL = NORMALIZED_FRONTEND_URL ?? (IS_DEVELOPMENT ? 'http://localhost:5173' : (PRODUCTION_FALLBACK_URL || ''));
 
 export const DEFAULT_CORS_ORIGIN = IS_DEVELOPMENT
   ? 'http://localhost:5173'
   : FRONTEND_URL;
 
-const EXTRA_CORS_ORIGINS = getEnv('CORS_ALLOWED_ORIGINS')?.split(',').map(o => o.trim()).filter(Boolean) || [];
+const EXTRA_CORS_ORIGINS = getEnv('CORS_ALLOWED_ORIGINS')
+  .split(',')
+  .map((origin) => normalizeFrontendUrl(origin.trim()))
+  .filter((origin): origin is string => Boolean(origin));
 
 export const ALLOWED_CORS_ORIGINS = new Set([
   DEFAULT_CORS_ORIGIN,
-  // Always include the production Vercel URL regardless of NODE_ENV so that
+  // Always include the normalized production Vercel URL regardless of NODE_ENV so that
   // POST requests from the browser (which send Origin) are never rejected in production.
   PRODUCTION_FALLBACK_URL,
   ...EXTRA_CORS_ORIGINS
@@ -71,7 +75,7 @@ export function buildCorsHeaders(origin: string | null) {
     if (ALLOWED_CORS_ORIGINS.has(origin)) {
       allowedOrigin = origin;
     } else if (/\.vercel\.app$/.test(origin)) {
-      // Support any Vercel deploy/preview/alias URL. 
+      // Support any Vercel deploy/preview/alias URL.
       // Security is handled by JWT/Auth verification in the functions.
       allowedOrigin = origin;
     }
