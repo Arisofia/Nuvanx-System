@@ -33,6 +33,36 @@ describe('NUVANX Control Centre operations contract', () => {
     expect(overview).not.toMatch(/mock|fixture|demo data/i)
   })
 
+  it('keeps CRM clinical progress on the canonical three-visit Doctoralia journey', () => {
+    const hook = read('../src/hooks/useLeads.ts')
+    const crm = read('../src/pages/CRM.tsx')
+    const pipeline = read('../src/lib/pipeline.ts')
+
+    expect(hook).toContain("supabase.rpc('nvx_get_control_centre_pipeline'")
+    expect(hook).toContain('journey_appointment_count')
+    expect(hook).toContain('fetchOptionalLeadMetadata')
+    expect(hook).toContain('return new Map()')
+    expectOrdered(
+      hook,
+      'const pipelineRows = await fetchCanonicalPipeline()',
+      'const rawById = await fetchOptionalLeadMetadata()',
+    )
+    expect(hook).not.toContain('resolveCanonicalStage')
+    expect(hook).not.toContain('apiUpdates.stage = apiUpdates.status')
+    expect(hook).not.toContain('Promise.all([')
+
+    expect(crm).toContain('1/3 · Valoración')
+    expect(crm).toContain('2/3 · Tratamiento')
+    expect(crm).toContain('3/3 · 1er control')
+    expect(crm).toContain('Clientes nuevos')
+    expect(crm).toContain('El nombre de la cita puede ser “revisión”')
+    expect(crm).not.toContain("import { KanbanBoard }")
+
+    expect(pipeline).toContain("{ id: 'control_scheduled', label: '1er control programado' }")
+    expect(pipeline).toContain("{ id: 'client_completed', label: 'Cliente nuevo · ciclo completado' }")
+    expect(pipeline).not.toContain("{ id: 'won', label: 'Ganado' }")
+  })
+
   it('fails visibly on unavailable provider envelopes and refreshes across day boundaries', () => {
     const overview = read('../src/components/dashboard/OperationsOverview.tsx')
     expect(overview).toContain('function envelopeUsable')

@@ -304,7 +304,7 @@ export function OperationsOverview() {
   }, [load])
 
   const activeLeads = useMemo(
-    () => leads.filter((lead) => !['won', 'lost', 'treatment_completed'].includes(String(lead.status || '').toLowerCase())),
+    () => leads.filter((lead) => !['lost', 'client_completed'].includes(String(lead.status || '').toLowerCase())),
     [leads],
   )
 

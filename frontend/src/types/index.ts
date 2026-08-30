@@ -157,23 +157,24 @@ export interface FinancialsState {
 // ── CRM ───────────────────────────────────────────────────────────────────────
 
 /**
- * Canonical funnel stages. These are the only values the Kanban renders.
- * 'asistio' and 'valoracion_aceptada' from stage_canonical are mapped to
- * 'appointment' before reaching the UI.
+ * Legacy five-column DnD board type. The active CRM does not use this as
+ * commercial truth; it remains only for compatibility with old components.
  */
 export type LeadStage = 'lead' | 'whatsapp' | 'appointment' | 'treatment' | 'closed'
 
-/**
- * Canonical stage values from the DB (stage_canonical column).
- * Distinct from LeadStage (UI) to make the mapping explicit.
- */
+/** Canonical evidence-first pipeline returned by vw_control_centre_pipeline. */
 export type CanonicalStage =
-  | 'lead'
-  | 'contacto'
-  | 'valoracion_aceptada'
-  | 'asistio'
-  | 'closed'
-  | null
+  | 'new_lead'
+  | 'contacted'
+  | 'conversation'
+  | 'valuation_scheduled'
+  | 'valuation_completed'
+  | 'treatment_proposed'
+  | 'treatment_scheduled'
+  | 'treatment_completed'
+  | 'control_scheduled'
+  | 'client_completed'
+  | 'lost'
 
 /** An appointment match from lead_appointment_matches joined via the API. */
 export interface AppointmentMatch {
@@ -186,33 +187,32 @@ export interface AppointmentMatch {
 export interface Lead {
   id: string
   name: string
-  /**
-   * Resolved UI stage — always one of LeadStage values.
-   * Set by resolveCanonicalStage() in useLeads; never the raw DB field.
-   */
+  /** Canonical evidence-first pipeline stage in the active CRM. */
   status: string
-  /**
-   * Raw DB stage field (legacy). Preserved for debug/display only.
-   * Never use this for funnel logic.
-   */
+  /** Raw legacy leads.stage value, debug only. */
   stage_raw?: string
-  /**
-   * Canonical stage from DB (stage_canonical column).
-   * Supercedes stage_raw when present.
-   */
-  stage_canonical?: CanonicalStage
+  /** Legacy leads.stage_canonical value, debug only; not the Control Centre pipeline. */
+  stage_canonical?: string | null
   source: string
   email?: string
   phone?: string
   dni?: string
   notes?: string
   revenue?: number
+  verified_revenue?: number
   appointment_date?: string
   treatment_name?: string
   created_at?: string
   updated_at?: string
-  /** Verified Doctoralia appointment matches (phone_normalized). Empty = no verified match. */
   appointment_matches?: AppointmentMatch[]
+  pipeline_stage_source?: 'evidence' | 'explicit'
+  journey_appointment_count?: number
+  valuation_appointment_date?: string | null
+  treatment_appointment_date?: string | null
+  first_control_appointment_date?: string | null
+  is_new_client?: boolean
+  client_completed_at?: string | null
+  journey_identity_source?: 'doctoralia_id' | 'phone_normalized' | null
 }
 
 // ── Integrations ──────────────────────────────────────────────────────────────
