@@ -1,6 +1,8 @@
 import { supabase, supabaseUrl } from './supabaseClient'
 
-export type InvokeApiOptions = Omit<RequestInit, 'body'> & { body?: unknown }
+const DEFAULT_API_TIMEOUT_MS = 20_000
+
+export type InvokeApiOptions = Omit<RequestInit, 'body'> & { body?: unknown; timeoutMs?: number }
 
 export async function invokeApi<T = unknown>(functionName: string, init?: InvokeApiOptions): Promise<T> {
   if (!supabaseUrl) {
@@ -40,10 +42,15 @@ export async function invokeApi<T = unknown>(functionName: string, init?: Invoke
     body = JSON.stringify(init.body)
   }
 
+  const timeoutMs = Math.max(1_000, Math.min(Number(init?.timeoutMs ?? DEFAULT_API_TIMEOUT_MS), 120_000))
+  const timeoutSignal = AbortSignal.timeout(timeoutMs)
+  const signal = init?.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal
+
   const response = await fetch(url, {
     method: init?.method || (body ? 'POST' : 'GET'),
     headers,
     body,
+    signal,
   })
 
   const text = await response.text()
