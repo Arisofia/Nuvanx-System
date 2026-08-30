@@ -40,6 +40,10 @@ export const metaBusinessPortfolioNuvanxId = sanitizeEnv(import.meta.env.VITE_ME
 export const metaBusinessPortfolioYolandaId = sanitizeEnv(import.meta.env.VITE_META_BUSINESS_PORTFOLIO_YOLANDA_ID)
 export const googleAdsAccountIds = sanitizeEnv(import.meta.env.VITE_GOOGLE_ADS_ACCOUNT_IDS)
 
+// Fail closed. The UI can only expose direct patient messaging after the controlled
+// Meta Test WABA + delivery-webhook acceptance has passed and Vercel is explicitly enabled.
+export const directWhatsappEnabled = sanitizeEnv(import.meta.env.VITE_WHATSAPP_DIRECT_ENABLED).toLowerCase() === 'true'
+
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseKey)
 
 if (!isSupabaseConfigured) {
