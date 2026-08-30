@@ -9,7 +9,7 @@
 
 create table if not exists public.meta_capi_outbox (
   id uuid primary key default gen_random_uuid(),
-  lead_id uuid not null references public.leads(id) on delete restrict,
+  lead_id uuid not null references public.leads(id) on delete cascade,
   event_name text not null default 'Lead'
     constraint meta_capi_outbox_event_name_check check (event_name = 'Lead'),
   event_id text not null,
