@@ -7,6 +7,9 @@
 -- The outbox stores no contact PII. Delivery reads the already-authoritative
 -- public.leads row under service_role. QA captures never reach this path.
 
+alter table public.leads
+  add column if not exists capi_sent boolean not null default false;
+
 create table if not exists public.meta_capi_outbox (
   id uuid primary key default gen_random_uuid(),
   lead_id uuid not null references public.leads(id) on delete cascade,

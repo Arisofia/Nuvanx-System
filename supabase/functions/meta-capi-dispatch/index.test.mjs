@@ -19,6 +19,8 @@ describe("Meta CAPI durable dispatch contract", () => {
     expect(source).toContain('message: "Forbidden"');
     expect(migration).toContain("revoke all on table public.meta_capi_outbox from public, anon, authenticated");
     expect(migration).toContain("grant all on table public.meta_capi_outbox to service_role");
+    expect(migration).toContain("alter table public.leads");
+    expect(migration).toContain("add column if not exists capi_sent");
   });
 
   it("claims durable rows with a recoverable lease", () => {
