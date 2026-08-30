@@ -94,7 +94,6 @@ test('authenticated Control Centre routes load without runtime or server errors'
     const bodyText = await page.locator('body').innerText().catch(() => '');
     throw new Error(`Control Centre login failed to redirect to /dashboard. Visible error: "${errorText?.trim() || 'none'}". Page summary: ${bodyText.replace(/\s+/g, ' ').slice(0, 300)}`, { cause: error });
   }
-
   await expect(page.getByRole('navigation', { name: /navegación principal/i })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId('control-centre-overview')).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole('heading', { name: /^Centro operativo de la clínica$/i })).toBeVisible({ timeout: 15_000 });
