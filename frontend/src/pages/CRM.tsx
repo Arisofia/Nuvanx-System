@@ -1,39 +1,73 @@
 import { useState, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
-import { useLeads, hasVerifiedAppointmentEvidence } from '../hooks/useLeads'
-import { KanbanBoard } from '../components/crm/KanbanBoard'
+import { useLeads } from '../hooks/useLeads'
 import { LeadDetailSheet } from '../components/crm/LeadDetailSheet'
-import type { Lead, LeadStage } from '../types'
+import type { Lead } from '../types'
 import { MetaAccountsInline } from '../components/MetaAccountsNotice'
+import {
+  PIPELINE_STAGES,
+  hasCanonicalAppointmentEvidence,
+  isNewClientPipelineStage,
+  pipelineStageLabel,
+} from '../lib/pipeline'
 
-const ALL_STAGES = ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'] as const
 const STALE_LEADS_AFTER_DAYS = 7
 const CRM_LOADED_AT_MS = Date.now()
 
+function formatJourneyDate(value: string | null | undefined) {
+  if (!value) return null
+  const [year, month, day] = value.slice(0, 10).split('-').map(Number)
+  if (!year || !month || !day) return value
+  return new Date(year, month - 1, day).toLocaleDateString('es-ES', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })
+}
+
+function stageEvidenceDate(lead: Lead) {
+  switch (lead.status) {
+    case 'valuation_scheduled':
+    case 'valuation_completed':
+      return lead.valuation_appointment_date
+    case 'treatment_scheduled':
+    case 'treatment_completed':
+      return lead.treatment_appointment_date
+    case 'control_scheduled':
+    case 'client_completed':
+      return lead.first_control_appointment_date
+    default:
+      return null
+  }
+}
+
 export default function CRM() {
-  const { leads, loading, error, orphanCount, updateLead, deleteLead } = useLeads()
+  const { leads, loading, error, updateLead, deleteLead } = useLeads()
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
   const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [stageFilter, setStageFilter] = useState<string>('ALL')
   const [sourceFilter, setSourceFilter] = useState<string>('ALL')
 
   const sources = useMemo(() => {
-    const s = new Set(leads.map((l) => l.source).filter(Boolean))
-    return Array.from(s).sort((a, b) => a.localeCompare(b))
+    const values = new Set(leads.map((lead) => lead.source).filter(Boolean))
+    return Array.from(values).sort((a, b) => a.localeCompare(b))
   }, [leads])
 
   const filteredLeads = useMemo(() => {
-    return leads.filter((l) => {
-      if (stageFilter !== 'ALL' && l.status !== stageFilter) return false
-      if (sourceFilter !== 'ALL' && l.source !== sourceFilter) return false
+    return leads.filter((lead) => {
+      if (stageFilter !== 'ALL' && lead.status !== stageFilter) return false
+      if (sourceFilter !== 'ALL' && lead.source !== sourceFilter) return false
       return true
     })
   }, [leads, stageFilter, sourceFilter])
 
-  const handleStageChange = async (leadId: string, newStage: LeadStage) => {
-    await updateLead(leadId, { status: newStage })
-  }
+  const pipelineStagesToRender = useMemo(
+    () => stageFilter === 'ALL'
+      ? PIPELINE_STAGES
+      : PIPELINE_STAGES.filter((stage) => stage.id === stageFilter),
+    [stageFilter],
+  )
 
   const handleLeadClick = (lead: Lead) => {
     setSelectedLead(lead)
@@ -43,57 +77,47 @@ export default function CRM() {
   const handleUpdate = async (id: string, updates: Partial<Lead>) => {
     const result = await updateLead(id, updates)
     if (result.success && selectedLead?.id === id) {
-      setSelectedLead((prev) => (prev ? { ...prev, ...updates } : prev))
+      setSelectedLead((previous) => previous
+        ? { ...previous, ...updates, status: previous.status }
+        : previous)
     }
     return result
   }
 
-  const handleDelete = async (id: string) => {
-    return deleteLead(id)
-  }
+  const handleDelete = async (id: string) => deleteLead(id)
 
-  // ── Stage stats ─────────────────────────────────────────────────────────────
-  // Uses resolved status (from resolveCanonicalStage), so 'convertido' legacy
-  // records now appear under 'lead' instead of being invisible.
   const stageStats = useMemo(() => {
-    const counts: Record<string, number> = {
-      lead: 0,
-      whatsapp: 0,
-      appointment: 0,
-      treatment: 0,
-      closed: 0,
-    }
-    for (const l of leads) {
-      const stage = l.status ?? ''
-      if (stage in counts) counts[stage]++
+    const counts = Object.fromEntries(
+      PIPELINE_STAGES.map((stage) => [stage.id, 0]),
+    ) as Record<string, number>
+    for (const lead of leads) {
+      if (lead.status in counts) counts[lead.status] += 1
     }
     return counts
   }, [leads])
 
-  // ── Appointment coverage ────────────────────────────────────────────────────
-  // Counts only leads where the cita is temporally attributable (cita >= captación)
-  // OR has a verified phone-match in lead_appointment_matches.
-  // This eliminates the 69 legacy backfill cases with appointment_date < created_at.
+  const journeyCoverage = useMemo(() => {
+    const valuation = leads.filter((lead) => Number(lead.journey_appointment_count ?? 0) >= 1).length
+    const treatment = leads.filter((lead) => Number(lead.journey_appointment_count ?? 0) >= 2).length
+    const control = leads.filter((lead) => Number(lead.journey_appointment_count ?? 0) >= 3).length
+    const newClients = leads.filter(
+      (lead) => lead.is_new_client === true || isNewClientPipelineStage(lead.status),
+    ).length
+    return { valuation, treatment, control, newClients }
+  }, [leads])
+
   const appointmentCoverage = useMemo(() => {
     if (leads.length === 0) return null
-    const withEvidence = leads.filter(hasVerifiedAppointmentEvidence).length
+    const withEvidence = leads.filter((lead) => hasCanonicalAppointmentEvidence(lead.status)).length
     return {
       count: withEvidence,
-      pct: Number.parseFloat(((withEvidence / leads.length) * 100).toFixed(1)),
+      percentage: Number.parseFloat(((withEvidence / leads.length) * 100).toFixed(1)),
     }
   }, [leads])
 
-  // ── WhatsApp coverage ───────────────────────────────────────────────────────
-  // Leads in 'whatsapp' stage require a persisted conversation record.
-  // Currently 0 in production — this surfaces that gap explicitly.
-  const whatsappCoverage = useMemo(() => {
-    return leads.filter((l) => l.status === 'whatsapp').length
-  }, [leads])
-
-  // ── Data freshness ──────────────────────────────────────────────────────────
   const dataFreshness = useMemo(() => {
     const timestamps = leads
-      .map((lead) => (lead.created_at ? Date.parse(lead.created_at) : Number.NaN))
+      .map((lead) => lead.created_at ? Date.parse(lead.created_at) : Number.NaN)
       .filter(Number.isFinite)
     if (timestamps.length === 0) return null
 
@@ -111,7 +135,9 @@ export default function CRM() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-serif font-bold text-foreground">CRM</h1>
-          <p className="text-muted mt-1">Pipeline de leads — etapas, DNI, motivo de pérdida</p>
+          <p className="text-muted mt-1">
+            Journey comercial canónico · Valoración → Tratamiento → 1er control
+          </p>
           <MetaAccountsInline
             context="Los leads de Meta Ads se trazan contra estas cuentas antes de entrar al CRM."
             className="mt-4 max-w-2xl"
@@ -119,112 +145,111 @@ export default function CRM() {
         </div>
       </div>
 
-      {/* ── Staleness warning ─────────────────────────────────────────────── */}
-      {!loading && dataFreshness?.stale && (
+      {!loading && error && (
+        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-foreground">
+          <p className="font-medium">Pipeline canónico no disponible.</p>
+          <p className="mt-1 text-xs text-muted">{error}</p>
+        </div>
+      )}
+
+      {!loading && !error && dataFreshness?.stale && (
         <div className="rounded-xl border border-[#E0A020]/30 bg-[#E0A020]/10 px-4 py-3 text-sm text-foreground">
           Datos CRM desactualizados: el último lead cargado es del {dataFreshness.latestDate}.
-          Las métricas de este panel no deben interpretarse como actividad actual hasta recuperar
-          la ingestión.
+          Las métricas no deben interpretarse como actividad actual hasta recuperar la ingestión.
         </div>
       )}
 
-      {/* ── Funnel integrity warning ──────────────────────────────────────── */}
-      {!loading && leads.length > 0 && (
-        <div className="rounded-xl border border-[#5C5550]/20 bg-surface px-4 py-3 text-xs text-muted space-y-1">
-          <p className="font-semibold text-foreground text-[11px] uppercase tracking-wider">Estado del funnel · evidencia actual</p>
+      {!loading && !error && leads.length > 0 && (
+        <div className="rounded-xl border border-border bg-surface px-4 py-3 text-xs text-muted space-y-1">
+          <p className="font-semibold text-foreground text-[11px] uppercase tracking-wider">
+            Regla de atribución clínica
+          </p>
           <p>
-            <span className="font-medium text-foreground">{stageStats.lead}</span> leads captados ·{' '}
-            <span className="font-medium text-[#28A745]">{whatsappCoverage}</span> con conversación WhatsApp persistida ·{' '}
-            <span className="font-medium text-[#E0A020]">{appointmentCoverage?.count ?? 0}</span> con cita Doctoralia verificada por teléfono
+            La secuencia Doctoralia determina el avance: <strong>1ª cita = valoración</strong> ·{' '}
+            <strong>2ª = tratamiento</strong> · <strong>3ª = 1er control</strong>.
+            El nombre de la cita puede ser “revisión” y no altera la posición del journey.
           </p>
-          <p className="text-[10px] text-muted">
-            Las etapas del Kanban reflejan <code>stage_canonical</code> (evidencia) cuando está
-            disponible, y el campo <code>stage</code> (legacy) como fallback mapeado. Los 123
-            registros con etiqueta <code>convertido</code> aparecen ahora en columna <em>Lead</em>{' '}
-            porque <code>stage_canonical</code> los clasifica como <code>lead</code>.
+          <p className="text-[10px]">
+            Citas anuladas o “no acude” no consumen posición. Un cobro suma revenue financiero,
+            pero nunca convierte por sí solo un lead en cliente.
           </p>
-          {orphanCount > 0 && (
-            <p className="text-[#E0A020]">
-              ⚠ {orphanCount} lead{orphanCount > 1 ? 's' : ''} no pudieron resolverse a una etapa
-              válida tras el mapeo. Revisa la consola para el detalle.
-            </p>
-          )}
         </div>
       )}
 
-      {/* ── Funnel stage stats bar ────────────────────────────────────────── */}
-      {!loading && leads.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-          {(
-            [
-              { key: 'lead', label: 'Lead', color: 'text-primary' },
-              { key: 'whatsapp', label: 'WhatsApp', color: 'text-[#28A745]' },
-              { key: 'appointment', label: 'Cita', color: 'text-[#E0A020]' },
-              { key: 'treatment', label: 'Tratamiento', color: 'text-[#B08B5A]' },
-              { key: 'closed', label: 'Cerrado', color: 'text-primary' },
-            ] as const
-          ).map(({ key, label, color }) => (
+      {!loading && !error && leads.length > 0 && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {[
+            { label: '1/3 · Valoración', value: journeyCoverage.valuation },
+            { label: '2/3 · Tratamiento', value: journeyCoverage.treatment },
+            { label: '3/3 · 1er control', value: journeyCoverage.control },
+            { label: 'Clientes nuevos', value: journeyCoverage.newClients },
+          ].map((metric) => (
+            <div key={metric.label} className="rounded-xl border border-border bg-card p-4">
+              <p className="text-2xl font-bold text-primary">{metric.value}</p>
+              <p className="text-xs text-muted mt-1">{metric.label}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!loading && !error && leads.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+          {PIPELINE_STAGES.map(({ id, label }) => (
             <button
-              key={key}
+              key={id}
               type="button"
-              onClick={() => setStageFilter(stageFilter === key ? 'ALL' : key)}
-              className={`bg-card border rounded-xl p-3 text-left transition-colors hover:border-primary/60
-                ${stageFilter === key ? 'border-primary/80 bg-card/80' : 'border-border'}`}
+              onClick={() => setStageFilter(stageFilter === id ? 'ALL' : id)}
+              className={`bg-card border rounded-xl p-3 text-left transition-colors hover:border-primary/60 ${
+                stageFilter === id ? 'border-primary/80 bg-card/80' : 'border-border'
+              }`}
             >
-              <p className={`text-2xl font-bold ${color}`}>{stageStats[key]}</p>
-              <p className="text-xs text-muted mt-0.5 capitalize">{label}</p>
+              <p className="text-2xl font-bold text-primary">{stageStats[id]}</p>
+              <p className="text-xs text-muted mt-0.5">{label}</p>
             </button>
           ))}
         </div>
       )}
 
-      {!loading && leads.length === 0 && (
+      {!loading && !error && leads.length === 0 && (
         <div className="rounded-xl border border-dashed border-border bg-card/50 p-8 text-center">
-          <p className="text-muted text-sm">No hay leads en el CRM todavía.</p>
-          <p className="text-muted text-xs mt-1">
-            Los leads de Meta Ads aparecerán aquí automáticamente vía webhook.
-          </p>
+          <p className="text-muted text-sm">No hay registros en el pipeline canónico.</p>
         </div>
       )}
 
-      {/* ── Appointment coverage footnote ─────────────────────────────────── */}
-      {appointmentCoverage !== null && !loading && (
+      {appointmentCoverage !== null && !loading && !error && (
         <p className="text-xs text-muted">
-          Cobertura de cita verificada:{' '}
-          <span className="text-foreground font-medium">{appointmentCoverage.count}</span>{' '}
-          ({appointmentCoverage.pct}%) · leads con cita Doctoralia atribuible por teléfono o
-          con fecha de cita ≥ fecha de captación. No es una tasa de conversión de cohorte.
+          Leads con evidencia Doctoralia dentro del journey:{' '}
+          <span className="text-foreground font-medium">
+            {appointmentCoverage.count} · {appointmentCoverage.percentage}%
+          </span>
+          . La conversión a cliente nuevo requiere llegar al tercer paso; revenue y pagos se miden aparte.
         </p>
       )}
 
-      {/* ── Filtros ──────────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap gap-3">
         <select
           value={stageFilter}
-          onChange={(e) => setStageFilter(e.target.value)}
+          onChange={(event) => setStageFilter(event.target.value)}
           className="bg-surface border border-border rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
         >
-          <option value="ALL">Todas las etapas</option>
-          {ALL_STAGES.map((s) => (
-            <option key={s} value={s} className="capitalize">
-              {s}
-            </option>
+          <option value="ALL">Todas las etapas canónicas</option>
+          {PIPELINE_STAGES.map((stage) => (
+            <option key={stage.id} value={stage.id}>{stage.label}</option>
           ))}
         </select>
         <select
           value={sourceFilter}
-          onChange={(e) => setSourceFilter(e.target.value)}
+          onChange={(event) => setSourceFilter(event.target.value)}
           className="bg-surface border border-border rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
         >
           <option value="ALL">Todas las fuentes</option>
-          {sources.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
+          {sources.map((source) => (
+            <option key={source} value={source}>{source}</option>
           ))}
         </select>
         {(stageFilter !== 'ALL' || sourceFilter !== 'ALL') && (
           <button
+            type="button"
             onClick={() => {
               setStageFilter('ALL')
               setSourceFilter('ALL')
@@ -238,29 +263,81 @@ export default function CRM() {
 
       <Tabs defaultValue="pipeline" className="w-full">
         <TabsList>
-          <TabsTrigger value="pipeline">Embudo</TabsTrigger>
-          <TabsTrigger value="leads">Leads</TabsTrigger>
+          <TabsTrigger value="pipeline">Pipeline canónico</TabsTrigger>
+          <TabsTrigger value="leads">Registros</TabsTrigger>
         </TabsList>
 
         <TabsContent value="pipeline" className="space-y-4 pt-4">
           {loading ? (
             <div className="flex items-center justify-center h-64">
-              <p className="text-muted">Cargando embudo...</p>
+              <p className="text-muted">Cargando pipeline canónico...</p>
             </div>
-          ) : (
-            <KanbanBoard
-              leads={filteredLeads}
-              onStageChange={handleStageChange}
-              onLeadClick={handleLeadClick}
-            />
-          )}
+          ) : !error ? (
+            <>
+              <p className="text-xs text-muted">
+                Las etapas clínicas son de solo lectura: el sistema las deriva de Doctoralia.
+                No se permite arrastrar un lead para fabricar una valoración, tratamiento o control.
+              </p>
+              <div className="flex gap-4 overflow-x-auto pb-6 -mx-4 px-4 min-h-[420px]">
+                {pipelineStagesToRender.map((stage) => {
+                  const stageLeads = filteredLeads.filter((lead) => lead.status === stage.id)
+                  return (
+                    <div
+                      key={stage.id}
+                      className="flex flex-col min-w-[280px] w-full max-w-[340px] bg-surface/50 rounded-xl border border-border p-3 min-h-[390px]"
+                    >
+                      <div className="flex items-center justify-between mb-4 px-2">
+                        <h3 className="text-xs font-bold font-serif text-muted uppercase tracking-widest">
+                          {stage.label}{' '}
+                          <span className="font-normal font-sans">({stageLeads.length})</span>
+                        </h3>
+                      </div>
+                      <div className="space-y-3 overflow-y-auto">
+                        {stageLeads.map((lead) => {
+                          const evidenceDate = formatJourneyDate(stageEvidenceDate(lead))
+                          return (
+                            <button
+                              key={lead.id}
+                              type="button"
+                              onClick={() => handleLeadClick(lead)}
+                              className="w-full rounded-xl border border-border bg-card p-4 text-left hover:border-primary/50 transition-colors"
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <p className="font-semibold text-foreground truncate">{lead.name}</p>
+                                {lead.is_new_client && (
+                                  <span className="shrink-0 rounded-full border border-[#28A745]/30 bg-[#28A745]/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-[#28A745]">
+                                    Cliente nuevo
+                                  </span>
+                                )}
+                              </div>
+                              <p className="mt-1 text-[10px] uppercase tracking-wider text-muted">
+                                {lead.source} · {Math.min(Number(lead.journey_appointment_count ?? 0), 3)}/3 citas
+                              </p>
+                              {evidenceDate && (
+                                <p className="mt-2 text-[10px] font-medium text-[#E0A020]">{evidenceDate}</p>
+                              )}
+                            </button>
+                          )
+                        })}
+                        {stageLeads.length === 0 && (
+                          <div className="flex items-center justify-center h-28 rounded-xl border border-dashed border-border text-xs text-muted">
+                            Sin registros
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          ) : null}
         </TabsContent>
 
         <TabsContent value="leads">
           <Card>
             <CardHeader>
               <CardTitle>
-                Todos los leads{' '}
+                Todos los registros{' '}
                 {filteredLeads.length !== leads.length && (
                   <span className="text-sm font-normal text-muted">
                     ({filteredLeads.length} de {leads.length})
@@ -270,49 +347,34 @@ export default function CRM() {
             </CardHeader>
             <CardContent>
               {loading ? (
-                <p className="text-muted">Obteniendo leads desde Edge Function...</p>
-              ) : (
-                <div className="space-y-3">
-                  {error && <p className="text-sm text-[#E0A020]">{error}</p>}
-                  <div className="grid gap-3">
-                    {filteredLeads.map((lead) => (
-                      <button
-                        key={lead.id}
-                        type="button"
-                        className="rounded-xl border border-border p-4 bg-background text-left cursor-pointer hover:border-primary/50 transition-colors"
-                        onClick={() => handleLeadClick(lead)}
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="font-serif font-bold text-foreground">{lead.name}</p>
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-surface text-muted border border-border font-medium">
-                              {lead.status}
-                            </span>
-                            {/* Show raw stage when it differs from resolved status */}
-                            {lead.stage_raw && lead.stage_raw !== lead.status && (
-                              <span
-                                className="text-[10px] text-muted font-mono"
-                                title={`Etapa original en BD: ${lead.stage_raw}`}
-                              >
-                                ← {lead.stage_raw}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <p className="text-[10px] uppercase tracking-wider text-muted mt-1">
-                          Origen: {lead.source}
+                <p className="text-muted">Obteniendo leads y pipeline canónico...</p>
+              ) : !error ? (
+                <div className="grid gap-3">
+                  {filteredLeads.map((lead) => (
+                    <button
+                      key={lead.id}
+                      type="button"
+                      className="rounded-xl border border-border p-4 bg-background text-left cursor-pointer hover:border-primary/50 transition-colors"
+                      onClick={() => handleLeadClick(lead)}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-serif font-bold text-foreground">{lead.name}</p>
+                        <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-surface text-muted border border-border font-medium">
+                          {pipelineStageLabel(lead.status)}
+                        </span>
+                      </div>
+                      <p className="text-[10px] uppercase tracking-wider text-muted mt-1">
+                        Origen: {lead.source} · Journey: {Math.min(Number(lead.journey_appointment_count ?? 0), 3)}/3
+                      </p>
+                      {lead.is_new_client && (
+                        <p className="mt-1 text-[10px] font-medium text-[#28A745]">
+                          Cliente nuevo por secuencia Doctoralia completa
                         </p>
-                        {/* Surface verified Doctoralia match inline */}
-                        {lead.appointment_matches && lead.appointment_matches.length > 0 && (
-                          <p className="text-[10px] text-[#28A745] mt-1">
-                            ✓ {lead.appointment_matches.length} cita Doctoralia verificada
-                          </p>
-                        )}
-                      </button>
-                    ))}
-                  </div>
+                      )}
+                    </button>
+                  ))}
                 </div>
-              )}
+              ) : null}
             </CardContent>
           </Card>
         </TabsContent>
