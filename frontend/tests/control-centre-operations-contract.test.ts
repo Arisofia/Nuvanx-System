@@ -113,7 +113,7 @@ describe('NUVANX Control Centre operations contract', () => {
   it('does not claim delivery from a synchronous Meta acceptance', () => {
     const sheet = read('../src/components/crm/LeadDetailSheet.tsx')
     expect(sheet).toContain('Aceptado por Meta. Entrega pendiente de confirmación.')
-    expect(sheet).toContain('aceptación de Meta y la entrega al paciente son estados diferentes')
+    expect(sheet).toContain('aceptación de Meta y la entrega al contacto son estados diferentes')
     expect(sheet).not.toContain('Mensaje enviado correctamente.')
   })
 
