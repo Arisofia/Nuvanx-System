@@ -168,7 +168,20 @@ async function resolveCanonicalMeta(admin: any) {
   const integration = canonical[0];
   const userId = String(integration.user_id || "").trim();
   const pageId = String(integration.metadata?.pageId ?? integration.metadata?.page_id ?? "").trim();
+  const integrationAppId = String(
+    integration.metadata?.appId ??
+    integration.metadata?.app_id ??
+    integration.metadata?.metaAppId ??
+    integration.metadata?.meta_app_id ??
+    "",
+  ).trim();
+
+  const appId = integrationAppId || META_APP_ID;
   if (!userId || !/^\d+$/.test(pageId)) throw new Error("Canonical Meta page routing metadata incomplete");
+  if (!/^\d+$/.test(appId)) throw new Error("Canonical Meta App ID missing or invalid");
+  if (integrationAppId && META_APP_ID && integrationAppId !== META_APP_ID) {
+    throw new Error(`Canonical Meta App ID mismatch: metadata ${integrationAppId} vs env ${META_APP_ID}`);
+  }
 
   const { data: credential, error: credentialError } = await admin
     .from("credentials")
@@ -180,6 +193,7 @@ async function resolveCanonicalMeta(admin: any) {
   return {
     userId,
     pageId,
+    appId,
     credentialId: credential.id,
     managementToken: await decryptCred(String(credential.encrypted_key)),
   };
@@ -201,11 +215,11 @@ async function resolvePageToken(pageId: string, managementToken: string): Promis
   return String(match.access_token);
 }
 
-async function resolveAppToken(): Promise<string> {
+async function resolveAppToken(appId: string): Promise<string> {
   const appSecret = META_CANONICAL_APP_SECRET || META_APP_SECRET;
-  if (!/^\d+$/.test(META_APP_ID) || !appSecret) throw new Error("META_APP_ID / Meta App Secret unavailable");
+  if (!/^\d+$/.test(appId) || !appSecret) throw new Error("META_APP_ID / Meta App Secret unavailable");
   const url = new URL(`${META_GRAPH_ROOT}/oauth/access_token`);
-  url.searchParams.set("client_id", META_APP_ID);
+  url.searchParams.set("client_id", appId);
   url.searchParams.set("client_secret", appSecret);
   url.searchParams.set("grant_type", "client_credentials");
   const response = await fetch(url.toString(), { signal: AbortSignal.timeout(20_000) });
@@ -245,9 +259,9 @@ function summarizePageApp(row: any) {
   };
 }
 
-async function fetchState(pageId: string, pageToken: string, appToken: string) {
+async function fetchState(appId: string, pageId: string, pageToken: string, appToken: string) {
   const [appSubscriptions, pageApps] = await Promise.all([
-    graphFetchAll(`/${META_APP_ID}/subscriptions`, appToken, {}, false),
+    graphFetchAll(`/${appId}/subscriptions`, appToken, {}, false),
     graphFetchAll(`/${pageId}/subscribed_apps`, pageToken, {
       fields: "id,name,subscribed_fields",
       limit: "100",
@@ -257,7 +271,7 @@ async function fetchState(pageId: string, pageToken: string, appToken: string) {
   const expectedAppSubscription = pageObjectSubscriptions.find((row: any) =>
     normalizeUrl(row?.callback_url) === EXPECTED_CALLBACK && fieldNames(row).includes("leadgen") && row?.active !== false
   ) ?? null;
-  const pageApp = pageApps.find((row: any) => String(row?.id || "") === META_APP_ID) ?? null;
+  const pageApp = pageApps.find((row: any) => String(row?.id || "") === appId) ?? null;
   const pageLeadgenSubscribed = Boolean(
     pageApp && Array.isArray(pageApp?.subscribed_fields) && pageApp.subscribed_fields.includes("leadgen")
   );
@@ -271,7 +285,7 @@ async function fetchState(pageId: string, pageToken: string, appToken: string) {
   };
 }
 
-async function ensureAppLeadgenSubscription(appToken: string, state: any) {
+async function ensureAppLeadgenSubscription(appId: string, appToken: string, state: any) {
   if (state.expectedAppSubscription) return { changed: false, reason: "already_configured" };
   if (!META_WEBHOOK_VERIFY_TOKEN) {
     throw new Error("META_WEBHOOK_VERIFY_TOKEN unavailable; refusing to create app webhook subscription");
@@ -288,7 +302,7 @@ async function ensureAppLeadgenSubscription(appToken: string, state: any) {
 
   const sameCallback = state.pageObjectSubscriptions.find((row: any) => normalizeUrl(row?.callback_url) === EXPECTED_CALLBACK);
   const fields = [...new Set([...(sameCallback ? fieldNames(sameCallback) : []), "leadgen"])];
-  const result = await graphRequest("POST", `/${META_APP_ID}/subscriptions`, appToken, {
+  const result = await graphRequest("POST", `/${appId}/subscriptions`, appToken, {
     object: "page",
     callback_url: EXPECTED_CALLBACK,
     fields: fields.join(","),
@@ -336,16 +350,16 @@ Deno.serve(async (req: Request) => {
     const ctx = await resolveCanonicalMeta(admin);
     const [pageToken, appToken] = await Promise.all([
       resolvePageToken(ctx.pageId, ctx.managementToken),
-      resolveAppToken(),
+      resolveAppToken(ctx.appId),
     ]);
 
-    const before = await fetchState(ctx.pageId, pageToken, appToken);
+    const before = await fetchState(ctx.appId, ctx.pageId, pageToken, appToken);
     let appChange = { changed: false, reason: "audit_only" };
     let pageChange = { changed: false, reason: "audit_only" };
 
     if (mode === "ensure_leadgen") {
-      appChange = await ensureAppLeadgenSubscription(appToken, before);
-      const afterApp = appChange.changed ? await fetchState(ctx.pageId, pageToken, appToken) : before;
+      appChange = await ensureAppLeadgenSubscription(ctx.appId, appToken, before);
+      const afterApp = appChange.changed ? await fetchState(ctx.appId, ctx.pageId, pageToken, appToken) : before;
       if (!afterApp.expectedAppSubscription) {
         throw new Error("App-level Page webhook still lacks active leadgen subscription after repair");
       }
@@ -353,7 +367,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const after = mode === "ensure_leadgen"
-      ? await fetchState(ctx.pageId, pageToken, appToken)
+      ? await fetchState(ctx.appId, ctx.pageId, pageToken, appToken)
       : before;
 
     const { error: usageError } = await admin.from("credentials").update({ last_used: new Date().toISOString() }).eq("id", ctx.credentialId);
@@ -362,7 +376,7 @@ Deno.serve(async (req: Request) => {
     return reply(200, {
       success: true,
       mode,
-      appId: META_APP_ID,
+      appId: ctx.appId,
       pageId: ctx.pageId,
       expected_callback: EXPECTED_CALLBACK,
       before: {
