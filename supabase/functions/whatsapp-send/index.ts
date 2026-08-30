@@ -1,14 +1,25 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { ALLOWED_CORS_ORIGINS } from "../_shared/config.ts";
 
-const cors = {
-  "Access-Control-Allow-Origin": "*",
+const corsBase = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Vary": "Origin",
 };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const PROVIDER_TIMEOUT_MS = 10_000;
+
+function corsHeaders(origin: string | null): Record<string, string> {
+  return origin && ALLOWED_CORS_ORIGINS.has(origin)
+    ? { ...corsBase, "Access-Control-Allow-Origin": origin }
+    : { ...corsBase };
+}
+
+function isDisallowedBrowserOrigin(origin: string | null): boolean {
+  return Boolean(origin && !ALLOWED_CORS_ORIGINS.has(origin));
+}
 
 function cleanUuid(value: unknown): string | null {
   const v = String(value || "").trim().toLowerCase();
@@ -94,7 +105,7 @@ async function prepareSend(
     }
     // SQLSTATE 22023 is shared by multiple validation failures, so preserve the specific message check.
     if (message.includes("recipient_does_not_match_lead_phone")) {
-      return { ok: false, status: 409, message: "Recipient does not match the lead phone" };
+      return { ok: false, status: 403, message: "Recipient does not match the lead phone" };
     }
     if (message.includes("whatsapp_direct_disabled")) {
       return { ok: false, status: 503, message: "Direct WhatsApp is disabled until controlled delivery acceptance is complete" };
@@ -169,13 +180,24 @@ async function trackFirstHumanResponse(admin: any, userId: string, leadId: strin
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
-
+  const origin = req.headers.get("Origin");
+  const cors = corsHeaders(origin);
   const json = (data: unknown, status = 200, extraHeaders: Record<string, string> = {}) =>
     new Response(JSON.stringify(data), {
       status,
       headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store", ...extraHeaders },
     });
+
+  if (req.method === "OPTIONS") {
+    if (isDisallowedBrowserOrigin(origin)) {
+      return json({ success: false, message: "Origin not allowed" }, 403);
+    }
+    return new Response(null, { status: 204, headers: cors });
+  }
+
+  if (isDisallowedBrowserOrigin(origin)) {
+    return json({ success: false, message: "Origin not allowed" }, 403);
+  }
 
   if (req.method !== "POST") return json({ success: false, message: "POST required" }, 405);
 
