@@ -4,13 +4,15 @@ declare const Deno: any;
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-const OAUTH_CLIENT_ID = Deno.env.get("GOOGLE_DATA_MANAGER_CLIENT_ID") || "";
-const OAUTH_CLIENT_SECRET = Deno.env.get("GOOGLE_DATA_MANAGER_CLIENT_SECRET") || "";
+const OAUTH_CLIENT_ID = Deno.env.get("GOOGLE_DATA_MANAGER_CLIENT_ID") || Deno.env.get("GOOGLE_ADS_CLIENT_ID") || Deno.env.get("GOOGLE_CLIENT_ID") || "";
+const OAUTH_CLIENT_SECRET = Deno.env.get("GOOGLE_DATA_MANAGER_CLIENT_SECRET") || Deno.env.get("GOOGLE_ADS_CLIENT_SECRET") || "";
 const OAUTH_REFRESH_TOKEN = Deno.env.get("GOOGLE_DATA_MANAGER_REFRESH_TOKEN") || "";
-const CLOUD_PROJECT_ID = Deno.env.get("GOOGLE_DATA_MANAGER_PROJECT_ID") || "";
-const CUSTOMER_ID_ENV = Deno.env.get("GOOGLE_DATA_MANAGER_CUSTOMER_ID") || "";
+const CLOUD_PROJECT_ID = Deno.env.get("GOOGLE_DATA_MANAGER_PROJECT_ID") || Deno.env.get("GOOGLE_ADS_PROJECT_ID") || Deno.env.get("GOOGLE_PROJECT_ID") || "";
+const CUSTOMER_ID_ENV = Deno.env.get("GOOGLE_DATA_MANAGER_CUSTOMER_ID") || Deno.env.get("GOOGLE_ADS_CUSTOMER_ID") || "";
 const LOGIN_CUSTOMER_ID = Deno.env.get("GOOGLE_DATA_MANAGER_LOGIN_CUSTOMER_ID") || "";
 const ACTIONS_JSON = Deno.env.get("GOOGLE_DATA_MANAGER_CONVERSION_ACTIONS_JSON") || "";
+const SERVICE_ACCOUNT_EMAIL = Deno.env.get("GOOGLE_CLIENT_EMAIL") || Deno.env.get("GOOGLE_ADS_SERVICE_ACCOUNT") || "";
+const SERVICE_ACCOUNT_PRIVATE_KEY = Deno.env.get("GOOGLE_PRIVATE_KEY") || "";
 const DATA_MANAGER_SCOPE = "https://www.googleapis.com/auth/datamanager";
 const INGEST_URL = "https://datamanager.googleapis.com/v1/events:ingest";
 const STATUS_URL = "https://datamanager.googleapis.com/v1/requestStatus:retrieve";
@@ -78,25 +80,91 @@ function safeProviderDiagnostics(result: any) {
   return Object.keys(diagnostics).length ? diagnostics : null;
 }
 
-async function accessToken(): Promise<string> {
-  if (!OAUTH_CLIENT_ID || !OAUTH_CLIENT_SECRET || !OAUTH_REFRESH_TOKEN) {
-    throw new Error("Data Manager OAuth configuration missing");
+function pemToBinary(pem: string): Uint8Array {
+  const clean = pem.replace(/-----[^\n]+-----/g, "").replace(/\s+/g, "");
+  const binary = atob(clean);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function base64UrlEncode(data: Uint8Array | string): string {
+  const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
+  let binary = "";
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+async function serviceAccountAccessToken(): Promise<string | null> {
+  const email = String(SERVICE_ACCOUNT_EMAIL || "").trim();
+  const rawKey = String(SERVICE_ACCOUNT_PRIVATE_KEY || "").replace(/\\n/g, "\n").trim();
+  if (!email || !rawKey || !rawKey.includes("PRIVATE KEY")) return null;
+
+  try {
+    const keyData = pemToBinary(rawKey);
+    const privateKey = await crypto.subtle.importKey(
+      "pkcs8",
+      keyData.buffer as ArrayBuffer,
+      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
+
+    const now = Math.floor(Date.now() / 1000);
+    const header = base64UrlEncode(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+    const claim = base64UrlEncode(JSON.stringify({
+      iss: email,
+      scope: `${DATA_MANAGER_SCOPE} https://www.googleapis.com/auth/adwords`,
+      aud: "https://oauth2.googleapis.com/token",
+      exp: now + 3600,
+      iat: now,
+    }));
+    const unsigned = `${header}.${claim}`;
+    const signature = new Uint8Array(
+      await crypto.subtle.sign("RSASSA-PKCS1-v1_5", privateKey, new TextEncoder().encode(unsigned))
+    );
+    const assertion = `${unsigned}.${base64UrlEncode(signature)}`;
+
+    const response = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        assertion,
+      }).toString(),
+    });
+    const payload = await response.json().catch(() => ({}));
+    const token = String(payload?.access_token || "");
+    if (response.ok && token) return token;
+    return null;
+  } catch (err) {
+    console.warn("[google-data-manager-export] service account auth fallback failed:", err);
+    return null;
   }
-  const body = new URLSearchParams({
-    client_id: OAUTH_CLIENT_ID,
-    client_secret: OAUTH_CLIENT_SECRET,
-    refresh_token: OAUTH_REFRESH_TOKEN,
-    grant_type: "refresh_token",
-  });
-  const response = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: body.toString(),
-  });
-  const payload = await response.json().catch(() => ({}));
-  const token = String(payload?.access_token || "");
-  if (!response.ok || !token) throw new Error(`Data Manager OAuth failed ${response.status}`);
-  return token;
+}
+
+async function accessToken(): Promise<string> {
+  if (OAUTH_CLIENT_ID && OAUTH_CLIENT_SECRET && OAUTH_REFRESH_TOKEN) {
+    const body = new URLSearchParams({
+      client_id: OAUTH_CLIENT_ID,
+      client_secret: OAUTH_CLIENT_SECRET,
+      refresh_token: OAUTH_REFRESH_TOKEN,
+      grant_type: "refresh_token",
+    });
+    const response = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+    });
+    const payload = await response.json().catch(() => ({}));
+    const token = String(payload?.access_token || "");
+    if (response.ok && token) return token;
+  }
+
+  const saToken = await serviceAccountAccessToken();
+  if (saToken) return saToken;
+
+  throw new Error("Data Manager OAuth configuration missing");
 }
 
 async function customerId(admin: any): Promise<string> {
@@ -276,20 +344,6 @@ Deno.serve(async (req: Request) => {
   const limit = Math.max(1, Math.min(MAX_LIMIT, Number.isFinite(requestedLimit) ? Math.trunc(requestedLimit) : DEFAULT_LIMIT));
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
 
-  let token: string;
-  try {
-    token = await accessToken();
-  } catch (error: any) {
-    const message = String(error?.message || "Data Manager authentication unavailable").slice(0, 200);
-    if (mode === "deliver") {
-      await admin.from("google_data_manager_outbox")
-        .update({ delivery_status: "configuration_required", last_error: message, updated_at: new Date().toISOString() })
-        .in("delivery_status", ["pending", "failed"])
-        .eq("is_test_lead", false);
-    }
-    return json({ success: false, configuration_required: true, message }, 503);
-  }
-
   try {
     const results = [];
     if (mode === "poll") {
@@ -302,10 +356,20 @@ Deno.serve(async (req: Request) => {
         .order("updated_at", { ascending: true })
         .limit(limit);
       if (error) throw new Error("Outbox status query failed");
-      for (const row of rows || []) results.push(await pollOne(admin, row, token));
+      if (!rows || rows.length === 0) {
+        return json({ success: true, mode: "poll", processed: 0, outbox_empty: true, results: [] });
+      }
+
+      let token: string;
+      try {
+        token = await accessToken();
+      } catch (error: any) {
+        const message = String(error?.message || "Data Manager authentication unavailable").slice(0, 200);
+        return json({ success: false, configuration_required: true, message }, 503);
+      }
+
+      for (const row of rows) results.push(await pollOne(admin, row, token));
     } else {
-      const customer = await customerId(admin);
-      const actions = cleanActionMap();
       const { data: rows, error } = await admin
         .from("google_data_manager_outbox")
         .select("id,lead_id,event_name,event_timestamp,operating_customer_id,conversion_action_id,gclid,gbraid,wbraid,email_hash,phone_hash,conversion_value,currency_code,transaction_id,is_test_lead,delivery_status,attempt_count")
@@ -313,7 +377,25 @@ Deno.serve(async (req: Request) => {
         .order("created_at", { ascending: true })
         .limit(limit);
       if (error) throw new Error("Outbox delivery query failed");
-      for (const row of rows || []) results.push(await deliverOne(admin, row, token, customer, actions));
+      if (!rows || rows.length === 0) {
+        return json({ success: true, mode: "deliver", processed: 0, outbox_empty: true, results: [] });
+      }
+
+      let token: string;
+      try {
+        token = await accessToken();
+      } catch (error: any) {
+        const message = String(error?.message || "Data Manager OAuth configuration missing").slice(0, 200);
+        await admin.from("google_data_manager_outbox")
+          .update({ delivery_status: "configuration_required", last_error: message, updated_at: new Date().toISOString() })
+          .in("delivery_status", ["pending", "failed"])
+          .eq("is_test_lead", false);
+        return json({ success: false, configuration_required: true, message }, 503);
+      }
+
+      const customer = await customerId(admin);
+      const actions = cleanActionMap();
+      for (const row of rows) results.push(await deliverOne(admin, row, token, customer, actions));
     }
 
     return json({
