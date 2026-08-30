@@ -48,6 +48,7 @@ function NavigationItem({
   return (
     <Link
       href={item.href}
+      aria-label={item.label}
       className={`flex items-center gap-4 px-5 py-3.5 rounded-2xl transition-all duration-300 group relative ${
         active
           ? 'bg-[#84643B] text-white shadow-[0_10px_20px_rgba(132,100,59,0.15)]'
