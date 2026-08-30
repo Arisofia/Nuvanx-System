@@ -8,6 +8,7 @@ const cors = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+const PROVIDER_TIMEOUT_MS = 10_000;
 
 function cleanUuid(value: unknown): string | null {
   const v = String(value || "").trim().toLowerCase();
@@ -28,73 +29,96 @@ function bearerToken(req: Request): string | null {
   return token || null;
 }
 
-type AuthorizedLeadContext = {
-  ok: true;
-  admin: ReturnType<typeof createClient> | null;
-  userId: string | null;
-};
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes).map((value) => value.toString(16).padStart(2, "0")).join("");
+}
 
-type RejectedLeadContext = {
-  ok: false;
-  status: number;
-  message: string;
-};
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return bytesToHex(new Uint8Array(digest));
+}
 
-async function authorizeLeadRecipient(
-  req: Request,
-  leadId: string | null,
-  normalizedTo: string,
-): Promise<AuthorizedLeadContext | RejectedLeadContext> {
-  if (!leadId) return { ok: true, admin: null, userId: null };
+function providerError(data: any): { code: string | null; message: string } {
+  const error = data?.error || data?.errors?.[0] || null;
+  return {
+    code: error?.code === undefined || error?.code === null ? null : String(error.code),
+    message: String(error?.message || data?.message || "WhatsApp provider error").slice(0, 500),
+  };
+}
+
+async function authenticatedContext(req: Request): Promise<{ ok: true; admin: any; userId: string } | { ok: false; status: number; message: string }> {
   if (!SUPABASE_URL || !SERVICE_ROLE) {
-    return { ok: false, status: 500, message: "Lead authorization is not configured" };
+    return { ok: false, status: 500, message: "WhatsApp authorization is not configured" };
   }
 
   const token = bearerToken(req);
   if (!token) return { ok: false, status: 401, message: "Authenticated user context is required" };
 
   try {
-    const admin = createClient(SUPABASE_URL, SERVICE_ROLE, {
+    const admin: any = createClient(SUPABASE_URL, SERVICE_ROLE, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
     const { data: authData, error: authError } = await admin.auth.getUser(token);
-    const userId = authData?.user?.id || "";
+    const userId = String(authData?.user?.id || "");
     if (authError || !userId) return { ok: false, status: 401, message: "Authenticated user context is invalid" };
-
-    const { data: lead, error: leadError } = await admin
-      .from("leads")
-      .select("id,user_id,phone")
-      .eq("id", leadId)
-      .eq("user_id", userId)
-      .is("deleted_at", null)
-      .limit(1)
-      .maybeSingle();
-
-    if (leadError || !lead?.id) {
-      return { ok: false, status: 403, message: "Lead is not available to this user" };
-    }
-
-    const storedPhone = normalizePhone(lead.phone);
-    if (!storedPhone) return { ok: false, status: 409, message: "Lead has no WhatsApp phone registered" };
-    if (storedPhone !== normalizedTo) {
-      return { ok: false, status: 409, message: "Recipient does not match the lead phone" };
-    }
-
     return { ok: true, admin, userId };
   } catch {
-    return { ok: false, status: 500, message: "Lead authorization failed" };
+    return { ok: false, status: 500, message: "WhatsApp authorization failed" };
   }
 }
 
-async function trackFirstHumanResponse(
-  admin: ReturnType<typeof createClient> | null,
-  userId: string | null,
-  leadId: string | null,
-  messageId: string | null,
-) {
-  if (!leadId) return { tracked: false, reason: "lead_id_not_provided" };
-  if (!admin || !userId) return { tracked: false, reason: "tracking_context_missing" };
+async function prepareSend(
+  admin: any,
+  userId: string,
+  leadId: string,
+  normalizedTo: string,
+  idempotencyKey: string,
+  messageSha256: string,
+): Promise<{ ok: true; row: any } | { ok: false; status: number; message: string }> {
+  const { data, error } = await admin.rpc("nvx_prepare_whatsapp_send", {
+    p_user_id: userId,
+    p_lead_id: leadId,
+    p_normalized_phone: normalizedTo,
+    p_idempotency_key: idempotencyKey,
+    p_message_sha256: messageSha256,
+  });
 
+  if (error) {
+    const message = String(error.message || "WhatsApp send reservation failed");
+    if (message.includes("lead_not_owned")) return { ok: false, status: 403, message: "Lead is not available to this user" };
+    if (message.includes("recipient_does_not_match_lead_phone")) return { ok: false, status: 409, message: "Recipient does not match the lead phone" };
+    if (message.includes("idempotency_key_conflict")) return { ok: false, status: 409, message: "Idempotency key was already used for another send intent" };
+    return { ok: false, status: 500, message: "WhatsApp send reservation failed" };
+  }
+
+  const row = Array.isArray(data) ? data[0] : null;
+  if (!row) return { ok: false, status: 500, message: "WhatsApp send reservation returned no decision" };
+  return { ok: true, row };
+}
+
+async function finalizeSend(
+  admin: any,
+  userId: string,
+  requestId: string,
+  status: "accepted" | "failed",
+  providerMessageId: string | null,
+  providerHttpStatus: number | null,
+  errorCode: string | null,
+  errorMessage: string | null,
+): Promise<boolean> {
+  const { data, error } = await admin.rpc("nvx_finalize_whatsapp_send", {
+    p_request_id: requestId,
+    p_user_id: userId,
+    p_status: status,
+    p_provider_message_id: providerMessageId,
+    p_provider_http_status: providerHttpStatus,
+    p_provider_error_code: errorCode,
+    p_provider_error_message: errorMessage,
+  });
+  return !error && data === true;
+}
+
+async function trackFirstHumanResponse(admin: any, userId: string, leadId: string, messageId: string) {
   try {
     const sentAt = new Date().toISOString();
     const { data: slaRows, error: slaError } = await admin.rpc("mark_lead_human_first_response", {
@@ -115,22 +139,18 @@ async function trackFirstHumanResponse(
       event_type: "outbound_response",
       event_created_at: sentAt,
       captured_at: sentAt,
-      resolution_status: "resolved",
+      resolution_status: "accepted",
       raw_payload: {
-        ...(messageId ? { message_id: messageId } : {}),
+        message_id: messageId,
         actor: "human_authenticated",
+        provider_status: "accepted",
         sla_first_response_at: firstResponseAt,
       },
     });
-    if (eventError) {
-      return {
-        tracked: true,
-        event_recorded: false,
-        reason: "event_insert_failed",
-        first_response_at: firstResponseAt,
-      };
-    }
 
+    if (eventError) {
+      return { tracked: true, event_recorded: false, reason: "event_insert_failed", first_response_at: firstResponseAt };
+    }
     return { tracked: true, event_recorded: true, first_response_at: firstResponseAt };
   } catch {
     return { tracked: false, reason: "tracking_failed" };
@@ -140,74 +160,174 @@ async function trackFirstHumanResponse(
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
-  const json = (data: unknown, status = 200) =>
+  const json = (data: unknown, status = 200, extraHeaders: Record<string, string> = {}) =>
     new Response(JSON.stringify(data), {
       status,
-      headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" },
+      headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store", ...extraHeaders },
     });
 
   if (req.method !== "POST") return json({ success: false, message: "POST required" }, 405);
 
   const body = await req.json().catch(() => ({}));
   const normalizedTo = normalizePhone(body?.to);
-  const message = String(body?.message || "");
-  const leadId = body?.lead_id === undefined || body?.lead_id === null || body?.lead_id === ""
-    ? null
-    : cleanUuid(body.lead_id);
+  const message = String(body?.message || "").trim();
+  const leadId = cleanUuid(body?.lead_id);
+  const idempotencyKey = String(body?.idempotency_key || "").trim();
 
   if (!normalizedTo || !message) return json({ success: false, message: "to and message are required" }, 400);
-  if (body?.lead_id && !leadId) return json({ success: false, message: "lead_id must be a UUID" }, 400);
+  if (!leadId) return json({ success: false, message: "lead_id is required and must be a UUID" }, 400);
+  if (!/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey)) {
+    return json({ success: false, message: "idempotency_key is required" }, 400);
+  }
   if (message.length > 4096) return json({ success: false, message: "message is too long" }, 400);
   if (!/^\+?[1-9]\d{7,14}$/.test(normalizedTo)) {
     return json({ success: false, message: "to must be a valid phone number in E.164 format (+34XXXXXXXXX)" }, 400);
   }
 
-  // Authorization MUST happen before any irreversible provider call.
-  // When a lead_id is supplied, the destination must equal that owned lead's stored phone.
-  const authorized = await authorizeLeadRecipient(req, leadId, normalizedTo);
-  if (!authorized.ok) {
-    return json({ success: false, message: authorized.message }, authorized.status);
+  const auth = await authenticatedContext(req);
+  if (!auth.ok) return json({ success: false, message: auth.message }, auth.status);
+
+  const messageSha256 = await sha256Hex(message);
+  const prepared = await prepareSend(auth.admin, auth.userId, leadId, normalizedTo, idempotencyKey, messageSha256);
+  if (!prepared.ok) return json({ success: false, message: prepared.message }, prepared.status);
+
+  const decision = String(prepared.row?.decision || "");
+  const requestStatus = String(prepared.row?.request_status || "");
+  const requestId = String(prepared.row?.request_id || "");
+  const priorMessageId = String(prepared.row?.provider_message_id || "") || null;
+  const retryAfter = Math.max(0, Number(prepared.row?.retry_after_seconds || 0));
+
+  if (decision === "rate_limited") {
+    return json(
+      { success: false, rateLimited: true, retryAfterSeconds: retryAfter, message: "WhatsApp rate limit reached for this lead or clinic" },
+      429,
+      { "Retry-After": String(retryAfter || 60) },
+    );
   }
+
+  if (decision === "duplicate") {
+    if (["accepted", "sent", "delivered", "read"].includes(requestStatus)) {
+      return json({
+        success: true,
+        idempotentReplay: true,
+        requestId,
+        messageId: priorMessageId,
+        providerStatus: requestStatus,
+        message: "This send intent was already accepted by Meta",
+      });
+    }
+    if (requestStatus === "reserved") {
+      return json({
+        success: true,
+        pending: true,
+        idempotentReplay: true,
+        requestId,
+        providerStatus: "unknown",
+        message: "This send intent is already reserved; provider outcome is not yet confirmed",
+      }, 202);
+    }
+    return json({
+      success: false,
+      idempotentReplay: true,
+      requestId,
+      providerStatus: requestStatus || "failed",
+      message: "This send intent already failed. Create a new send intent only after reviewing the failure.",
+    }, 409);
+  }
+
+  if (!requestId) return json({ success: false, message: "WhatsApp request ledger did not return a request id" }, 500);
 
   const accessToken = Deno.env.get("WHATSAPP_ACCESS_TOKEN") ?? "";
   const phoneNumberId = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID") ?? "";
   const graphVersion = Deno.env.get("META_GRAPH_VERSION") ?? "v22.0";
 
   if (!accessToken || !phoneNumberId) {
-    return json({ success: false, message: "WhatsApp not configured" }, 503);
+    await finalizeSend(auth.admin, auth.userId, requestId, "failed", null, null, "configuration_required", "WhatsApp not configured");
+    return json({ success: false, requestId, message: "WhatsApp not configured" }, 503);
   }
 
-  const waRes = await fetch(`https://graph.facebook.com/${graphVersion}/${phoneNumberId}/messages`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      recipient_type: "individual",
-      to: normalizedTo,
-      type: "text",
-      text: { preview_url: false, body: message },
-    }),
-  });
-
-  const waData = await waRes.json().catch(() => ({}));
-
-  if (!waRes.ok) {
-    return json({ success: false, message: "WhatsApp provider error", providerStatus: waRes.status }, waRes.status);
+  let waRes: Response;
+  let waData: any = {};
+  try {
+    waRes = await fetch(`https://graph.facebook.com/${graphVersion}/${phoneNumberId}/messages`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: normalizedTo,
+        type: "text",
+        text: { preview_url: false, body: message },
+      }),
+      signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
+    });
+    waData = await waRes.json().catch(() => ({}));
+  } catch (error: unknown) {
+    // Do not mark the request failed: after a timeout the provider outcome is ambiguous.
+    // The reserved idempotency row prevents a retry from sending the same intent again.
+    const reason = error instanceof Error ? error.name : "provider_timeout";
+    return json({
+      success: false,
+      pending: true,
+      requestId,
+      providerStatus: "unknown",
+      message: `Meta provider outcome is unknown (${reason}); do not resend with a new idempotency key`,
+    }, 504);
   }
 
-  const messageId = String(waData?.messages?.[0]?.id || "") || null;
-  const sla = await trackFirstHumanResponse(authorized.admin, authorized.userId, leadId, messageId);
+  const explicitProviderError = Boolean(waData?.error || waData?.success === false);
+  const messageId = String(waData?.messages?.[0]?.id || "").trim() || null;
+
+  if (!waRes.ok || explicitProviderError) {
+    const provider = providerError(waData);
+    const ambiguous = waRes.status >= 500;
+    if (!ambiguous) {
+      await finalizeSend(auth.admin, auth.userId, requestId, "failed", null, waRes.status, provider.code, provider.message);
+    }
+    return json({
+      success: false,
+      pending: ambiguous,
+      requestId,
+      providerStatus: ambiguous ? "unknown" : "failed",
+      providerHttpStatus: waRes.status,
+      providerErrorCode: provider.code,
+      message: ambiguous
+        ? "Meta returned a server error; provider outcome is unknown and the send intent remains reserved"
+        : provider.message,
+    }, ambiguous ? 502 : Math.max(400, waRes.status));
+  }
+
+  if (!messageId) {
+    // A 2xx without a provider message id is not proof of acceptance.
+    return json({
+      success: false,
+      pending: true,
+      requestId,
+      providerStatus: "unknown",
+      message: "Meta returned success without a message id; provider outcome is unknown and the send intent remains reserved",
+    }, 502);
+  }
+
+  const ledgerTracked = await finalizeSend(auth.admin, auth.userId, requestId, "accepted", messageId, waRes.status, null, null);
+  const sla = await trackFirstHumanResponse(auth.admin, auth.userId, leadId, messageId);
 
   return json({
     success: true,
+    requestId,
     messageId,
     to: normalizedTo,
+    providerStatus: "accepted",
+    delivered: false,
+    ledgerTracked,
     slaTracked: sla.tracked,
     slaEventRecorded: sla.event_recorded === true,
     slaFirstResponseAt: sla.first_response_at || null,
     slaTrackingReason: sla.tracked && sla.event_recorded !== false ? null : sla.reason || null,
+    message: ledgerTracked
+      ? "Message accepted by Meta; delivery status is pending webhook confirmation"
+      : "Message accepted by Meta, but ledger persistence needs reconciliation; do not resend",
   });
 });
