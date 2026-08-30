@@ -21,9 +21,10 @@ create table if not exists public.whatsapp_send_requests (
   delivered_at timestamptz,
   read_at timestamptz,
   failed_at timestamptz,
+  unknown_at timestamptz,
   updated_at timestamptz not null default now(),
   constraint whatsapp_send_requests_status_check check (
-    status in ('reserved', 'accepted', 'sent', 'delivered', 'read', 'failed')
+    status in ('reserved', 'unknown', 'accepted', 'sent', 'delivered', 'read', 'failed')
   ),
   constraint whatsapp_send_requests_idempotency_key_check check (
     idempotency_key ~ '^[A-Za-z0-9_-]{16,128}$'
@@ -84,13 +85,13 @@ create policy whatsapp_rate_limit_config_service_role_all
   using (true)
   with check (true);
 
--- Provider message ids are the durable correlation key for delivery webhooks.
-create unique index if not exists whatsapp_conversations_wa_message_id_uidx
+-- Historical tables may already contain duplicate provider ids/events. Preserve all existing rows.
+-- New writes are serialized and idempotent in the RPCs below instead of imposing destructive uniqueness.
+create index if not exists whatsapp_conversations_wa_message_id_idx
   on public.whatsapp_conversations (wa_message_id)
   where wa_message_id is not null;
 
--- Delivery webhook retries are idempotent at the event ledger boundary.
-create unique index if not exists lead_events_whatsapp_message_status_uidx
+create index if not exists lead_events_whatsapp_message_status_idx
   on public.lead_events (lead_id, event_type, ((raw_payload ->> 'message_id')))
   where source_platform = 'whatsapp'
     and raw_payload ? 'message_id';
@@ -158,7 +159,10 @@ begin
     raise exception 'recipient_does_not_match_lead_phone' using errcode = '22023';
   end if;
 
-  -- Serialize competing sends for the same user/lead so limits and idempotency are atomic.
+  -- Serialize clinic-wide counters first, then the exact user/lead intent. Every caller uses this order.
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('nvx-whatsapp-clinic:' || v_clinic_id::text, 0)
+  );
   perform pg_catalog.pg_advisory_xact_lock(
     pg_catalog.hashtextextended('nvx-whatsapp:' || p_user_id::text || ':' || p_lead_id::text, 0)
   );
@@ -362,8 +366,9 @@ as $$
 declare
   v_request public.whatsapp_send_requests%rowtype;
   v_now timestamptz := clock_timestamp();
+  v_conversation_count integer;
 begin
-  if p_status not in ('accepted', 'failed') then
+  if p_status not in ('accepted', 'failed', 'unknown') then
     raise exception 'invalid_finalize_status' using errcode = '22023';
   end if;
 
@@ -377,68 +382,94 @@ begin
     return false;
   end if;
 
+  -- A known accepted/delivered result must never be downgraded by an ambiguous follow-up.
+  if v_request.status in ('accepted', 'sent', 'delivered', 'read') and p_status in ('unknown', 'failed') then
+    return true;
+  end if;
+
   update public.whatsapp_send_requests r
   set status = p_status,
       provider_message_id = coalesce(p_provider_message_id, r.provider_message_id),
-      provider_http_status = p_provider_http_status,
-      provider_error_code = p_provider_error_code,
-      provider_error_message = left(p_provider_error_message, 500),
+      provider_http_status = coalesce(p_provider_http_status, r.provider_http_status),
+      provider_error_code = coalesce(p_provider_error_code, r.provider_error_code),
+      provider_error_message = coalesce(left(p_provider_error_message, 500), r.provider_error_message),
       accepted_at = case when p_status = 'accepted' then coalesce(r.accepted_at, v_now) else r.accepted_at end,
       failed_at = case when p_status = 'failed' then coalesce(r.failed_at, v_now) else r.failed_at end,
+      unknown_at = case when p_status = 'unknown' then coalesce(r.unknown_at, v_now) else r.unknown_at end,
       updated_at = v_now
   where r.id = p_request_id;
 
   if p_status = 'accepted' and coalesce(p_provider_message_id, '') <> '' then
-    insert into public.whatsapp_conversations (
-      clinic_id,
-      lead_id,
-      phone,
-      direction,
-      message_type,
-      sent_at,
-      wa_message_id,
-      conversation_status
-    ) values (
-      v_request.clinic_id,
-      v_request.lead_id,
-      v_request.normalized_phone,
-      'outbound',
-      'text',
-      v_now,
-      p_provider_message_id,
-      'accepted'
-    )
-    on conflict (wa_message_id) where wa_message_id is not null
-    do update set
-      sent_at = coalesce(public.whatsapp_conversations.sent_at, excluded.sent_at),
-      conversation_status = excluded.conversation_status;
+    -- Serialize provider-id writes without requiring a new unique constraint on historical rows.
+    perform pg_catalog.pg_advisory_xact_lock(
+      pg_catalog.hashtextextended('nvx-whatsapp-provider:' || p_provider_message_id, 0)
+    );
 
-    insert into public.lead_events (
-      lead_id,
-      source_platform,
-      source_channel,
-      channel_label,
-      event_type,
-      event_created_at,
-      captured_at,
-      resolution_status,
-      raw_payload
-    ) values (
-      v_request.lead_id,
-      'whatsapp',
-      'direct',
-      'WhatsApp',
-      'whatsapp_meta_accepted',
-      v_now,
-      v_now,
-      'accepted',
-      jsonb_build_object(
-        'message_id', p_provider_message_id,
-        'request_id', p_request_id,
-        'actor', 'human_authenticated'
-      )
-    )
-    on conflict do nothing;
+    update public.whatsapp_conversations c
+    set sent_at = coalesce(c.sent_at, v_now),
+        conversation_status = case
+          when c.conversation_status in ('sent', 'delivered', 'read') then c.conversation_status
+          else 'accepted'
+        end
+    where c.wa_message_id = p_provider_message_id;
+    get diagnostics v_conversation_count = row_count;
+
+    if v_conversation_count = 0 then
+      insert into public.whatsapp_conversations (
+        clinic_id,
+        lead_id,
+        phone,
+        direction,
+        message_type,
+        sent_at,
+        wa_message_id,
+        conversation_status
+      ) values (
+        v_request.clinic_id,
+        v_request.lead_id,
+        v_request.normalized_phone,
+        'outbound',
+        'text',
+        v_now,
+        p_provider_message_id,
+        'accepted'
+      );
+    end if;
+
+    if not exists (
+      select 1
+      from public.lead_events e
+      where e.lead_id = v_request.lead_id
+        and e.source_platform = 'whatsapp'
+        and e.event_type = 'whatsapp_meta_accepted'
+        and e.raw_payload ->> 'message_id' = p_provider_message_id
+    ) then
+      insert into public.lead_events (
+        lead_id,
+        source_platform,
+        source_channel,
+        channel_label,
+        event_type,
+        event_created_at,
+        captured_at,
+        resolution_status,
+        raw_payload
+      ) values (
+        v_request.lead_id,
+        'whatsapp',
+        'direct',
+        'WhatsApp',
+        'whatsapp_meta_accepted',
+        v_now,
+        v_now,
+        'accepted',
+        jsonb_build_object(
+          'message_id', p_provider_message_id,
+          'request_id', p_request_id,
+          'actor', 'human_authenticated'
+        )
+      );
+    end if;
   elsif p_status = 'failed' then
     insert into public.lead_events (
       lead_id,
@@ -467,6 +498,44 @@ begin
         'provider_error_code', p_provider_error_code
       )
     );
+  elsif p_status = 'unknown' then
+    if not exists (
+      select 1
+      from public.lead_events e
+      where e.lead_id = v_request.lead_id
+        and e.source_platform = 'whatsapp'
+        and e.event_type = 'whatsapp_provider_unknown'
+        and e.raw_payload ->> 'request_id' = p_request_id::text
+    ) then
+      insert into public.lead_events (
+        lead_id,
+        source_platform,
+        source_channel,
+        channel_label,
+        event_type,
+        event_created_at,
+        captured_at,
+        resolution_status,
+        error_message,
+        raw_payload
+      ) values (
+        v_request.lead_id,
+        'whatsapp',
+        'direct',
+        'WhatsApp',
+        'whatsapp_provider_unknown',
+        v_now,
+        v_now,
+        'pending',
+        left(p_provider_error_message, 500),
+        jsonb_strip_nulls(jsonb_build_object(
+          'request_id', p_request_id,
+          'provider_http_status', p_provider_http_status,
+          'provider_error_code', p_provider_error_code,
+          'requires_reconciliation', true
+        ))
+      );
+    end if;
   end if;
 
   return true;
@@ -501,6 +570,10 @@ begin
     return false;
   end if;
 
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('nvx-whatsapp-provider:' || p_provider_message_id, 0)
+  );
+
   select * into v_request
   from public.whatsapp_send_requests r
   where r.provider_message_id = p_provider_message_id
@@ -512,18 +585,18 @@ begin
 
   update public.whatsapp_send_requests r
   set status = case
-        when p_status = 'failed' then 'failed'
         when p_status = 'read' then 'read'
         when p_status = 'delivered' and r.status <> 'read' then 'delivered'
-        when p_status = 'sent' and r.status in ('reserved', 'accepted') then 'sent'
+        when p_status = 'sent' and r.status in ('reserved', 'unknown', 'accepted', 'sent') then 'sent'
+        when p_status = 'failed' and r.status in ('reserved', 'unknown', 'accepted', 'failed') then 'failed'
         else r.status
       end,
       sent_at = case when p_status = 'sent' then coalesce(r.sent_at, v_event_at) else r.sent_at end,
       delivered_at = case when p_status = 'delivered' then coalesce(r.delivered_at, v_event_at) else r.delivered_at end,
       read_at = case when p_status = 'read' then coalesce(r.read_at, v_event_at) else r.read_at end,
-      failed_at = case when p_status = 'failed' then coalesce(r.failed_at, v_event_at) else r.failed_at end,
-      provider_error_code = case when p_status = 'failed' then p_error_code else r.provider_error_code end,
-      provider_error_message = case when p_status = 'failed' then left(p_error_message, 500) else r.provider_error_message end,
+      failed_at = case when p_status = 'failed' and r.status in ('reserved', 'unknown', 'accepted', 'failed') then coalesce(r.failed_at, v_event_at) else r.failed_at end,
+      provider_error_code = case when p_status = 'failed' then coalesce(p_error_code, r.provider_error_code) else r.provider_error_code end,
+      provider_error_message = case when p_status = 'failed' then coalesce(left(p_error_message, 500), r.provider_error_message) else r.provider_error_message end,
       updated_at = clock_timestamp()
   where r.id = v_request.id;
 
@@ -531,40 +604,54 @@ begin
   set sent_at = case when p_status = 'sent' then coalesce(c.sent_at, v_event_at) else c.sent_at end,
       delivered_at = case when p_status = 'delivered' then coalesce(c.delivered_at, v_event_at) else c.delivered_at end,
       read_at = case when p_status = 'read' then coalesce(c.read_at, v_event_at) else c.read_at end,
-      conversation_status = p_status
+      conversation_status = case
+        when p_status = 'read' then 'read'
+        when p_status = 'delivered' and c.conversation_status <> 'read' then 'delivered'
+        when p_status = 'sent' and coalesce(c.conversation_status, 'accepted') in ('reserved', 'accepted', 'sent') then 'sent'
+        when p_status = 'failed' and coalesce(c.conversation_status, 'accepted') in ('reserved', 'accepted', 'failed') then 'failed'
+        else c.conversation_status
+      end
   where c.wa_message_id = p_provider_message_id;
 
   v_event_type := 'whatsapp_' || p_status;
   v_resolution := case when p_status = 'failed' then 'failed' else p_status end;
 
-  insert into public.lead_events (
-    lead_id,
-    source_platform,
-    source_channel,
-    channel_label,
-    event_type,
-    event_created_at,
-    captured_at,
-    resolution_status,
-    error_message,
-    raw_payload
-  ) values (
-    v_request.lead_id,
-    'whatsapp',
-    'delivery_status',
-    'WhatsApp',
-    v_event_type,
-    v_event_at,
-    clock_timestamp(),
-    v_resolution,
-    case when p_status = 'failed' then left(p_error_message, 500) else null end,
-    jsonb_strip_nulls(jsonb_build_object(
-      'message_id', p_provider_message_id,
-      'request_id', v_request.id,
-      'provider_error_code', p_error_code
-    ))
-  )
-  on conflict do nothing;
+  if not exists (
+    select 1
+    from public.lead_events e
+    where e.lead_id = v_request.lead_id
+      and e.source_platform = 'whatsapp'
+      and e.event_type = v_event_type
+      and e.raw_payload ->> 'message_id' = p_provider_message_id
+  ) then
+    insert into public.lead_events (
+      lead_id,
+      source_platform,
+      source_channel,
+      channel_label,
+      event_type,
+      event_created_at,
+      captured_at,
+      resolution_status,
+      error_message,
+      raw_payload
+    ) values (
+      v_request.lead_id,
+      'whatsapp',
+      'delivery_status',
+      'WhatsApp',
+      v_event_type,
+      v_event_at,
+      clock_timestamp(),
+      v_resolution,
+      case when p_status = 'failed' then left(p_error_message, 500) else null end,
+      jsonb_strip_nulls(jsonb_build_object(
+        'message_id', p_provider_message_id,
+        'request_id', v_request.id,
+        'provider_error_code', p_error_code
+      ))
+    );
+  end if;
 
   return true;
 end;
