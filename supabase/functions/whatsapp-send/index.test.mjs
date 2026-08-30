@@ -9,9 +9,19 @@ const migration = readFileSync(
 );
 
 describe("WhatsApp human first-response SLA contract", () => {
+  it("authorizes the exact lead recipient before the irreversible provider send", () => {
+    const authorizationCall = source.indexOf("authorizeLeadRecipient(req, leadId, normalizedTo)");
+    const providerSend = source.indexOf("const waRes = await fetch");
+    expect(authorizationCall).toBeGreaterThan(-1);
+    expect(providerSend).toBeGreaterThan(authorizationCall);
+    expect(source).toContain('.select("id,user_id,phone")');
+    expect(source).toContain("storedPhone !== normalizedTo");
+    expect(source).toContain('message: "Recipient does not match the lead phone"');
+  });
+
   it("tracks only after the provider accepted the outbound text", () => {
     const providerCheck = source.indexOf("if (!waRes.ok)");
-    const trackerCall = source.indexOf("trackFirstHumanResponse(req, leadId, messageId)");
+    const trackerCall = source.indexOf("trackFirstHumanResponse(authorized.admin, authorized.userId, leadId, messageId)");
     expect(providerCheck).toBeGreaterThan(-1);
     expect(trackerCall).toBeGreaterThan(providerCheck);
     expect(source).toContain('type: "text"');
@@ -47,7 +57,7 @@ describe("WhatsApp human first-response SLA contract", () => {
   });
 
   it("never converts a successful WhatsApp send into a business failure when SLA telemetry fails", () => {
-    const trackerCall = source.indexOf("trackFirstHumanResponse(req, leadId, messageId)");
+    const trackerCall = source.indexOf("trackFirstHumanResponse(authorized.admin, authorized.userId, leadId, messageId)");
     const successResponse = source.indexOf("success: true", trackerCall);
     expect(trackerCall).toBeGreaterThan(-1);
     expect(successResponse).toBeGreaterThan(trackerCall);
