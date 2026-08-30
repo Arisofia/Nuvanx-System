@@ -1935,7 +1935,11 @@ function handleWhatsappWebhookGet(ctx: PublicRouteContext): Response | null {
   const mode = url.searchParams.get('hub.mode');
   const challenge = url.searchParams.get('hub.challenge');
   const verifyToken = url.searchParams.get('hub.verify_token');
-  const expected = String(Deno.env.get('WHATSAPP_WEBHOOK_VERIFY_TOKEN') ?? '').trim();
+  const expected = String(
+    Deno.env.get('WHATSAPP_WEBHOOK_VERIFY_TOKEN') ??
+    Deno.env.get('META_WEBHOOK_VERIFY_TOKEN') ??
+    Deno.env.get('META_VERIFY_TOKEN') ?? ''
+  ).trim();
   if (!expected) return new Response('WhatsApp verify token not configured', { status: 503 });
   if (mode === 'subscribe' && verifyToken === expected) {
     return new Response(challenge ?? '', { status: 200, headers: { 'Content-Type': 'text/plain' } });
