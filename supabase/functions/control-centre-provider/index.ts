@@ -120,7 +120,7 @@ async function fetchProvider(
     const params = new URLSearchParams();
     if (query.get('from')) params.set('from', query.get('from')!);
     if (query.get('to')) params.set('to', query.get('to')!);
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/api/api/meta/insights?${params.toString()}`, {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/api/meta/insights?${params.toString()}`, {
       headers: { Authorization: bearer, Accept: 'application/json' },
       signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
     });
@@ -129,7 +129,7 @@ async function fetchProvider(
 
   if (provider === 'agenda') {
     const date = query.get('date') || new Date().toISOString().slice(0, 10);
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/api/api/agenda/doctoralia?date=${encodeURIComponent(date)}`, {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/api/agenda/doctoralia?date=${encodeURIComponent(date)}`, {
       headers: { Authorization: bearer, Accept: 'application/json' },
       signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
     });
