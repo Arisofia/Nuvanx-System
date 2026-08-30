@@ -50,11 +50,33 @@ function frontendChanged() {
   return true;
 }
 
-async function getRequiredWorkflowRun(sha) {
+function latestRunPerWorkflow(runs) {
+  const latest = new Map();
+
+  for (const run of runs) {
+    const key = run?.path;
+    if (!key) continue;
+
+    const current = latest.get(key);
+    if (!current) {
+      latest.set(key, run);
+      continue;
+    }
+
+    const attemptDelta = Number(run.run_attempt ?? 1) - Number(current.run_attempt ?? 1);
+    if (attemptDelta > 0 || (attemptDelta === 0 && Number(run.id ?? 0) > Number(current.id ?? 0))) {
+      latest.set(key, run);
+    }
+  }
+
+  return [...latest.values()];
+}
+
+async function getPushWorkflowRuns(sha) {
   const url = new URL(`https://api.github.com/repos/${OWNER}/${REPO}/actions/runs`);
   url.searchParams.set('head_sha', sha);
   url.searchParams.set('event', 'push');
-  url.searchParams.set('per_page', '20');
+  url.searchParams.set('per_page', '100');
 
   const response = await fetch(url, {
     headers: {
@@ -70,15 +92,13 @@ async function getRequiredWorkflowRun(sha) {
 
   const payload = await response.json();
   const runs = Array.isArray(payload.workflow_runs) ? payload.workflow_runs : [];
-  const matching = runs
-    .filter((run) => run?.path === REQUIRED_WORKFLOW_PATH && run?.head_sha === sha)
-    .sort((a, b) => {
-      const attemptDelta = Number(b.run_attempt ?? 1) - Number(a.run_attempt ?? 1);
-      if (attemptDelta !== 0) return attemptDelta;
-      return Number(b.id ?? 0) - Number(a.id ?? 0);
-    });
+  return latestRunPerWorkflow(runs.filter((run) => run?.head_sha === sha));
+}
 
-  return matching[0] ?? null;
+function summarizeRuns(runs) {
+  return runs
+    .map((run) => `${run.path ?? run.name ?? 'unknown'}=${run.status}/${run.conclusion ?? 'pending'}`)
+    .join(', ');
 }
 
 async function main() {
@@ -93,20 +113,27 @@ async function main() {
 
   const sha = resolveCommitSha();
   const deadline = Date.now() + MAX_WAIT_MS;
-  console.log(`[vercel-ci-gate] waiting for ${REQUIRED_WORKFLOW_PATH} on ${sha}`);
+  console.log(`[vercel-ci-gate] waiting for all push workflows on ${sha}`);
 
   while (Date.now() < deadline) {
     try {
-      const run = await getRequiredWorkflowRun(sha);
+      const runs = await getPushWorkflowRuns(sha);
+      const requiredRun = runs.find((run) => run.path === REQUIRED_WORKFLOW_PATH);
 
-      if (!run) {
-        console.log('[vercel-ci-gate] required workflow run not visible yet; waiting');
-      } else if (run.status !== 'completed') {
-        console.log(`[vercel-ci-gate] required workflow status=${run.status}; waiting`);
-      } else if (run.conclusion === 'success') {
-        continueBuild(`required workflow passed for ${sha}`);
+      if (!requiredRun) {
+        console.log('[vercel-ci-gate] required master workflow not visible yet; waiting');
       } else {
-        ignoreBuild(`required workflow concluded ${run.conclusion ?? 'unknown'} for ${sha}`);
+        const pending = runs.filter((run) => run.status !== 'completed');
+        if (pending.length > 0) {
+          console.log(`[vercel-ci-gate] workflows still running: ${summarizeRuns(pending)}`);
+        } else {
+          const failed = runs.filter((run) => run.conclusion !== 'success');
+          if (failed.length > 0) {
+            ignoreBuild(`push workflow gate failed: ${summarizeRuns(failed)}`);
+          }
+
+          continueBuild(`all ${runs.length} push workflow(s) passed for ${sha}`);
+        }
       }
     } catch (error) {
       console.log(`[vercel-ci-gate] GitHub status lookup failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -115,7 +142,7 @@ async function main() {
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
   }
 
-  ignoreBuild(`timed out waiting for a successful ${REQUIRED_WORKFLOW_PATH} result`);
+  ignoreBuild(`timed out waiting for successful push workflows for ${sha}`);
 }
 
 main().catch((error) => {
