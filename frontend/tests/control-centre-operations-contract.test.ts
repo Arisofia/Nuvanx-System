@@ -21,41 +21,44 @@ describe('NUVANX Control Centre operations contract', () => {
     expect(dashboard).toContain('Analítica y rendimiento')
   })
 
-  it('reads patients, agenda, Meta and Google from canonical production APIs', () => {
+  it('reads CRM, agenda, Meta and Google through canonical production owners', () => {
     const overview = read('../src/components/dashboard/OperationsOverview.tsx')
     expect(overview).toContain('useLeads()')
-    expect(overview).toContain('/api/agenda/doctoralia?date=')
-    expect(overview).toContain('/api/meta/insights?')
-    expect(overview).toContain('/api/google-ads/status')
-    expect(overview).toContain('/api/google-ads/insights?')
+    expect(overview).toContain('/control-centre-provider?provider=agenda&date=')
+    expect(overview).toContain('/control-centre-provider?provider=meta&')
+    expect(overview).toContain('/control-centre-provider?provider=google&')
+    expect(overview).not.toContain('/api/meta/insights?')
+    expect(overview).not.toContain('/api/google-ads/status')
+    expect(overview).not.toContain('/api/google-ads/insights?')
     expect(overview).not.toMatch(/mock|fixture|demo data/i)
   })
 
-  it('fails visibly on application-level provider errors and refreshes across day boundaries', () => {
+  it('fails visibly on unavailable provider envelopes and refreshes across day boundaries', () => {
     const overview = read('../src/components/dashboard/OperationsOverview.tsx')
-    expect(overview).toContain("metaResult.status === 'fulfilled' && metaResult.value.success !== false")
-    expect(overview).toContain('googleStatusResult.value.success !== false')
-    expect(overview).toContain("googleResult.status === 'fulfilled' && googleResult.value.success !== false")
+    expect(overview).toContain('function envelopeUsable')
+    expect(overview).toContain('function resolveEnvelopeHealth')
+    expect(overview).toContain("value.status === 'live' || value.status === 'stale'")
+    expect(overview).toContain("status: hasPrevious ? 'stale' : 'error'")
     expect(overview).toContain('const currentToday = localDate(now)')
     expect(overview).toContain('globalThis.setInterval')
     expect(overview).toContain("period: { from: currentFrom, to: currentToday }")
   })
 
-  it('bounds every API request independently so one provider cannot freeze the overview', () => {
+  it('bounds every gateway request below the provider budget', () => {
+    const overview = read('../src/components/dashboard/OperationsOverview.tsx')
     const invokeApi = read('../src/lib/invokeApi.ts')
-    expect(invokeApi).toContain('const DEFAULT_API_TIMEOUT_MS = 20_000')
+    expect(overview.match(/timeoutMs: 18_000/g)?.length).toBe(3)
     expect(invokeApi).toContain('AbortSignal.timeout(timeoutMs)')
     expect(invokeApi).toContain('AbortSignal.any([init.signal, timeoutSignal])')
     expect(invokeApi).toContain('signal,')
   })
 
-  it('preserves last-known-good provider data and marks stale sources instead of presenting failures as zero', () => {
+  it('preserves last-known-good provider data and never presents unavailable providers as confirmed zero', () => {
     const overview = read('../src/components/dashboard/OperationsOverview.tsx')
-    expect(overview).toContain('cached?: boolean')
-    expect(overview).toContain('degraded?: boolean')
-    expect(overview).toContain('last_success?: string | null')
-    expect(overview).toContain("metaBackendStale ? 'stale' : 'live'")
-    expect(overview).toContain("prev.google && prev.googleStatus?.connected")
+    expect(overview).toContain("type ProviderStatus = 'live' | 'stale' | 'unavailable'")
+    expect(overview).toContain('last_success_at?: string | null')
+    expect(overview).toContain('const meta = metaUsable ? metaEnvelope.data : prev.meta')
+    expect(overview).toContain('const google = googleUsable ? googleEnvelope.data : prev.google')
     expect(overview).toContain("? money(metaSpend) : '—'")
     expect(overview).toContain("? money(googleSpend) : '—'")
     expect(overview).toContain('Las fuentes con último dato válido se conservan marcadas como STALE')
