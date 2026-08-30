@@ -5,7 +5,6 @@ declare const Deno: any;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const HUBSPOT_ACCESS_TOKEN_ENV = (Deno.env.get("HUBSPOT_ACCESS_TOKEN") || "").trim();
-let runtimeHubspotAccessToken = HUBSPOT_ACCESS_TOKEN_ENV;
 const FORM_ID = "5042522a-0bc5-4381-ac3e-5aee8649b69c";
 const STAGING_ORIGIN = "https://staging2.nuvanx.com";
 const SIGNATURE_MAX_SKEW_SECONDS = 300;
@@ -62,13 +61,11 @@ async function deriveGoogleAttributionHmacKey(token: string): Promise<string> {
 }
 
 async function resolveHubspotToken(admin: any): Promise<string> {
-  if (runtimeHubspotAccessToken) return runtimeHubspotAccessToken;
+  if (HUBSPOT_ACCESS_TOKEN_ENV) return HUBSPOT_ACCESS_TOKEN_ENV;
   try {
     const { data, error } = await admin.rpc("nvx_get_runtime_secret", { p_name: "HUBSPOT_ACCESS_TOKEN" });
     if (error || !data) return "";
-    const token = String(data).trim();
-    if (token) runtimeHubspotAccessToken = token;
-    return runtimeHubspotAccessToken;
+    return String(data).trim();
   } catch {
     return "";
   }
