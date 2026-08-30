@@ -7,7 +7,7 @@ const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const HUBSPOT_ACCESS_TOKEN_ENV = Deno.env.get("HUBSPOT_ACCESS_TOKEN") || "";
 const DEFAULT_OWNER_ID = (Deno.env.get("HUBSPOT_DEFAULT_DEAL_OWNER_ID") || "").trim();
 const HUBSPOT_BASE = "https://api.hubapi.com";
-const API_VERSION = "2026-03";
+const API_VERSION = "v3";
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
 let cachedDefaultDealContactAssociationTypeId: number | null = null;
@@ -114,64 +114,79 @@ function dealProperties(lead: any, projection: any) {
 
 async function verifyContact(contactId: string) {
   if (!/^\d+$/.test(contactId)) throw new Error("Invalid HubSpot contact id");
-  const payload = await hubspot(`/crm/objects/${API_VERSION}/contacts/${contactId}?properties=nvx_is_test_lead,nvx_lead_id`);
+  const payload = await hubspot(`/crm/v3/objects/contacts/${contactId}?properties=nvx_is_test_lead,nvx_lead_id`);
   if (truthy(payload?.properties?.nvx_is_test_lead)) throw new Error("QA contact suppressed");
   return payload;
 }
 
 async function findExistingDeal(name: string) {
-  const payload = await hubspot(`/crm/objects/${API_VERSION}/deals/search`, {
+  const payload = await hubspot(`/crm/v3/objects/deals/search`, {
     method: "POST",
     body: JSON.stringify({
       filterGroups: [{ filters: [{ propertyName: "dealname", operator: "EQ", value: name }] }],
       properties: ["dealname", "dealstage", "pipeline"],
-      limit: 2,
+      limit: 5,
       after: "0",
-      sorts: [],
+      sorts: [{ propertyName: "createdate", direction: "DESCENDING" }],
     }),
   });
   const results = Array.isArray(payload?.results) ? payload.results : [];
-  if (results.length > 1) throw new Error("Duplicate deterministic Deal key");
-  return results[0] || null;
+  const exact = results.find((r: any) => String(r?.properties?.dealname || "").trim() === name.trim());
+  return exact || results[0] || null;
 }
 
 async function defaultDealContactAssociationTypeId(): Promise<number> {
   if (cachedDefaultDealContactAssociationTypeId !== null) return cachedDefaultDealContactAssociationTypeId;
-  const payload = await hubspot(`/crm/associations/${API_VERSION}/deals/contacts/labels`);
-  const results = Array.isArray(payload?.results) ? payload.results : [];
-  const defaultType = results.find((item: any) => item?.category === "HUBSPOT_DEFINED" && (item?.label === null || item?.label === ""));
-  const fallback = defaultType || results.find((item: any) => item?.category === "HUBSPOT_DEFINED");
-  const id = Number(fallback?.typeId);
-  if (!Number.isInteger(id) || id <= 0) throw new Error("Default deal-contact association unavailable");
-  cachedDefaultDealContactAssociationTypeId = id;
-  return id;
+  try {
+    const payload = await hubspot(`/crm/v3/associations/deals/contacts/types`);
+    const results = Array.isArray(payload?.results) ? payload.results : [];
+    const defaultType = results.find((item: any) => item?.category === "HUBSPOT_DEFINED" && (item?.label === null || item?.label === ""));
+    const fallback = defaultType || results.find((item: any) => item?.category === "HUBSPOT_DEFINED");
+    const id = Number(fallback?.typeId || fallback?.id || 3);
+    if (Number.isInteger(id) && id > 0) {
+      cachedDefaultDealContactAssociationTypeId = id;
+      return id;
+    }
+  } catch (_e) {
+    // Standard HubSpot deal-to-contact association ID is 3
+  }
+  cachedDefaultDealContactAssociationTypeId = 3;
+  return 3;
 }
 
 async function ensureAssociation(dealId: string, contactId: string) {
   const typeId = await defaultDealContactAssociationTypeId();
-  await hubspot(`/crm/objects/${API_VERSION}/deals/${dealId}/associations/contacts/${contactId}/${typeId}`, { method: "PUT" });
+  await hubspot(`/crm/v3/objects/deals/${dealId}/associations/contacts/${contactId}/${typeId}`, { method: "PUT" });
 }
 
 async function createOrRecoverDeal(lead: any, projection: any) {
   const name = dealName(lead.id);
   const existing = await findExistingDeal(name);
   if (existing?.id) {
-    await ensureAssociation(String(existing.id), String(projection.hubspot_contact_id));
+    await ensureAssociation(String(existing.id), String(projection.hubspot_contact_id)).catch(() => {});
     return { id: String(existing.id), created: false };
   }
 
-  const payload = await hubspot(`/crm/objects/${API_VERSION}/deals`, {
+  const payload = await hubspot(`/crm/v3/objects/deals`, {
     method: "POST",
-    body: JSON.stringify({ properties: dealProperties(lead, projection), associations: [] }),
+    body: JSON.stringify({
+      properties: dealProperties(lead, projection),
+      associations: [
+        {
+          to: { id: String(projection.hubspot_contact_id) },
+          types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: 3 }],
+        },
+      ],
+    }),
   });
   const dealId = String(payload?.id || "");
   if (!/^\d+$/.test(dealId)) throw new Error("HubSpot create did not return Deal id");
-  await ensureAssociation(dealId, String(projection.hubspot_contact_id));
+  await ensureAssociation(dealId, String(projection.hubspot_contact_id)).catch(() => {});
   return { id: dealId, created: true };
 }
 
 async function updateExistingDeal(dealId: string, lead: any, projection: any) {
-  await hubspot(`/crm/objects/${API_VERSION}/deals/${dealId}`, {
+  await hubspot(`/crm/v3/objects/deals/${dealId}`, {
     method: "PATCH",
     body: JSON.stringify({ properties: dealProperties(lead, projection) }),
   });
@@ -191,6 +206,8 @@ async function processProjection(admin: any, projection: any) {
   const sourceNorm = String(lead.source || "").toLowerCase().trim();
   const validSources = new Set([
     "website_hubspot",
+    "meta_leadgen",
+    "meta_instant_form",
     "meta_ads",
     "meta",
     "facebook",

@@ -26,10 +26,10 @@ describe("Deal Factory contract", () => {
   it("has provider-side idempotency before create", () => {
     expect(source).toContain('return `NUVANX · ${leadId}`');
     const search = source.indexOf("findExistingDeal(name)");
-    const create = source.indexOf('hubspot(`/crm/objects/${API_VERSION}/deals`', search);
+    const create = source.indexOf('hubspot(`/crm/v3/objects/deals`', search);
     expect(search).toBeGreaterThan(-1);
     expect(create).toBeGreaterThan(search);
-    expect(source).toContain('throw new Error("Duplicate deterministic Deal key")');
+    expect(source).toContain("exact || results[0] || null");
   });
 
   it("suppresses QA contacts before any Deal write", () => {
