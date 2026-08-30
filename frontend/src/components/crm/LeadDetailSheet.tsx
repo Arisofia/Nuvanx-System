@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { CheckCircle2, MessageCircle, Send, XCircle } from 'lucide-react'
+import { CheckCircle2, Clock3, MessageCircle, Send, XCircle } from 'lucide-react'
 import type { Lead } from '../../types'
 import { supabase } from '../../lib/supabaseClient'
 import { Button } from '../ui/button'
@@ -20,6 +20,12 @@ const STAGES = [
   { value: 'closed', label: 'Cerrado' },
 ] as const
 
+type WhatsappResult = {
+  ok: boolean
+  pending?: boolean
+  message: string
+}
+
 function defaultWhatsappDraft(name: string) {
   const firstName = name.trim().split(/\s+/)[0] || ''
   return `Hola${firstName ? ` ${firstName}` : ''}, soy del equipo de NUVANX Medicina Estética Láser. Te escribo para ayudarte con tu solicitud de valoración. ¿Qué momento te viene bien para hablar?`
@@ -32,6 +38,23 @@ function normalizeWhatsappPhone(value: string) {
   return `${hasLeadingPlus ? '+' : ''}${digits}`
 }
 
+function createWhatsappIntentKey() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID()
+  const random = new Uint8Array(16)
+  globalThis.crypto.getRandomValues(random)
+  return Array.from(random, value => value.toString(16).padStart(2, '0')).join('')
+}
+
+async function readFunctionErrorPayload(error: unknown): Promise<Record<string, unknown> | null> {
+  const context = (error as { context?: unknown } | null)?.context
+  if (!(context instanceof Response)) return null
+  try {
+    return await context.clone().json() as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
+
 export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: Readonly<LeadDetailSheetProps>) {
   const [isEditing, setIsEditing] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -39,7 +62,8 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
   const [saveError, setSaveError] = useState<string | null>(null)
   const [whatsappDraft, setWhatsappDraft] = useState('')
   const [whatsappSending, setWhatsappSending] = useState(false)
-  const [whatsappResult, setWhatsappResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [whatsappIntentKey, setWhatsappIntentKey] = useState<string | null>(null)
+  const [whatsappResult, setWhatsappResult] = useState<WhatsappResult | null>(null)
   const [form, setForm] = useState({
     name: '',
     status: '',
@@ -69,6 +93,7 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
     setSaveError(null)
     setWhatsappResult(null)
     setWhatsappSending(false)
+    setWhatsappIntentKey(null)
   }, [lead])
 
   if (!isOpen || !lead) return null
@@ -103,6 +128,13 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
     onClose()
   }
 
+  const handleWhatsappDraftChange = (value: string) => {
+    setWhatsappDraft(value)
+    // An idempotency key fingerprints one exact send intent. Editing creates a new intent.
+    setWhatsappIntentKey(null)
+    setWhatsappResult(null)
+  }
+
   const handleWhatsappSend = async () => {
     const phone = normalizeWhatsappPhone(String(lead.phone || ''))
     const message = whatsappDraft.trim()
@@ -122,24 +154,57 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
     const confirmed = globalThis.confirm(`¿Enviar este WhatsApp a ${lead.name} (${phone})?`)
     if (!confirmed) return
 
+    const intentKey = whatsappIntentKey || createWhatsappIntentKey()
+    if (!whatsappIntentKey) setWhatsappIntentKey(intentKey)
+
     setWhatsappSending(true)
     setWhatsappResult(null)
     try {
       const { data, error } = await supabase.functions.invoke('whatsapp-send', {
-        body: { to: phone, message, lead_id: lead.id },
+        body: { to: phone, message, lead_id: lead.id, idempotency_key: intentKey },
       })
-      if (error) throw error
-      if (!data?.success) throw new Error(data?.message || 'WhatsApp no confirmó el envío.')
 
+      if (error) {
+        const payload = await readFunctionErrorPayload(error)
+        const providerStatus = String(payload?.providerStatus || '')
+        if (providerStatus === 'failed') setWhatsappIntentKey(null)
+        const failureMessage = String(payload?.message || (error as Error).message || 'WhatsApp no confirmó la solicitud.')
+        const pending = payload?.pending === true || providerStatus === 'unknown'
+        setWhatsappResult({ ok: false, pending, message: failureMessage })
+        return
+      }
+
+      if (!data?.success) {
+        if (data?.providerStatus === 'failed') setWhatsappIntentKey(null)
+        setWhatsappResult({
+          ok: false,
+          pending: data?.pending === true || data?.providerStatus === 'unknown',
+          message: data?.message || 'WhatsApp no confirmó la solicitud.',
+        })
+        return
+      }
+
+      if (data?.pending === true || data?.providerStatus === 'unknown') {
+        setWhatsappResult({
+          ok: false,
+          pending: true,
+          message: data?.message || 'Solicitud registrada. El resultado del proveedor aún no está confirmado; no reenvíes con una intención nueva.',
+        })
+        return
+      }
+
+      // Meta returned a durable message id / known prior provider result. A later webhook proves delivery/read.
+      setWhatsappIntentKey(null)
       setWhatsappResult({
         ok: true,
         message: data?.messageId
-          ? `Mensaje enviado. ID Meta: ${String(data.messageId)}`
-          : 'Mensaje enviado correctamente.',
+          ? `Aceptado por Meta. Entrega pendiente de confirmación. ID: ${String(data.messageId)}`
+          : 'Aceptado por Meta. Entrega pendiente de confirmación.',
       })
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'No se pudo enviar el WhatsApp.'
-      setWhatsappResult({ ok: false, message })
+      // Keep the same key after a transport exception: retrying the same intent must remain idempotent.
+      const message = error instanceof Error ? error.message : 'No se pudo confirmar la solicitud de WhatsApp.'
+      setWhatsappResult({ ok: false, pending: true, message: `${message} No crees un segundo envío; vuelve a intentar con la misma intención.` })
     } finally {
       setWhatsappSending(false)
     }
@@ -232,10 +297,10 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
                 <span className="rounded-full border border-border bg-card px-2 py-1 text-[10px] font-semibold text-muted">Meta Cloud API</span>
               </div>
               <div className="space-y-3 rounded-xl border border-border bg-card p-4">
-                <p className="text-xs leading-5 text-muted">Edita el mensaje y confirma el envío. La respuesta se registra contra este lead para trazabilidad y SLA.</p>
+                <p className="text-xs leading-5 text-muted">Edita el mensaje y confirma el envío. NUVANX registra una intención idempotente; la aceptación de Meta y la entrega al paciente son estados diferentes.</p>
                 <textarea
                   value={whatsappDraft}
-                  onChange={(event) => setWhatsappDraft(event.target.value)}
+                  onChange={(event) => handleWhatsappDraftChange(event.target.value)}
                   rows={5}
                   maxLength={4096}
                   className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm leading-6 text-foreground focus:outline-none focus:border-primary"
@@ -248,8 +313,18 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
                   </Button>
                 </div>
                 {whatsappResult && (
-                  <div className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${whatsappResult.ok ? 'border-emerald-500/25 bg-emerald-500/8 text-emerald-700' : 'border-rose-500/25 bg-rose-500/8 text-rose-600'}`}>
-                    {whatsappResult.ok ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <XCircle className="mt-0.5 h-4 w-4 shrink-0" />}
+                  <div className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${
+                    whatsappResult.pending
+                      ? 'border-amber-500/25 bg-amber-500/8 text-amber-700'
+                      : whatsappResult.ok
+                        ? 'border-emerald-500/25 bg-emerald-500/8 text-emerald-700'
+                        : 'border-rose-500/25 bg-rose-500/8 text-rose-600'
+                  }`}>
+                    {whatsappResult.pending
+                      ? <Clock3 className="mt-0.5 h-4 w-4 shrink-0" />
+                      : whatsappResult.ok
+                        ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                        : <XCircle className="mt-0.5 h-4 w-4 shrink-0" />}
                     <span>{whatsappResult.message}</span>
                   </div>
                 )}
