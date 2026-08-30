@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { CheckCircle2, Clock3, MessageCircle, Send, XCircle } from 'lucide-react'
 import type { Lead } from '../../types'
+import { directWhatsappEnabled } from '../../lib/env'
 import { supabase } from '../../lib/supabaseClient'
 import { Button } from '../ui/button'
 
@@ -290,7 +291,7 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
             </div>
           </section>
 
-          {!isEditing && (
+          {!isEditing && directWhatsappEnabled && (
             <section data-testid="direct-whatsapp-workspace">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-muted"><MessageCircle className="h-4 w-4 text-primary" />WhatsApp directo</h3>
