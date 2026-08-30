@@ -23,12 +23,24 @@ describe('NUVANX Control Centre operations contract', () => {
 
   it('fails visibly on application-level provider errors and refreshes across day boundaries', () => {
     const overview = read('../src/components/dashboard/OperationsOverview.tsx')
-    expect(overview).toContain('metaResult.value.success === false')
-    expect(overview).toContain('googleStatusResult.value.success === false')
-    expect(overview).toContain('googleResult.value.success === false')
+    expect(overview).toContain("metaResult.status === 'fulfilled' && metaResult.value.success !== false")
+    expect(overview).toContain('googleStatusResult.value.success !== false')
+    expect(overview).toContain("googleResult.status === 'fulfilled' && googleResult.value.success !== false")
     expect(overview).toContain('const currentToday = localDate(now)')
     expect(overview).toContain('globalThis.setInterval')
     expect(overview).toContain("period: { from: currentFrom, to: currentToday }")
+  })
+
+  it('preserves last-known-good provider data and marks stale sources instead of presenting failures as zero', () => {
+    const overview = read('../src/components/dashboard/OperationsOverview.tsx')
+    expect(overview).toContain('cached?: boolean')
+    expect(overview).toContain('degraded?: boolean')
+    expect(overview).toContain('last_success?: string | null')
+    expect(overview).toContain("metaBackendStale ? 'stale' : 'live'")
+    expect(overview).toContain("prev.google && prev.googleStatus?.connected")
+    expect(overview).toContain("? money(metaSpend) : '—'")
+    expect(overview).toContain("? money(googleSpend) : '—'")
+    expect(overview).toContain('Las fuentes con último dato válido se conservan marcadas como STALE')
   })
 
   it('organizes the primary navigation around clinic work instead of technical pages', () => {
