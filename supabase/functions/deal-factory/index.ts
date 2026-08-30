@@ -188,7 +188,21 @@ async function processProjection(admin: any, projection: any) {
     .is("deleted_at", null)
     .single();
   if (leadError || !lead) throw new Error("Projection lead missing");
-  if (lead.source !== "website_hubspot") throw new Error("Deal Factory only accepts website_hubspot leads");
+  const sourceNorm = String(lead.source || "").toLowerCase().trim();
+  const validSources = new Set([
+    "website_hubspot",
+    "meta_ads",
+    "meta",
+    "facebook",
+    "instagram",
+    "website",
+    "landing_page",
+    "whatsapp",
+    "direct",
+    "phone",
+    "doctoralia",
+  ]);
+  if (!validSources.has(sourceNorm)) throw new Error(`Unsupported lead source for Deal Factory: ${lead.source}`);
   if (String(lead.hubspot_contact_id || "") !== String(projection.hubspot_contact_id || "")) throw new Error("Contact projection mismatch");
 
   try {
