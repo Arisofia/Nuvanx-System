@@ -40,6 +40,7 @@ const Integrations = lazy(() => import('./pages/Integrations'))
 const AiPage = lazy(() => import('./pages/AI'))
 const Reports = lazy(() => import('./pages/Reports'))
 const LeadAudit = lazy(() => import('./pages/LeadAudit'))
+const SEOTracker = lazy(() => import('./pages/SEOTracker'))
 
 const PageLoader = () => (
   <div className="min-h-screen bg-background flex items-center justify-center">
@@ -90,6 +91,7 @@ function Router() {
     if (location === '/ai') return <AiPage />
     if (location === '/reports') return <Reports />
     if (location === '/reports/lead-audit') return <LeadAudit />
+    if (location === '/seo') return <SEOTracker />
     return <NotFound />
   })()
 

@@ -7,6 +7,7 @@ import {
   DollarSign,
   FileBarChart2,
   GitMerge,
+  Globe,
   Home,
   LogOut,
   Megaphone,
@@ -30,6 +31,7 @@ const primaryNavItems = [
 ]
 
 const systemNavItems = [
+  { label: 'SEO & IA', href: '/seo', icon: Globe },
   { label: 'Trazabilidad', href: '/traceability', icon: GitMerge },
   { label: 'Auditoría leads', href: '/reports/lead-audit', icon: FileBarChart2 },
   { label: 'Asistente IA', href: '/ai', icon: Bot },
