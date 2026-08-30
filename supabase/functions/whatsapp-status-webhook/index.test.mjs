@@ -30,19 +30,37 @@ describe("WhatsApp delivery status webhook contract", () => {
     expect(source).toContain('timingSafeEqualHex');
   });
 
-  it("processes only provider delivery states and caps one callback batch", () => {
+  it("processes the complete signed provider batch and retries persistence failures", () => {
     expect(source).toContain('["sent", "delivered", "read", "failed"]');
-    expect(source).toContain('statuses.slice(0, 100)');
+    expect(source).toContain('for (const item of statuses)');
+    expect(source).not.toContain('statuses.slice(0, 100)');
     expect(source).toContain('p_provider_message_id: messageId');
     expect(source).toContain('p_event_at: eventTime');
+    expect(source).toContain('if (error) failed += 1');
+    expect(source).toContain('if (failed > 0)');
+    expect(source).toContain('}, 503)');
   });
 
-  it("persists delivered/read/failed as idempotent lead events correlated by provider message id", () => {
-    expect(migration).toContain('lead_events_whatsapp_message_status_uidx');
+  it("bounds provider timestamps before converting them to ISO", () => {
+    expect(source).toContain('seconds > 8.64e12');
+    expect(source).toContain('return new Date().toISOString()');
+  });
+
+  it("persists delivered/read/failed idempotently without deleting historical duplicates", () => {
+    expect(migration).toContain('lead_events_whatsapp_message_status_idx');
     expect(migration).toContain("raw_payload ->> 'message_id'");
     expect(migration).toContain("p_status not in ('sent', 'delivered', 'read', 'failed')");
-    expect(migration).toContain('whatsapp_conversations_wa_message_id_uidx');
+    expect(migration).toContain('whatsapp_conversations_wa_message_id_idx');
     expect(migration).toContain("v_event_type := 'whatsapp_' || p_status");
-    expect(migration).toContain('on conflict do nothing');
+    expect(migration).toContain('if not exists (');
+    expect(migration).not.toContain('lead_events_whatsapp_message_status_uidx');
+    expect(migration).not.toContain('whatsapp_conversations_wa_message_id_uidx');
+  });
+
+  it("never regresses conversation delivery state when callbacks arrive out of order", () => {
+    expect(migration).toContain("when p_status = 'read' then 'read'");
+    expect(migration).toContain("when p_status = 'delivered' and c.conversation_status <> 'read' then 'delivered'");
+    expect(migration).toContain("when p_status = 'sent' and coalesce(c.conversation_status, 'accepted') in ('reserved', 'accepted', 'sent') then 'sent'");
+    expect(migration).toContain("when p_status = 'failed' and coalesce(c.conversation_status, 'accepted') in ('reserved', 'accepted', 'failed') then 'failed'");
   });
 });
