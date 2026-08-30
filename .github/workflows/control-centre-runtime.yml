@@ -64,7 +64,7 @@ jobs:
       - name: Frontend lint and build
         working-directory: frontend
         run: |
-          npm ci --ignore-scripts
+          npm install --include=dev --ignore-scripts
           npm run lint
           npm run build
         env:
