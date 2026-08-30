@@ -59,17 +59,34 @@ export function PipelineSnapshot() {
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
-    const { data, error: rpcError } = await supabase.rpc('nvx_get_control_centre_pipeline', {
-      p_limit: 500,
-      p_offset: 0,
-    })
-    if (rpcError) {
-      setError(rpcError.message || 'No se pudo cargar el pipeline comercial.')
+    const PAGE_SIZE = 500
+    let offset = 0
+    const allRows: PipelineRow[] = []
+
+    try {
+      while (true) {
+        const { data, error: rpcError } = await supabase.rpc('nvx_get_control_centre_pipeline', {
+          p_limit: PAGE_SIZE,
+          p_offset: offset,
+        })
+        if (rpcError) {
+          setError(rpcError.message || 'No se pudo cargar el pipeline comercial.')
+          setLoading(false)
+          return
+        }
+        const chunk = (data || []) as PipelineRow[]
+        allRows.push(...chunk)
+        if (chunk.length < PAGE_SIZE) {
+          break
+        }
+        offset += chunk.length
+      }
+      setRows(allRows)
+    } catch (err: any) {
+      setError(err?.message || 'Error inesperado cargando el pipeline.')
+    } finally {
       setLoading(false)
-      return
     }
-    setRows((data || []) as PipelineRow[])
-    setLoading(false)
   }, [])
 
   useEffect(() => {
