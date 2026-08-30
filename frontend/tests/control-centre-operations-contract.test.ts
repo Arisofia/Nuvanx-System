@@ -41,27 +41,47 @@ describe('NUVANX Control Centre operations contract', () => {
     expect(layout).toContain('systemNavItems')
   })
 
-  it('normalizes patient phones and sends WhatsApp only through the authenticated NUVANX Edge Function', () => {
+  it('sends WhatsApp only through the authenticated NUVANX Edge Function with an idempotency key', () => {
     const sheet = read('../src/components/crm/LeadDetailSheet.tsx')
     expect(sheet).toContain('normalizeWhatsappPhone')
     expect(sheet).toContain("raw.replace(/\\D/g, '')")
     expect(sheet).toContain("supabase.functions.invoke('whatsapp-send'")
     expect(sheet).toContain('lead_id: lead.id')
+    expect(sheet).toContain('idempotency_key: intentKey')
+    expect(sheet).toContain('createWhatsappIntentKey')
     expect(sheet).toContain('globalThis.confirm')
     expect(sheet).toContain('Meta Cloud API')
     expect(sheet).not.toContain('api.whatsapp.com')
     expect(sheet).not.toContain('wa.me')
   })
 
-  it('authorizes the owned lead and exact stored recipient before the irreversible Meta send', () => {
+  it('keeps the same send intent after ambiguous network/provider outcomes and creates a new one only after editing or explicit failure', () => {
+    const sheet = read('../src/components/crm/LeadDetailSheet.tsx')
+    expect(sheet).toContain('whatsappIntentKey || createWhatsappIntentKey()')
+    expect(sheet).toContain('if (!whatsappIntentKey) setWhatsappIntentKey(intentKey)')
+    expect(sheet).toContain("providerStatus === 'failed'")
+    expect(sheet).toContain('setWhatsappIntentKey(null)')
+    expect(sheet).toContain('No crees un segundo envío')
+  })
+
+  it('does not claim delivery from a synchronous Meta acceptance', () => {
+    const sheet = read('../src/components/crm/LeadDetailSheet.tsx')
+    expect(sheet).toContain('Aceptado por Meta. Entrega pendiente de confirmación.')
+    expect(sheet).toContain('aceptación de Meta y la entrega al paciente son estados diferentes')
+    expect(sheet).not.toContain('Mensaje enviado correctamente.')
+  })
+
+  it('authorizes, rate-limits and reserves the exact owned recipient before the irreversible Meta send', () => {
     const worker = read('../../supabase/functions/whatsapp-send/index.ts')
-    expect(worker).toContain('authorizeLeadRecipient')
-    expect(worker).toContain('.select("id,user_id,phone")')
-    expect(worker).toContain('storedPhone !== normalizedTo')
-    expect(worker).toContain('Recipient does not match the lead phone')
-    const authorization = worker.indexOf('const authorized = await authorizeLeadRecipient')
-    const providerSend = worker.indexOf('const waRes = await fetch')
-    expect(authorization).toBeGreaterThan(-1)
-    expect(providerSend).toBeGreaterThan(authorization)
+    const auth = worker.indexOf('const auth = await authenticatedContext(req)')
+    const reservation = worker.indexOf('const prepared = await prepareSend')
+    const providerSend = worker.indexOf('waRes = await fetch')
+    expect(auth).toBeGreaterThan(-1)
+    expect(reservation).toBeGreaterThan(auth)
+    expect(providerSend).toBeGreaterThan(reservation)
+    expect(worker).toContain('nvx_prepare_whatsapp_send')
+    expect(worker).toContain('decision === "rate_limited"')
+    expect(worker).toContain('decision === "duplicate"')
+    expect(worker).toContain('AbortSignal.timeout(PROVIDER_TIMEOUT_MS)')
   })
 })
