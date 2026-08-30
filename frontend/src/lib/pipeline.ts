@@ -7,24 +7,37 @@ export const PIPELINE_STAGES = [
   { id: 'treatment_proposed', label: 'Tratamiento propuesto' },
   { id: 'treatment_scheduled', label: 'Tratamiento programado' },
   { id: 'treatment_completed', label: 'Tratamiento realizado' },
-  { id: 'won', label: 'Ganado' },
+  { id: 'control_scheduled', label: '1er control programado' },
+  { id: 'client_completed', label: 'Cliente nuevo · ciclo completado' },
   { id: 'lost', label: 'Perdido' },
 ] as const
 
 export type CanonicalPipelineStage = (typeof PIPELINE_STAGES)[number]['id']
 
 const PIPELINE_STAGE_IDS = new Set<string>(PIPELINE_STAGES.map((stage) => stage.id))
+
 const APPOINTMENT_EVIDENCE_STAGE_IDS = new Set<string>([
   'valuation_scheduled',
   'valuation_completed',
+  'treatment_scheduled',
+  'treatment_completed',
+  'control_scheduled',
+  'client_completed',
 ])
+
 const CLINICAL_STAGE_IDS = new Set<string>([
   'valuation_scheduled',
   'valuation_completed',
   'treatment_proposed',
   'treatment_scheduled',
   'treatment_completed',
-  'won',
+  'control_scheduled',
+  'client_completed',
+])
+
+const NEW_CLIENT_STAGE_IDS = new Set<string>([
+  'control_scheduled',
+  'client_completed',
 ])
 
 export function isCanonicalPipelineStage(value: unknown): value is CanonicalPipelineStage {
@@ -41,4 +54,8 @@ export function hasCanonicalAppointmentEvidence(value: string | null | undefined
 
 export function isClinicalPipelineStage(value: string | null | undefined): boolean {
   return typeof value === 'string' && CLINICAL_STAGE_IDS.has(value)
+}
+
+export function isNewClientPipelineStage(value: string | null | undefined): boolean {
+  return typeof value === 'string' && NEW_CLIENT_STAGE_IDS.has(value)
 }
