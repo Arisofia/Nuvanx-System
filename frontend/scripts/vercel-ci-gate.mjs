@@ -3,8 +3,11 @@ import { spawnSync } from 'node:child_process';
 const OWNER = 'Arisofia';
 const REPO = 'Nuvanx-System';
 const REQUIRED_WORKFLOW_PATH = '.github/workflows/master.yml';
-const POLL_INTERVAL_MS = 30_000;
-const MAX_WAIT_MS = 10 * 60_000;
+const POLL_INTERVAL_MS = 60_000;
+const REQUEST_TIMEOUT_MS = 10_000;
+// Vercel imposes a finite build window. Keep the gate below that window so
+// successful CI still leaves time for the actual frontend build.
+const MAX_WAIT_MS = 40 * 60_000;
 
 function ignoreBuild(reason) {
   console.log(`[vercel-ci-gate] IGNORE: ${reason}`);
@@ -42,10 +45,20 @@ function resolveCommitSha() {
 }
 
 function frontendChanged() {
-  const result = git(['diff', 'HEAD^', 'HEAD', '--quiet', '.']);
+  const previousSha = process.env.VERCEL_GIT_PREVIOUS_SHA?.trim();
+  if (previousSha) {
+    const result = git(['diff', '--quiet', previousSha, 'HEAD', '--', '.']);
+    if (result.status === 0) return false;
+    if (result.status === 1) return true;
+    console.log(`[vercel-ci-gate] previous-SHA diff unavailable; falling back to HEAD^: ${result.stderr}`);
+  }
+
+  const result = git(['diff', 'HEAD^', 'HEAD', '--quiet', '--', '.']);
   if (result.status === 0) return false;
   if (result.status === 1) return true;
 
+  // If Git cannot evaluate the diff, do not suppress a potentially necessary
+  // production deployment. Continue to the CI gate instead.
   console.log(`[vercel-ci-gate] unable to evaluate frontend diff; checking CI instead: ${result.stderr}`);
   return true;
 }
@@ -72,27 +85,36 @@ function latestRunPerWorkflow(runs) {
   return [...latest.values()];
 }
 
-async function getPushWorkflowRuns(sha) {
+async function getPushWorkflowRuns(sha, remainingMs) {
   const url = new URL(`https://api.github.com/repos/${OWNER}/${REPO}/actions/runs`);
   url.searchParams.set('head_sha', sha);
   url.searchParams.set('event', 'push');
   url.searchParams.set('per_page', '100');
 
-  const response = await fetch(url, {
-    headers: {
-      Accept: 'application/vnd.github+json',
-      'User-Agent': 'nuvanx-vercel-ci-gate',
-      'X-GitHub-Api-Version': '2022-11-28',
-    },
-  });
+  const controller = new AbortController();
+  const requestTimeoutMs = Math.max(1_000, Math.min(REQUEST_TIMEOUT_MS, remainingMs));
+  const timer = setTimeout(() => controller.abort(), requestTimeoutMs);
 
-  if (!response.ok) {
-    throw new Error(`GitHub API ${response.status} ${response.statusText}`);
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'nuvanx-vercel-ci-gate',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`GitHub API ${response.status} ${response.statusText}`);
+    }
+
+    const payload = await response.json();
+    const runs = Array.isArray(payload.workflow_runs) ? payload.workflow_runs : [];
+    return latestRunPerWorkflow(runs.filter((run) => run?.head_sha === sha));
+  } finally {
+    clearTimeout(timer);
   }
-
-  const payload = await response.json();
-  const runs = Array.isArray(payload.workflow_runs) ? payload.workflow_runs : [];
-  return latestRunPerWorkflow(runs.filter((run) => run?.head_sha === sha));
 }
 
 function summarizeRuns(runs) {
@@ -108,38 +130,47 @@ async function main() {
   }
 
   if (!frontendChanged()) {
-    ignoreBuild('no frontend changes in this commit');
+    ignoreBuild('no frontend changes since the previous successful deployment');
   }
 
   const sha = resolveCommitSha();
   const deadline = Date.now() + MAX_WAIT_MS;
-  console.log(`[vercel-ci-gate] waiting for all push workflows on ${sha}`);
+  console.log(`[vercel-ci-gate] waiting for all applicable push workflows on ${sha}`);
 
   while (Date.now() < deadline) {
+    const remainingMs = deadline - Date.now();
+
+    let runs;
     try {
-      const runs = await getPushWorkflowRuns(sha);
-      const requiredRun = runs.find((run) => run.path === REQUIRED_WORKFLOW_PATH);
-
-      if (!requiredRun) {
-        console.log('[vercel-ci-gate] required master workflow not visible yet; waiting');
-      } else {
-        const pending = runs.filter((run) => run.status !== 'completed');
-        if (pending.length > 0) {
-          console.log(`[vercel-ci-gate] workflows still running: ${summarizeRuns(pending)}`);
-        } else {
-          const failed = runs.filter((run) => run.conclusion !== 'success');
-          if (failed.length > 0) {
-            ignoreBuild(`push workflow gate failed: ${summarizeRuns(failed)}`);
-          }
-
-          continueBuild(`all ${runs.length} push workflow(s) passed for ${sha}`);
-        }
-      }
+      runs = await getPushWorkflowRuns(sha, remainingMs);
     } catch (error) {
-      console.log(`[vercel-ci-gate] GitHub status lookup failed: ${error instanceof Error ? error.message : String(error)}`);
+      const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+      // Fail closed immediately. A deployment must never proceed when CI state
+      // cannot be verified, including request timeouts or API failures.
+      ignoreBuild(`cannot verify GitHub CI state: ${detail}`);
     }
 
-    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+    const requiredRun = runs.find((run) => run.path === REQUIRED_WORKFLOW_PATH);
+    if (!requiredRun) {
+      console.log('[vercel-ci-gate] required master workflow not visible yet; waiting');
+    } else {
+      const pending = runs.filter((run) => run.status !== 'completed');
+      if (pending.length > 0) {
+        console.log(`[vercel-ci-gate] workflows still running: ${summarizeRuns(pending)}`);
+      } else {
+        const failed = runs.filter((run) => run.conclusion !== 'success');
+        if (failed.length > 0) {
+          ignoreBuild(`push workflow gate failed: ${summarizeRuns(failed)}`);
+        }
+
+        continueBuild(`all ${runs.length} applicable push workflow(s) passed for ${sha}`);
+      }
+    }
+
+    const sleepMs = Math.min(POLL_INTERVAL_MS, Math.max(0, deadline - Date.now()));
+    if (sleepMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, sleepMs));
+    }
   }
 
   ignoreBuild(`timed out waiting for successful push workflows for ${sha}`);
