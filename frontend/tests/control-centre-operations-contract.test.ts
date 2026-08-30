@@ -3,6 +3,16 @@ import { describe, expect, it } from 'vitest'
 
 const read = (relativePath: string) => readFileSync(new URL(relativePath, import.meta.url), 'utf8')
 
+function expectOrdered(source: string, ...anchors: string[]) {
+  let previous = -1
+  for (const anchor of anchors) {
+    const current = source.indexOf(anchor)
+    expect(current, `missing anchor: ${anchor}`).toBeGreaterThan(-1)
+    expect(current, `out-of-order anchor: ${anchor}`).toBeGreaterThan(previous)
+    previous = current
+  }
+}
+
 describe('NUVANX Control Centre operations contract', () => {
   it('makes the real operations overview the dashboard entry point', () => {
     const dashboard = read('../src/pages/Dashboard.tsx')
@@ -31,6 +41,14 @@ describe('NUVANX Control Centre operations contract', () => {
     expect(overview).toContain("period: { from: currentFrom, to: currentToday }")
   })
 
+  it('bounds every API request independently so one provider cannot freeze the overview', () => {
+    const invokeApi = read('../src/lib/invokeApi.ts')
+    expect(invokeApi).toContain('const DEFAULT_API_TIMEOUT_MS = 20_000')
+    expect(invokeApi).toContain('AbortSignal.timeout(timeoutMs)')
+    expect(invokeApi).toContain('AbortSignal.any([init.signal, timeoutSignal])')
+    expect(invokeApi).toContain('signal,')
+  })
+
   it('preserves last-known-good provider data and marks stale sources instead of presenting failures as zero', () => {
     const overview = read('../src/components/dashboard/OperationsOverview.tsx')
     expect(overview).toContain('cached?: boolean')
@@ -43,7 +61,7 @@ describe('NUVANX Control Centre operations contract', () => {
     expect(overview).toContain('Las fuentes con último dato válido se conservan marcadas como STALE')
   })
 
-  it('organizes the primary navigation around clinic work instead of technical pages', () => {
+  it('organizes accessible primary navigation around clinic work instead of technical pages', () => {
     const layout = read('../src/components/Layout.tsx')
     for (const label of ['Centro', 'Pacientes', 'Agenda', 'Adquisición', 'Finanzas', 'Inteligencia', 'Analítica', 'Integraciones']) {
       expect(layout).toContain(`label: '${label}'`)
@@ -51,6 +69,16 @@ describe('NUVANX Control Centre operations contract', () => {
     expect(layout).toContain("label: 'Trazabilidad'")
     expect(layout).toContain("label: 'Auditoría leads'")
     expect(layout).toContain('systemNavItems')
+    expect(layout).toContain('aria-label={item.label}')
+  })
+
+  it('renders appointment calendar dates locally and labels the WhatsApp editor accessibly', () => {
+    const sheet = read('../src/components/crm/LeadDetailSheet.tsx')
+    expect(sheet).toContain('function formatLocalCalendarDate')
+    expect(sheet).toContain('new Date(year, month - 1, day)')
+    expect(sheet).not.toContain('new Date(lead.appointment_date)')
+    expect(sheet).toContain('<label htmlFor="whatsapp-draft" className="sr-only">Mensaje de WhatsApp</label>')
+    expect(sheet).toContain('id="whatsapp-draft"')
   })
 
   it('sends WhatsApp only through the authenticated NUVANX Edge Function with an idempotency key', () => {
@@ -67,12 +95,18 @@ describe('NUVANX Control Centre operations contract', () => {
     expect(sheet).not.toContain('wa.me')
   })
 
-  it('keeps the same send intent after ambiguous network/provider outcomes and creates a new one only after editing or explicit failure', () => {
+  it('keeps confirmation before invocation and preserves the same intent after ambiguous outcomes', () => {
     const sheet = read('../src/components/crm/LeadDetailSheet.tsx')
-    expect(sheet).toContain('whatsappIntentKey || createWhatsappIntentKey()')
+    expectOrdered(
+      sheet,
+      'const confirmed = globalThis.confirm',
+      'if (!confirmed) return',
+      'const intentKey = whatsappIntentKey || createWhatsappIntentKey()',
+      "supabase.functions.invoke('whatsapp-send'",
+    )
     expect(sheet).toContain('if (!whatsappIntentKey) setWhatsappIntentKey(intentKey)')
     expect(sheet).toContain("providerStatus === 'failed'")
-    expect(sheet).toContain('setWhatsappIntentKey(null)')
+    expect(sheet).toContain('payload?.pending === true || providerStatus === \'unknown\'')
     expect(sheet).toContain('No crees un segundo envío')
   })
 
@@ -85,15 +119,16 @@ describe('NUVANX Control Centre operations contract', () => {
 
   it('authorizes, rate-limits and reserves the exact owned recipient before the irreversible Meta send', () => {
     const worker = read('../../supabase/functions/whatsapp-send/index.ts')
-    const auth = worker.indexOf('const auth = await authenticatedContext(req)')
-    const reservation = worker.indexOf('const prepared = await prepareSend')
-    const providerSend = worker.indexOf('waRes = await fetch')
-    expect(auth).toBeGreaterThan(-1)
-    expect(reservation).toBeGreaterThan(auth)
-    expect(providerSend).toBeGreaterThan(reservation)
+    expectOrdered(
+      worker,
+      'const auth = await authenticatedContext(req)',
+      'const prepared = await prepareSend',
+      'waRes = await fetch',
+    )
     expect(worker).toContain('nvx_prepare_whatsapp_send')
     expect(worker).toContain('decision === "rate_limited"')
     expect(worker).toContain('decision === "duplicate"')
     expect(worker).toContain('AbortSignal.timeout(PROVIDER_TIMEOUT_MS)')
+    expect(worker).toContain('["reserved", "unknown"].includes(requestStatus)')
   })
 })
