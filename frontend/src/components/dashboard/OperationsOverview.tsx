@@ -17,15 +17,12 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import { useLeads } from '../../hooks/useLeads'
 import { invokeApi } from '../../lib/invokeApi'
+import { pipelineStageLabel } from '../../lib/pipeline'
 import type { DoctoraliaAppointment } from '../../types'
 
 type MetaInsightsResponse = {
   success?: boolean
   message?: string
-  cached?: boolean
-  degraded?: boolean
-  source?: string
-  last_success?: string | null
   summary?: {
     spend?: number
     clicks?: number
@@ -34,29 +31,47 @@ type MetaInsightsResponse = {
   }
 }
 
-type GoogleStatusResponse = {
-  success?: boolean
-  connected?: boolean
-  status?: string
-  message?: string
-  customerId?: string | null
-  lastSync?: string | null
+type GoogleCampaign = {
+  id?: string
+  name?: string | null
+  status?: string | null
+  spend?: number
+  clicks?: number
+  conversions?: number
 }
 
-type GoogleInsightsResponse = {
+type GoogleHealthResponse = {
   success?: boolean
-  message?: string
-  summary?: {
-    spend?: number
-    clicks?: number
-    conversions?: number
-  }
+  verified_at?: string | null
+  customer?: {
+    id?: string | null
+    descriptive_name?: string | null
+    currency_code?: string | null
+  } | null
+  campaigns?: GoogleCampaign[]
 }
 
 type AgendaResponse = {
   success?: boolean
   message?: string
   appointments?: DoctoraliaAppointment[]
+}
+
+type ProviderStatus = 'live' | 'stale' | 'unavailable'
+
+type ProviderEnvelope<T> = {
+  success?: boolean
+  provider?: string
+  status?: ProviderStatus
+  source?: 'provider' | 'cache'
+  fetched_at?: string | null
+  last_success_at?: string | null
+  age_seconds?: number | null
+  breaker_state?: string | null
+  breaker_open_until?: string | null
+  failure_count?: number
+  data?: T | null
+  error?: string | null
 }
 
 type HealthStatus = 'loading' | 'live' | 'stale' | 'error'
@@ -69,8 +84,7 @@ type SourceHealth = {
 
 type ProviderState = {
   meta: MetaInsightsResponse | null
-  googleStatus: GoogleStatusResponse | null
-  google: GoogleInsightsResponse | null
+  google: GoogleHealthResponse | null
   appointments: DoctoraliaAppointment[]
   health: {
     meta: SourceHealth
@@ -87,7 +101,6 @@ const emptyHealth: SourceHealth = { status: 'loading', lastSuccessAt: null, mess
 
 const initialProviderState: ProviderState = {
   meta: null,
-  googleStatus: null,
   google: null,
   appointments: [],
   health: {
@@ -125,17 +138,7 @@ function compactNumber(value: number | null | undefined) {
   return Number(value ?? 0).toLocaleString('es-ES')
 }
 
-function statusLabel(status: string | null | undefined) {
-  const normalized = String(status || '').toLowerCase()
-  if (normalized === 'lead') return 'Nuevo lead'
-  if (normalized === 'whatsapp') return 'En conversación'
-  if (normalized === 'appointment') return 'Con cita'
-  if (normalized === 'treatment') return 'En tratamiento'
-  if (normalized === 'closed') return 'Cerrado'
-  return status || 'Sin estado'
-}
-
-function providerFailure(label: string, message?: string) {
+function providerFailure(label: string, message?: string | null) {
   return message ? `${label}: ${message}` : label
 }
 
@@ -144,6 +147,46 @@ function lastSuccessLabel(health: SourceHealth) {
   const parsed = new Date(health.lastSuccessAt)
   if (Number.isNaN(parsed.getTime())) return null
   return parsed.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+}
+
+function envelopeUsable<T>(value: ProviderEnvelope<T> | null | undefined): value is ProviderEnvelope<T> & { data: T } {
+  return Boolean(
+    value
+    && value.data
+    && value.success !== false
+    && (value.status === 'live' || value.status === 'stale'),
+  )
+}
+
+function resolveEnvelopeHealth<T>(
+  envelope: ProviderEnvelope<T> | null,
+  hasPrevious: boolean,
+  previous: SourceHealth,
+): SourceHealth {
+  if (envelopeUsable(envelope)) {
+    return {
+      status: envelope.status === 'stale' ? 'stale' : 'live',
+      lastSuccessAt: envelope.last_success_at || previous.lastSuccessAt || envelope.fetched_at || null,
+      message: envelope.error || null,
+    }
+  }
+  return {
+    status: hasPrevious ? 'stale' : 'error',
+    lastSuccessAt: previous.lastSuccessAt,
+    message: envelope?.error || 'Proveedor no disponible',
+  }
+}
+
+function aggregateGoogleCampaigns(google: GoogleHealthResponse | null) {
+  const campaigns = Array.isArray(google?.campaigns) ? google.campaigns : []
+  return campaigns.reduce(
+    (summary, campaign) => ({
+      spend: summary.spend + Number(campaign.spend || 0),
+      clicks: summary.clicks + Number(campaign.clicks || 0),
+      conversions: summary.conversions + Number(campaign.conversions || 0),
+    }),
+    { spend: 0, clicks: 0, conversions: 0 },
+  )
 }
 
 function OperationsMetric({
@@ -201,105 +244,47 @@ export function OperationsOverview() {
     const currentToday = localDate(now)
     const currentFrom = monthStart(now)
     setState((prev) => ({ ...prev, loading: true, error: null, period: { from: currentFrom, to: currentToday } }))
-    const params = new URLSearchParams({ from: currentFrom, to: currentToday }).toString()
+    const range = new URLSearchParams({ from: currentFrom, to: currentToday }).toString()
 
-    const [agendaResult, metaResult, googleStatusResult, googleResult] = await Promise.allSettled([
-      invokeApi<AgendaResponse>(`/api/agenda/doctoralia?date=${encodeURIComponent(currentToday)}`),
-      invokeApi<MetaInsightsResponse>(`/api/meta/insights?${params}`),
-      invokeApi<GoogleStatusResponse>('/api/google-ads/status'),
-      invokeApi<GoogleInsightsResponse>(`/api/google-ads/insights?${params}`),
+    const [agendaResult, metaResult, googleResult] = await Promise.allSettled([
+      invokeApi<ProviderEnvelope<AgendaResponse>>(`/control-centre-provider?provider=agenda&date=${encodeURIComponent(currentToday)}`, { timeoutMs: 18_000 }),
+      invokeApi<ProviderEnvelope<MetaInsightsResponse>>(`/control-centre-provider?provider=meta&${range}`, { timeoutMs: 18_000 }),
+      invokeApi<ProviderEnvelope<GoogleHealthResponse>>(`/control-centre-provider?provider=google&${range}`, { timeoutMs: 18_000 }),
     ])
 
     const refreshedAt = new Date().toISOString()
-    const failures: string[] = []
-
-    const agendaGood = agendaResult.status === 'fulfilled'
-      && agendaResult.value.success !== false
-      && Array.isArray(agendaResult.value.appointments)
-    if (!agendaGood) {
-      failures.push(agendaResult.status === 'rejected'
-        ? 'agenda'
-        : providerFailure('agenda', agendaResult.value.message))
-    }
-
-    const metaGood = metaResult.status === 'fulfilled' && metaResult.value.success !== false
-    if (!metaGood) {
-      failures.push(metaResult.status === 'rejected'
-        ? 'Meta'
-        : providerFailure('Meta', metaResult.value.message))
-    }
-
-    const googleStatusGood = googleStatusResult.status === 'fulfilled'
-      && googleStatusResult.value.success !== false
-      && googleStatusResult.value.connected === true
-    const googleInsightsGood = googleResult.status === 'fulfilled' && googleResult.value.success !== false
-    const googleGood = googleStatusGood && googleInsightsGood
-    if (!googleStatusGood) {
-      failures.push(googleStatusResult.status === 'rejected'
-        ? 'Google Ads: estado no disponible'
-        : providerFailure('Google Ads', googleStatusResult.value.message || googleStatusResult.value.status))
-    }
-    if (!googleInsightsGood) {
-      failures.push(googleResult.status === 'rejected'
-        ? 'Google Ads: métricas no disponibles'
-        : providerFailure('Google Ads', googleResult.value.message))
-    }
 
     setState((prev) => {
-      const metaValue = metaGood && metaResult.status === 'fulfilled' ? metaResult.value : prev.meta
-      const metaBackendStale = Boolean(metaGood && metaResult.status === 'fulfilled' && (metaResult.value.cached || metaResult.value.degraded))
-      const metaStatus: HealthStatus = metaGood
-        ? (metaBackendStale ? 'stale' : 'live')
-        : prev.meta
-          ? 'stale'
-          : 'error'
-      const metaLastSuccess = metaGood && metaResult.status === 'fulfilled'
-        ? (metaResult.value.last_success || (metaBackendStale ? prev.health.meta.lastSuccessAt : refreshedAt) || refreshedAt)
-        : prev.health.meta.lastSuccessAt
+      const agendaEnvelope = agendaResult.status === 'fulfilled' ? agendaResult.value : null
+      const metaEnvelope = metaResult.status === 'fulfilled' ? metaResult.value : null
+      const googleEnvelope = googleResult.status === 'fulfilled' ? googleResult.value : null
 
-      const googleStatusValue = googleStatusGood && googleStatusResult.status === 'fulfilled'
-        ? googleStatusResult.value
-        : prev.googleStatus
-      const googleValue = googleInsightsGood && googleResult.status === 'fulfilled'
-        ? googleResult.value
-        : prev.google
-      const googleStatus: HealthStatus = googleGood
-        ? 'live'
-        : (prev.google && prev.googleStatus?.connected)
-          ? 'stale'
-          : 'error'
-      const googleLastSuccess = googleGood ? refreshedAt : prev.health.google.lastSuccessAt
+      const agendaUsable = envelopeUsable(agendaEnvelope) && Array.isArray(agendaEnvelope.data.appointments)
+      const metaUsable = envelopeUsable(metaEnvelope)
+      const googleUsable = envelopeUsable(googleEnvelope) && Array.isArray(googleEnvelope.data.campaigns)
 
-      const appointments = agendaGood && agendaResult.status === 'fulfilled'
-        ? agendaResult.value.appointments || []
-        : prev.appointments
-      const agendaStatus: HealthStatus = agendaGood
-        ? 'live'
-        : prev.health.agenda.lastSuccessAt
-          ? 'stale'
-          : 'error'
+      const appointments = agendaUsable ? agendaEnvelope.data.appointments || [] : prev.appointments
+      const meta = metaUsable ? metaEnvelope.data : prev.meta
+      const google = googleUsable ? googleEnvelope.data : prev.google
+
+      const agendaHealth = resolveEnvelopeHealth(agendaEnvelope, prev.appointments.length > 0, prev.health.agenda)
+      const metaHealth = resolveEnvelopeHealth(metaEnvelope, Boolean(prev.meta), prev.health.meta)
+      const googleHealth = resolveEnvelopeHealth(googleEnvelope, Boolean(prev.google), prev.health.google)
+
+      const failures = [
+        agendaHealth.status === 'error' ? providerFailure('Agenda', agendaHealth.message) : null,
+        metaHealth.status === 'error' ? providerFailure('Meta', metaHealth.message) : null,
+        googleHealth.status === 'error' ? providerFailure('Google Ads', googleHealth.message) : null,
+      ].filter((value): value is string => Boolean(value))
 
       return {
         appointments,
-        meta: metaValue,
-        googleStatus: googleStatusValue,
-        google: googleValue,
+        meta,
+        google,
         health: {
-          meta: {
-            status: metaStatus,
-            lastSuccessAt: metaLastSuccess,
-            message: metaGood ? (metaResult.status === 'fulfilled' ? metaResult.value.message || null : null) : failures.find(item => item.startsWith('Meta')) || null,
-          },
-          google: {
-            status: googleStatus,
-            lastSuccessAt: googleLastSuccess,
-            message: googleGood ? null : failures.find(item => item.startsWith('Google Ads')) || null,
-          },
-          agenda: {
-            status: agendaStatus,
-            lastSuccessAt: agendaGood ? refreshedAt : prev.health.agenda.lastSuccessAt,
-            message: agendaGood ? null : failures.find(item => item.toLowerCase().startsWith('agenda')) || null,
-          },
+          meta: metaHealth,
+          google: googleHealth,
+          agenda: agendaHealth,
         },
         period: { from: currentFrom, to: currentToday },
         loading: false,
@@ -319,7 +304,7 @@ export function OperationsOverview() {
   }, [load])
 
   const activeLeads = useMemo(
-    () => leads.filter((lead) => !['closed', 'treatment'].includes(String(lead.status || '').toLowerCase())),
+    () => leads.filter((lead) => !['won', 'lost', 'treatment_completed'].includes(String(lead.status || '').toLowerCase())),
     [leads],
   )
 
@@ -339,11 +324,12 @@ export function OperationsOverview() {
 
   const confirmed = state.appointments.filter((appointment) => appointment.confirmada).length
   const metaAvailable = Boolean(state.meta && ['live', 'stale'].includes(state.health.meta.status))
-  const googleAvailable = Boolean(state.google && state.googleStatus?.connected && ['live', 'stale'].includes(state.health.google.status))
+  const googleAvailable = Boolean(state.google && ['live', 'stale'].includes(state.health.google.status))
   const metaSpend = metaAvailable ? state.meta?.summary?.spend ?? 0 : 0
   const metaConversions = metaAvailable ? state.meta?.summary?.conversions ?? 0 : 0
-  const googleSpend = googleAvailable ? state.google?.summary?.spend ?? 0 : 0
-  const googleConversions = googleAvailable ? state.google?.summary?.conversions ?? 0 : 0
+  const googleSummary = useMemo(() => aggregateGoogleCampaigns(state.google), [state.google])
+  const googleSpend = googleAvailable ? googleSummary.spend : 0
+  const googleConversions = googleAvailable ? googleSummary.conversions : 0
   const totalSpend = metaSpend + googleSpend
   const totalConversions = metaConversions + googleConversions
   const acquisitionError = state.error
@@ -364,7 +350,7 @@ export function OperationsOverview() {
               <ProviderPill status={crmStatus}>CRM interno</ProviderPill>
             </div>
             <h1 id="operations-overview-title" className="mt-4 font-serif text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">Centro operativo de la clínica</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">Pacientes, agenda, captación y rendimiento en un único lugar. Todos los indicadores de este bloque provienen de las APIs productivas de NUVANX.</p>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">Leads, agenda, captación y rendimiento en un único lugar. Los datos externos pasan por el gateway autenticado con caché, último dato válido y fallo visible.</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <p className="text-xs text-muted">
@@ -390,7 +376,7 @@ export function OperationsOverview() {
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <OperationsMetric title="Pacientes por atender" value={busy ? '—' : compactNumber(activeLeads.length)} detail="Leads activos sin cierre/tratamiento" icon={<UsersRound className="h-5 w-5" />} />
+        <OperationsMetric title="Leads por atender" value={busy ? '—' : compactNumber(activeLeads.length)} detail="Registros activos según pipeline canónico" icon={<UsersRound className="h-5 w-5" />} />
         <OperationsMetric title="Agenda de hoy" value={state.loading ? '—' : compactNumber(state.appointments.length)} detail={`${confirmed} confirmadas · ${state.health.agenda.status.toUpperCase()}`} icon={<CalendarDays className="h-5 w-5" />} />
         <OperationsMetric title="Inversión del mes" value={state.loading ? '—' : money(totalSpend)} detail={`Meta ${metaAvailable ? money(metaSpend) : '—'} · Google ${googleAvailable ? money(googleSpend) : '—'}`} icon={<CircleDollarSign className="h-5 w-5" />} />
         <OperationsMetric title="Conversiones Ads" value={state.loading ? '—' : compactNumber(totalConversions)} detail={`Meta ${metaAvailable ? compactNumber(metaConversions) : '—'} · Google ${googleAvailable ? compactNumber(googleConversions) : '—'}`} icon={<Target className="h-5 w-5" />} />
@@ -401,12 +387,12 @@ export function OperationsOverview() {
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
             <div>
               <CardTitle className="flex items-center gap-2"><UserRound className="h-4 w-4 text-primary" />Atención inmediata</CardTitle>
-              <p className="mt-1 text-xs text-muted">Últimos pacientes/leads que requieren seguimiento</p>
+              <p className="mt-1 text-xs text-muted">Últimos leads/contactos que requieren seguimiento</p>
             </div>
-            <Link href="/crm" className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">Ver pacientes <ArrowRight className="h-3.5 w-3.5" /></Link>
+            <Link href="/crm" className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">Ver CRM <ArrowRight className="h-3.5 w-3.5" /></Link>
           </CardHeader>
           <CardContent>
-            {leadsLoading && <p className="py-8 text-center text-sm text-muted">Cargando pacientes…</p>}
+            {leadsLoading && <p className="py-8 text-center text-sm text-muted">Cargando leads…</p>}
             {!leadsLoading && newestLeads.length === 0 && <p className="py-8 text-center text-sm text-muted">No hay leads abiertos pendientes.</p>}
             {!leadsLoading && newestLeads.length > 0 && (
               <div className="divide-y divide-border">
@@ -415,7 +401,7 @@ export function OperationsOverview() {
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="truncate text-sm font-semibold text-foreground">{lead.name}</p>
-                        <span className="rounded-full border border-border bg-surface px-2 py-0.5 text-[10px] font-semibold text-muted">{statusLabel(lead.status)}</span>
+                        <span className="rounded-full border border-border bg-surface px-2 py-0.5 text-[10px] font-semibold text-muted">{pipelineStageLabel(lead.status)}</span>
                       </div>
                       <p className="mt-1 truncate text-xs text-muted">{lead.treatment_name || lead.source || 'Origen sin clasificar'}</p>
                     </div>
@@ -463,7 +449,7 @@ export function OperationsOverview() {
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
           <div>
             <CardTitle className="flex items-center gap-2"><Activity className="h-4 w-4 text-primary" />Adquisición en vivo</CardTitle>
-            <p className="mt-1 text-xs text-muted">Datos directos de Meta Ads y Google Ads · {state.period.from || '—'} → {state.period.to || '—'}</p>
+            <p className="mt-1 text-xs text-muted">Gateway NUVANX · Meta Ads y Google Ads · {state.period.from || '—'} → {state.period.to || '—'}</p>
           </div>
           <Link href="/marketing" className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">Analizar campañas <ArrowRight className="h-3.5 w-3.5" /></Link>
         </CardHeader>
@@ -487,7 +473,7 @@ export function OperationsOverview() {
               </div>
               <div className="mt-4 grid grid-cols-3 gap-3">
                 <div><p className="text-[10px] uppercase tracking-wide text-muted">Inversión</p><p className="mt-1 text-lg font-semibold">{googleAvailable ? money(googleSpend) : '—'}</p></div>
-                <div><p className="text-[10px] uppercase tracking-wide text-muted">Clicks</p><p className="mt-1 text-lg font-semibold">{googleAvailable ? compactNumber(state.google?.summary?.clicks) : '—'}</p></div>
+                <div><p className="text-[10px] uppercase tracking-wide text-muted">Clicks</p><p className="mt-1 text-lg font-semibold">{googleAvailable ? compactNumber(googleSummary.clicks) : '—'}</p></div>
                 <div><p className="text-[10px] uppercase tracking-wide text-muted">Conversiones</p><p className="mt-1 text-lg font-semibold">{googleAvailable ? compactNumber(googleConversions) : '—'}</p></div>
               </div>
             </div>
