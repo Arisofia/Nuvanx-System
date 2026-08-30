@@ -2,8 +2,8 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 declare const Deno: any;
 
-const SUPABASE_URL = (Deno.env.get("SUPABASE_URL") || "").trim();
-const SERVICE_ROLE = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
+const SUPABASE_URL = (Deno.env.get("SUPABASE_URL") || Deno.env.get("NUVANX_SUPABASE_URL") || "").trim();
+const SERVICE_ROLE = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("NUVANX_SUPABASE_SERVICE_ROLE_KEY") || "").trim();
 const HUBSPOT_ACCESS_TOKEN_ENV = (Deno.env.get("HUBSPOT_ACCESS_TOKEN") || "").trim();
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
@@ -33,7 +33,11 @@ async function constantTimeMatch(received: string, expected: string): Promise<bo
 async function requireServiceRole(req: Request): Promise<boolean> {
   const authorization = String(req.headers.get("authorization") || "").trim();
   const match = authorization.match(/^Bearer\s+(.+)$/i);
-  return match ? await constantTimeMatch(match[1], SERVICE_ROLE) : false;
+  if (!match) return false;
+  const token = match[1].trim();
+  if (await constantTimeMatch(token, SERVICE_ROLE)) return true;
+  const alt = (Deno.env.get("NUVANX_SUPABASE_SERVICE_ROLE_KEY") || "").trim();
+  return alt ? await constantTimeMatch(token, alt) : false;
 }
 
 function boundedError(raw: unknown): string {
