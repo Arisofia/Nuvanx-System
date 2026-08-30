@@ -63,11 +63,15 @@ async function deriveGoogleAttributionHmacKey(token: string): Promise<string> {
 
 async function resolveHubspotToken(admin: any): Promise<string> {
   if (runtimeHubspotAccessToken) return runtimeHubspotAccessToken;
-  const { data, error } = await admin.rpc("nvx_get_runtime_secret", { p_name: "HUBSPOT_ACCESS_TOKEN" });
-  if (error || !data) return "";
-  const token = String(data).trim();
-  if (token) runtimeHubspotAccessToken = token;
-  return runtimeHubspotAccessToken;
+  try {
+    const { data, error } = await admin.rpc("nvx_get_runtime_secret", { p_name: "HUBSPOT_ACCESS_TOKEN" });
+    if (error || !data) return "";
+    const token = String(data).trim();
+    if (token) runtimeHubspotAccessToken = token;
+    return runtimeHubspotAccessToken;
+  } catch {
+    return "";
+  }
 }
 
 async function authenticateSignedBody(req: Request, rawBody: string, admin: any): Promise<"ok" | "unauthorized" | "bootstrap_required"> {
