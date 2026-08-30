@@ -356,7 +356,8 @@ Deno.serve(async (req: Request) => {
       ? await fetchState(ctx.pageId, pageToken, appToken)
       : before;
 
-    await admin.from("credentials").update({ last_used: new Date().toISOString() }).eq("id", ctx.credentialId);
+    const { error: usageError } = await admin.from("credentials").update({ last_used: new Date().toISOString() }).eq("id", ctx.credentialId);
+    if (usageError) throw usageError;
 
     return reply(200, {
       success: true,
