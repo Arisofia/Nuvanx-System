@@ -1,0 +1,115 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
+name: Control Centre Runtime
+run-name: Control Centre Runtime · ${{ github.event_name }} · ${{ github.ref_name }}
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'supabase/functions/control-centre-provider/**'
+      - 'supabase/migrations/*control_centre*'
+      - 'frontend/src/components/dashboard/OperationsOverview.tsx'
+      - 'frontend/src/components/dashboard/PipelineSnapshot.tsx'
+      - '.github/workflows/control-centre-runtime.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/functions/control-centre-provider/**'
+      - 'supabase/migrations/*control_centre*'
+      - 'frontend/src/components/dashboard/OperationsOverview.tsx'
+      - 'frontend/src/components/dashboard/PipelineSnapshot.tsx'
+      - '.github/workflows/control-centre-runtime.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: control-centre-runtime-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  validate:
+    name: Validate provider gateway
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
+        with:
+          deno-version: v2.x
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Provider contract tests
+        run: npx vitest run supabase/functions/control-centre-provider/index.test.mjs
+
+      - name: Deno type-check
+        run: deno check --config=supabase/functions/deno.json supabase/functions/control-centre-provider/index.ts
+
+      - name: Validate migrations
+        run: node scripts/validate-sql-migrations.js
+
+      - name: Frontend lint and build
+        working-directory: frontend
+        run: |
+          npm install --include=dev --ignore-scripts
+          npm run lint
+          npm run build
+        env:
+          NODE_ENV: production
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+
+  deploy:
+    name: Deploy provider gateway
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: Production
+    steps:
+      - name: Checkout exact main
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@52a446718e4edd1a9f1e2631186019c87e329f60
+        with:
+          version: 2.102.0
+
+      - name: Validate deployment configuration
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN"
+          [[ "$SUPABASE_ACCESS_TOKEN" =~ ^sbp_[A-Za-z0-9]+$ ]]
+          test -n "$SUPABASE_PROJECT_REF"
+          [[ "$SUPABASE_PROJECT_REF" =~ ^[a-z0-9]{20}$ ]]
+
+      - name: Deploy exact gateway
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          supabase functions deploy control-centre-provider \
+            --project-ref "$SUPABASE_PROJECT_REF" \
+            --no-verify-jwt
+          supabase functions list --project-ref "$SUPABASE_PROJECT_REF"
+          echo 'CONTROL_CENTRE_PROVIDER_DEPLOY=PASS'

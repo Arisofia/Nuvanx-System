@@ -156,12 +156,51 @@ export interface FinancialsState {
 
 // ── CRM ───────────────────────────────────────────────────────────────────────
 
+/**
+ * Canonical funnel stages. These are the only values the Kanban renders.
+ * 'asistio' and 'valoracion_aceptada' from stage_canonical are mapped to
+ * 'appointment' before reaching the UI.
+ */
 export type LeadStage = 'lead' | 'whatsapp' | 'appointment' | 'treatment' | 'closed'
+
+/**
+ * Canonical stage values from the DB (stage_canonical column).
+ * Distinct from LeadStage (UI) to make the mapping explicit.
+ */
+export type CanonicalStage =
+  | 'lead'
+  | 'contacto'
+  | 'valoracion_aceptada'
+  | 'asistio'
+  | 'closed'
+  | null
+
+/** An appointment match from lead_appointment_matches joined via the API. */
+export interface AppointmentMatch {
+  appointment_ingestion_id: string
+  match_method: string
+  is_primary: boolean
+  appointment_date?: string | null
+}
 
 export interface Lead {
   id: string
   name: string
+  /**
+   * Resolved UI stage — always one of LeadStage values.
+   * Set by resolveCanonicalStage() in useLeads; never the raw DB field.
+   */
   status: string
+  /**
+   * Raw DB stage field (legacy). Preserved for debug/display only.
+   * Never use this for funnel logic.
+   */
+  stage_raw?: string
+  /**
+   * Canonical stage from DB (stage_canonical column).
+   * Supercedes stage_raw when present.
+   */
+  stage_canonical?: CanonicalStage
   source: string
   email?: string
   phone?: string
@@ -172,14 +211,26 @@ export interface Lead {
   treatment_name?: string
   created_at?: string
   updated_at?: string
+  /** Verified Doctoralia appointment matches (phone_normalized). Empty = no verified match. */
+  appointment_matches?: AppointmentMatch[]
 }
 
 // ── Integrations ──────────────────────────────────────────────────────────────
+
+/**
+ * Health status computed on the frontend from the raw integration row.
+ * - 'ok':          connected + last_sync confirmed
+ * - 'degraded':    status is connected/active but runtime evidence missing
+ *                  (null last_sync, missing service-account env, etc.)
+ * - 'disconnected': any other status value
+ */
+export type IntegrationHealthStatus = 'ok' | 'degraded' | 'disconnected'
 
 export type IntegrationRow = {
   id: string
   service: string
   status: string | null
+  last_sync?: string | null
   last_error: string | null
   metadata: Record<string, unknown> | null
   created_at: string | null

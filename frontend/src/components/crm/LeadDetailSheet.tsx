@@ -3,6 +3,7 @@ import { CheckCircle2, Clock3, MessageCircle, Send, XCircle } from 'lucide-react
 import type { Lead } from '../../types'
 import { directWhatsappEnabled } from '../../lib/env'
 import { supabase } from '../../lib/supabaseClient'
+import { hasCanonicalAppointmentEvidence, isClinicalPipelineStage, pipelineStageLabel } from '../../lib/pipeline'
 import { Button } from '../ui/button'
 
 interface LeadDetailSheetProps {
@@ -12,14 +13,6 @@ interface LeadDetailSheetProps {
   onUpdate: (id: string, updates: Partial<Lead>) => Promise<{ success: boolean; error?: string }>
   onDelete: (id: string) => Promise<{ success: boolean; error?: string }>
 }
-
-const STAGES = [
-  { value: 'lead', label: 'Lead' },
-  { value: 'whatsapp', label: 'En conversación' },
-  { value: 'appointment', label: 'Cita' },
-  { value: 'treatment', label: 'Tratamiento' },
-  { value: 'closed', label: 'Cerrado' },
-] as const
 
 type WhatsappResult = {
   ok: boolean
@@ -40,7 +33,8 @@ function normalizeWhatsappPhone(value: string) {
 }
 
 function formatLocalCalendarDate(value: string) {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim())
+  const dateOnly = value.slice(0, 10)
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateOnly)
   if (!match) return value
   const year = Number(match[1])
   const month = Number(match[2])
@@ -82,12 +76,10 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
   const [whatsappResult, setWhatsappResult] = useState<WhatsappResult | null>(null)
   const [form, setForm] = useState({
     name: '',
-    status: '',
     phone: '',
     dni: '',
     notes: '',
     revenue: '',
-    appointment_date: '',
     treatment_name: '',
   })
 
@@ -95,12 +87,10 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
     if (lead) {
       setForm({
         name: lead.name ?? '',
-        status: lead.status ?? 'lead',
         phone: lead.phone ?? '',
         dni: lead.dni ?? '',
         notes: lead.notes ?? '',
         revenue: lead.revenue == null ? '' : String(lead.revenue),
-        appointment_date: lead.appointment_date ?? '',
         treatment_name: lead.treatment_name ?? '',
       })
       setWhatsappDraft(defaultWhatsappDraft(lead.name ?? ''))
@@ -119,12 +109,10 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
     setSaveError(null)
     const updates: Partial<Lead> = {
       name: form.name,
-      status: form.status,
       phone: form.phone || undefined,
       dni: form.dni || undefined,
       notes: form.notes || undefined,
       revenue: form.revenue === '' ? undefined : Number(form.revenue),
-      appointment_date: form.appointment_date || undefined,
       treatment_name: form.treatment_name || undefined,
     }
     const result = await onUpdate(lead.id, updates)
@@ -146,7 +134,6 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
 
   const handleWhatsappDraftChange = (value: string) => {
     setWhatsappDraft(value)
-    // An idempotency key fingerprints one exact send intent. Editing creates a new intent.
     setWhatsappIntentKey(null)
     setWhatsappResult(null)
   }
@@ -155,7 +142,7 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
     const phone = normalizeWhatsappPhone(String(lead.phone || ''))
     const message = whatsappDraft.trim()
     if (!phone) {
-      setWhatsappResult({ ok: false, message: 'Este paciente no tiene teléfono registrado.' })
+      setWhatsappResult({ ok: false, message: 'Este contacto no tiene teléfono registrado.' })
       return
     }
     if (!message) {
@@ -209,7 +196,6 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
         return
       }
 
-      // Meta returned a durable message id / known prior provider result. A later webhook proves delivery/read.
       setWhatsappIntentKey(null)
       setWhatsappResult({
         ok: true,
@@ -218,7 +204,6 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
           : 'Aceptado por Meta. Entrega pendiente de confirmación.',
       })
     } catch (error: unknown) {
-      // Keep the same key after a transport exception: retrying the same intent must remain idempotent.
       const message = error instanceof Error ? error.message : 'No se pudo confirmar la solicitud de WhatsApp.'
       setWhatsappResult({ ok: false, pending: true, message: `${message} No crees un segundo envío; vuelve a intentar con la misma intención.` })
     } finally {
@@ -251,7 +236,7 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
       <div className="relative w-full max-w-lg h-full bg-background border-l border-border shadow-2xl p-6 flex flex-col animate-in slide-in-from-right duration-300">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-primary">Paciente / Lead</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-primary">Lead / paciente según evidencia</p>
             <h2 className="mt-1 text-xl font-bold text-foreground">{isEditing ? 'Editar ficha' : lead.name}</h2>
           </div>
           <Button variant="ghost" onClick={onClose} className="text-muted hover:text-foreground" aria-label="Cerrar">×</Button>
@@ -261,30 +246,14 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
           <section>
             <h3 className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Información básica</h3>
             <div className="grid gap-4 bg-card rounded-xl p-4 border border-border">
-              {isEditing ? (
-                <>
-                  {input('Nombre', 'name')}
-                  <div>
-                    <label htmlFor="lead-stage-select" className="text-xs text-muted mb-1 block">Etapa</label>
-                    <select
-                      id="lead-stage-select"
-                      value={form.status}
-                      onChange={e => setForm(prev => ({ ...prev, status: e.target.value }))}
-                      className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary"
-                    >
-                      {STAGES.map(stage => <option key={stage.value} value={stage.value}>{stage.label}</option>)}
-                    </select>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div>
-                    <p className="text-xs text-muted mb-1">Estado</p>
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold uppercase bg-primary/15 text-primary border border-primary/20">{STAGES.find(stage => stage.value === lead.status)?.label || lead.status}</span>
-                  </div>
-                  {field('Origen', lead.source)}
-                </>
-              )}
+              {isEditing ? input('Nombre', 'name') : <>{field('Origen', lead.source)}</>}
+              <div>
+                <p className="text-xs text-muted mb-1">Etapa comercial canónica</p>
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold uppercase bg-primary/15 text-primary border border-primary/20">
+                  {pipelineStageLabel(lead.status)}
+                </span>
+                <p className="mt-2 text-[10px] leading-4 text-muted">Esta etapa no se edita desde la ficha. Se deriva de evidencia operativa o de una transición auditada.</p>
+              </div>
             </div>
           </section>
 
@@ -313,7 +282,7 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
                 <span className="rounded-full border border-border bg-card px-2 py-1 text-[10px] font-semibold text-muted">Meta Cloud API</span>
               </div>
               <div className="space-y-3 rounded-xl border border-border bg-card p-4">
-                <p className="text-xs leading-5 text-muted">Edita el mensaje y confirma el envío. NUVANX registra una intención idempotente; la aceptación de Meta y la entrega al paciente son estados diferentes.</p>
+                <p className="text-xs leading-5 text-muted">Edita el mensaje y confirma el envío. NUVANX registra una intención idempotente; la aceptación de Meta y la entrega al contacto son estados diferentes.</p>
                 <label htmlFor="whatsapp-draft" className="sr-only">Mensaje de WhatsApp</label>
                 <textarea
                   id="whatsapp-draft"
@@ -362,20 +331,20 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
             </div>
           </section>
 
-          {(lead.status === 'appointment' || lead.status === 'treatment' || lead.status === 'closed' || isEditing) && (
+          {(isClinicalPipelineStage(lead.status) || isEditing) && (
             <section>
               <h3 className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Proceso clínico</h3>
               <div className="grid gap-4 bg-card rounded-xl p-4 border border-border">
                 {isEditing ? (
                   <>
-                    {input('Fecha de cita', 'appointment_date', 'date')}
+                    <p className="text-[10px] leading-4 text-muted">La fecha de valoración no se modifica aquí porque forma parte de la evidencia del pipeline.</p>
                     {input('Tratamiento / procedimiento', 'treatment_name')}
                   </>
                 ) : (
                   <>
-                    {lead.appointment_date && field('Fecha de cita', formatLocalCalendarDate(lead.appointment_date))}
+                    {hasCanonicalAppointmentEvidence(lead.status) && lead.appointment_date && field('Fecha de valoración', formatLocalCalendarDate(lead.appointment_date))}
                     {lead.treatment_name && field('Tratamiento / procedimiento', lead.treatment_name)}
-                    {lead.status === 'closed' && <span className="inline-flex w-fit items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-600 border border-emerald-500/20">✓ Cerrado</span>}
+                    {lead.status === 'won' && <span className="inline-flex w-fit items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-600 border border-emerald-500/20">✓ Ganado con evidencia financiera</span>}
                   </>
                 )}
               </div>
@@ -406,7 +375,7 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
             <div className="flex gap-3">
               <Button variant="outline" onClick={() => void handleDelete()} disabled={deleting} className="text-rose-500 border-rose-500/30 hover:bg-rose-500/10">{deleting ? '…' : 'Archivar'}</Button>
               <Button variant="outline" onClick={onClose} className="flex-1">Cerrar</Button>
-              <Button onClick={() => setIsEditing(true)} className="flex-1">Editar</Button>
+              <Button onClick={() => setIsEditing(true)} className="flex-1">Editar datos</Button>
             </div>
           )}
         </div>
