@@ -58,6 +58,7 @@ async function hubSpotIdentity(token: string, contactId: string) {
   url.searchParams.set("archived", "false");
   const response = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(10_000),
   });
   if (!response.ok) throw new Error(`HubSpot contact lookup failed ${response.status}`);
   const payload = await response.json();
@@ -142,6 +143,7 @@ async function dispatchOne(admin: any, hubspotToken: string, row: any) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(15_000),
   }).catch((error: unknown) => ({ networkError: error } as any));
 
   if ((response as any)?.networkError) {
@@ -208,11 +210,12 @@ Deno.serve(async (req: Request) => {
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
 
   try {
+    const hubspotToken = await resolveHubSpotToken(admin);
+
     const { data: claimed, error: claimError } = await admin.rpc("nvx_claim_meta_capi_outbox", { p_limit: limit });
     if (claimError) throw new Error("Meta CAPI outbox claim failed");
     if (!claimed?.length) return json({ success: true, processed: 0, succeeded: 0, failed: 0, dead: 0, results: [] });
 
-    const hubspotToken = await resolveHubSpotToken(admin);
     const results = [];
     for (const row of claimed) results.push(await dispatchOne(admin, hubspotToken, row));
 

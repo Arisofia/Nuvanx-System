@@ -60,7 +60,17 @@ describe("Meta CAPI durable dispatch contract", () => {
   it("is idempotent and bounded", () => {
     expect(migration).toContain("constraint meta_capi_outbox_lead_event_unique unique (lead_id, event_name)");
     expect(migration).toContain("constraint meta_capi_outbox_event_id_unique unique (event_id)");
+    expect(migration).toContain("on conflict do nothing");
     expect(source).toContain("const MAX_ATTEMPTS = 8");
     expect(source).toContain("Meta deduplicates by event_id");
+  });
+
+  it("enforces explicit timeouts and pre-claim credential resolution", () => {
+    expect(source).toContain("AbortSignal.timeout(10_000)");
+    expect(source).toContain("AbortSignal.timeout(15_000)");
+    const claimIdx = source.indexOf('admin.rpc("nvx_claim_meta_capi_outbox"');
+    const tokenIdx = source.indexOf("await resolveHubSpotToken(admin)");
+    expect(tokenIdx).toBeGreaterThan(0);
+    expect(claimIdx).toBeGreaterThan(tokenIdx);
   });
 });

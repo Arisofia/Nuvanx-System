@@ -287,7 +287,7 @@ begin
   if v_capture.marketing_consent and coalesce(p_hubspot_contact_id, v_lead.hubspot_contact_id) is not null then
     insert into public.meta_capi_outbox (lead_id, event_name, event_id)
     values (p_lead_id, 'Lead', 'lead:' || v_capture.nvx_lead_id::text)
-    on conflict (lead_id, event_name) do nothing;
+    on conflict do nothing;
   end if;
 
   return p_lead_id;
