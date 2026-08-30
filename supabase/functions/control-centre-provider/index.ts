@@ -44,6 +44,8 @@ type DynamicSupabaseClient = {
   rpc: (fn: string, args?: Record<string, unknown>) => Promise<{ data: any; error: any }>;
 };
 
+type ProviderEnvelopeStatus = 'live' | 'stale' | 'refreshing' | 'unavailable';
+
 function originFor(req: Request): string | null {
   const raw = req.headers.get('origin');
   if (!raw) return null;
@@ -78,7 +80,7 @@ function ageSeconds(lastSuccessAt: unknown): number | null {
 
 function envelope(
   provider: string,
-  status: 'live' | 'stale' | 'unavailable',
+  status: ProviderEnvelopeStatus,
   data: unknown,
   cache: CacheState,
   source: 'provider' | 'cache',
@@ -203,14 +205,22 @@ Deno.serve(async (req: Request) => {
 
   if (!state.refresh) {
     const hasCache = state.payload !== null && state.payload !== undefined;
-    const status = state.reason === 'fresh_cache' ? 'live' : hasCache ? 'stale' : 'unavailable';
-    return json(req, 200, envelope(
+    const status: ProviderEnvelopeStatus = state.reason === 'fresh_cache'
+      ? 'live'
+      : state.reason === 'refresh_in_flight' && !hasCache
+        ? 'refreshing'
+        : hasCache
+          ? 'stale'
+          : 'unavailable';
+    return json(req, status === 'refreshing' ? 202 : 200, envelope(
       provider,
       status,
       state.payload,
       state,
       'cache',
-      status === 'live' ? null : String(state.last_error || state.reason || 'Provider refresh unavailable'),
+      status === 'live' || status === 'refreshing'
+        ? null
+        : String(state.last_error || state.reason || 'Provider refresh unavailable'),
     ));
   }
 
@@ -237,7 +247,7 @@ Deno.serve(async (req: Request) => {
     }, 'provider'));
   } catch (error: any) {
     const message = String(error?.message || 'Provider refresh failed').replace(/\s+/g, ' ').slice(0, 500);
-    const { data: failedData } = await admin.rpc('nvx_control_centre_provider_finish_failure', {
+    const { data: failedData, error: failureError } = await admin.rpc('nvx_control_centre_provider_finish_failure', {
       p_user_id: userId,
       p_provider: provider,
       p_cache_key: cacheKey,
@@ -246,6 +256,9 @@ Deno.serve(async (req: Request) => {
       p_failure_threshold: 3,
       p_open_seconds: 300,
     });
+    if (failureError) {
+      console.error('[control-centre-provider] breaker update failed', provider);
+    }
     const failed = (failedData || {}) as CacheState;
     const cached = failed.payload ?? state.payload;
     const hasCache = cached !== null && cached !== undefined;
