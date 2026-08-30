@@ -26,7 +26,7 @@ select m.lead_id,
        'appointment'::text,
        (
          a.appointment_date::text || ' ' ||
-         coalesce(substring(coalesce(a.appointment_time,'') from '([0-2][0-9]:[0-5][0-9])'),'12:00')
+         coalesce(substring(coalesce(a.appointment_time,'') from '((?:[01][0-9]|2[0-3]):[0-5][0-9])'),'12:00')
        )::timestamp at time zone 'Europe/Madrid',
        coalesce(a.treatment,a.subject,'Cita Doctoralia'),
        coalesce(a.status,a.estado),
