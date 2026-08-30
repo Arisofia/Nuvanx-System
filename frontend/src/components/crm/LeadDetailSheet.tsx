@@ -39,6 +39,21 @@ function normalizeWhatsappPhone(value: string) {
   return `${hasLeadingPlus ? '+' : ''}${digits}`
 }
 
+function formatLocalCalendarDate(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim())
+  if (!match) return value
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const localDate = new Date(year, month - 1, day)
+  if (
+    localDate.getFullYear() !== year
+    || localDate.getMonth() !== month - 1
+    || localDate.getDate() !== day
+  ) return value
+  return localDate.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+}
+
 function createWhatsappIntentKey() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID()
   const random = new Uint8Array(16)
@@ -299,7 +314,9 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
               </div>
               <div className="space-y-3 rounded-xl border border-border bg-card p-4">
                 <p className="text-xs leading-5 text-muted">Edita el mensaje y confirma el envío. NUVANX registra una intención idempotente; la aceptación de Meta y la entrega al paciente son estados diferentes.</p>
+                <label htmlFor="whatsapp-draft" className="sr-only">Mensaje de WhatsApp</label>
                 <textarea
+                  id="whatsapp-draft"
                   value={whatsappDraft}
                   onChange={(event) => handleWhatsappDraftChange(event.target.value)}
                   rows={5}
@@ -356,7 +373,7 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
                   </>
                 ) : (
                   <>
-                    {lead.appointment_date && field('Fecha de cita', new Date(lead.appointment_date).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}
+                    {lead.appointment_date && field('Fecha de cita', formatLocalCalendarDate(lead.appointment_date))}
                     {lead.treatment_name && field('Tratamiento / procedimiento', lead.treatment_name)}
                     {lead.status === 'closed' && <span className="inline-flex w-fit items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-600 border border-emerald-500/20">✓ Cerrado</span>}
                   </>
