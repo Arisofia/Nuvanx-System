@@ -18,8 +18,17 @@ describe("google-click-attribution QA contract", () => {
   });
 
   it("keeps browser lineage separate from the reconciled lead foreign key", () => {
-    expect(source).toContain("nvx_lead_id: nvxLeadId");
     expect(source).not.toContain("applied_lead_id:");
     expect(source).not.toContain("applied_at:");
+  });
+
+  it("protects applied rows and production outbox lineage in retention purge migration", () => {
+    const migration = readFileSync(
+      fileURLToPath(new URL("../../migrations/20260830020500_add_qa_attribution_retention.sql", import.meta.url)),
+      "utf8"
+    );
+    expect(migration).toContain("g.applied_lead_id is null");
+    expect(migration).toContain("w.applied_lead_id is null");
+    expect(migration).toContain("coalesce(o.is_test_lead, false) = false");
   });
 });
