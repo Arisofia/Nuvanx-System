@@ -25,6 +25,13 @@ function defaultWhatsappDraft(name: string) {
   return `Hola${firstName ? ` ${firstName}` : ''}, soy del equipo de NUVANX Medicina Estética Láser. Te escribo para ayudarte con tu solicitud de valoración. ¿Qué momento te viene bien para hablar?`
 }
 
+function normalizeWhatsappPhone(value: string) {
+  const raw = value.trim()
+  const hasLeadingPlus = raw.startsWith('+')
+  const digits = raw.replace(/\D/g, '')
+  return `${hasLeadingPlus ? '+' : ''}${digits}`
+}
+
 export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: Readonly<LeadDetailSheetProps>) {
   const [isEditing, setIsEditing] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -97,7 +104,7 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
   }
 
   const handleWhatsappSend = async () => {
-    const phone = String(lead.phone || '').replace(/\s/g, '')
+    const phone = normalizeWhatsappPhone(String(lead.phone || ''))
     const message = whatsappDraft.trim()
     if (!phone) {
       setWhatsappResult({ ok: false, message: 'Este paciente no tiene teléfono registrado.' })
@@ -108,7 +115,7 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
       return
     }
     if (!/^\+?[1-9]\d{7,14}$/.test(phone)) {
-      setWhatsappResult({ ok: false, message: 'El teléfono debe estar en formato internacional, por ejemplo +34XXXXXXXXX.' })
+      setWhatsappResult({ ok: false, message: 'El teléfono debe ser válido y preferiblemente incluir el prefijo internacional, por ejemplo +34XXXXXXXXX.' })
       return
     }
 
