@@ -157,10 +157,12 @@ async function resolveCanonicalMeta(admin: any) {
     .eq("service", "meta_ads")
     .eq("status", "connected");
   if (integrationError) throw integrationError;
-  if (!Array.isArray(integrations) || integrations.length !== 1) {
+  const canonicalIntegrations = (Array.isArray(integrations) ? integrations : [])
+    .filter((row: any) => row?.metadata?.canonical === true || String(row?.metadata?.canonical || "").toLowerCase() === "true");
+  if (canonicalIntegrations.length !== 1) {
     throw new Error("Expected exactly one connected canonical meta_ads integration");
   }
-  const integration = integrations[0];
+  const integration = canonicalIntegrations[0];
   const userId = String(integration.user_id || "").trim();
   const pageId = String(integration.metadata?.pageId ?? integration.metadata?.page_id ?? "").trim();
   const adAccountId = String(integration.metadata?.adAccountId ?? integration.metadata?.ad_account_id ?? "").trim() || null;
@@ -234,6 +236,13 @@ function normalizePhone(raw: unknown): string | null {
   return digits.length >= 8 && digits.length <= 15 ? `+${digits}` : null;
 }
 
+function phoneLookupKey(phone: string | null): string | null {
+  if (!phone) return null;
+  const digits = phone.replaceAll(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("34")) return digits.slice(2);
+  return digits || null;
+}
+
 function normalizeEmail(raw: unknown): string | null {
   const value = String(raw ?? "").trim().toLowerCase();
   return value && value.includes("@") && value.length <= 254 ? value : null;
@@ -258,26 +267,65 @@ function mapLead(raw: MetaLead) {
   return { fullName, email, phone, isTest };
 }
 
-async function findExistingLead(admin: any, userId: string, leadgenId: string, phone: string | null, email: string | null) {
-  const { data: attr } = await admin.from("meta_attribution").select("lead_id").eq("leadgen_id", leadgenId).maybeSingle();
+const LEAD_MATCH_FIELDS = "id,user_id,external_id,source,campaign_id,campaign_name,meta_form_id,meta_ad_id,meta_ad_name,ad_account_id";
+
+type ExistingLeadResolution = {
+  row: any | null;
+  conflict: boolean;
+};
+
+async function fetchIdentityCandidate(admin: any, userId: string, column: "phone_normalized" | "email", value: string | null): Promise<ExistingLeadResolution> {
+  if (!value) return { row: null, conflict: false };
+  const { data, error } = await admin
+    .from("leads")
+    .select(LEAD_MATCH_FIELDS)
+    .eq("user_id", userId)
+    .eq(column, value)
+    .is("deleted_at", null)
+    .limit(2);
+  if (error) throw error;
+  const rows = Array.isArray(data) ? data : [];
+  if (rows.length > 1) return { row: null, conflict: true };
+  return { row: rows[0] ?? null, conflict: false };
+}
+
+async function findExistingLead(admin: any, userId: string, leadgenId: string, phone: string | null, email: string | null): Promise<ExistingLeadResolution> {
+  const { data: attr, error: attrError } = await admin
+    .from("meta_attribution")
+    .select("lead_id")
+    .eq("leadgen_id", leadgenId)
+    .maybeSingle();
+  if (attrError) throw attrError;
   if (attr?.lead_id) {
-    const { data: row } = await admin.from("leads").select("*").eq("id", attr.lead_id).is("deleted_at", null).maybeSingle();
+    const { data: row, error: rowError } = await admin
+      .from("leads")
+      .select(LEAD_MATCH_FIELDS)
+      .eq("id", attr.lead_id)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (rowError) throw rowError;
     if (row) return String(row.user_id) === userId ? { row, conflict: false } : { row: null, conflict: true };
   }
-  const { data: external } = await admin.from("leads").select("*").eq("user_id", userId).eq("external_id", leadgenId).is("deleted_at", null).maybeSingle();
+
+  const { data: external, error: externalError } = await admin
+    .from("leads")
+    .select(LEAD_MATCH_FIELDS)
+    .eq("user_id", userId)
+    .eq("external_id", leadgenId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (externalError) throw externalError;
   if (external) return { row: external, conflict: false };
-  let phoneRow: any = null;
-  let emailRow: any = null;
-  if (phone) {
-    const { data } = await admin.from("leads").select("*").eq("user_id", userId).eq("phone", phone).is("deleted_at", null).order("created_at", { ascending: false }).limit(1).maybeSingle();
-    phoneRow = data ?? null;
+
+  const phoneCandidate = await fetchIdentityCandidate(admin, userId, "phone_normalized", phoneLookupKey(phone));
+  if (phoneCandidate.conflict) return phoneCandidate;
+  const emailCandidate = await fetchIdentityCandidate(admin, userId, "email", email);
+  if (emailCandidate.conflict) return emailCandidate;
+
+  if (phoneCandidate.row && emailCandidate.row && phoneCandidate.row.id !== emailCandidate.row.id) {
+    return { row: null, conflict: true };
   }
-  if (email) {
-    const { data } = await admin.from("leads").select("*").eq("user_id", userId).ilike("email", email).is("deleted_at", null).order("created_at", { ascending: false }).limit(1).maybeSingle();
-    emailRow = data ?? null;
-  }
-  if (phoneRow && emailRow && phoneRow.id !== emailRow.id) return { row: null, conflict: true };
-  return { row: phoneRow ?? emailRow ?? null, conflict: false };
+  return { row: phoneCandidate.row ?? emailCandidate.row ?? null, conflict: false };
 }
 
 async function persistLead(admin: any, ctx: any, raw: MetaLead) {
@@ -343,7 +391,7 @@ async function persistLead(admin: any, ctx: any, raw: MetaLead) {
       ad_id: raw.ad_id || null,
       ad_name: raw.ad_name || null,
       captured_at: createdAt,
-    }, { onConflict: "leadgen_id" });
+    }, { onConflict: "lead_id" });
     if (error) throw error;
   }
   return resolved.row ? "reconciled" : "inserted";

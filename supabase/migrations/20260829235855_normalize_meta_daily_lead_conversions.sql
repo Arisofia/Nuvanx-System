@@ -28,8 +28,8 @@ FOR EACH ROW EXECUTE FUNCTION public.nvx_normalize_meta_daily_conversions();
 
 UPDATE public.meta_daily_insights
 SET conversions = GREATEST(
-  COALESCE(NULLIF(actions->>'lead','')::integer,0),
-  COALESCE(NULLIF(actions->>'onsite_conversion.lead_grouped','')::integer,0),
-  COALESCE(NULLIF(actions->>'contact_total','')::integer,0),
+  CASE WHEN actions->>'lead' ~ '^-?[0-9]+$' THEN (actions->>'lead')::integer ELSE 0 END,
+  CASE WHEN actions->>'onsite_conversion.lead_grouped' ~ '^-?[0-9]+$' THEN (actions->>'onsite_conversion.lead_grouped')::integer ELSE 0 END,
+  CASE WHEN actions->>'contact_total' ~ '^-?[0-9]+$' THEN (actions->>'contact_total')::integer ELSE 0 END,
   COALESCE(messaging_conversations,0)
 );

@@ -29,6 +29,7 @@ on:
           - web-lead-reconcile
           - deal-factory
           - meta-lead-backfill
+          - meta-daily-insights
           - google-ads-health
       confirmation:
         description: Type DEPLOY for Edge deployment, PRUNE for retired Edge cleanup, or UPDATE for WordPress mutation
@@ -80,7 +81,7 @@ jobs:
           test -n "${SUPABASE_ACCESS_TOKEN:-}"
           test -n "${SUPABASE_PROJECT_REF:-}"
           [[ "${SUPABASE_PROJECT_REF:-}" =~ ^[a-z0-9]{20}$ ]]
-          [[ "$DEPLOY_FUNCTION" =~ ^(all|web-events|google-click-attribution|google-data-manager-export|runtime-bootstrap|lead-captured|revops-dispatcher|web-lead-reconcile|deal-factory|meta-lead-backfill|google-ads-health)$ ]]
+          [[ "$DEPLOY_FUNCTION" =~ ^(all|web-events|google-click-attribution|google-data-manager-export|runtime-bootstrap|lead-captured|revops-dispatcher|web-lead-reconcile|deal-factory|meta-lead-backfill|meta-daily-insights|google-ads-health)$ ]]
           if [[ -z "${DATABASE_URL:-}" && -z "${SUPABASE_DB_PASSWORD:-}" ]]; then
             echo "::error::DATABASE_URL or SUPABASE_DB_PASSWORD is required"
             exit 1
@@ -126,7 +127,8 @@ jobs:
             supabase/functions/web-lead-reconcile/index.ts \
             supabase/functions/deal-factory/index.ts \
             supabase/functions/google-ads-health/index.ts \
-            supabase/functions/meta-lead-backfill/index.ts
+            supabase/functions/meta-lead-backfill/index.ts \
+            supabase/functions/meta-daily-insights/index.ts
 
       - name: Apply canonical migrations
         uses: ./.github/actions/supabase-link-run
@@ -162,6 +164,7 @@ jobs:
                 web-lead-reconcile) supabase functions deploy web-lead-reconcile --project-ref "$SUPABASE_PROJECT_REF" ;;
                 deal-factory) supabase functions deploy deal-factory --project-ref "$SUPABASE_PROJECT_REF" ;;
                 meta-lead-backfill) supabase functions deploy meta-lead-backfill --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt ;;
+                meta-daily-insights) supabase functions deploy meta-daily-insights --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt ;;
                 google-ads-health) supabase functions deploy google-ads-health --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt ;;
                 *) echo "::error::Unsupported Edge Function: $1"; exit 1 ;;
               esac

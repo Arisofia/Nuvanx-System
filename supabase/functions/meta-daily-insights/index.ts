@@ -144,8 +144,12 @@ async function resolveCanonical(admin: any) {
     .eq("service", "meta_ads")
     .eq("status", "connected");
   if (error) throw error;
-  if (!Array.isArray(integrations) || integrations.length !== 1) throw new Error("Expected exactly one canonical meta_ads integration");
-  const integration = integrations[0];
+  const canonicalIntegrations = (Array.isArray(integrations) ? integrations : [])
+    .filter((row: any) => row?.metadata?.canonical === true || String(row?.metadata?.canonical || "").toLowerCase() === "true");
+  if (canonicalIntegrations.length !== 1) {
+    throw new Error("Expected exactly one canonical connected meta_ads integration");
+  }
+  const integration = canonicalIntegrations[0];
   const accountId = String(integration.metadata?.adAccountId ?? integration.metadata?.ad_account_id ?? "").trim();
   if (!/^act_\d+$/.test(accountId)) throw new Error("Canonical Meta ad account missing");
   const { data: credential, error: credentialError } = await admin
@@ -205,7 +209,7 @@ Deno.serve(async (req: Request) => {
       const actions: Action[] = Array.isArray(row?.actions) ? row.actions : [];
       const leadActions = actionValue(actions, isCanonicalLeadAction);
       const messaging = actionValue(actions, isMessagingAction);
-      const conversions = Math.max(leadActions, messaging);
+      const conversions = leadActions;
       return {
         user_id: ctx.integration.user_id,
         clinic_id: ctx.integration.clinic_id,

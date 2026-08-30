@@ -370,6 +370,8 @@ jobs:
             supabase functions deploy api --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy mcp --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy daily-aggregates --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+            supabase functions deploy meta-daily-insights --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+            supabase functions deploy meta-lead-backfill --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions list --project-ref "$SUPABASE_PROJECT_REF"
 
   daily-sync:
