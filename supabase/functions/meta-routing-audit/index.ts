@@ -121,21 +121,27 @@ async function graphFetch(pathOrUrl: string, token: string, params: Record<strin
   throw error;
 }
 
-async function graphFetchAll(path: string, token: string, params: Record<string, string>) {
+async function graphFetchAll(path: string, token: string, params: Record<string, string>, limit = MAX_OBJECTS, maxPages = 50): Promise<{ rows: any[]; truncated: boolean }> {
   const rows: any[] = [];
   let next: string | null = path;
   let nextParams: Record<string, string> = { ...params };
+  let truncated = false;
 
-  for (let page = 0; next && rows.length < MAX_OBJECTS && page < 20; page += 1) {
+  for (let page = 0; next && rows.length < limit && page < maxPages; page += 1) {
     const payload = await graphFetch(next, token, nextParams);
     nextParams = {};
     for (const row of Array.isArray(payload?.data) ? payload.data : []) {
       rows.push(row);
-      if (rows.length >= MAX_OBJECTS) break;
+      if (rows.length >= limit) {
+        if (payload?.paging?.next) truncated = true;
+        break;
+      }
     }
+    if (rows.length >= limit) break;
     next = typeof payload?.paging?.next === "string" ? payload.paging.next : null;
   }
-  return rows;
+  if (next) truncated = true;
+  return { rows, truncated };
 }
 
 async function resolveCanonicalMeta(admin: any) {
@@ -153,9 +159,10 @@ async function resolveCanonicalMeta(admin: any) {
 
   const integration = canonical[0];
   const userId = String(integration.user_id || "").trim();
+  const clinicId = String(integration.clinic_id || "").trim();
   const pageId = String(integration.metadata?.pageId ?? integration.metadata?.page_id ?? "").trim();
   const adAccountId = String(integration.metadata?.adAccountId ?? integration.metadata?.ad_account_id ?? "").trim();
-  if (!userId || !/^\d+$/.test(pageId) || !/^act_\d+$/.test(adAccountId)) {
+  if (!userId || !clinicId || !/^\d+$/.test(pageId) || !/^act_\d+$/.test(adAccountId)) {
     throw new Error("Canonical Meta routing metadata incomplete");
   }
 
@@ -167,7 +174,7 @@ async function resolveCanonicalMeta(admin: any) {
     .maybeSingle();
   if (credentialError || !credential?.encrypted_key) throw new Error("Canonical Meta credential missing");
   const managementToken = await decryptCred(String(credential.encrypted_key));
-  return { integration, userId, pageId, adAccountId, credentialId: credential.id, managementToken };
+  return { integration, userId, clinicId, pageId, adAccountId, credentialId: credential.id, managementToken };
 }
 
 async function resolvePageToken(pageId: string, managementToken: string): Promise<string> {
@@ -182,7 +189,7 @@ async function resolvePageToken(pageId: string, managementToken: string): Promis
     fields: "id,name,access_token",
     limit: "100",
   });
-  const match = accounts.find((row: any) => String(row?.id || "") === pageId);
+  const match = accounts.rows.find((row: any) => String(row?.id || "") === pageId);
   if (!match?.access_token) throw new Error("Canonical Meta credential cannot resolve configured Page Access Token");
   return String(match.access_token);
 }
@@ -218,24 +225,22 @@ async function getPageForms(pageId: string, pageToken: string) {
 }
 
 async function getPageSubscriptions(pageId: string, pageToken: string) {
-  try {
-    const rows = await graphFetchAll(`/${pageId}/subscribed_apps`, pageToken, {
-      fields: "id,name,subscribed_fields",
-      limit: "100",
-    });
-    return { ok: true, rows, error: null };
-  } catch (error: any) {
-    return { ok: false, rows: [], error: String(error?.message || error).slice(0, 300) };
-  }
+  const result = await graphFetchAll(`/${pageId}/subscribed_apps`, pageToken, {
+    fields: "id,name,subscribed_fields",
+    limit: "100",
+  });
+  return { ok: true, rows: result.rows, truncated: result.truncated };
 }
 
 async function getAdsRouting(adAccountId: string, managementToken: string, campaignId: string | null) {
-  const [ads, adsets, campaigns] = await Promise.all([
-    graphFetchAll(`/${adAccountId}/ads`, managementToken, {
-      fields: "id,name,status,effective_status,adset_id,campaign_id,creative{id,name,object_story_spec}",
+  const adsPath = campaignId ? `/${campaignId}/ads` : `/${adAccountId}/ads`;
+  const adsetsPath = campaignId ? `/${campaignId}/adsets` : `/${adAccountId}/adsets`;
+  const [adsResult, adsetsResult, campaignsResult] = await Promise.all([
+    graphFetchAll(adsPath, managementToken, {
+      fields: "id,name,status,effective_status,adset_id,campaign_id,creative{id,name,object_story_spec,asset_feed_spec}",
       limit: "500",
     }),
-    graphFetchAll(`/${adAccountId}/adsets`, managementToken, {
+    graphFetchAll(adsetsPath, managementToken, {
       fields: "id,name,status,effective_status,campaign_id",
       limit: "500",
     }),
@@ -245,8 +250,12 @@ async function getAdsRouting(adAccountId: string, managementToken: string, campa
     }),
   ]);
 
-  const filteredAds = campaignId ? ads.filter((row: any) => String(row?.campaign_id || "") === campaignId) : ads;
-  return { ads: filteredAds, adsets, campaigns };
+  const ads = adsResult.rows;
+  const adsets = adsetsResult.rows;
+  const campaigns = campaignsResult.rows;
+  const truncated = adsResult.truncated || adsetsResult.truncated || campaignsResult.truncated;
+
+  return { ads, adsets, campaigns, truncated };
 }
 
 Deno.serve(async (req: Request) => {
@@ -270,12 +279,13 @@ Deno.serve(async (req: Request) => {
 
     const ctx = await resolveCanonicalMeta(admin);
     const pageToken = await resolvePageToken(ctx.pageId, ctx.managementToken);
-    const [forms, subscriptions, routing] = await Promise.all([
+    const [formsResult, subscriptionsResult, routing] = await Promise.all([
       getPageForms(ctx.pageId, pageToken),
       getPageSubscriptions(ctx.pageId, pageToken),
       getAdsRouting(ctx.adAccountId, ctx.managementToken, campaignId),
     ]);
 
+    const forms = formsResult.rows;
     const formMap = objectMap(forms);
     const adsetMap = objectMap(routing.adsets);
     const campaignMap = objectMap(routing.campaigns);
@@ -310,17 +320,20 @@ Deno.serve(async (req: Request) => {
     });
 
     const uniqueFormIds = [...new Set(ads.flatMap((ad: any) => ad.lead_form_ids))];
-    const activeAds = ads.filter((ad: any) => ["ACTIVE", "PENDING_REVIEW", "IN_PROCESS"].includes(String(ad.effective_status || "")));
+    const activeAds = ads.filter((ad: any) => String(ad.effective_status || "") === "ACTIVE");
     const activeFormIds = [...new Set(activeAds.flatMap((ad: any) => ad.lead_form_ids))];
-    const leadgenSubscribers = subscriptions.rows.filter((row: any) =>
+    const leadgenSubscribers = subscriptionsResult.rows.filter((row: any) =>
       Array.isArray(row?.subscribed_fields) && row.subscribed_fields.some((field: unknown) => String(field) === "leadgen")
     );
+    const truncated = formsResult.truncated || subscriptionsResult.truncated || routing.truncated;
 
-    await admin.from("credentials").update({ last_used: new Date().toISOString() }).eq("id", ctx.credentialId);
+    const { error: usageError } = await admin.from("credentials").update({ last_used: new Date().toISOString() }).eq("id", ctx.credentialId);
+    if (usageError) throw usageError;
 
     return reply(200, {
       success: true,
       source: "meta_graph_live",
+      truncated,
       pageId: ctx.pageId,
       adAccountId: ctx.adAccountId,
       campaignId,
@@ -331,9 +344,8 @@ Deno.serve(async (req: Request) => {
         created_time: form?.created_time ?? null,
       })),
       subscriptions: {
-        ok: subscriptions.ok,
-        error: subscriptions.error,
-        apps: subscriptions.rows,
+        ok: subscriptionsResult.ok,
+        apps: subscriptionsResult.rows,
         leadgen_apps: leadgenSubscribers,
       },
       ads,
@@ -346,8 +358,9 @@ Deno.serve(async (req: Request) => {
         active_form_ids: activeFormIds,
         page_form_ids: forms.map((form: any) => String(form?.id || "")),
         all_active_ads_have_form: activeAds.length > 0 && activeAds.every((ad: any) => ad.lead_form_ids.length > 0),
-        all_active_ads_same_form: activeAds.length > 0 && activeFormIds.length === 1,
+        all_active_ads_same_form: activeAds.length > 0 && activeFormIds.length === 1 && activeAds.every((ad: any) => ad.lead_form_ids.length > 0),
         page_has_leadgen_subscriber: leadgenSubscribers.length > 0,
+        truncated,
       },
     });
   } catch (error: any) {
