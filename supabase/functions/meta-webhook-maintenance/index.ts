@@ -370,6 +370,11 @@ Deno.serve(async (req: Request) => {
       ? await fetchState(ctx.appId, ctx.pageId, pageToken, appToken)
       : before;
 
+    const ready = Boolean(after.expectedAppSubscription) && after.pageLeadgenSubscribed;
+    if (mode === "ensure_leadgen" && !ready) {
+      throw new Error("Meta leadgen subscriptions are not ready after repair");
+    }
+
     const { error: usageError } = await admin.from("credentials").update({ last_used: new Date().toISOString() }).eq("id", ctx.credentialId);
     if (usageError) throw usageError;
 
@@ -395,7 +400,7 @@ Deno.serve(async (req: Request) => {
         app_leadgen_webhook_ok: Boolean(after.expectedAppSubscription),
         page_leadgen_subscription_ok: after.pageLeadgenSubscribed,
       },
-      ready: Boolean(after.expectedAppSubscription) && after.pageLeadgenSubscribed,
+      ready,
     });
   } catch (error: any) {
     const code = String(error?.code || "META_WEBHOOK_MAINTENANCE_ERROR");
