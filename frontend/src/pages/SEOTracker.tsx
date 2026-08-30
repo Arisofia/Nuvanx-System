@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Badge } from '../components/ui/badge'
@@ -131,7 +131,7 @@ function StatusTag({ status }: { status: 'done' | 'in-progress' | 'pending' | 'g
 }
 
 export default function SEOTracker() {
-  const [lastRefresh, setLastRefresh] = useState(new Date())
+  const [, setLastRefresh] = useState(new Date())
 
   const refresh = useCallback(() => {
     setLastRefresh(new Date())
