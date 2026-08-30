@@ -5,7 +5,7 @@ declare const Deno: any;
 
 const SUPABASE_URL = (Deno.env.get("SUPABASE_URL") || "").trim();
 const SERVICE_ROLE = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
-const ALLOWED_WORKERS = new Set(["web-lead-reconcile", "deal-factory", "google-data-manager-export"]);
+const ALLOWED_WORKERS = new Set(["web-lead-reconcile", "deal-factory", "google-data-manager-export", "meta-capi-dispatch"]);
 
 function reply(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), {
