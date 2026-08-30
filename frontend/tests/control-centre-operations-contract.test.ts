@@ -40,8 +40,16 @@ describe('NUVANX Control Centre operations contract', () => {
 
     expect(hook).toContain("supabase.rpc('nvx_get_control_centre_pipeline'")
     expect(hook).toContain('journey_appointment_count')
+    expect(hook).toContain('fetchOptionalLeadMetadata')
+    expect(hook).toContain('return new Map()')
+    expectOrdered(
+      hook,
+      'const pipelineRows = await fetchCanonicalPipeline()',
+      'const rawById = await fetchOptionalLeadMetadata()',
+    )
     expect(hook).not.toContain('resolveCanonicalStage')
     expect(hook).not.toContain('apiUpdates.stage = apiUpdates.status')
+    expect(hook).not.toContain('Promise.all([')
 
     expect(crm).toContain('1/3 · Valoración')
     expect(crm).toContain('2/3 · Tratamiento')
