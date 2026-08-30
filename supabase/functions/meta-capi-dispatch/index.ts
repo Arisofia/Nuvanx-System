@@ -4,6 +4,7 @@ declare const Deno: any;
 
 const SUPABASE_URL = (Deno.env.get("SUPABASE_URL") || "").trim();
 const SERVICE_ROLE = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
+const HUBSPOT_ACCESS_TOKEN_ENV = (Deno.env.get("HUBSPOT_ACCESS_TOKEN") || "").trim();
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
 const MAX_ATTEMPTS = 8;
@@ -43,6 +44,29 @@ function retryDelayMinutes(attempts: number): number {
   return Math.min(360, Math.max(1, 2 ** Math.max(0, attempts - 1)));
 }
 
+async function resolveHubSpotToken(admin: any): Promise<string> {
+  if (HUBSPOT_ACCESS_TOKEN_ENV) return HUBSPOT_ACCESS_TOKEN_ENV;
+  const { data, error } = await admin.rpc("nvx_get_runtime_secret", { p_name: "HUBSPOT_ACCESS_TOKEN" });
+  if (error || !data) throw new Error("HubSpot runtime credential unavailable");
+  return String(data).trim();
+}
+
+async function hubSpotIdentity(token: string, contactId: string) {
+  if (!/^\d+$/.test(contactId)) throw new Error("Invalid HubSpot contact id");
+  const url = new URL(`https://api.hubapi.com/crm/v3/objects/contacts/${contactId}`);
+  url.searchParams.set("properties", "email,phone");
+  url.searchParams.set("archived", "false");
+  const response = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) throw new Error(`HubSpot contact lookup failed ${response.status}`);
+  const payload = await response.json();
+  return {
+    email: String(payload?.properties?.email || "").trim().toLowerCase(),
+    phone: String(payload?.properties?.phone || "").trim(),
+  };
+}
+
 async function updateOutbox(admin: any, id: string, patch: Record<string, unknown>) {
   const { error } = await admin
     .from("meta_capi_outbox")
@@ -63,10 +87,10 @@ async function markFailure(admin: any, row: any, message: string, permanent: boo
   return dead ? "dead" : "failed";
 }
 
-async function dispatchOne(admin: any, row: any) {
+async function dispatchOne(admin: any, hubspotToken: string, row: any) {
   const { data: lead, error: leadError } = await admin
     .from("leads")
-    .select("id,nvx_lead_id,email,phone,source,deleted_at,fbc,fbp,ip_address,user_agent,capi_sent,enviado_a_meta")
+    .select("id,nvx_lead_id,hubspot_contact_id,source,deleted_at,fbc,fbp,ip_address,user_agent,capi_sent,enviado_a_meta")
     .eq("id", row.lead_id)
     .maybeSingle();
 
@@ -84,12 +108,22 @@ async function dispatchOne(admin: any, row: any) {
     return { id: row.id, lead_id: lead.id, outcome: "already_delivered" };
   }
 
+  let identity: { email: string; phone: string };
+  try {
+    identity = await hubSpotIdentity(hubspotToken, String(lead.hubspot_contact_id || ""));
+  } catch (error: any) {
+    return { id: row.id, outcome: await markFailure(admin, row, boundedError(error?.message || error), false) };
+  }
+  if (!identity.email && !identity.phone) {
+    return { id: row.id, outcome: await markFailure(admin, row, "HubSpot contact has no CAPI identity", true) };
+  }
+
   const payload = {
     event_name: "Lead",
     event_id: String(row.event_id || ""),
     nvx_lead_id: String(lead.nvx_lead_id),
-    email: String(lead.email || ""),
-    phone: String(lead.phone || ""),
+    email: identity.email,
+    phone: identity.phone,
     fbc: String(lead.fbc || ""),
     fbp: String(lead.fbp || ""),
     client_ip_address: String(lead.ip_address || ""),
@@ -114,27 +148,27 @@ async function dispatchOne(admin: any, row: any) {
   }
 
   const httpResponse = response as Response;
-  let body: any = null;
+  let responseBody: any = null;
   try {
-    body = await httpResponse.json();
+    responseBody = await httpResponse.json();
   } catch {
-    body = null;
+    responseBody = null;
   }
 
-  if (!httpResponse.ok || body?.success !== true || body?.suppressed === true) {
-    const permanent = [400, 413, 422].includes(httpResponse.status) || body?.suppressed === true;
+  if (!httpResponse.ok || responseBody?.success !== true || responseBody?.suppressed === true) {
+    const permanent = [400, 413, 422].includes(httpResponse.status) || responseBody?.suppressed === true;
     return {
       id: row.id,
       outcome: await markFailure(
         admin,
         row,
-        `web-events rejected delivery status=${httpResponse.status}${body?.reason ? ` reason=${String(body.reason)}` : ""}`,
+        `web-events rejected delivery status=${httpResponse.status}${responseBody?.reason ? ` reason=${String(responseBody.reason)}` : ""}`,
         permanent,
       ),
     };
   }
 
-  if (String(body?.eventId || "") !== String(row.event_id || "")) {
+  if (String(responseBody?.eventId || "") !== String(row.event_id || "")) {
     return { id: row.id, outcome: await markFailure(admin, row, "web-events event_id acknowledgement mismatch", false) };
   }
 
@@ -172,9 +206,11 @@ Deno.serve(async (req: Request) => {
   try {
     const { data: claimed, error: claimError } = await admin.rpc("nvx_claim_meta_capi_outbox", { p_limit: limit });
     if (claimError) throw new Error("Meta CAPI outbox claim failed");
+    if (!claimed?.length) return json({ success: true, processed: 0, succeeded: 0, failed: 0, dead: 0, results: [] });
 
+    const hubspotToken = await resolveHubSpotToken(admin);
     const results = [];
-    for (const row of claimed || []) results.push(await dispatchOne(admin, row));
+    for (const row of claimed) results.push(await dispatchOne(admin, hubspotToken, row));
 
     return json({
       success: true,
