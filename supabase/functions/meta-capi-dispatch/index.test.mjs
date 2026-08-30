@@ -7,6 +7,10 @@ const migration = readFileSync(
   fileURLToPath(new URL("../../migrations/20260830070000_add_durable_meta_capi_outbox.sql", import.meta.url)),
   "utf8",
 );
+const eligibilityMigration = readFileSync(
+  fileURLToPath(new URL("../../migrations/20260830070100_harden_meta_capi_outbox_eligibility.sql", import.meta.url)),
+  "utf8",
+);
 
 describe("Meta CAPI durable dispatch contract", () => {
   it("is internal service-role only", () => {
@@ -29,6 +33,13 @@ describe("Meta CAPI durable dispatch contract", () => {
     expect(source).toContain("crm/v3/objects/contacts/");
     expect(source).toContain('url.searchParams.set("properties", "email,phone")');
     expect(migration).not.toMatch(/meta_capi_outbox[\s\S]{0,500}\b(email|phone)\b/i);
+  });
+
+  it("rejects enqueue without canonical HubSpot identity and exact lineage", () => {
+    expect(eligibilityMigration).toContain("v_lead.source <> 'website_hubspot'");
+    expect(eligibilityMigration).toContain("v_lead.hubspot_contact_id is null or v_lead.hubspot_contact_id <= 0");
+    expect(eligibilityMigration).toContain("new.event_id <> 'lead:' || v_lead.nvx_lead_id::text");
+    expect(eligibilityMigration).toContain("before insert or update of lead_id, event_name, event_id");
   });
 
   it("calls only the canonical internal web-events bridge", () => {
