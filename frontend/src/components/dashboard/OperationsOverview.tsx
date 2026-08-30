@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'wouter'
 import {
   Activity,
@@ -34,6 +34,7 @@ type GoogleStatusResponse = {
   success?: boolean
   connected?: boolean
   status?: string
+  message?: string
   customerId?: string | null
   lastSync?: string | null
 }
@@ -49,6 +50,8 @@ type GoogleInsightsResponse = {
 }
 
 type AgendaResponse = {
+  success?: boolean
+  message?: string
   appointments?: DoctoraliaAppointment[]
 }
 
@@ -57,6 +60,7 @@ type ProviderState = {
   googleStatus: GoogleStatusResponse | null
   google: GoogleInsightsResponse | null
   appointments: DoctoraliaAppointment[]
+  period: { from: string; to: string }
   loading: boolean
   error: string | null
   refreshedAt: string | null
@@ -67,6 +71,7 @@ const initialProviderState: ProviderState = {
   googleStatus: null,
   google: null,
   appointments: [],
+  period: { from: '', to: '' },
   loading: true,
   error: null,
   refreshedAt: null,
@@ -79,9 +84,8 @@ function localDate(date: Date) {
   return `${y}-${m}-${d}`
 }
 
-function monthStart() {
-  const now = new Date()
-  return localDate(new Date(now.getFullYear(), now.getMonth(), 1))
+function monthStart(date = new Date()) {
+  return localDate(new Date(date.getFullYear(), date.getMonth(), 1))
 }
 
 function money(value: number | null | undefined) {
@@ -105,6 +109,10 @@ function statusLabel(status: string | null | undefined) {
   if (normalized === 'treatment') return 'En tratamiento'
   if (normalized === 'closed') return 'Cerrado'
   return status || 'Sin estado'
+}
+
+function providerFailure(label: string, message?: string) {
+  return message ? `${label}: ${message}` : label
 }
 
 function OperationsMetric({
@@ -141,43 +149,65 @@ function ProviderPill({ ok, children }: Readonly<{ ok: boolean; children: React.
 export function OperationsOverview() {
   const { leads, loading: leadsLoading, error: leadsError } = useLeads()
   const [state, setState] = useState<ProviderState>(initialProviderState)
-  const today = useMemo(() => localDate(new Date()), [])
-  const from = useMemo(monthStart, [])
 
-  const load = async () => {
-    setState((prev) => ({ ...prev, loading: true, error: null }))
-    const params = new URLSearchParams({ from, to: today }).toString()
+  const load = useCallback(async () => {
+    const now = new Date()
+    const currentToday = localDate(now)
+    const currentFrom = monthStart(now)
+    setState((prev) => ({ ...prev, loading: true, error: null, period: { from: currentFrom, to: currentToday } }))
+    const params = new URLSearchParams({ from: currentFrom, to: currentToday }).toString()
 
     const [agendaResult, metaResult, googleStatusResult, googleResult] = await Promise.allSettled([
-      invokeApi<AgendaResponse>(`/api/agenda/doctoralia?date=${encodeURIComponent(today)}`),
+      invokeApi<AgendaResponse>(`/api/agenda/doctoralia?date=${encodeURIComponent(currentToday)}`),
       invokeApi<MetaInsightsResponse>(`/api/meta/insights?${params}`),
       invokeApi<GoogleStatusResponse>('/api/google-ads/status'),
       invokeApi<GoogleInsightsResponse>(`/api/google-ads/insights?${params}`),
     ])
 
     const failures: string[] = []
-    if (agendaResult.status === 'rejected') failures.push('agenda')
-    if (metaResult.status === 'rejected') failures.push('Meta')
-    if (googleStatusResult.status === 'rejected' || googleResult.status === 'rejected') failures.push('Google Ads')
+    if (agendaResult.status === 'rejected') {
+      failures.push('agenda')
+    } else if (agendaResult.value.success === false) {
+      failures.push(providerFailure('agenda', agendaResult.value.message))
+    }
+
+    if (metaResult.status === 'rejected') {
+      failures.push('Meta')
+    } else if (metaResult.value.success === false) {
+      failures.push(providerFailure('Meta', metaResult.value.message))
+    }
+
+    if (googleStatusResult.status === 'rejected') {
+      failures.push('Google Ads: estado no disponible')
+    } else if (googleStatusResult.value.success === false) {
+      failures.push(providerFailure('Google Ads', googleStatusResult.value.message || googleStatusResult.value.status))
+    }
+
+    if (googleResult.status === 'rejected') {
+      failures.push('Google Ads: métricas no disponibles')
+    } else if (googleResult.value.success === false) {
+      failures.push(providerFailure('Google Ads', googleResult.value.message))
+    }
 
     setState({
-      appointments: agendaResult.status === 'fulfilled' && Array.isArray(agendaResult.value.appointments)
+      appointments: agendaResult.status === 'fulfilled' && agendaResult.value.success !== false && Array.isArray(agendaResult.value.appointments)
         ? agendaResult.value.appointments
         : [],
       meta: metaResult.status === 'fulfilled' ? metaResult.value : null,
       googleStatus: googleStatusResult.status === 'fulfilled' ? googleStatusResult.value : null,
       google: googleResult.status === 'fulfilled' ? googleResult.value : null,
+      period: { from: currentFrom, to: currentToday },
       loading: false,
-      error: failures.length ? `No se pudieron actualizar: ${failures.join(', ')}.` : null,
+      error: failures.length ? `No se pudieron actualizar correctamente: ${failures.join(' · ')}.` : null,
       refreshedAt: new Date().toISOString(),
     })
-  }
+  }, [])
 
   useEffect(() => {
     void load()
-    // `from` and `today` are stable for this mounted work session.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, today])
+    const refreshTimer = globalThis.setInterval(() => void load(), 300_000)
+    return () => globalThis.clearInterval(refreshTimer)
+  }, [load])
 
   const activeLeads = useMemo(
     () => leads.filter((lead) => !['closed', 'treatment'].includes(String(lead.status || '').toLowerCase())),
@@ -199,10 +229,12 @@ export function OperationsOverview() {
   )
 
   const confirmed = state.appointments.filter((appointment) => appointment.confirmada).length
-  const metaSpend = state.meta?.summary?.spend ?? 0
-  const metaConversions = state.meta?.summary?.conversions ?? 0
-  const googleSpend = state.google?.summary?.spend ?? 0
-  const googleConversions = state.google?.summary?.conversions ?? 0
+  const metaHealthy = Boolean(state.meta && state.meta.success !== false)
+  const googleHealthy = Boolean(state.googleStatus?.connected && state.google?.success !== false)
+  const metaSpend = metaHealthy ? state.meta?.summary?.spend ?? 0 : 0
+  const metaConversions = metaHealthy ? state.meta?.summary?.conversions ?? 0 : 0
+  const googleSpend = googleHealthy ? state.google?.summary?.spend ?? 0 : 0
+  const googleConversions = googleHealthy ? state.google?.summary?.conversions ?? 0 : 0
   const totalSpend = metaSpend + googleSpend
   const totalConversions = metaConversions + googleConversions
   const acquisitionError = state.error
@@ -215,8 +247,8 @@ export function OperationsOverview() {
           <div className="max-w-3xl">
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-primary">NUVANX Control Centre</span>
-              <ProviderPill ok={Boolean(state.meta && state.meta.success !== false)}>Meta</ProviderPill>
-              <ProviderPill ok={Boolean(state.googleStatus?.connected)}>Google Ads</ProviderPill>
+              <ProviderPill ok={metaHealthy}>Meta</ProviderPill>
+              <ProviderPill ok={googleHealthy}>Google Ads</ProviderPill>
               <ProviderPill ok={!leadsError}>CRM interno</ProviderPill>
             </div>
             <h1 id="operations-overview-title" className="mt-4 font-serif text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">Centro operativo de la clínica</h1>
@@ -241,35 +273,15 @@ export function OperationsOverview() {
 
       {(acquisitionError || leadsError) && (
         <div className="rounded-xl border border-amber-500/25 bg-amber-500/8 px-4 py-3 text-sm text-amber-700">
-          {[acquisitionError, leadsError].filter(Boolean).join(' ')} Los módulos disponibles siguen mostrando datos confirmados.
+          {[acquisitionError, leadsError].filter(Boolean).join(' ')} Los módulos disponibles siguen mostrando únicamente datos confirmados.
         </div>
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <OperationsMetric
-          title="Pacientes por atender"
-          value={busy ? '—' : compactNumber(activeLeads.length)}
-          detail="Leads activos sin cierre/tratamiento"
-          icon={<UsersRound className="h-5 w-5" />}
-        />
-        <OperationsMetric
-          title="Agenda de hoy"
-          value={state.loading ? '—' : compactNumber(state.appointments.length)}
-          detail={`${confirmed} confirmadas`}
-          icon={<CalendarDays className="h-5 w-5" />}
-        />
-        <OperationsMetric
-          title="Inversión del mes"
-          value={state.loading ? '—' : money(totalSpend)}
-          detail={`Meta ${money(metaSpend)} · Google ${money(googleSpend)}`}
-          icon={<CircleDollarSign className="h-5 w-5" />}
-        />
-        <OperationsMetric
-          title="Conversiones Ads"
-          value={state.loading ? '—' : compactNumber(totalConversions)}
-          detail={`Meta ${compactNumber(metaConversions)} · Google ${compactNumber(googleConversions)}`}
-          icon={<Target className="h-5 w-5" />}
-        />
+        <OperationsMetric title="Pacientes por atender" value={busy ? '—' : compactNumber(activeLeads.length)} detail="Leads activos sin cierre/tratamiento" icon={<UsersRound className="h-5 w-5" />} />
+        <OperationsMetric title="Agenda de hoy" value={state.loading ? '—' : compactNumber(state.appointments.length)} detail={`${confirmed} confirmadas`} icon={<CalendarDays className="h-5 w-5" />} />
+        <OperationsMetric title="Inversión del mes" value={state.loading ? '—' : money(totalSpend)} detail={`Meta ${money(metaSpend)} · Google ${money(googleSpend)}`} icon={<CircleDollarSign className="h-5 w-5" />} />
+        <OperationsMetric title="Conversiones Ads" value={state.loading ? '—' : compactNumber(totalConversions)} detail={`Meta ${compactNumber(metaConversions)} · Google ${compactNumber(googleConversions)}`} icon={<Target className="h-5 w-5" />} />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
@@ -339,7 +351,7 @@ export function OperationsOverview() {
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
           <div>
             <CardTitle className="flex items-center gap-2"><Activity className="h-4 w-4 text-primary" />Adquisición en vivo</CardTitle>
-            <p className="mt-1 text-xs text-muted">Datos directos de Meta Ads y Google Ads · {from} → {today}</p>
+            <p className="mt-1 text-xs text-muted">Datos directos de Meta Ads y Google Ads · {state.period.from || '—'} → {state.period.to || '—'}</p>
           </div>
           <Link href="/marketing" className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">Analizar campañas <ArrowRight className="h-3.5 w-3.5" /></Link>
         </CardHeader>
@@ -348,22 +360,22 @@ export function OperationsOverview() {
             <div className="rounded-2xl border border-border bg-surface/50 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2"><Target className="h-4 w-4 text-primary" /><p className="text-sm font-semibold">Meta Ads</p></div>
-                <ProviderPill ok={Boolean(state.meta && state.meta.success !== false)}>API activa</ProviderPill>
+                <ProviderPill ok={metaHealthy}>{metaHealthy ? 'API activa' : 'Revisar conexión'}</ProviderPill>
               </div>
               <div className="mt-4 grid grid-cols-3 gap-3">
                 <div><p className="text-[10px] uppercase tracking-wide text-muted">Inversión</p><p className="mt-1 text-lg font-semibold">{money(metaSpend)}</p></div>
-                <div><p className="text-[10px] uppercase tracking-wide text-muted">Clicks</p><p className="mt-1 text-lg font-semibold">{compactNumber(state.meta?.summary?.clicks)}</p></div>
+                <div><p className="text-[10px] uppercase tracking-wide text-muted">Clicks</p><p className="mt-1 text-lg font-semibold">{compactNumber(metaHealthy ? state.meta?.summary?.clicks : 0)}</p></div>
                 <div><p className="text-[10px] uppercase tracking-wide text-muted">Conversiones</p><p className="mt-1 text-lg font-semibold">{compactNumber(metaConversions)}</p></div>
               </div>
             </div>
             <div className="rounded-2xl border border-border bg-surface/50 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2"><Search className="h-4 w-4 text-primary" /><p className="text-sm font-semibold">Google Ads</p></div>
-                <ProviderPill ok={Boolean(state.googleStatus?.connected)}>{state.googleStatus?.connected ? 'Conectado' : 'Revisar conexión'}</ProviderPill>
+                <ProviderPill ok={googleHealthy}>{googleHealthy ? 'Conectado' : 'Revisar conexión'}</ProviderPill>
               </div>
               <div className="mt-4 grid grid-cols-3 gap-3">
                 <div><p className="text-[10px] uppercase tracking-wide text-muted">Inversión</p><p className="mt-1 text-lg font-semibold">{money(googleSpend)}</p></div>
-                <div><p className="text-[10px] uppercase tracking-wide text-muted">Clicks</p><p className="mt-1 text-lg font-semibold">{compactNumber(state.google?.summary?.clicks)}</p></div>
+                <div><p className="text-[10px] uppercase tracking-wide text-muted">Clicks</p><p className="mt-1 text-lg font-semibold">{compactNumber(googleHealthy ? state.google?.summary?.clicks : 0)}</p></div>
                 <div><p className="text-[10px] uppercase tracking-wide text-muted">Conversiones</p><p className="mt-1 text-lg font-semibold">{compactNumber(googleConversions)}</p></div>
               </div>
             </div>
