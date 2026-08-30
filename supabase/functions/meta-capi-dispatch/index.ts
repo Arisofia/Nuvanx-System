@@ -108,9 +108,13 @@ async function dispatchOne(admin: any, hubspotToken: string, row: any) {
     return { id: row.id, lead_id: lead.id, outcome: "already_delivered" };
   }
 
+  if (!lead.hubspot_contact_id || !/^\d+$/.test(String(lead.hubspot_contact_id))) {
+    return { id: row.id, outcome: await markFailure(admin, row, "Lead missing valid hubspot_contact_id for CAPI lookup", false) };
+  }
+
   let identity: { email: string; phone: string };
   try {
-    identity = await hubSpotIdentity(hubspotToken, String(lead.hubspot_contact_id || ""));
+    identity = await hubSpotIdentity(hubspotToken, String(lead.hubspot_contact_id));
   } catch (error: any) {
     return { id: row.id, outcome: await markFailure(admin, row, boundedError(error?.message || error), false) };
   }

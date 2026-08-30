@@ -213,9 +213,12 @@ begin
   where id = p_lead_id and deleted_at is null
   for update;
   if not found then raise exception 'Lead not found'; end if;
-  if v_lead.source <> 'website_hubspot' then raise exception 'Unexpected lead source'; end if;
-  if v_lead.nvx_lead_id is distinct from v_capture.nvx_lead_id then raise exception 'Lead lineage mismatch'; end if;
-  if v_lead.hubspot_contact_id is distinct from p_hubspot_contact_id then raise exception 'HubSpot contact mismatch'; end if;
+  if coalesce(p_hubspot_contact_id, v_lead.hubspot_contact_id) is null then
+    raise exception 'HubSpot contact ID is required for reconciliation';
+  end if;
+  if v_lead.hubspot_contact_id is distinct from p_hubspot_contact_id then
+    raise exception 'HubSpot contact mismatch';
+  end if;
   if v_capture.applied_lead_id is not null and v_capture.applied_lead_id <> p_lead_id then
     raise exception 'Capture already applied to another lead';
   end if;
@@ -278,7 +281,7 @@ begin
     );
   end if;
 
-  if v_capture.marketing_consent then
+  if v_capture.marketing_consent and coalesce(p_hubspot_contact_id, v_lead.hubspot_contact_id) is not null then
     insert into public.meta_capi_outbox (lead_id, event_name, event_id)
     values (p_lead_id, 'Lead', 'lead:' || v_capture.nvx_lead_id::text)
     on conflict (lead_id, event_name) do nothing;
