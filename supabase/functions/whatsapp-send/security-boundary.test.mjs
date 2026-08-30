@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const source = readFileSync(fileURLToPath(new URL("./index.ts", import.meta.url)), "utf8");
+const config = readFileSync(fileURLToPath(new URL("../_shared/config.ts", import.meta.url)), "utf8");
 const migration = readFileSync(
   fileURLToPath(new URL("../../migrations/20260830090000_harden_whatsapp_outbound_delivery.sql", import.meta.url)),
   "utf8",
@@ -25,6 +26,12 @@ describe("WhatsApp browser and recipient security boundary", () => {
     expect(source).not.toContain('"Access-Control-Allow-Origin": "*"');
     expect(source).toContain('isDisallowedBrowserOrigin(origin)');
     expect(source).toContain('message: "Origin not allowed" }, 403');
+  });
+
+  it("normalizes configured production and additional browser origins before exact matching", () => {
+    expect(config).toContain("PRODUCTION_FALLBACK_URL = normalizeFrontendUrl(getEnv('PRODUCTION_FALLBACK_URL')) || ''");
+    expect(config).toContain(".map((origin) => normalizeFrontendUrl(origin.trim()))");
+    expect(config).toContain("return parsed.origin");
   });
 
   it("treats recipient mismatch as an authorization denial", () => {
