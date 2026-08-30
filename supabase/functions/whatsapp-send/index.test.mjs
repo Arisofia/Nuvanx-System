@@ -11,6 +11,10 @@ const deliveryMigration = readFileSync(
   fileURLToPath(new URL("../../migrations/20260830090000_harden_whatsapp_outbound_delivery.sql", import.meta.url)),
   "utf8",
 );
+const gateMigration = readFileSync(
+  fileURLToPath(new URL("../../migrations/20260830090500_gate_whatsapp_direct_until_acceptance.sql", import.meta.url)),
+  "utf8",
+);
 
 describe("WhatsApp outbound safety contract", () => {
   it("authenticates and reserves the owned lead before the irreversible provider send", () => {
@@ -23,6 +27,13 @@ describe("WhatsApp outbound safety contract", () => {
     expect(source).toContain('rpc("nvx_prepare_whatsapp_send"');
     expect(deliveryMigration).toContain("and l.user_id = p_user_id");
     expect(deliveryMigration).toContain("recipient_does_not_match_lead_phone");
+  });
+
+  it("is fail-closed per clinic until controlled delivery acceptance explicitly enables sending", () => {
+    expect(gateMigration).toContain('send_enabled boolean not null default false');
+    expect(gateMigration).toContain("raise exception 'whatsapp_direct_disabled'");
+    expect(gateMigration).toContain('before insert on public.whatsapp_send_requests');
+    expect(gateMigration).toContain('coalesce(v_enabled, false) is not true');
   });
 
   it("requires a client idempotency key and never re-sends an existing reservation", () => {
