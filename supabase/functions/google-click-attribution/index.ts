@@ -4,8 +4,12 @@ declare const Deno: any;
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+const HUBSPOT_ACCESS_TOKEN_ENV = (Deno.env.get("HUBSPOT_ACCESS_TOKEN") || "").trim();
+let runtimeHubspotAccessToken = HUBSPOT_ACCESS_TOKEN_ENV;
 const FORM_ID = "5042522a-0bc5-4381-ac3e-5aee8649b69c";
 const STAGING_ORIGIN = "https://staging2.nuvanx.com";
+const SIGNATURE_MAX_SKEW_SECONDS = 300;
+const GOOGLE_ATTRIBUTION_HMAC_CONTEXT = "nuvanx-google-click-attribution-hmac-key-v1";
 const ALLOWED_ORIGINS = new Set([
   "https://nuvanx.com",
   "https://www.nuvanx.com",
@@ -20,7 +24,7 @@ const ALLOWED_LANDING_HOSTS = new Set([
 function headers(origin: string) {
   return {
     "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Headers": "content-type",
+    "Access-Control-Allow-Headers": "content-type,x-nvx-timestamp,x-nvx-signature",
     "Access-Control-Allow-Methods": "POST,OPTIONS",
     "Vary": "Origin",
     "Content-Type": "application/json",
@@ -30,6 +34,57 @@ function headers(origin: string) {
 
 function reply(origin: string, status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), { status, headers: headers(origin) });
+}
+
+function timingSafeHexMatch(received: string, expected: string): boolean {
+  const a = String(received || "").trim().toLowerCase();
+  const b = String(expected || "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(a) || !/^[0-9a-f]{64}$/.test(b)) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+async function hmacHex(secret: string, message: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
+  return Array.from(new Uint8Array(signature)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function deriveGoogleAttributionHmacKey(token: string): Promise<string> {
+  return await hmacHex(token, GOOGLE_ATTRIBUTION_HMAC_CONTEXT);
+}
+
+async function resolveHubspotToken(admin: any): Promise<string> {
+  if (runtimeHubspotAccessToken) return runtimeHubspotAccessToken;
+  const { data, error } = await admin.rpc("nvx_get_runtime_secret", { p_name: "HUBSPOT_ACCESS_TOKEN" });
+  if (error || !data) return "";
+  const token = String(data).trim();
+  if (token) runtimeHubspotAccessToken = token;
+  return runtimeHubspotAccessToken;
+}
+
+async function authenticateSignedBody(req: Request, rawBody: string, admin: any): Promise<"ok" | "unauthorized" | "bootstrap_required"> {
+  const timestampRaw = String(req.headers.get("x-nvx-timestamp") || "").trim();
+  const receivedSignature = String(req.headers.get("x-nvx-signature") || "").trim();
+  if (!/^\d{10}$/.test(timestampRaw)) return "unauthorized";
+  if (!/^[0-9a-fA-F]{64}$/.test(receivedSignature)) return "unauthorized";
+
+  const timestamp = Number(timestampRaw);
+  const now = Math.floor(Date.now() / 1000);
+  if (!Number.isFinite(timestamp) || Math.abs(now - timestamp) > SIGNATURE_MAX_SKEW_SECONDS) return "unauthorized";
+
+  const token = await resolveHubspotToken(admin);
+  if (!token) return "bootstrap_required";
+  const hmacKey = await deriveGoogleAttributionHmacKey(token);
+  const expected = await hmacHex(hmacKey, `${timestampRaw}.${rawBody}`);
+  return timingSafeHexMatch(receivedSignature, expected) ? "ok" : "unauthorized";
 }
 
 function cleanClickId(value: unknown, max = 512): string | null {
@@ -131,8 +186,28 @@ Deno.serve(async (req: Request) => {
     return reply(origin, 500, { success: false, message: "Server configuration error" });
   }
 
-  const body = await req.json().catch(() => null);
-  if (!body || typeof body !== "object") return reply(origin, 400, { success: false, message: "Invalid JSON" });
+  const rawBody = await req.text();
+  if (new TextEncoder().encode(rawBody).byteLength > 8192) {
+    return reply(origin, 413, { success: false, message: "Payload too large" });
+  }
+
+  const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
+  const authResult = await authenticateSignedBody(req, rawBody, admin);
+  if (authResult === "bootstrap_required") {
+    console.error("[google-click-attribution] runtime signing credential unavailable");
+    return reply(origin, 503, { success: false, message: "Runtime bootstrap required" });
+  }
+  if (authResult !== "ok") {
+    return reply(origin, 401, { success: false, message: "Unauthorized" });
+  }
+
+  let body: unknown = null;
+  try {
+    body = JSON.parse(rawBody);
+  } catch {
+    body = null;
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) return reply(origin, 400, { success: false, message: "Invalid JSON" });
 
   const emailHash = String((body as any).email_hash || "").trim().toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(emailHash)) {
@@ -164,7 +239,6 @@ Deno.serve(async (req: Request) => {
 
   const landingUrl = cleanLanding((body as any).landing_url);
   const qa = qaContext(origin, (body as any).nvx_test_run_id);
-  const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
 
   if (submissionId) {
     const { data: duplicateRow, error: duplicateError } = await admin
