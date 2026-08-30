@@ -176,12 +176,24 @@ async function resolvePageToken(pageId: string, managementToken: string): Promis
   throw new Error("Canonical Meta credential cannot resolve configured Page Access Token");
 }
 
+async function resolveTokenApp(managementToken: string) {
+  const app = await graphRequest("GET", "/app", managementToken, { fields: "id,name" });
+  const id = String(app?.id || "").trim();
+  if (!/^\d+$/.test(id)) throw new Error("Canonical Meta credential cannot resolve its app identity");
+  return { id, name: app?.name ? String(app.name) : null };
+}
+
 async function getSubscriptions(pageId: string, pageToken: string) {
   const payload = await graphRequest("GET", `/${pageId}/subscribed_apps`, pageToken, {
     fields: "id,name,subscribed_fields",
     limit: "100",
   });
   return Array.isArray(payload?.data) ? payload.data : [];
+}
+
+function appHasLeadgen(rows: any[], appId: string): boolean {
+  const target = rows.find((row: any) => String(row?.id || "") === appId);
+  return Boolean(target && Array.isArray(target?.subscribed_fields) && target.subscribed_fields.includes("leadgen"));
 }
 
 Deno.serve(async (req: Request) => {
@@ -200,11 +212,12 @@ Deno.serve(async (req: Request) => {
     }
 
     const ctx = await resolveCanonicalMeta(admin);
-    const pageToken = await resolvePageToken(ctx.pageId, ctx.managementToken);
+    const [pageToken, canonicalApp] = await Promise.all([
+      resolvePageToken(ctx.pageId, ctx.managementToken),
+      resolveTokenApp(ctx.managementToken),
+    ]);
     const before = await getSubscriptions(ctx.pageId, pageToken);
-    const alreadySubscribed = before.some(
-      (row: any) => Array.isArray(row?.subscribed_fields) && row.subscribed_fields.includes("leadgen"),
-    );
+    const alreadySubscribed = appHasLeadgen(before, canonicalApp.id);
 
     let mutation: any = { success: true, skipped: alreadySubscribed };
     if (!alreadySubscribed) {
@@ -214,17 +227,20 @@ Deno.serve(async (req: Request) => {
     }
 
     const after = await getSubscriptions(ctx.pageId, pageToken);
+    const targetSubscribed = appHasLeadgen(after, canonicalApp.id);
     const leadgenApps = after.filter(
       (row: any) => Array.isArray(row?.subscribed_fields) && row.subscribed_fields.includes("leadgen"),
     );
     await admin.from("credentials").update({ last_used: new Date().toISOString() }).eq("id", ctx.credentialId);
 
-    return reply(200, {
-      success: leadgenApps.length > 0,
+    return reply(targetSubscribed ? 200 : 502, {
+      success: targetSubscribed,
       pageId: ctx.pageId,
+      canonical_app: canonicalApp,
       before,
       mutation,
       after,
+      canonical_app_has_leadgen: targetSubscribed,
       leadgen_apps: leadgenApps,
     });
   } catch (error: any) {
