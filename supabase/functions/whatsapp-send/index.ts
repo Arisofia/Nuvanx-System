@@ -84,10 +84,21 @@ async function prepareSend(
   });
 
   if (error) {
+    const code = String(error.code || "");
     const message = String(error.message || "WhatsApp send reservation failed");
-    if (message.includes("lead_not_owned")) return { ok: false, status: 403, message: "Lead is not available to this user" };
-    if (message.includes("recipient_does_not_match_lead_phone")) return { ok: false, status: 409, message: "Recipient does not match the lead phone" };
-    if (message.includes("idempotency_key_conflict")) return { ok: false, status: 409, message: "Idempotency key was already used for another send intent" };
+    if (code === "42501" || message.includes("lead_not_owned")) {
+      return { ok: false, status: 403, message: "Lead is not available to this user" };
+    }
+    if (code === "23505" || message.includes("idempotency_key_conflict")) {
+      return { ok: false, status: 409, message: "Idempotency key was already used for another send intent" };
+    }
+    // SQLSTATE 22023 is shared by multiple validation failures, so preserve the specific message check.
+    if (message.includes("recipient_does_not_match_lead_phone")) {
+      return { ok: false, status: 409, message: "Recipient does not match the lead phone" };
+    }
+    if (message.includes("whatsapp_direct_disabled")) {
+      return { ok: false, status: 503, message: "Direct WhatsApp is disabled until controlled delivery acceptance is complete" };
+    }
     return { ok: false, status: 500, message: "WhatsApp send reservation failed" };
   }
 
@@ -100,7 +111,7 @@ async function finalizeSend(
   admin: any,
   userId: string,
   requestId: string,
-  status: "accepted" | "failed",
+  status: "accepted" | "failed" | "unknown",
   providerMessageId: string | null,
   providerHttpStatus: number | null,
   errorCode: string | null,
@@ -216,14 +227,14 @@ Deno.serve(async (req: Request) => {
         message: "This send intent was already accepted by Meta",
       });
     }
-    if (requestStatus === "reserved") {
+    if (["reserved", "unknown"].includes(requestStatus)) {
       return json({
         success: true,
         pending: true,
         idempotentReplay: true,
         requestId,
         providerStatus: "unknown",
-        message: "This send intent is already reserved; provider outcome is not yet confirmed",
+        message: "This send intent has an unresolved provider outcome; it will not be sent again automatically",
       }, 202);
     }
     return json({
@@ -266,15 +277,15 @@ Deno.serve(async (req: Request) => {
     });
     waData = await waRes.json().catch(() => ({}));
   } catch (error: unknown) {
-    // Do not mark the request failed: after a timeout the provider outcome is ambiguous.
-    // The reserved idempotency row prevents a retry from sending the same intent again.
-    const reason = error instanceof Error ? error.name : "provider_timeout";
+    // A transport failure is ambiguous: persist UNKNOWN and never automatically replay this intent.
+    const reason = error instanceof Error ? error.name : "provider_transport_error";
+    await finalizeSend(auth.admin, auth.userId, requestId, "unknown", null, null, reason, "Meta provider outcome is unknown after transport failure");
     return json({
       success: false,
       pending: true,
       requestId,
       providerStatus: "unknown",
-      message: `Meta provider outcome is unknown (${reason}); do not resend with a new idempotency key`,
+      message: `Meta provider outcome is unknown (${reason}); this send intent will not be resent automatically`,
     }, 504);
   }
 
@@ -284,9 +295,16 @@ Deno.serve(async (req: Request) => {
   if (!waRes.ok || explicitProviderError) {
     const provider = providerError(waData);
     const ambiguous = waRes.status >= 500;
-    if (!ambiguous) {
-      await finalizeSend(auth.admin, auth.userId, requestId, "failed", null, waRes.status, provider.code, provider.message);
-    }
+    await finalizeSend(
+      auth.admin,
+      auth.userId,
+      requestId,
+      ambiguous ? "unknown" : "failed",
+      null,
+      waRes.status,
+      provider.code,
+      provider.message,
+    );
     return json({
       success: false,
       pending: ambiguous,
@@ -295,19 +313,20 @@ Deno.serve(async (req: Request) => {
       providerHttpStatus: waRes.status,
       providerErrorCode: provider.code,
       message: ambiguous
-        ? "Meta returned a server error; provider outcome is unknown and the send intent remains reserved"
+        ? "Meta returned a server error; provider outcome is unknown and this send intent will not be resent automatically"
         : provider.message,
     }, ambiguous ? 502 : Math.max(400, waRes.status));
   }
 
   if (!messageId) {
-    // A 2xx without a provider message id is not proof of acceptance.
+    // A 2xx without a provider message id is not proof of acceptance and must not become replayable.
+    await finalizeSend(auth.admin, auth.userId, requestId, "unknown", null, waRes.status, "missing_provider_message_id", "Meta returned success without a message id");
     return json({
       success: false,
       pending: true,
       requestId,
       providerStatus: "unknown",
-      message: "Meta returned success without a message id; provider outcome is unknown and the send intent remains reserved",
+      message: "Meta returned success without a message id; provider outcome is unknown and this send intent will not be resent automatically",
     }, 502);
   }
 
