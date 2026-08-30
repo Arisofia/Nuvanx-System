@@ -65,8 +65,12 @@ supabase/.temp/
 **/blob-report/
 **/playwright/.cache/
 
-# Python cache
+# Python virtualenv & cache
 scripts/__pycache__/
+venv/
+.venv/
+env/
+.env_python/
 
 # Local data imports
 Base Pacientes Nuvanx.xlsx
