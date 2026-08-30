@@ -40,6 +40,10 @@ type CacheState = {
   last_error?: string | null;
 };
 
+type DynamicSupabaseClient = {
+  rpc: (fn: string, args?: Record<string, unknown>) => Promise<{ data: any; error: any }>;
+};
+
 function originFor(req: Request): string | null {
   const raw = req.headers.get('origin');
   if (!raw) return null;
@@ -114,7 +118,7 @@ async function fetchProvider(
   userId: string,
   bearer: string,
   query: URLSearchParams,
-  admin: ReturnType<typeof createClient>,
+  admin: DynamicSupabaseClient,
 ): Promise<unknown> {
   if (provider === 'meta') {
     const params = new URLSearchParams();
@@ -183,7 +187,7 @@ Deno.serve(async (req: Request) => {
     ? `date:${url.searchParams.get('date') || new Date().toISOString().slice(0, 10)}`
     : `range:${url.searchParams.get('from') || ''}:${url.searchParams.get('to') || ''}`;
   const ttl = TTL_SECONDS[provider] || 300;
-  const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
+  const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } }) as unknown as DynamicSupabaseClient;
 
   const { data: beginData, error: beginError } = await admin.rpc('nvx_control_centre_provider_begin_refresh', {
     p_user_id: userId,
