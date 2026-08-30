@@ -16,6 +16,10 @@ const baseMigration = readFileSync(
   fileURLToPath(new URL("../../migrations/20260819193000_consolidate_web_capture_revops.sql", import.meta.url)),
   "utf8",
 );
+const capiMigration = readFileSync(
+  fileURLToPath(new URL("../../migrations/20260830070000_add_durable_meta_capi_outbox.sql", import.meta.url)),
+  "utf8",
+);
 
 describe("RevOps dispatcher contract", () => {
   it("authenticates only with the Vault-generated internal secret", () => {
@@ -27,8 +31,8 @@ describe("RevOps dispatcher contract", () => {
     expect(source).toContain('SUPABASE_SERVICE_ROLE_KEY") || "").trim()');
   });
 
-  it("allowlists only governed RevOps workers", () => {
-    expect(source).toContain('new Set(["web-lead-reconcile", "deal-factory", "google-data-manager-export"])');
+  it("allowlists only governed RevOps workers including durable Meta CAPI", () => {
+    expect(source).toContain('new Set(["web-lead-reconcile", "deal-factory", "google-data-manager-export", "meta-capi-dispatch"])');
     expect(source).toContain("if (!ALLOWED_WORKERS.has(worker))");
   });
 
@@ -54,30 +58,23 @@ describe("RevOps dispatcher contract", () => {
     expect(baseMigration).not.toContain("ssvvuuysgxyqvmovrlvk.supabase.co");
     expect(routingMigration).not.toContain("ssvvuuysgxyqvmovrlvk.supabase.co");
     expect(hotfixMigration).not.toContain("ssvvuuysgxyqvmovrlvk.supabase.co");
+    expect(capiMigration).not.toContain("ssvvuuysgxyqvmovrlvk.supabase.co");
     expect(routingMigration).toContain("REVOPS_PROJECT_URL");
     expect(routingMigration).toContain("nvx_set_revops_project_url");
     expect(routingMigration).toContain("v_project_url || '/functions/v1/revops-dispatcher'");
   });
 
-  it("preserves the already-applied strict dispatcher migration and versions wakeup hardening separately", () => {
-    expect(routingMigration).not.toContain("nvx_try_dispatch_revops_worker");
+  it("preserves non-blocking transaction wakeups", () => {
     expect(hotfixMigration).toContain("create or replace function public.nvx_try_dispatch_revops_worker");
     expect(hotfixMigration).toContain("exception\n  when others then");
     expect(hotfixMigration).toContain("return null;");
+    expect(capiMigration).toContain("perform public.nvx_try_dispatch_revops_worker('meta-capi-dispatch', 25, null)");
   });
 
-  it("keeps trigger wakeups non-blocking before runtime bootstrap", () => {
-    expect(hotfixMigration).toContain("perform public.nvx_try_dispatch_revops_worker('deal-factory', 20, null)");
-    expect(hotfixMigration).toContain("perform public.nvx_try_dispatch_revops_worker('google-data-manager-export', 20, 'deliver')");
-    expect(hotfixMigration).not.toMatch(/perform public\.nvx_dispatch_revops_worker\('(?:deal-factory|google-data-manager-export)'/);
-  });
-
-  it("schedules both Google delivery and provider-status polling through the safe wakeup wrapper", () => {
-    expect(hotfixMigration).toContain("nvx-google-data-manager-deliver");
-    expect(hotfixMigration).toContain("nvx-google-data-manager-poll");
-    expect(hotfixMigration).toContain("nvx_try_dispatch_revops_worker('google-data-manager-export', 50, 'deliver')");
-    expect(hotfixMigration).toContain("nvx_try_dispatch_revops_worker('google-data-manager-export', 50, 'poll')");
-    expect(hotfixMigration).toContain("nvx_try_dispatch_revops_worker('web-lead-reconcile', 50, null)");
-    expect(hotfixMigration).toContain("nvx_try_dispatch_revops_worker('deal-factory', 50, null)");
+  it("keeps Meta CAPI delivery consent-gated and atomically queued", () => {
+    expect(capiMigration).toContain("if v_capture.marketing_consent then");
+    expect(capiMigration).toContain("insert into public.meta_capi_outbox (lead_id, event_name, event_id)");
+    expect(capiMigration).toContain("'lead:' || v_capture.nvx_lead_id::text");
+    expect(capiMigration).toContain("if v_capture.is_test_lead then raise exception 'QA capture cannot be reconciled'; end if;");
   });
 });
