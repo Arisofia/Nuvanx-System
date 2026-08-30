@@ -124,9 +124,9 @@ async function hubspotContactById(token: string, contactId: string) {
 
 function desiredProperties(lead: any, attr: any): Record<string, string> {
   const fields = fieldMap(lead?.raw_field_data || {});
-  const fullName = clean(lead?.name, 255) || answer(fields, ["full_name"]);
-  const email = normalizeEmail(lead?.email) || normalizeEmail(answer(fields, ["email"]));
-  const phone = clean(lead?.phone_normalized, 80) || clean(lead?.phone, 80) || answer(fields, ["phone_number"]);
+  const fullName = clean(lead?.name, 255) || answer(fields, ["full_name", "first_name", "nombre", "nombre_y_apellidos", "nombre_completo"]);
+  const email = normalizeEmail(lead?.email) || normalizeEmail(answer(fields, ["email", "correo", "correo_electrónico", "correo_electronico"]));
+  const phone = clean(lead?.phone_normalized, 80) || clean(lead?.phone, 80) || answer(fields, ["phone_number", "phone", "telefono", "teléfono", "numero_de_telefono", "número_de_teléfono", "mobile_phone_number", "mobile_phone", "celular"]);
   const improve = answer(fields, ["¿qué_te_gustaría_mejorar_principalmente?", "qué_te_gustaría_mejorar_principalmente"]);
   const contactWhen = answer(fields, ["¿cuándo_prefieres_que_te_contactemos?", "cuándo_prefieres_que_te_contactemos"]);
 
