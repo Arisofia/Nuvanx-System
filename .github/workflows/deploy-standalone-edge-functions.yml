@@ -100,7 +100,8 @@ jobs:
             supabase/functions/runtime-bootstrap/index.ts \
             supabase/functions/google-ads-health/index.ts \
             supabase/functions/meta-lead-backfill/index.ts \
-            supabase/functions/meta-daily-insights/index.ts
+            supabase/functions/meta-daily-insights/index.ts \
+            supabase/functions/meta-routing-audit/index.ts
 
       - name: Deploy standalone functions
         if: ${{ steps.candidate.outputs.deploy == 'true' }}
@@ -120,4 +121,5 @@ jobs:
             supabase functions deploy google-ads-health --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy meta-lead-backfill --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy meta-daily-insights --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+            supabase functions deploy meta-routing-audit --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions list --project-ref "$SUPABASE_PROJECT_REF"
