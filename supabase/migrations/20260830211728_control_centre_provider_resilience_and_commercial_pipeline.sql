@@ -256,7 +256,7 @@ select
   p.next_action,
   p.due_at,
   coalesce(p.lost_reason, l.lost_reason::text) as lost_reason,
-  coalesce(l.verified_revenue,0) + coalesce(r.settled_revenue,0) as verified_revenue,
+  coalesce(r.settled_revenue, l.verified_revenue, 0) as verified_revenue,
   coalesce(p.explicit_stage,
     case
       when l.lost_reason is not null or lower(coalesce(l.stage,'')) in ('lost','perdido') then 'lost'
