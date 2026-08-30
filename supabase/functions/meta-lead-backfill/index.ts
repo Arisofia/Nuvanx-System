@@ -44,8 +44,9 @@ function timingSafeTextMatch(received: string, expected: string): boolean {
   return diff === 0;
 }
 
-function hexToBytes(hex: string): Uint8Array {
-  const out = new Uint8Array(hex.length >>> 1);
+function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
+  const buffer = new ArrayBuffer(hex.length >>> 1);
+  const out = new Uint8Array(buffer);
   for (let i = 0; i < hex.length; i += 2) out[i >>> 1] = Number.parseInt(hex.slice(i, i + 2), 16);
   return out;
 }
@@ -63,18 +64,19 @@ async function decryptCred(encoded: string): Promise<string> {
   const iv = hexToBytes(ivH);
   const tag = hexToBytes(tagH);
   const ct = hexToBytes(ctH);
-  const combined = new Uint8Array(ct.length + tag.length);
+  const combinedBuffer = new ArrayBuffer(ct.length + tag.length);
+  const combined = new Uint8Array(combinedBuffer);
   combined.set(ct);
   combined.set(tag, ct.length);
   const km = await crypto.subtle.importKey("raw", new TextEncoder().encode(ENCRYPTION_KEY), "PBKDF2", false, ["deriveKey"]);
   const aesKey = await crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" },
+    { name: "PBKDF2", salt: salt.buffer, iterations: 100000, hash: "SHA-256" },
     km,
     { name: "AES-GCM", length: 256 },
     false,
     ["decrypt"],
   );
-  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, aesKey, combined);
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: iv.buffer }, aesKey, combinedBuffer);
   return new TextDecoder().decode(plain).trim();
 }
 
