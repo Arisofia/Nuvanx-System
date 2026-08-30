@@ -8,7 +8,7 @@ describe('Control Centre provider gateway contract', () => {
     expect(source).toContain("nvx_control_centre_provider_begin_refresh");
     expect(source).toContain("nvx_control_centre_provider_finish_success");
     expect(source).toContain("nvx_control_centre_provider_finish_failure");
-    expect(source).toContain("state.reason === 'fresh_cache'");
+    expect(source).toContain("reason === 'fresh_cache'");
     expect(source).toContain('breaker_open_until');
     expect(source).toContain('failure_count');
   });
@@ -27,13 +27,12 @@ describe('Control Centre provider gateway contract', () => {
     expect(source).toContain('Origin not allowed');
   });
 
-  it('returns fail-visible live/stale/refreshing/unavailable envelopes', () => {
-    expect(source).toContain("type ProviderEnvelopeStatus = 'live' | 'stale' | 'refreshing' | 'unavailable'");
-    expect(source).toContain("state.reason === 'refresh_in_flight' && !hasCache");
-    expect(source).toContain("status === 'refreshing' ? 202 : 200");
+  it('returns one fail-visible live/stale/unavailable envelope', () => {
+    expect(source).toContain("status: 'live' | 'stale' | 'unavailable'");
     expect(source).toContain('last_success_at');
     expect(source).toContain('age_seconds');
     expect(source).toContain('breaker_state');
+    expect(source).toContain("hasCache ? 'stale' : 'unavailable'");
   });
 
   it('logs breaker persistence failures instead of hiding them', () => {
