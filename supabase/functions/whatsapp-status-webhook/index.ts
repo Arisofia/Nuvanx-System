@@ -51,7 +51,8 @@ async function verifyMetaSignature(req: Request, rawBody: string): Promise<boole
 
 function eventTime(timestamp: unknown): string {
   const seconds = Number(timestamp);
-  if (!Number.isFinite(seconds) || seconds <= 0) return new Date().toISOString();
+  // Date supports ±8.64e15 milliseconds. Reject out-of-range provider values before toISOString().
+  if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 8.64e12) return new Date().toISOString();
   return new Date(seconds * 1000).toISOString();
 }
 
@@ -96,7 +97,7 @@ Deno.serve(async (req: Request) => {
   }
 
   const statuses = extractStatuses(payload);
-  if (statuses.length === 0) return json({ success: true, received: 0, applied: 0, ignored: 0 });
+  if (statuses.length === 0) return json({ success: true, received: 0, applied: 0, ignored: 0, failed: 0 });
 
   const admin: any = createClient(SUPABASE_URL, SERVICE_ROLE, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -104,8 +105,10 @@ Deno.serve(async (req: Request) => {
 
   let applied = 0;
   let ignored = 0;
+  let failed = 0;
 
-  for (const item of statuses.slice(0, 100)) {
+  // Process the complete signed Meta batch. Successful rows are idempotent, so a later 5xx retry is safe.
+  for (const item of statuses) {
     const messageId = String(item?.id || "").trim();
     const status = String(item?.status || "").trim().toLowerCase();
     if (!messageId || !["sent", "delivered", "read", "failed"].includes(status)) {
@@ -122,9 +125,21 @@ Deno.serve(async (req: Request) => {
       p_error_message: providerError?.title || providerError?.message || providerError?.error_data?.details || null,
     });
 
-    if (error || data !== true) ignored += 1;
+    if (error) failed += 1;
+    else if (data !== true) ignored += 1;
     else applied += 1;
   }
 
-  return json({ success: true, received: Math.min(statuses.length, 100), applied, ignored });
+  if (failed > 0) {
+    return json({
+      success: false,
+      received: statuses.length,
+      applied,
+      ignored,
+      failed,
+      message: "One or more delivery statuses could not be persisted; Meta should retry the signed batch",
+    }, 503);
+  }
+
+  return json({ success: true, received: statuses.length, applied, ignored, failed: 0 });
 });
