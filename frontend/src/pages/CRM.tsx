@@ -2,20 +2,13 @@ import { useState, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { useLeads } from '../hooks/useLeads'
-import { KanbanBoard } from '../components/crm/KanbanBoard'
 import { LeadDetailSheet } from '../components/crm/LeadDetailSheet'
-import type { Lead, LeadStage } from '../types'
+import type { Lead } from '../types'
 import { MetaAccountsInline } from '../components/MetaAccountsNotice'
+import { PIPELINE_STAGES, hasCanonicalAppointmentEvidence, pipelineStageLabel } from '../lib/pipeline'
 
-const ALL_STAGES = ['lead', 'whatsapp', 'appointment', 'treatment', 'closed'] as const
-const APPOINTMENT_EVIDENCE_STAGES = new Set(['appointment', 'treatment'])
 const STALE_LEADS_AFTER_DAYS = 7
 const CRM_LOADED_AT_MS = Date.now()
-
-function hasAppointmentEvidence(lead: Lead) {
-  const stage = String(lead.status ?? '').toLowerCase()
-  return Boolean(lead.appointment_date) || APPOINTMENT_EVIDENCE_STAGES.has(stage)
-}
 
 export default function CRM() {
   const { leads, loading, error, updateLead, deleteLead } = useLeads()
@@ -37,9 +30,10 @@ export default function CRM() {
     })
   }, [leads, stageFilter, sourceFilter])
 
-  const handleStageChange = async (leadId: string, newStage: LeadStage) => {
-    await updateLead(leadId, { status: newStage })
-  }
+  const pipelineStagesToRender = useMemo(
+    () => stageFilter === 'ALL' ? PIPELINE_STAGES : PIPELINE_STAGES.filter(stage => stage.id === stageFilter),
+    [stageFilter],
+  )
 
   const handleLeadClick = (lead: Lead) => {
     setSelectedLead(lead)
@@ -49,7 +43,7 @@ export default function CRM() {
   const handleUpdate = async (id: string, updates: Partial<Lead>) => {
     const result = await updateLead(id, updates)
     if (result.success && selectedLead?.id === id) {
-      setSelectedLead(prev => prev ? { ...prev, ...updates } : prev)
+      setSelectedLead(prev => prev ? { ...prev, ...updates, status: prev.status } : prev)
     }
     return result
   }
@@ -59,18 +53,20 @@ export default function CRM() {
   }
 
   const stageStats = useMemo(() => {
-    const counts: Record<string, number> = { lead: 0, whatsapp: 0, appointment: 0, treatment: 0, closed: 0 }
-    for (const l of leads) {
-      const stage = l.status ?? ''
-      if (stage in counts) counts[stage]++
+    const counts = Object.fromEntries(PIPELINE_STAGES.map(stage => [stage.id, 0])) as Record<string, number>
+    for (const lead of leads) {
+      if (lead.status in counts) counts[lead.status] += 1
     }
     return counts
   }, [leads])
 
   const appointmentCoverage = useMemo(() => {
     if (leads.length === 0) return null
-    const withAppointmentEvidence = leads.filter(hasAppointmentEvidence).length
-    return Number.parseFloat(((withAppointmentEvidence / leads.length) * 100).toFixed(1))
+    const withAppointmentEvidence = leads.filter(lead => hasCanonicalAppointmentEvidence(lead.status)).length
+    return {
+      count: withAppointmentEvidence,
+      percentage: Number.parseFloat(((withAppointmentEvidence / leads.length) * 100).toFixed(1)),
+    }
   }, [leads])
 
   const dataFreshness = useMemo(() => {
@@ -93,65 +89,62 @@ export default function CRM() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-serif font-bold text-foreground">CRM</h1>
-          <p className="text-muted mt-1">Pipeline de leads — etapas, DNI, motivo de pérdida</p>
+          <p className="text-muted mt-1">Leads y pacientes · pipeline comercial canónico derivado de evidencia operativa</p>
           <MetaAccountsInline context="Los leads de Meta Ads se trazan contra estas cuentas antes de entrar al CRM." className="mt-4 max-w-2xl" />
         </div>
       </div>
 
-      {!loading && dataFreshness?.stale && (
+      {!loading && error && (
+        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-foreground">
+          <p className="font-medium">Pipeline canónico no disponible.</p>
+          <p className="mt-1 text-xs text-muted">{error}</p>
+        </div>
+      )}
+
+      {!loading && !error && dataFreshness?.stale && (
         <div className="rounded-xl border border-[#E0A020]/30 bg-[#E0A020]/10 px-4 py-3 text-sm text-foreground">
           Datos CRM desactualizados: el último lead cargado es del {dataFreshness.latestDate}. Las métricas de este panel no deben interpretarse como actividad actual hasta recuperar la ingestión.
         </div>
       )}
 
-      {/* Funnel stage stats bar */}
-      {!loading && leads.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-          {([
-            { key: 'lead',        label: 'Lead',       color: 'text-primary'      },
-            { key: 'whatsapp',    label: 'WhatsApp',   color: 'text-[#28A745]'  },
-            { key: 'appointment', label: 'Cita',       color: 'text-[#E0A020]' },
-            { key: 'treatment',   label: 'Tratamiento',color: 'text-[#B08B5A]' },
-            { key: 'closed',      label: 'Cerrado',    color: 'text-primary'    },
-          ] as const).map(({ key, label, color }) => (
+      {!loading && !error && leads.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
+          {PIPELINE_STAGES.map(({ id, label }) => (
             <button
-              key={key}
+              key={id}
               type="button"
-              onClick={() => setStageFilter(stageFilter === key ? 'ALL' : key)}
-              className={`bg-card border rounded-xl p-3 text-left transition-colors hover:border-primary/60
-                ${stageFilter === key ? 'border-primary/80 bg-card/80' : 'border-border'}`}
+              onClick={() => setStageFilter(stageFilter === id ? 'ALL' : id)}
+              className={`bg-card border rounded-xl p-3 text-left transition-colors hover:border-primary/60 ${stageFilter === id ? 'border-primary/80 bg-card/80' : 'border-border'}`}
             >
-              <p className={`text-2xl font-bold ${color}`}>{stageStats[key]}</p>
-              <p className="text-xs text-muted mt-0.5 capitalize">{label}</p>
+              <p className="text-2xl font-bold text-primary">{stageStats[id]}</p>
+              <p className="text-xs text-muted mt-0.5">{label}</p>
             </button>
           ))}
         </div>
       )}
 
-      {!loading && leads.length === 0 && (
+      {!loading && !error && leads.length === 0 && (
         <div className="rounded-xl border border-dashed border-border bg-card/50 p-8 text-center">
-          <p className="text-muted text-sm">No hay leads en el CRM todavía.</p>
-          <p className="text-muted text-xs mt-1">Los leads de Meta Ads aparecerán aquí automáticamente vía webhook.</p>
+          <p className="text-muted text-sm">No hay registros en el pipeline canónico.</p>
         </div>
       )}
 
-      {appointmentCoverage !== null && !loading && (
+      {appointmentCoverage !== null && !loading && !error && (
         <p className="text-xs text-muted">
-          Cobertura de evidencia de cita: <span className="text-foreground font-medium">{appointmentCoverage}%</span>
-          {' '}· leads con fecha de cita o etapa cita/tratamiento ÷ total de leads cargados. No es una tasa de conversión de cohort.
+          Evidencia canónica de valoración: <span className="text-foreground font-medium">{appointmentCoverage.count} leads · {appointmentCoverage.percentage}%</span>
+          {' '}· solo `valuation_scheduled` o `valuation_completed`. No utiliza `appointment_date` legacy ni la etiqueta `convertido`.
         </p>
       )}
 
-      {/* Filtros */}
       <div className="flex flex-wrap gap-3">
         <select
           value={stageFilter}
           onChange={e => setStageFilter(e.target.value)}
           className="bg-surface border border-border rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
         >
-          <option value="ALL">Todas las etapas</option>
-          {ALL_STAGES.map(s => (
-            <option key={s} value={s} className="capitalize">{s}</option>
+          <option value="ALL">Todas las etapas canónicas</option>
+          {PIPELINE_STAGES.map(stage => (
+            <option key={stage.id} value={stage.id}>{stage.label}</option>
           ))}
         </select>
         <select
@@ -160,12 +153,13 @@ export default function CRM() {
           className="bg-surface border border-border rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
         >
           <option value="ALL">Todas las fuentes</option>
-          {sources.map(s => (
-            <option key={s} value={s}>{s}</option>
+          {sources.map(source => (
+            <option key={source} value={source}>{source}</option>
           ))}
         </select>
         {(stageFilter !== 'ALL' || sourceFilter !== 'ALL') && (
           <button
+            type="button"
             onClick={() => { setStageFilter('ALL'); setSourceFilter('ALL') }}
             className="text-xs text-muted hover:text-foreground underline"
           >
@@ -176,55 +170,85 @@ export default function CRM() {
 
       <Tabs defaultValue="pipeline" className="w-full">
         <TabsList>
-          <TabsTrigger value="pipeline">Embudo</TabsTrigger>
-          <TabsTrigger value="leads">Leads</TabsTrigger>
+          <TabsTrigger value="pipeline">Pipeline canónico</TabsTrigger>
+          <TabsTrigger value="leads">Registros</TabsTrigger>
         </TabsList>
 
         <TabsContent value="pipeline" className="space-y-4 pt-4">
           {loading ? (
             <div className="flex items-center justify-center h-64">
-              <p className="text-muted">Cargando embudo...</p>
+              <p className="text-muted">Cargando pipeline canónico...</p>
             </div>
-          ) : (
-            <KanbanBoard
-              leads={filteredLeads}
-              onStageChange={handleStageChange}
-              onLeadClick={handleLeadClick}
-            />
-          )}
+          ) : !error ? (
+            <>
+              <p className="text-xs text-muted">Las etapas son de solo lectura en este panel. No se permite arrastrar un lead para fabricar una cita, tratamiento o cierre sin evidencia.</p>
+              <div className="flex gap-4 overflow-x-auto pb-6 -mx-4 px-4 min-h-[420px]">
+                {pipelineStagesToRender.map(stage => {
+                  const stageLeads = filteredLeads.filter(lead => lead.status === stage.id)
+                  return (
+                    <div key={stage.id} className="flex flex-col min-w-[280px] w-full max-w-[340px] bg-surface/50 rounded-xl border border-border p-3 min-h-[390px]">
+                      <div className="flex items-center justify-between mb-4 px-2">
+                        <h3 className="text-xs font-bold font-serif text-muted uppercase tracking-widest">
+                          {stage.label} <span className="ml-2 font-normal font-sans">({stageLeads.length})</span>
+                        </h3>
+                      </div>
+                      <div className="space-y-3 overflow-y-auto">
+                        {stageLeads.map(lead => (
+                          <button
+                            key={lead.id}
+                            type="button"
+                            onClick={() => handleLeadClick(lead)}
+                            className="w-full rounded-xl border border-border bg-card p-4 text-left hover:border-primary/50 transition-colors"
+                          >
+                            <p className="font-semibold text-foreground truncate">{lead.name}</p>
+                            <p className="mt-1 text-[10px] uppercase tracking-wider text-muted">{lead.source}</p>
+                            {hasCanonicalAppointmentEvidence(lead.status) && lead.appointment_date && (
+                              <p className="mt-2 text-[10px] font-medium text-[#E0A020]">
+                                {new Date(lead.appointment_date).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}
+                              </p>
+                            )}
+                          </button>
+                        ))}
+                        {stageLeads.length === 0 && (
+                          <div className="flex items-center justify-center h-28 rounded-xl border border-dashed border-border text-xs text-muted">Sin registros</div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          ) : null}
         </TabsContent>
 
         <TabsContent value="leads">
           <Card>
             <CardHeader>
-              <CardTitle>Todos los leads {filteredLeads.length !== leads.length && <span className="text-sm font-normal text-muted">({filteredLeads.length} de {leads.length})</span>}</CardTitle>
+              <CardTitle>Todos los registros {filteredLeads.length !== leads.length && <span className="text-sm font-normal text-muted">({filteredLeads.length} de {leads.length})</span>}</CardTitle>
             </CardHeader>
             <CardContent>
               {loading ? (
-                <p className="text-muted">Obteniendo leads desde Edge Function...</p>
-              ) : (
-                <div className="space-y-3">
-                  {error && <p className="text-sm text-[#E0A020]">{error}</p>}
-                  <div className="grid gap-3">
-                    {filteredLeads.map((lead) => (
-                      <button
-                        key={lead.id}
-                        type="button"
-                        className="rounded-xl border border-border p-4 bg-background text-left cursor-pointer hover:border-primary/50 transition-colors"
-                        onClick={() => handleLeadClick(lead)}
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="font-serif font-bold text-foreground">{lead.name}</p>
-                          <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-surface text-muted border border-border font-medium">
-                            {lead.status}
-                          </span>
-                        </div>
-                        <p className="text-[10px] uppercase tracking-wider text-muted mt-1">Origen: {lead.source}</p>
-                      </button>
-                    ))}
-                  </div>
+                <p className="text-muted">Obteniendo leads y pipeline canónico...</p>
+              ) : !error ? (
+                <div className="grid gap-3">
+                  {filteredLeads.map((lead) => (
+                    <button
+                      key={lead.id}
+                      type="button"
+                      className="rounded-xl border border-border p-4 bg-background text-left cursor-pointer hover:border-primary/50 transition-colors"
+                      onClick={() => handleLeadClick(lead)}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-serif font-bold text-foreground">{lead.name}</p>
+                        <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-surface text-muted border border-border font-medium">
+                          {pipelineStageLabel(lead.status)}
+                        </span>
+                      </div>
+                      <p className="text-[10px] uppercase tracking-wider text-muted mt-1">Origen: {lead.source}</p>
+                    </button>
+                  ))}
                 </div>
-              )}
+              ) : null}
             </CardContent>
           </Card>
         </TabsContent>
