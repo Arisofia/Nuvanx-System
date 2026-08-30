@@ -48,11 +48,11 @@ describe("google-click-attribution HMAC trust boundary", () => {
     expect(handler).toContain('return reply(origin, 503, { success: false, message: "Runtime bootstrap required" })');
   });
 
-  it("caches the resolved signing credential for the lifetime of the isolate", () => {
-    expect(source).toContain("let runtimeHubspotAccessToken = HUBSPOT_ACCESS_TOKEN_ENV");
-    expect(source).toContain("if (runtimeHubspotAccessToken) return runtimeHubspotAccessToken");
-    expect(source).toContain("if (token) runtimeHubspotAccessToken = token");
-    expect(source).toContain("return runtimeHubspotAccessToken");
+  it("does not cache a Vault-resolved signing credential across requests", () => {
+    expect(source).toContain("if (HUBSPOT_ACCESS_TOKEN_ENV) return HUBSPOT_ACCESS_TOKEN_ENV");
+    expect(source).toContain('admin.rpc("nvx_get_runtime_secret", { p_name: "HUBSPOT_ACCESS_TOKEN" })');
+    expect(source).toContain("return String(data).trim()");
+    expect(source).not.toContain("runtimeHubspotAccessToken");
   });
 
   it("keeps the cross-language fixture byte-compatible with the WordPress sender", () => {
