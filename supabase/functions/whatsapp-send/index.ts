@@ -14,6 +14,13 @@ function cleanUuid(value: unknown): string | null {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(v) ? v : null;
 }
 
+function normalizePhone(value: unknown): string {
+  const raw = String(value || "").trim();
+  const hasLeadingPlus = raw.startsWith("+");
+  const digits = raw.replace(/\D/g, "");
+  return `${hasLeadingPlus ? "+" : ""}${digits}`;
+}
+
 function bearerToken(req: Request): string | null {
   const header = String(req.headers.get("Authorization") || "").trim();
   if (!header.toLowerCase().startsWith("bearer ")) return null;
@@ -21,29 +28,74 @@ function bearerToken(req: Request): string | null {
   return token || null;
 }
 
-async function trackFirstHumanResponse(req: Request, leadId: string | null, messageId: string | null) {
-  if (!leadId) return { tracked: false, reason: "lead_id_not_provided" };
-  if (!SUPABASE_URL || !SERVICE_ROLE) return { tracked: false, reason: "tracking_not_configured" };
+type AuthorizedLeadContext = {
+  ok: true;
+  admin: ReturnType<typeof createClient> | null;
+  userId: string | null;
+};
+
+type RejectedLeadContext = {
+  ok: false;
+  status: number;
+  message: string;
+};
+
+async function authorizeLeadRecipient(
+  req: Request,
+  leadId: string | null,
+  normalizedTo: string,
+): Promise<AuthorizedLeadContext | RejectedLeadContext> {
+  if (!leadId) return { ok: true, admin: null, userId: null };
+  if (!SUPABASE_URL || !SERVICE_ROLE) {
+    return { ok: false, status: 500, message: "Lead authorization is not configured" };
+  }
 
   const token = bearerToken(req);
-  if (!token) return { tracked: false, reason: "auth_context_missing" };
+  if (!token) return { ok: false, status: 401, message: "Authenticated user context is required" };
 
   try {
-    const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false, autoRefreshToken: false } });
+    const admin = createClient(SUPABASE_URL, SERVICE_ROLE, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
     const { data: authData, error: authError } = await admin.auth.getUser(token);
     const userId = authData?.user?.id || "";
-    if (authError || !userId) return { tracked: false, reason: "auth_context_invalid" };
+    if (authError || !userId) return { ok: false, status: 401, message: "Authenticated user context is invalid" };
 
     const { data: lead, error: leadError } = await admin
       .from("leads")
-      .select("id,user_id")
+      .select("id,user_id,phone")
       .eq("id", leadId)
       .eq("user_id", userId)
       .is("deleted_at", null)
       .limit(1)
       .maybeSingle();
-    if (leadError || !lead?.id) return { tracked: false, reason: "lead_not_owned" };
 
+    if (leadError || !lead?.id) {
+      return { ok: false, status: 403, message: "Lead is not available to this user" };
+    }
+
+    const storedPhone = normalizePhone(lead.phone);
+    if (!storedPhone) return { ok: false, status: 409, message: "Lead has no WhatsApp phone registered" };
+    if (storedPhone !== normalizedTo) {
+      return { ok: false, status: 409, message: "Recipient does not match the lead phone" };
+    }
+
+    return { ok: true, admin, userId };
+  } catch {
+    return { ok: false, status: 500, message: "Lead authorization failed" };
+  }
+}
+
+async function trackFirstHumanResponse(
+  admin: ReturnType<typeof createClient> | null,
+  userId: string | null,
+  leadId: string | null,
+  messageId: string | null,
+) {
+  if (!leadId) return { tracked: false, reason: "lead_id_not_provided" };
+  if (!admin || !userId) return { tracked: false, reason: "tracking_context_missing" };
+
+  try {
     const sentAt = new Date().toISOString();
     const { data: slaRows, error: slaError } = await admin.rpc("mark_lead_human_first_response", {
       p_lead_id: leadId,
@@ -70,7 +122,14 @@ async function trackFirstHumanResponse(req: Request, leadId: string | null, mess
         sla_first_response_at: firstResponseAt,
       },
     });
-    if (eventError) return { tracked: true, event_recorded: false, reason: "event_insert_failed", first_response_at: firstResponseAt };
+    if (eventError) {
+      return {
+        tracked: true,
+        event_recorded: false,
+        reason: "event_insert_failed",
+        first_response_at: firstResponseAt,
+      };
+    }
 
     return { tracked: true, event_recorded: true, first_response_at: firstResponseAt };
   } catch {
@@ -82,20 +141,32 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
   const json = (data: unknown, status = 200) =>
-    new Response(JSON.stringify(data), { status, headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    new Response(JSON.stringify(data), {
+      status,
+      headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" },
+    });
 
   if (req.method !== "POST") return json({ success: false, message: "POST required" }, 405);
 
   const body = await req.json().catch(() => ({}));
-  const to = String(body?.to || "").trim();
+  const normalizedTo = normalizePhone(body?.to);
   const message = String(body?.message || "");
-  const leadId = body?.lead_id === undefined || body?.lead_id === null || body?.lead_id === "" ? null : cleanUuid(body.lead_id);
+  const leadId = body?.lead_id === undefined || body?.lead_id === null || body?.lead_id === ""
+    ? null
+    : cleanUuid(body.lead_id);
 
-  if (!to || !message) return json({ success: false, message: "to and message are required" }, 400);
+  if (!normalizedTo || !message) return json({ success: false, message: "to and message are required" }, 400);
   if (body?.lead_id && !leadId) return json({ success: false, message: "lead_id must be a UUID" }, 400);
   if (message.length > 4096) return json({ success: false, message: "message is too long" }, 400);
-  if (!/^\+?[1-9]\d{7,14}$/.test(to.replace(/\s/g, ""))) {
+  if (!/^\+?[1-9]\d{7,14}$/.test(normalizedTo)) {
     return json({ success: false, message: "to must be a valid phone number in E.164 format (+34XXXXXXXXX)" }, 400);
+  }
+
+  // Authorization MUST happen before any irreversible provider call.
+  // When a lead_id is supplied, the destination must equal that owned lead's stored phone.
+  const authorized = await authorizeLeadRecipient(req, leadId, normalizedTo);
+  if (!authorized.ok) {
+    return json({ success: false, message: authorized.message }, authorized.status);
   }
 
   const accessToken = Deno.env.get("WHATSAPP_ACCESS_TOKEN") ?? "";
@@ -115,7 +186,7 @@ Deno.serve(async (req: Request) => {
     body: JSON.stringify({
       messaging_product: "whatsapp",
       recipient_type: "individual",
-      to: to.replace(/\s/g, ""),
+      to: normalizedTo,
       type: "text",
       text: { preview_url: false, body: message },
     }),
@@ -128,12 +199,12 @@ Deno.serve(async (req: Request) => {
   }
 
   const messageId = String(waData?.messages?.[0]?.id || "") || null;
-  const sla = await trackFirstHumanResponse(req, leadId, messageId);
+  const sla = await trackFirstHumanResponse(authorized.admin, authorized.userId, leadId, messageId);
 
   return json({
     success: true,
     messageId,
-    to,
+    to: normalizedTo,
     slaTracked: sla.tracked,
     slaEventRecorded: sla.event_recorded === true,
     slaFirstResponseAt: sla.first_response_at || null,
