@@ -103,7 +103,7 @@ function shouldRetryProof(body: any): boolean {
 
 async function graphFetch(pathOrUrl: string, token: string, params: Record<string, string> = {}) {
   const secrets = [...new Set([META_CANONICAL_APP_SECRET, META_APP_SECRET].filter(Boolean))];
-  const candidates: Array<string | null> = [...secrets, null];
+  const candidates: Array<string | null> = secrets.length > 0 ? [...secrets] : [null];
   let lastMessage = "Meta API request failed";
   let lastStatus = 502;
 
@@ -446,7 +446,8 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    await admin.from("credentials").update({ last_used: new Date().toISOString() }).eq("id", ctx.credentialId);
+    const { error: usageError } = await admin.from("credentials").update({ last_used: new Date().toISOString() }).eq("id", ctx.credentialId);
+    if (usageError) throw usageError;
     return reply(200, {
       success: counts.failed === 0,
       source: "meta_page_leadgen_forms",

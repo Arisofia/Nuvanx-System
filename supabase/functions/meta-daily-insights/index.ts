@@ -126,7 +126,10 @@ function actionsObject(actions: Action[] | undefined): Record<string, number> {
   const out: Record<string, number> = {};
   for (const action of actions || []) {
     const key = String(action?.action_type || "").trim();
-    if (key) out[key] = parseMetric(action?.value);
+    if (key) {
+      const val = parseMetric(action?.value);
+      out[key] = (out[key] || 0) + val;
+    }
   }
   return out;
 }
@@ -150,6 +153,8 @@ async function resolveCanonical(admin: any) {
     throw new Error("Expected exactly one canonical connected meta_ads integration");
   }
   const integration = canonicalIntegrations[0];
+  const clinicId = String(integration.clinic_id || "").trim();
+  if (!clinicId) throw new Error("Canonical Meta integration clinic_id missing");
   const accountId = String(integration.metadata?.adAccountId ?? integration.metadata?.ad_account_id ?? "").trim();
   if (!/^act_\d+$/.test(accountId)) throw new Error("Canonical Meta ad account missing");
   const { data: credential, error: credentialError } = await admin
@@ -214,15 +219,16 @@ Deno.serve(async (req: Request) => {
         user_id: ctx.integration.user_id,
         clinic_id: ctx.integration.clinic_id,
         ad_account_id: ctx.accountId,
-        date: row.date_start,
-        impressions: Math.round(parseMetric(row.impressions)),
-        reach: Math.round(parseMetric(row.reach)),
-        clicks: Math.round(parseMetric(row.clicks)),
-        spend: parseMetric(row.spend),
+        date: String(row?.date_start || "").trim(),
+        impressions: parseMetric(row?.impressions),
+        reach: parseMetric(row?.reach),
+        clicks: parseMetric(row?.clicks),
+        spend: Number((parseMetric(row?.spend)).toFixed(2)),
+        cpc: Number((parseMetric(row?.cpc)).toFixed(4)),
+        cpm: Number((parseMetric(row?.cpm)).toFixed(4)),
+        ctr: Number((parseMetric(row?.ctr)).toFixed(6)),
         conversions: Math.round(conversions),
-        ctr: parseMetric(row.ctr),
-        cpc: parseMetric(row.cpc),
-        cpm: parseMetric(row.cpm),
+        leads: Math.round(leadActions),
         messaging_conversations: Math.round(messaging),
         actions: actionsObject(actions),
         action_values: Array.isArray(row?.action_values) ? row.action_values : [],
@@ -236,10 +242,12 @@ Deno.serve(async (req: Request) => {
       if (upsertError) throw upsertError;
     }
     const nowIso = new Date().toISOString();
-    await Promise.all([
+    const [credRes, intRes] = await Promise.all([
       admin.from("credentials").update({ last_used: nowIso }).eq("id", ctx.credentialId),
       admin.from("integrations").update({ last_sync: nowIso, last_error: null, updated_at: nowIso }).eq("id", ctx.integration.id),
     ]);
+    if (credRes.error) throw credRes.error;
+    if (intRes.error) throw intRes.error;
 
     return reply(200, {
       success: true,
