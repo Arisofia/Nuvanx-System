@@ -237,7 +237,7 @@ Deno.serve(async (req: Request) => {
     }, 'provider'));
   } catch (error: any) {
     const message = String(error?.message || 'Provider refresh failed').replace(/\s+/g, ' ').slice(0, 500);
-    const { data: failedData } = await admin.rpc('nvx_control_centre_provider_finish_failure', {
+    const { data: failedData, error: failureError } = await admin.rpc('nvx_control_centre_provider_finish_failure', {
       p_user_id: userId,
       p_provider: provider,
       p_cache_key: cacheKey,
@@ -246,6 +246,7 @@ Deno.serve(async (req: Request) => {
       p_failure_threshold: 3,
       p_open_seconds: 300,
     });
+    if (failureError) console.error('[control-centre-provider] breaker update failed', provider);
     const failed = (failedData || {}) as CacheState;
     const cached = failed.payload ?? state.payload;
     const hasCache = cached !== null && cached !== undefined;

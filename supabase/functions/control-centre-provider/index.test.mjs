@@ -34,4 +34,9 @@ describe('Control Centre provider gateway contract', () => {
     expect(source).toContain('breaker_state');
     expect(source).toContain("hasCache ? 'stale' : 'unavailable'");
   });
+
+  it('logs breaker persistence failures instead of hiding them', () => {
+    expect(source).toContain('error: failureError');
+    expect(source).toContain("console.error('[control-centre-provider] breaker update failed', provider)");
+  });
 });
