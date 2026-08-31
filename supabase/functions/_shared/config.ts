@@ -26,11 +26,12 @@ export const SHEETS_WEBHOOK_SECRET_DOCTORALIA = getEnv('SHEETS_WEBHOOK_SECRET_DO
 export const META_APP_ID = getEnv('META_APP_ID');
 export const META_APP_SECRET = getEnv('META_APP_SECRET');
 
-export function normalizeFrontendUrl(url: string): string | null {
+export function normalizeFrontendUrl(url: string | null | undefined): string | null {
   if (!url) return null;
-  if (url === '*' || url.toLowerCase() === 'null') return null;
+  const trimmed = String(url).trim();
+  if (!trimmed || trimmed === '*' || trimmed.toLowerCase() === 'null') return null;
   try {
-    const parsed = new URL(url);
+    const parsed = new URL(trimmed);
     if (parsed.protocol !== 'https:') return null;
     return parsed.origin;
   } catch {

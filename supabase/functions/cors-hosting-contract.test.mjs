@@ -15,59 +15,13 @@ const provider = readFileSync(
   'utf8',
 );
 
-const workersOrigin = 'https://nuvanx-frontend.jenineferderas.workers.dev';
+import {
+  normalizeFrontendUrl,
+  createCorsEvaluator,
+  CLOUDFLARE_WORKERS_FRONTEND_ORIGIN,
+} from './_shared/cors-core.ts';
 
-// Runtime implementation matching _shared/config.ts logic for execution testing
-function normalizeFrontendUrl(url) {
-  if (!url) return null;
-  if (url === '*' || String(url).toLowerCase() === 'null') return null;
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== 'https:') return null;
-    return parsed.origin;
-  } catch {
-    return null;
-  }
-}
-
-function createCorsEvaluator(env = {}) {
-  const isDev = (env.DENO_ENV || env.NODE_ENV || '').toLowerCase() !== 'production';
-  const rawFrontend = env.FRONTEND_URL || '';
-  const normalizedFrontend = normalizeFrontendUrl(rawFrontend);
-  const productionFallback = normalizeFrontendUrl(env.PRODUCTION_FALLBACK_URL || '') || '';
-  const cloudflareOrigin = normalizeFrontendUrl(workersOrigin) || '';
-  const frontendUrl = normalizedFrontend ?? (isDev ? 'http://localhost:5173' : (productionFallback || ''));
-  const defaultCorsOrigin = isDev ? 'http://localhost:5173' : frontendUrl;
-
-  const extraOrigins = String(env.CORS_ALLOWED_ORIGINS || '')
-    .split(',')
-    .map((o) => normalizeFrontendUrl(o.trim()))
-    .filter((o) => Boolean(o));
-
-  const allowedOrigins = new Set([
-    defaultCorsOrigin,
-    normalizedFrontend,
-    productionFallback,
-    cloudflareOrigin,
-    ...extraOrigins,
-  ].filter((o) => Boolean(o)));
-
-  const defaultCorsHeaders = {
-    'Access-Control-Allow-Origin': defaultCorsOrigin,
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-  };
-
-  function buildCorsHeaders(origin) {
-    const allowed = origin && allowedOrigins.has(origin) ? origin : defaultCorsOrigin;
-    return {
-      ...defaultCorsHeaders,
-      'Access-Control-Allow-Origin': allowed,
-    };
-  }
-
-  return { allowedOrigins, buildCorsHeaders, defaultCorsOrigin };
-}
+const workersOrigin = CLOUDFLARE_WORKERS_FRONTEND_ORIGIN;
 
 describe('frontend CORS hosting contract', () => {
   it('includes the exact controlled Cloudflare Workers frontend origin in source and constants', () => {
@@ -80,7 +34,7 @@ describe('frontend CORS hosting contract', () => {
     expect(sharedConfig).toContain('PRODUCTION_FALLBACK_URL');
     expect(sharedConfig).toContain("getEnv('CORS_ALLOWED_ORIGINS')");
     expect(sharedConfig).not.toMatch(/Access-Control-Allow-Origin['"]?\s*:\s*['"]\*['"]/);
-    expect(sharedConfig).toContain("if (url === '*' || url.toLowerCase() === 'null') return null;");
+    expect(sharedConfig).toContain("trimmed.toLowerCase() === 'null'");
   });
 
   it('keeps API and provider CORS on the shared canonical owner', () => {
