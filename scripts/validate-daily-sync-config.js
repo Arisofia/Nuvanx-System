@@ -15,13 +15,15 @@ const REQUIRED = [
   'DOCTORALIA_APPOINTMENTS_SHEET_NAME',
   'ENCRYPTION_KEY',
   'REPORT_USER_ID',
+  'GOOGLE_ADS_DEVELOPER_TOKEN',
+  'GOOGLE_ADS_SERVICE_ACCOUNT',
 ];
 
 const RECOMMENDED = [
   'SUPABASE_DB_PASSWORD',
   'META_APP_SECRET',
   'FALLBACK_META_AD_ACCOUNT_ID',
-  'GOOGLE_ADS_DEVELOPER_TOKEN',
+  'GOOGLE_ADS_LOGIN_CUSTOMER_ID',
   'GOOGLE_ADS_CUSTOMER_ID',
   'SHEETS_WEBHOOK_URL_DOCTORALIA',
   'SHEETS_WEBHOOK_SECRET_DOCTORALIA',
@@ -31,16 +33,11 @@ function hasValue(key) {
   return String(process.env[key] || '').trim().length > 0;
 }
 
-function readServiceAccountEmail() {
-  const rawCredential = String(
-    process.env.GOOGLE_DOCTORALIA_SERVICE_ACCOUNT ||
-    process.env.GOOGLE_ADS_SERVICE_ACCOUNT ||
-    '',
-  ).trim();
-  if (!rawCredential) return '';
-
+function readServiceAccountEmail(rawCredential) {
+  const raw = String(rawCredential || '').trim();
+  if (!raw) return '';
   try {
-    const credentials = JSON.parse(rawCredential);
+    const credentials = JSON.parse(raw);
     return typeof credentials.client_email === 'string' ? credentials.client_email.trim() : '';
   } catch {
     return '';
@@ -53,7 +50,8 @@ const ERROR_MESSAGES = {
   DOCTORALIA_PERMISSION_MODE_INVALID: 'DOCTORALIA_SYNC_PERMISSION_MODE and DOCTORALIA_APPOINTMENTS_PERMISSION_MODE must be fail or warn.',
   DOCTORALIA_MIN_ROWS_TOO_LOW: 'DOCTORALIA_APPOINTMENTS_MIN_ROWS must be at least 1800 for complete Doctoralia daily sync loads.',
   META_ACCOUNT_MISSING: 'META_AD_ACCOUNT_ID, META_AD_ACCOUNT_IDS, or FALLBACK_META_AD_ACCOUNT_ID secret is required.',
-  GOOGLE_SERVICE_ACCOUNT_MISSING: 'GOOGLE_DOCTORALIA_SERVICE_ACCOUNT or GOOGLE_ADS_SERVICE_ACCOUNT secret is required for Doctoralia appointments sync.',
+  GOOGLE_DOCTORALIA_SERVICE_ACCOUNT_MISSING: 'GOOGLE_DOCTORALIA_SERVICE_ACCOUNT or GOOGLE_ADS_SERVICE_ACCOUNT secret is required for Doctoralia appointments sync.',
+  GOOGLE_ADS_SERVICE_ACCOUNT_INVALID: 'GOOGLE_ADS_SERVICE_ACCOUNT must be valid service-account JSON with client_email.',
   SUPABASE_ACCESS_TOKEN_FORMAT: 'SUPABASE_ACCESS_TOKEN format is invalid. Expected sbp_ token.',
   SUPABASE_PROJECT_REF_FORMAT: 'SUPABASE_PROJECT_REF format is invalid. Expected 20 lowercase alphanumeric characters.',
   UNKNOWN: 'Daily Sync configuration validation failed.',
@@ -70,7 +68,6 @@ function failMissingRequiredSecret(key) {
     failCode('UNKNOWN');
     return;
   }
-
   console.error(`::error::${key} secret is required for Daily Sync Orchestrator.`);
   process.exitCode = 1;
 }
@@ -78,7 +75,6 @@ function failMissingRequiredSecret(key) {
 for (const key of REQUIRED) {
   if (!hasValue(key)) failMissingRequiredSecret(key);
 }
-
 
 function validateDoctoraliaSheetConfiguration() {
   const sheetId = String(process.env.DOCTORALIA_SHEET_ID || '').trim();
@@ -95,9 +91,7 @@ function validateDoctoraliaSheetConfiguration() {
 
   if (hasValue('DOCTORALIA_APPOINTMENTS_MIN_ROWS')) {
     const minRows = Number.parseInt(process.env.DOCTORALIA_APPOINTMENTS_MIN_ROWS, 10);
-    if (!Number.isFinite(minRows) || minRows < 1800) {
-      failCode('DOCTORALIA_MIN_ROWS_TOO_LOW');
-    }
+    if (!Number.isFinite(minRows) || minRows < 1800) failCode('DOCTORALIA_MIN_ROWS_TOO_LOW');
   }
 }
 
@@ -108,14 +102,22 @@ if (!hasValue('META_AD_ACCOUNT_ID') && !hasValue('META_AD_ACCOUNT_IDS') && !hasV
 }
 
 if (!hasValue('GOOGLE_DOCTORALIA_SERVICE_ACCOUNT') && !hasValue('GOOGLE_ADS_SERVICE_ACCOUNT')) {
-  failCode('GOOGLE_SERVICE_ACCOUNT_MISSING');
+  failCode('GOOGLE_DOCTORALIA_SERVICE_ACCOUNT_MISSING');
 } else {
-  const serviceAccountEmail = readServiceAccountEmail();
-  if (!serviceAccountEmail) {
+  const doctoraliaCredential = process.env.GOOGLE_DOCTORALIA_SERVICE_ACCOUNT || process.env.GOOGLE_ADS_SERVICE_ACCOUNT;
+  if (!readServiceAccountEmail(doctoraliaCredential)) {
     console.error('::error::Configured Google service account is not valid JSON with a client_email field.');
     process.exitCode = 1;
   } else {
-    console.log('[daily-sync] Google service account configured.');
+    console.log('[daily-sync] Google service account configured for Doctoralia.');
+  }
+}
+
+if (hasValue('GOOGLE_ADS_SERVICE_ACCOUNT')) {
+  if (!readServiceAccountEmail(process.env.GOOGLE_ADS_SERVICE_ACCOUNT)) {
+    failCode('GOOGLE_ADS_SERVICE_ACCOUNT_INVALID');
+  } else {
+    console.log('[daily-sync] Google Ads service account configured.');
   }
 }
 
@@ -130,10 +132,7 @@ if (hasValue('SUPABASE_PROJECT_REF') && !/^[a-z0-9]{20}$/.test(process.env.SUPAB
 if (process.exitCode) process.exit(process.exitCode);
 
 const missingRecommended = RECOMMENDED.filter((key) => {
-  if (key === 'FALLBACK_META_AD_ACCOUNT_ID' && (hasValue('META_AD_ACCOUNT_ID') || hasValue('META_AD_ACCOUNT_IDS'))) {
-    return false;
-  }
-
+  if (key === 'FALLBACK_META_AD_ACCOUNT_ID' && (hasValue('META_AD_ACCOUNT_ID') || hasValue('META_AD_ACCOUNT_IDS'))) return false;
   return !hasValue(key);
 });
 if (missingRecommended.length > 0) {
