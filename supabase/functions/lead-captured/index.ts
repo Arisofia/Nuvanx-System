@@ -14,6 +14,7 @@ const CANONICAL_FORM_ID = "5042522a-0bc5-4381-ac3e-5aee8649b69c";
 const ALLOWED_ORIGINS = new Set(["https://nuvanx.com", "https://www.nuvanx.com", "https://staging2.nuvanx.com"]);
 const SIGNATURE_MAX_SKEW_SECONDS = 300;
 const CAPTURE_HMAC_CONTEXT = "nuvanx-lead-capture-hmac-key-v1";
+const META_BROWSER_ID_MAX_LENGTH = 512;
 
 class ValidationError extends Error {
   status: number;
@@ -130,11 +131,12 @@ const ATTR_KEYS = new Set([
 ]);
 
 function cleanMetaIdentity(key: string, raw: string): string | null {
+  if (!raw || raw.length > META_BROWSER_ID_MAX_LENGTH) return null;
   if (key === "fbclid") {
-    return /^[A-Za-z0-9._~:+-]{1,512}$/.test(raw) ? raw : null;
+    return /^[A-Za-z0-9._~:+-]+$/.test(raw) ? raw : null;
   }
   if (key === "fbc" || key === "fbp") {
-    return /^fb\.1\.\d{10,16}\.[A-Za-z0-9._~:+-]{1,512}$/.test(raw) ? raw : null;
+    return /^fb\.1\.\d{10,16}\.[A-Za-z0-9._~:+-]+$/.test(raw) ? raw : null;
   }
   return null;
 }
