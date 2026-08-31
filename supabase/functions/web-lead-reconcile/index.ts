@@ -243,13 +243,15 @@ async function reconcileOne(admin: any, systemUser: any, hubspotToken: string, c
       hubspot_contact_id: hubspotContactId,
       email_hash: expectedEmailHash || google?.email_hash || null,
       telefono_hash: phoneHash,
-      gclid: attrValue(capture, "gclid") || google?.gclid || null,
-      landing_url: attrValue(capture, "landing_url") || google?.landing_url || null,
-      utm_source: cleanText(props.nvx_utm_source, 255) || attrValue(capture, "utm_source"),
-      utm_medium: cleanText(props.nvx_utm_medium, 255) || attrValue(capture, "utm_medium"),
-      utm_campaign: cleanText(props.nvx_utm_campaign, 255) || attrValue(capture, "utm_campaign"),
-      utm_content: cleanText(props.nvx_utm_content, 255) || attrValue(capture, "utm_content"),
-      utm_term: cleanText(props.nvx_utm_term, 255) || attrValue(capture, "utm_term"),
+      gclid: capture.marketing_consent === true ? (attrValue(capture, "gclid") || google?.gclid || null) : null,
+      fbc: capture.marketing_consent === true ? attrValue(capture, "fbc") : null,
+      fbp: capture.marketing_consent === true ? attrValue(capture, "fbp") : null,
+      landing_url: capture.marketing_consent === true ? (attrValue(capture, "landing_url") || google?.landing_url || null) : null,
+      utm_source: capture.marketing_consent === true ? (cleanText(props.nvx_utm_source, 255) || attrValue(capture, "utm_source")) : null,
+      utm_medium: capture.marketing_consent === true ? (cleanText(props.nvx_utm_medium, 255) || attrValue(capture, "utm_medium")) : null,
+      utm_campaign: capture.marketing_consent === true ? (cleanText(props.nvx_utm_campaign, 255) || attrValue(capture, "utm_campaign")) : null,
+      utm_content: capture.marketing_consent === true ? (cleanText(props.nvx_utm_content, 255) || attrValue(capture, "utm_content")) : null,
+      utm_term: capture.marketing_consent === true ? (cleanText(props.nvx_utm_term, 255) || attrValue(capture, "utm_term")) : null,
       form_id: capture.form_id,
       form_name: "Valoracion web",
       created_at: capture.captured_at,
@@ -307,7 +309,13 @@ async function reconcileOne(admin: any, systemUser: any, hubspotToken: string, c
       cleanText(props.hubspot_owner_id, 80),
     );
 
-    return { id: capture.id, lead_id: lead.id, google_attribution: Boolean(google), outcome: "reconciled" };
+    return {
+      id: capture.id,
+      lead_id: lead.id,
+      google_attribution: Boolean(google),
+      meta_browser_identity: capture.marketing_consent === true && Boolean(attrValue(capture, "fbc") || attrValue(capture, "fbp")),
+      outcome: "reconciled",
+    };
   } catch (error: any) {
     const message = String(error?.message || "Reconciliation failed").slice(0, 240);
     const conflict = /mismatch|different lead|different lead source|conflict/i.test(message);
