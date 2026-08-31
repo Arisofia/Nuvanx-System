@@ -1,0 +1,59 @@
+name: Google Ads August Backfill Once
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - tmp-noop
+    paths:
+      - .github/workflows/google-ads-backfill-once.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: google-ads-august-backfill-once
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    name: Backfill Google Ads August 2026
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: Production
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL || secrets.NUVANX_SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
+      GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
+      GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
+      GOOGLE_ADS_LOGIN_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_LOGIN_CUSTOMER_ID || '' }}
+    steps:
+      - name: Checkout exact branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install workspace dependencies
+        run: npm install --include=dev --ignore-scripts
+
+      - name: Validate required runtime secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${SUPABASE_URL:-}"
+          test -n "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -n "${GOOGLE_ADS_SERVICE_ACCOUNT:-}"
+          test -n "${GOOGLE_ADS_DEVELOPER_TOKEN:-}"
+
+      - name: Backfill August 2026
+        run: node scripts/sync-google-ads-insights.js --from 2026-08-01 --to 2026-08-31
+
+      - name: Verify canonical August totals
+        run: node scripts/check-google-ads-db.js --json
