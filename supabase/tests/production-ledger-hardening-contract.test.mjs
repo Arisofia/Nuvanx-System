@@ -74,7 +74,7 @@ describe('Production ledger reconciliation hardening', () => {
 
   it('repairs funnel data through the canonical owner rather than duplicating status mapping', () => {
     expect(funnelAndSourceRepair).toMatch(/PERFORM public\.refresh_doctoralia_funnel\(v_user_id\)/);
-    expect(funnelAndSourceRepair).toMatch(/lower\(pg_catalog\.coalesce\(pc\.funnel_status, ''\)\) IN \('converted', 'returning'\)/);
+    expect(funnelAndSourceRepair).toMatch(/lower\(coalesce\(pc\.funnel_status, ''\)\) IN \('converted', 'returning'\)/);
     expect(funnelAndSourceRepair).not.toMatch(/WHEN LOWER\(estado\)/);
   });
 
