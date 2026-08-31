@@ -1,55 +1,55 @@
-create or replace function public.nvx_dispatch_maintenance_worker(
+CREATE OR REPLACE FUNCTION public.nvx_dispatch_maintenance_worker(
   p_worker text,
   p_from date,
   p_to date
 )
-returns bigint
-language plpgsql
-security definer
-set search_path = ''
-as $$
-declare
+RETURNS bigint
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
   v_secret text;
   v_project_url text;
   v_url text;
   v_body jsonb;
   v_request_id bigint;
-begin
-  if p_worker not in ('meta-lead-backfill','meta-daily-insights') then
-    raise exception 'Unsupported maintenance worker';
-  end if;
-  if p_from is null or p_to is null or p_from > p_to then
-    raise exception 'Invalid maintenance date range';
-  end if;
-  if (p_to - p_from) > 93 then
-    raise exception 'Maintenance date range exceeds 93 days';
-  end if;
+BEGIN
+  IF p_worker NOT IN ('meta-lead-backfill','meta-daily-insights') THEN
+    RAISE EXCEPTION 'Unsupported maintenance worker';
+  END IF;
+  IF p_from IS NULL OR p_to IS NULL OR p_from > p_to THEN
+    RAISE EXCEPTION 'Invalid maintenance date range';
+  END IF;
+  IF (p_to - p_from) > 93 THEN
+    RAISE EXCEPTION 'Maintenance date range exceeds 93 days';
+  END IF;
 
-  select decrypted_secret into v_secret
-  from vault.decrypted_secrets
-  where name = 'REVOPS_INTERNAL_SECRET'
-  limit 1;
-  if v_secret is null or length(v_secret) < 32 then
-    raise exception 'Internal maintenance credential unavailable';
-  end if;
+  SELECT decrypted_secret INTO v_secret
+  FROM vault.decrypted_secrets
+  WHERE name = 'REVOPS_INTERNAL_SECRET'
+  LIMIT 1;
+  IF v_secret IS NULL OR length(v_secret) < 32 THEN
+    RAISE EXCEPTION 'Internal maintenance credential unavailable';
+  END IF;
 
-  select trim(decrypted_secret) into v_project_url
-  from vault.decrypted_secrets
-  where name = 'REVOPS_PROJECT_URL'
-  limit 1;
-  if v_project_url is null or v_project_url !~ '^https://[a-z0-9-]+[.]supabase[.]co$' then
-    raise exception 'Environment-local project URL unavailable';
-  end if;
+  SELECT trim(decrypted_secret) INTO v_project_url
+  FROM vault.decrypted_secrets
+  WHERE name = 'REVOPS_PROJECT_URL'
+  LIMIT 1;
+  IF v_project_url IS NULL OR v_project_url !~ '^https://[a-z0-9-]+[.]supabase[.]co$' THEN
+    RAISE EXCEPTION 'Environment-local project URL unavailable';
+  END IF;
 
-  if p_worker = 'meta-lead-backfill' then
+  IF p_worker = 'meta-lead-backfill' THEN
     v_url := v_project_url || '/functions/v1/meta-lead-backfill';
     v_body := pg_catalog.jsonb_build_object('since', p_from::text, 'until', p_to::text);
-  else
+  ELSE
     v_url := v_project_url || '/functions/v1/meta-daily-insights';
     v_body := pg_catalog.jsonb_build_object('from', p_from::text, 'to', p_to::text);
-  end if;
+  END IF;
 
-  select net.http_post(
+  SELECT net.http_post(
     url := v_url,
     headers := pg_catalog.jsonb_build_object(
       'Content-Type', 'application/json',
@@ -57,17 +57,36 @@ begin
     ),
     body := v_body,
     timeout_milliseconds := 60000
-  ) into v_request_id;
+  ) INTO v_request_id;
 
-  return v_request_id;
-end;
+  RETURN v_request_id;
+END;
 $$;
 
-revoke all on function public.nvx_dispatch_maintenance_worker(text,date,date) from public;
-grant execute on function public.nvx_dispatch_maintenance_worker(text,date,date) to service_role;
+REVOKE ALL ON FUNCTION public.nvx_dispatch_maintenance_worker(text,date,date) FROM public;
+GRANT EXECUTE ON FUNCTION public.nvx_dispatch_maintenance_worker(text,date,date) TO service_role;
 
-select cron.alter_job(
-  26,
-  command := $$select public.nvx_dispatch_maintenance_worker('meta-daily-insights', current_date - 2, current_date);$$,
-  active := true
-);
+-- Production originally recorded a generated pg_cron job id here. Generated job IDs are
+-- environment-local and therefore cannot be replayed on a clean Preview database. Resolve
+-- the same canonical job by name while preserving the applied command and active state.
+DO $route_meta_daily$
+DECLARE
+  v_job RECORD;
+BEGIN
+  IF to_regclass('cron.job') IS NULL THEN
+    RETURN;
+  END IF;
+
+  FOR v_job IN
+    SELECT jobid
+    FROM cron.job
+    WHERE jobname = 'fetch-meta-daily-insights'
+  LOOP
+    PERFORM cron.alter_job(
+      v_job.jobid,
+      command := $command$select public.nvx_dispatch_maintenance_worker('meta-daily-insights', current_date - 2, current_date);$command$,
+      active := true
+    );
+  END LOOP;
+END;
+$route_meta_daily$;
