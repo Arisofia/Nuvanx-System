@@ -1,0 +1,133 @@
+name: Cloudflare Canonical Runtime
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - 'supabase/functions/**'
+      - '.github/workflows/cloudflare-canonical-runtime.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - 'supabase/functions/**'
+      - '.github/workflows/cloudflare-canonical-runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-canonical-runtime-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  acceptance:
+    name: Cloudflare + Supabase authenticated acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PRODUCTION_E2E_URL: https://nuvanx-frontend.jenineferderas.workers.dev
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm install --include=dev --ignore-scripts
+
+      - name: Install Chromium
+        working-directory: frontend
+        run: npm exec playwright install --with-deps chromium
+
+      - name: Verify Cloudflare public runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          for route in / /login /dashboard /__canonical_runtime_probe__; do
+            code="$(curl --silent --show-error --output /tmp/cf-body --write-out '%{http_code}' "${PRODUCTION_E2E_URL}${route}")"
+            test "$code" = '200' || { echo "${route} returned HTTP ${code}" >&2; exit 1; }
+            grep -q 'id="root"' /tmp/cf-body || { echo "${route} is not the SPA shell" >&2; exit 1; }
+          done
+
+      - name: Write strict Supabase runtime test
+        working-directory: frontend
+        shell: bash
+        run: |
+          cat > tests/cloudflare-canonical-runtime.playwright.ts <<'EOF'
+          import { test, expect } from '@playwright/test';
+
+          test('canonical Cloudflare runtime has healthy Supabase session and APIs', async ({ page }) => {
+            test.setTimeout(75_000);
+            const email = process.env.E2E_EMAIL?.trim();
+            const password = process.env.E2E_PASSWORD?.trim();
+            if (!email || !password) throw new Error('E2E credentials missing');
+
+            const pageErrors: string[] = [];
+            const networkFailures: string[] = [];
+            const httpErrors: string[] = [];
+            const policyErrors: string[] = [];
+            const fallbackWarnings: string[] = [];
+            const isSupabase = (url: string) => url.includes('ssvvuuysgxyqvmovrlvk.supabase.co');
+
+            page.on('pageerror', error => pageErrors.push(error.message));
+            page.on('requestfailed', request => {
+              if (!isSupabase(request.url())) return;
+              const reason = request.failure()?.errorText || 'unknown';
+              if (!reason.includes('ERR_ABORTED')) networkFailures.push(`${reason} ${request.url()}`);
+            });
+            page.on('response', response => {
+              if (isSupabase(response.url()) && response.status() >= 400) {
+                httpErrors.push(`${response.status()} ${response.url()}`);
+              }
+            });
+            page.on('console', msg => {
+              const text = msg.text();
+              if (/cors|content security policy|blocked by client/i.test(text)) policyErrors.push(text);
+              if (/canonical crm load failed|legacy lead metadata unavailable/i.test(text)) fallbackWarnings.push(text);
+            });
+
+            await page.goto('/login', { waitUntil: 'domcontentloaded' });
+            await page.locator('#login-email').fill(email);
+            await page.locator('#login-password').fill(password);
+            await page.getByRole('button', { name: /entrar/i }).click();
+            await expect(page).toHaveURL(/\/dashboard\/?$/, { timeout: 15_000 });
+            await expect(page.getByTestId('control-centre-overview')).toBeVisible({ timeout: 15_000 });
+            await page.waitForTimeout(10_000);
+
+            await page.reload({ waitUntil: 'domcontentloaded' });
+            await expect(page).toHaveURL(/\/dashboard\/?$/, { timeout: 15_000 });
+            await expect(page.getByTestId('control-centre-overview')).toBeVisible({ timeout: 15_000 });
+            await page.waitForTimeout(6_000);
+
+            expect(pageErrors).toEqual([]);
+            expect(networkFailures).toEqual([]);
+            expect(httpErrors).toEqual([]);
+            expect(policyErrors).toEqual([]);
+            expect(fallbackWarnings).toEqual([]);
+          });
+          EOF
+
+      - name: Run canonical authenticated acceptance
+        working-directory: frontend
+        env:
+          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+          PRODUCTION_E2E_URL: https://nuvanx-frontend.jenineferderas.workers.dev
+          PLAYWRIGHT_REQUIRE_BROWSERS: 'true'
+        run: |
+          set -euo pipefail
+          test -n "$E2E_EMAIL"
+          test -n "$E2E_PASSWORD"
+          npm exec playwright test tests/cloudflare-canonical-runtime.playwright.ts --project=chromium
+          echo 'CLOUDFLARE_CANONICAL_RUNTIME=PASS'
