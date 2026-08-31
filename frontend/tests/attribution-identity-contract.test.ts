@@ -17,7 +17,7 @@ describe('Attribution Identity v1', () => {
 
   it('hardens final reconciliation with exact lineage and fill-null acquisition ownership', () => {
     const baseline = read('../../supabase/migrations/20260831031258_canonical_attribution_identity_and_qa_cleanup.sql')
-    const hardening = read('../../supabase/migrations/20260831082500_harden_attribution_lineage_and_tenant_health.sql')
+    const hardening = read('../../supabase/migrations/20260831081800_harden_attribution_lineage_and_tenant_health.sql')
     expect(hardening).toContain('CREATE OR REPLACE FUNCTION public.finalize_web_capture_reconciliation')
     expect(hardening).toContain('v_lead.nvx_lead_id IS DISTINCT FROM v_capture.nvx_lead_id')
     expect(hardening).toContain('v_effective_hubspot_contact_id := COALESCE(p_hubspot_contact_id, v_lead.hubspot_contact_id)')
@@ -56,7 +56,7 @@ describe('Attribution Identity v1', () => {
   })
 
   it('surfaces a tenant-scoped no-PII attribution health contract on the first dashboard page', () => {
-    const hardening = read('../../supabase/migrations/20260831082500_harden_attribution_lineage_and_tenant_health.sql')
+    const hardening = read('../../supabase/migrations/20260831081800_harden_attribution_lineage_and_tenant_health.sql')
     const component = read('../src/components/dashboard/AttributionHealthMonitor.tsx')
     const dashboard = read('../src/pages/Dashboard.tsx')
     expect(hardening).toContain('CREATE OR REPLACE FUNCTION public.nvx_get_attribution_health()')
