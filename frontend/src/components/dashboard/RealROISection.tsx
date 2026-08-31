@@ -23,7 +23,7 @@ export function RealROISection({ funnel, combined }: RealROISectionProps) {
             <div className="bg-[#FAF7F2] p-3 rounded-2xl"><ShieldCheck className="h-6 w-6 text-[#B08B5A]" /></div>
             Eficiencia operativa
           </CardTitle>
-          <p className="text-xs text-[#8E8680] mt-2">Sin métricas de caja hasta disponer de una fuente contable o de pagos reconciliada.</p>
+          <p className="text-xs text-[#8E8680] mt-2">CAC y ROAS quedan bloqueados hasta disponer de atribución financiera temporalmente reconciliada por lead/campaña.</p>
         </div>
       </CardHeader>
       <CardContent className="pt-10 px-8 pb-10 relative z-10">
@@ -35,32 +35,32 @@ export function RealROISection({ funnel, combined }: RealROISectionProps) {
             </div>
             <p className="text-4xl font-serif font-bold text-[#2C2825]">{formatCurrency(funnel.metaSpend)}</p>
             <div className="h-[2px] w-6 bg-[#B08B5A]/20 group-hover:w-10 transition-all duration-500" />
-            <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest opacity-60">Gasto total publicidad</p>
+            <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest opacity-60">Gasto reportado por Meta</p>
           </div>
 
           <div className="space-y-5 group">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-[#8E8680] uppercase tracking-[0.2em] group-hover:text-[#84643B] transition-colors">Pacientes cruzados</span>
+              <span className="text-[10px] font-bold text-[#8E8680] uppercase tracking-[0.2em] group-hover:text-[#84643B] transition-colors">Identidades Doctoralia</span>
               <div className="p-2.5 bg-[#FAF7F2] rounded-xl group-hover:bg-[#B08B5A] transition-all duration-500"><UserCheck className="h-3.5 w-3.5 text-[#B08B5A] group-hover:text-white" /></div>
             </div>
             <p className="text-4xl font-serif font-bold text-[#2C2825]">{funnel.doctoraliaPatients ?? '—'}</p>
             <div className="h-[2px] w-6 bg-[#B08B5A]/20 group-hover:w-10 transition-all duration-500" />
-            <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest opacity-60">Coincidencia por identidad</p>
+            <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest opacity-60">Cruce de identidad, no conversión</p>
           </div>
 
           <div className="space-y-5 group">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-[#8E8680] uppercase tracking-[0.2em] group-hover:text-[#84643B] transition-colors">Coste por paciente cruzado</span>
+              <span className="text-[10px] font-bold text-[#8E8680] uppercase tracking-[0.2em] group-hover:text-[#84643B] transition-colors">CAC cliente nuevo</span>
               <div className="p-2.5 bg-[#FAF7F2] rounded-xl group-hover:bg-[#B08B5A] transition-all duration-500"><Target className="h-3.5 w-3.5 text-[#B08B5A] group-hover:text-white" /></div>
             </div>
-            <p className="text-4xl font-serif font-bold text-[#2C2825]">{formatCurrency(funnel.cac)}</p>
+            <p className="text-4xl font-serif font-bold text-[#2C2825]">—</p>
             <div className="h-[2px] w-6 bg-[#B08B5A]/20 group-hover:w-10 transition-all duration-500" />
-            <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest opacity-60">Meta spend / pacientes cruzados</p>
+            <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest opacity-60">No disponible · attribution pendiente</p>
           </div>
 
           <div className="space-y-5 group">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-[#8E8680] uppercase tracking-[0.2em] group-hover:text-[#84643B] transition-colors">CPL Meta</span>
+              <span className="text-[10px] font-bold text-[#8E8680] uppercase tracking-[0.2em] group-hover:text-[#84643B] transition-colors">Coste / conversión Meta</span>
               <div className="p-2.5 bg-[#FAF7F2] rounded-xl group-hover:bg-[#B08B5A] transition-all duration-500"><Target className="h-3.5 w-3.5 text-[#B08B5A] group-hover:text-white" /></div>
             </div>
             <p className="text-4xl font-serif font-bold text-[#2C2825]">{formatCurrency(combined.metaCpl)}</p>
@@ -68,19 +68,6 @@ export function RealROISection({ funnel, combined }: RealROISectionProps) {
             <p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest opacity-60">Meta spend / conversiones Meta</p>
           </div>
         </div>
-
-        {funnel.cacConfidence != null && (
-          <div className="mt-12 pt-8 border-t border-[#E5D5C5]/20 flex flex-col sm:flex-row items-center justify-between gap-6">
-            <div className="flex items-center gap-6 w-full sm:w-auto">
-              <div className="flex items-center gap-3"><div className="p-2 bg-[#B08B5A]/5 rounded-lg"><ShieldCheck className="h-4 w-4 text-[#B08B5A]" /></div><span className="text-[10px] font-bold text-[#8E8680] uppercase tracking-[0.2em]">Confianza del cruce</span></div>
-              <div className="flex-1 sm:w-48 h-2 bg-[#FAF7F2] rounded-full overflow-hidden border border-[#E5D5C5]/40 shadow-inner min-w-[120px]">
-                <div className={`h-full transition-all duration-[2000ms] cubic-bezier(0.4, 0, 0.2, 1) ${funnel.cacConfidence > 70 ? 'bg-[#28A745]' : funnel.cacConfidence > 40 ? 'bg-[#B08B5A]' : 'bg-[#D9534F]'}`} style={{ width: `${funnel.cacConfidence}%` }} />
-              </div>
-              <span className={`text-xs font-bold ${funnel.cacConfidence > 70 ? 'text-[#28A745]' : funnel.cacConfidence > 40 ? 'text-[#B08B5A]' : 'text-[#D9534F]'}`}>{funnel.cacConfidence}%</span>
-            </div>
-            <div className="flex items-center gap-2"><div className="h-1.5 w-1.5 rounded-full bg-[#28A745] animate-pulse" /><p className="text-[10px] font-bold text-[#8E8680] uppercase tracking-widest">Datos sincronizados</p></div>
-          </div>
-        )}
       </CardContent>
     </Card>
   )

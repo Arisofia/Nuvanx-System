@@ -3,13 +3,15 @@ import { TrendingUp, Users, Target, Sparkles, UserCheck } from 'lucide-react'
 import { MetricDelta } from './MetricDelta'
 import type { DashboardMetrics } from '../../types'
 import type { DashboardQuality } from '../../lib/dashboard-helpers'
+import type { CanonicalDashboardMetricPayload } from '../../hooks/useCanonicalDashboardMetrics'
 
 interface MetricsGridProps {
   readonly metrics: DashboardMetrics
   readonly quality: DashboardQuality | null
+  readonly canonicalMetrics?: CanonicalDashboardMetricPayload | null
 }
 
-export function MetricsGrid({ metrics, quality }: MetricsGridProps) {
+export function MetricsGrid({ metrics, quality, canonicalMetrics }: MetricsGridProps) {
   const renderIsReal = (isReal: boolean | undefined) => {
     if (isReal === undefined) return null
     return (
@@ -29,7 +31,7 @@ export function MetricsGrid({ metrics, quality }: MetricsGridProps) {
         </CardHeader>
         <CardContent className="relative z-10">
           <div className="flex items-baseline gap-4 mt-6"><div className="text-5xl font-serif font-bold tracking-tight text-[#2C2825]">{metrics.metaConversions == null ? '—' : metrics.metaConversions.toLocaleString('es-ES')}</div>{metrics.deltas && <MetricDelta value={metrics.deltas.conversions} />}</div>
-          <div className="mt-6 flex items-center gap-2"><div className="h-[1px] w-4 bg-[#B08B5A]/40" /><p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest">Conversiones Meta</p></div>
+          <div className="mt-6 flex items-center gap-2"><div className="h-[1px] w-4 bg-[#B08B5A]/40" /><p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest">Conversiones reportadas por Meta</p></div>
         </CardContent>
       </Card>
 
@@ -41,7 +43,7 @@ export function MetricsGrid({ metrics, quality }: MetricsGridProps) {
         </CardHeader>
         <CardContent className="relative z-10">
           <div className="flex items-baseline gap-4 mt-6"><div className="text-5xl font-serif font-bold tracking-tight text-[#2C2825]">{metrics.totalLeads == null ? '—' : metrics.totalLeads.toLocaleString('es-ES')}</div>{metrics.deltas && <MetricDelta value={metrics.deltas.leads} />}</div>
-          <div className="mt-6 flex items-center gap-2"><div className="h-[1px] w-4 bg-[#B08B5A]/40" /><p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest">Leads en BD</p></div>
+          <div className="mt-6 flex items-center gap-2"><div className="h-[1px] w-4 bg-[#B08B5A]/40" /><p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest">Leads activos del periodo</p></div>
         </CardContent>
       </Card>
 
@@ -53,19 +55,20 @@ export function MetricsGrid({ metrics, quality }: MetricsGridProps) {
         </CardHeader>
         <CardContent className="relative z-10">
           <div className="flex items-baseline gap-4 mt-6"><div className="text-5xl font-serif font-bold tracking-tight text-[#2C2825]">{metrics.patientMatches == null ? '—' : metrics.patientMatches.toLocaleString('es-ES')}</div>{metrics.deltas && <MetricDelta value={metrics.deltas.patientMatches ?? null} />}</div>
-          <div className="mt-6 flex items-center gap-2"><div className="h-[1px] w-4 bg-[#B08B5A]/40" /><p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest">Coincidencias por identidad</p></div>
+          <div className="mt-6 flex items-center gap-2"><div className="h-[1px] w-4 bg-[#B08B5A]/40" /><p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest">Identidad Doctoralia verificada</p></div>
         </CardContent>
       </Card>
 
       <Card className="hover:shadow-[0_20px_40px_rgba(0,0,0,0.06)] transition-all duration-700 group border-none shadow-[0_8px_30px_rgba(0,0,0,0.02)] bg-white/80 backdrop-blur-sm rounded-[2rem] overflow-hidden relative">
         <div className="absolute top-0 right-0 p-8 opacity-0 group-hover:opacity-10 transition-opacity duration-700"><Sparkles className="h-20 w-20 text-[#B08B5A]" /></div>
         <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 relative z-10">
-          <div className="flex flex-col gap-3"><CardTitle className="text-[10px] font-bold text-[#8E8680] uppercase tracking-[0.25em]">Conversión a paciente</CardTitle>{renderIsReal(quality?.doctoraliaIsReal)}</div>
+          <div className="flex flex-col gap-3"><CardTitle className="text-[10px] font-bold text-[#8E8680] uppercase tracking-[0.25em]">Conversión a cliente nuevo</CardTitle>{renderIsReal(quality?.doctoraliaIsReal)}</div>
           <div className="bg-[#FAF7F2] p-3.5 rounded-2xl group-hover:bg-[#B08B5A] transition-all duration-500 group-hover:translate-y-[-4px]"><TrendingUp className="h-5 w-5 text-[#B08B5A] group-hover:text-white" /></div>
         </CardHeader>
         <CardContent className="relative z-10">
           <div className="text-5xl font-serif font-bold tracking-tight text-[#2C2825] mt-6">{metrics.conversionRate == null ? '—' : `${metrics.conversionRate.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}%`}</div>
-          <div className="mt-6 flex items-center gap-2"><div className="h-[1px] w-4 bg-[#B08B5A]/40" /><p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest">Lead → paciente</p></div>
+          <div className="mt-3 text-sm font-semibold text-[#2C2825]">{canonicalMetrics?.newClients ?? 0} clientes nuevos</div>
+          <div className="mt-4 flex items-center gap-2"><div className="h-[1px] w-4 bg-[#B08B5A]/40" /><p className="text-[10px] text-[#8E8680] font-bold uppercase tracking-widest">Lead → control programado/completado</p></div>
         </CardContent>
       </Card>
     </div>

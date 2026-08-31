@@ -59,7 +59,7 @@ function buildQuery(filters: FunnelFilters) {
   return query ? `?${query}` : ''
 }
 
-export default function TrazabilidadFunnelTableFinal() {
+export default function TrazabilidadFunnelTable() {
   const [filters, setFilters] = useState<FunnelFilters>(EMPTY_FILTERS)
   const [rows, setRows] = useState<TrazabilidadFunnelRow[]>([])
   const [loading, setLoading] = useState(false)

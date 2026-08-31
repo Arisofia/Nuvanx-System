@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import { AlertTriangle } from 'lucide-react'
 import { useDashboardData } from '../hooks/useDashboardData'
+import { useCanonicalDashboardMetrics } from '../hooks/useCanonicalDashboardMetrics'
 import { HubSpotMarketingContactMonitor } from '../components/dashboard/HubSpotMarketingContactMonitor'
 import { OperationsOverview } from '../components/dashboard/OperationsOverview'
 import { DashboardHeader } from '../components/dashboard/DashboardHeader'
@@ -55,13 +57,42 @@ export default function Dashboard() {
     metrics,
     combined,
     funnel,
-    funnelData,
     dataMode,
     trendData,
     sourcesList,
     campaignsList,
     quality,
   } = useDashboardData(dateRange.from, dateRange.to, campaignId, sourceFilter, 0, 0)
+
+  const canonical = useCanonicalDashboardMetrics(dateRange.from, dateRange.to, campaignId, sourceFilter)
+
+  const visibleMetrics = {
+    ...metrics,
+    totalLeads: canonical.metrics?.totalLeads ?? null,
+    conversionRate: canonical.metrics?.conversionRate ?? null,
+    patientMatches: canonical.metrics?.patientMatches ?? null,
+    patientConversionRate: canonical.metrics?.patientConversionRate ?? null,
+    deltas: metrics.deltas
+      ? {
+          ...metrics.deltas,
+          leads: canonical.metrics?.deltas.leads ?? null,
+          patientMatches: canonical.metrics?.deltas.patientMatches ?? null,
+        }
+      : undefined,
+    loading: metrics.loading || canonical.loading,
+    error: metrics.error,
+  }
+
+  const visibleFunnelData = canonical.funnel
+  const visibleFunnel = funnel
+    ? {
+        ...funnel,
+        crmLeads: canonical.metrics?.totalLeads ?? null,
+        doctoraliaPatients: canonical.metrics?.patientMatches ?? null,
+        cac: null,
+        cacConfidence: null,
+      }
+    : null
 
   const periodLabel = `Periodo: ${dateRange.from} al ${dateRange.to}`
 
@@ -74,10 +105,10 @@ export default function Dashboard() {
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-primary">Analítica y rendimiento</p>
           <h2 id="analytics-title" className="mt-2 font-serif text-2xl font-semibold text-foreground">Profundidad del negocio</h2>
-          <p className="mt-1 text-sm text-muted">Funnel, ROI, inversión y tendencia para análisis de gestión.</p>
+          <p className="mt-1 text-sm text-muted">Journey canónico, inversión y tendencia para análisis de gestión.</p>
         </div>
 
-        {metrics.loading ? (
+        {visibleMetrics.loading ? (
           <AnalyticsSkeleton />
         ) : (
           <>
@@ -94,13 +125,25 @@ export default function Dashboard() {
               metaAccountIds={quality?.metaAccountIds || []}
             />
 
-            <AlertSection error={metrics.error} metaError={metrics.metaError} />
+            <AlertSection error={visibleMetrics.error} metaError={visibleMetrics.metaError} />
 
-            {!metrics.error && (
+            {canonical.error && (
+              <div className="rounded-2xl border border-amber-300/70 bg-amber-50/70 px-5 py-4 flex items-start gap-3" role="status">
+                <AlertTriangle className="h-5 w-5 text-amber-700 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-900">Journey canónico no disponible</p>
+                  <p className="mt-1 text-sm text-amber-900/80">
+                    Las métricas CRM/Doctoralia quedan ocultas para evitar usar etapas o conversiones legacy. Meta puede seguir mostrándose con sus datos de proveedor.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {!visibleMetrics.error && (
               <>
-                <MetricsGrid metrics={metrics} quality={quality} />
-                <FunnelAndSpendSection funnelData={funnelData} metrics={metrics} combined={combined} periodLabel={periodLabel} quality={quality} />
-                <RealROISection funnel={funnel} combined={combined} />
+                <MetricsGrid metrics={visibleMetrics} quality={quality} canonicalMetrics={canonical.metrics} />
+                <FunnelAndSpendSection funnelData={visibleFunnelData} metrics={visibleMetrics} combined={combined} periodLabel={periodLabel} quality={quality} />
+                <RealROISection funnel={visibleFunnel} combined={combined} />
                 <TrendSection trendData={trendData} formatDate={(dateString) => {
                   const [year, month, day] = dateString.split('-')
                   return year && month && day ? `${day}/${month}/${year}` : dateString

@@ -4,7 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { GitMerge, Search, CheckCircle2, XCircle, TrendingUp, MessageCircle, Info } from 'lucide-react'
 import { invokeApi } from '../lib/invokeApi'
 import { SortableTable, type ColDef } from '../components/ui/SortableTable'
-import TrazabilidadFunnelTableFinal from '../components/traceability/TrazabilidadFunnelTable_Final'
+import TrazabilidadFunnelTable from '../components/traceability/TrazabilidadFunnelTable'
 
 interface TraceRow {
   lead_id: string
@@ -216,7 +216,7 @@ export default function Traceability() {
         </TabsContent>
 
         <TabsContent value="campaigns" className="mt-4"><Card><CardHeader><CardTitle>Cruces Doctoralia por campaña</CardTitle></CardHeader><CardContent><SortableTable columns={campaignColumns} rows={campaigns} loading={loading} emptyMessage="No hay datos de cruce por campaña todavía." exportFilename="cruces-doctoralia-por-campana" /></CardContent></Card></TabsContent>
-        <TabsContent value="funnel" className="mt-4"><TrazabilidadFunnelTableFinal /></TabsContent>
+        <TabsContent value="funnel" className="mt-4"><TrazabilidadFunnelTable /></TabsContent>
       </Tabs>
     </div>
   )
