@@ -25,7 +25,10 @@ jobs:
     env:
       SUPABASE_URL: https://ssvvuuysgxyqvmovrlvk.supabase.co
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
-      GOOGLE_ADS_SERVICE_ACCOUNT_RAW: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT || secrets.GOOGLE_DOCTORALIA_SERVICE_ACCOUNT }}
+      GOOGLE_ADS_SERVICE_ACCOUNT_RAW: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT || secrets.GOOGLE_DOCTORALIA_SERVICE_ACCOUNT || '' }}
+      GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID || '' }}
+      GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET || '' }}
+      GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN || '' }}
       GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
       GOOGLE_ADS_LOGIN_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_LOGIN_CUSTOMER_ID || '' }}
     steps:
@@ -43,10 +46,17 @@ jobs:
       - name: Install workspace dependencies
         run: npm install --include=dev --ignore-scripts
 
-      - name: Normalize and validate Google service account
+      - name: Resolve Google Ads authentication
         shell: bash
         run: |
           set -euo pipefail
+
+          if [[ -n "${GOOGLE_ADS_CLIENT_ID:-}" && -n "${GOOGLE_ADS_CLIENT_SECRET:-}" && -n "${GOOGLE_ADS_REFRESH_TOKEN:-}" ]]; then
+            echo "GOOGLE_ADS_AUTH_MODE=oauth2" >> "$GITHUB_ENV"
+            echo "Google Ads authentication: OAuth2 refresh token."
+            exit 0
+          fi
+
           python3 - <<'PY'
           import ast
           import base64
@@ -56,7 +66,11 @@ jobs:
 
           raw = os.environ.get('GOOGLE_ADS_SERVICE_ACCOUNT_RAW', '').strip()
           if not raw:
-              raise SystemExit('GOOGLE_ADS_SERVICE_ACCOUNT is empty')
+              raise SystemExit(
+                  'Google Ads auth unavailable: configure the complete OAuth2 triple '
+                  '(GOOGLE_ADS_CLIENT_ID, GOOGLE_ADS_CLIENT_SECRET, GOOGLE_ADS_REFRESH_TOKEN) '
+                  'or a valid GOOGLE_ADS_SERVICE_ACCOUNT'
+              )
 
           candidates = []
           def add(label, value):
@@ -112,6 +126,7 @@ jobs:
           canonical = json.dumps(service_account, separators=(',', ':'))
           with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as handle:
               handle.write(f'GOOGLE_ADS_SERVICE_ACCOUNT={canonical}\n')
+              handle.write('GOOGLE_ADS_AUTH_MODE=service_account\n')
           print(f'Google service account normalized successfully ({matched}).')
           PY
 
@@ -121,8 +136,22 @@ jobs:
           set -euo pipefail
           test -n "${SUPABASE_URL:-}"
           test -n "${SUPABASE_SERVICE_ROLE_KEY:-}"
-          test -n "${GOOGLE_ADS_SERVICE_ACCOUNT:-}"
           test -n "${GOOGLE_ADS_DEVELOPER_TOKEN:-}"
+
+          case "${GOOGLE_ADS_AUTH_MODE:-}" in
+            oauth2)
+              test -n "${GOOGLE_ADS_CLIENT_ID:-}"
+              test -n "${GOOGLE_ADS_CLIENT_SECRET:-}"
+              test -n "${GOOGLE_ADS_REFRESH_TOKEN:-}"
+              ;;
+            service_account)
+              test -n "${GOOGLE_ADS_SERVICE_ACCOUNT:-}"
+              ;;
+            *)
+              echo "Google Ads authentication mode was not resolved." >&2
+              exit 1
+              ;;
+          esac
 
       - name: Backfill August 2026
         run: node scripts/sync-google-ads-insights.js --from 2026-08-01 --to 2026-08-31
