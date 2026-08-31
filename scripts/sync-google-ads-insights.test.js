@@ -65,3 +65,34 @@ test('validateMappedRow rejects rows without canonical identity', () => {
     /canonical identity/,
   );
 });
+
+test('resolveGoogleAccessToken rejects incomplete OAuth configuration with clear error', async () => {
+  const origClientId = process.env.GOOGLE_ADS_CLIENT_ID;
+  const origClientSecret = process.env.GOOGLE_ADS_CLIENT_SECRET;
+  const origRefreshToken = process.env.GOOGLE_ADS_REFRESH_TOKEN;
+  const origServiceAccount = process.env.GOOGLE_ADS_SERVICE_ACCOUNT;
+
+  try {
+    process.env.GOOGLE_ADS_CLIENT_ID = 'test-client-id';
+    delete process.env.GOOGLE_ADS_CLIENT_SECRET;
+    delete process.env.GOOGLE_ADS_REFRESH_TOKEN;
+    delete process.env.GOOGLE_ADS_SERVICE_ACCOUNT;
+
+    await assert.rejects(
+      async () => {
+        const { resolveGoogleAccessToken } = require('./sync-google-ads-insights');
+        await resolveGoogleAccessToken();
+      },
+      /Incomplete Google Ads OAuth configuration\. Missing: GOOGLE_ADS_CLIENT_SECRET, GOOGLE_ADS_REFRESH_TOKEN/,
+    );
+  } finally {
+    if (origClientId !== undefined) process.env.GOOGLE_ADS_CLIENT_ID = origClientId;
+    else delete process.env.GOOGLE_ADS_CLIENT_ID;
+    if (origClientSecret !== undefined) process.env.GOOGLE_ADS_CLIENT_SECRET = origClientSecret;
+    else delete process.env.GOOGLE_ADS_CLIENT_SECRET;
+    if (origRefreshToken !== undefined) process.env.GOOGLE_ADS_REFRESH_TOKEN = origRefreshToken;
+    else delete process.env.GOOGLE_ADS_REFRESH_TOKEN;
+    if (origServiceAccount !== undefined) process.env.GOOGLE_ADS_SERVICE_ACCOUNT = origServiceAccount;
+    else delete process.env.GOOGLE_ADS_SERVICE_ACCOUNT;
+  }
+});

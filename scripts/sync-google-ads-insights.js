@@ -99,7 +99,18 @@ async function resolveGoogleAccessToken() {
   const clientSecret = getEnv('GOOGLE_ADS_CLIENT_SECRET');
   const refreshToken = getEnv('GOOGLE_ADS_REFRESH_TOKEN');
 
-  if (clientId && clientSecret && refreshToken) {
+  const hasAnyOAuth = Boolean(clientId || clientSecret || refreshToken);
+  const hasAllOAuth = Boolean(clientId && clientSecret && refreshToken);
+
+  if (hasAnyOAuth) {
+    if (!hasAllOAuth) {
+      const missing = [];
+      if (!clientId) missing.push('GOOGLE_ADS_CLIENT_ID');
+      if (!clientSecret) missing.push('GOOGLE_ADS_CLIENT_SECRET');
+      if (!refreshToken) missing.push('GOOGLE_ADS_REFRESH_TOKEN');
+      throw new Error(`Incomplete Google Ads OAuth configuration. Missing: ${missing.join(', ')}`);
+    }
+
     const body = new URLSearchParams({
       client_id: clientId,
       client_secret: clientSecret,
@@ -111,10 +122,12 @@ async function resolveGoogleAccessToken() {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body,
+      signal: AbortSignal.timeout(15_000),
     });
-    const data = await res.json();
-    if (!data.access_token) {
-      throw new Error(`Google OAuth refresh failed: ${JSON.stringify(data)}`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.access_token) {
+      const detail = data.error_description || data.error || `HTTP ${res.status}`;
+      throw new Error(`Google OAuth refresh failed: ${detail}`);
     }
     return data.access_token;
   }
@@ -381,5 +394,6 @@ module.exports = {
   resolveDateRange,
   mapGoogleRow,
   validateMappedRow,
+  resolveGoogleAccessToken,
   syncGoogleAds,
 };
