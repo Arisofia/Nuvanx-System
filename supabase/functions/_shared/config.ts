@@ -54,9 +54,10 @@ const EXTRA_CORS_ORIGINS = getEnv('CORS_ALLOWED_ORIGINS')
 
 export const ALLOWED_CORS_ORIGINS = new Set([
   DEFAULT_CORS_ORIGIN,
+  NORMALIZED_FRONTEND_URL,
   PRODUCTION_FALLBACK_URL,
   ...EXTRA_CORS_ORIGINS,
-].filter(Boolean));
+].filter((origin): origin is string => Boolean(origin)));
 
 export const DEFAULT_CORS_HEADERS = {
   'Access-Control-Allow-Origin': DEFAULT_CORS_ORIGIN,
