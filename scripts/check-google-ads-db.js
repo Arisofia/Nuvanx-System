@@ -10,11 +10,30 @@ function requireEnv(name) {
   return value;
 }
 
+function parseArg(flag) {
+  const idx = process.argv.indexOf(flag);
+  if (idx === -1) return null;
+  const value = process.argv[idx + 1];
+  return value && !value.startsWith('--') ? value : null;
+}
+
+function validateDate(name, value) {
+  if (value === null) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new Error(`${name} must be in YYYY-MM-DD format.`);
+  }
+  return value;
+}
+
 async function check() {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const serviceRoleKey = requireEnv('SUPABASE_SERVICE_ROLE_KEY');
   if (!supabaseUrl) throw new Error('SUPABASE_URL or VITE_SUPABASE_URL is required.');
   const supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
+
+  const from = validateDate('--from', parseArg('--from'));
+  const to = validateDate('--to', parseArg('--to'));
+  const hasRange = Boolean(from || to);
 
   let query = supabase
     .from('vw_google_ads_connection_status')
@@ -31,6 +50,7 @@ async function check() {
     const customerId = String(row.customer_id || '').replace(/\D/g, '');
     let insightCount = 0;
     let latestInsightDate = null;
+    let rangeRows = 0;
     if (customerId) {
       const countResult = await supabase
         .from('google_ads_daily_insights')
@@ -50,6 +70,19 @@ async function check() {
         .maybeSingle();
       if (latestResult.error) throw latestResult.error;
       latestInsightDate = latestResult.data?.date || null;
+
+      if (hasRange) {
+        let rangeQuery = supabase
+          .from('google_ads_daily_insights')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', row.user_id)
+          .eq('customer_id', customerId);
+        if (from) rangeQuery = rangeQuery.gte('date', from);
+        if (to) rangeQuery = rangeQuery.lte('date', to);
+        const rangeResult = await rangeQuery;
+        if (rangeResult.error) throw rangeResult.error;
+        rangeRows = rangeResult.count || 0;
+      }
     }
 
     rows.push({
@@ -65,21 +98,32 @@ async function check() {
       last_error_present: Boolean(row.last_error),
       updated_at: row.updated_at,
       insight_rows: insightCount,
+      range_rows: hasRange ? rangeRows : undefined,
       latest_insight_date: latestInsightDate,
       connected: row.status === 'connected' && row.credential_present === true && Boolean(row.customer_id),
     });
   }
 
+  const connectedRows = rows.filter((row) => row.connected);
   const output = {
     success: true,
     rows: rows.length,
-    connected: rows.filter((row) => row.connected).length,
+    connected: connectedRows.length,
     synced: rows.filter((row) => Boolean(row.last_sync) && row.insight_rows > 0).length,
+    range: hasRange ? { from, to } : undefined,
+    range_synced: hasRange ? connectedRows.filter((row) => row.range_rows > 0).length : undefined,
     data: rows,
   };
   console.log(process.argv.includes('--json') ? JSON.stringify(output) : JSON.stringify(output, null, 2));
-  if (rows.length === 0) process.exitCode = 2;
-  else if (rows.some((row) => !row.connected)) process.exitCode = 3;
+
+  if (rows.length === 0) {
+    process.exitCode = 2;
+  } else if (rows.some((row) => !row.connected)) {
+    process.exitCode = 3;
+  } else if (hasRange && connectedRows.some((row) => row.range_rows === 0)) {
+    // A date range was requested but a connected customer has no rows in it.
+    process.exitCode = 4;
+  }
 }
 
 check().catch((error) => {
