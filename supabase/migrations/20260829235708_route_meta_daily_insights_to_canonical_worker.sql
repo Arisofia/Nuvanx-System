@@ -66,7 +66,7 @@ $$;
 REVOKE ALL ON FUNCTION public.nvx_dispatch_maintenance_worker(text,date,date) FROM public;
 GRANT EXECUTE ON FUNCTION public.nvx_dispatch_maintenance_worker(text,date,date) TO service_role;
 
-DO $route_meta_daily$
+DO $$
 DECLARE
   v_job RECORD;
 BEGIN
@@ -81,9 +81,9 @@ BEGIN
   LOOP
     PERFORM cron.alter_job(
       v_job.jobid,
-      command := $command$select public.nvx_dispatch_maintenance_worker('meta-daily-insights', current_date - 2, current_date);$command$,
+      command := $$select public.nvx_dispatch_maintenance_worker('meta-daily-insights', current_date - 2, current_date);$$,
       active := true
     );
   END LOOP;
 END;
-$route_meta_daily$;
+$$;
