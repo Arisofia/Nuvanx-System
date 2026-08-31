@@ -44,18 +44,58 @@ function resolveCommitSha() {
   return result.stdout;
 }
 
+const TRIGGER_PATTERNS = [
+  /^frontend\//,
+  /^src\//,
+  /^public\//,
+  /^index\.html$/,
+  /^\.vercelignore$/,
+  /^vercel\.json$/,
+  /^vite\.config\./,
+  /^package\.json$/,
+  /^package-lock\.json$/,
+  /^\.env/,
+  /^scripts\/vercel-ci-gate/,
+  /vercel-ci-gate/,
+];
+
+export function isTriggerPath(filePath) {
+  if (!filePath || typeof filePath !== 'string') return false;
+  const normalized = filePath
+    .replace(/^(\.\/|\.\.\/)+/, '')
+    .replace(/^[/\\]+/, '')
+    .trim();
+  if (!normalized) return false;
+  return (
+    TRIGGER_PATTERNS.some((pattern) => pattern.test(normalized)) ||
+    normalized.startsWith('frontend/')
+  );
+}
+
+export function evaluateChangedFiles(fileListText) {
+  if (!fileListText || typeof fileListText !== 'string') return false;
+  const files = fileListText
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (files.length === 0) return false;
+  return files.some(isTriggerPath);
+}
+
 function frontendChanged() {
   const previousSha = process.env.VERCEL_GIT_PREVIOUS_SHA?.trim();
   if (previousSha) {
-    const result = git(['diff', '--quiet', previousSha, 'HEAD', '--', '.']);
-    if (result.status === 0) return false;
-    if (result.status === 1) return true;
+    const result = git(['diff', previousSha, 'HEAD', '--name-only']);
+    if (result.status === 0) {
+      return evaluateChangedFiles(result.stdout);
+    }
     console.log(`[vercel-ci-gate] previous-SHA diff unavailable; falling back to HEAD^: ${result.stderr}`);
   }
 
-  const result = git(['diff', 'HEAD^', 'HEAD', '--quiet', '--', '.']);
-  if (result.status === 0) return false;
-  if (result.status === 1) return true;
+  const result = git(['diff', 'HEAD^', 'HEAD', '--name-only']);
+  if (result.status === 0) {
+    return evaluateChangedFiles(result.stdout);
+  }
 
   // If Git cannot evaluate the diff, do not suppress a potentially necessary
   // production deployment. Continue to the CI gate instead.
@@ -176,6 +216,11 @@ async function main() {
   ignoreBuild(`timed out waiting for successful push workflows for ${sha}`);
 }
 
-main().catch((error) => {
-  ignoreBuild(`unexpected gate error: ${error instanceof Error ? error.message : String(error)}`);
-});
+import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
+
+if (process.argv[1] && resolve(fileURLToPath(import.meta.url)) === resolve(process.argv[1])) {
+  main().catch((error) => {
+    ignoreBuild(`unexpected gate error: ${error instanceof Error ? error.message : String(error)}`);
+  });
+}
