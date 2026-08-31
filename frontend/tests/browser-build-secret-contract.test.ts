@@ -37,30 +37,57 @@ const BACKEND_SECRETS_DENYLIST = [
   'SHEETS_WEBHOOK_SECRET_DOCTORALIA',
 ]
 
-describe('browser build secret boundary', () => {
-  it('strictly restricts all VITE_* secrets to the browser-public allowlist', () => {
-    const viteSecretPattern = /(VITE_[A-Z0-9_]+):\s*\$\{\{[^}]*secrets\.([A-Z0-9_]+)[^}]*\}\}/g
+// Matches VITE_VAR: ${{ secrets.FOO }}, VITE_VAR: '${{ secrets.FOO }}', VITE_VAR: "${{ secrets.FOO || '' }}", etc.
+export function extractViteSecretAssignments(workflowContent: string): Array<{ fullMatch: string; viteVar: string; secretName: string }> {
+  const viteSecretPattern = /(VITE_[A-Z0-9_]+):\s*['"]?\s*\$\{\{[^}]*secrets\.([A-Z0-9_]+)[^}]*\}\}\s*['"]?/g
+  const matches: Array<{ fullMatch: string; viteVar: string; secretName: string }> = []
+  let match: RegExpExecArray | null
+  while ((match = viteSecretPattern.exec(workflowContent)) !== null) {
+    matches.push({
+      fullMatch: match[0],
+      viteVar: match[1],
+      secretName: match[2],
+    })
+  }
+  return matches
+}
 
+describe('browser build secret boundary', () => {
+  it('strictly restricts all VITE_* secrets to the browser-public allowlist (supporting quoted & unquoted syntax)', () => {
     for (const [workflowName, content] of Object.entries(frontendBuildWorkflows)) {
       expect(content, `${workflowName} contains legacy VITE_MCP_API_KEY`).not.toContain('VITE_MCP_API_KEY')
 
-      let match: RegExpExecArray | null
-      while ((match = viteSecretPattern.exec(content)) !== null) {
-        const [fullMatch, viteVarName, secretName] = match
+      const assignments = extractViteSecretAssignments(content)
+      for (const { fullMatch, viteVar, secretName } of assignments) {
         expect(
           ALLOWED_BROWSER_PUBLIC_SECRETS.has(secretName),
-          `In ${workflowName}: variable ${viteVarName} maps forbidden secret secrets.${secretName} (full assignment: "${fullMatch}")`,
+          `In ${workflowName}: variable ${viteVar} maps forbidden secret secrets.${secretName} (assignment: "${fullMatch}")`,
         ).toBe(true)
       }
     }
   })
 
-  it('explicitly guards against any backend denylist secret in VITE mappings', () => {
+  it('explicitly guards against any backend denylist secret in VITE mappings with optional quotes and fallbacks', () => {
     for (const [workflowName, content] of Object.entries(frontendBuildWorkflows)) {
       for (const secret of BACKEND_SECRETS_DENYLIST) {
-        const pattern = new RegExp(`VITE_[A-Z0-9_]+:\\s*\\$\\{\\{[^}]*secrets\\.${secret}[^}]*\\}\\}`, 'i')
+        const pattern = new RegExp(`VITE_[A-Z0-9_]+:\\s*['"]?\\s*\\$\\{\\{[^}]*secrets\\.${secret}[^}]*\\}\\}\\s*['"]?`, 'i')
         expect(content, `In ${workflowName}: exposes backend secret ${secret}`).not.toMatch(pattern)
       }
+    }
+  })
+
+  it('detects quoted, unquoted, and fallback expressions for secret leakage in synthetic snippets', () => {
+    const syntheticSnippets = [
+      "VITE_LEAK: ${{ secrets.MCP_API_KEY }}",
+      "VITE_LEAK: '${{ secrets.MCP_API_KEY }}'",
+      'VITE_LEAK: "${{ secrets.MCP_API_KEY }}"',
+      "VITE_LEAK: '${{ secrets.MCP_API_KEY || \"\" }}'",
+      'VITE_LEAK:   "   ${{ secrets.JWT_SECRET }}   "',
+    ]
+    for (const snippet of syntheticSnippets) {
+      const extracted = extractViteSecretAssignments(snippet)
+      expect(extracted.length, `Failed to extract from snippet: ${snippet}`).toBe(1)
+      expect(ALLOWED_BROWSER_PUBLIC_SECRETS.has(extracted[0].secretName)).toBe(false)
     }
   })
 
