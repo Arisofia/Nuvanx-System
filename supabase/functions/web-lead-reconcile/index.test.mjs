@@ -59,8 +59,14 @@ describe("web lead reconciliation contract", () => {
     expect(source).toContain("googleAttributionForLead");
     expect(source).toContain("capture.marketing_consent === true ? await googleAttributionForLead(admin, nvxLeadId) : null");
     expect(source).toContain("google_attribution: Boolean(google)");
-    expect(source).toContain('gclid: attrValue(capture, "gclid") || google?.gclid || null');
+    expect(source).toContain('gclid: capture.marketing_consent === true ? (attrValue(capture, "gclid") || google?.gclid || null) : null');
     expect(source).toContain("marketing_consent,first_attribution");
+  });
+
+  it("persists Meta browser identity only under explicit marketing consent", () => {
+    expect(source).toContain('fbc: capture.marketing_consent === true ? attrValue(capture, "fbc") : null');
+    expect(source).toContain('fbp: capture.marketing_consent === true ? attrValue(capture, "fbp") : null');
+    expect(source).toContain('meta_browser_identity: capture.marketing_consent === true');
   });
 
   it("does not write downstream Deal/Data Manager queues client-side", () => {
