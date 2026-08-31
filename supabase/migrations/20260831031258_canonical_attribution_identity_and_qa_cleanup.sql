@@ -1,5 +1,7 @@
 -- Canonical Attribution Identity v1
 -- 1) Remove only known, unapplied QA Google attribution rows.
+--    Production contained exactly 14 legacy QA rows when this version was applied.
+--    Clean replays legitimately contain 0; any other count fails closed.
 -- 2) Make final web-capture reconciliation the single atomic owner of lead attribution enrichment.
 -- 3) Expose an authenticated, no-PII attribution health contract for Control Centre.
 
@@ -20,21 +22,23 @@ BEGIN
       OR gclid LIKE 'QA-ENRICHMENT-%'
     );
 
-  IF v_count <> 14 THEN
-    RAISE EXCEPTION 'Refusing QA attribution cleanup: expected exactly 14 unapplied rows, found %', v_count;
+  IF v_count NOT IN (0, 14) THEN
+    RAISE EXCEPTION 'Refusing QA attribution cleanup: expected 0 on clean replay or 14 legacy rows, found %', v_count;
   END IF;
 
-  DELETE FROM public.google_click_attributions
-  WHERE applied_lead_id IS NULL
-    AND reconciliation_status = 'pending'
-    AND (
-      landing_url LIKE 'https://staging2.nuvanx.com/%'
-      OR gclid LIKE 'NVXALLOW-%'
-      OR gclid LIKE 'NUVANX_QA_%'
-      OR gclid LIKE 'TEST_QA_%'
-      OR gclid LIKE 'QA-CONSENT-%'
-      OR gclid LIKE 'QA-ENRICHMENT-%'
-    );
+  IF v_count = 14 THEN
+    DELETE FROM public.google_click_attributions
+    WHERE applied_lead_id IS NULL
+      AND reconciliation_status = 'pending'
+      AND (
+        landing_url LIKE 'https://staging2.nuvanx.com/%'
+        OR gclid LIKE 'NVXALLOW-%'
+        OR gclid LIKE 'NUVANX_QA_%'
+        OR gclid LIKE 'TEST_QA_%'
+        OR gclid LIKE 'QA-CONSENT-%'
+        OR gclid LIKE 'QA-ENRICHMENT-%'
+      );
+  END IF;
 END
 $cleanup$;
 
