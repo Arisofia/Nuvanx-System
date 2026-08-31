@@ -8,6 +8,9 @@ on:
       - 'scripts/check-supabase-migration-history.mjs'
       - '.github/workflows/supabase-migration-history.yml'
       - '.github/actions/supabase-link-run/**'
+  workflow_dispatch:
+  schedule:
+    - cron: '17 0,8,16 * * *'
 
 permissions:
   contents: read
