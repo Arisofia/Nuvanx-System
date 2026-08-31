@@ -10,14 +10,37 @@
 
 -- Preview safety: partial Supabase preview databases used by CI may not carry
 -- the application core schema before historical compatibility migrations run.
--- Keep a minimal clinics table available so later guarded Doctoralia/Meta
--- scaffolding can declare clinic_id foreign keys without failing at parse time.
+-- Keep the effective production clinics contract available so later migrations
+-- have one deterministic schema owner instead of adding one-off compatibility
+-- columns at each consumer.
 CREATE TABLE IF NOT EXISTS public.clinics (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT,
-  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  name VARCHAR(255) NOT NULL,
+  slug VARCHAR(100) NOT NULL UNIQUE,
+  plan VARCHAR(50) NOT NULL DEFAULT 'starter',
+  country VARCHAR(64),
+  timezone VARCHAR(64) NOT NULL DEFAULT 'UTC',
+  settings JSONB NOT NULL DEFAULT '{}'::jsonb,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- If a reduced preview database supplied an older partial clinics table,
+-- reconcile only missing columns. Fresh replays use the exact contract above.
+ALTER TABLE public.clinics
+  ADD COLUMN IF NOT EXISTS slug VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS plan VARCHAR(50) NOT NULL DEFAULT 'starter',
+  ADD COLUMN IF NOT EXISTS country VARCHAR(64),
+  ADD COLUMN IF NOT EXISTS timezone VARCHAR(64) NOT NULL DEFAULT 'UTC',
+  ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}'::jsonb,
+  ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+CREATE UNIQUE INDEX IF NOT EXISTS clinics_slug_key
+  ON public.clinics (slug);
+CREATE INDEX IF NOT EXISTS clinics_slug_idx
+  ON public.clinics (slug);
 
 -- Keep a minimal patients compatibility table available for preview/fresh
 -- databases. Several historical migrations intentionally join or policy-scope
@@ -105,7 +128,7 @@ BEGIN
       NULL::UUID        AS lead_user_id,
       NULL::TEXT        AS patient_name,
       NULL::TEXT        AS patient_dni,
-      NULL::TEXT AS patient_phone,
+      NULL::TEXT        AS patient_phone,
       NULL::TIMESTAMPTZ AS patient_last_visit,
       NULL::TEXT        AS doc_patient_id,
       NULL::NUMERIC     AS match_confidence,
