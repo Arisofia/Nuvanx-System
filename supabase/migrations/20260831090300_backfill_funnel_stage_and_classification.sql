@@ -1,2 +1,0 @@
--- (ya aplicado en producción — placeholder para sync de historial)
--- funnel_stage: 0→2244; patient_classification canonical: 76→240

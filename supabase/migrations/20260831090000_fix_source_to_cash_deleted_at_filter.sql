@@ -1,2 +1,0 @@
--- (ya aplicado en producción — placeholder para sync de historial)
--- source_to_cash: deleted_at IS NULL + stage_canonical + match via doctoralia_appointments_ingestion
