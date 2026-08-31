@@ -11,6 +11,8 @@ const reconciliation = fs.readFileSync(
   'utf8',
 );
 
+const migrationRunner = fs.readFileSync('scripts/supabase-migrate.sh', 'utf8');
+
 const staleCleanupHistory = fs.readFileSync(
   'supabase/migrations/20260831140045_fix_revops_dispatch_ledger_stale_cleanup.sql',
   'utf8',
@@ -62,5 +64,19 @@ describe('Production ledger reconciliation hardening', () => {
     expect(reconciliation).toMatch(/DROP FUNCTION IF EXISTS public\.nvx_cleanup_stale_dispatch_ledger\(integer\)/);
     expect(reconciliation).toMatch(/'nvx-revops-dispatch-reconcile',[\s\S]*'\*\/10 \* \* \* \*'/);
     expect(reconciliation).toMatch(/GRANT EXECUTE ON FUNCTION public\.nvx_reconcile_dispatch_ledger\(integer\)[\s\S]*TO service_role/);
+  });
+
+  it('fails closed on migration-history drift and never repairs the remote ledger automatically', () => {
+    expect(migrationRunner).toMatch(/db push --dry-run --include-all/);
+    expect(migrationRunner).toMatch(/Remote migration versions not found in local migrations directory/);
+    expect(migrationRunner).toMatch(/No database mutation was attempted/);
+    expect(migrationRunner).not.toMatch(/supabase\s+migration\s+repair/);
+  });
+
+  it('retries only recognized transport failures', () => {
+    expect(migrationRunner).toMatch(/is_transient_transport_error/);
+    expect(migrationRunner).toMatch(/DB_PUSH_RETRYABLE=false/);
+    expect(migrationRunner).toMatch(/DB_PUSH_RETRYABLE=true/);
+    expect(migrationRunner).toMatch(/unclassified reason\. Failing closed/);
   });
 });
