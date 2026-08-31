@@ -28,12 +28,16 @@ const authenticatedRpcRepair = fs.readFileSync(
 
 const migrationRunner = fs.readFileSync('scripts/supabase-migrate.sh', 'utf8');
 const productionDeploy = fs.readFileSync('.github/workflows/master.yml', 'utf8');
-const doctorsBridge = fs.readFileSync(
-  'supabase/migrations/20260830223450_bridge_doctors_table.sql',
+const clinicalCoreBridge = fs.readFileSync(
+  'supabase/migrations/20260830223430_reconcile_clinical_core_contract.sql',
   'utf8',
 );
 const doctorsSeed = fs.readFileSync(
   'supabase/migrations/20260830223500_seed_canonical_doctors.sql',
+  'utf8',
+);
+const hubspotLatestViewBridge = fs.readFileSync(
+  'supabase/migrations/20260830233203_bridge_hubspot_contacts_latest_view.sql',
   'utf8',
 );
 
@@ -91,11 +95,21 @@ describe('Production ledger reconciliation hardening', () => {
     expect(hardening).not.toMatch(/pi\.clinic_id IS NULL OR/);
   });
 
-  it('creates public.doctors before the already-applied canonical seed on clean Preview history', () => {
-    expect(doctorsBridge).toMatch(/CREATE TABLE IF NOT EXISTS public\.doctors/);
-    expect(doctorsBridge).toMatch(/ADD COLUMN IF NOT EXISTS clinic_id uuid/);
+  it('creates the canonical clinical core before the already-applied doctor seed on clean Preview history', () => {
+    expect(clinicalCoreBridge).toMatch(/CREATE TABLE IF NOT EXISTS public\.doctors/);
+    expect(clinicalCoreBridge).toMatch(/CREATE TABLE IF NOT EXISTS public\.treatment_types/);
+    expect(clinicalCoreBridge).toMatch(/CREATE TABLE IF NOT EXISTS public\.appointments/);
+    expect(clinicalCoreBridge).toMatch(/CREATE POLICY appointments_clinic_isolation/);
+    expect(clinicalCoreBridge).toMatch(/clinic_id = \(select public\.current_clinic_id\(\)\)/);
     expect(doctorsSeed).toMatch(/INSERT INTO public\.doctors/);
     expect(doctorsSeed).not.toMatch(/CREATE TABLE/);
+  });
+
+  it('bridges the missing HubSpot latest view without rewriting applied timezone history', () => {
+    expect(hubspotLatestViewBridge).toMatch(/to_regclass\('public\.vw_hubspot_contacts_latest'\) IS NULL/);
+    expect(hubspotLatestViewBridge).toMatch(/CREATE VIEW public\.vw_hubspot_contacts_latest/);
+    expect(hubspotLatestViewBridge).toMatch(/REVOKE ALL ON public\.vw_hubspot_contacts_latest FROM PUBLIC, anon, authenticated/);
+    expect(hubspotLatestViewBridge).toMatch(/GRANT SELECT ON public\.vw_hubspot_contacts_latest TO service_role/);
   });
 
   it('makes the production deploy path use the fail-closed migration runner', () => {
