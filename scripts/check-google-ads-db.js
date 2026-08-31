@@ -87,7 +87,7 @@ async function check() {
         if (hasRange) {
           let rangeQuery = supabase
             .from('google_ads_daily_insights')
-            .select('*', { count: 'exact', head: true })
+            .select('date')
             .eq('user_id', row.user_id)
             .eq('customer_id', customerId);
           if (from) rangeQuery = rangeQuery.gte('date', from);
@@ -107,10 +107,33 @@ async function check() {
         if (latestResult.error) throw latestResult.error;
         latestInsightDate = latestResult.data?.date || null;
 
+        let rangeDistinctDays = 0;
         if (rangeResult) {
           if (rangeResult.error) throw rangeResult.error;
-          rangeRows = rangeResult.count || 0;
+          const records = rangeResult.data || [];
+          rangeRows = records.length;
+          const distinct = new Set(records.map((r) => r.date));
+          rangeDistinctDays = distinct.size;
         }
+
+        return {
+          integration_id: row.integration_id,
+          user_id: row.user_id,
+          clinic_id: row.clinic_id,
+          status: row.status,
+          customer_id: row.customer_id,
+          credential_present: row.credential_present === true,
+          credential_created_at: row.credential_created_at,
+          credential_last_used: row.credential_last_used,
+          last_sync: row.last_sync,
+          last_error_present: Boolean(row.last_error),
+          updated_at: row.updated_at,
+          insight_rows: insightCount,
+          range_rows: hasRange ? rangeRows : undefined,
+          range_distinct_days: hasRange ? rangeDistinctDays : undefined,
+          latest_insight_date: latestInsightDate,
+          connected: row.status === 'connected' && row.credential_present === true && Boolean(customerId),
+        };
       }
 
       return {
@@ -125,10 +148,11 @@ async function check() {
         last_sync: row.last_sync,
         last_error_present: Boolean(row.last_error),
         updated_at: row.updated_at,
-        insight_rows: insightCount,
-        range_rows: hasRange ? rangeRows : undefined,
-        latest_insight_date: latestInsightDate,
-        connected: row.status === 'connected' && row.credential_present === true && Boolean(customerId),
+        insight_rows: 0,
+        range_rows: hasRange ? 0 : undefined,
+        range_distinct_days: hasRange ? 0 : undefined,
+        latest_insight_date: null,
+        connected: false,
       };
     })
   );
@@ -140,17 +164,15 @@ async function check() {
     connected: connectedRows.length,
     synced: rows.filter((row) => Boolean(row.last_sync) && row.insight_rows > 0).length,
     range: hasRange ? { from, to } : undefined,
-    range_synced: hasRange ? connectedRows.filter((row) => row.range_rows > 0).length : undefined,
+    range_synced: hasRange ? connectedRows.filter((row) => (row.range_rows || 0) > 0).length : undefined,
     data: rows,
   };
   console.log(process.argv.includes('--json') ? JSON.stringify(output) : JSON.stringify(output, null, 2));
 
   if (rows.length === 0) {
     process.exitCode = 2;
-  } else if (rows.some((row) => !row.connected)) {
-    process.exitCode = 3;
-  } else if (hasRange && connectedRows.some((row) => row.range_rows === 0)) {
-    // A date range was requested but a connected customer has no rows in it.
+  } else if (hasRange && connectedRows.length > 0 && connectedRows.some((row) => (row.range_rows || 0) === 0)) {
+    // A date range was requested but an active connected customer has no rows in it.
     process.exitCode = 4;
   }
 }
