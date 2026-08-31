@@ -1,27 +1,12 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { ALLOWED_CORS_ORIGINS } from '../_shared/config.ts';
 
 declare const Deno: any;
 
 const SUPABASE_URL = (Deno.env.get('SUPABASE_URL') || '').trim();
 const ANON_KEY = (Deno.env.get('SUPABASE_ANON_KEY') || '').trim();
 const SERVICE_ROLE = (Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '').trim();
-const DEFAULT_FRONTEND = 'https://frontend-beta-ten-49.vercel.app';
-const DEFAULT_FRONTEND_ALT = 'https://frontend-arisofias-projects-c2217452.vercel.app';
-const ALLOWED_ORIGINS = new Set(
-  [
-    DEFAULT_FRONTEND,
-    DEFAULT_FRONTEND_ALT,
-    Deno.env.get('FRONTEND_URL'),
-    Deno.env.get('PRODUCTION_FALLBACK_URL'),
-    ...(Deno.env.get('CORS_ALLOWED_ORIGINS') || '').split(','),
-  ]
-    .map((value) => String(value || '').trim())
-    .filter(Boolean)
-    .map((value) => {
-      try { return new URL(value).origin; } catch { return ''; }
-    })
-    .filter(Boolean),
-);
+const ALLOWED_ORIGINS = ALLOWED_CORS_ORIGINS;
 
 const PROVIDERS = new Set(['meta', 'google', 'agenda']);
 const TTL_SECONDS: Record<string, number> = { meta: 300, google: 300, agenda: 120 };
