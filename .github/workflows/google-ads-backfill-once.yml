@@ -128,4 +128,4 @@ jobs:
         run: node scripts/sync-google-ads-insights.js --from 2026-08-01 --to 2026-08-31
 
       - name: Verify canonical August totals
-        run: node scripts/check-google-ads-db.js --json
+        run: node scripts/check-google-ads-db.js --json --from 2026-08-01 --to 2026-08-31
