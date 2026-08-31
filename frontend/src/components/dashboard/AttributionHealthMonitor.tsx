@@ -91,10 +91,18 @@ export function AttributionHealthMonitor() {
   }, [health])
 
   const border = state === 'attention'
-    ? 'border-amber-500/35 bg-amber-500/7'
+    ? 'border-amber-500/35 bg-amber-500/[0.07]'
     : state === 'healthy'
-      ? 'border-emerald-500/25 bg-emerald-500/6'
+      ? 'border-emerald-500/25 bg-emerald-500/[0.06]'
       : 'border-border bg-card'
+
+  const stateLabel = state === 'attention'
+    ? 'Atención · reconciliación pendiente'
+    : state === 'healthy'
+      ? 'Saludable · ledger reconciliado'
+      : state === 'waiting'
+        ? 'En espera · sin captura real'
+        : 'Comprobando estado'
 
   return (
     <Card className={border} data-testid="attribution-health-monitor">
@@ -104,7 +112,10 @@ export function AttributionHealthMonitor() {
             <div className="flex items-start gap-3">
               <div className="rounded-xl border border-border/70 bg-card p-2.5 text-primary"><Fingerprint className="h-5 w-5" /></div>
               <div>
-                <p className="text-sm font-semibold text-foreground">Attribution Identity · adquisición real</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-semibold text-foreground">Attribution Identity · adquisición real</p>
+                  <span className="rounded-full border border-border/70 bg-card px-2 py-0.5 text-[10px] font-semibold text-foreground">{stateLabel}</span>
+                </div>
                 <p className="mt-1 text-xs text-muted">GCLID, FBC, FBP y UTM solo desde evidencia consentida. El ledger QA antiguo ya no forma parte de producción.</p>
               </div>
             </div>
@@ -114,7 +125,7 @@ export function AttributionHealthMonitor() {
           </div>
 
           {error ? (
-            <div className="rounded-lg border border-rose-500/25 bg-rose-500/8 px-3 py-2 text-xs text-rose-700">{error}</div>
+            <div role="status" className="rounded-lg border border-rose-500/25 bg-rose-500/[0.08] px-3 py-2 text-xs text-rose-700">Error de Attribution Health: {error}</div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
               <Metric label="Leads activos" value={health?.leads.active ?? null} detail={`${health?.leads.websiteHubspot ?? 0} web canónicos`} />
