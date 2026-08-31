@@ -5,10 +5,10 @@ import pg from 'pg';
 
 const { Client } = pg;
 const migrationsDir = path.resolve('supabase/migrations');
-const databaseUrl = String(process.env.DATABASE_URL || '').trim();
+const databaseUrl = String(process.env.SESSION_URL || process.env.DATABASE_URL || '').trim();
 
 if (!databaseUrl) {
-  console.error('DATABASE_URL is required for Supabase migration history parity validation.');
+  console.error('SESSION_URL or DATABASE_URL is required for Supabase migration history parity validation.');
   process.exit(1);
 }
 
