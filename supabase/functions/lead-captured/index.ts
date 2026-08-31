@@ -126,7 +126,18 @@ const ATTR_KEYS = new Set([
   "source", "medium", "campaign_id", "referrer_domain", "landing_url", "timestamp", "channel",
   "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
   "gclid", "gbraid", "wbraid", "gclsrc",
+  "fbclid", "fbc", "fbp",
 ]);
+
+function cleanMetaIdentity(key: string, raw: string): string | null {
+  if (key === "fbclid") {
+    return /^[A-Za-z0-9._~:+-]{1,512}$/.test(raw) ? raw : null;
+  }
+  if (key === "fbc" || key === "fbp") {
+    return /^fb\.1\.\d{10,16}\.[A-Za-z0-9._~:+-]{1,512}$/.test(raw) ? raw : null;
+  }
+  return null;
+}
 
 function cleanAttribution(raw: unknown): Record<string, string> {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
@@ -135,7 +146,25 @@ function cleanAttribution(raw: unknown): Record<string, string> {
     if (!ATTR_KEYS.has(key) || value === null || value === undefined || value === "") continue;
     const normalized = String(value).trim();
     if (!normalized) continue;
+    if (key === "fbclid" || key === "fbc" || key === "fbp") {
+      const metaValue = cleanMetaIdentity(key, normalized);
+      if (metaValue) out[key] = metaValue;
+      continue;
+    }
     out[key] = normalized.slice(0, key === "landing_url" ? 1000 : 512);
+  }
+
+  // FBC is a deterministic representation of a real fbclid. Derive it only
+  // when a consented touch contains both fbclid evidence and its capture time.
+  // FBP is never synthesized; it is accepted only when the browser supplies
+  // a real `_fbp` cookie value.
+  if (out.fbclid && !out.fbc && out.timestamp) {
+    const touchMillis = Date.parse(out.timestamp);
+    if (Number.isFinite(touchMillis) && touchMillis > 0) {
+      const derived = `fb.1.${Math.trunc(touchMillis)}.${out.fbclid}`;
+      const valid = cleanMetaIdentity("fbc", derived);
+      if (valid) out.fbc = valid;
+    }
   }
   return out;
 }
@@ -202,7 +231,7 @@ Deno.serve(async (req: Request) => {
       conversion_attribution: marketingConsent ? cleanAttribution(body.conversion_attribution) : {},
       source: "hubspot_web",
       last_seen_at: new Date().toISOString(),
-      metadata: { schema_version: 2, auth: "hubspot_hmac_sha256" },
+      metadata: { schema_version: 3, auth: "hubspot_hmac_sha256", attribution_contract: "attribution_identity_v1" },
     };
 
     const { data, error } = await admin
