@@ -1,0 +1,2 @@
+-- (ya aplicado en producción — placeholder para sync de historial)
+-- master_pacientes_trazabilidad: produccion_intermediarios → doctoralia_appointments_ingestion

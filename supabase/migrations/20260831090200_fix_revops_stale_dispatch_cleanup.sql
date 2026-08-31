@@ -1,0 +1,2 @@
+-- (ya aplicado en producción — placeholder para sync de historial)
+-- revops_dispatch_ledger: cleanup stale dispatched + cron nvx_cleanup_stale_dispatch_ledger
