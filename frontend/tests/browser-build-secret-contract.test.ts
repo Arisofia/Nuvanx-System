@@ -10,8 +10,16 @@ const cloudflare = readFileSync(
   fileURLToPath(new URL('../../.github/workflows/deploy-cloudflare.yml', import.meta.url)),
   'utf8',
 )
+const runtime = readFileSync(
+  fileURLToPath(new URL('../../.github/workflows/control-centre-runtime.yml', import.meta.url)),
+  'utf8',
+)
 
-const frontendBuildWorkflows = { 'master.yml': master, 'deploy-cloudflare.yml': cloudflare }
+const frontendBuildWorkflows = {
+  'master.yml': master,
+  'deploy-cloudflare.yml': cloudflare,
+  'control-centre-runtime.yml': runtime,
+}
 
 // Strict allowlist of secrets permitted to be injected into browser-accessible VITE_* variables.
 const ALLOWED_BROWSER_PUBLIC_SECRETS = new Set([
@@ -41,8 +49,8 @@ const BACKEND_SECRETS_DENYLIST = [
 export function extractViteSecretAssignments(workflowContent: string): Array<{ fullMatch: string; viteVar: string; secretName: string }> {
   const viteSecretPattern = /(VITE_[A-Z0-9_]+):\s*['"]?\s*\$\{\{[^}]*secrets\.([A-Z0-9_]+)[^}]*\}\}\s*['"]?/g
   const matches: Array<{ fullMatch: string; viteVar: string; secretName: string }> = []
-  let match: RegExpExecArray | null
-  while ((match = viteSecretPattern.exec(workflowContent)) !== null) {
+  const allMatches = [...workflowContent.matchAll(viteSecretPattern)]
+  for (const match of allMatches) {
     matches.push({
       fullMatch: match[0],
       viteVar: match[1],
@@ -53,7 +61,7 @@ export function extractViteSecretAssignments(workflowContent: string): Array<{ f
 }
 
 describe('browser build secret boundary', () => {
-  it('strictly restricts all VITE_* secrets to the browser-public allowlist (supporting quoted & unquoted syntax)', () => {
+  it('strictly restricts all VITE_* secrets to the browser-public allowlist across all build workflows', () => {
     for (const [workflowName, content] of Object.entries(frontendBuildWorkflows)) {
       expect(content, `${workflowName} contains legacy VITE_MCP_API_KEY`).not.toContain('VITE_MCP_API_KEY')
 
@@ -67,10 +75,10 @@ describe('browser build secret boundary', () => {
     }
   })
 
-  it('explicitly guards against any backend denylist secret in VITE mappings with optional quotes and fallbacks', () => {
+  it('explicitly guards against any backend denylist secret in VITE mappings with word boundary', () => {
     for (const [workflowName, content] of Object.entries(frontendBuildWorkflows)) {
       for (const secret of BACKEND_SECRETS_DENYLIST) {
-        const pattern = new RegExp(`VITE_[A-Z0-9_]+:\\s*['"]?\\s*\\$\\{\\{[^}]*secrets\\.${secret}[^}]*\\}\\}\\s*['"]?`, 'i')
+        const pattern = new RegExp(`VITE_[A-Z0-9_]+:\\s*['"]?\\s*\\$\\{\\{[^}]*secrets\\.${secret}(?:\\b|[^A-Z0-9_])[^}]*\\}\\}\\s*['"]?`, 'i')
         expect(content, `In ${workflowName}: exposes backend secret ${secret}`).not.toMatch(pattern)
       }
     }
