@@ -25,6 +25,16 @@ function validateDate(name, value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     throw new Error(`${name} must be in YYYY-MM-DD format.`);
   }
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    isNaN(date.getTime()) ||
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    throw new Error(`${name} must be a valid calendar date.`);
+  }
   return value;
 }
 
@@ -51,64 +61,77 @@ async function check() {
   if (error) throw error;
 
   const connections = data || [];
-  const rows = [];
-  for (const row of connections) {
-    const customerId = String(row.customer_id || '').replace(/\D/g, '');
-    let insightCount = 0;
-    let latestInsightDate = null;
-    let rangeRows = 0;
-    if (customerId) {
-      const countResult = await supabase
-        .from('google_ads_daily_insights')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', row.user_id)
-        .eq('customer_id', customerId);
-      if (countResult.error) throw countResult.error;
-      insightCount = countResult.count || 0;
-
-      const latestResult = await supabase
-        .from('google_ads_daily_insights')
-        .select('date')
-        .eq('user_id', row.user_id)
-        .eq('customer_id', customerId)
-        .order('date', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (latestResult.error) throw latestResult.error;
-      latestInsightDate = latestResult.data?.date || null;
-
-      if (hasRange) {
-        let rangeQuery = supabase
+  const rows = await Promise.all(
+    connections.map(async (row) => {
+      const customerId = String(row.customer_id || '').replace(/\D/g, '');
+      let insightCount = 0;
+      let latestInsightDate = null;
+      let rangeRows = 0;
+      if (customerId) {
+        const countPromise = supabase
           .from('google_ads_daily_insights')
           .select('*', { count: 'exact', head: true })
           .eq('user_id', row.user_id)
           .eq('customer_id', customerId);
-        if (from) rangeQuery = rangeQuery.gte('date', from);
-        if (to) rangeQuery = rangeQuery.lte('date', to);
-        const rangeResult = await rangeQuery;
-        if (rangeResult.error) throw rangeResult.error;
-        rangeRows = rangeResult.count || 0;
-      }
-    }
 
-    rows.push({
-      integration_id: row.integration_id,
-      user_id: row.user_id,
-      clinic_id: row.clinic_id,
-      status: row.status,
-      customer_id: row.customer_id,
-      credential_present: row.credential_present === true,
-      credential_created_at: row.credential_created_at,
-      credential_last_used: row.credential_last_used,
-      last_sync: row.last_sync,
-      last_error_present: Boolean(row.last_error),
-      updated_at: row.updated_at,
-      insight_rows: insightCount,
-      range_rows: hasRange ? rangeRows : undefined,
-      latest_insight_date: latestInsightDate,
-      connected: row.status === 'connected' && row.credential_present === true && Boolean(customerId),
-    });
-  }
+        const latestPromise = supabase
+          .from('google_ads_daily_insights')
+          .select('date')
+          .eq('user_id', row.user_id)
+          .eq('customer_id', customerId)
+          .order('date', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        let rangePromise = null;
+        if (hasRange) {
+          let rangeQuery = supabase
+            .from('google_ads_daily_insights')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', row.user_id)
+            .eq('customer_id', customerId);
+          if (from) rangeQuery = rangeQuery.gte('date', from);
+          if (to) rangeQuery = rangeQuery.lte('date', to);
+          rangePromise = rangeQuery;
+        }
+
+        const [countResult, latestResult, rangeResult] = await Promise.all([
+          countPromise,
+          latestPromise,
+          rangePromise,
+        ]);
+
+        if (countResult.error) throw countResult.error;
+        insightCount = countResult.count || 0;
+
+        if (latestResult.error) throw latestResult.error;
+        latestInsightDate = latestResult.data?.date || null;
+
+        if (rangeResult) {
+          if (rangeResult.error) throw rangeResult.error;
+          rangeRows = rangeResult.count || 0;
+        }
+      }
+
+      return {
+        integration_id: row.integration_id,
+        user_id: row.user_id,
+        clinic_id: row.clinic_id,
+        status: row.status,
+        customer_id: row.customer_id,
+        credential_present: row.credential_present === true,
+        credential_created_at: row.credential_created_at,
+        credential_last_used: row.credential_last_used,
+        last_sync: row.last_sync,
+        last_error_present: Boolean(row.last_error),
+        updated_at: row.updated_at,
+        insight_rows: insightCount,
+        range_rows: hasRange ? rangeRows : undefined,
+        latest_insight_date: latestInsightDate,
+        connected: row.status === 'connected' && row.credential_present === true && Boolean(customerId),
+      };
+    })
+  );
 
   const connectedRows = rows.filter((row) => row.connected);
   const output = {
