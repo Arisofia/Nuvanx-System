@@ -6,7 +6,8 @@ const read = (relativePath: string) => readFileSync(new URL(relativePath, import
 describe('Attribution Identity v1', () => {
   it('purges only the known unapplied QA Google ledger and keeps cleanup deterministic', () => {
     const migration = read('../../supabase/migrations/20260831031258_canonical_attribution_identity_and_qa_cleanup.sql')
-    expect(migration).toContain("IF v_count <> 14 THEN")
+    expect(migration).toContain('IF v_count NOT IN (0, 14) THEN')
+    expect(migration).toContain('IF v_count = 14 THEN')
     expect(migration).toContain("landing_url LIKE 'https://staging2.nuvanx.com/%'")
     expect(migration).toContain("gclid LIKE 'NVXALLOW-%'")
     expect(migration).toContain("gclid LIKE 'NUVANX_QA_%'")
