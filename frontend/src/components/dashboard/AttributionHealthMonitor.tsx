@@ -73,9 +73,14 @@ export function AttributionHealthMonitor() {
   }, [])
 
   useEffect(() => {
-    void load()
+    // Schedule the initial fetch through the timer callback instead of synchronously
+    // mutating state in the effect body. Subsequent refreshes use the same owner.
+    const initial = globalThis.setTimeout(() => void load(), 0)
     const timer = globalThis.setInterval(() => void load(), 300_000)
-    return () => globalThis.clearInterval(timer)
+    return () => {
+      globalThis.clearTimeout(initial)
+      globalThis.clearInterval(timer)
+    }
   }, [load])
 
   const state = useMemo(() => {
