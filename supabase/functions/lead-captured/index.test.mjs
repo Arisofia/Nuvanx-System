@@ -39,7 +39,7 @@ describe("lead-captured canonical contract", () => {
     expect(source).toContain("Missing/legacy senders are deliberately fail-closed as false");
     expect(source).toContain("first_attribution: marketingConsent ? cleanAttribution(body.first_attribution) : {}");
     expect(source).toContain("conversion_attribution: marketingConsent ? cleanAttribution(body.conversion_attribution) : {}");
-    expect(source).toContain('metadata: { schema_version: 2, auth: "hubspot_hmac_sha256" }');
+    expect(source).toContain('metadata: { schema_version: 3, auth: "hubspot_hmac_sha256", attribution_contract: "attribution_identity_v1" }');
   });
 
   it("stores only allowlisted non-clinical attribution", () => {
@@ -50,6 +50,15 @@ describe("lead-captured canonical contract", () => {
     expect(contract).toMatch(/gclid/);
     expect(contract).toMatch(/utm_source/);
     expect(contract).toMatch(/landing_url/);
+    expect(contract).toMatch(/fbclid/);
+    expect(contract).toMatch(/fbc/);
+    expect(contract).toMatch(/fbp/);
+  });
+
+  it("derives only FBC from real fbclid evidence and never synthesizes FBP", () => {
+    expect(source).toContain("if (out.fbclid && !out.fbc && out.timestamp)");
+    expect(source).toContain('const derived = `fb.1.${Math.trunc(touchMillis)}.${out.fbclid}`');
+    expect(source).toContain("FBP is never synthesized");
   });
 
   it("is idempotent by nvx_lead_id and wakes only the governed reconciliation worker", () => {
