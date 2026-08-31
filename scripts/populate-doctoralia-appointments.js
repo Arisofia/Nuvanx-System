@@ -42,7 +42,7 @@ require('dotenv').config({ path: '.env.local' });
 const DEFAULT_CSV = 'doctoralia_appointments.csv';
 const DEFAULT_WORKBOOK = 'Base Pacientes Nuvanx.xlsx';
 const DEFAULT_SHEET = 'Base Completa Doctoralia';
-const DEFAULT_CHUNK_SIZE = 500;
+const DEFAULT_CHUNK_SIZE = 100;
 const DRY_RUN = process.argv.includes('--dry-run');
 
 const INPUT_PATH = path.resolve(
@@ -356,7 +356,14 @@ function buildRecord(row, headerMap, sheetRow) {
     day_num: parseIntOrNull(getCell(row, headerMap, 'day_num')),
     month_num: parseIntOrNull(getCell(row, headerMap, 'month_num')),
     year_num: parseIntOrNull(getCell(row, headerMap, 'year_num')),
-    clinic: clean(getCell(row, headerMap, 'clinic')),
+    clinic: (() => {
+      const explicit = clean(getCell(row, headerMap, 'clinic'));
+      if (explicit && (explicit.includes('Chamber') || explicit.includes('Goya') || explicit.includes('Salamanca'))) {
+        return explicit;
+      }
+      const isChamberi = hasAny(agenda, ['JJRT', 'MEDICINA EST', 'ENFERMER', 'DERMOCOSM']);
+      return isChamberi ? 'Centro Clínico NUVANX Chamberí' : 'Centro Clínico NUVANX Salamanca–Goya';
+    })(),
     is_cancelled: hasAny(estado, ['ANULAD', 'CANCEL', 'BAJA']),
     is_jjrt: hasAny(agenda, ['JJRT', 'MEDICINA EST']),
     is_nursing: hasAny(agenda, ['ENFERMER', 'DERMOCOSM']),
