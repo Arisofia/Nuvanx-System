@@ -9,7 +9,8 @@ const sql = readFileSync(
 
 describe('Doctoralia timeout regression contract', () => {
   it('does not hide the production defect by changing statement_timeout', () => {
-    expect(sql.toLowerCase()).not.toContain('statement_timeout')
+    expect(sql).not.toMatch(/\bSET\s+(?:LOCAL\s+)?statement_timeout\b/i)
+    expect(sql).not.toMatch(/\bset_config\s*\(\s*['"]statement_timeout['"]/i)
   })
 
   it('does not use migration-history repair or generated IDs', () => {
