@@ -25,12 +25,6 @@ jobs:
     env:
       SUPABASE_URL: https://ssvvuuysgxyqvmovrlvk.supabase.co
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
-      GOOGLE_ADS_SERVICE_ACCOUNT_RAW: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT || secrets.GOOGLE_DOCTORALIA_SERVICE_ACCOUNT || '' }}
-      GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID || '' }}
-      GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET || '' }}
-      GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN || '' }}
-      GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
-      GOOGLE_ADS_LOGIN_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_LOGIN_CUSTOMER_ID || '' }}
     steps:
       - name: Checkout exact branch
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -46,115 +40,64 @@ jobs:
       - name: Install workspace dependencies
         run: npm install --include=dev --ignore-scripts
 
-      - name: Resolve Google Ads authentication
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [[ -n "${GOOGLE_ADS_CLIENT_ID:-}" && -n "${GOOGLE_ADS_CLIENT_SECRET:-}" && -n "${GOOGLE_ADS_REFRESH_TOKEN:-}" ]]; then
-            echo "GOOGLE_ADS_AUTH_MODE=oauth2" >> "$GITHUB_ENV"
-            echo "Google Ads authentication: OAuth2 refresh token."
-            exit 0
-          fi
-
-          python3 - <<'PY'
-          import ast
-          import base64
-          import json
-          import os
-          import re
-
-          raw = os.environ.get('GOOGLE_ADS_SERVICE_ACCOUNT_RAW', '').strip()
-          if not raw:
-              raise SystemExit(
-                  'Google Ads auth unavailable: configure the complete OAuth2 triple '
-                  '(GOOGLE_ADS_CLIENT_ID, GOOGLE_ADS_CLIENT_SECRET, GOOGLE_ADS_REFRESH_TOKEN) '
-                  'or a valid GOOGLE_ADS_SERVICE_ACCOUNT'
-              )
-
-          candidates = []
-          def add(label, value):
-              value = (value or '').strip()
-              if value and all(existing != value for _, existing in candidates):
-                  candidates.append((label, value))
-
-          add('raw', raw)
-          if raw.startswith('GOOGLE_ADS_SERVICE_ACCOUNT='):
-              add('assignment', raw.split('=', 1)[1])
-          if raw[:1] in {'"', "'"} and raw[-1:] == raw[:1]:
-              add('outer-quoted', raw[1:-1])
-          if raw.startswith(('base64:', 'b64:')):
-              add('base64-prefixed', raw.split(':', 1)[1])
-          if '\\"' in raw:
-              add('escaped-quotes', raw.replace('\\"', '"'))
-
-          expanded = list(candidates)
-          for label, value in expanded:
-              compact = re.sub(r'\s+', '', value)
-              padded = compact + ('=' * (-len(compact) % 4))
-              for variant, decoder in (
-                  ('base64', base64.b64decode),
-                  ('base64url', base64.urlsafe_b64decode),
-              ):
-                  try:
-                      decoded = decoder(padded.encode()).decode('utf-8').strip()
-                  except Exception:
-                      continue
-                  add(f'{label}-{variant}', decoded)
-
-          service_account = None
-          matched = None
-          for label, value in candidates:
-              parsed = None
-              try:
-                  parsed = json.loads(value)
-                  if isinstance(parsed, str):
-                      parsed = json.loads(parsed)
-              except Exception:
-                  try:
-                      parsed = ast.literal_eval(value)
-                  except Exception:
-                      parsed = None
-              if isinstance(parsed, dict) and parsed.get('client_email') and parsed.get('private_key'):
-                  service_account = parsed
-                  matched = label
-                  break
-
-          if service_account is None:
-              raise SystemExit('GOOGLE_ADS_SERVICE_ACCOUNT format is unsupported or missing client_email/private_key')
-
-          canonical = json.dumps(service_account, separators=(',', ':'))
-          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as handle:
-              handle.write(f'GOOGLE_ADS_SERVICE_ACCOUNT={canonical}\n')
-              handle.write('GOOGLE_ADS_AUTH_MODE=service_account\n')
-          print(f'Google service account normalized successfully ({matched}).')
-          PY
-
-      - name: Validate required runtime secrets
+      - name: Validate server-side runtime contract
         shell: bash
         run: |
           set -euo pipefail
           test -n "${SUPABASE_URL:-}"
           test -n "${SUPABASE_SERVICE_ROLE_KEY:-}"
-          test -n "${GOOGLE_ADS_DEVELOPER_TOKEN:-}"
 
-          case "${GOOGLE_ADS_AUTH_MODE:-}" in
-            oauth2)
-              test -n "${GOOGLE_ADS_CLIENT_ID:-}"
-              test -n "${GOOGLE_ADS_CLIENT_SECRET:-}"
-              test -n "${GOOGLE_ADS_REFRESH_TOKEN:-}"
-              ;;
-            service_account)
-              test -n "${GOOGLE_ADS_SERVICE_ACCOUNT:-}"
-              ;;
-            *)
-              echo "Google Ads authentication mode was not resolved." >&2
-              exit 1
-              ;;
-          esac
+      - name: Backfill August 2026 through Edge runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          status="$(curl --silent --show-error \
+            --output "$response_file" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+            --header "Content-Type: application/json" \
+            --data '{"from":"2026-08-01","to":"2026-08-31"}' \
+            "${SUPABASE_URL}/functions/v1/google-ads-daily-sync")"
 
-      - name: Backfill August 2026
-        run: node scripts/sync-google-ads-insights.js --from 2026-08-01 --to 2026-08-31
+          node - "$response_file" "$status" <<'NODE'
+          const fs = require('fs');
+          const [file, status] = process.argv.slice(2);
+          const raw = fs.readFileSync(file, 'utf8');
+          let payload;
+          try {
+            payload = JSON.parse(raw);
+          } catch {
+            throw new Error(`Google Ads Edge runtime returned non-JSON (HTTP ${status})`);
+          }
+          if (Number(status) < 200 || Number(status) >= 300 || payload.success !== true) {
+            const safe = {
+              status: Number(status),
+              success: payload.success === true,
+              provider: payload.provider || null,
+              kind: payload.kind || null,
+              message: payload.message || null,
+              failures: Array.isArray(payload.failures)
+                ? payload.failures.map((item) => ({
+                    customer_id: item.customer_id || null,
+                    kind: item.kind || null,
+                    message: item.message || null,
+                  }))
+                : [],
+            };
+            console.error(JSON.stringify(safe));
+            process.exit(1);
+          }
+          const summary = {
+            success: true,
+            provider: payload.provider || null,
+            api_version: payload.api_version || null,
+            date_range: payload.date_range || null,
+            accounts: Array.isArray(payload.accounts) ? payload.accounts : [],
+          };
+          console.log(JSON.stringify(summary));
+          NODE
 
       - name: Verify canonical August totals
         run: node scripts/check-google-ads-db.js --json --from 2026-08-01 --to 2026-08-31
