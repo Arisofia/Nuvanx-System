@@ -16,9 +16,11 @@ const activeRoots = [
 ];
 const sourceExtensions = new Set(['.ts', '.tsx', '.js', '.mjs', '.cjs', '.sql', '.yml', '.yaml', '.json']);
 const forbiddenName = /(?:_final|_old|_backup|_copy|\.bak$|\.tmp$|\.old$|~$)/i;
+// Assemble review-only sentinels from fragments so this detector never contains
+// the complete forbidden string it is searching for.
 const forbiddenContentMarkers = [
-  'touch: force inclusion in PR diff',
-  'temporary review-only marker',
+  ['touch:', 'force inclusion in PR diff'].join(' '),
+  ['temporary', 'review-only marker'].join(' '),
 ];
 const forbiddenExactPaths = new Set([
   '.secret-webhook.example',
