@@ -3,6 +3,7 @@ import { AlertTriangle } from 'lucide-react'
 import { useDashboardData } from '../hooks/useDashboardData'
 import { useCanonicalDashboardMetrics } from '../hooks/useCanonicalDashboardMetrics'
 import { HubSpotMarketingContactMonitor } from '../components/dashboard/HubSpotMarketingContactMonitor'
+import { AttributionHealthMonitor } from '../components/dashboard/AttributionHealthMonitor'
 import { OperationsOverview } from '../components/dashboard/OperationsOverview'
 import { DashboardHeader } from '../components/dashboard/DashboardHeader'
 import { AlertSection } from '../components/dashboard/AlertSection'
@@ -99,6 +100,7 @@ export default function Dashboard() {
   return (
     <main className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-14 pb-24" aria-labelledby="operations-overview-title">
       <HubSpotMarketingContactMonitor />
+      <AttributionHealthMonitor />
       <OperationsOverview />
 
       <section className="space-y-8 border-t border-border/70 pt-10" aria-labelledby="analytics-title">
