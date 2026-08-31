@@ -8,7 +8,7 @@ CREATE OR REPLACE VIEW public.master_pacientes_trazabilidad
 WITH (security_invoker = true)
 AS
 WITH leads_clean AS (
-  SELECT DISTINCT ON (leads.phone_normalized)
+  SELECT DISTINCT ON (leads.phone_normalized, leads.clinic_id)
     leads.id,
     leads.name,
     leads.email_normalized,
@@ -23,7 +23,7 @@ WITH leads_clean AS (
   WHERE leads.phone_normalized IS NOT NULL
     AND leads.phone_normalized::text <> ''::text
     AND leads.deleted_at IS NULL
-  ORDER BY leads.phone_normalized, leads.created_at DESC
+  ORDER BY leads.phone_normalized, leads.clinic_id, leads.created_at DESC
 )
 SELECT
   l.id                                          AS lead_id,

@@ -27,6 +27,15 @@ const authenticatedRpcRepair = fs.readFileSync(
 );
 
 const migrationRunner = fs.readFileSync('scripts/supabase-migrate.sh', 'utf8');
+const productionDeploy = fs.readFileSync('.github/workflows/master.yml', 'utf8');
+const doctorsBridge = fs.readFileSync(
+  'supabase/migrations/20260830223450_bridge_doctors_table.sql',
+  'utf8',
+);
+const doctorsSeed = fs.readFileSync(
+  'supabase/migrations/20260830223500_seed_canonical_doctors.sql',
+  'utf8',
+);
 
 const staleCleanupHistory = fs.readFileSync(
   'supabase/migrations/20260831140045_fix_revops_dispatch_ledger_stale_cleanup.sql',
@@ -77,7 +86,23 @@ describe('Production ledger reconciliation hardening', () => {
     expect(hardening).toMatch(/JOIN public\.clinics c/);
     expect(hardening).toMatch(/c\.name = dai\.clinic/);
     expect(hardening).toMatch(/c\.id = l\.clinic_id/);
+    expect(hardening).toMatch(/DISTINCT ON \(leads\.phone_normalized, leads\.clinic_id\)/);
+    expect(hardening).toMatch(/ORDER BY leads\.phone_normalized, leads\.clinic_id, leads\.created_at DESC/);
     expect(hardening).not.toMatch(/pi\.clinic_id IS NULL OR/);
+  });
+
+  it('creates public.doctors before the already-applied canonical seed on clean Preview history', () => {
+    expect(doctorsBridge).toMatch(/CREATE TABLE IF NOT EXISTS public\.doctors/);
+    expect(doctorsBridge).toMatch(/ADD COLUMN IF NOT EXISTS clinic_id uuid/);
+    expect(doctorsSeed).toMatch(/INSERT INTO public\.doctors/);
+    expect(doctorsSeed).not.toMatch(/CREATE TABLE/);
+  });
+
+  it('makes the production deploy path use the fail-closed migration runner', () => {
+    expect(productionDeploy).toMatch(/bash scripts\/supabase-migrate\.sh/);
+    expect(productionDeploy).not.toMatch(
+      /Apply canonical migrations[\s\S]*supabase db push --include-all --db-url/,
+    );
   });
 
   it('rejects invalid stale-dispatch thresholds and remains service-role only', () => {
@@ -133,5 +158,7 @@ describe('Production ledger reconciliation hardening', () => {
     expect(migrationRunner).toMatch(/DB_PUSH_RETRYABLE=false/);
     expect(migrationRunner).toMatch(/DB_PUSH_RETRYABLE=true/);
     expect(migrationRunner).toMatch(/unclassified reason\. Failing closed/);
+    expect(migrationRunner).toMatch(/\$\{DB_PUSH_RETRYABLE:-false\}" != "true"/);
+    expect(migrationRunner).toMatch(/max_attempts=3/);
   });
 });

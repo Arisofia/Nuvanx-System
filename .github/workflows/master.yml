@@ -352,7 +352,7 @@ jobs:
           command: |
             set -euo pipefail
             node scripts/validate-sql-migrations.js
-            supabase db push --include-all --db-url "${SESSION_URL:-$DATABASE_URL}" --debug
+            bash scripts/supabase-migrate.sh
             supabase migration list --db-url "${SESSION_URL:-$DATABASE_URL}" --debug
 
       - name: Deploy canonical core Edge Functions
