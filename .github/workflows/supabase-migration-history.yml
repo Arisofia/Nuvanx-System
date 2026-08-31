@@ -1,0 +1,53 @@
+name: Supabase Migration History Parity
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+      - 'scripts/check-supabase-migration-history.mjs'
+      - '.github/workflows/supabase-migration-history.yml'
+      - '.github/actions/supabase-link-run/**'
+  workflow_dispatch:
+  schedule:
+    - cron: '17 0,8,16 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-migration-history-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  history-parity:
+    name: Supabase · migration history parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install workspace dependencies
+        run: npm install --include=dev --ignore-scripts
+
+      - name: Validate remote migration history parity
+        uses: ./.github/actions/supabase-link-run
+        with:
+          project_ref: ${{ secrets.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ secrets.DATABASE_URL }}
+          supabase_db_password: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          skip_link: 'true'
+          command: |
+            set -euo pipefail
+            test -n "${SESSION_URL:-}"
+            node scripts/check-supabase-migration-history.mjs
