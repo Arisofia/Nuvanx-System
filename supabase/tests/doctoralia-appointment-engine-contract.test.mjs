@@ -3,7 +3,14 @@ import { readFileSync } from "node:fs";
 
 const runner = readFileSync("scripts/refresh-doctoralia-appointment-engine.js", "utf8");
 const orchestrator = readFileSync("scripts/run-daily-sync.js", "utf8");
-const migration = readFileSync("supabase/migrations/20260819171218_revops_operating_contract.sql", "utf8");
+const scheduledMigration = readFileSync(
+  "supabase/migrations/20260831011429_harden_scheduled_doctoralia_refresh_and_meta_campaign_filter.sql",
+  "utf8",
+);
+const validityMigration = readFileSync(
+  "supabase/migrations/20260831011936_centralize_doctoralia_match_validity_and_prune_stale_matches.sql",
+  "utf8",
+);
 
 describe("Doctoralia Appointment Engine contract", () => {
   it("runs only after canonical Doctoralia appointment ingestion", () => {
@@ -20,16 +27,21 @@ describe("Doctoralia Appointment Engine contract", () => {
     expect(runner).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i);
   });
 
-  it("preserves the live lead stage vocabulary", () => {
-    expect(migration).toContain("WHEN l.stage = 'convertido' THEN l.stage");
-    expect(migration).toContain("WHEN l.stage = 'lead' THEN 'appointment'");
-    expect(migration).not.toContain("appointment_attended");
-    expect(migration).not.toContain("l.stage = 'closed'");
+  it("keeps the scheduled engine evidence-only", () => {
+    expect(scheduledMigration).toContain("RETURN public.match_leads_to_doctoralia_by_phone(p_user_id);");
+    expect(scheduledMigration).not.toContain("DELETE FROM public.lead_appointment_matches");
+    expect(scheduledMigration).not.toContain("UPDATE public.leads");
+    expect(scheduledMigration).not.toContain("THEN 'appointment'");
+    expect(scheduledMigration).not.toContain("appointment_status = CASE");
   });
 
-  it("stores attendance and no-show state in dedicated appointment fields", () => {
-    expect(migration).toContain("appointment_status = CASE");
-    expect(migration).toContain("attended_at = CASE");
-    expect(migration).toContain("no_show_flag = lower(pm.estado) = 'no acude'");
+  it("centralizes match validity and self-heals stale evidence", () => {
+    expect(validityMigration).toContain("CREATE OR REPLACE FUNCTION public.nvx_doctoralia_match_is_valid");
+    expect(validityMigration).toContain("count(DISTINCT NULLIF(btrim(a2.doctoralia_id), ''))");
+    expect(validityMigration).toContain("AT TIME ZONE 'Europe/Madrid'");
+    expect(validityMigration).toContain("DELETE FROM public.lead_appointment_matches lam");
+    expect(validityMigration).toContain("public.nvx_doctoralia_match_is_valid(l.id, a.id)");
+    expect(validityMigration).not.toContain("SET verified_revenue");
+    expect(validityMigration).not.toContain("stage = CASE");
   });
 });
