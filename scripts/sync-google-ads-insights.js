@@ -16,7 +16,6 @@ const { google } = require('googleapis');
 require('dotenv').config();
 
 const API_VERSION = 'v25';
-const PAGE_SIZE = 1000;
 const MAX_PAGES = 50;
 const MAX_RANGE_DAYS = 92;
 const DEFAULT_LOOKBACK_DAYS = 30;

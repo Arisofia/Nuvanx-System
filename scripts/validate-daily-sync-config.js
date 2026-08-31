@@ -53,7 +53,7 @@ const ERROR_MESSAGES = {
   DOCTORALIA_MIN_ROWS_TOO_LOW: 'DOCTORALIA_APPOINTMENTS_MIN_ROWS must be at least 1800 for complete Doctoralia daily sync loads.',
   META_ACCOUNT_MISSING: 'META_AD_ACCOUNT_ID, META_AD_ACCOUNT_IDS, or FALLBACK_META_AD_ACCOUNT_ID secret is required.',
   GOOGLE_DOCTORALIA_SERVICE_ACCOUNT_MISSING: 'GOOGLE_DOCTORALIA_SERVICE_ACCOUNT or GOOGLE_ADS_SERVICE_ACCOUNT secret is required for Doctoralia appointments sync.',
-  GOOGLE_ADS_SERVICE_ACCOUNT_INVALID: 'GOOGLE_ADS_SERVICE_ACCOUNT must be valid service-account JSON with client_email.',
+  GOOGLE_ADS_SERVICE_ACCOUNT_INVALID: 'GOOGLE_ADS_SERVICE_ACCOUNT must be valid service-account JSON with client_email and private_key.',
   SUPABASE_ACCESS_TOKEN_FORMAT: 'SUPABASE_ACCESS_TOKEN format is invalid. Expected sbp_ token.',
   SUPABASE_PROJECT_REF_FORMAT: 'SUPABASE_PROJECT_REF format is invalid. Expected 20 lowercase alphanumeric characters.',
   UNKNOWN: 'Daily Sync configuration validation failed.',
@@ -108,7 +108,7 @@ if (!hasValue('GOOGLE_DOCTORALIA_SERVICE_ACCOUNT') && !hasValue('GOOGLE_ADS_SERV
 } else {
   const doctoraliaCredential = process.env.GOOGLE_DOCTORALIA_SERVICE_ACCOUNT || process.env.GOOGLE_ADS_SERVICE_ACCOUNT;
   if (!readServiceAccountEmail(doctoraliaCredential)) {
-    console.error('::error::Configured Google service account is not valid JSON with a client_email field.');
+    console.error('::error::Configured Google service account is not valid JSON with client_email and private_key fields.');
     process.exitCode = 1;
   } else {
     console.log('[daily-sync] Google service account configured for Doctoralia.');

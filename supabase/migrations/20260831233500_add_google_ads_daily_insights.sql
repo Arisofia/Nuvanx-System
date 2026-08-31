@@ -17,7 +17,10 @@ alter table public.integrations
 drop index if exists public.integrations_user_service_uq;
 drop index if exists public.integrations_user_id_service_key;
 drop index if exists public.integrations_service_unique;
+drop index if exists public.integrations_user_service_unique_idx;
+drop index if exists public.integrations_user_id_service_unique_idx;
 
+drop index if exists public.integrations_service_unique_non_google_ads;
 create unique index if not exists integrations_service_unique_non_google_ads
   on public.integrations (user_id, service)
   where service <> 'google_ads';
