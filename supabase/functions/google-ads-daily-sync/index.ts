@@ -40,19 +40,17 @@ function isRecord(value: unknown): value is Record<string, any> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-async function secretMatches(received: string, expected: string): Promise<boolean> {
-  if (!received || !expected) return false;
-  const encoder = new TextEncoder();
-  const [a, b] = await Promise.all([
-    crypto.subtle.digest("SHA-256", encoder.encode(received)),
-    crypto.subtle.digest("SHA-256", encoder.encode(expected)),
-  ]);
-  const left = new Uint8Array(a);
-  const right = new Uint8Array(b);
-  if (left.length !== right.length) return false;
-  let diff = 0;
-  for (let i = 0; i < left.length; i += 1) diff |= left[i] ^ right[i];
-  return diff === 0;
+function verifiedJwtRole(token: string): string {
+  const parts = String(token || "").split(".");
+  if (parts.length !== 3) return "";
+  try {
+    const normalized = parts[1].replaceAll("-", "+").replaceAll("_", "/");
+    const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+    const payload = JSON.parse(atob(padded));
+    return isRecord(payload) ? String(payload.role || "") : "";
+  } catch {
+    return "";
+  }
 }
 
 function parseServiceAccount(raw: string): Record<string, any> {
@@ -255,7 +253,7 @@ Deno.serve(async (req: Request) => {
   if (!SUPABASE_URL || !SERVICE_ROLE) return reply(500, { success: false, message: "Server configuration error" });
 
   const bearer = String(req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
-  if (!(await secretMatches(bearer, SERVICE_ROLE))) {
+  if (verifiedJwtRole(bearer) !== "service_role") {
     return reply(403, { success: false, message: "Forbidden" });
   }
 
