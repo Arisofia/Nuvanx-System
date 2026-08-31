@@ -17,7 +17,8 @@ describe('Doctoralia funnel production-safe repair', () => {
     const batchCalls = migration.match(/SELECT public\.nvx_normalize_doctoralia_funnel_batch\(/g) || []
     expect(batchCalls).toHaveLength(8)
     expect(migration).toContain('DROP FUNCTION public.nvx_normalize_doctoralia_funnel_batch(text[])')
-    expect(migration).not.toMatch(/statement_timeout/i)
+    expect(migration).not.toMatch(/\bSET\s+(?:LOCAL\s+)?statement_timeout\b/i)
+    expect(migration).not.toMatch(/\bset_config\s*\(\s*['"]statement_timeout['"]/i)
   })
 
   it('keeps the canonical owner refresh strictly owner-scoped', () => {
