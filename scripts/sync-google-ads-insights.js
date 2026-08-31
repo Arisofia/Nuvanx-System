@@ -94,6 +94,35 @@ function parseServiceAccount() {
   return value;
 }
 
+async function resolveGoogleAccessToken() {
+  const clientId = getEnv('GOOGLE_ADS_CLIENT_ID');
+  const clientSecret = getEnv('GOOGLE_ADS_CLIENT_SECRET');
+  const refreshToken = getEnv('GOOGLE_ADS_REFRESH_TOKEN');
+
+  if (clientId && clientSecret && refreshToken) {
+    const body = new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token',
+    }).toString();
+
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+    const data = await res.json();
+    if (!data.access_token) {
+      throw new Error(`Google OAuth refresh failed: ${JSON.stringify(data)}`);
+    }
+    return data.access_token;
+  }
+
+  const serviceAccount = parseServiceAccount();
+  return getGoogleAccessToken(serviceAccount);
+}
+
 async function getGoogleAccessToken(serviceAccount) {
   const auth = new google.auth.JWT({
     email: serviceAccount.client_email,
@@ -254,8 +283,7 @@ async function syncGoogleAds() {
   if (!supabaseUrl || !serviceRoleKey) throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required');
   if (!developerToken) throw new Error('GOOGLE_ADS_DEVELOPER_TOKEN is required');
 
-  const serviceAccount = parseServiceAccount();
-  const accessToken = await getGoogleAccessToken(serviceAccount);
+  const accessToken = await resolveGoogleAccessToken();
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
