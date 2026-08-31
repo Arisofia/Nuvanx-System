@@ -4,6 +4,10 @@
 -- multi-clinic contract. This migration is intentionally ordered immediately before
 -- that first consumer. It is idempotent and is a no-op/normalization on Production,
 -- where these columns and constraints already exist.
+--
+-- Do not coerce clinics.name here. Production already carries varchar(255), and clean
+-- Preview only needs the semantic name contract. ALTER TYPE is unsafe once reporting
+-- views (for example doctoralia_kpis) depend on clinics.name.
 
 ALTER TABLE public.clinics
   ADD COLUMN IF NOT EXISTS slug varchar(100),
@@ -15,7 +19,6 @@ ALTER TABLE public.clinics
   ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
 
 ALTER TABLE public.clinics
-  ALTER COLUMN name TYPE varchar(255) USING name::varchar(255),
   ALTER COLUMN name SET NOT NULL,
   ALTER COLUMN slug SET NOT NULL,
   ALTER COLUMN plan SET DEFAULT 'starter',
