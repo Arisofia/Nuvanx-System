@@ -1,0 +1,77 @@
+import { readFileSync } from 'node:fs'
+import { describe, expect, it } from 'vitest'
+
+const read = (relativePath: string) => readFileSync(new URL(relativePath, import.meta.url), 'utf8')
+
+describe('Attribution Identity v1', () => {
+  it('purges only the known unapplied QA Google ledger and keeps cleanup deterministic', () => {
+    const migration = read('../../supabase/migrations/20260831031258_canonical_attribution_identity_and_qa_cleanup.sql')
+    expect(migration).toContain('IF v_count NOT IN (0, 14) THEN')
+    expect(migration).toContain('IF v_count = 14 THEN')
+    expect(migration).toContain("landing_url LIKE 'https://staging2.nuvanx.com/%'")
+    expect(migration).toContain("gclid LIKE 'NVXALLOW-%'")
+    expect(migration).toContain("gclid LIKE 'NUVANX_QA_%'")
+    expect(migration).toContain('applied_lead_id IS NULL')
+    expect(migration).toContain("reconciliation_status = 'pending'")
+  })
+
+  it('hardens final reconciliation with exact lineage and fill-null acquisition ownership', () => {
+    const baseline = read('../../supabase/migrations/20260831031258_canonical_attribution_identity_and_qa_cleanup.sql')
+    const hardening = read('../../supabase/migrations/20260831081800_harden_attribution_lineage_and_tenant_health.sql')
+    expect(hardening).toContain('CREATE OR REPLACE FUNCTION public.finalize_web_capture_reconciliation')
+    expect(hardening).toContain('v_lead.nvx_lead_id IS DISTINCT FROM v_capture.nvx_lead_id')
+    expect(hardening).toContain('v_effective_hubspot_contact_id := COALESCE(p_hubspot_contact_id, v_lead.hubspot_contact_id)')
+    expect(hardening).toContain("v_capture.conversion_attribution ->> 'fbc'")
+    expect(hardening).toContain("v_capture.conversion_attribution ->> 'fbp'")
+    expect(hardening).toContain("gclid = COALESCE(NULLIF(BTRIM(gclid), ''), v_gclid)")
+    expect(hardening).toContain("fbc = COALESCE(NULLIF(BTRIM(fbc), ''), v_fbc)")
+    expect(hardening).toContain("fbp = COALESCE(NULLIF(BTRIM(fbp), ''), v_fbp)")
+    expect(baseline).not.toContain("stage = 'convertido'")
+    expect(hardening).not.toContain("stage = 'convertido'")
+    expect(hardening).not.toContain('verified_revenue =')
+  })
+
+  it('accepts Meta browser identity only inside the consent-gated and bounded capture payload', () => {
+    const capture = read('../../supabase/functions/lead-captured/index.ts')
+    expect(capture).toContain('"fbclid", "fbc", "fbp"')
+    expect(capture).toContain('marketingConsent ? cleanAttribution(body.first_attribution) : {}')
+    expect(capture).toContain('marketingConsent ? cleanAttribution(body.conversion_attribution) : {}')
+    expect(capture).toContain('META_BROWSER_ID_MAX_LENGTH = 512')
+    expect(capture).toContain('raw.length > META_BROWSER_ID_MAX_LENGTH')
+    expect(capture).toContain('if (out.fbclid && !out.fbc && out.timestamp)')
+    expect(capture).toContain('const derived = `fb.1.${Math.trunc(touchMillis)}.${out.fbclid}`')
+    expect(capture).toContain('FBP is never synthesized')
+    expect(capture).toContain('schema_version: 3')
+  })
+
+  it('reconciles only structurally valid FBC and FBP when marketing consent exists', () => {
+    const reconcile = read('../../supabase/functions/web-lead-reconcile/index.ts')
+    expect(reconcile).toContain('const consented = capture.marketing_consent === true')
+    expect(reconcile).toContain('function metaBrowserIdentityValue(capture: any, key: "fbc" | "fbp")')
+    expect(reconcile).toContain('const fbc = consented ? metaBrowserIdentityValue(capture, "fbc") : null')
+    expect(reconcile).toContain('const fbp = consented ? metaBrowserIdentityValue(capture, "fbp") : null')
+    expect(reconcile).toContain('meta_browser_identity: consented && Boolean(fbc || fbp)')
+    expect(reconcile).not.toContain('fbc: attrValue(capture, "fbc")')
+    expect(reconcile).not.toContain('fbp: attrValue(capture, "fbp")')
+  })
+
+  it('surfaces a tenant-scoped no-PII attribution health contract on the first dashboard page', () => {
+    const hardening = read('../../supabase/migrations/20260831081800_harden_attribution_lineage_and_tenant_health.sql')
+    const component = read('../src/components/dashboard/AttributionHealthMonitor.tsx')
+    const dashboard = read('../src/pages/Dashboard.tsx')
+    expect(hardening).toContain('CREATE OR REPLACE FUNCTION public.nvx_get_attribution_health()')
+    expect(hardening).toContain('WITH active_leads AS')
+    expect(hardening).toContain('FROM public.web_lead_captures c')
+    expect(hardening).toContain('FROM public.google_click_attributions g')
+    expect(hardening).toContain('FROM active_leads l')
+    expect(hardening).toContain('tenant-scoped no-PII acquisition identity health')
+    expect(component).toContain("supabase.rpc('nvx_get_attribution_health')")
+    expect(component).toContain('role="status"')
+    expect(component).toContain('Atención · reconciliación pendiente')
+    expect(component).toContain('GCLID')
+    expect(component).toContain('FBC')
+    expect(component).toContain('FBP')
+    expect(dashboard.indexOf('<AttributionHealthMonitor />')).toBeGreaterThan(-1)
+    expect(dashboard.indexOf('<AttributionHealthMonitor />')).toBeLessThan(dashboard.indexOf('<OperationsOverview />'))
+  })
+})

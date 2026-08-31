@@ -57,10 +57,22 @@ describe("web lead reconciliation contract", () => {
 
   it("treats Google as consent-gated optional enrichment rather than the lead source", () => {
     expect(source).toContain("googleAttributionForLead");
-    expect(source).toContain("capture.marketing_consent === true ? await googleAttributionForLead(admin, nvxLeadId) : null");
+    expect(source).toContain("const consented = capture.marketing_consent === true");
+    expect(source).toContain("const google = consented ? await googleAttributionForLead(admin, nvxLeadId) : null");
     expect(source).toContain("google_attribution: Boolean(google)");
-    expect(source).toContain('gclid: attrValue(capture, "gclid") || google?.gclid || null');
+    expect(source).toContain('gclid: consented ? (attrValue(capture, "gclid") || google?.gclid || null) : null');
     expect(source).toContain("marketing_consent,first_attribution");
+  });
+
+  it("persists only bounded, structurally valid Meta browser identity under explicit consent", () => {
+    expect(source).toContain("META_BROWSER_ID_MAX_LENGTH = 512");
+    expect(source).toContain('function metaBrowserIdentityValue(capture: any, key: "fbc" | "fbp")');
+    expect(source).toContain("value.length > META_BROWSER_ID_MAX_LENGTH");
+    expect(source).toContain('const fbc = consented ? metaBrowserIdentityValue(capture, "fbc") : null');
+    expect(source).toContain('const fbp = consented ? metaBrowserIdentityValue(capture, "fbp") : null');
+    expect(source).toContain("meta_browser_identity: consented && Boolean(fbc || fbp)");
+    expect(source).not.toContain('fbc: attrValue(capture, "fbc")');
+    expect(source).not.toContain('fbp: attrValue(capture, "fbp")');
   });
 
   it("does not write downstream Deal/Data Manager queues client-side", () => {
