@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { AlertTriangle } from 'lucide-react'
 import { useDashboardData } from '../hooks/useDashboardData'
 import { useCanonicalDashboardMetrics } from '../hooks/useCanonicalDashboardMetrics'
 import { HubSpotMarketingContactMonitor } from '../components/dashboard/HubSpotMarketingContactMonitor'
@@ -56,7 +57,6 @@ export default function Dashboard() {
     metrics,
     combined,
     funnel,
-    funnelData,
     dataMode,
     trendData,
     sourcesList,
@@ -68,32 +68,31 @@ export default function Dashboard() {
 
   const visibleMetrics = {
     ...metrics,
-    totalLeads: canonical.metrics?.totalLeads ?? metrics.totalLeads,
-    conversionRate: canonical.metrics?.conversionRate ?? metrics.conversionRate,
-    patientMatches: canonical.metrics?.patientMatches ?? metrics.patientMatches,
-    patientConversionRate: canonical.metrics?.patientConversionRate ?? metrics.patientConversionRate,
+    totalLeads: canonical.metrics?.totalLeads ?? null,
+    conversionRate: canonical.metrics?.conversionRate ?? null,
+    patientMatches: canonical.metrics?.patientMatches ?? null,
+    patientConversionRate: canonical.metrics?.patientConversionRate ?? null,
     deltas: metrics.deltas
       ? {
           ...metrics.deltas,
-          leads: canonical.metrics?.deltas.leads ?? metrics.deltas.leads,
-          patientMatches: canonical.metrics?.deltas.patientMatches ?? metrics.deltas.patientMatches ?? null,
+          leads: canonical.metrics?.deltas.leads ?? null,
+          patientMatches: canonical.metrics?.deltas.patientMatches ?? null,
         }
       : undefined,
     loading: metrics.loading || canonical.loading,
-    error: canonical.error || metrics.error,
+    error: metrics.error,
   }
 
-  const visibleFunnelData = canonical.funnel.length > 0 ? canonical.funnel : funnelData
+  const visibleFunnelData = canonical.funnel
   const visibleFunnel = funnel
     ? {
         ...funnel,
-        crmLeads: canonical.metrics?.totalLeads ?? funnel.crmLeads,
-        doctoraliaPatients: canonical.metrics?.patientMatches ?? funnel.doctoraliaPatients,
-        cac: canonical.metrics?.patientMatches && metrics.spend != null
-          ? Number((metrics.spend / canonical.metrics.patientMatches).toFixed(2))
-          : null,
+        crmLeads: canonical.metrics?.totalLeads ?? null,
+        doctoraliaPatients: canonical.metrics?.patientMatches ?? null,
+        cac: null,
+        cacConfidence: null,
       }
-    : funnel
+    : null
 
   const periodLabel = `Periodo: ${dateRange.from} al ${dateRange.to}`
 
@@ -127,6 +126,18 @@ export default function Dashboard() {
             />
 
             <AlertSection error={visibleMetrics.error} metaError={visibleMetrics.metaError} />
+
+            {canonical.error && (
+              <div className="rounded-2xl border border-amber-300/70 bg-amber-50/70 px-5 py-4 flex items-start gap-3" role="status">
+                <AlertTriangle className="h-5 w-5 text-amber-700 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-900">Journey canónico no disponible</p>
+                  <p className="mt-1 text-sm text-amber-900/80">
+                    Las métricas CRM/Doctoralia quedan ocultas para evitar usar etapas o conversiones legacy. Meta puede seguir mostrándose con sus datos de proveedor.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {!visibleMetrics.error && (
               <>
