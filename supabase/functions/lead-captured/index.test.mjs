@@ -55,9 +55,12 @@ describe("lead-captured canonical contract", () => {
     expect(contract).toMatch(/fbp/);
   });
 
-  it("derives only FBC from real fbclid evidence and never synthesizes FBP", () => {
+  it("derives only bounded FBC from real fbclid evidence and never synthesizes FBP", () => {
+    expect(source).toContain("META_BROWSER_ID_MAX_LENGTH = 512");
+    expect(source).toContain("raw.length > META_BROWSER_ID_MAX_LENGTH");
     expect(source).toContain("if (out.fbclid && !out.fbc && out.timestamp)");
     expect(source).toContain('const derived = `fb.1.${Math.trunc(touchMillis)}.${out.fbclid}`');
+    expect(source).toContain('const valid = cleanMetaIdentity("fbc", derived)');
     expect(source).toContain("FBP is never synthesized");
   });
 
