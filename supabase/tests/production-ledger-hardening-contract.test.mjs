@@ -11,6 +11,11 @@ const reconciliation = fs.readFileSync(
   'utf8',
 );
 
+const funnelAndSourceRepair = fs.readFileSync(
+  'supabase/migrations/20260831173000_repair_funnel_and_source_to_cash_contracts.sql',
+  'utf8',
+);
+
 const migrationRunner = fs.readFileSync('scripts/supabase-migrate.sh', 'utf8');
 
 const staleCleanupHistory = fs.readFileSync(
@@ -29,6 +34,7 @@ describe('Production ledger reconciliation hardening', () => {
     expect(traceabilityHistory).toMatch(/JOIN doctoralia_appointments_ingestion dai/);
     expect(hardening).toMatch(/Do not rewrite the already-applied historical migrations/);
     expect(reconciliation).toMatch(/Consolidate RevOps async outcome reconciliation into one canonical owner/);
+    expect(funnelAndSourceRepair).toMatch(/Historical migration files remain byte-equivalent to Production audit history/);
   });
 
   it('requires exact tenant resolution before exposing Doctoralia traceability', () => {
@@ -64,6 +70,19 @@ describe('Production ledger reconciliation hardening', () => {
     expect(reconciliation).toMatch(/DROP FUNCTION IF EXISTS public\.nvx_cleanup_stale_dispatch_ledger\(integer\)/);
     expect(reconciliation).toMatch(/'nvx-revops-dispatch-reconcile',[\s\S]*'\*\/10 \* \* \* \*'/);
     expect(reconciliation).toMatch(/GRANT EXECUTE ON FUNCTION public\.nvx_reconcile_dispatch_ledger\(integer\)[\s\S]*TO service_role/);
+  });
+
+  it('repairs funnel data through the canonical owner rather than duplicating status mapping', () => {
+    expect(funnelAndSourceRepair).toMatch(/PERFORM public\.refresh_doctoralia_funnel\(v_user_id\)/);
+    expect(funnelAndSourceRepair).toMatch(/lower\(pg_catalog\.coalesce\(pc\.funnel_status, ''\)\) IN \('converted', 'returning'\)/);
+    expect(funnelAndSourceRepair).not.toMatch(/WHEN LOWER\(estado\)/);
+  });
+
+  it('keeps source_to_cash dependency-safe, stable and Doctoralia-identifiable', () => {
+    expect(funnelAndSourceRepair).toMatch(/CREATE OR REPLACE VIEW public\.source_to_cash/);
+    expect(funnelAndSourceRepair).not.toMatch(/DROP VIEW IF EXISTS public\.source_to_cash/);
+    expect(funnelAndSourceRepair).toMatch(/dai\.appointment_date DESC NULLS LAST,[\s\S]*dai\.amount DESC NULLS LAST,[\s\S]*dai\.id/);
+    expect(funnelAndSourceRepair).toMatch(/NULLIF\(pg_catalog\.btrim\(dai\.doctoralia_id\), ''\)/);
   });
 
   it('fails closed on migration-history drift and never repairs the remote ledger automatically', () => {
