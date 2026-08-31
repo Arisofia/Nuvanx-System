@@ -21,6 +21,11 @@ const metaDailyRouteHistory = fs.readFileSync(
   'utf8',
 );
 
+const authenticatedRpcRepair = fs.readFileSync(
+  'supabase/migrations/20260831185000_restore_control_centre_security_definer.sql',
+  'utf8',
+);
+
 const migrationRunner = fs.readFileSync('scripts/supabase-migrate.sh', 'utf8');
 
 const staleCleanupHistory = fs.readFileSync(
@@ -47,6 +52,25 @@ describe('Production ledger reconciliation hardening', () => {
     expect(metaDailyRouteHistory).toMatch(/PERFORM cron\.alter_job\([\s\S]*v_job\.jobid/);
     expect(metaDailyRouteHistory).toMatch(/environment-local/);
     expect(metaDailyRouteHistory).not.toMatch(/cron\.alter_job\(\s*26,/);
+  });
+
+  it('restores SECURITY DEFINER only on the authenticated RPC surface whose ledger contract drifted', () => {
+    const expectedSignatures = [
+      'nvx_get_control_centre_pipeline(integer, integer)',
+      'nvx_get_control_centre_lead_timeline(uuid, integer)',
+      'nvx_set_lead_pipeline_state(uuid, text, text, timestamptz, text)',
+      'nvx_get_hubspot_marketing_contact_monitor()',
+      'nvx_get_attribution_health()',
+      'nvx_get_dashboard_metrics_v2(date, date, text, text)',
+    ];
+
+    for (const signature of expectedSignatures) {
+      expect(authenticatedRpcRepair).toContain(`ALTER FUNCTION public.${signature}`);
+    }
+    expect(authenticatedRpcRepair.match(/SECURITY DEFINER/g)?.length).toBe(7); // comment + six ALTERs
+    expect(authenticatedRpcRepair).not.toMatch(/GRANT\s+SELECT\s+ON/i);
+    expect(authenticatedRpcRepair).toMatch(/FROM PUBLIC, anon/);
+    expect(authenticatedRpcRepair).toMatch(/TO authenticated, service_role/);
   });
 
   it('requires exact tenant resolution before exposing Doctoralia traceability', () => {
