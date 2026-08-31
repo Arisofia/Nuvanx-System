@@ -3,7 +3,7 @@
   "git": {
     "deploymentEnabled": {
       "*": false,
-      "main": true
+      "main": false
     }
   },
   "ignoreCommand": "node scripts/vercel-ci-gate.mjs",
