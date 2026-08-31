@@ -1,6 +1,7 @@
 name: Google Ads August Backfill Once
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - tmp-noop
