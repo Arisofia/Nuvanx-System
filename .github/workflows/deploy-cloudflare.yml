@@ -1,9 +1,14 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
 name: Cloudflare Frontend Acceptance
-run-name: Cloudflare acceptance · ${{ github.ref_name }} · ${{ github.sha }}
+run-name: Cloudflare acceptance · ${{ github.ref_name }} · ${{ inputs.approved_sha || github.sha }}
 
 on:
   workflow_dispatch:
+    inputs:
+      approved_sha:
+        description: 'Optional exact approved Git commit SHA to checkout and deploy'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -27,7 +32,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
+          ref: ${{ inputs.approved_sha || github.sha }}
           persist-credentials: false
+
+      - name: Verify exact approved SHA
+        if: ${{ inputs.approved_sha != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          deployed_sha="$(git rev-parse HEAD)"
+          expected_sha="${{ inputs.approved_sha }}"
+          if [ "$deployed_sha" != "$expected_sha" ]; then
+            echo "::error::Deployed SHA ($deployed_sha) does not match expected approved SHA ($expected_sha)" >&2
+            exit 1
+          fi
+          echo "Verified exact approved commit: $deployed_sha"
 
       - name: Setup Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
