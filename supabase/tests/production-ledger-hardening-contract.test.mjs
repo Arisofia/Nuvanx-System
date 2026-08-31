@@ -16,6 +16,11 @@ const funnelAndSourceRepair = fs.readFileSync(
   'utf8',
 );
 
+const metaDailyRouteHistory = fs.readFileSync(
+  'supabase/migrations/20260829235708_route_meta_daily_insights_to_canonical_worker.sql',
+  'utf8',
+);
+
 const migrationRunner = fs.readFileSync('scripts/supabase-migrate.sh', 'utf8');
 
 const staleCleanupHistory = fs.readFileSync(
@@ -29,12 +34,19 @@ const traceabilityHistory = fs.readFileSync(
 );
 
 describe('Production ledger reconciliation hardening', () => {
-  it('preserves the restored applied-history files and fixes issues only in forward migrations', () => {
+  it('preserves restored applied history except explicitly documented replay-portability repairs', () => {
     expect(staleCleanupHistory).toMatch(/nvx-revops-dispatch-stale-cleanup/);
     expect(traceabilityHistory).toMatch(/JOIN doctoralia_appointments_ingestion dai/);
     expect(hardening).toMatch(/Do not rewrite the already-applied historical migrations/);
     expect(reconciliation).toMatch(/Consolidate RevOps async outcome reconciliation into one canonical owner/);
     expect(funnelAndSourceRepair).toMatch(/Historical migration files remain byte-equivalent to Production audit history/);
+  });
+
+  it('routes the historical Meta daily cron by stable jobname instead of a generated job id', () => {
+    expect(metaDailyRouteHistory).toMatch(/jobname = 'fetch-meta-daily-insights'/);
+    expect(metaDailyRouteHistory).toMatch(/PERFORM cron\.alter_job\([\s\S]*v_job\.jobid/);
+    expect(metaDailyRouteHistory).toMatch(/environment-local/);
+    expect(metaDailyRouteHistory).not.toMatch(/cron\.alter_job\(\s*26,/);
   });
 
   it('requires exact tenant resolution before exposing Doctoralia traceability', () => {
