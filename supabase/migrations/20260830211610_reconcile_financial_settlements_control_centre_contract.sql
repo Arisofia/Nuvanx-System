@@ -3,7 +3,7 @@
 -- already has these canonical enrichment columns. Add only the missing contract so
 -- later reporting migrations can compile without deleting legacy compatibility fields.
 
-ALTER TABLE public.financial_settlements
+ALTER TABLE IF EXISTS public.financial_settlements
   ADD COLUMN IF NOT EXISTS amount_discount numeric NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS payment_method varchar(64),
   ADD COLUMN IF NOT EXISTS upload_id uuid,
