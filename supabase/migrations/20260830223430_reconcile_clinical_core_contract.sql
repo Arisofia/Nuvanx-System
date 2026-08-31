@@ -3,6 +3,42 @@
 -- their original creation was performed outside the reproducible migration chain.
 -- The statements are idempotent in Production and also close tenant access fail-closed.
 
+-- 20260830223000 updates Chamberí only when its historical row already exists, while
+-- clean Preview starts with no clinic data. Ensure that canonical row exists before the
+-- doctor seed that references its fixed clinic id. Production already has this exact row.
+INSERT INTO public.clinics (
+  id,
+  name,
+  slug,
+  plan,
+  country,
+  timezone,
+  settings,
+  is_active,
+  created_at,
+  updated_at
+)
+VALUES (
+  '4207023b-eac1-4249-bf0f-d9b1e36a5d7a',
+  'Centro Clínico NUVANX Chamberí',
+  'nuvanx-chamberi',
+  'starter',
+  'ES',
+  'Europe/Madrid',
+  jsonb_build_object(
+    'address', 'Calle de Fernández de la Hoz, 45, Bajo Derecha',
+    'postal_code', '28010',
+    'locality', 'Madrid',
+    'registro_sanitario', 'CS20144',
+    'phone', '+34669319836',
+    'short_name', 'Chamberí'
+  ),
+  true,
+  now(),
+  now()
+)
+ON CONFLICT (id) DO NOTHING;
+
 DO $enum$
 BEGIN
   IF to_regtype('public.appointment_status') IS NULL THEN
