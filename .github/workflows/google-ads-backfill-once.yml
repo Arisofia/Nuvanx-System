@@ -25,7 +25,7 @@ jobs:
     env:
       SUPABASE_URL: https://ssvvuuysgxyqvmovrlvk.supabase.co
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
-      GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
+      GOOGLE_ADS_SERVICE_ACCOUNT_B64: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
       GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
       GOOGLE_ADS_LOGIN_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_LOGIN_CUSTOMER_ID || '' }}
     steps:
@@ -42,6 +42,19 @@ jobs:
 
       - name: Install workspace dependencies
         run: npm install --include=dev --ignore-scripts
+
+      - name: Decode and validate Google service account
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GOOGLE_ADS_SERVICE_ACCOUNT_B64:-}"
+          decoded="$(printf '%s' "$GOOGLE_ADS_SERVICE_ACCOUNT_B64" | base64 --decode)"
+          printf '%s' "$decoded" | python3 -c 'import json,sys; value=json.load(sys.stdin); assert value.get("client_email") and value.get("private_key")'
+          {
+            echo 'GOOGLE_ADS_SERVICE_ACCOUNT<<__NUVANX_GOOGLE_SA__'
+            printf '%s\n' "$decoded"
+            echo '__NUVANX_GOOGLE_SA__'
+          } >> "$GITHUB_ENV"
 
       - name: Validate required runtime secrets
         shell: bash
