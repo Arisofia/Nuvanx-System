@@ -7,6 +7,7 @@ on:
       - 'supabase/migrations/**'
       - 'scripts/check-supabase-migration-history.mjs'
       - '.github/workflows/supabase-migration-history.yml'
+      - '.github/actions/supabase-link-run/**'
 
 permissions:
   contents: read
@@ -36,9 +37,14 @@ jobs:
         run: npm install --include=dev --ignore-scripts
 
       - name: Validate remote migration history parity
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          set -euo pipefail
-          test -n "${DATABASE_URL:-}"
-          node scripts/check-supabase-migration-history.mjs
+        uses: ./.github/actions/supabase-link-run
+        with:
+          project_ref: ${{ secrets.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ secrets.DATABASE_URL }}
+          supabase_db_password: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          skip_link: 'true'
+          command: |
+            set -euo pipefail
+            test -n "${SESSION_URL:-}"
+            node scripts/check-supabase-migration-history.mjs
