@@ -4,7 +4,7 @@ import fs from 'node:fs';
 const capture = fs.readFileSync('supabase/functions/lead-captured/index.ts', 'utf8');
 const reconcile = fs.readFileSync('supabase/functions/web-lead-reconcile/index.ts', 'utf8');
 const baseline = fs.readFileSync('supabase/migrations/20260831031258_canonical_attribution_identity_and_qa_cleanup.sql', 'utf8');
-const hardening = fs.readFileSync('supabase/migrations/20260831082500_harden_attribution_lineage_and_tenant_health.sql', 'utf8');
+const hardening = fs.readFileSync('supabase/migrations/20260831081800_harden_attribution_lineage_and_tenant_health.sql', 'utf8');
 
 describe('Attribution Identity v1 contract', () => {
   it('keeps Meta browser identity consent-gated, bounded and non-synthetic', () => {
