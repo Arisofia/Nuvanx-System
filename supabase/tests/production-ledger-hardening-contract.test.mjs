@@ -6,6 +6,11 @@ const hardening = fs.readFileSync(
   'utf8',
 );
 
+const reconciliation = fs.readFileSync(
+  'supabase/migrations/20260831172500_consolidate_revops_dispatch_reconciliation.sql',
+  'utf8',
+);
+
 const staleCleanupHistory = fs.readFileSync(
   'supabase/migrations/20260831140045_fix_revops_dispatch_ledger_stale_cleanup.sql',
   'utf8',
@@ -17,10 +22,11 @@ const traceabilityHistory = fs.readFileSync(
 );
 
 describe('Production ledger reconciliation hardening', () => {
-  it('preserves the restored applied-history files and fixes issues only in a forward migration', () => {
+  it('preserves the restored applied-history files and fixes issues only in forward migrations', () => {
     expect(staleCleanupHistory).toMatch(/nvx-revops-dispatch-stale-cleanup/);
     expect(traceabilityHistory).toMatch(/JOIN doctoralia_appointments_ingestion dai/);
     expect(hardening).toMatch(/Do not rewrite the already-applied historical migrations/);
+    expect(reconciliation).toMatch(/Consolidate RevOps async outcome reconciliation into one canonical owner/);
   });
 
   it('requires exact tenant resolution before exposing Doctoralia traceability', () => {
@@ -41,5 +47,20 @@ describe('Production ledger reconciliation hardening', () => {
   it('uses typed interval construction rather than concatenating arbitrary interval text', () => {
     expect(hardening).toMatch(/pg_catalog\.make_interval\(mins => p_stale_threshold_minutes\)/);
     expect(hardening).not.toMatch(/p_stale_threshold_minutes \|\| ' minutes'/);
+    expect(reconciliation).toMatch(/pg_catalog\.make_interval\(mins => p_lookback_minutes\)/);
+  });
+
+  it('terminalizes stale dispatches independently of pg_net retention and never stores raw response content', () => {
+    expect(reconciliation).toMatch(/WHERE status = 'dispatched'[\s\S]*dispatched_at < pg_catalog\.now\(\) - INTERVAL '5 minutes'/);
+    expect(reconciliation).toMatch(/response_body = NULL/);
+    expect(reconciliation).not.toMatch(/r\.content/);
+    expect(reconciliation).not.toMatch(/jsonb_build_object\('raw'/);
+  });
+
+  it('retires the duplicate stale-cleanup owner and schedules the canonical reconciler by jobname', () => {
+    expect(reconciliation).toMatch(/jobname IN \([\s\S]*'nvx-revops-dispatch-stale-cleanup'[\s\S]*'nvx-revops-dispatch-reconcile'/);
+    expect(reconciliation).toMatch(/DROP FUNCTION IF EXISTS public\.nvx_cleanup_stale_dispatch_ledger\(integer\)/);
+    expect(reconciliation).toMatch(/'nvx-revops-dispatch-reconcile',[\s\S]*'\*\/10 \* \* \* \*'/);
+    expect(reconciliation).toMatch(/GRANT EXECUTE ON FUNCTION public\.nvx_reconcile_dispatch_ledger\(integer\)[\s\S]*TO service_role/);
   });
 });
