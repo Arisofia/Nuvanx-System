@@ -47,14 +47,15 @@ const BACKEND_SECRETS_DENYLIST = [
 
 // Matches VITE_VAR: ${{ secrets.FOO }}, VITE_VAR: '${{ secrets.FOO }}', VITE_VAR: "${{ secrets.FOO || '' }}", etc.
 export function extractViteSecretAssignments(workflowContent: string): Array<{ fullMatch: string; viteVar: string; secretName: string }> {
-  const viteSecretPattern = /(VITE_[A-Z0-9_]+):\s*['"]?\s*\$\{\{[^}]*secrets\.([A-Z0-9_]+)[^}]*\}\}\s*['"]?/g
+  // Uses backreference (\2) for balanced quote pairs and .*? to tolerate nested fallbacks within ${{ ... }}
+  const viteSecretPattern = /(VITE_[A-Z0-9_]+):\s*(['"])?\s*\$\{\{.*?secrets\.([A-Z0-9_]+).*?\}\}\s*\2?/g
   const matches: Array<{ fullMatch: string; viteVar: string; secretName: string }> = []
   const allMatches = [...workflowContent.matchAll(viteSecretPattern)]
   for (const match of allMatches) {
     matches.push({
       fullMatch: match[0],
       viteVar: match[1],
-      secretName: match[2],
+      secretName: match[3],
     })
   }
   return matches
@@ -75,10 +76,11 @@ describe('browser build secret boundary', () => {
     }
   })
 
-  it('explicitly guards against any backend denylist secret in VITE mappings with word boundary', () => {
+  it('explicitly guards against any backend denylist secret in VITE mappings with word boundary (fail-closed)', () => {
     for (const [workflowName, content] of Object.entries(frontendBuildWorkflows)) {
       for (const secret of BACKEND_SECRETS_DENYLIST) {
-        const pattern = new RegExp(`VITE_[A-Z0-9_]+:\\s*['"]?\\s*\\$\\{\\{[^}]*secrets\\.${secret}(?:\\b|[^A-Z0-9_])[^}]*\\}\\}\\s*['"]?`, 'i')
+        // Denylist uses aggressive lax pattern to prevent false negatives even with malformed quotes
+        const pattern = new RegExp(`VITE_[A-Z0-9_]+:\\s*['"]?\\s*\\$\\{\\{.*?secrets\\.${secret}(?:\\b|[^A-Z0-9_]).*?\\}\\}\\s*['"]?`, 'i')
         expect(content, `In ${workflowName}: exposes backend secret ${secret}`).not.toMatch(pattern)
       }
     }
@@ -90,6 +92,7 @@ describe('browser build secret boundary', () => {
       "VITE_LEAK: '${{ secrets.MCP_API_KEY }}'",
       'VITE_LEAK: "${{ secrets.MCP_API_KEY }}"',
       "VITE_LEAK: '${{ secrets.MCP_API_KEY || \"\" }}'",
+      'VITE_LEAK: "${{ \'\' || secrets.MCP_API_KEY }}"',
       'VITE_LEAK:   "   ${{ secrets.JWT_SECRET }}   "',
     ]
     for (const snippet of syntheticSnippets) {
