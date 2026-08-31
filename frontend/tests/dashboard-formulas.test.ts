@@ -30,7 +30,7 @@ describe('dashboard formula contracts', () => {
     expect(funnel[3]?.label).toBe('Cita posterior')
   })
 
-  it('suppresses unreconciled Doctoralia revenue while preserving operational acquisition metrics', () => {
+  it('suppresses legacy CRM/Doctoralia fallbacks while preserving provider acquisition metrics', () => {
     const result = buildDashboardState({
       metricsData: { totalLeads: 10, conversionRate: 20, patientMatches: 2, verifiedRevenue: 999999 },
       campaigns: [],
@@ -38,20 +38,24 @@ describe('dashboard formula contracts', () => {
       kpisResponse: {
         meta: { spend: 251.17, leads: 5, is_real: true },
         crm: { totalLeads: 10, is_real: true },
-        doctoralia: { newVerifiedPatients: 0, verifiedRevenue: 500, is_real: true },
+        doctoralia: { newVerifiedPatients: 2, verifiedRevenue: 500, is_real: true },
       },
       spend: 251.17,
       avgCpcRaw: 0.21,
       metaConversions: 5,
       spendDelta: null,
     })
-    expect(result.metrics.patientMatches).toBe(2)
+
+    expect(result.metrics.totalLeads).toBeNull()
+    expect(result.metrics.patientMatches).toBeNull()
+    expect(result.metrics.conversionRate).toBeNull()
     expect(result.metrics.verifiedRevenue).toBeNull()
     expect(result.combined.verifiedRevenue).toBeNull()
     expect(result.combined.revenuePerLead).toBeNull()
+    expect(result.funnel.crmLeads).toBeNull()
     expect(result.funnel.doctoraliaRevenue).toBeNull()
-    expect(result.funnel.doctoraliaPatients).toBe(2)
-    expect(result.funnel.cac).toBe(125.58)
+    expect(result.funnel.doctoraliaPatients).toBeNull()
+    expect(result.funnel.cac).toBeNull()
     expect(result.combined.metaCpl).toBe(50.23)
   })
 })
