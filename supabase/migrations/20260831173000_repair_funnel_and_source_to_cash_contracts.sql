@@ -1,5 +1,5 @@
 -- Forward repair for out-of-band 2026-08-31 backfill/view migrations.
--- Predecessor migration files remain byte-equivalent to Production audit history.
+-- Historical migration files remain byte-equivalent to Production audit history.
 -- This migration is intentionally production-safe: normalize Doctoralia once in bounded
 -- deterministic batches, then refresh lead matching strictly per owner.
 
