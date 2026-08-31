@@ -47,7 +47,8 @@ const BACKEND_SECRETS_DENYLIST = [
 
 // Matches VITE_VAR: ${{ secrets.FOO }}, VITE_VAR: '${{ secrets.FOO }}', VITE_VAR: "${{ secrets.FOO || secrets.BAR }}", etc.
 export function extractViteSecretAssignments(workflowContent: string): Array<{ fullMatch: string; viteVar: string; secretName: string }> {
-  const linePattern = /(VITE_[A-Z0-9_]+):\s*(['"])?\s*\$\{\{([\s\S]*?)\}\}\s*\2?/g
+  // Constrain to single-line VITE_* mappings so it never consumes subsequent YAML lines
+  const linePattern = /^[ \t]*(?:-\s+)?(VITE_[A-Z0-9_]+):\s*(['"])?\s*\$\{\{([^}\r\n]*?)\}\}\s*\2?/gm
   const secretPattern = /secrets\.([A-Z0-9_]+)/g
   const matches: Array<{ fullMatch: string; viteVar: string; secretName: string }> = []
   
@@ -86,10 +87,12 @@ describe('browser build secret boundary', () => {
 
   it('explicitly guards against any backend denylist secret in VITE mappings with word boundary (fail-closed)', () => {
     for (const [workflowName, content] of Object.entries(frontendBuildWorkflows)) {
-      for (const secret of BACKEND_SECRETS_DENYLIST) {
-        // Denylist uses aggressive lax pattern to prevent false negatives even with malformed quotes
-        const pattern = new RegExp(`VITE_[A-Z0-9_]+:\\s*['"]?\\s*\\$\\{\\{[\\s\\S]*?secrets\\.${secret}(?:\\b|[^A-Z0-9_])[\\s\\S]*?\\}\\}\\s*['"]?`, 'i')
-        expect(content, `In ${workflowName}: exposes backend secret ${secret}`).not.toMatch(pattern)
+      const assignments = extractViteSecretAssignments(content)
+      for (const { fullMatch, viteVar, secretName } of assignments) {
+        expect(
+          BACKEND_SECRETS_DENYLIST.includes(secretName),
+          `In ${workflowName}: variable ${viteVar} maps backend secret secrets.${secretName} (assignment: "${fullMatch}")`,
+        ).toBe(false)
       }
     }
   })
@@ -111,6 +114,17 @@ describe('browser build secret boundary', () => {
       const hasForbiddenSecret = extracted.some((item) => !ALLOWED_BROWSER_PUBLIC_SECRETS.has(item.secretName))
       expect(hasForbiddenSecret, `Expected snippet to contain forbidden secret: ${snippet}`).toBe(true)
     }
+  })
+
+  it('does not falsely flag unmapped backend secrets on subsequent lines after non-secret VITE variable', () => {
+    const validWorkflowSnippet = `
+      env:
+        VITE_PUBLIC_URL: "https://example.com"
+        ENCRYPTION_KEY: \${{ secrets.ENCRYPTION_KEY }}
+        DATABASE_URL: \${{ secrets.DATABASE_URL }}
+    `
+    const extracted = extractViteSecretAssignments(validWorkflowSnippet)
+    expect(extracted.length).toBe(0)
   })
 
   it('keeps Cloudflare build inputs limited to browser-public integration variables', () => {
