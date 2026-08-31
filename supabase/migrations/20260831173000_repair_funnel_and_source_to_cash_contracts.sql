@@ -27,7 +27,7 @@ SET funnel_status_canonical = l.stage_canonical,
     updated_at = pg_catalog.now()
 FROM public.leads l
 WHERE pc.lead_id = l.id
-  AND pg_catalog.lower(pg_catalog.coalesce(pc.funnel_status, '')) IN ('converted', 'returning')
+  AND pg_catalog.lower(coalesce(pc.funnel_status, '')) IN ('converted', 'returning')
   AND pc.funnel_status_canonical IS DISTINCT FROM l.stage_canonical;
 
 -- 2. Keep source_to_cash dependency-safe and deterministic.
