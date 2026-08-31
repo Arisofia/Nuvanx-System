@@ -14,7 +14,10 @@ function parseArg(flag) {
   const idx = process.argv.indexOf(flag);
   if (idx === -1) return null;
   const value = process.argv[idx + 1];
-  return value && !value.startsWith('--') ? value : null;
+  if (!value || value.startsWith('--')) {
+    throw new Error(`${flag} requires a value.`);
+  }
+  return value;
 }
 
 function validateDate(name, value) {
@@ -33,6 +36,9 @@ async function check() {
 
   const from = validateDate('--from', parseArg('--from'));
   const to = validateDate('--to', parseArg('--to'));
+  if (from && to && from > to) {
+    throw new Error('--from must not be after --to.');
+  }
   const hasRange = Boolean(from || to);
 
   let query = supabase
@@ -100,7 +106,7 @@ async function check() {
       insight_rows: insightCount,
       range_rows: hasRange ? rangeRows : undefined,
       latest_insight_date: latestInsightDate,
-      connected: row.status === 'connected' && row.credential_present === true && Boolean(row.customer_id),
+      connected: row.status === 'connected' && row.credential_present === true && Boolean(customerId),
     });
   }
 
