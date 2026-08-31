@@ -56,6 +56,13 @@ for (const file of files) {
   for (const marker of forbiddenContentMarkers) {
     if (content.includes(marker)) failures.push(`temporary review marker in ${file}: ${marker}`);
   }
+
+  if (file.startsWith('supabase/functions/') && /https:\/\/[^\s'"`]+\.vercel\.app/i.test(content)) {
+    failures.push(`hardcoded Vercel runtime origin in ${file}; configure FRONTEND_URL/PRODUCTION_FALLBACK_URL/CORS_ALLOWED_ORIGINS instead`);
+  }
+  if (file.startsWith('supabase/functions/') && /\.vercel\\?\.app\$/.test(content)) {
+    failures.push(`wildcard Vercel CORS bypass in ${file}`);
+  }
 }
 
 for (const forbiddenPath of forbiddenExactPaths) {
@@ -71,9 +78,9 @@ if (existsSync(functionsRoot)) {
   }
 }
 
-// Duplicate active source is reported only when byte-identical and non-trivial.
-// Historical migrations are intentionally outside this detector because applied
-// versions remain audit records until the baseline cutover is formally accepted.
+// Duplicate active source is fail-closed only for byte-identical, non-trivial
+// runtime/config files. Historical migrations are intentionally outside this
+// detector because applied versions remain audit records until formal cutover.
 const duplicateCandidates = files.filter((file) => {
   const extension = path.extname(file).toLowerCase();
   return sourceExtensions.has(extension) && !file.startsWith('scripts/') && !file.includes('/tests/');
