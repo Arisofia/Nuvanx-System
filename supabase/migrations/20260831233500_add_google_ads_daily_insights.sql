@@ -11,8 +11,15 @@ alter table public.integrations
 alter table public.integrations
   drop constraint if exists integrations_user_id_service_key;
 
+alter table public.integrations
+  drop constraint if exists integrations_user_service_uq;
+
+drop index if exists public.integrations_user_service_uq;
+drop index if exists public.integrations_user_id_service_key;
+drop index if exists public.integrations_service_unique;
+
 create unique index if not exists integrations_service_unique_non_google_ads
-  on public.integrations (service)
+  on public.integrations (user_id, service)
   where service <> 'google_ads';
 
 create unique index if not exists integrations_google_ads_user_customer_unique

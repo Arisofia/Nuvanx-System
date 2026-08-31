@@ -44,7 +44,15 @@ function isoDate(date) {
 }
 
 function assertIsoDate(value, label) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`))) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || '').trim());
+  const d = new Date(`${value}T00:00:00Z`);
+  if (
+    !m ||
+    Number.isNaN(d.getTime()) ||
+    d.getUTCFullYear() !== +m[1] ||
+    d.getUTCMonth() + 1 !== +m[2] ||
+    d.getUTCDate() !== +m[3]
+  ) {
     throw new Error(`${label} must be YYYY-MM-DD`);
   }
 }
@@ -126,7 +134,7 @@ async function googleAdsSearch({ customerId, developerToken, accessToken, loginC
     };
     if (loginCustomerId) headers['login-customer-id'] = loginCustomerId;
 
-    const body = { query, pageSize: PAGE_SIZE };
+    const body = { query };
     if (pageToken) body.pageToken = pageToken;
 
     const response = await fetch(

@@ -35,6 +35,7 @@ async function check() {
       const countResult = await supabase
         .from('google_ads_daily_insights')
         .select('*', { count: 'exact', head: true })
+        .eq('user_id', row.user_id)
         .eq('customer_id', customerId);
       if (countResult.error) throw countResult.error;
       insightCount = countResult.count || 0;
@@ -42,6 +43,7 @@ async function check() {
       const latestResult = await supabase
         .from('google_ads_daily_insights')
         .select('date')
+        .eq('user_id', row.user_id)
         .eq('customer_id', customerId)
         .order('date', { ascending: false })
         .limit(1)

@@ -1563,13 +1563,13 @@ async function resolveGoogleAdsCreds(adminClient: any, userId: string, qCustomer
   let serviceAccount: any;
   try { serviceAccount = JSON.parse(saRaw); } catch { return { notConnected: false, noServiceAccount: true } as const; }
 
-  const { data: credRow } = await adminClient.from('credentials').select('encrypted_key').eq('user_id', userId).eq('service', 'google_ads').single();
+  const { data: credRow } = await adminClient.from('credentials').select('encrypted_key').eq('user_id', userId).eq('service', 'google_ads').limit(1).maybeSingle();
   if (!credRow) return { notConnected: true, noServiceAccount: false } as const;
   const devToken = await decryptCred(credRow.encrypted_key);
 
   let customerId = qCustomerId;
   if (!customerId) {
-    const { data: intg } = await adminClient.from('integrations').select('metadata').eq('user_id', userId).eq('service', 'google_ads').single();
+    const { data: intg } = await adminClient.from('integrations').select('metadata').eq('user_id', userId).eq('service', 'google_ads').limit(1).maybeSingle();
     customerId = intg?.metadata?.customerId ?? intg?.metadata?.customer_id ?? '';
   }
   return { notConnected: false, noServiceAccount: false, devToken, customerId, serviceAccount } as const;

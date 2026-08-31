@@ -38,7 +38,9 @@ function readServiceAccountEmail(rawCredential) {
   if (!raw) return '';
   try {
     const credentials = JSON.parse(raw);
-    return typeof credentials.client_email === 'string' ? credentials.client_email.trim() : '';
+    const email = typeof credentials.client_email === 'string' ? credentials.client_email.trim() : '';
+    const key = typeof credentials.private_key === 'string' ? credentials.private_key.trim() : '';
+    return email && key ? email : '';
   } catch {
     return '';
   }
