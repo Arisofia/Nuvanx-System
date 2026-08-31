@@ -106,7 +106,9 @@ jobs:
             supabase/functions/meta-hubspot-sync/index.ts \
             supabase/functions/meta-capi-dispatch/index.ts \
             supabase/functions/whatsapp-send/index.ts \
-            supabase/functions/whatsapp-status-webhook/index.ts
+            supabase/functions/whatsapp-status-webhook/index.ts \
+            supabase/functions/google-click-attribution/index.ts \
+            supabase/functions/google-data-manager-export/index.ts
 
       - name: Deploy standalone functions
         if: ${{ steps.candidate.outputs.deploy == 'true' }}
@@ -132,4 +134,6 @@ jobs:
             supabase functions deploy meta-capi-dispatch --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy whatsapp-send --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy whatsapp-status-webhook --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+            supabase functions deploy google-click-attribution --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+            supabase functions deploy google-data-manager-export --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions list --project-ref "$SUPABASE_PROJECT_REF"
