@@ -54,6 +54,7 @@ const doctoraliaAppointmentsEnv = {
 const steps = [
   { name: 'scan-secrets', cmd: 'node scripts/scan-secrets.js', critical: true },
   { name: 'verify-meta-access', cmd: 'node scripts/verify-meta-access.js', critical: true },
+  { name: 'sync-google-ads', cmd: 'node scripts/sync-google-ads-insights.js', critical: false },
   { name: 'sync-doctoralia', cmd: 'node scripts/sync-doctoralia.js', critical: false },
   {
     name: 'sync-doctoralia-appointments',
