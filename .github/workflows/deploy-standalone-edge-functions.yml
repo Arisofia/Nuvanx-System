@@ -106,7 +106,7 @@ jobs:
             set -euo pipefail
             MIGRATION_STATUS="$(supabase migration list --db-url "${SESSION_URL:-$DATABASE_URL}" 2>&1)"
             printf '%s\n' "$MIGRATION_STATUS"
-            for REQUIRED_MIGRATION in 20260901190000 20260901190100; do
+            for REQUIRED_MIGRATION in 20260901190000 20260901190100 20260901190200; do
               if ! printf '%s\n' "$MIGRATION_STATUS" | grep -Eq "^[[:space:]]*${REQUIRED_MIGRATION}[[:space:]]*\\|[[:space:]]*${REQUIRED_MIGRATION}[[:space:]]*(\\||$)"; then
                 echo "::error::Required migration ${REQUIRED_MIGRATION} is not present in both LOCAL and REMOTE migration history. Refusing to deploy migration-dependent WhatsApp functions."
                 exit 1
