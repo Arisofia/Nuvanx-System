@@ -204,6 +204,14 @@ export interface Lead {
   treatment_name?: string
   created_at?: string
   updated_at?: string
+  campaign_name?: string | null
+  ad_name?: string | null
+  form_name?: string | null
+  utm_source?: string | null
+  utm_campaign?: string | null
+  utm_medium?: string | null
+  landing_url?: string | null
+  gclid?: string | null
   appointment_matches?: AppointmentMatch[]
   pipeline_stage_source?: 'evidence' | 'explicit'
   journey_appointment_count?: number

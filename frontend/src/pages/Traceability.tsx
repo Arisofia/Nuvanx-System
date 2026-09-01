@@ -42,11 +42,8 @@ function toLocalDateInputValue(date: Date) {
 }
 
 export default function Traceability() {
-  const [from, setFrom] = useState<string>(() => {
-    const d = new Date()
-    return toLocalDateInputValue(new Date(d.getFullYear(), d.getMonth(), 1))
-  })
-  const [to, setTo] = useState<string>(() => toLocalDateInputValue(new Date()))
+  const [from, setFrom] = useState<string>('')
+  const [to, setTo] = useState<string>('')
   const [rows, setRows] = useState<TraceRow[]>([])
   const [total, setTotal] = useState(0)
   const [matchedTotal, setMatchedTotal] = useState<number | null>(null)
@@ -63,10 +60,17 @@ export default function Traceability() {
       setLoading(true)
       setError(null)
       try {
+        let cleanFrom = from
+        let cleanTo = to
+        if (cleanFrom && cleanTo && cleanFrom > cleanTo) {
+          const temp = cleanFrom
+          cleanFrom = cleanTo
+          cleanTo = temp
+        }
         const params = new URLSearchParams({ limit: '500' })
         if (matchedOnly) params.set('matched', 'true')
-        if (from) params.set('from', from)
-        if (to) params.set('to', to)
+        if (cleanFrom) params.set('from', cleanFrom)
+        if (cleanTo) params.set('to', cleanTo)
 
         const [leadsData, campaignsData] = await Promise.all([
           invokeApi<any>(`/api/traceability/leads?${params}`),
@@ -122,6 +126,19 @@ export default function Traceability() {
     { key: 'booked', label: 'Cruces Doctoralia', align: 'right', sortable: true },
   ]
 
+  const setAllTime = () => {
+    setFrom('')
+    setTo('')
+  }
+
+  const setDaysAgo = (days: number) => {
+    const d = new Date()
+    const past = new Date()
+    past.setDate(past.getDate() - days)
+    setFrom(toLocalDateInputValue(past))
+    setTo(toLocalDateInputValue(d))
+  }
+
   const setThisMonth = () => {
     const d = new Date()
     setFrom(toLocalDateInputValue(new Date(d.getFullYear(), d.getMonth(), 1)))
@@ -143,6 +160,9 @@ export default function Traceability() {
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1 bg-white/80 backdrop-blur-xl p-1 rounded-xl border border-[#E5D5C5]/60 shadow-sm">
+            <button onClick={setAllTime} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${!from && !to ? 'bg-[#84643B] text-white shadow-sm' : 'text-[#8E8680] hover:text-[#84643B] hover:bg-[#84643B]/5'}`}>Todo</button>
+            <button onClick={() => setDaysAgo(30)} className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all text-[#8E8680] hover:text-[#84643B] hover:bg-[#84643B]/5">30d</button>
+            <button onClick={() => setDaysAgo(90)} className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all text-[#8E8680] hover:text-[#84643B] hover:bg-[#84643B]/5">90d</button>
             <button onClick={setThisMonth} className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all text-[#8E8680] hover:text-[#84643B] hover:bg-[#84643B]/5">Este mes</button>
             <button onClick={setLastMonth} className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all text-[#8E8680] hover:text-[#84643B] hover:bg-[#84643B]/5">Mes pasado</button>
           </div>

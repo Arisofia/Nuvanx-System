@@ -6962,20 +6962,19 @@ async function processWhatsappConversionPost(adminClient: any, userId: string, r
 }
 
 function getKpiDateRange(url: URL) {
-  const fromParam = url.searchParams.get('from') ?? '';
-  const toParam = url.searchParams.get('to') ?? '';
+  const fromParam = (url.searchParams.get('from') ?? '').trim();
+  const toParam = (url.searchParams.get('to') ?? '').trim();
   
   let since = fromParam;
-  let until = toParam || new Date().toISOString().slice(0, 10);
+  let until = toParam;
   
-  if (!since) {
-    // Default to first day of current month if no from date provided
-    const now = new Date();
-    since = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  if (since && until && since > until) {
+    const temp = since;
+    since = until;
+    until = temp;
   }
   
-  const diffTime = Math.abs(new Date(until).getTime() - new Date(since).getTime());
-  const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 30;
+  const days = (since && until) ? Math.ceil(Math.abs(new Date(until).getTime() - new Date(since).getTime()) / (1000 * 60 * 60 * 24)) : 30;
 
   return { since, until, days, period: { since, until, range: `${days}d` } };
 }
