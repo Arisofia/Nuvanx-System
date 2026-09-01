@@ -59,9 +59,11 @@ AS $$
     SELECT
       COALESCE(from_date, p_from_date, CURRENT_DATE - 30) AS since_date,
       COALESCE(to_date, p_to_date, CURRENT_DATE) AS until_date,
-      c.timezone AS clinic_timezone
-    FROM public.clinics c
-    WHERE c.id = (SELECT clinic_id FROM public.users WHERE id = p_user_id LIMIT 1)
+      COALESCE(c.timezone, 'UTC') AS clinic_timezone
+    FROM public.users u
+    LEFT JOIN public.clinics c ON c.id = u.clinic_id
+    WHERE u.id = p_user_id
+    LIMIT 1
   ),
   base AS (
     SELECT
