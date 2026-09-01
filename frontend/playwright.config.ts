@@ -1,7 +1,19 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const productionBaseURL = process.env.PRODUCTION_E2E_URL?.trim();
+const configuredProductionBaseURL = process.env.PRODUCTION_E2E_URL?.trim();
+const canonicalCiBaseURL =
+  process.env.CANONICAL_PRODUCTION_E2E_URL?.trim() ||
+  'https://nuvanx-frontend.jenineferderas.workers.dev';
+
+// CI must validate the canonical production runtime, never a legacy Vercel
+// deployment left behind in a repository secret. Local runs may still target an
+// explicitly supplied URL for troubleshooting.
+const productionBaseURL = process.env.CI ? canonicalCiBaseURL : configuredProductionBaseURL;
 const baseURL = productionBaseURL || 'http://localhost:5173';
+
+if (process.env.CI) {
+  process.env.PRODUCTION_E2E_URL = canonicalCiBaseURL;
+}
 
 export default defineConfig({
   testDir: './tests',
