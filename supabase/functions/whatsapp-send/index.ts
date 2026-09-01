@@ -49,6 +49,10 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+function asBufferSource(bytes: Uint8Array): ArrayBuffer {
+  return bytes.slice().buffer as ArrayBuffer;
+}
+
 function base64ToBytes(value: string): Uint8Array {
   const normalized = value.trim().replace(/-/g, "+").replace(/_/g, "/");
   const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
@@ -85,11 +89,11 @@ function loadActiveQueueKey(): { version: string; keyBytes: Uint8Array } {
 
 async function encryptMessage(message: string, leadId: string, messageSha256: string) {
   const active = loadActiveQueueKey();
-  const key = await crypto.subtle.importKey("raw", active.keyBytes, { name: "AES-GCM" }, false, ["encrypt"]);
+  const key = await crypto.subtle.importKey("raw", asBufferSource(active.keyBytes), { name: "AES-GCM" }, false, ["encrypt"]);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const aad = new TextEncoder().encode(`nvx-whatsapp-v1:${leadId}:${messageSha256}`);
   const encrypted = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv, additionalData: aad, tagLength: 128 },
+    { name: "AES-GCM", iv: asBufferSource(iv), additionalData: asBufferSource(aad), tagLength: 128 },
     key,
     new TextEncoder().encode(message),
   );

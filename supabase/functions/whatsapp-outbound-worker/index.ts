@@ -35,6 +35,10 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+function asBufferSource(bytes: Uint8Array): ArrayBuffer {
+  return bytes.slice().buffer as ArrayBuffer;
+}
+
 function base64ToBytes(value: string): Uint8Array {
   const normalized = value.trim().replace(/-/g, "+").replace(/_/g, "/");
   const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
@@ -72,14 +76,14 @@ async function decryptMessage(row: ClaimRow, keyring: Record<string, string>): P
   const keyBytes = base64ToBytes(encodedKey);
   if (keyBytes.byteLength !== 32) throw new Error("queue_key_invalid_length");
 
-  const key = await crypto.subtle.importKey("raw", keyBytes, { name: "AES-GCM" }, false, ["decrypt"]);
+  const key = await crypto.subtle.importKey("raw", asBufferSource(keyBytes), { name: "AES-GCM" }, false, ["decrypt"]);
   const iv = base64ToBytes(row.iv);
   if (iv.byteLength !== 12) throw new Error("queue_iv_invalid");
   const aad = new TextEncoder().encode(`nvx-whatsapp-v1:${row.lead_id}:${row.message_sha256}`);
   const plaintext = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv, additionalData: aad, tagLength: 128 },
+    { name: "AES-GCM", iv: asBufferSource(iv), additionalData: asBufferSource(aad), tagLength: 128 },
     key,
-    base64ToBytes(row.ciphertext),
+    asBufferSource(base64ToBytes(row.ciphertext)),
   );
   const decoded = new TextDecoder().decode(plaintext);
   if (!decoded || decoded.length > 4096) throw new Error("queue_payload_invalid");
