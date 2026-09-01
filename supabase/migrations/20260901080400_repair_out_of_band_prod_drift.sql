@@ -27,35 +27,44 @@ WHERE service = 'google_ads';
 
 -- 2. Replace the hard-coded Meta coverage view with the actual runtime canonical account.
 -- Normalize optional act_ prefixes and enforce invoker security so RLS/permissions belong to the caller.
+-- Scope the canonical account per owner (user_id or clinic_id) to avoid misclassifying
+-- other owners' canonical accounts as historical_or_noncanonical when multiple users/clinics
+-- have connected canonical Meta integrations.
 CREATE OR REPLACE VIEW public.vw_meta_account_coverage
 WITH (security_invoker = true)
 AS
 WITH runtime_canonical AS (
-  SELECT pg_catalog.regexp_replace(
-           coalesce(i.metadata->>'adAccountId', i.metadata->>'ad_account_id', ''),
-           '^act_',
-           ''
-         ) AS canonical_account_id
+  SELECT
+    i.id AS integration_id,
+    i.user_id,
+    i.clinic_id,
+    pg_catalog.regexp_replace(
+      coalesce(i.metadata->>'adAccountId', i.metadata->>'ad_account_id', ''),
+      '^act_',
+      ''
+    ) AS canonical_account_id
   FROM public.integrations i
   WHERE i.service = 'meta_ads'
     AND i.status = 'connected'
     AND pg_catalog.lower(coalesce(i.metadata->>'canonical', 'false')) = 'true'
-  ORDER BY i.updated_at DESC, i.id
-  LIMIT 1
 )
 SELECT
   mdi.ad_account_id,
+  mdi.owner_user_id,
+  mdi.owner_clinic_id,
   pg_catalog.count(*) AS total_insights,
   pg_catalog.max(mdi.date) AS last_insight_date,
   CASE
     WHEN rc.canonical_account_id <> ''
      AND pg_catalog.regexp_replace(mdi.ad_account_id, '^act_', '') = rc.canonical_account_id
+     AND (rc.user_id IS NULL OR mdi.owner_user_id = rc.user_id)
+     AND (rc.clinic_id IS NULL OR mdi.owner_clinic_id = rc.clinic_id)
       THEN 'canonical_runtime'
     ELSE 'historical_or_noncanonical'
   END AS classification
 FROM public.meta_daily_insights mdi
 LEFT JOIN runtime_canonical rc ON true
-GROUP BY mdi.ad_account_id, rc.canonical_account_id;
+GROUP BY mdi.ad_account_id, mdi.owner_user_id, mdi.owner_clinic_id, rc.canonical_account_id, rc.user_id, rc.clinic_id;
 
 -- 3. Repair the helper introduced by 080300 so the Advisor no longer reports a mutable search_path.
 CREATE OR REPLACE FUNCTION public.nvx_assert_non_anonymous_session()
