@@ -85,4 +85,10 @@ describe("Google Ads provider health contract", () => {
       'supabase functions deploy google-ads-health --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt',
     );
   });
+
+  it("normalizes service account representations via parseServiceAccount", () => {
+    expect(source).toContain("function parseServiceAccount(raw: string)");
+    expect(source).toContain("parseServiceAccount(SERVICE_ACCOUNT_RAW)");
+    expect(source).toContain("add(atob(value))");
+  });
 });
