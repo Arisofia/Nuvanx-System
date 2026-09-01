@@ -198,7 +198,8 @@ async function dataManagerAuthCheck(): Promise<{ scopeOk: boolean }> {
     throw new Error("Data Manager OAuth token acquisition failed");
   }
   const scopes = String(payload?.scope || "").split(/\s+/).filter(Boolean);
-  if (!scopes.includes(DATA_MANAGER_SCOPE)) throw new Error("Data Manager OAuth scope missing");
+  const grantedScopes = new Set(scopes);
+  if (!grantedScopes.has(DATA_MANAGER_SCOPE)) throw new Error("Data Manager OAuth scope missing");
   return { scopeOk: true };
 }
 

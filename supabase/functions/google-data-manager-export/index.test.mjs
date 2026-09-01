@@ -42,7 +42,7 @@ describe("Google Data Manager exporter contract", () => {
     expect(source).toContain('fetch("https://oauth2.googleapis.com/token", {');
     expect(source).toContain('refresh_token: OAUTH_REFRESH_TOKEN');
     expect(source).toContain('String(payload?.scope || "")');
-    expect(source).toContain('scopes.includes(DATA_MANAGER_SCOPE)');
+    expect(source).toContain('grantedScopes.has(DATA_MANAGER_SCOPE)');
     expect(source).not.toContain('tokeninfo');
     expect(source).not.toContain('access_token: token');
     expect(source).toContain('auth_ready: true');
