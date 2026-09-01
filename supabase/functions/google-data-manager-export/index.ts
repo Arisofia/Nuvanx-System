@@ -168,15 +168,25 @@ async function accessToken(): Promise<string> {
 }
 
 async function dataManagerAuthCheck(): Promise<{ scopeOk: boolean }> {
-  const token = await accessToken();
-  const response = await fetch("https://oauth2.googleapis.com/tokeninfo", {
+  if (!OAUTH_CLIENT_ID || !OAUTH_CLIENT_SECRET || !OAUTH_REFRESH_TOKEN) {
+    throw new Error("Data Manager OAuth configuration missing");
+  }
+
+  const response = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ access_token: token }).toString(),
+    body: new URLSearchParams({
+      client_id: OAUTH_CLIENT_ID,
+      client_secret: OAUTH_CLIENT_SECRET,
+      refresh_token: OAUTH_REFRESH_TOKEN,
+      grant_type: "refresh_token",
+    }).toString(),
     signal: AbortSignal.timeout(15_000),
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error("Data Manager OAuth token validation failed");
+  if (!response.ok || !String(payload?.access_token || "")) {
+    throw new Error("Data Manager OAuth token acquisition failed");
+  }
   const scopes = String(payload?.scope || "").split(/\s+/).filter(Boolean);
   if (!scopes.includes(DATA_MANAGER_SCOPE)) throw new Error("Data Manager OAuth scope missing");
   return { scopeOk: true };
