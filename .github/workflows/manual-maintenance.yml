@@ -380,6 +380,21 @@ jobs:
             esac
           }
 
+          # Redact secrets (SSH host and user) from error strings before logging/persisting
+          redact_ssh_secrets() {
+            local msg="$1"
+            if [[ -n "${NUVANX_SSH_USER:-}" && -n "${NUVANX_SSH_HOST:-}" ]]; then
+              msg="${msg//"${NUVANX_SSH_USER}@${NUVANX_SSH_HOST}"/[REDACTED_USER]@[REDACTED_HOST]}"
+            fi
+            if [[ -n "${NUVANX_SSH_HOST:-}" ]]; then
+              msg="${msg//"$NUVANX_SSH_HOST"/[REDACTED_HOST]}"
+            fi
+            if [[ -n "${NUVANX_SSH_USER:-}" ]]; then
+              msg="${msg//"$NUVANX_SSH_USER"/[REDACTED_USER]}"
+            fi
+            printf '%s' "$msg"
+          }
+
           MAX_ATTEMPTS=5
           BACKOFF_SECONDS=5
           last_error=""
@@ -389,27 +404,32 @@ jobs:
             printf '[preflight] attempt %d/%d\n' "$attempt" "$MAX_ATTEMPTS" | tee -a "$LOG_FILE"
 
             stderr_out="$(mktemp)"
-            if ssh -i ~/.ssh/nuvanx_key \
-                  -p "$NUVANX_SSH_PORT" \
-                  -o StrictHostKeyChecking=yes \
-                  -o UserKnownHostsFile=~/.ssh/known_hosts \
-                  -o ConnectTimeout=15 \
-                  -o BatchMode=yes \
-                  "$NUVANX_SSH_USER@$NUVANX_SSH_HOST" \
-                  "echo ssh-preflight-ok" 2>"$stderr_out"; then
+            ssh_exit=0
+            ssh -i ~/.ssh/nuvanx_key \
+              -p "$NUVANX_SSH_PORT" \
+              -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile=~/.ssh/known_hosts \
+              -o ConnectTimeout=15 \
+              -o BatchMode=yes \
+              "$NUVANX_SSH_USER@$NUVANX_SSH_HOST" \
+              "echo ssh-preflight-ok" 2>"$stderr_out" || ssh_exit=$?
+
+            if [[ "$ssh_exit" -eq 0 ]]; then
               printf '[preflight] SUCCESS on attempt %d\n' "$attempt" | tee -a "$LOG_FILE"
               echo "SSH_PREFLIGHT=PASS" >> "$GITHUB_OUTPUT"
+              rm -f "$stderr_out"
               exit 0
             fi
-            ssh_exit=$?
-            last_error="$(cat "$stderr_out")"
-            last_category="$(classify_ssh_error "$ssh_exit" "$last_error")"
+
+            raw_error="$(cat "$stderr_out")"
+            rm -f "$stderr_out"
+            last_error="$(redact_ssh_secrets "$raw_error")"
+            last_category="$(classify_ssh_error "$ssh_exit" "$raw_error")"
             printf '[preflight] attempt %d FAILED (exit=%d category=%s): %s\n' \
               "$attempt" "$ssh_exit" "$last_category" "$last_error" | tee -a "$LOG_FILE"
-            rm -f "$stderr_out"
 
-            # Never retry identity failures — they will not self-heal.
-            if [[ "$last_category" == "auth" || "$last_category" == "hostkey" ]]; then
+            # Never retry identity or remote environment failures — they will not self-heal.
+            if [[ "$last_category" == "auth" || "$last_category" == "hostkey" || "$last_category" == "remote_env" ]]; then
               printf '[preflight] FATAL: %s error — fail-closed, no retry\n' \
                 "$last_category" | tee -a "$LOG_FILE"
               echo "::error::SSH preflight failed: $last_category — $last_error"
