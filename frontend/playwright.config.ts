@@ -8,10 +8,6 @@ const canonicalCiBaseURL = 'https://nuvanx-frontend.jenineferderas.workers.dev';
 const productionBaseURL = process.env.CI ? canonicalCiBaseURL : configuredProductionBaseURL;
 const baseURL = productionBaseURL || 'http://localhost:5173';
 
-if (process.env.CI) {
-  process.env.PRODUCTION_E2E_URL = canonicalCiBaseURL;
-}
-
 export default defineConfig({
   testDir: './tests',
   testMatch: '**/*.playwright.ts',
