@@ -38,7 +38,9 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       QUALITY_APPROVED_SHA: ${{ github.event.workflow_run.head_sha }}
-      CORS_ALLOWED_ORIGINS: https://nuvanx-frontend.jenineferderas.workers.dev,https://frontend-arisofias-projects-c2217452.vercel.app,https://frontend-git-main-arisofias-projects-c2217452.vercel.app
+      CORS_ALLOWED_ORIGINS: https://nuvanx-frontend.jenineferderas.workers.dev
+      FRONTEND_URL: https://nuvanx-frontend.jenineferderas.workers.dev
+      PRODUCTION_FALLBACK_URL: https://nuvanx-frontend.jenineferderas.workers.dev
 
     steps:
       - name: Checkout trusted main
@@ -73,8 +75,14 @@ jobs:
           test -n "${SUPABASE_PROJECT_REF:-}"
           test -n "${SUPABASE_ACCESS_TOKEN:-}"
           test -n "${CORS_ALLOWED_ORIGINS:-}"
+          test -n "${FRONTEND_URL:-}"
+          test -n "${PRODUCTION_FALLBACK_URL:-}"
           [[ "$SUPABASE_PROJECT_REF" =~ ^[a-z0-9]{20}$ ]]
           [[ "$SUPABASE_ACCESS_TOKEN" =~ ^sbp_[A-Za-z0-9]+$ ]]
+          if [ -z "${DATABASE_URL:-}" ] && [ -z "${SUPABASE_DB_PASSWORD:-}" ]; then
+            echo "::error::DATABASE_URL or SUPABASE_DB_PASSWORD is required for migration parity validation"
+            exit 1
+          fi
 
       - name: Setup Node.js
         if: ${{ steps.candidate.outputs.deploy == 'true' }}
@@ -88,6 +96,26 @@ jobs:
         uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
         with:
           deno-version: v2.x
+
+      - name: Verify WhatsApp async migrations are already applied
+        if: ${{ steps.candidate.outputs.deploy == 'true' }}
+        uses: ./.github/actions/supabase-link-run
+        with:
+          project_ref: ${{ env.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ env.DATABASE_URL }}
+          supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
+          skip_link: true
+          command: |
+            set -euo pipefail
+            MIGRATION_STATUS="$(supabase migration list --db-url "${SESSION_URL:-$DATABASE_URL}" 2>&1)"
+            printf '%s\n' "$MIGRATION_STATUS"
+            for REQUIRED_MIGRATION in 20260901190000 20260901190100 20260901190200; do
+              if ! printf '%s\n' "$MIGRATION_STATUS" | grep -Eq "^[[:space:]]*${REQUIRED_MIGRATION}[[:space:]]*\\|[[:space:]]*${REQUIRED_MIGRATION}[[:space:]]*(\\||$)"; then
+                echo "::error::Required migration ${REQUIRED_MIGRATION} is not present in both LOCAL and REMOTE migration history. Refusing to deploy migration-dependent WhatsApp functions."
+                exit 1
+              fi
+            done
 
       - name: Revalidate governed Edge candidate
         if: ${{ steps.candidate.outputs.deploy == 'true' }}
@@ -110,7 +138,9 @@ jobs:
             supabase/functions/meta-leadgen-subscribe/index.ts \
             supabase/functions/meta-hubspot-sync/index.ts \
             supabase/functions/meta-capi-dispatch/index.ts \
+            supabase/functions/revops-dispatcher/index.ts \
             supabase/functions/whatsapp-send/index.ts \
+            supabase/functions/whatsapp-outbound-worker/index.ts \
             supabase/functions/whatsapp-status-webhook/index.ts \
             supabase/functions/google-click-attribution/index.ts \
             supabase/functions/google-data-manager-export/index.ts
@@ -128,7 +158,13 @@ jobs:
             set -euo pipefail
             test -n "${SUPABASE_PROJECT_REF:-}"
             test -n "${CORS_ALLOWED_ORIGINS:-}"
-            supabase secrets set CORS_ALLOWED_ORIGINS="$CORS_ALLOWED_ORIGINS" --project-ref "$SUPABASE_PROJECT_REF"
+            test -n "${FRONTEND_URL:-}"
+            test -n "${PRODUCTION_FALLBACK_URL:-}"
+            supabase secrets set \
+              CORS_ALLOWED_ORIGINS="$CORS_ALLOWED_ORIGINS" \
+              FRONTEND_URL="$FRONTEND_URL" \
+              PRODUCTION_FALLBACK_URL="$PRODUCTION_FALLBACK_URL" \
+              --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy dashboard --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy agent-run --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy runtime-bootstrap --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
@@ -142,7 +178,9 @@ jobs:
             supabase functions deploy meta-leadgen-subscribe --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy meta-hubspot-sync --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy meta-capi-dispatch --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+            supabase functions deploy revops-dispatcher --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy whatsapp-send --project-ref "$SUPABASE_PROJECT_REF"
+            supabase functions deploy whatsapp-outbound-worker --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy whatsapp-status-webhook --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy google-click-attribution --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy google-data-manager-export --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt

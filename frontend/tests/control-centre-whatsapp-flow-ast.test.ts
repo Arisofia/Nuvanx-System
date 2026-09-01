@@ -104,43 +104,62 @@ describe('Control Centre WhatsApp executable control-flow AST', () => {
     expect(text(source, catchClause!)).not.toContain('setWhatsappIntentKey(null)')
   })
 
-  it('server-side rate-limit and duplicate branches return before any Meta provider call', () => {
+  it('server-side rate-limit and duplicate branches return before a request can leave the enqueue boundary', () => {
     const source = read('../../supabase/functions/whatsapp-send/index.ts')
     const root = ast(source)
     const serveCall = walk(root).find((node) => node.type === 'CallExpression' && text(source, node).startsWith('Deno.serve('))
-    expect(serveCall).toBeDefined()
+    expect(serveCall, 'missing Deno.serve in whatsapp-send').toBeDefined()
     const callback = ((serveCall!.arguments as AstNode[]) || [])[0]
-    expect(callback?.type).toBe('ArrowFunctionExpression')
+    expect(callback, 'missing Deno.serve callback in whatsapp-send').toBeDefined()
+    expect(callback.type).toBe('ArrowFunctionExpression')
 
     const rateLimited = findIf(callback, source, 'decision === "rate_limited"')
     const duplicate = findIf(callback, source, 'decision === "duplicate"')
     expect(containsReturn(rateLimited.consequent as AstNode)).toBe(true)
     expect(containsReturn(duplicate.consequent as AstNode)).toBe(true)
 
-    const providerFetch = walk(callback).find((node) => node.type === 'CallExpression' && text(source, node).startsWith('fetch(`https://graph.facebook.com/'))
-    expect(providerFetch).toBeDefined()
-    expect(rateLimited.range![0]).toBeLessThan(providerFetch!.range![0])
-    expect(duplicate.range![0]).toBeLessThan(providerFetch!.range![0])
+    expect(source).not.toContain('graph.facebook.com')
+    expect(source).not.toContain('WHATSAPP_ACCESS_TOKEN')
+    expect(source).not.toContain('WHATSAPP_PHONE_NUMBER_ID')
+    expect(text(source, callback)).toContain('providerStatus: "queued"')
   })
 
-  it('authorized send obtains auth and reservation before Meta, then accepts only after a durable message id', () => {
-    const source = read('../../supabase/functions/whatsapp-send/index.ts')
-    const root = ast(source)
-    const serveCall = walk(root).find((node) => node.type === 'CallExpression' && text(source, node).startsWith('Deno.serve('))
-    const callback = ((serveCall!.arguments as AstNode[]) || [])[0]
+  it('authorized enqueue authenticates and encrypts before reservation while Meta runs only after worker claim', () => {
+    const enqueueSource = read('../../supabase/functions/whatsapp-send/index.ts')
+    const enqueueRoot = ast(enqueueSource)
+    const enqueueServe = walk(enqueueRoot).find((node) => node.type === 'CallExpression' && text(enqueueSource, node).startsWith('Deno.serve('))
+    expect(enqueueServe, 'missing Deno.serve in whatsapp-send').toBeDefined()
+    const enqueueCallback = ((enqueueServe!.arguments as AstNode[]) || [])[0]
+    expect(enqueueCallback, 'missing Deno.serve callback in whatsapp-send').toBeDefined()
+    expect(enqueueCallback.type).toBe('ArrowFunctionExpression')
 
-    const authCall = walk(callback).find((node) => node.type === 'AwaitExpression' && text(source, node).includes('authenticatedContext(req)'))
-    const reservation = walk(callback).find((node) => node.type === 'AwaitExpression' && text(source, node).includes('prepareSend('))
-    const providerFetch = walk(callback).find((node) => node.type === 'CallExpression' && text(source, node).startsWith('fetch(`https://graph.facebook.com/'))
-    const missingMessageId = findIf(callback, source, '!messageId')
-    const acceptedFinalize = walk(callback).find((node) => node.type === 'AwaitExpression' && text(source, node).includes('finalizeSend(auth.admin, auth.userId, requestId, "accepted"'))
+    const authCall = walk(enqueueCallback).find((node) => node.type === 'AwaitExpression' && text(enqueueSource, node).includes('authenticatedContext(req)'))
+    const encryptCall = walk(enqueueCallback).find((node) => node.type === 'AwaitExpression' && text(enqueueSource, node).includes('encryptMessage(message, leadId, messageSha256)'))
+    const reservation = walk(enqueueCallback).find((node) => node.type === 'AwaitExpression' && text(enqueueSource, node).includes('prepareSendAsync('))
 
     expect(authCall).toBeDefined()
+    expect(encryptCall).toBeDefined()
     expect(reservation).toBeDefined()
+    expect(authCall!.range![0]).toBeLessThan(encryptCall!.range![0])
+    expect(encryptCall!.range![0]).toBeLessThan(reservation!.range![0])
+
+    const workerSource = read('../../supabase/functions/whatsapp-outbound-worker/index.ts')
+    const workerRoot = ast(workerSource)
+    const workerServe = walk(workerRoot).find((node) => node.type === 'CallExpression' && text(workerSource, node).startsWith('Deno.serve('))
+    expect(workerServe, 'missing Deno.serve in whatsapp-outbound-worker').toBeDefined()
+    const workerCallback = ((workerServe!.arguments as AstNode[]) || [])[0]
+    expect(workerCallback, 'missing Deno.serve callback in whatsapp-outbound-worker').toBeDefined()
+    expect(workerCallback.type).toBe('ArrowFunctionExpression')
+
+    const claim = walk(workerCallback).find((node) => node.type === 'AwaitExpression' && text(workerSource, node).includes('nvx_claim_whatsapp_outbound_payload'))
+    const providerFetch = walk(workerCallback).find((node) => node.type === 'CallExpression' && text(workerSource, node).startsWith('fetch(`https://graph.facebook.com/'))
+    const missingMessageId = findIf(workerCallback, workerSource, '!messageId')
+    const acceptedFinalize = walk(workerCallback).find((node) => node.type === 'AwaitExpression' && text(workerSource, node).includes('finalizeSend(admin, row, "accepted"'))
+
+    expect(claim).toBeDefined()
     expect(providerFetch).toBeDefined()
     expect(acceptedFinalize).toBeDefined()
-    expect(authCall!.range![0]).toBeLessThan(reservation!.range![0])
-    expect(reservation!.range![0]).toBeLessThan(providerFetch!.range![0])
+    expect(claim!.range![0]).toBeLessThan(providerFetch!.range![0])
     expect(missingMessageId.range![0]).toBeLessThan(acceptedFinalize!.range![0])
   })
 })

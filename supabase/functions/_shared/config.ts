@@ -33,6 +33,8 @@ export function normalizeFrontendUrl(url: string | null | undefined): string | n
   try {
     const parsed = new URL(trimmed);
     if (parsed.protocol !== 'https:') return null;
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname === 'vercel.app' || hostname.endsWith('.vercel.app')) return null;
     return parsed.origin;
   } catch {
     return null;
@@ -44,14 +46,14 @@ export const NORMALIZED_FRONTEND_URL = normalizeFrontendUrl(RAW_FRONTEND_URL);
 export const PRODUCTION_FALLBACK_URL = normalizeFrontendUrl(getEnv('PRODUCTION_FALLBACK_URL')) || '';
 export const FRONTEND_URL = NORMALIZED_FRONTEND_URL ?? (IS_DEVELOPMENT ? 'http://localhost:5173' : (PRODUCTION_FALLBACK_URL || ''));
 
-export const DEFAULT_CORS_ORIGIN = IS_DEVELOPMENT
-  ? 'http://localhost:5173'
-  : FRONTEND_URL;
-
 const EXTRA_CORS_ORIGINS = getEnv('CORS_ALLOWED_ORIGINS')
   .split(',')
   .map((origin) => normalizeFrontendUrl(origin.trim()))
   .filter((origin): origin is string => Boolean(origin));
+
+export const DEFAULT_CORS_ORIGIN = IS_DEVELOPMENT
+  ? 'http://localhost:5173'
+  : (FRONTEND_URL || EXTRA_CORS_ORIGINS[0] || '');
 
 export const ALLOWED_CORS_ORIGINS = new Set([
   DEFAULT_CORS_ORIGIN,

@@ -5,7 +5,6 @@ declare const Deno: any;
 
 const SUPABASE_URL = (Deno.env.get("SUPABASE_URL") || "").trim();
 const SERVICE_ROLE = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
-const ALLOWED_WORKERS = new Set(["web-lead-reconcile", "deal-factory", "google-data-manager-export", "meta-capi-dispatch"]);
 
 function reply(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), {
@@ -16,11 +15,15 @@ function reply(status: number, body: Record<string, unknown>) {
 
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return reply(405, { success: false, message: "Method not allowed" });
+  if (!SUPABASE_URL || !SERVICE_ROLE) {
+    return reply(500, { success: false, message: "Dispatcher runtime configuration unavailable" });
+  }
+
+  const admin = createClient(SUPABASE_URL, SERVICE_ROLE, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
 
   const auth = await authenticateDispatcherRequest(req, async () => {
-    if (!SUPABASE_URL || !SERVICE_ROLE) throw new Error("runtime configuration unavailable");
-
-    const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
     const { data: expected, error: secretError } = await admin.rpc("nvx_get_runtime_secret", {
       p_name: "REVOPS_INTERNAL_SECRET",
     });
@@ -31,19 +34,31 @@ Deno.serve(async (req: Request) => {
 
   const body = await req.json().catch(() => ({}));
   const worker = String(body?.worker || "").trim();
-  if (!ALLOWED_WORKERS.has(worker)) return reply(422, { success: false, message: "Unsupported worker" });
+
+  const { data: workerConfig, error: workerError } = await admin
+    .from("revops_worker_registry")
+    .select("worker, allows_mode")
+    .eq("worker", worker)
+    .eq("enabled", true)
+    .maybeSingle();
+
+  if (workerError) {
+    console.error(`[revops-dispatcher] worker registry unavailable code=${String(workerError.code || "unknown")}`);
+    return reply(503, { success: false, message: "Worker registry unavailable" });
+  }
+  if (!workerConfig) return reply(422, { success: false, message: "Unsupported worker" });
+
   const requestedLimit = Number(body?.limit || 25);
   const limit = Math.max(1, Math.min(100, Number.isFinite(requestedLimit) ? Math.trunc(requestedLimit) : 25));
 
   const mode = body?.mode === undefined || body?.mode === null || body?.mode === ""
     ? null
     : String(body.mode).trim();
-  if (worker === "google-data-manager-export") {
-    if (mode !== null && mode !== "deliver" && mode !== "poll") {
-      return reply(422, { success: false, message: "Unsupported Google Data Manager mode" });
-    }
-  } else if (mode !== null) {
-    return reply(422, { success: false, message: "Worker mode is only valid for Google Data Manager" });
+  if (mode !== null && workerConfig.allows_mode !== true) {
+    return reply(422, { success: false, message: "Worker mode is not supported for this worker" });
+  }
+  if (worker === "google-data-manager-export" && mode !== null && mode !== "deliver" && mode !== "poll") {
+    return reply(422, { success: false, message: "Unsupported Google Data Manager mode" });
   }
 
   const workerBody: Record<string, unknown> = { limit };
