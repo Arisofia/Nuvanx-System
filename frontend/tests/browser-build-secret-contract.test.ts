@@ -14,6 +14,11 @@ const runtime = readFileSync(
   fileURLToPath(new URL('../../.github/workflows/control-centre-runtime.yml', import.meta.url)),
   'utf8',
 )
+const secretSync = readFileSync(
+  fileURLToPath(new URL('../../scripts/sync-platform-secrets.js', import.meta.url)),
+  'utf8',
+)
+const frontendKeysBlock = secretSync.match(/const frontendKeys = \[[\s\S]*?\n\];/)?.[0] ?? ''
 
 const frontendBuildWorkflows = {
   'master.yml': master,
@@ -137,5 +142,21 @@ describe('browser build secret boundary', () => {
   it('allows MCP_API_KEY only in backend/test contexts without a VITE prefix', () => {
     expect(master).toContain("MCP_API_KEY: ${{ secrets.MCP_API_KEY || '' }}")
     expect(master).not.toContain('VITE_MCP_API_KEY:')
+  })
+
+  it('retires Meta ad-account identity from frontend sync and purges the deprecated Vercel key', () => {
+    expect(frontendKeysBlock).not.toContain("'VITE_META_AD_ACCOUNT_IDS'")
+    expect(secretSync).toContain("const deprecatedKeys = ['VITE_META_AD_ACCOUNT_IDS']")
+    expect(secretSync).toContain('await deleteVercelEnv(projectId, env.id, token, queryString)')
+    expect(secretSync).toContain("'META_AD_ACCOUNT_IDS'")
+  })
+
+  it('resolves trusted Supabase URL from governed secret aliases without hardcoding production', () => {
+    expect(master).toContain(
+      'SUPABASE_URL: ${{ secrets.SUPABASE_URL || secrets.NUVANX_SUPABASE_URL || secrets.VITE_SUPABASE_URL }}',
+    )
+    expect(master).not.toContain('SUPABASE_URL: https://ssvvuuysgxyqvmovrlvk.supabase.co')
+    expect(secretSync).toContain("'SUPABASE_URL'")
+    expect(secretSync).toContain("'VITE_SUPABASE_URL'")
   })
 })

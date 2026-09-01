@@ -78,7 +78,6 @@ const frontendKeys = [
   'VITE_SENTRY_DSN',
   'VITE_META_APP_ID',
   'VITE_META_PIXEL_ID',
-  'VITE_META_AD_ACCOUNT_IDS',
   'VITE_META_PAGE_ID',
   'VITE_META_INSTAGRAM_CHAMBERI_ID',
   'VITE_META_INSTAGRAM_GOYA_ID',
@@ -132,6 +131,14 @@ function mergeSources() {
   }
   if (merged.DOCTORALIA_SHEET_ID && !merged.DOCTORALIA_DRIVE_FILE_ID) {
     merged.DOCTORALIA_DRIVE_FILE_ID = merged.DOCTORALIA_SHEET_ID;
+  }
+
+  // Supabase project URL is public configuration. Keep one canonical value available
+  // to both browser builds and trusted backend/E2E workflows without hardcoding it.
+  if (merged.SUPABASE_URL) {
+    merged.VITE_SUPABASE_URL = merged.SUPABASE_URL;
+  } else if (merged.VITE_SUPABASE_URL) {
+    merged.SUPABASE_URL = merged.VITE_SUPABASE_URL;
   }
 
   return merged;
@@ -326,6 +333,17 @@ async function setVercelSecrets(vars) {
       existingMap.set(env.key, [...(existingMap.get(env.key) || []), env]);
     }
 
+    // Explicitly delete deprecated keys that shouldn't be in Vercel anymore
+    const deprecatedKeys = ['VITE_META_AD_ACCOUNT_IDS'];
+    for (const dk of deprecatedKeys) {
+      if (existingMap.has(dk)) {
+        for (const env of existingMap.get(dk)) {
+          await deleteVercelEnv(projectId, env.id, token, queryString);
+          console.log(`[VERCEL] Deleted deprecated secret: ${dk}`);
+        }
+      }
+    }
+
     const requiredTargets = ['production', 'preview', 'development'];
     for (const key of frontendKeys) {
       const value = vars[key];
@@ -361,6 +379,7 @@ function setGithubSecrets(vars) {
   let uploaded = 0;
   const githubKeys = Array.from(new Set([
     ...requiredSecretKeys,
+    'SUPABASE_URL',
     'VITE_SUPABASE_URL',
     'VITE_SUPABASE_PUBLISHABLE_KEY',
     'VITE_SUPABASE_ANON_KEY',
