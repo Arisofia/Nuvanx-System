@@ -1,21 +1,21 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
 name: Cloudflare Frontend Acceptance
-run-name: Cloudflare acceptance · ${{ github.ref_name }} · ${{ inputs.approved_sha || github.sha }}
+run-name: Cloudflare acceptance · ${{ github.ref_name }} · ${{ inputs.approved_sha }}
 
 on:
   workflow_dispatch:
     inputs:
       approved_sha:
-        description: 'Optional exact approved Git commit SHA to checkout and deploy'
-        required: false
+        description: 'Exact approved Git commit SHA to deploy'
+        required: true
         type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: cloudflare-frontend-${{ github.ref }}
-  cancel-in-progress: true
+  group: cloudflare-frontend-production
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -28,25 +28,31 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      APPROVED_SHA: ${{ inputs.approved_sha }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-        with:
-          ref: ${{ inputs.approved_sha || github.sha }}
-          persist-credentials: false
-
-      - name: Verify exact approved SHA
-        if: ${{ inputs.approved_sha != '' }}
+      - name: Validate approved SHA
         shell: bash
         run: |
           set -euo pipefail
-          deployed_sha="$(git rev-parse HEAD)"
-          expected_sha="${{ inputs.approved_sha }}"
-          if [ "$deployed_sha" != "$expected_sha" ]; then
-            echo "::error::Deployed SHA ($deployed_sha) does not match expected approved SHA ($expected_sha)" >&2
+          [[ "${APPROVED_SHA:-}" =~ ^[0-9a-f]{40}$ ]] || { echo 'approved_sha must be an exact 40-character lowercase Git SHA' >&2; exit 1; }
+
+      - name: Checkout exact approved SHA
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ inputs.approved_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify exact approved SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOYED_SHA="$(git rev-parse HEAD)"
+          if [[ "$DEPLOYED_SHA" != "$APPROVED_SHA" ]]; then
+            echo "::error::Checked-out SHA does not match approved SHA" >&2
             exit 1
           fi
-          echo "Verified exact approved commit: $deployed_sha"
+          echo "Verified exact approved commit: $DEPLOYED_SHA"
 
       - name: Setup Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
@@ -89,6 +95,83 @@ jobs:
           grep -F "X-Frame-Options: DENY" dist/_headers >/dev/null
           grep -F "Content-Security-Policy:" dist/_headers >/dev/null
 
-      - name: Deploy Cloudflare Workers Static Assets
+      - name: Deploy exact Cloudflare Workers version
         shell: bash
-        run: npm exec --yes --package=wrangler@4.127.1 -- wrangler deploy --config wrangler.jsonc
+        env:
+          WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/wrangler-output.ndjson
+        run: |
+          set -euo pipefail
+          npm exec --yes --package=wrangler@4.127.1 -- wrangler deploy \
+            --config wrangler.jsonc \
+            --tag "$APPROVED_SHA" \
+            --message "git:$APPROVED_SHA"
+
+      - name: Capture deployment provenance
+        shell: bash
+        env:
+          WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/wrangler-output.ndjson
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+          const path = String(process.env.WRANGLER_OUTPUT_FILE_PATH || '');
+          const approved = String(process.env.APPROVED_SHA || '');
+          const envFile = String(process.env.GITHUB_ENV || '');
+          const summaryFile = String(process.env.GITHUB_STEP_SUMMARY || '');
+          if (!path || !fs.existsSync(path)) throw new Error('Wrangler structured output is missing');
+          const events = fs.readFileSync(path, 'utf8')
+            .split(/\r?\n/)
+            .filter(Boolean)
+            .map((line) => JSON.parse(line));
+          const deploy = [...events].reverse().find((event) => event?.type === 'deploy');
+          if (!deploy) throw new Error('Wrangler deploy event is missing');
+          if (deploy.worker_name !== 'nuvanx-frontend') throw new Error('Unexpected Cloudflare Worker identity');
+          const versionId = String(deploy.version_id || '').trim();
+          const targets = Array.isArray(deploy.targets) ? deploy.targets.map(String).filter(Boolean) : [];
+          if (!versionId || targets.length === 0) throw new Error('Cloudflare deployment provenance is incomplete');
+          const target = targets.find((value) => /^https:\/\//.test(value));
+          if (!target) throw new Error('Cloudflare deployment did not report an HTTPS target');
+          fs.appendFileSync(envFile, `CLOUDFLARE_VERSION_ID=${versionId}\nCLOUDFLARE_TARGET=${target}\n`);
+          fs.appendFileSync(summaryFile,
+            `## Cloudflare deployment provenance\n\n` +
+            `- Git SHA: \`${approved}\`\n` +
+            `- Worker: \`${deploy.worker_name}\`\n` +
+            `- Version ID: \`${versionId}\`\n` +
+            `- Target: \`${target}\`\n`);
+          console.log(JSON.stringify({ git_sha: approved, worker: deploy.worker_name, version_id: versionId, target }));
+          NODE
+
+      - name: Verify deployed version is active
+        shell: bash
+        run: |
+          set -euo pipefail
+          STATUS_FILE="${RUNNER_TEMP}/cloudflare-deployment-status.json"
+          npm exec --yes --package=wrangler@4.127.1 -- wrangler deployments status --config wrangler.jsonc --json > "$STATUS_FILE"
+          node - "$STATUS_FILE" <<'NODE'
+          const fs = require('fs');
+          const [file] = process.argv.slice(2);
+          const payload = JSON.parse(fs.readFileSync(file, 'utf8'));
+          const expected = String(process.env.CLOUDFLARE_VERSION_ID || '');
+          if (!expected) throw new Error('Expected Cloudflare version ID is missing');
+          function contains(value) {
+            if (value === expected) return true;
+            if (Array.isArray(value)) return value.some(contains);
+            if (value && typeof value === 'object') return Object.values(value).some(contains);
+            return false;
+          }
+          if (!contains(payload)) throw new Error('Fresh Cloudflare version is not present in active deployment status');
+          console.log(JSON.stringify({ active_version_verified: true, version_id: expected }));
+          NODE
+
+      - name: Post-deploy runtime smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="${CLOUDFLARE_TARGET%/}"
+          [[ "$TARGET" =~ ^https:// ]] || { echo 'Invalid Cloudflare target' >&2; exit 1; }
+          for route in / /login /dashboard /__canonical_runtime_probe__; do
+            code="$(curl --silent --show-error --max-time 20 --output /tmp/cf-body --write-out '%{http_code}' "${TARGET}${route}")"
+            test "$code" = '200' || { echo "${route} returned HTTP ${code}" >&2; exit 1; }
+            grep -q 'id="root"' /tmp/cf-body || { echo "${route} is not the SPA shell" >&2; exit 1; }
+          done
+          echo "CLOUDFLARE_PROVENANCE_ACCEPTANCE=PASS sha=${APPROVED_SHA} version=${CLOUDFLARE_VERSION_ID} target=${TARGET}"
