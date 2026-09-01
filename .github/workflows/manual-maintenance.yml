@@ -347,7 +347,8 @@ jobs:
       - name: Audit public NUVANX social proof before mutation
         run: node scripts/social-proof/nuvanx-social-proof-audit.mjs
 
-      - name: Update WordPress option and purge cache
+      - name: SSH preflight — verify SiteGround reachability
+        id: ssh_preflight
         shell: bash
         run: |
           set -euo pipefail
@@ -355,9 +356,96 @@ jobs:
           printf '%s' "$NUVANX_SSH_KEY" > ~/.ssh/nuvanx_key
           printf '%s\n' "$NUVANX_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/nuvanx_key ~/.ssh/known_hosts
+
+          LOG_FILE="${RUNNER_TEMP}/ssh-preflight.log"
+          printf '' > "$LOG_FILE"
+
+          # Classify SSH exit code into an error category.
+          # Returns: transport | auth | hostkey | remote_env | unknown
+          classify_ssh_error() {
+            local exit_code="$1"
+            local stderr_snippet="$2"
+            case "$exit_code" in
+              255)
+                if printf '%s' "$stderr_snippet" | grep -qi "REMOTE HOST IDENTIFICATION"; then
+                  echo "hostkey"
+                elif printf '%s' "$stderr_snippet" | grep -qi "Permission denied\|Authentication failed\|publickey"; then
+                  echo "auth"
+                else
+                  echo "transport"
+                fi
+                ;;
+              127|126)  echo "remote_env" ;;
+              *)        echo "unknown" ;;
+            esac
+          }
+
+          MAX_ATTEMPTS=5
+          BACKOFF_SECONDS=5
+          last_error=""
+          last_category=""
+
+          for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+            printf '[preflight] attempt %d/%d\n' "$attempt" "$MAX_ATTEMPTS" | tee -a "$LOG_FILE"
+
+            stderr_out="$(mktemp)"
+            if ssh -i ~/.ssh/nuvanx_key \
+                  -p "$NUVANX_SSH_PORT" \
+                  -o StrictHostKeyChecking=yes \
+                  -o UserKnownHostsFile=~/.ssh/known_hosts \
+                  -o ConnectTimeout=15 \
+                  -o BatchMode=yes \
+                  "$NUVANX_SSH_USER@$NUVANX_SSH_HOST" \
+                  "echo ssh-preflight-ok" 2>"$stderr_out"; then
+              printf '[preflight] SUCCESS on attempt %d\n' "$attempt" | tee -a "$LOG_FILE"
+              echo "SSH_PREFLIGHT=PASS" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            ssh_exit=$?
+            last_error="$(cat "$stderr_out")"
+            last_category="$(classify_ssh_error "$ssh_exit" "$last_error")"
+            printf '[preflight] attempt %d FAILED (exit=%d category=%s): %s\n' \
+              "$attempt" "$ssh_exit" "$last_category" "$last_error" | tee -a "$LOG_FILE"
+            rm -f "$stderr_out"
+
+            # Never retry identity failures — they will not self-heal.
+            if [[ "$last_category" == "auth" || "$last_category" == "hostkey" ]]; then
+              printf '[preflight] FATAL: %s error — fail-closed, no retry\n' \
+                "$last_category" | tee -a "$LOG_FILE"
+              echo "::error::SSH preflight failed: $last_category — $last_error"
+              exit 1
+            fi
+
+            if [[ "$attempt" -lt "$MAX_ATTEMPTS" ]]; then
+              sleep_secs=$(( BACKOFF_SECONDS * attempt ))
+              printf '[preflight] retrying in %ds (transport/unknown)\n' "$sleep_secs" | tee -a "$LOG_FILE"
+              sleep "$sleep_secs"
+            fi
+          done
+
+          printf '[preflight] FAILED after %d attempts (category=%s)\n' \
+            "$MAX_ATTEMPTS" "$last_category" | tee -a "$LOG_FILE"
+          echo "::error::SSH preflight failed after $MAX_ATTEMPTS attempts ($last_category): $last_error"
+          exit 1
+
+      - name: Upload SSH preflight log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ssh-preflight-log
+          path: ${{ runner.temp }}/ssh-preflight.log
+          if-no-files-found: ignore
+
+      - name: Update WordPress option and purge cache
+        shell: bash
+        run: |
+          set -euo pipefail
           ssh -i ~/.ssh/nuvanx_key \
             -p "$NUVANX_SSH_PORT" \
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
+            -o ConnectTimeout=15 \
+            -o BatchMode=yes \
             "$NUVANX_SSH_USER@$NUVANX_SSH_HOST" \
             "set -e; cd '$NUVANX_WP_PATH' && /usr/local/bin/wp option update nvx_doctoralia_social_proof_count '$EXPECTED_DOCTORALIA_COUNT' && /usr/local/bin/wp cache flush && /usr/local/bin/wp sg purge"
+
