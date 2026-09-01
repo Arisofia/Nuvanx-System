@@ -36,6 +36,49 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Prove Cloudflare custom-domain binding
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo 'CLOUDFLARE_API_TOKEN missing' >&2; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo 'CLOUDFLARE_ACCOUNT_ID missing' >&2; exit 1; }
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/domains?hostname=app.nuvanx.com" \
+            > /tmp/cloudflare-worker-domains.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path('/tmp/cloudflare-worker-domains.json').read_text())
+          if not payload.get('success'):
+              print('CLOUDFLARE_DOMAIN_API=FAIL')
+              for error in payload.get('errors', []):
+                  print(f"Cloudflare API error: {error.get('code')} {error.get('message')}")
+              raise SystemExit(1)
+
+          matches = [
+              item for item in payload.get('result', [])
+              if item.get('hostname') == 'app.nuvanx.com'
+          ]
+          print(f'CLOUDFLARE_CUSTOM_DOMAIN_MATCHES={len(matches)}')
+          for item in matches:
+              print('CLOUDFLARE_CUSTOM_DOMAIN=' + '|'.join([
+                  str(item.get('hostname', '')),
+                  str(item.get('service', '')),
+                  str(item.get('zone_name', '')),
+              ]))
+
+          if len(matches) != 1:
+              raise SystemExit('app.nuvanx.com is not attached exactly once as a Worker custom domain')
+          if matches[0].get('service') != 'nuvanx-frontend':
+              raise SystemExit('app.nuvanx.com is attached to the wrong Worker service')
+          print('CLOUDFLARE_CUSTOM_DOMAIN_BINDING=PASS')
+          PY
+
       - name: Setup Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
@@ -59,7 +102,15 @@ jobs:
             headers="/tmp/cf-headers-${route//\//_}"
             body="/tmp/cf-body-${route//\//_}"
             code="$(curl --silent --show-error --dump-header "$headers" --output "$body" --write-out '%{http_code}' "${PRODUCTION_E2E_URL}${route}")"
-            test "$code" = '200' || { echo "${route} returned HTTP ${code}" >&2; exit 1; }
+            if [ "$code" != '200' ]; then
+              echo "${route} returned HTTP ${code}" >&2
+              echo '--- response headers ---' >&2
+              sed -n '1,40p' "$headers" >&2
+              echo '--- response body preview ---' >&2
+              head -c 1200 "$body" >&2 || true
+              echo >&2
+              exit 1
+            fi
             grep -q 'id="root"' "$body" || { echo "${route} is not the SPA shell" >&2; exit 1; }
           done
 
