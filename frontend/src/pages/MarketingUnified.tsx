@@ -201,14 +201,7 @@ function MetaAdsPanel() {
   const load = useCallback(async () => {
     const requestId = ++sequence.current
     setState((previous) => ({ ...previous, loading: true, error: null }))
-    let cleanFrom = from || ''
-    let cleanTo = to || ''
-    if (cleanFrom && cleanTo && cleanFrom > cleanTo) {
-      const temp = cleanFrom
-      cleanFrom = cleanTo
-      cleanTo = temp
-    }
-    const params = new URLSearchParams({ from: cleanFrom, to: cleanTo }).toString()
+    const params = new URLSearchParams({ from, to }).toString()
     try {
       const [insights, campaigns, ads] = await Promise.all([
         invokeApi<MetaInsightsResponse>(`/api/meta/insights?${params}`),

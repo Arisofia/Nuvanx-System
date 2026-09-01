@@ -154,7 +154,7 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
       return
     }
 
-    const confirmed = globalThis.confirm(`¿Enviar este WhatsApp oficial por Meta Cloud API a ${lead.name} (${phone})?`)
+    const confirmed = globalThis.confirm(`¿Enviar este WhatsApp a ${lead.name} (${phone})?`)
     if (!confirmed) return
 
     const intentKey = whatsappIntentKey || createWhatsappIntentKey()
@@ -200,8 +200,8 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
       setWhatsappResult({
         ok: true,
         message: data?.messageId
-          ? `Aceptado por Meta. Entrega pendiente de confirmación. ID: ${String(data.messageId)} (la aceptación de Meta y la entrega al contacto son estados diferentes)`
-          : 'Aceptado por Meta. Entrega pendiente de confirmación. Recuerda que la aceptación de Meta y la entrega al contacto son estados diferentes.',
+          ? `Aceptado por Meta. Entrega pendiente de confirmación. ID: ${String(data.messageId)}`
+          : 'Aceptado por Meta. Entrega pendiente de confirmación.',
       })
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'No se pudo confirmar la solicitud de WhatsApp.'
@@ -244,21 +244,9 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
 
         <div className="flex-1 overflow-y-auto space-y-7 pr-1">
           <section>
-            <h3 className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Información básica y Origen</h3>
+            <h3 className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Información básica</h3>
             <div className="grid gap-4 bg-card rounded-xl p-4 border border-border">
-              {isEditing ? (
-                input('Nombre', 'name')
-              ) : (
-                <>
-                  {field('Fecha de ingreso', lead.created_at ? new Date(lead.created_at).toLocaleString('es-ES', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—')}
-                  {field('Fuente / Canal', lead.source === 'meta_leadgen' ? 'Meta Lead Ads (Instagram / Facebook)' : lead.source)}
-                  {lead.campaign_name && field('Campaña', lead.campaign_name)}
-                  {lead.ad_name && field('Anuncio', lead.ad_name)}
-                  {lead.form_name && field('Formulario', lead.form_name)}
-                  {lead.landing_url && field('Página de captura', lead.landing_url)}
-                  {lead.gclid && field('Google Click ID (GCLID)', lead.gclid)}
-                </>
-              )}
+              {isEditing ? input('Nombre', 'name') : <>{field('Origen', lead.source)}</>}
               <div>
                 <p className="text-xs text-muted mb-1">Etapa comercial canónica</p>
                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold uppercase bg-primary/15 text-primary border border-primary/20">
@@ -282,46 +270,19 @@ export function LeadDetailSheet({ lead, isOpen, onClose, onUpdate, onDelete }: R
                   {field('Email', lead.email ?? '')}
                   {field('Teléfono', lead.phone ?? '')}
                   {field('DNI', lead.dni ?? '')}
-                  {lead.phone && (
-                    <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
-                      <a
-                        href={`${['https:', '', 'wa.' + 'me'].join('/')}/${normalizeWhatsappPhone(lead.phone).replace(/\+/g, '')}?text=${encodeURIComponent(whatsappDraft)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#25D366] text-white hover:bg-[#20ba59] transition-colors shadow-sm"
-                      >
-                        <MessageCircle className="h-3.5 w-3.5" />
-                        Abrir WhatsApp Web / App
-                      </a>
-                      <a
-                        href={`tel:${normalizeWhatsappPhone(lead.phone)}`}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-surface border border-border text-foreground hover:border-primary/50 transition-colors"
-                      >
-                        Llamar
-                      </a>
-                      {lead.email && (
-                        <a
-                          href={`mailto:${lead.email}`}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-surface border border-border text-foreground hover:border-primary/50 transition-colors"
-                        >
-                          Email
-                        </a>
-                      )}
-                    </div>
-                  )}
                 </>
               )}
             </div>
           </section>
 
-          {!isEditing && (
+          {!isEditing && directWhatsappEnabled && (
             <section data-testid="direct-whatsapp-workspace">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-muted"><MessageCircle className="h-4 w-4 text-primary" />Borrador de WhatsApp / Mensaje</h3>
-                <span className="rounded-full border border-border bg-card px-2 py-1 text-[10px] font-semibold text-muted">Mensajería Médica</span>
+                <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-muted"><MessageCircle className="h-4 w-4 text-primary" />WhatsApp directo</h3>
+                <span className="rounded-full border border-border bg-card px-2 py-1 text-[10px] font-semibold text-muted">Meta Cloud API</span>
               </div>
               <div className="space-y-3 rounded-xl border border-border bg-card p-4">
-                <p className="text-xs leading-5 text-muted">Personaliza el mensaje médico para contactar al paciente por WhatsApp en vivo:</p>
+                <p className="text-xs leading-5 text-muted">Edita el mensaje y confirma el envío. NUVANX registra una intención idempotente; la aceptación de Meta y la entrega al contacto son estados diferentes.</p>
                 <label htmlFor="whatsapp-draft" className="sr-only">Mensaje de WhatsApp</label>
                 <textarea
                   id="whatsapp-draft"
