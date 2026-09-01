@@ -63,6 +63,22 @@ describe("WhatsApp asynchronous encrypted outbound worker", () => {
     expect(migration).toContain("'worker_interrupted_after_attempt_start'");
   });
 
+  it("does not terminalize transport ambiguity unless the request ledger was finalized", () => {
+    const providerCall = source.indexOf('waRes = await fetch');
+    const catchStart = source.indexOf('} catch (error: unknown) {', providerCall);
+    const catchEnd = source.indexOf('continue;', catchStart);
+    expect(providerCall).toBeGreaterThan(-1);
+    expect(catchStart).toBeGreaterThan(providerCall);
+    expect(catchEnd).toBeGreaterThan(catchStart);
+
+    const transportCatch = source.slice(catchStart, catchEnd);
+    expect(transportCatch).toContain('const ledgerTracked = await finalizeSend');
+    expect(transportCatch).toContain('if (ledgerTracked)');
+    expect(transportCatch.indexOf('await finishPayload(admin, row, true)')).toBeGreaterThan(
+      transportCatch.indexOf('if (ledgerTracked)'),
+    );
+  });
+
   it("keeps a recoverable keyring failure encrypted and pre-provider", () => {
     expect(source).toContain('deferred += 1');
     const decryptFailure = source.indexOf('// No provider attempt has started.');
