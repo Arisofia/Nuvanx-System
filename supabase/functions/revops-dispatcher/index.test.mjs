@@ -41,17 +41,30 @@ describe("RevOps dispatcher contract", () => {
     expect(source).toContain('fetch(`${SUPABASE_URL}/functions/v1/${worker}`');
   });
 
-  it("passes only deliver/poll mode to Google Data Manager", () => {
+  it("passes only deliver/poll/auth_check mode to Google Data Manager", () => {
     expect(source).toContain('worker === "google-data-manager-export"');
-    expect(source).toContain('mode !== "deliver" && mode !== "poll"');
+    expect(source).toContain('mode !== "deliver" && mode !== "poll" && mode !== "auth_check"');
     expect(source).toContain("workerBody.mode = mode");
     expect(source).toContain('message: "Worker mode is only valid for Google Data Manager"');
   });
 
-  it("does not expose credentials or worker response bodies", () => {
+  it("returns only bounded safe auth-check diagnostics", () => {
+    expect(source).toContain("function safeAuthCheckResult");
+    expect(source).toContain('payload?.auth_ready === true');
+    expect(source).toContain('payload?.configuration_required === true');
+    expect(source).toContain('payload?.scope_ok === true');
+    expect(source).toContain('payload.required_scope.slice(0, 200)');
+    expect(source).toContain('payload.message.slice(0, 200)');
     expect(source).not.toMatch(/console\.(?:log|error)\([^\n]*(?:expected|SERVICE_ROLE)/);
     expect(source).not.toContain("await response.text()");
-    expect(source).not.toContain("await response.json()");
+    expect(source).not.toContain("payload?.access_token");
+    expect(source).not.toContain("payload?.refresh_token");
+  });
+
+  it("preserves existing asynchronous deliver/poll response semantics", () => {
+    expect(source).toContain('return reply(202, { success: true, worker, mode, dispatched: true })');
+    expect(source).toContain('return reply(200, { success: true, worker, mode, checked: true, ...safe })');
+    expect(source).toContain('return reply(502, { success: false, worker, mode, worker_status: response.status, ...safe })');
   });
 
   it("never hardcodes the production Supabase project into migrations", () => {
