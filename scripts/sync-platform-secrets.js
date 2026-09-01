@@ -135,11 +135,10 @@ function mergeSources() {
 
   // Supabase project URL is public configuration. Keep one canonical value available
   // to both browser builds and trusted backend/E2E workflows without hardcoding it.
-  if (merged.VITE_SUPABASE_URL && !merged.SUPABASE_URL) {
-    merged.SUPABASE_URL = merged.VITE_SUPABASE_URL;
-  }
-  if (merged.SUPABASE_URL && !merged.VITE_SUPABASE_URL) {
+  if (merged.SUPABASE_URL) {
     merged.VITE_SUPABASE_URL = merged.SUPABASE_URL;
+  } else if (merged.VITE_SUPABASE_URL) {
+    merged.SUPABASE_URL = merged.VITE_SUPABASE_URL;
   }
 
   return merged;
