@@ -250,7 +250,7 @@ jobs:
     env:
       E2E_CLINIC_ID: 4207023b-eac1-4249-bf0f-d9b1e36a5d7a
       PRODUCTION_E2E_URL: https://nuvanx-frontend.jenineferderas.workers.dev
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL || secrets.NUVANX_SUPABASE_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL || secrets.NUVANX_SUPABASE_URL || secrets.VITE_SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
     steps:
       - name: Checkout
@@ -499,7 +499,7 @@ jobs:
     environment:
       name: Production
     env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL || secrets.NUVANX_SUPABASE_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL || secrets.NUVANX_SUPABASE_URL || secrets.VITE_SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
       NUVANX_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
