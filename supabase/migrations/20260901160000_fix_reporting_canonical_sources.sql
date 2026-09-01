@@ -1,24 +1,18 @@
 -- Canonical reporting repair — 2026-09-01
 --
 -- Goals:
---   1. Campaign Performance must use the canonical pipeline/journey evidence,
---      not legacy lead.stage / lead.appointment_date fields.
---   2. Source Comparison gets a period-aware, user-scoped RPC so API callers
---      can calculate the requested window instead of filtering an all-time aggregate.
---   3. Campaign ROI must expose verified revenue and only attach spend when a
---      campaign-level canonical spend source exists (Google Ads today). Meta spend
---      remains NULL rather than being fabricated from account-level totals.
---   4. Doctor Performance must use Doctoralia appointment ingestion when doctor_id
---      is available instead of counting only the small legacy leads.doctor_id subset.
+--   1. Campaign Performance uses tenant-scoped canonical pipeline evidence.
+--   2. Source Comparison filters facts inside the requested local-time window.
+--   3. Campaign ROI exposes verified revenue and only provable campaign spend.
+--   4. Doctor Performance prefers Doctoralia appointment ingestion.
+--   5. Lead Audit excludes soft-deleted and merged leads without rewriting history.
 --
 -- No synthetic leads, patients, appointments, revenue or advertising spend are created.
 
 BEGIN;
 
 -- ---------------------------------------------------------------------------
--- Campaign Performance: preserve the legacy four-argument compatibility
--- signature used by both /reports/campaign-performance and dashboard callers,
--- while rebuilding the metrics from vw_control_centre_pipeline.
+-- Campaign Performance
 -- ---------------------------------------------------------------------------
 DROP FUNCTION IF EXISTS public.get_campaign_report(date, date, date, date);
 DROP FUNCTION IF EXISTS public.get_campaign_report(uuid, date, date, date, date);
@@ -56,15 +50,27 @@ LANGUAGE sql
 STABLE
 SET search_path TO 'public', 'pg_catalog'
 AS $$
-  WITH params AS (
-    SELECT
-      COALESCE(from_date, p_from_date, CURRENT_DATE - 30) AS since_date,
-      COALESCE(to_date, p_to_date, CURRENT_DATE) AS until_date,
-      COALESCE(c.timezone, 'UTC') AS clinic_timezone
+  WITH user_context AS (
+    SELECT COALESCE(c.timezone, 'UTC') AS clinic_timezone
     FROM public.users u
     LEFT JOIN public.clinics c ON c.id = u.clinic_id
     WHERE u.id = p_user_id
     LIMIT 1
+  ),
+  params AS (
+    SELECT
+      COALESCE(
+        from_date,
+        p_from_date,
+        ((CURRENT_TIMESTAMP AT TIME ZONE uc.clinic_timezone)::date - 30)
+      ) AS since_date,
+      COALESCE(
+        to_date,
+        p_to_date,
+        (CURRENT_TIMESTAMP AT TIME ZONE uc.clinic_timezone)::date
+      ) AS until_date,
+      uc.clinic_timezone
+    FROM user_context uc
   ),
   base AS (
     SELECT
@@ -87,7 +93,32 @@ AS $$
       p.valuation_appointment_date,
       p.is_new_client,
       p.client_completed_at,
-      p.verified_revenue
+      p.verified_revenue,
+      EXISTS (
+        SELECT 1
+        FROM public.lead_appointment_matches lam
+        JOIN public.doctoralia_appointments_ingestion anchor
+          ON anchor.id = lam.appointment_ingestion_id
+        JOIN public.doctoralia_appointments_ingestion appt
+          ON appt.appointment_date = p.valuation_appointment_date
+         AND (
+           (
+             NULLIF(btrim(anchor.doctoralia_id), '') IS NOT NULL
+             AND NULLIF(btrim(appt.doctoralia_id), '') = NULLIF(btrim(anchor.doctoralia_id), '')
+           )
+           OR (
+             NULLIF(btrim(anchor.doctoralia_id), '') IS NULL
+             AND NULLIF(btrim(anchor.phone_normalized), '') IS NOT NULL
+             AND appt.phone_normalized = anchor.phone_normalized
+           )
+         )
+        WHERE lam.lead_id = l.id
+          AND lam.is_primary IS TRUE
+          AND p.valuation_appointment_date IS NOT NULL
+          AND NOT COALESCE(appt.is_cancelled, false)
+          AND lower(btrim(COALESCE(NULLIF(appt.status, ''), NULLIF(appt.estado, ''), '')))
+              IN ('pagada', 'realizada', 'showed', 'completed')
+      ) AS valuation_attended
     FROM public.leads l
     JOIN public.vw_control_centre_pipeline p ON p.lead_id = l.id
     LEFT JOIN public.meta_attribution ma ON ma.lead_id = l.id
@@ -96,8 +127,8 @@ AS $$
       AND l.deleted_at IS NULL
       AND l.merged_into_lead_id IS NULL
       AND lower(btrim(COALESCE(l.source, '')::text)) <> 'doctoralia'
-      AND l.created_at >= (x.since_date || ' 00:00:00')::timestamp AT TIME ZONE x.clinic_timezone
-      AND l.created_at < ((x.until_date || ' 00:00:00')::timestamp + INTERVAL '1 day') AT TIME ZONE x.clinic_timezone
+      AND l.created_at >= (x.since_date::timestamp AT TIME ZONE x.clinic_timezone)
+      AND l.created_at < ((x.until_date + 1)::timestamp AT TIME ZONE x.clinic_timezone)
   )
   SELECT
     b.campaign_name,
@@ -112,11 +143,7 @@ AS $$
     count(DISTINCT b.id) FILTER (WHERE b.first_inbound_at IS NOT NULL)::bigint AS replied,
     count(DISTINCT b.id) FILTER (WHERE b.journey_appointment_count >= 1)::bigint AS booked,
     count(DISTINCT b.id) FILTER (
-      WHERE b.valuation_appointment_date IS NOT NULL
-        AND (
-          lower(btrim(COALESCE(p.appointment_status, ''))) IN ('pagada', 'realizada', 'showed', 'completed')
-          OR b.is_new_client = true
-        )
+      WHERE b.valuation_attended OR b.is_new_client
     )::bigint AS attended,
     count(DISTINCT b.id) FILTER (WHERE COALESCE(b.no_show_flag, false))::bigint AS no_shows,
     count(DISTINCT b.id) FILTER (WHERE b.is_new_client)::bigint AS closed,
@@ -158,9 +185,7 @@ AS $$
 $$;
 
 -- ---------------------------------------------------------------------------
--- Source Comparison: period-aware + tenant-aware canonical RPC.
--- The existing view is retained for backwards compatibility, but report APIs
--- should move to this function so arbitrary date filters recalculate metrics.
+-- Source Comparison
 -- ---------------------------------------------------------------------------
 DROP FUNCTION IF EXISTS public.get_source_comparison(uuid, text, text);
 
@@ -193,8 +218,7 @@ STABLE
 SET search_path TO 'public', 'pg_catalog'
 AS $$
   WITH params AS (
-    SELECT
-      COALESCE(c.timezone, 'UTC') AS clinic_timezone
+    SELECT COALESCE(c.timezone, 'UTC') AS clinic_timezone
     FROM public.users u
     LEFT JOIN public.clinics c ON c.id = u.clinic_id
     WHERE u.id = p_user_id
@@ -220,8 +244,14 @@ AS $$
     WHERE l.user_id = p_user_id
       AND l.deleted_at IS NULL
       AND l.merged_into_lead_id IS NULL
-      AND (p_from = '' OR p_from IS NULL OR l.created_at >= (p_from || ' 00:00:00')::timestamp AT TIME ZONE COALESCE(x.clinic_timezone, 'UTC'))
-      AND (p_to = '' OR p_to IS NULL OR l.created_at < ((p_to || ' 00:00:00')::timestamp + INTERVAL '1 day') AT TIME ZONE COALESCE(x.clinic_timezone, 'UTC'))
+      AND (
+        p_from IS NULL OR p_from = ''
+        OR l.created_at >= (p_from::date::timestamp AT TIME ZONE COALESCE(x.clinic_timezone, 'UTC'))
+      )
+      AND (
+        p_to IS NULL OR p_to = ''
+        OR l.created_at < (((p_to::date + 1)::timestamp) AT TIME ZONE COALESCE(x.clinic_timezone, 'UTC'))
+      )
   )
   SELECT
     b.user_id,
@@ -278,10 +308,7 @@ AS $$
 $$;
 
 -- ---------------------------------------------------------------------------
--- Campaign ROI: verified lead-level revenue + provable campaign-level spend.
--- Google Ads has canonical campaign/day spend. Meta currently has only account/day
--- persistence, so Meta campaign spend is intentionally NULL until campaign-level
--- ingestion exists. This prevents invented ROI/CAC.
+-- Campaign ROI
 -- ---------------------------------------------------------------------------
 DROP FUNCTION IF EXISTS public.get_campaign_roi(uuid, text, text, text);
 
@@ -306,9 +333,7 @@ STABLE
 SET search_path TO 'public', 'pg_catalog'
 AS $$
   WITH user_clinic AS (
-    SELECT 
-      u.id AS user_id,
-      COALESCE(c.timezone, 'UTC') AS clinic_timezone
+    SELECT COALESCE(c.timezone, 'UTC') AS clinic_timezone
     FROM public.users u
     LEFT JOIN public.clinics c ON c.id = u.clinic_id
     WHERE u.id = p_user_id
@@ -331,11 +356,16 @@ AS $$
       AND l.deleted_at IS NULL
       AND l.merged_into_lead_id IS NULL
       AND lower(btrim(COALESCE(l.source, '')::text)) <> 'doctoralia'
-      AND (p_from = '' OR p_from IS NULL OR l.created_at >= (p_from || ' 00:00:00')::timestamp AT TIME ZONE COALESCE(uc.clinic_timezone, 'UTC'))
-      AND (p_to = '' OR p_to IS NULL OR l.created_at < ((p_to || ' 00:00:00')::timestamp + INTERVAL '1 day') AT TIME ZONE COALESCE(uc.clinic_timezone, 'UTC'))
       AND (
-        p_source = ''
-        OR p_source IS NULL
+        p_from IS NULL OR p_from = ''
+        OR l.created_at >= (p_from::date::timestamp AT TIME ZONE COALESCE(uc.clinic_timezone, 'UTC'))
+      )
+      AND (
+        p_to IS NULL OR p_to = ''
+        OR l.created_at < (((p_to::date + 1)::timestamp) AT TIME ZONE COALESCE(uc.clinic_timezone, 'UTC'))
+      )
+      AND (
+        p_source IS NULL OR p_source = ''
         OR COALESCE(NULLIF(btrim(l.utm_source), ''), NULLIF(btrim(l.source::text), ''), 'unknown') = p_source
       )
   ),
@@ -368,8 +398,8 @@ AS $$
       round(sum(COALESCE(g.spend, 0)), 2) AS spend
     FROM public.google_ads_daily_insights g
     WHERE g.user_id = p_user_id
-      AND (p_from = '' OR p_from IS NULL OR g.date >= p_from::date)
-      AND (p_to = '' OR p_to IS NULL OR g.date <= p_to::date)
+      AND (p_from IS NULL OR p_from = '' OR g.date >= p_from::date)
+      AND (p_to IS NULL OR p_to = '' OR g.date <= p_to::date)
     GROUP BY g.campaign_id, date_trunc('month', g.date)::date
   )
   SELECT
@@ -380,13 +410,16 @@ AS $$
     r.patients_count,
     r.net_revenue,
     CASE
-      WHEN r.campaign_id IS NOT NULL AND gs.campaign_id IS NOT NULL AND r.source_category = 'google' THEN gs.spend
+      WHEN r.source_category = 'google'
+       AND r.campaign_id IS NOT NULL
+       AND gs.campaign_id IS NOT NULL
+      THEN gs.spend
       ELSE NULL::numeric
     END AS spend,
     CASE
-      WHEN r.campaign_id IS NOT NULL
+      WHEN r.source_category = 'google'
+       AND r.campaign_id IS NOT NULL
        AND gs.campaign_id IS NOT NULL
-       AND r.source_category = 'google'
        AND r.patients_count > 0
       THEN round(gs.spend / r.patients_count::numeric, 2)
       ELSE NULL::numeric
@@ -399,9 +432,8 @@ AS $$
 $$;
 
 -- ---------------------------------------------------------------------------
--- Doctor Performance: Doctoralia ingestion already owns doctor_id for clinical
--- agendas. Prefer that evidence; retain lead/revenue fallback for doctors that do
--- not yet have Doctoralia-attributed appointments.
+-- Doctor Performance
+-- Preserve the existing public view column order exactly.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE VIEW public.vw_doctor_performance_real AS
 WITH doctoralia_agg AS (
@@ -409,23 +441,28 @@ WITH doctoralia_agg AS (
     a.doctor_id,
     count(*)::bigint AS total_appointments,
     count(*) FILTER (
-      WHERE lower(btrim(COALESCE(NULLIF(a.status, ''), NULLIF(a.estado, ''), ''))) IN ('pagada', 'realizada', 'showed', 'completed')
+      WHERE lower(btrim(COALESCE(NULLIF(a.status, ''), NULLIF(a.estado, ''), '')))
+            IN ('pagada', 'realizada', 'showed', 'completed')
     )::bigint AS attended_count,
     count(*) FILTER (
-      WHERE lower(btrim(COALESCE(NULLIF(a.status, ''), NULLIF(a.estado, ''), ''))) IN ('no acude', 'no acudió', 'no acudio', 'no_show', 'no show', 'noshow')
+      WHERE lower(btrim(COALESCE(NULLIF(a.status, ''), NULLIF(a.estado, ''), '')))
+            IN ('no acude', 'no acudió', 'no acudio', 'no_show', 'no show', 'noshow')
     )::bigint AS no_show_count,
     count(*) FILTER (
       WHERE COALESCE(a.is_cancelled, false)
-         OR lower(btrim(COALESCE(NULLIF(a.status, ''), NULLIF(a.estado, ''), ''))) IN ('anulada', 'anulado', 'cancelada', 'cancelado', 'cancelled', 'canceled')
+         OR lower(btrim(COALESCE(NULLIF(a.status, ''), NULLIF(a.estado, ''), '')))
+            IN ('anulada', 'anulado', 'cancelada', 'cancelado', 'cancelled', 'canceled')
     )::bigint AS cancelled_count,
     count(*) FILTER (
       WHERE a.appointment_date IS NOT NULL
         AND NOT COALESCE(a.is_cancelled, false)
-        AND lower(btrim(COALESCE(NULLIF(a.status, ''), NULLIF(a.estado, ''), ''))) NOT IN ('anulada', 'anulado', 'cancelada', 'cancelado', 'cancelled', 'canceled', 'no acude', 'no acudió', 'no acudio', 'no_show', 'no show', 'noshow')
+        AND lower(btrim(COALESCE(NULLIF(a.status, ''), NULLIF(a.estado, ''), '')))
+            NOT IN ('anulada', 'anulado', 'cancelada', 'cancelado', 'cancelled', 'canceled', 'no acude', 'no acudió', 'no acudio', 'no_show', 'no show', 'noshow')
     )::bigint AS confirmed_count,
     round(COALESCE(sum(COALESCE(a.amount, 0)) FILTER (
       WHERE NOT COALESCE(a.is_cancelled, false)
-        AND lower(btrim(COALESCE(NULLIF(a.status, ''), NULLIF(a.estado, ''), ''))) NOT IN ('anulada', 'anulado', 'cancelada', 'cancelado', 'cancelled', 'canceled', 'no acude', 'no acudió', 'no acudio', 'no_show', 'no show', 'noshow')
+        AND lower(btrim(COALESCE(NULLIF(a.status, ''), NULLIF(a.estado, ''), '')))
+            NOT IN ('anulada', 'anulado', 'cancelada', 'cancelado', 'cancelled', 'canceled', 'no acude', 'no acudió', 'no acudio', 'no_show', 'no show', 'noshow')
     ), 0), 2) AS estimated_revenue
   FROM public.doctoralia_appointments_ingestion a
   WHERE a.doctor_id IS NOT NULL
@@ -435,9 +472,14 @@ lead_agg AS (
   SELECT
     l.doctor_id,
     count(l.id)::bigint AS total_appointments,
-    count(l.id) FILTER (WHERE l.attended_at IS NOT NULL OR l.appointment_status = 'showed'::public.appointment_status)::bigint AS attended_count,
+    count(l.id) FILTER (
+      WHERE l.attended_at IS NOT NULL
+         OR l.appointment_status = 'showed'::public.appointment_status
+    )::bigint AS attended_count,
     count(l.id) FILTER (WHERE COALESCE(l.no_show_flag, false))::bigint AS no_show_count,
-    count(l.id) FILTER (WHERE l.appointment_status = 'cancelled'::public.appointment_status)::bigint AS cancelled_count,
+    count(l.id) FILTER (
+      WHERE l.appointment_status = 'cancelled'::public.appointment_status
+    )::bigint AS cancelled_count,
     count(l.id) FILTER (WHERE l.appointment_date IS NOT NULL)::bigint AS confirmed_count,
     round(COALESCE(sum(COALESCE(l.revenue, 0)) FILTER (WHERE COALESCE(l.revenue, 0) > 0), 0), 2) AS estimated_revenue
   FROM public.leads l
@@ -481,6 +523,7 @@ SELECT
   c.doctor_name,
   c.specialty,
   c.is_active,
+  c.clinic_id,
   c.total_appointments,
   c.attended_count,
   c.no_show_count,
@@ -499,20 +542,91 @@ SELECT
     2
   ) AS no_show_rate_pct,
   c.estimated_revenue,
-  c.verified_revenue_crm,
-  c.clinic_id
+  c.verified_revenue_crm
 FROM combined c;
 
+-- ---------------------------------------------------------------------------
+-- Lead Audit SSOT: preserve the public contract but exclude inactive lead rows.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE VIEW public.vw_lead_traceability
+WITH (security_invoker = true) AS
+WITH fs_latest AS (
+  SELECT DISTINCT ON (fs.lead_id)
+    fs.lead_id,
+    fs.id,
+    fs.template_id,
+    fs.template_name,
+    fs.amount_net,
+    fs.amount_gross,
+    fs.settled_at,
+    fs.intake_at,
+    fs.source_system
+  FROM public.financial_settlements fs
+  ORDER BY fs.lead_id, fs.settled_at DESC NULLS LAST, fs.created_at DESC NULLS LAST
+)
+SELECT
+  l.id AS lead_id,
+  l.name AS lead_name,
+  COALESCE(l.email, NULL::character varying)::text AS email_normalized,
+  l.phone_normalized,
+  l.source,
+  l.stage::text AS stage,
+  l.campaign_id,
+  l.campaign_name,
+  l.adset_id,
+  l.adset_name,
+  l.ad_id,
+  l.ad_name,
+  l.form_id,
+  l.form_name,
+  l.created_at AS lead_created_at,
+  l.first_outbound_at,
+  l.first_inbound_at,
+  l.reply_delay_minutes,
+  l.appointment_status,
+  l.attended_at,
+  l.no_show_flag,
+  l.revenue AS estimated_revenue,
+  l.verified_revenue AS crm_verified_revenue,
+  l.lost_reason::text AS lost_reason,
+  p.id AS patient_id,
+  p.total_ltv AS patient_ltv,
+  fs.id::text AS settlement_id,
+  fs.template_id AS doctoralia_template_id,
+  fs.template_name AS doctoralia_template_name,
+  fs.amount_net AS doctoralia_net,
+  fs.amount_gross AS doctoralia_gross,
+  fs.settled_at AS settlement_date,
+  fs.intake_at AS settlement_intake_date,
+  fs.source_system::text AS settlement_source,
+  l.user_id AS lead_user_id,
+  p.name::text AS patient_name,
+  p.dni::text AS patient_dni,
+  p.phone AS patient_phone,
+  p.last_visit AS patient_last_visit,
+  NULL::text AS doc_patient_id,
+  NULL::numeric AS match_confidence,
+  NULL::character varying(32) AS match_class,
+  NULL::timestamptz AS first_settlement_at
+FROM public.leads l
+LEFT JOIN public.patients p ON p.id = l.converted_patient_id
+LEFT JOIN fs_latest fs ON fs.lead_id = l.id
+WHERE l.deleted_at IS NULL
+  AND l.merged_into_lead_id IS NULL;
+
 COMMENT ON FUNCTION public.get_campaign_report(uuid, date, date, date, date) IS
-  'Canonical period-aware campaign performance from active leads + vw_control_centre_pipeline. User-scoped with legacy date arguments supported.';
+  'Canonical period-aware campaign performance from active leads + vw_control_centre_pipeline. Tenant-scoped; attendance requires Doctoralia evidence or verified client progression.';
 
 COMMENT ON FUNCTION public.get_source_comparison(uuid, text, text) IS
-  'Tenant-scoped, period-aware source performance. Intended reporting SSOT; API must call this RPC rather than date-filtering the all-time vw_source_comparison aggregate.';
+  'Tenant-scoped, period-aware source performance. Filters facts before aggregation using clinic-local boundaries.';
 
 COMMENT ON FUNCTION public.get_campaign_roi(uuid, text, text, text) IS
-  'Campaign ROI with verified lead-level revenue and only provable campaign-level spend. Google campaign spend is supported; Meta campaign spend remains NULL until canonical campaign/day ingestion exists.';
+  'Campaign ROI with verified lead-level revenue and only provable campaign-level spend. Google campaign spend is supported; non-Google spend remains NULL.';
 
 COMMENT ON VIEW public.vw_doctor_performance_real IS
   'Doctor performance sourced from Doctoralia appointment ingestion when doctor_id is present, with legacy lead fallback and verified settlement revenue.';
+
+COMMENT ON VIEW public.vw_lead_traceability IS
+  'Lead audit traceability restricted to active, unmerged leads while preserving the existing public column contract.';
 
 COMMIT;
