@@ -8,6 +8,17 @@ const master = readFileSync('.github/workflows/master.yml', 'utf8');
 
 const ORDINARY_EDGE_LOCK = 'manual-maintenance-deploy_edge';
 
+function jobBody(workflow, jobName) {
+  const marker = `\n  ${jobName}:\n`;
+  const start = workflow.indexOf(marker);
+  if (start < 0) return '';
+  const bodyStart = start + marker.length;
+  const nextJob = workflow.slice(bodyStart).search(/\n  [A-Za-z0-9_-]+:\n/);
+  return nextJob < 0
+    ? workflow.slice(bodyStart)
+    : workflow.slice(bodyStart, bodyStart + nextJob);
+}
+
 describe('production Supabase mutation concurrency', () => {
   it('serializes the canonical standalone Edge deployment with manual deploy_edge', () => {
     expect(standalone).toContain(`group: ${ORDINARY_EDGE_LOCK}`);
@@ -17,15 +28,17 @@ describe('production Supabase mutation concurrency', () => {
   });
 
   it('serializes the automatic Control Centre provider deploy on the same lock', () => {
-    const deployJob = controlCentre.split('\n  deploy:\n')[1] || '';
+    const deployJob = jobBody(controlCentre, 'deploy');
     expect(deployJob).toContain(`group: ${ORDINARY_EDGE_LOCK}`);
     expect(deployJob).toContain('cancel-in-progress: false');
     expect(deployJob).toContain('supabase functions deploy control-centre-provider');
   });
 
   it('keeps the Master Supabase fallback explicit/manual rather than an ordinary push mutator', () => {
-    expect(master).toContain("if: github.event_name == 'workflow_dispatch'");
-    expect(master).toContain('group: nuvanx-system-supabase-production');
-    expect(master).toContain('cancel-in-progress: false');
+    const fallbackJob = jobBody(master, 'deploy-supabase');
+    expect(fallbackJob).toContain("github.event_name == 'workflow_dispatch'");
+    expect(fallbackJob).toContain("inputs.operation == 'deploy'");
+    expect(fallbackJob).toContain('group: nuvanx-system-supabase-production');
+    expect(fallbackJob).toContain('cancel-in-progress: false');
   });
 });
