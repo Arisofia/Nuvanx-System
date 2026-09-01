@@ -21,6 +21,20 @@ describe("Google Data Manager exporter contract", () => {
     expect(source).toContain('const DATA_MANAGER_SCOPE = "https://www.googleapis.com/auth/datamanager"');
   });
 
+  it("supports a non-mutating auth_check that validates the Data Manager OAuth scope", () => {
+    expect(source).toContain('requestedMode === "poll" || requestedMode === "auth_check"');
+    expect(source).toContain('if (mode === "auth_check")');
+    expect(source).toContain('https://oauth2.googleapis.com/tokeninfo?access_token=');
+    expect(source).toContain('scopes.includes(DATA_MANAGER_SCOPE)');
+    expect(source).toContain('auth_ready: true');
+    expect(source).toContain('scope_ok: auth.scopeOk');
+    const authBranch = source.indexOf('if (mode === "auth_check")');
+    const firstOutboxRead = source.indexOf('from("google_data_manager_outbox")', authBranch);
+    const authReturn = source.indexOf('auth_ready: true', authBranch);
+    expect(authReturn).toBeGreaterThan(authBranch);
+    expect(firstOutboxRead).toBeGreaterThan(authReturn);
+  });
+
   it("never sends QA rows", () => {
     const qaGuard = source.indexOf("if (row.is_test_lead === true)");
     const ingest = source.indexOf("fetch(INGEST_URL", qaGuard);
