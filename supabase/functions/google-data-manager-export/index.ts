@@ -135,20 +135,33 @@ async function serviceAccountAccessToken(): Promise<string | null> {
     );
     const assertion = `${unsigned}.${base64UrlEncode(signature)}`;
 
-    const response = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-        assertion,
-      }).toString(),
-    });
+    let response;
+    try {
+      response = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+          assertion,
+        }).toString(),
+      });
+    } catch (err: any) {
+      const error = new Error("Service account network error");
+      (error as any).transient = true;
+      throw error;
+    }
     const payload = await response.json().catch(() => ({}));
     const token = String(payload?.access_token || "");
     if (response.ok && token) return token;
+    if (response.status >= 500) {
+      const error = new Error("Service account token acquisition failed");
+      (error as any).transient = true;
+      throw error;
+    }
     return null;
-  } catch (err) {
+  } catch (err: any) {
     console.warn("[google-data-manager-export] service account auth fallback failed:", err);
+    if (err?.transient) throw err;
     return null;
   }
 }
@@ -161,14 +174,26 @@ async function accessToken(): Promise<string> {
       refresh_token: OAUTH_REFRESH_TOKEN,
       grant_type: "refresh_token",
     });
-    const response = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: body.toString(),
-    });
+    let response;
+    try {
+      response = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: body.toString(),
+      });
+    } catch (err: any) {
+      const error = new Error("Data Manager OAuth token acquisition network error");
+      (error as any).transient = true;
+      throw error;
+    }
     const payload = await response.json().catch(() => ({}));
     const token = String(payload?.access_token || "");
     if (response.ok && token) return token;
+    if (response.status >= 500) {
+      const error = new Error("Data Manager OAuth token acquisition failed");
+      (error as any).transient = true;
+      throw error;
+    }
   }
 
   const saToken = await serviceAccountAccessToken();
@@ -182,20 +207,31 @@ async function dataManagerAuthCheck(): Promise<{ scopeOk: boolean }> {
     throw new Error("Data Manager OAuth configuration missing");
   }
 
-  const response = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: OAUTH_CLIENT_ID,
-      client_secret: OAUTH_CLIENT_SECRET,
-      refresh_token: OAUTH_REFRESH_TOKEN,
-      grant_type: "refresh_token",
-    }).toString(),
-    signal: AbortSignal.timeout(15_000),
-  });
+  let response;
+  try {
+    response = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: OAUTH_CLIENT_ID,
+        client_secret: OAUTH_CLIENT_SECRET,
+        refresh_token: OAUTH_REFRESH_TOKEN,
+        grant_type: "refresh_token",
+      }).toString(),
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (err: any) {
+    const error = new Error("Data Manager OAuth token acquisition network error");
+    (error as any).transient = true;
+    throw error;
+  }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || !String(payload?.access_token || "")) {
-    throw new Error("Data Manager OAuth token acquisition failed");
+    const error = new Error("Data Manager OAuth token acquisition failed");
+    if (response.status >= 500) {
+      (error as any).transient = true;
+    }
+    throw error;
   }
   const scopes = String(payload?.scope || "").split(/\s+/).filter(Boolean);
   const grantedScopes = new Set(scopes);
@@ -373,19 +409,29 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ success: false, message: "Method not allowed" }, 405);
   if (!SUPABASE_URL || !SERVICE_ROLE) return json({ success: false, message: "Server configuration error" }, 500);
 
+  const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
+
+  const serviceRoleAuthorized = await requireServiceRole(req);
+  let internalAuthorized = false;
+
+  if (!serviceRoleAuthorized) {
+    if (!req.headers.has("x-nvx-internal-secret")) {
+      return json({ success: false, message: "Forbidden" }, 403);
+    }
+    internalAuthorized = await requireInternalAuthCheckSecret(req, admin);
+    if (!internalAuthorized) {
+      return json({ success: false, message: "Forbidden" }, 403);
+    }
+  }
+
   const body = await req.json().catch(() => ({}));
   const requestedMode = String(body?.mode || "deliver");
   const mode = requestedMode === "poll" || requestedMode === "auth_check" ? requestedMode : "deliver";
   const requestedLimit = Number(body?.limit || DEFAULT_LIMIT);
   const limit = Math.max(1, Math.min(MAX_LIMIT, Number.isFinite(requestedLimit) ? Math.trunc(requestedLimit) : DEFAULT_LIMIT));
-  const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
 
-  const serviceRoleAuthorized = await requireServiceRole(req);
-  if (!serviceRoleAuthorized) {
-    if (mode !== "auth_check") return json({ success: false, message: "Forbidden" }, 403);
-    if (!(await requireInternalAuthCheckSecret(req, admin))) {
-      return json({ success: false, message: "Forbidden" }, 403);
-    }
+  if (!serviceRoleAuthorized && mode !== "auth_check") {
+    return json({ success: false, message: "Forbidden" }, 403);
   }
 
   try {
@@ -402,6 +448,9 @@ Deno.serve(async (req: Request) => {
         });
       } catch (error: any) {
         const message = String(error?.message || "Data Manager authentication unavailable").slice(0, 200);
+        if (error?.transient) {
+          return json({ success: false, mode, transient: true, message }, 503);
+        }
         return json({
           success: false,
           mode,
@@ -429,6 +478,9 @@ Deno.serve(async (req: Request) => {
         token = await accessToken();
       } catch (error: any) {
         const message = String(error?.message || "Data Manager authentication unavailable").slice(0, 200);
+        if (error?.transient) {
+          return json({ success: false, transient: true, message }, 503);
+        }
         return json({ success: false, configuration_required: true, message }, 503);
       }
 
@@ -450,6 +502,9 @@ Deno.serve(async (req: Request) => {
         token = await accessToken();
       } catch (error: any) {
         const message = String(error?.message || "Data Manager OAuth configuration missing").slice(0, 200);
+        if (error?.transient) {
+          return json({ success: false, transient: true, message }, 503);
+        }
         await admin.from("google_data_manager_outbox")
           .update({ delivery_status: "configuration_required", last_error: message, updated_at: new Date().toISOString() })
           .in("delivery_status", ["pending", "failed"])

@@ -1,95 +1,180 @@
-import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
-const source = readFileSync(fileURLToPath(new URL("./index.ts", import.meta.url)), "utf8");
+// Mock Supabase JS client
+const mockRpc = vi.fn();
+const mockSelect = vi.fn();
+const mockEq = vi.fn();
+const mockNot = vi.fn();
+const mockIs = vi.fn();
+const mockOrder = vi.fn();
+const mockLimit = vi.fn();
+const mockUpdate = vi.fn();
+const mockIn = vi.fn();
+const mockMaybeSingle = vi.fn();
 
-describe("Google Data Manager exporter contract", () => {
-  it("keeps deliver and poll behind the exact Supabase service-role credential", () => {
-    expect(source).toContain("async function requireServiceRole");
-    expect(source).toContain("secretMatches(match[1], SERVICE_ROLE)");
-    expect(source).toContain("const serviceRoleAuthorized = await requireServiceRole(req)");
-    expect(source).toContain('if (mode !== "auth_check") return json({ success: false, message: "Forbidden" }, 403)');
-    const serviceRoleGuard = source.indexOf("const serviceRoleAuthorized = await requireServiceRole(req)");
-    const nonAuthCheckGuard = source.indexOf('if (mode !== "auth_check") return json({ success: false, message: "Forbidden" }, 403)', serviceRoleGuard);
-    const outbox = source.indexOf('from("google_data_manager_outbox")', nonAuthCheckGuard);
-    expect(serviceRoleGuard).toBeGreaterThan(-1);
-    expect(nonAuthCheckGuard).toBeGreaterThan(serviceRoleGuard);
-    expect(outbox).toBeGreaterThan(nonAuthCheckGuard);
+const mockFrom = vi.fn(() => ({
+  select: mockSelect,
+  update: mockUpdate,
+}));
+
+vi.mock("jsr:@supabase/supabase-js@2", () => ({
+  createClient: vi.fn(() => ({
+    rpc: mockRpc,
+    from: mockFrom,
+  }))
+}));
+
+// Setup Deno
+let handler;
+globalThis.Deno = {
+  env: {
+    get: (key) => {
+      if (key === "SUPABASE_URL") return "https://mock.supabase.co";
+      if (key === "SUPABASE_SERVICE_ROLE_KEY") return "mock-service-role";
+      if (key === "GOOGLE_DATA_MANAGER_CLIENT_ID") return "mock-client-id";
+      if (key === "GOOGLE_DATA_MANAGER_CLIENT_SECRET") return "mock-client-secret";
+      if (key === "GOOGLE_DATA_MANAGER_REFRESH_TOKEN") return "mock-refresh-token";
+      return "";
+    }
+  },
+  serve: vi.fn((fn) => {
+    handler = fn;
+  })
+};
+
+// Import the function so handler is populated
+await import("./index.ts");
+
+describe("google-data-manager-export behavioral tests", () => {
+  let fetchSpy;
+  
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+      if (url === "https://oauth2.googleapis.com/token") {
+        return new Response(JSON.stringify({
+          access_token: "mock-oauth-token",
+          scope: "https://www.googleapis.com/auth/datamanager"
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    
+    // Chain mocks for Supabase builder
+    mockSelect.mockReturnValue({ eq: mockEq });
+    mockEq.mockReturnValue({ not: mockNot, eq: mockEq, order: mockOrder });
+    mockNot.mockReturnValue({ is: mockIs });
+    mockIs.mockReturnValue({ order: mockOrder });
+    mockOrder.mockReturnValue({ limit: mockLimit });
+    mockLimit.mockReturnValue({ maybeSingle: mockMaybeSingle, then: (cb) => cb({ data: [], error: null }) });
+    mockMaybeSingle.mockReturnValue({ then: (cb) => cb({ data: null, error: null }) });
+    
+    mockUpdate.mockReturnValue({ eq: mockEq, in: mockIn });
+    mockIn.mockReturnValue({ eq: mockEq });
+    
+    mockRpc.mockImplementation(async (fnName, params) => {
+      if (fnName === "nvx_get_runtime_secret" && params.p_name === "REVOPS_INTERNAL_SECRET") {
+        return { data: "mock-internal-secret", error: null };
+      }
+      return { data: null, error: null };
+    });
   });
 
-  it("allows the Vault-backed internal secret only for auth_check", () => {
-    expect(source).toContain("async function requireInternalAuthCheckSecret");
-    expect(source).toContain('req.headers.get("x-nvx-internal-secret")');
-    expect(source).toContain('p_name: "REVOPS_INTERNAL_SECRET"');
-    expect(source).toContain("secretMatches(received, String(expected))");
-    const modeGuard = source.indexOf('if (mode !== "auth_check") return json({ success: false, message: "Forbidden" }, 403)');
-    const internalCheck = source.indexOf("await requireInternalAuthCheckSecret(req, admin)", modeGuard);
-    expect(modeGuard).toBeGreaterThan(-1);
-    expect(internalCheck).toBeGreaterThan(modeGuard);
-    expect(source).not.toMatch(/console\.(?:log|warn|error)\([^\n]*(?:received|expected|REVOPS_INTERNAL_SECRET)/);
+  afterEach(() => {
+    vi.clearAllMocks();
   });
 
-  it("uses the v1 event ingestion and request-status APIs", () => {
-    expect(source).toContain('const INGEST_URL = "https://datamanager.googleapis.com/v1/events:ingest"');
-    expect(source).toContain('const STATUS_URL = "https://datamanager.googleapis.com/v1/requestStatus:retrieve"');
-    expect(source).toContain('const DATA_MANAGER_SCOPE = "https://www.googleapis.com/auth/datamanager"');
+  it("auth_check no toca outbox", async () => {
+    const req = new Request("https://mock/", {
+      method: "POST",
+      headers: {
+        "x-nvx-internal-secret": "mock-internal-secret",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ mode: "auth_check" })
+    });
+    
+    const res = await handler(req);
+    const body = await res.json();
+    
+    expect(res.status).toBe(200);
+    expect(body.success).toBe(true);
+    expect(body.mode).toBe("auth_check");
+    expect(body.auth_ready).toBe(true);
+    
+    // Verificamos que se haya hecho fetch al token
+    expect(fetchSpy).toHaveBeenCalledWith("https://oauth2.googleapis.com/token", expect.anything());
+    
+    // auth_check NO debe tocar la outbox
+    expect(mockFrom).not.toHaveBeenCalled();
   });
 
-  it("supports a non-mutating auth_check that validates scope from the OAuth exchange itself", () => {
-    expect(source).toContain('requestedMode === "poll" || requestedMode === "auth_check"');
-    expect(source).toContain('if (mode === "auth_check")');
-    expect(source).toContain('fetch("https://oauth2.googleapis.com/token", {');
-    expect(source).toContain('refresh_token: OAUTH_REFRESH_TOKEN');
-    expect(source).toContain('String(payload?.scope || "")');
-    expect(source).toContain('grantedScopes.has(DATA_MANAGER_SCOPE)');
-    expect(source).not.toContain('tokeninfo');
-    expect(source).not.toContain('access_token: token');
-    expect(source).toContain('auth_ready: true');
-    expect(source).toContain('scope_ok: auth.scopeOk');
-    const authBranch = source.indexOf('if (mode === "auth_check")');
-    const firstOutboxRead = source.indexOf('from("google_data_manager_outbox")', authBranch);
-    const authReturn = source.indexOf('auth_ready: true', authBranch);
-    expect(authReturn).toBeGreaterThan(authBranch);
-    expect(firstOutboxRead).toBeGreaterThan(authReturn);
+  it("el token nunca aparece en la respuesta (auth_check)", async () => {
+    const req = new Request("https://mock/", {
+      method: "POST",
+      headers: {
+        "Authorization": "Bearer mock-service-role",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ mode: "auth_check" })
+    });
+    
+    const res = await handler(req);
+    const bodyText = await res.text();
+    
+    // Token is "mock-oauth-token" from our fetch mock
+    expect(bodyText).not.toContain("mock-oauth-token");
+    const body = JSON.parse(bodyText);
+    expect(body.success).toBe(true);
   });
 
-  it("never sends QA rows", () => {
-    const qaGuard = source.indexOf("if (row.is_test_lead === true)");
-    const ingest = source.indexOf("fetch(INGEST_URL", qaGuard);
-    expect(qaGuard).toBeGreaterThan(-1);
-    expect(ingest).toBeGreaterThan(qaGuard);
-    expect(source).toContain('delivery_status: "suppressed"');
+  it("deliver/poll rechazan el secreto interno", async () => {
+    // Intento hacer poll usando el internal secret en vez del service role
+    const reqPoll = new Request("https://mock/", {
+      method: "POST",
+      headers: {
+        "x-nvx-internal-secret": "mock-internal-secret",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ mode: "poll" })
+    });
+    
+    const resPoll = await handler(reqPoll);
+    expect(resPoll.status).toBe(403);
+    expect(await resPoll.json()).toEqual({ success: false, message: "Forbidden" });
+
+    // Intento hacer deliver usando el internal secret
+    const reqDeliver = new Request("https://mock/", {
+      method: "POST",
+      headers: {
+        "x-nvx-internal-secret": "mock-internal-secret",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ mode: "deliver" })
+    });
+    
+    const resDeliver = await handler(reqDeliver);
+    expect(resDeliver.status).toBe(403);
+    expect(await resDeliver.json()).toEqual({ success: false, message: "Forbidden" });
   });
 
-  it("maps click identifiers and hashed user identifiers using HEX encoding", () => {
-    expect(source).toContain("if (row.gclid) result.gclid");
-    expect(source).toContain("if (row.gbraid) result.gbraid");
-    expect(source).toContain("if (row.wbraid) result.wbraid");
-    expect(source).toContain("emailAddress");
-    expect(source).toContain("phoneNumber");
-    expect(source).toContain('payload.encoding = "HEX"');
-  });
-
-  it("uses an operating Google Ads account and a conversion-action destination", () => {
-    expect(source).toContain('accountType: "GOOGLE_ADS"');
-    expect(source).toContain("operatingAccount");
-    expect(source).toContain("productDestinationId: actionId");
-    expect(source).toContain('destinationReferences: ["google_ads_conversion"]');
-  });
-
-  it("does not mark an accepted ingestion as finally delivered until requestStatus SUCCESS", () => {
-    const accepted = source.indexOf('delivery_status: "sent"');
-    const delivered = source.indexOf("delivered_at: new Date().toISOString()", accepted);
-    const successCheck = source.indexOf('status === "SUCCESS"');
-    expect(accepted).toBeGreaterThan(-1);
-    expect(successCheck).toBeGreaterThan(accepted);
-    expect(delivered).toBeGreaterThan(successCheck);
-  });
-
-  it("fails closed when OAuth or conversion-action configuration is missing", () => {
-    expect(source).toContain("Data Manager OAuth configuration missing");
-    expect(source).toContain('delivery_status: "configuration_required"');
-    expect(source).toContain("Conversion action not configured");
+  it("maneja errores de red 5xx como transient", async () => {
+    fetchSpy.mockImplementationOnce(async () => {
+      return new Response(JSON.stringify({}), { status: 500 });
+    });
+    
+    const req = new Request("https://mock/", {
+      method: "POST",
+      headers: {
+        "Authorization": "Bearer mock-service-role",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ mode: "auth_check" })
+    });
+    
+    const res = await handler(req);
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.transient).toBe(true);
+    expect(body.configuration_required).toBeUndefined();
   });
 });

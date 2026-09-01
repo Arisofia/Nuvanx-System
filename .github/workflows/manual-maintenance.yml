@@ -158,7 +158,7 @@ jobs:
               case "$1" in
                 web-events) supabase functions deploy web-events --project-ref "$SUPABASE_PROJECT_REF" ;;
                 google-click-attribution) supabase functions deploy google-click-attribution --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt ;;
-                google-data-manager-export) supabase functions deploy google-data-manager-export --project-ref "$SUPABASE_PROJECT_REF" ;;
+                google-data-manager-export) supabase functions deploy google-data-manager-export --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt ;;
                 runtime-bootstrap) supabase functions deploy runtime-bootstrap --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt ;;
                 lead-captured) supabase functions deploy lead-captured --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt ;;
                 revops-dispatcher) supabase functions deploy revops-dispatcher --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt ;;

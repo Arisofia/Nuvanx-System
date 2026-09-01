@@ -419,3 +419,7 @@ import_map = "functions/mcp/deno.json"
 [functions.daily-aggregates]
 verify_jwt = false
 import_map = "functions/deno.json"
+
+[functions.google-data-manager-export]
+verify_jwt = false
+import_map = "functions/deno.json"
