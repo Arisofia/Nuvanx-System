@@ -35,9 +35,24 @@ jobs:
         run: |
           set -euo pipefail
           for route in / /login /dashboard /__canonical_runtime_probe__; do
-            code="$(curl --silent --show-error --output /tmp/cf-body --write-out '%{http_code}' "${PRODUCTION_E2E_URL}${route}")"
+            code="$(curl --silent --show-error \
+              --dump-header /tmp/cf-headers \
+              --output /tmp/cf-body \
+              --write-out '%{http_code}' \
+              "${PRODUCTION_E2E_URL}${route}")"
             test "$code" = '200' || { echo "${route} returned HTTP ${code}" >&2; exit 1; }
             grep -q 'id="root"' /tmp/cf-body || { echo "${route} is not the SPA shell" >&2; exit 1; }
+
+            tr -d '\r' < /tmp/cf-headers > /tmp/cf-headers-normalized
+            grep -Eiq '^x-frame-options:[[:space:]]*DENY$' /tmp/cf-headers-normalized || { echo "${route} missing X-Frame-Options: DENY" >&2; exit 1; }
+            grep -Eiq '^x-content-type-options:[[:space:]]*nosniff$' /tmp/cf-headers-normalized || { echo "${route} missing X-Content-Type-Options: nosniff" >&2; exit 1; }
+            grep -Eiq '^referrer-policy:[[:space:]]*strict-origin-when-cross-origin$' /tmp/cf-headers-normalized || { echo "${route} missing Referrer-Policy" >&2; exit 1; }
+            grep -Eiq '^permissions-policy:[[:space:]]*camera=\(\), microphone=\(\), geolocation=\(\), payment=\(\), usb=\(\)$' /tmp/cf-headers-normalized || { echo "${route} missing governed Permissions-Policy" >&2; exit 1; }
+            grep -Eiq '^content-security-policy:' /tmp/cf-headers-normalized || { echo "${route} missing Content-Security-Policy" >&2; exit 1; }
+            grep -Eiq "^content-security-policy:.*frame-ancestors 'none'" /tmp/cf-headers-normalized || { echo "${route} CSP does not deny framing" >&2; exit 1; }
+            grep -Eiq '^content-security-policy:.*https://connect\.facebook\.net' /tmp/cf-headers-normalized || { echo "${route} CSP does not allow the governed Meta Pixel script origin" >&2; exit 1; }
+            grep -Eiq '^content-security-policy:.*https://\*\.supabase\.co' /tmp/cf-headers-normalized || { echo "${route} CSP does not allow Supabase HTTPS connections" >&2; exit 1; }
+            grep -Eiq '^content-security-policy:.*wss://\*\.supabase\.co' /tmp/cf-headers-normalized || { echo "${route} CSP does not allow Supabase realtime connections" >&2; exit 1; }
           done
 
       - name: Record acceptance boundary
@@ -46,3 +61,4 @@ jobs:
           set -euo pipefail
           echo "Authenticated production acceptance is owned by Master System · Quality · Playwright smoke · trusted."
           echo "CLOUDFLARE_PUBLIC_RUNTIME=PASS"
+          echo "CLOUDFLARE_SECURITY_HEADERS=PASS"
