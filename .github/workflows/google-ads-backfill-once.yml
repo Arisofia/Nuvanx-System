@@ -58,9 +58,12 @@ jobs:
         run: |
           set -euo pipefail
           node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
           const base = String(process.env.SUPABASE_URL || '').replace(/\/$/, '');
           const key = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '');
-          if (!base || !key) throw new Error('Supabase runtime contract unavailable');
+          const runnerTemp = String(process.env.RUNNER_TEMP || '').trim();
+          if (!base || !key || !runnerTemp) throw new Error('Supabase/runtime contract unavailable');
 
           async function rpc(name, body) {
             const response = await fetch(`${base}/rest/v1/rpc/${name}`, {
@@ -126,13 +129,19 @@ jobs:
                 console.error(JSON.stringify({ success: false, failures }));
                 throw new Error('Google Ads backfill worker reported failure');
               }
-              console.log(JSON.stringify({
+
+              const summary = {
                 success: true,
                 provider: content.provider || null,
                 api_version: content.api_version || null,
                 date_range: content.date_range || null,
                 accounts: Array.isArray(content.accounts) ? content.accounts : [],
-              }));
+              };
+              if (summary.provider !== 'google_ads' || summary.accounts.length === 0) {
+                throw new Error('Google Ads provider summary is incomplete');
+              }
+              fs.writeFileSync(path.join(runnerTemp, 'google-ads-provider-summary.json'), JSON.stringify(summary));
+              console.log(JSON.stringify(summary));
               process.exit(0);
             }
             await new Promise((resolve) => setTimeout(resolve, 2_000));
@@ -140,5 +149,76 @@ jobs:
           throw new Error('Google Ads internal dispatch response was not observed before timeout');
           NODE
 
-      - name: Verify canonical August totals
+      - name: Verify provider totals equal persisted August facts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const { createClient } = require('@supabase/supabase-js');
+
+          const summaryPath = path.join(String(process.env.RUNNER_TEMP || ''), 'google-ads-provider-summary.json');
+          const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+          const range = summary.date_range || {};
+          if (range.from !== '2026-08-01' || range.to !== '2026-08-31') {
+            throw new Error('Provider summary does not cover the canonical August window');
+          }
+
+          const client = createClient(
+            String(process.env.SUPABASE_URL || ''),
+            String(process.env.SUPABASE_SERVICE_ROLE_KEY || ''),
+            { auth: { persistSession: false, autoRefreshToken: false } },
+          );
+
+          const norm = (value) => String(value || '').replace(/\D/g, '');
+          const round6 = (value) => Number(Number(value || 0).toFixed(6));
+          const expected = new Map();
+          for (const account of summary.accounts || []) {
+            const customerId = norm(account.customer_id);
+            if (!customerId || expected.has(customerId)) throw new Error('Provider returned invalid/duplicate customer identity');
+            expected.set(customerId, {
+              rows: Number(account.rows || 0),
+              impressions: Number(account.impressions || 0),
+              clicks: Number(account.clicks || 0),
+              spend: round6(account.spend),
+              conversions: round6(account.conversions),
+            });
+          }
+          if (expected.size === 0) throw new Error('Provider returned no Google Ads accounts');
+
+          (async () => {
+            for (const [customerId, provider] of expected.entries()) {
+              const { data, error } = await client
+                .from('google_ads_daily_insights')
+                .select('impressions,clicks,spend,conversions')
+                .eq('customer_id', customerId)
+                .gte('date', range.from)
+                .lte('date', range.to);
+              if (error) throw error;
+              const persisted = (data || []).reduce((acc, row) => {
+                acc.rows += 1;
+                acc.impressions += Number(row.impressions || 0);
+                acc.clicks += Number(row.clicks || 0);
+                acc.spend += Number(row.spend || 0);
+                acc.conversions += Number(row.conversions || 0);
+                return acc;
+              }, { rows: 0, impressions: 0, clicks: 0, spend: 0, conversions: 0 });
+              persisted.spend = round6(persisted.spend);
+              persisted.conversions = round6(persisted.conversions);
+
+              for (const metric of ['rows', 'impressions', 'clicks', 'spend', 'conversions']) {
+                if (persisted[metric] !== provider[metric]) {
+                  throw new Error(`Provider/DB mismatch ${customerId} ${metric}: provider=${provider[metric]} db=${persisted[metric]}`);
+                }
+              }
+              console.log(JSON.stringify({ customer_id: customerId, provider_db_match: true, ...persisted }));
+            }
+          })().catch((error) => {
+            console.error(error.message || error);
+            process.exit(1);
+          });
+          NODE
+
+      - name: Verify connection and August range coverage
         run: node scripts/check-google-ads-db.js --json --from 2026-08-01 --to 2026-08-31
