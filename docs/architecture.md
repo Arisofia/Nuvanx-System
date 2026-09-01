@@ -8,12 +8,12 @@ This document describes the high-level architecture of the Nuvanx System.
 
 ```mermaid
 graph TD
-  subgraph "Root"
+  subgraph "Root & Configuration"
     A["package.json"]
     B["README.md"]
-    C[".github/workflows/*"]
+    C[".github/ workflows and actions"]
     D["supabase/config.toml"]
-    E["vercel.json"]
+    E["frontend/wrangler.jsonc + public/_headers"]
   end
 
   subgraph "Frontend"
@@ -47,16 +47,17 @@ graph TD
     W["scripts/health-check-nuvanx.ts"]
   end
 
-  subgraph "CI/CD"
-    C1[".github/workflows/deploy.yml"]
-    C2[".github/workflows/ci.yml"]
+  subgraph "CI/CD & Governance"
+    C1["Master System + governed Supabase deployment"]
+    C2["Cloudflare canonical runtime acceptance"]
     C4[".github/workflows/daily-sync.yml"]
     C6[".github/actions/supabase-link-run"]
   end
 
   subgraph "External Services"
     Y["Supabase Cloud"]
-    Z["Vercel"]
+    Z["Cloudflare Workers Static Assets"]
+    ZR["Vercel legacy rollback only"]
     AA["Meta Graph API"]
     AB["Doctoralia exports"]
     AC["Google Sheets / Google Ads"]
@@ -69,6 +70,7 @@ graph TD
   D --> K
   D --> L
   D --> M
+  E --> Z
   F --> K
   K --> N
   K --> O
@@ -87,6 +89,7 @@ graph TD
   C1 --> L
   C1 --> M
   C2 --> F
+  C2 --> Z
   C4 --> T
   C4 --> U
   C6 --> C1
@@ -94,12 +97,16 @@ graph TD
   L --> Y
   M --> Y
   F --> Z
+  ZR -. rollback .-> F
   K --> AA
   K --> AD
   K --> AC
 ```
 
 ## Key Architectural Notes
+
+### Frontend runtime
+Cloudflare Workers Static Assets is the canonical frontend runtime. Production browser API calls target Supabase Edge Functions explicitly; the local Vite `/api` proxy is a development convenience only. The existing Vercel deployment is a temporary rollback asset and is not the canonical delivery path.
 
 ### CAPI / Meta Conversions
 The API Edge Function is the central hub for server-side event dispatch. Runtime identifiers and tokens must come from environment variables or secrets.
