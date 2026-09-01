@@ -36,7 +36,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Prove Cloudflare custom-domain binding
+      - name: Prove Cloudflare zone ownership
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -45,6 +45,43 @@ jobs:
           set -euo pipefail
           test -n "$CLOUDFLARE_API_TOKEN" || { echo 'CLOUDFLARE_API_TOKEN missing' >&2; exit 1; }
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo 'CLOUDFLARE_ACCOUNT_ID missing' >&2; exit 1; }
+          curl --fail-with-body --silent --show-error --get \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            --data-urlencode 'name=nuvanx.com' \
+            --data-urlencode "account.id=${CLOUDFLARE_ACCOUNT_ID}" \
+            'https://api.cloudflare.com/client/v4/zones' \
+            > /tmp/cloudflare-zones.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path('/tmp/cloudflare-zones.json').read_text())
+          if not payload.get('success'):
+              print('CLOUDFLARE_ZONE_API=FAIL')
+              for error in payload.get('errors', []):
+                  print(f"Cloudflare API error: {error.get('code')} {error.get('message')}")
+              raise SystemExit(1)
+          matches = [z for z in payload.get('result', []) if z.get('name') == 'nuvanx.com']
+          print(f'CLOUDFLARE_ZONE_MATCHES={len(matches)}')
+          for zone in matches:
+              print('CLOUDFLARE_ZONE=' + '|'.join([
+                  str(zone.get('name', '')),
+                  str(zone.get('status', '')),
+                  str(zone.get('type', '')),
+              ]))
+          if len(matches) != 1:
+              raise SystemExit('nuvanx.com is not visible exactly once in the configured Cloudflare account')
+          if matches[0].get('status') != 'active':
+              raise SystemExit('nuvanx.com is visible but not active in Cloudflare')
+          print('CLOUDFLARE_ZONE_OWNERSHIP=PASS')
+          PY
+
+      - name: Prove Cloudflare custom-domain binding
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
           curl --fail-with-body --silent --show-error \
             -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
             "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/domains?hostname=app.nuvanx.com" \
@@ -52,18 +89,13 @@ jobs:
           python3 - <<'PY'
           import json
           from pathlib import Path
-
           payload = json.loads(Path('/tmp/cloudflare-worker-domains.json').read_text())
           if not payload.get('success'):
               print('CLOUDFLARE_DOMAIN_API=FAIL')
               for error in payload.get('errors', []):
                   print(f"Cloudflare API error: {error.get('code')} {error.get('message')}")
               raise SystemExit(1)
-
-          matches = [
-              item for item in payload.get('result', [])
-              if item.get('hostname') == 'app.nuvanx.com'
-          ]
+          matches = [item for item in payload.get('result', []) if item.get('hostname') == 'app.nuvanx.com']
           print(f'CLOUDFLARE_CUSTOM_DOMAIN_MATCHES={len(matches)}')
           for item in matches:
               print('CLOUDFLARE_CUSTOM_DOMAIN=' + '|'.join([
@@ -71,7 +103,6 @@ jobs:
                   str(item.get('service', '')),
                   str(item.get('zone_name', '')),
               ]))
-
           if len(matches) != 1:
               raise SystemExit('app.nuvanx.com is not attached exactly once as a Worker custom domain')
           if matches[0].get('service') != 'nuvanx-frontend':
@@ -113,7 +144,6 @@ jobs:
             fi
             grep -q 'id="root"' "$body" || { echo "${route} is not the SPA shell" >&2; exit 1; }
           done
-
           root_headers='/tmp/cf-headers-_'
           grep -qi '^server: cloudflare' "$root_headers" || { echo 'Custom domain is not being served through Cloudflare' >&2; exit 1; }
           grep -qi '^cf-ray:' "$root_headers" || { echo 'Missing Cloudflare request trace header' >&2; exit 1; }
@@ -139,20 +169,17 @@ jobs:
         run: |
           cat > tests/cloudflare-canonical-runtime.playwright.ts <<'EOF'
           import { test, expect } from '@playwright/test';
-
           test('canonical Cloudflare runtime has healthy Supabase session and APIs', async ({ page }) => {
             test.setTimeout(75_000);
             const email = process.env.E2E_EMAIL?.trim();
             const password = process.env.E2E_PASSWORD?.trim();
             if (!email || !password) throw new Error('E2E credentials missing');
-
             const pageErrors: string[] = [];
             const networkFailures: string[] = [];
             const httpErrors: string[] = [];
             const policyErrors: string[] = [];
             const fallbackWarnings: string[] = [];
             const isSupabase = (url: string) => url.includes('ssvvuuysgxyqvmovrlvk.supabase.co');
-
             page.on('pageerror', error => pageErrors.push(error.message));
             page.on('requestfailed', request => {
               if (!isSupabase(request.url())) return;
@@ -160,16 +187,13 @@ jobs:
               if (!reason.includes('ERR_ABORTED')) networkFailures.push(`${reason} ${request.url()}`);
             });
             page.on('response', response => {
-              if (isSupabase(response.url()) && response.status() >= 400) {
-                httpErrors.push(`${response.status()} ${response.url()}`);
-              }
+              if (isSupabase(response.url()) && response.status() >= 400) httpErrors.push(`${response.status()} ${response.url()}`);
             });
             page.on('console', msg => {
               const text = msg.text();
               if (/cors|content security policy|blocked by client/i.test(text)) policyErrors.push(text);
               if (/canonical crm load failed|legacy lead metadata unavailable/i.test(text)) fallbackWarnings.push(text);
             });
-
             await page.goto('/login', { waitUntil: 'domcontentloaded' });
             await page.locator('#login-email').fill(email);
             await page.locator('#login-password').fill(password);
@@ -177,12 +201,10 @@ jobs:
             await expect(page).toHaveURL(/\/dashboard\/?$/, { timeout: 15_000 });
             await expect(page.getByTestId('control-centre-overview')).toBeVisible({ timeout: 15_000 });
             await page.waitForTimeout(10_000);
-
             await page.reload({ waitUntil: 'domcontentloaded' });
             await expect(page).toHaveURL(/\/dashboard\/?$/, { timeout: 15_000 });
             await expect(page.getByTestId('control-centre-overview')).toBeVisible({ timeout: 15_000 });
             await page.waitForTimeout(6_000);
-
             expect(pageErrors).toEqual([]);
             expect(networkFailures).toEqual([]);
             expect(httpErrors).toEqual([]);
