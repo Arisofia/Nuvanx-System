@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 const workflow = readFileSync('.github/workflows/deploy-standalone-edge-functions.yml', 'utf8');
 const packageJson = JSON.parse(readFileSync('package.json', 'utf8'));
+const whatsappMigrationParityRow = /^[\s]*20260901190000[\s]*\|[\s]*20260901190000[\s]*(\||$)/;
 
 describe('standalone Edge deployment ownership', () => {
   it('runs only after successful Master System main-push quality or explicit manual dispatch', () => {
@@ -29,12 +30,16 @@ describe('standalone Edge deployment ownership', () => {
     expect(workflow).not.toContain('frontend-git-main-arisofias-projects-c2217452.vercel.app');
   });
 
-  it('fails closed if the migration-dependent WhatsApp schema is not already applied', () => {
+  it('fails closed unless the migration is present in both LOCAL and REMOTE history', () => {
     expect(workflow).toContain('Verify WhatsApp async migration is already applied');
     expect(workflow).toContain('supabase migration list --db-url');
-    expect(workflow).toContain("grep -q '20260901190000'");
-    expect(workflow).toContain('Refusing to deploy migration-dependent WhatsApp functions');
+    expect(workflow).toContain("grep -Eq '^[[:space:]]*20260901190000[[:space:]]*\\|[[:space:]]*20260901190000[[:space:]]*(\\||$)'");
+    expect(workflow).toContain('not present in both LOCAL and REMOTE migration history');
     expect(workflow).not.toContain('bash scripts/supabase-migrate.sh');
+
+    expect(whatsappMigrationParityRow.test('  20260901190000 | 20260901190000 | 2026-09-01 19:00:00')).toBe(true);
+    expect(whatsappMigrationParityRow.test('  20260901190000 |                | 2026-09-01 19:00:00')).toBe(false);
+    expect(whatsappMigrationParityRow.test('                   | 20260901190000 | 2026-09-01 19:00:00')).toBe(false);
   });
 
   it('revalidates tests and all governed Deno entrypoints before deployment', () => {
