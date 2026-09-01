@@ -108,9 +108,10 @@ describe('Control Centre WhatsApp executable control-flow AST', () => {
     const source = read('../../supabase/functions/whatsapp-send/index.ts')
     const root = ast(source)
     const serveCall = walk(root).find((node) => node.type === 'CallExpression' && text(source, node).startsWith('Deno.serve('))
-    expect(serveCall).toBeDefined()
+    expect(serveCall, 'missing Deno.serve in whatsapp-send').toBeDefined()
     const callback = ((serveCall!.arguments as AstNode[]) || [])[0]
-    expect(callback?.type).toBe('ArrowFunctionExpression')
+    expect(callback, 'missing Deno.serve callback in whatsapp-send').toBeDefined()
+    expect(callback.type).toBe('ArrowFunctionExpression')
 
     const rateLimited = findIf(callback, source, 'decision === "rate_limited"')
     const duplicate = findIf(callback, source, 'decision === "duplicate"')
@@ -127,7 +128,10 @@ describe('Control Centre WhatsApp executable control-flow AST', () => {
     const enqueueSource = read('../../supabase/functions/whatsapp-send/index.ts')
     const enqueueRoot = ast(enqueueSource)
     const enqueueServe = walk(enqueueRoot).find((node) => node.type === 'CallExpression' && text(enqueueSource, node).startsWith('Deno.serve('))
+    expect(enqueueServe, 'missing Deno.serve in whatsapp-send').toBeDefined()
     const enqueueCallback = ((enqueueServe!.arguments as AstNode[]) || [])[0]
+    expect(enqueueCallback, 'missing Deno.serve callback in whatsapp-send').toBeDefined()
+    expect(enqueueCallback.type).toBe('ArrowFunctionExpression')
 
     const authCall = walk(enqueueCallback).find((node) => node.type === 'AwaitExpression' && text(enqueueSource, node).includes('authenticatedContext(req)'))
     const encryptCall = walk(enqueueCallback).find((node) => node.type === 'AwaitExpression' && text(enqueueSource, node).includes('encryptMessage(message, leadId, messageSha256)'))
@@ -142,7 +146,11 @@ describe('Control Centre WhatsApp executable control-flow AST', () => {
     const workerSource = read('../../supabase/functions/whatsapp-outbound-worker/index.ts')
     const workerRoot = ast(workerSource)
     const workerServe = walk(workerRoot).find((node) => node.type === 'CallExpression' && text(workerSource, node).startsWith('Deno.serve('))
+    expect(workerServe, 'missing Deno.serve in whatsapp-outbound-worker').toBeDefined()
     const workerCallback = ((workerServe!.arguments as AstNode[]) || [])[0]
+    expect(workerCallback, 'missing Deno.serve callback in whatsapp-outbound-worker').toBeDefined()
+    expect(workerCallback.type).toBe('ArrowFunctionExpression')
+
     const claim = walk(workerCallback).find((node) => node.type === 'AwaitExpression' && text(workerSource, node).includes('nvx_claim_whatsapp_outbound_payload'))
     const providerFetch = walk(workerCallback).find((node) => node.type === 'CallExpression' && text(workerSource, node).startsWith('fetch(`https://graph.facebook.com/'))
     const missingMessageId = findIf(workerCallback, workerSource, '!messageId')
