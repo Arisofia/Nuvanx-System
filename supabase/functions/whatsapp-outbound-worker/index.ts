@@ -202,8 +202,14 @@ Deno.serve(async (req: Request) => {
   let failed = 0;
   let unknown = 0;
   let deferred = 0;
+  const batchStart = Date.now();
+  const BATCH_DEADLINE_MS = 45_000;
 
   for (const row of rows) {
+    if (Date.now() - batchStart > BATCH_DEADLINE_MS) {
+      deferred += 1;
+      continue;
+    }
     let message: string;
     try {
       message = await decryptMessage(row, keyring);
