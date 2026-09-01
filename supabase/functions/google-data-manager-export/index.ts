@@ -169,10 +169,12 @@ async function accessToken(): Promise<string> {
 
 async function dataManagerAuthCheck(): Promise<{ scopeOk: boolean }> {
   const token = await accessToken();
-  const response = await fetch(
-    `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(token)}`,
-    { method: "GET", signal: AbortSignal.timeout(15_000) },
-  );
+  const response = await fetch("https://oauth2.googleapis.com/tokeninfo", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ access_token: token }).toString(),
+    signal: AbortSignal.timeout(15_000),
+  });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error("Data Manager OAuth token validation failed");
   const scopes = String(payload?.scope || "").split(/\s+/).filter(Boolean);
