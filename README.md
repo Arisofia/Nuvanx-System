@@ -4,7 +4,7 @@ Revenue Intelligence and RevOps platform for NUVANX: paid-media acquisition, web
 
 ## Architecture
 
-- **Frontend:** React 19 + Vite, deployed on Vercel.
+- **Frontend:** React 19 + Vite, deployed canonically on Cloudflare Workers Static Assets.
 - **Production API:** Supabase Edge Function `supabase/functions/api/index.ts`.
 - **MCP:** Supabase Edge Function `supabase/functions/mcp/index.ts`.
 - **Database:** Supabase project `ssvvuuysgxyqvmovrlvk` (`nuvanx-prod`).
@@ -138,10 +138,11 @@ npm run validate:doctoralia-appointments
 npm run secrets:scan
 ```
 
-The repository contains canonical GitHub Actions for master validation, standalone Edge Function deployment, scheduled Meta backfill and bounded maintenance operations. Do not add temporary builder/repair workflows to `main`; operational one-shots must be removed after their completion is proven.
+The repository contains canonical GitHub Actions for master validation, Cloudflare runtime acceptance, standalone Edge Function deployment, scheduled Meta backfill and bounded maintenance operations. Do not add temporary builder/repair workflows to `main`; operational one-shots must be removed after their completion is proven.
 
 ## Deployment rules
 
+- Frontend production runtime is Cloudflare Workers Static Assets; legacy Vercel configuration is retained only while the controlled rollback/decommission owner remains open.
 - Database schema changes are forward-only Supabase migrations.
 - Edge Function production ownership is the canonical repository source plus its deployment workflows.
 - Do not manually recreate an Edge Function that canonical deployment has pruned unless the repository again contains an explicit owner.
@@ -158,6 +159,7 @@ See `SECURITY.md` and the relevant security/operations documentation before chan
 
 - `SECURITY.md` — security posture and production controls.
 - `docs/revops-attribution-contract-v1.md` — current RevOps attribution contract.
+- `docs/operations/cloudflare-frontend-cutover.md` — canonical frontend cutover/rollback contract.
 - `docs/operations/google-access-inventory.md` — redacted Google ownership/access inventory.
 - `docs/operations/google-ads-status-output.md` — Google Ads status ownership.
 - `docs/production-validation-checklist.md` — production validation requirements.
