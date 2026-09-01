@@ -54,12 +54,11 @@ Deno.serve(async (req: Request) => {
   const mode = body?.mode === undefined || body?.mode === null || body?.mode === ""
     ? null
     : String(body.mode).trim();
-  if (worker === "google-data-manager-export") {
-    if (mode !== null && mode !== "deliver" && mode !== "poll") {
-      return reply(422, { success: false, message: "Unsupported Google Data Manager mode" });
-    }
-  } else if (mode !== null || workerConfig.allows_mode === true) {
-    if (mode !== null) return reply(422, { success: false, message: "Worker mode is not supported for this worker" });
+  if (mode !== null && workerConfig.allows_mode !== true) {
+    return reply(422, { success: false, message: "Worker mode is not supported for this worker" });
+  }
+  if (worker === "google-data-manager-export" && mode !== null && mode !== "deliver" && mode !== "poll") {
+    return reply(422, { success: false, message: "Unsupported Google Data Manager mode" });
   }
 
   const workerBody: Record<string, unknown> = { limit };
