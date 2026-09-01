@@ -15,7 +15,10 @@ WITH canonical_by_owner AS (
     i.user_id,
     i.clinic_id,
     pg_catalog.regexp_replace(
-      coalesce(i.metadata->>'adAccountId', i.metadata->>'ad_account_id', ''),
+      coalesce(
+        nullif(i.metadata->>'adAccountId', ''),
+        nullif(i.metadata->>'ad_account_id', '')
+      ),
       '^act_',
       ''
     ) AS canonical_account_id
@@ -24,6 +27,14 @@ WITH canonical_by_owner AS (
     AND i.status = 'connected'
     AND pg_catalog.lower(coalesce(i.metadata->>'canonical', 'false')) = 'true'
     AND (i.user_id IS NOT NULL OR i.clinic_id IS NOT NULL)
+    AND pg_catalog.regexp_replace(
+      coalesce(
+        nullif(i.metadata->>'adAccountId', ''),
+        nullif(i.metadata->>'ad_account_id', '')
+      ),
+      '^act_',
+      ''
+    ) <> ''
   ORDER BY
     CASE
       WHEN i.clinic_id IS NOT NULL THEN 'clinic:' || i.clinic_id::text
@@ -37,7 +48,8 @@ SELECT
   pg_catalog.count(*) AS total_insights,
   pg_catalog.max(mdi.date) AS last_insight_date,
   CASE
-    WHEN cbo.canonical_account_id <> ''
+    WHEN cbo.canonical_account_id IS NOT NULL
+     AND cbo.canonical_account_id <> ''
      AND pg_catalog.regexp_replace(mdi.ad_account_id, '^act_', '') = cbo.canonical_account_id
       THEN 'canonical_runtime'
     ELSE 'historical_or_noncanonical'
