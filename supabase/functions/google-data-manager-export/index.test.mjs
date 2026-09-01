@@ -21,14 +21,15 @@ describe("Google Data Manager exporter contract", () => {
     expect(source).toContain('const DATA_MANAGER_SCOPE = "https://www.googleapis.com/auth/datamanager"');
   });
 
-  it("supports a non-mutating auth_check that validates scope without putting the token in a URL", () => {
+  it("supports a non-mutating auth_check that validates scope from the OAuth exchange itself", () => {
     expect(source).toContain('requestedMode === "poll" || requestedMode === "auth_check"');
     expect(source).toContain('if (mode === "auth_check")');
-    expect(source).toContain('fetch("https://oauth2.googleapis.com/tokeninfo", {');
-    expect(source).toContain('method: "POST"');
-    expect(source).toContain('body: new URLSearchParams({ access_token: token }).toString()');
-    expect(source).not.toContain('tokeninfo?access_token=');
+    expect(source).toContain('fetch("https://oauth2.googleapis.com/token", {');
+    expect(source).toContain('refresh_token: OAUTH_REFRESH_TOKEN');
+    expect(source).toContain('String(payload?.scope || "")');
     expect(source).toContain('scopes.includes(DATA_MANAGER_SCOPE)');
+    expect(source).not.toContain('tokeninfo');
+    expect(source).not.toContain('access_token: token');
     expect(source).toContain('auth_ready: true');
     expect(source).toContain('scope_ok: auth.scopeOk');
     const authBranch = source.indexOf('if (mode === "auth_check")');
