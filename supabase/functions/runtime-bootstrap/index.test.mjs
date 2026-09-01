@@ -20,8 +20,9 @@ describe("runtime bootstrap contract", () => {
     expect(source).toContain("verified.hubId !== EXPECTED_HUB_ID");
   });
 
-  it("requires contacts read and deal read/write scopes", () => {
+  it("requires contact and deal read/write scopes used by RevOps runtime", () => {
     expect(source).toContain('"crm.objects.contacts.read"');
+    expect(source).toContain('"crm.objects.contacts.write"');
     expect(source).toContain('"crm.objects.deals.read"');
     expect(source).toContain('"crm.objects.deals.write"');
     expect(source).toContain("missingScopes.length");
