@@ -150,18 +150,21 @@ describe('NUVANX Control Centre operations contract', () => {
     expect(sheet).not.toContain('Mensaje enviado correctamente.')
   })
 
-  it('authorizes, rate-limits and reserves the exact owned recipient before the irreversible Meta send', () => {
-    const worker = read('../../supabase/functions/whatsapp-send/index.ts')
+  it('authorizes, rate-limits and reserves the exact owned recipient before the asynchronous worker send', () => {
+    const sender = read('../../supabase/functions/whatsapp-send/index.ts')
+    const worker = read('../../supabase/functions/whatsapp-outbound-worker/index.ts')
     expectOrdered(
-      worker,
+      sender,
       'const auth = await authenticatedContext(req)',
-      'const prepared = await prepareSend',
-      'waRes = await fetch',
+      'const prepared = await prepareSendAsync',
+      'return json({\n    success: true,\n    queued: true',
     )
-    expect(worker).toContain('nvx_prepare_whatsapp_send')
-    expect(worker).toContain('decision === "rate_limited"')
-    expect(worker).toContain('decision === "duplicate"')
+    expect(sender).toContain('nvx_prepare_whatsapp_send_async')
+    expect(sender).toContain('decision === "rate_limited"')
+    expect(sender).toContain('decision === "duplicate"')
+    expect(sender).not.toContain('fetch(`https://graph.facebook.com/')
     expect(worker).toContain('AbortSignal.timeout(PROVIDER_TIMEOUT_MS)')
-    expect(worker).toContain('["reserved", "unknown"].includes(requestStatus)')
+    expect(worker).toContain('nvx_claim_whatsapp_outbound_payload')
+    expect(worker).toContain('finishPayload(admin, row, true)')
   })
 })
