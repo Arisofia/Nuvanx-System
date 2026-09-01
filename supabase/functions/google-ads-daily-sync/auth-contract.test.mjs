@@ -26,9 +26,17 @@ describe('Google Ads Edge authentication contract', () => {
     expect(source).not.toMatch(/pageSize\s*:/);
   });
 
-  it('reports only the non-secret authentication mode', () => {
+  it('uses the refresh token only in the server-side OAuth request and reports only the safe auth mode', () => {
+    expect(source).toContain('refresh_token: OAUTH_REFRESH_TOKEN');
     expect(source).toContain('auth_mode: googleAuth.mode');
     expect(source).not.toContain('auth_token:');
-    expect(source).not.toContain('refresh_token: OAUTH_REFRESH_TOKEN');
+    expect(source).not.toMatch(/console\.(?:log|error|warn)\([^\n]*OAUTH_(?:CLIENT_SECRET|REFRESH_TOKEN)/);
+
+    const successReply = source.match(/return reply\(success \? 200 : 502, \{([\s\S]*?)\n\s*\}\);/);
+    expect(successReply?.[1] || '').toContain('auth_mode: googleAuth.mode');
+    expect(successReply?.[1] || '').not.toMatch(/OAUTH_(?:CLIENT_SECRET|REFRESH_TOKEN)|accessToken|googleAuth\.token/);
+
+    const failureReply = source.match(/return reply\(failure\.status, \{([\s\S]*?)\n\s*\}\);/);
+    expect(failureReply?.[1] || '').not.toMatch(/OAUTH_(?:CLIENT_SECRET|REFRESH_TOKEN)|accessToken|googleAuth\.token/);
   });
 });
