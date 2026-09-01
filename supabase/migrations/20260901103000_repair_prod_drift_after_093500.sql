@@ -13,19 +13,27 @@ begin;
 ALTER TABLE public.credentials
   DROP CONSTRAINT IF EXISTS check_google_ads_credential_length;
 
-DELETE FROM public.credentials
-WHERE service = 'google_ads'
-  AND pg_catalog.left(pg_catalog.ltrim(encrypted_key), 1) = '{';
-
-UPDATE public.integrations
+WITH quarantined_credentials AS (
+  DELETE FROM public.credentials
+  WHERE service = 'google_ads'
+    AND pg_catalog.left(pg_catalog.ltrim(encrypted_key), 1) = '{'
+  RETURNING user_id, clinic_id
+)
+UPDATE public.integrations i
 SET status = 'credential_invalid',
     last_error = 'Google Ads developer-token credential requires governed reprovisioning',
-    metadata = coalesce(metadata, '{}'::jsonb) || pg_catalog.jsonb_build_object(
+    metadata = coalesce(i.metadata, '{}'::jsonb) || pg_catalog.jsonb_build_object(
       'credential_quarantine_reason', 'plaintext_service_account_removed_from_developer_token_slot',
       'credential_quarantined_at', pg_catalog.now()
     ),
     updated_at = pg_catalog.now()
-WHERE service = 'google_ads';
+WHERE i.service = 'google_ads'
+  AND EXISTS (
+    SELECT 1
+    FROM quarantined_credentials q
+    WHERE q.user_id IS NOT DISTINCT FROM i.user_id
+      AND q.clinic_id IS NOT DISTINCT FROM i.clinic_id
+  );
 
 -- 2. Repair Meta reporting coverage without hard-coding a historical account.
 -- Use caller permissions/RLS and derive the canonical account from the connected meta_ads row.
@@ -161,6 +169,8 @@ WITH resolved AS (
         OR l.first_response_at IS NOT NULL
         OR pg_catalog.lower(coalesce(l.stage::text, '')) = 'contactado'
         THEN 'contactado'
+      WHEN l.stage IS NOT NULL AND pg_catalog.lower(pg_catalog.btrim(l.stage::text)) NOT IN ('', 'lead')
+        THEN NULL
       ELSE 'lead'
     END AS canonical_stage,
     coalesce(l.stage::text, 'unknown') AS original_stage
