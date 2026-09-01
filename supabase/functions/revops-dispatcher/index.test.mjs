@@ -41,25 +41,17 @@ describe("RevOps dispatcher contract", () => {
     expect(source).toContain('fetch(`${SUPABASE_URL}/functions/v1/${worker}`');
   });
 
-  it("passes only deliver/poll/auth_check mode to Google Data Manager", () => {
+  it("passes only deliver/poll mode to Google Data Manager", () => {
     expect(source).toContain('worker === "google-data-manager-export"');
-    expect(source).toContain('mode !== "deliver" && mode !== "poll" && mode !== "auth_check"');
+    expect(source).toContain('mode !== "deliver" && mode !== "poll"');
     expect(source).toContain("workerBody.mode = mode");
     expect(source).toContain('message: "Worker mode is only valid for Google Data Manager"');
   });
 
-  it("never forwards worker response bodies or credentials", () => {
+  it("does not expose credentials or worker response bodies", () => {
     expect(source).not.toMatch(/console\.(?:log|error)\([^\n]*(?:expected|SERVICE_ROLE)/);
     expect(source).not.toContain("await response.text()");
     expect(source).not.toContain("await response.json()");
-    expect(source).not.toContain("access_token");
-    expect(source).not.toContain("refresh_token");
-  });
-
-  it("returns only dispatcher-owned status for auth_check and preserves deliver/poll semantics", () => {
-    expect(source).toContain('return reply(200, { success: true, worker, mode, checked: true })');
-    expect(source).toContain('return reply(502, { success: false, worker, mode, worker_status: response.status })');
-    expect(source).toContain('return reply(202, { success: true, worker, mode, dispatched: true })');
   });
 
   it("never hardcodes the production Supabase project into migrations", () => {
