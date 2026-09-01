@@ -172,6 +172,33 @@ async function prepareSendAsync(
   return { ok: true, row };
 }
 
+
+async function checkPayloadExists(requestId: string, auth: any): Promise<{ hasPayload: boolean; errorResponse?: Response }> {
+  try {
+    const { data: payloadRows, error: payloadError } = await auth.admin
+      .from("whatsapp_outbound_payloads")
+      .select("state")
+      .eq("request_id", requestId)
+      .limit(1);
+
+    if (!payloadError) {
+      return { hasPayload: Array.isArray(payloadRows) && payloadRows.length > 0 };
+    } else if (payloadError.code === "42P01" || payloadError.message?.includes("does not exist")) {
+      return { hasPayload: false };
+    } else {
+      console.error(`Database error checking outbound payload: ${payloadError.message}`);
+      return { hasPayload: false, errorResponse: json({ success: false, message: "Unexpected error checking outbound payload" }, 500) };
+    }
+  } catch (error: any) {
+    if (error?.code === "42P01" || error?.message?.includes("does not exist")) {
+      return { hasPayload: false };
+    } else {
+      console.error(`Unexpected error checking outbound payload:`, error);
+      return { hasPayload: false, errorResponse: json({ success: false, message: "Unexpected error checking outbound payload" }, 500) };
+    }
+  }
+}
+
 Deno.serve(async (req: Request) => {
   const origin = req.headers.get("Origin");
   const cors = corsHeaders(origin);
@@ -321,29 +348,8 @@ Deno.serve(async (req: Request) => {
       // Check if this reserved request has an encrypted payload for the async worker.
       // Pre-existing reserved requests from the synchronous implementation may not have
       // a payload row and should be marked for reconciliation instead of reported as queued.
-      let hasPayload = false;
-      try {
-        const { data: payloadRows, error: payloadError } = await auth.admin
-          .from("whatsapp_outbound_payloads")
-          .select("state")
-          .eq("request_id", requestId)
-          .limit(1);
-
-        if (!payloadError) {
-          hasPayload = Array.isArray(payloadRows) && payloadRows.length > 0;
-        } else if (payloadError.code === "42P01" || payloadError.message?.includes("does not exist")) {
-          // Table doesn't exist yet (fresh or pre-migration deployment)
-          hasPayload = false;
-        } else {
-          return json({ success: false, message: `Database error checking outbound payload: ${payloadError.message}` }, 500);
-        }
-      } catch (error: any) {
-        if (error?.code === "42P01" || error?.message?.includes("does not exist")) {
-          hasPayload = false;
-        } else {
-          return json({ success: false, message: "Unexpected error checking outbound payload" }, 500);
-        }
-      }
+      const { hasPayload, errorResponse } = await checkPayloadExists(requestId, auth);
+      if (errorResponse) return errorResponse;
 
       if (!hasPayload) {
         return json({
@@ -385,6 +391,19 @@ Deno.serve(async (req: Request) => {
   }
 
   if (!requestId) return json({ success: false, message: "WhatsApp request ledger did not return a request id" }, 500);
+
+  const { hasPayload, errorResponse } = await checkPayloadExists(requestId, auth);
+  if (errorResponse) return errorResponse;
+  
+  if (!hasPayload) {
+    return json({
+      success: false,
+      idempotentReplay: true,
+      requestId,
+      providerStatus: "reconciliation_required",
+      message: "This send intent is reserved but has no encrypted payload for async delivery. Manual reconciliation is required.",
+    }, 503);
+  }
 
   return json({
     success: true,

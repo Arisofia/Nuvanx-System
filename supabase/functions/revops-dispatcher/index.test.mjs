@@ -38,7 +38,7 @@ describe("RevOps dispatcher contract", () => {
   it("allowlists only governed RevOps workers including durable Meta CAPI and async WhatsApp", () => {
     const match = source.match(/const ALLOWED_WORKERS = new Set\(\[([^\]]+)\]\)/);
     expect(match).not.toBeNull();
-    const workers = match[1].split(",").map(s => s.trim().replace(/"/g, ''));
+    const workers = match[1].split(",").map(s => s.trim().replace(/"/g, '')).filter(Boolean);
     expect(workers).toEqual([
       "web-lead-reconcile",
       "deal-factory",

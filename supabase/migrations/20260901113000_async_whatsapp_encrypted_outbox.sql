@@ -205,12 +205,15 @@ begin
     );
 
   update public.whatsapp_outbound_payloads p
-  set state = 'manual_review',
+  set state = case when r.status in ('accepted', 'failed') then 'terminal' else 'manual_review' end,
       ciphertext = null,
       iv = null,
-      manual_review_at = coalesce(p.manual_review_at, v_now),
+      manual_review_at = case when r.status = 'unknown' then coalesce(p.manual_review_at, v_now) else p.manual_review_at end,
+      completed_at = case when r.status in ('accepted', 'failed') then coalesce(p.completed_at, v_now) else p.completed_at end,
       updated_at = v_now
-  where p.state = 'sending'
+  from public.whatsapp_send_requests r
+  where p.request_id = r.id
+    and p.state = 'sending'
     and p.provider_attempt_started_at < v_now - interval '2 minutes';
 
   -- A worker that died before provider-attempt start may safely release its claim.

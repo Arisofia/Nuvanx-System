@@ -205,10 +205,21 @@ Deno.serve(async (req: Request) => {
   const batchStart = Date.now();
   const BATCH_DEADLINE_MS = 45_000;
 
-  for (const row of rows) {
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
     if (Date.now() - batchStart > BATCH_DEADLINE_MS) {
-      deferred += 1;
-      continue;
+      const deferredRows = rows.slice(i);
+      deferred += deferredRows.length;
+      
+      // Release deferred claims back to the queue
+      const deferredTokens = deferredRows.map(r => r.claim_token);
+      await admin
+        .from("whatsapp_outbound_payloads")
+        .update({ state: "queued", claim_token: null, claimed_at: null })
+        .in("claim_token", deferredTokens)
+        .eq("state", "claimed");
+        
+      break;
     }
     let message: string;
     try {

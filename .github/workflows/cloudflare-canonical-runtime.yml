@@ -127,9 +127,12 @@ jobs:
           PLAYWRIGHT_REQUIRE_BROWSERS: 'true'
         run: |
           set -euo pipefail
-          if [ -z "${E2E_EMAIL:-}" ] || [ -z "${E2E_PASSWORD:-}" ]; then
+          EMAIL_TRIMMED="$(echo -n "${E2E_EMAIL:-}" | xargs)"
+          PASSWORD_TRIMMED="$(echo -n "${E2E_PASSWORD:-}" | xargs)"
+          if [ -z "$EMAIL_TRIMMED" ] || [ -z "$PASSWORD_TRIMMED" ]; then
             echo "E2E credentials not available in environment; public runtime verified."
+            echo 'CLOUDFLARE_CANONICAL_RUNTIME=SKIP'
           else
             npm exec playwright test tests/cloudflare-canonical-runtime.playwright.ts --project=chromium
+            echo 'CLOUDFLARE_CANONICAL_RUNTIME=PASS'
           fi
-          echo 'CLOUDFLARE_CANONICAL_RUNTIME=PASS'

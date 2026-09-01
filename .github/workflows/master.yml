@@ -256,7 +256,10 @@ jobs:
           E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
         run: |
           set -euo pipefail
-          if [ -z "${E2E_EMAIL:-}" ] || [ -z "${E2E_PASSWORD:-}" ] || [ -z "${PRODUCTION_E2E_URL:-}" ]; then
+          EMAIL_TRIMMED="$(echo -n "${E2E_EMAIL:-}" | xargs)"
+          PASSWORD_TRIMMED="$(echo -n "${E2E_PASSWORD:-}" | xargs)"
+          URL_TRIMMED="$(echo -n "${PRODUCTION_E2E_URL:-}" | xargs)"
+          if [ -z "$EMAIL_TRIMMED" ] || [ -z "$PASSWORD_TRIMMED" ] || [ -z "$URL_TRIMMED" ]; then
             echo "E2E secrets not available in environment; skipping authenticated Playwright smoke."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else

@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+function boundedSlice(source, startAnchor, endAnchor) {
+  const startIndex = source.indexOf(startAnchor);
+  if (startIndex === -1) throw new Error(`Anchor '${startAnchor}' not found`);
+  const endIndex = source.indexOf(endAnchor, startIndex);
+  if (endIndex === -1) throw new Error(`Anchor '${endAnchor}' not found`);
+  return source.slice(startIndex, endIndex);
+}
+
 
 const source = readFileSync(fileURLToPath(new URL("./index.ts", import.meta.url)), "utf8");
 const deliveryMigration = readFileSync(
@@ -89,18 +97,18 @@ describe("WhatsApp encrypted asynchronous enqueue contract", () => {
   });
 
   it("handles missing payload table gracefully for fresh deployments", () => {
-    const tryBlock = boundedSlice(source, 'try {', 'catch (error: any)');
+    const tryBlock = boundedSlice(source, 'async function checkPayloadExists', 'catch (error: any)');
     expect(tryBlock).toContain('const { data: payloadRows, error: payloadError } = await auth.admin');
     expect(tryBlock).toContain('.from("whatsapp_outbound_payloads")');
     expect(tryBlock).toContain('if (!payloadError) {');
-    expect(tryBlock).toContain('hasPayload = Array.isArray(payloadRows) && payloadRows.length > 0;');
+    expect(tryBlock).toContain('return { hasPayload: Array.isArray(payloadRows) && payloadRows.length > 0 };');
     expect(tryBlock).toContain('else if (payloadError.code === "42P01" || payloadError.message?.includes("does not exist")) {');
-    expect(tryBlock).toContain('hasPayload = false;');
+    expect(tryBlock).toContain('return { hasPayload: false };');
 
-    const catchBlock = boundedSlice(source, 'catch (error: any)', 'if (!hasPayload) {');
+    const catchBlock = boundedSlice(source, 'catch (error: any)', 'Deno.serve(');
     expect(catchBlock).toContain('if (error?.code === "42P01" || error?.message?.includes("does not exist")) {');
-    expect(catchBlock).toContain('hasPayload = false;');
-    expect(catchBlock).toContain('return json({ success: false, message: `Unexpected error checking outbound payload` }, 500);');
+    expect(catchBlock).toContain('return { hasPayload: false };');
+    expect(catchBlock).toContain('return { hasPayload: false, errorResponse: json({ success: false, message: "Unexpected error checking outbound payload" }, 500) };');
   });
 
   it("keeps rate limiting and reservation ownership in the existing atomic contract", () => {
