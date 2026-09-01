@@ -253,10 +253,33 @@ async function googleAdsSearch(customerId: string, developerToken: string, acces
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(30_000),
     });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload?.error) throw providerError(response.status, payload);
-    if (!Array.isArray(payload?.results)) throw new SyncFailure("provider", 502, "Google Ads API returned malformed results");
-    rows.push(...payload.results);
+    // Strict parsing: Fail-closed on invalid JSON payloads
+    let payload: any;
+    try {
+      payload = await response.json();
+    } catch (err) {
+      throw new SyncFailure(
+        "provider",
+        502,
+        `Google Ads API returned invalid non-JSON payload (HTTP ${response.status})`
+      );
+    }
+
+    if (!response.ok || payload?.error) {
+      throw providerError(response.status, payload);
+    }
+
+    // Explicit validation: Distinguish omitted vs non-array
+    let resultsArray: unknown[];
+    if (payload.results === undefined) {
+      resultsArray = [];
+    } else if (Array.isArray(payload.results)) {
+      resultsArray = payload.results;
+    } else {
+      throw new SyncFailure("provider", 502, "Google Ads API results field is not an array");
+    }
+
+    rows.push(...resultsArray);
     pageToken = String(payload?.nextPageToken || "").trim();
   } while (pageToken);
   return rows;
