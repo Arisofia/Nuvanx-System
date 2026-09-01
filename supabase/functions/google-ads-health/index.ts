@@ -16,7 +16,6 @@ const MAX_RANGE_DAYS = 92;
 const MAX_BODY_BYTES = 8192;
 const MAX_PROVIDER_PAGES = 20;
 const MAX_PROVIDER_ROWS = 10_000;
-const PROVIDER_PAGE_SIZE = 1000;
 
 type FailureKind = "request" | "configuration" | "oauth" | "provider" | "validation" | "persistence";
 
@@ -208,7 +207,7 @@ async function googleAdsSearch(
       seenPageTokens.add(pageToken);
     }
 
-    const requestBody: Record<string, unknown> = { query, pageSize: PROVIDER_PAGE_SIZE };
+    const requestBody: Record<string, unknown> = { query };
     if (pageToken) requestBody.pageToken = pageToken;
     const headers: Record<string, string> = {
       Authorization: `Bearer ${accessToken}`,
@@ -227,8 +226,8 @@ async function googleAdsSearch(
     );
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload?.error) throw providerError(response.status, payload);
-    if (!Array.isArray(payload?.results)) throw new HealthFailure("provider", 502, "Google Ads API returned malformed results");
-    rows.push(...payload.results);
+    const results = Array.isArray(payload?.results) ? payload.results : [];
+    rows.push(...results);
     if (rows.length > MAX_PROVIDER_ROWS) {
       throw new HealthFailure("provider", 502, `Google Ads result set exceeded ${MAX_PROVIDER_ROWS} rows`);
     }
