@@ -18,16 +18,6 @@ function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function expectedHeading(path: string, heading: string) {
-  const againstProduction = Boolean(process.env.PRODUCTION_E2E_URL?.trim());
-
-  if (againstProduction && path === '/financials') {
-    return /^(Finanzas verificadas|Auditoría operativa Doctoralia)$/i;
-  }
-
-  return new RegExp(`^${escapeRegExp(heading)}$`, 'i');
-}
-
 function isSupabaseUrl(url: string): boolean {
   try {
     return new URL(url).hostname.endsWith('.supabase.co');
@@ -50,6 +40,14 @@ test('authenticated Control Centre routes load without transport or browser-poli
   const networkFailures: string[] = [];
   const httpErrors: string[] = [];
   const policyErrors: string[] = [];
+  let navigationAbortWindowUntil = 0;
+
+  const beginNavigation = () => {
+    // Requests from the page being replaced can be aborted by Chromium while
+    // the next route is committed. Only aborts inside this bounded transition
+    // window are tolerated; timeouts/application aborts outside it are fatal.
+    navigationAbortWindowUntil = Date.now() + 3_000;
+  };
 
   const resetRuntimeEvidence = () => {
     pageErrors.length = 0;
@@ -64,7 +62,7 @@ test('authenticated Control Centre routes load without transport or browser-poli
     await expect(page.getByText(/ha ocurrido un error cargando esta sección/i)).toHaveCount(0);
 
     expect(pageErrors, `${label} emitted page runtime errors`).toEqual([]);
-    expect(networkFailures, `${label} emitted non-aborted Supabase request failures`).toEqual([]);
+    expect(networkFailures, `${label} emitted non-navigation Supabase request failures`).toEqual([]);
     expect(httpErrors, `${label} received Supabase HTTP 4xx/5xx responses`).toEqual([]);
     expect(policyErrors, `${label} emitted CORS/CSP policy errors`).toEqual([]);
     resetRuntimeEvidence();
@@ -86,10 +84,8 @@ test('authenticated Control Centre routes load without transport or browser-poli
     console.log(`[REQUEST FAILED] ${request.url()} - ${reason}`);
 
     if (!isSupabaseUrl(request.url())) return;
-    // Route transitions intentionally cancel in-flight read requests. These
-    // lifecycle aborts are not transport failures; every other Supabase request
-    // failure remains fatal in the PR baseline smoke.
-    if (!reason.includes('ERR_ABORTED')) {
+    const expectedNavigationAbort = reason.includes('ERR_ABORTED') && Date.now() <= navigationAbortWindowUntil;
+    if (!expectedNavigationAbort) {
       networkFailures.push(`${reason} ${request.url()}`);
     }
   });
@@ -107,9 +103,11 @@ test('authenticated Control Centre routes load without transport or browser-poli
     }
   });
 
+  beginNavigation();
   await page.goto('/login', { waitUntil: 'domcontentloaded' });
   await page.locator('#login-email').fill(email);
   await page.locator('#login-password').fill(password);
+  beginNavigation();
   await page.getByRole('button', { name: /entrar/i }).click();
 
   try {
@@ -126,11 +124,12 @@ test('authenticated Control Centre routes load without transport or browser-poli
   await assertRuntimeHealthy('/dashboard after login');
 
   for (const route of CONTROL_CENTRE_ROUTES) {
+    beginNavigation();
     await page.goto(route.path, { waitUntil: 'domcontentloaded' });
     await expect(page).toHaveURL(new RegExp(`${escapeRegExp(route.path)}/?$`));
     await expect(page.getByRole('navigation', { name: /navegación principal/i })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('link', { name: new RegExp(`^${escapeRegExp(route.label)}$`, 'i') })).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole('heading', { name: expectedHeading(route.path, route.heading) }).first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: new RegExp(`^${escapeRegExp(route.heading)}$`, 'i') }).first()).toBeVisible({ timeout: 15_000 });
 
     if (route.path === '/dashboard') {
       await expect(page.getByTestId('control-centre-overview')).toBeVisible({ timeout: 15_000 });
