@@ -9,7 +9,6 @@ const corsBase = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-const PROVIDER_TIMEOUT_MS = 10_000;
 
 function corsHeaders(origin: string | null): Record<string, string> {
   return origin && ALLOWED_CORS_ORIGINS.has(origin)
@@ -44,16 +43,60 @@ function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes).map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const normalized = value.trim().replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
 async function sha256Hex(value: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return bytesToHex(new Uint8Array(digest));
 }
 
-function providerError(data: any): { code: string | null; message: string } {
-  const error = data?.error || data?.errors?.[0] || null;
+function loadActiveQueueKey(): { version: string; keyBytes: Uint8Array } {
+  const raw = (Deno.env.get("WHATSAPP_QUEUE_KEYRING") || "").trim();
+  const activeVersion = (Deno.env.get("WHATSAPP_QUEUE_ACTIVE_KEY_VERSION") || "").trim();
+  if (!raw || !/^[A-Za-z0-9._-]{1,64}$/.test(activeVersion)) throw new Error("queue_encryption_unavailable");
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("queue_encryption_unavailable");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("queue_encryption_unavailable");
+
+  const encoded = String((parsed as Record<string, unknown>)[activeVersion] || "").trim();
+  if (!encoded) throw new Error("queue_encryption_unavailable");
+  const keyBytes = base64ToBytes(encoded);
+  if (keyBytes.byteLength !== 32) throw new Error("queue_encryption_unavailable");
+  return { version: activeVersion, keyBytes };
+}
+
+async function encryptMessage(message: string, leadId: string, messageSha256: string) {
+  const active = loadActiveQueueKey();
+  const key = await crypto.subtle.importKey("raw", active.keyBytes, { name: "AES-GCM" }, false, ["encrypt"]);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const aad = new TextEncoder().encode(`nvx-whatsapp-v1:${leadId}:${messageSha256}`);
+  const encrypted = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv, additionalData: aad, tagLength: 128 },
+    key,
+    new TextEncoder().encode(message),
+  );
   return {
-    code: error?.code === undefined || error?.code === null ? null : String(error.code),
-    message: String(error?.message || data?.message || "WhatsApp provider error").slice(0, 500),
+    ciphertext: bytesToBase64(new Uint8Array(encrypted)),
+    iv: bytesToBase64(iv),
+    keyVersion: active.version,
   };
 }
 
@@ -78,20 +121,26 @@ async function authenticatedContext(req: Request): Promise<{ ok: true; admin: an
   }
 }
 
-async function prepareSend(
+async function prepareSendAsync(
   admin: any,
   userId: string,
   leadId: string,
   normalizedTo: string,
   idempotencyKey: string,
   messageSha256: string,
+  ciphertext: string,
+  iv: string,
+  keyVersion: string,
 ): Promise<{ ok: true; row: any } | { ok: false; status: number; message: string }> {
-  const { data, error } = await admin.rpc("nvx_prepare_whatsapp_send", {
+  const { data, error } = await admin.rpc("nvx_prepare_whatsapp_send_async", {
     p_user_id: userId,
     p_lead_id: leadId,
     p_normalized_phone: normalizedTo,
     p_idempotency_key: idempotencyKey,
     p_message_sha256: messageSha256,
+    p_ciphertext: ciphertext,
+    p_iv: iv,
+    p_key_version: keyVersion,
   });
 
   if (error) {
@@ -103,7 +152,6 @@ async function prepareSend(
     if (code === "23505" || message.includes("idempotency_key_conflict")) {
       return { ok: false, status: 409, message: "Idempotency key was already used for another send intent" };
     }
-    // SQLSTATE 22023 is shared by multiple validation failures, so preserve the specific message check.
     if (message.includes("recipient_does_not_match_lead_phone")) {
       return { ok: false, status: 403, message: "Recipient does not match the lead phone" };
     }
@@ -118,67 +166,6 @@ async function prepareSend(
   return { ok: true, row };
 }
 
-async function finalizeSend(
-  admin: any,
-  userId: string,
-  requestId: string,
-  status: "accepted" | "failed" | "unknown",
-  providerMessageId: string | null,
-  providerHttpStatus: number | null,
-  errorCode: string | null,
-  errorMessage: string | null,
-): Promise<boolean> {
-  const { data, error } = await admin.rpc("nvx_finalize_whatsapp_send", {
-    p_request_id: requestId,
-    p_user_id: userId,
-    p_status: status,
-    p_provider_message_id: providerMessageId,
-    p_provider_http_status: providerHttpStatus,
-    p_provider_error_code: errorCode,
-    p_provider_error_message: errorMessage,
-  });
-  return !error && data === true;
-}
-
-async function trackFirstHumanResponse(admin: any, userId: string, leadId: string, messageId: string) {
-  try {
-    const sentAt = new Date().toISOString();
-    const { data: slaRows, error: slaError } = await admin.rpc("mark_lead_human_first_response", {
-      p_lead_id: leadId,
-      p_user_id: userId,
-      p_sent_at: sentAt,
-    });
-    if (slaError || !Array.isArray(slaRows) || slaRows.length !== 1) {
-      return { tracked: false, reason: "lead_update_failed" };
-    }
-
-    const firstResponseAt = String(slaRows[0]?.first_response_at || "") || null;
-    const { error: eventError } = await admin.from("lead_events").insert({
-      lead_id: leadId,
-      source_platform: "whatsapp",
-      source_channel: "direct",
-      channel_label: "WhatsApp",
-      event_type: "outbound_response",
-      event_created_at: sentAt,
-      captured_at: sentAt,
-      resolution_status: "accepted",
-      raw_payload: {
-        message_id: messageId,
-        actor: "human_authenticated",
-        provider_status: "accepted",
-        sla_first_response_at: firstResponseAt,
-      },
-    });
-
-    if (eventError) {
-      return { tracked: true, event_recorded: false, reason: "event_insert_failed", first_response_at: firstResponseAt };
-    }
-    return { tracked: true, event_recorded: true, first_response_at: firstResponseAt };
-  } catch {
-    return { tracked: false, reason: "tracking_failed" };
-  }
-}
-
 Deno.serve(async (req: Request) => {
   const origin = req.headers.get("Origin");
   const cors = corsHeaders(origin);
@@ -189,16 +176,10 @@ Deno.serve(async (req: Request) => {
     });
 
   if (req.method === "OPTIONS") {
-    if (isDisallowedBrowserOrigin(origin)) {
-      return json({ success: false, message: "Origin not allowed" }, 403);
-    }
+    if (isDisallowedBrowserOrigin(origin)) return json({ success: false, message: "Origin not allowed" }, 403);
     return new Response(null, { status: 204, headers: cors });
   }
-
-  if (isDisallowedBrowserOrigin(origin)) {
-    return json({ success: false, message: "Origin not allowed" }, 403);
-  }
-
+  if (isDisallowedBrowserOrigin(origin)) return json({ success: false, message: "Origin not allowed" }, 403);
   if (req.method !== "POST") return json({ success: false, message: "POST required" }, 405);
 
   const body = await req.json().catch(() => ({}));
@@ -209,9 +190,7 @@ Deno.serve(async (req: Request) => {
 
   if (!normalizedTo || !message) return json({ success: false, message: "to and message are required" }, 400);
   if (!leadId) return json({ success: false, message: "lead_id is required and must be a UUID" }, 400);
-  if (!/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey)) {
-    return json({ success: false, message: "idempotency_key is required" }, 400);
-  }
+  if (!/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey)) return json({ success: false, message: "idempotency_key is required" }, 400);
   if (message.length > 4096) return json({ success: false, message: "message is too long" }, 400);
   if (!/^\+?[1-9]\d{7,14}$/.test(normalizedTo)) {
     return json({ success: false, message: "to must be a valid phone number in E.164 format (+34XXXXXXXXX)" }, 400);
@@ -221,7 +200,24 @@ Deno.serve(async (req: Request) => {
   if (!auth.ok) return json({ success: false, message: auth.message }, auth.status);
 
   const messageSha256 = await sha256Hex(message);
-  const prepared = await prepareSend(auth.admin, auth.userId, leadId, normalizedTo, idempotencyKey, messageSha256);
+  let encrypted: { ciphertext: string; iv: string; keyVersion: string };
+  try {
+    encrypted = await encryptMessage(message, leadId, messageSha256);
+  } catch {
+    return json({ success: false, message: "WhatsApp queue encryption is not configured" }, 503);
+  }
+
+  const prepared = await prepareSendAsync(
+    auth.admin,
+    auth.userId,
+    leadId,
+    normalizedTo,
+    idempotencyKey,
+    messageSha256,
+    encrypted.ciphertext,
+    encrypted.iv,
+    encrypted.keyVersion,
+  );
   if (!prepared.ok) return json({ success: false, message: prepared.message }, prepared.status);
 
   const decision = String(prepared.row?.decision || "");
@@ -249,7 +245,18 @@ Deno.serve(async (req: Request) => {
         message: "This send intent was already accepted by Meta",
       });
     }
-    if (["reserved", "unknown"].includes(requestStatus)) {
+    if (requestStatus === "reserved") {
+      return json({
+        success: true,
+        queued: true,
+        pending: true,
+        idempotentReplay: true,
+        requestId,
+        providerStatus: "queued",
+        message: "This send intent is already queued for asynchronous delivery",
+      }, 202);
+    }
+    if (requestStatus === "unknown") {
       return json({
         success: true,
         pending: true,
@@ -270,105 +277,12 @@ Deno.serve(async (req: Request) => {
 
   if (!requestId) return json({ success: false, message: "WhatsApp request ledger did not return a request id" }, 500);
 
-  const accessToken = Deno.env.get("WHATSAPP_ACCESS_TOKEN") ?? "";
-  const phoneNumberId = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID") ?? "";
-  const graphVersion = Deno.env.get("META_GRAPH_VERSION") ?? "v22.0";
-
-  if (!accessToken || !phoneNumberId) {
-    await finalizeSend(auth.admin, auth.userId, requestId, "failed", null, null, "configuration_required", "WhatsApp not configured");
-    return json({ success: false, requestId, message: "WhatsApp not configured" }, 503);
-  }
-
-  let waRes: Response;
-  let waData: any = {};
-  try {
-    waRes = await fetch(`https://graph.facebook.com/${graphVersion}/${phoneNumberId}/messages`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        recipient_type: "individual",
-        to: normalizedTo,
-        type: "text",
-        text: { preview_url: false, body: message },
-      }),
-      signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
-    });
-    waData = await waRes.json().catch(() => ({}));
-  } catch (error: unknown) {
-    // A transport failure is ambiguous: persist UNKNOWN and never automatically replay this intent.
-    const reason = error instanceof Error ? error.name : "provider_transport_error";
-    await finalizeSend(auth.admin, auth.userId, requestId, "unknown", null, null, reason, "Meta provider outcome is unknown after transport failure");
-    return json({
-      success: false,
-      pending: true,
-      requestId,
-      providerStatus: "unknown",
-      message: `Meta provider outcome is unknown (${reason}); this send intent will not be resent automatically`,
-    }, 504);
-  }
-
-  const explicitProviderError = Boolean(waData?.error || waData?.success === false);
-  const messageId = String(waData?.messages?.[0]?.id || "").trim() || null;
-
-  if (!waRes.ok || explicitProviderError) {
-    const provider = providerError(waData);
-    const ambiguous = waRes.status >= 500;
-    await finalizeSend(
-      auth.admin,
-      auth.userId,
-      requestId,
-      ambiguous ? "unknown" : "failed",
-      null,
-      waRes.status,
-      provider.code,
-      provider.message,
-    );
-    return json({
-      success: false,
-      pending: ambiguous,
-      requestId,
-      providerStatus: ambiguous ? "unknown" : "failed",
-      providerHttpStatus: waRes.status,
-      providerErrorCode: provider.code,
-      message: ambiguous
-        ? "Meta returned a server error; provider outcome is unknown and this send intent will not be resent automatically"
-        : provider.message,
-    }, ambiguous ? 502 : Math.max(400, waRes.status));
-  }
-
-  if (!messageId) {
-    // A 2xx without a provider message id is not proof of acceptance and must not become replayable.
-    await finalizeSend(auth.admin, auth.userId, requestId, "unknown", null, waRes.status, "missing_provider_message_id", "Meta returned success without a message id");
-    return json({
-      success: false,
-      pending: true,
-      requestId,
-      providerStatus: "unknown",
-      message: "Meta returned success without a message id; provider outcome is unknown and this send intent will not be resent automatically",
-    }, 502);
-  }
-
-  const ledgerTracked = await finalizeSend(auth.admin, auth.userId, requestId, "accepted", messageId, waRes.status, null, null);
-  const sla = await trackFirstHumanResponse(auth.admin, auth.userId, leadId, messageId);
-
   return json({
     success: true,
+    queued: true,
+    pending: true,
     requestId,
-    messageId,
-    to: normalizedTo,
-    providerStatus: "accepted",
-    delivered: false,
-    ledgerTracked,
-    slaTracked: sla.tracked,
-    slaEventRecorded: sla.event_recorded === true,
-    slaFirstResponseAt: sla.first_response_at || null,
-    slaTrackingReason: sla.tracked && sla.event_recorded !== false ? null : sla.reason || null,
-    message: ledgerTracked
-      ? "Message accepted by Meta; delivery status is pending webhook confirmation"
-      : "Message accepted by Meta, but ledger persistence needs reconciliation; do not resend",
-  });
+    providerStatus: "queued",
+    message: "Solicitud cifrada y en cola. La aceptación y la entrega de Meta se confirmarán de forma asíncrona.",
+  }, 202);
 });
