@@ -44,7 +44,7 @@ jobs:
       META_CANONICAL_APP_SECRET: ${{ secrets.META_CANONICAL_APP_SECRET }}
       WHATSAPP_QUEUE_KEYRING: ${{ secrets.WHATSAPP_QUEUE_KEYRING }}
       WHATSAPP_QUEUE_ACTIVE_KEY_VERSION: ${{ secrets.WHATSAPP_QUEUE_ACTIVE_KEY_VERSION }}
-      CORS_ALLOWED_ORIGINS: https://nuvanx-frontend.jenineferderas.workers.dev,https://frontend-arisofias-projects-c2217452.vercel.app,https://frontend-git-main-arisofias-projects-c2217452.vercel.app
+      CORS_ALLOWED_ORIGINS: https://nuvanx-frontend.jenineferderas.workers.dev
 
     steps:
       - name: Checkout trusted main
@@ -123,6 +123,19 @@ jobs:
             supabase/functions/google-click-attribution/index.ts \
             supabase/functions/google-data-manager-export/index.ts
 
+      - name: Apply required migrations before manual deployment
+        if: ${{ steps.candidate.outputs.deploy == 'true' && github.event_name == 'workflow_dispatch' }}
+        uses: ./.github/actions/supabase-link-run
+        with:
+          project_ref: ${{ env.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ env.DATABASE_URL }}
+          supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
+          skip_link: false
+          command: |
+            set -euo pipefail
+            bash scripts/supabase-migrate.sh
+
       - name: Deploy governed functions
         if: ${{ steps.candidate.outputs.deploy == 'true' }}
         uses: ./.github/actions/supabase-link-run
@@ -137,7 +150,7 @@ jobs:
             test -n "${SUPABASE_PROJECT_REF:-}"
             test -n "${CORS_ALLOWED_ORIGINS:-}"
             supabase secrets set CORS_ALLOWED_ORIGINS="$CORS_ALLOWED_ORIGINS" --project-ref "$SUPABASE_PROJECT_REF"
-            
+
             # Sync WhatsApp & Meta secrets
             if [ -n "${WHATSAPP_ACCESS_TOKEN:-}" ]; then supabase secrets set WHATSAPP_ACCESS_TOKEN="$WHATSAPP_ACCESS_TOKEN" --project-ref "$SUPABASE_PROJECT_REF"; fi
             if [ -n "${WHATSAPP_PHONE_NUMBER_ID:-}" ]; then supabase secrets set WHATSAPP_PHONE_NUMBER_ID="$WHATSAPP_PHONE_NUMBER_ID" --project-ref "$SUPABASE_PROJECT_REF"; fi
