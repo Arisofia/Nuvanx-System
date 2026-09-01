@@ -33,11 +33,11 @@ describe('standalone Edge deployment ownership', () => {
   it('fails closed unless the complete WhatsApp migration tail is present in LOCAL and REMOTE history', () => {
     expect(workflow).toContain('Verify WhatsApp async migrations are already applied');
     expect(workflow).toContain('supabase migration list --db-url');
-    expect(workflow).toContain('for REQUIRED_MIGRATION in 20260901190000 20260901190100; do');
+    expect(workflow).toContain('for REQUIRED_MIGRATION in 20260901190000 20260901190100 20260901190200; do');
     expect(workflow).toContain('not present in both LOCAL and REMOTE migration history');
     expect(workflow).not.toContain('bash scripts/supabase-migrate.sh');
 
-    for (const version of ['20260901190000', '20260901190100']) {
+    for (const version of ['20260901190000', '20260901190100', '20260901190200']) {
       const parity = migrationParityRow(version);
       expect(parity.test(`  ${version} | ${version} | 2026-09-01 19:00:00`)).toBe(true);
       expect(parity.test(`  ${version} |                | 2026-09-01 19:00:00`)).toBe(false);
