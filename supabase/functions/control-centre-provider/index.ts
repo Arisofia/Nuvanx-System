@@ -27,6 +27,7 @@ type CacheState = {
 
 type DynamicSupabaseClient = {
   rpc: (fn: string, args?: Record<string, unknown>) => Promise<{ data: any; error: any }>;
+  from: (table: string) => any;
 };
 
 function originFor(req: Request): string | null {
@@ -85,7 +86,7 @@ function envelope(
   };
 }
 
-async function parseProviderResponse(response: Response): Promise<unknown> {
+async function parseProviderResponse(response: Response): Promise<any> {
   const text = await response.text();
   let payload: any = null;
   if (text) {
@@ -96,6 +97,97 @@ async function parseProviderResponse(response: Response): Promise<unknown> {
     throw new Error(message);
   }
   return payload;
+}
+
+function latestIso(values: unknown[]): string | null {
+  let latest: string | null = null;
+  let latestMs = -1;
+  for (const value of values) {
+    const text = String(value || '').trim();
+    const ms = Date.parse(text);
+    if (text && Number.isFinite(ms) && ms > latestMs) {
+      latest = text;
+      latestMs = ms;
+    }
+  }
+  return latest;
+}
+
+async function fetchGoogleProvider(
+  userId: string,
+  query: URLSearchParams,
+  admin: DynamicSupabaseClient,
+): Promise<unknown> {
+  const { data: internalSecret, error: secretError } = await admin.rpc('nvx_get_runtime_secret', {
+    p_name: 'REVOPS_INTERNAL_SECRET',
+  });
+  if (secretError || !internalSecret) throw new Error('Google Ads internal health credential unavailable');
+
+  const { data: integrations, error: integrationError } = await admin
+    .from('integrations')
+    .select('id,metadata,created_at')
+    .eq('service', 'google_ads')
+    .eq('status', 'connected')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true });
+  if (integrationError) throw new Error('Google Ads integration lookup failed');
+  if (!Array.isArray(integrations) || integrations.length === 0) {
+    throw new Error('No connected Google Ads integrations found');
+  }
+
+  const accounts: Record<string, unknown>[] = [];
+  const campaigns: Record<string, unknown>[] = [];
+  let apiVersion: string | null = null;
+  let dateRange: unknown = null;
+
+  for (const integration of integrations) {
+    const integrationId = String(integration?.id || '').trim();
+    if (!integrationId) throw new Error('Google Ads integration identity missing');
+    const body: Record<string, string> = { integration_id: integrationId };
+    if (query.get('from')) body.from = query.get('from')!;
+    if (query.get('to')) body.to = query.get('to')!;
+
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/google-ads-health`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-nvx-internal-secret': String(internalSecret),
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
+    });
+    const payload = await parseProviderResponse(response);
+    if (payload?.provider !== 'google_ads') throw new Error('Google Ads health returned an invalid provider contract');
+    if (payload?.integration_id !== integrationId) throw new Error('Google Ads health returned an integration identity mismatch');
+
+    apiVersion = apiVersion || String(payload?.api_version || '') || null;
+    dateRange = dateRange || payload?.date_range || null;
+    const customerId = String(payload?.customer?.id || integration?.metadata?.customerId || integration?.metadata?.customer_id || '').replace(/\D/g, '');
+    accounts.push({
+      integration_id: integrationId,
+      customer: payload?.customer || null,
+      canonical_conversion: payload?.canonical_conversion || null,
+      verified_at: payload?.verified_at || null,
+    });
+    for (const campaign of Array.isArray(payload?.campaigns) ? payload.campaigns : []) {
+      campaigns.push({
+        ...campaign,
+        integration_id: integrationId,
+        customer_id: customerId || null,
+      });
+    }
+  }
+
+  return {
+    success: true,
+    provider: 'google_ads',
+    api_version: apiVersion,
+    verified_at: latestIso(accounts.map((account) => account.verified_at)),
+    date_range: dateRange,
+    customer: accounts.length === 1 ? accounts[0].customer : null,
+    accounts,
+    campaigns,
+  };
 }
 
 async function fetchProvider(
@@ -125,23 +217,7 @@ async function fetchProvider(
     return await parseProviderResponse(response);
   }
 
-  const { data: internalSecret, error: secretError } = await admin.rpc('nvx_get_runtime_secret', {
-    p_name: 'REVOPS_INTERNAL_SECRET',
-  });
-  if (secretError || !internalSecret) throw new Error('Google Ads internal health credential unavailable');
-  const body: Record<string, string> = { user_id: userId };
-  if (query.get('from')) body.from = query.get('from')!;
-  if (query.get('to')) body.to = query.get('to')!;
-  const response = await fetch(`${SUPABASE_URL}/functions/v1/google-ads-health`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-nvx-internal-secret': String(internalSecret),
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
-  });
-  return await parseProviderResponse(response);
+  return await fetchGoogleProvider(userId, query, admin);
 }
 
 Deno.serve(async (req: Request) => {
