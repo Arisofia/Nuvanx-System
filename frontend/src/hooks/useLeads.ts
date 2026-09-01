@@ -23,6 +23,11 @@ type PipelineRow = {
   journey_identity_source?: 'doctoralia_id' | 'phone_normalized' | null
 }
 
+type LeadLoadContext = {
+  active: boolean
+  signal?: AbortSignal
+}
+
 const PIPELINE_PAGE_SIZE = 500
 
 async function fetchCanonicalPipeline(): Promise<PipelineRow[]> {
@@ -53,12 +58,17 @@ async function fetchCanonicalPipeline(): Promise<PipelineRow[]> {
   return rows
 }
 
-async function fetchOptionalLeadMetadata(): Promise<Map<string, Record<string, unknown>>> {
+async function fetchOptionalLeadMetadata(signal?: AbortSignal): Promise<Map<string, Record<string, unknown>>> {
   try {
-    const response = await invokeApi<{ leads?: Record<string, unknown>[] }>('/api/leads')
+    const response = await invokeApi<{ leads?: Record<string, unknown>[] }>('/api/leads', { signal })
     const rawLeads = Array.isArray(response.leads) ? response.leads : []
     return new Map(rawLeads.map((item) => [String(item.id ?? item.lead_id ?? ''), item]))
   } catch (err: unknown) {
+    // Route changes and React lifecycle cleanup intentionally abort this optional
+    // enrichment request. Do not report those cancellations as degraded CRM
+    // health; genuine network/CORS/HTTP failures remain observable and are hard
+    // failures in the production E2E gate.
+    if (signal?.aborted) return new Map()
     const message = err instanceof Error ? err.message : 'metadata endpoint unavailable'
     console.warn('Legacy lead metadata unavailable; canonical CRM remains active:', message)
     return new Map()
@@ -70,14 +80,14 @@ export function useLeads() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const loadLeads = useCallback(async (activeFlag?: { active: boolean }) => {
+  const loadLeads = useCallback(async (context?: LeadLoadContext) => {
     setLoading(true)
     setError(null)
     try {
       const pipelineRows = await fetchCanonicalPipeline()
-      const rawById = await fetchOptionalLeadMetadata()
+      const rawById = await fetchOptionalLeadMetadata(context?.signal)
 
-      if (activeFlag && !activeFlag.active) return
+      if (context && !context.active) return
 
       setLeads(
         pipelineRows.map((pipeline) => {
@@ -123,7 +133,7 @@ export function useLeads() {
         }),
       )
     } catch (err: unknown) {
-      if (activeFlag && !activeFlag.active) return
+      if (context && !context.active) return
       const message = err instanceof Error ? err.message : 'No se pudo cargar el pipeline canónico.'
       console.warn('Canonical CRM load failed:', message)
       setError(
@@ -131,7 +141,7 @@ export function useLeads() {
       )
       setLeads([])
     } finally {
-      if (!activeFlag || activeFlag.active) setLoading(false)
+      if (!context || context.active) setLoading(false)
     }
   }, [])
 
@@ -206,12 +216,14 @@ export function useLeads() {
   }
 
   useEffect(() => {
-    const activeFlag = { active: true }
+    const controller = new AbortController()
+    const context: LeadLoadContext = { active: true, signal: controller.signal }
     const timer = setTimeout(() => {
-      void loadLeads(activeFlag)
+      void loadLeads(context)
     }, 0)
     return () => {
-      activeFlag.active = false
+      context.active = false
+      controller.abort()
       clearTimeout(timer)
     }
   }, [loadLeads])
