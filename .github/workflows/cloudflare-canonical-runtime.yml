@@ -28,7 +28,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      PRODUCTION_E2E_URL: https://nuvanx-frontend.jenineferderas.workers.dev
+      PRODUCTION_E2E_URL: https://app.nuvanx.com
+      ROLLBACK_E2E_URL: https://nuvanx-frontend.jenineferderas.workers.dev
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -50,15 +51,36 @@ jobs:
         working-directory: frontend
         run: npm exec playwright install --with-deps chromium
 
-      - name: Verify Cloudflare public runtime
+      - name: Verify Cloudflare custom-domain public runtime
         shell: bash
         run: |
           set -euo pipefail
           for route in / /login /dashboard /__canonical_runtime_probe__; do
-            code="$(curl --silent --show-error --output /tmp/cf-body --write-out '%{http_code}' "${PRODUCTION_E2E_URL}${route}")"
+            headers="/tmp/cf-headers-${route//\//_}"
+            body="/tmp/cf-body-${route//\//_}"
+            code="$(curl --silent --show-error --dump-header "$headers" --output "$body" --write-out '%{http_code}' "${PRODUCTION_E2E_URL}${route}")"
             test "$code" = '200' || { echo "${route} returned HTTP ${code}" >&2; exit 1; }
-            grep -q 'id="root"' /tmp/cf-body || { echo "${route} is not the SPA shell" >&2; exit 1; }
+            grep -q 'id="root"' "$body" || { echo "${route} is not the SPA shell" >&2; exit 1; }
           done
+
+          root_headers='/tmp/cf-headers-_'
+          grep -qi '^server: cloudflare' "$root_headers" || { echo 'Custom domain is not being served through Cloudflare' >&2; exit 1; }
+          grep -qi '^cf-ray:' "$root_headers" || { echo 'Missing Cloudflare request trace header' >&2; exit 1; }
+          grep -qi '^x-frame-options: DENY' "$root_headers" || { echo 'Missing X-Frame-Options: DENY' >&2; exit 1; }
+          grep -qi '^x-content-type-options: nosniff' "$root_headers" || { echo 'Missing X-Content-Type-Options: nosniff' >&2; exit 1; }
+          grep -qi '^referrer-policy: strict-origin-when-cross-origin' "$root_headers" || { echo 'Missing Referrer-Policy' >&2; exit 1; }
+          grep -qi '^permissions-policy:' "$root_headers" || { echo 'Missing Permissions-Policy' >&2; exit 1; }
+          grep -qi '^content-security-policy:' "$root_headers" || { echo 'Missing Content-Security-Policy' >&2; exit 1; }
+          echo 'CLOUDFLARE_CUSTOM_DOMAIN_PUBLIC_RUNTIME=PASS'
+
+      - name: Verify workers.dev rollback origin
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl --silent --show-error --output /tmp/cf-rollback-body --write-out '%{http_code}' "${ROLLBACK_E2E_URL}/")"
+          test "$code" = '200' || { echo "Rollback origin returned HTTP ${code}" >&2; exit 1; }
+          grep -q 'id="root"' /tmp/cf-rollback-body || { echo 'Rollback origin is not the SPA shell' >&2; exit 1; }
+          echo 'CLOUDFLARE_WORKERS_DEV_ROLLBACK=PASS'
 
       - name: Write strict Supabase runtime test
         working-directory: frontend
@@ -123,7 +145,7 @@ jobs:
         env:
           E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
           E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
-          PRODUCTION_E2E_URL: https://nuvanx-frontend.jenineferderas.workers.dev
+          PRODUCTION_E2E_URL: https://app.nuvanx.com
           PLAYWRIGHT_REQUIRE_BROWSERS: 'true'
         run: |
           set -euo pipefail
