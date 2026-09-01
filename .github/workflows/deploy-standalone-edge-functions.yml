@@ -99,7 +99,6 @@ jobs:
             supabase/functions/agent-run/index.ts \
             supabase/functions/runtime-bootstrap/index.ts \
             supabase/functions/control-centre-provider/index.ts \
-            supabase/functions/revops-dispatcher/index.ts \
             supabase/functions/google-ads-health/index.ts \
             supabase/functions/google-ads-daily-sync/index.ts \
             supabase/functions/google-ads-backfill-dispatcher/index.ts \
@@ -130,7 +129,6 @@ jobs:
             supabase functions deploy agent-run --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy runtime-bootstrap --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy control-centre-provider --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
-            supabase functions deploy revops-dispatcher --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy google-ads-health --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy google-ads-daily-sync --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy google-ads-backfill-dispatcher --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
