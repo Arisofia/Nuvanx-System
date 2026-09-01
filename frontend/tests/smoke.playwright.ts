@@ -37,7 +37,7 @@ function isDisposableE2EIdentity(email: string): boolean {
 }
 
 async function isExpectedDisposableProviderState(response: Response, email: string): Promise<boolean> {
-  if (!isDisposableE2EIdentity(email) || response.status() !== 400) return false;
+  if (!isDisposableE2EIdentity(email) || response.status() !== 400 || response.request().method() !== 'GET') return false;
 
   let path = '';
   try {
