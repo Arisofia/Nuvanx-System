@@ -30,15 +30,16 @@ type LeadLoadContext = {
 
 const PIPELINE_PAGE_SIZE = 500
 
-async function fetchCanonicalPipeline(): Promise<PipelineRow[]> {
+async function fetchCanonicalPipeline(signal?: AbortSignal): Promise<PipelineRow[]> {
   const rows: PipelineRow[] = []
   let offset = 0
 
   while (true) {
-    const { data, error } = await supabase.rpc('nvx_get_control_centre_pipeline', {
+    const query = supabase.rpc('nvx_get_control_centre_pipeline', {
       p_limit: PIPELINE_PAGE_SIZE,
       p_offset: offset,
     })
+    const { data, error } = signal ? await query.abortSignal(signal) : await query
     if (error) throw error
 
     const page = Array.isArray(data) ? data as PipelineRow[] : []
@@ -84,7 +85,7 @@ export function useLeads() {
     setLoading(true)
     setError(null)
     try {
-      const pipelineRows = await fetchCanonicalPipeline()
+      const pipelineRows = await fetchCanonicalPipeline(context?.signal)
       const rawById = await fetchOptionalLeadMetadata(context?.signal)
 
       if (context && !context.active) return
@@ -133,7 +134,7 @@ export function useLeads() {
         }),
       )
     } catch (err: unknown) {
-      if (context && !context.active) return
+      if (context?.signal?.aborted || (context && !context.active)) return
       const message = err instanceof Error ? err.message : 'No se pudo cargar el pipeline canónico.'
       console.warn('Canonical CRM load failed:', message)
       setError(
