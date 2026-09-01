@@ -56,7 +56,7 @@ function parseServiceAccount(raw: string): Record<string, any> {
     if (clean && !candidates.includes(clean)) candidates.push(clean);
   };
   add(raw);
-  if (raw.startsWith("GOOGLE_ADS_SERVICE_ACCOUNT=")) add(raw.split("=", 2)[1] || "");
+  if (raw.startsWith("GOOGLE_ADS_SERVICE_ACCOUNT=")) add(raw.slice("GOOGLE_ADS_SERVICE_ACCOUNT=".length) || "");
   if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) add(raw.slice(1, -1));
   if (raw.startsWith("base64:") || raw.startsWith("b64:")) add(raw.split(":", 2)[1] || "");
   if (raw.includes('\\"')) add(raw.replaceAll('\\"', '"'));
