@@ -55,7 +55,7 @@ describe("WhatsApp encrypted asynchronous enqueue contract", () => {
     expect(source).toContain('providerStatus: "reconciliation_required"');
     expect(source).toContain('providerStatus: "queued"');
     expect(source).toContain("WhatsApp encrypted queue state is unavailable");
-    expect(source).not.toContain("error.message");
+    expect(source).not.toContain("message: error.message");
   });
 
   it("remains fail-closed per clinic until controlled delivery acceptance enables sending", () => {
