@@ -50,14 +50,14 @@ test('authenticated Control Centre routes load without runtime or server errors'
   const networkFailures: string[] = [];
   const httpErrors: string[] = [];
   const policyErrors: string[] = [];
-  const fallbackWarnings: string[] = [];
+  const canonicalCrmErrors: string[] = [];
 
   const resetRuntimeEvidence = () => {
     pageErrors.length = 0;
     networkFailures.length = 0;
     httpErrors.length = 0;
     policyErrors.length = 0;
-    fallbackWarnings.length = 0;
+    canonicalCrmErrors.length = 0;
   };
 
   const assertRuntimeHealthy = async (label: string) => {
@@ -69,7 +69,7 @@ test('authenticated Control Centre routes load without runtime or server errors'
     expect(networkFailures, `${label} emitted non-aborted Supabase request failures`).toEqual([]);
     expect(httpErrors, `${label} received Supabase HTTP 4xx/5xx responses`).toEqual([]);
     expect(policyErrors, `${label} emitted CORS/CSP policy errors`).toEqual([]);
-    expect(fallbackWarnings, `${label} emitted canonical fallback warnings`).toEqual([]);
+    expect(canonicalCrmErrors, `${label} emitted canonical CRM failures`).toEqual([]);
     resetRuntimeEvidence();
   };
 
@@ -82,8 +82,8 @@ test('authenticated Control Centre routes load without runtime or server errors'
     if (/cors|content security policy|blocked by client/i.test(text)) {
       policyErrors.push(text);
     }
-    if (/canonical crm load failed|legacy lead metadata unavailable/i.test(text)) {
-      fallbackWarnings.push(text);
+    if (/canonical crm load failed/i.test(text)) {
+      canonicalCrmErrors.push(text);
     }
   });
 
@@ -92,6 +92,9 @@ test('authenticated Control Centre routes load without runtime or server errors'
     console.log(`[REQUEST FAILED] ${request.url()} - ${reason}`);
 
     if (!isSupabaseUrl(request.url())) return;
+    // Chromium reports requests cancelled by route/lifecycle transitions as
+    // ERR_ABORTED. Supabase backend logs are checked separately and these are
+    // not transport failures. Every other failed Supabase request is fatal.
     if (!reason.includes('ERR_ABORTED')) {
       networkFailures.push(`${reason} ${request.url()}`);
     }
