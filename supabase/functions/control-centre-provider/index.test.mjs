@@ -29,6 +29,8 @@ describe('Control Centre provider gateway contract', () => {
     expect(source).toContain('accounts,');
     expect(source).toContain('campaigns,');
     expect(source).not.toContain("const body: Record<string, string> = { user_id: userId }");
+    expect(source).toContain('Promise.all(healthRequests)');
+    expect(source).toContain('const healthRequests = integrations.map');
   });
 
   it('keeps provider credentials server-side and authenticates the browser session', () => {
