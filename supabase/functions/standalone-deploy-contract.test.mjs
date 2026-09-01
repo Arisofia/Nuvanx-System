@@ -23,6 +23,12 @@ describe('standalone Edge deployment ownership', () => {
     expect(workflow).toContain('group: manual-maintenance-deploy_edge');
   });
 
+  it('publishes a Cloudflare-only browser CORS boundary after Vercel retirement', () => {
+    expect(workflow).toContain('CORS_ALLOWED_ORIGINS: https://nuvanx-frontend.jenineferderas.workers.dev');
+    expect(workflow).not.toContain('frontend-arisofias-projects-c2217452.vercel.app');
+    expect(workflow).not.toContain('frontend-git-main-arisofias-projects-c2217452.vercel.app');
+  });
+
   it('fails closed if the migration-dependent WhatsApp schema is not already applied', () => {
     expect(workflow).toContain('Verify WhatsApp async migration is already applied');
     expect(workflow).toContain('supabase migration list --db-url');
