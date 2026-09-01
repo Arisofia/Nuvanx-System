@@ -206,6 +206,75 @@ Deno.serve(async (req: Request) => {
   if (!auth.ok) return json({ success: false, message: auth.message }, auth.status);
 
   const messageSha256 = await sha256Hex(message);
+
+  // Check idempotency first to return existing results without requiring encryption
+  // when the keyring is unavailable during replays of already-processed intents.
+  const { data: idempotencyRows, error: idempotencyError } = await auth.admin.rpc("nvx_prepare_whatsapp_send", {
+    p_user_id: auth.userId,
+    p_lead_id: leadId,
+    p_normalized_phone: normalizedTo,
+    p_idempotency_key: idempotencyKey,
+    p_message_sha256: messageSha256,
+  });
+
+  if (!idempotencyError && Array.isArray(idempotencyRows) && idempotencyRows.length > 0) {
+    const row = idempotencyRows[0];
+    const decision = String(row.decision || "");
+    const requestStatus = String(row.request_status || "");
+    const requestId = String(row.request_id || "");
+    const priorMessageId = String(row.provider_message_id || "") || null;
+
+    if (decision === "duplicate") {
+      if (["accepted", "sent", "delivered", "read"].includes(requestStatus)) {
+        return json({
+          success: true,
+          idempotentReplay: true,
+          requestId,
+          messageId: priorMessageId,
+          providerStatus: requestStatus,
+          message: "This send intent was already accepted by Meta",
+        });
+      }
+      if (requestStatus === "reserved") {
+        return json({
+          success: true,
+          queued: true,
+          pending: true,
+          idempotentReplay: true,
+          requestId,
+          providerStatus: "queued",
+          message: "This send intent is already queued for asynchronous delivery",
+        }, 202);
+      }
+      if (requestStatus === "unknown") {
+        return json({
+          success: true,
+          pending: true,
+          idempotentReplay: true,
+          requestId,
+          providerStatus: "unknown",
+          message: "This send intent has an unresolved provider outcome; it will not be sent again automatically",
+        }, 202);
+      }
+      return json({
+        success: false,
+        idempotentReplay: true,
+        requestId,
+        providerStatus: requestStatus || "failed",
+        message: "This send intent already failed. Create a new send intent only after reviewing the failure.",
+      }, 409);
+    }
+
+    if (decision === "rate_limited") {
+      const retryAfter = Math.max(0, Number(row.retry_after_seconds || 0));
+      return json(
+        { success: false, rateLimited: true, retryAfterSeconds: retryAfter, message: "WhatsApp rate limit reached for this lead or clinic" },
+        429,
+        { "Retry-After": String(retryAfter || 60) },
+      );
+    }
+  }
+
   let encrypted: { ciphertext: string; iv: string; keyVersion: string };
   try {
     encrypted = await encryptMessage(message, leadId, messageSha256);

@@ -254,7 +254,7 @@ Deno.serve(async (req: Request) => {
     if (!waRes.ok || explicitProviderError) {
       const provider = providerError(waData);
       const ambiguous = waRes.status >= 500;
-      await finalizeSend(
+      const ledgerTracked = await finalizeSend(
         admin,
         row,
         ambiguous ? "unknown" : "failed",
@@ -263,7 +263,12 @@ Deno.serve(async (req: Request) => {
         provider.code,
         provider.message,
       );
-      await finishPayload(admin, row, ambiguous);
+      // Only destroy the payload if ledger finalization succeeded. If it failed,
+      // the payload remains claimable for recovery/reconciliation instead of
+      // being lost while the request ledger stays reserved.
+      if (ledgerTracked) {
+        await finishPayload(admin, row, ambiguous);
+      }
       if (ambiguous) unknown += 1;
       else failed += 1;
       continue;
