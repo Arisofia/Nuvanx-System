@@ -58,6 +58,12 @@ function base64ToBytes(value: string): Uint8Array {
   return bytes;
 }
 
+function ownedArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
+}
+
 async function sha256Hex(value: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return bytesToHex(new Uint8Array(digest));
@@ -85,7 +91,7 @@ function loadActiveQueueKey(): { version: string; keyBytes: Uint8Array } {
 
 async function encryptMessage(message: string, leadId: string, messageSha256: string) {
   const active = loadActiveQueueKey();
-  const key = await crypto.subtle.importKey("raw", active.keyBytes, { name: "AES-GCM" }, false, ["encrypt"]);
+  const key = await crypto.subtle.importKey("raw", ownedArrayBuffer(active.keyBytes), { name: "AES-GCM" }, false, ["encrypt"]);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const aad = new TextEncoder().encode(`nvx-whatsapp-v1:${leadId}:${messageSha256}`);
   const encrypted = await crypto.subtle.encrypt(
