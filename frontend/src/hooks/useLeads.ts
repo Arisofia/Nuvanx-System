@@ -111,6 +111,13 @@ export function useLeads() {
             updated_at: typeof item.updated_at === 'string'
               ? item.updated_at
               : pipeline.updated_at ?? undefined,
+            campaign_name: typeof item.campaign_name === 'string' ? item.campaign_name : undefined,
+            ad_name: typeof item.ad_name === 'string' ? item.ad_name : undefined,
+            form_name: typeof item.form_name === 'string' ? item.form_name : undefined,
+            utm_source: typeof item.utm_source === 'string' ? item.utm_source : undefined,
+            utm_campaign: typeof item.utm_campaign === 'string' ? item.utm_campaign : undefined,
+            landing_url: typeof item.landing_url === 'string' ? item.landing_url : undefined,
+            gclid: typeof item.gclid === 'string' ? item.gclid : undefined,
             pipeline_stage_source: pipeline.pipeline_stage_source === 'explicit' ? 'explicit' : 'evidence',
             journey_appointment_count: Number(pipeline.journey_appointment_count ?? 0),
             valuation_appointment_date: pipeline.valuation_appointment_date ?? null,

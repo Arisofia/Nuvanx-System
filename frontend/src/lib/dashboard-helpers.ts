@@ -89,8 +89,15 @@ function asObject(value: unknown): Record<string, any> {
 }
 
 export function buildDashboardPaths(from: string, to: string) {
-  const baseParams = `?from=${from}&to=${to}`
-  const campaignsPath = `?from=${from}&to=${to}`
+  let cleanFrom = from || ''
+  let cleanTo = to || ''
+  if (cleanFrom && cleanTo && cleanFrom > cleanTo) {
+    const temp = cleanFrom
+    cleanFrom = cleanTo
+    cleanTo = temp
+  }
+  const baseParams = `?from=${cleanFrom}&to=${cleanTo}`
+  const campaignsPath = `?from=${cleanFrom}&to=${cleanTo}`
   return { baseParams, campaignsPath }
 }
 
