@@ -42,8 +42,6 @@ export function normalizeFrontendUrl(url: string | null | undefined): string | n
 export const RAW_FRONTEND_URL = getEnv('FRONTEND_URL');
 export const NORMALIZED_FRONTEND_URL = normalizeFrontendUrl(RAW_FRONTEND_URL);
 export const PRODUCTION_FALLBACK_URL = normalizeFrontendUrl(getEnv('PRODUCTION_FALLBACK_URL')) || '';
-export const CLOUDFLARE_WORKERS_FRONTEND_ORIGIN =
-  normalizeFrontendUrl('https://nuvanx-frontend.jenineferderas.workers.dev') || '';
 export const FRONTEND_URL = NORMALIZED_FRONTEND_URL ?? (IS_DEVELOPMENT ? 'http://localhost:5173' : (PRODUCTION_FALLBACK_URL || ''));
 
 export const DEFAULT_CORS_ORIGIN = IS_DEVELOPMENT
@@ -59,7 +57,6 @@ export const ALLOWED_CORS_ORIGINS = new Set([
   DEFAULT_CORS_ORIGIN,
   NORMALIZED_FRONTEND_URL,
   PRODUCTION_FALLBACK_URL,
-  CLOUDFLARE_WORKERS_FRONTEND_ORIGIN,
   ...EXTRA_CORS_ORIGINS,
 ].filter((origin): origin is string => Boolean(origin)));
 
