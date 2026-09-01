@@ -114,7 +114,7 @@ AS $$
     count(DISTINCT b.id) FILTER (
       WHERE b.valuation_appointment_date IS NOT NULL
         AND (
-          b.valuation_appointment_date <= CURRENT_DATE
+          lower(btrim(COALESCE(p.appointment_status, ''))) IN ('pagada', 'realizada', 'showed', 'completed')
           OR b.is_new_client = true
         )
     )::bigint AS attended,
@@ -481,7 +481,6 @@ SELECT
   c.doctor_name,
   c.specialty,
   c.is_active,
-  c.clinic_id,
   c.total_appointments,
   c.attended_count,
   c.no_show_count,
@@ -500,7 +499,8 @@ SELECT
     2
   ) AS no_show_rate_pct,
   c.estimated_revenue,
-  c.verified_revenue_crm
+  c.verified_revenue_crm,
+  c.clinic_id
 FROM combined c;
 
 COMMENT ON FUNCTION public.get_campaign_report(uuid, date, date, date, date) IS
