@@ -232,6 +232,9 @@ async function googleAdsSearch(
     );
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload?.error) throw providerError(response.status, payload);
+    if (payload?.results !== undefined && !Array.isArray(payload.results)) {
+      throw new HealthFailure("provider", 502, "Google Ads response has invalid results");
+    }
     const results = Array.isArray(payload?.results) ? payload.results : [];
     rows.push(...results);
     if (rows.length > MAX_PROVIDER_ROWS) {
