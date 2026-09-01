@@ -18,6 +18,7 @@ const secretSync = readFileSync(
   fileURLToPath(new URL('../../scripts/sync-platform-secrets.js', import.meta.url)),
   'utf8',
 )
+const frontendKeysBlock = secretSync.match(/const frontendKeys = \[[\s\S]*?\n\];/)?.[0] ?? ''
 
 const frontendBuildWorkflows = {
   'master.yml': master,
@@ -143,8 +144,10 @@ describe('browser build secret boundary', () => {
     expect(master).not.toContain('VITE_MCP_API_KEY:')
   })
 
-  it('keeps Meta ad-account identity out of frontend secret synchronization', () => {
-    expect(secretSync).not.toContain("'VITE_META_AD_ACCOUNT_IDS'")
+  it('retires Meta ad-account identity from frontend sync and purges the deprecated Vercel key', () => {
+    expect(frontendKeysBlock).not.toContain("'VITE_META_AD_ACCOUNT_IDS'")
+    expect(secretSync).toContain("const deprecatedKeys = ['VITE_META_AD_ACCOUNT_IDS']")
+    expect(secretSync).toContain('await deleteVercelEnv(projectId, env.id, token, queryString)')
     expect(secretSync).toContain("'META_AD_ACCOUNT_IDS'")
   })
 
