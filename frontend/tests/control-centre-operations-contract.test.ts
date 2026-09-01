@@ -160,25 +160,33 @@ describe('NUVANX Control Centre operations contract', () => {
     expect(sheet).toContain('No crees un segundo envío')
   })
 
-  it('does not claim delivery from a synchronous Meta acceptance', () => {
+  it('never claims delivery merely because an enqueue request succeeded', () => {
     const sheet = read('../src/components/crm/LeadDetailSheet.tsx')
-    expect(sheet).toContain('Aceptado por Meta. Entrega pendiente de confirmación.')
     expect(sheet).toContain('aceptación de Meta y la entrega al contacto son estados diferentes')
     expect(sheet).not.toContain('Mensaje enviado correctamente.')
   })
 
-  it('authorizes, rate-limits and reserves the exact owned recipient before the irreversible Meta send', () => {
-    const worker = read('../../supabase/functions/whatsapp-send/index.ts')
+  it('authorizes, encrypts and queues before async provider delivery', () => {
+    const enqueue = read('../../supabase/functions/whatsapp-send/index.ts')
+    const worker = read('../../supabase/functions/whatsapp-outbound-worker/index.ts')
+    expectOrdered(
+      enqueue,
+      'const auth = await authenticatedContext(req)',
+      'encrypted = await encryptMessage(message, leadId, messageSha256)',
+      'const prepared = await prepareSendAsync(',
+    )
+    expect(enqueue).toContain('nvx_prepare_whatsapp_send_async')
+    expect(enqueue).toContain('decision === "rate_limited"')
+    expect(enqueue).toContain('decision === "duplicate"')
+    expect(enqueue).toContain('providerStatus: "queued"')
+    expect(enqueue).not.toContain('graph.facebook.com')
     expectOrdered(
       worker,
-      'const auth = await authenticatedContext(req)',
-      'const prepared = await prepareSend',
+      'message = await decryptMessage(row, keyring)',
+      'await markSending(admin, row)',
       'waRes = await fetch',
     )
-    expect(worker).toContain('nvx_prepare_whatsapp_send')
-    expect(worker).toContain('decision === "rate_limited"')
-    expect(worker).toContain('decision === "duplicate"')
     expect(worker).toContain('AbortSignal.timeout(PROVIDER_TIMEOUT_MS)')
-    expect(worker).toContain('["reserved", "unknown"].includes(requestStatus)')
+    expect(worker).toContain('if (!messageId)')
   })
 })

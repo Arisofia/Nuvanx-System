@@ -9,7 +9,6 @@ const corsBase = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-const PROVIDER_TIMEOUT_MS = 10_000;
 
 function corsHeaders(origin: string | null): Record<string, string> {
   return origin && ALLOWED_CORS_ORIGINS.has(origin)
@@ -44,20 +43,82 @@ function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes).map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const normalized = value.trim().replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function ownedArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
+}
+
 async function sha256Hex(value: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return bytesToHex(new Uint8Array(digest));
 }
 
-function providerError(data: any): { code: string | null; message: string } {
-  const error = data?.error || data?.errors?.[0] || null;
+function loadActiveQueueKey(): { version: string; keyBytes: Uint8Array } {
+  const raw = (Deno.env.get("WHATSAPP_QUEUE_KEYRING") || "").trim();
+  const activeVersion = (Deno.env.get("WHATSAPP_QUEUE_ACTIVE_KEY_VERSION") || "").trim();
+  if (!raw || !/^[A-Za-z0-9._-]{1,64}$/.test(activeVersion)) {
+    throw new Error("queue_encryption_unavailable");
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("queue_encryption_unavailable");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("queue_encryption_unavailable");
+  }
+
+  const encoded = String((parsed as Record<string, unknown>)[activeVersion] || "").trim();
+  if (!encoded) throw new Error("queue_encryption_unavailable");
+  const keyBytes = base64ToBytes(encoded);
+  if (keyBytes.byteLength !== 32) throw new Error("queue_encryption_unavailable");
+  return { version: activeVersion, keyBytes };
+}
+
+async function encryptMessage(message: string, leadId: string, messageSha256: string) {
+  const active = loadActiveQueueKey();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    ownedArrayBuffer(active.keyBytes),
+    { name: "AES-GCM" },
+    false,
+    ["encrypt"],
+  );
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const aad = new TextEncoder().encode(`nvx-whatsapp-v1:${leadId}:${messageSha256}`);
+  const encrypted = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv, additionalData: aad, tagLength: 128 },
+    key,
+    new TextEncoder().encode(message),
+  );
   return {
-    code: error?.code === undefined || error?.code === null ? null : String(error.code),
-    message: String(error?.message || data?.message || "WhatsApp provider error").slice(0, 500),
+    ciphertext: bytesToBase64(new Uint8Array(encrypted)),
+    iv: bytesToBase64(iv),
+    keyVersion: active.version,
   };
 }
 
-async function authenticatedContext(req: Request): Promise<{ ok: true; admin: any; userId: string } | { ok: false; status: number; message: string }> {
+async function authenticatedContext(
+  req: Request,
+): Promise<{ ok: true; admin: any; userId: string } | { ok: false; status: number; message: string }> {
   if (!SUPABASE_URL || !SERVICE_ROLE) {
     return { ok: false, status: 500, message: "WhatsApp authorization is not configured" };
   }
@@ -71,27 +132,35 @@ async function authenticatedContext(req: Request): Promise<{ ok: true; admin: an
     });
     const { data: authData, error: authError } = await admin.auth.getUser(token);
     const userId = String(authData?.user?.id || "");
-    if (authError || !userId) return { ok: false, status: 401, message: "Authenticated user context is invalid" };
+    if (authError || !userId) {
+      return { ok: false, status: 401, message: "Authenticated user context is invalid" };
+    }
     return { ok: true, admin, userId };
   } catch {
     return { ok: false, status: 500, message: "WhatsApp authorization failed" };
   }
 }
 
-async function prepareSend(
+async function prepareSendAsync(
   admin: any,
   userId: string,
   leadId: string,
   normalizedTo: string,
   idempotencyKey: string,
   messageSha256: string,
+  ciphertext: string,
+  iv: string,
+  keyVersion: string,
 ): Promise<{ ok: true; row: any } | { ok: false; status: number; message: string }> {
-  const { data, error } = await admin.rpc("nvx_prepare_whatsapp_send", {
+  const { data, error } = await admin.rpc("nvx_prepare_whatsapp_send_async", {
     p_user_id: userId,
     p_lead_id: leadId,
     p_normalized_phone: normalizedTo,
     p_idempotency_key: idempotencyKey,
     p_message_sha256: messageSha256,
+    p_ciphertext: ciphertext,
+    p_iv: iv,
+    p_key_version: keyVersion,
   });
 
   if (error) {
@@ -103,7 +172,6 @@ async function prepareSend(
     if (code === "23505" || message.includes("idempotency_key_conflict")) {
       return { ok: false, status: 409, message: "Idempotency key was already used for another send intent" };
     }
-    // SQLSTATE 22023 is shared by multiple validation failures, so preserve the specific message check.
     if (message.includes("recipient_does_not_match_lead_phone")) {
       return { ok: false, status: 403, message: "Recipient does not match the lead phone" };
     }
@@ -118,64 +186,35 @@ async function prepareSend(
   return { ok: true, row };
 }
 
-async function finalizeSend(
-  admin: any,
-  userId: string,
-  requestId: string,
-  status: "accepted" | "failed" | "unknown",
-  providerMessageId: string | null,
-  providerHttpStatus: number | null,
-  errorCode: string | null,
-  errorMessage: string | null,
-): Promise<boolean> {
-  const { data, error } = await admin.rpc("nvx_finalize_whatsapp_send", {
-    p_request_id: requestId,
-    p_user_id: userId,
-    p_status: status,
-    p_provider_message_id: providerMessageId,
-    p_provider_http_status: providerHttpStatus,
-    p_provider_error_code: errorCode,
-    p_provider_error_message: errorMessage,
-  });
-  return !error && data === true;
-}
+const PAYLOAD_STATES = new Set(["queued", "claimed", "sending", "manual_review", "terminal"]);
 
-async function trackFirstHumanResponse(admin: any, userId: string, leadId: string, messageId: string) {
+type PayloadLookup =
+  | { ok: true; state: string | null }
+  | { ok: false; status: number; message: string };
+
+async function lookupPayload(admin: any, requestId: string): Promise<PayloadLookup> {
   try {
-    const sentAt = new Date().toISOString();
-    const { data: slaRows, error: slaError } = await admin.rpc("mark_lead_human_first_response", {
-      p_lead_id: leadId,
-      p_user_id: userId,
-      p_sent_at: sentAt,
-    });
-    if (slaError || !Array.isArray(slaRows) || slaRows.length !== 1) {
-      return { tracked: false, reason: "lead_update_failed" };
+    const { data, error } = await admin
+      .from("whatsapp_outbound_payloads")
+      .select("state")
+      .eq("request_id", requestId)
+      .limit(1);
+
+    if (error) {
+      console.error(`[whatsapp-send] queue lookup failed code=${String(error.code || "unknown")}`);
+      return { ok: false, status: 503, message: "WhatsApp encrypted queue state is unavailable" };
     }
 
-    const firstResponseAt = String(slaRows[0]?.first_response_at || "") || null;
-    const { error: eventError } = await admin.from("lead_events").insert({
-      lead_id: leadId,
-      source_platform: "whatsapp",
-      source_channel: "direct",
-      channel_label: "WhatsApp",
-      event_type: "outbound_response",
-      event_created_at: sentAt,
-      captured_at: sentAt,
-      resolution_status: "accepted",
-      raw_payload: {
-        message_id: messageId,
-        actor: "human_authenticated",
-        provider_status: "accepted",
-        sla_first_response_at: firstResponseAt,
-      },
-    });
-
-    if (eventError) {
-      return { tracked: true, event_recorded: false, reason: "event_insert_failed", first_response_at: firstResponseAt };
+    if (!Array.isArray(data) || data.length === 0) return { ok: true, state: null };
+    const state = String(data[0]?.state || "").trim();
+    if (!PAYLOAD_STATES.has(state)) {
+      console.error("[whatsapp-send] queue lookup returned an unsupported state");
+      return { ok: false, status: 503, message: "WhatsApp encrypted queue state is unavailable" };
     }
-    return { tracked: true, event_recorded: true, first_response_at: firstResponseAt };
+    return { ok: true, state };
   } catch {
-    return { tracked: false, reason: "tracking_failed" };
+    console.error("[whatsapp-send] queue lookup raised an unexpected error");
+    return { ok: false, status: 503, message: "WhatsApp encrypted queue state is unavailable" };
   }
 }
 
@@ -188,17 +227,74 @@ Deno.serve(async (req: Request) => {
       headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store", ...extraHeaders },
     });
 
-  if (req.method === "OPTIONS") {
-    if (isDisallowedBrowserOrigin(origin)) {
-      return json({ success: false, message: "Origin not allowed" }, 403);
+  const respondForPayloadState = (
+    state: string | null,
+    requestId: string,
+    idempotentReplay: boolean,
+  ): Response => {
+    const replay = idempotentReplay ? { idempotentReplay: true } : {};
+
+    if (state === null || state === "terminal") {
+      return json({
+        success: false,
+        ...replay,
+        requestId,
+        providerStatus: "reconciliation_required",
+        message: "WhatsApp request and encrypted queue state require manual reconciliation.",
+      }, 503);
     }
+
+    if (state === "queued") {
+      return json({
+        success: true,
+        queued: true,
+        pending: true,
+        ...replay,
+        requestId,
+        providerStatus: "queued",
+        message: idempotentReplay
+          ? "This send intent is already queued for asynchronous delivery"
+          : "Solicitud cifrada y en cola. La aceptación y la entrega de Meta se confirmarán de forma asíncrona.",
+      }, 202);
+    }
+
+    if (state === "claimed") {
+      return json({
+        success: true,
+        pending: true,
+        ...replay,
+        requestId,
+        providerStatus: "claimed",
+        message: "This send intent has been claimed for asynchronous delivery and will not be queued again.",
+      }, 202);
+    }
+
+    if (state === "sending") {
+      return json({
+        success: true,
+        pending: true,
+        ...replay,
+        requestId,
+        providerStatus: "sending",
+        message: "Provider delivery has started or is being reconciled; do not resend this intent.",
+      }, 202);
+    }
+
+    return json({
+      success: true,
+      pending: true,
+      ...replay,
+      requestId,
+      providerStatus: "manual_review",
+      message: "This send intent requires manual review and will not be sent again automatically.",
+    }, 202);
+  };
+
+  if (req.method === "OPTIONS") {
+    if (isDisallowedBrowserOrigin(origin)) return json({ success: false, message: "Origin not allowed" }, 403);
     return new Response(null, { status: 204, headers: cors });
   }
-
-  if (isDisallowedBrowserOrigin(origin)) {
-    return json({ success: false, message: "Origin not allowed" }, 403);
-  }
-
+  if (isDisallowedBrowserOrigin(origin)) return json({ success: false, message: "Origin not allowed" }, 403);
   if (req.method !== "POST") return json({ success: false, message: "POST required" }, 405);
 
   const body = await req.json().catch(() => ({}));
@@ -221,7 +317,88 @@ Deno.serve(async (req: Request) => {
   if (!auth.ok) return json({ success: false, message: auth.message }, auth.status);
 
   const messageSha256 = await sha256Hex(message);
-  const prepared = await prepareSend(auth.admin, auth.userId, leadId, normalizedTo, idempotencyKey, messageSha256);
+
+  // Read-only replay lookup. Never consume a reservation before ciphertext is ready.
+  const { data: idempotencyRows, error: idempotencyError } = await auth.admin
+    .from("whatsapp_send_requests")
+    .select("id, status, provider_message_id, message_sha256, normalized_phone, lead_id")
+    .eq("user_id", auth.userId)
+    .eq("idempotency_key", idempotencyKey)
+    .limit(1);
+
+  if (idempotencyError) {
+    return json({ success: false, message: "WhatsApp idempotency lookup failed" }, 500);
+  }
+
+  if (Array.isArray(idempotencyRows) && idempotencyRows.length > 0) {
+    const row = idempotencyRows[0];
+    if (
+      String(row.lead_id || "") !== leadId ||
+      String(row.message_sha256 || "") !== messageSha256 ||
+      normalizePhone(row.normalized_phone) !== normalizedTo
+    ) {
+      return json({ success: false, message: "Idempotency key was already used for another send intent" }, 409);
+    }
+
+    const requestStatus = String(row.status || "");
+    const requestId = String(row.id || "");
+    const priorMessageId = String(row.provider_message_id || "") || null;
+
+    if (["accepted", "sent", "delivered", "read"].includes(requestStatus)) {
+      return json({
+        success: true,
+        idempotentReplay: true,
+        requestId,
+        messageId: priorMessageId,
+        providerStatus: requestStatus,
+        message: "This send intent was already accepted by Meta",
+      });
+    }
+
+    if (requestStatus === "reserved") {
+      const payload = await lookupPayload(auth.admin, requestId);
+      if (!payload.ok) return json({ success: false, message: payload.message }, payload.status);
+      return respondForPayloadState(payload.state, requestId, true);
+    }
+
+    if (requestStatus === "unknown") {
+      return json({
+        success: true,
+        pending: true,
+        idempotentReplay: true,
+        requestId,
+        providerStatus: "unknown",
+        message: "This send intent has an unresolved provider outcome; it will not be sent again automatically",
+      }, 202);
+    }
+
+    return json({
+      success: false,
+      idempotentReplay: true,
+      requestId,
+      providerStatus: requestStatus || "failed",
+      message: "This send intent already failed. Create a new send intent only after reviewing the failure.",
+    }, 409);
+  }
+
+  let encrypted: { ciphertext: string; iv: string; keyVersion: string };
+  try {
+    encrypted = await encryptMessage(message, leadId, messageSha256);
+  } catch {
+    return json({ success: false, message: "WhatsApp queue encryption is not configured" }, 503);
+  }
+
+  const prepared = await prepareSendAsync(
+    auth.admin,
+    auth.userId,
+    leadId,
+    normalizedTo,
+    idempotencyKey,
+    messageSha256,
+    encrypted.ciphertext,
+    encrypted.iv,
+    encrypted.keyVersion,
+  );
   if (!prepared.ok) return json({ success: false, message: prepared.message }, prepared.status);
 
   const decision = String(prepared.row?.decision || "");
@@ -232,7 +409,12 @@ Deno.serve(async (req: Request) => {
 
   if (decision === "rate_limited") {
     return json(
-      { success: false, rateLimited: true, retryAfterSeconds: retryAfter, message: "WhatsApp rate limit reached for this lead or clinic" },
+      {
+        success: false,
+        rateLimited: true,
+        retryAfterSeconds: retryAfter,
+        message: "WhatsApp rate limit reached for this lead or clinic",
+      },
       429,
       { "Retry-After": String(retryAfter || 60) },
     );
@@ -249,7 +431,7 @@ Deno.serve(async (req: Request) => {
         message: "This send intent was already accepted by Meta",
       });
     }
-    if (["reserved", "unknown"].includes(requestStatus)) {
+    if (requestStatus === "unknown") {
       return json({
         success: true,
         pending: true,
@@ -259,116 +441,20 @@ Deno.serve(async (req: Request) => {
         message: "This send intent has an unresolved provider outcome; it will not be sent again automatically",
       }, 202);
     }
-    return json({
-      success: false,
-      idempotentReplay: true,
-      requestId,
-      providerStatus: requestStatus || "failed",
-      message: "This send intent already failed. Create a new send intent only after reviewing the failure.",
-    }, 409);
+    if (requestStatus !== "reserved") {
+      return json({
+        success: false,
+        idempotentReplay: true,
+        requestId,
+        providerStatus: requestStatus || "failed",
+        message: "This send intent already failed. Create a new send intent only after reviewing the failure.",
+      }, 409);
+    }
   }
 
   if (!requestId) return json({ success: false, message: "WhatsApp request ledger did not return a request id" }, 500);
 
-  const accessToken = Deno.env.get("WHATSAPP_ACCESS_TOKEN") ?? "";
-  const phoneNumberId = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID") ?? "";
-  const graphVersion = Deno.env.get("META_GRAPH_VERSION") ?? "v22.0";
-
-  if (!accessToken || !phoneNumberId) {
-    await finalizeSend(auth.admin, auth.userId, requestId, "failed", null, null, "configuration_required", "WhatsApp not configured");
-    return json({ success: false, requestId, message: "WhatsApp not configured" }, 503);
-  }
-
-  let waRes: Response;
-  let waData: any = {};
-  try {
-    waRes = await fetch(`https://graph.facebook.com/${graphVersion}/${phoneNumberId}/messages`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        recipient_type: "individual",
-        to: normalizedTo,
-        type: "text",
-        text: { preview_url: false, body: message },
-      }),
-      signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
-    });
-    waData = await waRes.json().catch(() => ({}));
-  } catch (error: unknown) {
-    // A transport failure is ambiguous: persist UNKNOWN and never automatically replay this intent.
-    const reason = error instanceof Error ? error.name : "provider_transport_error";
-    await finalizeSend(auth.admin, auth.userId, requestId, "unknown", null, null, reason, "Meta provider outcome is unknown after transport failure");
-    return json({
-      success: false,
-      pending: true,
-      requestId,
-      providerStatus: "unknown",
-      message: `Meta provider outcome is unknown (${reason}); this send intent will not be resent automatically`,
-    }, 504);
-  }
-
-  const explicitProviderError = Boolean(waData?.error || waData?.success === false);
-  const messageId = String(waData?.messages?.[0]?.id || "").trim() || null;
-
-  if (!waRes.ok || explicitProviderError) {
-    const provider = providerError(waData);
-    const ambiguous = waRes.status >= 500;
-    await finalizeSend(
-      auth.admin,
-      auth.userId,
-      requestId,
-      ambiguous ? "unknown" : "failed",
-      null,
-      waRes.status,
-      provider.code,
-      provider.message,
-    );
-    return json({
-      success: false,
-      pending: ambiguous,
-      requestId,
-      providerStatus: ambiguous ? "unknown" : "failed",
-      providerHttpStatus: waRes.status,
-      providerErrorCode: provider.code,
-      message: ambiguous
-        ? "Meta returned a server error; provider outcome is unknown and this send intent will not be resent automatically"
-        : provider.message,
-    }, ambiguous ? 502 : Math.max(400, waRes.status));
-  }
-
-  if (!messageId) {
-    // A 2xx without a provider message id is not proof of acceptance and must not become replayable.
-    await finalizeSend(auth.admin, auth.userId, requestId, "unknown", null, waRes.status, "missing_provider_message_id", "Meta returned success without a message id");
-    return json({
-      success: false,
-      pending: true,
-      requestId,
-      providerStatus: "unknown",
-      message: "Meta returned success without a message id; provider outcome is unknown and this send intent will not be resent automatically",
-    }, 502);
-  }
-
-  const ledgerTracked = await finalizeSend(auth.admin, auth.userId, requestId, "accepted", messageId, waRes.status, null, null);
-  const sla = await trackFirstHumanResponse(auth.admin, auth.userId, leadId, messageId);
-
-  return json({
-    success: true,
-    requestId,
-    messageId,
-    to: normalizedTo,
-    providerStatus: "accepted",
-    delivered: false,
-    ledgerTracked,
-    slaTracked: sla.tracked,
-    slaEventRecorded: sla.event_recorded === true,
-    slaFirstResponseAt: sla.first_response_at || null,
-    slaTrackingReason: sla.tracked && sla.event_recorded !== false ? null : sla.reason || null,
-    message: ledgerTracked
-      ? "Message accepted by Meta; delivery status is pending webhook confirmation"
-      : "Message accepted by Meta, but ledger persistence needs reconciliation; do not resend",
-  });
+  const payload = await lookupPayload(auth.admin, requestId);
+  if (!payload.ok) return json({ success: false, message: payload.message }, payload.status);
+  return respondForPayloadState(payload.state, requestId, decision === "duplicate");
 });
