@@ -249,7 +249,38 @@ Deno.serve(async (req: Request) => {
         message: "This send intent was already accepted by Meta",
       });
     }
-    if (["reserved", "unknown"].includes(requestStatus)) {
+    if (requestStatus === "reserved") {
+      // Check if this reserved request has an encrypted payload for the async worker.
+      // Pre-existing reserved requests from the synchronous implementation may not have
+      // a payload row and should be marked for reconciliation instead of reported as queued.
+      const { data: payloadRows } = await auth.admin
+        .from("whatsapp_outbound_payloads")
+        .select("state")
+        .eq("request_id", requestId)
+        .limit(1);
+
+      const hasPayload = Array.isArray(payloadRows) && payloadRows.length > 0;
+      if (!hasPayload) {
+        return json({
+          success: false,
+          idempotentReplay: true,
+          requestId,
+          providerStatus: "reconciliation_required",
+          message: "This send intent is reserved but has no encrypted payload for async delivery. Manual reconciliation is required.",
+        }, 503);
+      }
+
+      return json({
+        success: true,
+        queued: true,
+        pending: true,
+        idempotentReplay: true,
+        requestId,
+        providerStatus: "queued",
+        message: "This send intent is already queued for asynchronous delivery",
+      }, 202);
+    }
+    if (requestStatus === "unknown") {
       return json({
         success: true,
         pending: true,
