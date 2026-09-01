@@ -11,6 +11,7 @@ const ALLOWED_ORIGINS = ALLOWED_CORS_ORIGINS;
 const PROVIDERS = new Set(['meta', 'google', 'agenda']);
 const TTL_SECONDS: Record<string, number> = { meta: 300, google: 300, agenda: 120 };
 const PROVIDER_TIMEOUT_MS = 15_000;
+const GATEWAY_TIMEOUT_MS = 45_000;
 
 type CacheState = {
   refresh?: boolean;
@@ -140,7 +141,7 @@ async function fetchGoogleProvider(
   let apiVersion: string | null = null;
   let dateRange: unknown = null;
 
-  for (const integration of integrations) {
+  const healthRequests = integrations.map(async (integration) => {
     const integrationId = String(integration?.id || '').trim();
     if (!integrationId) throw new Error('Google Ads integration identity missing');
     const body: Record<string, string> = { integration_id: integrationId };
@@ -160,22 +161,29 @@ async function fetchGoogleProvider(
     if (payload?.provider !== 'google_ads') throw new Error('Google Ads health returned an invalid provider contract');
     if (payload?.integration_id !== integrationId) throw new Error('Google Ads health returned an integration identity mismatch');
 
-    apiVersion = apiVersion || String(payload?.api_version || '') || null;
-    dateRange = dateRange || payload?.date_range || null;
     const customerId = String(payload?.customer?.id || integration?.metadata?.customerId || integration?.metadata?.customer_id || '').replace(/\D/g, '');
-    accounts.push({
+    const account = {
       integration_id: integrationId,
       customer: payload?.customer || null,
       canonical_conversion: payload?.canonical_conversion || null,
       verified_at: payload?.verified_at || null,
-    });
-    for (const campaign of Array.isArray(payload?.campaigns) ? payload.campaigns : []) {
-      campaigns.push({
-        ...campaign,
-        integration_id: integrationId,
-        customer_id: customerId || null,
-      });
-    }
+    };
+    const campaignList = Array.isArray(payload?.campaigns) ? payload.campaigns.map((campaign: any) => ({
+      ...campaign,
+      integration_id: integrationId,
+      customer_id: customerId || null,
+    })) : [];
+
+    return { payload, account, campaignList };
+  });
+
+  const results = await Promise.all(healthRequests);
+
+  for (const { payload, account, campaignList } of results) {
+    apiVersion = apiVersion || String(payload?.api_version || '') || null;
+    dateRange = dateRange || payload?.date_range || null;
+    accounts.push(account);
+    campaigns.push(...campaignList);
   }
 
   return {
@@ -221,103 +229,111 @@ async function fetchProvider(
 }
 
 Deno.serve(async (req: Request) => {
-  const origin = originFor(req);
-  if (origin === '' || (origin && !ALLOWED_ORIGINS.has(origin))) {
-    return json(req, 403, { success: false, error: 'Origin not allowed' });
-  }
-  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(req) });
-  if (req.method !== 'GET') return json(req, 405, { success: false, error: 'Method not allowed' });
-  if (!SUPABASE_URL || !ANON_KEY || !SERVICE_ROLE) {
-    return json(req, 500, { success: false, error: 'Server configuration unavailable' });
-  }
-
-  const bearer = String(req.headers.get('authorization') || '').trim();
-  const token = bearer.toLowerCase().startsWith('bearer ') ? bearer.slice(7).trim() : '';
-  if (!token) return json(req, 401, { success: false, error: 'Authentication required' });
-
-  const authClient = createClient(SUPABASE_URL, ANON_KEY, { auth: { persistSession: false } });
-  const { data: userData, error: userError } = await authClient.auth.getUser(token);
-  const userId = userData?.user?.id;
-  if (userError || !userId) return json(req, 401, { success: false, error: 'Invalid session' });
-
-  const url = new URL(req.url);
-  const provider = String(url.searchParams.get('provider') || '').trim().toLowerCase();
-  if (!PROVIDERS.has(provider)) return json(req, 422, { success: false, error: 'Invalid provider' });
-
-  const cacheKey = provider === 'agenda'
-    ? `date:${url.searchParams.get('date') || new Date().toISOString().slice(0, 10)}`
-    : `range:${url.searchParams.get('from') || ''}:${url.searchParams.get('to') || ''}`;
-  const ttl = TTL_SECONDS[provider] || 300;
-  const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } }) as unknown as DynamicSupabaseClient;
-
-  const { data: beginData, error: beginError } = await admin.rpc('nvx_control_centre_provider_begin_refresh', {
-    p_user_id: userId,
-    p_provider: provider,
-    p_cache_key: cacheKey,
-    p_ttl_seconds: ttl,
-    p_lease_seconds: 45,
-  });
-  if (beginError || !beginData) {
-    return json(req, 500, { success: false, provider, status: 'unavailable', error: 'Provider cache unavailable' });
-  }
-  const state = beginData as CacheState;
-
-  if (!state.refresh) {
-    const hasCache = state.payload !== null && state.payload !== undefined;
-    const status = state.reason === 'fresh_cache' ? 'live' : hasCache ? 'stale' : 'unavailable';
-    return json(req, 200, envelope(
-      provider,
-      status,
-      state.payload,
-      state,
-      'cache',
-      status === 'live' ? null : String(state.last_error || state.reason || 'Provider refresh unavailable'),
-    ));
-  }
-
-  const leaseOwner = String(state.lease_owner || '');
-  if (!leaseOwner) return json(req, 500, { success: false, provider, status: 'unavailable', error: 'Provider refresh lease unavailable' });
-
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), GATEWAY_TIMEOUT_MS);
+  req.signal.addEventListener('abort', () => clearTimeout(timeoutId));
+  
   try {
-    const payload = await fetchProvider(provider, userId, bearer, url.searchParams, admin);
-    const { error: finishError } = await admin.rpc('nvx_control_centre_provider_finish_success', {
+    const origin = originFor(req);
+    if (origin === '' || (origin && !ALLOWED_ORIGINS.has(origin))) {
+      return json(req, 403, { success: false, error: 'Origin not allowed' });
+    }
+    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(req) });
+    if (req.method !== 'GET') return json(req, 405, { success: false, error: 'Method not allowed' });
+    if (!SUPABASE_URL || !ANON_KEY || !SERVICE_ROLE) {
+      return json(req, 500, { success: false, error: 'Server configuration unavailable' });
+    }
+
+    const bearer = String(req.headers.get('authorization') || '').trim();
+    const token = bearer.toLowerCase().startsWith('bearer ') ? bearer.slice(7).trim() : '';
+    if (!token) return json(req, 401, { success: false, error: 'Authentication required' });
+
+    const authClient = createClient(SUPABASE_URL, ANON_KEY, { auth: { persistSession: false } });
+    const { data: userData, error: userError } = await authClient.auth.getUser(token);
+    const userId = userData?.user?.id;
+    if (userError || !userId) return json(req, 401, { success: false, error: 'Invalid session' });
+
+    const url = new URL(req.url);
+    const provider = String(url.searchParams.get('provider') || '').trim().toLowerCase();
+    if (!PROVIDERS.has(provider)) return json(req, 422, { success: false, error: 'Invalid provider' });
+
+    const cacheKey = provider === 'agenda'
+      ? `date:${url.searchParams.get('date') || new Date().toISOString().slice(0, 10)}`
+      : `range:${url.searchParams.get('from') || ''}:${url.searchParams.get('to') || ''}`;
+    const ttl = TTL_SECONDS[provider] || 300;
+    const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } }) as unknown as DynamicSupabaseClient;
+
+    const { data: beginData, error: beginError } = await admin.rpc('nvx_control_centre_provider_begin_refresh', {
       p_user_id: userId,
       p_provider: provider,
       p_cache_key: cacheKey,
-      p_lease_owner: leaseOwner,
-      p_payload: payload,
       p_ttl_seconds: ttl,
+      p_lease_seconds: 45,
     });
-    if (finishError) throw new Error('Provider cache persistence failed');
-    const now = new Date().toISOString();
-    return json(req, 200, envelope(provider, 'live', payload, {
-      fetched_at: now,
-      last_success_at: now,
-      breaker_state: 'closed',
-      failure_count: 0,
-    }, 'provider'));
-  } catch (error: any) {
-    const message = String(error?.message || 'Provider refresh failed').replace(/\s+/g, ' ').slice(0, 500);
-    const { data: failedData, error: failureError } = await admin.rpc('nvx_control_centre_provider_finish_failure', {
-      p_user_id: userId,
-      p_provider: provider,
-      p_cache_key: cacheKey,
-      p_lease_owner: leaseOwner,
-      p_error: message,
-      p_failure_threshold: 3,
-      p_open_seconds: 300,
-    });
-    if (failureError) console.error('[control-centre-provider] breaker update failed', provider);
-    const failed = (failedData || {}) as CacheState;
-    const cached = failed.payload ?? state.payload;
-    const hasCache = cached !== null && cached !== undefined;
-    return json(req, 200, envelope(
-      provider,
-      hasCache ? 'stale' : 'unavailable',
-      cached,
-      { ...state, ...failed, last_error: message },
-      'cache',
-      message,
-    ));
+    if (beginError || !beginData) {
+      return json(req, 500, { success: false, provider, status: 'unavailable', error: 'Provider cache unavailable' });
+    }
+    const state = beginData as CacheState;
+
+    if (!state.refresh) {
+      const hasCache = state.payload !== null && state.payload !== undefined;
+      const status = state.reason === 'fresh_cache' ? 'live' : hasCache ? 'stale' : 'unavailable';
+      return json(req, 200, envelope(
+        provider,
+        status,
+        state.payload,
+        state,
+        'cache',
+        status === 'live' ? null : String(state.last_error || state.reason || 'Provider refresh unavailable'),
+      ));
+    }
+
+    const leaseOwner = String(state.lease_owner || '');
+    if (!leaseOwner) return json(req, 500, { success: false, provider, status: 'unavailable', error: 'Provider refresh lease unavailable' });
+
+    try {
+      const payload = await fetchProvider(provider, userId, bearer, url.searchParams, admin);
+      const { error: finishError } = await admin.rpc('nvx_control_centre_provider_finish_success', {
+        p_user_id: userId,
+        p_provider: provider,
+        p_cache_key: cacheKey,
+        p_lease_owner: leaseOwner,
+        p_payload: payload,
+        p_ttl_seconds: ttl,
+      });
+      if (finishError) throw new Error('Provider cache persistence failed');
+      const now = new Date().toISOString();
+      return json(req, 200, envelope(provider, 'live', payload, {
+        fetched_at: now,
+        last_success_at: now,
+        breaker_state: 'closed',
+        failure_count: 0,
+      }, 'provider'));
+    } catch (error: any) {
+      const message = String(error?.message || 'Provider refresh failed').replace(/\s+/g, ' ').slice(0, 500);
+      const { data: failedData, error: failureError } = await admin.rpc('nvx_control_centre_provider_finish_failure', {
+        p_user_id: userId,
+        p_provider: provider,
+        p_cache_key: cacheKey,
+        p_lease_owner: leaseOwner,
+        p_error: message,
+        p_failure_threshold: 3,
+        p_open_seconds: 300,
+      });
+      if (failureError) console.error('[control-centre-provider] breaker update failed', provider);
+      const failed = (failedData || {}) as CacheState;
+      const cached = failed.payload ?? state.payload;
+      const hasCache = cached !== null && cached !== undefined;
+      return json(req, 200, envelope(
+        provider,
+        hasCache ? 'stale' : 'unavailable',
+        cached,
+        { ...state, ...failed, last_error: message },
+        'cache',
+        message,
+      ));
+    }
+  } finally {
+    clearTimeout(timeoutId);
   }
 });
