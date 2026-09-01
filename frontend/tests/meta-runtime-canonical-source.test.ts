@@ -5,7 +5,7 @@ import {
   resolveRuntimeMetaEntities,
   selectCanonicalMetaIntegration,
   type IntegrationRow,
-} from '../src/components/MetaAccountsNotice'
+} from '../src/config/metaRuntime'
 
 describe('canonical Meta account source', () => {
   it('resolves ad-account IDs only from runtime input', () => {
