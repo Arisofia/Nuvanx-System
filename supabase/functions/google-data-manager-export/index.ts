@@ -46,6 +46,16 @@ async function requireServiceRole(req: Request): Promise<boolean> {
   return match ? await secretMatches(match[1], SERVICE_ROLE) : false;
 }
 
+async function requireInternalAuthCheckSecret(req: Request, admin: any): Promise<boolean> {
+  const received = String(req.headers.get("x-nvx-internal-secret") || "").trim();
+  if (!received) return false;
+  const { data: expected, error } = await admin.rpc("nvx_get_runtime_secret", {
+    p_name: "REVOPS_INTERNAL_SECRET",
+  });
+  if (error || !expected) return false;
+  return secretMatches(received, String(expected));
+}
+
 function digits(value: unknown): string {
   return String(value || "").replace(/\D/g, "");
 }
@@ -361,7 +371,6 @@ async function pollOne(admin: any, row: any, token: string) {
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ success: false, message: "Method not allowed" }, 405);
   if (!SUPABASE_URL || !SERVICE_ROLE) return json({ success: false, message: "Server configuration error" }, 500);
-  if (!(await requireServiceRole(req))) return json({ success: false, message: "Forbidden" }, 403);
 
   const body = await req.json().catch(() => ({}));
   const requestedMode = String(body?.mode || "deliver");
@@ -369,6 +378,14 @@ Deno.serve(async (req: Request) => {
   const requestedLimit = Number(body?.limit || DEFAULT_LIMIT);
   const limit = Math.max(1, Math.min(MAX_LIMIT, Number.isFinite(requestedLimit) ? Math.trunc(requestedLimit) : DEFAULT_LIMIT));
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
+
+  const serviceRoleAuthorized = await requireServiceRole(req);
+  if (!serviceRoleAuthorized) {
+    if (mode !== "auth_check") return json({ success: false, message: "Forbidden" }, 403);
+    if (!(await requireInternalAuthCheckSecret(req, admin))) {
+      return json({ success: false, message: "Forbidden" }, 403);
+    }
+  }
 
   try {
     const results = [];
