@@ -7,10 +7,16 @@ function required(name) {
 }
 
 function decodeBase64Candidate(value) {
-  const compact = String(value || '').replace(/\s+/g, '');
-  if (!compact || compact.length < 16 || compact.length % 4 !== 0 || !/^[A-Za-z0-9+/=]+$/.test(compact)) return null;
+  let compact = String(value || '').trim();
+  compact = compact.replace(/^(?:base64|b64):/i, '');
+  compact = compact
+    .replace(/\s+/g, '')
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+  if (!compact || compact.length < 16 || compact.length % 4 === 1 || !/^[A-Za-z0-9+/]*={0,2}$/.test(compact)) return null;
+  const padded = compact.padEnd(Math.ceil(compact.length / 4) * 4, '=');
   try {
-    const decoded = Buffer.from(compact, 'base64').toString('utf8').trim();
+    const decoded = Buffer.from(padded, 'base64').toString('utf8').trim();
     return decoded.startsWith('{') || decoded.startsWith('"') ? decoded : null;
   } catch {
     return null;
@@ -58,11 +64,13 @@ function normalizeServiceAccount(raw) {
   if (privateKey.includes('\\n')) privateKey = privateKey.replace(/\\n/g, '\n');
 
   if (String(account.type || '').trim() !== 'service_account') throw new Error('Service account type is invalid');
-  if (!clientEmail || !clientEmail.includes('@')) throw new Error('Service account client_email is missing');
+  if (!/^[^@\s]+@[^@\s]+\.iam\.gserviceaccount\.com$/.test(clientEmail)) {
+    throw new Error('Service account client_email is missing or malformed');
+  }
   if (!privateKey.includes('-----BEGIN PRIVATE KEY-----') || !privateKey.includes('-----END PRIVATE KEY-----')) {
     throw new Error('Service account private_key is missing or malformed');
   }
-  if (!String(account.token_uri || '').includes('oauth2.googleapis.com/token')) {
+  if (String(account.token_uri || '').trim() !== 'https://oauth2.googleapis.com/token') {
     throw new Error('Service account token_uri is missing or unexpected');
   }
 
@@ -105,4 +113,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { normalizeServiceAccount, serviceAccountObject };
+module.exports = { decodeBase64Candidate, normalizeServiceAccount, serviceAccountObject };
