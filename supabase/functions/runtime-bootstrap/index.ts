@@ -6,6 +6,7 @@ const EXPECTED_HUB_ID = "147416356";
 const TOKEN_INFO_URL = "https://api.hubapi.com/oauth/v2/private-apps/get/access-token-info";
 const REQUIRED_SCOPES = new Set([
   "crm.objects.contacts.read",
+  "crm.objects.contacts.write",
   "crm.objects.deals.read",
   "crm.objects.deals.write",
 ]);
