@@ -75,10 +75,12 @@ function answer(fields: Record<string, string>, names: string[]): string | null 
 }
 
 async function resolveHubspotToken(admin: any): Promise<string> {
-  if (HUBSPOT_ACCESS_TOKEN_ENV) return HUBSPOT_ACCESS_TOKEN_ENV;
   const { data, error } = await admin.rpc("nvx_get_runtime_secret", { p_name: "HUBSPOT_ACCESS_TOKEN" });
-  if (error || !data) throw new Error("HubSpot runtime credential unavailable");
-  return String(data).trim();
+  if (!error && data && String(data).trim()) {
+    return String(data).trim();
+  }
+  if (HUBSPOT_ACCESS_TOKEN_ENV) return HUBSPOT_ACCESS_TOKEN_ENV;
+  throw new Error("HubSpot runtime credential unavailable");
 }
 
 async function hubspotRequest(token: string, method: string, path: string, body?: unknown) {

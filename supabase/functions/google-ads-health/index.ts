@@ -16,7 +16,6 @@ const MAX_RANGE_DAYS = 92;
 const MAX_BODY_BYTES = 8192;
 const MAX_PROVIDER_PAGES = 20;
 const MAX_PROVIDER_ROWS = 10_000;
-const PROVIDER_PAGE_SIZE = 1000;
 
 type FailureKind = "request" | "configuration" | "oauth" | "provider" | "validation" | "persistence";
 
@@ -178,7 +177,13 @@ async function googleAccessToken(serviceAccount: Record<string, any>): Promise<s
 function providerError(status: number, payload: unknown): HealthFailure {
   const value = isRecord(payload) && isRecord(payload.error) ? payload.error : {};
   const providerStatus = String(value.status || "").slice(0, 80);
-  const message = String(value.message || "").replace(/\s+/g, " ").slice(0, 300);
+  let message = String(value.message || "").replace(/\s+/g, " ").slice(0, 300);
+  const detailErrors = Array.isArray(value.details)
+    ? value.details.flatMap((d: any) => Array.isArray(d?.errors) ? d.errors.map((e: any) => e?.message || JSON.stringify(e?.errorCode)) : []).filter(Boolean)
+    : [];
+  if (detailErrors.length > 0) {
+    message += ` (${detailErrors.join("; ")})`;
+  }
   return new HealthFailure(
     "provider",
     502,
@@ -208,7 +213,7 @@ async function googleAdsSearch(
       seenPageTokens.add(pageToken);
     }
 
-    const requestBody: Record<string, unknown> = { query, pageSize: PROVIDER_PAGE_SIZE };
+    const requestBody: Record<string, unknown> = { query };
     if (pageToken) requestBody.pageToken = pageToken;
     const headers: Record<string, string> = {
       Authorization: `Bearer ${accessToken}`,
@@ -227,8 +232,8 @@ async function googleAdsSearch(
     );
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload?.error) throw providerError(response.status, payload);
-    if (!Array.isArray(payload?.results)) throw new HealthFailure("provider", 502, "Google Ads API returned malformed results");
-    rows.push(...payload.results);
+    const results = Array.isArray(payload?.results) ? payload.results : [];
+    rows.push(...results);
     if (rows.length > MAX_PROVIDER_ROWS) {
       throw new HealthFailure("provider", 502, `Google Ads result set exceeded ${MAX_PROVIDER_ROWS} rows`);
     }
@@ -353,7 +358,17 @@ Deno.serve(async (req: Request) => {
     if (credentialError || !credential?.encrypted_key) {
       throw new HealthFailure("configuration", 500, "Google Ads developer credential not found");
     }
-    const developerToken = await decryptCredential(String(credential.encrypted_key));
+    let developerToken = "";
+    try {
+      developerToken = await decryptCredential(String(credential.encrypted_key));
+    } catch {
+      developerToken = String(
+        integration?.metadata?.developer_token ||
+        integration?.metadata?.developerToken ||
+        Deno.env.get("GOOGLE_ADS_DEVELOPER_TOKEN") ||
+        ""
+      ).trim();
+    }
     if (!developerToken) throw new HealthFailure("configuration", 500, "Google Ads developer credential is empty");
 
     const accessToken = await googleAccessToken(serviceAccount);
