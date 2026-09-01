@@ -30,12 +30,28 @@ jobs:
     env:
       SUPABASE_URL: https://ssvvuuysgxyqvmovrlvk.supabase.co
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
+      DEPLOYED_SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
-      - name: Checkout deployed main SHA
+      - name: Checkout trusted main
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          ref: main
+          fetch-depth: 0
           persist-credentials: false
+
+      - name: Verify trusted main matches deployed candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT_SHA="$(git rev-parse HEAD)"
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_run" ]]; then
+            [[ "${DEPLOYED_SHA:-}" =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid deployed SHA' >&2; exit 1; }
+            if [[ "$CURRENT_SHA" != "$DEPLOYED_SHA" ]]; then
+              echo "Current main advanced beyond the deployed candidate; a newer deployment run must own the backfill." >&2
+              exit 1
+            fi
+          fi
+          echo "Verified trusted candidate $CURRENT_SHA"
 
       - name: Setup Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
