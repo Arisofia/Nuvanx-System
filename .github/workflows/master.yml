@@ -217,17 +217,41 @@ jobs:
   frontend-e2e:
     name: Quality · Playwright smoke
     needs: frontend
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Preserve untrusted PR boundary
+        id: check-e2e
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "skip=true" >> "$GITHUB_OUTPUT"
+          echo "AUTHENTICATED_E2E=NOT_RUN_UNTRUSTED_PR"
+
+  frontend-e2e-trusted:
+    name: Quality · Playwright smoke · trusted
+    needs: frontend
     if: >-
       ${{
-        github.event_name == 'pull_request' ||
         github.event_name == 'push' ||
         (github.event_name == 'workflow_dispatch' && (inputs.operation == 'ci' || inputs.operation == 'deploy'))
       }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    environment:
+      name: Production
+    concurrency:
+      group: production-authenticated-e2e
+      cancel-in-progress: false
     defaults:
       run:
         working-directory: frontend
+    env:
+      E2E_EMAIL: test@nuvanx.com
+      PRODUCTION_E2E_URL: https://nuvanx-frontend.jenineferderas.workers.dev
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL || secrets.NUVANX_SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -244,42 +268,90 @@ jobs:
       - name: Install frontend dependencies
         run: npm install --include=dev --ignore-scripts
 
-      - name: Install Playwright browsers
-        run: npm exec playwright install --with-deps
+      - name: Install Chromium
+        run: npm exec playwright install --with-deps chromium
 
-      - name: Validate E2E Context
-        id: check-e2e
+      - name: Provision ephemeral E2E credential
         shell: bash
-        env:
-          PRODUCTION_E2E_URL: ${{ secrets.PRODUCTION_E2E_URL }}
-          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
-          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
         run: |
           set -euo pipefail
-          if [ -z "${E2E_EMAIL:-}" ] || [ -z "${E2E_PASSWORD:-}" ] || [ -z "${PRODUCTION_E2E_URL:-}" ]; then
-            if [ "${{ github.event_name }}" = "pull_request" ]; then
-              echo "skip=true" >> "$GITHUB_OUTPUT"
-              echo "Secretless pull_request: skipping authenticated Playwright smoke."
-            else
-              echo "Error: Production secrets missing on trusted release branch!" >&2
-              exit 1
-            fi
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
+          test -n "${SUPABASE_URL:-}" || { echo "::error::SUPABASE_URL is missing from Production"; exit 1; }
+          test -n "${SUPABASE_SERVICE_ROLE_KEY:-}" || { echo "::error::SUPABASE_SERVICE_ROLE_KEY is missing from Production"; exit 1; }
+          [[ "$SUPABASE_URL" == https://*.supabase.co ]]
+
+          password="$(openssl rand -hex 32)"
+          echo "::add-mask::$password"
+          export E2E_PASSWORD="$password"
+
+          node --input-type=module <<'NODE'
+          import { createClient } from '@supabase/supabase-js';
+
+          const url = process.env.SUPABASE_URL?.trim();
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+          const email = process.env.E2E_EMAIL?.trim();
+          const password = process.env.E2E_PASSWORD;
+          if (!url || !key || !email || !password) throw new Error('Trusted E2E provisioning context is incomplete');
+
+          const supabase = createClient(url, key, {
+            auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
+          });
+          const { data, error } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
+          if (error) throw error;
+          const user = data.users.find((candidate) => candidate.email?.toLowerCase() === email.toLowerCase());
+          if (!user) throw new Error(`Dedicated E2E user ${email} does not exist in production Auth`);
+
+          const { error: updateError } = await supabase.auth.admin.updateUserById(user.id, {
+            password,
+            email_confirm: true,
+          });
+          if (updateError) throw updateError;
+          console.log('Ephemeral E2E credential provisioned for the dedicated production test user.');
+          NODE
+
+          printf 'E2E_PASSWORD=%s\n' "$password" >> "$GITHUB_ENV"
 
       - name: Run Playwright smoke
-        if: steps.check-e2e.outputs.skip != 'true'
         run: npm run test:e2e
         env:
-          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
-          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
-          PRODUCTION_E2E_URL: ${{ secrets.PRODUCTION_E2E_URL }}
           PLAYWRIGHT_REQUIRE_BROWSERS: 'true'
+
+      - name: Rotate E2E credential after smoke
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${SUPABASE_URL:-}" || { echo "::error::Cannot rotate E2E credential without SUPABASE_URL"; exit 1; }
+          test -n "${SUPABASE_SERVICE_ROLE_KEY:-}" || { echo "::error::Cannot rotate E2E credential without SUPABASE_SERVICE_ROLE_KEY"; exit 1; }
+
+          quarantine_password="$(openssl rand -hex 32)"
+          echo "::add-mask::$quarantine_password"
+          export E2E_PASSWORD="$quarantine_password"
+
+          node --input-type=module <<'NODE'
+          import { createClient } from '@supabase/supabase-js';
+
+          const url = process.env.SUPABASE_URL?.trim();
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+          const email = process.env.E2E_EMAIL?.trim();
+          const password = process.env.E2E_PASSWORD;
+          if (!url || !key || !email || !password) throw new Error('Trusted E2E cleanup context is incomplete');
+
+          const supabase = createClient(url, key, {
+            auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
+          });
+          const { data, error } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
+          if (error) throw error;
+          const user = data.users.find((candidate) => candidate.email?.toLowerCase() === email.toLowerCase());
+          if (!user) throw new Error(`Dedicated E2E user ${email} does not exist in production Auth`);
+
+          const { error: updateError } = await supabase.auth.admin.updateUserById(user.id, { password });
+          if (updateError) throw updateError;
+          console.log('Dedicated E2E credential rotated after the smoke run.');
+          NODE
 
   deploy-supabase:
     name: Deploy · Supabase manual fallback
-    needs: [quality-backend, frontend, frontend-e2e]
+    needs: [quality-backend, frontend, frontend-e2e-trusted]
     # Supabase Git Branching is the automatic production deploy owner for pushes to main.
     # This job is retained only as an explicit manual recovery path.
     if: >-
