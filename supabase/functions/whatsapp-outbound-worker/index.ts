@@ -242,8 +242,22 @@ Deno.serve(async (req: Request) => {
       waData = await waRes.json().catch(() => ({}));
     } catch (error: unknown) {
       const reason = error instanceof Error ? error.name : "provider_transport_error";
-      await finalizeSend(admin, row, "unknown", null, null, reason, "Meta provider outcome is unknown after transport failure");
-      await finishPayload(admin, row, true);
+      const ledgerTracked = await finalizeSend(
+        admin,
+        row,
+        "unknown",
+        null,
+        null,
+        reason,
+        "Meta provider outcome is unknown after transport failure",
+      );
+      // A timeout/transport error happens after the irreversible provider boundary.
+      // Only terminalize the payload if the request ledger was durably moved to
+      // unknown/manual-review; otherwise retain the reconciliation row rather than
+      // losing the only durable evidence while the ledger remains reserved.
+      if (ledgerTracked) {
+        await finishPayload(admin, row, true);
+      }
       unknown += 1;
       continue;
     }
