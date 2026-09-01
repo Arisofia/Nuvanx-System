@@ -45,7 +45,7 @@ describe('NUVANX Control Centre operations contract', () => {
     expectOrdered(
       hook,
       'const pipelineRows = await fetchCanonicalPipeline()',
-      'const rawById = await fetchOptionalLeadMetadata()',
+      'const rawById = await fetchOptionalLeadMetadata(context?.signal)',
     )
     expect(hook).not.toContain('resolveCanonicalStage')
     expect(hook).not.toContain('apiUpdates.stage = apiUpdates.status')
@@ -61,6 +61,19 @@ describe('NUVANX Control Centre operations contract', () => {
     expect(pipeline).toContain("{ id: 'control_scheduled', label: '1er control programado' }")
     expect(pipeline).toContain("{ id: 'client_completed', label: 'Cliente nuevo · ciclo completado' }")
     expect(pipeline).not.toContain("{ id: 'won', label: 'Ganado' }")
+  })
+
+  it('cancels optional legacy metadata cleanly when the CRM view unmounts', () => {
+    const hook = read('../src/hooks/useLeads.ts')
+    expect(hook).toContain('const controller = new AbortController()')
+    expect(hook).toContain("invokeApi<{ leads?: Record<string, unknown>[] }>('/api/leads', { signal })")
+    expect(hook).toContain('if (signal?.aborted) return new Map()')
+    expectOrdered(
+      hook,
+      'context.active = false',
+      'controller.abort()',
+      'clearTimeout(timer)',
+    )
   })
 
   it('fails visibly on unavailable provider envelopes and refreshes across day boundaries', () => {
