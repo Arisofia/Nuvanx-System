@@ -1,6 +1,6 @@
 # Nuvanx-System Architecture
 
-This document describes the high-level architecture of the Nuvanx System.
+This document describes the current high-level architecture of the Nuvanx System.
 
 ## Diagram
 
@@ -8,107 +8,115 @@ This document describes the high-level architecture of the Nuvanx System.
 
 ```mermaid
 graph TD
-  subgraph "Root"
+  subgraph "Repository & Configuration"
     A["package.json"]
     B["README.md"]
     C[".github/workflows/*"]
     D["supabase/config.toml"]
-    E["vercel.json"]
+    E["frontend/wrangler.jsonc + public/_headers"]
   end
 
   subgraph "Frontend"
-    F["frontend/src/pages/*"]
+    F["React 19 + Vite SPA"]
     G["frontend/src/components/*"]
     H["frontend/src/hooks/*"]
     I["frontend/src/lib/env.ts"]
-    J["frontend/src/lib/metaPixel.ts"]
+    J["frontend/src/lib/invokeApi.ts"]
   end
 
   subgraph "Supabase"
-    subgraph "Functions"
-      K["supabase/functions/api/index.ts"]
-      L["supabase/functions/daily-aggregates/index.ts"]
-      M["supabase/functions/mcp/index.ts"]
-      N["supabase/functions/_shared/config.ts"]
-      O["supabase/functions/_shared/phone.ts"]
+    subgraph "Edge Functions"
+      K["api"]
+      L["daily-aggregates"]
+      M["mcp"]
+      N["control-centre-provider"]
+      O["governed integration workers"]
     end
-    subgraph "Database"
+    subgraph "Postgres"
       P["supabase/migrations/*.sql"]
       Q["Operational tables"]
-      R["Reporting and traceability views"]
-      S["RPC functions"]
+      R["Reporting / traceability views"]
+      S["Authenticated + service RPCs"]
     end
   end
 
-  subgraph "Scripts"
+  subgraph "Automation"
     T["scripts/run-daily-sync.js"]
-    U["scripts/shared/meta-daily-insights.js"]
-    V["scripts/sync-platform-secrets.js"]
-    W["scripts/health-check-nuvanx.ts"]
+    U["scripts/sync-platform-secrets.js"]
+    V["Master System"]
+    W["Deploy Standalone Edge Functions"]
+    X["Cloudflare Canonical Runtime"]
+    X2["Supabase Migration History Parity"]
   end
 
-  subgraph "CI/CD"
-    C1[".github/workflows/deploy.yml"]
-    C2[".github/workflows/ci.yml"]
-    C4[".github/workflows/daily-sync.yml"]
-    C6[".github/actions/supabase-link-run"]
-  end
-
-  subgraph "External Services"
+  subgraph "External Runtime & Providers"
+    CF["Cloudflare Workers Static Assets"]
     Y["Supabase Cloud"]
-    Z["Vercel"]
-    AA["Meta Graph API"]
-    AB["Doctoralia exports"]
-    AC["Google Sheets / Google Ads"]
+    AA["Meta Graph / WhatsApp"]
+    AB["Doctoralia exports / Google Sheets"]
+    AC["Google Ads / Data Manager"]
     AD["AI providers"]
+    HS["HubSpot"]
   end
 
   A --> F
-  A --> K
-  A --> T
   D --> K
   D --> L
   D --> M
-  F --> K
-  K --> N
-  K --> O
-  L --> N
-  M --> N
+  E --> CF
+  F --> CF
+  G --> F
+  H --> F
+  I --> F
+  J --> K
+  J --> N
   K --> Q
   K --> R
   K --> S
+  L --> Q
+  M --> Y
+  N --> Q
+  O --> Q
+  P --> Y
+  Q --> Y
+  R --> Y
+  S --> Y
   T --> Q
   T --> AB
   T --> AC
-  U --> Q
   U --> AA
-  C1 --> P
-  C1 --> K
-  C1 --> L
-  C1 --> M
-  C2 --> F
-  C4 --> T
-  C4 --> U
-  C6 --> C1
-  K --> Y
-  L --> Y
-  M --> Y
-  F --> Z
-  K --> AA
-  K --> AD
-  K --> AC
+  U --> HS
+  V --> W
+  V --> T
+  W --> O
+  X --> CF
+  X --> K
+  X2 --> P
+  O --> AA
+  O --> AC
+  O --> HS
+  O --> AD
+
+  LEG["Legacy Vercel rollback/Git link\nretirement tracked by #391"]
+  LEG -. not canonical runtime .-> F
 ```
 
 ## Key Architectural Notes
 
+### Frontend runtime
+The canonical frontend is the React/Vite SPA deployed through Cloudflare Workers Static Assets. The frontend talks directly to governed Supabase Auth/Edge endpoints; production API behavior must not depend on Vercel rewrites. Legacy Vercel configuration remains only as a temporary rollback/decommission concern tracked separately.
+
 ### CAPI / Meta Conversions
-The API Edge Function is the central hub for server-side event dispatch. Runtime identifiers and tokens must come from environment variables or secrets.
+The governed server-side functions own provider event dispatch. Runtime identifiers and tokens must come from environment variables, Vault or approved secret stores; they must not enter browser builds.
 
 ### Daily Data Flow
-Daily sync is orchestrated by `scripts/run-daily-sync.js` and `.github/workflows/daily-sync.yml`.
+Daily synchronization is orchestrated by `scripts/run-daily-sync.js` under the current `Master System` workflow. Provider-specific workers persist canonical server-side facts in Supabase.
+
+### Deployment ownership
+`Master System` is the quality gate. `Deploy Standalone Edge Functions` owns the governed standalone Edge deployment set after a successful main candidate. `Cloudflare Canonical Runtime` continuously proves the public SPA plus authenticated Supabase session/runtime contract. `Supabase Migration History Parity` fails closed on Git↔ledger drift.
 
 ### Monitoring & Quality
-Operational health is checked through scripts, workflow logs and Supabase reporting views. Do not embed live account identifiers or secrets in documentation.
+Operational health is checked through workflow gates, runtime acceptance and Supabase reporting/health views. Do not embed live credentials or private customer/patient data in documentation or CI output.
 
 ## Maintenance Rule
-Keep this document aligned with active workflows and source paths only. Do not document removed workflows, historical one-off jobs, generated outputs or local machine files.
+Keep this document aligned with active workflows and source paths only. Do not promote retired workflows, historical one-off jobs, generated outputs or local-machine files into architecture ownership.
