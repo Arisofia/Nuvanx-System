@@ -7,18 +7,20 @@
 ALTER TABLE public.credentials
   DROP CONSTRAINT IF EXISTS check_google_ads_credential_length;
 
-UPDATE public.credentials
-SET encrypted_key = 'quarantined:plaintext_service_account_removed:requires_encrypted_developer_token',
-    metadata = coalesce(metadata, '{}'::jsonb) || pg_catalog.jsonb_build_object(
-      'quarantined_reason', 'plaintext_service_account_in_developer_token_slot',
-      'quarantined_at', pg_catalog.now()
-    )
+-- A plaintext service-account private key must not remain in a slot the runtime decrypts as a
+-- developer token. Delete the malformed row instead of replacing it with another non-ciphertext
+-- sentinel that could later be passed to the decryptor.
+DELETE FROM public.credentials
 WHERE service = 'google_ads'
   AND pg_catalog.left(pg_catalog.ltrim(encrypted_key), 1) = '{';
 
 UPDATE public.integrations
 SET status = 'credential_invalid',
     last_error = 'Google Ads developer token must be reprovisioned through the encrypted credential path',
+    metadata = coalesce(metadata, '{}'::jsonb) || pg_catalog.jsonb_build_object(
+      'credential_quarantine_reason', 'plaintext_service_account_removed_from_developer_token_slot',
+      'credential_quarantined_at', pg_catalog.now()
+    ),
     updated_at = pg_catalog.now()
 WHERE service = 'google_ads';
 
