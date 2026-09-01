@@ -56,7 +56,7 @@ WITH resolved AS (
     END AS canonical_stage,
     coalesce(l.stage::text, 'unknown') AS original_stage
   FROM public.leads l
-  WHERE l.stage_canonical IS NULL
+  WHERE (l.stage_canonical IS NULL OR l.stage_canonical = 'lead')
     AND l.deleted_at IS NULL
     AND l.merged_into_lead_id IS NULL
 )
@@ -68,7 +68,7 @@ SET
   updated_at                 = pg_catalog.now()
 FROM resolved r
 WHERE l.id = r.lead_id
-  AND l.stage_canonical IS NULL;
+  AND (l.stage_canonical IS NULL OR l.stage_canonical = 'lead');
 
 -- 2. Ensure newly inserted leads derive canonical stage from available evidence
 CREATE OR REPLACE FUNCTION public.nvx_sync_default_stage_canonical()
