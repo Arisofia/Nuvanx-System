@@ -260,6 +260,9 @@ async function googleAdsSearch(customerId: string, developerToken: string, acces
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload?.error) throw providerError(response.status, payload);
+    if (payload?.results !== undefined && !Array.isArray(payload.results)) {
+      throw new SyncFailure("provider", 502, "Google Ads returned malformed results");
+    }
     const results = Array.isArray(payload?.results) ? payload.results : [];
     rows.push(...results);
     pageToken = String(payload?.nextPageToken || "").trim();
