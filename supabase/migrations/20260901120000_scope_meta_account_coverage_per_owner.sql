@@ -51,8 +51,7 @@ LEFT JOIN canonical_by_owner cbo
     AND cbo.clinic_id = mdi.clinic_id
   )
   OR (
-    mdi.clinic_id IS NULL
-    AND cbo.clinic_id IS NULL
+    cbo.clinic_id IS NULL
     AND cbo.user_id = mdi.user_id
   )
 GROUP BY
