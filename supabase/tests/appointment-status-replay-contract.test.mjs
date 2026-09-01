@@ -27,6 +27,17 @@ describe('clean replay appointment-status type contract', () => {
     expect(typeBridge).not.toMatch(/UPDATE\s+public\.leads/i);
   });
 
+  it('captures and rebuilds dependent views without blind CASCADE deletion', () => {
+    expect(typeBridge).toContain('WITH RECURSIVE target AS');
+    expect(typeBridge).toContain('pg_catalog.pg_get_viewdef(v.oid, true)');
+    expect(typeBridge).toContain('ORDER BY dependency_depth DESC');
+    expect(typeBridge).toContain('ORDER BY dependency_depth ASC');
+    expect(typeBridge).toContain("'DROP VIEW %I.%I'");
+    expect(typeBridge).toContain("'CREATE VIEW %I.%I AS %s'");
+    expect(typeBridge).toContain('pg_catalog.aclexplode(c.relacl)');
+    expect(typeBridge).not.toMatch(/DROP\s+VIEW[^;]*CASCADE/i);
+  });
+
   it('runs before the reporting migration that requires enum comparison semantics', () => {
     expect('20260901155900').toBeLessThan('20260901160000');
     expect(reporting).toContain("l.appointment_status = 'showed'::public.appointment_status");
