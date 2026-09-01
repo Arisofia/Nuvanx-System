@@ -14,16 +14,6 @@ function reply(status: number, body: Record<string, unknown>) {
   });
 }
 
-function safeAuthCheckResult(payload: any) {
-  const result: Record<string, unknown> = {};
-  if (payload?.auth_ready === true) result.auth_ready = true;
-  if (payload?.configuration_required === true) result.configuration_required = true;
-  if (payload?.scope_ok === true) result.scope_ok = true;
-  if (typeof payload?.required_scope === "string") result.required_scope = payload.required_scope.slice(0, 200);
-  if (typeof payload?.message === "string") result.message = payload.message.slice(0, 200);
-  return result;
-}
-
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return reply(405, { success: false, message: "Method not allowed" });
 
@@ -68,19 +58,13 @@ Deno.serve(async (req: Request) => {
     body: JSON.stringify(workerBody),
   });
 
-  if (mode === "auth_check") {
-    const payload = await response.json().catch(() => ({}));
-    const safe = safeAuthCheckResult(payload);
-    if (!response.ok) {
-      console.error(`[revops-dispatcher] worker=${worker} mode=auth_check status=${response.status}`);
-      return reply(502, { success: false, worker, mode, worker_status: response.status, ...safe });
-    }
-    return reply(200, { success: true, worker, mode, checked: true, ...safe });
-  }
-
   if (!response.ok) {
     console.error(`[revops-dispatcher] worker=${worker} status=${response.status}`);
-    return reply(502, { success: false, worker, worker_status: response.status });
+    return reply(502, { success: false, worker, mode, worker_status: response.status });
+  }
+
+  if (mode === "auth_check") {
+    return reply(200, { success: true, worker, mode, checked: true });
   }
 
   return reply(202, { success: true, worker, mode, dispatched: true });
