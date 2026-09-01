@@ -20,18 +20,19 @@ function jobBody(workflow, jobName) {
 }
 
 describe('production Supabase mutation concurrency', () => {
-  it('serializes the canonical standalone Edge deployment with manual deploy_edge', () => {
+  it('keeps one automatic governed Edge deploy owner and a serialized manual break-glass path', () => {
     expect(standalone).toContain(`group: ${ORDINARY_EDGE_LOCK}`);
     expect(standalone).toContain('cancel-in-progress: false');
+    expect(standalone).toContain('supabase functions deploy control-centre-provider');
+    expect(standalone).toContain('supabase/functions/control-centre-provider/index.ts');
     expect(maintenance).toContain('- deploy_edge');
     expect(maintenance).toContain('group: manual-maintenance-${{ inputs.operation }}');
   });
 
-  it('serializes the automatic Control Centre provider deploy on the same lock', () => {
-    const deployJob = jobBody(controlCentre, 'deploy');
-    expect(deployJob).toContain(`group: ${ORDINARY_EDGE_LOCK}`);
-    expect(deployJob).toContain('cancel-in-progress: false');
-    expect(deployJob).toContain('supabase functions deploy control-centre-provider');
+  it('keeps Control Centre Runtime validation-only so a separate automatic deploy cannot be dropped', () => {
+    expect(jobBody(controlCentre, 'validate')).toContain('Provider contract tests');
+    expect(jobBody(controlCentre, 'deploy')).toBe('');
+    expect(controlCentre).not.toContain('supabase functions deploy control-centre-provider');
   });
 
   it('keeps the Master Supabase fallback explicit/manual rather than an ordinary push mutator', () => {
