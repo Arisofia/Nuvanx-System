@@ -209,19 +209,18 @@ Deno.serve(async (req: Request) => {
 
   // Check idempotency first to return existing results without requiring encryption
   // when the keyring is unavailable during replays of already-processed intents.
-  const { data: idempotencyRows, error: idempotencyError } = await auth.admin.rpc("nvx_prepare_whatsapp_send", {
-    p_user_id: auth.userId,
-    p_lead_id: leadId,
-    p_normalized_phone: normalizedTo,
-    p_idempotency_key: idempotencyKey,
-    p_message_sha256: messageSha256,
-  });
+  const { data: idempotencyRows, error: idempotencyError } = await auth.admin
+    .from("whatsapp_send_requests")
+    .select("id, status, provider_message_id")
+    .eq("idempotency_key", idempotencyKey)
+    .eq("lead_id", leadId)
+    .limit(1);
 
   if (!idempotencyError && Array.isArray(idempotencyRows) && idempotencyRows.length > 0) {
     const row = idempotencyRows[0];
-    const decision = String(row.decision || "");
-    const requestStatus = String(row.request_status || "");
-    const requestId = String(row.request_id || "");
+    const decision = "duplicate";
+    const requestStatus = String(row.status || "");
+    const requestId = String(row.id || "");
     const priorMessageId = String(row.provider_message_id || "") || null;
 
     if (decision === "duplicate") {
@@ -340,8 +339,12 @@ Deno.serve(async (req: Request) => {
         } else {
           return json({ success: false, message: `Database error checking outbound payload: ${payloadError.message}` }, 500);
         }
-      } catch {
-        hasPayload = false;
+      } catch (error: any) {
+        if (error?.code === "42P01" || error?.message?.includes("does not exist")) {
+          hasPayload = false;
+        } else {
+          return json({ success: false, message: `Unexpected error checking outbound payload` }, 500);
+        }
       }
 
       if (!hasPayload) {

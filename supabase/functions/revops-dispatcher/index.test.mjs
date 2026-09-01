@@ -36,11 +36,16 @@ describe("RevOps dispatcher contract", () => {
   });
 
   it("allowlists only governed RevOps workers including durable Meta CAPI and async WhatsApp", () => {
-    expect(source).toContain('"web-lead-reconcile"');
-    expect(source).toContain('"deal-factory"');
-    expect(source).toContain('"google-data-manager-export"');
-    expect(source).toContain('"meta-capi-dispatch"');
-    expect(source).toContain('"whatsapp-outbound-worker"');
+    const match = source.match(/const ALLOWED_WORKERS = new Set\(\[([^\]]+)\]\)/);
+    expect(match).not.toBeNull();
+    const workers = match[1].split(",").map(s => s.trim().replace(/"/g, ''));
+    expect(workers).toEqual([
+      "web-lead-reconcile",
+      "deal-factory",
+      "google-data-manager-export",
+      "meta-capi-dispatch",
+      "whatsapp-outbound-worker"
+    ]);
     expect(source).toContain("if (!ALLOWED_WORKERS.has(worker))");
   });
 

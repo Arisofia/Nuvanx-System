@@ -122,7 +122,7 @@ begin
     p_message_sha256
   ) d;
 
-  if v_decision = 'reserved' and v_request_id is not null then
+  if (v_decision = 'reserved' or (v_decision = 'duplicate' and v_request_status = 'reserved')) and v_request_id is not null then
     insert into public.whatsapp_outbound_payloads (
       request_id,
       ciphertext,
@@ -141,7 +141,7 @@ begin
       pg_catalog.clock_timestamp() + interval '1 hour',
       pg_catalog.clock_timestamp(),
       pg_catalog.clock_timestamp()
-    );
+    ) on conflict (request_id) do nothing;
   end if;
 
   return query
@@ -416,7 +416,26 @@ revoke all on function public.nvx_get_whatsapp_outbound_queue_health()
   from public, anon, authenticated;
 grant execute on function public.nvx_get_whatsapp_outbound_queue_health() to service_role;
 
--- Extend the existing governed dispatcher with the WhatsApp async worker.
+-- Extract the allowed workers into a configuration function to avoid recreating the full dispatcher body.
+create or replace function public.nvx_is_allowed_revops_worker(p_worker text)
+returns boolean
+language sql
+immutable
+security definer
+set search_path = ''
+as $$
+  select p_worker in (
+    'web-lead-reconcile',
+    'deal-factory',
+    'google-data-manager-export',
+    'meta-capi-dispatch',
+    'whatsapp-outbound-worker'
+  );
+$$;
+
+revoke all on function public.nvx_is_allowed_revops_worker(text) from public, anon, authenticated;
+grant execute on function public.nvx_is_allowed_revops_worker(text) to service_role;
+
 create or replace function public.nvx_dispatch_revops_worker(
   p_worker text,
   p_limit integer default 25,
@@ -435,7 +454,7 @@ declare
   v_body jsonb;
   v_request_id bigint;
 begin
-  if p_worker not in ('web-lead-reconcile', 'deal-factory', 'google-data-manager-export', 'meta-capi-dispatch', 'whatsapp-outbound-worker') then
+  if not public.nvx_is_allowed_revops_worker(p_worker) then
     raise exception 'Unsupported RevOps worker';
   end if;
 
@@ -503,11 +522,10 @@ security definer
 set search_path = ''
 as $$
 begin
-  if new.state = 'queued'
-     and (tg_op = 'INSERT' or old.state is distinct from 'queued') then
+  if exists (select 1 from public.whatsapp_outbound_payloads where state = 'queued' limit 1) then
     perform public.nvx_try_dispatch_revops_worker('whatsapp-outbound-worker', 25, null);
   end if;
-  return new;
+  return null;
 end;
 $$;
 
@@ -516,7 +534,7 @@ revoke all on function public.nvx_wake_whatsapp_outbound_on_queue() from public,
 drop trigger if exists trg_nvx_wake_whatsapp_outbound on public.whatsapp_outbound_payloads;
 create trigger trg_nvx_wake_whatsapp_outbound
 after insert or update of state on public.whatsapp_outbound_payloads
-for each row execute function public.nvx_wake_whatsapp_outbound_on_queue();
+for each statement execute function public.nvx_wake_whatsapp_outbound_on_queue();
 
 do $$
 declare
