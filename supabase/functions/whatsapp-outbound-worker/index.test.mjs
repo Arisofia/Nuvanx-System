@@ -7,6 +7,10 @@ const migration = readFileSync(
   fileURLToPath(new URL("../../migrations/20260901190000_async_whatsapp_encrypted_outbox.sql", import.meta.url)),
   "utf8",
 );
+const wakeupMigration = readFileSync(
+  fileURLToPath(new URL("../../migrations/20260901190100_whatsapp_insert_only_wakeup.sql", import.meta.url)),
+  "utf8",
+);
 
 function ordered(sourceText, ...anchors) {
   let previous = -1;
@@ -64,14 +68,17 @@ describe("WhatsApp asynchronous encrypted outbound worker", () => {
   });
 
   it("terminalizes a payload only after the request ledger finalization succeeds", () => {
-    const transport = source.slice(
-      source.indexOf("catch (error: unknown)"),
-      source.indexOf("const explicitProviderError"),
-    );
+    const transportStart = source.indexOf("catch (error: unknown)");
+    const providerErrorStart = source.indexOf("const explicitProviderError");
+    expect(transportStart, "transport catch anchor missing").toBeGreaterThan(-1);
+    expect(providerErrorStart, "provider error anchor missing").toBeGreaterThan(transportStart);
+    const transport = source.slice(transportStart, providerErrorStart);
     expect(transport).toContain("const ledgerTracked = await finalizeSend(");
     expect(transport).toContain("if (ledgerTracked) await finishPayload(admin, row, true)");
 
-    const accepted = source.slice(source.lastIndexOf("const ledgerTracked = await finalizeSend"));
+    const acceptedStart = source.lastIndexOf("const ledgerTracked = await finalizeSend");
+    expect(acceptedStart, "accepted ledger finalization anchor missing").toBeGreaterThan(-1);
+    const accepted = source.slice(acceptedStart);
     expect(accepted).toContain("if (ledgerTracked)");
     expect(accepted).toContain("await finishPayload(admin, row, false)");
   });
@@ -93,8 +100,10 @@ describe("WhatsApp asynchronous encrypted outbound worker", () => {
     expect(source).toContain("Telemetry failure must never trigger a resend");
   });
 
-  it("has event wakeup plus one-minute safety scheduling without plaintext persistence", () => {
-    expect(migration).toContain("for each statement execute function public.nvx_wake_whatsapp_outbound_on_queue()");
+  it("uses insert-only event wakeup plus one-minute safety scheduling", () => {
+    expect(wakeupMigration).toContain("after insert on public.whatsapp_outbound_payloads");
+    expect(wakeupMigration).not.toContain("update of state");
+    expect(wakeupMigration).toContain("for each statement execute function public.nvx_wake_whatsapp_outbound_on_queue()");
     expect(migration).toContain("public.nvx_try_dispatch_revops_worker('whatsapp-outbound-worker', 3, null)");
     expect(migration).toContain("'nvx-whatsapp-outbound-worker'");
     expect(migration).toContain("'* * * * *'");
