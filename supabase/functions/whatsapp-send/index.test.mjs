@@ -43,6 +43,8 @@ describe("WhatsApp encrypted asynchronous enqueue contract", () => {
   it("uses a read-only idempotency preflight and leaves reservation to the async RPC", () => {
     const preflightStart = source.indexOf("// Read-only replay lookup");
     const encryptionStart = source.indexOf("encrypted = await encryptMessage");
+    expect(preflightStart, "read-only replay anchor missing").toBeGreaterThan(-1);
+    expect(encryptionStart, "encryption anchor missing").toBeGreaterThan(preflightStart);
     const preflight = source.slice(preflightStart, encryptionStart);
     expect(preflight).toContain('.from("whatsapp_send_requests")');
     expect(preflight).toContain('.eq("idempotency_key", idempotencyKey)');
@@ -50,10 +52,14 @@ describe("WhatsApp encrypted asynchronous enqueue contract", () => {
     expect(asyncMigration).toContain("from public.nvx_prepare_whatsapp_send(");
   });
 
-  it("requires ciphertext to exist before a reserved replay is reported queued", () => {
-    expect(source).toContain("const payload = await lookupPayload(auth.admin, requestId)");
-    expect(source).toContain('providerStatus: "reconciliation_required"');
+  it("reports the actual encrypted payload state instead of relabeling active/manual states as queued", () => {
+    expect(source).toContain('.select("state")');
+    expect(source).toContain('return { ok: true, state: null }');
     expect(source).toContain('providerStatus: "queued"');
+    expect(source).toContain('providerStatus: "claimed"');
+    expect(source).toContain('providerStatus: "sending"');
+    expect(source).toContain('providerStatus: "manual_review"');
+    expect(source).toContain('providerStatus: "reconciliation_required"');
     expect(source).toContain("WhatsApp encrypted queue state is unavailable");
     expect(source).not.toContain("message: error.message");
   });
@@ -84,7 +90,7 @@ describe("WhatsApp encrypted asynchronous enqueue contract", () => {
     expect(source).not.toContain("nvx_finalize_whatsapp_send");
   });
 
-  it("returns HTTP 202 queued state without claiming provider acceptance", () => {
+  it("returns HTTP 202 only with queue/process state and never claims provider acceptance", () => {
     expect(source).toContain("queued: true");
     expect(source).toContain("pending: true");
     expect(source).toContain('providerStatus: "queued"');
