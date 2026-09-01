@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react'
 import { getConfiguredMetaEntityIds, resolveMetaAccountIds, type MetaEntityId } from '../config/metaAccounts'
 import { invokeApi } from '../lib/invokeApi'
 
-type IntegrationRow = {
+export type IntegrationRow = {
   service?: string
   status?: string
   metadata?: Record<string, unknown> | null
 }
 
-function normalizeAccountIds(value: unknown): string[] {
+export function normalizeAccountIds(value: unknown): string[] {
   const source = Array.isArray(value) ? value : [value]
   return Array.from(new Set(
     source
@@ -35,8 +35,18 @@ function metadataValue(metadata: Record<string, unknown>, ...keys: string[]): st
   return ''
 }
 
-function resolveRuntimeMetaEntities(metadata: Record<string, unknown> | null | undefined): MetaEntityId[] {
-  const fallback = getConfiguredMetaEntityIds()
+export function selectCanonicalMetaIntegration(integrations: readonly IntegrationRow[]): IntegrationRow | null {
+  return integrations.find((integration) => (
+    integration?.service === 'meta_ads'
+    && integration?.status === 'connected'
+    && integration?.metadata?.canonical === true
+  )) ?? null
+}
+
+export function resolveRuntimeMetaEntities(
+  metadata: Record<string, unknown> | null | undefined,
+  fallback: MetaEntityId[] = getConfiguredMetaEntityIds(),
+): MetaEntityId[] {
   if (!metadata || typeof metadata !== 'object') return fallback
 
   const accountIds = normalizeAccountIds(
@@ -45,22 +55,21 @@ function resolveRuntimeMetaEntities(metadata: Record<string, unknown> | null | u
     ?? metadata.adAccountId
     ?? metadata.ad_account_id,
   )
-  const overrides: Record<string, string> = {
-    'Pixel / Dataset': metadataValue(metadata, 'pixelId', 'pixel_id'),
-    'Ad Accounts': accountIds.join(', '),
-    'Facebook Page': metadataValue(metadata, 'pageId', 'page_id'),
-    'Instagram Chamberí': metadataValue(metadata, 'igBusinessAccountId', 'ig_business_account_id'),
-    'Portfolio NUVANX': metadataValue(metadata, 'businessPortfolioId', 'business_portfolio_id'),
-  }
 
-  const merged = fallback
-    .map((entity) => ({ ...entity, value: overrides[entity.label] || entity.value }))
-    .filter((entity) => entity.value)
+  const runtimeEntities: MetaEntityId[] = [
+    { label: 'Meta App', value: metadataValue(metadata, 'appId', 'app_id') },
+    { label: 'Pixel / Dataset', value: metadataValue(metadata, 'pixelId', 'pixel_id') },
+    { label: 'Ad Accounts', value: accountIds.join(', ') },
+    { label: 'Facebook Page', value: metadataValue(metadata, 'pageId', 'page_id') },
+    { label: 'Instagram Chamberí', value: metadataValue(metadata, 'igBusinessAccountId', 'ig_business_account_id') },
+    { label: 'Portfolio NUVANX', value: metadataValue(metadata, 'businessPortfolioId', 'business_portfolio_id') },
+  ].filter((entity) => entity.value)
 
-  if (overrides['Ad Accounts'] && !merged.some((entity) => entity.label === 'Ad Accounts')) {
-    merged.push({ label: 'Ad Accounts', value: overrides['Ad Accounts'] })
-  }
-  return merged
+  const runtimeLabels = new Set(runtimeEntities.map((entity) => entity.label))
+  return [
+    ...fallback.filter((entity) => !runtimeLabels.has(entity.label)),
+    ...runtimeEntities,
+  ]
 }
 
 function useMetaEntities() {
@@ -71,13 +80,14 @@ function useMetaEntities() {
     void invokeApi('/api/integrations')
       .then((response: { integrations?: IntegrationRow[] } | null | undefined) => {
         if (!active) return
-        const meta = (response?.integrations ?? []).find((integration) => (
-          integration?.service === 'meta' && integration?.status === 'connected'
-        ))
-        if (meta?.metadata) setEntities(resolveRuntimeMetaEntities(meta.metadata))
+        const meta = selectCanonicalMetaIntegration(response?.integrations ?? [])
+        if (meta?.metadata) {
+          setEntities(resolveRuntimeMetaEntities(meta.metadata))
+        }
       })
       .catch(() => {
-        // The public Vercel configuration is intentionally retained as a safe display fallback.
+        // Fail closed for ad-account identity. Cloudflare build-time configuration
+        // is not an authority for operational Meta ad-account IDs.
       })
     return () => { active = false }
   }, [])
