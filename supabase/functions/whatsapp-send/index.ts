@@ -207,71 +207,69 @@ Deno.serve(async (req: Request) => {
 
   const messageSha256 = await sha256Hex(message);
 
-  // Check idempotency first to return existing results without requiring encryption
-  // when the keyring is unavailable during replays of already-processed intents.
+  // Read-only replay lookup: never consumes a reservation before ciphertext is ready.
+  // Scope the service-role query to the authenticated user and verify the original
+  // recipient/message fingerprint before returning an idempotent result.
   const { data: idempotencyRows, error: idempotencyError } = await auth.admin
     .from("whatsapp_send_requests")
-    .select("id, status, provider_message_id")
+    .select("id, status, provider_message_id, message_sha256, normalized_phone")
+    .eq("user_id", auth.userId)
     .eq("idempotency_key", idempotencyKey)
     .eq("lead_id", leadId)
     .limit(1);
 
-  if (!idempotencyError && Array.isArray(idempotencyRows) && idempotencyRows.length > 0) {
+  if (idempotencyError) {
+    return json({ success: false, message: "WhatsApp idempotency lookup failed" }, 500);
+  }
+
+  if (Array.isArray(idempotencyRows) && idempotencyRows.length > 0) {
     const row = idempotencyRows[0];
-    const decision = "duplicate";
+    if (String(row.message_sha256 || "") !== messageSha256 || normalizePhone(row.normalized_phone) !== normalizedTo) {
+      return json({ success: false, message: "Idempotency key was already used for another send intent" }, 409);
+    }
+
     const requestStatus = String(row.status || "");
     const requestId = String(row.id || "");
     const priorMessageId = String(row.provider_message_id || "") || null;
 
-    if (decision === "duplicate") {
-      if (["accepted", "sent", "delivered", "read"].includes(requestStatus)) {
-        return json({
-          success: true,
-          idempotentReplay: true,
-          requestId,
-          messageId: priorMessageId,
-          providerStatus: requestStatus,
-          message: "This send intent was already accepted by Meta",
-        });
-      }
-      if (requestStatus === "reserved") {
-        return json({
-          success: true,
-          queued: true,
-          pending: true,
-          idempotentReplay: true,
-          requestId,
-          providerStatus: "queued",
-          message: "This send intent is already queued for asynchronous delivery",
-        }, 202);
-      }
-      if (requestStatus === "unknown") {
-        return json({
-          success: true,
-          pending: true,
-          idempotentReplay: true,
-          requestId,
-          providerStatus: "unknown",
-          message: "This send intent has an unresolved provider outcome; it will not be sent again automatically",
-        }, 202);
-      }
+    if (["accepted", "sent", "delivered", "read"].includes(requestStatus)) {
       return json({
-        success: false,
+        success: true,
         idempotentReplay: true,
         requestId,
-        providerStatus: requestStatus || "failed",
-        message: "This send intent already failed. Create a new send intent only after reviewing the failure.",
-      }, 409);
+        messageId: priorMessageId,
+        providerStatus: requestStatus,
+        message: "This send intent was already accepted by Meta",
+      });
     }
-
-    if (decision === "rate_limited") {
-      const retryAfter = Math.max(0, Number(row.retry_after_seconds || 0));
-      return json(
-        { success: false, rateLimited: true, retryAfterSeconds: retryAfter, message: "WhatsApp rate limit reached for this lead or clinic" },
-        429,
-        { "Retry-After": String(retryAfter || 60) },
-      );
+    if (requestStatus === "reserved") {
+      return json({
+        success: true,
+        queued: true,
+        pending: true,
+        idempotentReplay: true,
+        requestId,
+        providerStatus: "queued",
+        message: "This send intent is already queued for asynchronous delivery",
+      }, 202);
     }
+    if (requestStatus === "unknown") {
+      return json({
+        success: true,
+        pending: true,
+        idempotentReplay: true,
+        requestId,
+        providerStatus: "unknown",
+        message: "This send intent has an unresolved provider outcome; it will not be sent again automatically",
+      }, 202);
+    }
+    return json({
+      success: false,
+      idempotentReplay: true,
+      requestId,
+      providerStatus: requestStatus || "failed",
+      message: "This send intent already failed. Create a new send intent only after reviewing the failure.",
+    }, 409);
   }
 
   let encrypted: { ciphertext: string; iv: string; keyVersion: string };
@@ -343,7 +341,7 @@ Deno.serve(async (req: Request) => {
         if (error?.code === "42P01" || error?.message?.includes("does not exist")) {
           hasPayload = false;
         } else {
-          return json({ success: false, message: `Unexpected error checking outbound payload` }, 500);
+          return json({ success: false, message: "Unexpected error checking outbound payload" }, 500);
         }
       }
 
