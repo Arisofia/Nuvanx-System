@@ -11,7 +11,6 @@ const OAUTH_CLIENT_SECRET = (Deno.env.get("GOOGLE_ADS_CLIENT_SECRET") || "").tri
 const OAUTH_REFRESH_TOKEN = (Deno.env.get("GOOGLE_ADS_REFRESH_TOKEN") || "").trim();
 const LOGIN_CUSTOMER_ID_ENV = (Deno.env.get("GOOGLE_ADS_LOGIN_CUSTOMER_ID") || "").replace(/\D/g, "");
 const API_VERSION = "v25";
-const PAGE_SIZE = 1000;
 const MAX_PAGES = 50;
 const MAX_RANGE_DAYS = 92;
 
@@ -182,7 +181,7 @@ async function serviceAccountAccessToken(serviceAccount: Record<string, any>): P
   const response = await fetch(tokenUri, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth-type:jwt-bearer", assertion }).toString(),
+    body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion }).toString(),
     signal: AbortSignal.timeout(20_000),
   });
   const tokenPayload = await response.json().catch(() => ({}));
@@ -246,7 +245,7 @@ async function googleAdsSearch(customerId: string, developerToken: string, acces
       "Content-Type": "application/json",
     };
     if (loginCustomerId) headers["login-customer-id"] = loginCustomerId;
-    const body: Record<string, unknown> = { query, pageSize: PAGE_SIZE };
+    const body: Record<string, unknown> = { query };
     if (pageToken) body.pageToken = pageToken;
     const response = await fetch(`https://googleads.googleapis.com/${API_VERSION}/customers/${customerId}/googleAds:search`, {
       method: "POST",
