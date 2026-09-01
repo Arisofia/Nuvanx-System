@@ -333,6 +333,17 @@ async function setVercelSecrets(vars) {
       existingMap.set(env.key, [...(existingMap.get(env.key) || []), env]);
     }
 
+    // Explicitly delete deprecated keys that shouldn't be in Vercel anymore
+    const deprecatedKeys = ['VITE_META_AD_ACCOUNT_IDS'];
+    for (const dk of deprecatedKeys) {
+      if (existingMap.has(dk)) {
+        for (const env of existingMap.get(dk)) {
+          await deleteVercelEnv(projectId, env.id, token, queryString);
+          console.log(`[VERCEL] Deleted deprecated secret: ${dk}`);
+        }
+      }
+    }
+
     const requiredTargets = ['production', 'preview', 'development'];
     for (const key of frontendKeys) {
       const value = vars[key];
