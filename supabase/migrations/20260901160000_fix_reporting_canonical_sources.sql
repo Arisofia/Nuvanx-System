@@ -23,6 +23,7 @@ BEGIN;
 DROP FUNCTION IF EXISTS public.get_campaign_report(date, date, date, date);
 
 CREATE FUNCTION public.get_campaign_report(
+  p_user_id uuid,
   from_date date DEFAULT NULL,
   to_date date DEFAULT NULL,
   p_from_date date DEFAULT NULL,
@@ -57,7 +58,10 @@ AS $$
   WITH params AS (
     SELECT
       COALESCE(from_date, p_from_date, CURRENT_DATE - 30) AS since_date,
-      COALESCE(to_date, p_to_date, CURRENT_DATE) AS until_date
+      COALESCE(to_date, p_to_date, CURRENT_DATE) AS until_date,
+      c.timezone AS clinic_timezone
+    FROM public.clinics c
+    WHERE c.id = (SELECT clinic_id FROM public.users WHERE id = p_user_id LIMIT 1)
   ),
   base AS (
     SELECT
@@ -85,10 +89,12 @@ AS $$
     JOIN public.vw_control_centre_pipeline p ON p.lead_id = l.id
     LEFT JOIN public.meta_attribution ma ON ma.lead_id = l.id
     CROSS JOIN params x
-    WHERE l.deleted_at IS NULL
+    WHERE l.user_id = p_user_id
+      AND l.deleted_at IS NULL
       AND l.merged_into_lead_id IS NULL
       AND lower(btrim(COALESCE(l.source, '')::text)) <> 'doctoralia'
-      AND l.created_at::date BETWEEN x.since_date AND x.until_date
+      AND l.created_at >= (x.since_date || ' 00:00:00')::timestamptz AT TIME ZONE x.clinic_timezone
+      AND l.created_at < ((x.until_date || ' 00:00:00')::timestamptz + INTERVAL '1 day') AT TIME ZONE x.clinic_timezone
   )
   SELECT
     b.campaign_name,
@@ -104,7 +110,10 @@ AS $$
     count(DISTINCT b.id) FILTER (WHERE b.journey_appointment_count >= 1)::bigint AS booked,
     count(DISTINCT b.id) FILTER (
       WHERE b.valuation_appointment_date IS NOT NULL
-        AND b.valuation_appointment_date <= CURRENT_DATE
+        AND (
+          lower(btrim(COALESCE(p.appointment_status, ''))) IN ('pagada', 'realizada', 'showed', 'completed')
+          OR b.is_new_client = true
+        )
     )::bigint AS attended,
     count(DISTINCT b.id) FILTER (WHERE COALESCE(b.no_show_flag, false))::bigint AS no_shows,
     count(DISTINCT b.id) FILTER (WHERE b.is_new_client)::bigint AS closed,
@@ -199,8 +208,8 @@ AS $$
     WHERE l.user_id = p_user_id
       AND l.deleted_at IS NULL
       AND l.merged_into_lead_id IS NULL
-      AND (p_from = '' OR l.created_at >= p_from::timestamptz)
-      AND (p_to = '' OR l.created_at <= (p_to || 'T23:59:59Z')::timestamptz)
+      AND (p_from = '' OR l.created_at >= (p_from || ' 00:00:00')::timestamptz AT TIME ZONE params.clinic_timezone)
+      AND (p_to = '' OR l.created_at < ((p_to || ' 00:00:00')::timestamptz + INTERVAL '1 day') AT TIME ZONE params.clinic_timezone)
   )
   SELECT
     b.user_id,
@@ -284,7 +293,15 @@ LANGUAGE sql
 STABLE
 SET search_path TO 'public', 'pg_catalog'
 AS $$
-  WITH lead_base AS (
+  WITH user_clinic AS (
+    SELECT 
+      u.id AS user_id,
+      c.timezone AS clinic_timezone
+    FROM public.users u
+    JOIN public.clinics c ON c.id = u.clinic_id
+    WHERE u.id = p_user_id
+  ),
+  lead_base AS (
     SELECT
       l.id AS lead_id,
       COALESCE(ma.campaign_name, l.campaign_name, 'Organic / Unknown')::text AS campaign_name,
@@ -296,12 +313,13 @@ AS $$
     FROM public.leads l
     JOIN public.vw_control_centre_pipeline p ON p.lead_id = l.id
     LEFT JOIN public.meta_attribution ma ON ma.lead_id = l.id
+    CROSS JOIN user_clinic uc
     WHERE l.user_id = p_user_id
       AND l.deleted_at IS NULL
       AND l.merged_into_lead_id IS NULL
       AND lower(btrim(COALESCE(l.source, '')::text)) <> 'doctoralia'
-      AND (p_from = '' OR l.created_at >= p_from::timestamptz)
-      AND (p_to = '' OR l.created_at <= (p_to || 'T23:59:59Z')::timestamptz)
+      AND (p_from = '' OR l.created_at >= (p_from || ' 00:00:00')::timestamptz AT TIME ZONE uc.clinic_timezone)
+      AND (p_to = '' OR l.created_at < ((p_to || ' 00:00:00')::timestamptz + INTERVAL '1 day') AT TIME ZONE uc.clinic_timezone)
       AND (
         p_source = ''
         OR COALESCE(NULLIF(btrim(l.utm_source), ''), NULLIF(btrim(l.source::text), ''), 'unknown') = p_source
@@ -312,12 +330,13 @@ AS $$
       b.campaign_name,
       b.campaign_id,
       b.source,
+      b.source_category,
       b.month_date,
       count(DISTINCT b.lead_id)::bigint AS leads_count,
       count(DISTINCT b.lead_id) FILTER (WHERE b.is_new_client)::bigint AS patients_count,
       round(COALESCE(sum(b.verified_revenue), 0), 2) AS net_revenue
-    FROM lead_base b
-    GROUP BY b.campaign_name, b.campaign_id, b.source, b.month_date
+    FROM lead_base_with_source b
+    GROUP BY b.campaign_name, b.campaign_id, b.source, b.source_category, b.month_date
   ),
   google_spend AS (
     SELECT
@@ -329,6 +348,15 @@ AS $$
       AND (p_from = '' OR g.date >= p_from::date)
       AND (p_to = '' OR g.date <= p_to::date)
     GROUP BY g.campaign_id, date_trunc('month', g.date)::date
+  ),
+  lead_base_with_source AS (
+    SELECT
+      lb.*,
+      CASE
+        WHEN lb.source IN ('google', 'google_ads', 'googleads', 'adwords', 'cpc') THEN 'google'
+        ELSE 'other'
+      END AS source_category
+    FROM lead_base lb
   )
   SELECT
     r.campaign_name,
