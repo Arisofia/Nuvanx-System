@@ -21,7 +21,7 @@ export const isBrowser = (): boolean =>
 /**
  * Supabase URL and publishable key.
  *
- * These values must come from Vercel environment variables. There is no
+ * These values must come from the controlled frontend build environment. There is no
  * production fallback here by design: binding a production build to a hardcoded
  * project or stale key makes audits unreliable and can hide misconfiguration.
  */
@@ -41,7 +41,7 @@ export const metaBusinessPortfolioYolandaId = sanitizeEnv(import.meta.env.VITE_M
 export const googleAdsAccountIds = sanitizeEnv(import.meta.env.VITE_GOOGLE_ADS_ACCOUNT_IDS)
 
 // Fail closed. The UI can only expose direct patient messaging after the controlled
-// Meta Test WABA + delivery-webhook acceptance has passed and Vercel is explicitly enabled.
+// Meta Test WABA + delivery-webhook acceptance has passed and the runtime flag is explicitly enabled.
 export const directWhatsappEnabled = sanitizeEnv(import.meta.env.VITE_WHATSAPP_DIRECT_ENABLED).toLowerCase() === 'true'
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseKey)
