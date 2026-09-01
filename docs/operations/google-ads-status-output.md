@@ -1,6 +1,6 @@
 # Google Ads status output ownership
 
-Canonical flow: `public.vw_google_ads_connection_status` → authenticated `GET /api/google-ads/status` → Vercel `/marketing` Google Ads panel.
+Canonical flow: `public.vw_google_ads_connection_status` → authenticated `GET /api/google-ads/status` → Cloudflare-served Control Centre `/marketing` Google Ads panel.
 
 The view is secret-free and direct `anon`/`authenticated` access is revoked. Only the server-side service role queries it. The browser receives connection state, Customer ID, credential presence and timestamps; it never receives credential IDs, encrypted keys, tokens or raw credential metadata.
 
@@ -11,5 +11,5 @@ The production baseline was created by migration `20260825082322`. Follow-up mig
 Owners:
 - Database state: Supabase `vw_google_ads_connection_status`.
 - API: Supabase Edge `api` / `GET /api/google-ads/status`.
-- Human output: Vercel Control Centre `/marketing`.
+- Human output: Cloudflare-served Control Centre `/marketing`.
 - CLI/CI diagnostic: `scripts/check-google-ads-db.js`.

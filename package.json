@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Unified workspace commands for Nuvanx System",
   "scripts": {
-    "test": "node --test frontend/scripts/vercel-ci-gate.test.mjs && node scripts/lib/phone-normalization.test.js && node scripts/meta-apply-rsv26.concurrency.test.mjs && node scripts/populate-doctoralia-appointments.test.js && node scripts/sync-doctoralia.test.js && node --test scripts/sync-google-ads-insights.test.js && node --test scripts/google-ads-daily-owner.test.js && node scripts/verify-meta-access.test.js && node scripts/validate-retired-edge-inventory.mjs && node scripts/validate-repository-hygiene.mjs && vitest run supabase/functions supabase/tests",
+    "test": "node scripts/lib/phone-normalization.test.js && node scripts/meta-apply-rsv26.concurrency.test.mjs && node scripts/populate-doctoralia-appointments.test.js && node scripts/sync-doctoralia.test.js && node --test scripts/sync-google-ads-insights.test.js && node --test scripts/google-ads-daily-owner.test.js && node scripts/verify-meta-access.test.js && node scripts/validate-retired-edge-inventory.mjs && node scripts/validate-repository-hygiene.mjs && vitest run supabase/functions supabase/tests",
     "build": "npm --prefix frontend ci && npm --prefix frontend run build",
     "dev": "npm --prefix frontend run dev",
     "lint": "npm --prefix frontend run lint",

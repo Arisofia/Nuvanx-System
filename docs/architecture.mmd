@@ -52,7 +52,6 @@ graph TD
   subgraph "External Services"
     Y["Supabase Cloud"]
     Z["Cloudflare Workers Static Assets"]
-    ZR["Vercel legacy rollback only"]
     AA["Meta Graph API"]
     AB["Doctoralia exports"]
     AC["Google Sheets / Google Ads"]
@@ -97,7 +96,6 @@ graph TD
   L --> Y
   M --> Y
   F --> Z
-  ZR -. rollback .-> F
   K --> AA
   K --> AD
   K --> AC

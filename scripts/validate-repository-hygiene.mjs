@@ -59,12 +59,6 @@ for (const file of files) {
     if (content.includes(marker)) failures.push(`temporary review marker in ${file}: ${marker}`);
   }
 
-  if (file.startsWith('supabase/functions/') && /https:\/\/[^\s'"`]+\.vercel\.app/i.test(content)) {
-    failures.push(`hardcoded Vercel runtime origin in ${file}; configure FRONTEND_URL/PRODUCTION_FALLBACK_URL/CORS_ALLOWED_ORIGINS instead`);
-  }
-  if (file.startsWith('supabase/functions/') && /\.vercel\\?\.app\$/.test(content)) {
-    failures.push(`wildcard Vercel CORS bypass in ${file}`);
-  }
 }
 
 for (const forbiddenPath of forbiddenExactPaths) {

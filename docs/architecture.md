@@ -57,7 +57,6 @@ graph TD
   subgraph "External Services"
     Y["Supabase Cloud"]
     Z["Cloudflare Workers Static Assets"]
-    ZR["Vercel legacy rollback only"]
     AA["Meta Graph API"]
     AB["Doctoralia exports"]
     AC["Google Sheets / Google Ads"]
@@ -97,7 +96,6 @@ graph TD
   L --> Y
   M --> Y
   F --> Z
-  ZR -. rollback .-> F
   K --> AA
   K --> AD
   K --> AC
@@ -106,7 +104,7 @@ graph TD
 ## Key Architectural Notes
 
 ### Frontend runtime
-Cloudflare Workers Static Assets is the canonical frontend runtime. Production browser API calls target Supabase Edge Functions explicitly; the local Vite `/api` proxy is a development convenience only. The existing Vercel deployment is a temporary rollback asset and is not the canonical delivery path.
+Cloudflare Workers Static Assets is the canonical frontend runtime. Production browser API calls target Supabase Edge Functions explicitly; the local Vite `/api` proxy is a development convenience only. No secondary frontend runtime or rollback provider is configured.
 
 ### CAPI / Meta Conversions
 The API Edge Function is the central hub for server-side event dispatch. Runtime identifiers and tokens must come from environment variables or secrets.

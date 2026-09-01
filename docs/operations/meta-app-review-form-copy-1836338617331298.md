@@ -109,7 +109,7 @@ Use:
 
 `https://nuvanx.com/`
 
-Do **not** use the internal Vercel dashboard as the primary review URL for this submission while its per-user Meta integration layer remains historically mixed.
+Do **not** use an internal deployment dashboard as the primary review URL for this submission; use the public NUVANX URL and the server-side evidence described above.
 
 ## 5. Screencast contract
 
@@ -267,9 +267,9 @@ Production project region:
 
 `eu-central-1` — Frankfurt, Germany.
 
-### Vercel
+### Cloudflare Workers Static Assets
 
-The current React/Vite frontend is hosted by Vercel. Current application code sends Meta business data through the browser to the Supabase API; no Vercel server-side Meta API route has been identified in the repository. If Meta's questionnaire defines static hosting/request telemetry as processor access to Platform Data, list Vercel as well. Do not list it as a confirmed server-side processor of Meta API payloads without that qualification.
+The current React/Vite frontend is served by Cloudflare Workers Static Assets. Application code sends Meta business data through the browser to the Supabase API; no frontend runtime server-side Meta API route has been identified in the repository. Supabase remains the confirmed backend processor in the canonical data path.
 
 ### Responsible person/entity for Platform Data
 

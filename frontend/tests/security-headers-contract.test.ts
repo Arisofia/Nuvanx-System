@@ -2,18 +2,19 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-const vercel = JSON.parse(
-  readFileSync(fileURLToPath(new URL('../vercel.json', import.meta.url)), 'utf8'),
-) as {
-  headers?: Array<{
-    source?: string
-    headers?: Array<{ key?: string; value?: string }>
-  }>
-}
+const headersFile = readFileSync(
+  fileURLToPath(new URL('../public/_headers', import.meta.url)),
+  'utf8',
+)
 
 function headerMap() {
-  const route = vercel.headers?.find((entry) => entry.source === '/(.*)')
-  return new Map((route?.headers || []).map((entry) => [String(entry.key), String(entry.value)]))
+  const block = headersFile.match(/^\/\*[\s\S]*?^\s*$/m)?.[0] || ''
+  const headers = new Map<string, string>()
+  for (const line of block.split(/\r?\n/)) {
+    const match = line.match(/^\s*([^:]+):\s*(.+)$/)
+    if (match) headers.set(match[1], match[2])
+  }
+  return headers
 }
 
 function parseCsp(value: string) {
@@ -29,7 +30,7 @@ function parseCsp(value: string) {
   )
 }
 
-describe('Control Centre Vercel security headers', () => {
+describe('Cloudflare frontend security headers', () => {
   it('sets the required browser security baseline on every route', () => {
     const headers = headerMap()
     expect(headers.get('X-Frame-Options')).toBe('DENY')
@@ -48,7 +49,6 @@ describe('Control Centre Vercel security headers', () => {
     expect(directives.get('form-action')).toEqual(["'self'"])
     expect(directives.get('frame-ancestors')).toEqual(["'none'"])
     expect(directives.get('object-src')).toEqual(["'none'"])
-
     expect(directives.get('script-src')).toEqual([
       "'self'",
       'https://connect.facebook.net',

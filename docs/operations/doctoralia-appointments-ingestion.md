@@ -55,7 +55,7 @@ DOCTORALIA_APPOINTMENTS_INPUT_PATH="$DOCTORALIA_APPOINTMENTS_INPUT_PATH" npm run
 
 ## Required Environment Variables
 
-Configure these values outside the repository through `.env.local`, GitHub Actions secrets, Vercel env vars, or the deployment secret store:
+Configure these values outside the repository through `.env.local`, GitHub Actions secrets, or the deployment secret store:
 
 ```text
 SUPABASE_URL

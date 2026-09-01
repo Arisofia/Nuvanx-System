@@ -77,7 +77,7 @@ function useMetaEntities() {
         if (meta?.metadata) setEntities(resolveRuntimeMetaEntities(meta.metadata))
       })
       .catch(() => {
-        // The public Vercel configuration is intentionally retained as a safe display fallback.
+        // Keep the server-provided configuration as the safe display fallback.
       })
     return () => { active = false }
   }, [])

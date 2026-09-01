@@ -60,9 +60,9 @@ const requiredSecretKeys = [
   'WHATSAPP_ACCESS_TOKEN',
   'WHATSAPP_PHONE_NUMBER_ID',
   'WHATSAPP_WEBHOOK_VERIFY_TOKEN',
-  'SUPABASE_SERVICE_ROLE_KEY', // Included for GitHub/Vercel, filtered for Supabase API
-  'NUVANX_SUPABASE_SERVICE_ROLE_KEY', // Included for GitHub/Vercel, filtered for Supabase API
-  'SUPABASE_ANON_KEY', // Included for GitHub/Vercel, filtered for Supabase API
+  'SUPABASE_SERVICE_ROLE_KEY', // Included for GitHub, filtered for Supabase API
+  'NUVANX_SUPABASE_SERVICE_ROLE_KEY', // Included for GitHub, filtered for Supabase API
+  'SUPABASE_ANON_KEY', // Included for GitHub, filtered for Supabase API
   'HEALTH_CHECK_API_AUTH_TOKEN',
 ];
 
@@ -231,118 +231,6 @@ async function setSupabaseSecrets(vars, projectRef) {
   }
 }
 
-async function vercelFetch(url, method, token, body = null) {
-  const options = {
-    method,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-  };
-  if (body) options.body = JSON.stringify(body);
-
-  const res = await fetch(url, options);
-  if (!res.ok) {
-    const resBody = await res.text();
-    throw new Error(`Vercel ${res.status} ${method} ${url}: ${resBody}`);
-  }
-  return res;
-}
-
-async function deleteVercelEnv(projectId, envId, token, queryString) {
-  const url = `https://api.vercel.com/v10/projects/${projectId}/env/${envId}${queryString}`;
-  await vercelFetch(url, 'DELETE', token);
-}
-
-async function createVercelEnv(projectId, key, value, targets, token, queryString) {
-  const url = `https://api.vercel.com/v10/projects/${projectId}/env${queryString}`;
-  await vercelFetch(url, 'POST', token, {
-    key,
-    value,
-    type: 'encrypted',
-    target: targets,
-  });
-}
-
-async function updateVercelEnv(projectId, envId, value, token, queryString) {
-  const url = `https://api.vercel.com/v10/projects/${projectId}/env/${envId}${queryString}`;
-  await vercelFetch(url, 'PATCH', token, { value });
-}
-
-async function handleVercelKey(key, value, existingMap, projectId, token, queryString, requiredTargets) {
-  if (existingMap.has(key)) {
-    const existingEnvs = existingMap.get(key);
-    const existingTargets = new Set(existingEnvs.flatMap((env) => Array.isArray(env.target) ? env.target : [env.target]));
-
-    if (existingEnvs.length > 1) {
-      for (const env of existingEnvs) {
-        await deleteVercelEnv(projectId, env.id, token, queryString);
-      }
-      await createVercelEnv(projectId, key, value, requiredTargets, token, queryString);
-      return;
-    }
-
-    const env = existingEnvs[0];
-    try {
-      await updateVercelEnv(projectId, env.id, value, token, queryString);
-    } catch (error) {
-      console.warn(`Patch failed for ${key}, falling back to delete/create: ${maskSensitive(error.message)}`);
-      for (const e of existingEnvs) {
-        await deleteVercelEnv(projectId, e.id, token, queryString);
-      }
-      await createVercelEnv(projectId, key, value, requiredTargets, token, queryString);
-    }
-
-    const missingTargets = requiredTargets.filter((t) => !existingTargets.has(t));
-    if (missingTargets.length > 0) {
-      await createVercelEnv(projectId, key, value, missingTargets, token, queryString);
-    }
-    return;
-  }
-
-  await createVercelEnv(projectId, key, value, requiredTargets, token, queryString);
-}
-
-async function setVercelSecrets(vars) {
-  const token = vars.VERCEL_TOKEN;
-  const teamId = vars.VERCEL_TEAM_ID;
-  const projectId = vars.VERCEL_PROJECT_ID;
-
-  console.log(`[PHASE] Syncing environment variables to Vercel project: ${projectId}`);
-  if (!token || !projectId) {
-    console.warn('[sync-platform-secrets] Vercel sync skipped: VERCEL_TOKEN or VERCEL_PROJECT_ID missing.');
-    return { skipped: true, reason: 'missing credentials' };
-  }
-
-  let uploaded = 0;
-  const queryString = teamId ? `?teamId=${teamId}` : '';
-  const listUrl = `https://api.vercel.com/v10/projects/${projectId}/env${queryString}`;
-
-  try {
-    const existingResp = await vercelFetch(listUrl, 'GET', token);
-    const existingJson = await existingResp.json();
-    const existingMap = new Map();
-    for (const env of existingJson.envs || []) {
-      existingMap.set(env.key, [...(existingMap.get(env.key) || []), env]);
-    }
-
-    const requiredTargets = ['production', 'preview', 'development'];
-    for (const key of frontendKeys) {
-      const value = vars[key];
-      if (!value) continue;
-      await handleVercelKey(key, value, existingMap, projectId, token, queryString, requiredTargets);
-      uploaded += 1;
-    }
-
-    return { uploaded };
-  } catch (error) {
-    if (error.message.includes('403')) {
-      return { skipped: true, reason: 'Vercel token is invalid or unauthorized for this project/team.' };
-    }
-    throw error;
-  }
-}
-
 function setGithubSecrets(vars) {
   console.log('[PHASE] Syncing secrets to GitHub Actions...');
   const repoInfo = resolveGitHubRepo(vars);
@@ -422,19 +310,11 @@ async function main() {
   }
   const supabaseFigmaResult = vars.SUPABASE_FIGMA_PROJECT_REF ? await setSupabaseSecrets(vars, vars.SUPABASE_FIGMA_PROJECT_REF) : { skipped: true, reason: 'missing ref' };
   
-  let vercelResult = { skipped: true, reason: 'error during sync' };
-  try {
-    vercelResult = await setVercelSecrets(vars);
-  } catch (err) {
-    console.error(`[VERCEL] Sync failed: ${maskSensitive(err.message)}`);
-  }
-
   console.log('Secret sync completed.');
   console.log(`Local frontend env: ${frontendEnvPath}`);
   console.log(`GitHub: ${maskSensitive(JSON.stringify(githubResult))}`);
   console.log(`Supabase main: ${maskSensitive(JSON.stringify(supabaseMainResult))}`);
   console.log(`Supabase figma: ${maskSensitive(JSON.stringify(supabaseFigmaResult))}`);
-  console.log(`Vercel: ${maskSensitive(JSON.stringify(vercelResult))}`);
 }
 
 main().catch((err) => {

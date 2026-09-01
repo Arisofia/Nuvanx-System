@@ -55,9 +55,7 @@ artifacts/
 *.tsbuildinfo
 
 # Deployment tool caches
-frontend/.vercel/
 supabase/.temp/
-.vercel
 
 # Playwright
 **/test-results/
