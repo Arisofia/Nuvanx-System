@@ -332,12 +332,15 @@ Deno.serve(async (req: Request) => {
           .eq("request_id", requestId)
           .limit(1);
 
-        // Only treat as missing payload if the table exists and query succeeded
         if (!payloadError) {
           hasPayload = Array.isArray(payloadRows) && payloadRows.length > 0;
+        } else if (payloadError.code === "42P01" || payloadError.message?.includes("does not exist")) {
+          // Table doesn't exist yet (fresh or pre-migration deployment)
+          hasPayload = false;
+        } else {
+          return json({ success: false, message: `Database error checking outbound payload: ${payloadError.message}` }, 500);
         }
       } catch {
-        // Table doesn't exist yet (fresh deployment) - treat as having no payload
         hasPayload = false;
       }
 
