@@ -20,6 +20,17 @@ describe('Control Centre provider gateway contract', () => {
     expect(source).not.toContain('GOOGLE_ADS_DEVELOPER_TOKEN');
   });
 
+  it('fans Google health out by integration so multiple Ads accounts can coexist', () => {
+    expect(source).toContain(".eq('service', 'google_ads')");
+    expect(source).toContain(".eq('status', 'connected')");
+    expect(source).toContain(".eq('user_id', userId)");
+    expect(source).toContain("const body: Record<string, string> = { integration_id: integrationId }");
+    expect(source).toContain("payload?.integration_id !== integrationId");
+    expect(source).toContain('accounts,');
+    expect(source).toContain('campaigns,');
+    expect(source).not.toContain("const body: Record<string, string> = { user_id: userId }");
+  });
+
   it('keeps provider credentials server-side and authenticates the browser session', () => {
     expect(source).toContain('authClient.auth.getUser(token)');
     expect(source).toContain("p_name: 'REVOPS_INTERNAL_SECRET'");
