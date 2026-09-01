@@ -1,0 +1,37 @@
+name: Cloudflare Public DNS Diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cloudflare-public-dns-diagnostic.yml'
+      - '.github/workflows/cloudflare-canonical-runtime.yml'
+      - 'frontend/wrangler.jsonc'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dns:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Resolve public DNS and HTTP edge
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== NS nuvanx.com ==='
+          dig +short NS nuvanx.com
+          echo '=== CNAME app.nuvanx.com ==='
+          dig +short CNAME app.nuvanx.com || true
+          echo '=== A app.nuvanx.com ==='
+          dig +short A app.nuvanx.com || true
+          echo '=== AAAA app.nuvanx.com ==='
+          dig +short AAAA app.nuvanx.com || true
+          echo '=== HTTPS app.nuvanx.com ==='
+          curl --silent --show-error --max-time 15 --dump-header /tmp/app-headers --output /tmp/app-body --write-out 'HTTP=%{http_code}\nEFFECTIVE_URL=%{url_effective}\nREMOTE_IP=%{remote_ip}\n' https://app.nuvanx.com/ || true
+          sed -n '1,40p' /tmp/app-headers || true
+          echo '=== BODY PREVIEW ==='
+          head -c 800 /tmp/app-body || true
+          echo
