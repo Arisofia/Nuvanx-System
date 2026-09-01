@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -18,15 +18,16 @@ const provider = readFileSync(
 import {
   normalizeFrontendUrl,
   createCorsEvaluator,
-  CLOUDFLARE_WORKERS_FRONTEND_ORIGIN,
 } from './_shared/cors-core.ts';
 
-const workersOrigin = CLOUDFLARE_WORKERS_FRONTEND_ORIGIN;
+const workersOrigin = 'https://nuvanx-frontend.jenineferderas.workers.dev';
 
 describe('frontend CORS hosting contract', () => {
-  it('includes the exact controlled Cloudflare Workers frontend origin in source and constants', () => {
-    expect(sharedConfig).toContain(`normalizeFrontendUrl('${workersOrigin}')`);
-    expect(sharedConfig).toMatch(/ALLOWED_CORS_ORIGINS\s*=\s*new Set\(\[[\s\S]*CLOUDFLARE_WORKERS_FRONTEND_ORIGIN/);
+  it('keeps all production frontend origins environment-owned', () => {
+    expect(sharedConfig).not.toContain("normalizeFrontendUrl('https://nuvanx-frontend.jenineferderas.workers.dev')");
+    expect(sharedConfig).not.toContain('CLOUDFLARE_WORKERS_FRONTEND_ORIGIN');
+    expect(sharedConfig).toContain("getEnv('CORS_ALLOWED_ORIGINS')");
+    expect(sharedConfig).toMatch(/ALLOWED_CORS_ORIGINS\s*=\s*new Set\(\[[\s\S]*EXTRA_CORS_ORIGINS/);
   });
 
   it('preserves environment-owned production and extra origins without wildcarding CORS', () => {
@@ -47,24 +48,29 @@ describe('frontend CORS hosting contract', () => {
   describe('runtime CORS contract evaluation', () => {
     it('normalizes https origins and rejects wildcards, null, or http insecure protocols', () => {
       expect(normalizeFrontendUrl('https://nuvanx.com/')).toBe('https://nuvanx.com');
-      expect(normalizeFrontendUrl('https://nuvanx-frontend.jenineferderas.workers.dev/dashboard')).toBe(workersOrigin);
+      expect(normalizeFrontendUrl(`${workersOrigin}/dashboard`)).toBe(workersOrigin);
       expect(normalizeFrontendUrl('*')).toBeNull();
       expect(normalizeFrontendUrl('null')).toBeNull();
       expect(normalizeFrontendUrl('http://insecure-domain.com')).toBeNull();
       expect(normalizeFrontendUrl('not-a-url')).toBeNull();
     });
 
-    it('allows the Cloudflare Workers origin in runtime header generation', () => {
-      const { buildCorsHeaders, allowedOrigins } = createCorsEvaluator({
+    it('allows the Cloudflare Workers origin only when supplied by environment', () => {
+      const withoutExtra = createCorsEvaluator({
         NODE_ENV: 'production',
         FRONTEND_URL: 'https://nuvanx.com',
         PRODUCTION_FALLBACK_URL: 'https://nuvanx.com',
       });
+      expect(withoutExtra.allowedOrigins.has(workersOrigin)).toBe(false);
 
-      expect(allowedOrigins.has(workersOrigin)).toBe(true);
-
-      const headers = buildCorsHeaders(workersOrigin);
-      expect(headers['Access-Control-Allow-Origin']).toBe(workersOrigin);
+      const configured = createCorsEvaluator({
+        NODE_ENV: 'production',
+        FRONTEND_URL: 'https://nuvanx.com',
+        PRODUCTION_FALLBACK_URL: 'https://nuvanx.com',
+        CORS_ALLOWED_ORIGINS: `${workersOrigin},https://frontend.example.com`,
+      });
+      expect(configured.allowedOrigins.has(workersOrigin)).toBe(true);
+      expect(configured.buildCorsHeaders(workersOrigin)['Access-Control-Allow-Origin']).toBe(workersOrigin);
     });
 
     it('falls back to default origin when receiving unknown or untrusted origin', () => {
