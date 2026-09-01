@@ -46,6 +46,16 @@ async function requireServiceRole(req: Request): Promise<boolean> {
   return match ? await secretMatches(match[1], SERVICE_ROLE) : false;
 }
 
+async function requireInternalAuthCheckSecret(req: Request, admin: any): Promise<boolean> {
+  const received = String(req.headers.get("x-nvx-internal-secret") || "").trim();
+  if (!received) return false;
+  const { data: expected, error } = await admin.rpc("nvx_get_runtime_secret", {
+    p_name: "REVOPS_INTERNAL_SECRET",
+  });
+  if (error || !expected) return false;
+  return secretMatches(received, String(expected));
+}
+
 function digits(value: unknown): string {
   return String(value || "").replace(/\D/g, "");
 }
@@ -165,6 +175,32 @@ async function accessToken(): Promise<string> {
   if (saToken) return saToken;
 
   throw new Error("Data Manager OAuth configuration missing");
+}
+
+async function dataManagerAuthCheck(): Promise<{ scopeOk: boolean }> {
+  if (!OAUTH_CLIENT_ID || !OAUTH_CLIENT_SECRET || !OAUTH_REFRESH_TOKEN) {
+    throw new Error("Data Manager OAuth configuration missing");
+  }
+
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: OAUTH_CLIENT_ID,
+      client_secret: OAUTH_CLIENT_SECRET,
+      refresh_token: OAUTH_REFRESH_TOKEN,
+      grant_type: "refresh_token",
+    }).toString(),
+    signal: AbortSignal.timeout(15_000),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !String(payload?.access_token || "")) {
+    throw new Error("Data Manager OAuth token acquisition failed");
+  }
+  const scopes = String(payload?.scope || "").split(/\s+/).filter(Boolean);
+  const grantedScopes = new Set(scopes);
+  if (!grantedScopes.has(DATA_MANAGER_SCOPE)) throw new Error("Data Manager OAuth scope missing");
+  return { scopeOk: true };
 }
 
 async function customerId(admin: any): Promise<string> {
@@ -336,17 +372,45 @@ async function pollOne(admin: any, row: any, token: string) {
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ success: false, message: "Method not allowed" }, 405);
   if (!SUPABASE_URL || !SERVICE_ROLE) return json({ success: false, message: "Server configuration error" }, 500);
-  if (!(await requireServiceRole(req))) return json({ success: false, message: "Forbidden" }, 403);
 
   const body = await req.json().catch(() => ({}));
-  const mode = body?.mode === "poll" ? "poll" : "deliver";
+  const requestedMode = String(body?.mode || "deliver");
+  const mode = requestedMode === "poll" || requestedMode === "auth_check" ? requestedMode : "deliver";
   const requestedLimit = Number(body?.limit || DEFAULT_LIMIT);
   const limit = Math.max(1, Math.min(MAX_LIMIT, Number.isFinite(requestedLimit) ? Math.trunc(requestedLimit) : DEFAULT_LIMIT));
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
 
+  const serviceRoleAuthorized = await requireServiceRole(req);
+  if (!serviceRoleAuthorized) {
+    if (mode !== "auth_check") return json({ success: false, message: "Forbidden" }, 403);
+    if (!(await requireInternalAuthCheckSecret(req, admin))) {
+      return json({ success: false, message: "Forbidden" }, 403);
+    }
+  }
+
   try {
     const results = [];
-    if (mode === "poll") {
+    if (mode === "auth_check") {
+      try {
+        const auth = await dataManagerAuthCheck();
+        return json({
+          success: true,
+          mode,
+          auth_ready: true,
+          required_scope: DATA_MANAGER_SCOPE,
+          scope_ok: auth.scopeOk,
+        });
+      } catch (error: any) {
+        const message = String(error?.message || "Data Manager authentication unavailable").slice(0, 200);
+        return json({
+          success: false,
+          mode,
+          configuration_required: true,
+          required_scope: DATA_MANAGER_SCOPE,
+          message,
+        }, 503);
+      }
+    } else if (mode === "poll") {
       const { data: rows, error } = await admin
         .from("google_data_manager_outbox")
         .select("id,provider_request_id,delivery_status")

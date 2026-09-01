@@ -1,4 +1,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { parseServiceAccount } from "./parse-service-account.ts";
+
+export { parseServiceAccount };
 
 declare const Deno: any;
 
@@ -47,6 +50,7 @@ function digits(value: unknown): string {
 function cleanSelector(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
+
 
 async function sha256(raw: string): Promise<Uint8Array> {
   return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw)));
@@ -313,13 +317,7 @@ Deno.serve(async (req: Request) => {
 
   let integrationId = "";
   try {
-    if (!SERVICE_ACCOUNT_RAW) throw new HealthFailure("configuration", 500, "Google Ads service account not configured");
-    let serviceAccount: Record<string, any>;
-    try {
-      serviceAccount = JSON.parse(SERVICE_ACCOUNT_RAW);
-    } catch {
-      throw new HealthFailure("configuration", 500, "Google Ads service account is malformed");
-    }
+    const serviceAccount = parseServiceAccount(SERVICE_ACCOUNT_RAW);
 
     let integrationQuery = admin
       .from("integrations")

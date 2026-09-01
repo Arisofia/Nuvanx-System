@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { CheckCircle2, Clock3, MessageCircle, Send, XCircle } from 'lucide-react'
 import type { Lead } from '../../types'
-import { directWhatsappEnabled } from '../../lib/env'
 import { supabase } from '../../lib/supabaseClient'
 import { hasCanonicalAppointmentEvidence, isClinicalPipelineStage, pipelineStageLabel } from '../../lib/pipeline'
 import { Button } from '../ui/button'
