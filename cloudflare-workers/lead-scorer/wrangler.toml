@@ -1,0 +1,11 @@
+name = "lead-scorer"
+main = "worker.js"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# Workers AI binding (gratuito, 10k neurons/día)
+[ai]
+binding = "AI"
+
+# Variables de entorno — añadir en Cloudflare Dashboard
+# Settings → Variables → HUBSPOT_TOKEN = tu_private_app_token
