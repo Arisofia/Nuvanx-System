@@ -69,8 +69,9 @@ describe("WhatsApp browser and recipient security boundary", () => {
       "encrypted = await encryptMessage(message, leadId, messageSha256)",
       "const prepared = await prepareSendAsync(",
     );
-    expect(asyncMigration).toContain("grant execute on function public.nvx_prepare_whatsapp_send_async");
-    expect(asyncMigration).toContain("to service_role");
+    expect(asyncMigration).toMatch(
+      /grant execute on function public\.nvx_prepare_whatsapp_send_async\([^;]+\)\s+to service_role;/i,
+    );
     expect(asyncMigration).toContain("revoke all on table public.whatsapp_outbound_payloads from public, anon, authenticated");
   });
 
