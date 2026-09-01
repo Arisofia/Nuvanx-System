@@ -59,7 +59,8 @@ describe("WhatsApp outbound safety contract", () => {
   it("requires a client idempotency key and never re-sends a reserved or unknown intent", () => {
     expect(source).toContain('idempotency_key');
     expect(source).toContain('decision === "duplicate"');
-    expect(source).toContain('["reserved", "unknown"].includes(requestStatus)');
+    expect(source).toContain('requestStatus === "reserved"');
+    expect(source).toContain('requestStatus === "unknown"');
     expect(source).toContain('idempotentReplay: true');
     expect(source).toContain('will not be sent again automatically');
     expect(deliveryMigration).toContain('whatsapp_send_requests_clinic_idempotency_uidx');
