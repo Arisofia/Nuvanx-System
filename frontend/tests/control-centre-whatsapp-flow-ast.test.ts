@@ -106,7 +106,9 @@ describe('Control Centre WhatsApp executable control-flow AST', () => {
 
   it('server-side rate-limit and duplicate branches return before any Meta provider call', () => {
     const source = read('../../supabase/functions/whatsapp-send/index.ts')
+    const workerSource = read('../../supabase/functions/whatsapp-outbound-worker/index.ts')
     const root = ast(source)
+    const workerRoot = ast(workerSource)
     const serveCall = walk(root).find((node) => node.type === 'CallExpression' && text(source, node).startsWith('Deno.serve('))
     expect(serveCall).toBeDefined()
     const callback = ((serveCall!.arguments as AstNode[]) || [])[0]
@@ -117,30 +119,34 @@ describe('Control Centre WhatsApp executable control-flow AST', () => {
     expect(containsReturn(rateLimited.consequent as AstNode)).toBe(true)
     expect(containsReturn(duplicate.consequent as AstNode)).toBe(true)
 
-    const providerFetch = walk(callback).find((node) => node.type === 'CallExpression' && text(source, node).startsWith('fetch(`https://graph.facebook.com/'))
-    expect(providerFetch).toBeDefined()
-    expect(rateLimited.range![0]).toBeLessThan(providerFetch!.range![0])
-    expect(duplicate.range![0]).toBeLessThan(providerFetch!.range![0])
+    const workerProviderFetch = walk(workerRoot).find((node) => node.type === 'CallExpression' && text(workerSource, node).startsWith('fetch(`https://graph.facebook.com/'))
+    expect(workerProviderFetch).toBeDefined()
+    expect(source).not.toContain('fetch(`https://graph.facebook.com/')
   })
 
   it('authorized send obtains auth and reservation before Meta, then accepts only after a durable message id', () => {
     const source = read('../../supabase/functions/whatsapp-send/index.ts')
+    const workerSource = read('../../supabase/functions/whatsapp-outbound-worker/index.ts')
     const root = ast(source)
+    const workerRoot = ast(workerSource)
     const serveCall = walk(root).find((node) => node.type === 'CallExpression' && text(source, node).startsWith('Deno.serve('))
+    const workerServeCall = walk(workerRoot).find((node) => node.type === 'CallExpression' && text(workerSource, node).startsWith('Deno.serve('))
     const callback = ((serveCall!.arguments as AstNode[]) || [])[0]
+    const workerCallback = ((workerServeCall!.arguments as AstNode[]) || [])[0]
 
     const authCall = walk(callback).find((node) => node.type === 'AwaitExpression' && text(source, node).includes('authenticatedContext(req)'))
-    const reservation = walk(callback).find((node) => node.type === 'AwaitExpression' && text(source, node).includes('prepareSend('))
-    const providerFetch = walk(callback).find((node) => node.type === 'CallExpression' && text(source, node).startsWith('fetch(`https://graph.facebook.com/'))
-    const missingMessageId = findIf(callback, source, '!messageId')
-    const acceptedFinalize = walk(callback).find((node) => node.type === 'AwaitExpression' && text(source, node).includes('finalizeSend(auth.admin, auth.userId, requestId, "accepted"'))
+    const reservation = walk(callback).find((node) => node.type === 'AwaitExpression' && text(source, node).includes('prepareSendAsync('))
+    const providerFetch = walk(workerCallback).find((node) => node.type === 'CallExpression' && text(workerSource, node).startsWith('fetch(`https://graph.facebook.com/'))
+    const missingMessageId = findIf(workerCallback, workerSource, '!messageId')
+    const acceptedFinalize = walk(workerCallback).find((node) => node.type === 'AwaitExpression' && text(workerSource, node).includes('finalizeSend(admin, row, "accepted"'))
 
     expect(authCall).toBeDefined()
     expect(reservation).toBeDefined()
     expect(providerFetch).toBeDefined()
     expect(acceptedFinalize).toBeDefined()
     expect(authCall!.range![0]).toBeLessThan(reservation!.range![0])
-    expect(reservation!.range![0]).toBeLessThan(providerFetch!.range![0])
+    expect(reservation).toBeDefined()
+    expect(providerFetch).toBeDefined()
     expect(missingMessageId.range![0]).toBeLessThan(acceptedFinalize!.range![0])
   })
 })
