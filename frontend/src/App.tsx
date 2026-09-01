@@ -22,7 +22,7 @@ function ConfigurationError() {
           Las variables de entorno de Supabase no están configuradas.
           Añade <code className="bg-[#F0ECE6] px-1 rounded text-xs">VITE_SUPABASE_URL</code> y{' '}
           <code className="bg-[#F0ECE6] px-1 rounded text-xs">VITE_SUPABASE_ANON_KEY</code> en
-          el panel de Vercel y vuelve a desplegar.
+          el archivo de configuración y vuelve a desplegar.
         </p>
       </div>
     </div>

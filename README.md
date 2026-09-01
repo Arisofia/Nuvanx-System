@@ -4,7 +4,7 @@ Revenue Intelligence and RevOps platform for NUVANX: paid-media acquisition, web
 
 ## Architecture
 
-- **Frontend:** React 19 + Vite, deployed on Vercel.
+- **Frontend:** React 19 + Vite, deployed on Cloudflare Workers.
 - **Production API:** Supabase Edge Function `supabase/functions/api/index.ts`.
 - **MCP:** Supabase Edge Function `supabase/functions/mcp/index.ts`.
 - **Database:** Supabase project `ssvvuuysgxyqvmovrlvk` (`nuvanx-prod`).

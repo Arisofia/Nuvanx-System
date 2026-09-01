@@ -60,9 +60,9 @@ const requiredSecretKeys = [
   'WHATSAPP_ACCESS_TOKEN',
   'WHATSAPP_PHONE_NUMBER_ID',
   'WHATSAPP_WEBHOOK_VERIFY_TOKEN',
-  'SUPABASE_SERVICE_ROLE_KEY', // Included for GitHub/Vercel, filtered for Supabase API
-  'NUVANX_SUPABASE_SERVICE_ROLE_KEY', // Included for GitHub/Vercel, filtered for Supabase API
-  'SUPABASE_ANON_KEY', // Included for GitHub/Vercel, filtered for Supabase API
+  'SUPABASE_SERVICE_ROLE_KEY', // Included for GitHub, filtered for Supabase API
+  'NUVANX_SUPABASE_SERVICE_ROLE_KEY', // Included for GitHub, filtered for Supabase API
+  'SUPABASE_ANON_KEY', // Included for GitHub, filtered for Supabase API
   'HEALTH_CHECK_API_AUTH_TOKEN',
 ];
 
@@ -304,15 +304,9 @@ async function handleVercelKey(key, value, existingMap, projectId, token, queryS
 }
 
 async function setVercelSecrets(vars) {
-  const token = vars.VERCEL_TOKEN;
-  const teamId = vars.VERCEL_TEAM_ID;
-  const projectId = vars.VERCEL_PROJECT_ID;
-
-  console.log(`[PHASE] Syncing environment variables to Vercel project: ${projectId}`);
-  if (!token || !projectId) {
-    console.warn('[sync-platform-secrets] Vercel sync skipped: VERCEL_TOKEN or VERCEL_PROJECT_ID missing.');
-    return { skipped: true, reason: 'missing credentials' };
-  }
+  console.log('[PHASE] Vercel sync disabled - Cloudflare Workers is the sole runtime');
+  return { skipped: true, reason: 'Vercel integration disabled - using Cloudflare Workers' };
+}
 
   let uploaded = 0;
   const queryString = teamId ? `?teamId=${teamId}` : '';
