@@ -1,6 +1,5 @@
 import {
   googleAdsAccountIds,
-  metaAccountIds,
   metaAppId,
   metaBusinessPortfolioNuvanxId,
   metaBusinessPortfolioYolandaId,
@@ -17,7 +16,6 @@ function splitIds(value: string) {
 }
 
 export const META_APP_ID = metaAppId
-export const META_ACCOUNT_IDS = splitIds(metaAccountIds) as readonly string[]
 export const META_PIXEL_IDS = splitIds(metaPixelId) as readonly string[]
 export const META_PAGE_ID = metaPageId
 export const META_INSTAGRAM_CHAMBERI_ID = metaInstagramChamberiId
@@ -35,7 +33,6 @@ export function getConfiguredMetaEntityIds(): MetaEntityId[] {
   return [
     { label: 'Meta App', value: META_APP_ID },
     { label: 'Pixel / Dataset', value: META_PIXEL_IDS.join(', ') },
-    { label: 'Ad Accounts', value: META_ACCOUNT_IDS.join(', ') },
     { label: 'Facebook Page', value: META_PAGE_ID },
     { label: 'Instagram Chamberí', value: META_INSTAGRAM_CHAMBERI_ID },
     { label: 'Instagram Goya', value: META_INSTAGRAM_GOYA_ID },
@@ -44,8 +41,14 @@ export function getConfiguredMetaEntityIds(): MetaEntityId[] {
   ].filter((item) => item.value)
 }
 
+/**
+ * Meta ad-account IDs are runtime data owned by the canonical `meta_ads`
+ * integration or by an API response scoped to the current request. They must
+ * never be injected from a Vite build variable because a stale compiled value
+ * can silently reintroduce retired accounts after a deployment.
+ */
 export function resolveMetaAccountIds(accountIds: readonly unknown[] = []) {
-  const normalized = [...META_ACCOUNT_IDS, ...accountIds]
+  const normalized = accountIds
     .map((accountId) => String(accountId ?? '').trim())
     .filter(Boolean)
 
