@@ -30,6 +30,7 @@ describe('standalone Edge deployment ownership', () => {
     expect(workflow).toContain('supabase/functions/dashboard/index.ts');
     expect(workflow).toContain('supabase/functions/agent-run/index.ts');
     expect(workflow).toContain('supabase/functions/runtime-bootstrap/index.ts');
+    expect(workflow).toContain('supabase/functions/revops-dispatcher/index.ts');
     expect(workflow).toContain('supabase/functions/google-ads-health/index.ts');
     expect(workflow).toContain('supabase/functions/google-ads-daily-sync/index.ts');
     expect(workflow).toContain('supabase/functions/google-ads-backfill-dispatcher/index.ts');
@@ -44,6 +45,7 @@ describe('standalone Edge deployment ownership', () => {
     expect(workflow).toContain('supabase functions deploy dashboard --project-ref "$SUPABASE_PROJECT_REF"');
     expect(workflow).toContain('supabase functions deploy agent-run --project-ref "$SUPABASE_PROJECT_REF"');
     expect(workflow).toContain('supabase functions deploy runtime-bootstrap --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
+    expect(workflow).toContain('supabase functions deploy revops-dispatcher --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
     expect(workflow).toContain('supabase functions deploy google-ads-health --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
     expect(workflow).toContain('supabase functions deploy google-ads-daily-sync --project-ref "$SUPABASE_PROJECT_REF"');
     expect(workflow).toContain('supabase functions deploy google-ads-backfill-dispatcher --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
