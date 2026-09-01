@@ -38,6 +38,7 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       QUALITY_APPROVED_SHA: ${{ github.event.workflow_run.head_sha }}
+      CORS_ALLOWED_ORIGINS: https://nuvanx-frontend.jenineferderas.workers.dev,https://frontend-arisofias-projects-c2217452.vercel.app,https://frontend-git-main-arisofias-projects-c2217452.vercel.app
 
     steps:
       - name: Checkout trusted main
@@ -71,6 +72,7 @@ jobs:
           set -euo pipefail
           test -n "${SUPABASE_PROJECT_REF:-}"
           test -n "${SUPABASE_ACCESS_TOKEN:-}"
+          test -n "${CORS_ALLOWED_ORIGINS:-}"
           [[ "$SUPABASE_PROJECT_REF" =~ ^[a-z0-9]{20}$ ]]
           [[ "$SUPABASE_ACCESS_TOKEN" =~ ^sbp_[A-Za-z0-9]+$ ]]
 
@@ -125,6 +127,8 @@ jobs:
           command: |
             set -euo pipefail
             test -n "${SUPABASE_PROJECT_REF:-}"
+            test -n "${CORS_ALLOWED_ORIGINS:-}"
+            supabase secrets set CORS_ALLOWED_ORIGINS="$CORS_ALLOWED_ORIGINS" --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy dashboard --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy agent-run --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy runtime-bootstrap --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
