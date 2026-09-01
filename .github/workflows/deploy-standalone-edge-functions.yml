@@ -10,15 +10,15 @@ on:
 permissions:
   contents: read
 
-# Match Manual Maintenance when operation=deploy_edge so runtime-bootstrap and
-# the standalone owner can never race each other in production.
+# One automatic owner deploys the governed standalone/Control Centre Edge set.
+# Manual Maintenance shares this lock only as an explicit break-glass operation.
 concurrency:
   group: manual-maintenance-deploy_edge
   cancel-in-progress: false
 
 jobs:
   deploy:
-    name: Deploy · standalone Edge Functions
+    name: Deploy · governed Edge Functions
     if: >-
       ${{
         github.event_name == 'workflow_dispatch' ||
@@ -87,7 +87,7 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: Revalidate standalone candidate
+      - name: Revalidate governed Edge candidate
         if: ${{ steps.candidate.outputs.deploy == 'true' }}
         shell: bash
         run: |
@@ -98,6 +98,7 @@ jobs:
             supabase/functions/dashboard/index.ts \
             supabase/functions/agent-run/index.ts \
             supabase/functions/runtime-bootstrap/index.ts \
+            supabase/functions/control-centre-provider/index.ts \
             supabase/functions/google-ads-health/index.ts \
             supabase/functions/google-ads-backfill-dispatcher/index.ts \
             supabase/functions/meta-lead-backfill/index.ts \
@@ -111,7 +112,7 @@ jobs:
             supabase/functions/google-click-attribution/index.ts \
             supabase/functions/google-data-manager-export/index.ts
 
-      - name: Deploy standalone functions
+      - name: Deploy governed functions
         if: ${{ steps.candidate.outputs.deploy == 'true' }}
         uses: ./.github/actions/supabase-link-run
         with:
@@ -126,6 +127,7 @@ jobs:
             supabase functions deploy dashboard --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy agent-run --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy runtime-bootstrap --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+            supabase functions deploy control-centre-provider --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy google-ads-health --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy google-ads-backfill-dispatcher --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy meta-lead-backfill --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
