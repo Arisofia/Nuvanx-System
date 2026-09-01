@@ -10,6 +10,7 @@ ALTER TABLE public.credentials
 -- A plaintext service-account private key must not remain in a slot the runtime decrypts as a
 -- developer token. Delete the malformed row instead of replacing it with another non-ciphertext
 -- sentinel that could later be passed to the decryptor.
+-- Deleting this copy does not revoke the exposed source key; rotate that key in Google Cloud IAM.
 DELETE FROM public.credentials
 WHERE service = 'google_ads'
   AND pg_catalog.left(pg_catalog.ltrim(encrypted_key), 1) = '{';
