@@ -17,9 +17,6 @@ export function normalizeFrontendUrl(url: string | null | undefined): string | n
   }
 }
 
-export const CLOUDFLARE_WORKERS_FRONTEND_ORIGIN =
-  normalizeFrontendUrl('https://nuvanx-frontend.jenineferderas.workers.dev') || '';
-
 export interface CorsEvaluatorOptions {
   DENO_ENV?: string;
   NODE_ENV?: string;
@@ -50,7 +47,6 @@ export function createCorsEvaluator(env: CorsEvaluatorOptions = {}) {
     defaultCorsOrigin,
     normalizedFrontend,
     productionFallback,
-    CLOUDFLARE_WORKERS_FRONTEND_ORIGIN,
     ...extraOrigins,
   ].filter((o): o is string => Boolean(o)));
 
