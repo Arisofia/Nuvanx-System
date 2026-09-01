@@ -2,13 +2,11 @@ name: Google Ads August Backfill Once
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - .github/workflows/google-ads-backfill-once.yml
-      - supabase/functions/google-ads-backfill-dispatcher/**
-      - supabase/migrations/20260901012500_add_google_ads_internal_backfill_dispatch.sql
+  workflow_run:
+    workflows:
+      - Deploy Standalone Edge Functions
+    types:
+      - completed
 
 permissions:
   contents: read
@@ -20,6 +18,11 @@ concurrency:
 jobs:
   backfill:
     name: Backfill Google Ads August 2026
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' ||
+          (github.event.workflow_run.event == 'workflow_run' &&
+           github.event.workflow_run.conclusion == 'success' &&
+           github.event.workflow_run.head_branch == 'main') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
@@ -28,9 +31,10 @@ jobs:
       SUPABASE_URL: https://ssvvuuysgxyqvmovrlvk.supabase.co
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
     steps:
-      - name: Checkout exact branch
+      - name: Checkout deployed main SHA
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
           persist-credentials: false
 
       - name: Setup Node.js
