@@ -15,6 +15,7 @@ const CONTROL_CENTRE_ROUTES = [
 ] as const;
 
 const DISPOSABLE_META_PROVIDER_PATHS = new Set([
+  '/functions/v1/api/meta/ads',
   '/functions/v1/api/meta/campaigns',
   '/functions/v1/api/meta/insights',
   '/functions/v1/api/dashboard/meta-trends',
