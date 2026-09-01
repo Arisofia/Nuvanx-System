@@ -275,6 +275,9 @@ async function googleAdsSearch(customerId: string, developerToken: string, acces
     }
 
     // Explicit validation: Distinguish omitted vs non-array
+    if (!isRecord(payload)) {
+      throw new SyncFailure("provider", 502, "Google Ads API returned malformed payload");
+    }
     let resultsArray: unknown[];
     if (payload.results === undefined) {
       resultsArray = [];
