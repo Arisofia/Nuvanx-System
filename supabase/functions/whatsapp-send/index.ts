@@ -186,8 +186,10 @@ async function prepareSendAsync(
   return { ok: true, row };
 }
 
+const PAYLOAD_STATES = new Set(["queued", "claimed", "sending", "manual_review", "terminal"]);
+
 type PayloadLookup =
-  | { ok: true; hasPayload: boolean }
+  | { ok: true; state: string | null }
   | { ok: false; status: number; message: string };
 
 async function lookupPayload(admin: any, requestId: string): Promise<PayloadLookup> {
@@ -202,7 +204,14 @@ async function lookupPayload(admin: any, requestId: string): Promise<PayloadLook
       console.error(`[whatsapp-send] queue lookup failed code=${String(error.code || "unknown")}`);
       return { ok: false, status: 503, message: "WhatsApp encrypted queue state is unavailable" };
     }
-    return { ok: true, hasPayload: Array.isArray(data) && data.length > 0 };
+
+    if (!Array.isArray(data) || data.length === 0) return { ok: true, state: null };
+    const state = String(data[0]?.state || "").trim();
+    if (!PAYLOAD_STATES.has(state)) {
+      console.error("[whatsapp-send] queue lookup returned an unsupported state");
+      return { ok: false, status: 503, message: "WhatsApp encrypted queue state is unavailable" };
+    }
+    return { ok: true, state };
   } catch {
     console.error("[whatsapp-send] queue lookup raised an unexpected error");
     return { ok: false, status: 503, message: "WhatsApp encrypted queue state is unavailable" };
@@ -217,6 +226,69 @@ Deno.serve(async (req: Request) => {
       status,
       headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store", ...extraHeaders },
     });
+
+  const respondForPayloadState = (
+    state: string | null,
+    requestId: string,
+    idempotentReplay: boolean,
+  ): Response => {
+    const replay = idempotentReplay ? { idempotentReplay: true } : {};
+
+    if (state === null || state === "terminal") {
+      return json({
+        success: false,
+        ...replay,
+        requestId,
+        providerStatus: "reconciliation_required",
+        message: "WhatsApp request and encrypted queue state require manual reconciliation.",
+      }, 503);
+    }
+
+    if (state === "queued") {
+      return json({
+        success: true,
+        queued: true,
+        pending: true,
+        ...replay,
+        requestId,
+        providerStatus: "queued",
+        message: idempotentReplay
+          ? "This send intent is already queued for asynchronous delivery"
+          : "Solicitud cifrada y en cola. La aceptación y la entrega de Meta se confirmarán de forma asíncrona.",
+      }, 202);
+    }
+
+    if (state === "claimed") {
+      return json({
+        success: true,
+        pending: true,
+        ...replay,
+        requestId,
+        providerStatus: "claimed",
+        message: "This send intent has been claimed for asynchronous delivery and will not be queued again.",
+      }, 202);
+    }
+
+    if (state === "sending") {
+      return json({
+        success: true,
+        pending: true,
+        ...replay,
+        requestId,
+        providerStatus: "sending",
+        message: "Provider delivery has started or is being reconciled; do not resend this intent.",
+      }, 202);
+    }
+
+    return json({
+      success: true,
+      pending: true,
+      ...replay,
+      requestId,
+      providerStatus: "manual_review",
+      message: "This send intent requires manual review and will not be sent again automatically.",
+    }, 202);
+  };
 
   if (req.method === "OPTIONS") {
     if (isDisallowedBrowserOrigin(origin)) return json({ success: false, message: "Origin not allowed" }, 403);
@@ -286,24 +358,7 @@ Deno.serve(async (req: Request) => {
     if (requestStatus === "reserved") {
       const payload = await lookupPayload(auth.admin, requestId);
       if (!payload.ok) return json({ success: false, message: payload.message }, payload.status);
-      if (!payload.hasPayload) {
-        return json({
-          success: false,
-          idempotentReplay: true,
-          requestId,
-          providerStatus: "reconciliation_required",
-          message: "This send intent is reserved but has no encrypted payload. Manual reconciliation is required.",
-        }, 503);
-      }
-      return json({
-        success: true,
-        queued: true,
-        pending: true,
-        idempotentReplay: true,
-        requestId,
-        providerStatus: "queued",
-        message: "This send intent is already queued for asynchronous delivery",
-      }, 202);
+      return respondForPayloadState(payload.state, requestId, true);
     }
 
     if (requestStatus === "unknown") {
@@ -401,21 +456,5 @@ Deno.serve(async (req: Request) => {
 
   const payload = await lookupPayload(auth.admin, requestId);
   if (!payload.ok) return json({ success: false, message: payload.message }, payload.status);
-  if (!payload.hasPayload) {
-    return json({
-      success: false,
-      requestId,
-      providerStatus: "reconciliation_required",
-      message: "WhatsApp request was reserved without an encrypted queue payload. Manual reconciliation is required.",
-    }, 503);
-  }
-
-  return json({
-    success: true,
-    queued: true,
-    pending: true,
-    requestId,
-    providerStatus: "queued",
-    message: "Solicitud cifrada y en cola. La aceptación y la entrega de Meta se confirmarán de forma asíncrona.",
-  }, 202);
+  return respondForPayloadState(payload.state, requestId, decision === "duplicate");
 });
