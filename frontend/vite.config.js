@@ -31,8 +31,8 @@ export default ({ mode }) => {
         .filter(Boolean),
       proxy: {
         '/api': {
-          // Forward /api/* to the Supabase Edge Function in local dev.
-          // In production, Vercel handles this via vercel.json rewrites.
+          // Forward /api/* to the Supabase Edge Function in local development.
+          // Production calls the governed Supabase Edge API explicitly from the Cloudflare-hosted SPA.
           target: `${process.env.VITE_SUPABASE_URL}/functions/v1`,
           changeOrigin: true,
           secure: true,
