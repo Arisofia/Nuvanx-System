@@ -67,7 +67,7 @@ DECLARE
   v_claims jsonb;
 BEGIN
   v_claims := nullif(pg_catalog.current_setting('request.jwt.claims', true), '')::jsonb;
-  IF pg_catalog.coalesce(v_claims->>'is_anonymous', 'false') = 'true' THEN
+  IF coalesce(v_claims->>'is_anonymous', 'false') = 'true' THEN
     RAISE EXCEPTION 'Anonymous access is not allowed for this operation.';
   END IF;
 END;
