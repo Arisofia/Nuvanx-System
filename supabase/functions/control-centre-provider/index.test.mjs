@@ -26,6 +26,7 @@ describe('Control Centre provider gateway contract', () => {
     expect(source).toContain(".eq('user_id', userId)");
     expect(source).toContain("const body: Record<string, string> = { integration_id: integrationId }");
     expect(source).toContain("payload?.integration_id !== integrationId");
+    expect(source).toContain('Promise.all(healthRequests)');
     expect(source).toContain('accounts,');
     expect(source).toContain('campaigns,');
     expect(source).not.toContain("const body: Record<string, string> = { user_id: userId }");

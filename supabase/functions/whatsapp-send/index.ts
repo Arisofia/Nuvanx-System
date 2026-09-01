@@ -324,13 +324,23 @@ Deno.serve(async (req: Request) => {
       // Check if this reserved request has an encrypted payload for the async worker.
       // Pre-existing reserved requests from the synchronous implementation may not have
       // a payload row and should be marked for reconciliation instead of reported as queued.
-      const { data: payloadRows } = await auth.admin
-        .from("whatsapp_outbound_payloads")
-        .select("state")
-        .eq("request_id", requestId)
-        .limit(1);
+      let hasPayload = false;
+      try {
+        const { data: payloadRows, error: payloadError } = await auth.admin
+          .from("whatsapp_outbound_payloads")
+          .select("state")
+          .eq("request_id", requestId)
+          .limit(1);
 
-      const hasPayload = Array.isArray(payloadRows) && payloadRows.length > 0;
+        // Only treat as missing payload if the table exists and query succeeded
+        if (!payloadError) {
+          hasPayload = Array.isArray(payloadRows) && payloadRows.length > 0;
+        }
+      } catch {
+        // Table doesn't exist yet (fresh deployment) - treat as having no payload
+        hasPayload = false;
+      }
+
       if (!hasPayload) {
         return json({
           success: false,

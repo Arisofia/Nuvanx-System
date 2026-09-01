@@ -44,6 +44,7 @@ describe("WhatsApp encrypted asynchronous enqueue contract", () => {
     expect(source).toContain('idempotency_key');
     expect(source).toContain('decision === "duplicate"');
     expect(source).toContain('requestStatus === "reserved"');
+    expect(source).toContain('requestStatus === "unknown"');
     expect(source).toContain('idempotentReplay: true');
     expect(source).toContain('already queued for asynchronous delivery');
     expect(deliveryMigration).toContain('whatsapp_send_requests_clinic_idempotency_uidx');
@@ -85,6 +86,14 @@ describe("WhatsApp encrypted asynchronous enqueue contract", () => {
     expect(asyncMigration).not.toMatch(/message_body\s+text/i);
     expect(asyncMigration).not.toMatch(/plaintext\s+text/i);
     expect(asyncMigration).toContain('revoke all on table public.whatsapp_outbound_payloads from public, anon, authenticated');
+  });
+
+  it("handles missing payload table gracefully for fresh deployments", () => {
+    expect(source).toContain('try {');
+    expect(source).toContain('const { data: payloadRows, error: payloadError }');
+    expect(source).toContain('if (!payloadError)');
+    expect(source).toContain('} catch');
+    expect(source).toContain('hasPayload = false');
   });
 
   it("keeps rate limiting and reservation ownership in the existing atomic contract", () => {
