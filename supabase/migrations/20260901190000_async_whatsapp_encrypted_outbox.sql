@@ -52,7 +52,7 @@ create table if not exists public.whatsapp_outbound_payloads (
       state in ('queued', 'claimed')
       and ciphertext is not null
       and iv is not null
-      and pg_catalog.length(ciphertext) between 16 and 16384
+      and pg_catalog.length(ciphertext) between 16 and 32768
       and pg_catalog.length(iv) between 12 and 128
     )
     or (
@@ -237,7 +237,7 @@ declare
   v_provider_message_id text;
   v_retry_after_seconds integer;
 begin
-  if coalesce(p_ciphertext, '') = '' or pg_catalog.length(p_ciphertext) > 16384 then
+  if coalesce(p_ciphertext, '') = '' or pg_catalog.length(p_ciphertext) > 32768 then
     raise exception 'invalid_encrypted_payload' using errcode = '22023';
   end if;
   if coalesce(p_iv, '') = '' or pg_catalog.length(p_iv) > 128 then
@@ -633,7 +633,17 @@ select cron.schedule(
       select 1
       from public.whatsapp_outbound_payloads
       where state = 'queued'
-        and expires_at > now()
+         or (
+           state = 'claimed'
+           and (
+             claimed_at < pg_catalog.now() - interval '2 minutes'
+             or expires_at <= pg_catalog.now()
+           )
+         )
+         or (
+           state = 'sending'
+           and provider_attempt_started_at < pg_catalog.now() - interval '2 minutes'
+         )
       limit 1
     );
   $cron$

@@ -39,7 +39,7 @@ describe('clean replay appointment-status type contract', () => {
   });
 
   it('runs before the reporting migration that requires enum comparison semantics', () => {
-    expect('20260901155900').toBeLessThan('20260901160000');
+    expect(Number('20260901155900')).toBeLessThan(Number('20260901160000'));
     expect(reporting).toContain("l.appointment_status = 'showed'::public.appointment_status");
   });
 });

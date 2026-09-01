@@ -78,6 +78,8 @@ describe("WhatsApp encrypted asynchronous enqueue contract", () => {
     expect(source).toContain("keyBytes.byteLength !== 32");
     expect(asyncMigration).toContain("ciphertext text");
     expect(asyncMigration).toContain("iv text");
+    expect(asyncMigration).toContain("pg_catalog.length(ciphertext) between 16 and 32768");
+    expect(asyncMigration).toContain("pg_catalog.length(p_ciphertext) > 32768");
     expect(asyncMigration).not.toMatch(/message_body\s+text/i);
     expect(asyncMigration).not.toMatch(/plaintext\s+text/i);
   });

@@ -108,4 +108,12 @@ describe("WhatsApp asynchronous encrypted outbound worker", () => {
     expect(migration).toContain("'nvx-whatsapp-outbound-worker'");
     expect(migration).toContain("'* * * * *'");
   });
+
+  it("wakes the safety worker for queued rows as well as stale claimed and sending rows", () => {
+    expect(migration).toContain("where state = 'queued'");
+    expect(migration).toContain("claimed_at < pg_catalog.now() - interval '2 minutes'");
+    expect(migration).toContain("provider_attempt_started_at < pg_catalog.now() - interval '2 minutes'");
+    expect(migration).toContain("expires_at <= pg_catalog.now()");
+    expect(migration).not.toContain("where state = 'queued'\n        and expires_at > now()");
+  });
 });
