@@ -39,7 +39,7 @@ Deno.serve(async (req: Request) => {
     ? null
     : String(body.mode).trim();
   if (worker === "google-data-manager-export") {
-    if (mode !== null && mode !== "deliver" && mode !== "poll" && mode !== "auth_check") {
+    if (mode !== null && mode !== "deliver" && mode !== "poll") {
       return reply(422, { success: false, message: "Unsupported Google Data Manager mode" });
     }
   } else if (mode !== null) {
@@ -60,11 +60,7 @@ Deno.serve(async (req: Request) => {
 
   if (!response.ok) {
     console.error(`[revops-dispatcher] worker=${worker} status=${response.status}`);
-    return reply(502, { success: false, worker, mode, worker_status: response.status });
-  }
-
-  if (mode === "auth_check") {
-    return reply(200, { success: true, worker, mode, checked: true });
+    return reply(502, { success: false, worker, worker_status: response.status });
   }
 
   return reply(202, { success: true, worker, mode, dispatched: true });
