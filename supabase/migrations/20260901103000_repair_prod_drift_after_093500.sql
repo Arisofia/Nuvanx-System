@@ -169,9 +169,7 @@ WITH resolved AS (
         OR l.first_response_at IS NOT NULL
         OR pg_catalog.lower(coalesce(l.stage::text, '')) = 'contactado'
         THEN 'contactado'
-      WHEN l.stage IS NOT NULL 
-        AND pg_catalog.lower(pg_catalog.btrim(l.stage::text)) NOT IN ('', 'lead')
-        AND pg_catalog.lower(pg_catalog.btrim(l.stage::text)) NOT IN ('contactado', 'contacto', 'valoracion_aceptada', 'appointment', 'asistio', 'cliente', 'perdido')
+      WHEN l.stage IS NOT NULL AND pg_catalog.lower(pg_catalog.btrim(l.stage::text)) NOT IN ('', 'lead')
         THEN NULL
       ELSE 'lead'
     END AS canonical_stage,
