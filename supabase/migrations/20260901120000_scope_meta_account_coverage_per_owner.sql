@@ -57,15 +57,26 @@ SELECT
   mdi.user_id,
   mdi.clinic_id
 FROM public.meta_daily_insights mdi
-LEFT JOIN canonical_by_owner cbo
-  ON (
-    mdi.clinic_id IS NOT NULL
-    AND cbo.clinic_id = mdi.clinic_id
-  )
-  OR (
-    cbo.clinic_id IS NULL
-    AND cbo.user_id = mdi.user_id
-  )
+LEFT JOIN LATERAL (
+  SELECT candidate.canonical_account_id
+  FROM canonical_by_owner candidate
+  WHERE (
+      candidate.clinic_id IS NULL
+      AND candidate.user_id = mdi.user_id
+    )
+    OR (
+      candidate.clinic_id IS NOT NULL
+      AND candidate.clinic_id = mdi.clinic_id
+    )
+  ORDER BY
+    CASE
+      WHEN candidate.clinic_id IS NULL
+       AND candidate.user_id = mdi.user_id
+        THEN 0
+      ELSE 1
+    END
+  LIMIT 1
+) cbo ON true
 GROUP BY
   mdi.ad_account_id,
   mdi.user_id,
@@ -73,4 +84,4 @@ GROUP BY
   cbo.canonical_account_id;
 
 COMMENT ON VIEW public.vw_meta_account_coverage IS
-'Coverage by Meta ad account scoped per owning clinic/user. Canonical classification derives from that owner''s connected meta_ads integration marked metadata.canonical=true; cross-owner facts are never aggregated.';
+'Coverage by Meta ad account scoped per owning clinic/user. Exact user-scoped canonical integrations take precedence; clinic scope is the fallback. Canonical classification derives from the selected owner integration marked metadata.canonical=true; cross-owner facts are never aggregated.';
