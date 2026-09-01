@@ -38,6 +38,12 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       QUALITY_APPROVED_SHA: ${{ github.event.workflow_run.head_sha }}
+      WHATSAPP_ACCESS_TOKEN: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
+      WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
+      META_WEBHOOK_VERIFY_TOKEN: ${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}
+      META_CANONICAL_APP_SECRET: ${{ secrets.META_CANONICAL_APP_SECRET }}
+      WHATSAPP_QUEUE_KEYRING: ${{ secrets.WHATSAPP_QUEUE_KEYRING }}
+      WHATSAPP_QUEUE_ACTIVE_KEY_VERSION: ${{ secrets.WHATSAPP_QUEUE_ACTIVE_KEY_VERSION }}
       CORS_ALLOWED_ORIGINS: https://nuvanx-frontend.jenineferderas.workers.dev,https://frontend-arisofias-projects-c2217452.vercel.app,https://frontend-git-main-arisofias-projects-c2217452.vercel.app
 
     steps:
@@ -131,6 +137,14 @@ jobs:
             test -n "${SUPABASE_PROJECT_REF:-}"
             test -n "${CORS_ALLOWED_ORIGINS:-}"
             supabase secrets set CORS_ALLOWED_ORIGINS="$CORS_ALLOWED_ORIGINS" --project-ref "$SUPABASE_PROJECT_REF"
+            
+            # Sync WhatsApp & Meta secrets
+            if [ -n "${WHATSAPP_ACCESS_TOKEN:-}" ]; then supabase secrets set WHATSAPP_ACCESS_TOKEN="$WHATSAPP_ACCESS_TOKEN" --project-ref "$SUPABASE_PROJECT_REF"; fi
+            if [ -n "${WHATSAPP_PHONE_NUMBER_ID:-}" ]; then supabase secrets set WHATSAPP_PHONE_NUMBER_ID="$WHATSAPP_PHONE_NUMBER_ID" --project-ref "$SUPABASE_PROJECT_REF"; fi
+            if [ -n "${META_WEBHOOK_VERIFY_TOKEN:-}" ]; then supabase secrets set META_WEBHOOK_VERIFY_TOKEN="$META_WEBHOOK_VERIFY_TOKEN" --project-ref "$SUPABASE_PROJECT_REF"; fi
+            if [ -n "${META_CANONICAL_APP_SECRET:-}" ]; then supabase secrets set META_CANONICAL_APP_SECRET="$META_CANONICAL_APP_SECRET" --project-ref "$SUPABASE_PROJECT_REF"; fi
+            if [ -n "${WHATSAPP_QUEUE_KEYRING:-}" ]; then supabase secrets set WHATSAPP_QUEUE_KEYRING="$WHATSAPP_QUEUE_KEYRING" --project-ref "$SUPABASE_PROJECT_REF"; fi
+            if [ -n "${WHATSAPP_QUEUE_ACTIVE_KEY_VERSION:-}" ]; then supabase secrets set WHATSAPP_QUEUE_ACTIVE_KEY_VERSION="$WHATSAPP_QUEUE_ACTIVE_KEY_VERSION" --project-ref "$SUPABASE_PROJECT_REF"; fi
             supabase functions deploy dashboard --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy agent-run --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy runtime-bootstrap --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
