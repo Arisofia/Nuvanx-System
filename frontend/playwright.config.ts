@@ -1,7 +1,16 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const productionBaseURL = process.env.PRODUCTION_E2E_URL?.trim();
+const configuredProductionBaseURL = process.env.PRODUCTION_E2E_URL?.trim();
+const canonicalCiBaseURL = 'https://nuvanx-frontend.jenineferderas.workers.dev';
+
+// CI validates exactly the canonical Cloudflare production runtime. Local runs
+// may still target an explicitly supplied URL for troubleshooting.
+const productionBaseURL = process.env.CI ? canonicalCiBaseURL : configuredProductionBaseURL;
 const baseURL = productionBaseURL || 'http://localhost:5173';
+
+if (process.env.CI) {
+  process.env.PRODUCTION_E2E_URL = canonicalCiBaseURL;
+}
 
 export default defineConfig({
   testDir: './tests',
