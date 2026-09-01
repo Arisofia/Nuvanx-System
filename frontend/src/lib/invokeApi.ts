@@ -24,8 +24,8 @@ export async function invokeApi<T = unknown>(functionName: string, init?: Invoke
   const isBrowser = typeof window !== 'undefined'
   const isDevelopment = import.meta.env.DEV
   const isApiCall = functionPath.startsWith('/api/') || functionPath === '/api'
-  // Vite proxies /api locally. Vercel serves only the static frontend, so
-  // production must target the Supabase Edge Function explicitly.
+  // Vite proxies /api locally. The Cloudflare production SPA calls the governed
+  // Supabase Edge Function explicitly instead of depending on hosting rewrites.
   const url = isBrowser && isDevelopment && isApiCall
     ? functionPath
     : `${supabaseUrl}/functions/v1${functionPath}`
