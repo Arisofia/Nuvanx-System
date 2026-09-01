@@ -144,6 +144,9 @@ EXECUTE FUNCTION public.nvx_sync_default_stage_canonical();
 
 -- 5. Repair rows flattened to 'lead' by 080200. This is a legacy/debug field repair only;
 -- vw_control_centre_pipeline remains the operational Control Centre pipeline owner.
+-- Preserve explicit legacy stages (e.g., treatment) that are not mapped here by
+-- resolving nonempty, non-lead explicit stages to NULL, matching the trigger's
+-- explicit-stage branch so COALESCE(l.stage_canonical, l.stage) falls back to stage.
 WITH resolved AS (
   SELECT
     l.id AS lead_id,
@@ -169,6 +172,7 @@ WITH resolved AS (
         OR l.first_response_at IS NOT NULL
         OR pg_catalog.lower(coalesce(l.stage::text, '')) = 'contactado'
         THEN 'contactado'
+      -- Explicit stage supplied that is not recognized: leave NULL so COALESCE(l.stage_canonical, l.stage) falls back to stage
       WHEN l.stage IS NOT NULL AND pg_catalog.lower(pg_catalog.btrim(l.stage::text)) NOT IN ('', 'lead')
         THEN NULL
       ELSE 'lead'
