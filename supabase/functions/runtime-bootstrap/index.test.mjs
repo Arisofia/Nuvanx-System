@@ -20,10 +20,14 @@ describe("runtime bootstrap contract", () => {
     expect(source).toContain("verified.hubId !== EXPECTED_HUB_ID");
   });
 
-  it("requires contacts read and deal read/write scopes", () => {
-    expect(source).toContain('"crm.objects.contacts.read"');
-    expect(source).toContain('"crm.objects.deals.read"');
-    expect(source).toContain('"crm.objects.deals.write"');
+  it("requires contact and deal read/write scopes used by RevOps runtime", () => {
+    const scopesDeclaration = source.match(/const REQUIRED_SCOPES = new Set\(\[([\s\S]*?)\]\);/)?.[1] || "";
+    expect(scopesDeclaration).toContain('"crm.objects.contacts.read"');
+    expect(scopesDeclaration).toContain('"crm.objects.contacts.write"');
+    expect(scopesDeclaration).toContain('"crm.objects.deals.read"');
+    expect(scopesDeclaration).toContain('"crm.objects.deals.write"');
+    expect(source).toContain("const missingScopes = Array.from(REQUIRED_SCOPES).filter((scope) => !verified.scopes.includes(scope));");
+    expect(source).toContain("missing_scopes: missingScopes");
     expect(source).toContain("missingScopes.length");
   });
 
