@@ -6,14 +6,15 @@
 --      had stage_canonical = NULL because refresh_doctoralia_funnel was only
 --      scoped to users with existing appointment matches, leaving other sources
 --      unprocessed, and leads had no default on insert.
---   2. Adds trg_leads_default_stage_canonical so no future inserted lead can
---      ever have stage_canonical IS NULL.
+--   2. Adds trg_nvx_default_stage_canonical so newly inserted leads derive
+--      their canonical stage from evidence (won, appointment, whatsapp, etc.)
+--      or default to 'lead' for raw leads without masking explicit stages.
 --   3. Synchronizes patient_classification.funnel_status_canonical.
 --   4. Resets the open circuit breaker in control_centre_provider_cache for
---      provider='google' to 'half_open' (failure_count=0) so the next cycle
---      can immediately re-test the provider.
---   5. Hardens nvx_get_hubspot_marketing_contact_monitor() by revoking
---      EXECUTE from authenticated and restricting to service_role.
+--      provider='google' to 'half_open' while preserving threshold-level
+--      failure_count (>=3) so a failed half-open probe immediately re-opens.
+--   5. Preserves authenticated and service_role access for
+--      nvx_get_hubspot_marketing_contact_monitor() for the Control Centre.
 -- =============================================================================
 
 begin;
@@ -29,29 +30,33 @@ WITH resolved AS (
         THEN 'perdido'
       -- Converted / Won
       WHEN coalesce(l.verified_revenue, 0) > 0
-        OR lower(coalesce(l.stage::text, '')) IN ('won', 'cliente', 'convertido')
+        OR lower(coalesce(l.stage::text, '')) IN ('won', 'cliente', 'convertido', 'closed')
         THEN 'cliente'
       -- Attended appointment
       WHEN l.appointment_status::text IN ('showed', 'attended')
         OR l.attended_at IS NOT NULL
+        OR lower(coalesce(l.stage::text, '')) = 'asistio'
         THEN 'asistio'
       -- Scheduled appointment
       WHEN l.appointment_status::text IN ('scheduled')
-        OR (l.appointment_date IS NOT NULL AND l.appointment_date >= now())
+        OR lower(coalesce(l.stage::text, '')) IN ('appointment', 'valoracion_aceptada')
+        OR (l.appointment_date IS NOT NULL AND l.appointment_date >= pg_catalog.now())
         THEN 'valoracion_aceptada'
-      -- Patient responded inbound
+      -- Patient responded inbound / WhatsApp
       WHEN l.first_inbound_at IS NOT NULL
+        OR lower(coalesce(l.stage::text, '')) IN ('whatsapp', 'contacto')
         THEN 'contacto'
       -- Outbound contact initiated
       WHEN l.first_outbound_at IS NOT NULL
         OR l.first_response_at IS NOT NULL
+        OR lower(coalesce(l.stage::text, '')) = 'contactado'
         THEN 'contactado'
       -- Default for unprocessed / new leads (including doctoralia_marketing)
       ELSE 'lead'
     END AS canonical_stage,
     coalesce(l.stage::text, 'unknown') AS original_stage
   FROM public.leads l
-  WHERE l.stage_canonical IS NULL
+  WHERE (l.stage_canonical IS NULL OR l.stage_canonical = 'lead')
     AND l.deleted_at IS NULL
     AND l.merged_into_lead_id IS NULL
 )
@@ -63,9 +68,9 @@ SET
   updated_at                 = pg_catalog.now()
 FROM resolved r
 WHERE l.id = r.lead_id
-  AND l.stage_canonical IS NULL;
+  AND (l.stage_canonical IS NULL OR l.stage_canonical = 'lead');
 
--- 2. Ensure all newly inserted leads always have a non-null stage_canonical
+-- 2. Ensure newly inserted leads derive canonical stage from available evidence
 CREATE OR REPLACE FUNCTION public.nvx_sync_default_stage_canonical()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -74,9 +79,45 @@ SET search_path = ''
 AS $$
 BEGIN
   IF NEW.stage_canonical IS NULL THEN
-    NEW.stage_canonical := 'lead';
-    NEW.stage_source := coalesce(NEW.stage_source, NEW.stage, 'initial_capture');
-    NEW.stage_canonical_updated_at := pg_catalog.now();
+    NEW.stage_canonical := CASE
+      -- Lost / Perdido
+      WHEN NEW.lost_reason IS NOT NULL
+        OR lower(coalesce(NEW.stage, '')) IN ('lost', 'perdido')
+        THEN 'perdido'
+      -- Converted / Won
+      WHEN coalesce(NEW.verified_revenue, 0) > 0
+        OR lower(coalesce(NEW.stage, '')) IN ('won', 'cliente', 'convertido', 'closed')
+        THEN 'cliente'
+      -- Attended appointment
+      WHEN lower(coalesce(NEW.appointment_status, '')) IN ('showed', 'attended')
+        OR NEW.attended_at IS NOT NULL
+        OR lower(coalesce(NEW.stage, '')) = 'asistio'
+        THEN 'asistio'
+      -- Scheduled appointment
+      WHEN lower(coalesce(NEW.appointment_status, '')) IN ('scheduled')
+        OR lower(coalesce(NEW.stage, '')) IN ('appointment', 'valoracion_aceptada')
+        OR (NEW.appointment_date IS NOT NULL AND NEW.appointment_date >= pg_catalog.now())
+        THEN 'valoracion_aceptada'
+      -- Patient responded inbound / WhatsApp
+      WHEN NEW.first_inbound_at IS NOT NULL
+        OR lower(coalesce(NEW.stage, '')) IN ('whatsapp', 'contacto')
+        THEN 'contacto'
+      -- Outbound contact initiated
+      WHEN NEW.first_outbound_at IS NOT NULL
+        OR NEW.first_response_at IS NOT NULL
+        OR lower(coalesce(NEW.stage, '')) = 'contactado'
+        THEN 'contactado'
+      -- Explicit stage supplied that is not recognized: leave NULL so COALESCE(l.stage_canonical, l.stage) falls back to stage
+      WHEN NEW.stage IS NOT NULL AND lower(trim(NEW.stage)) NOT IN ('', 'lead')
+        THEN NULL
+      -- Default for raw / unprocessed leads with no advanced stage
+      ELSE 'lead'
+    END;
+
+    IF NEW.stage_canonical IS NOT NULL THEN
+      NEW.stage_source := coalesce(NEW.stage_source, NEW.stage, 'initial_capture');
+      NEW.stage_canonical_updated_at := pg_catalog.now();
+    END IF;
   END IF;
   RETURN NEW;
 END;
@@ -97,11 +138,14 @@ FROM public.leads l
 WHERE pc.lead_id = l.id
   AND pc.funnel_status_canonical IS DISTINCT FROM l.stage_canonical;
 
--- 4. Reset the Google Ads circuit breaker so the next provider refresh retries
+-- 4. Reset the Google Ads circuit breaker so the next provider refresh probes the provider.
+-- Retain a threshold-level failure count (>= 3) so that if the half-open probe fails,
+-- nvx_control_centre_provider_finish_failure immediately reopens the breaker rather than
+-- transitioning it back to 'closed'. If the probe succeeds, finish_success will clear failure_count.
 UPDATE public.control_centre_provider_cache
 SET
   breaker_state      = 'half_open',
-  failure_count      = 0,
+  failure_count      = greatest(coalesce(failure_count, 0), 3),
   breaker_open_until = NULL,
   lease_owner        = NULL,
   lease_until        = NULL,
@@ -110,10 +154,10 @@ SET
 WHERE provider = 'google'
   AND breaker_state = 'open';
 
--- 5. Revoke authenticated access from nvx_get_hubspot_marketing_contact_monitor
+-- 5. Preserve authenticated and service_role access for nvx_get_hubspot_marketing_contact_monitor
 REVOKE ALL ON FUNCTION public.nvx_get_hubspot_marketing_contact_monitor()
-  FROM PUBLIC, anon, authenticated;
+  FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.nvx_get_hubspot_marketing_contact_monitor()
-  TO service_role;
+  TO authenticated, service_role;
 
 commit;

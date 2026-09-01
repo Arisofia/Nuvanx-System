@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import { HealthFailure, parseServiceAccount } from "./parse-service-account.ts";
+
 const source = readFileSync(fileURLToPath(new URL("./index.ts", import.meta.url)), "utf8");
 const deployWorkflow = readFileSync(
   fileURLToPath(new URL("../../../.github/workflows/deploy-standalone-edge-functions.yml", import.meta.url)),
@@ -87,8 +89,48 @@ describe("Google Ads provider health contract", () => {
   });
 
   it("normalizes service account representations via parseServiceAccount", () => {
-    expect(source).toContain("function parseServiceAccount(raw: string)");
     expect(source).toContain("parseServiceAccount(SERVICE_ACCOUNT_RAW)");
-    expect(source).toContain("add(atob(value))");
+
+    const expected = {
+      client_email: "test-sa@project-123.iam.gserviceaccount.com",
+      private_key: "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQD...\n-----END PRIVATE KEY-----\n",
+    };
+    const json = JSON.stringify(expected);
+
+    // 1. Plain JSON string
+    expect(parseServiceAccount(json)).toEqual(expected);
+
+    // 2. Double-quoted and single-quoted JSON string
+    expect(parseServiceAccount(`'${json}'`)).toEqual(expected);
+    expect(parseServiceAccount(`"${json.replaceAll('"', '\\"')}"`)).toEqual(expected);
+
+    // 3. Assignment prefix form
+    expect(parseServiceAccount(`GOOGLE_ADS_SERVICE_ACCOUNT=${json}`)).toEqual(expected);
+
+    // 4. Base64 encodings (raw base64, base64: prefix, b64: prefix)
+    const b64 = Buffer.from(json).toString("base64");
+    expect(parseServiceAccount(b64)).toEqual(expected);
+    expect(parseServiceAccount(`base64:${b64}`)).toEqual(expected);
+    expect(parseServiceAccount(`b64:${b64}`)).toEqual(expected);
+
+    // 5. Escaped quotes representation
+    expect(parseServiceAccount(json.replaceAll('"', '\\"'))).toEqual(expected);
+
+    // 6. Double stringified JSON
+    expect(parseServiceAccount(JSON.stringify(json))).toEqual(expected);
+
+    // 7. Malformed input failures
+    expect(() => parseServiceAccount("")).toThrowError(HealthFailure);
+    expect(() => parseServiceAccount("")).toThrow("Google Ads service account not configured");
+
+    expect(() => parseServiceAccount("not-valid-json")).toThrowError(HealthFailure);
+    expect(() => parseServiceAccount("not-valid-json")).toThrow("Google Ads service account is malformed");
+
+    expect(() => parseServiceAccount(JSON.stringify({ client_email: "missing_private_key" }))).toThrowError(
+      HealthFailure,
+    );
+    expect(() => parseServiceAccount(JSON.stringify({ client_email: "missing_private_key" }))).toThrow(
+      "Google Ads service account is malformed",
+    );
   });
 });
