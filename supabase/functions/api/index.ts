@@ -3258,12 +3258,13 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
 }
 
 async function handleCampaignsFilter(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, resource, sub, url, sendJson } = ctx;
+  const { adminClient, userId, resource, sub, url, sendJson } = ctx;
 
   if (resource === 'dashboard' && sub === 'campaigns-filter') {
     const { since, until } = getKpiDateRange(url);
 
-    const { data, error } = await adminClient.rpc('get_campaign_report', { // Changed to get_campaign_report as per prompt
+    const { data, error } = await adminClient.rpc('get_campaign_report', {
+      p_user_id: userId,
       p_from_date: since,
       p_to_date: until
     });
@@ -7745,8 +7746,6 @@ function buildLeadAuditQuery(
       'phone_normalized,patient_id,patient_name,patient_dni,patient_phone,match_confidence,match_class,settlement_id,settlement_date,first_settlement_at,doctoralia_net,doctoralia_template_name,doc_patient_id'
     )
     .eq('lead_user_id', userId)
-    .is('deleted_at', null)
-    .is('merged_into_lead_id', null)
     .order('lead_created_at', { ascending: false })
     .limit(limit);
 

@@ -21,6 +21,7 @@ BEGIN;
 -- while rebuilding the metrics from vw_control_centre_pipeline.
 -- ---------------------------------------------------------------------------
 DROP FUNCTION IF EXISTS public.get_campaign_report(date, date, date, date);
+DROP FUNCTION IF EXISTS public.get_campaign_report(uuid, date, date, date, date);
 
 CREATE FUNCTION public.get_campaign_report(
   p_user_id uuid,
@@ -95,8 +96,8 @@ AS $$
       AND l.deleted_at IS NULL
       AND l.merged_into_lead_id IS NULL
       AND lower(btrim(COALESCE(l.source, '')::text)) <> 'doctoralia'
-      AND l.created_at >= (x.since_date || ' 00:00:00')::timestamptz AT TIME ZONE x.clinic_timezone
-      AND l.created_at < ((x.until_date || ' 00:00:00')::timestamptz + INTERVAL '1 day') AT TIME ZONE x.clinic_timezone
+      AND l.created_at >= (x.since_date || ' 00:00:00')::timestamp AT TIME ZONE x.clinic_timezone
+      AND l.created_at < ((x.until_date || ' 00:00:00')::timestamp + INTERVAL '1 day') AT TIME ZONE x.clinic_timezone
   )
   SELECT
     b.campaign_name,
@@ -113,7 +114,7 @@ AS $$
     count(DISTINCT b.id) FILTER (
       WHERE b.valuation_appointment_date IS NOT NULL
         AND (
-          lower(btrim(COALESCE(p.appointment_status, ''))) IN ('pagada', 'realizada', 'showed', 'completed')
+          b.valuation_appointment_date <= CURRENT_DATE
           OR b.is_new_client = true
         )
     )::bigint AS attended,
@@ -191,7 +192,15 @@ LANGUAGE sql
 STABLE
 SET search_path TO 'public', 'pg_catalog'
 AS $$
-  WITH base AS (
+  WITH params AS (
+    SELECT
+      COALESCE(c.timezone, 'UTC') AS clinic_timezone
+    FROM public.users u
+    LEFT JOIN public.clinics c ON c.id = u.clinic_id
+    WHERE u.id = p_user_id
+    LIMIT 1
+  ),
+  base AS (
     SELECT
       l.id,
       l.user_id,
@@ -207,11 +216,12 @@ AS $$
       p.verified_revenue
     FROM public.leads l
     JOIN public.vw_control_centre_pipeline p ON p.lead_id = l.id
+    LEFT JOIN params x ON true
     WHERE l.user_id = p_user_id
       AND l.deleted_at IS NULL
       AND l.merged_into_lead_id IS NULL
-      AND (p_from = '' OR l.created_at >= (p_from || ' 00:00:00')::timestamptz AT TIME ZONE params.clinic_timezone)
-      AND (p_to = '' OR l.created_at < ((p_to || ' 00:00:00')::timestamptz + INTERVAL '1 day') AT TIME ZONE params.clinic_timezone)
+      AND (p_from = '' OR p_from IS NULL OR l.created_at >= (p_from || ' 00:00:00')::timestamp AT TIME ZONE COALESCE(x.clinic_timezone, 'UTC'))
+      AND (p_to = '' OR p_to IS NULL OR l.created_at < ((p_to || ' 00:00:00')::timestamp + INTERVAL '1 day') AT TIME ZONE COALESCE(x.clinic_timezone, 'UTC'))
   )
   SELECT
     b.user_id,
@@ -298,10 +308,11 @@ AS $$
   WITH user_clinic AS (
     SELECT 
       u.id AS user_id,
-      c.timezone AS clinic_timezone
+      COALESCE(c.timezone, 'UTC') AS clinic_timezone
     FROM public.users u
-    JOIN public.clinics c ON c.id = u.clinic_id
+    LEFT JOIN public.clinics c ON c.id = u.clinic_id
     WHERE u.id = p_user_id
+    LIMIT 1
   ),
   lead_base AS (
     SELECT
@@ -309,23 +320,33 @@ AS $$
       COALESCE(ma.campaign_name, l.campaign_name, 'Organic / Unknown')::text AS campaign_name,
       COALESCE(ma.campaign_id, l.campaign_id)::text AS campaign_id,
       COALESCE(NULLIF(btrim(l.utm_source), ''), NULLIF(btrim(l.source::text), ''), 'unknown')::text AS source,
-      date_trunc('month', l.created_at)::date AS month_date,
+      date_trunc('month', l.created_at AT TIME ZONE COALESCE(uc.clinic_timezone, 'UTC'))::date AS month_date,
       p.is_new_client,
       COALESCE(p.verified_revenue, 0)::numeric AS verified_revenue
     FROM public.leads l
     JOIN public.vw_control_centre_pipeline p ON p.lead_id = l.id
     LEFT JOIN public.meta_attribution ma ON ma.lead_id = l.id
-    CROSS JOIN user_clinic uc
+    LEFT JOIN user_clinic uc ON true
     WHERE l.user_id = p_user_id
       AND l.deleted_at IS NULL
       AND l.merged_into_lead_id IS NULL
       AND lower(btrim(COALESCE(l.source, '')::text)) <> 'doctoralia'
-      AND (p_from = '' OR l.created_at >= (p_from || ' 00:00:00')::timestamptz AT TIME ZONE uc.clinic_timezone)
-      AND (p_to = '' OR l.created_at < ((p_to || ' 00:00:00')::timestamptz + INTERVAL '1 day') AT TIME ZONE uc.clinic_timezone)
+      AND (p_from = '' OR p_from IS NULL OR l.created_at >= (p_from || ' 00:00:00')::timestamp AT TIME ZONE COALESCE(uc.clinic_timezone, 'UTC'))
+      AND (p_to = '' OR p_to IS NULL OR l.created_at < ((p_to || ' 00:00:00')::timestamp + INTERVAL '1 day') AT TIME ZONE COALESCE(uc.clinic_timezone, 'UTC'))
       AND (
         p_source = ''
+        OR p_source IS NULL
         OR COALESCE(NULLIF(btrim(l.utm_source), ''), NULLIF(btrim(l.source::text), ''), 'unknown') = p_source
       )
+  ),
+  lead_base_with_source AS (
+    SELECT
+      lb.*,
+      CASE
+        WHEN lb.source IN ('google', 'google_ads', 'googleads', 'adwords', 'cpc') THEN 'google'
+        ELSE 'other'
+      END AS source_category
+    FROM lead_base lb
   ),
   lead_rollup AS (
     SELECT
@@ -347,18 +368,9 @@ AS $$
       round(sum(COALESCE(g.spend, 0)), 2) AS spend
     FROM public.google_ads_daily_insights g
     WHERE g.user_id = p_user_id
-      AND (p_from = '' OR g.date >= p_from::date)
-      AND (p_to = '' OR g.date <= p_to::date)
+      AND (p_from = '' OR p_from IS NULL OR g.date >= p_from::date)
+      AND (p_to = '' OR p_to IS NULL OR g.date <= p_to::date)
     GROUP BY g.campaign_id, date_trunc('month', g.date)::date
-  ),
-  lead_base_with_source AS (
-    SELECT
-      lb.*,
-      CASE
-        WHEN lb.source IN ('google', 'google_ads', 'googleads', 'adwords', 'cpc') THEN 'google'
-        ELSE 'other'
-      END AS source_category
-    FROM lead_base lb
   )
   SELECT
     r.campaign_name,
@@ -491,8 +503,8 @@ SELECT
   c.verified_revenue_crm
 FROM combined c;
 
-COMMENT ON FUNCTION public.get_campaign_report(date, date, date, date) IS
-  'Canonical period-aware campaign performance from active leads + vw_control_centre_pipeline. Legacy four-date signature retained for API compatibility.';
+COMMENT ON FUNCTION public.get_campaign_report(uuid, date, date, date, date) IS
+  'Canonical period-aware campaign performance from active leads + vw_control_centre_pipeline. User-scoped with legacy date arguments supported.';
 
 COMMENT ON FUNCTION public.get_source_comparison(uuid, text, text) IS
   'Tenant-scoped, period-aware source performance. Intended reporting SSOT; API must call this RPC rather than date-filtering the all-time vw_source_comparison aggregate.';
