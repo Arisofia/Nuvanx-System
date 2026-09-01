@@ -92,7 +92,7 @@ export default function AI() {
     setAnalysisEmpty(null)
     try {
       // Backend agent auto-fetches a CRM-side snapshot when no payload is sent,
-      // so the panel can render on mount without the client gathering data first.
+      // so the panel can render on demand without the client gathering data first.
       const data: any = await invokeApi('/api/ai/analyze-campaign', { method: 'POST', body: {} })
       if (!data?.success) throw new Error(data?.message || 'Analysis failed')
       if (data?.empty) {
@@ -160,12 +160,11 @@ export default function AI() {
     }
   }
 
-  // Auto-load every panel on mount so the UI is "connected by default" and
-  // only surfaces errors when a specific agent fails.
+  // Initial route load must stay read-only. Analysis and suggestion generation
+  // are explicit user actions because both endpoints are POST operations that
+  // may consume provider capacity or create durable agent output.
   useEffect(() => {
     const timer = setTimeout(() => {
-      void handleAnalyze()
-      void handleFetchSuggestions()
       void handleFetchOutputs()
       void handleFetchAiStatus()
     }, 0)
@@ -325,7 +324,7 @@ export default function AI() {
                 <p className="text-sm text-[#D9534F] mb-4">{suggestionsError}</p>
               )}
               {suggestions.length === 0 && !suggestionsLoading && !suggestionsError && (
-                <p className="text-muted text-sm py-4 text-center">Aún no hay sugerencias. El agente las generará cuando tengas leads en el CRM.</p>
+                <p className="text-muted text-sm py-4 text-center">Aún no hay sugerencias. Pulsa refrescar para generarlas cuando las necesites.</p>
               )}
               {suggestions.length === 0 && suggestionsLoading && (
                 <p className="text-muted text-sm py-4 text-center">El agente está preparando sugerencias…</p>
