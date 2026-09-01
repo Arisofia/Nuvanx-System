@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Response } from '@playwright/test';
 
 const CONTROL_CENTRE_ROUTES = [
   { path: '/dashboard', label: 'Centro', heading: 'Centro operativo de la clínica' },
@@ -14,6 +14,12 @@ const CONTROL_CENTRE_ROUTES = [
   { path: '/ai', label: 'Asistente IA', heading: 'Capa IA' },
 ] as const;
 
+const DISPOSABLE_META_PROVIDER_PATHS = new Set([
+  '/functions/v1/api/meta/campaigns',
+  '/functions/v1/api/meta/insights',
+  '/functions/v1/api/dashboard/meta-trends',
+]);
+
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -21,6 +27,29 @@ function escapeRegExp(value: string) {
 function isSupabaseUrl(url: string): boolean {
   try {
     return new URL(url).hostname.endsWith('.supabase.co');
+  } catch {
+    return false;
+  }
+}
+
+function isDisposableE2EIdentity(email: string): boolean {
+  return /^e2e-ci-\d+-\d+@nuvanx\.com$/i.test(email);
+}
+
+async function isExpectedDisposableProviderState(response: Response, email: string): Promise<boolean> {
+  if (!isDisposableE2EIdentity(email) || response.status() !== 400) return false;
+
+  let path = '';
+  try {
+    path = new URL(response.url()).pathname;
+  } catch {
+    return false;
+  }
+  if (!DISPOSABLE_META_PROVIDER_PATHS.has(path)) return false;
+
+  try {
+    const body = await response.json() as { message?: unknown };
+    return body?.message === 'Meta Ads not connected';
   } catch {
     return false;
   }
@@ -40,6 +69,7 @@ test('authenticated Control Centre routes load without transport or browser-poli
   const networkFailures: string[] = [];
   const httpErrors: string[] = [];
   const policyErrors: string[] = [];
+  const pendingResponseChecks: Promise<void>[] = [];
   let navigationAbortWindowUntil = 0;
 
   const beginNavigation = () => {
@@ -47,6 +77,12 @@ test('authenticated Control Centre routes load without transport or browser-poli
     // the next route is committed. Only aborts inside this bounded transition
     // window are tolerated; timeouts/application aborts outside it are fatal.
     navigationAbortWindowUntil = Date.now() + 3_000;
+  };
+
+  const flushResponseChecks = async () => {
+    while (pendingResponseChecks.length > 0) {
+      await Promise.all(pendingResponseChecks.splice(0));
+    }
   };
 
   const resetRuntimeEvidence = () => {
@@ -58,12 +94,13 @@ test('authenticated Control Centre routes load without transport or browser-poli
 
   const assertRuntimeHealthy = async (label: string) => {
     await page.waitForTimeout(1_250);
+    await flushResponseChecks();
     await expect(page.getByText(/error inesperado/i)).toHaveCount(0);
     await expect(page.getByText(/ha ocurrido un error cargando esta sección/i)).toHaveCount(0);
 
     expect(pageErrors, `${label} emitted page runtime errors`).toEqual([]);
     expect(networkFailures, `${label} emitted non-navigation Supabase request failures`).toEqual([]);
-    expect(httpErrors, `${label} received Supabase HTTP 4xx/5xx responses`).toEqual([]);
+    expect(httpErrors, `${label} received unexpected Supabase HTTP 4xx/5xx responses`).toEqual([]);
     expect(policyErrors, `${label} emitted CORS/CSP policy errors`).toEqual([]);
     resetRuntimeEvidence();
   };
@@ -98,9 +135,16 @@ test('authenticated Control Centre routes load without transport or browser-poli
     if (response.status() >= 400) {
       console.log(`[HTTP ${response.status()}] ${response.url()}`);
     }
-    if (isSupabaseUrl(response.url()) && response.status() >= 400) {
+    if (!isSupabaseUrl(response.url()) || response.status() < 400) return;
+
+    const check = (async () => {
+      if (await isExpectedDisposableProviderState(response, email)) {
+        console.log(`[EXPECTED PROVIDER STATE] ${response.status()} ${response.url()} - disposable E2E identity has no user-owned Meta credential`);
+        return;
+      }
       httpErrors.push(`${response.status()} ${response.url()}`);
-    }
+    })();
+    pendingResponseChecks.push(check);
   });
 
   beginNavigation();
