@@ -44,9 +44,11 @@ describe('NUVANX Control Centre operations contract', () => {
     expect(hook).toContain('return new Map()')
     expectOrdered(
       hook,
-      'const pipelineRows = await fetchCanonicalPipeline()',
-      'const rawById = await fetchOptionalLeadMetadata()',
+      'const pipelineRows = await fetchCanonicalPipeline(context?.signal)',
+      'const rawById = await fetchOptionalLeadMetadata(context?.signal)',
     )
+    expect(hook).toContain('query.abortSignal(signal)')
+    expect(hook).toContain('if (context?.signal?.aborted || (context && !context.active)) return')
     expect(hook).not.toContain('resolveCanonicalStage')
     expect(hook).not.toContain('apiUpdates.stage = apiUpdates.status')
     expect(hook).not.toContain('Promise.all([')
@@ -61,6 +63,21 @@ describe('NUVANX Control Centre operations contract', () => {
     expect(pipeline).toContain("{ id: 'control_scheduled', label: '1er control programado' }")
     expect(pipeline).toContain("{ id: 'client_completed', label: 'Cliente nuevo · ciclo completado' }")
     expect(pipeline).not.toContain("{ id: 'won', label: 'Ganado' }")
+  })
+
+  it('cancels canonical and optional CRM requests cleanly when the view unmounts', () => {
+    const hook = read('../src/hooks/useLeads.ts')
+    expect(hook).toContain('const controller = new AbortController()')
+    expect(hook).toContain('fetchCanonicalPipeline(context?.signal)')
+    expect(hook).toContain('query.abortSignal(signal)')
+    expect(hook).toContain("invokeApi<{ leads?: Record<string, unknown>[] }>('/api/leads', { signal })")
+    expect(hook).toContain('if (signal?.aborted) return new Map()')
+    expectOrdered(
+      hook,
+      'context.active = false',
+      'controller.abort()',
+      'clearTimeout(timer)',
+    )
   })
 
   it('fails visibly on unavailable provider envelopes and refreshes across day boundaries', () => {
