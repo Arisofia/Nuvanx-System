@@ -167,6 +167,19 @@ async function accessToken(): Promise<string> {
   throw new Error("Data Manager OAuth configuration missing");
 }
 
+async function dataManagerAuthCheck(): Promise<{ scopeOk: boolean }> {
+  const token = await accessToken();
+  const response = await fetch(
+    `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(token)}`,
+    { method: "GET", signal: AbortSignal.timeout(15_000) },
+  );
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error("Data Manager OAuth token validation failed");
+  const scopes = String(payload?.scope || "").split(/\s+/).filter(Boolean);
+  if (!scopes.includes(DATA_MANAGER_SCOPE)) throw new Error("Data Manager OAuth scope missing");
+  return { scopeOk: true };
+}
+
 async function customerId(admin: any): Promise<string> {
   const envId = digits(CUSTOMER_ID_ENV);
   if (envId) return envId;
@@ -339,14 +352,35 @@ Deno.serve(async (req: Request) => {
   if (!(await requireServiceRole(req))) return json({ success: false, message: "Forbidden" }, 403);
 
   const body = await req.json().catch(() => ({}));
-  const mode = body?.mode === "poll" ? "poll" : "deliver";
+  const requestedMode = String(body?.mode || "deliver");
+  const mode = requestedMode === "poll" || requestedMode === "auth_check" ? requestedMode : "deliver";
   const requestedLimit = Number(body?.limit || DEFAULT_LIMIT);
   const limit = Math.max(1, Math.min(MAX_LIMIT, Number.isFinite(requestedLimit) ? Math.trunc(requestedLimit) : DEFAULT_LIMIT));
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
 
   try {
     const results = [];
-    if (mode === "poll") {
+    if (mode === "auth_check") {
+      try {
+        const auth = await dataManagerAuthCheck();
+        return json({
+          success: true,
+          mode,
+          auth_ready: true,
+          required_scope: DATA_MANAGER_SCOPE,
+          scope_ok: auth.scopeOk,
+        });
+      } catch (error: any) {
+        const message = String(error?.message || "Data Manager authentication unavailable").slice(0, 200);
+        return json({
+          success: false,
+          mode,
+          configuration_required: true,
+          required_scope: DATA_MANAGER_SCOPE,
+          message,
+        }, 503);
+      }
+    } else if (mode === "poll") {
       const { data: rows, error } = await admin
         .from("google_data_manager_outbox")
         .select("id,provider_request_id,delivery_status")
