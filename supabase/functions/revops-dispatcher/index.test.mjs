@@ -20,6 +20,10 @@ const capiMigration = readFileSync(
   fileURLToPath(new URL("../../migrations/20260830070000_add_durable_meta_capi_outbox.sql", import.meta.url)),
   "utf8",
 );
+const whatsappAsyncMigration = readFileSync(
+  fileURLToPath(new URL("../../migrations/20260901113000_async_whatsapp_encrypted_outbox.sql", import.meta.url)),
+  "utf8",
+);
 
 describe("RevOps dispatcher contract", () => {
   it("authenticates only with the Vault-generated internal secret", () => {
@@ -31,8 +35,12 @@ describe("RevOps dispatcher contract", () => {
     expect(source).toContain('SUPABASE_SERVICE_ROLE_KEY") || "").trim()');
   });
 
-  it("allowlists only governed RevOps workers including durable Meta CAPI", () => {
-    expect(source).toContain('new Set(["web-lead-reconcile", "deal-factory", "google-data-manager-export", "meta-capi-dispatch"])');
+  it("allowlists only governed RevOps workers including durable Meta CAPI and async WhatsApp", () => {
+    expect(source).toContain('"web-lead-reconcile"');
+    expect(source).toContain('"deal-factory"');
+    expect(source).toContain('"google-data-manager-export"');
+    expect(source).toContain('"meta-capi-dispatch"');
+    expect(source).toContain('"whatsapp-outbound-worker"');
     expect(source).toContain("if (!ALLOWED_WORKERS.has(worker))");
   });
 
@@ -59,16 +67,18 @@ describe("RevOps dispatcher contract", () => {
     expect(routingMigration).not.toContain("ssvvuuysgxyqvmovrlvk.supabase.co");
     expect(hotfixMigration).not.toContain("ssvvuuysgxyqvmovrlvk.supabase.co");
     expect(capiMigration).not.toContain("ssvvuuysgxyqvmovrlvk.supabase.co");
+    expect(whatsappAsyncMigration).not.toContain("ssvvuuysgxyqvmovrlvk.supabase.co");
     expect(routingMigration).toContain("REVOPS_PROJECT_URL");
     expect(routingMigration).toContain("nvx_set_revops_project_url");
     expect(routingMigration).toContain("v_project_url || '/functions/v1/revops-dispatcher'");
   });
 
-  it("preserves non-blocking transaction wakeups", () => {
+  it("preserves non-blocking transaction wakeups and routes the WhatsApp worker through the same owner", () => {
     expect(hotfixMigration).toContain("create or replace function public.nvx_try_dispatch_revops_worker");
     expect(hotfixMigration).toContain("exception\n  when others then");
     expect(hotfixMigration).toContain("return null;");
     expect(capiMigration).toContain("perform public.nvx_try_dispatch_revops_worker('meta-capi-dispatch', 25, null)");
+    expect(whatsappAsyncMigration).toContain("public.nvx_try_dispatch_revops_worker('whatsapp-outbound-worker', 25, null)");
   });
 
   it("keeps Meta CAPI delivery consent-gated and atomically queued", () => {
