@@ -113,6 +113,43 @@ test('authenticated Control Centre routes load without runtime or server errors'
     }
   });
 
+  // The AI page intentionally auto-loads analysis and suggestions with POSTs.
+  // The production smoke is a read-only health check, so intercept only those
+  // mutating AI requests while keeping GET status/history and every other
+  // production dependency real and fail-closed.
+  await page.route('**/api/ai/**', async route => {
+    const request = route.request();
+    if (request.method() !== 'POST') {
+      await route.continue();
+      return;
+    }
+
+    const pathname = new URL(request.url()).pathname;
+    if (pathname.endsWith('/api/ai/analyze-campaign')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, empty: true, message: 'E2E read-only smoke: analysis disabled.' }),
+      });
+      return;
+    }
+
+    if (pathname.endsWith('/api/ai/suggestions')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, suggestions: [] }),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, content: '', result: '' }),
+    });
+  });
+
   await page.goto('/login', { waitUntil: 'domcontentloaded' });
   await page.locator('#login-email').fill(email);
   await page.locator('#login-password').fill(password);
