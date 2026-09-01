@@ -10,6 +10,20 @@ const NATIVE_SYNC_GRACE_MS = 2 * 60 * 60 * 1000;
 const DEFAULT_LOOKBACK_DAYS = 7;
 const MAX_ROWS = 100;
 
+const ENRICHMENT_PROPERTIES = [
+  "email",
+  "phone",
+  "nvx_lead_id",
+  "nvx_utm_source",
+  "nvx_utm_medium",
+  "nvx_utm_campaign",
+  "nvx_utm_content",
+  "nvx_attribution_captured_at",
+  "nombre",
+  "qu_te_gustara_mejorar_principalmente",
+  "cundo_prefieres_que_te_contactemos",
+] as const;
+
 function reply(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), {
     status,
@@ -92,22 +106,14 @@ async function hubspotRequest(token: string, method: string, path: string, body?
   return payload;
 }
 
+function enrichmentPropertiesQuery(): string {
+  return ENRICHMENT_PROPERTIES.join(",");
+}
+
 async function searchHubspotByEmail(token: string, email: string) {
   const payload = await hubspotRequest(token, "POST", "/crm/v3/objects/contacts/search", {
     filterGroups: [{ filters: [{ propertyName: "email", operator: "EQ", value: email }] }],
-    properties: [
-      "email",
-      "phone",
-      "nvx_lead_id",
-      "nvx_utm_source",
-      "nvx_utm_medium",
-      "nvx_utm_campaign",
-      "nvx_utm_content",
-      "nvx_attribution_captured_at",
-      "nombre",
-      "qu_te_gustara_mejorar_principalmente",
-      "cundo_prefieres_que_te_contactemos",
-    ],
+    properties: [...ENRICHMENT_PROPERTIES],
     limit: 2,
   });
   return Array.isArray(payload?.results) ? payload.results : [];
@@ -118,7 +124,7 @@ async function hubspotContactById(token: string, contactId: string) {
   return await hubspotRequest(
     token,
     "GET",
-    `/crm/v3/objects/contacts/${contactId}?properties=email,nvx_lead_id&archived=false`,
+    `/crm/v3/objects/contacts/${contactId}?properties=${enrichmentPropertiesQuery()}&archived=false`,
   );
 }
 
@@ -144,7 +150,7 @@ function desiredProperties(lead: any, attr: any): Record<string, string> {
   put("nvx_utm_campaign", lead?.utm_campaign || lead?.campaign_name || attr?.campaign_id);
   put("nvx_utm_content", lead?.utm_content || attr?.ad_id);
   put("nvx_attribution_captured_at", attr?.captured_at || lead?.created_at_meta);
-  put("qu_te_gustara_mejor_principalmente", improve);
+  put("qu_te_gustara_mejorar_principalmente", improve);
   put("cundo_prefieres_que_te_contactemos", contactWhen);
   return props;
 }
@@ -172,13 +178,21 @@ async function linkLocalLead(admin: any, lead: any, contactId: string) {
   if (error) throw new Error("Local HubSpot lineage update failed");
 }
 
-async function syncExistingContact(admin: any, token: string, lead: any, contact: any, desired: Record<string, string>) {
+async function patchMissingContactProperties(token: string, contact: any, desired: Record<string, string>): Promise<string[]> {
   const contactId = String(contact?.id || "").trim();
   if (!/^\d+$/.test(contactId)) throw new Error("Invalid HubSpot contact id");
   const patch = missingOnly(contact?.properties || {}, desired);
-  if (Object.keys(patch).length) {
+  const patchedProperties = Object.keys(patch).sort();
+  if (patchedProperties.length) {
     await hubspotRequest(token, "PATCH", `/crm/v3/objects/contacts/${contactId}`, { properties: patch });
   }
+  return patchedProperties;
+}
+
+async function syncExistingContact(admin: any, token: string, lead: any, contact: any, desired: Record<string, string>) {
+  const contactId = String(contact?.id || "").trim();
+  if (!/^\d+$/.test(contactId)) throw new Error("Invalid HubSpot contact id");
+  await patchMissingContactProperties(token, contact, desired);
   await linkLocalLead(admin, lead, contactId);
   return contactId;
 }
@@ -225,7 +239,7 @@ Deno.serve(async (req: Request) => {
         .in("id", leadIds)
       : { data: [], error: null };
     if (leadError) throw leadError;
-    const leadMap = new Map((leads || []).map((lead: any) => [String(lead.id), lead]));
+    const leadMap = new Map<string, any>((leads || []).map((lead: any) => [String(lead.id), lead]));
 
     const results: any[] = [];
     for (const attr of attrs || []) {
@@ -234,19 +248,36 @@ Deno.serve(async (req: Request) => {
         results.push({ leadgen_id: attr.leadgen_id, outcome: "missing_local_lead" });
         continue;
       }
+
+      const desired = desiredProperties(lead, attr);
+
       if (lead.hubspot_contact_id) {
         const contactId = String(lead.hubspot_contact_id);
-        if (verifyLinked) {
-          const contact = await hubspotContactById(token, contactId);
-          if (String(contact?.id || "") !== contactId) throw new Error("Linked HubSpot contact verification mismatch");
+        const contact = await hubspotContactById(token, contactId);
+        if (String(contact?.id || "") !== contactId) throw new Error("Linked HubSpot contact verification mismatch");
+
+        if (mode === "sync") {
+          const patchedProperties = await patchMissingContactProperties(token, contact, desired);
+          results.push({
+            leadgen_id: attr.leadgen_id,
+            hubspot_contact_id: contactId,
+            outcome: patchedProperties.length ? "linked_enriched" : "already_linked",
+            patched_properties: patchedProperties,
+          });
+        } else if (verifyLinked) {
           results.push({ leadgen_id: attr.leadgen_id, hubspot_contact_id: contactId, outcome: "linked_verified" });
         } else {
-          results.push({ leadgen_id: attr.leadgen_id, hubspot_contact_id: contactId, outcome: "already_linked" });
+          const missingProperties = Object.keys(missingOnly(contact?.properties || {}, desired)).sort();
+          results.push({
+            leadgen_id: attr.leadgen_id,
+            hubspot_contact_id: contactId,
+            outcome: missingProperties.length ? "would_enrich_linked" : "already_linked",
+            missing_properties: missingProperties,
+          });
         }
         continue;
       }
 
-      const desired = desiredProperties(lead, attr);
       const email = normalizeEmail(desired.email);
       if (!email) {
         results.push({ leadgen_id: attr.leadgen_id, outcome: "missing_email" });
@@ -305,6 +336,8 @@ Deno.serve(async (req: Request) => {
       processed: results.length,
       already_linked: results.filter((row) => row.outcome === "already_linked").length,
       linked_verified: results.filter((row) => row.outcome === "linked_verified").length,
+      linked_enriched: results.filter((row) => row.outcome === "linked_enriched").length,
+      would_enrich_linked: results.filter((row) => row.outcome === "would_enrich_linked").length,
       linked_existing: results.filter((row) => row.outcome === "linked_existing").length,
       linked_race: results.filter((row) => row.outcome === "linked_race").length,
       created_fallback: results.filter((row) => row.outcome === "created_fallback").length,
