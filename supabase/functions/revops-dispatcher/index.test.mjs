@@ -48,23 +48,18 @@ describe("RevOps dispatcher contract", () => {
     expect(source).toContain('message: "Worker mode is only valid for Google Data Manager"');
   });
 
-  it("returns only bounded safe auth-check diagnostics", () => {
-    expect(source).toContain("function safeAuthCheckResult");
-    expect(source).toContain('payload?.auth_ready === true');
-    expect(source).toContain('payload?.configuration_required === true');
-    expect(source).toContain('payload?.scope_ok === true');
-    expect(source).toContain('payload.required_scope.slice(0, 200)');
-    expect(source).toContain('payload.message.slice(0, 200)');
+  it("never forwards worker response bodies or credentials", () => {
     expect(source).not.toMatch(/console\.(?:log|error)\([^\n]*(?:expected|SERVICE_ROLE)/);
     expect(source).not.toContain("await response.text()");
-    expect(source).not.toContain("payload?.access_token");
-    expect(source).not.toContain("payload?.refresh_token");
+    expect(source).not.toContain("await response.json()");
+    expect(source).not.toContain("access_token");
+    expect(source).not.toContain("refresh_token");
   });
 
-  it("preserves existing asynchronous deliver/poll response semantics", () => {
+  it("returns only dispatcher-owned status for auth_check and preserves deliver/poll semantics", () => {
+    expect(source).toContain('return reply(200, { success: true, worker, mode, checked: true })');
+    expect(source).toContain('return reply(502, { success: false, worker, mode, worker_status: response.status })');
     expect(source).toContain('return reply(202, { success: true, worker, mode, dispatched: true })');
-    expect(source).toContain('return reply(200, { success: true, worker, mode, checked: true, ...safe })');
-    expect(source).toContain('return reply(502, { success: false, worker, mode, worker_status: response.status, ...safe })');
   });
 
   it("never hardcodes the production Supabase project into migrations", () => {
