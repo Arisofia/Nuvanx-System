@@ -36,7 +36,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Prove Cloudflare zone ownership
+      - name: Prove Cloudflare custom-domain binding
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -45,43 +45,6 @@ jobs:
           set -euo pipefail
           test -n "$CLOUDFLARE_API_TOKEN" || { echo 'CLOUDFLARE_API_TOKEN missing' >&2; exit 1; }
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo 'CLOUDFLARE_ACCOUNT_ID missing' >&2; exit 1; }
-          curl --fail-with-body --silent --show-error --get \
-            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-            --data-urlencode 'name=nuvanx.com' \
-            --data-urlencode "account.id=${CLOUDFLARE_ACCOUNT_ID}" \
-            'https://api.cloudflare.com/client/v4/zones' \
-            > /tmp/cloudflare-zones.json
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          payload = json.loads(Path('/tmp/cloudflare-zones.json').read_text())
-          if not payload.get('success'):
-              print('CLOUDFLARE_ZONE_API=FAIL')
-              for error in payload.get('errors', []):
-                  print(f"Cloudflare API error: {error.get('code')} {error.get('message')}")
-              raise SystemExit(1)
-          matches = [z for z in payload.get('result', []) if z.get('name') == 'nuvanx.com']
-          print(f'CLOUDFLARE_ZONE_MATCHES={len(matches)}')
-          for zone in matches:
-              print('CLOUDFLARE_ZONE=' + '|'.join([
-                  str(zone.get('name', '')),
-                  str(zone.get('status', '')),
-                  str(zone.get('type', '')),
-              ]))
-          if len(matches) != 1:
-              raise SystemExit('nuvanx.com is not visible exactly once in the configured Cloudflare account')
-          if matches[0].get('status') != 'active':
-              raise SystemExit('nuvanx.com is visible but not active in Cloudflare')
-          print('CLOUDFLARE_ZONE_OWNERSHIP=PASS')
-          PY
-
-      - name: Prove Cloudflare custom-domain binding
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        shell: bash
-        run: |
-          set -euo pipefail
           curl --fail-with-body --silent --show-error \
             -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
             "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/domains?hostname=app.nuvanx.com" \
@@ -138,7 +101,7 @@ jobs:
               echo '--- response headers ---' >&2
               sed -n '1,40p' "$headers" >&2
               echo '--- response body preview ---' >&2
-              head -c 1200 "$body" >&2 || true
+              head -c 1200 "$body" >&2
               echo >&2
               exit 1
             fi
