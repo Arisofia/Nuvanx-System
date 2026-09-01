@@ -287,11 +287,17 @@ Deno.serve(async (req: Request) => {
     }
 
     const ledgerTracked = await finalizeSend(admin, row, "accepted", messageId, waRes.status, null, null);
-    await finishPayload(admin, row, !ledgerTracked);
+    // Only destroy the payload if ledger finalization succeeded. If it failed,
+    // preserve the payload for manual reconciliation instead of destroying it
+    // while the request ledger remains reserved.
     if (ledgerTracked) {
+      await finishPayload(admin, row, false);
       accepted += 1;
       await trackFirstHumanResponse(admin, row, messageId);
     } else {
+      // Ledger finalization failed after provider accepted the message.
+      // Preserve the payload for manual reconciliation instead of destroying it.
+      // The request ledger remains reserved, and the payload remains claimable.
       unknown += 1;
     }
   }
