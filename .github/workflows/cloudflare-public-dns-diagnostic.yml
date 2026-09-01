@@ -24,14 +24,18 @@ jobs:
           echo '=== NS nuvanx.com ==='
           dig +short NS nuvanx.com
           echo '=== CNAME app.nuvanx.com ==='
-          dig +short CNAME app.nuvanx.com || true
+          dig +short CNAME app.nuvanx.com
           echo '=== A app.nuvanx.com ==='
-          dig +short A app.nuvanx.com || true
+          dig +short A app.nuvanx.com
           echo '=== AAAA app.nuvanx.com ==='
-          dig +short AAAA app.nuvanx.com || true
+          dig +short AAAA app.nuvanx.com
           echo '=== HTTPS app.nuvanx.com ==='
-          curl --silent --show-error --max-time 15 --dump-header /tmp/app-headers --output /tmp/app-body --write-out 'HTTP=%{http_code}\nEFFECTIVE_URL=%{url_effective}\nREMOTE_IP=%{remote_ip}\n' https://app.nuvanx.com/ || true
-          sed -n '1,40p' /tmp/app-headers || true
+          curl --fail-with-body --silent --show-error --max-time 15 \
+            --dump-header /tmp/app-headers \
+            --output /tmp/app-body \
+            --write-out 'HTTP=%{http_code}\nEFFECTIVE_URL=%{url_effective}\nREMOTE_IP=%{remote_ip}\n' \
+            https://app.nuvanx.com/
+          sed -n '1,40p' /tmp/app-headers
           echo '=== BODY PREVIEW ==='
-          head -c 800 /tmp/app-body || true
+          head -c 800 /tmp/app-body
           echo
