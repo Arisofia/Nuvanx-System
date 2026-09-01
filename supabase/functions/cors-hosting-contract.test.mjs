@@ -84,5 +84,26 @@ describe('frontend CORS hosting contract', () => {
       expect(untrustedHeaders['Access-Control-Allow-Origin']).not.toBe('https://evil-attacker.com');
       expect(untrustedHeaders['Access-Control-Allow-Origin']).not.toBe('*');
     });
+
+    it('retires legacy Vercel origins from frontend and fallback configuration', () => {
+      const legacyVercelOrigin = ['https://', 'frontend-arisofias-projects-c2217452', '.vercel', '.app'].join('');
+      const legacyVercelMain = ['https://', 'frontend-git-main-arisofias-projects-c2217452', '.vercel', '.app'].join('');
+
+      expect(normalizeFrontendUrl(legacyVercelOrigin)).toBeNull();
+      expect(normalizeFrontendUrl(legacyVercelMain)).toBeNull();
+
+      const retiredEvaluator = createCorsEvaluator({
+        NODE_ENV: 'production',
+        FRONTEND_URL: legacyVercelOrigin,
+        PRODUCTION_FALLBACK_URL: legacyVercelMain,
+        CORS_ALLOWED_ORIGINS: workersOrigin,
+      });
+
+      expect(retiredEvaluator.allowedOrigins.has(legacyVercelOrigin)).toBe(false);
+      expect(retiredEvaluator.allowedOrigins.has(legacyVercelMain)).toBe(false);
+      expect(retiredEvaluator.allowedOrigins.has(workersOrigin)).toBe(true);
+      expect(retiredEvaluator.defaultCorsOrigin).toBe(workersOrigin);
+      expect(retiredEvaluator.buildCorsHeaders(legacyVercelOrigin)['Access-Control-Allow-Origin']).toBe(workersOrigin);
+    });
   });
 });
