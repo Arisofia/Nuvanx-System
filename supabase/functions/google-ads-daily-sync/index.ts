@@ -6,6 +6,9 @@ const SUPABASE_URL = (Deno.env.get("SUPABASE_URL") || "").trim();
 const SERVICE_ROLE = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
 const ENCRYPTION_KEY = (Deno.env.get("ENCRYPTION_KEY") || "").trim();
 const SERVICE_ACCOUNT_RAW = (Deno.env.get("GOOGLE_ADS_SERVICE_ACCOUNT") || "").trim();
+const OAUTH_CLIENT_ID = (Deno.env.get("GOOGLE_ADS_CLIENT_ID") || "").trim();
+const OAUTH_CLIENT_SECRET = (Deno.env.get("GOOGLE_ADS_CLIENT_SECRET") || "").trim();
+const OAUTH_REFRESH_TOKEN = (Deno.env.get("GOOGLE_ADS_REFRESH_TOKEN") || "").trim();
 const LOGIN_CUSTOMER_ID_ENV = (Deno.env.get("GOOGLE_ADS_LOGIN_CUSTOMER_ID") || "").replace(/\D/g, "");
 const API_VERSION = "v25";
 const PAGE_SIZE = 1000;
@@ -13,6 +16,7 @@ const MAX_PAGES = 50;
 const MAX_RANGE_DAYS = 92;
 
 type FailureKind = "request" | "configuration" | "oauth" | "provider" | "persistence";
+type GoogleAuth = { token: string; mode: "oauth_refresh" | "service_account" };
 
 class SyncFailure extends Error {
   kind: FailureKind;
@@ -151,7 +155,7 @@ function pemBytes(pem: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
-async function googleAccessToken(serviceAccount: Record<string, any>): Promise<string> {
+async function serviceAccountAccessToken(serviceAccount: Record<string, any>): Promise<string> {
   const email = String(serviceAccount.client_email || "").trim();
   const tokenUri = String(serviceAccount.token_uri || "https://oauth2.googleapis.com/token").trim();
   const privateKey = String(serviceAccount.private_key || "");
@@ -178,13 +182,43 @@ async function googleAccessToken(serviceAccount: Record<string, any>): Promise<s
   const response = await fetch(tokenUri, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion }).toString(),
+    body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth-type:jwt-bearer", assertion }).toString(),
     signal: AbortSignal.timeout(20_000),
   });
   const tokenPayload = await response.json().catch(() => ({}));
   const token = String(tokenPayload?.access_token || "").trim();
-  if (!response.ok || !token) throw new SyncFailure("oauth", 424, `Google OAuth failed ${response.status}`);
+  if (!response.ok || !token) throw new SyncFailure("oauth", 424, `Google service-account OAuth failed ${response.status}`);
   return token;
+}
+
+async function oauthRefreshAccessToken(): Promise<string> {
+  const body = new URLSearchParams({
+    client_id: OAUTH_CLIENT_ID,
+    client_secret: OAUTH_CLIENT_SECRET,
+    refresh_token: OAUTH_REFRESH_TOKEN,
+    grant_type: "refresh_token",
+  });
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body.toString(),
+    signal: AbortSignal.timeout(20_000),
+  });
+  const payload = await response.json().catch(() => ({}));
+  const token = String(payload?.access_token || "").trim();
+  if (!response.ok || !token) throw new SyncFailure("oauth", 424, `Google OAuth refresh failed ${response.status}`);
+  return token;
+}
+
+async function resolveGoogleAuth(): Promise<GoogleAuth> {
+  const hasAnyOAuth = Boolean(OAUTH_CLIENT_ID || OAUTH_CLIENT_SECRET || OAUTH_REFRESH_TOKEN);
+  const hasAllOAuth = Boolean(OAUTH_CLIENT_ID && OAUTH_CLIENT_SECRET && OAUTH_REFRESH_TOKEN);
+  if (hasAnyOAuth) {
+    if (!hasAllOAuth) throw new SyncFailure("configuration", 500, "Google Ads OAuth configuration is incomplete");
+    return { token: await oauthRefreshAccessToken(), mode: "oauth_refresh" };
+  }
+  const serviceAccount = parseServiceAccount(SERVICE_ACCOUNT_RAW);
+  return { token: await serviceAccountAccessToken(serviceAccount), mode: "service_account" };
 }
 
 function providerError(status: number, payload: unknown): SyncFailure {
@@ -278,8 +312,8 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const serviceAccount = parseServiceAccount(SERVICE_ACCOUNT_RAW);
-    const accessToken = await googleAccessToken(serviceAccount);
+    const googleAuth = await resolveGoogleAuth();
+    const accessToken = googleAuth.token;
     const requestedCustomerId = digits(body.customer_id || "");
     const { data: integrations, error: integrationError } = await admin
       .from("integrations")
@@ -395,6 +429,7 @@ Deno.serve(async (req: Request) => {
       success,
       provider: "google_ads",
       api_version: API_VERSION,
+      auth_mode: googleAuth.mode,
       date_range: range,
       accounts: summaries,
       failures,
