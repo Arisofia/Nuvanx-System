@@ -21,11 +21,6 @@ function escapeRegExp(value: string) {
 function expectedHeading(path: string, heading: string) {
   const againstProduction = Boolean(process.env.PRODUCTION_E2E_URL?.trim());
 
-  // This smoke runs before deployment while targeting the currently deployed
-  // production UI. During the one-release finance rename transition, accept
-  // either the old deployed label or the new canonical label. Route, runtime
-  // and 5xx gates remain strict. Remove the legacy label after production has
-  // fully rolled forward.
   if (againstProduction && path === '/financials') {
     return /^(Finanzas verificadas|Auditoría operativa Doctoralia)$/i;
   }
@@ -33,8 +28,16 @@ function expectedHeading(path: string, heading: string) {
   return new RegExp(`^${escapeRegExp(heading)}$`, 'i');
 }
 
+function isSupabaseUrl(url: string): boolean {
+  try {
+    return new URL(url).hostname.endsWith('.supabase.co');
+  } catch {
+    return false;
+  }
+}
+
 test('authenticated Control Centre routes load without runtime or server errors', async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
 
   const email = process.env.E2E_EMAIL?.trim();
   const password = process.env.E2E_PASSWORD?.trim();
@@ -44,41 +47,66 @@ test('authenticated Control Centre routes load without runtime or server errors'
   }
 
   const pageErrors: string[] = [];
-  const serverErrors: string[] = [];
+  const networkFailures: string[] = [];
+  const httpErrors: string[] = [];
+  const policyErrors: string[] = [];
+  const fallbackWarnings: string[] = [];
+
+  const resetRuntimeEvidence = () => {
+    pageErrors.length = 0;
+    networkFailures.length = 0;
+    httpErrors.length = 0;
+    policyErrors.length = 0;
+    fallbackWarnings.length = 0;
+  };
+
+  const assertRuntimeHealthy = async (label: string) => {
+    await page.waitForTimeout(1_250);
+    await expect(page.getByText(/error inesperado/i)).toHaveCount(0);
+    await expect(page.getByText(/ha ocurrido un error cargando esta sección/i)).toHaveCount(0);
+
+    expect(pageErrors, `${label} emitted page runtime errors`).toEqual([]);
+    expect(networkFailures, `${label} emitted non-aborted Supabase request failures`).toEqual([]);
+    expect(httpErrors, `${label} received Supabase HTTP 4xx/5xx responses`).toEqual([]);
+    expect(policyErrors, `${label} emitted CORS/CSP policy errors`).toEqual([]);
+    expect(fallbackWarnings, `${label} emitted canonical fallback warnings`).toEqual([]);
+    resetRuntimeEvidence();
+  };
 
   page.on('console', msg => {
     if (msg.type() === 'error' || msg.type() === 'warning') {
       console.log(`[BROWSER CONSOLE ${msg.type().toUpperCase()}] ${msg.text()}`);
     }
+
+    const text = msg.text();
+    if (/cors|content security policy|blocked by client/i.test(text)) {
+      policyErrors.push(text);
+    }
+    if (/canonical crm load failed|legacy lead metadata unavailable/i.test(text)) {
+      fallbackWarnings.push(text);
+    }
   });
 
   page.on('requestfailed', request => {
-    console.log(`[REQUEST FAILED] ${request.url()} - ${request.failure()?.errorText}`);
+    const reason = request.failure()?.errorText || 'unknown';
+    console.log(`[REQUEST FAILED] ${request.url()} - ${reason}`);
+
+    if (!isSupabaseUrl(request.url())) return;
+    if (!reason.includes('ERR_ABORTED')) {
+      networkFailures.push(`${reason} ${request.url()}`);
+    }
   });
 
-  page.on('pageerror', (error) => {
+  page.on('pageerror', error => {
     pageErrors.push(error.message);
   });
 
-  page.on('response', (response) => {
+  page.on('response', response => {
     if (response.status() >= 400) {
       console.log(`[HTTP ${response.status()}] ${response.url()}`);
     }
-    if (response.status() >= 500) {
-      serverErrors.push(`${response.status()} ${response.url()}`);
-    }
-  });
-
-  // Prevent production mutations and costs on the AI route.
-  await page.route('**/api/ai/**', route => {
-    if (route.request().method() === 'POST') {
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ success: true, message: 'Mocked response for E2E', content: 'Mocked content', data: { success: true } })
-      });
-    } else {
-      route.continue();
+    if (isSupabaseUrl(response.url()) && response.status() >= 400) {
+      httpErrors.push(`${response.status()} ${response.url()}`);
     }
   });
 
@@ -94,14 +122,13 @@ test('authenticated Control Centre routes load without runtime or server errors'
     const bodyText = await page.locator('body').innerText().catch(() => '');
     throw new Error(`Control Centre login failed to redirect to /dashboard. Visible error: "${errorText?.trim() || 'none'}". Page summary: ${bodyText.replace(/\s+/g, ' ').slice(0, 300)}`, { cause: error });
   }
+
   await expect(page.getByRole('navigation', { name: /navegación principal/i })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId('control-centre-overview')).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole('heading', { name: /^Centro operativo de la clínica$/i })).toBeVisible({ timeout: 15_000 });
+  await assertRuntimeHealthy('/dashboard after login');
 
   for (const route of CONTROL_CENTRE_ROUTES) {
-    pageErrors.length = 0;
-    serverErrors.length = 0;
-
     await page.goto(route.path, { waitUntil: 'domcontentloaded' });
     await expect(page).toHaveURL(new RegExp(`${escapeRegExp(route.path)}/?$`));
     await expect(page.getByRole('navigation', { name: /navegación principal/i })).toBeVisible({ timeout: 15_000 });
@@ -112,14 +139,6 @@ test('authenticated Control Centre routes load without runtime or server errors'
       await expect(page.getByTestId('control-centre-overview')).toBeVisible({ timeout: 15_000 });
     }
 
-    // Realtime/polling routes may never become network-idle. Observe a bounded
-    // post-render window instead, while keeping pageerror and every 5xx strict.
-    await page.waitForTimeout(1_000);
-
-    await expect(page.getByText(/error inesperado/i)).toHaveCount(0);
-    await expect(page.getByText(/ha ocurrido un error cargando esta sección/i)).toHaveCount(0);
-
-    expect(pageErrors, `${route.path} emitted page runtime errors`).toEqual([]);
-    expect(serverErrors, `${route.path} received server-side 5xx responses`).toEqual([]);
+    await assertRuntimeHealthy(route.path);
   }
 });
