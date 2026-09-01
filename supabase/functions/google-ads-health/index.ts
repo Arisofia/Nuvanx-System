@@ -241,6 +241,11 @@ async function googleAdsSearch(
       throw providerError(response.status, payload);
     }
 
+    // Validate payload is an object before checking results field
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+      throw new HealthFailure("provider", 502, "Google Ads API returned non-object payload");
+    }
+
     // Explicit validation: Distinguish omitted vs non-array
     let resultsArray: unknown[];
     if (payload.results === undefined) {
