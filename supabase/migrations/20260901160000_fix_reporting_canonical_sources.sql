@@ -366,12 +366,13 @@ AS $$
     r.patients_count,
     r.net_revenue,
     CASE
-      WHEN r.campaign_id IS NOT NULL AND gs.campaign_id IS NOT NULL THEN gs.spend
+      WHEN r.campaign_id IS NOT NULL AND gs.campaign_id IS NOT NULL AND r.source_category = 'google' THEN gs.spend
       ELSE NULL::numeric
     END AS spend,
     CASE
       WHEN r.campaign_id IS NOT NULL
        AND gs.campaign_id IS NOT NULL
+       AND r.source_category = 'google'
        AND r.patients_count > 0
       THEN round(gs.spend / r.patients_count::numeric, 2)
       ELSE NULL::numeric
