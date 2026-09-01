@@ -11,6 +11,10 @@ const wakeupMigration = readFileSync(
   fileURLToPath(new URL("../../migrations/20260901190100_whatsapp_insert_only_wakeup.sql", import.meta.url)),
   "utf8",
 );
+const lateAttemptMigration = readFileSync(
+  fileURLToPath(new URL("../../migrations/20260901190200_whatsapp_late_attempt_reconciliation.sql", import.meta.url)),
+  "utf8",
+);
 
 function ordered(sourceText, ...anchors) {
   let previous = -1;
@@ -59,11 +63,15 @@ describe("WhatsApp asynchronous encrypted outbound worker", () => {
   });
 
   it("never auto-retries ambiguous provider outcomes", () => {
-    expect(source).toContain('"unknown"');
-    expect(source).toContain("Meta provider outcome is unknown after transport failure");
+    const transportStart = source.indexOf("catch (error: unknown)");
+    const providerErrorStart = source.indexOf("const explicitProviderError");
+    expect(transportStart, "transport catch anchor missing").toBeGreaterThan(-1);
+    expect(providerErrorStart, "provider error anchor missing").toBeGreaterThan(transportStart);
+    const transport = source.slice(transportStart, providerErrorStart);
+    expect(transport).toContain('row,\n        "unknown",\n        null,\n        null,');
+    expect(transport).toContain("Meta provider outcome is unknown after transport failure");
     expect(migration).toContain("Worker outcome requires manual review; automatic resend is blocked");
     expect(migration).toContain("p.state = 'sending'");
-    expect(migration).toContain("state = case");
     expect(migration).toContain("else 'manual_review'");
   });
 
@@ -83,11 +91,26 @@ describe("WhatsApp asynchronous encrypted outbound worker", () => {
     expect(accepted).toContain("await finishPayload(admin, row, false)");
   });
 
+  it("allows the same claim to reconcile a late provider outcome after stale manual review", () => {
+    expect(source).toContain("provider delivery is authorized for this claim token");
+    expect(lateAttemptMigration).toContain("p.claim_token = p_claim_token");
+    expect(lateAttemptMigration).toContain("p.state in ('claimed', 'sending', 'manual_review')");
+    expect(lateAttemptMigration).toContain("r.status in ('accepted', 'sent', 'delivered', 'read', 'failed')");
+    expect(lateAttemptMigration).toContain("r.status = 'unknown'");
+    expect(lateAttemptMigration).not.toContain("state = 'queued'");
+  });
+
   it("treats HTTP 5xx and success-without-message-id as ambiguous", () => {
     expect(source).toContain("const ambiguous = waRes.status >= 500");
     expect(source).toContain('ambiguous ? "unknown" : "failed"');
     expect(source).toContain("if (!messageId)");
     expect(source).toContain("missing_provider_message_id");
+  });
+
+  it("logs provider body-read failures without changing the no-retry outcome", () => {
+    expect(source).toContain("provider body read failed request=${row.request_id} status=${waRes.status} reason=${reason}");
+    expect(source).toContain("return {};");
+    expect(source).toContain("if (!messageId)");
   });
 
   it("preserves SLA telemetry as non-authoritative after provider acceptance", () => {
