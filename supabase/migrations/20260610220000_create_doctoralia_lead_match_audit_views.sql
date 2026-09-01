@@ -33,7 +33,6 @@ l AS (
     verified_revenue as crm_verified_revenue
   FROM public.leads
   WHERE deleted_at IS NULL
-    AND merged_into_lead_id IS NULL
 )
 SELECT
   d.doctoralia_appointment_id,
@@ -184,8 +183,7 @@ SELECT
     END as status_reason
 FROM public.leads l
 LEFT JOIN lead_best_doctoralia bm ON l.id = bm.lead_id AND bm.lead_match_rank = 1
-WHERE l.deleted_at IS NULL
-  AND l.merged_into_lead_id IS NULL;
+WHERE l.deleted_at IS NULL;
 
 -- 4. Set security and grants
 ALTER VIEW public.v_doctoralia_lead_identity_candidates SET (security_invoker = true);
