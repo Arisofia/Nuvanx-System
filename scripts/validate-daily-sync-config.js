@@ -15,16 +15,12 @@ const REQUIRED = [
   'DOCTORALIA_APPOINTMENTS_SHEET_NAME',
   'ENCRYPTION_KEY',
   'REPORT_USER_ID',
-  'GOOGLE_ADS_DEVELOPER_TOKEN',
-  'GOOGLE_ADS_SERVICE_ACCOUNT',
 ];
 
 const RECOMMENDED = [
   'SUPABASE_DB_PASSWORD',
   'META_APP_SECRET',
   'FALLBACK_META_AD_ACCOUNT_ID',
-  'GOOGLE_ADS_LOGIN_CUSTOMER_ID',
-  'GOOGLE_ADS_CUSTOMER_ID',
   'SHEETS_WEBHOOK_URL_DOCTORALIA',
   'SHEETS_WEBHOOK_SECRET_DOCTORALIA',
 ];
@@ -53,7 +49,6 @@ const ERROR_MESSAGES = {
   DOCTORALIA_MIN_ROWS_TOO_LOW: 'DOCTORALIA_APPOINTMENTS_MIN_ROWS must be at least 1800 for complete Doctoralia daily sync loads.',
   META_ACCOUNT_MISSING: 'META_AD_ACCOUNT_ID, META_AD_ACCOUNT_IDS, or FALLBACK_META_AD_ACCOUNT_ID secret is required.',
   GOOGLE_DOCTORALIA_SERVICE_ACCOUNT_MISSING: 'GOOGLE_DOCTORALIA_SERVICE_ACCOUNT or GOOGLE_ADS_SERVICE_ACCOUNT secret is required for Doctoralia appointments sync.',
-  GOOGLE_ADS_SERVICE_ACCOUNT_INVALID: 'GOOGLE_ADS_SERVICE_ACCOUNT must be valid service-account JSON with client_email and private_key.',
   SUPABASE_ACCESS_TOKEN_FORMAT: 'SUPABASE_ACCESS_TOKEN format is invalid. Expected sbp_ token.',
   SUPABASE_PROJECT_REF_FORMAT: 'SUPABASE_PROJECT_REF format is invalid. Expected 20 lowercase alphanumeric characters.',
   UNKNOWN: 'Daily Sync configuration validation failed.',
@@ -112,14 +107,6 @@ if (!hasValue('GOOGLE_DOCTORALIA_SERVICE_ACCOUNT') && !hasValue('GOOGLE_ADS_SERV
     process.exitCode = 1;
   } else {
     console.log('[daily-sync] Google service account configured for Doctoralia.');
-  }
-}
-
-if (hasValue('GOOGLE_ADS_SERVICE_ACCOUNT')) {
-  if (!readServiceAccountEmail(process.env.GOOGLE_ADS_SERVICE_ACCOUNT)) {
-    failCode('GOOGLE_ADS_SERVICE_ACCOUNT_INVALID');
-  } else {
-    console.log('[daily-sync] Google Ads service account configured.');
   }
 }
 
