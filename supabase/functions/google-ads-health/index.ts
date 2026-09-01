@@ -177,7 +177,13 @@ async function googleAccessToken(serviceAccount: Record<string, any>): Promise<s
 function providerError(status: number, payload: unknown): HealthFailure {
   const value = isRecord(payload) && isRecord(payload.error) ? payload.error : {};
   const providerStatus = String(value.status || "").slice(0, 80);
-  const message = String(value.message || "").replace(/\s+/g, " ").slice(0, 300);
+  let message = String(value.message || "").replace(/\s+/g, " ").slice(0, 300);
+  const detailErrors = Array.isArray(value.details)
+    ? value.details.flatMap((d: any) => Array.isArray(d?.errors) ? d.errors.map((e: any) => e?.message || JSON.stringify(e?.errorCode)) : []).filter(Boolean)
+    : [];
+  if (detailErrors.length > 0) {
+    message += ` (${detailErrors.join("; ")})`;
+  }
   return new HealthFailure(
     "provider",
     502,
@@ -352,7 +358,17 @@ Deno.serve(async (req: Request) => {
     if (credentialError || !credential?.encrypted_key) {
       throw new HealthFailure("configuration", 500, "Google Ads developer credential not found");
     }
-    const developerToken = await decryptCredential(String(credential.encrypted_key));
+    let developerToken = "";
+    try {
+      developerToken = await decryptCredential(String(credential.encrypted_key));
+    } catch {
+      developerToken = String(
+        integration?.metadata?.developer_token ||
+        integration?.metadata?.developerToken ||
+        Deno.env.get("GOOGLE_ADS_DEVELOPER_TOKEN") ||
+        ""
+      ).trim();
+    }
     if (!developerToken) throw new HealthFailure("configuration", 500, "Google Ads developer credential is empty");
 
     const accessToken = await googleAccessToken(serviceAccount);

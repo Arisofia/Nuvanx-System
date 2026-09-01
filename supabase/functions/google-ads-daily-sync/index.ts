@@ -212,12 +212,17 @@ async function oauthRefreshAccessToken(): Promise<string> {
 async function resolveGoogleAuth(): Promise<GoogleAuth> {
   const hasAnyOAuth = Boolean(OAUTH_CLIENT_ID || OAUTH_CLIENT_SECRET || OAUTH_REFRESH_TOKEN);
   const hasAllOAuth = Boolean(OAUTH_CLIENT_ID && OAUTH_CLIENT_SECRET && OAUTH_REFRESH_TOKEN);
-  if (hasAnyOAuth) {
-    if (!hasAllOAuth) throw new SyncFailure("configuration", 500, "Google Ads OAuth configuration is incomplete");
+  if (hasAllOAuth) {
     return { token: await oauthRefreshAccessToken(), mode: "oauth_refresh" };
   }
-  const serviceAccount = parseServiceAccount(SERVICE_ACCOUNT_RAW);
-  return { token: await serviceAccountAccessToken(serviceAccount), mode: "service_account" };
+  if (SERVICE_ACCOUNT_RAW) {
+    const serviceAccount = parseServiceAccount(SERVICE_ACCOUNT_RAW);
+    return { token: await serviceAccountAccessToken(serviceAccount), mode: "service_account" };
+  }
+  if (hasAnyOAuth && !hasAllOAuth) {
+    throw new SyncFailure("configuration", 500, "Google Ads OAuth configuration is incomplete");
+  }
+  throw new SyncFailure("configuration", 500, "Google Ads authentication not configured");
 }
 
 function providerError(status: number, payload: unknown): SyncFailure {
@@ -287,8 +292,19 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return reply(405, { success: false, message: "Method not allowed" });
   if (!SUPABASE_URL || !SERVICE_ROLE) return reply(500, { success: false, message: "Server configuration error" });
 
+  const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
+  const { data: revopsSecret } = await admin.rpc("nvx_get_runtime_secret", {
+    p_name: "REVOPS_INTERNAL_SECRET",
+  });
   const bearer = String(req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
-  if (!(await secretMatches(bearer, SERVICE_ROLE))) {
+  const internalSecret = String(req.headers.get("x-nvx-internal-secret") || "").trim();
+
+  const bearerMatches = bearer ? await secretMatches(bearer, SERVICE_ROLE) : false;
+  const secretMatchesExpected = (internalSecret && revopsSecret)
+    ? await secretMatches(internalSecret, String(revopsSecret))
+    : false;
+
+  if (!bearerMatches && !secretMatchesExpected) {
     return reply(403, { success: false, message: "Forbidden" });
   }
 
@@ -301,7 +317,6 @@ Deno.serve(async (req: Request) => {
     return reply(400, { success: false, kind: "request", message: "Invalid JSON" });
   }
 
-  const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
   let range: { from: string; to: string };
   try {
     range = resolveRange(body);
@@ -345,7 +360,17 @@ Deno.serve(async (req: Request) => {
             .eq("service", "google_ads")
             .maybeSingle();
           if (credentialError || !credential?.encrypted_key) throw new SyncFailure("configuration", 500, "Google Ads developer credential not found");
-          developerToken = await decryptCredential(String(credential.encrypted_key));
+          try {
+            developerToken = await decryptCredential(String(credential.encrypted_key));
+          } catch {
+            developerToken = String(
+              integration?.metadata?.developer_token ||
+              integration?.metadata?.developerToken ||
+              Deno.env.get("GOOGLE_ADS_DEVELOPER_TOKEN") ||
+              ""
+            ).trim();
+          }
+          if (!developerToken) throw new SyncFailure("configuration", 500, "Google Ads developer credential is empty");
           tokenCache.set(String(integration.user_id), developerToken);
         }
 
