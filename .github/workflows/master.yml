@@ -10,7 +10,7 @@ on:
     branches: [main]
   schedule:
     - cron: '0 7 * * *'
-    - cron: '0 7 1 * *'
+    - cron: '0 7 1 * * *'
   workflow_dispatch:
     inputs:
       operation:
@@ -248,7 +248,7 @@ jobs:
       run:
         working-directory: frontend
     env:
-      E2E_EMAIL: test@nuvanx.com
+      E2E_CLINIC_ID: 4207023b-eac1-4249-bf0f-d9b1e36a5d7a
       PRODUCTION_E2E_URL: https://nuvanx-frontend.jenineferderas.workers.dev
       SUPABASE_URL: ${{ secrets.SUPABASE_URL || secrets.NUVANX_SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
@@ -271,17 +271,22 @@ jobs:
       - name: Install Chromium
         run: npm exec playwright install --with-deps chromium
 
-      - name: Provision ephemeral E2E credential
+      - name: Provision disposable E2E identity
         shell: bash
         run: |
           set -euo pipefail
           test -n "${SUPABASE_URL:-}" || { echo "::error::SUPABASE_URL is missing from Production"; exit 1; }
           test -n "${SUPABASE_SERVICE_ROLE_KEY:-}" || { echo "::error::SUPABASE_SERVICE_ROLE_KEY is missing from Production"; exit 1; }
           [[ "$SUPABASE_URL" == https://*.supabase.co ]]
+          [[ "${E2E_CLINIC_ID:-}" =~ ^[0-9a-f-]{36}$ ]]
 
+          email="e2e-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}@nuvanx.com"
           password="$(openssl rand -hex 32)"
           echo "::add-mask::$password"
+          export E2E_EMAIL="$email"
           export E2E_PASSWORD="$password"
+          printf 'E2E_EMAIL=%s\n' "$email" >> "$GITHUB_ENV"
+          printf 'E2E_PASSWORD=%s\n' "$password" >> "$GITHUB_ENV"
 
           node --input-type=module <<'NODE'
           import { createClient } from '@supabase/supabase-js';
@@ -290,42 +295,67 @@ jobs:
           const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
           const email = process.env.E2E_EMAIL?.trim();
           const password = process.env.E2E_PASSWORD;
-          if (!url || !key || !email || !password) throw new Error('Trusted E2E provisioning context is incomplete');
+          const clinicId = process.env.E2E_CLINIC_ID?.trim();
+          if (!url || !key || !email || !password || !clinicId) {
+            throw new Error('Trusted E2E provisioning context is incomplete');
+          }
 
           const supabase = createClient(url, key, {
             auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
           });
-          const { data, error } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
-          if (error) throw error;
-          const user = data.users.find((candidate) => candidate.email?.toLowerCase() === email.toLowerCase());
-          if (!user) throw new Error(`Dedicated E2E user ${email} does not exist in production Auth`);
 
-          const { error: updateError } = await supabase.auth.admin.updateUserById(user.id, {
+          const { data: listed, error: listError } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
+          if (listError) throw listError;
+          const staleUsers = listed.users.filter((candidate) => {
+            const candidateEmail = candidate.email?.toLowerCase() || '';
+            return candidateEmail.startsWith('e2e-ci-') && candidateEmail.endsWith('@nuvanx.com') && candidateEmail !== email.toLowerCase();
+          });
+          for (const stale of staleUsers) {
+            const { error: deleteError } = await supabase.auth.admin.deleteUser(stale.id);
+            if (deleteError) throw deleteError;
+          }
+
+          const { data: created, error: createError } = await supabase.auth.admin.createUser({
+            email,
             password,
             email_confirm: true,
+            user_metadata: { name: 'NUVANX CI E2E' },
           });
-          if (updateError) throw updateError;
-          console.log('Ephemeral E2E credential provisioned for the dedicated production test user.');
-          NODE
+          if (createError) throw createError;
+          const userId = created.user?.id;
+          if (!userId) throw new Error('Supabase did not return the disposable E2E user id');
 
-          printf 'E2E_PASSWORD=%s\n' "$password" >> "$GITHUB_ENV"
+          const { data: profile, error: profileError } = await supabase
+            .from('users')
+            .update({ clinic_id: clinicId })
+            .eq('id', userId)
+            .select('id, clinic_id')
+            .single();
+
+          if (profileError || profile?.clinic_id !== clinicId) {
+            await supabase.auth.admin.deleteUser(userId);
+            throw profileError || new Error('Disposable E2E profile was not assigned to the expected clinic');
+          }
+
+          console.log(`Disposable E2E identity provisioned: ${email}`);
+          NODE
 
       - name: Run Playwright smoke
         run: npm run test:e2e
         env:
           PLAYWRIGHT_REQUIRE_BROWSERS: 'true'
 
-      - name: Rotate E2E credential after smoke
+      - name: Delete disposable E2E identity
         if: always()
         shell: bash
         run: |
           set -euo pipefail
-          test -n "${SUPABASE_URL:-}" || { echo "::error::Cannot rotate E2E credential without SUPABASE_URL"; exit 1; }
-          test -n "${SUPABASE_SERVICE_ROLE_KEY:-}" || { echo "::error::Cannot rotate E2E credential without SUPABASE_SERVICE_ROLE_KEY"; exit 1; }
-
-          quarantine_password="$(openssl rand -hex 32)"
-          echo "::add-mask::$quarantine_password"
-          export E2E_PASSWORD="$quarantine_password"
+          if [ -z "${E2E_EMAIL:-}" ]; then
+            echo "No disposable E2E identity was exported; cleanup is not required."
+            exit 0
+          fi
+          test -n "${SUPABASE_URL:-}" || { echo "::error::Cannot delete E2E identity without SUPABASE_URL"; exit 1; }
+          test -n "${SUPABASE_SERVICE_ROLE_KEY:-}" || { echo "::error::Cannot delete E2E identity without SUPABASE_SERVICE_ROLE_KEY"; exit 1; }
 
           node --input-type=module <<'NODE'
           import { createClient } from '@supabase/supabase-js';
@@ -333,8 +363,7 @@ jobs:
           const url = process.env.SUPABASE_URL?.trim();
           const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
           const email = process.env.E2E_EMAIL?.trim();
-          const password = process.env.E2E_PASSWORD;
-          if (!url || !key || !email || !password) throw new Error('Trusted E2E cleanup context is incomplete');
+          if (!url || !key || !email) throw new Error('Trusted E2E cleanup context is incomplete');
 
           const supabase = createClient(url, key, {
             auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
@@ -342,11 +371,14 @@ jobs:
           const { data, error } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
           if (error) throw error;
           const user = data.users.find((candidate) => candidate.email?.toLowerCase() === email.toLowerCase());
-          if (!user) throw new Error(`Dedicated E2E user ${email} does not exist in production Auth`);
+          if (!user) {
+            console.log(`Disposable E2E identity already absent: ${email}`);
+            process.exit(0);
+          }
 
-          const { error: updateError } = await supabase.auth.admin.updateUserById(user.id, { password });
-          if (updateError) throw updateError;
-          console.log('Dedicated E2E credential rotated after the smoke run.');
+          const { error: deleteError } = await supabase.auth.admin.deleteUser(user.id);
+          if (deleteError) throw deleteError;
+          console.log(`Disposable E2E identity deleted: ${email}`);
           NODE
 
   deploy-supabase:
