@@ -86,23 +86,33 @@ async function prepareSend(
   idempotencyKey: string,
   messageSha256: string,
 ): Promise<{ ok: true; row: any } | { ok: false; status: number; message: string }> {
-  const { data, error } = await admin.rpc("nvx_prepare_whatsapp_send", {
+  // Use read-only idempotency lookup instead of reserving during precheck
+  // This allows replays to work when encryption is unavailable and prevents
+  // the async preparation from seeing a "duplicate" reservation
+  const { data, error } = await admin.rpc("nvx_check_whatsapp_idempotency", {
     p_user_id: userId,
-    p_lead_id: leadId,
-    p_normalized_phone: normalizedTo,
     p_idempotency_key: idempotencyKey,
-    p_message_sha256: messageSha256,
   });
 
   if (error) {
     const code = String(error.code || "");
-    const message = String(error.message || "WhatsApp send reservation failed");
+    const message = String(error.message || "WhatsApp idempotency check failed");
     if (code === "42501" || message.includes("lead_not_owned")) {
       return { ok: false, status: 403, message: "Lead is not available to this user" };
     }
     if (code === "23505" || message.includes("idempotency_key_conflict")) {
       return { ok: false, status: 409, message: "Idempotency key was already used for another send intent" };
     }
+    return { ok: false, status: 500, message };
+  }
+
+  // If idempotency key exists, return the existing result for replay
+  if (data && data.request_id) {
+    return { ok: true, row: data };
+  }
+
+  // No existing idempotency key - proceed with async preparation which will reserve and insert
+  return { ok: true, row: null };
     // SQLSTATE 22023 is shared by multiple validation failures, so preserve the specific message check.
     if (message.includes("recipient_does_not_match_lead_phone")) {
       return { ok: false, status: 403, message: "Recipient does not match the lead phone" };

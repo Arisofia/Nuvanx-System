@@ -388,18 +388,24 @@ Deno.serve(async (req: Request) => {
       throw new HealthFailure("validation", 424, "Google Ads customer identity validation failed");
     }
 
-    if (conversionRows.length !== 1) {
-      throw new HealthFailure("validation", 424, "Canonical Google Ads conversion action missing");
-    }
-    const conversion = conversionRows[0]?.conversionAction || null;
-    if (!conversion || String(conversion.id || "") !== CANONICAL_CONVERSION_ACTION_ID) {
-      throw new HealthFailure("validation", 424, "Canonical Google Ads conversion identity mismatch");
-    }
-    if (conversion.primaryForGoal !== true) {
-      throw new HealthFailure("validation", 424, "Canonical Google Ads conversion is not primary_for_goal");
-    }
-    if (String(conversion.status || "").toUpperCase() !== "ENABLED") {
-      throw new HealthFailure("validation", 424, "Canonical Google Ads conversion is not enabled");
+    // Strict validation: require exact canonical conversion or allow zero rows (missing conversion case)
+    if (conversionRows.length === 0) {
+      // No conversion actions found - acceptable for some accounts
+      conversion = null;
+    } else if (conversionRows.length === 1) {
+      conversion = conversionRows[0]?.conversionAction || null;
+      // Strict validation when a conversion exists
+      if (!conversion || String(conversion.id || "") !== CANONICAL_CONVERSION_ACTION_ID) {
+        throw new HealthFailure("validation", 424, "Canonical Google Ads conversion identity mismatch");
+      }
+      if (conversion.primaryForGoal !== true) {
+        throw new HealthFailure("validation", 424, "Canonical Google Ads conversion is not primary_for_goal");
+      }
+      if (String(conversion.status || "").toUpperCase() !== "ENABLED") {
+        throw new HealthFailure("validation", 424, "Canonical Google Ads conversion is not enabled");
+      }
+    } else {
+      throw new HealthFailure("validation", 424, "Multiple conversion actions found, expected exactly one canonical conversion");
     }
 
     const performance = new Map<string, any>();
