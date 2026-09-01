@@ -73,9 +73,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node <<'NODE'
-          const fs = require('fs');
-          const path = require('path');
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+
           const base = String(process.env.SUPABASE_URL || '').replace(/\/$/, '');
           const key = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '');
           const runnerTemp = String(process.env.RUNNER_TEMP || '').trim();
