@@ -76,93 +76,99 @@ jobs:
           node <<'NODE'
           const fs = require('fs');
           const path = require('path');
-          const base = String(process.env.SUPABASE_URL || '').replace(/\/$/, '');
-          const key = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '');
-          const runnerTemp = String(process.env.RUNNER_TEMP || '').trim();
-          if (!base || !key || !runnerTemp) throw new Error('Supabase/runtime contract unavailable');
 
-          async function rpc(name, body) {
-            const response = await fetch(`${base}/rest/v1/rpc/${name}`, {
-              method: 'POST',
-              headers: {
-                apikey: key,
-                Authorization: `Bearer ${key}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(body),
-              signal: AbortSignal.timeout(20_000),
-            });
-            const raw = await response.text();
-            let payload;
-            try {
-              payload = raw ? JSON.parse(raw) : null;
-            } catch {
-              throw new Error(`${name} returned non-JSON (HTTP ${response.status})`);
-            }
-            if (!response.ok) {
-              const message = payload && typeof payload === 'object'
-                ? String(payload.message || payload.hint || payload.code || 'RPC failed')
-                : 'RPC failed';
-              throw new Error(`${name} failed HTTP ${response.status}: ${message}`);
-            }
-            return payload;
-          }
+          (async () => {
+            const base = String(process.env.SUPABASE_URL || '').replace(/\/$/, '');
+            const key = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '');
+            const runnerTemp = String(process.env.RUNNER_TEMP || '').trim();
+            if (!base || !key || !runnerTemp) throw new Error('Supabase/runtime contract unavailable');
 
-          const requestIdRaw = await rpc('nvx_dispatch_google_ads_backfill_once', {
-            p_from: '2026-08-01',
-            p_to: '2026-08-31',
-          });
-          const requestId = Number(requestIdRaw);
-          if (!Number.isSafeInteger(requestId) || requestId <= 0) {
-            throw new Error('Google Ads dispatcher returned an invalid request id');
-          }
-          console.log(JSON.stringify({ dispatched: true, request_id: requestId }));
-
-          for (let attempt = 1; attempt <= 60; attempt += 1) {
-            const result = await rpc('nvx_get_google_ads_backfill_response', {
-              p_request_id: requestId,
-            });
-            if (result?.ready === true) {
-              if (result.timed_out === true) throw new Error('Google Ads internal dispatch timed out');
-              const status = Number(result.status_code || 0);
-              if (status < 200 || status >= 300) {
-                throw new Error(`Google Ads internal dispatch failed HTTP ${status}`);
-              }
-              let content;
+            async function rpc(name, body) {
+              const response = await fetch(`${base}/rest/v1/rpc/${name}`, {
+                method: 'POST',
+                headers: {
+                  apikey: key,
+                  Authorization: `Bearer ${key}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(body),
+                signal: AbortSignal.timeout(20_000),
+              });
+              const raw = await response.text();
+              let payload;
               try {
-                content = JSON.parse(String(result.content || '{}'));
+                payload = raw ? JSON.parse(raw) : null;
               } catch {
-                throw new Error('Google Ads internal dispatcher returned non-JSON content');
+                throw new Error(`${name} returned non-JSON (HTTP ${response.status})`);
               }
-              if (content.success !== true) {
-                const failures = Array.isArray(content.failures)
-                  ? content.failures.map((item) => ({
-                      customer_id: item?.customer_id || null,
-                      kind: item?.kind || null,
-                      message: item?.message || null,
-                    }))
-                  : [];
-                console.error(JSON.stringify({ success: false, failures }));
-                throw new Error('Google Ads backfill worker reported failure');
+              if (!response.ok) {
+                const message = payload && typeof payload === 'object'
+                  ? String(payload.message || payload.hint || payload.code || 'RPC failed')
+                  : 'RPC failed';
+                throw new Error(`${name} failed HTTP ${response.status}: ${message}`);
               }
-
-              const summary = {
-                success: true,
-                provider: content.provider || null,
-                api_version: content.api_version || null,
-                date_range: content.date_range || null,
-                accounts: Array.isArray(content.accounts) ? content.accounts : [],
-              };
-              if (summary.provider !== 'google_ads' || summary.accounts.length === 0) {
-                throw new Error('Google Ads provider summary is incomplete');
-              }
-              fs.writeFileSync(path.join(runnerTemp, 'google-ads-provider-summary.json'), JSON.stringify(summary));
-              console.log(JSON.stringify(summary));
-              process.exit(0);
+              return payload;
             }
-            await new Promise((resolve) => setTimeout(resolve, 2_000));
-          }
-          throw new Error('Google Ads internal dispatch response was not observed before timeout');
+
+            const requestIdRaw = await rpc('nvx_dispatch_google_ads_backfill_once', {
+              p_from: '2026-08-01',
+              p_to: '2026-08-31',
+            });
+            const requestId = Number(requestIdRaw);
+            if (!Number.isSafeInteger(requestId) || requestId <= 0) {
+              throw new Error('Google Ads dispatcher returned an invalid request id');
+            }
+            console.log(JSON.stringify({ dispatched: true, request_id: requestId }));
+
+            for (let attempt = 1; attempt <= 60; attempt += 1) {
+              const result = await rpc('nvx_get_google_ads_backfill_response', {
+                p_request_id: requestId,
+              });
+              if (result?.ready === true) {
+                if (result.timed_out === true) throw new Error('Google Ads internal dispatch timed out');
+                const status = Number(result.status_code || 0);
+                if (status < 200 || status >= 300) {
+                  throw new Error(`Google Ads internal dispatch failed HTTP ${status}`);
+                }
+                let content;
+                try {
+                  content = JSON.parse(String(result.content || '{}'));
+                } catch {
+                  throw new Error('Google Ads internal dispatcher returned non-JSON content');
+                }
+                if (content.success !== true) {
+                  const failures = Array.isArray(content.failures)
+                    ? content.failures.map((item) => ({
+                        customer_id: item?.customer_id || null,
+                        kind: item?.kind || null,
+                        message: item?.message || null,
+                      }))
+                    : [];
+                  console.error(JSON.stringify({ success: false, failures }));
+                  throw new Error('Google Ads backfill worker reported failure');
+                }
+
+                const summary = {
+                  success: true,
+                  provider: content.provider || null,
+                  api_version: content.api_version || null,
+                  date_range: content.date_range || null,
+                  accounts: Array.isArray(content.accounts) ? content.accounts : [],
+                };
+                if (summary.provider !== 'google_ads' || summary.accounts.length === 0) {
+                  throw new Error('Google Ads provider summary is incomplete');
+                }
+                fs.writeFileSync(path.join(runnerTemp, 'google-ads-provider-summary.json'), JSON.stringify(summary));
+                console.log(JSON.stringify(summary));
+                return;
+              }
+              await new Promise((resolve) => setTimeout(resolve, 2_000));
+            }
+            throw new Error('Google Ads internal dispatch response was not observed before timeout');
+          })().catch((error) => {
+            console.error(error.message || error);
+            process.exit(1);
+          });
           NODE
 
       - name: Verify provider totals equal persisted August facts
