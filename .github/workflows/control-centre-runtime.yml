@@ -73,46 +73,7 @@ jobs:
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
-  deploy:
-    name: Deploy provider gateway
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: validate
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    environment: Production
-    concurrency:
-      group: manual-maintenance-deploy_edge
-      cancel-in-progress: false
-    steps:
-      - name: Checkout exact main
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-        with:
-          persist-credentials: false
-
-      - name: Setup Supabase CLI
-        uses: supabase/setup-cli@52a446718e4edd1a9f1e2631186019c87e329f60
-        with:
-          version: 2.102.0
-
-      - name: Validate deployment configuration
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-        run: |
-          set -euo pipefail
-          test -n "$SUPABASE_ACCESS_TOKEN"
-          [[ "$SUPABASE_ACCESS_TOKEN" =~ ^sbp_[A-Za-z0-9]+$ ]]
-          test -n "$SUPABASE_PROJECT_REF"
-          [[ "$SUPABASE_PROJECT_REF" =~ ^[a-z0-9]{20}$ ]]
-
-      - name: Deploy exact gateway
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-        run: |
-          set -euo pipefail
-          supabase functions deploy control-centre-provider \
-            --project-ref "$SUPABASE_PROJECT_REF" \
-            --no-verify-jwt
-          supabase functions list --project-ref "$SUPABASE_PROJECT_REF"
-          echo 'CONTROL_CENTRE_PROVIDER_DEPLOY=PASS'
+# Production deployment is intentionally owned only by
+# Deploy Standalone Edge Functions after a successful Master System push.
+# Keeping this workflow validation-only prevents lossy cross-workflow
+# concurrency from dropping a pending control-centre-provider deployment.
