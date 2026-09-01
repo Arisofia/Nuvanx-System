@@ -48,12 +48,14 @@ describe("WhatsApp browser and recipient security boundary", () => {
     );
   });
 
-  it("keeps authorization and reservation before the irreversible Meta call", () => {
+  it("keeps authorization and encrypted reservation before returning a queued request", () => {
     ordered(
       source,
       "const auth = await authenticatedContext(req)",
-      "const prepared = await prepareSend",
-      "waRes = await fetch",
+      "encrypted = await encryptMessage",
+      "const prepared = await prepareSendAsync",
+      "return json({\n    success: true,\n    queued: true",
     );
+    expect(source).not.toContain("waRes = await fetch");
   });
 });
