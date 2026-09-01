@@ -26,6 +26,9 @@ describe('standalone Edge deployment ownership', () => {
 
   it('publishes a Cloudflare-only browser CORS boundary after Vercel retirement', () => {
     expect(workflow).toContain('CORS_ALLOWED_ORIGINS: https://nuvanx-frontend.jenineferderas.workers.dev');
+    expect(workflow).toContain('FRONTEND_URL: https://nuvanx-frontend.jenineferderas.workers.dev');
+    expect(workflow).toContain('PRODUCTION_FALLBACK_URL: https://nuvanx-frontend.jenineferderas.workers.dev');
+    expect(workflow).toContain('supabase secrets set \\\n              CORS_ALLOWED_ORIGINS="$CORS_ALLOWED_ORIGINS" \\\n              FRONTEND_URL="$FRONTEND_URL" \\\n              PRODUCTION_FALLBACK_URL="$PRODUCTION_FALLBACK_URL" \\\n              --project-ref "$SUPABASE_PROJECT_REF"');
     expect(workflow).not.toContain('frontend-arisofias-projects-c2217452.vercel.app');
     expect(workflow).not.toContain('frontend-git-main-arisofias-projects-c2217452.vercel.app');
   });
