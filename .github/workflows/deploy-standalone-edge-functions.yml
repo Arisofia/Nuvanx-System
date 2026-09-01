@@ -106,8 +106,8 @@ jobs:
             set -euo pipefail
             MIGRATION_STATUS="$(supabase migration list --db-url "${SESSION_URL:-$DATABASE_URL}" 2>&1)"
             printf '%s\n' "$MIGRATION_STATUS"
-            if ! printf '%s\n' "$MIGRATION_STATUS" | grep -q '20260901190000'; then
-              echo "::error::Required migration 20260901190000 is not applied. Refusing to deploy migration-dependent WhatsApp functions."
+            if ! printf '%s\n' "$MIGRATION_STATUS" | grep -Eq '^[[:space:]]*20260901190000[[:space:]]*\|[[:space:]]*20260901190000[[:space:]]*(\||$)'; then
+              echo "::error::Required migration 20260901190000 is not present in both LOCAL and REMOTE migration history. Refusing to deploy migration-dependent WhatsApp functions."
               exit 1
             fi
 
