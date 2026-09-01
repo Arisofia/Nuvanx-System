@@ -404,18 +404,23 @@ Deno.serve(async (req: Request) => {
       throw new HealthFailure("validation", 424, "Google Ads customer identity validation failed");
     }
 
-    if (conversionRows.length !== 1) {
-      throw new HealthFailure("validation", 424, "Canonical Google Ads conversion action missing");
+    let conversion = null;
+    if (conversionRows.length === 1) {
+      conversion = conversionRows[0]?.conversionAction || null;
+    } else if (conversionRows.length > 1) {
+      throw new HealthFailure("validation", 424, "Multiple conversion actions found, expected exactly one canonical conversion");
     }
-    const conversion = conversionRows[0]?.conversionAction || null;
-    if (!conversion || String(conversion.id || "") !== CANONICAL_CONVERSION_ACTION_ID) {
-      throw new HealthFailure("validation", 424, "Canonical Google Ads conversion identity mismatch");
-    }
-    if (conversion.primaryForGoal !== true) {
-      throw new HealthFailure("validation", 424, "Canonical Google Ads conversion is not primary_for_goal");
-    }
-    if (String(conversion.status || "").toUpperCase() !== "ENABLED") {
-      throw new HealthFailure("validation", 424, "Canonical Google Ads conversion is not enabled");
+    
+    if (conversion) {
+      if (String(conversion.id || "") !== CANONICAL_CONVERSION_ACTION_ID) {
+        throw new HealthFailure("validation", 424, "Canonical Google Ads conversion identity mismatch");
+      }
+      if (conversion.primaryForGoal !== true) {
+        throw new HealthFailure("validation", 424, "Canonical Google Ads conversion is not primary_for_goal");
+      }
+      if (String(conversion.status || "").toUpperCase() !== "ENABLED") {
+        throw new HealthFailure("validation", 424, "Canonical Google Ads conversion is not enabled");
+      }
     }
 
     const performance = new Map<string, any>();
@@ -462,15 +467,15 @@ Deno.serve(async (req: Request) => {
         time_zone: customer.timeZone ?? null,
       },
       campaigns,
-      canonical_conversion: {
+      canonical_conversion: conversion ? {
         id: String(conversion.id),
         name: conversion.name ?? null,
         status: conversion.status ?? null,
         type: conversion.type ?? null,
         category: conversion.category ?? null,
         origin: conversion.origin ?? null,
-        primary_for_goal: conversion.primaryForGoal,
-      },
+        primary_for_goal: conversion.primaryForGoal ?? false,
+      } : null,
     });
   } catch (error) {
     const failure = normalizeFailure(error);
