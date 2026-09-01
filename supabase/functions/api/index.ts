@@ -7673,11 +7673,12 @@ function computeAvgTicketNet(row: any): number {
 }
 
 async function handleReportsCampaignPerformanceGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
-  const { adminClient, resource, sub, req, url, sendJson } = ctx;
+  const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'reports' && sub === 'campaign-performance' && req.method === 'GET') {
     const { since, until } = getKpiDateRange(url);
-    
+
     const { data: rows, error } = await adminClient.rpc('get_campaign_report', {
+      p_user_id: userId,
       from_date: since,
       to_date: until
     });
@@ -7686,7 +7687,7 @@ async function handleReportsCampaignPerformanceGet(ctx: AuthenticatedRouteContex
       console.error('[Reports] campaign performance error:', error);
       return sendJson({ success: false, message: 'Failed to load campaign performance report.' }, 500);
     }
-    
+
     return sendJson({ success: true, campaigns: rows || [] });
   }
   return null;
@@ -7696,18 +7697,22 @@ async function handleReportsSourceComparisonGet(ctx: AuthenticatedRouteContext):
   const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'reports' && sub === 'source-comparison' && req.method === 'GET') {
     const { since: from, until: to } = getKpiDateRange(url);
-    let query = adminClient
-      .from('vw_source_comparison')
-      .select('*')
-      .eq('user_id', userId)
-      .order('total_leads', { ascending: false });
-    if (from) query = query.gte('first_lead_at', from);
-    if (to)   query = query.lte('last_lead_at', to);
-    const { data: rows, error } = await query;
+
+    // Call parameterized RPC to enforce pre-aggregation date boundaries & tenant isolation
+    const { data: rows, error } = await adminClient.rpc('get_source_comparison', {
+      p_user_id: userId,
+      p_from: from || null,
+      p_to: to || null,
+    });
+
     if (error) {
-      console.error('[Reports] source comparison error:', error);
-      return sendJson({ success: false, message: 'Source comparison view is unavailable. Apply the latest Supabase migrations and retry.' }, 500);
+      console.error('[Reports] source comparison rpc error:', error);
+      return sendJson({
+        success: false,
+        message: 'Source comparison RPC is unavailable. Apply migration 20260901160000 and retry.'
+      }, 500);
     }
+
     return sendJson({ success: true, sources: rows || [] });
   }
   return null;
@@ -7740,6 +7745,8 @@ function buildLeadAuditQuery(
       'phone_normalized,patient_id,patient_name,patient_dni,patient_phone,match_confidence,match_class,settlement_id,settlement_date,first_settlement_at,doctoralia_net,doctoralia_template_name,doc_patient_id'
     )
     .eq('lead_user_id', userId)
+    .is('deleted_at', null)
+    .is('merged_into_lead_id', null)
     .order('lead_created_at', { ascending: false })
     .limit(limit);
 
