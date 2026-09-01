@@ -5,14 +5,29 @@ import { fileURLToPath } from "node:url";
 const source = readFileSync(fileURLToPath(new URL("./index.ts", import.meta.url)), "utf8");
 
 describe("Google Data Manager exporter contract", () => {
-  it("requires the exact Supabase service-role credential before outbox access", () => {
+  it("keeps deliver and poll behind the exact Supabase service-role credential", () => {
     expect(source).toContain("async function requireServiceRole");
     expect(source).toContain("secretMatches(match[1], SERVICE_ROLE)");
-    expect(source).toContain('message: "Forbidden"');
-    const guard = source.indexOf("await requireServiceRole(req)");
-    const outbox = source.indexOf('from("google_data_manager_outbox")', guard);
-    expect(guard).toBeGreaterThan(-1);
-    expect(outbox).toBeGreaterThan(guard);
+    expect(source).toContain("const serviceRoleAuthorized = await requireServiceRole(req)");
+    expect(source).toContain('if (mode !== "auth_check") return json({ success: false, message: "Forbidden" }, 403)');
+    const serviceRoleGuard = source.indexOf("const serviceRoleAuthorized = await requireServiceRole(req)");
+    const nonAuthCheckGuard = source.indexOf('if (mode !== "auth_check") return json({ success: false, message: "Forbidden" }, 403)', serviceRoleGuard);
+    const outbox = source.indexOf('from("google_data_manager_outbox")', nonAuthCheckGuard);
+    expect(serviceRoleGuard).toBeGreaterThan(-1);
+    expect(nonAuthCheckGuard).toBeGreaterThan(serviceRoleGuard);
+    expect(outbox).toBeGreaterThan(nonAuthCheckGuard);
+  });
+
+  it("allows the Vault-backed internal secret only for auth_check", () => {
+    expect(source).toContain("async function requireInternalAuthCheckSecret");
+    expect(source).toContain('req.headers.get("x-nvx-internal-secret")');
+    expect(source).toContain('p_name: "REVOPS_INTERNAL_SECRET"');
+    expect(source).toContain("secretMatches(received, String(expected))");
+    const modeGuard = source.indexOf('if (mode !== "auth_check") return json({ success: false, message: "Forbidden" }, 403)');
+    const internalCheck = source.indexOf("await requireInternalAuthCheckSecret(req, admin)", modeGuard);
+    expect(modeGuard).toBeGreaterThan(-1);
+    expect(internalCheck).toBeGreaterThan(modeGuard);
+    expect(source).not.toMatch(/console\.(?:log|warn|error)\([^\n]*(?:received|expected|REVOPS_INTERNAL_SECRET)/);
   });
 
   it("uses the v1 event ingestion and request-status APIs", () => {
