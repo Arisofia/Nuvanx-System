@@ -275,8 +275,13 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!messageId) {
-      await finalizeSend(admin, row, "unknown", null, waRes.status, "missing_provider_message_id", "Meta returned success without a message id");
-      await finishPayload(admin, row, true);
+      const ledgerTracked = await finalizeSend(admin, row, "unknown", null, waRes.status, "missing_provider_message_id", "Meta returned success without a message id");
+      // Only destroy the payload if ledger finalization succeeded. If it failed,
+      // the payload remains claimable for recovery/reconciliation instead of
+      // being lost while the request ledger stays reserved.
+      if (ledgerTracked) {
+        await finishPayload(admin, row, true);
+      }
       unknown += 1;
       continue;
     }
