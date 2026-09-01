@@ -235,7 +235,9 @@ Deno.serve(async (req: Request) => {
       continue;
     }
 
-    // Durable exactly-once boundary: this transaction purges ciphertext before Meta.
+    // Once this succeeds, provider delivery is authorized for this claim token. A
+    // later stale-sending manual-review transition is not cancellation and can be
+    // reconciled by the same claim, but it can never authorize an automatic resend.
     if (!(await markSending(admin, row))) {
       deferred += 1;
       continue;
@@ -259,7 +261,13 @@ Deno.serve(async (req: Request) => {
         }),
         signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
       });
-      waData = await waRes.json().catch(() => ({}));
+      waData = await waRes.json().catch((bodyError: unknown) => {
+        const reason = bodyError instanceof Error ? bodyError.name : "unknown";
+        console.error(
+          `[whatsapp-outbound-worker] provider body read failed request=${row.request_id} status=${waRes.status} reason=${reason}`,
+        );
+        return {};
+      });
     } catch (error: unknown) {
       const reason = error instanceof Error ? error.name : "provider_transport_error";
       const ledgerTracked = await finalizeSend(
@@ -293,7 +301,12 @@ Deno.serve(async (req: Request) => {
         provider.code,
         provider.message,
       );
-      if (ledgerTracked) await finishPayload(admin, row, ambiguous);
+      if (ledgerTracked) {
+        const payloadTracked = await finishPayload(admin, row, ambiguous);
+        if (!payloadTracked) {
+          console.error(`[whatsapp-outbound-worker] payload finalization deferred request=${row.request_id}`);
+        }
+      }
       if (ambiguous) unknown += 1;
       else failed += 1;
       continue;
@@ -309,14 +322,22 @@ Deno.serve(async (req: Request) => {
         "missing_provider_message_id",
         "Meta returned success without a message id",
       );
-      if (ledgerTracked) await finishPayload(admin, row, true);
+      if (ledgerTracked) {
+        const payloadTracked = await finishPayload(admin, row, true);
+        if (!payloadTracked) {
+          console.error(`[whatsapp-outbound-worker] payload finalization deferred request=${row.request_id}`);
+        }
+      }
       unknown += 1;
       continue;
     }
 
     const ledgerTracked = await finalizeSend(admin, row, "accepted", messageId, waRes.status, null, null);
     if (ledgerTracked) {
-      await finishPayload(admin, row, false);
+      const payloadTracked = await finishPayload(admin, row, false);
+      if (!payloadTracked) {
+        console.error(`[whatsapp-outbound-worker] late payload reconciliation pending request=${row.request_id}`);
+      }
       accepted += 1;
       await trackFirstHumanResponse(admin, row, messageId);
     } else {
