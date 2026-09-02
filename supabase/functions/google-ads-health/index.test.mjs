@@ -61,7 +61,8 @@ describe("Google Ads provider health contract", () => {
   });
 
   it("does not send pageSize to Google Ads Search API", () => {
-    expect(source).not.toMatch(/pageSize\s*:/);
+    expect(source).toContain("const requestBody: Record<string, unknown> = { query };");
+    expect(source).not.toMatch(/pageSize/);
   });
 
   it("classifies local, OAuth, provider and validation failures separately", () => {
