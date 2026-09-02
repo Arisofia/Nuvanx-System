@@ -170,7 +170,6 @@ BEGIN
     'public.source_to_cash',
     'public.v_figma_campaign_kpis',
     'public.vw_campaign_performance_real',
-    'public.vw_lead_traceability',
     'public.vw_source_comparison'
   ]::text[] THEN
     RAISE EXCEPTION
@@ -227,9 +226,9 @@ BEGIN
       current_user;
   END IF;
 
-  -- The canonical contract has no column-level ACLs on the five known
-  -- reply-delay views. Relation-level ACL restoration cannot reproduce
-  -- pg_attribute.attacl, so fail closed before any DROP.
+  -- The canonical contract has no column-level ACLs on the known reply-delay
+  -- views. Relation-level ACL restoration cannot reproduce pg_attribute.attacl,
+  -- so fail closed before any DROP.
   IF EXISTS (
     SELECT 1
     FROM nvx_reply_delay_view_restore r
@@ -273,7 +272,7 @@ BEGIN
       v_view.view_definition
     );
 
-    -- All five known reply-delay dependants are security-invoker views in the
+    -- All known reply-delay dependants are security-invoker views in the
     -- canonical Production contract. Preserve every other option, but never
     -- inherit a historical security_invoker=false value.
     SELECT pg_catalog.array_agg(opt)
