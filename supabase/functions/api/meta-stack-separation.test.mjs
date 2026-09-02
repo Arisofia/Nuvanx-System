@@ -137,7 +137,7 @@ describe('Meta canonical stack routing behavior', () => {
       page_id: '111',
       field_data: [],
     });
-    vi.spyOn(api.publicRouteHelpers, 'processLeadData').mockResolvedValue(null);
+    const persist = vi.spyOn(api.publicRouteHelpers, 'processLeadData').mockResolvedValue(null);
 
     await api.processMetaLeadChange({ from }, {
       field: 'leadgen',
