@@ -6,6 +6,10 @@ const repairPath = 'supabase/migrations/20260902180000_reconcile_vw_lead_traceab
 
 const appliedHotfix = fs.readFileSync(appliedHotfixPath, 'utf8');
 const repair = fs.readFileSync(repairPath, 'utf8');
+const executableRepair = repair
+  .split('\n')
+  .filter((line) => !line.trimStart().startsWith('--'))
+  .join('\n');
 
 describe('vw_lead_traceability applied-hotfix ledger contract', () => {
   it('keeps the recovered applied 173941 artifact explicit and ordered before the forward repair', () => {
@@ -43,7 +47,7 @@ describe('vw_lead_traceability applied-hotfix ledger contract', () => {
     expect(repair).toContain('Cannot reconcile vw_lead_traceability: column-level ACLs detected');
     expect(repair).toContain('Unexpected vw_lead_traceability comment after applied 173941');
     expect(repair).toContain('Cannot rebuild replayed 173941 vw_lead_traceability: dependent view exists');
-    expect(repair).not.toMatch(/DROP\s+VIEW[^;]*CASCADE/i);
+    expect(executableRepair).not.toMatch(/DROP\s+VIEW[^;]*CASCADE/i);
   });
 
   it('rebuilds the replayed hotfix signature to the canonical narrowed public contract', () => {
@@ -72,7 +76,7 @@ describe('vw_lead_traceability applied-hotfix ledger contract', () => {
     expect(repair).toContain("v_canonical_acl constant text[] := ARRAY[");
     expect(repair).toContain("'authenticated:SELECT:plain'");
     expect(repair).toContain("'service_role:SELECT:plain'");
-    expect(repair).not.toMatch(/GRANT\s+ALL[^;]*TO\s+(anon|authenticated|service_role)/i);
+    expect(executableRepair).not.toMatch(/GRANT\s+ALL[^;]*TO\s+(anon|authenticated|service_role)/i);
   });
 
   it('restores canonical metadata and asserts exact postconditions before commit', () => {
