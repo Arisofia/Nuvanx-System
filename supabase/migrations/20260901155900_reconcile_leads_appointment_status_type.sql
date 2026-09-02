@@ -8,8 +8,13 @@
 -- This migration is intentionally ordered immediately before
 -- 20260901160000_fix_reporting_canonical_sources.sql. It is idempotent and a
 -- no-op when the column is already the canonical enum. On a clean replay it
--- snapshots dependent view definitions/options/grants, rebuilds them around the
--- type conversion, and fails closed rather than using DROP ... CASCADE blindly.
+-- snapshots the exact known dependent views/options/grants, rebuilds them around
+-- the type conversion, and fails closed rather than using DROP ... CASCADE.
+--
+-- One historical view needs an explicit compatibility rewrite:
+-- vw_doctoralia_lead_traceability_unified coalesces dr.estado::text with
+-- leads.appointment_status. Once the latter becomes the enum, that operand is
+-- cast to text so the public view contract remains text and replay can continue.
 
 DO $bridge$
 DECLARE
@@ -17,6 +22,8 @@ DECLARE
   v_udt_name text;
   v_view record;
   v_acl record;
+  v_definition text;
+  v_dependent_views text[];
 BEGIN
   IF to_regclass('public.leads') IS NULL THEN
     RAISE EXCEPTION 'public.leads is required before appointment-status replay reconciliation';
@@ -37,6 +44,7 @@ BEGIN
     RAISE EXCEPTION 'public.leads.appointment_status is missing';
   END IF;
 
+  -- Production already has the canonical enum. Never mutate its views here.
   IF v_udt_schema = 'public' AND v_udt_name = 'appointment_status' THEN
     RETURN;
   END IF;
@@ -137,6 +145,26 @@ BEGIN
   JOIN pg_catalog.pg_class v ON v.oid = d.view_oid
   JOIN pg_catalog.pg_namespace n ON n.oid = v.relnamespace;
 
+  -- This is deliberately strict. If migration history changes such that another
+  -- object depends on the column before this bridge, review it explicitly rather
+  -- than silently rewriting/dropping an unknown object.
+  SELECT array_agg(
+           pg_catalog.format('%I.%I', view_schema, view_name)
+           ORDER BY view_schema, view_name
+         )
+    INTO v_dependent_views
+  FROM nvx_appointment_status_view_restore;
+
+  IF v_dependent_views IS DISTINCT FROM ARRAY[
+    'public.vw_doctoralia_lead_traceability_unified',
+    'public.vw_doctoralia_patient_ltv',
+    'public.vw_lead_traceability'
+  ]::text[] THEN
+    RAISE EXCEPTION
+      'Unexpected appointment_status dependent views during clean replay: %',
+      v_dependent_views;
+  END IF;
+
   INSERT INTO nvx_appointment_status_view_acl (
     view_oid,
     grantee_name,
@@ -181,11 +209,34 @@ BEGIN
     FROM nvx_appointment_status_view_restore
     ORDER BY dependency_depth ASC, view_schema, view_name
   LOOP
+    v_definition := v_view.view_definition;
+
+    IF v_view.view_schema = 'public'
+       AND v_view.view_name = 'vw_doctoralia_lead_traceability_unified' THEN
+      IF pg_catalog.strpos(v_definition, 'l.appointment_status') = 0 THEN
+        RAISE EXCEPTION
+          'Expected l.appointment_status reference is missing from %.% during replay',
+          v_view.view_schema,
+          v_view.view_name;
+      END IF;
+
+      -- Keep the historical public column contract as text while the source
+      -- column becomes the enum. Avoid double-casting if replay history already
+      -- contains the compatibility cast.
+      IF pg_catalog.strpos(v_definition, 'l.appointment_status::text') = 0 THEN
+        v_definition := pg_catalog.replace(
+          v_definition,
+          'l.appointment_status',
+          'l.appointment_status::text'
+        );
+      END IF;
+    END IF;
+
     EXECUTE pg_catalog.format(
       'CREATE VIEW %I.%I AS %s',
       v_view.view_schema,
       v_view.view_name,
-      v_view.view_definition
+      v_definition
     );
 
     IF v_view.reloptions IS NOT NULL AND pg_catalog.array_length(v_view.reloptions, 1) > 0 THEN
