@@ -117,7 +117,7 @@ describe('Meta tenant-safe resolution contract', () => {
 
     expect(ig).toContain('resolveMetaIntegration(adminClient, userId');
     expect(ig).toContain('if (!integ || !requesterClinicId)');
-    expect(ig).toContain("igDiscoverQuery = igDiscoverQuery.eq('clinic_id', requesterClinicId)");
+    expect(ig).toMatch(/\.from\('meta_ig_account_daily'\)[\s\S]{0,180}\.eq\('clinic_id', requesterClinicId\)[\s\S]{0,80}\.limit\(1\)/);
     expect(ig).toContain("query = query.eq('clinic_id', requesterClinicId)");
     expect(ig).not.toContain('applyClinicOrUserScope(query, requesterClinicId, userId)');
   });
