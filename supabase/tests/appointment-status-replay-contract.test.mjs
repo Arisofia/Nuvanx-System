@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const leadsBase = readFileSync('supabase/migrations/20260501090000_create_leads_table.sql', 'utf8');
+const historicalUnified = readFileSync('supabase/migrations/20260527000000_add_fbc_fbp_to_traceability_view.sql', 'utf8');
 const clinicalBridge = readFileSync('supabase/migrations/20260830223430_reconcile_clinical_core_contract.sql', 'utf8');
 const typeBridge = readFileSync('supabase/migrations/20260901155900_reconcile_leads_appointment_status_type.sql', 'utf8');
 const reporting = readFileSync('supabase/migrations/20260901160000_fix_reporting_canonical_sources.sql', 'utf8');
@@ -36,6 +37,40 @@ describe('clean replay appointment-status type contract', () => {
     expect(typeBridge).toContain("'CREATE VIEW %I.%I AS %s'");
     expect(typeBridge).toContain('pg_catalog.aclexplode(c.relacl)');
     expect(typeBridge).not.toMatch(/DROP\s+VIEW[^;]*CASCADE/i);
+  });
+
+  it('repairs only the historical Doctoralia TEXT/enum COALESCE boundary', () => {
+    expect(historicalUnified).toMatch(/COALESCE\s*\(\s*dr\.estado::TEXT\s*,\s*l\.appointment_status\s*\)/i);
+    expect(typeBridge).toContain("'COALESCE(dr.estado::text, l.appointment_status)'");
+    expect(typeBridge).toContain("'COALESCE(dr.estado::text, l.appointment_status::text)'");
+    expect(typeBridge).toContain("r.view_name = 'vw_doctoralia_lead_traceability_unified'");
+    expect(typeBridge).toContain('expected appointment_status text COALESCE boundary is missing');
+    expect(typeBridge).toContain('Failed to make historical unified Doctoralia view enum-replay-safe');
+
+    // A broad cast deletion/rewrite would mutate unrelated saved view contracts.
+    expect(typeBridge).not.toMatch(/replace\s*\([^;]*['"]::text['"]/is);
+  });
+
+  it('preserves view and column comments across the controlled DROP/CREATE', () => {
+    expect(historicalUnified).toContain('COMMENT ON COLUMN public.vw_doctoralia_lead_traceability_unified.lead_fbc');
+    expect(historicalUnified).toContain('COMMENT ON COLUMN public.vw_doctoralia_lead_traceability_unified.lead_fbp');
+    expect(typeBridge).toContain("pg_catalog.obj_description(v.oid, 'pg_class')");
+    expect(typeBridge).toContain('nvx_appointment_status_view_column_comment');
+    expect(typeBridge).toContain('pg_catalog.col_description(r.view_oid, a.attnum)');
+    expect(typeBridge).toContain("'COMMENT ON VIEW %I.%I IS %L'");
+    expect(typeBridge).toContain("'COMMENT ON COLUMN %I.%I.%I IS %L'");
+  });
+
+  it('prepares incompatible historical reporting views for canonical recreation', () => {
+    expect(typeBridge).toContain("to_regclass('public.vw_doctor_performance_real') IS NOT NULL");
+    expect(typeBridge).toContain("EXECUTE 'DROP VIEW public.vw_doctor_performance_real'");
+    expect(typeBridge).toContain("to_regclass('public.vw_lead_traceability') IS NOT NULL");
+    expect(typeBridge).toContain("EXECUTE 'DROP VIEW public.vw_lead_traceability'");
+    expect(typeBridge).toContain('CREATE OR REPLACE VIEW with SQLSTATE 42P16');
+    expect(typeBridge).not.toMatch(/DROP\s+VIEW[^;]*CASCADE/i);
+
+    expect(reporting).toContain('CREATE OR REPLACE VIEW public.vw_doctor_performance_real AS');
+    expect(reporting).toContain('CREATE OR REPLACE VIEW public.vw_lead_traceability');
   });
 
   it('runs before the reporting migration that requires enum comparison semantics', () => {
