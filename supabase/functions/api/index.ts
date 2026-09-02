@@ -5529,6 +5529,9 @@ async function handleIntegrationsConnectPost(ctx: AuthenticatedRouteContext): Pr
     await ensurePublicUserRow(adminClient, authUser);
     const encryptedKey = await encryptCred(String(reqToken).trim());
     const requesterClinicId = await resolveClinicId(adminClient, userId);
+    if (service === 'meta' && !requesterClinicId) {
+      return sendJson({ success: false, message: 'Clinic not configured for this user.' }, 400);
+    }
 
     const { error: credErr } = await adminClient.from('credentials')
       .upsert({ 
