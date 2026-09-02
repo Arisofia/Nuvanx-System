@@ -193,6 +193,20 @@ BEGIN
       current_user;
   END IF;
 
+  -- Production has no column-level ACLs on the five known reply-delay views.
+  -- The relation-level ACL restore cannot reproduce pg_attribute.attacl, so
+  -- inspect the captured view OIDs and fail closed before any DROP.
+  IF EXISTS (
+    SELECT 1
+    FROM nvx_reply_delay_view_restore r
+    JOIN pg_catalog.pg_attribute a ON a.attrelid = r.view_oid
+    WHERE a.attnum > 0
+      AND NOT a.attisdropped
+      AND a.attacl IS NOT NULL
+  ) THEN
+    RAISE EXCEPTION 'Cannot reconcile reply-delay views: column-level ACLs detected (not supported by Production contract)';
+  END IF;
+
   -- Downstream first. No CASCADE: an uncaptured dependency must fail explicitly.
   FOR v_view IN
     SELECT *
@@ -218,21 +232,6 @@ BEGIN
     FROM nvx_reply_delay_view_restore
     ORDER BY dependency_depth ASC, view_schema, view_name
   LOOP
-    -- Production contract: no column-level ACLs on reply-delay views. Fail closed if present.
-    IF EXISTS (
-      SELECT 1
-      FROM pg_catalog.pg_attribute a
-      JOIN pg_catalog.pg_class c ON a.attrelid = c.oid
-      JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-      WHERE n.nspname = v_view.view_schema
-        AND c.relname = v_view.view_name
-        AND c.relkind = 'v'
-        AND a.attacl IS NOT NULL
-    ) THEN
-      RAISE EXCEPTION 'Cannot reconcile %.%: column-level ACLs detected (not supported by Production contract)',
-        v_view.view_schema, v_view.view_name;
-    END IF;
-
     EXECUTE pg_catalog.format(
       'CREATE VIEW %I.%I AS %s',
       v_view.view_schema,
