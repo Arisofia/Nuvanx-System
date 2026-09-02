@@ -11,6 +11,15 @@ const integrationSection = api.slice(integrationStart, resolverStart);
 const resolver = api.slice(resolverStart, resolverEnd);
 
 describe('Meta tenant-safe resolution contract', () => {
+  it('propagates clinic lookup errors instead of silently falling back to legacy user scope', () => {
+    const start = api.indexOf('async function resolveClinicId');
+    const end = api.indexOf('async function persistAgentOutput', start);
+    const source = api.slice(start, end);
+    expect(start).toBeGreaterThan(-1);
+    expect(source).toContain(".select('clinic_id').eq('id', userId).maybeSingle()");
+    expect(source).toContain('if (error) throw error;');
+  });
+
   it('resolves the connected integration from the requester clinic', () => {
     expect(integrationStart).toBeGreaterThan(-1);
     expect(integrationSection).toContain('const requesterClinicId = await resolveClinicId(adminClient, userId);');
@@ -23,16 +32,33 @@ describe('Meta tenant-safe resolution contract', () => {
   it('uses the selected integration owner for the credential while preserving clinic isolation', () => {
     expect(resolverStart).toBeGreaterThan(-1);
     expect(resolverEnd).toBeGreaterThan(resolverStart);
+    expect(resolver).toContain("const integrationService = intg.service === 'meta_ads' ? 'meta_ads' : 'meta';");
     expect(resolver).toContain('const integrationOwnerId = String(intg.user_id ?? \'\').trim();');
     expect(resolver).toContain(".eq('user_id', integrationOwnerId)");
     expect(resolver).toContain("credentialQuery.eq('clinic_id', requesterClinicId)");
     expect(resolver).toContain("credentialQuery.is('clinic_id', null)");
+    expect(resolver).toContain('integrationOwnerId,');
+    expect(resolver).toContain('integrationService,');
     expect(resolver).not.toContain(".eq('user_id', userId)\n    .eq('service', credentialService)");
   });
 
   it('fails closed when integration or owner credential is missing', () => {
-    const failClosedReturns = resolver.match(/return \{ notConnected: true, accessToken: '', adAccountIds: \[\] as string\[\], adAccountId: '', decryptionError: '' \};/g) ?? [];
-    expect(failClosedReturns.length).toBeGreaterThanOrEqual(3);
+    expect((resolver.match(/notConnected: true/g) ?? []).length).toBeGreaterThanOrEqual(3);
+    expect(resolver).toContain("integrationOwnerId: ''");
+    expect(resolver).toContain("integrationService: ''");
+    expect(resolver).toContain('integrationOwnerId,');
+    expect(resolver).toContain('integrationService,');
+  });
+
+  it('updates the selected canonical integration owner rather than the authenticated requester', () => {
+    const start = api.indexOf("if (service === 'meta') {");
+    const end = api.indexOf("const { data: cred }", start);
+    const source = api.slice(start, end);
+    expect(start).toBeGreaterThan(-1);
+    expect(source).toContain("const integrationOwnerId = creds.integrationOwnerId ?? '';");
+    expect(source).toContain("const integrationService = creds.integrationService ?? '';");
+    expect(source).toContain('updateIntegrationStatus(adminClient, integrationOwnerId, integrationService');
+    expect(source).not.toContain("updateIntegrationStatus(adminClient, userId, 'meta'");
   });
 
   it('scopes organic and Instagram persisted reads to clinic when the requester has one', () => {
