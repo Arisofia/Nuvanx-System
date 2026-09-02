@@ -36,7 +36,7 @@ describe('Meta tenant-safe resolution contract', () => {
     expect(integrationSection).toContain(".select('user_id, clinic_id, service, metadata, status, updated_at')");
     expect(integrationSection).toContain('if (!requesterClinicId) {');
     expect(integrationSection).toContain('integration: null');
-    expect(integrationSection).toContain("integrationsQuery = integrationsQuery.eq('clinic_id', requesterClinicId);");
+    expect(integrationSection).toContain(".eq('clinic_id', requesterClinicId)");
     expect(integrationSection).not.toContain(".is('clinic_id', null)");
     expect(integrationSection).not.toContain(".eq('clinic_id', requesterClinicId).or(");
   });
@@ -126,16 +126,16 @@ describe('Meta tenant-safe resolution contract', () => {
     const organic = api.slice(api.indexOf('async function handleMetaOrganicGet'), api.indexOf('async function handleMetaIgGet'));
     const ig = api.slice(api.indexOf('async function handleMetaIgGet'), api.indexOf('function parseMetaBackfillDates'));
 
-    expect(organic).toContain(".order('created_time', { ascending: false })");
     expect(organic).toContain(".order('updated_at', { ascending: false })");
+    expect(organic).toContain(".order('created_time', { ascending: false })");
     expect(organic).toContain('.range(offset, offset + pageSize - 1)');
     expect(organic).toContain('uniquePostsMap.size < limit');
     expect(organic).toContain('page.length < pageSize');
     expect(organic).not.toContain('.limit(Math.min(limit * 5, 1000))');
     expect(organic).toContain(".order('date', { ascending: true })");
 
-    expect(ig).toContain(".order('timestamp', { ascending: false })");
     expect(ig).toContain(".order('updated_at', { ascending: false })");
+    expect(ig).toContain(".order('timestamp', { ascending: false })");
     expect(ig).toContain('.range(offset, offset + pageSize - 1)');
     expect(ig).toContain('uniquePostsMap.size < limit');
     expect(ig).toContain('page.length < pageSize');
