@@ -114,14 +114,20 @@ describe("Google Ads provider health contract", () => {
     expect(source).toContain('provisioned_by: "google_ads_health_runtime"');
     expect(provisionScript).not.toContain("ENCRYPTION_KEY");
     expect(provisionScript).not.toContain("encryptCredential");
-    expect(provisionScript).not.toContain("/rest/v1/credentials");
+    expect(provisionScript).not.toContain("encrypted_key");
+    expect(provisionScript).not.toContain(".upsert(");
+    expect(provisionScript).toContain("/rest/v1/credentials?service=eq.google_ads&select=user_id,metadata");
     expect(provisionScript).toContain("operation: 'provision'");
   });
 
-  it("has one governed automatic post-deploy provisioning owner", () => {
+  it("uses state-driven, exact-SHA post-deploy credential convergence", () => {
     expect(deployWorkflow).toContain("Reverify remote main immediately before Production mutation");
-    expect(deployWorkflow).toContain("Provision Google Ads credential through deployed runtime");
+    expect(deployWorkflow).toContain("Converge Google Ads credential through deployed runtime");
     expect(deployWorkflow).toContain("steps.post_deploy_guard.outputs.provision == 'true'");
+    expect(deployWorkflow).toContain("Remote main advanced before Google Ads credential convergence; refusing stale credential mutation");
+    expect(deployWorkflow).not.toContain("git diff --name-only");
+    expect(provisionScript).toContain("credentialContractCurrent(integrations, credentials)");
+    expect(provisionScript).toContain("provision_required: false");
     expect(deployWorkflow).toContain('supabase functions deploy google-ads-health --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
     expect(credentialWorkflow).toContain("workflow_dispatch:");
     expect(credentialWorkflow).not.toContain("push:");
