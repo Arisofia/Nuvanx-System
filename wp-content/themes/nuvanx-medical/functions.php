@@ -333,8 +333,23 @@ require_once get_template_directory() . '/inc/nvx-navigation-filters.php';
 require_once get_template_directory() . '/inc/nvx-strategy-pages.php';
 require_once get_template_directory() . '/inc/nvx-signature-phase-pages.php';
 require_once get_template_directory() . '/inc/nvx-bridal-page.php';
-require_once get_template_directory() . '/inc/nvx-aesthetic-treatment-pages.php';
+
+// Aesthetic renderer: load only on governed slugs to enforce boundary
+$aesthetic_slugs = array(
+	'labios-acido-hialuronico-madrid',
+	'rinomodelacion-sin-cirugia-madrid',
+	'ojeras-surco-lagrimal-madrid',
+	'bioestimuladores-colageno-madrid',
+	'neuromoduladores-faciales-madrid',
+	'acido-hialuronico-relleno-madrid',
+);
+if ( function_exists( 'nvx_theme_current_page_slug' ) && in_array( nvx_theme_current_page_slug(), $aesthetic_slugs, true ) ) {
+	require_once get_template_directory() . '/inc/nvx-aesthetic-treatment-pages.php';
+}
+
+// Schema module remains global (needed for Yoast graph extension)
 require_once get_template_directory() . '/inc/nvx-aesthetic-treatment-schema.php';
+
 require_once get_template_directory() . '/inc/nvx-blog-system.php';
 require_once get_template_directory() . '/inc/nvx-journal-laserlipolisis-vs-lipo.php';
 require_once get_template_directory() . '/inc/nvx-medical-review.php';
