@@ -6,8 +6,6 @@
 -- authenticated callers. Anonymous access is not required by the canonical API
 -- path and is explicitly removed.
 
-BEGIN;
-
 ALTER VIEW IF EXISTS public.vw_doctor_performance_real
   SET (security_invoker = true);
 
@@ -17,5 +15,3 @@ GRANT SELECT ON TABLE public.vw_doctor_performance_real TO authenticated, servic
 
 COMMENT ON VIEW public.vw_doctor_performance_real IS
   'Doctor performance sourced from Doctoralia appointment ingestion when doctor_id is present, with legacy lead fallback and verified settlement revenue. SECURITY INVOKER: underlying RLS remains authoritative.';
-
-COMMIT;
