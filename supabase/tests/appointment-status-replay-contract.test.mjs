@@ -35,9 +35,9 @@ describe('clean replay appointment-status type contract', () => {
     expect(typeBridge).toContain("'DROP VIEW %I.%I'");
     expect(typeBridge).toContain("'CREATE VIEW %I.%I AS %s'");
     expect(typeBridge).toContain('pg_catalog.aclexplode(c.relacl)');
-    expect(typeBridge).toContain("'public.vw_doctoralia_lead_traceability_unified'");
-    expect(typeBridge).toContain("'public.vw_doctoralia_patient_ltv'");
-    expect(typeBridge).toContain("'public.vw_lead_traceability'");
+    expect(typeBridge).toMatch(
+      /IF v_dependent_views IS DISTINCT FROM ARRAY\[\s*'public\.vw_doctoralia_lead_traceability_unified',\s*'public\.vw_doctoralia_patient_ltv',\s*'public\.vw_lead_traceability'\s*\]::text\[\] THEN/
+    );
     expect(typeBridge).toContain('Unexpected appointment_status dependent views during clean replay');
     expect(typeBridge).not.toMatch(/DROP\s+VIEW[^;]*CASCADE/i);
   });

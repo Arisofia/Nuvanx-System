@@ -48,11 +48,12 @@ describe('Meta tenant-safe resolution contract', () => {
   });
 
   it('fails closed when integration or owner credential is missing', () => {
-    expect((resolver.match(/notConnected: true/g) ?? []).length).toBeGreaterThanOrEqual(3);
+    expect((resolver.match(/notConnected:\s*true/g) ?? []).length).toBeGreaterThanOrEqual(4);
     expect(resolver).toContain("integrationOwnerId: ''");
     expect(resolver).toContain("integrationService: ''");
     expect(resolver).toContain('integrationOwnerId,');
     expect(resolver).toContain('integrationService,');
+    expect(resolver).toContain('requesterClinicId,');
   });
 
   it('updates the selected canonical integration owner rather than the authenticated requester', () => {

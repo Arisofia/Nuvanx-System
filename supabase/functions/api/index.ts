@@ -1350,6 +1350,7 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
     credentialService,
     integrationOwnerId,
     integrationService,
+    requesterClinicId,
     decryptionError,
   } as const;
 }
