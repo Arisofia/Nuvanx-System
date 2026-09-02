@@ -156,8 +156,8 @@ BEGIN
   FROM nvx_appointment_status_view_restore;
 
   IF v_dependent_views IS DISTINCT FROM ARRAY[
-    'public.vw_doctoralia_lead_traceability_unified',
     'public.vw_doctoralia_patient_ltv',
+    'public.vw_doctoralia_lead_traceability_unified',
     'public.vw_lead_traceability'
   ]::text[] THEN
     RAISE EXCEPTION
