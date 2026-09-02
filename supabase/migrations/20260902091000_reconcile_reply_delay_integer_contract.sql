@@ -20,6 +20,7 @@ CREATE TEMP TABLE nvx_reply_delay_view_restore (
 
 CREATE TEMP TABLE nvx_reply_delay_view_acl (
   view_oid oid NOT NULL,
+  grantor_name text NOT NULL,
   grantee_name text NOT NULL,
   privilege_type text NOT NULL,
   is_grantable boolean NOT NULL
@@ -34,6 +35,7 @@ DECLARE
   v_dependent_views text[];
   v_view record;
   v_acl record;
+  v_safe_reloptions text[];
 BEGIN
   IF to_regclass('public.leads') IS NULL THEN
     RAISE EXCEPTION 'public.leads is required before reply-delay reconciliation';
@@ -160,11 +162,13 @@ BEGIN
 
   INSERT INTO nvx_reply_delay_view_acl (
     view_oid,
+    grantor_name,
     grantee_name,
     privilege_type,
     is_grantable
   )
   SELECT r.view_oid,
+         pg_catalog.pg_get_userbyid(acl.grantor),
          CASE
            WHEN acl.grantee = 0 THEN 'PUBLIC'
            ELSE pg_catalog.pg_get_userbyid(acl.grantee)
@@ -176,6 +180,18 @@ BEGIN
   CROSS JOIN LATERAL pg_catalog.aclexplode(c.relacl) acl
   WHERE c.relacl IS NOT NULL
     AND acl.grantee <> c.relowner;
+
+  -- GRANT executes as current_user. Refuse to rebuild a view if that would
+  -- silently change the grantor identity of an existing ACL entry.
+  IF EXISTS (
+    SELECT 1
+    FROM nvx_reply_delay_view_acl
+    WHERE grantor_name IS DISTINCT FROM current_user
+  ) THEN
+    RAISE EXCEPTION
+      'Cannot reproduce reply-delay view ACL grantors as current_user=%',
+      current_user;
+  END IF;
 
   -- Downstream first. No CASCADE: an uncaptured dependency must fail explicitly.
   FOR v_view IN
@@ -209,15 +225,29 @@ BEGIN
       v_view.view_definition
     );
 
-    IF v_view.reloptions IS NOT NULL
-       AND pg_catalog.array_length(v_view.reloptions, 1) > 0 THEN
+    -- All five known reply-delay dependants are security-invoker views in the
+    -- canonical Production contract. Preserve every other option, but never
+    -- inherit a historical security_invoker=false value.
+    SELECT pg_catalog.array_agg(opt)
+      INTO v_safe_reloptions
+    FROM pg_catalog.unnest(COALESCE(v_view.reloptions, ARRAY[]::text[])) AS opt
+    WHERE opt !~ '^security_invoker=';
+
+    IF v_safe_reloptions IS NOT NULL
+       AND pg_catalog.array_length(v_safe_reloptions, 1) > 0 THEN
       EXECUTE pg_catalog.format(
         'ALTER VIEW %I.%I SET (%s)',
         v_view.view_schema,
         v_view.view_name,
-        pg_catalog.array_to_string(v_view.reloptions, ', ')
+        pg_catalog.array_to_string(v_safe_reloptions, ', ')
       );
     END IF;
+
+    EXECUTE pg_catalog.format(
+      'ALTER VIEW %I.%I SET (security_invoker = true)',
+      v_view.view_schema,
+      v_view.view_name
+    );
 
     FOR v_acl IN
       SELECT *
@@ -247,7 +277,7 @@ BEGIN
       );
     END IF;
   END LOOP;
-END
+END;
 $reply_delay_bridge$;
 
 COMMIT;
