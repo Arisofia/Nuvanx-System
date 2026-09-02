@@ -27,7 +27,7 @@ describe('clean replay appointment-status type contract', () => {
     expect(typeBridge).not.toMatch(/UPDATE\s+public\.leads/i);
   });
 
-  it('captures and rebuilds dependent views without blind CASCADE deletion', () => {
+  it('captures and rebuilds only the known dependent replay views without blind CASCADE deletion', () => {
     expect(typeBridge).toContain('WITH RECURSIVE target AS');
     expect(typeBridge).toContain('pg_catalog.pg_get_viewdef(v.oid, true)');
     expect(typeBridge).toContain('ORDER BY dependency_depth DESC');
@@ -35,7 +35,18 @@ describe('clean replay appointment-status type contract', () => {
     expect(typeBridge).toContain("'DROP VIEW %I.%I'");
     expect(typeBridge).toContain("'CREATE VIEW %I.%I AS %s'");
     expect(typeBridge).toContain('pg_catalog.aclexplode(c.relacl)');
+    expect(typeBridge).toContain("'public.vw_doctoralia_lead_traceability_unified'");
+    expect(typeBridge).toContain("'public.vw_doctoralia_patient_ltv'");
+    expect(typeBridge).toContain("'public.vw_lead_traceability'");
+    expect(typeBridge).toContain('Unexpected appointment_status dependent views during clean replay');
     expect(typeBridge).not.toMatch(/DROP\s+VIEW[^;]*CASCADE/i);
+  });
+
+  it('keeps the historical Doctoralia unified view text contract enum-safe', () => {
+    expect(typeBridge).toContain("v_view.view_name = 'vw_doctoralia_lead_traceability_unified'");
+    expect(typeBridge).toContain("'l.appointment_status::text'");
+    expect(typeBridge).toContain("'l.appointment_status',");
+    expect(typeBridge).toContain('Expected l.appointment_status reference is missing');
   });
 
   it('runs before the reporting migration that requires enum comparison semantics', () => {
