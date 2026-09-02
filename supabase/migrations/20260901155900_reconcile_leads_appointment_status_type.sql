@@ -149,7 +149,7 @@ BEGIN
   -- object depends on the column before this bridge, review it explicitly rather
   -- than silently rewriting/dropping an unknown object.
   SELECT array_agg(
-           pg_catalog.format('%I.%I', view_schema, view_name)
+           view_schema || '.' || view_name
            ORDER BY view_schema, view_name
          )
     INTO v_dependent_views
