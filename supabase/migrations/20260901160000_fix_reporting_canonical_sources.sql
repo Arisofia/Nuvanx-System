@@ -733,6 +733,7 @@ DECLARE
   v_template_id_len integer;
   v_patient_phone_type text;
   v_patient_phone_len integer;
+  v_lead_security_invoker text[];
 BEGIN
   IF to_regclass('public.vw_lead_traceability') IS NULL THEN
     RETURN;
@@ -750,6 +751,14 @@ BEGIN
   WHERE c.table_schema = 'public'
     AND c.table_name = 'vw_lead_traceability'
     AND c.column_name = 'lead_name';
+
+  SELECT c.reloptions
+    INTO v_lead_security_invoker
+  FROM pg_catalog.pg_class c
+  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'public'
+    AND c.relname = 'vw_lead_traceability'
+    AND c.relkind = 'v';
 
   SELECT c.data_type, c.character_maximum_length
     INTO v_phone_type, v_phone_len
@@ -794,7 +803,9 @@ BEGIN
      AND v_patient_ltv_type = 'numeric'
      AND v_patient_ltv_precision = 12 AND v_patient_ltv_scale = 2
      AND v_template_id_type = 'character varying' AND v_template_id_len = 32
-     AND v_patient_phone_type = 'character varying' AND v_patient_phone_len = 64 THEN
+     AND v_patient_phone_type = 'character varying' AND v_patient_phone_len = 64
+     AND v_lead_security_invoker IS NOT NULL
+     AND 'security_invoker=true' = ANY(v_lead_security_invoker) THEN
     RETURN;
   END IF;
 
