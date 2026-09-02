@@ -44,6 +44,15 @@ describe('source_to_cash clean-replay contract', () => {
     expect(migration).toContain('ALTER VIEW public.source_to_cash OWNER TO %I');
   });
 
+  it('fails closed on column-level ACLs before dropping the view', () => {
+    const aclGuard = migration.indexOf('a.attacl IS NOT NULL');
+    const drop = migration.indexOf('DROP VIEW public.source_to_cash;');
+    expect(aclGuard).toBeGreaterThan(-1);
+    expect(drop).toBeGreaterThan(-1);
+    expect(aclGuard).toBeLessThan(drop);
+    expect(migration).toContain('Cannot reconcile source_to_cash: column-level ACLs detected');
+  });
+
   it('does not rewrite source data', () => {
     expect(migration).not.toMatch(/\bUPDATE\s+public\./i);
     expect(migration).not.toMatch(/\bDELETE\s+FROM\s+public\./i);
