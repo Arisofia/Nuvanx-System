@@ -1110,6 +1110,10 @@ export async function processLeadData(adminClient: any, userId: string, leadData
   // Upsert lead — idempotent via partial unique index (clinic_id, source, external_id)
   const createdAt = parseMetaLeadCreatedAt(leadData.created_time);
   const clinicIdForLead = clinicId ?? await resolveClinicId(adminClient, userId);
+  
+  if (!clinicIdForLead) {
+    throw new Error('Clinic is required for Meta lead ingestion');
+  }
 
   const { data: lead } = await adminClient.from('leads')
     .upsert({
@@ -4057,6 +4061,10 @@ async function persistMetaOrganicDailyInsights(adminClient: any, userId: string,
   }
 
   const clinicId = await resolveClinicId(adminClient, userId);
+  
+  if (!clinicId) {
+    throw new Error('Clinic is required for Meta provider fact persistence');
+  }
 
   const dbRows = Array.from(byDate.values()).map((r: any) => ({
     user_id: userId,
@@ -4077,7 +4085,7 @@ async function persistMetaOrganicDailyInsights(adminClient: any, userId: string,
 
   const { error } = await adminClient
     .from('meta_organic_daily')
-    .upsert(dbRows, { onConflict: 'user_id,page_id,date' });
+    .upsert(dbRows, { onConflict: 'clinic_id,page_id,date' });
 
   if (error) throw error;
   return dbRows.length;
@@ -4105,6 +4113,10 @@ async function persistMetaPostPerformance(adminClient: any, userId: string, page
   if (posts.length === 0) return 0;
 
   const clinicId = await resolveClinicId(adminClient, userId);
+  
+  if (!clinicId) {
+    throw new Error('Clinic is required for Meta provider fact persistence');
+  }
 
   const dbRows = posts.map((p: any) => {
     const insightsByName = new Map();
@@ -4150,7 +4162,7 @@ async function persistMetaPostPerformance(adminClient: any, userId: string, page
 
   const { error } = await adminClient
     .from('meta_post_performance')
-    .upsert(dbRows, { onConflict: 'user_id,post_id' });
+    .upsert(dbRows, { onConflict: 'clinic_id,page_id,post_id' });
 
   if (error) throw error;
   return dbRows.length;
@@ -4160,6 +4172,11 @@ async function persistMetaPostPerformance(adminClient: any, userId: string, page
 
 async function persistMetaIgAccountDailyInsights(adminClient: any, userId: string, igId: string, accessToken: string, sinceDate: string, untilDate: string): Promise<number> {
   const clinicId = await resolveClinicId(adminClient, userId);
+  
+  if (!clinicId) {
+    throw new Error('Clinic is required for Meta provider fact persistence');
+  }
+  
   const byDate = new Map<string, any>();
 
   const startDate = new Date(`${sinceDate}T00:00:00Z`);
@@ -4280,7 +4297,7 @@ async function persistMetaIgAccountDailyInsights(adminClient: any, userId: strin
 
   const { error } = await adminClient
     .from('meta_ig_account_daily')
-    .upsert(dbRows, { onConflict: 'user_id,ig_id,date' });
+    .upsert(dbRows, { onConflict: 'clinic_id,ig_id,date' });
 
   if (error) throw error;
 
@@ -4316,6 +4333,11 @@ async function persistMetaIgMediaPerformance(adminClient: any, userId: string, i
   if (items.length === 0) return 0;
 
   const clinicId = await resolveClinicId(adminClient, userId);
+  
+  if (!clinicId) {
+    throw new Error('Clinic is required for Meta provider fact persistence');
+  }
+  
   let upserted = 0;
 
   for (const media of items) {
@@ -4352,7 +4374,7 @@ async function persistMetaIgMediaPerformance(adminClient: any, userId: string, i
           total_interactions: Number(insights.total_interactions || 0),
           source_quality: 'daily_backfill',
           updated_at: new Date().toISOString(),
-        }, { onConflict: 'user_id,media_id' });
+        }, { onConflict: 'clinic_id,ig_id,media_id' });
 
       if (error) throw error;
       upserted++;
