@@ -65,6 +65,7 @@ describe('Canonical Reporting Pipeline and E2E Contract', () => {
     expect(auditQuerySection).not.toContain(".is('merged_into_lead_id', null)");
 
     expect(migration).toContain('CREATE OR REPLACE VIEW public.vw_lead_traceability');
+    expect(migration).toContain('l.reply_delay_minutes::integer AS reply_delay_minutes');
     expect(migration).toContain('WHERE l.deleted_at IS NULL');
     expect(migration).toContain('AND l.merged_into_lead_id IS NULL;');
   });
