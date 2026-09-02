@@ -42,6 +42,19 @@ describe('clean replay appointment-status type contract', () => {
     expect(typeBridge).not.toMatch(/DROP\s+VIEW[^;]*CASCADE/i);
   });
 
+  it('keeps the strict dependent-view allowlist in the same deterministic order as array_agg', () => {
+    expect(typeBridge).toContain('ORDER BY view_schema, view_name');
+    const expected = [
+      "'public.vw_doctoralia_lead_traceability_unified'",
+      "'public.vw_doctoralia_patient_ltv'",
+      "'public.vw_lead_traceability'",
+    ];
+    const positions = expected.map((entry) => typeBridge.indexOf(entry, typeBridge.indexOf('IF v_dependent_views IS DISTINCT FROM ARRAY[')));
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(positions[0]).toBeLessThan(positions[1]);
+    expect(positions[1]).toBeLessThan(positions[2]);
+  });
+
   it('keeps the historical Doctoralia unified view text contract enum-safe', () => {
     expect(typeBridge).toContain("v_view.view_name = 'vw_doctoralia_lead_traceability_unified'");
     expect(typeBridge).toContain("'l.appointment_status::text'");
