@@ -89,10 +89,12 @@ describe('Canonical Reporting Pipeline and E2E Contract', () => {
     expect(migration).toContain('p.phone::character varying(64) AS patient_phone');
   });
 
-  it('rebuilds only the known incompatible legacy doctor view without CASCADE', () => {
+  it('rebuilds only the exact known incompatible legacy doctor signature without CASCADE', () => {
+    expect(migration).toContain('v_signature text;');
     expect(migration).toContain('Unexpected vw_doctor_performance_real signature');
-    expect(migration).toContain('v_clinic_position = 14');
-    expect(migration).toContain('v_clinic_position = 5');
+    expect(migration).toContain("1:doctor_id:text\\n2:doctor_name:character varying(255)\\n3:specialty:character varying(128)");
+    expect(migration).toContain("1:doctor_id:text\\n2:doctor_name:text\\n3:specialty:text");
+    expect(migration).toContain('14:verified_revenue_crm:numeric');
     expect(migration).toContain('Cannot rebuild legacy vw_doctor_performance_real: dependent view exists');
     expect(migration).toContain('DROP VIEW public.vw_doctor_performance_real;');
     expect(migration).not.toMatch(/DROP\s+VIEW\s+public\.vw_doctor_performance_real[^;]*CASCADE/i);
