@@ -13,7 +13,6 @@ const LOGIN_CUSTOMER_ID_ENV = (Deno.env.get("GOOGLE_ADS_LOGIN_CUSTOMER_ID") || "
 const API_VERSION = "v25";
 const CANONICAL_CONVERSION_ACTION_ID = "7713427085";
 const LOCAL_CONVERSION_ACTION_ID = "7717850116";
-const DEVELOPER_TOKEN_ENV = (Deno.env.get("GOOGLE_ADS_DEVELOPER_TOKEN") || "").trim();
 const MAX_RANGE_DAYS = 92;
 const MAX_BODY_BYTES = 8192;
 const MAX_PROVIDER_PAGES = 20;
@@ -381,21 +380,11 @@ Deno.serve(async (req: Request) => {
       .eq("user_id", integration.user_id)
       .eq("service", "google_ads")
       .maybeSingle();
-
-    let developerToken = "";
-    if (!credentialError && credential?.encrypted_key) {
-      try {
-        developerToken = await decryptCredential(String(credential.encrypted_key));
-      } catch {
-        developerToken = "";
-      }
-    }
-    if (!developerToken) {
-      developerToken = DEVELOPER_TOKEN_ENV || String(integration?.metadata?.developer_token || "").trim();
-    }
-    if (!developerToken) {
+    if (credentialError || !credential?.encrypted_key) {
       throw new HealthFailure("configuration", 500, "Google Ads developer credential not found");
     }
+    const developerToken = await decryptCredential(String(credential.encrypted_key));
+    if (!developerToken) throw new HealthFailure("configuration", 500, "Google Ads developer credential is empty");
 
     const canonicalActionId = customerId === "8201489748" ? LOCAL_CONVERSION_ACTION_ID : CANONICAL_CONVERSION_ACTION_ID;
 
@@ -468,10 +457,10 @@ Deno.serve(async (req: Request) => {
     });
 
     const now = new Date().toISOString();
-    const credentialId = String(credential?.id || "");
-    const credentialUpdate = credentialId
-      ? await admin.from("credentials").update({ last_used: now }).eq("id", credentialId)
-      : { error: null };
+    const credentialUpdate = await admin
+      .from("credentials")
+      .update({ last_used: now })
+      .eq("id", credential.id);
     const integrationUpdate = credentialUpdate.error
       ? { error: credentialUpdate.error }
       : await admin.from("integrations").update({ status: "connected", last_sync: now, last_error: null, updated_at: now }).eq("id", integration.id);
