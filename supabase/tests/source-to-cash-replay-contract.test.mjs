@@ -8,17 +8,12 @@ const migration = fs.readFileSync(
 
 describe('source_to_cash clean-replay contract', () => {
   it('accepts only canonical Production or the exact observed replay signature', () => {
-    expect(migration).toContain("v_column_count = 23");
-    expect(migration).toContain("v_lead_name_type = 'character varying' AND v_lead_name_len = 255");
-    expect(migration).toContain("v_acquisition_type = 'character varying' AND v_acquisition_len = 64");
-    expect(migration).toContain("v_campaign_name_type = 'character varying' AND v_campaign_name_len = 255");
-    expect(migration).toContain("v_campaign_id_type = 'character varying' AND v_campaign_id_len = 64");
-    expect(migration).toContain("v_reply_type = 'int4'");
-    expect(migration).toContain('v_doctoralia_ltv_precision = 12 AND v_doctoralia_ltv_scale = 2');
-    expect(migration).toContain('v_settled_amount_precision = 12 AND v_settled_amount_scale = 2');
-    expect(migration).toContain("v_lead_name_type = 'text' AND v_lead_name_len IS NULL");
-    expect(migration).toContain('v_doctoralia_ltv_precision = 14 AND v_doctoralia_ltv_scale = 2');
-    expect(migration).toContain('v_settled_amount_precision = 14 AND v_settled_amount_scale = 2');
+    expect(migration).toContain('v_signature text;');
+    expect(migration).toContain("1:lead_id:uuid\\n2:user_id:uuid\\n3:lead_name:character varying(255)\\n4:acquisition_channel:character varying(64)");
+    expect(migration).toContain("17:patient_name:character varying\\n18:doctoralia_ltv:numeric(12,2)\\n19:settled_amount:numeric(12,2)");
+    expect(migration).toContain("1:lead_id:uuid\\n2:user_id:uuid\\n3:lead_name:text\\n4:acquisition_channel:text");
+    expect(migration).toContain("17:patient_name:text\\n18:doctoralia_ltv:numeric(14,2)\\n19:settled_amount:numeric(14,2)");
+    expect(migration).toContain('23:effective_revenue:numeric');
     expect(migration).toContain('Unexpected source_to_cash signature');
   });
 
