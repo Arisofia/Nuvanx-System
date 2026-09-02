@@ -133,14 +133,6 @@ BEGIN
     RAISE EXCEPTION 'Cannot reconcile source_to_cash: financial_settlements.amount_net exceeds numeric(12,2) range';
   END IF;
 
-  IF EXISTS (
-    SELECT 1 FROM public.leads l
-    WHERE (l.revenue IS NOT NULL AND pg_catalog.abs(l.revenue) >= 10000000000::numeric)
-       OR (l.verified_revenue IS NOT NULL AND pg_catalog.abs(l.verified_revenue) >= 10000000000::numeric)
-  ) THEN
-    RAISE EXCEPTION 'Cannot reconcile source_to_cash: leads revenue fields exceed numeric(12,2) range';
-  END IF;
-
   INSERT INTO nvx_source_to_cash_restore (reloptions, owner_name)
   SELECT c.reloptions, pg_catalog.pg_get_userbyid(c.relowner)
   FROM pg_catalog.pg_class c

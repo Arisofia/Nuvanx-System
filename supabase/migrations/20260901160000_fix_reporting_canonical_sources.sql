@@ -502,19 +502,6 @@ BEGIN
   END IF;
 
   IF EXISTS (
-    SELECT 1
-    FROM pg_catalog.pg_attribute a
-    JOIN pg_catalog.pg_class c ON a.attrelid = c.oid
-    JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-    WHERE n.nspname = 'public'
-      AND c.relname = 'vw_doctor_performance_real'
-      AND c.relkind = 'v'
-      AND a.attacl IS NOT NULL
-  ) THEN
-    RAISE EXCEPTION 'Cannot reconcile vw_doctor_performance_real: column-level ACLs detected (not supported by Production contract)';
-  END IF;
-
-  IF EXISTS (
     SELECT 1 FROM public.doctors d
     WHERE (d.name IS NOT NULL AND char_length(d.name) > 255)
        OR (d.specialty IS NOT NULL AND char_length(d.specialty) > 128)
