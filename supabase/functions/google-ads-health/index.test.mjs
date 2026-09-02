@@ -17,6 +17,10 @@ const credentialWorkflow = readFileSync(
   fileURLToPath(new URL("../../../.github/workflows/google-ads-credential-provision.yml", import.meta.url)),
   "utf8",
 );
+const credentialMigration = readFileSync(
+  fileURLToPath(new URL("../../migrations/20260903000500_reconcile_credentials_user_service_unique_index.sql", import.meta.url)),
+  "utf8",
+);
 
 describe("Google Ads provider health contract", () => {
   it("uses a currently supported Google Ads API version and never v17", () => {
@@ -93,31 +97,47 @@ describe("Google Ads provider health contract", () => {
     expect(source).toContain('new HealthFailure("validation", 424');
   });
 
-  it("proves provider identity before runtime encryption and credential overwrite", () => {
+  it("proves provider identity before runtime encryption and atomic credential commit", () => {
     const providerRead = source.indexOf("const [customerRows, campaignRows, performanceRows, conversionRows]");
     const conversionGate = source.indexOf('Canonical Google Ads conversion is not enabled');
     const encryptIndex = source.indexOf('const encryptedKey = await encryptCredential(developerToken)');
-    const upsertIndex = source.indexOf('.upsert({', encryptIndex);
-    const connectedIndex = source.indexOf('status: "connected"', upsertIndex);
-    const successIndex = source.indexOf("return reply(200", connectedIndex);
+    const atomicCommitIndex = source.indexOf('"nvx_commit_google_ads_credential_provision"', encryptIndex);
+    const successIndex = source.indexOf("return reply(200", atomicCommitIndex);
     expect(providerRead).toBeGreaterThan(-1);
     expect(conversionGate).toBeGreaterThan(providerRead);
     expect(encryptIndex).toBeGreaterThan(conversionGate);
-    expect(upsertIndex).toBeGreaterThan(encryptIndex);
-    expect(connectedIndex).toBeGreaterThan(upsertIndex);
-    expect(successIndex).toBeGreaterThan(connectedIndex);
+    expect(atomicCommitIndex).toBeGreaterThan(encryptIndex);
+    expect(successIndex).toBeGreaterThan(atomicCommitIndex);
+    expect(source).not.toContain('.upsert({');
+  });
+
+  it("commits credential replacement and integration connected state in one SQL transaction", () => {
+    expect(source).toContain('admin.rpc(\n        "nvx_commit_google_ads_credential_provision"');
+    expect(credentialMigration).toContain("CREATE UNIQUE INDEX IF NOT EXISTS credentials_user_id_service_key");
+    expect(credentialMigration).toContain("CREATE OR REPLACE FUNCTION public.nvx_commit_google_ads_credential_provision");
+    expect(credentialMigration).toContain("FOR UPDATE;");
+    expect(credentialMigration).toContain("ON CONFLICT (user_id, service)");
+    expect(credentialMigration).toContain("UPDATE public.integrations");
+    expect(credentialMigration).toContain("GRANT EXECUTE ON FUNCTION public.nvx_commit_google_ads_credential_provision");
   });
 
   it("makes the Edge runtime the sole Google Ads cryptographic owner", () => {
     expect(source).toContain('const ENCRYPTION_KEY = (Deno.env.get("ENCRYPTION_KEY") || "").trim()');
     expect(source).toContain('async function encryptCredential(secret: string)');
-    expect(source).toContain('provisioned_by: "google_ads_health_runtime"');
+    expect(credentialMigration).toContain("'provisioned_by', 'google_ads_health_runtime'");
     expect(provisionScript).not.toContain("ENCRYPTION_KEY");
     expect(provisionScript).not.toContain("encryptCredential");
     expect(provisionScript).not.toContain("encrypted_key");
     expect(provisionScript).not.toContain(".upsert(");
     expect(provisionScript).toContain("/rest/v1/credentials?service=eq.google_ads&select=user_id,metadata");
     expect(provisionScript).toContain("operation: 'provision'");
+  });
+
+  it("requires HTTPS before the provisioning script transmits Supabase or Google Ads secrets", () => {
+    expect(provisionScript).toContain("function requireHttpsBase(value)");
+    expect(provisionScript).toContain("parsed.protocol !== 'https:'");
+    expect(provisionScript).toContain("const safeBase = requireHttpsBase(base)");
+    expect(provisionScript).toContain("`${safeBase}/functions/v1/google-ads-health`");
   });
 
   it("uses state-driven, exact-SHA post-deploy credential convergence", () => {
