@@ -1077,7 +1077,7 @@ function classifyMetaLeadTag(fields: Record<string, string>): string {
  * Returns: { stage, treatmentName }
  *   stage ∈ 'lead' | 'appointment' | 'treatment' | 'closed'
  */
-export async function processLeadData(adminClient: any, userId: string, leadData: any) {
+export async function processLeadData(adminClient: any, userId: string, leadData: any, clinicId?: string | null) {
   const { fields, rawFieldData } = parseMetaLeadFields(leadData.field_data ?? []);
   const leadDataFields = extractMetaLeadCustomerInfo(leadData.field_data ?? []);
   const tag = classifyMetaLeadTag(leadDataFields);
@@ -1109,7 +1109,7 @@ export async function processLeadData(adminClient: any, userId: string, leadData
 
   // Upsert lead — idempotent via partial unique index (clinic_id, source, external_id)
   const createdAt = parseMetaLeadCreatedAt(leadData.created_time);
-  const clinicIdForLead = await resolveClinicId(adminClient, userId);
+  const clinicIdForLead = clinicId ?? await resolveClinicId(adminClient, userId);
 
   const { data: lead } = await adminClient.from('leads')
     .upsert({
@@ -1838,7 +1838,7 @@ export async function processMetaLeadChange(adminClient: any, change: any): Prom
   if (!leadgen_id) return;
 
   const { data: intgs } = await adminClient.from('integrations')
-    .select('user_id, service, metadata')
+    .select('user_id, clinic_id, service, metadata')
     .in('service', ['meta', 'meta_ads'])
     .eq('status', 'connected');
 
@@ -1861,7 +1861,13 @@ export async function processMetaLeadChange(adminClient: any, change: any): Prom
     return;
   }
 
+  if (!matchingIntg.clinic_id) {
+    console.warn('[meta-webhook] Matching integration has no clinic_id', { page_id, leadgen_id });
+    return;
+  }
+
   const webhookUserId = matchingIntg.user_id;
+  const webhookClinicId = matchingIntg.clinic_id;
   const credentialService = matchingIntg.service === 'meta_ads' ? 'meta_ads' : 'meta';
   const intgMetadata = matchingIntg.metadata ?? {};
   const pixelId = intgMetadata.pixelId ?? intgMetadata.pixel_id ?? '';
@@ -1869,6 +1875,7 @@ export async function processMetaLeadChange(adminClient: any, change: any): Prom
   const { data: credRow } = await adminClient.from('credentials')
     .select('encrypted_key')
     .eq('user_id', webhookUserId)
+    .eq('clinic_id', webhookClinicId)
     .eq('service', credentialService)
     .single();
   if (!credRow) {
@@ -1897,7 +1904,7 @@ export async function processMetaLeadChange(adminClient: any, change: any): Prom
     return;
   }
 
-  const leadId = await publicRouteHelpers.processLeadData(adminClient, webhookUserId, leadData);
+  const leadId = await publicRouteHelpers.processLeadData(adminClient, webhookUserId, leadData, webhookClinicId);
   await fireMetaLeadCapi(accessToken, leadgen_id, leadData, pixelId, leadId);
 }
 
@@ -4382,8 +4389,8 @@ async function handleMetaOrganicGet(ctx: AuthenticatedRouteContext): Promise<Res
       .from('meta_post_performance')
       .select('post_id, created_time, message, status_type, permalink_url, impressions, reach, engaged_users, reactions, comments, shares, video_views, is_video, updated_at')
       .eq('page_id', pageId)
-      .order('created_time', { ascending: false })
       .order('updated_at', { ascending: false })
+      .order('created_time', { ascending: false })
       .limit(Math.min(limit * 5, 1000));
     query = applyClinicOrUserScope(query, requesterClinicId, userId);
     if (keyword) query = query.ilike('message', `%${keyword}%`);
@@ -4445,6 +4452,9 @@ async function handleMetaIgGet(ctx: AuthenticatedRouteContext): Promise<Response
 
   // Fallback: auto-discover ig_id from existing DB data when metadata is missing
   if (!igId) {
+    if (!requesterClinicId) {
+      return sendJson({ success: false, message: 'Clinic not configured for this user.' }, 400);
+    }
     let igDiscoverQuery = adminClient.from('meta_ig_account_daily')
       .select('ig_id')
       .limit(1);
@@ -5111,7 +5121,8 @@ async function fetchAdDataFromCrm(adminClient: any, userId: string, requesterCli
     .not('ad_id', 'is', null)
     .order('created_at', { ascending: false });
   query = applyClinicOrUserScope(query, requesterClinicId, userId);
-  const { data: adLeads } = await query;
+  const { data: adLeads, error: adLeadsError } = await query;
+  if (adLeadsError) throw adLeadsError;
   return adLeads ?? [];
 }
 
@@ -5540,7 +5551,7 @@ async function handleIntegrationsConnectPost(ctx: AuthenticatedRouteContext): Pr
     await ensurePublicUserRow(adminClient, authUser);
     const encryptedKey = await encryptCred(String(reqToken).trim());
     const requesterClinicId = await resolveClinicId(adminClient, userId);
-    if (service === 'meta' && !requesterClinicId) {
+    if ((service === 'meta' || service === 'meta_ads') && !requesterClinicId) {
       return sendJson({ success: false, message: 'Clinic not configured for this user.' }, 400);
     }
 
@@ -7093,7 +7104,7 @@ function getKpiDateRange(url: URL) {
   }
   
   const diffTime = Math.abs(new Date(until).getTime() - new Date(since).getTime());
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
   const days = Number.isFinite(diffDays) ? Math.max(1, diffDays) : 30;
 
   return { since, until, days, period: { since, until, range: `${days}d` } };
