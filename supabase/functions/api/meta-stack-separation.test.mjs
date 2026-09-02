@@ -49,6 +49,11 @@ function createAdminClient(integrations, credentialByService = {}) {
     if (table === 'credentials') {
       let selectedService = '';
       let selectedClinicId = '';
+      const resolveCredential = async () => {
+        credentialServices.push(selectedService);
+        const encrypted_key = credentialByService[selectedService];
+        return { data: encrypted_key ? { encrypted_key } : null };
+      };
       const builder = {
         select: () => builder,
         eq: (field, value) => {
@@ -56,11 +61,8 @@ function createAdminClient(integrations, credentialByService = {}) {
           if (field === 'clinic_id') selectedClinicId = value;
           return builder;
         },
-        single: async () => {
-          credentialServices.push(selectedService);
-          const encrypted_key = credentialByService[selectedService];
-          return { data: encrypted_key ? { encrypted_key } : null };
-        },
+        single: resolveCredential,
+        maybeSingle: resolveCredential,
       };
       return builder;
     }
