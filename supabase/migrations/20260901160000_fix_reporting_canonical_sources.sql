@@ -475,13 +475,13 @@ BEGIN
     AND a.attnum > 0
     AND NOT a.attisdropped;
 
-  -- Exact canonical Production signature (14 columns).
-  IF v_signature = E'1:doctor_id:text\n2:doctor_name:character varying(255)\n3:specialty:character varying(128)\n4:is_active:boolean\n5:clinic_id:uuid\n6:total_appointments:bigint\n7:attended_count:bigint\n8:no_show_count:bigint\n9:cancelled_count:bigint\n10:confirmed_count:bigint\n11:attended_rate_pct:numeric\n12:no_show_rate_pct:numeric\n13:estimated_revenue:numeric\n14:verified_revenue_crm:numeric' THEN
+  -- Exact canonical Production signature measured on 2026-09-02 (14 columns).
+  IF v_signature = E'1:doctor_id:uuid\n2:doctor_name:character varying(255)\n3:specialty:character varying(128)\n4:is_active:boolean\n5:clinic_id:uuid\n6:total_appointments:bigint\n7:attended_count:bigint\n8:no_show_count:bigint\n9:cancelled_count:bigint\n10:confirmed_count:bigint\n11:attended_rate_pct:numeric\n12:no_show_rate_pct:numeric\n13:estimated_revenue:numeric\n14:verified_revenue_crm:numeric' THEN
     RETURN;
   END IF;
 
-  -- Exact historical replay signature (14 columns with text types).
-  IF v_signature IS DISTINCT FROM E'1:doctor_id:text\n2:doctor_name:text\n3:specialty:text\n4:is_active:boolean\n5:clinic_id:uuid\n6:total_appointments:bigint\n7:attended_count:bigint\n8:no_show_count:bigint\n9:cancelled_count:bigint\n10:confirmed_count:bigint\n11:attended_rate_pct:numeric\n12:no_show_rate_pct:numeric\n13:estimated_revenue:numeric\n14:verified_revenue_crm:numeric' THEN
+  -- Exact historical clean-replay signature measured from Supabase Preview on 2026-09-02.
+  IF v_signature IS DISTINCT FROM E'1:doctor_id:uuid\n2:doctor_name:text\n3:specialty:text\n4:is_active:boolean\n5:total_appointments:bigint\n6:attended_count:bigint\n7:no_show_count:bigint\n8:cancelled_count:bigint\n9:confirmed_count:bigint\n10:attended_rate_pct:numeric\n11:no_show_rate_pct:numeric\n12:estimated_revenue:numeric\n13:verified_revenue_crm:numeric\n14:clinic_id:uuid' THEN
     RAISE EXCEPTION 'Unexpected vw_doctor_performance_real signature:%', E'\n' || coalesce(v_signature, '<missing>');
   END IF;
 
