@@ -4396,8 +4396,8 @@ async function handleMetaOrganicGet(ctx: AuthenticatedRouteContext): Promise<Res
         .select('post_id, created_time, message, status_type, permalink_url, impressions, reach, engaged_users, reactions, comments, shares, video_views, is_video, updated_at')
         .eq('page_id', pageId)
         .eq('clinic_id', requesterClinicId)
-        .order('created_time', { ascending: false })
         .order('updated_at', { ascending: false })
+        .order('created_time', { ascending: false })
         .range(offset, offset + pageSize - 1);
       if (keyword) query = query.ilike('message', `%${keyword}%`);
       const { data, error } = await query;
@@ -4496,8 +4496,8 @@ async function handleMetaIgGet(ctx: AuthenticatedRouteContext): Promise<Response
         .select('media_id, media_type, media_product_type, caption, permalink, timestamp, reach, views, likes, comments, shares, saved, total_interactions, updated_at')
         .eq('ig_id', igId)
         .eq('clinic_id', requesterClinicId)
-        .order('timestamp', { ascending: false })
         .order('updated_at', { ascending: false })
+        .order('timestamp', { ascending: false })
         .range(offset, offset + pageSize - 1);
       if (keyword) query = query.ilike('caption', `%${keyword}%`);
       const { data, error } = await query;
