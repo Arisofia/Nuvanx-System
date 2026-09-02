@@ -485,9 +485,6 @@ BEGIN
     RAISE EXCEPTION 'Unexpected vw_doctor_performance_real signature:%', E'\n' || coalesce(v_signature, '<missing>');
   END IF;
 
-  -- CREATE OR REPLACE cannot safely preserve dependent objects through a type
-  -- change. No CASCADE is used: any dependent view/materialized view blocks the
-  -- reconciliation instead of being silently dropped.
   IF EXISTS (
     SELECT 1
     FROM pg_catalog.pg_class parent
@@ -504,7 +501,6 @@ BEGIN
     RAISE EXCEPTION 'Cannot rebuild legacy vw_doctor_performance_real: dependent view exists';
   END IF;
 
-  -- Explicit text -> varchar(n) casts may truncate. Refuse the rebuild.
   IF EXISTS (
     SELECT 1 FROM public.doctors d
     WHERE (d.name IS NOT NULL AND char_length(d.name) > 255)
@@ -679,7 +675,6 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Preserve historical view options (vw_doctor_performance_real does not force security_invoker).
   IF v_restore.reloptions IS NOT NULL
      AND pg_catalog.array_length(v_restore.reloptions, 1) > 0 THEN
     EXECUTE pg_catalog.format(
@@ -711,106 +706,8 @@ END;
 $doctor_restore$;
 
 -- ---------------------------------------------------------------------------
--- Lead Audit clean-replay bridge
--- Production exposes a typed 43-column contract, while historical clean replay
--- reaches this migration with a generic text/numeric placeholder. Rebuild only
--- that exact legacy shape, preserve metadata, and never use CASCADE.
--- ---------------------------------------------------------------------------
-CREATE TEMP TABLE nvx_lead_audit_view_restore (
-  reloptions text[],
-  owner_name text NOT NULL
-) ON COMMIT DROP;
-
-CREATE TEMP TABLE nvx_lead_audit_view_acl (
-  grantee_name text NOT NULL,
-  privilege_type text NOT NULL,
-  is_grantable boolean NOT NULL
-) ON COMMIT DROP;
-
-DO $lead_audit_view_bridge$
-DECLARE
-  v_signature text;
-BEGIN
-  IF to_regclass('public.vw_lead_traceability') IS NULL THEN
-    RETURN;
-  END IF;
-
-  SELECT string_agg(
-           pg_catalog.format(
-             '%s:%s:%s',
-             a.attnum,
-             a.attname,
-             pg_catalog.format_type(a.atttypid, a.atttypmod)
-           ),
-           E'\n' ORDER BY a.attnum
-         )
-    INTO v_signature
-  FROM pg_catalog.pg_class c
-  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-  JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid
-  WHERE n.nspname = 'public'
-    AND c.relname = 'vw_lead_traceability'
-    AND c.relkind = 'v'
-    AND a.attnum > 0
-    AND NOT a.attisdropped;
-
-  -- Exact canonical Production signature (43 columns).
-  IF v_signature = E'1:lead_id:uuid\n2:lead_name:character varying(255)\n3:email_normalized:text\n4:phone_normalized:character varying(20)\n5:source:character varying(64)\n6:stage:text\n7:campaign_id:character varying(64)\n8:campaign_name:character varying(255)\n9:adset_id:character varying(64)\n10:adset_name:character varying(255)\n11:ad_id:character varying(64)\n12:ad_name:character varying(255)\n13:form_id:character varying(64)\n14:form_name:character varying(255)\n15:lead_created_at:timestamptz\n16:first_outbound_at:timestamptz\n17:first_inbound_at:timestamptz\n18:reply_delay_minutes:integer\n19:appointment_status:text\n20:attended_at:timestamptz\n21:no_show_flag:boolean\n22:estimated_revenue:numeric(12,2)\n23:crm_verified_revenue:numeric(12,2)\n24:lost_reason:text\n25:patient_id:uuid\n26:patient_ltv:numeric(12,2)\n27:settlement_id:text\n28:doctoralia_template_id:character varying(32)\n29:doctoralia_template_name:character varying(255)\n30:doctoralia_net:numeric(12,2)\n31:doctoralia_gross:numeric(12,2)\n32:settlement_date:timestamptz\n33:settlement_intake_date:timestamptz\n34:settlement_source:text\n35:lead_user_id:uuid\n36:patient_name:text\n37:patient_dni:text\n38:patient_phone:character varying(64)\n39:patient_last_visit:date\n40:doc_patient_id:text\n41:match_confidence:numeric\n42:match_class:character varying(32)\n43:first_settlement_at:timestamptz' THEN
-    RETURN;
-  END IF;
-
-  -- Exact historical replay signature (43 columns with text types).
-  IF v_signature IS DISTINCT FROM E'1:lead_id:uuid\n2:lead_name:text\n3:email_normalized:text\n4:phone_normalized:text\n5:source:text\n6:stage:text\n7:campaign_id:text\n8:campaign_name:text\n9:adset_id:text\n10:adset_name:text\n11:ad_id:text\n12:ad_name:text\n13:form_id:text\n14:form_name:text\n15:lead_created_at:timestamptz\n16:first_outbound_at:timestamptz\n17:first_inbound_at:timestamptz\n18:reply_delay_minutes:integer\n19:appointment_status:text\n20:attended_at:timestamptz\n21:no_show_flag:boolean\n22:estimated_revenue:numeric(12,2)\n23:crm_verified_revenue:numeric(12,2)\n24:lost_reason:text\n25:patient_id:uuid\n26:patient_ltv:numeric\n27:settlement_id:text\n28:doctoralia_template_id:text\n29:doctoralia_template_name:text\n30:doctoralia_net:numeric(12,2)\n31:doctoralia_gross:numeric(12,2)\n32:settlement_date:timestamptz\n33:settlement_intake_date:timestamptz\n34:settlement_source:text\n35:lead_user_id:uuid\n36:patient_name:text\n37:patient_dni:text\n38:patient_phone:text\n39:patient_last_visit:date\n40:doc_patient_id:text\n41:match_confidence:numeric\n42:match_class:text\n43:first_settlement_at:timestamptz' THEN
-    RAISE EXCEPTION 'Unexpected vw_lead_traceability signature:%', E'\n' || coalesce(v_signature, '<missing>');
-  END IF;
-
-  IF EXISTS (
-    SELECT 1
-    FROM pg_catalog.pg_class parent
-    JOIN pg_catalog.pg_namespace pn ON pn.oid = parent.relnamespace
-    JOIN pg_catalog.pg_depend d ON d.refobjid = parent.oid
-    JOIN pg_catalog.pg_rewrite r ON r.oid = d.objid
-    JOIN pg_catalog.pg_class child ON child.oid = r.ev_class
-    WHERE pn.nspname = 'public'
-      AND parent.relname = 'vw_lead_traceability'
-      AND parent.relkind = 'v'
-      AND child.oid <> parent.oid
-      AND child.relkind IN ('v', 'm')
-  ) THEN
-    RAISE EXCEPTION 'Cannot rebuild legacy vw_lead_traceability: dependent view exists';
-  END IF;
-
-  INSERT INTO nvx_lead_audit_view_restore (reloptions, owner_name)
-  SELECT c.reloptions, pg_catalog.pg_get_userbyid(c.relowner)
-  FROM pg_catalog.pg_class c
-  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-  WHERE n.nspname = 'public'
-    AND c.relname = 'vw_lead_traceability'
-    AND c.relkind = 'v';
-
-  INSERT INTO nvx_lead_audit_view_acl (grantee_name, privilege_type, is_grantable)
-  SELECT
-    CASE WHEN acl.grantee = 0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(acl.grantee) END,
-    acl.privilege_type,
-    acl.is_grantable
-  FROM pg_catalog.pg_class c
-  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-  CROSS JOIN LATERAL pg_catalog.aclexplode(c.relacl) acl
-  WHERE n.nspname = 'public'
-    AND c.relname = 'vw_lead_traceability'
-    AND c.relkind = 'v'
-    AND c.relacl IS NOT NULL
-    AND acl.grantee <> c.relowner
-    AND acl.grantor = c.relowner;
-
-  DROP VIEW public.vw_lead_traceability;
-END
-$lead_audit_view_bridge$;
-
--- ---------------------------------------------------------------------------
 -- Lead Audit signature reconciliation
--- Production exposes a 43-column contract. Historical replay may have different
--- types. Only accept exact Production or known historical signatures.
+-- One bridge owns detection, metadata capture, drop, rebuild, and restore.
 -- ---------------------------------------------------------------------------
 CREATE TEMP TABLE nvx_lead_audit_restore (
   reloptions text[],
@@ -851,19 +748,16 @@ BEGIN
     AND a.attnum > 0
     AND NOT a.attisdropped;
 
-  -- Exact canonical Production signature (43 columns).
-  IF v_signature = E'1:lead_id:uuid\n2:user_id:uuid\n3:lead_name:character varying(255)\n4:email_normalized:text\n5:phone_normalized:character varying(20)\n6:source:character varying(64)\n7:stage:text\n8:campaign_id:character varying(64)\n9:campaign_name:character varying(255)\n10:adset_id:character varying(64)\n11:adset_name:character varying(255)\n12:ad_id:character varying(64)\n13:ad_name:character varying(255)\n14:form_id:character varying(64)\n15:form_name:character varying(255)\n16:lead_created_at:timestamp with time zone\n17:first_outbound_at:timestamp with time zone\n18:first_inbound_at:timestamp with time zone\n19:reply_delay_minutes:integer\n20:attended_at:timestamp with time zone\n21:no_show_flag:boolean\n22:estimated_revenue:numeric(12,2)\n23:verified_revenue_crm:numeric(12,2)\n24:reply_rate_pct:numeric\n25:replied_to_booked_pct:numeric\n26:lead_to_close_rate_pct:numeric\n27:no_show_rate_pct:numeric\n28:avg_reply_delay_min:numeric\n29:first_lead_at:timestamp with time zone\n30:last_lead_at:timestamp with time zone\n31:settlement_intake_date:timestamp with time zone\n32:settlement_source:text\n33:lead_user_id:uuid\n34:patient_name:text\n35:patient_dni:text\n36:patient_phone:character varying(64)\n37:patient_last_visit:date\n38:doc_patient_id:text\n39:match_confidence:numeric\n40:match_class:character varying(32)\n41:first_settlement_at:timestamp with time zone\n42:settlement_id:uuid\n43:settlement_status:text' THEN
+  -- Exact canonical Production signature measured on 2026-09-02.
+  IF v_signature = E'1:lead_id:uuid\n2:lead_name:character varying(255)\n3:email_normalized:text\n4:phone_normalized:character varying(20)\n5:source:character varying(64)\n6:stage:text\n7:campaign_id:character varying(64)\n8:campaign_name:character varying(255)\n9:adset_id:character varying(64)\n10:adset_name:character varying(255)\n11:ad_id:character varying(64)\n12:ad_name:character varying(255)\n13:form_id:character varying(64)\n14:form_name:character varying(255)\n15:lead_created_at:timestamp with time zone\n16:first_outbound_at:timestamp with time zone\n17:first_inbound_at:timestamp with time zone\n18:reply_delay_minutes:integer\n19:appointment_status:appointment_status\n20:attended_at:timestamp with time zone\n21:no_show_flag:boolean\n22:estimated_revenue:numeric(12,2)\n23:crm_verified_revenue:numeric(12,2)\n24:lost_reason:text\n25:patient_id:uuid\n26:patient_ltv:numeric(12,2)\n27:settlement_id:text\n28:doctoralia_template_id:character varying(32)\n29:doctoralia_template_name:character varying(255)\n30:doctoralia_net:numeric(12,2)\n31:doctoralia_gross:numeric(12,2)\n32:settlement_date:timestamp with time zone\n33:settlement_intake_date:timestamp with time zone\n34:settlement_source:text\n35:lead_user_id:uuid\n36:patient_name:text\n37:patient_dni:text\n38:patient_phone:character varying(64)\n39:patient_last_visit:timestamp with time zone\n40:doc_patient_id:text\n41:match_confidence:numeric\n42:match_class:character varying(32)\n43:first_settlement_at:timestamp with time zone' THEN
     RETURN;
   END IF;
 
-  -- Exact historical clean-replay signature (43 columns with text types).
-  IF v_signature IS DISTINCT FROM E'1:lead_id:uuid\n2:user_id:uuid\n3:lead_name:text\n4:email_normalized:text\n5:phone_normalized:text\n6:source:text\n7:stage:text\n8:campaign_id:text\n9:campaign_name:text\n10:adset_id:text\n11:adset_name:text\n12:ad_id:text\n13:ad_name:text\n14:form_id:text\n15:form_name:text\n16:lead_created_at:timestamp with time zone\n17:first_outbound_at:timestamp with time zone\n18:first_inbound_at:timestamp with time zone\n19:reply_delay_minutes:integer\n20:attended_at:timestamp with time zone\n21:no_show_flag:boolean\n22:estimated_revenue:numeric(12,2)\n23:verified_revenue_crm:numeric(12,2)\n24:reply_rate_pct:numeric\n25:replied_to_booked_pct:numeric\n26:lead_to_close_rate_pct:numeric\n27:no_show_rate_pct:numeric\n28:avg_reply_delay_min:numeric\n29:first_lead_at:timestamp with time zone\n30:last_lead_at:timestamp with time zone\n31:settlement_intake_date:timestamp with time zone\n32:settlement_source:text\n33:lead_user_id:uuid\n34:patient_name:text\n35:patient_dni:text\n36:patient_phone:text\n37:patient_last_visit:date\n38:doc_patient_id:text\n39:match_confidence:numeric\n40:match_class:character varying(32)\n41:first_settlement_at:timestamp with time zone\n42:settlement_id:uuid\n43:settlement_status:text' THEN
+  -- Exact historical clean-replay signature measured from Supabase Preview on 2026-09-02.
+  IF v_signature IS DISTINCT FROM E'1:lead_id:uuid\n2:lead_name:text\n3:email_normalized:text\n4:phone_normalized:text\n5:source:text\n6:stage:text\n7:campaign_id:text\n8:campaign_name:text\n9:adset_id:text\n10:adset_name:text\n11:ad_id:text\n12:ad_name:text\n13:form_id:text\n14:form_name:text\n15:lead_created_at:timestamp with time zone\n16:first_outbound_at:timestamp with time zone\n17:first_inbound_at:timestamp with time zone\n18:reply_delay_minutes:integer\n19:appointment_status:appointment_status\n20:attended_at:timestamp with time zone\n21:no_show_flag:boolean\n22:estimated_revenue:numeric(12,2)\n23:crm_verified_revenue:numeric(12,2)\n24:lost_reason:text\n25:patient_id:uuid\n26:patient_ltv:numeric\n27:settlement_id:text\n28:doctoralia_template_id:text\n29:doctoralia_template_name:text\n30:doctoralia_net:numeric\n31:doctoralia_gross:numeric\n32:settlement_date:timestamp with time zone\n33:settlement_intake_date:timestamp with time zone\n34:settlement_source:text\n35:lead_user_id:uuid\n36:patient_name:text\n37:patient_dni:text\n38:patient_phone:text\n39:patient_last_visit:timestamp with time zone\n40:doc_patient_id:text\n41:match_confidence:numeric\n42:match_class:character varying(32)\n43:first_settlement_at:timestamp with time zone' THEN
     RAISE EXCEPTION 'Unexpected vw_lead_traceability signature:%', E'\n' || coalesce(v_signature, '<missing>');
   END IF;
 
-  -- CREATE OR REPLACE cannot safely preserve dependent objects through a type
-  -- change. No CASCADE is used: any dependent view/materialized view blocks the
-  -- reconciliation instead of being silently dropped.
   IF EXISTS (
     SELECT 1
     FROM pg_catalog.pg_class parent
@@ -880,7 +774,6 @@ BEGIN
     RAISE EXCEPTION 'Cannot rebuild legacy vw_lead_traceability: dependent view exists';
   END IF;
 
-  -- Production contract: no column-level ACLs on reporting views. Fail closed if present.
   IF EXISTS (
     SELECT 1
     FROM pg_catalog.pg_attribute a
@@ -894,14 +787,36 @@ BEGIN
     RAISE EXCEPTION 'Cannot reconcile vw_lead_traceability: column-level ACLs detected (not supported by Production contract)';
   END IF;
 
-  -- Explicit text -> varchar(n) casts may truncate. Refuse the rebuild.
   IF EXISTS (
     SELECT 1 FROM public.leads l
     WHERE (l.name IS NOT NULL AND char_length(l.name) > 255)
        OR (l.phone_normalized IS NOT NULL AND char_length(l.phone_normalized) > 20)
        OR (l.source IS NOT NULL AND char_length(l.source) > 64)
+       OR (l.campaign_id IS NOT NULL AND char_length(l.campaign_id) > 64)
+       OR (l.campaign_name IS NOT NULL AND char_length(l.campaign_name) > 255)
+       OR (l.adset_id IS NOT NULL AND char_length(l.adset_id) > 64)
+       OR (l.adset_name IS NOT NULL AND char_length(l.adset_name) > 255)
+       OR (l.ad_id IS NOT NULL AND char_length(l.ad_id) > 64)
+       OR (l.ad_name IS NOT NULL AND char_length(l.ad_name) > 255)
+       OR (l.form_id IS NOT NULL AND char_length(l.form_id) > 64)
+       OR (l.form_name IS NOT NULL AND char_length(l.form_name) > 255)
   ) THEN
     RAISE EXCEPTION 'Cannot reconcile vw_lead_traceability: lead text exceeds canonical varchar bounds';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.patients p
+    WHERE p.phone IS NOT NULL AND char_length(p.phone) > 64
+  ) THEN
+    RAISE EXCEPTION 'Cannot reconcile vw_lead_traceability: patient phone exceeds varchar(64)';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.financial_settlements fs
+    WHERE (fs.template_id IS NOT NULL AND char_length(fs.template_id) > 32)
+       OR (fs.template_name IS NOT NULL AND char_length(fs.template_name) > 255)
+  ) THEN
+    RAISE EXCEPTION 'Cannot reconcile vw_lead_traceability: settlement text exceeds canonical varchar bounds';
   END IF;
 
   INSERT INTO nvx_lead_audit_restore (reloptions, owner_name)
@@ -1027,8 +942,6 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Preserve every historical view option except security_invoker. The
-  -- canonical contract is always invoker-security, regardless of replay input.
   SELECT pg_catalog.array_agg(opt)
     INTO v_safe_reloptions
   FROM pg_catalog.unnest(COALESCE(v_restore.reloptions, ARRAY[]::text[])) AS opt
