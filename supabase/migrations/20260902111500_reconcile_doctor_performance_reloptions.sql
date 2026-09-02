@@ -2,9 +2,9 @@
 -- public.vw_doctor_performance_real.
 --
 -- Production's canonical contract has the exact 14-column signature below and
--- no view reloptions. Historical clean replay can retain security_invoker=true
--- even though the public column contract is otherwise identical. Accept only
--- those two known states; fail closed on any third signature or reloption set.
+-- must have security_invoker=true to maintain the reporting security boundary.
+-- If the view is missing this reloption, it will be added. Accept only this
+-- known state; fail closed on any third signature or extra reloption set.
 
 BEGIN;
 
@@ -44,31 +44,17 @@ BEGIN
     RAISE EXCEPTION 'Unexpected vw_doctor_performance_real signature:%', E'\n' || coalesce(v_signature, '<missing>');
   END IF;
 
-  -- Production canonical state: no reloptions. This branch is intentionally a
-  -- no-op when the migration later reaches Production.
-  IF v_reloptions IS NULL OR pg_catalog.array_length(v_reloptions, 1) IS NULL THEN
+  -- The canonical state requires security_invoker=true for security.
+  -- If it's already set, we're good. If it's missing, we set it.
+  IF v_reloptions IS NOT DISTINCT FROM ARRAY['security_invoker=true']::text[] THEN
     RETURN;
   END IF;
 
-  -- The only accepted replay drift is the historical invoker-security option.
-  IF v_reloptions IS DISTINCT FROM ARRAY['security_invoker=true']::text[] THEN
+  IF v_reloptions IS NOT NULL AND pg_catalog.array_length(v_reloptions, 1) > 0 THEN
     RAISE EXCEPTION 'Unexpected vw_doctor_performance_real reloptions: %', v_reloptions;
   END IF;
 
-  ALTER VIEW public.vw_doctor_performance_real RESET (security_invoker);
-
-  SELECT c.reloptions
-    INTO v_reloptions
-  FROM pg_catalog.pg_class c
-  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-  WHERE n.nspname = 'public'
-    AND c.relname = 'vw_doctor_performance_real'
-    AND c.relkind = 'v';
-
-  IF v_reloptions IS NOT NULL
-     AND pg_catalog.array_length(v_reloptions, 1) IS NOT NULL THEN
-    RAISE EXCEPTION 'vw_doctor_performance_real reloptions did not reconcile: %', v_reloptions;
-  END IF;
+  ALTER VIEW public.vw_doctor_performance_real SET (security_invoker = true);
 END;
 $doctor_performance_reloptions$;
 
