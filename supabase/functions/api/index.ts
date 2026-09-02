@@ -655,7 +655,8 @@ export function resolveMetaLeadConversions(row: any): number {
 
 
 async function resolveClinicId(adminClient: any, userId: string): Promise<string | null> {
-  const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+  const { data: usr, error } = await adminClient.from('users').select('clinic_id').eq('id', userId).maybeSingle();
+  if (error) throw error;
   return usr?.clinic_id ?? null;
 }
 
@@ -1238,15 +1239,32 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
     qAccountId,
   );
   if (!intg) {
-    return { notConnected: true, accessToken: '', adAccountIds: [] as string[], adAccountId: '', decryptionError: '' };
+    return {
+      notConnected: true,
+      accessToken: '',
+      adAccountIds: [] as string[],
+      adAccountId: '',
+      decryptionError: '',
+      integrationOwnerId: '',
+      integrationService: '',
+    };
   }
 
+  const integrationService = intg.service === 'meta_ads' ? 'meta_ads' : 'meta';
   const integrationOwnerId = String(intg.user_id ?? '').trim();
   if (!integrationOwnerId) {
-    return { notConnected: true, accessToken: '', adAccountIds: [] as string[], adAccountId: '', decryptionError: '' };
+    return {
+      notConnected: true,
+      accessToken: '',
+      adAccountIds: [] as string[],
+      adAccountId: '',
+      decryptionError: '',
+      integrationOwnerId: '',
+      integrationService,
+    };
   }
 
-  const credentialService = intg.service === 'meta_ads' ? 'meta_ads' : 'meta';
+  const credentialService = integrationService;
   let credentialQuery = adminClient.from('credentials')
     .select('encrypted_key')
     .eq('user_id', integrationOwnerId)
@@ -1258,7 +1276,15 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
   const { data: credRow, error: credentialError } = await credentialQuery.maybeSingle();
   if (credentialError) throw credentialError;
   if (!credRow?.encrypted_key) {
-    return { notConnected: true, accessToken: '', adAccountIds: [] as string[], adAccountId: '', decryptionError: '' };
+    return {
+      notConnected: true,
+      accessToken: '',
+      adAccountIds: [] as string[],
+      adAccountId: '',
+      decryptionError: '',
+      integrationOwnerId,
+      integrationService,
+    };
   }
 
   let accessToken = '';
@@ -1306,6 +1332,8 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
     pageId: metadata.pageId ?? metadata.page_id ?? '',
     igId: metadata.igBusinessAccountId ?? metadata.ig_business_account_id ?? '',
     credentialService,
+    integrationOwnerId,
+    integrationService,
     decryptionError,
   } as const;
 }
@@ -5482,16 +5510,20 @@ async function handleIntegrationsTestPost(ctx: AuthenticatedRouteContext): Promi
     if (service === 'meta') {
       const creds = await resolveMetaCreds(adminClient, userId, body?.adAccountId ?? '');
       const validation = validateMetaCredentialResult(creds);
+      const integrationOwnerId = creds.integrationOwnerId ?? '';
+      const integrationService = creds.integrationService ?? '';
       if (!validation.ok) {
-        await updateIntegrationStatus(adminClient, userId, 'meta', 'error', validation.message);
+        if (integrationOwnerId && integrationService) {
+          await updateIntegrationStatus(adminClient, integrationOwnerId, integrationService, 'error', validation.message);
+        }
         return sendJson({ success: false, service, status: 'error', message: validation.message }, validation.statusCode);
       }
       try {
         const me = await metaFetch('/me', { fields: 'id,name' }, creds.accessToken);
-        await updateIntegrationStatus(adminClient, userId, 'meta', 'connected', null);
+        await updateIntegrationStatus(adminClient, integrationOwnerId, integrationService, 'connected', null);
         return sendJson({ success: true, service, status: 'connected', metadata: { accountName: me.name } });
       } catch (e: any) {
-        await updateIntegrationStatus(adminClient, userId, 'meta', 'error', e.message);
+        await updateIntegrationStatus(adminClient, integrationOwnerId, integrationService, 'error', e.message);
         return sendJson({ success: false, service, status: 'error', message: e.message }, 502);
       }
     }
