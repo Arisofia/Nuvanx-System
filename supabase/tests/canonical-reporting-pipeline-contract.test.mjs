@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 
 const migrationPath = 'supabase/migrations/20260901160000_fix_reporting_canonical_sources.sql';
+const doctorBridgePath = 'supabase/migrations/20260901155999_pre_reconcile_doctor_performance_order.sql';
+const leadBridgePath = 'supabase/migrations/20260901160050_reconcile_lead_traceability_public_contract.sql';
 const apiPath = 'supabase/functions/api/index.ts';
 
 const migration = fs.readFileSync(migrationPath, 'utf8');
+const doctorBridge = fs.readFileSync(doctorBridgePath, 'utf8');
+const leadBridge = fs.readFileSync(leadBridgePath, 'utf8');
 const api = fs.readFileSync(apiPath, 'utf8');
 
 describe('Canonical Reporting Pipeline and E2E Contract', () => {
@@ -58,55 +62,57 @@ describe('Canonical Reporting Pipeline and E2E Contract', () => {
     expect(api).toContain("adminClient.rpc('get_source_comparison', {");
   });
 
-  it('keeps lead-audit filtering in the SSOT view instead of querying unprojected columns', () => {
+  it('keeps lead-audit filtering in the SSOT and canonicalizes the replay public types forward-only', () => {
     const auditQuerySection = api.slice(api.indexOf('function buildLeadAuditQuery'), api.indexOf('function buildLeadAuditQuery') + 1200);
     expect(auditQuerySection).toContain(".eq('lead_user_id', userId)");
     expect(auditQuerySection).not.toContain(".is('deleted_at', null)");
     expect(auditQuerySection).not.toContain(".is('merged_into_lead_id', null)");
 
     expect(migration).toContain('CREATE OR REPLACE VIEW public.vw_lead_traceability');
-    expect(migration).toContain('l.reply_delay_minutes::integer AS reply_delay_minutes');
-    expect(migration).toContain('p.total_ltv::numeric(12,2) AS patient_ltv');
-    expect(migration).toContain('fs.amount_net::numeric(12,2) AS doctoralia_net');
-    expect(migration).toContain('fs.amount_gross::numeric(12,2) AS doctoralia_gross');
     expect(migration).toContain('WHERE l.deleted_at IS NULL');
     expect(migration).toContain('AND l.merged_into_lead_id IS NULL;');
+
+    expect(leadBridge).toContain('l.reply_delay_minutes::integer AS reply_delay_minutes');
+    expect(leadBridge).toContain('p.total_ltv::numeric(12,2) AS patient_ltv');
+    expect(leadBridge).toContain('fs.amount_net::numeric(12,2) AS doctoralia_net');
+    expect(leadBridge).toContain('fs.amount_gross::numeric(12,2) AS doctoralia_gross');
+    expect(leadBridge).toContain('WHERE l.deleted_at IS NULL');
+    expect(leadBridge).toContain('AND l.merged_into_lead_id IS NULL');
   });
 
-  it('uses one fail-closed lead-audit bridge for the exact measured Production and replay signatures', () => {
-    expect(migration).toContain('Unexpected vw_lead_traceability signature');
-    expect(migration).toContain("1:lead_id:uuid\\n2:lead_name:character varying(255)\\n3:email_normalized:text\\n4:phone_normalized:character varying(20)");
-    expect(migration).toContain("1:lead_id:uuid\\n2:lead_name:text\\n3:email_normalized:text\\n4:phone_normalized:text");
-    expect(migration).toContain('18:reply_delay_minutes:integer\\n19:appointment_status:appointment_status');
-    expect(migration).toContain('39:patient_last_visit:timestamp with time zone');
-    expect(migration).toContain('43:first_settlement_at:timestamp with time zone');
-    expect(migration).toContain('Cannot rebuild legacy vw_lead_traceability: dependent view exists');
-    expect(migration).toContain('DROP VIEW public.vw_lead_traceability;');
-    expect(migration).not.toMatch(/DROP\s+VIEW\s+public\.vw_lead_traceability[^;]*CASCADE/i);
-    expect(migration.match(/DO \$lead_audit_bridge\$/g) ?? []).toHaveLength(1);
-    expect(migration).not.toContain('lead_audit_view_bridge');
-    expect(migration).toContain('nvx_lead_audit_acl');
-    expect(migration).toContain('nvx_lead_audit_restore');
-    expect(migration).toContain('l.name::character varying(255) AS lead_name');
-    expect(migration).toContain('l.phone_normalized::character varying(20) AS phone_normalized');
-    expect(migration).toContain('fs.template_id::character varying(32) AS doctoralia_template_id');
-    expect(migration).toContain('p.phone::character varying(64) AS patient_phone');
+  it('uses one fail-closed forward bridge for the exact measured lead-audit Production and replay signatures', () => {
+    expect(leadBridge).toContain('Unexpected vw_lead_traceability signature');
+    expect(leadBridge).toContain("1:lead_id:uuid\\n2:lead_name:character varying(255)\\n3:email_normalized:text\\n4:phone_normalized:character varying(20)");
+    expect(leadBridge).toContain("1:lead_id:uuid\\n2:lead_name:text\\n3:email_normalized:text\\n4:phone_normalized:text");
+    expect(leadBridge).toContain('18:reply_delay_minutes:integer\\n19:appointment_status:appointment_status');
+    expect(leadBridge).toContain('39:patient_last_visit:timestamp with time zone');
+    expect(leadBridge).toContain('43:first_settlement_at:timestamp with time zone');
+    expect(leadBridge).toContain('Cannot rebuild legacy vw_lead_traceability: dependent view exists');
+    expect(leadBridge).toContain('DROP VIEW public.vw_lead_traceability;');
+    expect(leadBridge).not.toMatch(/DROP\s+VIEW\s+public\.vw_lead_traceability[^;]*CASCADE/i);
+    expect(leadBridge.match(/DO \$lead_audit_bridge\$/g) ?? []).toHaveLength(1);
+    expect(leadBridge).toContain('nvx_lead_audit_acl');
+    expect(leadBridge).toContain('l.name::character varying(255) AS lead_name');
+    expect(leadBridge).toContain('l.phone_normalized::character varying(20) AS phone_normalized');
+    expect(leadBridge).toContain('fs.template_id::character varying(32) AS doctoralia_template_id');
+    expect(leadBridge).toContain('p.phone::character varying(64) AS patient_phone');
+    expect(leadBridge).toContain('patients.total_ltv exceeds numeric(12,2) range');
+    expect(leadBridge).toContain('settlement amounts exceed numeric(12,2) range');
   });
 
-  it('rebuilds only the exact measured incompatible legacy doctor signature without CASCADE', () => {
-    expect(migration).toContain('v_signature text;');
-    expect(migration).toContain('Unexpected vw_doctor_performance_real signature');
-    expect(migration).toContain("1:doctor_id:uuid\\n2:doctor_name:character varying(255)\\n3:specialty:character varying(128)\\n4:is_active:boolean\\n5:clinic_id:uuid");
-    expect(migration).toContain("1:doctor_id:uuid\\n2:doctor_name:text\\n3:specialty:text\\n4:is_active:boolean\\n5:total_appointments:bigint");
-    expect(migration).toContain('13:verified_revenue_crm:numeric\\n14:clinic_id:uuid');
-    expect(migration).toContain('Cannot rebuild legacy vw_doctor_performance_real: dependent view exists');
-    expect(migration).toContain('DROP VIEW public.vw_doctor_performance_real;');
-    expect(migration).not.toMatch(/DROP\s+VIEW\s+public\.vw_doctor_performance_real[^;]*CASCADE/i);
-    expect(migration).toContain('nvx_doctor_acl');
-    expect(migration).toContain('nvx_doctor_restore');
+  it('rebuilds only the exact measured incompatible legacy doctor signature before immutable 160000', () => {
+    expect(doctorBridge).toContain('Unexpected vw_doctor_performance_real signature before reporting migration');
+    expect(doctorBridge).toContain("1:doctor_id:uuid\\n2:doctor_name:character varying(255)\\n3:specialty:character varying(128)\\n4:is_active:boolean\\n5:clinic_id:uuid");
+    expect(doctorBridge).toContain("1:doctor_id:uuid\\n2:doctor_name:text\\n3:specialty:text\\n4:is_active:boolean\\n5:total_appointments:bigint");
+    expect(doctorBridge).toContain('13:verified_revenue_crm:numeric\\n14:clinic_id:uuid');
+    expect(doctorBridge).toContain('Cannot rebuild legacy vw_doctor_performance_real: dependent view exists');
+    expect(doctorBridge).toContain('DROP VIEW public.vw_doctor_performance_real;');
+    expect(doctorBridge).not.toMatch(/DROP\s+VIEW\s+public\.vw_doctor_performance_real[^;]*CASCADE/i);
+    expect(doctorBridge).toContain('nvx_doctor_pre_acl');
+    expect(doctorBridge).toContain('column-level ACLs detected');
   });
 
-  it('preserves doctor performance column order and uses Doctoralia ingestion', () => {
+  it('preserves doctor performance column order and uses Doctoralia ingestion in immutable reporting', () => {
     expect(migration).toContain('CREATE OR REPLACE VIEW public.vw_doctor_performance_real AS');
     expect(migration).toContain('public.doctoralia_appointments_ingestion');
     expect(migration).toContain('public.financial_settlements');
@@ -119,5 +125,12 @@ describe('Canonical Reporting Pipeline and E2E Contract', () => {
     expect(doctorSelect.indexOf('c.total_appointments')).toBeGreaterThan(-1);
     expect(doctorSelect.indexOf('c.clinic_id')).toBeLessThan(doctorSelect.indexOf('c.total_appointments'));
     expect(migration).toContain('COMMENT ON VIEW public.vw_doctor_performance_real');
+  });
+
+  it('keeps immutable applied migrations untouched and places replay hardening around them', () => {
+    expect(Number('20260901155999')).toBeLessThan(Number('20260901160000'));
+    expect(Number('20260901160050')).toBeGreaterThan(Number('20260901160000'));
+    expect(doctorBridge).not.toContain('20260901160000_fix_reporting_canonical_sources.sql');
+    expect(leadBridge).toContain('immutable 20260901160000');
   });
 });
