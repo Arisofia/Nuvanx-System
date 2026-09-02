@@ -88,11 +88,14 @@ function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
-function bytesToHex(bytes: Uint8Array): string {
+function bytesToHex(bytes: Uint8Array<ArrayBuffer>): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-async function deriveCredentialKey(salt: Uint8Array, usage: "encrypt" | "decrypt"): Promise<CryptoKey> {
+async function deriveCredentialKey(
+  salt: Uint8Array<ArrayBuffer>,
+  usage: "encrypt" | "decrypt",
+): Promise<CryptoKey> {
   if (!ENCRYPTION_KEY) throw new HealthFailure("configuration", 500, "Credential encryption key unavailable");
   const keyMaterial = await crypto.subtle.importKey(
     "raw",
@@ -112,8 +115,10 @@ async function deriveCredentialKey(salt: Uint8Array, usage: "encrypt" | "decrypt
 
 async function encryptCredential(secret: string): Promise<string> {
   if (!secret) throw new HealthFailure("configuration", 500, "Google Ads developer credential is empty");
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const salt = new Uint8Array(new ArrayBuffer(16));
+  crypto.getRandomValues(salt);
+  const iv = new Uint8Array(new ArrayBuffer(12));
+  crypto.getRandomValues(iv);
   const key = await deriveCredentialKey(salt, "encrypt");
   const sealed = new Uint8Array(await crypto.subtle.encrypt(
     { name: "AES-GCM", iv },
