@@ -51,7 +51,6 @@ function cleanSelector(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-
 async function sha256(raw: string): Promise<Uint8Array> {
   return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw)));
 }
@@ -347,19 +346,22 @@ Deno.serve(async (req: Request) => {
   try {
     const serviceAccount = parseServiceAccount(SERVICE_ACCOUNT_RAW);
 
+    const [selectorKey, selectorValue] = selectors[0];
     let integrationQuery = admin
       .from("integrations")
       .select("id,user_id,clinic_id,metadata,status")
-      .eq("service", "google_ads")
-      .eq("status", "connected");
-    const [selectorKey, selectorValue] = selectors[0];
-    if (selectorKey === "integration_id") integrationQuery = integrationQuery.eq("id", selectorValue);
-    if (selectorKey === "user_id") integrationQuery = integrationQuery.eq("user_id", selectorValue);
-    if (selectorKey === "clinic_id") integrationQuery = integrationQuery.eq("clinic_id", selectorValue);
+      .eq("service", "google_ads");
+    if (selectorKey === "integration_id") {
+      integrationQuery = integrationQuery.eq("id", selectorValue).in("status", ["connected", "disconnected"]);
+    } else {
+      integrationQuery = integrationQuery.eq("status", "connected");
+      if (selectorKey === "user_id") integrationQuery = integrationQuery.eq("user_id", selectorValue);
+      if (selectorKey === "clinic_id") integrationQuery = integrationQuery.eq("clinic_id", selectorValue);
+    }
     const { data: integrations, error: integrationError } = await integrationQuery.limit(2);
     if (integrationError) throw new HealthFailure("configuration", 500, "Google Ads integration lookup failed");
     if (!Array.isArray(integrations) || integrations.length !== 1) {
-      throw new HealthFailure("validation", 424, "Google Ads integration selector did not resolve exactly one connected integration");
+      throw new HealthFailure("validation", 424, "Google Ads integration selector did not resolve exactly one eligible integration");
     }
     const integration = integrations[0];
     integrationId = String(integration.id || "");
@@ -455,7 +457,7 @@ Deno.serve(async (req: Request) => {
     const now = new Date().toISOString();
     const [credentialUpdate, integrationUpdate] = await Promise.all([
       admin.from("credentials").update({ last_used: now }).eq("id", credential.id),
-      admin.from("integrations").update({ last_sync: now, last_error: null, updated_at: now }).eq("id", integration.id),
+      admin.from("integrations").update({ status: "connected", last_sync: now, last_error: null, updated_at: now }).eq("id", integration.id),
     ]);
     if (credentialUpdate.error || integrationUpdate.error) {
       throw new HealthFailure("persistence", 500, "Google Ads provider proof persistence failed");
