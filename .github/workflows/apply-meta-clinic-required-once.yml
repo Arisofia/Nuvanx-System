@@ -1,0 +1,129 @@
+name: Apply Meta Clinic Required Once
+
+on:
+  push:
+    branches:
+      - fix/meta-clinic-tenant-resolution-v2-20260902
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.repository == 'Arisofia/Nuvanx-System' && github.ref == 'refs/heads/fix/meta-clinic-tenant-resolution-v2-20260902'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Enforce clinic-required Meta resolution
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          api_path = Path('supabase/functions/api/index.ts')
+          api = api_path.read_text()
+
+          old = """  integrationsQuery = requesterClinicId
+            ? integrationsQuery.eq('clinic_id', requesterClinicId)
+            : integrationsQuery.eq('user_id', userId).is('clinic_id', null);
+
+          const { data: integrations, error } = await integrationsQuery;
+          if (error) throw error;
+
+          const connected = integrations ?? [];
+          const requestedAccountIds = normalizeMetaAccountIds(qAccountId);
+          """
+          new = """  const requestedAccountIds = normalizeMetaAccountIds(qAccountId);
+          if (!requesterClinicId) {
+            return { integration: null, requesterClinicId, requestedAccountIds } as const;
+          }
+
+          integrationsQuery = integrationsQuery.eq('clinic_id', requesterClinicId);
+
+          const { data: integrations, error } = await integrationsQuery;
+          if (error) throw error;
+
+          const connected = integrations ?? [];
+          """
+          if old not in api:
+              raise SystemExit('meta integration legacy fallback anchor not found')
+          api = api.replace(old, new, 1)
+
+          old2 = """  const credentialService = integrationService;
+          let credentialQuery = adminClient.from('credentials')
+            .select('encrypted_key')
+            .eq('user_id', integrationOwnerId)
+            .eq('service', credentialService);
+          credentialQuery = requesterClinicId
+            ? credentialQuery.eq('clinic_id', requesterClinicId)
+            : credentialQuery.is('clinic_id', null);
+          """
+          new2 = """  if (!requesterClinicId) {
+            return {
+              notConnected: true,
+              accessToken: '',
+              adAccountIds: [] as string[],
+              adAccountId: '',
+              decryptionError: '',
+              integrationOwnerId,
+              integrationService,
+              requesterClinicId,
+            };
+          }
+
+          const credentialService = integrationService;
+          let credentialQuery = adminClient.from('credentials')
+            .select('encrypted_key')
+            .eq('user_id', integrationOwnerId)
+            .eq('service', credentialService);
+          credentialQuery = credentialQuery.eq('clinic_id', requesterClinicId);
+          """
+          if old2 not in api:
+              raise SystemExit('meta credential legacy fallback anchor not found')
+          api = api.replace(old2, new2, 1)
+          api_path.write_text(api)
+
+          test_path = Path('supabase/tests/meta-tenant-resolution-contract.test.mjs')
+          test = test_path.read_text()
+          test = test.replace(
+              "expect(integrationSection).toContain(\"integrationsQuery.eq('clinic_id', requesterClinicId)\");\n    expect(integrationSection).toContain(\"integrationsQuery.eq('user_id', userId).is('clinic_id', null)\");\n    expect(integrationSection).not.toContain(\".eq('clinic_id', requesterClinicId).or(\");",
+              "expect(integrationSection).toContain('if (!requesterClinicId) {');\n    expect(integrationSection).toContain('integration: null');\n    expect(integrationSection).toContain(\"integrationsQuery = integrationsQuery.eq('clinic_id', requesterClinicId);\");\n    expect(integrationSection).not.toContain(\".is('clinic_id', null)\");\n    expect(integrationSection).not.toContain(\".eq('clinic_id', requesterClinicId).or(\");"
+          )
+          test = test.replace(
+              "expect(resolver).toContain(\"credentialQuery.is('clinic_id', null)\");",
+              "expect(resolver).toContain(\"credentialQuery = credentialQuery.eq('clinic_id', requesterClinicId);\");\n    expect(resolver).not.toContain(\"credentialQuery.is('clinic_id', null)\");"
+          )
+          test_path.write_text(test)
+          PY
+
+      - name: Verify clinic-only contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F "if (!requesterClinicId)" supabase/functions/api/index.ts
+          grep -F "integrationsQuery = integrationsQuery.eq('clinic_id', requesterClinicId);" supabase/functions/api/index.ts
+          grep -F "credentialQuery = credentialQuery.eq('clinic_id', requesterClinicId);" supabase/functions/api/index.ts
+          if grep -Fq "integrationsQuery.eq('user_id', userId).is('clinic_id', null)" supabase/functions/api/index.ts; then
+            echo "::error::Meta integration legacy fallback remains"
+            exit 1
+          fi
+          if grep -Fq "credentialQuery.is('clinic_id', null)" supabase/functions/api/index.ts; then
+            echo "::error::Meta credential legacy fallback remains"
+            exit 1
+          fi
+
+      - name: Commit hardened source and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/apply-meta-clinic-required-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add supabase/functions/api/index.ts supabase/tests/meta-tenant-resolution-contract.test.mjs .github/workflows/apply-meta-clinic-required-once.yml
+          git commit -m "fix(meta): require clinic tenant for canonical resolution"
+          git push origin HEAD:fix/meta-clinic-tenant-resolution-v2-20260902
