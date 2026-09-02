@@ -117,7 +117,10 @@ describe('Meta tenant-safe resolution contract', () => {
 
     expect(ig).toContain('resolveMetaIntegration(adminClient, userId');
     expect(ig).toContain('if (!integ || !requesterClinicId)');
-    expect(ig).toMatch(/\.from\('meta_ig_account_daily'\)[\s\S]{0,180}\.eq\('clinic_id', requesterClinicId\)[\s\S]{0,80}\.limit\(1\)/);
+    expect(ig).toContain('const igId: string | null = meta.igBusinessAccountId ?? meta.ig_business_account_id ?? null;');
+    expect(ig).toContain('Instagram Business Account ID not configured in integration metadata');
+    expect(ig).not.toContain('igDiscoverQuery');
+    expect(ig).not.toMatch(/\.from\('meta_ig_account_daily'\)[\s\S]{0,180}\.limit\(1\)/);
     expect(ig).toContain("query = query.eq('clinic_id', requesterClinicId)");
     expect(ig).not.toContain('applyClinicOrUserScope(query, requesterClinicId, userId)');
   });
