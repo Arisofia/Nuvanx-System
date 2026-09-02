@@ -54,4 +54,13 @@ describe('reply_delay_minutes clean-replay contract', () => {
     expect(migration).toContain('nvx_reply_delay_view_restore');
     expect(migration).toContain('nvx_reply_delay_view_acl');
   });
+
+  it('fails closed on column-level ACLs before any dependent view is dropped', () => {
+    const aclGuard = migration.indexOf('a.attacl IS NOT NULL');
+    const drop = migration.indexOf("'DROP VIEW %I.%I'");
+    expect(aclGuard).toBeGreaterThan(-1);
+    expect(drop).toBeGreaterThan(-1);
+    expect(aclGuard).toBeLessThan(drop);
+    expect(migration).toContain('Cannot reconcile reply-delay views: column-level ACLs detected');
+  });
 });
