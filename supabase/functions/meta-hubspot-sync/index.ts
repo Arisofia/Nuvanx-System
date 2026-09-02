@@ -176,6 +176,13 @@ async function linkLocalLead(admin: any, lead: any, contactId: string) {
     .eq("id", lead.id)
     .is("hubspot_contact_id", null);
   if (error) throw new Error("Local HubSpot lineage update failed");
+
+  await admin.from("hubspot_deal_projections").upsert({
+    lead_id: lead.id,
+    hubspot_contact_id: Number(contactId),
+    projection_status: "pending",
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "lead_id" });
 }
 
 async function patchMissingContactProperties(token: string, contact: any, desired: Record<string, string>): Promise<string[]> {

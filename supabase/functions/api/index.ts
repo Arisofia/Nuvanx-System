@@ -655,7 +655,8 @@ export function resolveMetaLeadConversions(row: any): number {
 
 
 async function resolveClinicId(adminClient: any, userId: string): Promise<string | null> {
-  const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+  const { data: usr, error } = await adminClient.from('users').select('clinic_id').eq('id', userId).maybeSingle();
+  if (error) throw error;
   return usr?.clinic_id ?? null;
 }
 
@@ -1076,7 +1077,7 @@ function classifyMetaLeadTag(fields: Record<string, string>): string {
  * Returns: { stage, treatmentName }
  *   stage ∈ 'lead' | 'appointment' | 'treatment' | 'closed'
  */
-export async function processLeadData(adminClient: any, userId: string, leadData: any) {
+export async function processLeadData(adminClient: any, userId: string, leadData: any, clinicId?: string | null) {
   const { fields, rawFieldData } = parseMetaLeadFields(leadData.field_data ?? []);
   const leadDataFields = extractMetaLeadCustomerInfo(leadData.field_data ?? []);
   const tag = classifyMetaLeadTag(leadDataFields);
@@ -1108,10 +1109,25 @@ export async function processLeadData(adminClient: any, userId: string, leadData
 
   // Upsert lead — idempotent via partial unique index (clinic_id, source, external_id)
   const createdAt = parseMetaLeadCreatedAt(leadData.created_time);
-  const clinicIdForLead = await resolveClinicId(adminClient, userId);
+  const clinicIdForLead = clinicId ?? await resolveClinicId(adminClient, userId);
+  
+  if (!clinicIdForLead) {
+    throw new Error('Clinic is required for Meta lead ingestion');
+  }
 
-  const { data: lead } = await adminClient.from('leads')
-    .upsert({
+  // Query if lead already exists by clinic, source and external_id
+  const { data: existingLead } = await adminClient.from('leads')
+    .select('id')
+    .eq('clinic_id', clinicIdForLead)
+    .eq('source', 'meta_leadgen')
+    .eq('external_id', leadgen_id)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  let leadId = existingLead?.id ?? null;
+
+  if (!leadId) {
+    const leadPayload = {
       user_id:         userId,
       clinic_id:       clinicIdForLead,
       external_id:     leadgen_id,
@@ -1152,15 +1168,37 @@ export async function processLeadData(adminClient: any, userId: string, leadData
       lead_quality_score: null,
       ad_account_id:   leadData.account_id ?? leadData.ad_account_id ?? null,
       created_at:        createdAt,
-    }, { onConflict: 'clinic_id,source,external_id', ignoreDuplicates: true })
-    .select('id')
-    .maybeSingle();
+    };
+
+    const { data: inserted, error: insertError } = await adminClient.from('leads')
+      .insert(leadPayload)
+      .select('id')
+      .maybeSingle();
+
+    if (insertError) {
+      if (insertError.code === '23505') {
+        const { data: raceLead } = await adminClient.from('leads')
+          .select('id')
+          .eq('clinic_id', clinicIdForLead)
+          .eq('source', 'meta_leadgen')
+          .eq('external_id', leadgen_id)
+          .is('deleted_at', null)
+          .maybeSingle();
+        leadId = raceLead?.id ?? null;
+      } else {
+        console.error('[processLeadData] Failed to insert lead:', insertError);
+        throw insertError;
+      }
+    } else {
+      leadId = inserted?.id ?? null;
+    }
+  }
 
   // Record attribution details
-  if (lead?.id) {
+  if (leadId) {
     await adminClient.from('meta_attribution')
       .upsert({
-        lead_id:       lead.id,
+        lead_id:       leadId,
         leadgen_id,
         page_id:       leadData.page_id     ?? null,
         form_id:       leadData.form_id     ?? null,
@@ -1171,8 +1209,8 @@ export async function processLeadData(adminClient: any, userId: string, leadData
         ad_id:         leadData.ad_id       ?? null,
         ad_name:       leadData.ad_name     ?? null,
         form_name:     leadData.form_name   ?? null,
-      }, { onConflict: 'leadgen_id' });
-    return lead?.id ?? null;
+      }, { onConflict: 'lead_id' });
+    return leadId;
   }
   return null;
 }
@@ -1187,7 +1225,7 @@ async function resolveClinicMetadata(adminClient: any, userId: string) {
   const clinicId = await resolveClinicId(adminClient, userId);
   if (!clinicId) return { name: 'una clínica', city: 'Madrid', specialty: 'medicina estética' };
   
-  const { data } = await adminClient.from('clinics').select('name, metadata').eq('id', clinicId).single();
+  const { data } = await adminClient.from('clinics').select('name, metadata').eq('id', clinicId).maybeSingle();
   const meta = data?.metadata ?? {};
   return {
     name: data?.name ?? 'una clínica',
@@ -1197,16 +1235,24 @@ async function resolveClinicMetadata(adminClient: any, userId: string) {
 }
 
 // ── Meta credential resolver ──────────────────────────────────────────────────
-async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: string) {
-  const { data: integrations } = await adminClient
+async function resolveMetaIntegration(adminClient: any, userId: string, qAccountId: string) {
+  const requesterClinicId = await resolveClinicId(adminClient, userId);
+  const requestedAccountIds = normalizeMetaAccountIds(qAccountId);
+  if (!requesterClinicId) {
+    return { integration: null, requesterClinicId, requestedAccountIds } as const;
+  }
+
+  let integrationsQuery = adminClient
     .from('integrations')
-    .select('service, metadata, status, updated_at')
-    .eq('user_id', userId)
+    .select('user_id, clinic_id, service, metadata, status, updated_at')
     .in('service', ['meta_ads', 'meta'])
-    .eq('status', 'connected');
+    .eq('status', 'connected')
+    .eq('clinic_id', requesterClinicId);
+
+  const { data: integrations, error } = await integrationsQuery;
+  if (error) throw error;
 
   const connected = integrations ?? [];
-  const requestedAccountIds = normalizeMetaAccountIds(qAccountId);
   const matchingRows = requestedAccountIds.length > 0
     ? connected.filter((row: any) => {
         const metadata = row?.metadata ?? {};
@@ -1217,19 +1263,80 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
       })
     : connected;
 
-  const intg = selectCanonicalMetaIntegration(matchingRows);
+  return {
+    integration: selectCanonicalMetaIntegration(matchingRows),
+    requesterClinicId,
+    requestedAccountIds,
+  } as const;
+}
+
+async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: string) {
+  const { integration: intg, requesterClinicId, requestedAccountIds } = await resolveMetaIntegration(
+    adminClient,
+    userId,
+    qAccountId,
+  );
   if (!intg) {
-    return { notConnected: true, accessToken: '', adAccountIds: [] as string[], adAccountId: '', decryptionError: '' };
+    return {
+      notConnected: true,
+      accessToken: '',
+      adAccountIds: [] as string[],
+      adAccountId: '',
+      decryptionError: '',
+      integrationOwnerId: '',
+      integrationService: '',
+      requesterClinicId,
+    };
   }
 
-  const credentialService = intg.service === 'meta_ads' ? 'meta_ads' : 'meta';
-  const { data: credRow } = await adminClient.from('credentials')
+  const integrationService = intg.service === 'meta_ads' ? 'meta_ads' : 'meta';
+  const integrationOwnerId = String(intg.user_id ?? '').trim();
+  if (!integrationOwnerId) {
+    return {
+      notConnected: true,
+      accessToken: '',
+      adAccountIds: [] as string[],
+      adAccountId: '',
+      decryptionError: '',
+      integrationOwnerId: '',
+      integrationService,
+      requesterClinicId,
+    };
+  }
+
+  if (!requesterClinicId) {
+    return {
+      notConnected: true,
+      accessToken: '',
+      adAccountIds: [] as string[],
+      adAccountId: '',
+      decryptionError: '',
+      integrationOwnerId,
+      integrationService,
+      requesterClinicId,
+    };
+  }
+
+  const credentialService = integrationService;
+  let credentialQuery = adminClient.from('credentials')
     .select('encrypted_key')
-    .eq('user_id', userId)
-    .eq('service', credentialService)
-    .maybeSingle();
+    .eq('user_id', integrationOwnerId)
+    .eq('service', credentialService);
+  credentialQuery = credentialQuery.eq('clinic_id', requesterClinicId);
+
+  const { data: credRow, error: credentialError } = await credentialQuery.maybeSingle();
+  if (credentialError) throw credentialError;
   if (!credRow?.encrypted_key) {
-    return { notConnected: true, accessToken: '', adAccountIds: [] as string[], adAccountId: '', decryptionError: '' };
+    return {
+      notConnected: true,
+      accessToken: '',
+      adAccountIds: [] as string[],
+      adAccountId: '',
+      decryptionError: '',
+      integrationOwnerId,
+      integrationService,
+      requesterClinicId,
+    };
   }
 
   let accessToken = '';
@@ -1264,6 +1371,7 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
   console.log('[CAPI-ROUTING] Meta stack selected', {
     service: credentialService,
     accountId: activeAccountId,
+    clinicScoped: Boolean(requesterClinicId),
     hasPixel: Boolean(pixelId),
   });
 
@@ -1276,6 +1384,9 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
     pageId: metadata.pageId ?? metadata.page_id ?? '',
     igId: metadata.igBusinessAccountId ?? metadata.ig_business_account_id ?? '',
     credentialService,
+    integrationOwnerId,
+    integrationService,
+    requesterClinicId,
     decryptionError,
   } as const;
 }
@@ -1410,10 +1521,11 @@ function requireMetaAccountId(raw: unknown): string {
 }
 
 async function updateIntegrationStatus(adminClient: any, userId: string, service: string, status: string, message: string | null = null) {
-  await adminClient.from('integrations')
+  const { error } = await adminClient.from('integrations')
     .update({ status, last_error: message, updated_at: new Date().toISOString() })
     .eq('user_id', userId)
     .eq('service', service);
+  if (error) console.error(`[integrations] status update failed for ${service}:`, error.message);
 }
 
 async function ensurePublicUserRow(adminClient: any, user: any) {
@@ -1763,14 +1875,21 @@ export async function processMetaLeadChange(adminClient: any, change: any): Prom
   if (!leadgen_id) return;
 
   const { data: intgs } = await adminClient.from('integrations')
-    .select('user_id, service, metadata')
+    .select('user_id, clinic_id, service, metadata')
     .in('service', ['meta', 'meta_ads'])
     .eq('status', 'connected');
 
-  const connected = intgs ?? [];
-  let matchingIntg = connected.find((integration: any) =>
+  const connected = (intgs ?? []).filter((intg: any) => intg.clinic_id != null && intg.clinic_id !== '');
+  const explicitMatches = connected.filter((integration: any) =>
     metaIntegrationPageIds(integration?.metadata ?? {}).includes(String(page_id ?? '').trim())
   );
+
+  if (explicitMatches.length > 1) {
+    console.error('[meta-webhook] Ambiguous connected integrations match incoming page_id', { page_id, leadgen_id, matches: explicitMatches.length });
+    return;
+  }
+
+  let matchingIntg = explicitMatches[0] ?? null;
 
   if (matchingIntg == null) {
     const withoutPageRouting = connected.filter(
@@ -1786,7 +1905,13 @@ export async function processMetaLeadChange(adminClient: any, change: any): Prom
     return;
   }
 
+  if (!matchingIntg.clinic_id) {
+    console.warn('[meta-webhook] Matching integration has no clinic_id', { page_id, leadgen_id });
+    return;
+  }
+
   const webhookUserId = matchingIntg.user_id;
+  const webhookClinicId = matchingIntg.clinic_id;
   const credentialService = matchingIntg.service === 'meta_ads' ? 'meta_ads' : 'meta';
   const intgMetadata = matchingIntg.metadata ?? {};
   const pixelId = intgMetadata.pixelId ?? intgMetadata.pixel_id ?? '';
@@ -1794,6 +1919,7 @@ export async function processMetaLeadChange(adminClient: any, change: any): Prom
   const { data: credRow } = await adminClient.from('credentials')
     .select('encrypted_key')
     .eq('user_id', webhookUserId)
+    .eq('clinic_id', webhookClinicId)
     .eq('service', credentialService)
     .single();
   if (!credRow) {
@@ -1822,7 +1948,7 @@ export async function processMetaLeadChange(adminClient: any, change: any): Prom
     return;
   }
 
-  const leadId = await publicRouteHelpers.processLeadData(adminClient, webhookUserId, leadData);
+  const leadId = await publicRouteHelpers.processLeadData(adminClient, webhookUserId, leadData, webhookClinicId);
   await fireMetaLeadCapi(accessToken, leadgen_id, leadData, pixelId, leadId);
 }
 
@@ -2165,7 +2291,7 @@ async function processWhatsappWebhookMessage(adminClient: any, userId: string, v
     }
   })();
 
-  const { data: usrRow } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+  const { data: usrRow } = await adminClient.from('users').select('clinic_id').eq('id', userId).maybeSingle();
   const clinicId = usrRow?.clinic_id ?? null;
   if (clinicId) {
     await adminClient.from('whatsapp_conversations')
@@ -2463,7 +2589,7 @@ async function handleProductionAuditGet(ctx: AuthenticatedRouteContext): Promise
       adminClient.from('doctoralia_patients').select('doc_patient_id', { count: 'exact', head: true }),
       adminClient.from('doctors').select('id', { count: 'exact', head: true }),
       adminClient.from('treatment_types').select('id', { count: 'exact', head: true }),
-      adminClient.from('integrations').select('metadata').eq('user_id', userId).eq('service', 'meta').single(),
+      adminClient.from('integrations').select('metadata').eq('user_id', userId).in('service', ['meta_ads', 'meta']).maybeSingle(),
       adminClient.from('meta_cache').select('updated_at').order('updated_at', { ascending: false }).limit(1).maybeSingle(),
     ]);
 
@@ -2564,7 +2690,7 @@ async function runLeadPipelineReconciliation(adminClient: any, userId: string) {
   // Reconciliation started
 
   const { data: usr } = await adminClient
-    .from('users').select('clinic_id').eq('id', userId).single();
+    .from('users').select('clinic_id').eq('id', userId).maybeSingle();
 
   if (!usr?.clinic_id) return;
 
@@ -3167,7 +3293,7 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
     const { since, until } = getKpiDateRange(url);
     const untilFullDay = `${until}T23:59:59Z`;
 
-    const { data: usr, error: usrErr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+    const { data: usr, error: usrErr } = await adminClient.from('users').select('clinic_id').eq('id', userId).maybeSingle();
     if (usrErr) {
       console.error('[Metrics] Failed to fetch user clinic:', usrErr);
       return sendJson({ success: false, message: 'Failed to fetch user context' }, 500);
@@ -3826,6 +3952,9 @@ function metaActionsArrayToObject(actions: any[] | undefined): Record<string, nu
 
 async function persistMetaDailyInsights(adminClient: any, userId: string, adAccountId: string, accessToken: string, sinceDate: string, untilDate: string): Promise<number> {
   const clinicId = await resolveClinicId(adminClient, userId);
+  if (!clinicId) {
+    throw new Error('Clinic is required for Meta provider fact persistence');
+  }
 
   const fields = [
     'date_start',
@@ -3911,27 +4040,155 @@ async function persistMetaDailyInsights(adminClient: any, userId: string, adAcco
 
 
 
-async function ingestMetaLeadsFromForms(adminClient: any, userId: string, adAccountId: string, accessToken: string, sinceTs: number): Promise<number> {
-  let totalFetched = 0;
-  const formsRes = await metaFetch(`/${adAccountId}/leadgen_forms`, {
-    fields: 'id,name',
-    limit: '50',
-  }, accessToken);
+function extractLeadGenFormIdsFromCreative(creative: any): string[] {
+  const ids: string[] = [];
+  if (!creative || typeof creative !== 'object') return ids;
+  if (creative.lead_gen_form_id) ids.push(String(creative.lead_gen_form_id));
+  
+  const ctas = creative.asset_feed_spec?.call_to_actions ?? [];
+  for (const cta of ctas) {
+    const fid = cta?.value?.lead_gen_form_id;
+    if (fid) ids.push(String(fid));
+  }
+  
+  const storyCta = creative.object_story_spec?.link_data?.call_to_action?.value?.lead_gen_form_id
+    ?? creative.object_story_spec?.template_data?.call_to_action?.value?.lead_gen_form_id
+    ?? creative.object_story_spec?.call_to_action?.value?.lead_gen_form_id;
+  if (storyCta) ids.push(String(storyCta));
 
-  for (const form of (formsRes?.data ?? [])) {
+  return ids;
+}
+
+async function ingestMetaLeadsFromForms(
+  adminClient: any,
+  userId: string,
+  adAccountId: string,
+  accessToken: string,
+  sinceTs: number,
+  pageId?: string | null,
+  clinicId?: string | null,
+  diagnostics?: any[],
+  errors?: string[],
+): Promise<number> {
+  let totalFetched = 0;
+  const formIds = new Set<string>();
+
+  // 1. Fetch leadgen forms from the Page if pageId is provided
+  if (pageId) {
     try {
-      const leadsRes = await metaFetch(`/${form.id}/leads`, {
+      const pageFormsRes = await metaFetch(`/${pageId}/leadgen_forms`, {
+        fields: 'id,name',
+        limit: '50',
+      }, accessToken);
+      for (const form of (pageFormsRes?.data ?? [])) {
+        if (form?.id) formIds.add(String(form.id));
+      }
+    } catch (pageErr: any) {
+      const msg = `Meta page leadgen_forms query failed for page ${pageId}: ${pageErr?.message ?? pageErr}`;
+      if (errors) errors.push(msg);
+    }
+  }
+
+  // 2. Discover lead forms attached to ads in the Ad Account
+  try {
+    const adsRes = await metaFetch(`/${adAccountId}/ads`, {
+      fields: 'id,name,creative{id,lead_gen_form_id,asset_feed_spec,object_story_spec}',
+      limit: '100',
+    }, accessToken);
+    for (const ad of (adsRes?.data ?? [])) {
+      for (const fid of extractLeadGenFormIdsFromCreative(ad?.creative)) {
+        formIds.add(fid);
+      }
+    }
+  } catch (adsErr: any) {
+    const msg = `Meta ads query for form discovery failed for ${adAccountId}: ${adsErr?.message ?? adsErr}`;
+    if (errors) errors.push(msg);
+  }
+
+  // 3. Known canonical form for RSV26 / Madrid campaign
+  if (String(adAccountId).includes('718120894191565')) {
+    formIds.add('1493697602775666');
+  }
+
+  // 4. Compatibility fallback: try /{adAccountId}/leadgen_forms directly if supported
+  if (formIds.size === 0) {
+    try {
+      const formsRes = await metaFetch(`/${adAccountId}/leadgen_forms`, {
+        fields: 'id,name',
+        limit: '50',
+      }, accessToken);
+      for (const form of (formsRes?.data ?? [])) {
+        if (form?.id) formIds.add(String(form.id));
+      }
+    } catch {
+      // Ignored if ad account does not support the leadgen_forms edge
+    }
+  }
+
+  if (diagnostics) {
+    diagnostics.push({
+      scope: 'discovered_forms',
+      adAccountId,
+      forms: Array.from(formIds),
+    });
+  }
+
+  // 5. Fetch leads for each discovered form
+  for (const formId of formIds) {
+    try {
+      const leadsRes = await metaFetch(`/${formId}/leads`, {
         fields: 'id,field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,campaign_name,adset_id,adset_name,page_id',
-        filtering: JSON.stringify([{ field: 'time_created', operator: 'GREATER_THAN', value: sinceTs }]),
-        limit: '500',
+        limit: '100',
       }, accessToken);
 
-      for (const leadData of (leadsRes?.data ?? [])) {
-        const success = await processLeadData(adminClient, userId, leadData);
-        if (success) totalFetched++;
+      const rows: any[] = Array.isArray(leadsRes?.data) ? leadsRes.data : [];
+      if (diagnostics) {
+        diagnostics.push({
+          scope: 'form_leads_fetch',
+          formId,
+          returned: rows.length,
+          sinceTs,
+        });
+      }
+
+      for (const leadData of rows) {
+        const leadTs = Math.floor(new Date(leadData.created_time || 0).getTime() / 1000);
+        if (sinceTs && leadTs < sinceTs) {
+          if (diagnostics) {
+            diagnostics.push({
+              scope: 'lead_skipped_date',
+              formId,
+              leadId: leadData.id,
+              created_time: leadData.created_time,
+              leadTs,
+              sinceTs,
+            });
+          }
+          continue;
+        }
+        const success = await processLeadData(adminClient, userId, leadData, clinicId);
+        if (success) {
+          totalFetched++;
+          if (diagnostics) {
+            diagnostics.push({
+              scope: 'lead_persisted',
+              formId,
+              leadId: leadData.id,
+              created_time: leadData.created_time,
+            });
+          }
+        }
       }
     } catch (formError: any) {
-      console.warn(`Meta backfill failed for form ${form?.id}:`, maskSensitive(formError?.message ?? formError));
+      const msg = `Meta backfill failed for form ${formId}: ${formError?.message ?? formError}`;
+      if (errors) errors.push(msg);
+      if (diagnostics) {
+        diagnostics.push({
+          scope: 'form_leads_error',
+          formId,
+          error: msg,
+        });
+      }
     }
   }
 
@@ -3969,6 +4226,10 @@ async function persistMetaOrganicDailyInsights(adminClient: any, userId: string,
   }
 
   const clinicId = await resolveClinicId(adminClient, userId);
+  
+  if (!clinicId) {
+    throw new Error('Clinic is required for Meta provider fact persistence');
+  }
 
   const dbRows = Array.from(byDate.values()).map((r: any) => ({
     user_id: userId,
@@ -3989,7 +4250,7 @@ async function persistMetaOrganicDailyInsights(adminClient: any, userId: string,
 
   const { error } = await adminClient
     .from('meta_organic_daily')
-    .upsert(dbRows, { onConflict: 'user_id,page_id,date' });
+    .upsert(dbRows, { onConflict: 'clinic_id,page_id,date' });
 
   if (error) throw error;
   return dbRows.length;
@@ -4008,6 +4269,12 @@ async function persistMetaPostPerformance(adminClient: any, userId: string, page
     'insights.metric(post_impressions_unique,post_reactions_by_type_total,post_video_views,post_clicks,post_activity_by_action_type)',
   ].join(',');
 
+  const clinicId = await resolveClinicId(adminClient, userId);
+
+  if (!clinicId) {
+    throw new Error('Clinic is required for Meta provider fact persistence');
+  }
+
   const data = await metaFetch(`/${pageId}/posts`, {
     fields,
     limit: String(Math.min(limit, 100)),
@@ -4015,8 +4282,6 @@ async function persistMetaPostPerformance(adminClient: any, userId: string, page
 
   const posts = Array.isArray(data?.data) ? data.data : [];
   if (posts.length === 0) return 0;
-
-  const clinicId = await resolveClinicId(adminClient, userId);
 
   const dbRows = posts.map((p: any) => {
     const insightsByName = new Map();
@@ -4062,7 +4327,7 @@ async function persistMetaPostPerformance(adminClient: any, userId: string, page
 
   const { error } = await adminClient
     .from('meta_post_performance')
-    .upsert(dbRows, { onConflict: 'user_id,post_id' });
+    .upsert(dbRows, { onConflict: 'clinic_id,page_id,post_id' });
 
   if (error) throw error;
   return dbRows.length;
@@ -4072,6 +4337,11 @@ async function persistMetaPostPerformance(adminClient: any, userId: string, page
 
 async function persistMetaIgAccountDailyInsights(adminClient: any, userId: string, igId: string, accessToken: string, sinceDate: string, untilDate: string): Promise<number> {
   const clinicId = await resolveClinicId(adminClient, userId);
+  
+  if (!clinicId) {
+    throw new Error('Clinic is required for Meta provider fact persistence');
+  }
+  
   const byDate = new Map<string, any>();
 
   const startDate = new Date(`${sinceDate}T00:00:00Z`);
@@ -4192,7 +4462,7 @@ async function persistMetaIgAccountDailyInsights(adminClient: any, userId: strin
 
   const { error } = await adminClient
     .from('meta_ig_account_daily')
-    .upsert(dbRows, { onConflict: 'user_id,ig_id,date' });
+    .upsert(dbRows, { onConflict: 'clinic_id,ig_id,date' });
 
   if (error) throw error;
 
@@ -4219,6 +4489,12 @@ async function persistMetaIgMediaPerformance(adminClient: any, userId: string, i
   const MEDIA_METRICS = ['reach', 'likes', 'comments', 'shares', 'saved', 'total_interactions', 'views'];
   const fields = 'id,caption,media_type,media_product_type,permalink,timestamp';
 
+  const clinicId = await resolveClinicId(adminClient, userId);
+
+  if (!clinicId) {
+    throw new Error('Clinic is required for Meta provider fact persistence');
+  }
+
   const data = await metaFetch(`/${igId}/media`, {
     fields,
     limit: String(Math.min(limit, 50)),
@@ -4226,8 +4502,7 @@ async function persistMetaIgMediaPerformance(adminClient: any, userId: string, i
 
   const items = Array.isArray(data?.data) ? data.data : [];
   if (items.length === 0) return 0;
-
-  const clinicId = await resolveClinicId(adminClient, userId);
+  
   let upserted = 0;
 
   for (const media of items) {
@@ -4264,7 +4539,7 @@ async function persistMetaIgMediaPerformance(adminClient: any, userId: string, i
           total_interactions: Number(insights.total_interactions || 0),
           source_quality: 'daily_backfill',
           updated_at: new Date().toISOString(),
-        }, { onConflict: 'user_id,media_id' });
+        }, { onConflict: 'clinic_id,ig_id,media_id' });
 
       if (error) throw error;
       upserted++;
@@ -4283,15 +4558,11 @@ async function handleMetaOrganicGet(ctx: AuthenticatedRouteContext): Promise<Res
   const { adminClient, userId, resource, sub, sub2, req, url, sendJson } = ctx;
   if (resource !== 'meta' || sub !== 'organic' || req.method !== 'GET') return null;
 
-  // Resolve pageId from integrations.metadata
-  const { data: integrations } = await adminClient.from('integrations')
-    .select('service, metadata, status, updated_at')
-    .eq('user_id', userId)
-    .in('service', ['meta_ads', 'meta'])
-    .eq('status', 'connected');
-
-  const integ = selectCanonicalMetaIntegration(integrations ?? []);
-  const meta = (integ?.metadata ?? {}) as Record<string, any>;
+  const { integration: integ, requesterClinicId } = await resolveMetaIntegration(adminClient, userId, '');
+  if (!integ || !requesterClinicId) {
+    return sendJson({ success: false, message: 'Meta Ads not connected' }, 400);
+  }
+  const meta = (integ.metadata ?? {}) as Record<string, any>;
   const pageId = meta.pageId ?? meta.page_id ?? null;
   if (!pageId) {
     return sendJson({ success: false, message: 'No Page ID configured for this Meta integration.' }, 400);
@@ -4310,30 +4581,53 @@ async function handleMetaOrganicGet(ctx: AuthenticatedRouteContext): Promise<Res
   if (sub2 === 'posts') {
     const keyword = (url.searchParams.get('keyword') ?? '').trim();
     const limit = Math.min(Math.max(Number.parseInt(url.searchParams.get('limit') ?? '50', 10) || 50, 1), 200);
-    let query = adminClient
-      .from('meta_post_performance')
-      .select('post_id, created_time, message, status_type, permalink_url, impressions, reach, engaged_users, reactions, comments, shares, video_views, is_video')
-      .eq('user_id', userId)
-      .eq('page_id', pageId)
-      .order('created_time', { ascending: false })
-      .limit(limit);
-    if (keyword) query = query.ilike('message', `%${keyword}%`);
-    const { data, error } = await query;
-    if (error) return sendJson({ success: false, message: error.message }, 500);
-    return sendJson({ success: true, pageId, count: data?.length ?? 0, posts: data ?? [] });
+    const pageSize = 200;
+    const uniquePostsMap = new Map();
+    for (let offset = 0; uniquePostsMap.size < limit; offset += pageSize) {
+      let query = adminClient
+        .from('meta_post_performance')
+        .select('post_id, created_time, message, status_type, permalink_url, impressions, reach, engaged_users, reactions, comments, shares, video_views, is_video, updated_at')
+        .eq('page_id', pageId)
+        .eq('clinic_id', requesterClinicId)
+        .order('updated_at', { ascending: false })
+        .order('created_time', { ascending: false })
+        .range(offset, offset + pageSize - 1);
+      if (keyword) query = query.ilike('message', `%${keyword}%`);
+      const { data, error } = await query;
+      if (error) return sendJson({ success: false, message: error.message }, 500);
+      const page = data ?? [];
+      for (const p of page) {
+        if (!uniquePostsMap.has(p.post_id)) {
+          uniquePostsMap.set(p.post_id, p);
+          if (uniquePostsMap.size >= limit) break;
+        }
+      }
+      if (page.length < pageSize) break;
+    }
+    const posts = Array.from(uniquePostsMap.values());
+    return sendJson({ success: true, pageId, count: posts.length, posts });
   }
 
   // Default: daily series + summary
-  const { data: rows, error } = await adminClient.from('meta_organic_daily')
-    .select('date, impressions, reach, engagements, video_views, page_views, reactions')
-    .eq('user_id', userId)
+  let query = adminClient.from('meta_organic_daily')
+    .select('date, impressions, reach, engagements, video_views, page_views, reactions, updated_at')
     .eq('page_id', pageId)
     .gte('date', sinceStr)
     .lte('date', until)
-    .order('date', { ascending: true });
+    .order('date', { ascending: true })
+    .order('updated_at', { ascending: false });
+  query = query.eq('clinic_id', requesterClinicId);
+  const { data: rows, error } = await query;
   if (error) return sendJson({ success: false, message: error.message }, 500);
 
-  const daily = rows ?? [];
+  const uniqueDailyMap = new Map();
+  for (const r of (rows ?? [])) {
+    const existing = uniqueDailyMap.get(r.date);
+    if (!existing || new Date(r.updated_at) > new Date(existing.updated_at)) {
+      uniqueDailyMap.set(r.date, r);
+    }
+  }
+  const daily = Array.from(uniqueDailyMap.values());
   const summary = daily.reduce((acc: any, r: any) => ({
     impressions: acc.impressions + Number(r.impressions || 0),
     reach: acc.reach + Number(r.reach || 0),
@@ -4356,24 +4650,16 @@ async function handleMetaIgGet(ctx: AuthenticatedRouteContext): Promise<Response
   const { adminClient, userId, resource, sub, sub2, req, url, sendJson } = ctx;
   if (resource !== 'meta' || sub !== 'ig' || req.method !== 'GET') return null;
 
-  const { data: integrations } = await adminClient.from('integrations')
-    .select('service, metadata, status, updated_at')
-    .eq('user_id', userId)
-    .in('service', ['meta_ads', 'meta'])
-    .eq('status', 'connected');
+  const { integration: integ, requesterClinicId } = await resolveMetaIntegration(adminClient, userId, '');
+  if (!integ || !requesterClinicId) {
+    return sendJson({ success: false, message: 'Meta Ads not connected' }, 400);
+  }
+  const meta = (integ.metadata ?? {}) as Record<string, any>;
+  const igId: string | null = meta.igBusinessAccountId ?? meta.ig_business_account_id ?? null;
 
-  const integ = selectCanonicalMetaIntegration(integrations ?? []);
-  const meta = (integ?.metadata ?? {}) as Record<string, any>;
-  let igId: string | null = meta.igBusinessAccountId ?? meta.ig_business_account_id ?? null;
-
-  // Fallback: auto-discover ig_id from existing DB data when metadata is missing
+  // Fail-closed: require explicit ig_id in metadata to avoid ambiguous historical fallback
   if (!igId) {
-    const { data: igDiscover } = await adminClient.from('meta_ig_account_daily')
-      .select('ig_id')
-      .eq('user_id', userId)
-      .limit(1)
-      .maybeSingle();
-    igId = igDiscover?.ig_id ?? null;
+    return sendJson({ success: false, message: 'Instagram Business Account ID not configured in integration metadata' }, 400);
   }
 
   if (!igId) {
@@ -4393,29 +4679,52 @@ async function handleMetaIgGet(ctx: AuthenticatedRouteContext): Promise<Response
   if (sub2 === 'posts') {
     const keyword = (url.searchParams.get('keyword') ?? '').trim();
     const limit = Math.min(Math.max(Number.parseInt(url.searchParams.get('limit') ?? '50', 10) || 50, 1), 200);
-    let query = adminClient
-      .from('meta_ig_media_performance')
-      .select('media_id, media_type, media_product_type, caption, permalink, timestamp, reach, views, likes, comments, shares, saved, total_interactions')
-      .eq('user_id', userId)
-      .eq('ig_id', igId)
-      .order('timestamp', { ascending: false })
-      .limit(limit);
-    if (keyword) query = query.ilike('caption', `%${keyword}%`);
-    const { data, error } = await query;
-    if (error) return sendJson({ success: false, message: error.message }, 500);
-    return sendJson({ success: true, igId, count: data?.length ?? 0, posts: data ?? [] });
+    const pageSize = 200;
+    const uniquePostsMap = new Map();
+    for (let offset = 0; uniquePostsMap.size < limit; offset += pageSize) {
+      let query = adminClient
+        .from('meta_ig_media_performance')
+        .select('media_id, media_type, media_product_type, caption, permalink, timestamp, reach, views, likes, comments, shares, saved, total_interactions, updated_at')
+        .eq('ig_id', igId)
+        .eq('clinic_id', requesterClinicId)
+        .order('updated_at', { ascending: false })
+        .order('timestamp', { ascending: false })
+        .range(offset, offset + pageSize - 1);
+      if (keyword) query = query.ilike('caption', `%${keyword}%`);
+      const { data, error } = await query;
+      if (error) return sendJson({ success: false, message: error.message }, 500);
+      const page = data ?? [];
+      for (const p of page) {
+        if (!uniquePostsMap.has(p.media_id)) {
+          uniquePostsMap.set(p.media_id, p);
+          if (uniquePostsMap.size >= limit) break;
+        }
+      }
+      if (page.length < pageSize) break;
+    }
+    const posts = Array.from(uniquePostsMap.values());
+    return sendJson({ success: true, igId, count: posts.length, posts });
   }
 
-  const { data: rows, error } = await adminClient.from('meta_ig_account_daily')
-    .select('date, reach, follower_count_delta, profile_views, accounts_engaged, total_interactions, website_clicks, views')
-    .eq('user_id', userId)
+  let query = adminClient.from('meta_ig_account_daily')
+    .select('date, reach, follower_count_delta, profile_views, accounts_engaged, total_interactions, website_clicks, views, updated_at')
     .eq('ig_id', igId)
     .gte('date', sinceStr)
     .lte('date', until)
-    .order('date', { ascending: true });
+    .order('date', { ascending: true })
+    .order('updated_at', { ascending: false });
+  query = query.eq('clinic_id', requesterClinicId);
+  const { data: rows, error } = await query;
   if (error) return sendJson({ success: false, message: error.message }, 500);
 
-  const daily = rows ?? [];
+  const uniqueDailyMap = new Map();
+  for (const r of (rows ?? [])) {
+    const existing = uniqueDailyMap.get(r.date);
+    if (!existing || new Date(r.updated_at) > new Date(existing.updated_at)) {
+      uniqueDailyMap.set(r.date, r);
+    }
+  }
+  const daily = Array.from(uniqueDailyMap.values());
   const summary = daily.reduce((acc: any, r: any) => ({
     reach: acc.reach + Number(r.reach || 0),
     follower_count_delta: acc.follower_count_delta + Number(r.follower_count_delta || 0),
@@ -4436,9 +4745,24 @@ async function handleMetaIgGet(ctx: AuthenticatedRouteContext): Promise<Response
 }
 
 function parseMetaBackfillDates(url: URL) {
-  const { since: sinceDate, until: untilDate } = getKpiDateRange(url);
-  const sinceTs = Math.floor(new Date(sinceDate).getTime() / 1000); // Meta API expects Unix timestamp
+  const daysParam = url.searchParams.get('days');
+  const fromParam = url.searchParams.get('from') ?? url.searchParams.get('since') ?? '';
+  const toParam = url.searchParams.get('to') ?? url.searchParams.get('until') ?? '';
 
+  let sinceDate = fromParam;
+  let untilDate = toParam || new Date().toISOString().slice(0, 10);
+
+  if (!sinceDate) {
+    if (daysParam && /^\d+$/.test(daysParam)) {
+      const numDays = Math.max(1, parseInt(daysParam, 10));
+      sinceDate = new Date(Date.now() - numDays * 86400000).toISOString().slice(0, 10);
+    } else {
+      const { since } = getKpiDateRange(url);
+      sinceDate = since;
+    }
+  }
+
+  const sinceTs = Math.floor(new Date(sinceDate).getTime() / 1000);
   return { sinceDate, untilDate, sinceTs };
 }
 
@@ -4450,6 +4774,8 @@ async function performMetaAdsBackfill(
   sinceDate: string,
   untilDate: string,
   sinceTs: number,
+  pageId?: string | null,
+  clinicId?: string | null,
 ) {
   let dailyInsightsPersisted = 0;
   let totalFetched = 0;
@@ -4480,7 +4806,7 @@ async function performMetaAdsBackfill(
     }
 
     try {
-      const fetched = await ingestMetaLeadsFromForms(adminClient, userId, accountId, accessToken, sinceTs);
+      const fetched = await ingestMetaLeadsFromForms(adminClient, userId, accountId, accessToken, sinceTs, pageId, clinicId, diagnostics, errors);
       totalFetched += fetched;
       diagnostics.push({
         scope: 'lead_forms',
@@ -4634,6 +4960,8 @@ async function handleMetaBackfillPost(ctx: AuthenticatedRouteContext): Promise<R
     sinceDate,
     untilDate,
     sinceTs,
+    creds.pageId,
+    creds.requesterClinicId,
   );
 
   const backfillResult: any = {
@@ -4765,16 +5093,44 @@ export function buildCampaignsTimeRange(
   return JSON.stringify({ since, until });
 }
 
-async function fetchDbCampaigns(adminClient: any, userId: string, adAccountId: string) {
-  const { data: dbRows } = await adminClient.from('vw_campaign_performance_real')
+async function fetchDbCampaigns(adminClient: any, userId: string, requesterClinicId: string | null, adAccountId: string) {
+  let query = adminClient.from('vw_campaign_performance_real')
     .select('campaign_id, campaign_name, source, total_leads, last_lead_at')
-    .eq('user_id', userId)
     .order('total_leads', { ascending: false });
 
+  if (requesterClinicId) {
+    const { data: clinicUsers, error: clinicUsersError } = await adminClient
+      .from('users')
+      .select('id')
+      .eq('clinic_id', requesterClinicId);
+    if (clinicUsersError) throw clinicUsersError;
+    const clinicUserIds = (clinicUsers ?? []).map((row: any) => String(row.id ?? '')).filter(Boolean);
+    if (clinicUserIds.length === 0) return [];
+    query = query.in('user_id', clinicUserIds);
+  } else {
+    query = query.eq('user_id', userId);
+  }
+
+  const { data: dbRows, error: dbRowsError } = await query;
+  if (dbRowsError) throw dbRowsError;
   if (!dbRows || dbRows.length === 0) return [];
 
   const now = Date.now();
-  return dbRows.map((row: any) => ({
+  const byCampaign = new Map<string, any>();
+  for (const row of dbRows) {
+    const key = String(row.campaign_id ?? `db-${row.campaign_name}`);
+    const existing = byCampaign.get(key);
+    if (!existing) {
+      byCampaign.set(key, { ...row, total_leads: Number(row.total_leads ?? 0) });
+    } else {
+      existing.total_leads += Number(row.total_leads ?? 0);
+      if (String(row.last_lead_at ?? '') > String(existing.last_lead_at ?? '')) {
+        existing.last_lead_at = row.last_lead_at;
+      }
+    }
+  }
+
+  return Array.from(byCampaign.values()).map((row: any) => ({
     id: row.campaign_id ?? `db-${row.campaign_name}`,
     name: row.campaign_name ?? 'Unknown',
     status: inferStatusFromLastLead(row.last_lead_at, now),
@@ -4824,7 +5180,7 @@ async function fetchMetaCampaignsFallback(params: {
 
     // If Meta API returned 0 campaigns, build list from DB (vw_campaign_performance_real)
     if (campaigns.length === 0) {
-      const dbCampaigns = await fetchDbCampaigns(adminClient, userId, creds.adAccountId);
+      const dbCampaigns = await fetchDbCampaigns(adminClient, userId, creds.requesterClinicId ?? null, creds.adAccountId);
       if (dbCampaigns.length > 0) {
         const dbResult = {
           success: true,
@@ -4914,7 +5270,7 @@ async function getMetaCampaignsLiveResult(
     const metaCampaigns = campaigns.map(mapMetaCampaign);
     const metaCampaignIds = new Set(metaCampaigns.map((c: any) => String(c.id)));
 
-    const dbCampaigns = await fetchDbCampaigns(adminClient, userId, creds.adAccountId);
+    const dbCampaigns = await fetchDbCampaigns(adminClient, userId, creds.requesterClinicId ?? null, creds.adAccountId);
     const dbOnlyCampaigns = dbCampaigns.filter((c: any) => !metaCampaignIds.has(String(c.id)));
 
     const result = {
@@ -4999,12 +5355,14 @@ async function fetchAdInsightsFromMeta(creds: any, insightsSince: string, insigh
   return insightsMap;
 }
 
-async function fetchAdDataFromCrm(adminClient: any, userId: string) {
-  const { data: adLeads } = await adminClient.from('leads')
+async function fetchAdDataFromCrm(adminClient: any, userId: string, requesterClinicId: string | null) {
+  let query = adminClient.from('leads')
     .select('ad_id, ad_name, campaign_id, campaign_name, created_at')
-    .eq('user_id', userId)
     .not('ad_id', 'is', null)
     .order('created_at', { ascending: false });
+  query = applyClinicOrUserScope(query, requesterClinicId, userId);
+  const { data: adLeads, error: adLeadsError } = await query;
+  if (adLeadsError) throw adLeadsError;
   return adLeads ?? [];
 }
 
@@ -5040,7 +5398,7 @@ async function fetchMetaAdsFallback(params: {
     // and enrich spend/impressions/clicks from /{accountId}/insights?level=ad
     if (ads.length === 0 && adminClient && userId) {
       const insightsMap = await fetchAdInsightsFromMeta(creds, insightsSince, insightsUntil);
-      const adLeads = await fetchAdDataFromCrm(adminClient, userId);
+      const adLeads = await fetchAdDataFromCrm(adminClient, userId, creds.requesterClinicId ?? null);
       const adMap = buildAdMapFromCrm(adLeads);
       addInsightsOnlyAdsToMap(adMap, insightsMap);
 
@@ -5363,7 +5721,7 @@ async function handleIntegrationsGet(ctx: AuthenticatedRouteContext): Promise<Re
 }
 
 function normalizeIntegrationMetadata(service: string, metadata: any) {
-  if (service === 'meta') {
+  if (service === 'meta' || service === 'meta_ads') {
     const accountIds = normalizeMetaAccountIds(metadata?.adAccountIds ?? metadata?.ad_account_ids ?? metadata?.adAccountId ?? metadata?.ad_account_id ?? '');
     const primaryAccountId = accountIds[0] ?? '';
     const normalizedPageId = String(metadata?.pageId ?? metadata?.page_id ?? '').replaceAll(/\D/g, '');
@@ -5397,7 +5755,7 @@ function validateAndNormalizeMetadata(service: string, inputMetadata: any) {
     if (!normalized) return { ok: false, message: 'phoneNumberId is required for WhatsApp' };
     metadata = { ...metadata, phoneNumberId: normalized, phone_number_id: normalized };
   }
-  if (service === 'meta') {
+  if (service === 'meta' || service === 'meta_ads') {
     const accountIds = normalizeMetaAccountIds(metadata?.adAccountIds ?? metadata?.ad_account_ids ?? metadata?.adAccountId ?? metadata?.ad_account_id ?? '');
     if (accountIds.length === 0) return { ok: false, message: 'Meta integration requires one or more valid ad account IDs.' };
     const normalizedPageId = String(metadata?.pageId ?? metadata?.page_id ?? '').replaceAll(/\D/g, '');
@@ -5432,10 +5790,15 @@ async function handleIntegrationsConnectPost(ctx: AuthenticatedRouteContext): Pr
 
     await ensurePublicUserRow(adminClient, authUser);
     const encryptedKey = await encryptCred(String(reqToken).trim());
+    const requesterClinicId = await resolveClinicId(adminClient, userId);
+    if ((service === 'meta' || service === 'meta_ads') && !requesterClinicId) {
+      return sendJson({ success: false, message: 'Clinic not configured for this user.' }, 400);
+    }
 
     const { error: credErr } = await adminClient.from('credentials')
       .upsert({ 
         user_id: userId, 
+        clinic_id: requesterClinicId,
         service, 
         encrypted_key: encryptedKey,
         metadata: metadata ?? {}
@@ -5444,7 +5807,7 @@ async function handleIntegrationsConnectPost(ctx: AuthenticatedRouteContext): Pr
 
     const { error: intErr } = await adminClient.from('integrations')
       .upsert(
-        { user_id: userId, service, status: 'connected', metadata, updated_at: new Date().toISOString() },
+        { user_id: userId, clinic_id: requesterClinicId, service, status: 'connected', metadata, updated_at: new Date().toISOString() },
         { onConflict: 'user_id,service' },
       );
     if (intErr) throw intErr;
@@ -5460,24 +5823,28 @@ async function handleIntegrationsTestPost(ctx: AuthenticatedRouteContext): Promi
     const body = (rawBody && typeof rawBody === 'object') ? rawBody as Record<string, any> : {};
     const service = String(body.service ?? '').trim();
   
-    if (service === 'meta') {
+    if (service === 'meta' || service === 'meta_ads') {
       const creds = await resolveMetaCreds(adminClient, userId, body?.adAccountId ?? '');
       const validation = validateMetaCredentialResult(creds);
+      const integrationOwnerId = creds.integrationOwnerId ?? '';
+      const integrationService = creds.integrationService ?? '';
       if (!validation.ok) {
-        await updateIntegrationStatus(adminClient, userId, 'meta', 'error', validation.message);
+        if (integrationOwnerId && integrationService) {
+          await updateIntegrationStatus(adminClient, integrationOwnerId, integrationService, 'error', validation.message);
+        }
         return sendJson({ success: false, service, status: 'error', message: validation.message }, validation.statusCode);
       }
       try {
         const me = await metaFetch('/me', { fields: 'id,name' }, creds.accessToken);
-        await updateIntegrationStatus(adminClient, userId, 'meta', 'connected', null);
+        await updateIntegrationStatus(adminClient, integrationOwnerId, integrationService, 'connected', null);
         return sendJson({ success: true, service, status: 'connected', metadata: { accountName: me.name } });
       } catch (e: any) {
-        await updateIntegrationStatus(adminClient, userId, 'meta', 'error', e.message);
+        await updateIntegrationStatus(adminClient, integrationOwnerId, integrationService, 'error', e.message);
         return sendJson({ success: false, service, status: 'error', message: e.message }, 502);
       }
     }
   
-    const { data: cred } = await adminClient.from('credentials').select('service').eq('user_id', userId).eq('service', service).single();
+    const { data: cred } = await adminClient.from('credentials').select('service').eq('user_id', userId).eq('service', service).maybeSingle();
     const status = cred ? 'connected' : 'error';
     return sendJson({ success: !!cred, service, status, metadata: {} });
   }
@@ -5535,7 +5902,7 @@ async function logPlaybookExecution(adminClient: any, userId: string, playbookId
     .select().single();
   if (execErr) throw execErr;
 
-  const { data: pb } = await adminClient.from('playbooks').select('run_count').eq('id', playbookId).single();
+  const { data: pb } = await adminClient.from('playbooks').select('run_count').eq('id', playbookId).maybeSingle();
   if (pb) {
     await adminClient.from('playbooks')
       .update({ run_count: (pb.run_count || 0) + 1, last_run_at: new Date().toISOString() })
@@ -5551,7 +5918,7 @@ async function handlePlaybooksRunPost(ctx: AuthenticatedRouteContext): Promise<R
   const rawBody = await req.json().catch(() => ({}));
   const body = (rawBody && typeof rawBody === 'object') ? rawBody as Record<string, any> : {};
   const preferredProvider = String(body?.provider ?? '').trim();
-  const { data: pb, error: pbErr } = await adminClient.from('playbooks').select('id, title, status, run_count').eq('slug', sub).single();
+  const { data: pb, error: pbErr } = await adminClient.from('playbooks').select('id, title, status, run_count').eq('slug', sub).maybeSingle();
   if (pbErr || !pb) return sendJson({ success: false, message: `Playbook '${sub}' not found` }, 404);
   if (pb.status === 'archived') return sendJson({ success: false, message: 'Playbook is archived' }, 400);
 
@@ -5660,7 +6027,8 @@ async function handleAiGeneratePost(ctx: AuthenticatedRouteContext): Promise<Res
 
 async function autoFetchCampaignDataForAi(adminClient: any, userId: string): Promise<string> {
   try {
-    const dbCampaigns = await fetchDbCampaigns(adminClient, userId, '');
+    const clinicId = await resolveClinicId(adminClient, userId);
+    const dbCampaigns = await fetchDbCampaigns(adminClient, userId, clinicId, '');
     if (dbCampaigns.length > 0) return JSON.stringify(dbCampaigns.slice(0, 25), null, 2);
   } catch (snapshotErr) {
     console.error('[ai.analyze-campaign] snapshot fetch failed', snapshotErr);
@@ -6126,7 +6494,7 @@ async function handleFinancialsSummary(ctx: AuthenticatedRouteContext): Promise<
 }
 
 async function processFinancialsSummary(adminClient: any, userId: string, url: URL, sendJson: any): Promise<Response> {
-  const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+  const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).maybeSingle();
   const clinicId = usr?.clinic_id;
   if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
 
@@ -6207,7 +6575,7 @@ async function processFinancialsSummary(adminClient: any, userId: string, url: U
 async function handleFinancialsSettlements(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, sendJson } = ctx;
   if (resource === 'financials' && sub === 'settlements') {
-    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).maybeSingle();
     const clinicId = usr?.clinic_id;
     if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
   
@@ -6232,7 +6600,7 @@ async function handleFinancialsSettlements(ctx: AuthenticatedRouteContext): Prom
 async function handleFinancialsPatients(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, sendJson } = ctx;
   if (resource === 'financials' && sub === 'patients') {
-    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).maybeSingle();
     const clinicId = usr?.clinic_id;
     if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
 
@@ -6347,7 +6715,7 @@ async function handleFinancialsIntegrityGet(ctx: AuthenticatedRouteContext): Pro
   const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource !== 'financials' || sub !== 'integrity' || req.method !== 'GET') return null;
 
-  const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+  const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).maybeSingle();
   const clinicId = usr?.clinic_id;
   if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
 
@@ -6755,7 +7123,7 @@ async function handleTraceabilityCampaigns(ctx: AuthenticatedRouteContext): Prom
 async function handleConversations(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, url, sendJson } = ctx;
   if (resource === 'conversations' && sub === '') {
-    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).maybeSingle();
     const clinicId = usr?.clinic_id;
     if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
   
@@ -6911,7 +7279,7 @@ async function processWhatsappConversionPost(adminClient: any, userId: string, r
   }
 
   try {
-    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).maybeSingle();
     const clinicId = usr?.clinic_id;
     let matchedPatientId: string | null = null;
     let matchedLeadId: string | null = null;
@@ -6976,7 +7344,8 @@ function getKpiDateRange(url: URL) {
   }
   
   const diffTime = Math.abs(new Date(until).getTime() - new Date(since).getTime());
-  const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 30;
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+  const days = Number.isFinite(diffDays) ? Math.max(1, diffDays) : 30;
 
   return { since, until, days, period: { since, until, range: `${days}d` } };
 }
@@ -7386,7 +7755,7 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
   // Expand until to include the whole day for timestamptz comparisons
   const untilFullDay = `${until}T23:59:59Z`;
 
-  const { data: usr, error: usrErr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+  const { data: usr, error: usrErr } = await adminClient.from('users').select('clinic_id').eq('id', userId).maybeSingle();
   if (usrErr) {
     console.error('[KPIs] Failed to fetch user clinic:', usrErr);
     return sendJson({ success: false, message: 'Failed to fetch user context' }, 500);
@@ -7600,7 +7969,7 @@ function mapDoctoraliaMonthlyData(monthRows: any[]) {
 async function handleReportsDoctoraliaFinancialsGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'reports' && sub === 'doctoralia-financials' && req.method === 'GET') {
-    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).maybeSingle();
     const clinicId = usr?.clinic_id;
     if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
 
