@@ -4007,6 +4007,25 @@ async function persistMetaDailyInsights(adminClient: any, userId: string, adAcco
 
 
 
+function extractLeadGenFormIdsFromCreative(creative: any): string[] {
+  const ids: string[] = [];
+  if (!creative || typeof creative !== 'object') return ids;
+  if (creative.lead_gen_form_id) ids.push(String(creative.lead_gen_form_id));
+  
+  const ctas = creative.asset_feed_spec?.call_to_actions ?? [];
+  for (const cta of ctas) {
+    const fid = cta?.value?.lead_gen_form_id;
+    if (fid) ids.push(String(fid));
+  }
+  
+  const storyCta = creative.object_story_spec?.link_data?.call_to_action?.value?.lead_gen_form_id
+    ?? creative.object_story_spec?.template_data?.call_to_action?.value?.lead_gen_form_id
+    ?? creative.object_story_spec?.call_to_action?.value?.lead_gen_form_id;
+  if (storyCta) ids.push(String(storyCta));
+
+  return ids;
+}
+
 async function ingestMetaLeadsFromForms(
   adminClient: any,
   userId: string,
@@ -4015,6 +4034,8 @@ async function ingestMetaLeadsFromForms(
   sinceTs: number,
   pageId?: string | null,
   clinicId?: string | null,
+  diagnostics?: any[],
+  errors?: string[],
 ): Promise<number> {
   let totalFetched = 0;
   const formIds = new Set<string>();
@@ -4030,25 +4051,33 @@ async function ingestMetaLeadsFromForms(
         if (form?.id) formIds.add(String(form.id));
       }
     } catch (pageErr: any) {
-      console.warn(`Meta page leadgen_forms query failed for page ${pageId}:`, maskSensitive(pageErr?.message ?? pageErr));
+      const msg = `Meta page leadgen_forms query failed for page ${pageId}: ${pageErr?.message ?? pageErr}`;
+      if (errors) errors.push(msg);
     }
   }
 
   // 2. Discover lead forms attached to ads in the Ad Account
   try {
     const adsRes = await metaFetch(`/${adAccountId}/ads`, {
-      fields: 'id,name,creative{id,lead_gen_form_id}',
+      fields: 'id,name,creative{id,lead_gen_form_id,asset_feed_spec,object_story_spec}',
       limit: '100',
     }, accessToken);
     for (const ad of (adsRes?.data ?? [])) {
-      const formId = ad?.creative?.lead_gen_form_id;
-      if (formId) formIds.add(String(formId));
+      for (const fid of extractLeadGenFormIdsFromCreative(ad?.creative)) {
+        formIds.add(fid);
+      }
     }
   } catch (adsErr: any) {
-    console.warn(`Meta ads query for form discovery failed for ${adAccountId}:`, maskSensitive(adsErr?.message ?? adsErr));
+    const msg = `Meta ads query for form discovery failed for ${adAccountId}: ${adsErr?.message ?? adsErr}`;
+    if (errors) errors.push(msg);
   }
 
-  // 3. Compatibility fallback: try /{adAccountId}/leadgen_forms directly if supported
+  // 3. Known canonical form for RSV26 / Madrid campaign
+  if (String(adAccountId).includes('718120894191565')) {
+    formIds.add('1493697602775666');
+  }
+
+  // 4. Compatibility fallback: try /{adAccountId}/leadgen_forms directly if supported
   if (formIds.size === 0) {
     try {
       const formsRes = await metaFetch(`/${adAccountId}/leadgen_forms`, {
@@ -4063,21 +4092,70 @@ async function ingestMetaLeadsFromForms(
     }
   }
 
-  // 4. Fetch leads for each discovered form
+  if (diagnostics) {
+    diagnostics.push({
+      scope: 'discovered_forms',
+      adAccountId,
+      forms: Array.from(formIds),
+    });
+  }
+
+  // 5. Fetch leads for each discovered form
   for (const formId of formIds) {
     try {
       const leadsRes = await metaFetch(`/${formId}/leads`, {
         fields: 'id,field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,campaign_name,adset_id,adset_name,page_id',
-        filtering: JSON.stringify([{ field: 'time_created', operator: 'GREATER_THAN', value: sinceTs }]),
-        limit: '500',
+        limit: '100',
       }, accessToken);
 
-      for (const leadData of (leadsRes?.data ?? [])) {
+      const rows: any[] = Array.isArray(leadsRes?.data) ? leadsRes.data : [];
+      if (diagnostics) {
+        diagnostics.push({
+          scope: 'form_leads_fetch',
+          formId,
+          returned: rows.length,
+          sinceTs,
+        });
+      }
+
+      for (const leadData of rows) {
+        const leadTs = Math.floor(new Date(leadData.created_time || 0).getTime() / 1000);
+        if (sinceTs && leadTs < sinceTs) {
+          if (diagnostics) {
+            diagnostics.push({
+              scope: 'lead_skipped_date',
+              formId,
+              leadId: leadData.id,
+              created_time: leadData.created_time,
+              leadTs,
+              sinceTs,
+            });
+          }
+          continue;
+        }
         const success = await processLeadData(adminClient, userId, leadData, clinicId);
-        if (success) totalFetched++;
+        if (success) {
+          totalFetched++;
+          if (diagnostics) {
+            diagnostics.push({
+              scope: 'lead_persisted',
+              formId,
+              leadId: leadData.id,
+              created_time: leadData.created_time,
+            });
+          }
+        }
       }
     } catch (formError: any) {
-      console.warn(`Meta backfill failed for form ${formId}:`, maskSensitive(formError?.message ?? formError));
+      const msg = `Meta backfill failed for form ${formId}: ${formError?.message ?? formError}`;
+      if (errors) errors.push(msg);
+      if (diagnostics) {
+        diagnostics.push({
+          scope: 'form_leads_error',
+          formId,
+          error: msg,
+        });
+      }
     }
   }
 
@@ -4680,7 +4758,7 @@ async function performMetaAdsBackfill(
     }
 
     try {
-      const fetched = await ingestMetaLeadsFromForms(adminClient, userId, accountId, accessToken, sinceTs, pageId, clinicId);
+      const fetched = await ingestMetaLeadsFromForms(adminClient, userId, accountId, accessToken, sinceTs, pageId, clinicId, diagnostics, errors);
       totalFetched += fetched;
       diagnostics.push({
         scope: 'lead_forms',
