@@ -469,12 +469,12 @@ Deno.serve(async (req: Request) => {
 
     const now = new Date().toISOString();
     const credentialId = String(credential?.id || "");
-    const [credentialUpdate, integrationUpdate] = await Promise.all([
-      credentialId
-        ? admin.from("credentials").update({ last_used: now }).eq("id", credentialId)
-        : Promise.resolve({ error: null }),
-      admin.from("integrations").update({ status: "connected", last_sync: now, last_error: null, updated_at: now }).eq("id", integration.id),
-    ]);
+    const credentialUpdate = credentialId
+      ? await admin.from("credentials").update({ last_used: now }).eq("id", credentialId)
+      : { error: null };
+    const integrationUpdate = credentialUpdate.error
+      ? { error: credentialUpdate.error }
+      : await admin.from("integrations").update({ status: "connected", last_sync: now, last_error: null, updated_at: now }).eq("id", integration.id);
     if (credentialUpdate.error || integrationUpdate.error) {
       throw new HealthFailure("persistence", 500, "Google Ads provider proof persistence failed");
     }
