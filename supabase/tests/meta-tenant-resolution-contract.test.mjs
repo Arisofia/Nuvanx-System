@@ -79,7 +79,7 @@ describe('Meta tenant-safe resolution contract', () => {
     expect(smoke).not.toContain('[EXPECTED PROVIDER STATE]');
   });
 
-  it('keeps same-day from/to ranges valid', () => {
+  it('keeps same-day from/to ranges valid and reports one day', () => {
     const start = api.indexOf('function getKpiDateRange(url: URL)');
     const end = api.indexOf('function processLeadsByStage', start);
     const rangeSource = api.slice(start, end).replace('function getKpiDateRange(url: URL)', 'function getKpiDateRange(url)');
@@ -87,5 +87,7 @@ describe('Meta tenant-safe resolution contract', () => {
     const result = getKpiDateRange(new URL('https://example.test/?from=2026-09-01&to=2026-09-01'));
     expect(result.since).toBe('2026-09-01');
     expect(result.until).toBe('2026-09-01');
+    expect(result.days).toBe(1);
+    expect(result.period.range).toBe('1d');
   });
 });
