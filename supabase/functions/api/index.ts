@@ -1200,18 +1200,17 @@ async function resolveClinicMetadata(adminClient: any, userId: string) {
 // ── Meta credential resolver ──────────────────────────────────────────────────
 async function resolveMetaIntegration(adminClient: any, userId: string, qAccountId: string) {
   const requesterClinicId = await resolveClinicId(adminClient, userId);
-  let integrationsQuery = adminClient
-    .from('integrations')
-    .select('user_id, clinic_id, service, metadata, status, updated_at')
-    .in('service', ['meta_ads', 'meta'])
-    .eq('status', 'connected');
-
   const requestedAccountIds = normalizeMetaAccountIds(qAccountId);
   if (!requesterClinicId) {
     return { integration: null, requesterClinicId, requestedAccountIds } as const;
   }
 
-  integrationsQuery = integrationsQuery.eq('clinic_id', requesterClinicId);
+  let integrationsQuery = adminClient
+    .from('integrations')
+    .select('user_id, clinic_id, service, metadata, status, updated_at')
+    .in('service', ['meta_ads', 'meta'])
+    .eq('status', 'connected')
+    .eq('clinic_id', requesterClinicId);
 
   const { data: integrations, error } = await integrationsQuery;
   if (error) throw error;
