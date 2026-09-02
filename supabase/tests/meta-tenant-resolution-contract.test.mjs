@@ -87,6 +87,21 @@ describe('Meta tenant-safe resolution contract', () => {
     expect(ig).toContain('applyClinicOrUserScope(query, requesterClinicId, userId)');
   });
 
+  it('orders organic and Instagram posts and daily series by updated_at to ensure deterministic deduplication and avoids premature post limits', () => {
+    const organic = api.slice(api.indexOf('async function handleMetaOrganicGet'), api.indexOf('async function handleMetaIgGet'));
+    const ig = api.slice(api.indexOf('async function handleMetaIgGet'), api.indexOf('function parseMetaBackfillDates'));
+
+    expect(organic).toContain(".order('created_time', { ascending: false })");
+    expect(organic).toContain(".order('updated_at', { ascending: false })");
+    expect(organic).toContain('uniquePostsMap.size >= limit');
+    expect(organic).toContain(".order('date', { ascending: true })");
+
+    expect(ig).toContain(".order('timestamp', { ascending: false })");
+    expect(ig).toContain(".order('updated_at', { ascending: false })");
+    expect(ig).toContain('uniquePostsMap.size >= limit');
+    expect(ig).toContain(".order('date', { ascending: true })");
+  });
+
   it('keeps trusted Playwright strict: no disposable-provider 400 allowlist', () => {
     expect(smoke).toContain('httpErrors.push(`${response.status()} ${response.url()}`);');
     expect(smoke).toContain('received Supabase HTTP 4xx/5xx responses');
