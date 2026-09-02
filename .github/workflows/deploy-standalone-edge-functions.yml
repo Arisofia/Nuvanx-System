@@ -67,6 +67,33 @@ jobs:
           echo "deploy=true" >> "$GITHUB_OUTPUT"
           echo "candidate_sha=$CURRENT_SHA" >> "$GITHUB_OUTPUT"
 
+      - name: Detect Google Ads credential provisioning changes
+        id: google_ads_provision
+        if: ${{ steps.candidate.outputs.deploy == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            echo "provision=false" >> "$GITHUB_OUTPUT"
+            echo "Manual Edge deployment does not implicitly rotate Google Ads credentials."
+            exit 0
+          fi
+          CANDIDATE_SHA="${{ steps.candidate.outputs.candidate_sha }}"
+          PARENT_SHA="$(git rev-parse "${CANDIDATE_SHA}^")"
+          CHANGED="$(git diff --name-only "$PARENT_SHA" "$CANDIDATE_SHA" -- \
+            scripts/provision-google-ads-developer-token.js \
+            scripts/provision-google-ads-developer-token.test.js \
+            supabase/functions/google-ads-health/index.ts \
+            supabase/functions/google-ads-health/index.test.mjs \
+            .github/workflows/google-ads-credential-provision.yml)"
+          if [[ -n "$CHANGED" ]]; then
+            echo "provision=true" >> "$GITHUB_OUTPUT"
+            echo "Google Ads provisioning contract changed in approved candidate."
+          else
+            echo "provision=false" >> "$GITHUB_OUTPUT"
+            echo "Approved candidate has no Google Ads provisioning-contract changes."
+          fi
+
       - name: Validate production deployment configuration
         if: ${{ steps.candidate.outputs.deploy == 'true' }}
         shell: bash
@@ -145,8 +172,24 @@ jobs:
             supabase/functions/google-click-attribution/index.ts \
             supabase/functions/google-data-manager-export/index.ts
 
-      - name: Deploy governed functions
+      - name: Reverify remote main immediately before Production mutation
+        id: mutation_guard
         if: ${{ steps.candidate.outputs.deploy == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          REMOTE_MAIN_SHA="$(git rev-parse origin/main)"
+          CANDIDATE_SHA="${{ steps.candidate.outputs.candidate_sha }}"
+          if [[ "$REMOTE_MAIN_SHA" != "$CANDIDATE_SHA" ]]; then
+            echo "mutate=false" >> "$GITHUB_OUTPUT"
+            echo "Remote main advanced to $REMOTE_MAIN_SHA beyond approved candidate $CANDIDATE_SHA; refusing stale Production mutation."
+            exit 0
+          fi
+          echo "mutate=true" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy governed functions
+        if: ${{ steps.candidate.outputs.deploy == 'true' && steps.mutation_guard.outputs.mutate == 'true' }}
         uses: ./.github/actions/supabase-link-run
         with:
           project_ref: ${{ env.SUPABASE_PROJECT_REF }}
@@ -185,3 +228,33 @@ jobs:
             supabase functions deploy google-click-attribution --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy google-data-manager-export --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions list --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Reverify candidate after governed deployment
+        id: post_deploy_guard
+        if: ${{ steps.candidate.outputs.deploy == 'true' && steps.mutation_guard.outputs.mutate == 'true' && steps.google_ads_provision.outputs.provision == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          REMOTE_MAIN_SHA="$(git rev-parse origin/main)"
+          CANDIDATE_SHA="${{ steps.candidate.outputs.candidate_sha }}"
+          if [[ "$REMOTE_MAIN_SHA" != "$CANDIDATE_SHA" ]]; then
+            echo "provision=false" >> "$GITHUB_OUTPUT"
+            echo "Remote main advanced after Edge deployment; a newer governed run will own Google Ads provisioning."
+            exit 0
+          fi
+          echo "provision=true" >> "$GITHUB_OUTPUT"
+
+      - name: Provision Google Ads credential through deployed runtime
+        if: ${{ steps.post_deploy_guard.outputs.provision == 'true' }}
+        shell: bash
+        env:
+          SUPABASE_URL: https://ssvvuuysgxyqvmovrlvk.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
+          GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -n "${GOOGLE_ADS_DEVELOPER_TOKEN:-}"
+          node --test scripts/provision-google-ads-developer-token.test.js
+          node scripts/provision-google-ads-developer-token.js
