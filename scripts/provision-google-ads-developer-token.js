@@ -9,6 +9,18 @@ function required(name) {
   return value;
 }
 
+function requireHttpsBase(value) {
+  const base = String(value || '').trim().replace(/\/$/, '');
+  let parsed;
+  try {
+    parsed = new URL(base);
+  } catch {
+    throw new Error('SUPABASE_URL must be a valid HTTPS URL');
+  }
+  if (parsed.protocol !== 'https:') throw new Error('SUPABASE_URL must use HTTPS');
+  return base;
+}
+
 function validateDeveloperToken(value) {
   const token = String(value || '').trim();
   if (!token || token.length > 512) throw new Error('Google Ads developer token is missing or too long');
@@ -26,7 +38,8 @@ async function readJson(response) {
 }
 
 async function supabaseJson(base, serviceRole, path, options = {}, fetchImpl = fetch) {
-  const response = await fetchImpl(`${base}${path}`, {
+  const safeBase = requireHttpsBase(base);
+  const response = await fetchImpl(`${safeBase}${path}`, {
     ...options,
     headers: {
       apikey: serviceRole,
@@ -94,8 +107,9 @@ async function provisionGoogleAdsIntegrations({
     throw new Error('No Google Ads integrations available for provisioning');
   }
 
+  const safeBase = requireHttpsBase(base);
   const token = validateDeveloperToken(developerToken);
-  const internalSecret = await resolveInternalSecret(base, serviceRole, fetchImpl);
+  const internalSecret = await resolveInternalSecret(safeBase, serviceRole, fetchImpl);
   const failures = [];
   let recovered = 0;
 
@@ -107,7 +121,7 @@ async function provisionGoogleAdsIntegrations({
     try {
       if (!integrationId) throw new Error('Google Ads integration without id');
 
-      const response = await fetchImpl(`${base}/functions/v1/google-ads-health`, {
+      const response = await fetchImpl(`${safeBase}/functions/v1/google-ads-health`, {
         method: 'POST',
         headers: {
           apikey: serviceRole,
@@ -131,7 +145,7 @@ async function provisionGoogleAdsIntegrations({
       }
 
       const persisted = await supabaseJson(
-        base,
+        safeBase,
         serviceRole,
         `/rest/v1/integrations?id=eq.${encodeURIComponent(integrationId)}&select=id,status,last_error,last_sync`,
         {},
@@ -158,7 +172,7 @@ async function provisionGoogleAdsIntegrations({
 }
 
 async function provision() {
-  const base = required('SUPABASE_URL').replace(/\/$/, '');
+  const base = requireHttpsBase(required('SUPABASE_URL'));
   const serviceRole = required('SUPABASE_SERVICE_ROLE_KEY');
   const developerToken = validateDeveloperToken(required('GOOGLE_ADS_DEVELOPER_TOKEN'));
 
@@ -223,6 +237,7 @@ module.exports = {
   CREDENTIAL_OWNER,
   credentialContractCurrent,
   provisionGoogleAdsIntegrations,
+  requireHttpsBase,
   resolveInternalSecret,
   validateDeveloperToken,
 };
