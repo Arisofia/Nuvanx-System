@@ -1,5 +1,8 @@
 'use strict';
 
+const CREDENTIAL_OWNER = 'google_ads_health_runtime';
+const CREDENTIAL_FORMAT = 'aes_gcm_pbkdf2_sha256_v1';
+
 function required(name) {
   const value = String(process.env[name] || '').trim();
   if (!value) throw new Error(`${name} is required`);
@@ -36,6 +39,30 @@ async function supabaseJson(base, serviceRole, path, options = {}, fetchImpl = f
   const payload = await readJson(response);
   if (!response.ok) throw new Error(`Supabase request failed HTTP ${response.status}`);
   return payload;
+}
+
+function credentialContractCurrent(integrations, credentials) {
+  if (!Array.isArray(integrations) || integrations.length === 0) return false;
+  if (!Array.isArray(credentials) || credentials.length === 0) return false;
+
+  const healthyIntegrations = integrations.every((row) => (
+    String(row?.status || '') === 'connected'
+    && row?.last_error === null
+    && Boolean(row?.last_sync)
+  ));
+  if (!healthyIntegrations) return false;
+
+  const currentOwners = new Set(
+    credentials
+      .filter((row) => (
+        row?.metadata?.provisioned_by === CREDENTIAL_OWNER
+        && row?.metadata?.credential_format === CREDENTIAL_FORMAT
+      ))
+      .map((row) => String(row?.user_id || '').trim())
+      .filter(Boolean),
+  );
+
+  return integrations.every((row) => currentOwners.has(String(row?.user_id || '').trim()));
 }
 
 async function resolveInternalSecret(base, serviceRole, fetchImpl = fetch) {
@@ -138,7 +165,7 @@ async function provision() {
   const integrations = await supabaseJson(
     base,
     serviceRole,
-    '/rest/v1/integrations?service=eq.google_ads&select=id,user_id,clinic_id,status&order=created_at.asc',
+    '/rest/v1/integrations?service=eq.google_ads&select=id,user_id,clinic_id,status,last_error,last_sync&order=created_at.asc',
   );
   if (!Array.isArray(integrations) || integrations.length === 0) {
     throw new Error('No Google Ads integrations found');
@@ -151,6 +178,23 @@ async function provision() {
     owners.add(userId);
   }
 
+  const credentials = await supabaseJson(
+    base,
+    serviceRole,
+    '/rest/v1/credentials?service=eq.google_ads&select=user_id,metadata',
+  );
+
+  if (credentialContractCurrent(integrations, credentials)) {
+    console.log(JSON.stringify({
+      success: true,
+      provision_required: false,
+      owners_provisioned: 0,
+      integrations_recovered: 0,
+      credential_owner: CREDENTIAL_OWNER,
+    }));
+    return;
+  }
+
   const integrationsRecovered = await provisionGoogleAdsIntegrations({
     base,
     serviceRole,
@@ -160,9 +204,10 @@ async function provision() {
 
   console.log(JSON.stringify({
     success: true,
+    provision_required: true,
     owners_provisioned: owners.size,
     integrations_recovered: integrationsRecovered,
-    credential_owner: 'google_ads_health_runtime',
+    credential_owner: CREDENTIAL_OWNER,
   }));
 }
 
@@ -174,6 +219,9 @@ if (require.main === module) {
 }
 
 module.exports = {
+  CREDENTIAL_FORMAT,
+  CREDENTIAL_OWNER,
+  credentialContractCurrent,
   provisionGoogleAdsIntegrations,
   resolveInternalSecret,
   validateDeveloperToken,
