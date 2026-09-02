@@ -4380,17 +4380,21 @@ async function handleMetaOrganicGet(ctx: AuthenticatedRouteContext): Promise<Res
     const limit = Math.min(Math.max(Number.parseInt(url.searchParams.get('limit') ?? '50', 10) || 50, 1), 200);
     let query = adminClient
       .from('meta_post_performance')
-      .select('post_id, created_time, message, status_type, permalink_url, impressions, reach, engaged_users, reactions, comments, shares, video_views, is_video')
+      .select('post_id, created_time, message, status_type, permalink_url, impressions, reach, engaged_users, reactions, comments, shares, video_views, is_video, updated_at')
       .eq('page_id', pageId)
       .order('created_time', { ascending: false })
-      .limit(limit);
+      .order('updated_at', { ascending: false })
+      .limit(Math.min(limit * 5, 1000));
     query = applyClinicOrUserScope(query, requesterClinicId, userId);
     if (keyword) query = query.ilike('message', `%${keyword}%`);
     const { data, error } = await query;
     if (error) return sendJson({ success: false, message: error.message }, 500);
     const uniquePostsMap = new Map();
     for (const p of (data ?? [])) {
-      if (!uniquePostsMap.has(p.post_id)) uniquePostsMap.set(p.post_id, p);
+      if (!uniquePostsMap.has(p.post_id)) {
+        uniquePostsMap.set(p.post_id, p);
+        if (uniquePostsMap.size >= limit) break;
+      }
     }
     const posts = Array.from(uniquePostsMap.values());
     return sendJson({ success: true, pageId, count: posts.length, posts });
@@ -4398,11 +4402,12 @@ async function handleMetaOrganicGet(ctx: AuthenticatedRouteContext): Promise<Res
 
   // Default: daily series + summary
   let query = adminClient.from('meta_organic_daily')
-    .select('date, impressions, reach, engagements, video_views, page_views, reactions')
+    .select('date, impressions, reach, engagements, video_views, page_views, reactions, updated_at')
     .eq('page_id', pageId)
     .gte('date', sinceStr)
     .lte('date', until)
-    .order('date', { ascending: true });
+    .order('date', { ascending: true })
+    .order('updated_at', { ascending: false });
   query = applyClinicOrUserScope(query, requesterClinicId, userId);
   const { data: rows, error } = await query;
   if (error) return sendJson({ success: false, message: error.message }, 500);
@@ -4467,28 +4472,33 @@ async function handleMetaIgGet(ctx: AuthenticatedRouteContext): Promise<Response
     const limit = Math.min(Math.max(Number.parseInt(url.searchParams.get('limit') ?? '50', 10) || 50, 1), 200);
     let query = adminClient
       .from('meta_ig_media_performance')
-      .select('media_id, media_type, media_product_type, caption, permalink, timestamp, reach, views, likes, comments, shares, saved, total_interactions')
+      .select('media_id, media_type, media_product_type, caption, permalink, timestamp, reach, views, likes, comments, shares, saved, total_interactions, updated_at')
       .eq('ig_id', igId)
       .order('timestamp', { ascending: false })
-      .limit(limit);
+      .order('updated_at', { ascending: false })
+      .limit(Math.min(limit * 5, 1000));
     query = applyClinicOrUserScope(query, requesterClinicId, userId);
     if (keyword) query = query.ilike('caption', `%${keyword}%`);
     const { data, error } = await query;
     if (error) return sendJson({ success: false, message: error.message }, 500);
     const uniquePostsMap = new Map();
     for (const p of (data ?? [])) {
-      if (!uniquePostsMap.has(p.media_id)) uniquePostsMap.set(p.media_id, p);
+      if (!uniquePostsMap.has(p.media_id)) {
+        uniquePostsMap.set(p.media_id, p);
+        if (uniquePostsMap.size >= limit) break;
+      }
     }
     const posts = Array.from(uniquePostsMap.values());
     return sendJson({ success: true, igId, count: posts.length, posts });
   }
 
   let query = adminClient.from('meta_ig_account_daily')
-    .select('date, reach, follower_count_delta, profile_views, accounts_engaged, total_interactions, website_clicks, views')
+    .select('date, reach, follower_count_delta, profile_views, accounts_engaged, total_interactions, website_clicks, views, updated_at')
     .eq('ig_id', igId)
     .gte('date', sinceStr)
     .lte('date', until)
-    .order('date', { ascending: true });
+    .order('date', { ascending: true })
+    .order('updated_at', { ascending: false });
   query = applyClinicOrUserScope(query, requesterClinicId, userId);
   const { data: rows, error } = await query;
   if (error) return sendJson({ success: false, message: error.message }, 500);
