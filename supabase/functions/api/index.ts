@@ -1841,7 +1841,7 @@ export async function processMetaLeadChange(adminClient: any, change: any): Prom
     .in('service', ['meta', 'meta_ads'])
     .eq('status', 'connected');
 
-  const connected = (intgs ?? []).filter((intg: any) => intg.clinic_id != null);
+  const connected = (intgs ?? []).filter((intg: any) => intg.clinic_id != null && intg.clinic_id !== '');
   let matchingIntg = connected.find((integration: any) =>
     metaIntegrationPageIds(integration?.metadata ?? {}).includes(String(page_id ?? '').trim())
   );
