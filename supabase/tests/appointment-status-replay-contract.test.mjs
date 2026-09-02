@@ -61,6 +61,18 @@ describe('clean replay appointment-status type contract', () => {
     expect(typeBridge).toContain("'COMMENT ON COLUMN %I.%I.%I IS %L'");
   });
 
+  it('prepares incompatible historical reporting views for canonical recreation', () => {
+    expect(typeBridge).toContain("to_regclass('public.vw_doctor_performance_real') IS NOT NULL");
+    expect(typeBridge).toContain("EXECUTE 'DROP VIEW public.vw_doctor_performance_real'");
+    expect(typeBridge).toContain("to_regclass('public.vw_lead_traceability') IS NOT NULL");
+    expect(typeBridge).toContain("EXECUTE 'DROP VIEW public.vw_lead_traceability'");
+    expect(typeBridge).toContain('CREATE OR REPLACE VIEW with SQLSTATE 42P16');
+    expect(typeBridge).not.toMatch(/DROP\s+VIEW[^;]*CASCADE/i);
+
+    expect(reporting).toContain('CREATE OR REPLACE VIEW public.vw_doctor_performance_real AS');
+    expect(reporting).toContain('CREATE OR REPLACE VIEW public.vw_lead_traceability');
+  });
+
   it('runs before the reporting migration that requires enum comparison semantics', () => {
     expect(Number('20260901155900')).toBeLessThan(Number('20260901160000'));
     expect(reporting).toContain("l.appointment_status = 'showed'::public.appointment_status");
