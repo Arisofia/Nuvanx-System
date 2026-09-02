@@ -257,4 +257,11 @@ jobs:
           test -n "${SUPABASE_SERVICE_ROLE_KEY:-}"
           test -n "${GOOGLE_ADS_DEVELOPER_TOKEN:-}"
           node --test scripts/provision-google-ads-developer-token.test.js
+          git fetch --no-tags origin main
+          REMOTE_MAIN_SHA="$(git rev-parse origin/main)"
+          CANDIDATE_SHA="${{ steps.candidate.outputs.candidate_sha }}"
+          if [[ "$REMOTE_MAIN_SHA" != "$CANDIDATE_SHA" ]]; then
+            echo "::error::Remote main advanced before Google Ads provisioning; refusing stale credential mutation."
+            exit 1
+          fi
           node scripts/provision-google-ads-developer-token.js
