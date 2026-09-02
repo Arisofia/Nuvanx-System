@@ -73,11 +73,12 @@ describe('Canonical Reporting Pipeline and E2E Contract', () => {
     expect(migration).toContain('AND l.merged_into_lead_id IS NULL;');
   });
 
-  it('rebuilds only the known incompatible legacy lead-audit view without CASCADE', () => {
+  it('rebuilds only the exact known incompatible legacy lead-audit signature without CASCADE', () => {
+    expect(migration).toContain('v_signature text;');
     expect(migration).toContain('Unexpected vw_lead_traceability signature');
-    expect(migration).toContain('v_column_count = 43');
-    expect(migration).toContain("v_lead_name_type = 'text'");
-    expect(migration).toContain("v_patient_ltv_precision IS NULL");
+    expect(migration).toContain("1:lead_id:uuid\\n2:lead_name:character varying(255)\\n3:email_normalized:text\\n4:phone_normalized:character varying(20)");
+    expect(migration).toContain("1:lead_id:uuid\\n2:lead_name:text\\n3:email_normalized:text\\n4:phone_normalized:text");
+    expect(migration).toContain('43:first_settlement_at:timestamptz');
     expect(migration).toContain('Cannot rebuild legacy vw_lead_traceability: dependent view exists');
     expect(migration).toContain('DROP VIEW public.vw_lead_traceability;');
     expect(migration).not.toMatch(/DROP\s+VIEW\s+public\.vw_lead_traceability[^;]*CASCADE/i);
