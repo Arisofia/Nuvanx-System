@@ -16,6 +16,7 @@ const invokerPattern = /ALTER\s+VIEW\s+(?:IF\s+EXISTS\s+)?public\.vw_doctor_perf
 const revokeAnonPattern = /REVOKE\s+ALL(?:\s+PRIVILEGES)?\s+ON\s+TABLE\s+public\.vw_doctor_performance_real\s+FROM\s+(?:PUBLIC\s*,\s*)?anon(?:\s*,\s*authenticated)?\s*;/gi;
 const revokeAuthenticatedPattern = /REVOKE\s+ALL(?:\s+PRIVILEGES)?\s+ON\s+TABLE\s+public\.vw_doctor_performance_real\s+FROM\s+anon\s*,\s*authenticated\s*;/gi;
 const grantServiceRoleSelectPattern = /GRANT\s+SELECT\s+ON\s+TABLE\s+public\.vw_doctor_performance_real\s+TO\s+service_role\s*;/gi;
+const grantClientRolePattern = /GRANT\s+(?:SELECT|ALL(?:\s+PRIVILEGES)?)\s+ON\s+TABLE\s+public\.vw_doctor_performance_real\s+TO\s+(?=[^;]*\b(?:PUBLIC|anon|authenticated)\b)[^;]*;/gi;
 
 function lastMatchIndex(pattern) {
   let last = -1;
@@ -43,8 +44,10 @@ describe('Doctor performance reporting security boundary', () => {
     const lastCreate = lastMatchIndex(viewCreatePattern);
     const lastAuthenticatedRevoke = lastMatchIndex(revokeAuthenticatedPattern);
     const lastServiceRoleGrant = lastMatchIndex(grantServiceRoleSelectPattern);
+    const lastClientRoleGrant = lastMatchIndex(grantClientRolePattern);
 
     expect(lastAuthenticatedRevoke).toBeGreaterThan(lastCreate);
+    expect(lastClientRoleGrant).toBeLessThan(lastAuthenticatedRevoke);
     expect(lastServiceRoleGrant).toBeGreaterThan(lastAuthenticatedRevoke);
   });
 });
