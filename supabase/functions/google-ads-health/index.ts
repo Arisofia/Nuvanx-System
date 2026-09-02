@@ -352,7 +352,7 @@ Deno.serve(async (req: Request) => {
       .select("id,user_id,clinic_id,metadata,status")
       .eq("service", "google_ads");
     if (selectorKey === "integration_id") {
-      integrationQuery = integrationQuery.eq("id", selectorValue).in("status", ["connected", "disconnected"]);
+      integrationQuery = integrationQuery.eq("id", selectorValue);
     } else {
       integrationQuery = integrationQuery.eq("status", "connected");
       if (selectorKey === "user_id") integrationQuery = integrationQuery.eq("user_id", selectorValue);

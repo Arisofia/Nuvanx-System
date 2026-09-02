@@ -58,6 +58,7 @@ describe("Google Ads provider health contract", () => {
     expect(source).toContain("Exactly one of integration_id, user_id or clinic_id is required");
     expect(source).toContain("Google Ads integration selector did not resolve exactly one eligible integration");
     expect(source).not.toContain('.order("updated_at", { ascending: false })');
+    expect(source).toContain('if (selectorKey === "integration_id") {\n      integrationQuery = integrationQuery.eq("id", selectorValue);\n    } else {\n      integrationQuery = integrationQuery.eq("status", "connected");');
   });
 
   it("does not send pageSize to Google Ads Search API", () => {
