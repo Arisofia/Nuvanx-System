@@ -19,6 +19,19 @@ const migrationFiles = fs.readdirSync(migrationsDir)
   .filter((name) => name.endsWith('.sql'))
   .sort();
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function publicRpcSecurityStatements(sql, name) {
+  const escapedName = escapeRegExp(name);
+  const pattern = new RegExp(
+    `(?:create\\s+(?:or\\s+replace\\s+)?|alter\\s+)function\\s+public\\.${escapedName}\\s*\\([^;]*?\\)[\\s\\S]*?(?=;|$)`,
+    'gi',
+  );
+  return [...sql.matchAll(pattern)].map((match) => match[0].toLowerCase());
+}
+
 describe('Authenticated SECURITY DEFINER RPC boundary', () => {
   it('moves privileged implementations out of public and exposes invoker wrappers only', () => {
     expect(boundary).toContain('create schema if not exists private authorization postgres');
@@ -48,22 +61,20 @@ describe('Authenticated SECURITY DEFINER RPC boundary', () => {
     }
   });
 
-  it('fails if a later migration reintroduces an exposed SECURITY DEFINER implementation', () => {
+  it('fails if a later migration makes any exposed public RPC SECURITY DEFINER', () => {
     const boundaryIndex = migrationFiles.indexOf(boundaryFile);
     expect(boundaryIndex).toBeGreaterThanOrEqual(0);
 
     for (const file of migrationFiles.slice(boundaryIndex + 1)) {
-      const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8').toLowerCase();
+      const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
       for (const name of rpcNames) {
-        const touchesRpc = sql.includes(`public.${name}`);
-        if (!touchesRpc) continue;
-
-        const recreatesPublic = sql.includes(`create function public.${name}`) || sql.includes(`create or replace function public.${name}`);
-        const makesDefiner = sql.includes('security definer');
-        const movesPrivate = sql.includes(`alter function public.${name}`) && sql.includes('set schema private');
-        const makesInvoker = sql.includes('security invoker');
-
-        expect(recreatesPublic && makesDefiner && !movesPrivate && !makesInvoker, `${file} reopens ${name} as an exposed SECURITY DEFINER RPC`).toBe(false);
+        const statements = publicRpcSecurityStatements(sql, name);
+        for (const statement of statements) {
+          expect(
+            /\bsecurity\s+definer\b/i.test(statement),
+            `${file} reopens ${name} as an exposed SECURITY DEFINER RPC`,
+          ).toBe(false);
+        }
       }
     }
   });
