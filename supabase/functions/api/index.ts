@@ -7027,7 +7027,8 @@ function getKpiDateRange(url: URL) {
   }
   
   const diffTime = Math.abs(new Date(until).getTime() - new Date(since).getTime());
-  const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 30;
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  const days = Number.isFinite(diffDays) ? Math.max(1, diffDays) : 30;
 
   return { since, until, days, period: { since, until, range: `${days}d` } };
 }
