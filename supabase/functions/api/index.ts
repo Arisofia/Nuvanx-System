@@ -1247,6 +1247,7 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
       decryptionError: '',
       integrationOwnerId: '',
       integrationService: '',
+      requesterClinicId,
     };
   }
 
@@ -1261,6 +1262,7 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
       decryptionError: '',
       integrationOwnerId: '',
       integrationService,
+      requesterClinicId,
     };
   }
 
@@ -1284,6 +1286,7 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
       decryptionError: '',
       integrationOwnerId,
       integrationService,
+      requesterClinicId,
     };
   }
 
@@ -4371,7 +4374,12 @@ async function handleMetaOrganicGet(ctx: AuthenticatedRouteContext): Promise<Res
     if (keyword) query = query.ilike('message', `%${keyword}%`);
     const { data, error } = await query;
     if (error) return sendJson({ success: false, message: error.message }, 500);
-    return sendJson({ success: true, pageId, count: data?.length ?? 0, posts: data ?? [] });
+    const uniquePostsMap = new Map();
+    for (const p of (data ?? [])) {
+      if (!uniquePostsMap.has(p.post_id)) uniquePostsMap.set(p.post_id, p);
+    }
+    const posts = Array.from(uniquePostsMap.values());
+    return sendJson({ success: true, pageId, count: posts.length, posts });
   }
 
   // Default: daily series + summary
@@ -4385,7 +4393,11 @@ async function handleMetaOrganicGet(ctx: AuthenticatedRouteContext): Promise<Res
   const { data: rows, error } = await query;
   if (error) return sendJson({ success: false, message: error.message }, 500);
 
-  const daily = rows ?? [];
+  const uniqueDailyMap = new Map();
+  for (const r of (rows ?? [])) {
+    if (!uniqueDailyMap.has(r.date)) uniqueDailyMap.set(r.date, r);
+  }
+  const daily = Array.from(uniqueDailyMap.values());
   const summary = daily.reduce((acc: any, r: any) => ({
     impressions: acc.impressions + Number(r.impressions || 0),
     reach: acc.reach + Number(r.reach || 0),
@@ -4449,7 +4461,12 @@ async function handleMetaIgGet(ctx: AuthenticatedRouteContext): Promise<Response
     if (keyword) query = query.ilike('caption', `%${keyword}%`);
     const { data, error } = await query;
     if (error) return sendJson({ success: false, message: error.message }, 500);
-    return sendJson({ success: true, igId, count: data?.length ?? 0, posts: data ?? [] });
+    const uniquePostsMap = new Map();
+    for (const p of (data ?? [])) {
+      if (!uniquePostsMap.has(p.media_id)) uniquePostsMap.set(p.media_id, p);
+    }
+    const posts = Array.from(uniquePostsMap.values());
+    return sendJson({ success: true, igId, count: posts.length, posts });
   }
 
   let query = adminClient.from('meta_ig_account_daily')
@@ -4462,7 +4479,11 @@ async function handleMetaIgGet(ctx: AuthenticatedRouteContext): Promise<Response
   const { data: rows, error } = await query;
   if (error) return sendJson({ success: false, message: error.message }, 500);
 
-  const daily = rows ?? [];
+  const uniqueDailyMap = new Map();
+  for (const r of (rows ?? [])) {
+    if (!uniqueDailyMap.has(r.date)) uniqueDailyMap.set(r.date, r);
+  }
+  const daily = Array.from(uniqueDailyMap.values());
   const summary = daily.reduce((acc: any, r: any) => ({
     reach: acc.reach + Number(r.reach || 0),
     follower_count_delta: acc.follower_count_delta + Number(r.follower_count_delta || 0),
@@ -4812,11 +4833,12 @@ export function buildCampaignsTimeRange(
   return JSON.stringify({ since, until });
 }
 
-async function fetchDbCampaigns(adminClient: any, userId: string, adAccountId: string) {
-  const { data: dbRows } = await adminClient.from('vw_campaign_performance_real')
+async function fetchDbCampaigns(adminClient: any, userId: string, requesterClinicId: string | null, adAccountId: string) {
+  let query = adminClient.from('vw_campaign_performance_real')
     .select('campaign_id, campaign_name, source, total_leads, last_lead_at')
-    .eq('user_id', userId)
     .order('total_leads', { ascending: false });
+  query = applyClinicOrUserScope(query, requesterClinicId, userId);
+  const { data: dbRows } = await query;
 
   if (!dbRows || dbRows.length === 0) return [];
 
@@ -4871,7 +4893,7 @@ async function fetchMetaCampaignsFallback(params: {
 
     // If Meta API returned 0 campaigns, build list from DB (vw_campaign_performance_real)
     if (campaigns.length === 0) {
-      const dbCampaigns = await fetchDbCampaigns(adminClient, userId, creds.adAccountId);
+      const dbCampaigns = await fetchDbCampaigns(adminClient, userId, creds.requesterClinicId ?? null, creds.adAccountId);
       if (dbCampaigns.length > 0) {
         const dbResult = {
           success: true,
@@ -4961,7 +4983,7 @@ async function getMetaCampaignsLiveResult(
     const metaCampaigns = campaigns.map(mapMetaCampaign);
     const metaCampaignIds = new Set(metaCampaigns.map((c: any) => String(c.id)));
 
-    const dbCampaigns = await fetchDbCampaigns(adminClient, userId, creds.adAccountId);
+    const dbCampaigns = await fetchDbCampaigns(adminClient, userId, creds.requesterClinicId ?? null, creds.adAccountId);
     const dbOnlyCampaigns = dbCampaigns.filter((c: any) => !metaCampaignIds.has(String(c.id)));
 
     const result = {
@@ -5046,12 +5068,13 @@ async function fetchAdInsightsFromMeta(creds: any, insightsSince: string, insigh
   return insightsMap;
 }
 
-async function fetchAdDataFromCrm(adminClient: any, userId: string) {
-  const { data: adLeads } = await adminClient.from('leads')
+async function fetchAdDataFromCrm(adminClient: any, userId: string, requesterClinicId: string | null) {
+  let query = adminClient.from('leads')
     .select('ad_id, ad_name, campaign_id, campaign_name, created_at')
-    .eq('user_id', userId)
     .not('ad_id', 'is', null)
     .order('created_at', { ascending: false });
+  query = applyClinicOrUserScope(query, requesterClinicId, userId);
+  const { data: adLeads } = await query;
   return adLeads ?? [];
 }
 
@@ -5087,7 +5110,7 @@ async function fetchMetaAdsFallback(params: {
     // and enrich spend/impressions/clicks from /{accountId}/insights?level=ad
     if (ads.length === 0 && adminClient && userId) {
       const insightsMap = await fetchAdInsightsFromMeta(creds, insightsSince, insightsUntil);
-      const adLeads = await fetchAdDataFromCrm(adminClient, userId);
+      const adLeads = await fetchAdDataFromCrm(adminClient, userId, creds.requesterClinicId ?? null);
       const adMap = buildAdMapFromCrm(adLeads);
       addInsightsOnlyAdsToMap(adMap, insightsMap);
 
@@ -5479,10 +5502,12 @@ async function handleIntegrationsConnectPost(ctx: AuthenticatedRouteContext): Pr
 
     await ensurePublicUserRow(adminClient, authUser);
     const encryptedKey = await encryptCred(String(reqToken).trim());
+    const requesterClinicId = await resolveClinicId(adminClient, userId);
 
     const { error: credErr } = await adminClient.from('credentials')
       .upsert({ 
         user_id: userId, 
+        clinic_id: requesterClinicId,
         service, 
         encrypted_key: encryptedKey,
         metadata: metadata ?? {}
@@ -5491,7 +5516,7 @@ async function handleIntegrationsConnectPost(ctx: AuthenticatedRouteContext): Pr
 
     const { error: intErr } = await adminClient.from('integrations')
       .upsert(
-        { user_id: userId, service, status: 'connected', metadata, updated_at: new Date().toISOString() },
+        { user_id: userId, clinic_id: requesterClinicId, service, status: 'connected', metadata, updated_at: new Date().toISOString() },
         { onConflict: 'user_id,service' },
       );
     if (intErr) throw intErr;
@@ -5711,7 +5736,8 @@ async function handleAiGeneratePost(ctx: AuthenticatedRouteContext): Promise<Res
 
 async function autoFetchCampaignDataForAi(adminClient: any, userId: string): Promise<string> {
   try {
-    const dbCampaigns = await fetchDbCampaigns(adminClient, userId, '');
+    const clinicId = await resolveClinicId(adminClient, userId);
+    const dbCampaigns = await fetchDbCampaigns(adminClient, userId, clinicId, '');
     if (dbCampaigns.length > 0) return JSON.stringify(dbCampaigns.slice(0, 25), null, 2);
   } catch (snapshotErr) {
     console.error('[ai.analyze-campaign] snapshot fetch failed', snapshotErr);
