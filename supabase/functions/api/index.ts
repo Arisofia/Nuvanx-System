@@ -4936,7 +4936,21 @@ async function fetchDbCampaigns(adminClient: any, userId: string, requesterClini
   if (!dbRows || dbRows.length === 0) return [];
 
   const now = Date.now();
-  return dbRows.map((row: any) => ({
+  const byCampaign = new Map<string, any>();
+  for (const row of dbRows) {
+    const key = String(row.campaign_id ?? `db-${row.campaign_name}`);
+    const existing = byCampaign.get(key);
+    if (!existing) {
+      byCampaign.set(key, { ...row, total_leads: Number(row.total_leads ?? 0) });
+    } else {
+      existing.total_leads += Number(row.total_leads ?? 0);
+      if (String(row.last_lead_at ?? '') > String(existing.last_lead_at ?? '')) {
+        existing.last_lead_at = row.last_lead_at;
+      }
+    }
+  }
+
+  return Array.from(byCampaign.values()).map((row: any) => ({
     id: row.campaign_id ?? `db-${row.campaign_name}`,
     name: row.campaign_name ?? 'Unknown',
     status: inferStatusFromLastLead(row.last_lead_at, now),
@@ -5629,7 +5643,7 @@ async function handleIntegrationsTestPost(ctx: AuthenticatedRouteContext): Promi
     const body = (rawBody && typeof rawBody === 'object') ? rawBody as Record<string, any> : {};
     const service = String(body.service ?? '').trim();
   
-    if (service === 'meta') {
+    if (service === 'meta' || service === 'meta_ads') {
       const creds = await resolveMetaCreds(adminClient, userId, body?.adAccountId ?? '');
       const validation = validateMetaCredentialResult(creds);
       const integrationOwnerId = creds.integrationOwnerId ?? '';
