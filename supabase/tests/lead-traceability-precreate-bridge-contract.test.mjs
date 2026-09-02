@@ -40,16 +40,26 @@ describe('vw_lead_traceability clean-replay precreate bridge', () => {
     expect(preDrop).toContain("'security_invoker=true' = ANY");
     expect(preDrop).toContain('v_view_comment IS NOT NULL');
     expect(preDrop).toContain('Cannot pre-drop historical vw_lead_traceability: dependent view exists');
+    expect(preDrop).toContain("'anon:MAINTAIN:plain'");
+    expect(preDrop).toContain("'authenticated:MAINTAIN:plain'");
+    expect(preDrop).toContain("'service_role:MAINTAIN:plain'");
     expect(preDrop).toContain('Unexpected historical vw_lead_traceability ACL before 160000');
     expect(preDrop).not.toMatch(/DROP\s+VIEW[^;]*CASCADE/i);
   });
 
-  it('expects the exact fresh 160000 signature including source NUMERIC(14,2) widths', () => {
+  it('expects the exact fresh 160000 signature and exact Supabase PG16 default ACL', () => {
     expect(freshContract).toContain("v_fresh_signature constant text := E'1:lead_id:uuid");
     expect(freshContract).toContain('26:patient_ltv:numeric(14,2)');
     expect(freshContract).toContain('30:doctoralia_net:numeric(14,2)');
     expect(freshContract).toContain('31:doctoralia_gross:numeric(14,2)');
     expect(freshContract).toContain('Unexpected fresh vw_lead_traceability signature after 160000');
+    expect(freshContract).toContain('v_expected_default_acl constant text[]');
+    for (const role of ['anon', 'authenticated', 'service_role']) {
+      for (const privilege of ['DELETE', 'INSERT', 'MAINTAIN', 'REFERENCES', 'SELECT', 'TRIGGER', 'TRUNCATE', 'UPDATE']) {
+        expect(freshContract).toContain(`'${role}:${privilege}:plain'`);
+      }
+    }
+    expect(freshContract).toContain('IF v_acl IS DISTINCT FROM v_expected_default_acl THEN');
     expect(freshContract).toContain('Unexpected non-owner ACL on fresh vw_lead_traceability after 160000');
   });
 
@@ -71,9 +81,16 @@ describe('vw_lead_traceability clean-replay precreate bridge', () => {
     expect(freshContract).toContain('settlement amounts exceed numeric(12,2) range');
   });
 
-  it('restores canonical SELECT-only access and canonical metadata before immutable 160050', () => {
+  it('removes inherited defaults and proves canonical SELECT-only access before immutable 160050', () => {
     expect(freshContract).toContain('WITH (security_invoker = true) AS');
+    expect(freshContract).toContain('REVOKE ALL PRIVILEGES ON TABLE public.vw_lead_traceability');
+    expect(freshContract).toContain('FROM PUBLIC, anon, authenticated, service_role;');
     expect(freshContract).toContain('GRANT SELECT ON TABLE public.vw_lead_traceability TO authenticated, service_role;');
+    expect(freshContract).toContain("v_canonical_acl constant text[] := ARRAY[");
+    expect(freshContract).toContain("'authenticated:SELECT:plain'");
+    expect(freshContract).toContain("'service_role:SELECT:plain'");
+    expect(freshContract).toContain('IF v_acl IS DISTINCT FROM v_canonical_acl THEN');
+    expect(freshContract).toContain('Fresh vw_lead_traceability ACL reconciliation failed');
     expect(freshContract).toContain('Lead audit traceability restricted to active, unmerged leads while preserving the Production public column contract.');
     expect(appliedContract).toContain('-- Exact canonical Production signature: no mutation.');
   });
