@@ -73,17 +73,20 @@ describe('Canonical Reporting Pipeline and E2E Contract', () => {
     expect(migration).toContain('AND l.merged_into_lead_id IS NULL;');
   });
 
-  it('rebuilds only the exact known incompatible legacy lead-audit signature without CASCADE', () => {
-    expect(migration).toContain('v_signature text;');
+  it('uses one fail-closed lead-audit bridge for the exact measured Production and replay signatures', () => {
     expect(migration).toContain('Unexpected vw_lead_traceability signature');
     expect(migration).toContain("1:lead_id:uuid\\n2:lead_name:character varying(255)\\n3:email_normalized:text\\n4:phone_normalized:character varying(20)");
     expect(migration).toContain("1:lead_id:uuid\\n2:lead_name:text\\n3:email_normalized:text\\n4:phone_normalized:text");
-    expect(migration).toContain('43:first_settlement_at:timestamptz');
+    expect(migration).toContain('18:reply_delay_minutes:integer\\n19:appointment_status:appointment_status');
+    expect(migration).toContain('39:patient_last_visit:timestamp with time zone');
+    expect(migration).toContain('43:first_settlement_at:timestamp with time zone');
     expect(migration).toContain('Cannot rebuild legacy vw_lead_traceability: dependent view exists');
     expect(migration).toContain('DROP VIEW public.vw_lead_traceability;');
     expect(migration).not.toMatch(/DROP\s+VIEW\s+public\.vw_lead_traceability[^;]*CASCADE/i);
-    expect(migration).toContain('nvx_lead_audit_view_acl');
-    expect(migration).toContain('nvx_lead_audit_view_restore');
+    expect(migration.match(/DO \$lead_audit_bridge\$/g) ?? []).toHaveLength(1);
+    expect(migration).not.toContain('lead_audit_view_bridge');
+    expect(migration).toContain('nvx_lead_audit_acl');
+    expect(migration).toContain('nvx_lead_audit_restore');
     expect(migration).toContain('l.name::character varying(255) AS lead_name');
     expect(migration).toContain('l.phone_normalized::character varying(20) AS phone_normalized');
     expect(migration).toContain('fs.template_id::character varying(32) AS doctoralia_template_id');
