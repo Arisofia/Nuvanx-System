@@ -36,8 +36,10 @@ describe('Meta provider facts are clinic-canonical at write time', () => {
   });
 
   it('rejects Meta lead and provider-fact writes without a clinic', () => {
-    expect(api).toContain("if (!clinicIdForLead) throw new Error('Clinic is required for Meta lead ingestion');");
-    expect(api.match(/if \(!clinicId\) throw new Error\('Clinic is required for Meta provider fact persistence'\);/g)).toHaveLength(4);
+    expect(api).toContain("if (!clinicIdForLead) {");
+    expect(api).toContain("throw new Error('Clinic is required for Meta lead ingestion');");
+    expect(api.match(/if \(!clinicId\) \{/g)).toHaveLength(4);
+    expect(api.match(/throw new Error\('Clinic is required for Meta provider fact persistence'\);/g)).toHaveLength(4);
   });
 
   it('fails webhook routing closed when a page maps to multiple connected integrations', () => {
