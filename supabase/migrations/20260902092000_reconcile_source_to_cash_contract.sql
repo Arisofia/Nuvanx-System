@@ -77,6 +77,24 @@ BEGIN
     RAISE EXCEPTION 'Cannot rebuild legacy source_to_cash: dependent view exists';
   END IF;
 
+  -- Production contract has no column-level ACLs on source_to_cash. A rebuild
+  -- cannot preserve pg_attribute.attacl with the relation-level ACL restore
+  -- below, so fail closed before DROP if any appear.
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_attribute a
+    JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+    JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relname = 'source_to_cash'
+      AND c.relkind = 'v'
+      AND a.attnum > 0
+      AND NOT a.attisdropped
+      AND a.attacl IS NOT NULL
+  ) THEN
+    RAISE EXCEPTION 'Cannot reconcile source_to_cash: column-level ACLs detected (not supported by Production contract)';
+  END IF;
+
   -- Explicit text -> varchar(n) casts may truncate in PostgreSQL. Refuse the
   -- rebuild instead of losing characters.
   IF EXISTS (
