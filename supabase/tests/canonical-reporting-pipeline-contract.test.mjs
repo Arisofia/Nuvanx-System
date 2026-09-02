@@ -66,8 +66,27 @@ describe('Canonical Reporting Pipeline and E2E Contract', () => {
 
     expect(migration).toContain('CREATE OR REPLACE VIEW public.vw_lead_traceability');
     expect(migration).toContain('l.reply_delay_minutes::integer AS reply_delay_minutes');
+    expect(migration).toContain('p.total_ltv::numeric(12,2) AS patient_ltv');
+    expect(migration).toContain('fs.amount_net::numeric(12,2) AS doctoralia_net');
+    expect(migration).toContain('fs.amount_gross::numeric(12,2) AS doctoralia_gross');
     expect(migration).toContain('WHERE l.deleted_at IS NULL');
     expect(migration).toContain('AND l.merged_into_lead_id IS NULL;');
+  });
+
+  it('rebuilds only the known incompatible legacy lead-audit view without CASCADE', () => {
+    expect(migration).toContain('Unexpected vw_lead_traceability signature');
+    expect(migration).toContain('v_column_count = 43');
+    expect(migration).toContain("v_lead_name_type = 'text'");
+    expect(migration).toContain("v_patient_ltv_precision IS NULL");
+    expect(migration).toContain('Cannot rebuild legacy vw_lead_traceability: dependent view exists');
+    expect(migration).toContain('DROP VIEW public.vw_lead_traceability;');
+    expect(migration).not.toMatch(/DROP\s+VIEW\s+public\.vw_lead_traceability[^;]*CASCADE/i);
+    expect(migration).toContain('nvx_lead_audit_view_acl');
+    expect(migration).toContain('nvx_lead_audit_view_restore');
+    expect(migration).toContain('l.name::character varying(255) AS lead_name');
+    expect(migration).toContain('l.phone_normalized::character varying(20) AS phone_normalized');
+    expect(migration).toContain('fs.template_id::character varying(32) AS doctoralia_template_id');
+    expect(migration).toContain('p.phone::character varying(64) AS patient_phone');
   });
 
   it('rebuilds only the known incompatible legacy doctor view without CASCADE', () => {
