@@ -4429,7 +4429,10 @@ async function handleMetaOrganicGet(ctx: AuthenticatedRouteContext): Promise<Res
 
   const uniqueDailyMap = new Map();
   for (const r of (rows ?? [])) {
-    if (!uniqueDailyMap.has(r.date)) uniqueDailyMap.set(r.date, r);
+    const existing = uniqueDailyMap.get(r.date);
+    if (!existing || new Date(r.updated_at) > new Date(existing.updated_at)) {
+      uniqueDailyMap.set(r.date, r);
+    }
   }
   const daily = Array.from(uniqueDailyMap.values());
   const summary = daily.reduce((acc: any, r: any) => ({
@@ -4528,7 +4531,10 @@ async function handleMetaIgGet(ctx: AuthenticatedRouteContext): Promise<Response
 
   const uniqueDailyMap = new Map();
   for (const r of (rows ?? [])) {
-    if (!uniqueDailyMap.has(r.date)) uniqueDailyMap.set(r.date, r);
+    const existing = uniqueDailyMap.get(r.date);
+    if (!existing || new Date(r.updated_at) > new Date(existing.updated_at)) {
+      uniqueDailyMap.set(r.date, r);
+    }
   }
   const daily = Array.from(uniqueDailyMap.values());
   const summary = daily.reduce((acc: any, r: any) => ({
