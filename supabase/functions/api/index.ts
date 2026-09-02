@@ -3919,6 +3919,9 @@ function metaActionsArrayToObject(actions: any[] | undefined): Record<string, nu
 
 async function persistMetaDailyInsights(adminClient: any, userId: string, adAccountId: string, accessToken: string, sinceDate: string, untilDate: string): Promise<number> {
   const clinicId = await resolveClinicId(adminClient, userId);
+  if (!clinicId) {
+    throw new Error('Clinic is required for Meta provider fact persistence');
+  }
 
   const fields = [
     'date_start',
@@ -5640,7 +5643,7 @@ async function handleIntegrationsTestPost(ctx: AuthenticatedRouteContext): Promi
     const body = (rawBody && typeof rawBody === 'object') ? rawBody as Record<string, any> : {};
     const service = String(body.service ?? '').trim();
   
-    if (service === 'meta') {
+    if (service === 'meta' || service === 'meta_ads') {
       const creds = await resolveMetaCreds(adminClient, userId, body?.adAccountId ?? '');
       const validation = validateMetaCredentialResult(creds);
       const integrationOwnerId = creds.integrationOwnerId ?? '';
