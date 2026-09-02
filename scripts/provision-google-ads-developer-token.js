@@ -28,8 +28,14 @@ function encryptCredential(secret, encryptionKey) {
   return [salt, iv, tag, ciphertext].map((part) => part.toString('hex')).join(':');
 }
 
-async function supabaseJson(base, serviceRole, path, options = {}) {
-  const response = await fetch(`${base}${path}`, {
+async function readJson(response) {
+  const text = await response.text();
+  if (!text) return null;
+  try { return JSON.parse(text); } catch { return null; }
+}
+
+async function supabaseJson(base, serviceRole, path, options = {}, fetchImpl = fetch) {
+  const response = await fetchImpl(`${base}${path}`, {
     ...options,
     headers: {
       apikey: serviceRole,
@@ -39,13 +45,78 @@ async function supabaseJson(base, serviceRole, path, options = {}) {
     },
     signal: AbortSignal.timeout(20_000),
   });
-  const text = await response.text();
-  let payload = null;
-  if (text) {
-    try { payload = JSON.parse(text); } catch { payload = text.slice(0, 500); }
-  }
+  const payload = await readJson(response);
   if (!response.ok) throw new Error(`Supabase request failed HTTP ${response.status}`);
   return payload;
+}
+
+async function resolveInternalSecret(base, serviceRole, fetchImpl = fetch) {
+  const payload = await supabaseJson(
+    base,
+    serviceRole,
+    '/rest/v1/rpc/nvx_get_runtime_secret',
+    {
+      method: 'POST',
+      body: JSON.stringify({ p_name: 'REVOPS_INTERNAL_SECRET' }),
+    },
+    fetchImpl,
+  );
+  const secret = typeof payload === 'string'
+    ? payload.trim()
+    : String(payload?.nvx_get_runtime_secret || '').trim();
+  if (!secret) throw new Error('Google Ads internal recovery secret is unavailable');
+  return secret;
+}
+
+async function recoverGoogleAdsIntegrations({ base, serviceRole, integrations, fetchImpl = fetch }) {
+  if (!Array.isArray(integrations) || integrations.length === 0) {
+    throw new Error('No Google Ads integrations available for recovery');
+  }
+
+  const internalSecret = await resolveInternalSecret(base, serviceRole, fetchImpl);
+  let recovered = 0;
+
+  for (const integration of integrations) {
+    const integrationId = String(integration?.id || '').trim();
+    if (!integrationId) throw new Error('Google Ads integration without id');
+
+    const response = await fetchImpl(`${base}/functions/v1/google-ads-health`, {
+      method: 'POST',
+      headers: {
+        apikey: serviceRole,
+        Authorization: `Bearer ${serviceRole}`,
+        'Content-Type': 'application/json',
+        'x-nvx-internal-secret': internalSecret,
+      },
+      body: JSON.stringify({ integration_id: integrationId }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    const payload = await readJson(response);
+    if (!response.ok || payload?.success !== true) {
+      throw new Error(`Google Ads provider recovery failed for integration ${integrationId} (HTTP ${response.status})`);
+    }
+    if (String(payload?.integration_id || '') !== integrationId) {
+      throw new Error(`Google Ads provider recovery returned an integration identity mismatch for ${integrationId}`);
+    }
+
+    const persisted = await supabaseJson(
+      base,
+      serviceRole,
+      `/rest/v1/integrations?id=eq.${encodeURIComponent(integrationId)}&select=id,status,last_error`,
+      {},
+      fetchImpl,
+    );
+    if (!Array.isArray(persisted) || persisted.length !== 1) {
+      throw new Error(`Google Ads recovery persistence verification failed for integration ${integrationId}`);
+    }
+    const row = persisted[0];
+    if (String(row?.id || '') !== integrationId || row?.status !== 'connected' || row?.last_error !== null) {
+      throw new Error(`Google Ads integration ${integrationId} did not persist the canonical connected state`);
+    }
+    recovered += 1;
+  }
+
+  return recovered;
 }
 
 async function provision() {
@@ -57,7 +128,7 @@ async function provision() {
   const integrations = await supabaseJson(
     base,
     serviceRole,
-    '/rest/v1/integrations?service=eq.google_ads&select=user_id,clinic_id&order=created_at.asc',
+    '/rest/v1/integrations?service=eq.google_ads&select=id,user_id,clinic_id,status&order=created_at.asc',
   );
   if (!Array.isArray(integrations) || integrations.length === 0) {
     throw new Error('No Google Ads integrations found');
@@ -94,7 +165,18 @@ async function provision() {
     },
   );
 
-  console.log(JSON.stringify({ success: true, owners_provisioned: rows.length, credential_format: 'aes_gcm_pbkdf2_sha256_v1' }));
+  const integrationsRecovered = await recoverGoogleAdsIntegrations({
+    base,
+    serviceRole,
+    integrations,
+  });
+
+  console.log(JSON.stringify({
+    success: true,
+    owners_provisioned: rows.length,
+    integrations_recovered: integrationsRecovered,
+    credential_format: 'aes_gcm_pbkdf2_sha256_v1',
+  }));
 }
 
 if (require.main === module) {
@@ -104,4 +186,9 @@ if (require.main === module) {
   });
 }
 
-module.exports = { encryptCredential, validateDeveloperToken };
+module.exports = {
+  encryptCredential,
+  recoverGoogleAdsIntegrations,
+  resolveInternalSecret,
+  validateDeveloperToken,
+};
