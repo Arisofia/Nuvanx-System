@@ -4,6 +4,21 @@ import fs from 'node:fs';
 const api = fs.readFileSync('supabase/functions/api/index.ts', 'utf8');
 const migration = fs.readFileSync('supabase/migrations/20260902100000_meta_provider_fact_clinic_canonical.sql', 'utf8');
 
+function functionSection(name, nextName) {
+  const start = api.indexOf(`async function ${name}`);
+  const end = api.indexOf(`async function ${nextName}`, start + 1);
+  expect(start, `missing function: ${name}`).toBeGreaterThan(-1);
+  expect(end, `missing next function: ${nextName}`).toBeGreaterThan(start);
+  return api.slice(start, end);
+}
+
+function expectClinicRequiredProviderWriter(name, nextName) {
+  const source = functionSection(name, nextName);
+  expect(source).toMatch(
+    /const clinicId = await resolveClinicId\(adminClient, userId\);[\s\S]*?if \(!clinicId\) \{\s*throw new Error\('Clinic is required for Meta provider fact persistence'\);\s*\}/,
+  );
+}
+
 describe('Meta provider facts are clinic-canonical at write time', () => {
   it('fails closed on unknown ownership or duplicate historical facts', () => {
     expect(migration).toContain('WHERE clinic_id IS NULL');
@@ -35,15 +50,16 @@ describe('Meta provider facts are clinic-canonical at write time', () => {
     expect(api).toContain("onConflict: 'clinic_id,ig_id,media_id'");
   });
 
-  it('rejects Meta lead and provider-fact writes without a clinic', () => {
+  it('rejects Meta lead and every provider-fact writer without a clinic', () => {
     expect(api).toMatch(
       /if \(!clinicIdForLead\) \{\s*throw new Error\('Clinic is required for Meta lead ingestion'\);\s*\}/,
     );
-    expect(
-      api.match(
-        /if \(!clinicId\) \{\s*throw new Error\('Clinic is required for Meta provider fact persistence'\);\s*\}/g,
-      ) ?? [],
-    ).toHaveLength(4);
+
+    expectClinicRequiredProviderWriter('persistMetaDailyInsights', 'ingestMetaLeadsFromForms');
+    expectClinicRequiredProviderWriter('persistMetaOrganicDailyInsights', 'persistMetaPostPerformance');
+    expectClinicRequiredProviderWriter('persistMetaPostPerformance', 'persistMetaIgAccountDailyInsights');
+    expectClinicRequiredProviderWriter('persistMetaIgAccountDailyInsights', 'persistMetaIgMediaPerformance');
+    expectClinicRequiredProviderWriter('persistMetaIgMediaPerformance', 'handleMetaOrganicGet');
   });
 
   it('fails webhook routing closed when a page maps to multiple connected integrations', () => {
