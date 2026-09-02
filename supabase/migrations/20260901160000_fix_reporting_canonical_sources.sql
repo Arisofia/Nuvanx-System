@@ -476,12 +476,12 @@ BEGIN
     AND NOT a.attisdropped;
 
   -- Exact canonical Production signature (14 columns).
-  IF v_signature = E'1:clinic_id:uuid\n2:doctor_id:text\n3:doctor_name:character varying(255)\n4:specialty:character varying(128)\n5:total_appointments:bigint\n6:attended_count:bigint\n7:no_show_count:bigint\n8:cancelled_count:bigint\n9:completion_rate_pct:numeric\n10:no_show_rate_pct:numeric\n11:estimated_revenue:numeric\n12:verified_revenue_crm:numeric\n13:current_month_date:date\n14:current_month:text' THEN
+  IF v_signature = E'1:doctor_id:text\n2:doctor_name:character varying(255)\n3:specialty:character varying(128)\n4:is_active:boolean\n5:clinic_id:uuid\n6:total_appointments:bigint\n7:attended_count:bigint\n8:no_show_count:bigint\n9:cancelled_count:bigint\n10:confirmed_count:bigint\n11:attended_rate_pct:numeric\n12:no_show_rate_pct:numeric\n13:estimated_revenue:numeric\n14:verified_revenue_crm:numeric' THEN
     RETURN;
   END IF;
 
   -- Exact historical replay signature (14 columns with text types).
-  IF v_signature IS DISTINCT FROM E'1:clinic_id:uuid\n2:doctor_id:text\n3:doctor_name:text\n4:specialty:text\n5:total_appointments:bigint\n6:attended_count:bigint\n7:no_show_count:bigint\n8:cancelled_count:bigint\n9:completion_rate_pct:numeric\n10:no_show_rate_pct:numeric\n11:estimated_revenue:numeric\n12:verified_revenue_crm:numeric\n13:current_month_date:date\n14:current_month:text' THEN
+  IF v_signature IS DISTINCT FROM E'1:doctor_id:text\n2:doctor_name:text\n3:specialty:text\n4:is_active:boolean\n5:clinic_id:uuid\n6:total_appointments:bigint\n7:attended_count:bigint\n8:no_show_count:bigint\n9:cancelled_count:bigint\n10:confirmed_count:bigint\n11:attended_rate_pct:numeric\n12:no_show_rate_pct:numeric\n13:estimated_revenue:numeric\n14:verified_revenue_crm:numeric' THEN
     RAISE EXCEPTION 'Unexpected vw_doctor_performance_real signature:%', E'\n' || coalesce(v_signature, '<missing>');
   END IF;
 
@@ -506,11 +506,11 @@ BEGIN
 
   -- Explicit text -> varchar(n) casts may truncate. Refuse the rebuild.
   IF EXISTS (
-    SELECT 1 FROM public.doctoralia_appointments_ingestion dai
-    WHERE (dai.doctor_name IS NOT NULL AND char_length(dai.doctor_name) > 255)
-       OR (dai.specialty IS NOT NULL AND char_length(dai.specialty) > 128)
+    SELECT 1 FROM public.doctors d
+    WHERE (d.name IS NOT NULL AND char_length(d.name) > 255)
+       OR (d.specialty IS NOT NULL AND char_length(d.specialty) > 128)
   ) THEN
-    RAISE EXCEPTION 'Cannot reconcile vw_doctor_performance_real: doctoralia text exceeds canonical varchar bounds';
+    RAISE EXCEPTION 'Cannot reconcile vw_doctor_performance_real: doctor text exceeds canonical varchar bounds';
   END IF;
 
   INSERT INTO nvx_doctor_restore (reloptions, owner_name)
@@ -668,6 +668,47 @@ SELECT
   c.estimated_revenue,
   c.verified_revenue_crm
 FROM combined c;
+
+DO $doctor_restore$
+DECLARE
+  v_restore record;
+  v_acl record;
+BEGIN
+  SELECT * INTO v_restore FROM nvx_doctor_restore LIMIT 1;
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
+
+  -- Preserve historical view options (vw_doctor_performance_real does not force security_invoker).
+  IF v_restore.reloptions IS NOT NULL
+     AND pg_catalog.array_length(v_restore.reloptions, 1) > 0 THEN
+    EXECUTE pg_catalog.format(
+      'ALTER VIEW public.vw_doctor_performance_real SET (%s)',
+      pg_catalog.array_to_string(v_restore.reloptions, ', ')
+    );
+  END IF;
+
+  FOR v_acl IN
+    SELECT *
+    FROM nvx_doctor_acl
+    ORDER BY grantee_name, privilege_type
+  LOOP
+    EXECUTE pg_catalog.format(
+      'GRANT %s ON TABLE public.vw_doctor_performance_real TO %s%s',
+      v_acl.privilege_type,
+      CASE WHEN v_acl.grantee_name = 'PUBLIC' THEN 'PUBLIC' ELSE pg_catalog.quote_ident(v_acl.grantee_name) END,
+      CASE WHEN v_acl.is_grantable THEN ' WITH GRANT OPTION' ELSE '' END
+    );
+  END LOOP;
+
+  IF v_restore.owner_name <> current_user THEN
+    EXECUTE pg_catalog.format(
+      'ALTER VIEW public.vw_doctor_performance_real OWNER TO %I',
+      v_restore.owner_name
+    );
+  END IF;
+END;
+$doctor_restore$;
 
 -- ---------------------------------------------------------------------------
 -- Lead Audit clean-replay bridge
