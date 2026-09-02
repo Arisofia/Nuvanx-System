@@ -1840,7 +1840,8 @@ export async function processMetaLeadChange(adminClient: any, change: any): Prom
   const { data: intgs } = await adminClient.from('integrations')
     .select('user_id, clinic_id, service, metadata')
     .in('service', ['meta', 'meta_ads'])
-    .eq('status', 'connected');
+    .eq('status', 'connected')
+    .not('clinic_id', 'is', null);
 
   const connected = intgs ?? [];
   let matchingIntg = connected.find((integration: any) =>
