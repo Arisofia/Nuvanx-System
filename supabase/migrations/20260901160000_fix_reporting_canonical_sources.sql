@@ -544,7 +544,8 @@ BEGIN
     AND c.relname = 'vw_doctor_performance_real'
     AND c.relkind = 'v'
     AND c.relacl IS NOT NULL
-    AND acl.grantee <> c.relowner;
+    AND acl.grantee <> c.relowner
+    AND acl.grantor = c.relowner;
 
   DROP VIEW public.vw_doctor_performance_real;
 END
@@ -867,7 +868,8 @@ BEGIN
     AND c.relname = 'vw_lead_traceability'
     AND c.relkind = 'v'
     AND c.relacl IS NOT NULL
-    AND acl.grantee <> c.relowner;
+    AND acl.grantee <> c.relowner
+    AND acl.grantor = c.relowner;
 
   DROP VIEW public.vw_lead_traceability;
 END
