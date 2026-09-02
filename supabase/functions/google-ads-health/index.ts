@@ -12,11 +12,11 @@ const SERVICE_ACCOUNT_RAW = (Deno.env.get("GOOGLE_ADS_SERVICE_ACCOUNT") || "").t
 const LOGIN_CUSTOMER_ID_ENV = (Deno.env.get("GOOGLE_ADS_LOGIN_CUSTOMER_ID") || "").replace(/\D/g, "");
 const API_VERSION = "v25";
 const CANONICAL_CONVERSION_ACTION_ID = "7713427085";
+const LOCAL_CONVERSION_ACTION_ID = "7717850116";
 const MAX_RANGE_DAYS = 92;
 const MAX_BODY_BYTES = 8192;
 const MAX_PROVIDER_PAGES = 20;
 const MAX_PROVIDER_ROWS = 10_000;
-const PROVIDER_PAGE_SIZE = 1000;
 
 type FailureKind = "request" | "configuration" | "oauth" | "provider" | "validation" | "persistence";
 
@@ -50,7 +50,6 @@ function digits(value: unknown): string {
 function cleanSelector(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
-
 
 async function sha256(raw: string): Promise<Uint8Array> {
   return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw)));
@@ -208,7 +207,7 @@ async function googleAdsSearch(
       seenPageTokens.add(pageToken);
     }
 
-    const requestBody: Record<string, unknown> = { query, pageSize: PROVIDER_PAGE_SIZE };
+    const requestBody: Record<string, unknown> = { query };
     if (pageToken) requestBody.pageToken = pageToken;
     const headers: Record<string, string> = {
       Authorization: `Bearer ${accessToken}`,
@@ -347,19 +346,22 @@ Deno.serve(async (req: Request) => {
   try {
     const serviceAccount = parseServiceAccount(SERVICE_ACCOUNT_RAW);
 
+    const [selectorKey, selectorValue] = selectors[0];
     let integrationQuery = admin
       .from("integrations")
       .select("id,user_id,clinic_id,metadata,status")
-      .eq("service", "google_ads")
-      .eq("status", "connected");
-    const [selectorKey, selectorValue] = selectors[0];
-    if (selectorKey === "integration_id") integrationQuery = integrationQuery.eq("id", selectorValue);
-    if (selectorKey === "user_id") integrationQuery = integrationQuery.eq("user_id", selectorValue);
-    if (selectorKey === "clinic_id") integrationQuery = integrationQuery.eq("clinic_id", selectorValue);
+      .eq("service", "google_ads");
+    if (selectorKey === "integration_id") {
+      integrationQuery = integrationQuery.eq("id", selectorValue);
+    } else {
+      integrationQuery = integrationQuery.eq("status", "connected");
+      if (selectorKey === "user_id") integrationQuery = integrationQuery.eq("user_id", selectorValue);
+      if (selectorKey === "clinic_id") integrationQuery = integrationQuery.eq("clinic_id", selectorValue);
+    }
     const { data: integrations, error: integrationError } = await integrationQuery.limit(2);
     if (integrationError) throw new HealthFailure("configuration", 500, "Google Ads integration lookup failed");
     if (!Array.isArray(integrations) || integrations.length !== 1) {
-      throw new HealthFailure("validation", 424, "Google Ads integration selector did not resolve exactly one connected integration");
+      throw new HealthFailure("validation", 424, "Google Ads integration selector did not resolve exactly one eligible integration");
     }
     const integration = integrations[0];
     integrationId = String(integration.id || "");
@@ -384,6 +386,8 @@ Deno.serve(async (req: Request) => {
     const developerToken = await decryptCredential(String(credential.encrypted_key));
     if (!developerToken) throw new HealthFailure("configuration", 500, "Google Ads developer credential is empty");
 
+    const canonicalActionId = customerId === "8201489748" ? LOCAL_CONVERSION_ACTION_ID : CANONICAL_CONVERSION_ACTION_ID;
+
     const accessToken = await googleAccessToken(serviceAccount);
     const [customerRows, campaignRows, performanceRows, conversionRows] = await Promise.all([
       googleAdsSearch(customerId, developerToken, accessToken, `
@@ -399,7 +403,7 @@ Deno.serve(async (req: Request) => {
       `, loginCustomerId),
       googleAdsSearch(customerId, developerToken, accessToken, `
         SELECT campaign.id, metrics.impressions, metrics.clicks, metrics.cost_micros,
-               metrics.conversions, metrics.ctr, metrics.average_cpc, metrics.cost_per_conversion
+                metrics.conversions, metrics.ctr, metrics.average_cpc, metrics.cost_per_conversion
         FROM campaign
         WHERE segments.date BETWEEN '${range.from}' AND '${range.to}'
       `, loginCustomerId),
@@ -408,7 +412,7 @@ Deno.serve(async (req: Request) => {
                conversion_action.type, conversion_action.category, conversion_action.origin,
                conversion_action.primary_for_goal
         FROM conversion_action
-        WHERE conversion_action.id = ${CANONICAL_CONVERSION_ACTION_ID}
+        WHERE conversion_action.id = ${canonicalActionId}
       `, loginCustomerId),
     ]);
 
@@ -421,7 +425,7 @@ Deno.serve(async (req: Request) => {
       throw new HealthFailure("validation", 424, "Canonical Google Ads conversion action missing");
     }
     const conversion = conversionRows[0]?.conversionAction || null;
-    if (!conversion || String(conversion.id || "") !== CANONICAL_CONVERSION_ACTION_ID) {
+    if (!conversion || String(conversion.id || "") !== canonicalActionId) {
       throw new HealthFailure("validation", 424, "Canonical Google Ads conversion identity mismatch");
     }
     if (conversion.primaryForGoal !== true) {
@@ -453,10 +457,13 @@ Deno.serve(async (req: Request) => {
     });
 
     const now = new Date().toISOString();
-    const [credentialUpdate, integrationUpdate] = await Promise.all([
-      admin.from("credentials").update({ last_used: now }).eq("id", credential.id),
-      admin.from("integrations").update({ last_sync: now, last_error: null, updated_at: now }).eq("id", integration.id),
-    ]);
+    const credentialUpdate = await admin
+      .from("credentials")
+      .update({ last_used: now })
+      .eq("id", credential.id);
+    const integrationUpdate = credentialUpdate.error
+      ? { error: credentialUpdate.error }
+      : await admin.from("integrations").update({ status: "connected", last_sync: now, last_error: null, updated_at: now }).eq("id", integration.id);
     if (credentialUpdate.error || integrationUpdate.error) {
       throw new HealthFailure("persistence", 500, "Google Ads provider proof persistence failed");
     }

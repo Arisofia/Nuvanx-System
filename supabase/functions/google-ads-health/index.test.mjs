@@ -56,8 +56,14 @@ describe("Google Ads provider health contract", () => {
     expect(source).toContain('["user_id", cleanSelector(body.user_id)]');
     expect(source).toContain('["clinic_id", cleanSelector(body.clinic_id)]');
     expect(source).toContain("Exactly one of integration_id, user_id or clinic_id is required");
-    expect(source).toContain("Google Ads integration selector did not resolve exactly one connected integration");
+    expect(source).toContain("Google Ads integration selector did not resolve exactly one eligible integration");
     expect(source).not.toContain('.order("updated_at", { ascending: false })');
+    expect(source).toContain('if (selectorKey === "integration_id") {\n      integrationQuery = integrationQuery.eq("id", selectorValue);\n    } else {\n      integrationQuery = integrationQuery.eq("status", "connected");');
+  });
+
+  it("does not send pageSize to Google Ads Search API", () => {
+    expect(source).toContain("const requestBody: Record<string, unknown> = { query };");
+    expect(source).not.toMatch(/pageSize/);
   });
 
   it("classifies local, OAuth, provider and validation failures separately", () => {
@@ -71,7 +77,7 @@ describe("Google Ads provider health contract", () => {
   it("returns success only after both provider-proof timestamps persist", () => {
     const readIndex = source.indexOf("const [customerRows, campaignRows, performanceRows, conversionRows]");
     const usedIndex = source.indexOf('update({ last_used: now })');
-    const syncIndex = source.indexOf('update({ last_sync: now, last_error: null, updated_at: now })');
+    const syncIndex = source.indexOf('update({ status: "connected", last_sync: now, last_error: null, updated_at: now })');
     const persistenceGate = source.indexOf("if (credentialUpdate.error || integrationUpdate.error)");
     const successIndex = source.indexOf("return reply(200");
     expect(readIndex).toBeGreaterThan(-1);
