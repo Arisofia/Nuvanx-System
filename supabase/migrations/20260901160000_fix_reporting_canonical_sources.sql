@@ -701,7 +701,170 @@ END
 $doctor_view_restore$;
 
 -- ---------------------------------------------------------------------------
--- Lead Audit SSOT: preserve the public contract but exclude inactive lead rows.
+-- Lead Audit clean-replay bridge
+-- Production exposes a typed 43-column contract, while historical clean replay
+-- reaches this migration with a generic text/numeric placeholder. Rebuild only
+-- that exact legacy shape, preserve metadata, and never use CASCADE.
+-- ---------------------------------------------------------------------------
+CREATE TEMP TABLE nvx_lead_audit_view_restore (
+  reloptions text[],
+  owner_name text NOT NULL
+) ON COMMIT DROP;
+
+CREATE TEMP TABLE nvx_lead_audit_view_acl (
+  grantee_name text NOT NULL,
+  privilege_type text NOT NULL,
+  is_grantable boolean NOT NULL
+) ON COMMIT DROP;
+
+DO $lead_audit_view_bridge$
+DECLARE
+  v_column_count integer;
+  v_lead_name_type text;
+  v_lead_name_len integer;
+  v_phone_type text;
+  v_phone_len integer;
+  v_source_type text;
+  v_source_len integer;
+  v_patient_ltv_type text;
+  v_patient_ltv_precision integer;
+  v_patient_ltv_scale integer;
+  v_template_id_type text;
+  v_template_id_len integer;
+  v_patient_phone_type text;
+  v_patient_phone_len integer;
+BEGIN
+  IF to_regclass('public.vw_lead_traceability') IS NULL THEN
+    RETURN;
+  END IF;
+
+  SELECT count(*)::integer
+    INTO v_column_count
+  FROM information_schema.columns c
+  WHERE c.table_schema = 'public'
+    AND c.table_name = 'vw_lead_traceability';
+
+  SELECT c.data_type, c.character_maximum_length
+    INTO v_lead_name_type, v_lead_name_len
+  FROM information_schema.columns c
+  WHERE c.table_schema = 'public'
+    AND c.table_name = 'vw_lead_traceability'
+    AND c.column_name = 'lead_name';
+
+  SELECT c.data_type, c.character_maximum_length
+    INTO v_phone_type, v_phone_len
+  FROM information_schema.columns c
+  WHERE c.table_schema = 'public'
+    AND c.table_name = 'vw_lead_traceability'
+    AND c.column_name = 'phone_normalized';
+
+  SELECT c.data_type, c.character_maximum_length
+    INTO v_source_type, v_source_len
+  FROM information_schema.columns c
+  WHERE c.table_schema = 'public'
+    AND c.table_name = 'vw_lead_traceability'
+    AND c.column_name = 'source';
+
+  SELECT c.data_type, c.numeric_precision, c.numeric_scale
+    INTO v_patient_ltv_type, v_patient_ltv_precision, v_patient_ltv_scale
+  FROM information_schema.columns c
+  WHERE c.table_schema = 'public'
+    AND c.table_name = 'vw_lead_traceability'
+    AND c.column_name = 'patient_ltv';
+
+  SELECT c.data_type, c.character_maximum_length
+    INTO v_template_id_type, v_template_id_len
+  FROM information_schema.columns c
+  WHERE c.table_schema = 'public'
+    AND c.table_name = 'vw_lead_traceability'
+    AND c.column_name = 'doctoralia_template_id';
+
+  SELECT c.data_type, c.character_maximum_length
+    INTO v_patient_phone_type, v_patient_phone_len
+  FROM information_schema.columns c
+  WHERE c.table_schema = 'public'
+    AND c.table_name = 'vw_lead_traceability'
+    AND c.column_name = 'patient_phone';
+
+  -- Canonical Production signature: CREATE OR REPLACE is safe.
+  IF v_column_count = 43
+     AND v_lead_name_type = 'character varying' AND v_lead_name_len = 255
+     AND v_phone_type = 'character varying' AND v_phone_len = 20
+     AND v_source_type = 'character varying' AND v_source_len = 64
+     AND v_patient_ltv_type = 'numeric'
+     AND v_patient_ltv_precision = 12 AND v_patient_ltv_scale = 2
+     AND v_template_id_type = 'character varying' AND v_template_id_len = 32
+     AND v_patient_phone_type = 'character varying' AND v_patient_phone_len = 64 THEN
+    RETURN;
+  END IF;
+
+  -- Exact historical clean-replay placeholder signature observed in Preview.
+  IF NOT (
+    v_column_count = 43
+    AND v_lead_name_type = 'text' AND v_lead_name_len IS NULL
+    AND v_phone_type = 'text' AND v_phone_len IS NULL
+    AND v_source_type = 'text' AND v_source_len IS NULL
+    AND v_patient_ltv_type = 'numeric'
+    AND v_patient_ltv_precision IS NULL AND v_patient_ltv_scale IS NULL
+    AND v_template_id_type = 'text' AND v_template_id_len IS NULL
+    AND v_patient_phone_type = 'text' AND v_patient_phone_len IS NULL
+  ) THEN
+    RAISE EXCEPTION
+      'Unexpected vw_lead_traceability signature: columns=%, lead_name=%(%), phone=%(%), source=%(%), patient_ltv=%(%,%), template_id=%(%), patient_phone=%(%)',
+      v_column_count,
+      v_lead_name_type, v_lead_name_len,
+      v_phone_type, v_phone_len,
+      v_source_type, v_source_len,
+      v_patient_ltv_type, v_patient_ltv_precision, v_patient_ltv_scale,
+      v_template_id_type, v_template_id_len,
+      v_patient_phone_type, v_patient_phone_len;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_class parent
+    JOIN pg_catalog.pg_namespace pn ON pn.oid = parent.relnamespace
+    JOIN pg_catalog.pg_depend d ON d.refobjid = parent.oid
+    JOIN pg_catalog.pg_rewrite r ON r.oid = d.objid
+    JOIN pg_catalog.pg_class child ON child.oid = r.ev_class
+    WHERE pn.nspname = 'public'
+      AND parent.relname = 'vw_lead_traceability'
+      AND parent.relkind = 'v'
+      AND child.oid <> parent.oid
+      AND child.relkind IN ('v', 'm')
+  ) THEN
+    RAISE EXCEPTION 'Cannot rebuild legacy vw_lead_traceability: dependent view exists';
+  END IF;
+
+  INSERT INTO nvx_lead_audit_view_restore (reloptions, owner_name)
+  SELECT c.reloptions, pg_catalog.pg_get_userbyid(c.relowner)
+  FROM pg_catalog.pg_class c
+  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'public'
+    AND c.relname = 'vw_lead_traceability'
+    AND c.relkind = 'v';
+
+  INSERT INTO nvx_lead_audit_view_acl (grantee_name, privilege_type, is_grantable)
+  SELECT
+    CASE WHEN acl.grantee = 0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(acl.grantee) END,
+    acl.privilege_type,
+    acl.is_grantable
+  FROM pg_catalog.pg_class c
+  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+  CROSS JOIN LATERAL pg_catalog.aclexplode(c.relacl) acl
+  WHERE n.nspname = 'public'
+    AND c.relname = 'vw_lead_traceability'
+    AND c.relkind = 'v'
+    AND c.relacl IS NOT NULL
+    AND acl.grantee <> c.relowner;
+
+  DROP VIEW public.vw_lead_traceability;
+END
+$lead_audit_view_bridge$;
+
+-- ---------------------------------------------------------------------------
+-- Lead Audit SSOT: preserve the Production public contract but exclude inactive
+-- lead rows. Explicit casts reconcile historical clean-replay source drift.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE VIEW public.vw_lead_traceability
 WITH (security_invoker = true) AS
@@ -721,19 +884,19 @@ WITH fs_latest AS (
 )
 SELECT
   l.id AS lead_id,
-  l.name AS lead_name,
+  l.name::character varying(255) AS lead_name,
   COALESCE(l.email, NULL::character varying)::text AS email_normalized,
-  l.phone_normalized,
-  l.source,
+  l.phone_normalized::character varying(20) AS phone_normalized,
+  l.source::character varying(64) AS source,
   l.stage::text AS stage,
-  l.campaign_id,
-  l.campaign_name,
-  l.adset_id,
-  l.adset_name,
-  l.ad_id,
-  l.ad_name,
-  l.form_id,
-  l.form_name,
+  l.campaign_id::character varying(64) AS campaign_id,
+  l.campaign_name::character varying(255) AS campaign_name,
+  l.adset_id::character varying(64) AS adset_id,
+  l.adset_name::character varying(255) AS adset_name,
+  l.ad_id::character varying(64) AS ad_id,
+  l.ad_name::character varying(255) AS ad_name,
+  l.form_id::character varying(64) AS form_id,
+  l.form_name::character varying(255) AS form_name,
   l.created_at AS lead_created_at,
   l.first_outbound_at,
   l.first_inbound_at,
@@ -741,23 +904,23 @@ SELECT
   l.appointment_status,
   l.attended_at,
   l.no_show_flag,
-  l.revenue AS estimated_revenue,
-  l.verified_revenue AS crm_verified_revenue,
+  l.revenue::numeric(12,2) AS estimated_revenue,
+  l.verified_revenue::numeric(12,2) AS crm_verified_revenue,
   l.lost_reason::text AS lost_reason,
   p.id AS patient_id,
-  p.total_ltv AS patient_ltv,
+  p.total_ltv::numeric(12,2) AS patient_ltv,
   fs.id::text AS settlement_id,
-  fs.template_id AS doctoralia_template_id,
-  fs.template_name AS doctoralia_template_name,
-  fs.amount_net AS doctoralia_net,
-  fs.amount_gross AS doctoralia_gross,
+  fs.template_id::character varying(32) AS doctoralia_template_id,
+  fs.template_name::character varying(255) AS doctoralia_template_name,
+  fs.amount_net::numeric(12,2) AS doctoralia_net,
+  fs.amount_gross::numeric(12,2) AS doctoralia_gross,
   fs.settled_at AS settlement_date,
   fs.intake_at AS settlement_intake_date,
   fs.source_system::text AS settlement_source,
   l.user_id AS lead_user_id,
   p.name::text AS patient_name,
   p.dni::text AS patient_dni,
-  p.phone AS patient_phone,
+  p.phone::character varying(64) AS patient_phone,
   p.last_visit AS patient_last_visit,
   NULL::text AS doc_patient_id,
   NULL::numeric AS match_confidence,
@@ -768,6 +931,44 @@ LEFT JOIN public.patients p ON p.id = l.converted_patient_id
 LEFT JOIN fs_latest fs ON fs.lead_id = l.id
 WHERE l.deleted_at IS NULL
   AND l.merged_into_lead_id IS NULL;
+
+DO $lead_audit_view_restore$
+DECLARE
+  v_restore record;
+  v_acl record;
+BEGIN
+  SELECT * INTO v_restore FROM nvx_lead_audit_view_restore LIMIT 1;
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
+
+  IF v_restore.reloptions IS NOT NULL
+     AND pg_catalog.array_length(v_restore.reloptions, 1) > 0 THEN
+    EXECUTE pg_catalog.format(
+      'ALTER VIEW public.vw_lead_traceability SET (%s)',
+      pg_catalog.array_to_string(v_restore.reloptions, ', ')
+    );
+  END IF;
+
+  FOR v_acl IN
+    SELECT * FROM nvx_lead_audit_view_acl ORDER BY grantee_name, privilege_type
+  LOOP
+    EXECUTE pg_catalog.format(
+      'GRANT %s ON TABLE public.vw_lead_traceability TO %s%s',
+      v_acl.privilege_type,
+      CASE WHEN v_acl.grantee_name = 'PUBLIC' THEN 'PUBLIC' ELSE pg_catalog.quote_ident(v_acl.grantee_name) END,
+      CASE WHEN v_acl.is_grantable THEN ' WITH GRANT OPTION' ELSE '' END
+    );
+  END LOOP;
+
+  IF v_restore.owner_name <> current_user THEN
+    EXECUTE pg_catalog.format(
+      'ALTER VIEW public.vw_lead_traceability OWNER TO %I',
+      v_restore.owner_name
+    );
+  END IF;
+END
+$lead_audit_view_restore$;
 
 COMMENT ON FUNCTION public.get_campaign_report(uuid, date, date, date, date) IS
   'Canonical period-aware campaign performance from active leads + vw_control_centre_pipeline. Tenant-scoped; attendance requires Doctoralia evidence or verified client progression.';
@@ -782,6 +983,6 @@ COMMENT ON VIEW public.vw_doctor_performance_real IS
   'Doctor performance sourced from Doctoralia appointment ingestion when doctor_id is present, with legacy lead fallback and verified settlement revenue.';
 
 COMMENT ON VIEW public.vw_lead_traceability IS
-  'Lead audit traceability restricted to active, unmerged leads while preserving the existing public column contract.';
+  'Lead audit traceability restricted to active, unmerged leads while preserving the existing Production public column contract.';
 
 COMMIT;
