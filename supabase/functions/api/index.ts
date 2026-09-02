@@ -4007,27 +4007,77 @@ async function persistMetaDailyInsights(adminClient: any, userId: string, adAcco
 
 
 
-async function ingestMetaLeadsFromForms(adminClient: any, userId: string, adAccountId: string, accessToken: string, sinceTs: number): Promise<number> {
+async function ingestMetaLeadsFromForms(
+  adminClient: any,
+  userId: string,
+  adAccountId: string,
+  accessToken: string,
+  sinceTs: number,
+  pageId?: string | null,
+  clinicId?: string | null,
+): Promise<number> {
   let totalFetched = 0;
-  const formsRes = await metaFetch(`/${adAccountId}/leadgen_forms`, {
-    fields: 'id,name',
-    limit: '50',
-  }, accessToken);
+  const formIds = new Set<string>();
 
-  for (const form of (formsRes?.data ?? [])) {
+  // 1. Fetch leadgen forms from the Page if pageId is provided
+  if (pageId) {
     try {
-      const leadsRes = await metaFetch(`/${form.id}/leads`, {
+      const pageFormsRes = await metaFetch(`/${pageId}/leadgen_forms`, {
+        fields: 'id,name',
+        limit: '50',
+      }, accessToken);
+      for (const form of (pageFormsRes?.data ?? [])) {
+        if (form?.id) formIds.add(String(form.id));
+      }
+    } catch (pageErr: any) {
+      console.warn(`Meta page leadgen_forms query failed for page ${pageId}:`, maskSensitive(pageErr?.message ?? pageErr));
+    }
+  }
+
+  // 2. Discover lead forms attached to ads in the Ad Account
+  try {
+    const adsRes = await metaFetch(`/${adAccountId}/ads`, {
+      fields: 'id,name,creative{id,lead_gen_form_id}',
+      limit: '100',
+    }, accessToken);
+    for (const ad of (adsRes?.data ?? [])) {
+      const formId = ad?.creative?.lead_gen_form_id;
+      if (formId) formIds.add(String(formId));
+    }
+  } catch (adsErr: any) {
+    console.warn(`Meta ads query for form discovery failed for ${adAccountId}:`, maskSensitive(adsErr?.message ?? adsErr));
+  }
+
+  // 3. Compatibility fallback: try /{adAccountId}/leadgen_forms directly if supported
+  if (formIds.size === 0) {
+    try {
+      const formsRes = await metaFetch(`/${adAccountId}/leadgen_forms`, {
+        fields: 'id,name',
+        limit: '50',
+      }, accessToken);
+      for (const form of (formsRes?.data ?? [])) {
+        if (form?.id) formIds.add(String(form.id));
+      }
+    } catch {
+      // Ignored if ad account does not support the leadgen_forms edge
+    }
+  }
+
+  // 4. Fetch leads for each discovered form
+  for (const formId of formIds) {
+    try {
+      const leadsRes = await metaFetch(`/${formId}/leads`, {
         fields: 'id,field_data,created_time,ad_id,ad_name,form_id,form_name,campaign_id,campaign_name,adset_id,adset_name,page_id',
         filtering: JSON.stringify([{ field: 'time_created', operator: 'GREATER_THAN', value: sinceTs }]),
         limit: '500',
       }, accessToken);
 
       for (const leadData of (leadsRes?.data ?? [])) {
-        const success = await processLeadData(adminClient, userId, leadData);
+        const success = await processLeadData(adminClient, userId, leadData, clinicId);
         if (success) totalFetched++;
       }
     } catch (formError: any) {
-      console.warn(`Meta backfill failed for form ${form?.id}:`, maskSensitive(formError?.message ?? formError));
+      console.warn(`Meta backfill failed for form ${formId}:`, maskSensitive(formError?.message ?? formError));
     }
   }
 
@@ -4598,6 +4648,8 @@ async function performMetaAdsBackfill(
   sinceDate: string,
   untilDate: string,
   sinceTs: number,
+  pageId?: string | null,
+  clinicId?: string | null,
 ) {
   let dailyInsightsPersisted = 0;
   let totalFetched = 0;
@@ -4628,7 +4680,7 @@ async function performMetaAdsBackfill(
     }
 
     try {
-      const fetched = await ingestMetaLeadsFromForms(adminClient, userId, accountId, accessToken, sinceTs);
+      const fetched = await ingestMetaLeadsFromForms(adminClient, userId, accountId, accessToken, sinceTs, pageId, clinicId);
       totalFetched += fetched;
       diagnostics.push({
         scope: 'lead_forms',
@@ -4782,6 +4834,8 @@ async function handleMetaBackfillPost(ctx: AuthenticatedRouteContext): Promise<R
     sinceDate,
     untilDate,
     sinceTs,
+    creds.pageId,
+    creds.requesterClinicId,
   );
 
   const backfillResult: any = {
