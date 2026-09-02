@@ -25,8 +25,10 @@ describe('Meta tenant-safe resolution contract', () => {
     expect(integrationStart).toBeGreaterThan(-1);
     expect(integrationSection).toContain('const requesterClinicId = await resolveClinicId(adminClient, userId);');
     expect(integrationSection).toContain(".select('user_id, clinic_id, service, metadata, status, updated_at')");
-    expect(integrationSection).toContain("integrationsQuery.eq('clinic_id', requesterClinicId)");
-    expect(integrationSection).toContain("integrationsQuery.eq('user_id', userId).is('clinic_id', null)");
+    expect(integrationSection).toContain('if (!requesterClinicId) {');
+    expect(integrationSection).toContain('integration: null');
+    expect(integrationSection).toContain("integrationsQuery = integrationsQuery.eq('clinic_id', requesterClinicId);");
+    expect(integrationSection).not.toContain(".is('clinic_id', null)");
     expect(integrationSection).not.toContain(".eq('clinic_id', requesterClinicId).or(");
   });
 
@@ -37,7 +39,8 @@ describe('Meta tenant-safe resolution contract', () => {
     expect(resolver).toContain('const integrationOwnerId = String(intg.user_id ?? \'\').trim();');
     expect(resolver).toContain(".eq('user_id', integrationOwnerId)");
     expect(resolver).toContain("credentialQuery.eq('clinic_id', requesterClinicId)");
-    expect(resolver).toContain("credentialQuery.is('clinic_id', null)");
+    expect(resolver).toContain("credentialQuery = credentialQuery.eq('clinic_id', requesterClinicId);");
+    expect(resolver).not.toContain("credentialQuery.is('clinic_id', null)");
     expect(resolver).toContain('integrationOwnerId,');
     expect(resolver).toContain('integrationService,');
     expect(resolver).not.toContain(".eq('user_id', userId)\n    .eq('service', credentialService)");

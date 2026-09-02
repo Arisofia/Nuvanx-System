@@ -1206,15 +1206,17 @@ async function resolveMetaIntegration(adminClient: any, userId: string, qAccount
     .in('service', ['meta_ads', 'meta'])
     .eq('status', 'connected');
 
-  integrationsQuery = requesterClinicId
-    ? integrationsQuery.eq('clinic_id', requesterClinicId)
-    : integrationsQuery.eq('user_id', userId).is('clinic_id', null);
+  const requestedAccountIds = normalizeMetaAccountIds(qAccountId);
+  if (!requesterClinicId) {
+    return { integration: null, requesterClinicId, requestedAccountIds } as const;
+  }
+
+  integrationsQuery = integrationsQuery.eq('clinic_id', requesterClinicId);
 
   const { data: integrations, error } = await integrationsQuery;
   if (error) throw error;
 
   const connected = integrations ?? [];
-  const requestedAccountIds = normalizeMetaAccountIds(qAccountId);
   const matchingRows = requestedAccountIds.length > 0
     ? connected.filter((row: any) => {
         const metadata = row?.metadata ?? {};
@@ -1266,14 +1268,25 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
     };
   }
 
+  if (!requesterClinicId) {
+    return {
+      notConnected: true,
+      accessToken: '',
+      adAccountIds: [] as string[],
+      adAccountId: '',
+      decryptionError: '',
+      integrationOwnerId,
+      integrationService,
+      requesterClinicId,
+    };
+  }
+
   const credentialService = integrationService;
   let credentialQuery = adminClient.from('credentials')
     .select('encrypted_key')
     .eq('user_id', integrationOwnerId)
     .eq('service', credentialService);
-  credentialQuery = requesterClinicId
-    ? credentialQuery.eq('clinic_id', requesterClinicId)
-    : credentialQuery.is('clinic_id', null);
+  credentialQuery = credentialQuery.eq('clinic_id', requesterClinicId);
 
   const { data: credRow, error: credentialError } = await credentialQuery.maybeSingle();
   if (credentialError) throw credentialError;
