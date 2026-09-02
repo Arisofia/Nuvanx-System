@@ -36,16 +36,16 @@ describe('reply_delay_minutes pre-reporting replay bridge', () => {
     expect(preBridge).toContain('fractional or out-of-range value exists');
   });
 
-  it('captures and rebuilds only the known dependency graph without CASCADE', () => {
+  it('captures and rebuilds the exact four-view dependency graph observed by clean replay without CASCADE', () => {
     for (const view of [
       'public.source_to_cash',
       'public.v_figma_campaign_kpis',
       'public.vw_campaign_performance_real',
-      'public.vw_lead_traceability',
       'public.vw_source_comparison',
     ]) {
       expect(preBridge).toContain(`'${view}'`);
     }
+    expect(preBridge).not.toContain("'public.vw_lead_traceability',");
     expect(preBridge).toContain('Unexpected reply_delay_minutes dependent views during clean replay');
     expect(preBridge).not.toMatch(/DROP\s+VIEW[^;]*CASCADE/i);
     expect(preBridge).toContain('a.attacl IS NOT NULL');
