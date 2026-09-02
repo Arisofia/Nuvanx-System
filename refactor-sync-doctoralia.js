@@ -90,7 +90,10 @@ const newInsert = `         (id, clinic_id, amount_gross, amount_discount, amoun
           patient_phone, phone_normalized, patient_name, source_system,
           source_record_id, source_key_version, doctoralia_patient_key)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,'doctoralia',$21,2,$22)
-       ON CONFLICT (id) DO UPDATE SET`;
+       ON CONFLICT (id) DO UPDATE SET
+         source_record_id = EXCLUDED.source_record_id,
+         source_key_version = EXCLUDED.source_key_version,
+         doctoralia_patient_key = EXCLUDED.doctoralia_patient_key,`;
 
 content = content.replace(oldInsert, newInsert);
 
