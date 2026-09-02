@@ -8,8 +8,9 @@
 -- This migration is intentionally ordered immediately before
 -- 20260901160000_fix_reporting_canonical_sources.sql. It is idempotent and a
 -- no-op when the column is already the canonical enum. On a clean replay it
--- snapshots dependent view definitions/options/grants, rebuilds them around the
--- type conversion, and fails closed rather than using DROP ... CASCADE blindly.
+-- snapshots dependent view definitions/options/grants/comments, rebuilds them
+-- around the type conversion, and fails closed rather than using
+-- DROP ... CASCADE blindly.
 
 DO $bridge$
 DECLARE
@@ -17,6 +18,8 @@ DECLARE
   v_udt_name text;
   v_view record;
   v_acl record;
+  v_comment record;
+  v_historical_definition text;
 BEGIN
   IF to_regclass('public.leads') IS NULL THEN
     RAISE EXCEPTION 'public.leads is required before appointment-status replay reconciliation';
@@ -70,7 +73,8 @@ BEGIN
     view_name text NOT NULL,
     view_definition text NOT NULL,
     reloptions text[],
-    owner_name text NOT NULL
+    owner_name text NOT NULL,
+    view_comment text
   ) ON COMMIT DROP;
 
   CREATE TEMP TABLE nvx_appointment_status_view_acl (
@@ -78,6 +82,13 @@ BEGIN
     grantee_name text NOT NULL,
     privilege_type text NOT NULL,
     is_grantable boolean NOT NULL
+  ) ON COMMIT DROP;
+
+  CREATE TEMP TABLE nvx_appointment_status_view_column_comment (
+    view_oid oid NOT NULL,
+    column_name text NOT NULL,
+    comment_text text NOT NULL,
+    PRIMARY KEY (view_oid, column_name)
   ) ON COMMIT DROP;
 
   WITH RECURSIVE target AS (
@@ -124,7 +135,8 @@ BEGIN
     view_name,
     view_definition,
     reloptions,
-    owner_name
+    owner_name,
+    view_comment
   )
   SELECT v.oid,
          d.dependency_depth,
@@ -132,7 +144,8 @@ BEGIN
          v.relname,
          pg_catalog.pg_get_viewdef(v.oid, true),
          v.reloptions,
-         pg_catalog.pg_get_userbyid(v.relowner)
+         pg_catalog.pg_get_userbyid(v.relowner),
+         pg_catalog.obj_description(v.oid, 'pg_class')
   FROM depths d
   JOIN pg_catalog.pg_class v ON v.oid = d.view_oid
   JOIN pg_catalog.pg_namespace n ON n.oid = v.relnamespace;
@@ -155,6 +168,66 @@ BEGIN
   CROSS JOIN LATERAL pg_catalog.aclexplode(c.relacl) acl
   WHERE c.relacl IS NOT NULL
     AND acl.grantee <> c.relowner;
+
+  INSERT INTO nvx_appointment_status_view_column_comment (
+    view_oid,
+    column_name,
+    comment_text
+  )
+  SELECT r.view_oid,
+         a.attname,
+         pg_catalog.col_description(r.view_oid, a.attnum)
+  FROM nvx_appointment_status_view_restore r
+  JOIN pg_catalog.pg_attribute a
+    ON a.attrelid = r.view_oid
+   AND a.attnum > 0
+   AND NOT a.attisdropped
+  WHERE pg_catalog.col_description(r.view_oid, a.attnum) IS NOT NULL;
+
+  -- The historical unified Doctoralia view exposes appointment_status as TEXT:
+  -- Doctoralia's estado is text and, before this bridge, leads.appointment_status
+  -- was also text. After converting the base column to the enum, replaying the
+  -- captured definition verbatim would fail with SQLSTATE 42804 because
+  -- COALESCE(text, appointment_status) has no common type. Keep this one public
+  -- view contract as text by casting only the enum-side argument. Do not perform
+  -- a generic ::text rewrite across unrelated view definitions.
+  SELECT r.view_definition
+    INTO v_historical_definition
+  FROM nvx_appointment_status_view_restore r
+  WHERE r.view_schema = 'public'
+    AND r.view_name = 'vw_doctoralia_lead_traceability_unified';
+
+  IF FOUND THEN
+    IF pg_catalog.strpos(
+      v_historical_definition,
+      'COALESCE(dr.estado::text, l.appointment_status)'
+    ) = 0 THEN
+      RAISE EXCEPTION
+        'Historical vw_doctoralia_lead_traceability_unified definition changed: expected appointment_status text COALESCE boundary is missing';
+    END IF;
+
+    UPDATE nvx_appointment_status_view_restore r
+    SET view_definition = pg_catalog.replace(
+      r.view_definition,
+      'COALESCE(dr.estado::text, l.appointment_status)',
+      'COALESCE(dr.estado::text, l.appointment_status::text)'
+    )
+    WHERE r.view_schema = 'public'
+      AND r.view_name = 'vw_doctoralia_lead_traceability_unified';
+
+    IF EXISTS (
+      SELECT 1
+      FROM nvx_appointment_status_view_restore r
+      WHERE r.view_schema = 'public'
+        AND r.view_name = 'vw_doctoralia_lead_traceability_unified'
+        AND pg_catalog.strpos(
+          r.view_definition,
+          'COALESCE(dr.estado::text, l.appointment_status::text)'
+        ) = 0
+    ) THEN
+      RAISE EXCEPTION 'Failed to make historical unified Doctoralia view enum-replay-safe';
+    END IF;
+  END IF;
 
   -- Drop downstream views first. No CASCADE: an uncaptured dependency must fail
   -- closed rather than silently deleting unrelated schema objects.
@@ -196,6 +269,30 @@ BEGIN
         pg_catalog.array_to_string(v_view.reloptions, ', ')
       );
     END IF;
+
+    IF v_view.view_comment IS NOT NULL THEN
+      EXECUTE pg_catalog.format(
+        'COMMENT ON VIEW %I.%I IS %L',
+        v_view.view_schema,
+        v_view.view_name,
+        v_view.view_comment
+      );
+    END IF;
+
+    FOR v_comment IN
+      SELECT *
+      FROM nvx_appointment_status_view_column_comment c
+      WHERE c.view_oid = v_view.view_oid
+      ORDER BY c.column_name
+    LOOP
+      EXECUTE pg_catalog.format(
+        'COMMENT ON COLUMN %I.%I.%I IS %L',
+        v_view.view_schema,
+        v_view.view_name,
+        v_comment.column_name,
+        v_comment.comment_text
+      );
+    END LOOP;
 
     FOR v_acl IN
       SELECT *
