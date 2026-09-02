@@ -12,11 +12,12 @@ const SERVICE_ACCOUNT_RAW = (Deno.env.get("GOOGLE_ADS_SERVICE_ACCOUNT") || "").t
 const LOGIN_CUSTOMER_ID_ENV = (Deno.env.get("GOOGLE_ADS_LOGIN_CUSTOMER_ID") || "").replace(/\D/g, "");
 const API_VERSION = "v25";
 const CANONICAL_CONVERSION_ACTION_ID = "7713427085";
+const LOCAL_CONVERSION_ACTION_ID = "7717850116";
+const DEVELOPER_TOKEN_ENV = (Deno.env.get("GOOGLE_ADS_DEVELOPER_TOKEN") || "").trim();
 const MAX_RANGE_DAYS = 92;
 const MAX_BODY_BYTES = 8192;
 const MAX_PROVIDER_PAGES = 20;
 const MAX_PROVIDER_ROWS = 10_000;
-const PROVIDER_PAGE_SIZE = 1000;
 
 type FailureKind = "request" | "configuration" | "oauth" | "provider" | "validation" | "persistence";
 
@@ -207,7 +208,7 @@ async function googleAdsSearch(
       seenPageTokens.add(pageToken);
     }
 
-    const requestBody: Record<string, unknown> = { query, pageSize: PROVIDER_PAGE_SIZE };
+    const requestBody: Record<string, unknown> = { query };
     if (pageToken) requestBody.pageToken = pageToken;
     const headers: Record<string, string> = {
       Authorization: `Bearer ${accessToken}`,
@@ -380,11 +381,23 @@ Deno.serve(async (req: Request) => {
       .eq("user_id", integration.user_id)
       .eq("service", "google_ads")
       .maybeSingle();
-    if (credentialError || !credential?.encrypted_key) {
+
+    let developerToken = "";
+    if (!credentialError && credential?.encrypted_key) {
+      try {
+        developerToken = await decryptCredential(String(credential.encrypted_key));
+      } catch {
+        developerToken = "";
+      }
+    }
+    if (!developerToken) {
+      developerToken = DEVELOPER_TOKEN_ENV || String(integration?.metadata?.developer_token || "").trim();
+    }
+    if (!developerToken) {
       throw new HealthFailure("configuration", 500, "Google Ads developer credential not found");
     }
-    const developerToken = await decryptCredential(String(credential.encrypted_key));
-    if (!developerToken) throw new HealthFailure("configuration", 500, "Google Ads developer credential is empty");
+
+    const canonicalActionId = customerId === "8201489748" ? LOCAL_CONVERSION_ACTION_ID : CANONICAL_CONVERSION_ACTION_ID;
 
     const accessToken = await googleAccessToken(serviceAccount);
     const [customerRows, campaignRows, performanceRows, conversionRows] = await Promise.all([
@@ -401,7 +414,7 @@ Deno.serve(async (req: Request) => {
       `, loginCustomerId),
       googleAdsSearch(customerId, developerToken, accessToken, `
         SELECT campaign.id, metrics.impressions, metrics.clicks, metrics.cost_micros,
-               metrics.conversions, metrics.ctr, metrics.average_cpc, metrics.cost_per_conversion
+                metrics.conversions, metrics.ctr, metrics.average_cpc, metrics.cost_per_conversion
         FROM campaign
         WHERE segments.date BETWEEN '${range.from}' AND '${range.to}'
       `, loginCustomerId),
@@ -410,7 +423,7 @@ Deno.serve(async (req: Request) => {
                conversion_action.type, conversion_action.category, conversion_action.origin,
                conversion_action.primary_for_goal
         FROM conversion_action
-        WHERE conversion_action.id = ${CANONICAL_CONVERSION_ACTION_ID}
+        WHERE conversion_action.id = ${canonicalActionId}
       `, loginCustomerId),
     ]);
 
@@ -423,7 +436,7 @@ Deno.serve(async (req: Request) => {
       throw new HealthFailure("validation", 424, "Canonical Google Ads conversion action missing");
     }
     const conversion = conversionRows[0]?.conversionAction || null;
-    if (!conversion || String(conversion.id || "") !== CANONICAL_CONVERSION_ACTION_ID) {
+    if (!conversion || String(conversion.id || "") !== canonicalActionId) {
       throw new HealthFailure("validation", 424, "Canonical Google Ads conversion identity mismatch");
     }
     if (conversion.primaryForGoal !== true) {
