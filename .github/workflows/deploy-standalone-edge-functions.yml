@@ -67,33 +67,6 @@ jobs:
           echo "deploy=true" >> "$GITHUB_OUTPUT"
           echo "candidate_sha=$CURRENT_SHA" >> "$GITHUB_OUTPUT"
 
-      - name: Detect Google Ads credential provisioning changes
-        id: google_ads_provision
-        if: ${{ steps.candidate.outputs.deploy == 'true' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
-            echo "provision=false" >> "$GITHUB_OUTPUT"
-            echo "Manual Edge deployment does not implicitly rotate Google Ads credentials."
-            exit 0
-          fi
-          CANDIDATE_SHA="${{ steps.candidate.outputs.candidate_sha }}"
-          PARENT_SHA="$(git rev-parse "${CANDIDATE_SHA}^")"
-          CHANGED="$(git diff --name-only "$PARENT_SHA" "$CANDIDATE_SHA" -- \
-            scripts/provision-google-ads-developer-token.js \
-            scripts/provision-google-ads-developer-token.test.js \
-            supabase/functions/google-ads-health/index.ts \
-            supabase/functions/google-ads-health/index.test.mjs \
-            .github/workflows/google-ads-credential-provision.yml)"
-          if [[ -n "$CHANGED" ]]; then
-            echo "provision=true" >> "$GITHUB_OUTPUT"
-            echo "Google Ads provisioning contract changed in approved candidate."
-          else
-            echo "provision=false" >> "$GITHUB_OUTPUT"
-            echo "Approved candidate has no Google Ads provisioning-contract changes."
-          fi
-
       - name: Validate production deployment configuration
         if: ${{ steps.candidate.outputs.deploy == 'true' }}
         shell: bash
@@ -231,7 +204,7 @@ jobs:
 
       - name: Reverify candidate after governed deployment
         id: post_deploy_guard
-        if: ${{ steps.candidate.outputs.deploy == 'true' && steps.mutation_guard.outputs.mutate == 'true' && steps.google_ads_provision.outputs.provision == 'true' }}
+        if: ${{ steps.candidate.outputs.deploy == 'true' && steps.mutation_guard.outputs.mutate == 'true' && github.event_name != 'workflow_dispatch' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -240,12 +213,12 @@ jobs:
           CANDIDATE_SHA="${{ steps.candidate.outputs.candidate_sha }}"
           if [[ "$REMOTE_MAIN_SHA" != "$CANDIDATE_SHA" ]]; then
             echo "provision=false" >> "$GITHUB_OUTPUT"
-            echo "Remote main advanced after Edge deployment; a newer governed run will own Google Ads provisioning."
+            echo "Remote main advanced after Edge deployment; a newer governed run will own Google Ads credential convergence."
             exit 0
           fi
           echo "provision=true" >> "$GITHUB_OUTPUT"
 
-      - name: Provision Google Ads credential through deployed runtime
+      - name: Converge Google Ads credential through deployed runtime
         if: ${{ steps.post_deploy_guard.outputs.provision == 'true' }}
         shell: bash
         env:
@@ -261,7 +234,7 @@ jobs:
           REMOTE_MAIN_SHA="$(git rev-parse origin/main)"
           CANDIDATE_SHA="${{ steps.candidate.outputs.candidate_sha }}"
           if [[ "$REMOTE_MAIN_SHA" != "$CANDIDATE_SHA" ]]; then
-            echo "::error::Remote main advanced before Google Ads provisioning; refusing stale credential mutation."
+            echo "::error::Remote main advanced before Google Ads credential convergence; refusing stale credential mutation."
             exit 1
           fi
           node scripts/provision-google-ads-developer-token.js
