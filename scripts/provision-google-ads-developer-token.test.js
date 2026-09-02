@@ -7,6 +7,7 @@ const {
   CREDENTIAL_OWNER,
   credentialContractCurrent,
   provisionGoogleAdsIntegrations,
+  requireHttpsBase,
   validateDeveloperToken,
 } = require('./provision-google-ads-developer-token');
 
@@ -23,6 +24,28 @@ function jsonResponse(payload, status = 200) {
 test('developer token validation rejects service-account payloads', () => {
   assert.throws(() => validateDeveloperToken('{"client_email":"x","private_key":"y"}'), /service-account payload/);
   assert.equal(validateDeveloperToken('abc_DEF-123.xyz~'), 'abc_DEF-123.xyz~');
+});
+
+test('Supabase base URL must be valid HTTPS before any credential-bearing request', async () => {
+  assert.equal(requireHttpsBase('https://example.supabase.co/'), 'https://example.supabase.co');
+  assert.throws(() => requireHttpsBase('http://example.supabase.co'), /must use HTTPS/);
+  assert.throws(() => requireHttpsBase('not-a-url'), /valid HTTPS URL/);
+
+  let fetchCalled = false;
+  await assert.rejects(
+    provisionGoogleAdsIntegrations({
+      base: 'http://example.supabase.co',
+      serviceRole: 'service-role-value',
+      developerToken: 'developer-token-value',
+      integrations: [{ id: 'integration-820' }],
+      fetchImpl: async () => {
+        fetchCalled = true;
+        return jsonResponse({});
+      },
+    }),
+    /must use HTTPS/,
+  );
+  assert.equal(fetchCalled, false);
 });
 
 test('credential contract is current only when every integration is healthy and every owner is runtime-provisioned', () => {
