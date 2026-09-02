@@ -1197,13 +1197,20 @@ async function resolveClinicMetadata(adminClient: any, userId: string) {
 }
 
 // ── Meta credential resolver ──────────────────────────────────────────────────
-async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: string) {
-  const { data: integrations } = await adminClient
+async function resolveMetaIntegration(adminClient: any, userId: string, qAccountId: string) {
+  const requesterClinicId = await resolveClinicId(adminClient, userId);
+  let integrationsQuery = adminClient
     .from('integrations')
-    .select('service, metadata, status, updated_at')
-    .eq('user_id', userId)
+    .select('user_id, clinic_id, service, metadata, status, updated_at')
     .in('service', ['meta_ads', 'meta'])
     .eq('status', 'connected');
+
+  integrationsQuery = requesterClinicId
+    ? integrationsQuery.eq('clinic_id', requesterClinicId)
+    : integrationsQuery.eq('user_id', userId).is('clinic_id', null);
+
+  const { data: integrations, error } = await integrationsQuery;
+  if (error) throw error;
 
   const connected = integrations ?? [];
   const requestedAccountIds = normalizeMetaAccountIds(qAccountId);
@@ -1217,17 +1224,39 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
       })
     : connected;
 
-  const intg = selectCanonicalMetaIntegration(matchingRows);
+  return {
+    integration: selectCanonicalMetaIntegration(matchingRows),
+    requesterClinicId,
+    requestedAccountIds,
+  } as const;
+}
+
+async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: string) {
+  const { integration: intg, requesterClinicId, requestedAccountIds } = await resolveMetaIntegration(
+    adminClient,
+    userId,
+    qAccountId,
+  );
   if (!intg) {
     return { notConnected: true, accessToken: '', adAccountIds: [] as string[], adAccountId: '', decryptionError: '' };
   }
 
+  const integrationOwnerId = String(intg.user_id ?? '').trim();
+  if (!integrationOwnerId) {
+    return { notConnected: true, accessToken: '', adAccountIds: [] as string[], adAccountId: '', decryptionError: '' };
+  }
+
   const credentialService = intg.service === 'meta_ads' ? 'meta_ads' : 'meta';
-  const { data: credRow } = await adminClient.from('credentials')
+  let credentialQuery = adminClient.from('credentials')
     .select('encrypted_key')
-    .eq('user_id', userId)
-    .eq('service', credentialService)
-    .maybeSingle();
+    .eq('user_id', integrationOwnerId)
+    .eq('service', credentialService);
+  credentialQuery = requesterClinicId
+    ? credentialQuery.eq('clinic_id', requesterClinicId)
+    : credentialQuery.is('clinic_id', null);
+
+  const { data: credRow, error: credentialError } = await credentialQuery.maybeSingle();
+  if (credentialError) throw credentialError;
   if (!credRow?.encrypted_key) {
     return { notConnected: true, accessToken: '', adAccountIds: [] as string[], adAccountId: '', decryptionError: '' };
   }
@@ -1264,6 +1293,7 @@ async function resolveMetaCreds(adminClient: any, userId: string, qAccountId: st
   console.log('[CAPI-ROUTING] Meta stack selected', {
     service: credentialService,
     accountId: activeAccountId,
+    clinicScoped: Boolean(requesterClinicId),
     hasPixel: Boolean(pixelId),
   });
 
@@ -4283,14 +4313,7 @@ async function handleMetaOrganicGet(ctx: AuthenticatedRouteContext): Promise<Res
   const { adminClient, userId, resource, sub, sub2, req, url, sendJson } = ctx;
   if (resource !== 'meta' || sub !== 'organic' || req.method !== 'GET') return null;
 
-  // Resolve pageId from integrations.metadata
-  const { data: integrations } = await adminClient.from('integrations')
-    .select('service, metadata, status, updated_at')
-    .eq('user_id', userId)
-    .in('service', ['meta_ads', 'meta'])
-    .eq('status', 'connected');
-
-  const integ = selectCanonicalMetaIntegration(integrations ?? []);
+  const { integration: integ, requesterClinicId } = await resolveMetaIntegration(adminClient, userId, '');
   const meta = (integ?.metadata ?? {}) as Record<string, any>;
   const pageId = meta.pageId ?? meta.page_id ?? null;
   if (!pageId) {
@@ -4313,10 +4336,10 @@ async function handleMetaOrganicGet(ctx: AuthenticatedRouteContext): Promise<Res
     let query = adminClient
       .from('meta_post_performance')
       .select('post_id, created_time, message, status_type, permalink_url, impressions, reach, engaged_users, reactions, comments, shares, video_views, is_video')
-      .eq('user_id', userId)
       .eq('page_id', pageId)
       .order('created_time', { ascending: false })
       .limit(limit);
+    query = applyClinicOrUserScope(query, requesterClinicId, userId);
     if (keyword) query = query.ilike('message', `%${keyword}%`);
     const { data, error } = await query;
     if (error) return sendJson({ success: false, message: error.message }, 500);
@@ -4324,13 +4347,14 @@ async function handleMetaOrganicGet(ctx: AuthenticatedRouteContext): Promise<Res
   }
 
   // Default: daily series + summary
-  const { data: rows, error } = await adminClient.from('meta_organic_daily')
+  let query = adminClient.from('meta_organic_daily')
     .select('date, impressions, reach, engagements, video_views, page_views, reactions')
-    .eq('user_id', userId)
     .eq('page_id', pageId)
     .gte('date', sinceStr)
     .lte('date', until)
     .order('date', { ascending: true });
+  query = applyClinicOrUserScope(query, requesterClinicId, userId);
+  const { data: rows, error } = await query;
   if (error) return sendJson({ success: false, message: error.message }, 500);
 
   const daily = rows ?? [];
@@ -4356,23 +4380,17 @@ async function handleMetaIgGet(ctx: AuthenticatedRouteContext): Promise<Response
   const { adminClient, userId, resource, sub, sub2, req, url, sendJson } = ctx;
   if (resource !== 'meta' || sub !== 'ig' || req.method !== 'GET') return null;
 
-  const { data: integrations } = await adminClient.from('integrations')
-    .select('service, metadata, status, updated_at')
-    .eq('user_id', userId)
-    .in('service', ['meta_ads', 'meta'])
-    .eq('status', 'connected');
-
-  const integ = selectCanonicalMetaIntegration(integrations ?? []);
+  const { integration: integ, requesterClinicId } = await resolveMetaIntegration(adminClient, userId, '');
   const meta = (integ?.metadata ?? {}) as Record<string, any>;
   let igId: string | null = meta.igBusinessAccountId ?? meta.ig_business_account_id ?? null;
 
   // Fallback: auto-discover ig_id from existing DB data when metadata is missing
   if (!igId) {
-    const { data: igDiscover } = await adminClient.from('meta_ig_account_daily')
+    let igDiscoverQuery = adminClient.from('meta_ig_account_daily')
       .select('ig_id')
-      .eq('user_id', userId)
-      .limit(1)
-      .maybeSingle();
+      .limit(1);
+    igDiscoverQuery = applyClinicOrUserScope(igDiscoverQuery, requesterClinicId, userId);
+    const { data: igDiscover } = await igDiscoverQuery.maybeSingle();
     igId = igDiscover?.ig_id ?? null;
   }
 
@@ -4396,23 +4414,24 @@ async function handleMetaIgGet(ctx: AuthenticatedRouteContext): Promise<Response
     let query = adminClient
       .from('meta_ig_media_performance')
       .select('media_id, media_type, media_product_type, caption, permalink, timestamp, reach, views, likes, comments, shares, saved, total_interactions')
-      .eq('user_id', userId)
       .eq('ig_id', igId)
       .order('timestamp', { ascending: false })
       .limit(limit);
+    query = applyClinicOrUserScope(query, requesterClinicId, userId);
     if (keyword) query = query.ilike('caption', `%${keyword}%`);
     const { data, error } = await query;
     if (error) return sendJson({ success: false, message: error.message }, 500);
     return sendJson({ success: true, igId, count: data?.length ?? 0, posts: data ?? [] });
   }
 
-  const { data: rows, error } = await adminClient.from('meta_ig_account_daily')
+  let query = adminClient.from('meta_ig_account_daily')
     .select('date, reach, follower_count_delta, profile_views, accounts_engaged, total_interactions, website_clicks, views')
-    .eq('user_id', userId)
     .eq('ig_id', igId)
     .gte('date', sinceStr)
     .lte('date', until)
     .order('date', { ascending: true });
+  query = applyClinicOrUserScope(query, requesterClinicId, userId);
+  const { data: rows, error } = await query;
   if (error) return sendJson({ success: false, message: error.message }, 500);
 
   const daily = rows ?? [];
