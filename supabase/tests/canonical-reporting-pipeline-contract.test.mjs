@@ -69,6 +69,17 @@ describe('Canonical Reporting Pipeline and E2E Contract', () => {
     expect(migration).toContain('AND l.merged_into_lead_id IS NULL;');
   });
 
+  it('rebuilds only the known incompatible legacy doctor view without CASCADE', () => {
+    expect(migration).toContain('Unexpected vw_doctor_performance_real signature');
+    expect(migration).toContain('v_clinic_position = 14');
+    expect(migration).toContain('v_clinic_position = 5');
+    expect(migration).toContain('Cannot rebuild legacy vw_doctor_performance_real: dependent view exists');
+    expect(migration).toContain('DROP VIEW public.vw_doctor_performance_real;');
+    expect(migration).not.toMatch(/DROP\s+VIEW\s+public\.vw_doctor_performance_real[^;]*CASCADE/i);
+    expect(migration).toContain('nvx_doctor_view_acl');
+    expect(migration).toContain('nvx_doctor_view_restore');
+  });
+
   it('preserves doctor performance column order and uses Doctoralia ingestion', () => {
     expect(migration).toContain('CREATE OR REPLACE VIEW public.vw_doctor_performance_real AS');
     expect(migration).toContain('public.doctoralia_appointments_ingestion');

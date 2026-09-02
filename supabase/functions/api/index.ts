@@ -4850,9 +4850,22 @@ async function fetchDbCampaigns(adminClient: any, userId: string, requesterClini
   let query = adminClient.from('vw_campaign_performance_real')
     .select('campaign_id, campaign_name, source, total_leads, last_lead_at')
     .order('total_leads', { ascending: false });
-  query = applyClinicOrUserScope(query, requesterClinicId, userId);
-  const { data: dbRows } = await query;
 
+  if (requesterClinicId) {
+    const { data: clinicUsers, error: clinicUsersError } = await adminClient
+      .from('users')
+      .select('id')
+      .eq('clinic_id', requesterClinicId);
+    if (clinicUsersError) throw clinicUsersError;
+    const clinicUserIds = (clinicUsers ?? []).map((row: any) => String(row.id ?? '')).filter(Boolean);
+    if (clinicUserIds.length === 0) return [];
+    query = query.in('user_id', clinicUserIds);
+  } else {
+    query = query.eq('user_id', userId);
+  }
+
+  const { data: dbRows, error: dbRowsError } = await query;
+  if (dbRowsError) throw dbRowsError;
   if (!dbRows || dbRows.length === 0) return [];
 
   const now = Date.now();

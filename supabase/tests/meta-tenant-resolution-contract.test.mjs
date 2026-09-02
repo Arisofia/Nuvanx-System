@@ -66,6 +66,17 @@ describe('Meta tenant-safe resolution contract', () => {
     expect(source).not.toContain("updateIntegrationStatus(adminClient, userId, 'meta'");
   });
 
+  it('scopes campaign CRM fallback through clinic member user IDs instead of a non-existent view clinic_id', () => {
+    const start = api.indexOf('async function fetchDbCampaigns');
+    const end = api.indexOf('async function fetchMetaCampaignsFallback', start);
+    const source = api.slice(start, end);
+    expect(start).toBeGreaterThan(-1);
+    expect(source).toContain(".from('users')");
+    expect(source).toContain(".eq('clinic_id', requesterClinicId)");
+    expect(source).toContain("query = query.in('user_id', clinicUserIds)");
+    expect(source).not.toContain('applyClinicOrUserScope(query, requesterClinicId, userId)');
+  });
+
   it('scopes organic and Instagram persisted reads to clinic when the requester has one', () => {
     const organic = api.slice(api.indexOf('async function handleMetaOrganicGet'), api.indexOf('async function handleMetaIgGet'));
     const ig = api.slice(api.indexOf('async function handleMetaIgGet'), api.indexOf('function parseMetaBackfillDates'));

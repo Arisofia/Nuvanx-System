@@ -432,8 +432,127 @@ AS $$
 $$;
 
 -- ---------------------------------------------------------------------------
+-- Doctor Performance clean-replay bridge
+-- Historical replay has doctor_name/specialty as text and clinic_id at
+-- ordinal 14. The canonical view has varchar(255)/varchar(128) and
+-- clinic_id at ordinal 5. PostgreSQL cannot change that contract with
+-- CREATE OR REPLACE VIEW, so only the known incompatible legacy shape
+-- is dropped and rebuilt. DROP is intentionally non-CASCADE.
+-- ---------------------------------------------------------------------------
+CREATE TEMP TABLE nvx_doctor_view_restore (
+  reloptions text[],
+  owner_name text NOT NULL
+) ON COMMIT DROP;
+
+CREATE TEMP TABLE nvx_doctor_view_acl (
+  grantee_name text NOT NULL,
+  privilege_type text NOT NULL,
+  is_grantable boolean NOT NULL
+) ON COMMIT DROP;
+
+DO $doctor_view_bridge$
+DECLARE
+  v_doctor_name_type text;
+  v_doctor_name_len integer;
+  v_specialty_type text;
+  v_specialty_len integer;
+  v_clinic_position integer;
+BEGIN
+  IF to_regclass('public.vw_doctor_performance_real') IS NULL THEN
+    RETURN;
+  END IF;
+
+  SELECT c.data_type, c.character_maximum_length
+    INTO v_doctor_name_type, v_doctor_name_len
+  FROM information_schema.columns c
+  WHERE c.table_schema = 'public'
+    AND c.table_name = 'vw_doctor_performance_real'
+    AND c.column_name = 'doctor_name';
+
+  SELECT c.data_type, c.character_maximum_length
+    INTO v_specialty_type, v_specialty_len
+  FROM information_schema.columns c
+  WHERE c.table_schema = 'public'
+    AND c.table_name = 'vw_doctor_performance_real'
+    AND c.column_name = 'specialty';
+
+  SELECT c.ordinal_position
+    INTO v_clinic_position
+  FROM information_schema.columns c
+  WHERE c.table_schema = 'public'
+    AND c.table_name = 'vw_doctor_performance_real'
+    AND c.column_name = 'clinic_id';
+
+  -- Canonical Production signature: CREATE OR REPLACE is safe.
+  IF v_doctor_name_type = 'character varying'
+     AND v_doctor_name_len = 255
+     AND v_specialty_type = 'character varying'
+     AND v_specialty_len = 128
+     AND v_clinic_position = 5 THEN
+    RETURN;
+  END IF;
+
+  -- Only accept the exact historical replay signature we directly
+  -- observed. Any other shape must be reviewed explicitly.
+  IF NOT (
+    v_doctor_name_type = 'text'
+    AND v_doctor_name_len IS NULL
+    AND v_specialty_type = 'text'
+    AND v_specialty_len IS NULL
+    AND v_clinic_position = 14
+  ) THEN
+    RAISE EXCEPTION
+      'Unexpected vw_doctor_performance_real signature: doctor_name=%(%), specialty=%(%), clinic_position=%',
+      v_doctor_name_type, v_doctor_name_len,
+      v_specialty_type, v_specialty_len,
+      v_clinic_position;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_class parent
+    JOIN pg_catalog.pg_namespace pn ON pn.oid = parent.relnamespace
+    JOIN pg_catalog.pg_depend d ON d.refobjid = parent.oid
+    JOIN pg_catalog.pg_rewrite r ON r.oid = d.objid
+    JOIN pg_catalog.pg_class child ON child.oid = r.ev_class
+    WHERE pn.nspname = 'public'
+      AND parent.relname = 'vw_doctor_performance_real'
+      AND parent.relkind = 'v'
+      AND child.oid <> parent.oid
+      AND child.relkind = 'v'
+  ) THEN
+    RAISE EXCEPTION 'Cannot rebuild legacy vw_doctor_performance_real: dependent view exists';
+  END IF;
+
+  INSERT INTO nvx_doctor_view_restore (reloptions, owner_name)
+  SELECT c.reloptions, pg_catalog.pg_get_userbyid(c.relowner)
+  FROM pg_catalog.pg_class c
+  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'public'
+    AND c.relname = 'vw_doctor_performance_real'
+    AND c.relkind = 'v';
+
+  INSERT INTO nvx_doctor_view_acl (grantee_name, privilege_type, is_grantable)
+  SELECT
+    CASE WHEN acl.grantee = 0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(acl.grantee) END,
+    acl.privilege_type,
+    acl.is_grantable
+  FROM pg_catalog.pg_class c
+  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+  CROSS JOIN LATERAL pg_catalog.aclexplode(c.relacl) acl
+  WHERE n.nspname = 'public'
+    AND c.relname = 'vw_doctor_performance_real'
+    AND c.relkind = 'v'
+    AND c.relacl IS NOT NULL
+    AND acl.grantee <> c.relowner;
+
+  DROP VIEW public.vw_doctor_performance_real;
+END
+$doctor_view_bridge$;
+
+-- ---------------------------------------------------------------------------
 -- Doctor Performance
--- Preserve the existing public view column order exactly.
+-- Canonical public view order: clinic_id is ordinal 5.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE VIEW public.vw_doctor_performance_real AS
 WITH doctoralia_agg AS (
@@ -544,6 +663,42 @@ SELECT
   c.estimated_revenue,
   c.verified_revenue_crm
 FROM combined c;
+
+DO $doctor_view_restore$
+DECLARE
+  v_restore record;
+  v_acl record;
+BEGIN
+  SELECT * INTO v_restore FROM nvx_doctor_view_restore LIMIT 1;
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
+
+  IF v_restore.reloptions IS NOT NULL
+     AND pg_catalog.array_length(v_restore.reloptions, 1) > 0 THEN
+    EXECUTE pg_catalog.format(
+      'ALTER VIEW public.vw_doctor_performance_real SET (%s)',
+      pg_catalog.array_to_string(v_restore.reloptions, ', ')
+    );
+  END IF;
+
+  FOR v_acl IN SELECT * FROM nvx_doctor_view_acl ORDER BY grantee_name, privilege_type LOOP
+    EXECUTE pg_catalog.format(
+      'GRANT %s ON TABLE public.vw_doctor_performance_real TO %s%s',
+      v_acl.privilege_type,
+      CASE WHEN v_acl.grantee_name = 'PUBLIC' THEN 'PUBLIC' ELSE pg_catalog.quote_ident(v_acl.grantee_name) END,
+      CASE WHEN v_acl.is_grantable THEN ' WITH GRANT OPTION' ELSE '' END
+    );
+  END LOOP;
+
+  IF v_restore.owner_name <> current_user THEN
+    EXECUTE pg_catalog.format(
+      'ALTER VIEW public.vw_doctor_performance_real OWNER TO %I',
+      v_restore.owner_name
+    );
+  END IF;
+END
+$doctor_view_restore$;
 
 -- ---------------------------------------------------------------------------
 -- Lead Audit SSOT: preserve the public contract but exclude inactive lead rows.
