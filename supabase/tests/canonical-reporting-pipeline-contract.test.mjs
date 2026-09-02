@@ -98,8 +98,8 @@ describe('Canonical Reporting Pipeline and E2E Contract', () => {
     expect(migration).toContain('Cannot rebuild legacy vw_doctor_performance_real: dependent view exists');
     expect(migration).toContain('DROP VIEW public.vw_doctor_performance_real;');
     expect(migration).not.toMatch(/DROP\s+VIEW\s+public\.vw_doctor_performance_real[^;]*CASCADE/i);
-    expect(migration).toContain('nvx_doctor_view_acl');
-    expect(migration).toContain('nvx_doctor_view_restore');
+    expect(migration).toContain('nvx_doctor_acl');
+    expect(migration).toContain('nvx_doctor_restore');
   });
 
   it('preserves doctor performance column order and uses Doctoralia ingestion', () => {
