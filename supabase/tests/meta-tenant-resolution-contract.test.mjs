@@ -1,4 +1,5 @@
 // Security regression contract for clinic-scoped Meta ownership and strict trusted E2E.
+// NUVANX Meta resolution is clinic-required; clinic-less user/credential fallback is forbidden.
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 
