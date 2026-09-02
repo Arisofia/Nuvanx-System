@@ -737,7 +737,7 @@ SELECT
   l.created_at AS lead_created_at,
   l.first_outbound_at,
   l.first_inbound_at,
-  l.reply_delay_minutes,
+  l.reply_delay_minutes::integer AS reply_delay_minutes,
   l.appointment_status,
   l.attended_at,
   l.no_show_flag,
