@@ -3,6 +3,9 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const {
+  CREDENTIAL_FORMAT,
+  CREDENTIAL_OWNER,
+  credentialContractCurrent,
   provisionGoogleAdsIntegrations,
   validateDeveloperToken,
 } = require('./provision-google-ads-developer-token');
@@ -20,6 +23,37 @@ function jsonResponse(payload, status = 200) {
 test('developer token validation rejects service-account payloads', () => {
   assert.throws(() => validateDeveloperToken('{"client_email":"x","private_key":"y"}'), /service-account payload/);
   assert.equal(validateDeveloperToken('abc_DEF-123.xyz~'), 'abc_DEF-123.xyz~');
+});
+
+test('credential contract is current only when every integration is healthy and every owner is runtime-provisioned', () => {
+  const integrations = [
+    { user_id: 'owner-1', status: 'connected', last_error: null, last_sync: '2026-09-02T21:00:00Z' },
+    { user_id: 'owner-1', status: 'connected', last_error: null, last_sync: '2026-09-02T21:00:01Z' },
+  ];
+  const credentials = [{
+    user_id: 'owner-1',
+    metadata: { provisioned_by: CREDENTIAL_OWNER, credential_format: CREDENTIAL_FORMAT },
+  }];
+
+  assert.equal(credentialContractCurrent(integrations, credentials), true);
+  assert.equal(
+    credentialContractCurrent([{ ...integrations[0], last_error: 'provider failure' }, integrations[1]], credentials),
+    false,
+  );
+  assert.equal(
+    credentialContractCurrent(integrations, [{
+      user_id: 'owner-1',
+      metadata: { provisioned_by: 'github_actions', credential_format: CREDENTIAL_FORMAT },
+    }]),
+    false,
+  );
+  assert.equal(
+    credentialContractCurrent(integrations, [{
+      user_id: 'owner-1',
+      metadata: { provisioned_by: CREDENTIAL_OWNER, credential_format: 'legacy_format' },
+    }]),
+    false,
+  );
 });
 
 test('credential provisioning delegates plaintext token to authenticated Edge runtime and never writes credentials directly', async () => {
@@ -53,7 +87,7 @@ test('credential provisioning delegates plaintext token to authenticated Edge ru
     }
 
     if (url.includes('/rest/v1/credentials')) {
-      throw new Error('Provisioning script must never write credentials directly');
+      throw new Error('Provisioning execution must never write credentials directly');
     }
 
     throw new Error(`Unexpected test URL: ${url}`);
