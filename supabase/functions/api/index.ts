@@ -5541,7 +5541,7 @@ async function handleIntegrationsGet(ctx: AuthenticatedRouteContext): Promise<Re
 }
 
 function normalizeIntegrationMetadata(service: string, metadata: any) {
-  if (service === 'meta') {
+  if (service === 'meta' || service === 'meta_ads') {
     const accountIds = normalizeMetaAccountIds(metadata?.adAccountIds ?? metadata?.ad_account_ids ?? metadata?.adAccountId ?? metadata?.ad_account_id ?? '');
     const primaryAccountId = accountIds[0] ?? '';
     const normalizedPageId = String(metadata?.pageId ?? metadata?.page_id ?? '').replaceAll(/\D/g, '');
@@ -5575,7 +5575,7 @@ function validateAndNormalizeMetadata(service: string, inputMetadata: any) {
     if (!normalized) return { ok: false, message: 'phoneNumberId is required for WhatsApp' };
     metadata = { ...metadata, phoneNumberId: normalized, phone_number_id: normalized };
   }
-  if (service === 'meta') {
+  if (service === 'meta' || service === 'meta_ads') {
     const accountIds = normalizeMetaAccountIds(metadata?.adAccountIds ?? metadata?.ad_account_ids ?? metadata?.adAccountId ?? metadata?.ad_account_id ?? '');
     if (accountIds.length === 0) return { ok: false, message: 'Meta integration requires one or more valid ad account IDs.' };
     const normalizedPageId = String(metadata?.pageId ?? metadata?.page_id ?? '').replaceAll(/\D/g, '');
