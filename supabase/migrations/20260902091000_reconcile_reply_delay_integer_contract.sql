@@ -218,6 +218,21 @@ BEGIN
     FROM nvx_reply_delay_view_restore
     ORDER BY dependency_depth ASC, view_schema, view_name
   LOOP
+    -- Production contract: no column-level ACLs on reply-delay views. Fail closed if present.
+    IF EXISTS (
+      SELECT 1
+      FROM pg_catalog.pg_attribute a
+      JOIN pg_catalog.pg_class c ON a.attrelid = c.oid
+      JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = v_view.view_schema
+        AND c.relname = v_view.view_name
+        AND c.relkind = 'v'
+        AND a.attacl IS NOT NULL
+    ) THEN
+      RAISE EXCEPTION 'Cannot reconcile %.%: column-level ACLs detected (not supported by Production contract)',
+        v_view.view_schema, v_view.view_name;
+    END IF;
+
     EXECUTE pg_catalog.format(
       'CREATE VIEW %I.%I AS %s',
       v_view.view_schema,

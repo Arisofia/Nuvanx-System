@@ -729,116 +729,39 @@ CREATE TEMP TABLE nvx_lead_audit_view_acl (
 
 DO $lead_audit_view_bridge$
 DECLARE
-  v_column_count integer;
-  v_lead_name_type text;
-  v_lead_name_len integer;
-  v_phone_type text;
-  v_phone_len integer;
-  v_source_type text;
-  v_source_len integer;
-  v_patient_ltv_type text;
-  v_patient_ltv_precision integer;
-  v_patient_ltv_scale integer;
-  v_template_id_type text;
-  v_template_id_len integer;
-  v_patient_phone_type text;
-  v_patient_phone_len integer;
-  v_lead_security_invoker text[];
+  v_signature text;
 BEGIN
   IF to_regclass('public.vw_lead_traceability') IS NULL THEN
     RETURN;
   END IF;
 
-  SELECT count(*)::integer
-    INTO v_column_count
-  FROM information_schema.columns c
-  WHERE c.table_schema = 'public'
-    AND c.table_name = 'vw_lead_traceability';
-
-  SELECT c.data_type, c.character_maximum_length
-    INTO v_lead_name_type, v_lead_name_len
-  FROM information_schema.columns c
-  WHERE c.table_schema = 'public'
-    AND c.table_name = 'vw_lead_traceability'
-    AND c.column_name = 'lead_name';
-
-  SELECT c.reloptions
-    INTO v_lead_security_invoker
+  SELECT string_agg(
+           pg_catalog.format(
+             '%s:%s:%s',
+             a.attnum,
+             a.attname,
+             pg_catalog.format_type(a.atttypid, a.atttypmod)
+           ),
+           E'\n' ORDER BY a.attnum
+         )
+    INTO v_signature
   FROM pg_catalog.pg_class c
   JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+  JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid
   WHERE n.nspname = 'public'
     AND c.relname = 'vw_lead_traceability'
-    AND c.relkind = 'v';
+    AND c.relkind = 'v'
+    AND a.attnum > 0
+    AND NOT a.attisdropped;
 
-  SELECT c.data_type, c.character_maximum_length
-    INTO v_phone_type, v_phone_len
-  FROM information_schema.columns c
-  WHERE c.table_schema = 'public'
-    AND c.table_name = 'vw_lead_traceability'
-    AND c.column_name = 'phone_normalized';
-
-  SELECT c.data_type, c.character_maximum_length
-    INTO v_source_type, v_source_len
-  FROM information_schema.columns c
-  WHERE c.table_schema = 'public'
-    AND c.table_name = 'vw_lead_traceability'
-    AND c.column_name = 'source';
-
-  SELECT c.data_type, c.numeric_precision, c.numeric_scale
-    INTO v_patient_ltv_type, v_patient_ltv_precision, v_patient_ltv_scale
-  FROM information_schema.columns c
-  WHERE c.table_schema = 'public'
-    AND c.table_name = 'vw_lead_traceability'
-    AND c.column_name = 'patient_ltv';
-
-  SELECT c.data_type, c.character_maximum_length
-    INTO v_template_id_type, v_template_id_len
-  FROM information_schema.columns c
-  WHERE c.table_schema = 'public'
-    AND c.table_name = 'vw_lead_traceability'
-    AND c.column_name = 'doctoralia_template_id';
-
-  SELECT c.data_type, c.character_maximum_length
-    INTO v_patient_phone_type, v_patient_phone_len
-  FROM information_schema.columns c
-  WHERE c.table_schema = 'public'
-    AND c.table_name = 'vw_lead_traceability'
-    AND c.column_name = 'patient_phone';
-
-  -- Canonical Production signature: CREATE OR REPLACE is safe.
-  IF v_column_count = 43
-     AND v_lead_name_type = 'character varying' AND v_lead_name_len = 255
-     AND v_phone_type = 'character varying' AND v_phone_len = 20
-     AND v_source_type = 'character varying' AND v_source_len = 64
-     AND v_patient_ltv_type = 'numeric'
-     AND v_patient_ltv_precision = 12 AND v_patient_ltv_scale = 2
-     AND v_template_id_type = 'character varying' AND v_template_id_len = 32
-     AND v_patient_phone_type = 'character varying' AND v_patient_phone_len = 64
-     AND v_lead_security_invoker IS NOT NULL
-     AND 'security_invoker=true' = ANY(v_lead_security_invoker) THEN
+  -- Exact canonical Production signature (43 columns).
+  IF v_signature = E'1:lead_id:uuid\n2:lead_name:character varying(255)\n3:email_normalized:text\n4:phone_normalized:character varying(20)\n5:source:character varying(64)\n6:stage:text\n7:campaign_id:character varying(64)\n8:campaign_name:character varying(255)\n9:adset_id:character varying(64)\n10:adset_name:character varying(255)\n11:ad_id:character varying(64)\n12:ad_name:character varying(255)\n13:form_id:character varying(64)\n14:form_name:character varying(255)\n15:lead_created_at:timestamptz\n16:first_outbound_at:timestamptz\n17:first_inbound_at:timestamptz\n18:reply_delay_minutes:integer\n19:appointment_status:text\n20:attended_at:timestamptz\n21:no_show_flag:boolean\n22:estimated_revenue:numeric(12,2)\n23:crm_verified_revenue:numeric(12,2)\n24:lost_reason:text\n25:patient_id:uuid\n26:patient_ltv:numeric(12,2)\n27:settlement_id:text\n28:doctoralia_template_id:character varying(32)\n29:doctoralia_template_name:character varying(255)\n30:doctoralia_net:numeric(12,2)\n31:doctoralia_gross:numeric(12,2)\n32:settlement_date:timestamptz\n33:settlement_intake_date:timestamptz\n34:settlement_source:text\n35:lead_user_id:uuid\n36:patient_name:text\n37:patient_dni:text\n38:patient_phone:character varying(64)\n39:patient_last_visit:date\n40:doc_patient_id:text\n41:match_confidence:numeric\n42:match_class:character varying(32)\n43:first_settlement_at:timestamptz' THEN
     RETURN;
   END IF;
 
-  -- Exact historical clean-replay placeholder signature observed in Preview.
-  IF NOT (
-    v_column_count = 43
-    AND v_lead_name_type = 'text' AND v_lead_name_len IS NULL
-    AND v_phone_type = 'text' AND v_phone_len IS NULL
-    AND v_source_type = 'text' AND v_source_len IS NULL
-    AND v_patient_ltv_type = 'numeric'
-    AND v_patient_ltv_precision IS NULL AND v_patient_ltv_scale IS NULL
-    AND v_template_id_type = 'text' AND v_template_id_len IS NULL
-    AND v_patient_phone_type = 'text' AND v_patient_phone_len IS NULL
-  ) THEN
-    RAISE EXCEPTION
-      'Unexpected vw_lead_traceability signature: columns=%, lead_name=%(%), phone=%(%), source=%(%), patient_ltv=%(%,%), template_id=%(%), patient_phone=%(%)',
-      v_column_count,
-      v_lead_name_type, v_lead_name_len,
-      v_phone_type, v_phone_len,
-      v_source_type, v_source_len,
-      v_patient_ltv_type, v_patient_ltv_precision, v_patient_ltv_scale,
-      v_template_id_type, v_template_id_len,
-      v_patient_phone_type, v_patient_phone_len;
+  -- Exact historical replay signature (43 columns with text types).
+  IF v_signature IS DISTINCT FROM E'1:lead_id:uuid\n2:lead_name:text\n3:email_normalized:text\n4:phone_normalized:text\n5:source:text\n6:stage:text\n7:campaign_id:text\n8:campaign_name:text\n9:adset_id:text\n10:adset_name:text\n11:ad_id:text\n12:ad_name:text\n13:form_id:text\n14:form_name:text\n15:lead_created_at:timestamptz\n16:first_outbound_at:timestamptz\n17:first_inbound_at:timestamptz\n18:reply_delay_minutes:integer\n19:appointment_status:text\n20:attended_at:timestamptz\n21:no_show_flag:boolean\n22:estimated_revenue:numeric(12,2)\n23:crm_verified_revenue:numeric(12,2)\n24:lost_reason:text\n25:patient_id:uuid\n26:patient_ltv:numeric\n27:settlement_id:text\n28:doctoralia_template_id:text\n29:doctoralia_template_name:text\n30:doctoralia_net:numeric(12,2)\n31:doctoralia_gross:numeric(12,2)\n32:settlement_date:timestamptz\n33:settlement_intake_date:timestamptz\n34:settlement_source:text\n35:lead_user_id:uuid\n36:patient_name:text\n37:patient_dni:text\n38:patient_phone:text\n39:patient_last_visit:date\n40:doc_patient_id:text\n41:match_confidence:numeric\n42:match_class:text\n43:first_settlement_at:timestamptz' THEN
+    RAISE EXCEPTION 'Unexpected vw_lead_traceability signature:%', E'\n' || coalesce(v_signature, '<missing>');
   END IF;
 
   IF EXISTS (
@@ -955,6 +878,20 @@ BEGIN
       AND child.relkind IN ('v', 'm')
   ) THEN
     RAISE EXCEPTION 'Cannot rebuild legacy vw_lead_traceability: dependent view exists';
+  END IF;
+
+  -- Production contract: no column-level ACLs on reporting views. Fail closed if present.
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_attribute a
+    JOIN pg_catalog.pg_class c ON a.attrelid = c.oid
+    JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relname = 'vw_lead_traceability'
+      AND c.relkind = 'v'
+      AND a.attacl IS NOT NULL
+  ) THEN
+    RAISE EXCEPTION 'Cannot reconcile vw_lead_traceability: column-level ACLs detected (not supported by Production contract)';
   END IF;
 
   -- Explicit text -> varchar(n) casts may truncate. Refuse the rebuild.
