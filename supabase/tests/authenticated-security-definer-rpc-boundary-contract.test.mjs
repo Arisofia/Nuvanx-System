@@ -28,12 +28,13 @@ describe('Authenticated SECURITY DEFINER RPC boundary', () => {
 
     for (const name of rpcNames) {
       expect(boundary).toContain(`alter function public.${name}`);
-      expect(boundary).toContain(`set schema private`);
+      expect(boundary).toContain('set schema private');
       expect(boundary).toContain(`create function public.${name}`);
       expect(boundary).toContain(`private.${name}`);
     }
 
-    const publicWrapperCount = (boundary.match(/security invoker/g) ?? []).length;
+    // Count SQL declarations, not prose/comments mentioning SECURITY INVOKER.
+    const publicWrapperCount = (boundary.match(/language sql\s+security invoker/g) ?? []).length;
     expect(publicWrapperCount).toBe(6);
   });
 
