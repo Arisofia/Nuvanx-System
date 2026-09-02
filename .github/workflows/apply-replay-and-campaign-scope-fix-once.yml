@@ -17,134 +17,94 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Apply deterministic fixes
-        shell: bash
+      - name: Fix 155900 dependency ordering
         run: |
-          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('supabase/migrations/20260901155900_reconcile_leads_appointment_status_type.sql')
+          s=p.read_text()
+          old="    'public.vw_doctoralia_lead_traceability_unified',\n    'public.vw_doctoralia_patient_ltv',\n    'public.vw_lead_traceability'"
+          new="    'public.vw_doctoralia_patient_ltv',\n    'public.vw_doctoralia_lead_traceability_unified',\n    'public.vw_lead_traceability'"
+          if old not in s: raise SystemExit('dependency list anchor absent')
+          p.write_text(s.replace(old,new,1))
+          PY
+
+      - name: Fix 160000 doctor view replay
+        run: |
           python3 - <<'PY'
           from pathlib import Path
           from textwrap import dedent
-
-          # 155900: keep strict allowlist aligned with deterministic alphabetical aggregation.
-          p = Path('supabase/migrations/20260901155900_reconcile_leads_appointment_status_type.sql')
-          s = p.read_text()
-          s2 = s.replace(
-              "    'public.vw_doctoralia_lead_traceability_unified',\n    'public.vw_doctoralia_patient_ltv',\n    'public.vw_lead_traceability'",
-              "    'public.vw_doctoralia_patient_ltv',\n    'public.vw_doctoralia_lead_traceability_unified',\n    'public.vw_lead_traceability'",
-              1,
-          )
-          if s2 == s:
-              raise SystemExit('155900 dependency-order replacement did not apply')
-          p.write_text(s2)
-
-          # 160000: snapshot/drop only the exact incompatible historical doctor view.
-          p = Path('supabase/migrations/20260901160000_fix_reporting_canonical_sources.sql')
-          s = p.read_text()
-          doctor_marker = '-- Doctor Performance\n-- Preserve the existing public view column order exactly.'
-          marker_pos = s.find(doctor_marker)
-          if marker_pos < 0:
-              raise SystemExit('160000 doctor marker not found')
-          section_start = s.rfind('-- ---------------------------------------------------------------------------', 0, marker_pos)
-          create_pos = s.find('CREATE OR REPLACE VIEW public.vw_doctor_performance_real AS', marker_pos)
-          if section_start < 0 or create_pos < 0:
-              raise SystemExit('160000 doctor section boundaries not found')
-
-          bridge = dedent('''
+          p=Path('supabase/migrations/20260901160000_fix_reporting_canonical_sources.sql')
+          s=p.read_text()
+          marker='-- Doctor Performance\n-- Preserve the existing public view column order exactly.'
+          m=s.find(marker)
+          if m<0: raise SystemExit('doctor marker absent')
+          start=s.rfind('-- ---------------------------------------------------------------------------',0,m)
+          create=s.find('CREATE OR REPLACE VIEW public.vw_doctor_performance_real AS',m)
+          if start<0 or create<0: raise SystemExit(f'doctor boundaries absent start={start} create={create}')
+          bridge=dedent('''
           -- ---------------------------------------------------------------------------
           -- Doctor Performance clean-replay bridge
-          -- Historical replay has doctor_name/specialty as text and clinic_id at
-          -- ordinal 14. Canonical Production has varchar(255)/varchar(128) and
-          -- clinic_id at ordinal 5. PostgreSQL cannot change that public contract
-          -- with CREATE OR REPLACE VIEW. Rebuild only the exact known legacy shape.
+          -- Historical replay: doctor_name/specialty are text and clinic_id is
+          -- ordinal 14. Canonical Production: varchar(255)/varchar(128), clinic_id
+          -- ordinal 5. Rebuild only that exact incompatible historical shape.
           -- ---------------------------------------------------------------------------
           CREATE TEMP TABLE nvx_doctor_view_restore (
-            reloptions text[],
-            owner_name text NOT NULL
+            reloptions text[], owner_name text NOT NULL
           ) ON COMMIT DROP;
-
           CREATE TEMP TABLE nvx_doctor_view_acl (
-            grantee_name text NOT NULL,
-            privilege_type text NOT NULL,
-            is_grantable boolean NOT NULL
+            grantee_name text NOT NULL, privilege_type text NOT NULL, is_grantable boolean NOT NULL
           ) ON COMMIT DROP;
 
           DO $doctor_view_bridge$
           DECLARE
-            v_doctor_name_type text;
-            v_doctor_name_len integer;
-            v_specialty_type text;
-            v_specialty_len integer;
+            v_doctor_name_type text; v_doctor_name_len integer;
+            v_specialty_type text; v_specialty_len integer;
             v_clinic_position integer;
           BEGIN
-            IF to_regclass('public.vw_doctor_performance_real') IS NULL THEN
-              RETURN;
-            END IF;
-
-            SELECT data_type, character_maximum_length
-              INTO v_doctor_name_type, v_doctor_name_len
-            FROM information_schema.columns
-            WHERE table_schema='public' AND table_name='vw_doctor_performance_real' AND column_name='doctor_name';
-
-            SELECT data_type, character_maximum_length
-              INTO v_specialty_type, v_specialty_len
-            FROM information_schema.columns
-            WHERE table_schema='public' AND table_name='vw_doctor_performance_real' AND column_name='specialty';
-
+            IF to_regclass('public.vw_doctor_performance_real') IS NULL THEN RETURN; END IF;
+            SELECT data_type,character_maximum_length INTO v_doctor_name_type,v_doctor_name_len
+              FROM information_schema.columns
+              WHERE table_schema='public' AND table_name='vw_doctor_performance_real' AND column_name='doctor_name';
+            SELECT data_type,character_maximum_length INTO v_specialty_type,v_specialty_len
+              FROM information_schema.columns
+              WHERE table_schema='public' AND table_name='vw_doctor_performance_real' AND column_name='specialty';
             SELECT ordinal_position INTO v_clinic_position
-            FROM information_schema.columns
-            WHERE table_schema='public' AND table_name='vw_doctor_performance_real' AND column_name='clinic_id';
+              FROM information_schema.columns
+              WHERE table_schema='public' AND table_name='vw_doctor_performance_real' AND column_name='clinic_id';
 
             IF v_doctor_name_type='character varying' AND v_doctor_name_len=255
                AND v_specialty_type='character varying' AND v_specialty_len=128
-               AND v_clinic_position=5 THEN
-              RETURN;
-            END IF;
+               AND v_clinic_position=5 THEN RETURN; END IF;
 
-            IF NOT (
-              v_doctor_name_type='text' AND v_doctor_name_len IS NULL
+            IF NOT (v_doctor_name_type='text' AND v_doctor_name_len IS NULL
               AND v_specialty_type='text' AND v_specialty_len IS NULL
-              AND v_clinic_position=14
-            ) THEN
-              RAISE EXCEPTION
-                'Unexpected vw_doctor_performance_real signature: doctor_name=%(%), specialty=%(%), clinic_position=%',
-                v_doctor_name_type, v_doctor_name_len, v_specialty_type, v_specialty_len, v_clinic_position;
+              AND v_clinic_position=14) THEN
+              RAISE EXCEPTION 'Unexpected vw_doctor_performance_real signature: doctor_name=%(%), specialty=%(%), clinic_position=%',
+                v_doctor_name_type,v_doctor_name_len,v_specialty_type,v_specialty_len,v_clinic_position;
             END IF;
 
             IF EXISTS (
-              SELECT 1
-              FROM pg_catalog.pg_class parent
+              SELECT 1 FROM pg_catalog.pg_class parent
               JOIN pg_catalog.pg_namespace pn ON pn.oid=parent.relnamespace
               JOIN pg_catalog.pg_depend d ON d.refobjid=parent.oid
               JOIN pg_catalog.pg_rewrite r ON r.oid=d.objid
               JOIN pg_catalog.pg_class child ON child.oid=r.ev_class
-              WHERE pn.nspname='public'
-                AND parent.relname='vw_doctor_performance_real'
-                AND parent.relkind='v'
-                AND child.oid<>parent.oid
-                AND child.relkind='v'
-            ) THEN
-              RAISE EXCEPTION 'Cannot rebuild legacy vw_doctor_performance_real: dependent view exists';
-            END IF;
+              WHERE pn.nspname='public' AND parent.relname='vw_doctor_performance_real'
+                AND parent.relkind='v' AND child.oid<>parent.oid AND child.relkind='v'
+            ) THEN RAISE EXCEPTION 'Cannot rebuild legacy vw_doctor_performance_real: dependent view exists'; END IF;
 
-            INSERT INTO nvx_doctor_view_restore(reloptions, owner_name)
-            SELECT c.reloptions, pg_catalog.pg_get_userbyid(c.relowner)
-            FROM pg_catalog.pg_class c
-            JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
-            WHERE n.nspname='public' AND c.relname='vw_doctor_performance_real' AND c.relkind='v';
-
-            INSERT INTO nvx_doctor_view_acl(grantee_name, privilege_type, is_grantable)
-            SELECT CASE WHEN acl.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(acl.grantee) END,
-                   acl.privilege_type,
-                   acl.is_grantable
-            FROM pg_catalog.pg_class c
-            JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
-            CROSS JOIN LATERAL pg_catalog.aclexplode(c.relacl) acl
-            WHERE n.nspname='public'
-              AND c.relname='vw_doctor_performance_real'
-              AND c.relkind='v'
-              AND c.relacl IS NOT NULL
-              AND acl.grantee<>c.relowner;
-
+            INSERT INTO nvx_doctor_view_restore(reloptions,owner_name)
+              SELECT c.reloptions,pg_catalog.pg_get_userbyid(c.relowner)
+              FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+              WHERE n.nspname='public' AND c.relname='vw_doctor_performance_real' AND c.relkind='v';
+            INSERT INTO nvx_doctor_view_acl(grantee_name,privilege_type,is_grantable)
+              SELECT CASE WHEN acl.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(acl.grantee) END,
+                     acl.privilege_type,acl.is_grantable
+              FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+              CROSS JOIN LATERAL pg_catalog.aclexplode(c.relacl) acl
+              WHERE n.nspname='public' AND c.relname='vw_doctor_performance_real' AND c.relkind='v'
+                AND c.relacl IS NOT NULL AND acl.grantee<>c.relowner;
             DROP VIEW public.vw_doctor_performance_real;
           END
           $doctor_view_bridge$;
@@ -154,69 +114,54 @@ jobs:
           -- Canonical public view order: clinic_id is ordinal 5.
           -- ---------------------------------------------------------------------------
           ''')
-          s = s[:section_start] + bridge + s[create_pos:]
-
-          lead_marker = '-- Lead Audit SSOT: preserve the public contract but exclude inactive lead rows.'
-          lead_pos = s.find(lead_marker, create_pos)
-          if lead_pos < 0:
-              raise SystemExit('160000 Lead Audit marker not found')
-          lead_section_start = s.rfind('-- ---------------------------------------------------------------------------', create_pos, lead_pos)
-          if lead_section_start < 0:
-              raise SystemExit('160000 Lead Audit section boundary not found')
-
-          restore = dedent('''
+          s=s[:start]+bridge+s[create:]
+          lead='-- Lead Audit SSOT: preserve the public contract but exclude inactive lead rows.'
+          lp=s.find(lead,create)
+          if lp<0: raise SystemExit('lead marker absent')
+          ls=s.rfind('-- ---------------------------------------------------------------------------',create,lp)
+          if ls<0: raise SystemExit('lead section start absent')
+          restore=dedent('''
           DO $doctor_view_restore$
-          DECLARE
-            v_restore record;
-            v_acl record;
+          DECLARE v_restore record; v_acl record;
           BEGIN
             SELECT * INTO v_restore FROM nvx_doctor_view_restore LIMIT 1;
             IF NOT FOUND THEN RETURN; END IF;
-
             IF v_restore.reloptions IS NOT NULL AND pg_catalog.array_length(v_restore.reloptions,1)>0 THEN
-              EXECUTE pg_catalog.format(
-                'ALTER VIEW public.vw_doctor_performance_real SET (%s)',
-                pg_catalog.array_to_string(v_restore.reloptions, ', ')
-              );
+              EXECUTE pg_catalog.format('ALTER VIEW public.vw_doctor_performance_real SET (%s)',pg_catalog.array_to_string(v_restore.reloptions,', '));
             END IF;
-
-            FOR v_acl IN SELECT * FROM nvx_doctor_view_acl ORDER BY grantee_name, privilege_type LOOP
-              EXECUTE pg_catalog.format(
-                'GRANT %s ON TABLE public.vw_doctor_performance_real TO %s%s',
+            FOR v_acl IN SELECT * FROM nvx_doctor_view_acl ORDER BY grantee_name,privilege_type LOOP
+              EXECUTE pg_catalog.format('GRANT %s ON TABLE public.vw_doctor_performance_real TO %s%s',
                 v_acl.privilege_type,
                 CASE WHEN v_acl.grantee_name='PUBLIC' THEN 'PUBLIC' ELSE pg_catalog.quote_ident(v_acl.grantee_name) END,
-                CASE WHEN v_acl.is_grantable THEN ' WITH GRANT OPTION' ELSE '' END
-              );
+                CASE WHEN v_acl.is_grantable THEN ' WITH GRANT OPTION' ELSE '' END);
             END LOOP;
-
             IF v_restore.owner_name<>current_user THEN
-              EXECUTE pg_catalog.format('ALTER VIEW public.vw_doctor_performance_real OWNER TO %I', v_restore.owner_name);
+              EXECUTE pg_catalog.format('ALTER VIEW public.vw_doctor_performance_real OWNER TO %I',v_restore.owner_name);
             END IF;
           END
           $doctor_view_restore$;
 
           ''')
-          s = s[:lead_section_start] + restore + s[lead_section_start:]
+          s=s[:ls]+restore+s[ls:]
           p.write_text(s)
+          PY
 
-          # API: vw_campaign_performance_real has no clinic_id. Scope by clinic member IDs.
-          p = Path('supabase/functions/api/index.ts')
-          s = p.read_text()
-          start = s.find('async function fetchDbCampaigns(')
-          end = s.find('\nasync function fetchMetaCampaignsFallback(', start)
-          if start < 0 or end < 0:
-              raise SystemExit('fetchDbCampaigns boundaries not found')
-          replacement = dedent('''
+      - name: Fix campaign fallback tenant scope
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from textwrap import dedent
+          p=Path('supabase/functions/api/index.ts'); s=p.read_text()
+          start=s.find('async function fetchDbCampaigns(')
+          end=s.find('\nasync function fetchMetaCampaignsFallback(',start)
+          if start<0 or end<0: raise SystemExit(f'fetchDbCampaigns boundaries absent {start=} {end=}')
+          fn=dedent('''
           async function fetchDbCampaigns(adminClient: any, userId: string, requesterClinicId: string | null, adAccountId: string) {
             let query = adminClient.from('vw_campaign_performance_real')
               .select('campaign_id, campaign_name, source, total_leads, last_lead_at')
               .order('total_leads', { ascending: false });
-
             if (requesterClinicId) {
-              const { data: clinicUsers, error: clinicUsersError } = await adminClient
-                .from('users')
-                .select('id')
-                .eq('clinic_id', requesterClinicId);
+              const { data: clinicUsers, error: clinicUsersError } = await adminClient.from('users').select('id').eq('clinic_id', requesterClinicId);
               if (clinicUsersError) throw clinicUsersError;
               const clinicUserIds = (clinicUsers ?? []).map((row: any) => String(row.id ?? '')).filter(Boolean);
               if (clinicUserIds.length === 0) return [];
@@ -224,97 +169,56 @@ jobs:
             } else {
               query = query.eq('user_id', userId);
             }
-
             const { data: dbRows, error: dbRowsError } = await query;
             if (dbRowsError) throw dbRowsError;
             if (!dbRows || dbRows.length === 0) return [];
-
             const now = Date.now();
             return dbRows.map((row: any) => ({
               id: row.campaign_id ?? `db-${row.campaign_name}`,
               name: row.campaign_name ?? 'Unknown',
               status: inferStatusFromLastLead(row.last_lead_at, now),
-              objective: row.source ?? 'LEAD_GENERATION',
-              accountId: adAccountId,
-              dailyBudget: null,
-              lifetimeBudget: null,
-              insights: {
-                impressions: 0, reach: 0, clicks: 0, spend: 0, ctr: 0, cpc: 0, cpm: 0,
-                conversions: Number(row.total_leads ?? 0), cpp: null, actions: [],
-                costPerActionType: null, qualityRanking: null, engagementRateRanking: null,
-              },
+              objective: row.source ?? 'LEAD_GENERATION', accountId: adAccountId,
+              dailyBudget: null, lifetimeBudget: null,
+              insights: { impressions: 0, reach: 0, clicks: 0, spend: 0, ctr: 0, cpc: 0, cpm: 0,
+                conversions: Number(row.total_leads ?? 0), cpp: null, actions: [], costPerActionType: null,
+                qualityRanking: null, engagementRateRanking: null },
             }));
           }
-          ''').strip() + '\n'
-          s = s[:start] + replacement + s[end:]
-          p.write_text(s)
+          ''').strip()+'\n'
+          p.write_text(s[:start]+fn+s[end:])
+          PY
 
-          # Tests.
-          p = Path('supabase/tests/canonical-reporting-pipeline-contract.test.mjs')
-          s = p.read_text()
-          marker = "  it('preserves doctor performance column order and uses Doctoralia ingestion', () => {"
-          if marker not in s:
-              raise SystemExit('doctor contract marker not found')
-          addition = dedent('''
-            it('rebuilds only the known incompatible legacy doctor view without CASCADE', () => {
-              expect(migration).toContain('Unexpected vw_doctor_performance_real signature');
-              expect(migration).toContain('v_clinic_position=14');
-              expect(migration).toContain('v_clinic_position=5');
-              expect(migration).toContain('Cannot rebuild legacy vw_doctor_performance_real: dependent view exists');
-              expect(migration).toContain('DROP VIEW public.vw_doctor_performance_real;');
-              expect(migration).not.toMatch(/DROP\\s+VIEW\\s+public\\.vw_doctor_performance_real[^;]*CASCADE/i);
-              expect(migration).toContain('nvx_doctor_view_acl');
-              expect(migration).toContain('nvx_doctor_view_restore');
-            });
-
-          ''')
-          s = s.replace(marker, addition + marker, 1)
-          p.write_text(s)
-
-          p = Path('supabase/tests/meta-tenant-resolution-contract.test.mjs')
-          s = p.read_text()
-          marker = "  it('scopes organic and Instagram persisted reads to clinic when the requester has one', () => {"
-          if marker not in s:
-              raise SystemExit('meta contract marker not found')
-          addition = dedent('''
-            it('scopes campaign CRM fallback through clinic member user IDs instead of a non-existent view clinic_id', () => {
-              const start = api.indexOf('async function fetchDbCampaigns');
-              const end = api.indexOf('async function fetchMetaCampaignsFallback', start);
-              const source = api.slice(start, end);
-              expect(start).toBeGreaterThan(-1);
-              expect(source).toContain(".from('users')");
-              expect(source).toContain(".eq('clinic_id', requesterClinicId)");
-              expect(source).toContain("query = query.in('user_id', clinicUserIds)");
-              expect(source).not.toContain('applyClinicOrUserScope(query, requesterClinicId, userId)');
-            });
-
-          ''')
-          s = s.replace(marker, addition + marker, 1)
-          p.write_text(s)
+      - name: Extend contracts
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('supabase/tests/canonical-reporting-pipeline-contract.test.mjs'); s=p.read_text()
+          marker="  it('preserves doctor performance column order and uses Doctoralia ingestion', () => {"
+          if marker not in s: raise SystemExit('doctor test marker absent')
+          block="""  it('rebuilds only the known incompatible legacy doctor view without CASCADE', () => {\n    expect(migration).toContain('Unexpected vw_doctor_performance_real signature');\n    expect(migration).toContain('v_clinic_position=14');\n    expect(migration).toContain('v_clinic_position=5');\n    expect(migration).toContain('Cannot rebuild legacy vw_doctor_performance_real: dependent view exists');\n    expect(migration).toContain('DROP VIEW public.vw_doctor_performance_real;');\n    expect(migration).not.toMatch(/DROP\\s+VIEW\\s+public\\.vw_doctor_performance_real[^;]*CASCADE/i);\n    expect(migration).toContain('nvx_doctor_view_acl');\n    expect(migration).toContain('nvx_doctor_view_restore');\n  });\n\n"""
+          p.write_text(s.replace(marker,block+marker,1))
+          p=Path('supabase/tests/meta-tenant-resolution-contract.test.mjs'); s=p.read_text()
+          marker="  it('scopes organic and Instagram persisted reads to clinic when the requester has one', () => {"
+          if marker not in s: raise SystemExit('meta test marker absent')
+          block="""  it('scopes campaign CRM fallback through clinic member user IDs instead of a non-existent view clinic_id', () => {\n    const start = api.indexOf('async function fetchDbCampaigns');\n    const end = api.indexOf('async function fetchMetaCampaignsFallback', start);\n    const source = api.slice(start, end);\n    expect(start).toBeGreaterThan(-1);\n    expect(source).toContain(\".from('users')\");\n    expect(source).toContain(\".eq('clinic_id', requesterClinicId)\");\n    expect(source).toContain(\"query = query.in('user_id', clinicUserIds)\");\n    expect(source).not.toContain('applyClinicOrUserScope(query, requesterClinicId, userId)');\n  });\n\n"""
+          p.write_text(s.replace(marker,block+marker,1))
           PY
 
       - name: Verify invariants
-        shell: bash
         run: |
           set -euo pipefail
           grep -F "'public.vw_doctoralia_patient_ltv'," supabase/migrations/20260901155900_reconcile_leads_appointment_status_type.sql
           grep -F "Unexpected vw_doctor_performance_real signature" supabase/migrations/20260901160000_fix_reporting_canonical_sources.sql
           grep -F "DROP VIEW public.vw_doctor_performance_real;" supabase/migrations/20260901160000_fix_reporting_canonical_sources.sql
           grep -F "query = query.in('user_id', clinicUserIds)" supabase/functions/api/index.ts
-          if grep -Eiq 'DROP[[:space:]]+VIEW[[:space:]]+public\.vw_doctor_performance_real[^;]*CASCADE' supabase/migrations/20260901160000_fix_reporting_canonical_sources.sql; then exit 1; fi
+          ! grep -Eiq 'DROP[[:space:]]+VIEW[[:space:]]+public\.vw_doctor_performance_real[^;]*CASCADE' supabase/migrations/20260901160000_fix_reporting_canonical_sources.sql
 
       - name: Commit and self-remove
-        shell: bash
         run: |
           set -euo pipefail
           rm .github/workflows/apply-replay-and-campaign-scope-fix-once.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add supabase/functions/api/index.ts \
-            supabase/migrations/20260901155900_reconcile_leads_appointment_status_type.sql \
-            supabase/migrations/20260901160000_fix_reporting_canonical_sources.sql \
-            supabase/tests/canonical-reporting-pipeline-contract.test.mjs \
-            supabase/tests/meta-tenant-resolution-contract.test.mjs \
-            .github/workflows/apply-replay-and-campaign-scope-fix-once.yml
+          git add supabase/functions/api/index.ts supabase/migrations/20260901155900_reconcile_leads_appointment_status_type.sql supabase/migrations/20260901160000_fix_reporting_canonical_sources.sql supabase/tests/canonical-reporting-pipeline-contract.test.mjs supabase/tests/meta-tenant-resolution-contract.test.mjs .github/workflows/apply-replay-and-campaign-scope-fix-once.yml
           git commit -m "fix(replay): reconcile doctor view and clinic campaign fallback"
           git push origin HEAD:fix/meta-clinic-tenant-resolution-v2-20260902
