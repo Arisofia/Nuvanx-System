@@ -1,3 +1,4 @@
+// Security regression contract for clinic-scoped Meta ownership and strict trusted E2E.
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 
