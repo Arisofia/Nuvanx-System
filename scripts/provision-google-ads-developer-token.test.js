@@ -86,6 +86,54 @@ test('credential provisioning recovery proves every integration and verifies per
   assert.equal(calls.filter(({ url }) => url.includes('/rest/v1/integrations?id=eq.')).length, 2);
 });
 
+test('credential recovery continues after one integration fails and reports failures only after all proofs', async () => {
+  const healthIds = [];
+  const persistedIds = [];
+  const fetchImpl = async (url, options = {}) => {
+    if (url.endsWith('/rest/v1/rpc/nvx_get_runtime_secret')) {
+      return jsonResponse('do-not-log-this-secret');
+    }
+
+    if (url.endsWith('/functions/v1/google-ads-health')) {
+      const { integration_id: integrationId } = JSON.parse(options.body);
+      healthIds.push(integrationId);
+      if (integrationId === 'integration-broken') {
+        return jsonResponse({ success: false, message: 'provider rejected do-not-log-this-secret' }, 424);
+      }
+      return jsonResponse({ success: true, integration_id: integrationId });
+    }
+
+    if (url.includes('/rest/v1/integrations?id=eq.')) {
+      const id = decodeURIComponent(url.match(/id=eq\.([^&]+)/)[1]);
+      persistedIds.push(id);
+      return jsonResponse([{ id, status: 'connected', last_error: null }]);
+    }
+
+    throw new Error(`Unexpected test URL: ${url}`);
+  };
+
+  await assert.rejects(
+    recoverGoogleAdsIntegrations({
+      base: 'https://example.supabase.co',
+      serviceRole: 'service-role-value',
+      integrations: [
+        { id: 'integration-broken', status: 'credential_invalid' },
+        { id: 'integration-healthy', status: 'disconnected' },
+      ],
+      fetchImpl,
+    }),
+    (error) => {
+      assert.match(error.message, /recovery failed for 1 integration/);
+      assert.match(error.message, /integration-broken/);
+      assert.doesNotMatch(error.message, /do-not-log-this-secret/);
+      return true;
+    },
+  );
+
+  assert.deepEqual(healthIds, ['integration-broken', 'integration-healthy']);
+  assert.deepEqual(persistedIds, ['integration-healthy']);
+});
+
 test('credential recovery fails closed without leaking the internal secret', async () => {
   const fetchImpl = async (url) => {
     if (url.endsWith('/rest/v1/rpc/nvx_get_runtime_secret')) {
@@ -105,7 +153,8 @@ test('credential recovery fails closed without leaking the internal secret', asy
       fetchImpl,
     }),
     (error) => {
-      assert.match(error.message, /provider recovery failed/);
+      assert.match(error.message, /recovery failed for 1 integration/);
+      assert.match(error.message, /integration-quarantined/);
       assert.doesNotMatch(error.message, /do-not-log-this-secret/);
       return true;
     },
