@@ -147,7 +147,8 @@ BEGIN
 
   -- This is deliberately strict. If migration history changes such that another
   -- object depends on the column before this bridge, review it explicitly rather
-  -- than silently rewriting/dropping an unknown object.
+  -- than silently rewriting/dropping an unknown object. Keep the allowlist in
+  -- the same deterministic view_schema/view_name order produced by array_agg.
   SELECT array_agg(
            view_schema || '.' || view_name
            ORDER BY view_schema, view_name
@@ -156,8 +157,8 @@ BEGIN
   FROM nvx_appointment_status_view_restore;
 
   IF v_dependent_views IS DISTINCT FROM ARRAY[
-    'public.vw_doctoralia_patient_ltv',
     'public.vw_doctoralia_lead_traceability_unified',
+    'public.vw_doctoralia_patient_ltv',
     'public.vw_lead_traceability'
   ]::text[] THEN
     RAISE EXCEPTION
