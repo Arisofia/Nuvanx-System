@@ -510,42 +510,37 @@ Deno.serve(async (req: Request) => {
     });
 
     const now = new Date().toISOString();
-    let credentialPersistenceError: unknown = null;
     if (operation === "provision") {
       const encryptedKey = await encryptCredential(developerToken);
-      const { error: upsertError } = await admin
-        .from("credentials")
-        .upsert({
-          user_id: integration.user_id,
-          clinic_id: integration.clinic_id || null,
-          service: "google_ads",
-          encrypted_key: encryptedKey,
-          last_used: now,
-          metadata: {
-            credential_format: "aes_gcm_pbkdf2_sha256_v1",
-            provisioned_at: now,
-            provisioned_by: "google_ads_health_runtime",
-          },
-        }, { onConflict: "user_id,service" });
-      credentialPersistenceError = upsertError;
+      const { data: committedCredentialId, error: commitError } = await admin.rpc(
+        "nvx_commit_google_ads_credential_provision",
+        {
+          p_integration_id: integration.id,
+          p_encrypted_key: encryptedKey,
+          p_committed_at: now,
+        },
+      );
+      if (commitError || !committedCredentialId) {
+        throw new HealthFailure("persistence", 500, "Google Ads atomic credential provision persistence failed");
+      }
     } else {
       const credentialUpdate = await admin
         .from("credentials")
         .update({ last_used: now })
         .eq("id", credential!.id);
-      credentialPersistenceError = credentialUpdate.error;
-    }
+      if (credentialUpdate.error) {
+        throw new HealthFailure("persistence", 500, "Google Ads provider proof persistence failed");
+      }
 
-    const integrationUpdate = credentialPersistenceError
-      ? { error: credentialPersistenceError }
-      : await admin.from("integrations").update({
-          status: "connected",
-          last_sync: now,
-          last_error: null,
-          updated_at: now,
-        }).eq("id", integration.id);
-    if (credentialPersistenceError || integrationUpdate.error) {
-      throw new HealthFailure("persistence", 500, "Google Ads provider proof persistence failed");
+      const integrationUpdate = await admin.from("integrations").update({
+        status: "connected",
+        last_sync: now,
+        last_error: null,
+        updated_at: now,
+      }).eq("id", integration.id);
+      if (integrationUpdate.error) {
+        throw new HealthFailure("persistence", 500, "Google Ads provider proof persistence failed");
+      }
     }
 
     return reply(200, {
