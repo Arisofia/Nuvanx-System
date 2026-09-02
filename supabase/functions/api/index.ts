@@ -1115,8 +1115,19 @@ export async function processLeadData(adminClient: any, userId: string, leadData
     throw new Error('Clinic is required for Meta lead ingestion');
   }
 
-  const { data: lead } = await adminClient.from('leads')
-    .upsert({
+  // Query if lead already exists by clinic, source and external_id
+  const { data: existingLead } = await adminClient.from('leads')
+    .select('id')
+    .eq('clinic_id', clinicIdForLead)
+    .eq('source', 'meta_leadgen')
+    .eq('external_id', leadgen_id)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  let leadId = existingLead?.id ?? null;
+
+  if (!leadId) {
+    const leadPayload = {
       user_id:         userId,
       clinic_id:       clinicIdForLead,
       external_id:     leadgen_id,
@@ -1157,15 +1168,37 @@ export async function processLeadData(adminClient: any, userId: string, leadData
       lead_quality_score: null,
       ad_account_id:   leadData.account_id ?? leadData.ad_account_id ?? null,
       created_at:        createdAt,
-    }, { onConflict: 'clinic_id,source,external_id', ignoreDuplicates: true })
-    .select('id')
-    .maybeSingle();
+    };
+
+    const { data: inserted, error: insertError } = await adminClient.from('leads')
+      .insert(leadPayload)
+      .select('id')
+      .maybeSingle();
+
+    if (insertError) {
+      if (insertError.code === '23505') {
+        const { data: raceLead } = await adminClient.from('leads')
+          .select('id')
+          .eq('clinic_id', clinicIdForLead)
+          .eq('source', 'meta_leadgen')
+          .eq('external_id', leadgen_id)
+          .is('deleted_at', null)
+          .maybeSingle();
+        leadId = raceLead?.id ?? null;
+      } else {
+        console.error('[processLeadData] Failed to insert lead:', insertError);
+        throw insertError;
+      }
+    } else {
+      leadId = inserted?.id ?? null;
+    }
+  }
 
   // Record attribution details
-  if (lead?.id) {
+  if (leadId) {
     await adminClient.from('meta_attribution')
       .upsert({
-        lead_id:       lead.id,
+        lead_id:       leadId,
         leadgen_id,
         page_id:       leadData.page_id     ?? null,
         form_id:       leadData.form_id     ?? null,
@@ -1177,7 +1210,7 @@ export async function processLeadData(adminClient: any, userId: string, leadData
         ad_name:       leadData.ad_name     ?? null,
         form_name:     leadData.form_name   ?? null,
       }, { onConflict: 'leadgen_id' });
-    return lead?.id ?? null;
+    return leadId;
   }
   return null;
 }
@@ -4712,9 +4745,24 @@ async function handleMetaIgGet(ctx: AuthenticatedRouteContext): Promise<Response
 }
 
 function parseMetaBackfillDates(url: URL) {
-  const { since: sinceDate, until: untilDate } = getKpiDateRange(url);
-  const sinceTs = Math.floor(new Date(sinceDate).getTime() / 1000); // Meta API expects Unix timestamp
+  const daysParam = url.searchParams.get('days');
+  const fromParam = url.searchParams.get('from') ?? url.searchParams.get('since') ?? '';
+  const toParam = url.searchParams.get('to') ?? url.searchParams.get('until') ?? '';
 
+  let sinceDate = fromParam;
+  let untilDate = toParam || new Date().toISOString().slice(0, 10);
+
+  if (!sinceDate) {
+    if (daysParam && /^\d+$/.test(daysParam)) {
+      const numDays = Math.max(1, parseInt(daysParam, 10));
+      sinceDate = new Date(Date.now() - numDays * 86400000).toISOString().slice(0, 10);
+    } else {
+      const { since } = getKpiDateRange(url);
+      sinceDate = since;
+    }
+  }
+
+  const sinceTs = Math.floor(new Date(sinceDate).getTime() / 1000);
   return { sinceDate, untilDate, sinceTs };
 }
 
