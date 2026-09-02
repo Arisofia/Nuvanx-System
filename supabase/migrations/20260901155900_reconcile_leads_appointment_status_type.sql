@@ -322,5 +322,20 @@ BEGIN
       );
     END IF;
   END LOOP;
+
+  -- The immediately following canonical reporting migration intentionally changes
+  -- the public output contracts of these two views. Historical clean-replay
+  -- snapshots can have incompatible column types/order, and PostgreSQL rejects
+  -- those transitions through CREATE OR REPLACE VIEW with SQLSTATE 42P16.
+  -- Remove only the two known replacement targets here so 20260901160000 can
+  -- create their canonical definitions. No CASCADE: any newly introduced
+  -- dependency fails this bridge closed instead of being deleted silently.
+  IF to_regclass('public.vw_doctor_performance_real') IS NOT NULL THEN
+    EXECUTE 'DROP VIEW public.vw_doctor_performance_real';
+  END IF;
+
+  IF to_regclass('public.vw_lead_traceability') IS NOT NULL THEN
+    EXECUTE 'DROP VIEW public.vw_lead_traceability';
+  END IF;
 END
 $bridge$;
