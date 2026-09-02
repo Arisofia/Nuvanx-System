@@ -1192,7 +1192,7 @@ async function resolveClinicMetadata(adminClient: any, userId: string) {
   const clinicId = await resolveClinicId(adminClient, userId);
   if (!clinicId) return { name: 'una clínica', city: 'Madrid', specialty: 'medicina estética' };
   
-  const { data } = await adminClient.from('clinics').select('name, metadata').eq('id', clinicId).single();
+  const { data } = await adminClient.from('clinics').select('name, metadata').eq('id', clinicId).maybeSingle();
   const meta = data?.metadata ?? {};
   return {
     name: data?.name ?? 'una clínica',
@@ -1488,10 +1488,11 @@ function requireMetaAccountId(raw: unknown): string {
 }
 
 async function updateIntegrationStatus(adminClient: any, userId: string, service: string, status: string, message: string | null = null) {
-  await adminClient.from('integrations')
+  const { error } = await adminClient.from('integrations')
     .update({ status, last_error: message, updated_at: new Date().toISOString() })
     .eq('user_id', userId)
     .eq('service', service);
+  if (error) console.error(`[integrations] status update failed for ${service}:`, error.message);
 }
 
 async function ensurePublicUserRow(adminClient: any, user: any) {
@@ -1887,7 +1888,7 @@ export async function processMetaLeadChange(adminClient: any, change: any): Prom
     .eq('user_id', webhookUserId)
     .eq('clinic_id', webhookClinicId)
     .eq('service', credentialService)
-    .single();
+    .maybeSingle();
   if (!credRow) {
     console.warn('[meta-webhook] Matching integration has no credential', { page_id, credentialService });
     return;
@@ -2257,7 +2258,7 @@ async function processWhatsappWebhookMessage(adminClient: any, userId: string, v
     }
   })();
 
-  const { data: usrRow } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+  const { data: usrRow } = await adminClient.from('users').select('clinic_id').eq('id', userId).maybeSingle();
   const clinicId = usrRow?.clinic_id ?? null;
   if (clinicId) {
     await adminClient.from('whatsapp_conversations')
@@ -2555,7 +2556,7 @@ async function handleProductionAuditGet(ctx: AuthenticatedRouteContext): Promise
       adminClient.from('doctoralia_patients').select('doc_patient_id', { count: 'exact', head: true }),
       adminClient.from('doctors').select('id', { count: 'exact', head: true }),
       adminClient.from('treatment_types').select('id', { count: 'exact', head: true }),
-      adminClient.from('integrations').select('metadata').eq('user_id', userId).eq('service', 'meta').single(),
+      adminClient.from('integrations').select('metadata').eq('user_id', userId).in('service', ['meta_ads', 'meta']).maybeSingle(),
       adminClient.from('meta_cache').select('updated_at').order('updated_at', { ascending: false }).limit(1).maybeSingle(),
     ]);
 
@@ -2656,7 +2657,7 @@ async function runLeadPipelineReconciliation(adminClient: any, userId: string) {
   // Reconciliation started
 
   const { data: usr } = await adminClient
-    .from('users').select('clinic_id').eq('id', userId).single();
+    .from('users').select('clinic_id').eq('id', userId).maybeSingle();
 
   if (!usr?.clinic_id) return;
 
@@ -3259,7 +3260,7 @@ async function handleDashboardMetrics(ctx: AuthenticatedRouteContext): Promise<R
     const { since, until } = getKpiDateRange(url);
     const untilFullDay = `${until}T23:59:59Z`;
 
-    const { data: usr, error: usrErr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+    const { data: usr, error: usrErr } = await adminClient.from('users').select('clinic_id').eq('id', userId).maybeSingle();
     if (usrErr) {
       console.error('[Metrics] Failed to fetch user clinic:', usrErr);
       return sendJson({ success: false, message: 'Failed to fetch user context' }, 500);
@@ -3918,6 +3919,9 @@ function metaActionsArrayToObject(actions: any[] | undefined): Record<string, nu
 
 async function persistMetaDailyInsights(adminClient: any, userId: string, adAccountId: string, accessToken: string, sinceDate: string, untilDate: string): Promise<number> {
   const clinicId = await resolveClinicId(adminClient, userId);
+  if (!clinicId) {
+    throw new Error('Clinic is required for Meta provider fact persistence');
+  }
 
   const fields = [
     'date_start',
@@ -5646,7 +5650,7 @@ async function handleIntegrationsTestPost(ctx: AuthenticatedRouteContext): Promi
       }
     }
   
-    const { data: cred } = await adminClient.from('credentials').select('service').eq('user_id', userId).eq('service', service).single();
+    const { data: cred } = await adminClient.from('credentials').select('service').eq('user_id', userId).eq('service', service).maybeSingle();
     const status = cred ? 'connected' : 'error';
     return sendJson({ success: !!cred, service, status, metadata: {} });
   }
@@ -5704,7 +5708,7 @@ async function logPlaybookExecution(adminClient: any, userId: string, playbookId
     .select().single();
   if (execErr) throw execErr;
 
-  const { data: pb } = await adminClient.from('playbooks').select('run_count').eq('id', playbookId).single();
+  const { data: pb } = await adminClient.from('playbooks').select('run_count').eq('id', playbookId).maybeSingle();
   if (pb) {
     await adminClient.from('playbooks')
       .update({ run_count: (pb.run_count || 0) + 1, last_run_at: new Date().toISOString() })
@@ -5720,7 +5724,7 @@ async function handlePlaybooksRunPost(ctx: AuthenticatedRouteContext): Promise<R
   const rawBody = await req.json().catch(() => ({}));
   const body = (rawBody && typeof rawBody === 'object') ? rawBody as Record<string, any> : {};
   const preferredProvider = String(body?.provider ?? '').trim();
-  const { data: pb, error: pbErr } = await adminClient.from('playbooks').select('id, title, status, run_count').eq('slug', sub).single();
+  const { data: pb, error: pbErr } = await adminClient.from('playbooks').select('id, title, status, run_count').eq('slug', sub).maybeSingle();
   if (pbErr || !pb) return sendJson({ success: false, message: `Playbook '${sub}' not found` }, 404);
   if (pb.status === 'archived') return sendJson({ success: false, message: 'Playbook is archived' }, 400);
 
@@ -6296,7 +6300,7 @@ async function handleFinancialsSummary(ctx: AuthenticatedRouteContext): Promise<
 }
 
 async function processFinancialsSummary(adminClient: any, userId: string, url: URL, sendJson: any): Promise<Response> {
-  const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+  const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).maybeSingle();
   const clinicId = usr?.clinic_id;
   if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
 
@@ -6377,7 +6381,7 @@ async function processFinancialsSummary(adminClient: any, userId: string, url: U
 async function handleFinancialsSettlements(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, sendJson } = ctx;
   if (resource === 'financials' && sub === 'settlements') {
-    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).maybeSingle();
     const clinicId = usr?.clinic_id;
     if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
   
@@ -6402,7 +6406,7 @@ async function handleFinancialsSettlements(ctx: AuthenticatedRouteContext): Prom
 async function handleFinancialsPatients(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, sendJson } = ctx;
   if (resource === 'financials' && sub === 'patients') {
-    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).maybeSingle();
     const clinicId = usr?.clinic_id;
     if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
 
@@ -6517,7 +6521,7 @@ async function handleFinancialsIntegrityGet(ctx: AuthenticatedRouteContext): Pro
   const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource !== 'financials' || sub !== 'integrity' || req.method !== 'GET') return null;
 
-  const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+  const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).maybeSingle();
   const clinicId = usr?.clinic_id;
   if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
 
@@ -6925,7 +6929,7 @@ async function handleTraceabilityCampaigns(ctx: AuthenticatedRouteContext): Prom
 async function handleConversations(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, url, sendJson } = ctx;
   if (resource === 'conversations' && sub === '') {
-    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).maybeSingle();
     const clinicId = usr?.clinic_id;
     if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
   
@@ -7081,7 +7085,7 @@ async function processWhatsappConversionPost(adminClient: any, userId: string, r
   }
 
   try {
-    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).maybeSingle();
     const clinicId = usr?.clinic_id;
     let matchedPatientId: string | null = null;
     let matchedLeadId: string | null = null;
@@ -7557,7 +7561,7 @@ async function processKpisGet(adminClient: any, userId: string, url: URL, sendJs
   // Expand until to include the whole day for timestamptz comparisons
   const untilFullDay = `${until}T23:59:59Z`;
 
-  const { data: usr, error: usrErr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+  const { data: usr, error: usrErr } = await adminClient.from('users').select('clinic_id').eq('id', userId).maybeSingle();
   if (usrErr) {
     console.error('[KPIs] Failed to fetch user clinic:', usrErr);
     return sendJson({ success: false, message: 'Failed to fetch user context' }, 500);
@@ -7771,7 +7775,7 @@ function mapDoctoraliaMonthlyData(monthRows: any[]) {
 async function handleReportsDoctoraliaFinancialsGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'reports' && sub === 'doctoralia-financials' && req.method === 'GET') {
-    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).single();
+    const { data: usr } = await adminClient.from('users').select('clinic_id').eq('id', userId).maybeSingle();
     const clinicId = usr?.clinic_id;
     if (!clinicId) return sendJson({ success: false, message: 'No clinic' }, 400);
 
