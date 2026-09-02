@@ -1,4 +1,9 @@
-begin;
+-- Harden authenticated Control Centre RPCs without breaking the browser contract.
+--
+-- Public RPC names/signatures remain unchanged for PostgREST/Supabase clients,
+-- but the exposed functions are SECURITY INVOKER. Privileged implementations
+-- are moved into a non-public schema so signed-in users never execute a
+-- SECURITY DEFINER function directly through /rest/v1/rpc.
 
 create schema if not exists private authorization postgres;
 revoke all on schema private from public;
@@ -99,5 +104,3 @@ grant execute on function public.nvx_get_control_centre_pipeline(integer, intege
 grant execute on function public.nvx_get_dashboard_metrics_v2(date, date, text, text) to authenticated, service_role;
 grant execute on function public.nvx_get_hubspot_marketing_contact_monitor() to authenticated, service_role;
 grant execute on function public.nvx_set_lead_pipeline_state(uuid, text, text, timestamptz, text) to authenticated, service_role;
-
-commit;
