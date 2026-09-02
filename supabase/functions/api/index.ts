@@ -4104,6 +4104,12 @@ async function persistMetaPostPerformance(adminClient: any, userId: string, page
     'insights.metric(post_impressions_unique,post_reactions_by_type_total,post_video_views,post_clicks,post_activity_by_action_type)',
   ].join(',');
 
+  const clinicId = await resolveClinicId(adminClient, userId);
+
+  if (!clinicId) {
+    throw new Error('Clinic is required for Meta provider fact persistence');
+  }
+
   const data = await metaFetch(`/${pageId}/posts`, {
     fields,
     limit: String(Math.min(limit, 100)),
@@ -4111,12 +4117,6 @@ async function persistMetaPostPerformance(adminClient: any, userId: string, page
 
   const posts = Array.isArray(data?.data) ? data.data : [];
   if (posts.length === 0) return 0;
-
-  const clinicId = await resolveClinicId(adminClient, userId);
-  
-  if (!clinicId) {
-    throw new Error('Clinic is required for Meta provider fact persistence');
-  }
 
   const dbRows = posts.map((p: any) => {
     const insightsByName = new Map();
@@ -4324,6 +4324,12 @@ async function persistMetaIgMediaPerformance(adminClient: any, userId: string, i
   const MEDIA_METRICS = ['reach', 'likes', 'comments', 'shares', 'saved', 'total_interactions', 'views'];
   const fields = 'id,caption,media_type,media_product_type,permalink,timestamp';
 
+  const clinicId = await resolveClinicId(adminClient, userId);
+
+  if (!clinicId) {
+    throw new Error('Clinic is required for Meta provider fact persistence');
+  }
+
   const data = await metaFetch(`/${igId}/media`, {
     fields,
     limit: String(Math.min(limit, 50)),
@@ -4331,12 +4337,6 @@ async function persistMetaIgMediaPerformance(adminClient: any, userId: string, i
 
   const items = Array.isArray(data?.data) ? data.data : [];
   if (items.length === 0) return 0;
-
-  const clinicId = await resolveClinicId(adminClient, userId);
-  
-  if (!clinicId) {
-    throw new Error('Clinic is required for Meta provider fact persistence');
-  }
   
   let upserted = 0;
 
@@ -4490,16 +4490,11 @@ async function handleMetaIgGet(ctx: AuthenticatedRouteContext): Promise<Response
     return sendJson({ success: false, message: 'Meta Ads not connected' }, 400);
   }
   const meta = (integ.metadata ?? {}) as Record<string, any>;
-  let igId: string | null = meta.igBusinessAccountId ?? meta.ig_business_account_id ?? null;
+  const igId: string | null = meta.igBusinessAccountId ?? meta.ig_business_account_id ?? null;
 
-  // Fallback: auto-discover ig_id from existing DB data when metadata is missing
+  // Fail-closed: require explicit ig_id in metadata to avoid ambiguous historical fallback
   if (!igId) {
-    const igDiscoverQuery = adminClient.from('meta_ig_account_daily')
-      .select('ig_id')
-      .eq('clinic_id', requesterClinicId)
-      .limit(1);
-    const { data: igDiscover } = await igDiscoverQuery.maybeSingle();
-    igId = igDiscover?.ig_id ?? null;
+    return sendJson({ success: false, message: 'Instagram Business Account ID not configured in integration metadata' }, 400);
   }
 
   if (!igId) {
