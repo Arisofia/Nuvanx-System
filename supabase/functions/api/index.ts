@@ -4366,7 +4366,10 @@ async function handleMetaOrganicGet(ctx: AuthenticatedRouteContext): Promise<Res
   if (resource !== 'meta' || sub !== 'organic' || req.method !== 'GET') return null;
 
   const { integration: integ, requesterClinicId } = await resolveMetaIntegration(adminClient, userId, '');
-  const meta = (integ?.metadata ?? {}) as Record<string, any>;
+  if (!integ || !requesterClinicId) {
+    return sendJson({ success: false, message: 'Meta Ads not connected' }, 400);
+  }
+  const meta = (integ.metadata ?? {}) as Record<string, any>;
   const pageId = meta.pageId ?? meta.page_id ?? null;
   if (!pageId) {
     return sendJson({ success: false, message: 'No Page ID configured for this Meta integration.' }, 400);
@@ -4385,23 +4388,28 @@ async function handleMetaOrganicGet(ctx: AuthenticatedRouteContext): Promise<Res
   if (sub2 === 'posts') {
     const keyword = (url.searchParams.get('keyword') ?? '').trim();
     const limit = Math.min(Math.max(Number.parseInt(url.searchParams.get('limit') ?? '50', 10) || 50, 1), 200);
-    let query = adminClient
-      .from('meta_post_performance')
-      .select('post_id, created_time, message, status_type, permalink_url, impressions, reach, engaged_users, reactions, comments, shares, video_views, is_video, updated_at')
-      .eq('page_id', pageId)
-      .order('updated_at', { ascending: false })
-      .order('created_time', { ascending: false })
-      .limit(Math.min(limit * 5, 1000));
-    query = applyClinicOrUserScope(query, requesterClinicId, userId);
-    if (keyword) query = query.ilike('message', `%${keyword}%`);
-    const { data, error } = await query;
-    if (error) return sendJson({ success: false, message: error.message }, 500);
+    const pageSize = 200;
     const uniquePostsMap = new Map();
-    for (const p of (data ?? [])) {
-      if (!uniquePostsMap.has(p.post_id)) {
-        uniquePostsMap.set(p.post_id, p);
-        if (uniquePostsMap.size >= limit) break;
+    for (let offset = 0; uniquePostsMap.size < limit; offset += pageSize) {
+      let query = adminClient
+        .from('meta_post_performance')
+        .select('post_id, created_time, message, status_type, permalink_url, impressions, reach, engaged_users, reactions, comments, shares, video_views, is_video, updated_at')
+        .eq('page_id', pageId)
+        .eq('clinic_id', requesterClinicId)
+        .order('created_time', { ascending: false })
+        .order('updated_at', { ascending: false })
+        .range(offset, offset + pageSize - 1);
+      if (keyword) query = query.ilike('message', `%${keyword}%`);
+      const { data, error } = await query;
+      if (error) return sendJson({ success: false, message: error.message }, 500);
+      const page = data ?? [];
+      for (const p of page) {
+        if (!uniquePostsMap.has(p.post_id)) {
+          uniquePostsMap.set(p.post_id, p);
+          if (uniquePostsMap.size >= limit) break;
+        }
       }
+      if (page.length < pageSize) break;
     }
     const posts = Array.from(uniquePostsMap.values());
     return sendJson({ success: true, pageId, count: posts.length, posts });
@@ -4415,7 +4423,7 @@ async function handleMetaOrganicGet(ctx: AuthenticatedRouteContext): Promise<Res
     .lte('date', until)
     .order('date', { ascending: true })
     .order('updated_at', { ascending: false });
-  query = applyClinicOrUserScope(query, requesterClinicId, userId);
+  query = query.eq('clinic_id', requesterClinicId);
   const { data: rows, error } = await query;
   if (error) return sendJson({ success: false, message: error.message }, 500);
 
@@ -4447,18 +4455,18 @@ async function handleMetaIgGet(ctx: AuthenticatedRouteContext): Promise<Response
   if (resource !== 'meta' || sub !== 'ig' || req.method !== 'GET') return null;
 
   const { integration: integ, requesterClinicId } = await resolveMetaIntegration(adminClient, userId, '');
-  const meta = (integ?.metadata ?? {}) as Record<string, any>;
+  if (!integ || !requesterClinicId) {
+    return sendJson({ success: false, message: 'Meta Ads not connected' }, 400);
+  }
+  const meta = (integ.metadata ?? {}) as Record<string, any>;
   let igId: string | null = meta.igBusinessAccountId ?? meta.ig_business_account_id ?? null;
 
   // Fallback: auto-discover ig_id from existing DB data when metadata is missing
   if (!igId) {
-    if (!requesterClinicId) {
-      return sendJson({ success: false, message: 'Clinic not configured for this user.' }, 400);
-    }
-    let igDiscoverQuery = adminClient.from('meta_ig_account_daily')
+    const igDiscoverQuery = adminClient.from('meta_ig_account_daily')
       .select('ig_id')
+      .eq('clinic_id', requesterClinicId)
       .limit(1);
-    igDiscoverQuery = applyClinicOrUserScope(igDiscoverQuery, requesterClinicId, userId);
     const { data: igDiscover } = await igDiscoverQuery.maybeSingle();
     igId = igDiscover?.ig_id ?? null;
   }
@@ -4480,23 +4488,28 @@ async function handleMetaIgGet(ctx: AuthenticatedRouteContext): Promise<Response
   if (sub2 === 'posts') {
     const keyword = (url.searchParams.get('keyword') ?? '').trim();
     const limit = Math.min(Math.max(Number.parseInt(url.searchParams.get('limit') ?? '50', 10) || 50, 1), 200);
-    let query = adminClient
-      .from('meta_ig_media_performance')
-      .select('media_id, media_type, media_product_type, caption, permalink, timestamp, reach, views, likes, comments, shares, saved, total_interactions, updated_at')
-      .eq('ig_id', igId)
-      .order('timestamp', { ascending: false })
-      .order('updated_at', { ascending: false })
-      .limit(Math.min(limit * 5, 1000));
-    query = applyClinicOrUserScope(query, requesterClinicId, userId);
-    if (keyword) query = query.ilike('caption', `%${keyword}%`);
-    const { data, error } = await query;
-    if (error) return sendJson({ success: false, message: error.message }, 500);
+    const pageSize = 200;
     const uniquePostsMap = new Map();
-    for (const p of (data ?? [])) {
-      if (!uniquePostsMap.has(p.media_id)) {
-        uniquePostsMap.set(p.media_id, p);
-        if (uniquePostsMap.size >= limit) break;
+    for (let offset = 0; uniquePostsMap.size < limit; offset += pageSize) {
+      let query = adminClient
+        .from('meta_ig_media_performance')
+        .select('media_id, media_type, media_product_type, caption, permalink, timestamp, reach, views, likes, comments, shares, saved, total_interactions, updated_at')
+        .eq('ig_id', igId)
+        .eq('clinic_id', requesterClinicId)
+        .order('timestamp', { ascending: false })
+        .order('updated_at', { ascending: false })
+        .range(offset, offset + pageSize - 1);
+      if (keyword) query = query.ilike('caption', `%${keyword}%`);
+      const { data, error } = await query;
+      if (error) return sendJson({ success: false, message: error.message }, 500);
+      const page = data ?? [];
+      for (const p of page) {
+        if (!uniquePostsMap.has(p.media_id)) {
+          uniquePostsMap.set(p.media_id, p);
+          if (uniquePostsMap.size >= limit) break;
+        }
       }
+      if (page.length < pageSize) break;
     }
     const posts = Array.from(uniquePostsMap.values());
     return sendJson({ success: true, igId, count: posts.length, posts });
@@ -4509,7 +4522,7 @@ async function handleMetaIgGet(ctx: AuthenticatedRouteContext): Promise<Response
     .lte('date', until)
     .order('date', { ascending: true })
     .order('updated_at', { ascending: false });
-  query = applyClinicOrUserScope(query, requesterClinicId, userId);
+  query = query.eq('clinic_id', requesterClinicId);
   const { data: rows, error } = await query;
   if (error) return sendJson({ success: false, message: error.message }, 500);
 
