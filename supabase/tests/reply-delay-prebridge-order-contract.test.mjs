@@ -51,6 +51,19 @@ describe('reply_delay_minutes pre-reporting replay bridge', () => {
     expect(preBridge).toContain('a.attacl IS NOT NULL');
   });
 
+  it('preserves view and column comments across DROP/CREATE', () => {
+    expect(preBridge).toContain("pg_catalog.obj_description(v.oid, 'pg_class')");
+    expect(preBridge).toContain('pg_catalog.col_description(r.view_oid, a.attnum)');
+    expect(preBridge).toContain("'COMMENT ON VIEW %I.%I IS %L'");
+    expect(preBridge).toContain("'COMMENT ON COLUMN %I.%I.%I IS %L'");
+    const capture = preBridge.indexOf('INSERT INTO nvx_reply_delay_column_comments');
+    const firstDrop = preBridge.indexOf("'DROP VIEW %I.%I'");
+    const restore = preBridge.indexOf("'COMMENT ON COLUMN %I.%I.%I IS %L'");
+    expect(capture).toBeGreaterThan(-1);
+    expect(capture).toBeLessThan(firstDrop);
+    expect(restore).toBeGreaterThan(firstDrop);
+  });
+
   it('moves the base column to integer before the reporting migration consumes it', () => {
     expect(preBridge).toContain('ALTER COLUMN reply_delay_minutes TYPE integer');
     expect(preBridge).toContain('USING reply_delay_minutes::integer');
