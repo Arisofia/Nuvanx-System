@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 
 const leadsBase = readFileSync('supabase/migrations/20260501090000_create_leads_table.sql', 'utf8');
 const clinicalBridge = readFileSync('supabase/migrations/20260830223430_reconcile_clinical_core_contract.sql', 'utf8');
-const typeBridge = readFileSync('supabase/migrations/20260901155900_reconcile_leads_appointment_status_type.sql', 'utf8');
+const typeBridge = readFileSync('supabase/migrations/20260901155859_pre_reconcile_leads_appointment_status_type.sql', 'utf8');
+const immutableBridge = readFileSync('supabase/migrations/20260901155900_reconcile_leads_appointment_status_type.sql', 'utf8');
 const reporting = readFileSync('supabase/migrations/20260901160000_fix_reporting_canonical_sources.sql', 'utf8');
 
 describe('clean replay appointment-status type contract', () => {
@@ -62,8 +63,10 @@ describe('clean replay appointment-status type contract', () => {
     expect(typeBridge).toContain('Expected l.appointment_status reference is missing');
   });
 
-  it('runs before the reporting migration that requires enum comparison semantics', () => {
+  it('runs the strengthened bridge before the immutable applied bridge and reporting migration', () => {
+    expect(Number('20260901155859')).toBeLessThan(Number('20260901155900'));
     expect(Number('20260901155900')).toBeLessThan(Number('20260901160000'));
+    expect(immutableBridge).toContain("v_udt_schema = 'public' AND v_udt_name = 'appointment_status'");
     expect(reporting).toContain("l.appointment_status = 'showed'::public.appointment_status");
   });
 });
