@@ -6,6 +6,8 @@
 -- JSON (for example a numeric JSON value) from reaching Edge API PostgREST
 -- filters despite TypeScript-only annotations.
 
+BEGIN;
+
 DO $$
 BEGIN
   IF EXISTS (
@@ -39,7 +41,7 @@ BEGIN
           NULLIF(COALESCE(i.metadata, '{}'::jsonb)->>'igBusinessAccountId', '') IS NOT NULL
           AND NULLIF(COALESCE(i.metadata, '{}'::jsonb)->>'ig_business_account_id', '') IS NOT NULL
           AND COALESCE(i.metadata, '{}'::jsonb)->>'igBusinessAccountId'
-              IS DISTINCT FROM COALESCE(i.metadata, '{}'::jsonb)->>'ig_business_account_id'
+              <> COALESCE(i.metadata, '{}'::jsonb)->>'ig_business_account_id'
         )
       )
   ) THEN
@@ -94,3 +96,5 @@ BEGIN
     VALIDATE CONSTRAINT integrations_meta_ig_id_contract;
 END
 $$;
+COMMIT;
+
