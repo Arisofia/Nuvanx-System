@@ -48,10 +48,12 @@ function createAdminClient(integrations, credentialByService = {}) {
     }
     if (table === 'credentials') {
       let selectedService = '';
+      let selectedClinicId = '';
       const builder = {
         select: () => builder,
         eq: (field, value) => {
           if (field === 'service') selectedService = value;
+          if (field === 'clinic_id') selectedClinicId = value;
           return builder;
         },
         single: async () => {
@@ -92,9 +94,9 @@ describe('Meta canonical stack routing behavior', () => {
 
   it('queries connected legacy + canonical integrations and routes canonical Page correctly', async () => {
     const { from, credentialServices, integrationQuery } = createAdminClient([
-      { user_id: 'legacy-user', service: 'meta', status: 'connected', metadata: { pageId: '111' } },
-      { user_id: 'canonical-user', service: 'meta_ads', status: 'connected', metadata: { pageIds: ['222', '333'], pixelId: '' } },
-      { user_id: 'ignored-user', service: 'meta_ads', status: 'disconnected', metadata: { pageId: '333' } },
+      { user_id: 'legacy-user', clinic_id: 'clinic-1', service: 'meta', status: 'connected', metadata: { pageId: '111' } },
+      { user_id: 'canonical-user', clinic_id: 'clinic-1', service: 'meta_ads', status: 'connected', metadata: { pageIds: ['222', '333'], pixelId: '' } },
+      { user_id: 'ignored-user', clinic_id: 'clinic-1', service: 'meta_ads', status: 'disconnected', metadata: { pageId: '333' } },
     ], { meta_ads: 'encrypted-canonical', meta: 'encrypted-legacy' });
 
     const decrypt = vi.spyOn(api.publicRouteHelpers, 'decryptCred').mockResolvedValue('canonical-token');
@@ -120,13 +122,13 @@ describe('Meta canonical stack routing behavior', () => {
       'canonical-token',
       'canonical-secret',
     );
-    expect(persist).toHaveBeenCalledWith(expect.anything(), 'canonical-user', expect.objectContaining({ id: 'lead-1' }));
+    expect(persist).toHaveBeenCalledWith(expect.anything(), 'canonical-user', expect.objectContaining({ id: 'lead-1' }), 'clinic-1');
   });
 
   it('keeps legacy Page routing on the legacy credential and secret', async () => {
     const { from, credentialServices } = createAdminClient([
-      { user_id: 'legacy-user', service: 'meta', status: 'connected', metadata: { page_id: '111', pixelId: '' } },
-      { user_id: 'canonical-user', service: 'meta_ads', status: 'connected', metadata: { pageId: '222' } },
+      { user_id: 'legacy-user', clinic_id: 'clinic-1', service: 'meta', status: 'connected', metadata: { page_id: '111', pixelId: '' } },
+      { user_id: 'canonical-user', clinic_id: 'clinic-1', service: 'meta_ads', status: 'connected', metadata: { pageId: '222' } },
     ], { meta: 'encrypted-legacy', meta_ads: 'encrypted-canonical' });
 
     vi.spyOn(api.publicRouteHelpers, 'decryptCred').mockResolvedValue('legacy-token');
@@ -144,12 +146,13 @@ describe('Meta canonical stack routing behavior', () => {
 
     expect(credentialServices).toEqual(['meta']);
     expect(fetch).toHaveBeenCalledWith('/lead-2', expect.any(Object), 'legacy-token', 'legacy-secret');
+    expect(persist).toHaveBeenCalledWith(expect.anything(), 'legacy-user', expect.objectContaining({ id: 'lead-2' }), 'clinic-1');
   });
 
   it('does not fall back across integrations when Page ID is unmatched', async () => {
     const { from, credentialServices } = createAdminClient([
-      { user_id: 'legacy-user', service: 'meta', status: 'connected', metadata: { pageId: '111' } },
-      { user_id: 'canonical-user', service: 'meta_ads', status: 'connected', metadata: { pageId: '222' } },
+      { user_id: 'legacy-user', clinic_id: 'clinic-1', service: 'meta', status: 'connected', metadata: { pageId: '111' } },
+      { user_id: 'canonical-user', clinic_id: 'clinic-1', service: 'meta_ads', status: 'connected', metadata: { pageId: '222' } },
     ], { meta: 'encrypted-legacy', meta_ads: 'encrypted-canonical' });
     const fetch = vi.spyOn(api.publicRouteHelpers, 'metaFetch');
 

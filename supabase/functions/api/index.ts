@@ -1842,9 +1842,16 @@ export async function processMetaLeadChange(adminClient: any, change: any): Prom
     .eq('status', 'connected');
 
   const connected = (intgs ?? []).filter((intg: any) => intg.clinic_id != null && intg.clinic_id !== '');
-  let matchingIntg = connected.find((integration: any) =>
+  const explicitMatches = connected.filter((integration: any) =>
     metaIntegrationPageIds(integration?.metadata ?? {}).includes(String(page_id ?? '').trim())
   );
+
+  if (explicitMatches.length > 1) {
+    console.error('[meta-webhook] Ambiguous connected integrations match incoming page_id', { page_id, leadgen_id, matches: explicitMatches.length });
+    return;
+  }
+
+  let matchingIntg = explicitMatches[0] ?? null;
 
   if (matchingIntg == null) {
     const withoutPageRouting = connected.filter(
