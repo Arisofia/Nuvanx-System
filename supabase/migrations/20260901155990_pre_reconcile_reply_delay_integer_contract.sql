@@ -34,6 +34,8 @@ DECLARE
   v_udt_name text;
   v_default text;
   v_nullable text;
+  v_numeric_precision integer;
+  v_numeric_scale integer;
   v_dependent_views text[];
   v_view record;
   v_acl record;
@@ -43,8 +45,8 @@ BEGIN
     RAISE EXCEPTION 'public.leads is required before reply-delay reconciliation';
   END IF;
 
-  SELECT c.data_type, c.udt_name, c.column_default, c.is_nullable
-    INTO v_data_type, v_udt_name, v_default, v_nullable
+  SELECT c.data_type, c.udt_name, c.column_default, c.is_nullable, c.numeric_precision, c.numeric_scale
+    INTO v_data_type, v_udt_name, v_default, v_nullable, v_numeric_precision, v_numeric_scale
   FROM information_schema.columns c
   WHERE c.table_schema = 'public'
     AND c.table_name = 'leads'
@@ -65,10 +67,12 @@ BEGIN
     AND v_udt_name = 'numeric'
     AND v_default IS NULL
     AND v_nullable = 'YES'
+    AND v_numeric_precision IS NULL
+    AND v_numeric_scale IS NULL
   ) THEN
     RAISE EXCEPTION
-      'Unexpected public.leads.reply_delay_minutes contract: data_type=%, udt=%, default=%, nullable=%',
-      v_data_type, v_udt_name, v_default, v_nullable;
+      'Unexpected public.leads.reply_delay_minutes contract: data_type=%, udt=%, default=%, nullable=%, precision=%, scale=%',
+      v_data_type, v_udt_name, v_default, v_nullable, v_numeric_precision, v_numeric_scale;
   END IF;
 
   -- INTEGER conversion is lossless only for integral int4-range values.

@@ -30,6 +30,8 @@ describe('reply_delay_minutes pre-reporting replay bridge', () => {
     expect(preBridge).toContain("v_udt_name = 'numeric'");
     expect(preBridge).toContain('v_default IS NULL');
     expect(preBridge).toContain("v_nullable = 'YES'");
+    expect(preBridge).toContain('v_numeric_precision IS NULL');
+    expect(preBridge).toContain('v_numeric_scale IS NULL');
     expect(preBridge).toContain('Unexpected public.leads.reply_delay_minutes contract');
     expect(preBridge).toContain('fractional or out-of-range value exists');
   });
