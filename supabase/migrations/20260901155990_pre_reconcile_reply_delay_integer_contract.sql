@@ -17,7 +17,8 @@ CREATE TEMP TABLE nvx_reply_delay_view_restore (
   view_name text NOT NULL,
   view_definition text NOT NULL,
   reloptions text[],
-  owner_name text NOT NULL
+  owner_name text NOT NULL,
+  view_comment text
 ) ON COMMIT DROP;
 
 CREATE TEMP TABLE nvx_reply_delay_view_acl (
@@ -26,6 +27,14 @@ CREATE TEMP TABLE nvx_reply_delay_view_acl (
   grantee_name text NOT NULL,
   privilege_type text NOT NULL,
   is_grantable boolean NOT NULL
+) ON COMMIT DROP;
+
+CREATE TEMP TABLE nvx_reply_delay_column_comments (
+  view_oid oid NOT NULL,
+  attnum integer NOT NULL,
+  column_name text NOT NULL,
+  column_comment text NOT NULL,
+  PRIMARY KEY (view_oid, attnum)
 ) ON COMMIT DROP;
 
 DO $reply_delay_bridge$
@@ -39,6 +48,7 @@ DECLARE
   v_dependent_views text[];
   v_view record;
   v_acl record;
+  v_column_comment record;
   v_safe_reloptions text[];
 BEGIN
   IF to_regclass('public.leads') IS NULL THEN
@@ -134,7 +144,8 @@ BEGIN
     view_name,
     view_definition,
     reloptions,
-    owner_name
+    owner_name,
+    view_comment
   )
   SELECT v.oid,
          d.dependency_depth,
@@ -142,7 +153,8 @@ BEGIN
          v.relname,
          pg_catalog.pg_get_viewdef(v.oid, true),
          v.reloptions,
-         pg_catalog.pg_get_userbyid(v.relowner)
+         pg_catalog.pg_get_userbyid(v.relowner),
+         pg_catalog.obj_description(v.oid, 'pg_class')
   FROM depths d
   JOIN pg_catalog.pg_class v ON v.oid = d.view_oid
   JOIN pg_catalog.pg_namespace n ON n.oid = v.relnamespace;
@@ -186,6 +198,22 @@ BEGIN
   CROSS JOIN LATERAL pg_catalog.aclexplode(c.relacl) acl
   WHERE c.relacl IS NOT NULL
     AND acl.grantee <> c.relowner;
+
+  INSERT INTO nvx_reply_delay_column_comments (
+    view_oid,
+    attnum,
+    column_name,
+    column_comment
+  )
+  SELECT r.view_oid,
+         a.attnum,
+         a.attname,
+         pg_catalog.col_description(r.view_oid, a.attnum)
+  FROM nvx_reply_delay_view_restore r
+  JOIN pg_catalog.pg_attribute a ON a.attrelid = r.view_oid
+  WHERE a.attnum > 0
+    AND NOT a.attisdropped
+    AND pg_catalog.col_description(r.view_oid, a.attnum) IS NOT NULL;
 
   -- GRANT executes as current_user. Refuse to rebuild a view if that would
   -- silently change the grantor identity of an existing ACL entry.
@@ -285,6 +313,30 @@ BEGIN
           ELSE pg_catalog.quote_ident(v_acl.grantee_name)
         END,
         CASE WHEN v_acl.is_grantable THEN ' WITH GRANT OPTION' ELSE '' END
+      );
+    END LOOP;
+
+    IF v_view.view_comment IS NOT NULL THEN
+      EXECUTE pg_catalog.format(
+        'COMMENT ON VIEW %I.%I IS %L',
+        v_view.view_schema,
+        v_view.view_name,
+        v_view.view_comment
+      );
+    END IF;
+
+    FOR v_column_comment IN
+      SELECT *
+      FROM nvx_reply_delay_column_comments c
+      WHERE c.view_oid = v_view.view_oid
+      ORDER BY c.attnum
+    LOOP
+      EXECUTE pg_catalog.format(
+        'COMMENT ON COLUMN %I.%I.%I IS %L',
+        v_view.view_schema,
+        v_view.view_name,
+        v_column_comment.column_name,
+        v_column_comment.column_comment
       );
     END LOOP;
 
