@@ -80,10 +80,12 @@ describe('Meta tenant-safe resolution contract', () => {
   });
 
   it('updates every Meta integration-test status write through canonical owner and service', () => {
-    const start = api.indexOf("if (service === 'meta') {");
-    const end = api.indexOf("const { data: cred }", start);
+    const start = api.indexOf('async function handleIntegrationsTestPost');
+    const end = api.indexOf('async function handlePlaybooksGet', start);
     const source = api.slice(start, end);
     expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    expect(source).toContain("if (service === 'meta' || service === 'meta_ads') {");
     expect(source).toContain("const integrationOwnerId = creds.integrationOwnerId ?? '';");
     expect(source).toContain("const integrationService = creds.integrationService ?? '';");
 
@@ -94,6 +96,7 @@ describe('Meta tenant-safe resolution contract', () => {
       expect(call[2].trim()).toBe('integrationService');
     }
     expect(source).not.toContain("updateIntegrationStatus(adminClient, userId, 'meta'");
+    expect(source).not.toContain("updateIntegrationStatus(adminClient, userId, 'meta_ads'");
   });
 
   it('scopes campaign CRM fallback through clinic member user IDs instead of a non-existent view clinic_id', () => {
