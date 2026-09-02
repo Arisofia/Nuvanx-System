@@ -1209,7 +1209,7 @@ export async function processLeadData(adminClient: any, userId: string, leadData
         ad_id:         leadData.ad_id       ?? null,
         ad_name:       leadData.ad_name     ?? null,
         form_name:     leadData.form_name   ?? null,
-      }, { onConflict: 'leadgen_id' });
+      }, { onConflict: 'lead_id' });
     return leadId;
   }
   return null;
