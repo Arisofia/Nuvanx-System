@@ -7,6 +7,7 @@ const {
   isDynamicSecretReference,
   isHumanReadableDiagnostic,
   isLocalPostgresHarnessLine,
+  looksHighEntropySecret,
   scanText,
   scanTrackedFiles,
 } = require('./scan-secrets');
@@ -14,6 +15,9 @@ const {
 function patterns(findings) {
   return findings.map((finding) => finding.pattern);
 }
+
+const privateKeyBegin = ['-----BEGIN ', 'PRIVATE KEY-----'].join('');
+const privateKeyEnd = ['-----END ', 'PRIVATE KEY-----'].join('');
 
 test('local Postgres harness credential is accepted but remote inline credentials remain blocked', () => {
   const local = 'DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/nuvanx_invariant';
@@ -23,24 +27,24 @@ test('local Postgres harness credential is accepted but remote inline credential
   const remotePassword = 'remote' + 'Credential' + '987654321';
   const remote = `DATABASE_URL=postgresql://postgres:${remotePassword}@db.example.supabase.co:5432/postgres`;
   assert.ok(patterns(scanText('scripts/runtime.js', remote)).includes('Postgres URL with inline password'));
+
+  const mixed = `${local}; ${remote}`;
+  const mixedFindings = scanText('scripts/runtime.js', mixed);
+  assert.equal(patterns(mixedFindings).filter((pattern) => pattern === 'Postgres URL with inline password').length, 1);
 });
 
 test('private-key syntax mentions and the explicit tiny test fixture are not treated as private key material', () => {
-  const syntaxMention = "if (value.includes('-----BEGIN PRIVATE KEY-----')) return true;";
+  const syntaxMention = `if (value.includes('${privateKeyBegin}')) return true;`;
   assert.equal(findPrivateKeyMaterial(syntaxMention), null);
 
-  const tinyFixture = [
-    "private_key: '-----BEGIN PRIVATE KEY-----\\n",
-    "test\\n",
-    "-----END PRIVATE KEY-----'",
-  ].join('');
+  const tinyFixture = `private_key: '${privateKeyBegin}\\ntest\\n${privateKeyEnd}'`;
   assert.equal(findPrivateKeyMaterial(tinyFixture), null);
   assert.deepEqual(scanText('scripts/private-key.test.js', tinyFixture), []);
 });
 
 test('a plausible embedded private-key block is still blocked', () => {
   const body = 'QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo' + 'A'.repeat(96);
-  const pem = ['-----BEGIN PRIVATE KEY-----', body, '-----END PRIVATE KEY-----'].join('\n');
+  const pem = [privateKeyBegin, body, privateKeyEnd].join('\n');
   const findings = scanText('config/runtime.txt', pem);
   assert.ok(patterns(findings).includes('Private key block'));
 });
@@ -70,7 +74,7 @@ test('only explicit diagnostic identifiers may carry human-readable diagnostic m
   assert.ok(patterns(findings).includes('Hardcoded secret assignment'));
 });
 
-test('explicit synthetic test credentials are accepted without exempting the test file', () => {
+test('explicit low-entropy synthetic test credentials are accepted without exempting realistic secrets', () => {
   const source = [
     "const GOOGLE_ADS_CLIENT_SECRET = 'client-secret-for-contract-testing';",
     "const GOOGLE_ADS_REFRESH_TOKEN = 'refresh-token-for-contract-testing';",
@@ -80,6 +84,11 @@ test('explicit synthetic test credentials are accepted without exempting the tes
     "const secret = 'sensitive-stage-value';",
   ].join('\n');
   assert.deepEqual(scanText('scripts/example.test.js', source), []);
+
+  const randomWithMarker = 'test-' + ['z9Qx', '4LmN', '7VpR', '2KsT', '8WdF', '6JcH', '3ByE', '5UaG'].join('');
+  assert.equal(looksHighEntropySecret(randomWithMarker), true);
+  const findings = scanText('scripts/example.test.js', `const API_KEY = '${randomWithMarker}';`);
+  assert.ok(patterns(findings).includes('Hardcoded secret assignment'));
 });
 
 test('a high-entropy hardcoded secret remains blocked even inside a test file', () => {
