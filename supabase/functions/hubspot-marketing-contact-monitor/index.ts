@@ -123,7 +123,7 @@ async function fetchMarketingContactCount(accessToken: string): Promise<number> 
 async function persistFailureState(admin: any, failure: MonitorFailure): Promise<void> {
   const now = new Date().toISOString();
   try {
-    await admin
+    const { error } = await admin
       .from("hubspot_marketing_contact_monitor_state")
       .update({
         last_error_code: failure.code,
@@ -131,6 +131,7 @@ async function persistFailureState(admin: any, failure: MonitorFailure): Promise
         updated_at: now,
       })
       .eq("monitor_key", MONITOR_KEY);
+    if (error) throw error;
   } catch {
     // The response remains fail-closed even when observability persistence is unavailable.
   }
