@@ -15,6 +15,10 @@ const edgePreflightSource = readFileSync(
   fileURLToPath(new URL("../google-ads-auth-preflight/index.ts", import.meta.url)),
   "utf8",
 );
+const coreApiSource = readFileSync(
+  fileURLToPath(new URL("../api/index.ts", import.meta.url)),
+  "utf8",
+);
 const runtimePreflightScript = readFileSync(
   fileURLToPath(new URL("../../../scripts/preflight-google-ads-runtime.js", import.meta.url)),
   "utf8",
@@ -52,7 +56,7 @@ describe("Google Ads runtime acceptance orchestration", () => {
     expect(runtimePreflightScript).toContain("developer_token: token");
   });
 
-  it("converges exactly one normalized Google Ads identity into Edge before governed function deployment", () => {
+  it("converges one normalized runtime mode before governed function deployment", () => {
     expect(deployWorkflow).toContain("GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}");
     expect(deployWorkflow).toContain("GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}");
     expect(deployWorkflow).toContain("GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}");
@@ -71,6 +75,13 @@ describe("Google Ads runtime acceptance orchestration", () => {
     const preflightDeploy = deployWorkflow.indexOf("supabase functions deploy google-ads-auth-preflight");
     expect(secretConvergence).toBeGreaterThan(-1);
     expect(preflightDeploy).toBeGreaterThan(secretConvergence);
+  });
+
+  it("preserves the project-wide service account while the legacy core API still depends on it", () => {
+    expect(coreApiSource).toContain("Deno.env.get('GOOGLE_ADS_SERVICE_ACCOUNT')");
+    expect(convergenceScript).toContain("Do not unset GOOGLE_ADS_SERVICE_ACCOUNT here");
+    expect(convergenceScript).toContain("legacy core `api` function");
+    expect(convergenceScript).not.toContain("'service_account_cleanup'");
   });
 
   it("deploys the read-only auth preflight in the same governed Edge release as health and daily sync", () => {
