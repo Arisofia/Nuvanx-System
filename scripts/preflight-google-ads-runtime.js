@@ -9,6 +9,7 @@ const {
 const CANONICAL_LOGIN_CUSTOMER_ID = '8265708501';
 const TARGET_CUSTOMER_IDS = ['9084540447', '8201489748'];
 const SAFE_FAILURE_KINDS = new Set(['request', 'configuration', 'oauth', 'provider', 'validation']);
+const SAFE_FAILURE_STAGES = new Set(['oauth_token', 'list_accessible_customers', 'gaql_908', 'gaql_820']);
 
 const SAFE_FAILURE_DIAGNOSTICS = [
   ['OAuth refresh configuration is incomplete', 'oauth_refresh_incomplete'],
@@ -55,11 +56,13 @@ function sorted(values) {
 function classifyFailureDiagnostic(payload) {
   const candidateKind = String(payload?.kind || '').trim().toLowerCase();
   const kind = SAFE_FAILURE_KINDS.has(candidateKind) ? candidateKind : 'unknown';
+  const candidateStage = String(payload?.stage || '').trim().toLowerCase();
+  const stage = SAFE_FAILURE_STAGES.has(candidateStage) ? candidateStage : 'unknown';
   const message = String(payload?.message || '');
   for (const [needle, code] of SAFE_FAILURE_DIAGNOSTICS) {
-    if (message.includes(needle)) return { kind, diagnostic: code };
+    if (message.includes(needle)) return { kind, stage, diagnostic: code };
   }
-  return { kind, diagnostic: `${kind}_unknown` };
+  return { kind, stage, diagnostic: `${kind}_unknown` };
 }
 
 async function preflightGoogleAdsRuntime({
@@ -86,8 +89,10 @@ async function preflightGoogleAdsRuntime({
   });
   const payload = await readJson(response);
   if (!response.ok || payload?.success !== true) {
-    const { kind, diagnostic } = classifyFailureDiagnostic(payload);
-    throw new Error(`Google Ads Edge runtime preflight failed (HTTP ${response.status}, kind=${kind}, diagnostic=${diagnostic})`);
+    const { kind, stage, diagnostic } = classifyFailureDiagnostic(payload);
+    throw new Error(
+      `Google Ads Edge runtime preflight failed (HTTP ${response.status}, kind=${kind}, stage=${stage}, diagnostic=${diagnostic})`,
+    );
   }
   if (payload?.persistence_performed !== false) {
     throw new Error('Google Ads Edge runtime preflight did not prove read-only semantics');
