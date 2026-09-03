@@ -42,6 +42,10 @@ jobs:
       FRONTEND_URL: https://nuvanx-frontend.jenineferderas.workers.dev
       PRODUCTION_FALLBACK_URL: https://nuvanx-frontend.jenineferderas.workers.dev
       GOOGLE_ADS_LOGIN_CUSTOMER_ID: '8265708501'
+      GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
+      GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}
+      GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}
+      GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
 
     steps:
       - name: Checkout trusted main
@@ -93,6 +97,10 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+
+      - name: Validate Google Ads Edge auth identity
+        if: ${{ steps.candidate.outputs.deploy == 'true' }}
+        run: node scripts/converge-google-ads-edge-auth.js --validate-only
 
       - name: Setup Deno
         if: ${{ steps.candidate.outputs.deploy == 'true' }}
@@ -182,12 +190,16 @@ jobs:
             test -n "${PRODUCTION_FALLBACK_URL:-}"
             test -n "${GOOGLE_ADS_LOGIN_CUSTOMER_ID:-}"
             [[ "$GOOGLE_ADS_LOGIN_CUSTOMER_ID" == "8265708501" ]]
+
             supabase secrets set \
               CORS_ALLOWED_ORIGINS="$CORS_ALLOWED_ORIGINS" \
               FRONTEND_URL="$FRONTEND_URL" \
               PRODUCTION_FALLBACK_URL="$PRODUCTION_FALLBACK_URL" \
               GOOGLE_ADS_LOGIN_CUSTOMER_ID="$GOOGLE_ADS_LOGIN_CUSTOMER_ID" \
               --project-ref "$SUPABASE_PROJECT_REF"
+
+            node scripts/converge-google-ads-edge-auth.js
+
             supabase functions deploy dashboard --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy agent-run --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy runtime-bootstrap --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt

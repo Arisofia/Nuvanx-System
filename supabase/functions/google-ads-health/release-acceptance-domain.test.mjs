@@ -14,6 +14,10 @@ const runtimePreflightScript = readFileSync(
   fileURLToPath(new URL("../../../scripts/preflight-google-ads-runtime.js", import.meta.url)),
   "utf8",
 );
+const convergenceScript = readFileSync(
+  fileURLToPath(new URL("../../../scripts/converge-google-ads-edge-auth.js", import.meta.url)),
+  "utf8",
+);
 const packageJson = JSON.parse(
   readFileSync(fileURLToPath(new URL("../../../package.json", import.meta.url)), "utf8"),
 );
@@ -28,6 +32,20 @@ describe("Production release acceptance domains", () => {
     expect(deployWorkflow).not.toContain("GOOGLE_ADS_DEVELOPER_TOKEN");
     expect(deployWorkflow).not.toContain("continue-on-error: true");
     expect(deployWorkflow).not.toContain("git diff --name-only");
+  });
+
+  it("converges normalized Google Ads runtime identity without moving provider acceptance into the deploy domain", () => {
+    expect(deployWorkflow).toContain("GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}");
+    expect(deployWorkflow).toContain("GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}");
+    expect(deployWorkflow).toContain("GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}");
+    expect(deployWorkflow).toContain("GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}");
+    expect(deployWorkflow).toContain("node scripts/converge-google-ads-edge-auth.js --validate-only");
+    expect(deployWorkflow).toContain("node scripts/converge-google-ads-edge-auth.js");
+    expect(deployWorkflow).not.toContain("scripts/google-ads-auth-preflight.js");
+    expect(deployWorkflow).not.toContain("GOOGLE_ADS_DEVELOPER_TOKEN");
+    expect(convergenceScript).toContain("String(value ?? '').trim()");
+    expect(convergenceScript).toContain("verifySecretShape(after, identity)");
+    expect(convergenceScript).not.toContain("GOOGLE_ADS_DEVELOPER_TOKEN");
   });
 
   it("proves the actual upstream deploy and fails closed when required provenance is absent", () => {
@@ -98,8 +116,9 @@ describe("Production release acceptance domains", () => {
     expect(googleAdsAcceptanceWorkflow).not.toContain("git diff --name-only");
   });
 
-  it("is executed by the canonical repository test command", () => {
+  it("executes both runtime acceptance and Edge auth convergence tests in the canonical suite", () => {
     expect(packageJson.scripts.test).toContain("node --test scripts/preflight-google-ads-runtime.test.js");
+    expect(packageJson.scripts.test).toContain("node --test scripts/converge-google-ads-edge-auth.test.js");
     expect(packageJson.scripts.test).toContain("vitest run supabase/functions");
   });
 });
