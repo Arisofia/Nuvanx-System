@@ -107,13 +107,17 @@ async function listAccessibleCustomers({ accessToken, developerToken, fetchImpl 
     signal: AbortSignal.timeout(20_000),
   });
   const payload = await readJson(response);
-  const resourceNames = Array.isArray(payload?.resourceNames)
-    ? payload.resourceNames.map((value) => String(value)).filter((value) => /^customers\/\d+$/.test(value))
+  const accessibleCustomerIds = Array.isArray(payload?.resourceNames)
+    ? payload.resourceNames
+      .map((value) => String(value))
+      .filter((value) => /^customers\/\d+$/.test(value))
+      .map((value) => value.replace(/\D/g, ''))
     : [];
   return {
     http_status: response.status,
     provider_status: providerStatus(payload),
-    accessible_customer_ids: resourceNames.map((value) => value.replace(/\D/g, '')),
+    accessible_customer_count: accessibleCustomerIds.length,
+    login_customer_accessible: accessibleCustomerIds.includes(LOGIN_CUSTOMER_ID),
   };
 }
 
