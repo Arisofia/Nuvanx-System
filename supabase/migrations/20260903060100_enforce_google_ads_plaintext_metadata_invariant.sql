@@ -4,6 +4,10 @@
 -- The BEFORE trigger strips reserved aliases before table constraints evaluate.
 -- The cleanup UPDATE closes the race between the preceding cleanup-only migration
 -- and trigger installation. The CHECK constraint remains as defense in depth.
+--
+-- Only JSON objects participate in this legacy-key contract. Arrays/scalars are
+-- left unchanged because JSONB key operators have different semantics on arrays.
+-- Preserve updated_at during cleanup so secret removal cannot alter account routing.
 
 BEGIN;
 
@@ -13,8 +17,9 @@ LANGUAGE plpgsql
 SET search_path = public, pg_temp
 AS $$
 BEGIN
-  IF NEW.service = 'google_ads' THEN
-    NEW.metadata := COALESCE(NEW.metadata, '{}'::jsonb) - 'developer_token' - 'developerToken';
+  IF NEW.service = 'google_ads'
+     AND jsonb_typeof(NEW.metadata) = 'object' THEN
+    NEW.metadata := NEW.metadata - 'developer_token' - 'developerToken';
   END IF;
   RETURN NEW;
 END;
@@ -29,12 +34,12 @@ FOR EACH ROW
 EXECUTE FUNCTION public.nvx_strip_google_ads_plaintext_metadata();
 
 UPDATE public.integrations
-SET metadata = COALESCE(metadata, '{}'::jsonb) - 'developer_token' - 'developerToken',
-    updated_at = NOW()
+SET metadata = metadata - 'developer_token' - 'developerToken'
 WHERE service = 'google_ads'
+  AND jsonb_typeof(metadata) = 'object'
   AND (
-    COALESCE(metadata, '{}'::jsonb) ? 'developer_token'
-    OR COALESCE(metadata, '{}'::jsonb) ? 'developerToken'
+    metadata ? 'developer_token'
+    OR metadata ? 'developerToken'
   );
 
 ALTER TABLE public.integrations
@@ -44,9 +49,10 @@ ALTER TABLE public.integrations
   ADD CONSTRAINT integrations_google_ads_no_plaintext_developer_token
   CHECK (
     service <> 'google_ads'
+    OR jsonb_typeof(metadata) <> 'object'
     OR (
-      NOT (COALESCE(metadata, '{}'::jsonb) ? 'developer_token')
-      AND NOT (COALESCE(metadata, '{}'::jsonb) ? 'developerToken')
+      NOT (metadata ? 'developer_token')
+      AND NOT (metadata ? 'developerToken')
     )
   );
 
