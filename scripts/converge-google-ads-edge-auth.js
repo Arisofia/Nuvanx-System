@@ -19,9 +19,12 @@ function resolveIdentity(env = process.env) {
   const oauth = Object.fromEntries(OAUTH_KEYS.map((key) => [key, clean(env[key])]));
   const oauthCount = OAUTH_KEYS.filter((key) => oauth[key]).length;
   const serviceAccount = clean(env[SERVICE_ACCOUNT_KEY]);
-  const requestedMode = clean(env[AUTH_MODE_KEY]);
+  // Deployment policy is explicitly service-account first until a refresh token is
+  // intentionally provisioned. OAuth cannot become active merely because stale
+  // client id/secret values happen to exist in the Production environment.
+  const requestedMode = clean(env[AUTH_MODE_KEY]) || 'service_account';
 
-  if (requestedMode && !AUTH_MODES.has(requestedMode)) {
+  if (!AUTH_MODES.has(requestedMode)) {
     throw new Error('Google Ads auth mode is invalid; expected oauth_refresh or service_account.');
   }
 
@@ -32,23 +35,10 @@ function resolveIdentity(env = process.env) {
     return { mode: 'service_account', oauth, serviceAccount, requestedMode };
   }
 
-  if (requestedMode === 'oauth_refresh') {
-    if (oauthCount !== OAUTH_KEYS.length) {
-      throw new Error('Google Ads OAuth refresh mode is selected but the complete OAuth tuple is missing.');
-    }
-    return { mode: 'oauth_refresh', oauth, serviceAccount, requestedMode };
+  if (oauthCount !== OAUTH_KEYS.length) {
+    throw new Error('Google Ads OAuth refresh mode is selected but the complete OAuth tuple is missing.');
   }
-
-  if (oauthCount > 0 && oauthCount < OAUTH_KEYS.length) {
-    throw new Error('Google Ads OAuth refresh identity is partial; all three OAuth secrets are required.');
-  }
-  if (oauthCount === OAUTH_KEYS.length) {
-    return { mode: 'oauth_refresh', oauth, serviceAccount, requestedMode: '' };
-  }
-  if (!serviceAccount) {
-    throw new Error('No complete Google Ads runtime identity is configured.');
-  }
-  return { mode: 'service_account', oauth, serviceAccount, requestedMode: '' };
+  return { mode: 'oauth_refresh', oauth, serviceAccount, requestedMode };
 }
 
 function defaultExecSupabase(args, { capture = false } = {}) {
