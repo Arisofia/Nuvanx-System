@@ -6,6 +6,7 @@ const {
   validateDeveloperToken,
 } = require('./provision-google-ads-developer-token');
 
+const CANONICAL_LOGIN_CUSTOMER_ID = '8265708501';
 const TARGET_CUSTOMER_IDS = ['9084540447', '8201489748'];
 
 function required(name) {
@@ -36,6 +37,7 @@ async function preflightGoogleAdsRuntime({
 
   const response = await fetchImpl(`${safeBase}/functions/v1/google-ads-auth-preflight`, {
     method: 'POST',
+    redirect: 'error',
     headers: {
       apikey: serviceRole,
       Authorization: `Bearer ${serviceRole}`,
@@ -56,6 +58,12 @@ async function preflightGoogleAdsRuntime({
   if (!['oauth_refresh', 'service_account'].includes(String(payload?.auth_mode || ''))) {
     throw new Error('Google Ads Edge runtime preflight returned an invalid auth mode');
   }
+  if (String(payload?.login_customer_id || '') !== CANONICAL_LOGIN_CUSTOMER_ID) {
+    throw new Error('Google Ads Edge runtime preflight canonical MCC mismatch');
+  }
+  if (payload?.login_customer_accessible !== true) {
+    throw new Error('Google Ads Edge runtime preflight did not prove canonical MCC access');
+  }
   if (sorted(payload?.target_customer_ids || []).join(',') !== sorted(TARGET_CUSTOMER_IDS).join(',')) {
     throw new Error('Google Ads Edge runtime preflight target-account contract mismatch');
   }
@@ -70,7 +78,8 @@ async function preflightGoogleAdsRuntime({
   return {
     success: true,
     auth_mode: String(payload.auth_mode),
-    login_customer_id: String(payload?.login_customer_id || ''),
+    login_customer_id: CANONICAL_LOGIN_CUSTOMER_ID,
+    login_customer_accessible: true,
     target_customer_ids: TARGET_CUSTOMER_IDS,
     accessible_customer_count: Number(payload?.accessible_customer_count || 0),
     persistence_performed: false,
@@ -94,6 +103,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  CANONICAL_LOGIN_CUSTOMER_ID,
   TARGET_CUSTOMER_IDS,
   preflightGoogleAdsRuntime,
 };
