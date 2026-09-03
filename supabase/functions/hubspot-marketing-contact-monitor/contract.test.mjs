@@ -24,6 +24,33 @@ const migrationSource = readFileSync(
   "utf8",
 );
 
+function failureStateAdmin({ data = [{ monitor_key: "hubspot_marketing_contacts" }], error = null } = {}) {
+  const updates = [];
+  const admin = {
+    from: (table) => {
+      expect(table).toBe("hubspot_marketing_contact_monitor_state");
+      return {
+        update: (payload) => {
+          updates.push(payload);
+          return {
+            eq: (column, value) => {
+              expect(column).toBe("monitor_key");
+              expect(value).toBe("hubspot_marketing_contacts");
+              return {
+                select: async (projection) => {
+                  expect(projection).toBe("monitor_key");
+                  return { data, error };
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+  return { admin, updates };
+}
+
 describe("HubSpot marketing-contact monitor", () => {
   it("accepts a valid live count through the internal Edge boundary", async () => {
     const calls = [];
@@ -83,27 +110,10 @@ describe("HubSpot marketing-contact monitor", () => {
   });
 
   it("persists bounded failure state and surfaces database write errors", async () => {
-    const updates = [];
-    const failingAdmin = {
-      from: (table) => {
-        expect(table).toBe("hubspot_marketing_contact_monitor_state");
-        return {
-          update: (payload) => {
-            updates.push(payload);
-            return {
-              eq: async (column, value) => {
-                expect(column).toBe("monitor_key");
-                expect(value).toBe("hubspot_marketing_contacts");
-                return { error: new Error("write failed") };
-              },
-            };
-          },
-        };
-      },
-    };
+    const { admin, updates } = failureStateAdmin({ error: new Error("write failed") });
 
     await expect(persistFailureState(
-      failingAdmin,
+      admin,
       "hubspot_marketing_contacts",
       { code: "hubspot_unauthorized" },
       "2026-09-03T14:00:00.000Z",
@@ -116,6 +126,37 @@ describe("HubSpot marketing-contact monitor", () => {
     }]);
     expect(updates[0]).not.toHaveProperty("last_count");
     expect(updates[0]).not.toHaveProperty("last_checked_at");
+  });
+
+  it("requires failure-state persistence to affect exactly the canonical monitor row", async () => {
+    const missing = failureStateAdmin({ data: [] });
+    await expect(persistFailureState(
+      missing.admin,
+      "hubspot_marketing_contacts",
+      { code: "hubspot_unauthorized" },
+      "2026-09-03T14:00:00.000Z",
+    )).rejects.toThrow("unexpected row count");
+
+    const duplicate = failureStateAdmin({
+      data: [
+        { monitor_key: "hubspot_marketing_contacts" },
+        { monitor_key: "hubspot_marketing_contacts" },
+      ],
+    });
+    await expect(persistFailureState(
+      duplicate.admin,
+      "hubspot_marketing_contacts",
+      { code: "hubspot_unauthorized" },
+      "2026-09-03T14:00:00.000Z",
+    )).rejects.toThrow("unexpected row count");
+
+    const canonical = failureStateAdmin();
+    await expect(persistFailureState(
+      canonical.admin,
+      "hubspot_marketing_contacts",
+      { code: "hubspot_unauthorized" },
+      "2026-09-03T14:00:00.000Z",
+    )).resolves.toBeUndefined();
   });
 
   it("commits successful observations through one transactional RPC", () => {
