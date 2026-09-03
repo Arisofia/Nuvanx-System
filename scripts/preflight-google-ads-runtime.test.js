@@ -195,3 +195,35 @@ test('runtime preflight never emits an unrecognized Edge message or embedded sec
     },
   );
 });
+
+test('runtime preflight allowlists Edge failure kinds and cannot echo an untrusted kind', async () => {
+  const secret = 'kind-secret-that-must-not-appear';
+  const payload = {
+    success: false,
+    kind: `configuration_${secret}`,
+    message: 'unexpected failure',
+    persistence_performed: false,
+  };
+  assert.deepEqual(classifyFailureDiagnostic(payload), {
+    kind: 'unknown',
+    diagnostic: 'unknown_unknown',
+  });
+
+  const fetchImpl = async (url) => {
+    if (url.endsWith('/rest/v1/rpc/nvx_get_runtime_secret')) return response(200, 'internal-runtime-secret');
+    return response(500, payload);
+  };
+  await assert.rejects(
+    preflightGoogleAdsRuntime({
+      base: 'https://project.supabase.co',
+      serviceRole: 'service-role-key',
+      developerToken: 'developer-token',
+      fetchImpl,
+    }),
+    (error) => {
+      assert.match(error.message, /kind=unknown, diagnostic=unknown_unknown/);
+      assert.doesNotMatch(error.message, new RegExp(secret));
+      return true;
+    },
+  );
+});
