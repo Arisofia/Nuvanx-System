@@ -44,18 +44,20 @@ describe('standalone Edge deployment ownership', () => {
     expect(workflow).toContain('supabase functions deploy google-ads-daily-sync --project-ref "$SUPABASE_PROJECT_REF"');
   });
 
-  it('fails closed unless the complete WhatsApp migration tail is present in LOCAL and REMOTE history', () => {
-    expect(workflow).toContain('Verify WhatsApp async migrations are already applied');
+  it('waits read-only for the automatic migration owner and fails closed before migration-dependent Edge deploys', () => {
+    expect(workflow).toContain('Wait for automatic Production migration owner');
     expect(workflow).toContain('supabase migration list --db-url');
-    expect(workflow).toContain('for REQUIRED_MIGRATION in 20260901190000 20260901190100 20260901190200; do');
-    expect(workflow).toContain('not present in both LOCAL and REMOTE migration history');
+    expect(workflow).toContain('REQUIRED_MIGRATIONS=(20260901190000 20260901190100 20260901190200 20260903142000)');
+    expect(workflow).toContain('for ATTEMPT in {1..20}; do');
+    expect(workflow).toContain('Automatic Production migration owner did not converge required migrations');
     expect(workflow).not.toContain('bash scripts/supabase-migrate.sh');
+    expect(workflow).not.toContain('supabase db push');
 
-    for (const version of ['20260901190000', '20260901190100', '20260901190200']) {
+    for (const version of ['20260901190000', '20260901190100', '20260901190200', '20260903142000']) {
       const parity = migrationParityRow(version);
-      expect(parity.test(`  ${version} | ${version} | 2026-09-01 19:00:00`)).toBe(true);
-      expect(parity.test(`  ${version} |                | 2026-09-01 19:00:00`)).toBe(false);
-      expect(parity.test(`                 | ${version} | 2026-09-01 19:00:00`)).toBe(false);
+      expect(parity.test(`  ${version} | ${version} | 2026-09-03 14:20:00`)).toBe(true);
+      expect(parity.test(`  ${version} |                | 2026-09-03 14:20:00`)).toBe(false);
+      expect(parity.test(`                 | ${version} | 2026-09-03 14:20:00`)).toBe(false);
     }
   });
 
@@ -72,6 +74,7 @@ describe('standalone Edge deployment ownership', () => {
     expect(workflow).toContain('supabase/functions/meta-lead-backfill/index.ts');
     expect(workflow).toContain('supabase/functions/meta-daily-insights/index.ts');
     expect(workflow).toContain('supabase/functions/meta-capi-dispatch/index.ts');
+    expect(workflow).toContain('supabase/functions/hubspot-marketing-contact-monitor/index.ts');
     expect(workflow).toContain('supabase/functions/revops-dispatcher/index.ts');
     expect(workflow).toContain('supabase/functions/whatsapp-send/index.ts');
     expect(workflow).toContain('supabase/functions/whatsapp-outbound-worker/index.ts');
