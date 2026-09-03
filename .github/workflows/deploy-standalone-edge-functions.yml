@@ -111,7 +111,7 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: Verify WhatsApp async migrations are already applied
+      - name: Verify migration-dependent Edge schemas are already applied
         if: ${{ steps.candidate.outputs.deploy == 'true' }}
         uses: ./.github/actions/supabase-link-run
         with:
@@ -124,9 +124,9 @@ jobs:
             set -euo pipefail
             MIGRATION_STATUS="$(supabase migration list --db-url "${SESSION_URL:-$DATABASE_URL}" 2>&1)"
             printf '%s\n' "$MIGRATION_STATUS"
-            for REQUIRED_MIGRATION in 20260901190000 20260901190100 20260901190200; do
+            for REQUIRED_MIGRATION in 20260901190000 20260901190100 20260901190200 20260903142000; do
               if ! printf '%s\n' "$MIGRATION_STATUS" | grep -Eq "^[[:space:]]*${REQUIRED_MIGRATION}[[:space:]]*\|[[:space:]]*${REQUIRED_MIGRATION}[[:space:]]*(\||$)"; then
-                echo "::error::Required migration ${REQUIRED_MIGRATION} is not present in both LOCAL and REMOTE migration history. Refusing to deploy migration-dependent WhatsApp functions."
+                echo "::error::Required migration ${REQUIRED_MIGRATION} is not present in both LOCAL and REMOTE migration history. Refusing to deploy migration-dependent Edge functions."
                 exit 1
               fi
             done
