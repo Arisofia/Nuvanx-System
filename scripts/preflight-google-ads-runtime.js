@@ -57,12 +57,16 @@ function classifyFailureDiagnostic(payload) {
   const candidateKind = String(payload?.kind || '').trim().toLowerCase();
   const kind = SAFE_FAILURE_KINDS.has(candidateKind) ? candidateKind : 'unknown';
   const candidateStage = String(payload?.stage || '').trim().toLowerCase();
-  const stage = SAFE_FAILURE_STAGES.has(candidateStage) ? candidateStage : 'unknown';
+  const stage = SAFE_FAILURE_STAGES.has(candidateStage) ? candidateStage : '';
   const message = String(payload?.message || '');
   for (const [needle, code] of SAFE_FAILURE_DIAGNOSTICS) {
-    if (message.includes(needle)) return { kind, stage, diagnostic: code };
+    if (message.includes(needle)) {
+      return stage ? { kind, stage, diagnostic: code } : { kind, diagnostic: code };
+    }
   }
-  return { kind, stage, diagnostic: `${kind}_unknown` };
+  return stage
+    ? { kind, stage, diagnostic: `${kind}_unknown` }
+    : { kind, diagnostic: `${kind}_unknown` };
 }
 
 async function preflightGoogleAdsRuntime({
@@ -89,9 +93,10 @@ async function preflightGoogleAdsRuntime({
   });
   const payload = await readJson(response);
   if (!response.ok || payload?.success !== true) {
-    const { kind, stage, diagnostic } = classifyFailureDiagnostic(payload);
+    const classified = classifyFailureDiagnostic(payload);
+    const stage = classified.stage || 'unknown';
     throw new Error(
-      `Google Ads Edge runtime preflight failed (HTTP ${response.status}, kind=${kind}, stage=${stage}, diagnostic=${diagnostic})`,
+      `Google Ads Edge runtime preflight failed (HTTP ${response.status}, kind=${classified.kind}, stage=${stage}, diagnostic=${classified.diagnostic})`,
     );
   }
   if (payload?.persistence_performed !== false) {
