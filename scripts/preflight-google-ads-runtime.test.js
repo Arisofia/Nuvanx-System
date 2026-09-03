@@ -181,6 +181,33 @@ test('runtime preflight maps canonical MCC producer messages to stable diagnosti
   });
 });
 
+test('runtime preflight maps bounded provider statuses without exposing provider payloads', async () => {
+  const payload = {
+    success: false,
+    kind: 'provider',
+    message: 'Google Ads API 401 UNAUTHENTICATED',
+    persistence_performed: false,
+  };
+  assert.deepEqual(classifyFailureDiagnostic(payload), {
+    kind: 'provider',
+    diagnostic: 'provider_unauthenticated',
+  });
+
+  const fetchImpl = async (url) => {
+    if (url.endsWith('/rest/v1/rpc/nvx_get_runtime_secret')) return response(200, 'internal-runtime-secret');
+    return response(502, payload);
+  };
+  await assert.rejects(
+    preflightGoogleAdsRuntime({
+      base: 'https://project.supabase.co',
+      serviceRole: 'service-role-key',
+      developerToken: 'developer-token',
+      fetchImpl,
+    }),
+    /kind=provider, diagnostic=provider_unauthenticated/,
+  );
+});
+
 test('runtime preflight never emits an unrecognized Edge message or embedded secret', async () => {
   const secret = 'super-secret-value-that-must-not-appear';
   const payload = {
