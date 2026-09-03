@@ -60,10 +60,14 @@ test('dynamic secret references remain scannable without being treated as embedd
   assert.deepEqual(scanText('.github/workflows/runtime.yml', source), []);
 });
 
-test('human-readable diagnostic messages are not classified as embedded credentials', () => {
+test('only explicit diagnostic identifiers may carry human-readable diagnostic messages', () => {
   const message = 'Missing required GitHub secret/env var: META_ACCESS_TOKEN.';
-  assert.equal(isHumanReadableDiagnostic(message), true);
+  assert.equal(isHumanReadableDiagnostic('MISSING_ACCESS_TOKEN', message), true);
+  assert.equal(isHumanReadableDiagnostic('PASSWORD', 'this is a long real password phrase'), false);
   assert.deepEqual(scanText('scripts/runtime.js', `MISSING_ACCESS_TOKEN: '${message}'`), []);
+
+  const findings = scanText('scripts/runtime.js', "PASSWORD='this is a long real password phrase'");
+  assert.ok(patterns(findings).includes('Hardcoded secret assignment'));
 });
 
 test('explicit synthetic test credentials are accepted without exempting the test file', () => {
@@ -73,6 +77,7 @@ test('explicit synthetic test credentials are accepted without exempting the tes
     "const SUPABASE_SERVICE_ROLE = 'service-role-value-for-contract-testing';",
     "const SECRET = 'credential-material-must-not-leak';",
     "const TOKEN = 'super-secret-value-that-must-not-appear';",
+    "const secret = 'sensitive-stage-value';",
   ].join('\n');
   assert.deepEqual(scanText('scripts/example.test.js', source), []);
 });
