@@ -190,7 +190,7 @@ test('runtime preflight never emits an unrecognized Edge message or embedded sec
     }),
     (error) => {
       assert.match(error.message, /diagnostic=configuration_unknown/);
-      assert.doesNotMatch(error.message, new RegExp(secret));
+      assert.equal(error.message.includes(secret), false);
       return true;
     },
   );
@@ -222,7 +222,7 @@ test('runtime preflight allowlists Edge failure kinds and cannot echo an untrust
     }),
     (error) => {
       assert.match(error.message, /kind=unknown, diagnostic=unknown_unknown/);
-      assert.doesNotMatch(error.message, new RegExp(secret));
+      assert.equal(error.message.includes(secret), false);
       return true;
     },
   );
