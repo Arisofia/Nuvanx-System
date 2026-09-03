@@ -19,9 +19,6 @@ function resolveIdentity(env = process.env) {
   const oauth = Object.fromEntries(OAUTH_KEYS.map((key) => [key, clean(env[key])]));
   const oauthCount = OAUTH_KEYS.filter((key) => oauth[key]).length;
   const serviceAccount = clean(env[SERVICE_ACCOUNT_KEY]);
-  // Deployment policy is explicitly service-account first until a refresh token is
-  // intentionally provisioned. OAuth cannot become active merely because stale
-  // client id/secret values happen to exist in the Production environment.
   const requestedMode = clean(env[AUTH_MODE_KEY]) || 'service_account';
 
   if (!AUTH_MODES.has(requestedMode)) {
@@ -91,8 +88,8 @@ function runSecretOperation(label, args, execSupabase) {
 
 function expectedSecretShape(identity) {
   return identity.mode === 'oauth_refresh'
-    ? { required: new Set(OAUTH_KEYS), forbidden: new Set() }
-    : { required: new Set([SERVICE_ACCOUNT_KEY]), forbidden: new Set(OAUTH_KEYS) };
+    ? { required: new Set([AUTH_MODE_KEY, ...OAUTH_KEYS]), forbidden: new Set() }
+    : { required: new Set([AUTH_MODE_KEY, SERVICE_ACCOUNT_KEY]), forbidden: new Set() };
 }
 
 function verifySecretShape(names, identity) {
@@ -118,14 +115,13 @@ function convergeGoogleAdsEdgeAuth({
     throw new Error('SUPABASE_PROJECT_REF is invalid');
   }
 
-  const before = listSecretNames(projectRef, execSupabase);
-
   if (identity.mode === 'oauth_refresh') {
     runSecretOperation(
       'oauth_refresh_set',
       [
         'secrets',
         'set',
+        `${AUTH_MODE_KEY}=oauth_refresh`,
         ...OAUTH_KEYS.map((key) => `${key}=${identity.oauth[key]}`),
         '--project-ref',
         projectRef,
@@ -135,17 +131,19 @@ function convergeGoogleAdsEdgeAuth({
   } else {
     runSecretOperation(
       'service_account_set',
-      ['secrets', 'set', `${SERVICE_ACCOUNT_KEY}=${identity.serviceAccount}`, '--project-ref', projectRef],
+      [
+        'secrets',
+        'set',
+        `${AUTH_MODE_KEY}=service_account`,
+        `${SERVICE_ACCOUNT_KEY}=${identity.serviceAccount}`,
+        '--project-ref',
+        projectRef,
+      ],
       execSupabase,
     );
-    const staleOauthKeys = OAUTH_KEYS.filter((key) => before.has(key));
-    if (staleOauthKeys.length > 0) {
-      runSecretOperation(
-        'oauth_refresh_cleanup',
-        ['secrets', 'unset', ...staleOauthKeys, '--project-ref', projectRef],
-        execSupabase,
-      );
-    }
+    // Do not remove GOOGLE_ADS_CLIENT_ID / CLIENT_SECRET / REFRESH_TOKEN here.
+    // They are project-wide fallbacks also consumed by google-data-manager-export.
+    // Google Ads runtime identity selection is isolated by GOOGLE_ADS_AUTH_MODE.
   }
 
   const after = listSecretNames(projectRef, execSupabase);
