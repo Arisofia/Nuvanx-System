@@ -138,10 +138,6 @@ jobs:
       SUPABASE_URL: https://ssvvuuysgxyqvmovrlvk.supabase.co
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
       GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
-      GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
-      GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}
-      GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}
-      GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
 
     steps:
       - name: Checkout trusted main
@@ -178,16 +174,12 @@ jobs:
           test -n "${SUPABASE_URL:-}"
           test -n "${SUPABASE_SERVICE_ROLE_KEY:-}"
           test -n "${GOOGLE_ADS_DEVELOPER_TOKEN:-}"
-          if [[ -z "${GOOGLE_ADS_SERVICE_ACCOUNT:-}" && -z "${GOOGLE_ADS_CLIENT_ID:-}" && -z "${GOOGLE_ADS_CLIENT_SECRET:-}" && -z "${GOOGLE_ADS_REFRESH_TOKEN:-}" ]]; then
-            echo "::error::No Google Ads OAuth mode is configured in the Production environment."
-            exit 1
-          fi
 
-      - name: Verify provisioning and auth contracts
-        run: node --test scripts/provision-google-ads-developer-token.test.js scripts/google-ads-auth-preflight.test.js scripts/sync-google-ads-service-account.test.js
+      - name: Verify provisioning and runtime-preflight contracts
+        run: node --test scripts/provision-google-ads-developer-token.test.js scripts/preflight-google-ads-runtime.test.js
 
-      - name: Preflight Google Ads provider authentication
-        run: node scripts/google-ads-auth-preflight.js
+      - name: Preflight Google Ads authentication inside deployed Edge runtime
+        run: node scripts/preflight-google-ads-runtime.js
 
       - name: Reverify remote main immediately before Google Ads acceptance
         shell: bash
