@@ -19,6 +19,10 @@ const runtimePreflightScript = readFileSync(
   fileURLToPath(new URL("../../../scripts/preflight-google-ads-runtime.js", import.meta.url)),
   "utf8",
 );
+const convergenceScript = readFileSync(
+  fileURLToPath(new URL("../../../scripts/converge-google-ads-edge-auth.js", import.meta.url)),
+  "utf8",
+);
 const authSource = readFileSync(fileURLToPath(new URL("../_shared/google-ads-auth.ts", import.meta.url)), "utf8");
 
 describe("Google Ads runtime acceptance orchestration", () => {
@@ -48,20 +52,22 @@ describe("Google Ads runtime acceptance orchestration", () => {
     expect(runtimePreflightScript).toContain("developer_token: token");
   });
 
-  it("converges exactly one complete Google Ads identity into Edge before governed function deployment", () => {
+  it("converges exactly one normalized Google Ads identity into Edge before governed function deployment", () => {
     expect(deployWorkflow).toContain("GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}");
     expect(deployWorkflow).toContain("GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}");
     expect(deployWorkflow).toContain("GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}");
     expect(deployWorkflow).toContain("GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}");
-    expect(deployWorkflow).toContain("oauth_count > 0 && oauth_count < 3");
-    expect(deployWorkflow).toContain("Google Ads OAuth refresh identity is partial in GitHub Production");
-    expect(deployWorkflow).toContain("No complete Google Ads runtime identity is configured in GitHub Production");
-    expect(deployWorkflow).toContain("supabase secrets unset GOOGLE_ADS_SERVICE_ACCOUNT");
-    expect(deployWorkflow).toContain("supabase secrets unset \\\n                GOOGLE_ADS_CLIENT_ID \\\n                GOOGLE_ADS_CLIENT_SECRET \\\n                GOOGLE_ADS_REFRESH_TOKEN");
-    expect(deployWorkflow).toContain('GOOGLE_ADS_REFRESH_TOKEN="$GOOGLE_ADS_REFRESH_TOKEN"');
+    expect(deployWorkflow).toContain("node scripts/converge-google-ads-edge-auth.js --validate-only");
+    expect(deployWorkflow).toContain("node scripts/converge-google-ads-edge-auth.js");
     expect(deployWorkflow).not.toContain("GOOGLE_ADS_DEVELOPER_TOKEN");
 
-    const secretConvergence = deployWorkflow.indexOf('GOOGLE_ADS_REFRESH_TOKEN="$GOOGLE_ADS_REFRESH_TOKEN"');
+    expect(convergenceScript).toContain("String(value ?? '').trim()");
+    expect(convergenceScript).toContain("oauthCount > 0 && oauthCount < OAUTH_KEYS.length");
+    expect(convergenceScript).toContain("secrets', 'unset'");
+    expect(convergenceScript).toContain("verifySecretShape(after, identity)");
+    expect(convergenceScript).not.toContain("GOOGLE_ADS_DEVELOPER_TOKEN");
+
+    const secretConvergence = deployWorkflow.indexOf("node scripts/converge-google-ads-edge-auth.js\n");
     const preflightDeploy = deployWorkflow.indexOf("supabase functions deploy google-ads-auth-preflight");
     expect(secretConvergence).toBeGreaterThan(-1);
     expect(preflightDeploy).toBeGreaterThan(secretConvergence);
