@@ -1,0 +1,186 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Google Ads Runtime Acceptance
+
+on:
+  workflow_run:
+    workflows: ['Deploy Standalone Edge Functions']
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+
+# Share the Production mutation lock with governed Edge deployment and break-glass maintenance.
+concurrency:
+  group: manual-maintenance-deploy_edge
+  cancel-in-progress: false
+
+jobs:
+  provenance:
+    name: Qualify · governed Edge deployment
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      accept: ${{ steps.proof.outputs.accept }}
+      deployed_sha: ${{ steps.proof.outputs.deployed_sha }}
+
+    steps:
+      - name: Prove governed Edge deployment actually ran
+        id: proof
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id }}
+          UPSTREAM_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          UPSTREAM_EVENT: ${{ github.event.workflow_run.event }}
+          UPSTREAM_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          DEPLOYED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          test -n "${GH_TOKEN:-}"
+          [[ "${UPSTREAM_RUN_ID:-}" =~ ^[0-9]+$ ]]
+          [[ "${DEPLOYED_SHA:-}" =~ ^[0-9a-f]{40}$ ]]
+
+          JOBS_JSON="$RUNNER_TEMP/upstream-deploy-jobs.json"
+          curl --fail-with-body --silent --show-error \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/runs/${UPSTREAM_RUN_ID}/jobs?per_page=100" \
+            > "$JOBS_JSON"
+
+          export JOBS_JSON DEPLOYED_SHA UPSTREAM_RUN_ID UPSTREAM_CONCLUSION UPSTREAM_EVENT UPSTREAM_BRANCH
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          with open(os.environ['JOBS_JSON'], encoding='utf-8') as handle:
+              payload = json.load(handle)
+
+          expected_sha = os.environ['DEPLOYED_SHA']
+          expected_run_id = int(os.environ['UPSTREAM_RUN_ID'])
+          upstream_conclusion = os.environ.get('UPSTREAM_CONCLUSION', '')
+          upstream_event = os.environ.get('UPSTREAM_EVENT', '')
+          upstream_branch = os.environ.get('UPSTREAM_BRANCH', '')
+
+          accept = False
+          reason = 'governed deployment provenance was not established'
+
+          if upstream_conclusion != 'success':
+              reason = f"upstream deploy workflow conclusion is {upstream_conclusion!r}, not success"
+          elif upstream_event != 'workflow_run':
+              reason = f"upstream deploy workflow was triggered by {upstream_event!r}, not trusted Master workflow_run"
+          elif upstream_branch != 'main':
+              reason = f"upstream deploy workflow branch is {upstream_branch!r}, not main"
+          else:
+              deploy_jobs = [
+                  job for job in payload.get('jobs', [])
+                  if job.get('name') == 'Deploy · governed Edge Functions'
+              ]
+              if len(deploy_jobs) != 1:
+                  reason = 'governed deploy job was not uniquely present'
+              else:
+                  job = deploy_jobs[0]
+                  steps = {step.get('name'): step for step in job.get('steps', [])}
+                  required_steps = (
+                      'Verify current main is the quality-approved candidate',
+                      'Revalidate governed Edge candidate',
+                      'Reverify remote main immediately before Production mutation',
+                      'Deploy governed functions',
+                  )
+                  missing_or_failed = [
+                      name for name in required_steps
+                      if steps.get(name, {}).get('conclusion') != 'success'
+                  ]
+                  if job.get('run_id') != expected_run_id:
+                      reason = 'deploy job run_id does not match the triggering workflow run'
+                  elif job.get('head_sha') != expected_sha:
+                      reason = 'deploy job SHA does not match workflow_run.head_sha'
+                  elif job.get('conclusion') != 'success':
+                      reason = f"deploy job conclusion is {job.get('conclusion')!r}, not success"
+                  elif missing_or_failed:
+                      reason = f"required deploy steps did not complete successfully: {missing_or_failed}"
+                  else:
+                      accept = True
+                      reason = 'governed Edge deployment and exact-SHA guards completed successfully'
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f"accept={'true' if accept else 'false'}\n")
+              if accept:
+                  output.write(f"deployed_sha={expected_sha}\n")
+
+          if not accept:
+              print(f"::error::{reason}")
+              sys.exit(1)
+
+          print(reason)
+          PY
+
+  acceptance:
+    name: Accept · Google Ads runtime
+    needs: provenance
+    if: ${{ needs.provenance.outputs.accept == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: Production
+    env:
+      DEPLOYED_SHA: ${{ needs.provenance.outputs.deployed_sha }}
+      SUPABASE_URL: https://ssvvuuysgxyqvmovrlvk.supabase.co
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
+      GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
+
+    steps:
+      - name: Checkout trusted main
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify current main is the deployed candidate
+        id: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT_SHA="$(git rev-parse HEAD)"
+          test -n "${DEPLOYED_SHA:-}"
+          [[ "$DEPLOYED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "$CURRENT_SHA" != "$DEPLOYED_SHA" ]]; then
+            echo "::error::Current main $CURRENT_SHA advanced beyond deployed candidate $DEPLOYED_SHA; refusing to report Google Ads runtime acceptance for a superseded candidate."
+            exit 1
+          fi
+          echo "candidate_sha=$CURRENT_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Validate acceptance configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${SUPABASE_URL:-}"
+          test -n "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -n "${GOOGLE_ADS_DEVELOPER_TOKEN:-}"
+
+      - name: Verify provisioning contract
+        run: node --test scripts/provision-google-ads-developer-token.test.js
+
+      - name: Reverify remote main immediately before Google Ads acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          REMOTE_MAIN_SHA="$(git rev-parse origin/main)"
+          CANDIDATE_SHA="${{ steps.candidate.outputs.candidate_sha }}"
+          if [[ "$REMOTE_MAIN_SHA" != "$CANDIDATE_SHA" ]]; then
+            echo "::error::Remote main advanced to $REMOTE_MAIN_SHA beyond deployed candidate $CANDIDATE_SHA; refusing stale Google Ads credential mutation."
+            exit 1
+          fi
+
+      - name: Converge and accept Google Ads credential through deployed runtime
+        run: node scripts/provision-google-ads-developer-token.js
