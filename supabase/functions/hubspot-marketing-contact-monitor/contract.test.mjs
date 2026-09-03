@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { persistFailureState } from "./state.ts";
 
 const require = createRequire(import.meta.url);
 const {
@@ -81,16 +82,59 @@ describe("HubSpot marketing-contact monitor", () => {
     expect(classifyFailure({ code: "untrusted-secret-bearing-code" })).toBe("unknown_failure");
   });
 
-  it("keeps failed refreshes stale instead of overwriting the last valid count", () => {
-    const failurePersistence = edgeSource
-      .split("async function persistFailureState")[1]
-      .split("Deno.serve")[0];
-    expect(failurePersistence).toContain("last_error_code: failure.code");
-    expect(failurePersistence).toContain("last_error_at: now");
-    expect(failurePersistence).not.toContain("last_count");
-    expect(failurePersistence).not.toContain("last_checked_at");
-    expect(edgeSource).toContain('propertyName: "hs_marketable_status"');
-    expect(edgeSource).toContain('value: "true"');
+  it("persists bounded failure state and surfaces database write errors", async () => {
+    const updates = [];
+    const failingAdmin = {
+      from: (table) => {
+        expect(table).toBe("hubspot_marketing_contact_monitor_state");
+        return {
+          update: (payload) => {
+            updates.push(payload);
+            return {
+              eq: async (column, value) => {
+                expect(column).toBe("monitor_key");
+                expect(value).toBe("hubspot_marketing_contacts");
+                return { error: new Error("write failed") };
+              },
+            };
+          },
+        };
+      },
+    };
+
+    await expect(persistFailureState(
+      failingAdmin,
+      "hubspot_marketing_contacts",
+      { code: "hubspot_unauthorized" },
+      "2026-09-03T14:00:00.000Z",
+    )).rejects.toThrow("write failed");
+
+    expect(updates).toEqual([{
+      last_error_code: "hubspot_unauthorized",
+      last_error_at: "2026-09-03T14:00:00.000Z",
+      updated_at: "2026-09-03T14:00:00.000Z",
+    }]);
+    expect(updates[0]).not.toHaveProperty("last_count");
+    expect(updates[0]).not.toHaveProperty("last_checked_at");
+  });
+
+  it("commits successful observations through one transactional RPC", () => {
+    expect(edgeSource).toContain('"nvx_commit_hubspot_marketing_contact_monitor"');
+    expect(edgeSource).toContain("{ p_count: count }");
+    expect(edgeSource).not.toContain('.select("threshold,above_threshold,last_triggered_at")');
+    expect(edgeSource).not.toContain("last_count: count");
+    expect(migrationSource).toContain("for update;");
+    expect(migrationSource).toContain("v_transition := p_count >= v_threshold and not v_was_above");
+    expect(migrationSource).toContain("last_triggered_at = case when v_transition then v_checked_at else s.last_triggered_at end");
+  });
+
+  it("preserves the private-definer/public-invoker trust boundary", () => {
+    expect(migrationSource).toMatch(/create function private\.nvx_get_hubspot_marketing_contact_monitor\(\)[\s\S]*?security definer/i);
+    expect(migrationSource).toMatch(/create function public\.nvx_get_hubspot_marketing_contact_monitor\(\)[\s\S]*?security invoker/i);
+    expect(migrationSource).toContain("revoke all on function public.nvx_get_hubspot_marketing_contact_monitor() from public, anon");
+    expect(migrationSource).toMatch(/create function private\.nvx_commit_hubspot_marketing_contact_monitor\(p_count integer\)[\s\S]*?security definer/i);
+    expect(migrationSource).toMatch(/create function public\.nvx_commit_hubspot_marketing_contact_monitor\(p_count integer\)[\s\S]*?security invoker/i);
+    expect(migrationSource).toContain("revoke all on function public.nvx_commit_hubspot_marketing_contact_monitor(integer) from public, anon, authenticated");
   });
 
   it("publishes freshness/error state and uses an independent governed cadence", () => {
@@ -101,6 +145,7 @@ describe("HubSpot marketing-contact monitor", () => {
     expect(workflowSource).toContain("cron: '20 6 * * *'");
     expect(workflowSource).toContain("environment:\n      name: Production");
     expect(workflowSource).toContain("node scripts/refresh-hubspot-marketing-contact-monitor.js");
+    expect(deployWorkflow).toContain("20260903142000");
     expect(deployWorkflow).toContain("supabase/functions/hubspot-marketing-contact-monitor/index.ts");
     expect(deployWorkflow).toContain('supabase functions deploy hubspot-marketing-contact-monitor --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
   });
