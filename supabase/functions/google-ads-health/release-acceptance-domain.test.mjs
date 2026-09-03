@@ -26,7 +26,7 @@ describe("Production release acceptance domains", () => {
     expect(deployWorkflow).not.toContain("git diff --name-only");
   });
 
-  it("proves the actual upstream deploy and fails closed when provenance is absent", () => {
+  it("proves the actual upstream deploy and fails closed when required provenance is absent", () => {
     expect(googleAdsAcceptanceWorkflow).toContain("name: Google Ads Runtime Acceptance");
     expect(googleAdsAcceptanceWorkflow).toContain("workflows: ['Deploy Standalone Edge Functions']");
     expect(googleAdsAcceptanceWorkflow).toContain("actions: read");
@@ -47,6 +47,28 @@ describe("Production release acceptance domains", () => {
     expect(googleAdsAcceptanceWorkflow).toContain("needs: provenance");
     expect(googleAdsAcceptanceWorkflow).toContain("needs.provenance.outputs.accept == 'true'");
     expect(googleAdsAcceptanceWorkflow).toContain("DEPLOYED_SHA: ${{ needs.provenance.outputs.deployed_sha }}");
+  });
+
+  it("treats a legitimately skipped deploy as not applicable instead of a false Google Ads failure", () => {
+    expect(googleAdsAcceptanceWorkflow).toContain("not_applicable = False");
+    expect(googleAdsAcceptanceWorkflow).toContain("job.get('conclusion') == 'skipped'");
+    expect(googleAdsAcceptanceWorkflow).toContain("not_applicable = True");
+    expect(googleAdsAcceptanceWorkflow).toContain("no Production Edge mutation occurred and runtime acceptance is not applicable");
+    expect(googleAdsAcceptanceWorkflow).toContain("if not_applicable:");
+    expect(googleAdsAcceptanceWorkflow).toContain("sys.exit(0)");
+    expect(googleAdsAcceptanceWorkflow).toContain("accept={'true' if accept else 'false'}");
+  });
+
+  it("requires read-only proof of the same selected auth mode before any credential convergence", () => {
+    expect(googleAdsAcceptanceWorkflow).toContain("GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}");
+    expect(googleAdsAcceptanceWorkflow).toContain("GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}");
+    expect(googleAdsAcceptanceWorkflow).toContain("GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}");
+    expect(googleAdsAcceptanceWorkflow).toContain("GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}");
+    const preflight = googleAdsAcceptanceWorkflow.indexOf("node scripts/google-ads-auth-preflight.js");
+    const mutation = googleAdsAcceptanceWorkflow.indexOf("node scripts/provision-google-ads-developer-token.js");
+    expect(preflight).toBeGreaterThan(-1);
+    expect(mutation).toBeGreaterThan(preflight);
+    expect(googleAdsAcceptanceWorkflow).toContain("scripts/google-ads-auth-preflight.test.js");
   });
 
   it("keeps Google Ads runtime acceptance exact-SHA and fail-closed once qualified", () => {
