@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 const standalone = readFileSync('.github/workflows/deploy-standalone-edge-functions.yml', 'utf8');
 const maintenance = readFileSync('.github/workflows/manual-maintenance.yml', 'utf8');
+const hubspotMonitor = readFileSync('.github/workflows/hubspot-marketing-contact-monitor.yml', 'utf8');
 const controlCentre = readFileSync('.github/workflows/control-centre-runtime.yml', 'utf8');
 const master = readFileSync('.github/workflows/master.yml', 'utf8');
 
@@ -27,6 +28,12 @@ describe('production Supabase mutation concurrency', () => {
     expect(standalone).toContain('supabase/functions/control-centre-provider/index.ts');
     expect(maintenance).toContain('- deploy_edge');
     expect(maintenance).toContain('group: manual-maintenance-${{ inputs.operation }}');
+  });
+
+  it('serializes the HubSpot Production monitor with every governed Edge mutation path', () => {
+    expect(hubspotMonitor).toContain(`group: ${ORDINARY_EDGE_LOCK}`);
+    expect(hubspotMonitor).toContain('cancel-in-progress: false');
+    expect(hubspotMonitor).not.toContain('group: hubspot-marketing-contact-monitor-production');
   });
 
   it('keeps Control Centre Runtime validation-only so a separate automatic deploy cannot be dropped', () => {

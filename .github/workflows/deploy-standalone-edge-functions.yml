@@ -111,7 +111,7 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: Verify WhatsApp async migrations are already applied
+      - name: Wait for automatic Production migration owner
         if: ${{ steps.candidate.outputs.deploy == 'true' }}
         uses: ./.github/actions/supabase-link-run
         with:
@@ -122,13 +122,30 @@ jobs:
           skip_link: true
           command: |
             set -euo pipefail
-            MIGRATION_STATUS="$(supabase migration list --db-url "${SESSION_URL:-$DATABASE_URL}" 2>&1)"
-            printf '%s\n' "$MIGRATION_STATUS"
-            for REQUIRED_MIGRATION in 20260901190000 20260901190100 20260901190200; do
-              if ! printf '%s\n' "$MIGRATION_STATUS" | grep -Eq "^[[:space:]]*${REQUIRED_MIGRATION}[[:space:]]*\|[[:space:]]*${REQUIRED_MIGRATION}[[:space:]]*(\||$)"; then
-                echo "::error::Required migration ${REQUIRED_MIGRATION} is not present in both LOCAL and REMOTE migration history. Refusing to deploy migration-dependent WhatsApp functions."
+            REQUIRED_MIGRATIONS=(20260901190000 20260901190100 20260901190200 20260903142000)
+            for ATTEMPT in {1..20}; do
+              MIGRATION_STATUS="$(supabase migration list --db-url "${SESSION_URL:-$DATABASE_URL}" 2>&1)"
+              MISSING_MIGRATIONS=()
+              for REQUIRED_MIGRATION in "${REQUIRED_MIGRATIONS[@]}"; do
+                if ! printf '%s\n' "$MIGRATION_STATUS" | grep -Eq "^[[:space:]]*${REQUIRED_MIGRATION}[[:space:]]*[|│][[:space:]]*${REQUIRED_MIGRATION}[[:space:]]*([|│]|$)"; then
+                  MISSING_MIGRATIONS+=("$REQUIRED_MIGRATION")
+                fi
+              done
+
+              if [ "${#MISSING_MIGRATIONS[@]}" -eq 0 ]; then
+                printf '%s\n' "$MIGRATION_STATUS"
+                echo "All migration-dependent Edge schemas are present in LOCAL and REMOTE history."
+                break
+              fi
+
+              if [ "$ATTEMPT" -eq 20 ]; then
+                printf '%s\n' "$MIGRATION_STATUS"
+                echo "::error::Automatic Production migration owner did not converge required migrations: ${MISSING_MIGRATIONS[*]}. Refusing Edge deployment."
                 exit 1
               fi
+
+              echo "Waiting for automatic Production migration owner; missing: ${MISSING_MIGRATIONS[*]} (attempt ${ATTEMPT}/20)."
+              sleep 15
             done
 
       - name: Revalidate governed Edge candidate
@@ -153,6 +170,7 @@ jobs:
             supabase/functions/meta-leadgen-subscribe/index.ts \
             supabase/functions/meta-hubspot-sync/index.ts \
             supabase/functions/meta-capi-dispatch/index.ts \
+            supabase/functions/hubspot-marketing-contact-monitor/index.ts \
             supabase/functions/revops-dispatcher/index.ts \
             supabase/functions/whatsapp-send/index.ts \
             supabase/functions/whatsapp-outbound-worker/index.ts \
@@ -219,6 +237,7 @@ jobs:
             supabase functions deploy meta-leadgen-subscribe --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy meta-hubspot-sync --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy meta-capi-dispatch --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+            supabase functions deploy hubspot-marketing-contact-monitor --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy revops-dispatcher --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy whatsapp-send --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy whatsapp-outbound-worker --project-ref "$SUPABASE_PROJECT_REF"
