@@ -45,6 +45,7 @@ function providerStatus(payload) {
 async function mintRefreshAccessToken({ clientId, clientSecret, refreshToken, fetchImpl = fetch }) {
   const response = await fetchImpl(GOOGLE_TOKEN_URI, {
     method: 'POST',
+    redirect: 'error',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       client_id: clientId,
@@ -81,6 +82,7 @@ async function mintServiceAccountAccessToken({ rawServiceAccount, fetchImpl = fe
 
   const response = await fetchImpl(GOOGLE_TOKEN_URI, {
     method: 'POST',
+    redirect: 'error',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
@@ -100,6 +102,7 @@ async function mintServiceAccountAccessToken({ rawServiceAccount, fetchImpl = fe
 
 async function listAccessibleCustomers({ accessToken, developerToken, fetchImpl = fetch }) {
   const response = await fetchImpl(`https://googleads.googleapis.com/${API_VERSION}/customers:listAccessibleCustomers`, {
+    redirect: 'error',
     headers: {
       Authorization: `Bearer ${accessToken}`,
       'developer-token': developerToken,
@@ -126,6 +129,7 @@ async function probeCustomerSearch({ accessToken, developerToken, customerId, fe
     `https://googleads.googleapis.com/${API_VERSION}/customers/${customerId}/googleAds:search`,
     {
       method: 'POST',
+      redirect: 'error',
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'developer-token': developerToken,
