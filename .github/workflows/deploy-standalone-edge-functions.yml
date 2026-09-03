@@ -127,7 +127,7 @@ jobs:
               MIGRATION_STATUS="$(supabase migration list --db-url "${SESSION_URL:-$DATABASE_URL}" 2>&1)"
               MISSING_MIGRATIONS=()
               for REQUIRED_MIGRATION in "${REQUIRED_MIGRATIONS[@]}"; do
-                if ! printf '%s\n' "$MIGRATION_STATUS" | grep -Eq "^[[:space:]]*${REQUIRED_MIGRATION}[[:space:]]*\|[[:space:]]*${REQUIRED_MIGRATION}[[:space:]]*(\||$)"; then
+                if ! printf '%s\n' "$MIGRATION_STATUS" | grep -Eq "^[[:space:]]*${REQUIRED_MIGRATION}[[:space:]]*[|│][[:space:]]*${REQUIRED_MIGRATION}[[:space:]]*([|│]|$)"; then
                   MISSING_MIGRATIONS+=("$REQUIRED_MIGRATION")
                 fi
               done
