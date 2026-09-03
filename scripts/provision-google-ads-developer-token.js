@@ -96,6 +96,104 @@ async function resolveInternalSecret(base, serviceRole, fetchImpl = fetch) {
   return secret;
 }
 
+async function invokeGoogleAdsHealth({
+  safeBase,
+  serviceRole,
+  internalSecret,
+  integrationId,
+  operation,
+  developerToken,
+  fetchImpl = fetch,
+}) {
+  const body = { operation, integration_id: integrationId };
+  if (operation === 'provision') body.developer_token = validateDeveloperToken(developerToken);
+
+  const response = await fetchImpl(`${safeBase}/functions/v1/google-ads-health`, {
+    method: 'POST',
+    headers: {
+      apikey: serviceRole,
+      Authorization: `Bearer ${serviceRole}`,
+      'Content-Type': 'application/json',
+      'x-nvx-internal-secret': internalSecret,
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(60_000),
+  });
+  const payload = await readJson(response);
+  if (!response.ok || payload?.success !== true) {
+    throw new Error(`Google Ads provider ${operation} failed for integration ${integrationId} (HTTP ${response.status})`);
+  }
+  if (String(payload?.integration_id || '') !== integrationId) {
+    throw new Error(`Google Ads provider ${operation} returned an integration identity mismatch for ${integrationId}`);
+  }
+  if (operation === 'provision' && payload?.credential_provisioned !== true) {
+    throw new Error(`Google Ads provider provisioning did not persist a credential for integration ${integrationId}`);
+  }
+  if (operation === 'health' && payload?.credential_provisioned !== false) {
+    throw new Error(`Google Ads provider health did not use the persisted credential for integration ${integrationId}`);
+  }
+  return payload;
+}
+
+async function verifyPersistedIntegration(safeBase, serviceRole, integrationId, fetchImpl = fetch) {
+  const persisted = await supabaseJson(
+    safeBase,
+    serviceRole,
+    `/rest/v1/integrations?id=eq.${encodeURIComponent(integrationId)}&select=id,status,last_error,last_sync`,
+    {},
+    fetchImpl,
+  );
+  if (!Array.isArray(persisted) || persisted.length !== 1) {
+    throw new Error(`Google Ads provisioning persistence verification failed for integration ${integrationId}`);
+  }
+  const row = persisted[0];
+  if (String(row?.id || '') !== integrationId || row?.status !== 'connected' || row?.last_error !== null || !row?.last_sync) {
+    throw new Error(`Google Ads integration ${integrationId} did not persist the canonical connected state`);
+  }
+  return row;
+}
+
+async function acceptGoogleAdsIntegrations({
+  base,
+  serviceRole,
+  integrations,
+  fetchImpl = fetch,
+}) {
+  if (!Array.isArray(integrations) || integrations.length === 0) {
+    throw new Error('No Google Ads integrations available for runtime acceptance');
+  }
+
+  const safeBase = requireHttpsBase(base);
+  const internalSecret = await resolveInternalSecret(safeBase, serviceRole, fetchImpl);
+  const failures = [];
+  let accepted = 0;
+
+  for (let index = 0; index < integrations.length; index += 1) {
+    const integrationId = String(integrations[index]?.id || '').trim();
+    const failureId = integrationId || `missing-id-${index + 1}`;
+    try {
+      if (!integrationId) throw new Error('Google Ads integration without id');
+      await invokeGoogleAdsHealth({
+        safeBase,
+        serviceRole,
+        internalSecret,
+        integrationId,
+        operation: 'health',
+        fetchImpl,
+      });
+      await verifyPersistedIntegration(safeBase, serviceRole, integrationId, fetchImpl);
+      accepted += 1;
+    } catch {
+      failures.push(failureId);
+    }
+  }
+
+  if (failures.length > 0) {
+    throw new Error(`Google Ads runtime health acceptance failed for ${failures.length} integration(s): ${failures.join(',')}`);
+  }
+  return accepted;
+}
+
 async function provisionGoogleAdsIntegrations({
   base,
   serviceRole,
@@ -114,50 +212,33 @@ async function provisionGoogleAdsIntegrations({
   let recovered = 0;
 
   for (let index = 0; index < integrations.length; index += 1) {
-    const integration = integrations[index];
-    const integrationId = String(integration?.id || '').trim();
+    const integrationId = String(integrations[index]?.id || '').trim();
     const failureId = integrationId || `missing-id-${index + 1}`;
 
     try {
       if (!integrationId) throw new Error('Google Ads integration without id');
 
-      const response = await fetchImpl(`${safeBase}/functions/v1/google-ads-health`, {
-        method: 'POST',
-        headers: {
-          apikey: serviceRole,
-          Authorization: `Bearer ${serviceRole}`,
-          'Content-Type': 'application/json',
-          'x-nvx-internal-secret': internalSecret,
-        },
-        body: JSON.stringify({
-          operation: 'provision',
-          integration_id: integrationId,
-          developer_token: token,
-        }),
-        signal: AbortSignal.timeout(60_000),
-      });
-      const payload = await readJson(response);
-      if (!response.ok || payload?.success !== true || payload?.credential_provisioned !== true) {
-        throw new Error(`Google Ads provider provisioning failed for integration ${integrationId} (HTTP ${response.status})`);
-      }
-      if (String(payload?.integration_id || '') !== integrationId) {
-        throw new Error(`Google Ads provider provisioning returned an integration identity mismatch for ${integrationId}`);
-      }
-
-      const persisted = await supabaseJson(
+      await invokeGoogleAdsHealth({
         safeBase,
         serviceRole,
-        `/rest/v1/integrations?id=eq.${encodeURIComponent(integrationId)}&select=id,status,last_error,last_sync`,
-        {},
+        internalSecret,
+        integrationId,
+        operation: 'provision',
+        developerToken: token,
         fetchImpl,
-      );
-      if (!Array.isArray(persisted) || persisted.length !== 1) {
-        throw new Error(`Google Ads provisioning persistence verification failed for integration ${integrationId}`);
-      }
-      const row = persisted[0];
-      if (String(row?.id || '') !== integrationId || row?.status !== 'connected' || row?.last_error !== null || !row?.last_sync) {
-        throw new Error(`Google Ads integration ${integrationId} did not persist the canonical connected state`);
-      }
+      });
+
+      // Mandatory round-trip: the second call no longer receives the plaintext
+      // developer token. Edge must read and decrypt the credential it just persisted.
+      await invokeGoogleAdsHealth({
+        safeBase,
+        serviceRole,
+        internalSecret,
+        integrationId,
+        operation: 'health',
+        fetchImpl,
+      });
+      await verifyPersistedIntegration(safeBase, serviceRole, integrationId, fetchImpl);
       recovered += 1;
     } catch {
       failures.push(failureId);
@@ -199,11 +280,17 @@ async function provision() {
   );
 
   if (credentialContractCurrent(integrations, credentials)) {
+    const integrationsAccepted = await acceptGoogleAdsIntegrations({
+      base,
+      serviceRole,
+      integrations,
+    });
     console.log(JSON.stringify({
       success: true,
       provision_required: false,
       owners_provisioned: 0,
       integrations_recovered: 0,
+      integrations_accepted: integrationsAccepted,
       credential_owner: CREDENTIAL_OWNER,
     }));
     return;
@@ -221,6 +308,7 @@ async function provision() {
     provision_required: true,
     owners_provisioned: owners.size,
     integrations_recovered: integrationsRecovered,
+    integrations_accepted: integrationsRecovered,
     credential_owner: CREDENTIAL_OWNER,
   }));
 }
@@ -235,7 +323,9 @@ if (require.main === module) {
 module.exports = {
   CREDENTIAL_FORMAT,
   CREDENTIAL_OWNER,
+  acceptGoogleAdsIntegrations,
   credentialContractCurrent,
+  invokeGoogleAdsHealth,
   provisionGoogleAdsIntegrations,
   requireHttpsBase,
   resolveInternalSecret,
