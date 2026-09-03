@@ -1,0 +1,64 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Google Ads Metadata PostgreSQL Invariant
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/20260903060000_remove_google_ads_plaintext_developer_token.sql'
+      - 'supabase/migrations/20260903060100_enforce_google_ads_plaintext_metadata_invariant.sql'
+      - 'supabase/tests/google-ads-plaintext-metadata-postgres.test.mjs'
+      - '.github/workflows/google-ads-metadata-postgres-invariant.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/20260903060000_remove_google_ads_plaintext_developer_token.sql'
+      - 'supabase/migrations/20260903060100_enforce_google_ads_plaintext_metadata_invariant.sql'
+      - 'supabase/tests/google-ads-plaintext-metadata-postgres.test.mjs'
+      - '.github/workflows/google-ads-metadata-postgres-invariant.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: google-ads-metadata-postgres-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  postgres-invariant:
+    name: PostgreSQL · Google Ads metadata invariant
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16.6
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: nuvanx_invariant
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d nuvanx_invariant"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install runtime dependencies
+        run: npm install --omit=dev --ignore-scripts
+
+      - name: Execute migrations and prove PostgreSQL invariant
+        env:
+          GOOGLE_ADS_INVARIANT_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/nuvanx_invariant
+        run: node --test supabase/tests/google-ads-plaintext-metadata-postgres.test.mjs
