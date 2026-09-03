@@ -20,12 +20,24 @@ describe("Google Ads plaintext developer-token metadata invariant", () => {
     expect(migration).not.toContain("SET metadata = '{}'::jsonb");
   });
 
-  it("enforces the invariant in the database after cleanup", () => {
+  it("sanitizes legacy client writes before the database constraint is evaluated", () => {
+    const triggerIndex = migration.indexOf("CREATE TRIGGER integrations_strip_google_ads_plaintext_metadata");
+    const constraintIndex = migration.indexOf("ADD CONSTRAINT integrations_google_ads_no_plaintext_developer_token");
+
+    expect(migration).toContain("CREATE OR REPLACE FUNCTION public.nvx_strip_google_ads_plaintext_metadata()");
+    expect(migration).toContain("IF NEW.service = 'google_ads' THEN");
+    expect(migration).toContain("NEW.metadata := COALESCE(NEW.metadata, '{}'::jsonb) - 'developer_token' - 'developerToken'");
+    expect(migration).toContain("BEFORE INSERT OR UPDATE ON public.integrations");
+    expect(migration).toContain("EXECUTE FUNCTION public.nvx_strip_google_ads_plaintext_metadata()");
+    expect(triggerIndex).toBeGreaterThan(-1);
+    expect(constraintIndex).toBeGreaterThan(triggerIndex);
+  });
+
+  it("keeps a CHECK constraint as defense in depth after sanitization", () => {
     expect(migration).toContain("integrations_google_ads_no_plaintext_developer_token");
     expect(migration).toContain("service <> 'google_ads'");
     expect(migration).toContain("? 'developer_token'");
     expect(migration).toContain("? 'developerToken'");
-    expect(migration).toContain("ADD CONSTRAINT integrations_google_ads_no_plaintext_developer_token");
   });
 
   it("does not source the developer token from integration metadata at runtime", () => {
