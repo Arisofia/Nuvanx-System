@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: hubspot-marketing-contact-monitor-production
+  group: manual-maintenance-deploy_edge
   cancel-in-progress: false
 
 jobs:
