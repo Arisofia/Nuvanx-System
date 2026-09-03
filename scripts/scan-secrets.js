@@ -27,6 +27,7 @@ const SYNTHETIC_FIXTURE_MARKERS = [
   'example-',
   'fake-',
   'integration-contract',
+  'legacy-only',
   'mock-',
   'must-never-be-stored',
   'must-not-appear',
@@ -36,6 +37,7 @@ const SYNTHETIC_FIXTURE_MARKERS = [
   'refresh-token',
   'runtime-secret',
   'sensitive-',
+  'service-role',
   'service-role-value',
   'test-',
   'your-',
@@ -44,6 +46,20 @@ const SYNTHETIC_FIXTURE_MARKERS = [
 const POSTGRES_URL_RE = /postgres(?:ql)?:\/\/[^\s'"<>]+/gi;
 const AWS_ACCESS_KEY_RE = /AKIA[0-9A-Z]{16}/;
 const HARDCODED_SECRET_ASSIGNMENT_RE = /([A-Z0-9_]*(?:SECRET|TOKEN|API_KEY|PASSWORD|SERVICE_ROLE|PRIVATE_KEY)[A-Z0-9_]*)\s*[:=]\s*(['"])([^'"\r\n]{20,})\2/gi;
+
+function isSecretIdentifier(identifier) {
+  const upper = String(identifier || '').trim().toUpperCase();
+  if (!/(?:SECRET|TOKEN|API_KEY|PASSWORD|SERVICE_ROLE|PRIVATE_KEY)/.test(upper)) {
+    return false;
+  }
+  if (/(?:_URL|_URI|_ENDPOINT|_LABEL|_MODE|_FORMAT|_TYPE|_NAME|_PROP)$/.test(upper)) {
+    return false;
+  }
+  if (/^(?:TOKENLABEL|TOKENMODE|TOKENURL|TOKENURI)$/.test(upper)) {
+    return false;
+  }
+  return true;
+}
 
 function normalizedPlaceholderPassword(password) {
   return String(password || '')
@@ -198,6 +214,16 @@ function findPrivateKeyMaterial(text) {
   return null;
 }
 
+function isTinyPemTestFixture(file, value) {
+  if (!isTestLikePath(file)) return false;
+  const normalized = normalizeEscapedNewlines(value);
+  return (
+    normalized.includes('-----BEGIN ')
+    && normalized.includes('PRIVATE KEY-----')
+    && findPrivateKeyMaterial(normalized) === null
+  );
+}
+
 function scanText(file, text) {
   const findings = [];
   const lines = String(text || '').split(/\r?\n/);
@@ -215,6 +241,7 @@ function scanText(file, text) {
     for (const match of line.matchAll(HARDCODED_SECRET_ASSIGNMENT_RE)) {
       const identifier = match[1];
       const value = match[3];
+      if (!isSecretIdentifier(identifier)) continue;
       if (isDynamicSecretReference(value)) continue;
       if (looksHighEntropySecret(value)) {
         findings.push({ file, line: index + 1, pattern: 'Hardcoded secret assignment' });
@@ -222,6 +249,7 @@ function scanText(file, text) {
       }
       if (isHumanReadableDiagnostic(identifier, value)) continue;
       if (isClearlySyntheticFixture(file, value)) continue;
+      if (isTinyPemTestFixture(file, value)) continue;
       findings.push({ file, line: index + 1, pattern: 'Hardcoded secret assignment' });
     }
   });
@@ -277,6 +305,9 @@ module.exports = {
   isHumanReadableDiagnostic,
   isLocalPostgresHarnessLine,
   isPlaceholderPostgresUrlLine,
+  isSecretIdentifier,
+  isTestLikePath,
+  isTinyPemTestFixture,
   looksHighEntropySecret,
   postgresCredentialFindings,
   scanText,

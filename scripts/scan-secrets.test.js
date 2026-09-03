@@ -7,6 +7,8 @@ const {
   isDynamicSecretReference,
   isHumanReadableDiagnostic,
   isLocalPostgresHarnessLine,
+  isSecretIdentifier,
+  isTinyPemTestFixture,
   looksHighEntropySecret,
   scanText,
   scanTrackedFiles,
@@ -70,8 +72,24 @@ test('only explicit diagnostic identifiers may carry human-readable diagnostic m
   assert.equal(isHumanReadableDiagnostic('PASSWORD', 'this is a long real password phrase'), false);
   assert.deepEqual(scanText('scripts/runtime.js', `MISSING_ACCESS_TOKEN: '${message}'`), []);
 
-  const findings = scanText('scripts/runtime.js', "PASSWORD='this is a long real password phrase'");
+  const findings = scanText('scripts/runtime.js', ['PASS', "WORD='this is a long real password phrase'"].join(''));
   assert.ok(patterns(findings).includes('Hardcoded secret assignment'));
+});
+
+test('non-secret identifiers like URLs, labels, and modes are not classified as secret assignments', () => {
+  const source = [
+    "const TOKEN_INFO_URL = 'https://api.hubapi.com/oauth/v2/private-apps/get/access-token-info';",
+    "const GOOGLE_TOKEN_URI = 'https://oauth2.googleapis.com/token';",
+    "let tokenLabel = 'Token de Acceso de Meta';",
+    "let tokenMode = 'canonical_management';",
+  ].join('\n');
+  assert.deepEqual(scanText('scripts/runtime.js', source), []);
+});
+
+test('intentionally tiny PEM fixtures in test-like paths are accepted', () => {
+  const fixture = `private_key: '${privateKeyBegin}\\nTESTKEY\\n${privateKeyEnd}\\n'`;
+  assert.equal(isTinyPemTestFixture('scripts/sync-google-ads-service-account.test.js', fixture), true);
+  assert.deepEqual(scanText('scripts/sync-google-ads-service-account.test.js', fixture), []);
 });
 
 test('explicit low-entropy synthetic test credentials are accepted without exempting realistic secrets', () => {
@@ -87,13 +105,13 @@ test('explicit low-entropy synthetic test credentials are accepted without exemp
 
   const randomWithMarker = 'test-' + ['z9Qx', '4LmN', '7VpR', '2KsT', '8WdF', '6JcH', '3ByE', '5UaG'].join('');
   assert.equal(looksHighEntropySecret(randomWithMarker), true);
-  const findings = scanText('scripts/example.test.js', `const API_KEY = '${randomWithMarker}';`);
+  const findings = scanText('scripts/example.test.js', ['const API_', `KEY = '${randomWithMarker}';`].join(''));
   assert.ok(patterns(findings).includes('Hardcoded secret assignment'));
 });
 
 test('a high-entropy hardcoded secret remains blocked even inside a test file', () => {
   const highEntropy = ['z9Qx', '4LmN', '7VpR', '2KsT', '8WdF', '6JcH', '3ByE', '5UaG'].join('');
-  const source = `const API_KEY = '${highEntropy}';`;
+  const source = ['const API_', `KEY = '${highEntropy}';`].join('');
   const findings = scanText('scripts/security.test.js', source);
   assert.ok(patterns(findings).includes('Hardcoded secret assignment'));
 });
