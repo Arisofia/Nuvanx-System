@@ -43,7 +43,7 @@ describe("shared Google Ads runtime auth", () => {
     })).toBe("complete");
   });
 
-  it("fails closed on partial OAuth refresh configuration instead of falling back", async () => {
+  it("fails closed on partial OAuth refresh configuration instead of falling back when no explicit mode is selected", async () => {
     await expect(resolveGoogleAdsAuth({
       oauthClientId: "id",
       serviceAccountRaw: await generatedServiceAccount(),
@@ -52,6 +52,52 @@ describe("shared Google Ads runtime auth", () => {
       kind: "configuration",
       status: 500,
     });
+  });
+
+  it("explicit service-account mode ignores a shared partial OAuth tuple", async () => {
+    const serviceAccountRaw = await generatedServiceAccount();
+    const fetchImpl = vi.fn(async (_input, init) => {
+      expect(init?.redirect).toBe("error");
+      expect(String(init?.body)).toContain("urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer");
+      return jsonResponse(200, { access_token: "service-access" });
+    });
+
+    const result = await resolveGoogleAdsAuth({
+      authMode: "service_account",
+      oauthClientId: "shared-client-id",
+      oauthClientSecret: "shared-client-secret",
+      oauthRefreshToken: "",
+      serviceAccountRaw,
+    }, fetchImpl);
+
+    expect(result).toEqual({ token: "service-access", mode: "service_account" });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("explicit OAuth mode requires the complete refresh tuple even when service account exists", async () => {
+    await expect(resolveGoogleAdsAuth({
+      authMode: "oauth_refresh",
+      oauthClientId: "id",
+      oauthClientSecret: "secret",
+      serviceAccountRaw: await generatedServiceAccount(),
+    })).rejects.toMatchObject({
+      name: "GoogleAdsAuthFailure",
+      kind: "configuration",
+      status: 500,
+    });
+  });
+
+  it("rejects an unknown explicit auth mode before provider calls", async () => {
+    const fetchImpl = vi.fn();
+    await expect(resolveGoogleAdsAuth({
+      authMode: "whatever_works",
+      serviceAccountRaw: await generatedServiceAccount(),
+    }, fetchImpl)).rejects.toMatchObject({
+      name: "GoogleAdsAuthFailure",
+      kind: "configuration",
+      status: 500,
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("prefers a complete OAuth refresh identity and rejects credential-bearing redirects", async () => {
@@ -72,7 +118,7 @@ describe("shared Google Ads runtime auth", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
-  it("falls back to service account only when OAuth refresh configuration is absent", async () => {
+  it("falls back to service account only when OAuth refresh configuration is absent and no mode is selected", async () => {
     const serviceAccountRaw = await generatedServiceAccount();
     const fetchImpl = vi.fn(async (_input, init) => {
       expect(init?.redirect).toBe("error");
