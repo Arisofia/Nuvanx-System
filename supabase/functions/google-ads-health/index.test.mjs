@@ -13,6 +13,10 @@ const deployWorkflow = readFileSync(
   fileURLToPath(new URL("../../../.github/workflows/deploy-standalone-edge-functions.yml", import.meta.url)),
   "utf8",
 );
+const runtimeAcceptanceWorkflow = readFileSync(
+  fileURLToPath(new URL("../../../.github/workflows/google-ads-runtime-acceptance.yml", import.meta.url)),
+  "utf8",
+);
 const credentialWorkflow = readFileSync(
   fileURLToPath(new URL("../../../.github/workflows/google-ads-credential-provision.yml", import.meta.url)),
   "utf8",
@@ -140,15 +144,21 @@ describe("Google Ads provider health contract", () => {
     expect(provisionScript).toContain("`${safeBase}/functions/v1/google-ads-health`");
   });
 
-  it("uses state-driven, exact-SHA post-deploy credential convergence", () => {
+  it("keeps state-driven credential convergence in the independent exact-SHA runtime acceptance domain", () => {
     expect(deployWorkflow).toContain("Reverify remote main immediately before Production mutation");
-    expect(deployWorkflow).toContain("Converge Google Ads credential through deployed runtime");
-    expect(deployWorkflow).toContain("steps.post_deploy_guard.outputs.provision == 'true'");
-    expect(deployWorkflow).toContain("Remote main advanced before Google Ads credential convergence; refusing stale credential mutation");
-    expect(deployWorkflow).not.toContain("git diff --name-only");
+    expect(deployWorkflow).toContain('supabase functions deploy google-ads-health --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
+    expect(deployWorkflow).not.toContain("Converge Google Ads credential through deployed runtime");
+    expect(deployWorkflow).not.toContain("GOOGLE_ADS_DEVELOPER_TOKEN");
+    expect(runtimeAcceptanceWorkflow).toContain("Prove governed Edge deployment actually ran");
+    expect(runtimeAcceptanceWorkflow).toContain("Deploy governed functions");
+    expect(runtimeAcceptanceWorkflow).toContain("Verify current main is the deployed candidate");
+    expect(runtimeAcceptanceWorkflow).toContain("Reverify remote main immediately before Google Ads acceptance");
+    expect(runtimeAcceptanceWorkflow).toContain("Converge and accept Google Ads credential through deployed runtime");
+    expect(runtimeAcceptanceWorkflow).toContain("refusing stale Google Ads credential mutation");
+    expect(runtimeAcceptanceWorkflow).not.toContain("continue-on-error: true");
+    expect(runtimeAcceptanceWorkflow).not.toContain("git diff --name-only");
     expect(provisionScript).toContain("credentialContractCurrent(integrations, credentials)");
     expect(provisionScript).toContain("provision_required: false");
-    expect(deployWorkflow).toContain('supabase functions deploy google-ads-health --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
     expect(credentialWorkflow).toContain("workflow_dispatch:");
     expect(credentialWorkflow).not.toContain("push:");
     expect(credentialWorkflow).not.toContain("ENCRYPTION_KEY");
