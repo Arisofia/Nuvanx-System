@@ -82,10 +82,10 @@ test('validate-only selects a complete OAuth tuple without touching Supabase', (
   assert.equal(calls, 0);
 });
 
-test('OAuth convergence sets the full tuple, removes service account, and verifies exact secret shape', () => {
+test('OAuth convergence sets the full tuple and preserves the service account required by the legacy core API', () => {
   const fake = fakeSupabase(
     ['GOOGLE_ADS_SERVICE_ACCOUNT'],
-    ['GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET', 'GOOGLE_ADS_REFRESH_TOKEN'],
+    ['GOOGLE_ADS_SERVICE_ACCOUNT', 'GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET', 'GOOGLE_ADS_REFRESH_TOKEN'],
   );
   const result = convergeGoogleAdsEdgeAuth({
     env: {
@@ -107,8 +107,8 @@ test('OAuth convergence sets the full tuple, removes service account, and verifi
     'GOOGLE_ADS_REFRESH_TOKEN=refresh-token',
     '--project-ref', PROJECT_REF,
   ]);
-  assert.deepEqual(fake.calls[2].args, ['secrets', 'unset', 'GOOGLE_ADS_SERVICE_ACCOUNT', '--project-ref', PROJECT_REF]);
-  assert.deepEqual(fake.calls[3].args, ['secrets', 'list', '--project-ref', PROJECT_REF, '--output', 'json']);
+  assert.deepEqual(fake.calls[2].args, ['secrets', 'list', '--project-ref', PROJECT_REF, '--output', 'json']);
+  assert.equal(fake.calls.some((call) => call.args[1] === 'unset'), false);
   assert.equal(fake.calls.flatMap((call) => call.args).includes('GOOGLE_ADS_DEVELOPER_TOKEN'), false);
 });
 
@@ -141,10 +141,10 @@ test('service-account convergence sets service account, removes only stale OAuth
   assert.equal(fake.calls.flatMap((call) => call.args).includes('GOOGLE_ADS_DEVELOPER_TOKEN'), false);
 });
 
-test('cleanup is idempotent when the opposite identity is already absent', () => {
+test('OAuth convergence is idempotent and leaves a compatibility service account untouched', () => {
   const fake = fakeSupabase(
-    [],
-    ['GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET', 'GOOGLE_ADS_REFRESH_TOKEN'],
+    ['GOOGLE_ADS_SERVICE_ACCOUNT', 'GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET', 'GOOGLE_ADS_REFRESH_TOKEN'],
+    ['GOOGLE_ADS_SERVICE_ACCOUNT', 'GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET', 'GOOGLE_ADS_REFRESH_TOKEN'],
   );
   convergeGoogleAdsEdgeAuth({
     env: {
@@ -152,24 +152,23 @@ test('cleanup is idempotent when the opposite identity is already absent', () =>
       GOOGLE_ADS_CLIENT_ID: 'client-id',
       GOOGLE_ADS_CLIENT_SECRET: 'client-secret',
       GOOGLE_ADS_REFRESH_TOKEN: 'refresh-token',
+      GOOGLE_ADS_SERVICE_ACCOUNT: 'service-account-json',
     },
     execSupabase: fake.execSupabase,
   });
   assert.equal(fake.calls.some((call) => call.args[1] === 'unset'), false);
 });
 
-test('post-mutation verification fails closed if stale opposite-mode secrets remain', () => {
+test('post-mutation verification fails closed if OAuth keys remain in service-account mode', () => {
   const fake = fakeSupabase(
-    ['GOOGLE_ADS_SERVICE_ACCOUNT'],
-    ['GOOGLE_ADS_SERVICE_ACCOUNT', 'GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET', 'GOOGLE_ADS_REFRESH_TOKEN'],
+    ['GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET', 'GOOGLE_ADS_REFRESH_TOKEN'],
+    ['GOOGLE_ADS_SERVICE_ACCOUNT', 'GOOGLE_ADS_REFRESH_TOKEN'],
   );
   assert.throws(
     () => convergeGoogleAdsEdgeAuth({
       env: {
         SUPABASE_PROJECT_REF: PROJECT_REF,
-        GOOGLE_ADS_CLIENT_ID: 'client-id',
-        GOOGLE_ADS_CLIENT_SECRET: 'client-secret',
-        GOOGLE_ADS_REFRESH_TOKEN: 'refresh-token',
+        GOOGLE_ADS_SERVICE_ACCOUNT: 'service-account-json',
       },
       execSupabase: fake.execSupabase,
     }),
