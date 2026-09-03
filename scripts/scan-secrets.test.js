@@ -4,6 +4,8 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const {
   findPrivateKeyMaterial,
+  isDynamicSecretReference,
+  isHumanReadableDiagnostic,
   isLocalPostgresHarnessLine,
   scanText,
   scanTrackedFiles,
@@ -33,6 +35,7 @@ test('private-key syntax mentions and the explicit tiny test fixture are not tre
     "-----END PRIVATE KEY-----'",
   ].join('');
   assert.equal(findPrivateKeyMaterial(tinyFixture), null);
+  assert.deepEqual(scanText('scripts/private-key.test.js', tinyFixture), []);
 });
 
 test('a plausible embedded private-key block is still blocked', () => {
@@ -42,11 +45,34 @@ test('a plausible embedded private-key block is still blocked', () => {
   assert.ok(patterns(findings).includes('Private key block'));
 });
 
+test('dynamic secret references remain scannable without being treated as embedded values', () => {
+  assert.equal(isDynamicSecretReference('${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}'), true);
+  assert.equal(isDynamicSecretReference('$INPUT_SUPABASE_DB_PASSWORD'), true);
+  assert.equal(isDynamicSecretReference('$(openssl rand -hex 32)'), true);
+  assert.equal(isDynamicSecretReference('env(S3_SECRET_KEY)'), true);
+
+  const source = [
+    'SUPABASE_SERVICE_ROLE_KEY: "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}"',
+    'PASSWORD="$INPUT_SUPABASE_DB_PASSWORD"',
+    'PASSWORD="$(openssl rand -hex 32)"',
+    's3_secret_key = "env(S3_SECRET_KEY)"',
+  ].join('\n');
+  assert.deepEqual(scanText('.github/workflows/runtime.yml', source), []);
+});
+
+test('human-readable diagnostic messages are not classified as embedded credentials', () => {
+  const message = 'Missing required GitHub secret/env var: META_ACCESS_TOKEN.';
+  assert.equal(isHumanReadableDiagnostic(message), true);
+  assert.deepEqual(scanText('scripts/runtime.js', `MISSING_ACCESS_TOKEN: '${message}'`), []);
+});
+
 test('explicit synthetic test credentials are accepted without exempting the test file', () => {
   const source = [
     "const GOOGLE_ADS_CLIENT_SECRET = 'client-secret-for-contract-testing';",
     "const GOOGLE_ADS_REFRESH_TOKEN = 'refresh-token-for-contract-testing';",
     "const SUPABASE_SERVICE_ROLE = 'service-role-value-for-contract-testing';",
+    "const SECRET = 'credential-material-must-not-leak';",
+    "const TOKEN = 'super-secret-value-that-must-not-appear';",
   ].join('\n');
   assert.deepEqual(scanText('scripts/example.test.js', source), []);
 });
