@@ -65,6 +65,7 @@ jobs:
           upstream_branch = os.environ.get('UPSTREAM_BRANCH', '')
 
           accept = False
+          not_applicable = False
           reason = 'governed deployment provenance was not established'
 
           if upstream_conclusion != 'success':
@@ -97,6 +98,9 @@ jobs:
                       reason = 'deploy job run_id does not match the triggering workflow run'
                   elif job.get('head_sha') != expected_sha:
                       reason = 'deploy job SHA does not match workflow_run.head_sha'
+                  elif job.get('conclusion') == 'skipped':
+                      not_applicable = True
+                      reason = 'governed deploy job was skipped; no Production Edge mutation occurred and runtime acceptance is not applicable'
                   elif job.get('conclusion') != 'success':
                       reason = f"deploy job conclusion is {job.get('conclusion')!r}, not success"
                   elif missing_or_failed:
@@ -109,6 +113,10 @@ jobs:
               output.write(f"accept={'true' if accept else 'false'}\n")
               if accept:
                   output.write(f"deployed_sha={expected_sha}\n")
+
+          if not_applicable:
+              print(reason)
+              sys.exit(0)
 
           if not accept:
               print(f"::error::{reason}")
@@ -130,6 +138,10 @@ jobs:
       SUPABASE_URL: https://ssvvuuysgxyqvmovrlvk.supabase.co
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
       GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
+      GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
+      GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}
+      GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}
+      GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
 
     steps:
       - name: Checkout trusted main
@@ -166,9 +178,16 @@ jobs:
           test -n "${SUPABASE_URL:-}"
           test -n "${SUPABASE_SERVICE_ROLE_KEY:-}"
           test -n "${GOOGLE_ADS_DEVELOPER_TOKEN:-}"
+          if [[ -z "${GOOGLE_ADS_SERVICE_ACCOUNT:-}" && -z "${GOOGLE_ADS_CLIENT_ID:-}" && -z "${GOOGLE_ADS_CLIENT_SECRET:-}" && -z "${GOOGLE_ADS_REFRESH_TOKEN:-}" ]]; then
+            echo "::error::No Google Ads OAuth mode is configured in the Production environment."
+            exit 1
+          fi
 
-      - name: Verify provisioning contract
-        run: node --test scripts/provision-google-ads-developer-token.test.js
+      - name: Verify provisioning and auth contracts
+        run: node --test scripts/provision-google-ads-developer-token.test.js scripts/google-ads-auth-preflight.test.js scripts/sync-google-ads-service-account.test.js
+
+      - name: Preflight Google Ads provider authentication
+        run: node scripts/google-ads-auth-preflight.js
 
       - name: Reverify remote main immediately before Google Ads acceptance
         shell: bash
