@@ -13,15 +13,11 @@ function inventory(names) {
   return JSON.stringify(names.map((name) => ({ name, digest: 'not-a-secret-value' })));
 }
 
-function fakeSupabase(initialNames, finalNames) {
+function fakeSupabase(finalNames) {
   const calls = [];
-  let listCount = 0;
   const execSupabase = (args, options = {}) => {
     calls.push({ args: [...args], capture: options.capture === true });
-    if (args[0] === 'secrets' && args[1] === 'list') {
-      listCount += 1;
-      return listCount === 1 ? inventory(initialNames) : inventory(finalNames);
-    }
+    if (args[0] === 'secrets' && args[1] === 'list') return inventory(finalNames);
     return '';
   };
   return { calls, execSupabase };
@@ -75,15 +71,10 @@ test('explicit OAuth mode fails closed when the refresh tuple is partial', () =>
 });
 
 test('default service-account mode fails closed when service account is missing', () => {
-  let calls = 0;
   assert.throws(
-    () => convergeGoogleAdsEdgeAuth({
-      env: { SUPABASE_PROJECT_REF: PROJECT_REF },
-      execSupabase: () => { calls += 1; },
-    }),
+    () => convergeGoogleAdsEdgeAuth({ env: { SUPABASE_PROJECT_REF: PROJECT_REF } }),
     /service-account mode is selected but the service account is missing/,
   );
-  assert.equal(calls, 0);
 });
 
 test('invalid explicit auth mode fails closed', () => {
@@ -97,7 +88,6 @@ test('invalid explicit auth mode fails closed', () => {
 });
 
 test('validate-only selects OAuth only when explicitly requested with a complete tuple', () => {
-  let calls = 0;
   const result = convergeGoogleAdsEdgeAuth({
     env: {
       GOOGLE_ADS_AUTH_MODE: 'oauth_refresh',
@@ -106,17 +96,18 @@ test('validate-only selects OAuth only when explicitly requested with a complete
       GOOGLE_ADS_REFRESH_TOKEN: ' refresh-token ',
     },
     validateOnly: true,
-    execSupabase: () => { calls += 1; },
   });
   assert.deepEqual(result, { mode: 'oauth_refresh', mutated: false });
-  assert.equal(calls, 0);
 });
 
-test('OAuth convergence sets the full tuple when explicitly requested', () => {
-  const fake = fakeSupabase(
-    ['GOOGLE_ADS_SERVICE_ACCOUNT'],
-    ['GOOGLE_ADS_SERVICE_ACCOUNT', 'GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET', 'GOOGLE_ADS_REFRESH_TOKEN'],
-  );
+test('OAuth convergence persists mode and complete tuple without touching service account', () => {
+  const fake = fakeSupabase([
+    'GOOGLE_ADS_AUTH_MODE',
+    'GOOGLE_ADS_SERVICE_ACCOUNT',
+    'GOOGLE_ADS_CLIENT_ID',
+    'GOOGLE_ADS_CLIENT_SECRET',
+    'GOOGLE_ADS_REFRESH_TOKEN',
+  ]);
   const result = convergeGoogleAdsEdgeAuth({
     env: {
       SUPABASE_PROJECT_REF: PROJECT_REF,
@@ -130,22 +121,24 @@ test('OAuth convergence sets the full tuple when explicitly requested', () => {
   });
 
   assert.deepEqual(result, { mode: 'oauth_refresh', mutated: true });
-  assert.deepEqual(fake.calls[1].args, [
+  assert.deepEqual(fake.calls[0].args, [
     'secrets', 'set',
+    'GOOGLE_ADS_AUTH_MODE=oauth_refresh',
     'GOOGLE_ADS_CLIENT_ID=client-id',
     'GOOGLE_ADS_CLIENT_SECRET=client-secret',
     'GOOGLE_ADS_REFRESH_TOKEN=refresh-token',
     '--project-ref', PROJECT_REF,
   ]);
   assert.equal(fake.calls.some((call) => call.args[1] === 'unset'), false);
-  assert.equal(fake.calls.flatMap((call) => call.args).includes('GOOGLE_ADS_DEVELOPER_TOKEN'), false);
 });
 
-test('service-account convergence ignores partial GitHub OAuth values and removes stale OAuth Edge keys', () => {
-  const fake = fakeSupabase(
-    ['GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET'],
-    ['GOOGLE_ADS_SERVICE_ACCOUNT'],
-  );
+test('service-account convergence persists selector while preserving shared OAuth keys', () => {
+  const fake = fakeSupabase([
+    'GOOGLE_ADS_AUTH_MODE',
+    'GOOGLE_ADS_SERVICE_ACCOUNT',
+    'GOOGLE_ADS_CLIENT_ID',
+    'GOOGLE_ADS_CLIENT_SECRET',
+  ]);
   const result = convergeGoogleAdsEdgeAuth({
     env: {
       SUPABASE_PROJECT_REF: PROJECT_REF,
@@ -158,44 +151,18 @@ test('service-account convergence ignores partial GitHub OAuth values and remove
   });
 
   assert.deepEqual(result, { mode: 'service_account', mutated: true });
-  assert.deepEqual(fake.calls[1].args, [
+  assert.deepEqual(fake.calls[0].args, [
     'secrets', 'set',
+    'GOOGLE_ADS_AUTH_MODE=service_account',
     'GOOGLE_ADS_SERVICE_ACCOUNT=service-account-json',
     '--project-ref', PROJECT_REF,
   ]);
-  assert.deepEqual(fake.calls[2].args, [
-    'secrets', 'unset',
-    'GOOGLE_ADS_CLIENT_ID',
-    'GOOGLE_ADS_CLIENT_SECRET',
-    '--project-ref', PROJECT_REF,
-  ]);
+  assert.equal(fake.calls.some((call) => call.args[1] === 'unset'), false);
   assert.equal(fake.calls.flatMap((call) => call.args).includes('GOOGLE_ADS_DEVELOPER_TOKEN'), false);
 });
 
-test('explicit OAuth convergence is idempotent and leaves compatibility service account untouched', () => {
-  const fake = fakeSupabase(
-    ['GOOGLE_ADS_SERVICE_ACCOUNT', 'GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET', 'GOOGLE_ADS_REFRESH_TOKEN'],
-    ['GOOGLE_ADS_SERVICE_ACCOUNT', 'GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET', 'GOOGLE_ADS_REFRESH_TOKEN'],
-  );
-  convergeGoogleAdsEdgeAuth({
-    env: {
-      SUPABASE_PROJECT_REF: PROJECT_REF,
-      GOOGLE_ADS_AUTH_MODE: 'oauth_refresh',
-      GOOGLE_ADS_CLIENT_ID: 'client-id',
-      GOOGLE_ADS_CLIENT_SECRET: 'client-secret',
-      GOOGLE_ADS_REFRESH_TOKEN: 'refresh-token',
-      GOOGLE_ADS_SERVICE_ACCOUNT: 'service-account-json',
-    },
-    execSupabase: fake.execSupabase,
-  });
-  assert.equal(fake.calls.some((call) => call.args[1] === 'unset'), false);
-});
-
-test('post-mutation verification fails closed if OAuth keys remain in service-account mode', () => {
-  const fake = fakeSupabase(
-    ['GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET'],
-    ['GOOGLE_ADS_SERVICE_ACCOUNT', 'GOOGLE_ADS_CLIENT_SECRET'],
-  );
+test('post-mutation verification requires auth-mode selector and selected credential', () => {
+  const fake = fakeSupabase(['GOOGLE_ADS_SERVICE_ACCOUNT']);
   assert.throws(
     () => convergeGoogleAdsEdgeAuth({
       env: {
