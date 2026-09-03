@@ -1,0 +1,98 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Google Ads Runtime Acceptance
+
+on:
+  workflow_run:
+    workflows: ['Deploy Standalone Edge Functions']
+    types: [completed]
+
+permissions:
+  contents: read
+
+# Share the Production mutation lock with governed Edge deployment and break-glass maintenance.
+concurrency:
+  group: manual-maintenance-deploy_edge
+  cancel-in-progress: false
+
+jobs:
+  acceptance:
+    name: Accept · Google Ads runtime
+    if: >-
+      ${{
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'workflow_run' &&
+        github.event.workflow_run.head_branch == 'main'
+      }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: Production
+    env:
+      DEPLOYED_SHA: ${{ github.event.workflow_run.head_sha }}
+      SUPABASE_URL: https://ssvvuuysgxyqvmovrlvk.supabase.co
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
+      GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
+
+    steps:
+      - name: Checkout trusted main
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify current main is the deployed candidate
+        id: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT_SHA="$(git rev-parse HEAD)"
+          test -n "${DEPLOYED_SHA:-}"
+          [[ "$DEPLOYED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "$CURRENT_SHA" != "$DEPLOYED_SHA" ]]; then
+            echo "accept=false" >> "$GITHUB_OUTPUT"
+            echo "Current main $CURRENT_SHA advanced beyond deployed candidate $DEPLOYED_SHA; a newer governed deployment will own Google Ads runtime acceptance."
+            exit 0
+          fi
+          echo "accept=true" >> "$GITHUB_OUTPUT"
+          echo "candidate_sha=$CURRENT_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js
+        if: ${{ steps.candidate.outputs.accept == 'true' }}
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Validate acceptance configuration
+        if: ${{ steps.candidate.outputs.accept == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${SUPABASE_URL:-}"
+          test -n "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -n "${GOOGLE_ADS_DEVELOPER_TOKEN:-}"
+
+      - name: Verify provisioning contract
+        if: ${{ steps.candidate.outputs.accept == 'true' }}
+        run: node --test scripts/provision-google-ads-developer-token.test.js
+
+      - name: Reverify remote main immediately before Google Ads acceptance
+        id: mutation_guard
+        if: ${{ steps.candidate.outputs.accept == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          REMOTE_MAIN_SHA="$(git rev-parse origin/main)"
+          CANDIDATE_SHA="${{ steps.candidate.outputs.candidate_sha }}"
+          if [[ "$REMOTE_MAIN_SHA" != "$CANDIDATE_SHA" ]]; then
+            echo "mutate=false" >> "$GITHUB_OUTPUT"
+            echo "Remote main advanced to $REMOTE_MAIN_SHA beyond deployed candidate $CANDIDATE_SHA; a newer governed deployment will own Google Ads runtime acceptance."
+            exit 0
+          fi
+          echo "mutate=true" >> "$GITHUB_OUTPUT"
+
+      - name: Converge and accept Google Ads credential through deployed runtime
+        if: ${{ steps.candidate.outputs.accept == 'true' && steps.mutation_guard.outputs.mutate == 'true' }}
+        run: node scripts/provision-google-ads-developer-token.js
