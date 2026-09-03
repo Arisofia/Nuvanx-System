@@ -44,6 +44,21 @@ describe("Google Ads provider stage diagnostics", () => {
     });
   });
 
+  it("preserves stage across transport failures without exposing transport errors", () => {
+    expect(source).toContain("async function fetchProvider(url: string, init: RequestInit, stage: FailureStage)");
+    expect(source).toContain('"Google Ads API request failed before response"');
+    expect(source).toContain("const response = await fetchProvider(");
+    expect(classifyFailureDiagnostic({
+      kind: "provider",
+      stage: "gaql_820",
+      message: "Google Ads API request failed before response",
+    })).toEqual({
+      kind: "provider",
+      stage: "gaql_820",
+      diagnostic: "provider_transport_failure",
+    });
+  });
+
   it("cannot echo an untrusted stage into runtime acceptance", () => {
     const secret = "sensitive-stage-value";
     const classified = classifyFailureDiagnostic({
