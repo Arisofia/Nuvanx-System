@@ -160,19 +160,19 @@ Deno.serve(async (req: Request) => {
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  const { data: expectedSecret, error: secretError } = await admin.rpc("nvx_get_runtime_secret", {
-    p_name: "REVOPS_INTERNAL_SECRET",
-  });
-  if (secretError || !expectedSecret) {
-    return reply(503, { success: false, code: "runtime_secret_unavailable" });
-  }
-
-  const receivedSecret = String(req.headers.get("x-nvx-internal-secret") || "").trim();
-  if (!(await secretMatches(receivedSecret, String(expectedSecret)))) {
-    return reply(403, { success: false, code: "forbidden" });
-  }
-
   try {
+    const { data: expectedSecret, error: secretError } = await admin.rpc("nvx_get_runtime_secret", {
+      p_name: "REVOPS_INTERNAL_SECRET",
+    });
+    if (secretError || !expectedSecret) {
+      return reply(503, { success: false, code: "runtime_secret_unavailable" });
+    }
+
+    const receivedSecret = String(req.headers.get("x-nvx-internal-secret") || "").trim();
+    if (!(await secretMatches(receivedSecret, String(expectedSecret)))) {
+      return reply(403, { success: false, code: "forbidden" });
+    }
+
     const accessToken = await resolveHubSpotAccessToken(admin);
     const count = await fetchMarketingContactCount(accessToken);
 
