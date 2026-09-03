@@ -10,6 +10,10 @@ const googleAdsAcceptanceWorkflow = readFileSync(
   fileURLToPath(new URL("../../../.github/workflows/google-ads-runtime-acceptance.yml", import.meta.url)),
   "utf8",
 );
+const runtimePreflightScript = readFileSync(
+  fileURLToPath(new URL("../../../scripts/preflight-google-ads-runtime.js", import.meta.url)),
+  "utf8",
+);
 const packageJson = JSON.parse(
   readFileSync(fileURLToPath(new URL("../../../package.json", import.meta.url)), "utf8"),
 );
@@ -59,16 +63,24 @@ describe("Production release acceptance domains", () => {
     expect(googleAdsAcceptanceWorkflow).toContain("accept={'true' if accept else 'false'}");
   });
 
-  it("requires read-only proof of the same selected auth mode before any credential convergence", () => {
-    expect(googleAdsAcceptanceWorkflow).toContain("GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}");
-    expect(googleAdsAcceptanceWorkflow).toContain("GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}");
-    expect(googleAdsAcceptanceWorkflow).toContain("GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}");
-    expect(googleAdsAcceptanceWorkflow).toContain("GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}");
-    const preflight = googleAdsAcceptanceWorkflow.indexOf("node scripts/google-ads-auth-preflight.js");
+  it("proves auth inside the deployed Edge control plane before credential convergence", () => {
+    expect(googleAdsAcceptanceWorkflow).not.toContain("GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}");
+    expect(googleAdsAcceptanceWorkflow).not.toContain("GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}");
+    expect(googleAdsAcceptanceWorkflow).not.toContain("GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}");
+    expect(googleAdsAcceptanceWorkflow).not.toContain("GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}");
+    const preflight = googleAdsAcceptanceWorkflow.indexOf("node scripts/preflight-google-ads-runtime.js");
     const mutation = googleAdsAcceptanceWorkflow.indexOf("node scripts/provision-google-ads-developer-token.js");
     expect(preflight).toBeGreaterThan(-1);
     expect(mutation).toBeGreaterThan(preflight);
-    expect(googleAdsAcceptanceWorkflow).toContain("scripts/google-ads-auth-preflight.test.js");
+    expect(googleAdsAcceptanceWorkflow).toContain("scripts/preflight-google-ads-runtime.test.js");
+    expect(runtimePreflightScript).toContain("/functions/v1/google-ads-auth-preflight");
+    expect(runtimePreflightScript).toContain("persistence_performed !== false");
+  });
+
+  it("deploys health, daily sync and auth preflight from one governed exact-SHA release", () => {
+    expect(deployWorkflow).toContain("supabase functions deploy google-ads-auth-preflight");
+    expect(deployWorkflow).toContain("supabase functions deploy google-ads-health");
+    expect(deployWorkflow).toContain("supabase functions deploy google-ads-daily-sync");
   });
 
   it("keeps Google Ads runtime acceptance exact-SHA and fail-closed once qualified", () => {
@@ -87,6 +99,7 @@ describe("Production release acceptance domains", () => {
   });
 
   it("is executed by the canonical repository test command", () => {
+    expect(packageJson.scripts.test).toContain("node --test scripts/preflight-google-ads-runtime.test.js");
     expect(packageJson.scripts.test).toContain("vitest run supabase/functions");
   });
 });
