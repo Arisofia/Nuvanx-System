@@ -9,6 +9,23 @@ const {
 const CANONICAL_LOGIN_CUSTOMER_ID = '8265708501';
 const TARGET_CUSTOMER_IDS = ['9084540447', '8201489748'];
 
+const SAFE_FAILURE_DIAGNOSTICS = [
+  ['OAuth refresh configuration is incomplete', 'oauth_refresh_incomplete'],
+  ['service account not configured', 'service_account_missing'],
+  ['service account is malformed', 'service_account_malformed'],
+  ['service-account token_uri is not the canonical Google OAuth endpoint', 'service_account_token_uri_invalid'],
+  ['service-account private key unavailable', 'service_account_private_key_missing'],
+  ['service-account private key is malformed', 'service_account_private_key_malformed'],
+  ['service-account private key import failed', 'service_account_private_key_import_failed'],
+  ['service-account assertion signing failed', 'service_account_signing_failed'],
+  ['No Google Ads OAuth mode is configured', 'oauth_mode_missing'],
+  ['login customer id missing', 'login_customer_id_missing'],
+  ['target integrations do not share one login customer id', 'login_customer_id_drift'],
+  ['canonical MCC', 'canonical_mcc_invalid'],
+  ['integration lookup failed', 'integration_lookup_failed'],
+  ['Missing connected Google Ads integration', 'target_integration_missing'],
+];
+
 function required(name) {
   const value = String(process.env[name] || '').trim();
   if (!value) throw new Error(`${name} is required`);
@@ -23,6 +40,15 @@ async function readJson(response) {
 
 function sorted(values) {
   return [...values].map(String).sort();
+}
+
+function classifyFailureDiagnostic(payload) {
+  const kind = String(payload?.kind || 'provider').replace(/[^a-z_]/gi, '').slice(0, 40) || 'provider';
+  const message = String(payload?.message || '');
+  for (const [needle, code] of SAFE_FAILURE_DIAGNOSTICS) {
+    if (message.includes(needle)) return { kind, diagnostic: code };
+  }
+  return { kind, diagnostic: `${kind}_unknown` };
 }
 
 async function preflightGoogleAdsRuntime({
@@ -49,8 +75,8 @@ async function preflightGoogleAdsRuntime({
   });
   const payload = await readJson(response);
   if (!response.ok || payload?.success !== true) {
-    const kind = String(payload?.kind || 'provider').replace(/[^a-z_]/gi, '').slice(0, 40) || 'provider';
-    throw new Error(`Google Ads Edge runtime preflight failed (HTTP ${response.status}, kind=${kind})`);
+    const { kind, diagnostic } = classifyFailureDiagnostic(payload);
+    throw new Error(`Google Ads Edge runtime preflight failed (HTTP ${response.status}, kind=${kind}, diagnostic=${diagnostic})`);
   }
   if (payload?.persistence_performed !== false) {
     throw new Error('Google Ads Edge runtime preflight did not prove read-only semantics');
@@ -105,5 +131,6 @@ if (require.main === module) {
 module.exports = {
   CANONICAL_LOGIN_CUSTOMER_ID,
   TARGET_CUSTOMER_IDS,
+  classifyFailureDiagnostic,
   preflightGoogleAdsRuntime,
 };
