@@ -32,14 +32,6 @@ function refreshConfigState(env = process.env) {
   return 'complete';
 }
 
-function selectedAuthMode(env = process.env) {
-  const refreshState = refreshConfigState(env);
-  if (refreshState === 'partial') return null;
-  if (refreshState === 'complete') return 'oauth_refresh';
-  if (String(env.GOOGLE_ADS_SERVICE_ACCOUNT || '').trim()) return 'service_account';
-  return null;
-}
-
 async function readJson(response) {
   const text = await response.text();
   if (!text) return null;
@@ -75,12 +67,6 @@ async function mintRefreshAccessToken({ clientId, clientSecret, refreshToken, fe
 
 async function mintServiceAccountAccessToken({ rawServiceAccount, fetchImpl = fetch, now = () => Date.now() }) {
   const account = JSON.parse(normalizeServiceAccount(rawServiceAccount));
-  const tokenUri = String(account.token_uri || GOOGLE_TOKEN_URI).trim();
-  if (tokenUri !== GOOGLE_TOKEN_URI) {
-    const error = new Error('Service-account token_uri is not the canonical Google OAuth endpoint');
-    error.diagnostic = { phase: 'configuration', http_status: null, provider_status: null };
-    throw error;
-  }
   const issuedAt = Math.floor(now() / 1000);
   const header = base64Url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
   const claims = base64Url(JSON.stringify({
@@ -185,12 +171,10 @@ async function runPreflight({ env = process.env, fetchImpl = fetch } = {}) {
       success: false,
       reason: 'partial_oauth_refresh_configuration',
       refresh_config: refreshState,
-      selected_auth_mode: null,
       probes: [],
     };
   }
 
-  const selectedMode = selectedAuthMode(env);
   const candidates = [];
   if (refreshState === 'complete') {
     candidates.push({
@@ -213,14 +197,8 @@ async function runPreflight({ env = process.env, fetchImpl = fetch } = {}) {
     });
   }
 
-  if (!selectedMode || candidates.length === 0) {
-    return {
-      success: false,
-      reason: 'no_google_ads_oauth_mode_configured',
-      refresh_config: refreshState,
-      selected_auth_mode: null,
-      probes: [],
-    };
+  if (candidates.length === 0) {
+    return { success: false, reason: 'no_google_ads_oauth_mode_configured', refresh_config: refreshState, probes: [] };
   }
 
   const probes = [];
@@ -237,18 +215,18 @@ async function runPreflight({ env = process.env, fetchImpl = fetch } = {}) {
     }
   }
 
-  const selectedProbe = probes.find((probe) => probe.mode === selectedMode) || null;
-  const selectedOperative = selectedProbe?.operative === true;
-  const diagnosticOperativeModes = probes.filter((probe) => probe.operative).map((probe) => probe.mode);
+  const operativeModes = probes.filter((probe) => probe.operative).map((probe) => probe.mode);
+  const recommended = operativeModes.includes('oauth_refresh')
+    ? 'oauth_refresh'
+    : operativeModes.includes('service_account')
+      ? 'service_account'
+      : null;
 
   return {
-    success: selectedOperative,
-    reason: selectedOperative
-      ? 'selected_runtime_auth_mode_provider_read_proof_passed'
-      : 'selected_runtime_auth_mode_failed_provider_read_proof',
+    success: Boolean(recommended),
+    reason: recommended ? 'provider_read_proof_passed' : 'no_auth_mode_reached_both_customer_accounts',
     refresh_config: refreshState,
-    selected_auth_mode: selectedMode,
-    diagnostic_operative_modes: diagnosticOperativeModes,
+    recommended_auth_mode: recommended,
     login_customer_id: LOGIN_CUSTOMER_ID,
     target_customer_ids: TARGET_CUSTOMERS,
     probes,
@@ -275,10 +253,8 @@ module.exports = {
   TARGET_CUSTOMERS,
   listAccessibleCustomers,
   mintRefreshAccessToken,
-  mintServiceAccountAccessToken,
   probeAuthMode,
   probeCustomerSearch,
   refreshConfigState,
   runPreflight,
-  selectedAuthMode,
 };
