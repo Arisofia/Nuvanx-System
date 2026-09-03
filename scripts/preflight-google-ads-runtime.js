@@ -26,6 +26,14 @@ const SAFE_FAILURE_DIAGNOSTICS = [
   ['Canonical Google Ads MCC is not directly accessible', 'canonical_mcc_not_accessible'],
   ['integration lookup failed', 'integration_lookup_failed'],
   ['Missing connected Google Ads integration', 'target_integration_missing'],
+  ['Google Ads API 401 UNAUTHENTICATED', 'provider_unauthenticated'],
+  ['Google Ads API 403 PERMISSION_DENIED', 'provider_permission_denied'],
+  ['Google Ads API 400 INVALID_ARGUMENT', 'provider_invalid_argument'],
+  ['Google Ads API 404 NOT_FOUND', 'provider_not_found'],
+  ['Google Ads API 429 RESOURCE_EXHAUSTED', 'provider_resource_exhausted'],
+  ['Google Ads API 500 INTERNAL', 'provider_internal'],
+  ['Google Ads API 503 UNAVAILABLE', 'provider_unavailable'],
+  ['Google Ads API returned invalid non-JSON payload', 'provider_non_json'],
 ];
 
 function required(name) {
