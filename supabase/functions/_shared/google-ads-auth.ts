@@ -6,6 +6,7 @@ export type GoogleAdsAuth = {
 };
 
 export type GoogleAdsAuthConfig = {
+  authMode?: string;
   serviceAccountRaw?: string;
   oauthClientId?: string;
   oauthClientSecret?: string;
@@ -18,6 +19,7 @@ type FetchLike = typeof fetch;
 
 const GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token";
 const GOOGLE_ADS_SCOPE = "https://www.googleapis.com/auth/adwords";
+const GOOGLE_ADS_AUTH_MODES = new Set<GoogleAdsAuthMode>(["oauth_refresh", "service_account"]);
 
 export class GoogleAdsAuthFailure extends Error {
   kind: AuthFailureKind;
@@ -37,6 +39,13 @@ function isRecord(value: unknown): value is Record<string, any> {
 
 function clean(value: unknown): string {
   return String(value ?? "").trim();
+}
+
+function runtimeAuthMode(config: GoogleAdsAuthConfig): string {
+  const configured = clean(config.authMode);
+  if (configured) return configured;
+  if (typeof Deno !== "undefined") return clean(Deno.env.get("GOOGLE_ADS_AUTH_MODE"));
+  return "";
 }
 
 export function googleAdsRefreshConfigState(config: GoogleAdsAuthConfig): "absent" | "partial" | "complete" {
@@ -246,7 +255,33 @@ export async function resolveGoogleAdsAuth(
   config: GoogleAdsAuthConfig,
   fetchImpl: FetchLike = fetch,
 ): Promise<GoogleAdsAuth> {
+  const requestedMode = runtimeAuthMode(config);
+  if (requestedMode && !GOOGLE_ADS_AUTH_MODES.has(requestedMode as GoogleAdsAuthMode)) {
+    throw new GoogleAdsAuthFailure("configuration", 500, "Google Ads auth mode is invalid");
+  }
+
   const refreshState = googleAdsRefreshConfigState(config);
+
+  if (requestedMode === "service_account") {
+    if (!clean(config.serviceAccountRaw)) {
+      throw new GoogleAdsAuthFailure("configuration", 500, "Google Ads service account not configured");
+    }
+    return {
+      token: await mintGoogleAdsServiceAccountAccessToken(clean(config.serviceAccountRaw), fetchImpl),
+      mode: "service_account",
+    };
+  }
+
+  if (requestedMode === "oauth_refresh") {
+    if (refreshState !== "complete") {
+      throw new GoogleAdsAuthFailure("configuration", 500, "Google Ads OAuth refresh configuration is incomplete");
+    }
+    return {
+      token: await mintGoogleAdsRefreshAccessToken(config, fetchImpl),
+      mode: "oauth_refresh",
+    };
+  }
+
   if (refreshState === "partial") {
     throw new GoogleAdsAuthFailure("configuration", 500, "Google Ads OAuth refresh configuration is incomplete");
   }
