@@ -27,6 +27,7 @@ const SAFE_FAILURE_DIAGNOSTICS = [
   ['Canonical Google Ads MCC is not directly accessible', 'canonical_mcc_not_accessible'],
   ['integration lookup failed', 'integration_lookup_failed'],
   ['Missing connected Google Ads integration', 'target_integration_missing'],
+  ['Google Ads API request failed before response', 'provider_transport_failure'],
   ['Google Ads API 401 UNAUTHENTICATED', 'provider_unauthenticated'],
   ['Google Ads API 403 PERMISSION_DENIED', 'provider_permission_denied'],
   ['Google Ads API 400 INVALID_ARGUMENT', 'provider_invalid_argument'],
