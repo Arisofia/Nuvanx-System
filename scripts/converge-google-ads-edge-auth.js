@@ -79,8 +79,12 @@ function runSecretOperation(label, args, execSupabase) {
 }
 
 function expectedSecretShape(identity) {
+  // OAuth-capable workers prefer the complete refresh tuple. GOOGLE_ADS_SERVICE_ACCOUNT
+  // is intentionally allowed to coexist because the legacy core `api` function still
+  // consumes that project-wide secret directly. In service-account mode, OAuth keys
+  // must be absent so the shared resolver cannot select an unintended OAuth identity.
   return identity.mode === 'oauth_refresh'
-    ? { required: new Set(OAUTH_KEYS), forbidden: new Set([SERVICE_ACCOUNT_KEY]) }
+    ? { required: new Set(OAUTH_KEYS), forbidden: new Set() }
     : { required: new Set([SERVICE_ACCOUNT_KEY]), forbidden: new Set(OAUTH_KEYS) };
 }
 
@@ -121,13 +125,9 @@ function convergeGoogleAdsEdgeAuth({
       ],
       execSupabase,
     );
-    if (before.has(SERVICE_ACCOUNT_KEY)) {
-      runSecretOperation(
-        'service_account_cleanup',
-        ['secrets', 'unset', SERVICE_ACCOUNT_KEY, '--project-ref', projectRef],
-        execSupabase,
-      );
-    }
+    // Do not unset GOOGLE_ADS_SERVICE_ACCOUNT here. It remains a compatibility
+    // dependency of the separately deployed core API until that API is migrated
+    // to the shared OAuth-capable resolver.
   } else {
     runSecretOperation(
       'service_account_set',
