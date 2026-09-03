@@ -35,6 +35,7 @@ const SYNTHETIC_FIXTURE_MARKERS = [
   'redacted',
   'refresh-token',
   'runtime-secret',
+  'sensitive-',
   'service-role-value',
   'test-',
   'your-',
