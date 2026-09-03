@@ -11,6 +11,7 @@ const OAUTH_CLIENT_SECRET = (Deno.env.get("GOOGLE_ADS_CLIENT_SECRET") || "").tri
 const OAUTH_REFRESH_TOKEN = (Deno.env.get("GOOGLE_ADS_REFRESH_TOKEN") || "").trim();
 const LOGIN_CUSTOMER_ID_ENV = (Deno.env.get("GOOGLE_ADS_LOGIN_CUSTOMER_ID") || "").replace(/\D/g, "");
 const API_VERSION = "v25";
+const CANONICAL_LOGIN_CUSTOMER_ID = "8265708501";
 const TARGET_CUSTOMER_IDS = ["9084540447", "8201489748"] as const;
 const MAX_BODY_BYTES = 4096;
 
@@ -115,13 +116,12 @@ async function listAccessibleCustomers(accessToken: string, developerToken: stri
   });
   const payload = await readProviderJson(response);
   if (!response.ok || payload?.error) throw providerFailure(response.status, payload);
-  const accessibleCustomerIds = Array.isArray(payload?.resourceNames)
+  return Array.isArray(payload?.resourceNames)
     ? payload.resourceNames
       .map((value: unknown) => String(value))
       .filter((value: string) => /^customers\/\d+$/.test(value))
       .map((value: string) => digits(value))
     : [];
-  return accessibleCustomerIds;
 }
 
 async function proveCustomerIdentity(
@@ -220,6 +220,9 @@ Deno.serve(async (req: Request) => {
       throw new PreflightFailure("validation", 424, "Google Ads target integrations do not share one login customer id");
     }
     const loginCustomerId = [...loginCustomerIds][0];
+    if (loginCustomerId !== CANONICAL_LOGIN_CUSTOMER_ID) {
+      throw new PreflightFailure("validation", 424, "Google Ads login customer id is not the canonical MCC");
+    }
 
     const googleAuth = await resolveGoogleAdsAuth({
       serviceAccountRaw: SERVICE_ACCOUNT_RAW,
@@ -229,6 +232,10 @@ Deno.serve(async (req: Request) => {
     });
 
     const accessibleCustomerIds = await listAccessibleCustomers(googleAuth.token, developerToken);
+    if (!accessibleCustomerIds.includes(CANONICAL_LOGIN_CUSTOMER_ID)) {
+      throw new PreflightFailure("validation", 424, "Canonical Google Ads MCC is not directly accessible");
+    }
+
     const customerProofs = [];
     for (const customerId of TARGET_CUSTOMER_IDS) {
       customerProofs.push(await proveCustomerIdentity(
@@ -244,8 +251,8 @@ Deno.serve(async (req: Request) => {
       provider: "google_ads",
       api_version: API_VERSION,
       auth_mode: googleAuth.mode,
-      login_customer_id: loginCustomerId,
-      login_customer_accessible: accessibleCustomerIds.includes(loginCustomerId),
+      login_customer_id: CANONICAL_LOGIN_CUSTOMER_ID,
+      login_customer_accessible: true,
       accessible_customer_count: accessibleCustomerIds.length,
       target_customer_ids: TARGET_CUSTOMER_IDS,
       customer_proofs: customerProofs,
