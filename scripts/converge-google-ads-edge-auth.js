@@ -8,6 +8,8 @@ const OAUTH_KEYS = [
   'GOOGLE_ADS_REFRESH_TOKEN',
 ];
 const SERVICE_ACCOUNT_KEY = 'GOOGLE_ADS_SERVICE_ACCOUNT';
+const AUTH_MODE_KEY = 'GOOGLE_ADS_AUTH_MODE';
+const AUTH_MODES = new Set(['oauth_refresh', 'service_account']);
 
 function clean(value) {
   return String(value ?? '').trim();
@@ -17,17 +19,23 @@ function resolveIdentity(env = process.env) {
   const oauth = Object.fromEntries(OAUTH_KEYS.map((key) => [key, clean(env[key])]));
   const oauthCount = OAUTH_KEYS.filter((key) => oauth[key]).length;
   const serviceAccount = clean(env[SERVICE_ACCOUNT_KEY]);
+  const requestedMode = clean(env[AUTH_MODE_KEY]) || 'service_account';
 
-  if (oauthCount > 0 && oauthCount < OAUTH_KEYS.length) {
-    throw new Error('Google Ads OAuth refresh identity is partial; all three OAuth secrets are required.');
+  if (!AUTH_MODES.has(requestedMode)) {
+    throw new Error('Google Ads auth mode is invalid; expected oauth_refresh or service_account.');
   }
-  if (oauthCount === OAUTH_KEYS.length) {
-    return { mode: 'oauth_refresh', oauth, serviceAccount };
+
+  if (requestedMode === 'service_account') {
+    if (!serviceAccount) {
+      throw new Error('Google Ads service-account mode is selected but the service account is missing.');
+    }
+    return { mode: 'service_account', oauth, serviceAccount, requestedMode };
   }
-  if (!serviceAccount) {
-    throw new Error('No complete Google Ads runtime identity is configured.');
+
+  if (oauthCount !== OAUTH_KEYS.length) {
+    throw new Error('Google Ads OAuth refresh mode is selected but the complete OAuth tuple is missing.');
   }
-  return { mode: 'service_account', oauth, serviceAccount };
+  return { mode: 'oauth_refresh', oauth, serviceAccount, requestedMode };
 }
 
 function defaultExecSupabase(args, { capture = false } = {}) {
@@ -79,13 +87,9 @@ function runSecretOperation(label, args, execSupabase) {
 }
 
 function expectedSecretShape(identity) {
-  // OAuth-capable workers prefer the complete refresh tuple. GOOGLE_ADS_SERVICE_ACCOUNT
-  // is intentionally allowed to coexist because the legacy core `api` function still
-  // consumes that project-wide secret directly. In service-account mode, OAuth keys
-  // must be absent so the shared resolver cannot select an unintended OAuth identity.
   return identity.mode === 'oauth_refresh'
-    ? { required: new Set(OAUTH_KEYS), forbidden: new Set() }
-    : { required: new Set([SERVICE_ACCOUNT_KEY]), forbidden: new Set(OAUTH_KEYS) };
+    ? { required: new Set([AUTH_MODE_KEY, ...OAUTH_KEYS]), forbidden: new Set() }
+    : { required: new Set([AUTH_MODE_KEY, SERVICE_ACCOUNT_KEY]), forbidden: new Set() };
 }
 
 function verifySecretShape(names, identity) {
@@ -111,37 +115,35 @@ function convergeGoogleAdsEdgeAuth({
     throw new Error('SUPABASE_PROJECT_REF is invalid');
   }
 
-  const before = listSecretNames(projectRef, execSupabase);
-
   if (identity.mode === 'oauth_refresh') {
     runSecretOperation(
       'oauth_refresh_set',
       [
         'secrets',
         'set',
+        `${AUTH_MODE_KEY}=oauth_refresh`,
         ...OAUTH_KEYS.map((key) => `${key}=${identity.oauth[key]}`),
         '--project-ref',
         projectRef,
       ],
       execSupabase,
     );
-    // Do not unset GOOGLE_ADS_SERVICE_ACCOUNT here. It remains a compatibility
-    // dependency of the separately deployed core API until that API is migrated
-    // to the shared OAuth-capable resolver.
   } else {
     runSecretOperation(
       'service_account_set',
-      ['secrets', 'set', `${SERVICE_ACCOUNT_KEY}=${identity.serviceAccount}`, '--project-ref', projectRef],
+      [
+        'secrets',
+        'set',
+        `${AUTH_MODE_KEY}=service_account`,
+        `${SERVICE_ACCOUNT_KEY}=${identity.serviceAccount}`,
+        '--project-ref',
+        projectRef,
+      ],
       execSupabase,
     );
-    const staleOauthKeys = OAUTH_KEYS.filter((key) => before.has(key));
-    if (staleOauthKeys.length > 0) {
-      runSecretOperation(
-        'oauth_refresh_cleanup',
-        ['secrets', 'unset', ...staleOauthKeys, '--project-ref', projectRef],
-        execSupabase,
-      );
-    }
+    // Do not remove GOOGLE_ADS_CLIENT_ID / CLIENT_SECRET / REFRESH_TOKEN here.
+    // They are project-wide fallbacks also consumed by google-data-manager-export.
+    // Google Ads runtime identity selection is isolated by GOOGLE_ADS_AUTH_MODE.
   }
 
   const after = listSecretNames(projectRef, execSupabase);
@@ -165,6 +167,8 @@ if (require.main === module) {
 }
 
 module.exports = {
+  AUTH_MODE_KEY,
+  AUTH_MODES,
   OAUTH_KEYS,
   SERVICE_ACCOUNT_KEY,
   clean,
