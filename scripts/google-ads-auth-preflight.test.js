@@ -54,7 +54,12 @@ test('OAuth refresh mode is operative only after listAccessibleCustomers and bot
     if (url.endsWith('/customers:listAccessibleCustomers')) {
       assert.equal(options.headers.Authorization, 'Bearer ephemeral-access-token');
       assert.equal(options.headers['developer-token'], 'developer-token');
-      return jsonResponse({ resourceNames: ['customers/8265708501'] });
+      return jsonResponse({
+        resourceNames: [
+          'customers/8265708501',
+          'customers/9999999999',
+        ],
+      });
     }
     const match = url.match(/\/customers\/(\d+)\/googleAds:search$/);
     if (match) {
@@ -81,10 +86,13 @@ test('OAuth refresh mode is operative only after listAccessibleCustomers and bot
   assert.equal(result.recommended_auth_mode, 'oauth_refresh');
   assert.deepEqual(result.target_customer_ids, ['9084540447', '8201489748']);
   assert.equal(result.probes[0].operative, true);
+  assert.equal(result.probes[0].list_accessible.accessible_customer_count, 2);
+  assert.equal(result.probes[0].list_accessible.login_customer_accessible, true);
   assert.equal(result.probes[0].customer_probes.length, 2);
   assert.equal(seen.length, 4);
   const serialized = JSON.stringify(result);
   assert.doesNotMatch(serialized, /ephemeral-access-token|client-secret|refresh-token|developer-token/);
+  assert.doesNotMatch(serialized, /9999999999|accessible_customer_ids/);
 });
 
 test('provider 401 is reported as bounded diagnostic metadata without leaking credentials', async () => {
