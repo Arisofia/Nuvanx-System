@@ -164,6 +164,23 @@ test('runtime preflight maps bounded Edge configuration failures to stable secre
   );
 });
 
+test('runtime preflight maps canonical MCC producer messages to stable diagnostics', () => {
+  assert.deepEqual(classifyFailureDiagnostic({
+    kind: 'validation',
+    message: 'Google Ads login customer id is not the canonical MCC',
+  }), {
+    kind: 'validation',
+    diagnostic: 'canonical_mcc_invalid',
+  });
+  assert.deepEqual(classifyFailureDiagnostic({
+    kind: 'validation',
+    message: 'Canonical Google Ads MCC is not directly accessible',
+  }), {
+    kind: 'validation',
+    diagnostic: 'canonical_mcc_not_accessible',
+  });
+});
+
 test('runtime preflight never emits an unrecognized Edge message or embedded secret', async () => {
   const secret = 'super-secret-value-that-must-not-appear';
   const payload = {
