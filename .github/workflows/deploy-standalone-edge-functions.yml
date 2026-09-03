@@ -153,6 +153,7 @@ jobs:
             supabase/functions/meta-leadgen-subscribe/index.ts \
             supabase/functions/meta-hubspot-sync/index.ts \
             supabase/functions/meta-capi-dispatch/index.ts \
+            supabase/functions/hubspot-marketing-contact-monitor/index.ts \
             supabase/functions/revops-dispatcher/index.ts \
             supabase/functions/whatsapp-send/index.ts \
             supabase/functions/whatsapp-outbound-worker/index.ts \
@@ -219,6 +220,7 @@ jobs:
             supabase functions deploy meta-leadgen-subscribe --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy meta-hubspot-sync --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy meta-capi-dispatch --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+            supabase functions deploy hubspot-marketing-contact-monitor --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy revops-dispatcher --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy whatsapp-send --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy whatsapp-outbound-worker --project-ref "$SUPABASE_PROJECT_REF"
