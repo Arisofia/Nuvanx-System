@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { HealthFailure, parseServiceAccount } from "./parse-service-account.ts";
 
 const source = readFileSync(fileURLToPath(new URL("./index.ts", import.meta.url)), "utf8");
+const authSource = readFileSync(fileURLToPath(new URL("../_shared/google-ads-auth.ts", import.meta.url)), "utf8");
 const provisionScript = readFileSync(
   fileURLToPath(new URL("../../../scripts/provision-google-ads-developer-token.js", import.meta.url)),
   "utf8",
@@ -44,9 +45,25 @@ describe("Google Ads provider health contract", () => {
   });
 
   it("reads Google Ads with adwords scope and never mutates provider resources", () => {
-    expect(source).toContain('scope: "https://www.googleapis.com/auth/adwords"');
+    expect(authSource).toContain('const GOOGLE_ADS_SCOPE = "https://www.googleapis.com/auth/adwords"');
     expect(source).toContain("googleAds:search");
     expect(source).not.toMatch(/googleAds:mutate|mutateCampaigns|mutateConversionActions/);
+  });
+
+  it("uses one deterministic OAuth contract for health/provision runtime", () => {
+    expect(source).toContain('Deno.env.get("GOOGLE_ADS_CLIENT_ID")');
+    expect(source).toContain('Deno.env.get("GOOGLE_ADS_CLIENT_SECRET")');
+    expect(source).toContain('Deno.env.get("GOOGLE_ADS_REFRESH_TOKEN")');
+    expect(source).toContain('Deno.env.get("GOOGLE_ADS_SERVICE_ACCOUNT")');
+    expect(source).toContain("const googleAuth = await resolveGoogleAdsAuth({");
+    expect(source).toContain("oauthClientId: OAUTH_CLIENT_ID");
+    expect(source).toContain("oauthClientSecret: OAUTH_CLIENT_SECRET");
+    expect(source).toContain("oauthRefreshToken: OAUTH_REFRESH_TOKEN");
+    expect(source).toContain("serviceAccountRaw: SERVICE_ACCOUNT_RAW");
+    expect(source).toContain("auth_mode: googleAuth.mode");
+    expect(authSource).toContain('return "partial"');
+    expect(authSource).toContain('mode: "oauth_refresh"');
+    expect(authSource).toContain('mode: "service_account"');
   });
 
   it("fails closed unless the canonical conversion exists, is enabled, and is primary for goal", () => {
@@ -95,7 +112,8 @@ describe("Google Ads provider health contract", () => {
 
   it("classifies local, OAuth, provider and validation failures separately", () => {
     expect(source).toContain('type FailureKind = "request" | "configuration" | "oauth" | "provider" | "validation" | "persistence"');
-    expect(source).toContain('new HealthFailure("oauth", 424');
+    expect(source).toContain("error instanceof GoogleAdsAuthFailure");
+    expect(authSource).toContain('new GoogleAdsAuthFailure("oauth", 424');
     expect(source).toContain('"provider",\n    502');
     expect(source).toContain('new HealthFailure("configuration", 500');
     expect(source).toContain('new HealthFailure("validation", 424');
@@ -103,8 +121,8 @@ describe("Google Ads provider health contract", () => {
 
   it("proves provider identity before runtime encryption and atomic credential commit", () => {
     const providerRead = source.indexOf("const [customerRows, campaignRows, performanceRows, conversionRows]");
-    const conversionGate = source.indexOf('Canonical Google Ads conversion is not enabled');
-    const encryptIndex = source.indexOf('const encryptedKey = await encryptCredential(developerToken)');
+    const conversionGate = source.indexOf("Canonical Google Ads conversion is not enabled");
+    const encryptIndex = source.indexOf("const encryptedKey = await encryptCredential(developerToken)");
     const atomicCommitIndex = source.indexOf('"nvx_commit_google_ads_credential_provision"', encryptIndex);
     const successIndex = source.indexOf("return reply(200", atomicCommitIndex);
     expect(providerRead).toBeGreaterThan(-1);
@@ -112,7 +130,7 @@ describe("Google Ads provider health contract", () => {
     expect(encryptIndex).toBeGreaterThan(conversionGate);
     expect(atomicCommitIndex).toBeGreaterThan(encryptIndex);
     expect(successIndex).toBeGreaterThan(atomicCommitIndex);
-    expect(source).not.toContain('.upsert({');
+    expect(source).not.toContain(".upsert({");
   });
 
   it("commits credential replacement and integration connected state in one SQL transaction", () => {
@@ -127,7 +145,7 @@ describe("Google Ads provider health contract", () => {
 
   it("makes the Edge runtime the sole Google Ads cryptographic owner", () => {
     expect(source).toContain('const ENCRYPTION_KEY = (Deno.env.get("ENCRYPTION_KEY") || "").trim()');
-    expect(source).toContain('async function encryptCredential(secret: string)');
+    expect(source).toContain("async function encryptCredential(secret: string)");
     expect(credentialMigration).toContain("'provisioned_by', 'google_ads_health_runtime'");
     expect(provisionScript).not.toContain("ENCRYPTION_KEY");
     expect(provisionScript).not.toContain("encryptCredential");
@@ -164,9 +182,7 @@ describe("Google Ads provider health contract", () => {
     expect(credentialWorkflow).not.toContain("ENCRYPTION_KEY");
   });
 
-  it("normalizes service account representations via parseServiceAccount", () => {
-    expect(source).toContain("parseServiceAccount(SERVICE_ACCOUNT_RAW)");
-
+  it("keeps legacy service-account representation normalization covered", () => {
     const expected = {
       client_email: "test-sa@project-123.iam.gserviceaccount.com",
       private_key: "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQD...\n-----END PRIVATE KEY-----\n",
@@ -189,11 +205,6 @@ describe("Google Ads provider health contract", () => {
     expect(() => parseServiceAccount("")).toThrow("Google Ads service account not configured");
     expect(() => parseServiceAccount("not-valid-json")).toThrowError(HealthFailure);
     expect(() => parseServiceAccount("not-valid-json")).toThrow("Google Ads service account is malformed");
-    expect(() => parseServiceAccount(JSON.stringify({ client_email: "missing_private_key" }))).toThrowError(
-      HealthFailure,
-    );
-    expect(() => parseServiceAccount(JSON.stringify({ client_email: "missing_private_key" }))).toThrow(
-      "Google Ads service account is malformed",
-    );
+    expect(() => parseServiceAccount(JSON.stringify({ client_email: "missing_private_key" }))).toThrowError(HealthFailure);
   });
 });

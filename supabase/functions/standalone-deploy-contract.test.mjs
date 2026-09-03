@@ -28,9 +28,20 @@ describe('standalone Edge deployment ownership', () => {
     expect(workflow).toContain('CORS_ALLOWED_ORIGINS: https://nuvanx-frontend.jenineferderas.workers.dev');
     expect(workflow).toContain('FRONTEND_URL: https://nuvanx-frontend.jenineferderas.workers.dev');
     expect(workflow).toContain('PRODUCTION_FALLBACK_URL: https://nuvanx-frontend.jenineferderas.workers.dev');
-    expect(workflow).toContain('supabase secrets set \\\n              CORS_ALLOWED_ORIGINS="$CORS_ALLOWED_ORIGINS" \\\n              FRONTEND_URL="$FRONTEND_URL" \\\n              PRODUCTION_FALLBACK_URL="$PRODUCTION_FALLBACK_URL" \\\n              --project-ref "$SUPABASE_PROJECT_REF"');
+    expect(workflow).toContain('CORS_ALLOWED_ORIGINS="$CORS_ALLOWED_ORIGINS"');
+    expect(workflow).toContain('FRONTEND_URL="$FRONTEND_URL"');
+    expect(workflow).toContain('PRODUCTION_FALLBACK_URL="$PRODUCTION_FALLBACK_URL"');
     expect(workflow).not.toContain('frontend-arisofias-projects-c2217452.vercel.app');
     expect(workflow).not.toContain('frontend-git-main-arisofias-projects-c2217452.vercel.app');
+  });
+
+  it('owns the canonical Google Ads MCC routing value in the governed Edge deploy', () => {
+    expect(workflow).toContain("GOOGLE_ADS_LOGIN_CUSTOMER_ID: '8265708501'");
+    expect(workflow).toContain('[[ "$GOOGLE_ADS_LOGIN_CUSTOMER_ID" == "8265708501" ]]');
+    expect(workflow).toContain('GOOGLE_ADS_LOGIN_CUSTOMER_ID="$GOOGLE_ADS_LOGIN_CUSTOMER_ID"');
+    expect(workflow).toContain('supabase functions deploy google-ads-auth-preflight --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
+    expect(workflow).toContain('supabase functions deploy google-ads-health --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
+    expect(workflow).toContain('supabase functions deploy google-ads-daily-sync --project-ref "$SUPABASE_PROJECT_REF"');
   });
 
   it('fails closed unless the complete WhatsApp migration tail is present in LOCAL and REMOTE history', () => {
@@ -54,6 +65,7 @@ describe('standalone Edge deployment ownership', () => {
     expect(workflow).toContain('supabase/functions/dashboard/index.ts');
     expect(workflow).toContain('supabase/functions/agent-run/index.ts');
     expect(workflow).toContain('supabase/functions/runtime-bootstrap/index.ts');
+    expect(workflow).toContain('supabase/functions/google-ads-auth-preflight/index.ts');
     expect(workflow).toContain('supabase/functions/google-ads-health/index.ts');
     expect(workflow).toContain('supabase/functions/google-ads-daily-sync/index.ts');
     expect(workflow).toContain('supabase/functions/google-ads-backfill-dispatcher/index.ts');
