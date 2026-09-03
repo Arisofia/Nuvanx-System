@@ -56,7 +56,9 @@ describe("Google Ads runtime acceptance orchestration", () => {
     expect(runtimePreflightScript).toContain("developer_token: token");
   });
 
-  it("converges one normalized runtime mode before governed function deployment", () => {
+  it("declares service-account as the governed Production identity instead of inferring from partial OAuth", () => {
+    expect(deployWorkflow).toContain("GOOGLE_ADS_AUTH_MODE: service_account");
+    expect(deployWorkflow).toContain('[[ "$GOOGLE_ADS_AUTH_MODE" == "service_account" ]]');
     expect(deployWorkflow).toContain("GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}");
     expect(deployWorkflow).toContain("GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}");
     expect(deployWorkflow).toContain("GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}");
@@ -66,7 +68,8 @@ describe("Google Ads runtime acceptance orchestration", () => {
     expect(deployWorkflow).not.toContain("GOOGLE_ADS_DEVELOPER_TOKEN");
 
     expect(convergenceScript).toContain("String(value ?? '').trim()");
-    expect(convergenceScript).toContain("oauthCount > 0 && oauthCount < OAUTH_KEYS.length");
+    expect(convergenceScript).toContain("clean(env[AUTH_MODE_KEY]) || 'service_account'");
+    expect(convergenceScript).toContain("expected oauth_refresh or service_account");
     expect(convergenceScript).toContain("secrets', 'unset'");
     expect(convergenceScript).toContain("verifySecretShape(after, identity)");
     expect(convergenceScript).not.toContain("GOOGLE_ADS_DEVELOPER_TOKEN");
@@ -77,10 +80,9 @@ describe("Google Ads runtime acceptance orchestration", () => {
     expect(preflightDeploy).toBeGreaterThan(secretConvergence);
   });
 
-  it("preserves the project-wide service account while the legacy core API still depends on it", () => {
+  it("preserves the project-wide service account required by the legacy core API", () => {
     expect(coreApiSource).toContain("Deno.env.get('GOOGLE_ADS_SERVICE_ACCOUNT')");
-    expect(convergenceScript).toContain("Do not unset GOOGLE_ADS_SERVICE_ACCOUNT here");
-    expect(convergenceScript).toContain("legacy core `api` function");
+    expect(convergenceScript).toContain("required: new Set([SERVICE_ACCOUNT_KEY])");
     expect(convergenceScript).not.toContain("'service_account_cleanup'");
   });
 
