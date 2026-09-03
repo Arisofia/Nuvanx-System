@@ -51,6 +51,20 @@ function cleanSelector(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function validateDeveloperToken(value: unknown): string {
+  const token = String(value ?? "").trim();
+  if (!token || token.length > 512) {
+    throw new HealthFailure("request", 422, "Google Ads developer token is missing or too long");
+  }
+  if (token.startsWith("{") || token.includes("private_key") || token.includes("client_email")) {
+    throw new HealthFailure("request", 422, "Google Ads developer token slot contains a service-account payload");
+  }
+  if (!/^[A-Za-z0-9._~-]+$/.test(token)) {
+    throw new HealthFailure("request", 422, "Google Ads developer token contains unsupported characters");
+  }
+  return token;
+}
+
 async function sha256(raw: string): Promise<Uint8Array> {
   return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw)));
 }
@@ -74,8 +88,51 @@ function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
-async function decryptCredential(encoded: string): Promise<string> {
+function bytesToHex(bytes: Uint8Array<ArrayBuffer>): string {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function deriveCredentialKey(
+  salt: Uint8Array<ArrayBuffer>,
+  usage: "encrypt" | "decrypt",
+): Promise<CryptoKey> {
   if (!ENCRYPTION_KEY) throw new HealthFailure("configuration", 500, "Credential encryption key unavailable");
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(ENCRYPTION_KEY),
+    "PBKDF2",
+    false,
+    ["deriveKey"],
+  );
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt, iterations: 100_000, hash: "SHA-256" },
+    keyMaterial,
+    { name: "AES-GCM", length: 256 },
+    false,
+    [usage],
+  );
+}
+
+async function encryptCredential(secret: string): Promise<string> {
+  if (!secret) throw new HealthFailure("configuration", 500, "Google Ads developer credential is empty");
+  const salt = new Uint8Array(new ArrayBuffer(16));
+  crypto.getRandomValues(salt);
+  const iv = new Uint8Array(new ArrayBuffer(12));
+  crypto.getRandomValues(iv);
+  const key = await deriveCredentialKey(salt, "encrypt");
+  const sealed = new Uint8Array(await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    key,
+    new TextEncoder().encode(secret),
+  ));
+  const tagLength = 16;
+  if (sealed.length <= tagLength) throw new HealthFailure("configuration", 500, "Google Ads credential encryption failed");
+  const ciphertext = sealed.slice(0, sealed.length - tagLength);
+  const tag = sealed.slice(sealed.length - tagLength);
+  return [salt, iv, tag, ciphertext].map(bytesToHex).join(":");
+}
+
+async function decryptCredential(encoded: string): Promise<string> {
   const parts = String(encoded || "").split(":");
   if (parts.length !== 4) throw new HealthFailure("configuration", 500, "Malformed encrypted Google Ads credential");
   const [saltHex, ivHex, tagHex, ciphertextHex] = parts;
@@ -86,22 +143,9 @@ async function decryptCredential(encoded: string): Promise<string> {
   const combined = new Uint8Array(new ArrayBuffer(ciphertext.length + tag.length));
   combined.set(ciphertext);
   combined.set(tag, ciphertext.length);
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(ENCRYPTION_KEY),
-    "PBKDF2",
-    false,
-    ["deriveKey"],
-  );
-  const aesKey = await crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt, iterations: 100_000, hash: "SHA-256" },
-    keyMaterial,
-    { name: "AES-GCM", length: 256 },
-    false,
-    ["decrypt"],
-  );
+  const key = await deriveCredentialKey(salt, "decrypt");
   try {
-    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, aesKey, combined);
+    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, combined);
     return new TextDecoder().decode(plain).trim();
   } catch {
     throw new HealthFailure("configuration", 500, "Google Ads developer credential decryption failed");
@@ -224,36 +268,26 @@ async function googleAdsSearch(
         signal: AbortSignal.timeout(30_000),
       },
     );
-    // Strict parsing: Fail-closed on invalid JSON payloads
     let payload: any;
     try {
       payload = await response.json();
-    } catch (err) {
+    } catch {
       throw new HealthFailure(
         "provider",
         502,
-        `Google Ads API returned invalid non-JSON payload (HTTP ${response.status})`
+        `Google Ads API returned invalid non-JSON payload (HTTP ${response.status})`,
       );
     }
 
-    if (!response.ok || payload?.error) {
-      throw providerError(response.status, payload);
-    }
-
-    // Validate payload is an object before checking results field
-    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+    if (!response.ok || payload?.error) throw providerError(response.status, payload);
+    if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
       throw new HealthFailure("provider", 502, "Google Ads API returned non-object payload");
     }
 
-    // Explicit validation: Distinguish omitted vs non-array
     let resultsArray: unknown[];
-    if (payload.results === undefined) {
-      resultsArray = [];
-    } else if (Array.isArray(payload.results)) {
-      resultsArray = payload.results;
-    } else {
-      throw new HealthFailure("provider", 502, "Google Ads API results field is not an array");
-    }
+    if (payload.results === undefined) resultsArray = [];
+    else if (Array.isArray(payload.results)) resultsArray = payload.results;
+    else throw new HealthFailure("provider", 502, "Google Ads API results field is not an array");
 
     rows.push(...resultsArray);
     if (rows.length > MAX_PROVIDER_ROWS) {
@@ -321,6 +355,11 @@ Deno.serve(async (req: Request) => {
     return reply(400, { success: false, message: "Invalid JSON" });
   }
 
+  const operation = cleanSelector(body.operation) || "health";
+  if (operation !== "health" && operation !== "provision") {
+    return reply(422, { success: false, kind: "request", message: "Unsupported Google Ads health operation" });
+  }
+
   let range: { from: string; to: string };
   try {
     range = resolveRange(body);
@@ -339,6 +378,13 @@ Deno.serve(async (req: Request) => {
       success: false,
       kind: "request",
       message: "Exactly one of integration_id, user_id or clinic_id is required",
+    });
+  }
+  if (operation === "provision" && selectors[0][0] !== "integration_id") {
+    return reply(422, {
+      success: false,
+      kind: "request",
+      message: "Google Ads provisioning requires an exact integration_id",
     });
   }
 
@@ -374,17 +420,24 @@ Deno.serve(async (req: Request) => {
       || integration?.metadata?.login_customer_id,
     );
 
-    const { data: credential, error: credentialError } = await admin
-      .from("credentials")
-      .select("id,encrypted_key")
-      .eq("user_id", integration.user_id)
-      .eq("service", "google_ads")
-      .maybeSingle();
-    if (credentialError || !credential?.encrypted_key) {
-      throw new HealthFailure("configuration", 500, "Google Ads developer credential not found");
+    let credential: { id: string; encrypted_key: string } | null = null;
+    let developerToken = "";
+    if (operation === "provision") {
+      developerToken = validateDeveloperToken(body.developer_token);
+    } else {
+      const { data: storedCredential, error: credentialError } = await admin
+        .from("credentials")
+        .select("id,encrypted_key")
+        .eq("user_id", integration.user_id)
+        .eq("service", "google_ads")
+        .maybeSingle();
+      if (credentialError || !storedCredential?.encrypted_key) {
+        throw new HealthFailure("configuration", 500, "Google Ads developer credential not found");
+      }
+      credential = storedCredential;
+      developerToken = await decryptCredential(String(storedCredential.encrypted_key));
+      if (!developerToken) throw new HealthFailure("configuration", 500, "Google Ads developer credential is empty");
     }
-    const developerToken = await decryptCredential(String(credential.encrypted_key));
-    if (!developerToken) throw new HealthFailure("configuration", 500, "Google Ads developer credential is empty");
 
     const canonicalActionId = customerId === "8201489748" ? LOCAL_CONVERSION_ACTION_ID : CANONICAL_CONVERSION_ACTION_ID;
 
@@ -457,21 +510,45 @@ Deno.serve(async (req: Request) => {
     });
 
     const now = new Date().toISOString();
-    const credentialUpdate = await admin
-      .from("credentials")
-      .update({ last_used: now })
-      .eq("id", credential.id);
-    const integrationUpdate = credentialUpdate.error
-      ? { error: credentialUpdate.error }
-      : await admin.from("integrations").update({ status: "connected", last_sync: now, last_error: null, updated_at: now }).eq("id", integration.id);
-    if (credentialUpdate.error || integrationUpdate.error) {
-      throw new HealthFailure("persistence", 500, "Google Ads provider proof persistence failed");
+    if (operation === "provision") {
+      const encryptedKey = await encryptCredential(developerToken);
+      const { data: committedCredentialId, error: commitError } = await admin.rpc(
+        "nvx_commit_google_ads_credential_provision",
+        {
+          p_integration_id: integration.id,
+          p_encrypted_key: encryptedKey,
+          p_committed_at: now,
+        },
+      );
+      if (commitError || !committedCredentialId) {
+        throw new HealthFailure("persistence", 500, "Google Ads atomic credential provision persistence failed");
+      }
+    } else {
+      const credentialUpdate = await admin
+        .from("credentials")
+        .update({ last_used: now })
+        .eq("id", credential!.id);
+      if (credentialUpdate.error) {
+        throw new HealthFailure("persistence", 500, "Google Ads provider proof persistence failed");
+      }
+
+      const integrationUpdate = await admin.from("integrations").update({
+        status: "connected",
+        last_sync: now,
+        last_error: null,
+        updated_at: now,
+      }).eq("id", integration.id);
+      if (integrationUpdate.error) {
+        throw new HealthFailure("persistence", 500, "Google Ads provider proof persistence failed");
+      }
     }
 
     return reply(200, {
       success: true,
       provider: "google_ads",
       api_version: API_VERSION,
+      operation,
+      credential_provisioned: operation === "provision",
       verified_at: now,
       date_range: range,
       integration_id: integrationId,

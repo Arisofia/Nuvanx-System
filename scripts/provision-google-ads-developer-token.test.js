@@ -1,25 +1,15 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const crypto = require('node:crypto');
 const test = require('node:test');
 const {
-  encryptCredential,
-  recoverGoogleAdsIntegrations,
+  CREDENTIAL_FORMAT,
+  CREDENTIAL_OWNER,
+  credentialContractCurrent,
+  provisionGoogleAdsIntegrations,
+  requireHttpsBase,
   validateDeveloperToken,
 } = require('./provision-google-ads-developer-token');
-
-function decrypt(encoded, encryptionKey) {
-  const [saltHex, ivHex, tagHex, ciphertextHex] = encoded.split(':');
-  const salt = Buffer.from(saltHex, 'hex');
-  const iv = Buffer.from(ivHex, 'hex');
-  const tag = Buffer.from(tagHex, 'hex');
-  const ciphertext = Buffer.from(ciphertextHex, 'hex');
-  const key = crypto.pbkdf2Sync(encryptionKey, salt, 100_000, 32, 'sha256');
-  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-  decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
-}
 
 function jsonResponse(payload, status = 200) {
   return {
@@ -36,15 +26,60 @@ test('developer token validation rejects service-account payloads', () => {
   assert.equal(validateDeveloperToken('abc_DEF-123.xyz~'), 'abc_DEF-123.xyz~');
 });
 
-test('encrypted credential round-trips through the production AES-GCM contract', () => {
-  const token = 'developer_token_123';
-  const key = 'nuvanx-test-encryption-key';
-  const encoded = encryptCredential(token, key);
-  assert.match(encoded, /^[0-9a-f]+:[0-9a-f]+:[0-9a-f]+:[0-9a-f]+$/);
-  assert.equal(decrypt(encoded, key), token);
+test('Supabase base URL must be valid HTTPS before any credential-bearing request', async () => {
+  assert.equal(requireHttpsBase('https://example.supabase.co/'), 'https://example.supabase.co');
+  assert.throws(() => requireHttpsBase('http://example.supabase.co'), /must use HTTPS/);
+  assert.throws(() => requireHttpsBase('not-a-url'), /valid HTTPS URL/);
+
+  let fetchCalled = false;
+  await assert.rejects(
+    provisionGoogleAdsIntegrations({
+      base: 'http://example.supabase.co',
+      serviceRole: 'service-role-value',
+      developerToken: 'developer-token-value',
+      integrations: [{ id: 'integration-820' }],
+      fetchImpl: async () => {
+        fetchCalled = true;
+        return jsonResponse({});
+      },
+    }),
+    /must use HTTPS/,
+  );
+  assert.equal(fetchCalled, false);
 });
 
-test('credential provisioning recovery proves every integration and verifies persisted connected state', async () => {
+test('credential contract is current only when every integration is healthy and every owner is runtime-provisioned', () => {
+  const integrations = [
+    { user_id: 'owner-1', status: 'connected', last_error: null, last_sync: '2026-09-02T21:00:00Z' },
+    { user_id: 'owner-1', status: 'connected', last_error: null, last_sync: '2026-09-02T21:00:01Z' },
+  ];
+  const credentials = [{
+    user_id: 'owner-1',
+    metadata: { provisioned_by: CREDENTIAL_OWNER, credential_format: CREDENTIAL_FORMAT },
+  }];
+
+  assert.equal(credentialContractCurrent(integrations, credentials), true);
+  assert.equal(
+    credentialContractCurrent([{ ...integrations[0], last_error: 'provider failure' }, integrations[1]], credentials),
+    false,
+  );
+  assert.equal(
+    credentialContractCurrent(integrations, [{
+      user_id: 'owner-1',
+      metadata: { provisioned_by: 'github_actions', credential_format: CREDENTIAL_FORMAT },
+    }]),
+    false,
+  );
+  assert.equal(
+    credentialContractCurrent(integrations, [{
+      user_id: 'owner-1',
+      metadata: { provisioned_by: CREDENTIAL_OWNER, credential_format: 'legacy_format' },
+    }]),
+    false,
+  );
+});
+
+test('credential provisioning delegates plaintext token to authenticated Edge runtime and never writes credentials directly', async () => {
   const calls = [];
   const fetchImpl = async (url, options = {}) => {
     calls.push({ url, options });
@@ -57,23 +92,34 @@ test('credential provisioning recovery proves every integration and verifies per
 
     if (url.endsWith('/functions/v1/google-ads-health')) {
       const body = JSON.parse(options.body);
+      assert.equal(body.operation, 'provision');
       assert.match(body.integration_id, /^integration-/);
+      assert.equal(body.developer_token, 'developer-token-value');
       assert.equal(options.headers['x-nvx-internal-secret'], 'runtime-secret-value');
       assert.equal(options.headers.apikey, 'service-role-value');
-      return jsonResponse({ success: true, integration_id: body.integration_id });
+      return jsonResponse({
+        success: true,
+        credential_provisioned: true,
+        integration_id: body.integration_id,
+      });
     }
 
     if (url.includes('/rest/v1/integrations?id=eq.')) {
       const id = decodeURIComponent(url.match(/id=eq\.([^&]+)/)[1]);
-      return jsonResponse([{ id, status: 'connected', last_error: null }]);
+      return jsonResponse([{ id, status: 'connected', last_error: null, last_sync: '2026-09-02T19:40:00.000Z' }]);
+    }
+
+    if (url.includes('/rest/v1/credentials')) {
+      throw new Error('Provisioning execution must never write credentials directly');
     }
 
     throw new Error(`Unexpected test URL: ${url}`);
   };
 
-  const recovered = await recoverGoogleAdsIntegrations({
+  const recovered = await provisionGoogleAdsIntegrations({
     base: 'https://example.supabase.co',
     serviceRole: 'service-role-value',
+    developerToken: 'developer-token-value',
     integrations: [
       { id: 'integration-820', status: 'credential_invalid' },
       { id: 'integration-908', status: 'disconnected' },
@@ -84,9 +130,10 @@ test('credential provisioning recovery proves every integration and verifies per
   assert.equal(recovered, 2);
   assert.equal(calls.filter(({ url }) => url.endsWith('/functions/v1/google-ads-health')).length, 2);
   assert.equal(calls.filter(({ url }) => url.includes('/rest/v1/integrations?id=eq.')).length, 2);
+  assert.equal(calls.filter(({ url }) => url.includes('/rest/v1/credentials')).length, 0);
 });
 
-test('credential recovery continues after one integration fails and reports failures only after all proofs', async () => {
+test('credential provisioning continues after one integration fails and reports failures only after all proofs', async () => {
   const healthIds = [];
   const persistedIds = [];
   const fetchImpl = async (url, options = {}) => {
@@ -95,27 +142,34 @@ test('credential recovery continues after one integration fails and reports fail
     }
 
     if (url.endsWith('/functions/v1/google-ads-health')) {
-      const { integration_id: integrationId } = JSON.parse(options.body);
-      healthIds.push(integrationId);
-      if (integrationId === 'integration-broken') {
+      const body = JSON.parse(options.body);
+      healthIds.push(body.integration_id);
+      assert.equal(body.operation, 'provision');
+      assert.equal(body.developer_token, 'developer-token-value');
+      if (body.integration_id === 'integration-broken') {
         return jsonResponse({ success: false, message: 'provider rejected do-not-log-this-secret' }, 424);
       }
-      return jsonResponse({ success: true, integration_id: integrationId });
+      return jsonResponse({
+        success: true,
+        credential_provisioned: true,
+        integration_id: body.integration_id,
+      });
     }
 
     if (url.includes('/rest/v1/integrations?id=eq.')) {
       const id = decodeURIComponent(url.match(/id=eq\.([^&]+)/)[1]);
       persistedIds.push(id);
-      return jsonResponse([{ id, status: 'connected', last_error: null }]);
+      return jsonResponse([{ id, status: 'connected', last_error: null, last_sync: '2026-09-02T19:40:00.000Z' }]);
     }
 
     throw new Error(`Unexpected test URL: ${url}`);
   };
 
   await assert.rejects(
-    recoverGoogleAdsIntegrations({
+    provisionGoogleAdsIntegrations({
       base: 'https://example.supabase.co',
       serviceRole: 'service-role-value',
+      developerToken: 'developer-token-value',
       integrations: [
         { id: 'integration-broken', status: 'credential_invalid' },
         { id: 'integration-healthy', status: 'disconnected' },
@@ -123,9 +177,10 @@ test('credential recovery continues after one integration fails and reports fail
       fetchImpl,
     }),
     (error) => {
-      assert.match(error.message, /recovery failed for 1 integration/);
+      assert.match(error.message, /provisioning failed for 1 integration/);
       assert.match(error.message, /integration-broken/);
       assert.doesNotMatch(error.message, /do-not-log-this-secret/);
+      assert.doesNotMatch(error.message, /developer-token-value/);
       return true;
     },
   );
@@ -134,28 +189,30 @@ test('credential recovery continues after one integration fails and reports fail
   assert.deepEqual(persistedIds, ['integration-healthy']);
 });
 
-test('credential recovery fails closed without leaking the internal secret', async () => {
+test('credential provisioning fails closed without leaking internal or provider secrets', async () => {
   const fetchImpl = async (url) => {
     if (url.endsWith('/rest/v1/rpc/nvx_get_runtime_secret')) {
       return jsonResponse('do-not-log-this-secret');
     }
     if (url.endsWith('/functions/v1/google-ads-health')) {
-      return jsonResponse({ success: false, message: 'provider rejected do-not-log-this-secret' }, 424);
+      return jsonResponse({ success: false, message: 'provider rejected developer-token-value do-not-log-this-secret' }, 424);
     }
     throw new Error(`Unexpected test URL: ${url}`);
   };
 
   await assert.rejects(
-    recoverGoogleAdsIntegrations({
+    provisionGoogleAdsIntegrations({
       base: 'https://example.supabase.co',
       serviceRole: 'service-role-value',
+      developerToken: 'developer-token-value',
       integrations: [{ id: 'integration-quarantined', status: 'credential_invalid' }],
       fetchImpl,
     }),
     (error) => {
-      assert.match(error.message, /recovery failed for 1 integration/);
+      assert.match(error.message, /provisioning failed for 1 integration/);
       assert.match(error.message, /integration-quarantined/);
       assert.doesNotMatch(error.message, /do-not-log-this-secret/);
+      assert.doesNotMatch(error.message, /developer-token-value/);
       return true;
     },
   );
