@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { persistFailureState } from "./state.ts";
 
 declare const Deno: any;
 
@@ -65,10 +66,15 @@ function normalizeFailure(error: unknown): MonitorFailure {
 
 async function resolveHubSpotAccessToken(admin: any): Promise<string> {
   if (HUBSPOT_ACCESS_TOKEN_ENV) return HUBSPOT_ACCESS_TOKEN_ENV;
-  const { data, error } = await admin.rpc("nvx_get_runtime_secret", { p_name: "HUBSPOT_ACCESS_TOKEN" });
-  const token = String(data || "").trim();
-  if (error || !token) throw new MonitorFailure("hubspot_credential_unavailable", 503);
-  return token;
+  try {
+    const { data, error } = await admin.rpc("nvx_get_runtime_secret", { p_name: "HUBSPOT_ACCESS_TOKEN" });
+    const token = String(data || "").trim();
+    if (error || !token) throw new MonitorFailure("hubspot_credential_unavailable", 503);
+    return token;
+  } catch (error) {
+    if (error instanceof MonitorFailure) throw error;
+    throw new MonitorFailure("hubspot_credential_unavailable", 503);
+  }
 }
 
 async function fetchMarketingContactCount(accessToken: string): Promise<number> {
@@ -120,23 +126,6 @@ async function fetchMarketingContactCount(accessToken: string): Promise<number> 
   return total;
 }
 
-async function persistFailureState(admin: any, failure: MonitorFailure): Promise<void> {
-  const now = new Date().toISOString();
-  try {
-    const { error } = await admin
-      .from("hubspot_marketing_contact_monitor_state")
-      .update({
-        last_error_code: failure.code,
-        last_error_at: now,
-        updated_at: now,
-      })
-      .eq("monitor_key", MONITOR_KEY);
-    if (error) throw error;
-  } catch {
-    // The response remains fail-closed even when observability persistence is unavailable.
-  }
-}
-
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return reply(405, { success: false, code: "method_not_allowed" });
   if (!SUPABASE_URL || !SERVICE_ROLE) return reply(500, { success: false, code: "server_configuration_error" });
@@ -161,52 +150,51 @@ Deno.serve(async (req: Request) => {
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+
+  let expectedSecret: unknown;
   try {
-    const { data: expectedSecret, error: secretError } = await admin.rpc("nvx_get_runtime_secret", {
+    const result = await admin.rpc("nvx_get_runtime_secret", {
       p_name: "REVOPS_INTERNAL_SECRET",
     });
-    if (secretError || !expectedSecret) {
+    if (result.error || !result.data) {
       return reply(503, { success: false, code: "runtime_secret_unavailable" });
     }
+    expectedSecret = result.data;
+  } catch {
+    return reply(503, { success: false, code: "runtime_secret_unavailable" });
+  }
 
-    const receivedSecret = String(req.headers.get("x-nvx-internal-secret") || "").trim();
-    if (!(await secretMatches(receivedSecret, String(expectedSecret)))) {
-      return reply(403, { success: false, code: "forbidden" });
-    }
+  const receivedSecret = String(req.headers.get("x-nvx-internal-secret") || "").trim();
+  if (!(await secretMatches(receivedSecret, String(expectedSecret)))) {
+    return reply(403, { success: false, code: "forbidden" });
+  }
 
+  try {
     const accessToken = await resolveHubSpotAccessToken(admin);
     const count = await fetchMarketingContactCount(accessToken);
 
-    const { data: state, error: stateError } = await admin
-      .from("hubspot_marketing_contact_monitor_state")
-      .select("threshold,above_threshold,last_triggered_at")
-      .eq("monitor_key", MONITOR_KEY)
-      .single();
-    if (stateError || !state) throw new MonitorFailure("monitor_state_unavailable", 500);
-
-    const threshold = Number(state.threshold);
-    if (!Number.isSafeInteger(threshold) || threshold <= 0 || typeof state.above_threshold !== "boolean") {
-      throw new MonitorFailure("monitor_state_invalid", 500);
+    const { data: committed, error: commitError } = await admin.rpc(
+      "nvx_commit_hubspot_marketing_contact_monitor",
+      { p_count: count },
+    );
+    if (commitError || !Array.isArray(committed) || committed.length !== 1) {
+      throw new MonitorFailure("monitor_persistence_failed", 500);
     }
 
-    const now = new Date().toISOString();
-    const aboveThreshold = count >= threshold;
-    const thresholdTransition = aboveThreshold && state.above_threshold === false;
-    const updatePayload: Record<string, unknown> = {
-      last_count: count,
-      above_threshold: aboveThreshold,
-      last_checked_at: now,
-      last_error_code: null,
-      last_error_at: null,
-      updated_at: now,
-    };
-    if (thresholdTransition) updatePayload.last_triggered_at = now;
-
-    const { error: updateError } = await admin
-      .from("hubspot_marketing_contact_monitor_state")
-      .update(updatePayload)
-      .eq("monitor_key", MONITOR_KEY);
-    if (updateError) throw new MonitorFailure("monitor_persistence_failed", 500);
+    const state = committed[0];
+    const threshold = Number(state?.threshold);
+    const aboveThreshold = state?.above_threshold;
+    const thresholdTransition = state?.threshold_transition;
+    const checkedAt = String(state?.checked_at || "").trim();
+    if (
+      !Number.isSafeInteger(threshold)
+      || threshold <= 0
+      || typeof aboveThreshold !== "boolean"
+      || typeof thresholdTransition !== "boolean"
+      || !checkedAt
+    ) {
+      throw new MonitorFailure("monitor_state_invalid", 500);
+    }
 
     if (thresholdTransition) {
       console.warn(`[hubspot-marketing-contact-monitor] threshold_crossed count=${count} threshold=${threshold}`);
@@ -220,11 +208,15 @@ Deno.serve(async (req: Request) => {
       threshold,
       above_threshold: aboveThreshold,
       threshold_transition: thresholdTransition,
-      checked_at: now,
+      checked_at: checkedAt,
     });
   } catch (error) {
     const failure = normalizeFailure(error);
-    await persistFailureState(admin, failure);
+    try {
+      await persistFailureState(admin, MONITOR_KEY, failure);
+    } catch {
+      console.error("[hubspot-marketing-contact-monitor] failure_state_persistence_failed");
+    }
     console.error(`[hubspot-marketing-contact-monitor] failed code=${failure.code}`);
     return reply(failure.status, { success: false, code: failure.code });
   }
