@@ -1,4 +1,8 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import {
+  GoogleAdsAuthFailure,
+  resolveGoogleAdsAuth,
+} from "../_shared/google-ads-auth.ts";
 import { parseServiceAccount } from "./parse-service-account.ts";
 
 export { parseServiceAccount };
@@ -9,6 +13,9 @@ const SUPABASE_URL = (Deno.env.get("SUPABASE_URL") || "").trim();
 const SERVICE_ROLE = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
 const ENCRYPTION_KEY = (Deno.env.get("ENCRYPTION_KEY") || "").trim();
 const SERVICE_ACCOUNT_RAW = (Deno.env.get("GOOGLE_ADS_SERVICE_ACCOUNT") || "").trim();
+const OAUTH_CLIENT_ID = (Deno.env.get("GOOGLE_ADS_CLIENT_ID") || "").trim();
+const OAUTH_CLIENT_SECRET = (Deno.env.get("GOOGLE_ADS_CLIENT_SECRET") || "").trim();
+const OAUTH_REFRESH_TOKEN = (Deno.env.get("GOOGLE_ADS_REFRESH_TOKEN") || "").trim();
 const LOGIN_CUSTOMER_ID_ENV = (Deno.env.get("GOOGLE_ADS_LOGIN_CUSTOMER_ID") || "").replace(/\D/g, "");
 const API_VERSION = "v25";
 const CANONICAL_CONVERSION_ACTION_ID = "7713427085";
@@ -152,72 +159,6 @@ async function decryptCredential(encoded: string): Promise<string> {
   }
 }
 
-function base64Url(bytes: Uint8Array): string {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/g, "");
-}
-
-function base64UrlText(value: string): string {
-  return base64Url(new TextEncoder().encode(value));
-}
-
-function pemBytes(pem: string): Uint8Array<ArrayBuffer> {
-  const clean = String(pem || "")
-    .replace(/-----BEGIN PRIVATE KEY-----/g, "")
-    .replace(/-----END PRIVATE KEY-----/g, "")
-    .replace(/\s+/g, "");
-  if (!clean) throw new HealthFailure("configuration", 500, "Google Ads service-account private key unavailable");
-  const binary = atob(clean);
-  const bytes = new Uint8Array(new ArrayBuffer(binary.length));
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
-
-async function googleAccessToken(serviceAccount: Record<string, any>): Promise<string> {
-  const email = String(serviceAccount.client_email || "").trim();
-  const tokenUri = String(serviceAccount.token_uri || "https://oauth2.googleapis.com/token").trim();
-  const privateKey = String(serviceAccount.private_key || "");
-  if (!email || !privateKey) throw new HealthFailure("configuration", 500, "Google Ads service account is incomplete");
-
-  const now = Math.floor(Date.now() / 1000);
-  const header = base64UrlText(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  const payload = base64UrlText(JSON.stringify({
-    iss: email,
-    scope: "https://www.googleapis.com/auth/adwords",
-    aud: tokenUri,
-    iat: now,
-    exp: now + 3600,
-  }));
-  const signingInput = `${header}.${payload}`;
-  const key = await crypto.subtle.importKey(
-    "pkcs8",
-    pemBytes(privateKey),
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const signature = new Uint8Array(await crypto.subtle.sign(
-    "RSASSA-PKCS1-v1_5",
-    key,
-    new TextEncoder().encode(signingInput),
-  ));
-  const assertion = `${signingInput}.${base64Url(signature)}`;
-  const response = await fetch(tokenUri, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion,
-    }).toString(),
-    signal: AbortSignal.timeout(20_000),
-  });
-  const tokenPayload = await response.json().catch(() => ({}));
-  const token = String(tokenPayload?.access_token || "").trim();
-  if (!response.ok || !token) throw new HealthFailure("oauth", 424, `Google OAuth failed ${response.status}`);
-  return token;
-}
-
 function providerError(status: number, payload: unknown): HealthFailure {
   const value = isRecord(payload) && isRecord(payload.error) ? payload.error : {};
   const providerStatus = String(value.status || "").slice(0, 80);
@@ -323,6 +264,9 @@ function micros(value: unknown): number {
 
 function normalizeFailure(error: unknown): HealthFailure {
   if (error instanceof HealthFailure) return error;
+  if (error instanceof GoogleAdsAuthFailure) {
+    return new HealthFailure(error.kind, error.status, error.message);
+  }
   return new HealthFailure("configuration", 500, String((error as any)?.message || "Google Ads health check failed"));
 }
 
@@ -390,8 +334,6 @@ Deno.serve(async (req: Request) => {
 
   let integrationId = "";
   try {
-    const serviceAccount = parseServiceAccount(SERVICE_ACCOUNT_RAW);
-
     const [selectorKey, selectorValue] = selectors[0];
     let integrationQuery = admin
       .from("integrations")
@@ -439,9 +381,15 @@ Deno.serve(async (req: Request) => {
       if (!developerToken) throw new HealthFailure("configuration", 500, "Google Ads developer credential is empty");
     }
 
+    const googleAuth = await resolveGoogleAdsAuth({
+      serviceAccountRaw: SERVICE_ACCOUNT_RAW,
+      oauthClientId: OAUTH_CLIENT_ID,
+      oauthClientSecret: OAUTH_CLIENT_SECRET,
+      oauthRefreshToken: OAUTH_REFRESH_TOKEN,
+    });
+    const accessToken = googleAuth.token;
     const canonicalActionId = customerId === "8201489748" ? LOCAL_CONVERSION_ACTION_ID : CANONICAL_CONVERSION_ACTION_ID;
 
-    const accessToken = await googleAccessToken(serviceAccount);
     const [customerRows, campaignRows, performanceRows, conversionRows] = await Promise.all([
       googleAdsSearch(customerId, developerToken, accessToken, `
         SELECT customer.id, customer.descriptive_name, customer.currency_code, customer.time_zone
@@ -547,6 +495,7 @@ Deno.serve(async (req: Request) => {
       success: true,
       provider: "google_ads",
       api_version: API_VERSION,
+      auth_mode: googleAuth.mode,
       operation,
       credential_provisioned: operation === "provision",
       verified_at: now,
