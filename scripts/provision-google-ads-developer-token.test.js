@@ -5,6 +5,7 @@ const test = require('node:test');
 const {
   CREDENTIAL_FORMAT,
   CREDENTIAL_OWNER,
+  acceptGoogleAdsIntegrations,
   credentialContractCurrent,
   provisionGoogleAdsIntegrations,
   requireHttpsBase,
@@ -79,7 +80,7 @@ test('credential contract is current only when every integration is healthy and 
   );
 });
 
-test('credential provisioning delegates plaintext token to authenticated Edge runtime and never writes credentials directly', async () => {
+test('credential provisioning delegates plaintext token to Edge then round-trips the persisted credential with health', async () => {
   const calls = [];
   const fetchImpl = async (url, options = {}) => {
     calls.push({ url, options });
@@ -92,14 +93,24 @@ test('credential provisioning delegates plaintext token to authenticated Edge ru
 
     if (url.endsWith('/functions/v1/google-ads-health')) {
       const body = JSON.parse(options.body);
-      assert.equal(body.operation, 'provision');
       assert.match(body.integration_id, /^integration-/);
-      assert.equal(body.developer_token, 'developer-token-value');
       assert.equal(options.headers['x-nvx-internal-secret'], 'runtime-secret-value');
       assert.equal(options.headers.apikey, 'service-role-value');
+      if (body.operation === 'provision') {
+        assert.equal(body.developer_token, 'developer-token-value');
+        return jsonResponse({
+          success: true,
+          operation: 'provision',
+          credential_provisioned: true,
+          integration_id: body.integration_id,
+        });
+      }
+      assert.equal(body.operation, 'health');
+      assert.equal(Object.hasOwn(body, 'developer_token'), false);
       return jsonResponse({
         success: true,
-        credential_provisioned: true,
+        operation: 'health',
+        credential_provisioned: false,
         integration_id: body.integration_id,
       });
     }
@@ -128,13 +139,82 @@ test('credential provisioning delegates plaintext token to authenticated Edge ru
   });
 
   assert.equal(recovered, 2);
-  assert.equal(calls.filter(({ url }) => url.endsWith('/functions/v1/google-ads-health')).length, 2);
+  const runtimeCalls = calls
+    .filter(({ url }) => url.endsWith('/functions/v1/google-ads-health'))
+    .map(({ options }) => {
+      const body = JSON.parse(options.body);
+      return [body.integration_id, body.operation];
+    });
+  assert.deepEqual(runtimeCalls, [
+    ['integration-820', 'provision'],
+    ['integration-820', 'health'],
+    ['integration-908', 'provision'],
+    ['integration-908', 'health'],
+  ]);
   assert.equal(calls.filter(({ url }) => url.includes('/rest/v1/integrations?id=eq.')).length, 2);
   assert.equal(calls.filter(({ url }) => url.includes('/rest/v1/credentials')).length, 0);
 });
 
+test('already-current credentials still require live health acceptance using stored ciphertext', async () => {
+  const operations = [];
+  const fetchImpl = async (url, options = {}) => {
+    if (url.endsWith('/rest/v1/rpc/nvx_get_runtime_secret')) return jsonResponse('runtime-secret-value');
+    if (url.endsWith('/functions/v1/google-ads-health')) {
+      const body = JSON.parse(options.body);
+      operations.push(body);
+      assert.equal(body.operation, 'health');
+      assert.equal(Object.hasOwn(body, 'developer_token'), false);
+      return jsonResponse({
+        success: true,
+        credential_provisioned: false,
+        integration_id: body.integration_id,
+      });
+    }
+    if (url.includes('/rest/v1/integrations?id=eq.')) {
+      const id = decodeURIComponent(url.match(/id=eq\.([^&]+)/)[1]);
+      return jsonResponse([{ id, status: 'connected', last_error: null, last_sync: '2026-09-03T04:00:00.000Z' }]);
+    }
+    throw new Error(`Unexpected test URL: ${url}`);
+  };
+
+  const accepted = await acceptGoogleAdsIntegrations({
+    base: 'https://example.supabase.co',
+    serviceRole: 'service-role-value',
+    integrations: [{ id: 'integration-820' }, { id: 'integration-908' }],
+    fetchImpl,
+  });
+
+  assert.equal(accepted, 2);
+  assert.deepEqual(operations.map((body) => body.integration_id), ['integration-820', 'integration-908']);
+});
+
+test('post-provision health failure rejects acceptance even after provider proof and commit', async () => {
+  const fetchImpl = async (url, options = {}) => {
+    if (url.endsWith('/rest/v1/rpc/nvx_get_runtime_secret')) return jsonResponse('runtime-secret-value');
+    if (url.endsWith('/functions/v1/google-ads-health')) {
+      const body = JSON.parse(options.body);
+      if (body.operation === 'provision') {
+        return jsonResponse({ success: true, credential_provisioned: true, integration_id: body.integration_id });
+      }
+      return jsonResponse({ success: false, kind: 'configuration', message: 'stored credential decrypt failed' }, 500);
+    }
+    throw new Error(`Unexpected test URL: ${url}`);
+  };
+
+  await assert.rejects(
+    provisionGoogleAdsIntegrations({
+      base: 'https://example.supabase.co',
+      serviceRole: 'service-role-value',
+      developerToken: 'developer-token-value',
+      integrations: [{ id: 'integration-820' }],
+      fetchImpl,
+    }),
+    /provisioning failed for 1 integration/,
+  );
+});
+
 test('credential provisioning continues after one integration fails and reports failures only after all proofs', async () => {
-  const healthIds = [];
+  const runtimeCalls = [];
   const persistedIds = [];
   const fetchImpl = async (url, options = {}) => {
     if (url.endsWith('/rest/v1/rpc/nvx_get_runtime_secret')) {
@@ -143,15 +223,13 @@ test('credential provisioning continues after one integration fails and reports 
 
     if (url.endsWith('/functions/v1/google-ads-health')) {
       const body = JSON.parse(options.body);
-      healthIds.push(body.integration_id);
-      assert.equal(body.operation, 'provision');
-      assert.equal(body.developer_token, 'developer-token-value');
-      if (body.integration_id === 'integration-broken') {
+      runtimeCalls.push([body.integration_id, body.operation]);
+      if (body.integration_id === 'integration-broken' && body.operation === 'provision') {
         return jsonResponse({ success: false, message: 'provider rejected do-not-log-this-secret' }, 424);
       }
       return jsonResponse({
         success: true,
-        credential_provisioned: true,
+        credential_provisioned: body.operation === 'provision',
         integration_id: body.integration_id,
       });
     }
@@ -185,7 +263,11 @@ test('credential provisioning continues after one integration fails and reports 
     },
   );
 
-  assert.deepEqual(healthIds, ['integration-broken', 'integration-healthy']);
+  assert.deepEqual(runtimeCalls, [
+    ['integration-broken', 'provision'],
+    ['integration-healthy', 'provision'],
+    ['integration-healthy', 'health'],
+  ]);
   assert.deepEqual(persistedIds, ['integration-healthy']);
 });
 
