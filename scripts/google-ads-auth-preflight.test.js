@@ -46,6 +46,7 @@ test('OAuth refresh mode is operative only after listAccessibleCustomers and bot
   const seen = [];
   const fetchImpl = async (url, options = {}) => {
     seen.push({ url, options });
+    assert.equal(options.redirect, 'error');
     if (url === 'https://oauth2.googleapis.com/token') {
       const body = String(options.body || '');
       assert.match(body, /grant_type=refresh_token/);
@@ -96,7 +97,8 @@ test('OAuth refresh mode is operative only after listAccessibleCustomers and bot
 });
 
 test('provider 401 is reported as bounded diagnostic metadata without leaking credentials', async () => {
-  const fetchImpl = async (url) => {
+  const fetchImpl = async (url, options = {}) => {
+    assert.equal(options.redirect, 'error');
     if (url === 'https://oauth2.googleapis.com/token') return jsonResponse({ access_token: 'do-not-leak-token' });
     return jsonResponse({ error: { status: 'UNAUTHENTICATED', message: 'sensitive provider body' } }, 401);
   };
