@@ -5,16 +5,21 @@
 -- following migration installs the write sanitizer first and only then adds the
 -- database CHECK invariant, so legacy clients cannot be broken between a
 -- credential write and an integration upsert.
+--
+-- Preserve updated_at: downstream routing uses that timestamp, and removing a
+-- legacy secret must not change integration recency or account selection.
+-- Restrict cleanup to JSON objects so array/string metadata is never reinterpreted
+-- as an object-key store.
 
 BEGIN;
 
 UPDATE public.integrations
-SET metadata = COALESCE(metadata, '{}'::jsonb) - 'developer_token' - 'developerToken',
-    updated_at = NOW()
+SET metadata = metadata - 'developer_token' - 'developerToken'
 WHERE service = 'google_ads'
+  AND jsonb_typeof(metadata) = 'object'
   AND (
-    COALESCE(metadata, '{}'::jsonb) ? 'developer_token'
-    OR COALESCE(metadata, '{}'::jsonb) ? 'developerToken'
+    metadata ? 'developer_token'
+    OR metadata ? 'developerToken'
   );
 
 COMMIT;
