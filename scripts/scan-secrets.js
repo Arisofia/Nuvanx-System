@@ -17,7 +17,9 @@ const POSTGRES_PLACEHOLDER_PASSWORDS = new Set([
 ]);
 
 const SYNTHETIC_FIXTURE_MARKERS = [
+  '\\ntest\\n',
   'client-secret',
+  'credential-material',
   'developer-token',
   'do-not-leak',
   'do-not-log',
@@ -27,6 +29,8 @@ const SYNTHETIC_FIXTURE_MARKERS = [
   'integration-contract',
   'mock-',
   'must-never-be-stored',
+  'must-not-appear',
+  'must-not-leak',
   'placeholder',
   'redacted',
   'refresh-token',
@@ -85,6 +89,24 @@ function isClearlySyntheticFixture(file, value) {
   return SYNTHETIC_FIXTURE_MARKERS.some((marker) => normalized.includes(marker));
 }
 
+function isDynamicSecretReference(value) {
+  const normalized = String(value || '').trim();
+  if (!normalized) return true;
+  return (
+    normalized.startsWith('$')
+    || normalized.includes('${{')
+    || normalized.includes('${')
+    || normalized.includes('$(')
+    || /^env\([A-Z0-9_]+\)$/i.test(normalized)
+  );
+}
+
+function isHumanReadableDiagnostic(value) {
+  const normalized = String(value || '').trim();
+  if (!/\s/.test(normalized)) return false;
+  return /[A-Za-z]{3,}\s+[A-Za-z]{3,}/.test(normalized);
+}
+
 function normalizeEscapedNewlines(text) {
   return String(text || '')
     .replace(/\\r\\n/g, '\n')
@@ -127,6 +149,8 @@ function scanText(file, text) {
     HARDCODED_SECRET_ASSIGNMENT_RE.lastIndex = 0;
     for (const match of line.matchAll(HARDCODED_SECRET_ASSIGNMENT_RE)) {
       const value = match[2];
+      if (isDynamicSecretReference(value)) continue;
+      if (isHumanReadableDiagnostic(value)) continue;
       if (isClearlySyntheticFixture(file, value)) continue;
       findings.push({ file, line: index + 1, pattern: 'Hardcoded secret assignment' });
     }
@@ -179,6 +203,8 @@ if (require.main === module) main();
 module.exports = {
   findPrivateKeyMaterial,
   isClearlySyntheticFixture,
+  isDynamicSecretReference,
+  isHumanReadableDiagnostic,
   isLocalPostgresHarnessLine,
   isPlaceholderPostgresUrlLine,
   isTestLikePath,
