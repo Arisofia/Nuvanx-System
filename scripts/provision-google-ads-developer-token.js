@@ -41,6 +41,7 @@ async function supabaseJson(base, serviceRole, path, options = {}, fetchImpl = f
   const safeBase = requireHttpsBase(base);
   const response = await fetchImpl(`${safeBase}${path}`, {
     ...options,
+    redirect: 'error',
     headers: {
       apikey: serviceRole,
       Authorization: `Bearer ${serviceRole}`,
@@ -110,6 +111,7 @@ async function invokeGoogleAdsHealth({
 
   const response = await fetchImpl(`${safeBase}/functions/v1/google-ads-health`, {
     method: 'POST',
+    redirect: 'error',
     headers: {
       apikey: serviceRole,
       Authorization: `Bearer ${serviceRole}`,
