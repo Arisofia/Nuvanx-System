@@ -7,14 +7,14 @@ on:
     paths:
       - 'supabase/migrations/20260903060000_remove_google_ads_plaintext_developer_token.sql'
       - 'supabase/migrations/20260903060100_enforce_google_ads_plaintext_metadata_invariant.sql'
-      - 'supabase/tests/google-ads-plaintext-metadata-postgres.test.mjs'
+      - 'supabase/tests/google-ads-plaintext-metadata-postgres.acceptance.mjs'
       - '.github/workflows/google-ads-metadata-postgres-invariant.yml'
   push:
     branches: [main]
     paths:
       - 'supabase/migrations/20260903060000_remove_google_ads_plaintext_developer_token.sql'
       - 'supabase/migrations/20260903060100_enforce_google_ads_plaintext_metadata_invariant.sql'
-      - 'supabase/tests/google-ads-plaintext-metadata-postgres.test.mjs'
+      - 'supabase/tests/google-ads-plaintext-metadata-postgres.acceptance.mjs'
       - '.github/workflows/google-ads-metadata-postgres-invariant.yml'
 
 permissions:
@@ -61,4 +61,4 @@ jobs:
       - name: Execute migrations and prove PostgreSQL invariant
         env:
           GOOGLE_ADS_INVARIANT_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/nuvanx_invariant
-        run: node --test supabase/tests/google-ads-plaintext-metadata-postgres.test.mjs
+        run: node --test supabase/tests/google-ads-plaintext-metadata-postgres.acceptance.mjs
