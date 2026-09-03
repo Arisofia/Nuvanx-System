@@ -30,6 +30,19 @@ describe("Production release acceptance domains", () => {
     expect(deployWorkflow).not.toContain("git diff --name-only");
   });
 
+  it("converges Google Ads runtime identity without moving provider acceptance into the deploy domain", () => {
+    expect(deployWorkflow).toContain("GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}");
+    expect(deployWorkflow).toContain("GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}");
+    expect(deployWorkflow).toContain("GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}");
+    expect(deployWorkflow).toContain("GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}");
+    expect(deployWorkflow).toContain("oauth_count > 0 && oauth_count < 3");
+    expect(deployWorkflow).toContain("supabase secrets unset GOOGLE_ADS_SERVICE_ACCOUNT");
+    expect(deployWorkflow).toContain("Converged Google Ads Edge auth mode: oauth_refresh");
+    expect(deployWorkflow).toContain("Converged Google Ads Edge auth mode: service_account");
+    expect(deployWorkflow).not.toContain("scripts/google-ads-auth-preflight.js");
+    expect(deployWorkflow).not.toContain("GOOGLE_ADS_DEVELOPER_TOKEN");
+  });
+
   it("proves the actual upstream deploy and fails closed when required provenance is absent", () => {
     expect(googleAdsAcceptanceWorkflow).toContain("name: Google Ads Runtime Acceptance");
     expect(googleAdsAcceptanceWorkflow).toContain("workflows: ['Deploy Standalone Edge Functions']");
