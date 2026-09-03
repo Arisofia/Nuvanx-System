@@ -8,6 +8,7 @@ const {
 
 const CANONICAL_LOGIN_CUSTOMER_ID = '8265708501';
 const TARGET_CUSTOMER_IDS = ['9084540447', '8201489748'];
+const SAFE_FAILURE_KINDS = new Set(['request', 'configuration', 'oauth', 'provider', 'validation']);
 
 const SAFE_FAILURE_DIAGNOSTICS = [
   ['OAuth refresh configuration is incomplete', 'oauth_refresh_incomplete'],
@@ -43,7 +44,8 @@ function sorted(values) {
 }
 
 function classifyFailureDiagnostic(payload) {
-  const kind = String(payload?.kind || 'provider').replace(/[^a-z_]/gi, '').slice(0, 40) || 'provider';
+  const candidateKind = String(payload?.kind || '').trim().toLowerCase();
+  const kind = SAFE_FAILURE_KINDS.has(candidateKind) ? candidateKind : 'unknown';
   const message = String(payload?.message || '');
   for (const [needle, code] of SAFE_FAILURE_DIAGNOSTICS) {
     if (message.includes(needle)) return { kind, diagnostic: code };
