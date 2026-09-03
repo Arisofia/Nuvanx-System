@@ -95,6 +95,19 @@ function normalizeFailure(error: unknown, stage?: FailureStage): PreflightFailur
   );
 }
 
+async function fetchProvider(url: string, init: RequestInit, stage: FailureStage): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch {
+    throw new PreflightFailure(
+      "provider",
+      502,
+      "Google Ads API request failed before response",
+      stage,
+    );
+  }
+}
+
 async function readProviderJson(response: Response, stage: FailureStage): Promise<any> {
   try {
     return await response.json();
@@ -121,14 +134,18 @@ function providerFailure(status: number, payload: unknown, stage: FailureStage):
 
 async function listAccessibleCustomers(accessToken: string, developerToken: string) {
   const stage: FailureStage = "list_accessible_customers";
-  const response = await fetch(`https://googleads.googleapis.com/${API_VERSION}/customers:listAccessibleCustomers`, {
-    redirect: "error",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "developer-token": developerToken,
+  const response = await fetchProvider(
+    `https://googleads.googleapis.com/${API_VERSION}/customers:listAccessibleCustomers`,
+    {
+      redirect: "error",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "developer-token": developerToken,
+      },
+      signal: AbortSignal.timeout(20_000),
     },
-    signal: AbortSignal.timeout(20_000),
-  });
+    stage,
+  );
   const payload = await readProviderJson(response, stage);
   if (!response.ok || payload?.error) throw providerFailure(response.status, payload, stage);
   return Array.isArray(payload?.resourceNames)
@@ -159,7 +176,7 @@ async function proveCustomerIdentity(
   };
   if (loginCustomerId) headers["login-customer-id"] = loginCustomerId;
 
-  const response = await fetch(
+  const response = await fetchProvider(
     `https://googleads.googleapis.com/${API_VERSION}/customers/${customerId}/googleAds:search`,
     {
       method: "POST",
@@ -168,6 +185,7 @@ async function proveCustomerIdentity(
       body: JSON.stringify({ query: "SELECT customer.id FROM customer LIMIT 1" }),
       signal: AbortSignal.timeout(20_000),
     },
+    stage,
   );
   const payload = await readProviderJson(response, stage);
   if (!response.ok || payload?.error) throw providerFailure(response.status, payload, stage);
