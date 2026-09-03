@@ -40,10 +40,9 @@ describe("Google Ads plaintext developer-token metadata invariant", () => {
     expect(migration).toContain("? 'developerToken'");
   });
 
-  it("does not source the developer token from integration metadata at runtime", () => {
-    expect(healthSource).not.toContain("metadata.developer_token");
-    expect(healthSource).not.toContain("metadata.developerToken");
-    expect(healthSource).not.toContain("metadata['developer_token']");
-    expect(healthSource).not.toContain('metadata["developer_token"]');
+  it("does not source either developer-token alias from integration metadata at runtime", () => {
+    expect(healthSource).not.toMatch(
+      /metadata\s*(?:\?\.|\.)\s*(?:developer_token|developerToken)\b|metadata\s*(?:\?\.)?\s*\[\s*["'](?:developer_token|developerToken)["']\s*\]/,
+    );
   });
 });
