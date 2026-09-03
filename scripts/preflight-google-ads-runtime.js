@@ -9,6 +9,7 @@ const {
 const CANONICAL_LOGIN_CUSTOMER_ID = '8265708501';
 const TARGET_CUSTOMER_IDS = ['9084540447', '8201489748'];
 const SAFE_FAILURE_KINDS = new Set(['request', 'configuration', 'oauth', 'provider', 'validation']);
+const SAFE_FAILURE_STAGES = new Set(['oauth_token', 'list_accessible_customers', 'gaql_908', 'gaql_820']);
 
 const SAFE_FAILURE_DIAGNOSTICS = [
   ['OAuth refresh configuration is incomplete', 'oauth_refresh_incomplete'],
@@ -26,6 +27,7 @@ const SAFE_FAILURE_DIAGNOSTICS = [
   ['Canonical Google Ads MCC is not directly accessible', 'canonical_mcc_not_accessible'],
   ['integration lookup failed', 'integration_lookup_failed'],
   ['Missing connected Google Ads integration', 'target_integration_missing'],
+  ['Google Ads API request failed before response', 'provider_transport_failure'],
   ['Google Ads API 401 UNAUTHENTICATED', 'provider_unauthenticated'],
   ['Google Ads API 403 PERMISSION_DENIED', 'provider_permission_denied'],
   ['Google Ads API 400 INVALID_ARGUMENT', 'provider_invalid_argument'],
@@ -55,11 +57,17 @@ function sorted(values) {
 function classifyFailureDiagnostic(payload) {
   const candidateKind = String(payload?.kind || '').trim().toLowerCase();
   const kind = SAFE_FAILURE_KINDS.has(candidateKind) ? candidateKind : 'unknown';
+  const candidateStage = String(payload?.stage || '').trim().toLowerCase();
+  const stage = SAFE_FAILURE_STAGES.has(candidateStage) ? candidateStage : '';
   const message = String(payload?.message || '');
   for (const [needle, code] of SAFE_FAILURE_DIAGNOSTICS) {
-    if (message.includes(needle)) return { kind, diagnostic: code };
+    if (message.includes(needle)) {
+      return stage ? { kind, stage, diagnostic: code } : { kind, diagnostic: code };
+    }
   }
-  return { kind, diagnostic: `${kind}_unknown` };
+  return stage
+    ? { kind, stage, diagnostic: `${kind}_unknown` }
+    : { kind, diagnostic: `${kind}_unknown` };
 }
 
 async function preflightGoogleAdsRuntime({
@@ -86,8 +94,11 @@ async function preflightGoogleAdsRuntime({
   });
   const payload = await readJson(response);
   if (!response.ok || payload?.success !== true) {
-    const { kind, diagnostic } = classifyFailureDiagnostic(payload);
-    throw new Error(`Google Ads Edge runtime preflight failed (HTTP ${response.status}, kind=${kind}, diagnostic=${diagnostic})`);
+    const classified = classifyFailureDiagnostic(payload);
+    const stage = classified.stage || 'unknown';
+    throw new Error(
+      `Google Ads Edge runtime preflight failed (HTTP ${response.status}, kind=${classified.kind}, diagnostic=${classified.diagnostic}, stage=${stage})`,
+    );
   }
   if (payload?.persistence_performed !== false) {
     throw new Error('Google Ads Edge runtime preflight did not prove read-only semantics');
