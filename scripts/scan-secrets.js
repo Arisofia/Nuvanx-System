@@ -44,7 +44,7 @@ const SYNTHETIC_FIXTURE_MARKERS = [
 const POSTGRES_INLINE_PASSWORD_RE = /postgres(?:ql)?:\/\/[^\s:@$]+:(?!password@|\$\{)[^\s:@$]{8,}@[^\s]+/i;
 const SUPABASE_POOLER_INLINE_PASSWORD_RE = /postgres\.[a-z0-9]+:(?!\$\{)[^\s:@$]{8,}@aws-[^\s]+\.pooler\.supabase\.com/i;
 const AWS_ACCESS_KEY_RE = /AKIA[0-9A-Z]{16}/;
-const HARDCODED_SECRET_ASSIGNMENT_RE = /(?:SECRET|TOKEN|API_KEY|PASSWORD|SERVICE_ROLE|PRIVATE_KEY)\s*[:=]\s*(['"])([^'"\r\n]{20,})\1/gi;
+const HARDCODED_SECRET_ASSIGNMENT_RE = /([A-Z0-9_]*(?:SECRET|TOKEN|API_KEY|PASSWORD|SERVICE_ROLE|PRIVATE_KEY)[A-Z0-9_]*)\s*[:=]\s*(['"])([^'"\r\n]{20,})\2/gi;
 
 function isPlaceholderPostgresUrlLine(line) {
   const urlPasswordPattern = /postgres(?:ql)?:\/\/[^\s:@$]+:([^@\s]+)@/gi;
@@ -102,9 +102,14 @@ function isDynamicSecretReference(value) {
   );
 }
 
-function isHumanReadableDiagnostic(value) {
+function isHumanReadableDiagnostic(identifier, value) {
+  const key = String(identifier || '').trim().toUpperCase();
   const normalized = String(value || '').trim();
-  if (!/\s/.test(normalized)) return false;
+  const diagnosticKey = (
+    /^(?:MISSING|INVALID|UNKNOWN|UNEXPECTED|FAILURE|ERROR|DENIED|UNAVAILABLE)_/.test(key)
+    || /_(?:ERROR|FAILURE|MESSAGE|DENIED|UNAVAILABLE)$/.test(key)
+  );
+  if (!diagnosticKey || !/\s/.test(normalized)) return false;
   return /[A-Za-z]{3,}\s+[A-Za-z]{3,}/.test(normalized);
 }
 
@@ -149,9 +154,10 @@ function scanText(file, text) {
 
     HARDCODED_SECRET_ASSIGNMENT_RE.lastIndex = 0;
     for (const match of line.matchAll(HARDCODED_SECRET_ASSIGNMENT_RE)) {
-      const value = match[2];
+      const identifier = match[1];
+      const value = match[3];
       if (isDynamicSecretReference(value)) continue;
-      if (isHumanReadableDiagnostic(value)) continue;
+      if (isHumanReadableDiagnostic(identifier, value)) continue;
       if (isClearlySyntheticFixture(file, value)) continue;
       findings.push({ file, line: index + 1, pattern: 'Hardcoded secret assignment' });
     }
