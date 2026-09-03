@@ -5,6 +5,7 @@ const test = require('node:test');
 const {
   CANONICAL_LOGIN_CUSTOMER_ID,
   TARGET_CUSTOMER_IDS,
+  classifyFailureDiagnostic,
   preflightGoogleAdsRuntime,
 } = require('./preflight-google-ads-runtime');
 
@@ -133,5 +134,113 @@ test('runtime preflight rejects success when the canonical MCC is not directly a
       fetchImpl,
     }),
     /did not prove canonical MCC access/,
+  );
+});
+
+test('runtime preflight maps bounded Edge configuration failures to stable secretless diagnostics', async () => {
+  const payload = {
+    success: false,
+    kind: 'configuration',
+    message: 'Google Ads OAuth refresh configuration is incomplete',
+    persistence_performed: false,
+  };
+  assert.deepEqual(classifyFailureDiagnostic(payload), {
+    kind: 'configuration',
+    diagnostic: 'oauth_refresh_incomplete',
+  });
+
+  const fetchImpl = async (url) => {
+    if (url.endsWith('/rest/v1/rpc/nvx_get_runtime_secret')) return response(200, 'internal-runtime-secret');
+    return response(500, payload);
+  };
+  await assert.rejects(
+    preflightGoogleAdsRuntime({
+      base: 'https://project.supabase.co',
+      serviceRole: 'service-role-key',
+      developerToken: 'developer-token',
+      fetchImpl,
+    }),
+    /kind=configuration, diagnostic=oauth_refresh_incomplete/,
+  );
+});
+
+test('runtime preflight maps canonical MCC producer messages to stable diagnostics', () => {
+  assert.deepEqual(classifyFailureDiagnostic({
+    kind: 'validation',
+    message: 'Google Ads login customer id is not the canonical MCC',
+  }), {
+    kind: 'validation',
+    diagnostic: 'canonical_mcc_invalid',
+  });
+  assert.deepEqual(classifyFailureDiagnostic({
+    kind: 'validation',
+    message: 'Canonical Google Ads MCC is not directly accessible',
+  }), {
+    kind: 'validation',
+    diagnostic: 'canonical_mcc_not_accessible',
+  });
+});
+
+test('runtime preflight never emits an unrecognized Edge message or embedded secret', async () => {
+  const secret = 'super-secret-value-that-must-not-appear';
+  const payload = {
+    success: false,
+    kind: 'configuration',
+    message: `unexpected failure ${secret}`,
+    persistence_performed: false,
+  };
+  assert.deepEqual(classifyFailureDiagnostic(payload), {
+    kind: 'configuration',
+    diagnostic: 'configuration_unknown',
+  });
+
+  const fetchImpl = async (url) => {
+    if (url.endsWith('/rest/v1/rpc/nvx_get_runtime_secret')) return response(200, 'internal-runtime-secret');
+    return response(500, payload);
+  };
+  await assert.rejects(
+    preflightGoogleAdsRuntime({
+      base: 'https://project.supabase.co',
+      serviceRole: 'service-role-key',
+      developerToken: 'developer-token',
+      fetchImpl,
+    }),
+    (error) => {
+      assert.match(error.message, /diagnostic=configuration_unknown/);
+      assert.equal(error.message.includes(secret), false);
+      return true;
+    },
+  );
+});
+
+test('runtime preflight allowlists Edge failure kinds and cannot echo an untrusted kind', async () => {
+  const secret = 'kind-secret-that-must-not-appear';
+  const payload = {
+    success: false,
+    kind: `configuration_${secret}`,
+    message: 'unexpected failure',
+    persistence_performed: false,
+  };
+  assert.deepEqual(classifyFailureDiagnostic(payload), {
+    kind: 'unknown',
+    diagnostic: 'unknown_unknown',
+  });
+
+  const fetchImpl = async (url) => {
+    if (url.endsWith('/rest/v1/rpc/nvx_get_runtime_secret')) return response(200, 'internal-runtime-secret');
+    return response(500, payload);
+  };
+  await assert.rejects(
+    preflightGoogleAdsRuntime({
+      base: 'https://project.supabase.co',
+      serviceRole: 'service-role-key',
+      developerToken: 'developer-token',
+      fetchImpl,
+    }),
+    (error) => {
+      assert.match(error.message, /kind=unknown, diagnostic=unknown_unknown/);
+      assert.equal(error.message.includes(secret), false);
+      return true;
+    },
   );
 });
