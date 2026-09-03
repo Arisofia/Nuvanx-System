@@ -218,8 +218,9 @@ jobs:
           fi
           echo "provision=true" >> "$GITHUB_OUTPUT"
 
-      - name: Converge Google Ads credential through deployed runtime
+      - name: Attempt Google Ads credential convergence for independent readiness signal
         if: ${{ steps.post_deploy_guard.outputs.provision == 'true' }}
+        continue-on-error: true
         shell: bash
         env:
           SUPABASE_URL: https://ssvvuuysgxyqvmovrlvk.supabase.co
