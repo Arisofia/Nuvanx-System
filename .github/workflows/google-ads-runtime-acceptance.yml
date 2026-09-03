@@ -7,6 +7,7 @@ on:
     types: [completed]
 
 permissions:
+  actions: read
   contents: read
 
 # Share the Production mutation lock with governed Edge deployment and break-glass maintenance.
@@ -15,8 +16,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  acceptance:
-    name: Accept · Google Ads runtime
+  provenance:
+    name: Qualify · governed Edge deployment
     if: >-
       ${{
         github.event.workflow_run.conclusion == 'success' &&
@@ -24,11 +25,93 @@ jobs:
         github.event.workflow_run.head_branch == 'main'
       }}
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      accept: ${{ steps.proof.outputs.accept }}
+      deployed_sha: ${{ steps.proof.outputs.deployed_sha }}
+
+    steps:
+      - name: Prove governed Edge deployment actually ran
+        id: proof
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id }}
+          DEPLOYED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          test -n "${GH_TOKEN:-}"
+          [[ "${UPSTREAM_RUN_ID:-}" =~ ^[0-9]+$ ]]
+          [[ "${DEPLOYED_SHA:-}" =~ ^[0-9a-f]{40}$ ]]
+
+          JOBS_JSON="$RUNNER_TEMP/upstream-deploy-jobs.json"
+          curl --fail-with-body --silent --show-error \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/runs/${UPSTREAM_RUN_ID}/jobs?per_page=100" \
+            > "$JOBS_JSON"
+
+          export JOBS_JSON DEPLOYED_SHA UPSTREAM_RUN_ID
+          python3 - <<'PY'
+          import json
+          import os
+
+          with open(os.environ['JOBS_JSON'], encoding='utf-8') as handle:
+              payload = json.load(handle)
+
+          expected_sha = os.environ['DEPLOYED_SHA']
+          expected_run_id = int(os.environ['UPSTREAM_RUN_ID'])
+          deploy_jobs = [
+              job for job in payload.get('jobs', [])
+              if job.get('name') == 'Deploy · governed Edge Functions'
+          ]
+
+          accept = False
+          reason = 'governed deploy job was not uniquely present'
+          if len(deploy_jobs) == 1:
+              job = deploy_jobs[0]
+              steps = {step.get('name'): step for step in job.get('steps', [])}
+              required_steps = (
+                  'Verify current main is the quality-approved candidate',
+                  'Revalidate governed Edge candidate',
+                  'Reverify remote main immediately before Production mutation',
+                  'Deploy governed functions',
+              )
+              missing_or_failed = [
+                  name for name in required_steps
+                  if steps.get(name, {}).get('conclusion') != 'success'
+              ]
+              if job.get('run_id') != expected_run_id:
+                  reason = 'deploy job run_id does not match the triggering workflow run'
+              elif job.get('head_sha') != expected_sha:
+                  reason = 'deploy job SHA does not match workflow_run.head_sha'
+              elif job.get('conclusion') != 'success':
+                  reason = f"deploy job conclusion is {job.get('conclusion')!r}, not success"
+              elif missing_or_failed:
+                  reason = f"required deploy steps did not complete successfully: {missing_or_failed}"
+              else:
+                  accept = True
+                  reason = 'governed Edge deployment and exact-SHA guards completed successfully'
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f"accept={'true' if accept else 'false'}\n")
+              if accept:
+                  output.write(f"deployed_sha={expected_sha}\n")
+
+          print(reason)
+          PY
+
+  acceptance:
+    name: Accept · Google Ads runtime
+    needs: provenance
+    if: ${{ needs.provenance.outputs.accept == 'true' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
       name: Production
     env:
-      DEPLOYED_SHA: ${{ github.event.workflow_run.head_sha }}
+      DEPLOYED_SHA: ${{ needs.provenance.outputs.deployed_sha }}
       SUPABASE_URL: https://ssvvuuysgxyqvmovrlvk.supabase.co
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.NUVANX_SUPABASE_SERVICE_ROLE_KEY }}
       GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
@@ -50,22 +133,18 @@ jobs:
           test -n "${DEPLOYED_SHA:-}"
           [[ "$DEPLOYED_SHA" =~ ^[0-9a-f]{40}$ ]]
           if [[ "$CURRENT_SHA" != "$DEPLOYED_SHA" ]]; then
-            echo "accept=false" >> "$GITHUB_OUTPUT"
-            echo "Current main $CURRENT_SHA advanced beyond deployed candidate $DEPLOYED_SHA; a newer governed deployment will own Google Ads runtime acceptance."
-            exit 0
+            echo "::error::Current main $CURRENT_SHA advanced beyond deployed candidate $DEPLOYED_SHA; refusing to report Google Ads runtime acceptance for a superseded candidate."
+            exit 1
           fi
-          echo "accept=true" >> "$GITHUB_OUTPUT"
           echo "candidate_sha=$CURRENT_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js
-        if: ${{ steps.candidate.outputs.accept == 'true' }}
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: '22'
           cache: npm
 
       - name: Validate acceptance configuration
-        if: ${{ steps.candidate.outputs.accept == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -74,12 +153,9 @@ jobs:
           test -n "${GOOGLE_ADS_DEVELOPER_TOKEN:-}"
 
       - name: Verify provisioning contract
-        if: ${{ steps.candidate.outputs.accept == 'true' }}
         run: node --test scripts/provision-google-ads-developer-token.test.js
 
       - name: Reverify remote main immediately before Google Ads acceptance
-        id: mutation_guard
-        if: ${{ steps.candidate.outputs.accept == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -87,12 +163,9 @@ jobs:
           REMOTE_MAIN_SHA="$(git rev-parse origin/main)"
           CANDIDATE_SHA="${{ steps.candidate.outputs.candidate_sha }}"
           if [[ "$REMOTE_MAIN_SHA" != "$CANDIDATE_SHA" ]]; then
-            echo "mutate=false" >> "$GITHUB_OUTPUT"
-            echo "Remote main advanced to $REMOTE_MAIN_SHA beyond deployed candidate $CANDIDATE_SHA; a newer governed deployment will own Google Ads runtime acceptance."
-            exit 0
+            echo "::error::Remote main advanced to $REMOTE_MAIN_SHA beyond deployed candidate $CANDIDATE_SHA; refusing stale Google Ads credential mutation."
+            exit 1
           fi
-          echo "mutate=true" >> "$GITHUB_OUTPUT"
 
       - name: Converge and accept Google Ads credential through deployed runtime
-        if: ${{ steps.candidate.outputs.accept == 'true' && steps.mutation_guard.outputs.mutate == 'true' }}
         run: node scripts/provision-google-ads-developer-token.js
