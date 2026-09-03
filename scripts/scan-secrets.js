@@ -41,35 +41,82 @@ const SYNTHETIC_FIXTURE_MARKERS = [
   'your-',
 ];
 
-const POSTGRES_INLINE_PASSWORD_RE = /postgres(?:ql)?:\/\/[^\s:@$]+:(?!password@|\$\{)[^\s:@$]{8,}@[^\s]+/i;
-const SUPABASE_POOLER_INLINE_PASSWORD_RE = /postgres\.[a-z0-9]+:(?!\$\{)[^\s:@$]{8,}@aws-[^\s]+\.pooler\.supabase\.com/i;
+const POSTGRES_URL_RE = /postgres(?:ql)?:\/\/[^\s'"<>]+/gi;
 const AWS_ACCESS_KEY_RE = /AKIA[0-9A-Z]{16}/;
 const HARDCODED_SECRET_ASSIGNMENT_RE = /([A-Z0-9_]*(?:SECRET|TOKEN|API_KEY|PASSWORD|SERVICE_ROLE|PRIVATE_KEY)[A-Z0-9_]*)\s*[:=]\s*(['"])([^'"\r\n]{20,})\2/gi;
 
-function isPlaceholderPostgresUrlLine(line) {
-  const urlPasswordPattern = /postgres(?:ql)?:\/\/[^\s:@$]+:([^@\s]+)@/gi;
-  const matches = Array.from(line.matchAll(urlPasswordPattern));
+function normalizedPlaceholderPassword(password) {
+  return String(password || '')
+    .trim()
+    .replace(/^[[({<]+|[\])}>]+$/g, '')
+    .toLowerCase();
+}
 
-  if (matches.length === 0) return false;
+function isPlaceholderPassword(password) {
+  const raw = String(password || '').trim();
+  const normalized = normalizedPlaceholderPassword(raw);
+  return (
+    raw.startsWith('$')
+    || normalized.includes('example')
+    || normalized.includes('placeholder')
+    || normalized.includes('redacted')
+    || POSTGRES_PLACEHOLDER_PASSWORDS.has(normalized)
+  );
+}
 
-  return matches.every((match) => {
-    const password = match[1].trim();
-    const normalized = password
-      .replace(/^[[({<]+|[\])}>]+$/g, '')
-      .toLowerCase();
+function parsePostgresCredential(rawUrl) {
+  const cleaned = String(rawUrl || '').replace(/[),;]+$/g, '');
+  const match = cleaned.match(/^postgres(?:ql)?:\/\/([^:@$]+):([^@]+)@([^/:]+)/i);
+  if (!match) return null;
+  return {
+    user: match[1],
+    password: match[2],
+    host: match[3].toLowerCase(),
+  };
+}
 
-    return (
-      password.startsWith('${')
-      || normalized.includes('example')
-      || normalized.includes('placeholder')
-      || normalized.includes('redacted')
-      || POSTGRES_PLACEHOLDER_PASSWORDS.has(normalized)
+function postgresCredentialFindings(line) {
+  const findings = [];
+  POSTGRES_URL_RE.lastIndex = 0;
+  for (const match of String(line || '').matchAll(POSTGRES_URL_RE)) {
+    const credential = parsePostgresCredential(match[0]);
+    if (!credential) continue;
+    if (isPlaceholderPassword(credential.password)) continue;
+    if (
+      credential.user.toLowerCase() === 'postgres'
+      && credential.password === 'postgres'
+      && (credential.host === '127.0.0.1' || credential.host === 'localhost')
+    ) continue;
+    if (credential.password.length < 8) continue;
+
+    findings.push(
+      credential.host.endsWith('.pooler.supabase.com')
+        ? 'Supabase pooler URL with inline password'
+        : 'Postgres URL with inline password',
     );
+  }
+  return findings;
+}
+
+function isPlaceholderPostgresUrlLine(line) {
+  const urls = Array.from(String(line || '').matchAll(POSTGRES_URL_RE));
+  if (urls.length === 0) return false;
+  return urls.every((match) => {
+    const credential = parsePostgresCredential(match[0]);
+    return !credential || isPlaceholderPassword(credential.password);
   });
 }
 
 function isLocalPostgresHarnessLine(line) {
-  return /postgres(?:ql)?:\/\/postgres:postgres@(?:127\.0\.0\.1|localhost)(?::\d+)?\//i.test(line);
+  const urls = Array.from(String(line || '').matchAll(POSTGRES_URL_RE));
+  if (urls.length !== 1) return false;
+  const credential = parsePostgresCredential(urls[0][0]);
+  return Boolean(
+    credential
+    && credential.user.toLowerCase() === 'postgres'
+    && credential.password === 'postgres'
+    && (credential.host === '127.0.0.1' || credential.host === 'localhost')
+  );
 }
 
 function isTestLikePath(file) {
@@ -100,6 +147,26 @@ function isDynamicSecretReference(value) {
     || normalized.includes('$(')
     || /^env\([A-Z0-9_]+\)$/i.test(normalized)
   );
+}
+
+function shannonEntropy(value) {
+  const raw = String(value || '');
+  if (!raw) return 0;
+  const counts = new Map();
+  for (const char of raw) counts.set(char, (counts.get(char) || 0) + 1);
+  let entropy = 0;
+  for (const count of counts.values()) {
+    const probability = count / raw.length;
+    entropy -= probability * Math.log2(probability);
+  }
+  return entropy;
+}
+
+function looksHighEntropySecret(value) {
+  const normalized = String(value || '').trim();
+  if (normalized.length < 24 || /\s/.test(normalized)) return false;
+  const uniqueRatio = new Set(normalized).size / normalized.length;
+  return shannonEntropy(normalized) >= 4.25 && uniqueRatio >= 0.45;
 }
 
 function isHumanReadableDiagnostic(identifier, value) {
@@ -136,16 +203,8 @@ function scanText(file, text) {
   const lines = String(text || '').split(/\r?\n/);
 
   lines.forEach((line, index) => {
-    if (
-      POSTGRES_INLINE_PASSWORD_RE.test(line)
-      && !isPlaceholderPostgresUrlLine(line)
-      && !isLocalPostgresHarnessLine(line)
-    ) {
-      findings.push({ file, line: index + 1, pattern: 'Postgres URL with inline password' });
-    }
-
-    if (SUPABASE_POOLER_INLINE_PASSWORD_RE.test(line)) {
-      findings.push({ file, line: index + 1, pattern: 'Supabase pooler URL with inline password' });
+    for (const pattern of postgresCredentialFindings(line)) {
+      findings.push({ file, line: index + 1, pattern });
     }
 
     if (AWS_ACCESS_KEY_RE.test(line)) {
@@ -157,6 +216,10 @@ function scanText(file, text) {
       const identifier = match[1];
       const value = match[3];
       if (isDynamicSecretReference(value)) continue;
+      if (looksHighEntropySecret(value)) {
+        findings.push({ file, line: index + 1, pattern: 'Hardcoded secret assignment' });
+        continue;
+      }
       if (isHumanReadableDiagnostic(identifier, value)) continue;
       if (isClearlySyntheticFixture(file, value)) continue;
       findings.push({ file, line: index + 1, pattern: 'Hardcoded secret assignment' });
@@ -214,7 +277,9 @@ module.exports = {
   isHumanReadableDiagnostic,
   isLocalPostgresHarnessLine,
   isPlaceholderPostgresUrlLine,
-  isTestLikePath,
+  looksHighEntropySecret,
+  postgresCredentialFindings,
   scanText,
   scanTrackedFiles,
+  shannonEntropy,
 };
