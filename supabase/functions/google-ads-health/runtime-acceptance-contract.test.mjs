@@ -19,6 +19,10 @@ const coreApiSource = readFileSync(
   fileURLToPath(new URL("../api/index.ts", import.meta.url)),
   "utf8",
 );
+const dataManagerSource = readFileSync(
+  fileURLToPath(new URL("../google-data-manager-export/index.ts", import.meta.url)),
+  "utf8",
+);
 const runtimePreflightScript = readFileSync(
   fileURLToPath(new URL("../../../scripts/preflight-google-ads-runtime.js", import.meta.url)),
   "utf8",
@@ -67,10 +71,10 @@ describe("Google Ads runtime acceptance orchestration", () => {
     expect(deployWorkflow).toContain("node scripts/converge-google-ads-edge-auth.js");
     expect(deployWorkflow).not.toContain("GOOGLE_ADS_DEVELOPER_TOKEN");
 
-    expect(convergenceScript).toContain("String(value ?? '').trim()");
     expect(convergenceScript).toContain("clean(env[AUTH_MODE_KEY]) || 'service_account'");
-    expect(convergenceScript).toContain("expected oauth_refresh or service_account");
-    expect(convergenceScript).toContain("secrets', 'unset'");
+    expect(convergenceScript).toContain("`${AUTH_MODE_KEY}=service_account`");
+    expect(convergenceScript).toContain("required: new Set([AUTH_MODE_KEY, SERVICE_ACCOUNT_KEY])");
+    expect(convergenceScript).not.toContain("secrets', 'unset'");
     expect(convergenceScript).toContain("verifySecretShape(after, identity)");
     expect(convergenceScript).not.toContain("GOOGLE_ADS_DEVELOPER_TOKEN");
 
@@ -80,10 +84,14 @@ describe("Google Ads runtime acceptance orchestration", () => {
     expect(preflightDeploy).toBeGreaterThan(secretConvergence);
   });
 
-  it("preserves the project-wide service account required by the legacy core API", () => {
+  it("isolates Ads principal selection without deleting shared OAuth used by Data Manager", () => {
     expect(coreApiSource).toContain("Deno.env.get('GOOGLE_ADS_SERVICE_ACCOUNT')");
-    expect(convergenceScript).toContain("required: new Set([SERVICE_ACCOUNT_KEY])");
-    expect(convergenceScript).not.toContain("'service_account_cleanup'");
+    expect(dataManagerSource).toContain('Deno.env.get("GOOGLE_ADS_CLIENT_ID")');
+    expect(dataManagerSource).toContain('Deno.env.get("GOOGLE_ADS_CLIENT_SECRET")');
+    expect(dataManagerSource).toContain('Deno.env.get("GOOGLE_ADS_REFRESH_TOKEN")');
+    expect(convergenceScript).not.toContain("oauth_refresh_cleanup");
+    expect(authSource).toContain('Deno.env.get("GOOGLE_ADS_AUTH_MODE")');
+    expect(authSource).toContain('requestedMode === "service_account"');
   });
 
   it("deploys the read-only auth preflight in the same governed Edge release as health and daily sync", () => {
