@@ -96,7 +96,7 @@ async function preflightGoogleAdsRuntime({
     const classified = classifyFailureDiagnostic(payload);
     const stage = classified.stage || 'unknown';
     throw new Error(
-      `Google Ads Edge runtime preflight failed (HTTP ${response.status}, kind=${classified.kind}, stage=${stage}, diagnostic=${classified.diagnostic})`,
+      `Google Ads Edge runtime preflight failed (HTTP ${response.status}, kind=${classified.kind}, diagnostic=${classified.diagnostic}, stage=${stage})`,
     );
   }
   if (payload?.persistence_performed !== false) {
