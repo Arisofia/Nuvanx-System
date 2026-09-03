@@ -16,16 +16,19 @@ const TARGET_CUSTOMER_IDS = ["9084540447", "8201489748"] as const;
 const MAX_BODY_BYTES = 4096;
 
 type FailureKind = "request" | "configuration" | "oauth" | "provider" | "validation";
+type FailureStage = "oauth_token" | "list_accessible_customers" | "gaql_908" | "gaql_820";
 
 class PreflightFailure extends Error {
   kind: FailureKind;
   status: number;
+  stage?: FailureStage;
 
-  constructor(kind: FailureKind, status: number, message: string) {
+  constructor(kind: FailureKind, status: number, message: string, stage?: FailureStage) {
     super(message);
     this.name = "PreflightFailure";
     this.kind = kind;
     this.status = status;
+    this.stage = stage;
   }
 }
 
@@ -75,15 +78,24 @@ async function secretMatches(received: string, expected: string): Promise<boolea
   return diff === 0;
 }
 
-function normalizeFailure(error: unknown): PreflightFailure {
-  if (error instanceof PreflightFailure) return error;
-  if (error instanceof GoogleAdsAuthFailure) {
-    return new PreflightFailure(error.kind, error.status, error.message);
+function normalizeFailure(error: unknown, stage?: FailureStage): PreflightFailure {
+  if (error instanceof PreflightFailure) {
+    return stage && !error.stage
+      ? new PreflightFailure(error.kind, error.status, error.message, stage)
+      : error;
   }
-  return new PreflightFailure("configuration", 500, bounded((error as any)?.message || "Google Ads runtime auth preflight failed"));
+  if (error instanceof GoogleAdsAuthFailure) {
+    return new PreflightFailure(error.kind, error.status, error.message, stage);
+  }
+  return new PreflightFailure(
+    "configuration",
+    500,
+    bounded((error as any)?.message || "Google Ads runtime auth preflight failed"),
+    stage,
+  );
 }
 
-async function readProviderJson(response: Response): Promise<any> {
+async function readProviderJson(response: Response, stage: FailureStage): Promise<any> {
   try {
     return await response.json();
   } catch {
@@ -91,21 +103,24 @@ async function readProviderJson(response: Response): Promise<any> {
       "provider",
       502,
       `Google Ads API returned invalid non-JSON payload (HTTP ${response.status})`,
+      stage,
     );
   }
 }
 
-function providerFailure(status: number, payload: unknown): PreflightFailure {
+function providerFailure(status: number, payload: unknown, stage: FailureStage): PreflightFailure {
   const error = isRecord(payload) && isRecord(payload.error) ? payload.error : {};
   const providerStatus = bounded(error.status || "", 80);
   return new PreflightFailure(
     "provider",
     502,
     `Google Ads API ${status}${providerStatus ? ` ${providerStatus}` : ""}`,
+    stage,
   );
 }
 
 async function listAccessibleCustomers(accessToken: string, developerToken: string) {
+  const stage: FailureStage = "list_accessible_customers";
   const response = await fetch(`https://googleads.googleapis.com/${API_VERSION}/customers:listAccessibleCustomers`, {
     redirect: "error",
     headers: {
@@ -114,8 +129,8 @@ async function listAccessibleCustomers(accessToken: string, developerToken: stri
     },
     signal: AbortSignal.timeout(20_000),
   });
-  const payload = await readProviderJson(response);
-  if (!response.ok || payload?.error) throw providerFailure(response.status, payload);
+  const payload = await readProviderJson(response, stage);
+  if (!response.ok || payload?.error) throw providerFailure(response.status, payload, stage);
   return Array.isArray(payload?.resourceNames)
     ? payload.resourceNames
       .map((value: unknown) => String(value))
@@ -124,12 +139,19 @@ async function listAccessibleCustomers(accessToken: string, developerToken: stri
     : [];
 }
 
+function customerFailureStage(customerId: string): FailureStage {
+  if (customerId === "9084540447") return "gaql_908";
+  if (customerId === "8201489748") return "gaql_820";
+  throw new PreflightFailure("validation", 424, "Google Ads customer is outside the governed preflight set");
+}
+
 async function proveCustomerIdentity(
   customerId: string,
   loginCustomerId: string,
   developerToken: string,
   accessToken: string,
 ) {
+  const stage = customerFailureStage(customerId);
   const headers: Record<string, string> = {
     Authorization: `Bearer ${accessToken}`,
     "developer-token": developerToken,
@@ -147,11 +169,11 @@ async function proveCustomerIdentity(
       signal: AbortSignal.timeout(20_000),
     },
   );
-  const payload = await readProviderJson(response);
-  if (!response.ok || payload?.error) throw providerFailure(response.status, payload);
+  const payload = await readProviderJson(response, stage);
+  if (!response.ok || payload?.error) throw providerFailure(response.status, payload, stage);
   const returnedId = digits(payload?.results?.[0]?.customer?.id);
   if (returnedId !== customerId) {
-    throw new PreflightFailure("validation", 424, `Google Ads customer identity mismatch for ${customerId}`);
+    throw new PreflightFailure("validation", 424, `Google Ads customer identity mismatch for ${customerId}`, stage);
   }
   return { customer_id: customerId, identity_match: true };
 }
@@ -224,16 +246,26 @@ Deno.serve(async (req: Request) => {
       throw new PreflightFailure("validation", 424, "Google Ads login customer id is not the canonical MCC");
     }
 
-    const googleAuth = await resolveGoogleAdsAuth({
-      serviceAccountRaw: SERVICE_ACCOUNT_RAW,
-      oauthClientId: OAUTH_CLIENT_ID,
-      oauthClientSecret: OAUTH_CLIENT_SECRET,
-      oauthRefreshToken: OAUTH_REFRESH_TOKEN,
-    });
+    let googleAuth;
+    try {
+      googleAuth = await resolveGoogleAdsAuth({
+        serviceAccountRaw: SERVICE_ACCOUNT_RAW,
+        oauthClientId: OAUTH_CLIENT_ID,
+        oauthClientSecret: OAUTH_CLIENT_SECRET,
+        oauthRefreshToken: OAUTH_REFRESH_TOKEN,
+      });
+    } catch (error) {
+      throw normalizeFailure(error, "oauth_token");
+    }
 
     const accessibleCustomerIds = await listAccessibleCustomers(googleAuth.token, developerToken);
     if (!accessibleCustomerIds.includes(CANONICAL_LOGIN_CUSTOMER_ID)) {
-      throw new PreflightFailure("validation", 424, "Canonical Google Ads MCC is not directly accessible");
+      throw new PreflightFailure(
+        "validation",
+        424,
+        "Canonical Google Ads MCC is not directly accessible",
+        "list_accessible_customers",
+      );
     }
 
     const customerProofs = [];
@@ -260,12 +292,18 @@ Deno.serve(async (req: Request) => {
     });
   } catch (error) {
     const failure = normalizeFailure(error);
-    console.error("[google-ads-auth-preflight]", failure.kind, bounded(failure.message));
+    console.error(
+      "[google-ads-auth-preflight]",
+      failure.kind,
+      failure.stage || "unknown",
+      bounded(failure.message),
+    );
     return reply(failure.status, {
       success: false,
       provider: "google_ads",
       api_version: API_VERSION,
       kind: failure.kind,
+      stage: failure.stage || "unknown",
       message: bounded(failure.message),
       persistence_performed: false,
     });
