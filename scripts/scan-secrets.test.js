@@ -6,6 +6,7 @@ const {
   findPrivateKeyMaterial,
   isLocalPostgresHarnessLine,
   scanText,
+  scanTrackedFiles,
 } = require('./scan-secrets');
 
 function patterns(findings) {
@@ -61,4 +62,10 @@ test('AWS access keys remain blocked in all contexts', () => {
   const awsKey = ['AKIA', 'ABCDEFGHIJKLMNOP'].join('');
   const findings = scanText('scripts/security.test.js', `const candidate = '${awsKey}';`);
   assert.ok(patterns(findings).includes('AWS access key'));
+});
+
+test('the current tracked repository passes the same scanner used by Daily Sync', () => {
+  const result = scanTrackedFiles();
+  assert.deepEqual(result.findings, []);
+  assert.ok(result.scanned > 0);
 });
