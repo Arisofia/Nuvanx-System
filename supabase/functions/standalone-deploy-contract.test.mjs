@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 const workflow = readFileSync('.github/workflows/deploy-standalone-edge-functions.yml', 'utf8');
 const packageJson = JSON.parse(readFileSync('package.json', 'utf8'));
-const migrationParityRow = (version) => new RegExp(`^[\\s]*${version}[\\s]*\\|[\\s]*${version}[\\s]*(\\||$)`);
+const migrationParityRow = (version) => new RegExp(`^[\\s]*${version}[\\s]*[|│][\\s]*${version}[\\s]*([|│]|$)`);
 
 describe('standalone Edge deployment ownership', () => {
   it('runs only after successful Master System main-push quality or explicit manual dispatch', () => {
@@ -50,14 +50,24 @@ describe('standalone Edge deployment ownership', () => {
     expect(workflow).toContain('REQUIRED_MIGRATIONS=(20260901190000 20260901190100 20260901190200 20260903142000)');
     expect(workflow).toContain('for ATTEMPT in {1..20}; do');
     expect(workflow).toContain('Automatic Production migration owner did not converge required migrations');
+    expect(workflow).toContain('[|│]');
     expect(workflow).not.toContain('bash scripts/supabase-migrate.sh');
     expect(workflow).not.toContain('supabase db push');
 
     for (const version of ['20260901190000', '20260901190100', '20260901190200', '20260903142000']) {
-      const parity = migrationParityRow(version);
-      expect(parity.test(`  ${version} | ${version} | 2026-09-03 14:20:00`)).toBe(true);
-      expect(parity.test(`  ${version} |                | 2026-09-03 14:20:00`)).toBe(false);
-      expect(parity.test(`                 | ${version} | 2026-09-03 14:20:00`)).toBe(false);
+      const asciiParity = migrationParityRow(version);
+      const unicodeParity = migrationParityRow(version);
+      expect(asciiParity.test(`  ${version} | ${version} | 2026-09-03 14:20:00`)).toBe(true);
+      expect(unicodeParity.test(`  ${version} │ ${version} │ 2026-09-03 14:20:00`)).toBe(true);
+
+      const localOnlyAscii = migrationParityRow(version);
+      const remoteOnlyAscii = migrationParityRow(version);
+      const localOnlyUnicode = migrationParityRow(version);
+      const remoteOnlyUnicode = migrationParityRow(version);
+      expect(localOnlyAscii.test(`  ${version} |                | 2026-09-03 14:20:00`)).toBe(false);
+      expect(remoteOnlyAscii.test(`                 | ${version} | 2026-09-03 14:20:00`)).toBe(false);
+      expect(localOnlyUnicode.test(`  ${version} │                │ 2026-09-03 14:20:00`)).toBe(false);
+      expect(remoteOnlyUnicode.test(`                 │ ${version} │ 2026-09-03 14:20:00`)).toBe(false);
     }
   });
 
