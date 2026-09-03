@@ -22,7 +22,8 @@ const SAFE_FAILURE_DIAGNOSTICS = [
   ['No Google Ads OAuth mode is configured', 'oauth_mode_missing'],
   ['login customer id missing', 'login_customer_id_missing'],
   ['target integrations do not share one login customer id', 'login_customer_id_drift'],
-  ['canonical MCC', 'canonical_mcc_invalid'],
+  ['Google Ads login customer id is not the canonical MCC', 'canonical_mcc_invalid'],
+  ['Canonical Google Ads MCC is not directly accessible', 'canonical_mcc_not_accessible'],
   ['integration lookup failed', 'integration_lookup_failed'],
   ['Missing connected Google Ads integration', 'target_integration_missing'],
 ];
