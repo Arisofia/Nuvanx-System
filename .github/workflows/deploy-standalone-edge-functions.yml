@@ -42,6 +42,10 @@ jobs:
       FRONTEND_URL: https://nuvanx-frontend.jenineferderas.workers.dev
       PRODUCTION_FALLBACK_URL: https://nuvanx-frontend.jenineferderas.workers.dev
       GOOGLE_ADS_LOGIN_CUSTOMER_ID: '8265708501'
+      GOOGLE_ADS_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT }}
+      GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}
+      GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}
+      GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
 
     steps:
       - name: Checkout trusted main
@@ -85,6 +89,26 @@ jobs:
           if [ -z "${DATABASE_URL:-}" ] && [ -z "${SUPABASE_DB_PASSWORD:-}" ]; then
             echo "::error::DATABASE_URL or SUPABASE_DB_PASSWORD is required for migration parity validation"
             exit 1
+          fi
+
+          oauth_count=0
+          for key in GOOGLE_ADS_CLIENT_ID GOOGLE_ADS_CLIENT_SECRET GOOGLE_ADS_REFRESH_TOKEN; do
+            if [[ -n "${!key:-}" ]]; then
+              oauth_count=$((oauth_count + 1))
+            fi
+          done
+          if (( oauth_count > 0 && oauth_count < 3 )); then
+            echo "::error::Google Ads OAuth refresh identity is partial in GitHub Production; all three OAuth secrets are required."
+            exit 1
+          fi
+          if (( oauth_count == 0 )) && [[ -z "${GOOGLE_ADS_SERVICE_ACCOUNT:-}" ]]; then
+            echo "::error::No complete Google Ads runtime identity is configured in GitHub Production."
+            exit 1
+          fi
+          if (( oauth_count == 3 )); then
+            echo "Google Ads Edge auth convergence mode: oauth_refresh"
+          else
+            echo "Google Ads Edge auth convergence mode: service_account"
           fi
 
       - name: Setup Node.js
@@ -182,12 +206,46 @@ jobs:
             test -n "${PRODUCTION_FALLBACK_URL:-}"
             test -n "${GOOGLE_ADS_LOGIN_CUSTOMER_ID:-}"
             [[ "$GOOGLE_ADS_LOGIN_CUSTOMER_ID" == "8265708501" ]]
+
+            oauth_count=0
+            for key in GOOGLE_ADS_CLIENT_ID GOOGLE_ADS_CLIENT_SECRET GOOGLE_ADS_REFRESH_TOKEN; do
+              if [[ -n "${!key:-}" ]]; then
+                oauth_count=$((oauth_count + 1))
+              fi
+            done
+            if (( oauth_count > 0 && oauth_count < 3 )); then
+              echo "::error::Google Ads OAuth refresh identity became partial before Production mutation."
+              exit 1
+            fi
+
             supabase secrets set \
               CORS_ALLOWED_ORIGINS="$CORS_ALLOWED_ORIGINS" \
               FRONTEND_URL="$FRONTEND_URL" \
               PRODUCTION_FALLBACK_URL="$PRODUCTION_FALLBACK_URL" \
               GOOGLE_ADS_LOGIN_CUSTOMER_ID="$GOOGLE_ADS_LOGIN_CUSTOMER_ID" \
               --project-ref "$SUPABASE_PROJECT_REF"
+
+            if (( oauth_count == 3 )); then
+              supabase secrets set \
+                GOOGLE_ADS_CLIENT_ID="$GOOGLE_ADS_CLIENT_ID" \
+                GOOGLE_ADS_CLIENT_SECRET="$GOOGLE_ADS_CLIENT_SECRET" \
+                GOOGLE_ADS_REFRESH_TOKEN="$GOOGLE_ADS_REFRESH_TOKEN" \
+                --project-ref "$SUPABASE_PROJECT_REF"
+              supabase secrets unset GOOGLE_ADS_SERVICE_ACCOUNT --project-ref "$SUPABASE_PROJECT_REF"
+              echo "Converged Google Ads Edge auth mode: oauth_refresh"
+            else
+              test -n "${GOOGLE_ADS_SERVICE_ACCOUNT:-}"
+              supabase secrets set \
+                GOOGLE_ADS_SERVICE_ACCOUNT="$GOOGLE_ADS_SERVICE_ACCOUNT" \
+                --project-ref "$SUPABASE_PROJECT_REF"
+              supabase secrets unset \
+                GOOGLE_ADS_CLIENT_ID \
+                GOOGLE_ADS_CLIENT_SECRET \
+                GOOGLE_ADS_REFRESH_TOKEN \
+                --project-ref "$SUPABASE_PROJECT_REF"
+              echo "Converged Google Ads Edge auth mode: service_account"
+            fi
+
             supabase functions deploy dashboard --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy agent-run --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy runtime-bootstrap --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
