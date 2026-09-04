@@ -50,6 +50,11 @@ describe('Meta lead attribution invariant', () => {
     expect(migration).not.toContain('920250020698147');
   });
 
+  it('leaves transaction ownership to the migration runner', () => {
+    expect(executable).not.toMatch(/^\s*begin\s*;/im);
+    expect(executable).not.toMatch(/^\s*commit\s*;/im);
+  });
+
   it('does not introduce destructive cleanup or broaden function execution', () => {
     expect(executable).not.toMatch(/\bDELETE\s+FROM\s+public\.meta_attribution\b/i);
     expect(executable).not.toMatch(/\bCASCADE\b/i);
