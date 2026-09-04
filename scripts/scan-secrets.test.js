@@ -88,8 +88,8 @@ test('non-secret identifiers like URLs, labels, and modes are not classified as 
 
 test('intentionally tiny PEM fixtures in test-like paths are accepted', () => {
   const fixture = `private_key: '${privateKeyBegin}\\nTESTKEY\\n${privateKeyEnd}\\n'`;
-  assert.equal(isTinyPemTestFixture('scripts/sync-google-ads-service-account.test.js', fixture), true);
-  assert.deepEqual(scanText('scripts/sync-google-ads-service-account.test.js', fixture), []);
+  assert.equal(isTinyPemTestFixture('scripts/provider-auth.test.js', fixture), true);
+  assert.deepEqual(scanText('scripts/provider-auth.test.js', fixture), []);
 });
 
 test('explicit low-entropy synthetic test credentials are accepted without exempting realistic secrets', () => {
