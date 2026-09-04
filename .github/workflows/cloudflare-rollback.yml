@@ -1,0 +1,195 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
+name: Cloudflare Frontend Rollback
+run-name: Cloudflare rollback · ${{ inputs.expected_source_sha }} · ${{ inputs.target_version_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_version_id:
+        description: 'Exact Cloudflare Worker version ID to restore'
+        required: true
+        type: string
+      expected_source_sha:
+        description: 'Git SHA that must match the target version provenance'
+        required: true
+        type: string
+      confirmation:
+        description: 'Type ROLLBACK to authorize the Production rollback'
+        required: true
+        type: string
+      reason:
+        description: 'Operational reason recorded in the run summary'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-frontend-production
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    name: Restore exact Cloudflare Worker version
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: Production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      TARGET_VERSION_ID: ${{ inputs.target_version_id }}
+      EXPECTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+      CONFIRMATION: ${{ inputs.confirmation }}
+      ROLLBACK_REASON: ${{ inputs.reason }}
+      RUNTIME_TARGET: https://nuvanx-frontend.jenineferderas.workers.dev
+    steps:
+      - name: Checkout current protected main
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate rollback authorization and source lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$CONFIRMATION" = 'ROLLBACK' || { echo 'confirmation must equal ROLLBACK' >&2; exit 1; }
+          [[ "$TARGET_VERSION_ID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] || { echo 'target_version_id must be an exact UUID' >&2; exit 1; }
+          [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'expected_source_sha must be an exact lowercase Git SHA' >&2; exit 1; }
+          test -n "$ROLLBACK_REASON" || { echo 'rollback reason is required' >&2; exit 1; }
+          test -n "${CLOUDFLARE_API_TOKEN:-}" || { echo 'Missing GitHub Secret: CLOUDFLARE_API_TOKEN' >&2; exit 1; }
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" || { echo 'Missing GitHub Secret: CLOUDFLARE_ACCOUNT_ID' >&2; exit 1; }
+
+          git fetch --no-tags origin main
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" || { echo 'checked-out main is not current protected main' >&2; exit 1; }
+          git cat-file -e "${EXPECTED_SOURCE_SHA}^{commit}" || { echo 'expected source SHA is not present in repository history' >&2; exit 1; }
+          echo 'CLOUDFLARE_ROLLBACK_AUTHORIZATION=PASS'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '22'
+
+      - name: Verify target version provenance before mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET_FILE="${RUNNER_TEMP}/cloudflare-target-version.json"
+          npm exec --yes --package=wrangler@4.127.1 -- wrangler versions view "$TARGET_VERSION_ID" \
+            --config frontend/wrangler.jsonc \
+            --json > "$TARGET_FILE"
+
+          node - "$TARGET_FILE" <<'NODE'
+          const fs = require('fs');
+          const [file] = process.argv.slice(2);
+          const payload = JSON.parse(fs.readFileSync(file, 'utf8'));
+          const target = String(process.env.TARGET_VERSION_ID || '');
+          const expectedSha = String(process.env.EXPECTED_SOURCE_SHA || '');
+          const values = [];
+          const visit = (value) => {
+            if (typeof value === 'string') values.push(value);
+            else if (Array.isArray(value)) value.forEach(visit);
+            else if (value && typeof value === 'object') Object.values(value).forEach(visit);
+          };
+          visit(payload);
+          if (!values.includes(target)) throw new Error('Cloudflare target version response does not contain the requested version ID');
+          if (!values.includes(expectedSha) && !values.includes(`git:${expectedSha}`)) {
+            throw new Error('Cloudflare target version does not carry the expected Git SHA provenance');
+          }
+          console.log(JSON.stringify({ target_version_verified: true, expected_source_sha: expectedSha }));
+          NODE
+
+      - name: Prove rollback changes the active deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          BEFORE_FILE="${RUNNER_TEMP}/cloudflare-before-rollback.json"
+          npm exec --yes --package=wrangler@4.127.1 -- wrangler deployments status \
+            --config frontend/wrangler.jsonc \
+            --json > "$BEFORE_FILE"
+
+          node - "$BEFORE_FILE" <<'NODE'
+          const fs = require('fs');
+          const [file] = process.argv.slice(2);
+          const payload = JSON.parse(fs.readFileSync(file, 'utf8'));
+          const target = String(process.env.TARGET_VERSION_ID || '');
+          const contains = (value) => {
+            if (value === target) return true;
+            if (Array.isArray(value)) return value.some(contains);
+            if (value && typeof value === 'object') return Object.values(value).some(contains);
+            return false;
+          };
+          if (contains(payload)) throw new Error('Target version is already active; this run would not prove a rollback state transition');
+          console.log(JSON.stringify({ pre_rollback_target_active: false }));
+          NODE
+
+      - name: Roll back to exact verified version
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm exec --yes --package=wrangler@4.127.1 -- wrangler rollback "$TARGET_VERSION_ID" \
+            --config frontend/wrangler.jsonc \
+            --message "governed rollback to git:${EXPECTED_SOURCE_SHA}"
+
+      - name: Verify target version is now active
+        shell: bash
+        run: |
+          set -euo pipefail
+          AFTER_FILE="${RUNNER_TEMP}/cloudflare-after-rollback.json"
+          npm exec --yes --package=wrangler@4.127.1 -- wrangler deployments status \
+            --config frontend/wrangler.jsonc \
+            --json > "$AFTER_FILE"
+
+          node - "$AFTER_FILE" <<'NODE'
+          const fs = require('fs');
+          const [file] = process.argv.slice(2);
+          const payload = JSON.parse(fs.readFileSync(file, 'utf8'));
+          const target = String(process.env.TARGET_VERSION_ID || '');
+          const contains = (value) => {
+            if (value === target) return true;
+            if (Array.isArray(value)) return value.some(contains);
+            if (value && typeof value === 'object') return Object.values(value).some(contains);
+            return false;
+          };
+          if (!contains(payload)) throw new Error('Requested rollback version is not present in the current production deployment');
+          console.log(JSON.stringify({ rollback_active_version_verified: true, version_id: target }));
+          NODE
+
+      - name: Verify public runtime after rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="${RUNTIME_TARGET%/}"
+          for route in / /login /dashboard /__canonical_runtime_probe__; do
+            code="$(curl --silent --show-error --max-time 20 \
+              --dump-header /tmp/cf-headers \
+              --output /tmp/cf-body \
+              --write-out '%{http_code}' \
+              "${TARGET}${route}")"
+            test "$code" = '200' || { echo "${route} returned HTTP ${code}" >&2; exit 1; }
+            grep -q 'id="root"' /tmp/cf-body || { echo "${route} is not the SPA shell" >&2; exit 1; }
+            tr -d '\r' < /tmp/cf-headers > /tmp/cf-headers-normalized
+            grep -Eiq '^x-frame-options:[[:space:]]*DENY$' /tmp/cf-headers-normalized || { echo "${route} missing X-Frame-Options: DENY" >&2; exit 1; }
+            grep -Eiq '^x-content-type-options:[[:space:]]*nosniff$' /tmp/cf-headers-normalized || { echo "${route} missing X-Content-Type-Options: nosniff" >&2; exit 1; }
+            grep -Eiq '^content-security-policy:' /tmp/cf-headers-normalized || { echo "${route} missing Content-Security-Policy" >&2; exit 1; }
+            grep -Eiq "^content-security-policy:.*frame-ancestors 'none'" /tmp/cf-headers-normalized || { echo "${route} CSP does not deny framing" >&2; exit 1; }
+          done
+          echo "CLOUDFLARE_ROLLBACK_PUBLIC_ACCEPTANCE=PASS version=${TARGET_VERSION_ID}"
+
+      - name: Record rollback evidence boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo '## Cloudflare governed rollback'
+            echo
+            echo "- Target version: \`${TARGET_VERSION_ID}\`"
+            echo "- Expected source SHA: \`${EXPECTED_SOURCE_SHA}\`"
+            echo "- Reason: ${ROLLBACK_REASON}"
+            echo '- Active-version verification: PASS'
+            echo '- Public runtime/security acceptance: PASS'
+            echo '- Authenticated acceptance: still required via `Master System · Quality · Playwright smoke · trusted` after the drill.'
+          } >> "$GITHUB_STEP_SUMMARY"
