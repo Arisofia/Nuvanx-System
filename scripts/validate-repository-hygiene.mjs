@@ -88,15 +88,15 @@ for (const forbiddenPath of forbiddenExactPaths) {
   if (existsSync(path.join(root, forbiddenPath))) failures.push(`redundant repository artifact present: ${forbiddenPath}`);
 }
 for (const requiredPath of requiredProductionPaths) {
-  if (!existsSync(path.join(root, requiredPath))) failures.push(`required Production owner missing: ${requiredPath}`);
+  if (!files.includes(requiredPath)) failures.push(`required Production owner missing: ${requiredPath}`);
 }
 
 const functionsRoot = path.join(root, 'supabase/functions');
 if (existsSync(functionsRoot)) {
   for (const entry of await readdir(functionsRoot, { withFileTypes: true })) {
     if (!entry.isDirectory() || entry.name === '_shared') continue;
-    const indexPath = path.join(functionsRoot, entry.name, 'index.ts');
-    if (!existsSync(indexPath)) failures.push(`orphan Edge Function directory without index.ts: supabase/functions/${entry.name}`);
+    const indexPath = `supabase/functions/${entry.name}/index.ts`;
+    if (!files.includes(indexPath)) failures.push(`orphan Edge Function directory without index.ts: supabase/functions/${entry.name}`);
   }
 }
 
