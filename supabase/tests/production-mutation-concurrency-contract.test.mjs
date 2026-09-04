@@ -22,20 +22,24 @@ function jobBody(workflow, jobName) {
 
 describe('production Supabase mutation concurrency', () => {
   it('keeps one governed standalone Edge deployment owner for automatic and manual recovery runs', () => {
+    const deployJob = jobBody(standalone, 'deploy');
     expect(standalone).toContain("workflows: ['Master System']");
     expect(standalone).toContain('workflow_dispatch:');
     expect(standalone).toContain(`group: ${ORDINARY_EDGE_LOCK}`);
     expect(standalone).toContain('cancel-in-progress: false');
-    expect(standalone).toContain('environment:');
-    expect(standalone).toContain('name: Production');
-    expect(standalone).toContain('supabase functions deploy control-centre-provider');
-    expect(standalone).toContain('supabase/functions/control-centre-provider/index.ts');
+    expect(deployJob).toContain('environment:');
+    expect(deployJob).toContain('name: Production');
+    expect(deployJob).toContain('supabase functions deploy control-centre-provider');
+    expect(deployJob).toContain('supabase/functions/control-centre-provider/index.ts');
   });
 
   it('serializes downstream Google Ads acceptance with governed Edge mutations', () => {
+    const acceptanceJob = jobBody(googleAdsAcceptance, 'acceptance');
     expect(googleAdsAcceptance).toContain(`group: ${ORDINARY_EDGE_LOCK}`);
     expect(googleAdsAcceptance).toContain('cancel-in-progress: false');
-    expect(googleAdsAcceptance).toContain('name: Production');
+    expect(acceptanceJob).toContain('environment:');
+    expect(acceptanceJob).toContain('name: Production');
+    expect(acceptanceJob).toContain('Converge and accept Google Ads credential through deployed runtime');
   });
 
   it('serializes the HubSpot Production monitor with every governed Edge mutation path', () => {
