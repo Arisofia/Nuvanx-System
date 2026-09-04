@@ -30,7 +30,7 @@ describe('WordPress social-proof Production owner', () => {
     expect(workflow).not.toContain('StrictHostKeyChecking=no');
   });
 
-  it('accepts the public runtime only after option update and cache purge', () => {
+  it('attempts all cache operations and accepts the public runtime after any attempted mutation', () => {
     const mutation = workflow.indexOf('wp option update nvx_doctoralia_social_proof_count');
     const cacheFlush = workflow.indexOf('wp cache flush');
     const sitegroundPurge = workflow.indexOf('wp sg purge');
@@ -39,6 +39,11 @@ describe('WordPress social-proof Production owner', () => {
     expect(cacheFlush).toBeGreaterThan(mutation);
     expect(sitegroundPurge).toBeGreaterThan(cacheFlush);
     expect(acceptance).toBeGreaterThan(sitegroundPurge);
+    expect(workflow).toContain('id: mutation');
+    expect(workflow).toContain("status=0; /usr/local/bin/wp option update");
+    expect(workflow).toContain("/usr/local/bin/wp cache flush || status=\\$?");
+    expect(workflow).toContain("/usr/local/bin/wp sg purge || status=\\$?");
+    expect(workflow).toContain("if: ${{ always() && steps.mutation.outcome != 'skipped' }}");
     expect(workflow).toContain('name: wordpress-social-proof-acceptance');
   });
 });
