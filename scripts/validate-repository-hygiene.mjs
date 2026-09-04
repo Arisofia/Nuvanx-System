@@ -24,6 +24,23 @@ const forbiddenContentMarkers = [
 ];
 const forbiddenExactPaths = new Set([
   '.secret-webhook.example',
+  '.github/workflows/manual-maintenance.yml',
+  '.github/workflows/google-ads-auth-preflight.yml',
+  '.github/workflows/google-ads-credential-provision.yml',
+  '.github/workflows/google-ads-service-account-sync.yml',
+  'scripts/google-ads-auth-preflight.js',
+  'scripts/google-ads-auth-preflight.test.js',
+  'scripts/sync-google-ads-service-account.js',
+  'scripts/sync-google-ads-service-account.test.js',
+  'scripts/validate-retired-edge-inventory.mjs',
+]);
+const requiredProductionPaths = new Set([
+  '.github/workflows/deploy-standalone-edge-functions.yml',
+  '.github/workflows/google-ads-runtime-acceptance.yml',
+  '.github/workflows/update-wordpress-social-proof.yml',
+  'scripts/preflight-google-ads-runtime.js',
+  'scripts/provision-google-ads-developer-token.js',
+  'scripts/converge-google-ads-edge-auth.js',
 ]);
 
 const failures = [];
@@ -69,6 +86,9 @@ for (const file of files) {
 
 for (const forbiddenPath of forbiddenExactPaths) {
   if (existsSync(path.join(root, forbiddenPath))) failures.push(`redundant repository artifact present: ${forbiddenPath}`);
+}
+for (const requiredPath of requiredProductionPaths) {
+  if (!existsSync(path.join(root, requiredPath))) failures.push(`required Production owner missing: ${requiredPath}`);
 }
 
 const functionsRoot = path.join(root, 'supabase/functions');
