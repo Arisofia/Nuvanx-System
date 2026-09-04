@@ -87,6 +87,7 @@ async function readConnectedCustomers(base, key, fetchImpl = fetch) {
   url.searchParams.set('select', 'metadata');
 
   const response = await fetchImpl(url, {
+    redirect: 'error',
     headers: {
       apikey: key,
       Authorization: `Bearer ${key}`,
