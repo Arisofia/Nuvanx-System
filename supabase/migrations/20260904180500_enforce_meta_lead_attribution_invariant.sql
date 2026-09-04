@@ -1,5 +1,3 @@
-begin;
-
 create or replace function private.nvx_converge_meta_lead_attribution(p_lead public.leads)
 returns void
 language plpgsql
@@ -144,8 +142,8 @@ when (lower(btrim(coalesce(new.source::text, ''))) = 'meta_leadgen')
 execute function private.nvx_ensure_meta_lead_attribution();
 
 -- Repair current live orphans through the exact same convergence function used
--- by future writes. Any missing/oversized identity raises and rolls back the
--- entire migration instead of persisting a weaker historical contract.
+-- by future writes. Any missing/oversized identity raises and the migration
+-- runner's transaction rolls back instead of persisting a weaker contract.
 do $$
 declare
   v_lead public.leads%rowtype;
@@ -176,5 +174,3 @@ begin
   end if;
 end;
 $$;
-
-commit;
