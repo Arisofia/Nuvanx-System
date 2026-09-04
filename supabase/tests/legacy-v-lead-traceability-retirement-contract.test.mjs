@@ -4,13 +4,14 @@ import { describe, expect, it } from 'vitest';
 
 const migrationPath = fileURLToPath(new URL('../migrations/20260904172000_retire_legacy_v_lead_traceability.sql', import.meta.url));
 const migration = readFileSync(migrationPath, 'utf8');
+const executableSql = migration.replace(/^\s*--.*$/gm, '');
 
 describe('legacy v_lead_traceability retirement', () => {
   it('is Preview-safe and never cascades the legacy drop', () => {
     expect(migration).toContain("v_legacy_oid := to_regclass('public.v_lead_traceability');");
     expect(migration).toContain("public.v_lead_traceability absent; retirement is a no-op");
-    expect(migration).toContain('DROP VIEW public.v_lead_traceability;');
-    expect(migration).not.toMatch(/DROP\s+VIEW[^;]*CASCADE/i);
+    expect(executableSql).toContain('DROP VIEW public.v_lead_traceability;');
+    expect(executableSql).not.toMatch(/DROP\s+VIEW[^;]*\bCASCADE\b/i);
   });
 
   it('requires the exact audited legacy identity and 24-column signature', () => {
@@ -28,9 +29,9 @@ describe('legacy v_lead_traceability retirement', () => {
         expect(migration).toContain(`'${role}:${privilege}:plain'`);
       }
     }
-    const revoke = migration.indexOf('REVOKE ALL PRIVILEGES ON TABLE public.v_lead_traceability');
-    const serviceRoleGrant = migration.indexOf('GRANT SELECT ON TABLE public.v_lead_traceability TO service_role;');
-    const drop = migration.indexOf('DROP VIEW public.v_lead_traceability;');
+    const revoke = executableSql.indexOf('REVOKE ALL PRIVILEGES ON TABLE public.v_lead_traceability');
+    const serviceRoleGrant = executableSql.indexOf('GRANT SELECT ON TABLE public.v_lead_traceability TO service_role;');
+    const drop = executableSql.indexOf('DROP VIEW public.v_lead_traceability;');
     expect(revoke).toBeGreaterThan(-1);
     expect(serviceRoleGrant).toBeGreaterThan(revoke);
     expect(drop).toBeGreaterThan(serviceRoleGrant);
