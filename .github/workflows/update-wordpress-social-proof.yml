@@ -93,6 +93,7 @@ jobs:
             "set -e; cd '$NUVANX_WP_PATH'; test -x /usr/local/bin/wp; /usr/local/bin/wp core is-installed"
 
       - name: Update option and purge canonical cache owner
+        id: mutation
         shell: bash
         run: |
           set -euo pipefail
@@ -103,13 +104,14 @@ jobs:
             -o ConnectTimeout=15 \
             -o BatchMode=yes \
             "$NUVANX_SSH_USER@$NUVANX_SSH_HOST" \
-            "set -e; cd '$NUVANX_WP_PATH'; /usr/local/bin/wp option update nvx_doctoralia_social_proof_count '$EXPECTED_DOCTORALIA_COUNT'; /usr/local/bin/wp cache flush; /usr/local/bin/wp sg purge"
+            "cd '$NUVANX_WP_PATH'; status=0; /usr/local/bin/wp option update nvx_doctoralia_social_proof_count '$EXPECTED_DOCTORALIA_COUNT' || status=\$?; /usr/local/bin/wp cache flush || status=\$?; /usr/local/bin/wp sg purge || status=\$?; exit \$status"
 
-      - name: Accept public runtime after mutation
+      - name: Accept public runtime after attempted mutation
+        if: ${{ always() && steps.mutation.outcome != 'skipped' }}
         run: node scripts/social-proof/nuvanx-social-proof-audit.mjs
 
       - name: Archive acceptance evidence
-        if: always()
+        if: ${{ always() && steps.mutation.outcome != 'skipped' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: wordpress-social-proof-acceptance
