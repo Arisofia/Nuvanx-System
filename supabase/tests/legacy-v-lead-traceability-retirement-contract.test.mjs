@@ -23,12 +23,21 @@ describe('legacy v_lead_traceability retirement', () => {
     expect(migration).toContain('Unexpected column ACL on public.v_lead_traceability');
   });
 
-  it('recognizes and closes the known inherited ACL before retirement', () => {
+  it('compares the complete ACL identity, including PUBLIC and grantor, before retirement', () => {
+    expect(migration).toContain("CASE WHEN x.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(x.grantee) END");
+    expect(migration).toContain('pg_get_userbyid(x.grantor)');
+    expect(migration).toContain("'anon:postgres:SELECT:plain'");
+    expect(migration).toContain("'authenticated:postgres:SELECT:plain'");
+    expect(migration).toContain("'service_role:postgres:SELECT:plain'");
+    expect(migration).not.toContain("'PUBLIC:postgres:SELECT:plain'");
     for (const role of ['anon', 'authenticated', 'postgres', 'service_role']) {
       for (const privilege of ['DELETE', 'INSERT', 'MAINTAIN', 'REFERENCES', 'SELECT', 'TRIGGER', 'TRUNCATE', 'UPDATE']) {
-        expect(migration).toContain(`'${role}:${privilege}:plain'`);
+        expect(migration).toContain(`'${role}:postgres:${privilege}:plain'`);
       }
     }
+  });
+
+  it('closes the known inherited ACL before retirement', () => {
     const revoke = executableSql.indexOf('REVOKE ALL PRIVILEGES ON TABLE public.v_lead_traceability');
     const serviceRoleGrant = executableSql.indexOf('GRANT SELECT ON TABLE public.v_lead_traceability TO service_role;');
     const drop = executableSql.indexOf('DROP VIEW public.v_lead_traceability;');
