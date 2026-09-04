@@ -68,7 +68,7 @@ describe('Cloudflare governed rollback owner', () => {
     expect(workflow).toContain('governed Permissions-Policy');
     expect(workflow).toContain('Content-Security-Policy');
     expect(workflow).toContain('frame-ancestors');
-    expect(workflow).toContain('connect.facebook.net');
+    expect(workflow).toContain('connect\\.facebook\\.net');
     expect(workflow).toContain('Supabase HTTPS connections');
     expect(workflow).toContain('Supabase realtime connections');
     expect(workflow).toContain('Authenticated acceptance: still required');
