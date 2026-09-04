@@ -151,6 +151,36 @@ async function validDatabaseCase(port) {
     );
 
     await client.query(`
+      insert into public.leads (id, source, external_id, created_at)
+      values (
+        '88888888-8888-4888-8888-888888888888',
+        'meta_leadgen',
+        'created-at-correction',
+        '2026-09-04T12:00:00Z'
+      );
+      update public.leads
+      set created_at='2026-09-03T09:00:00Z'
+      where id='88888888-8888-4888-8888-888888888888';
+    `);
+    await assertSingleValue(
+      client,
+      `select captured_at = '2026-09-03T09:00:00Z'::timestamptz from public.meta_attribution where lead_id='88888888-8888-4888-8888-888888888888'`,
+      true,
+      'created_at-only correction convergence',
+    );
+    await client.query(`
+      update public.leads
+      set created_at='2026-09-05T09:00:00Z'
+      where id='88888888-8888-4888-8888-888888888888';
+    `);
+    await assertSingleValue(
+      client,
+      `select captured_at = '2026-09-03T09:00:00Z'::timestamptz from public.meta_attribution where lead_id='88888888-8888-4888-8888-888888888888'`,
+      true,
+      'captured_at never moves forward on later created_at correction',
+    );
+
+    await client.query(`
       insert into public.leads (id, source, external_id)
       values ('33333333-3333-4333-8333-333333333333', 'manual', 'existing-provider-lead');
       insert into public.meta_attribution (lead_id, leadgen_id, page_id, form_id)
