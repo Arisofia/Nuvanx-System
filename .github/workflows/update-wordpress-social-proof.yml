@@ -1,0 +1,118 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Update WordPress Social Proof
+run-name: Update WordPress Social Proof · ${{ inputs.expected_doctoralia_count }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_doctoralia_count:
+        description: Exact Doctoralia review count to publish
+        required: true
+        type: string
+      confirmation:
+        description: Type UPDATE to authorize the Production mutation
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wordpress-social-proof-production
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: Update and accept WordPress social proof
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: Production
+    env:
+      CONFIRMATION: ${{ inputs.confirmation }}
+      EXPECTED_DOCTORALIA_COUNT: ${{ inputs.expected_doctoralia_count }}
+      OUT_DIR: tmp/social-proof-audit
+      NUVANX_SSH_HOST: ${{ secrets.NUVANX_SSH_HOST }}
+      NUVANX_SSH_PORT: ${{ secrets.NUVANX_SSH_PORT }}
+      NUVANX_SSH_USER: ${{ secrets.NUVANX_SSH_USER }}
+      NUVANX_SSH_KEY: ${{ secrets.NUVANX_SSH_KEY }}
+      NUVANX_SSH_KNOWN_HOSTS: ${{ secrets.NUVANX_SSH_KNOWN_HOSTS }}
+      NUVANX_WP_PATH: ${{ secrets.NUVANX_WP_PATH }}
+
+    steps:
+      - name: Checkout trusted main
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify exact current main and authorization
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$CONFIRMATION" = UPDATE
+          [[ "$EXPECTED_DOCTORALIA_COUNT" =~ ^[0-9]+$ ]]
+          test "$EXPECTED_DOCTORALIA_COUNT" -gt 0
+          test -n "${NUVANX_SSH_HOST:-}"
+          test -n "${NUVANX_SSH_PORT:-}"
+          test -n "${NUVANX_SSH_USER:-}"
+          test -n "${NUVANX_SSH_KEY:-}"
+          test -n "${NUVANX_SSH_KNOWN_HOSTS:-}"
+          test -n "${NUVANX_WP_PATH:-}"
+          git fetch --no-tags origin main
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+          echo "WORDPRESS_SOCIAL_PROOF_SHA=$(git rev-parse HEAD)"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '22'
+
+      - name: Prepare pinned SSH identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s' "$NUVANX_SSH_KEY" > ~/.ssh/nuvanx_key
+          printf '%s\n' "$NUVANX_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/nuvanx_key ~/.ssh/known_hosts
+
+      - name: Verify SiteGround command boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/nuvanx_key \
+            -p "$NUVANX_SSH_PORT" \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            -o ConnectTimeout=15 \
+            -o BatchMode=yes \
+            "$NUVANX_SSH_USER@$NUVANX_SSH_HOST" \
+            "set -e; cd '$NUVANX_WP_PATH'; test -x /usr/local/bin/wp; /usr/local/bin/wp core is-installed"
+
+      - name: Update option and purge canonical cache owner
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/nuvanx_key \
+            -p "$NUVANX_SSH_PORT" \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            -o ConnectTimeout=15 \
+            -o BatchMode=yes \
+            "$NUVANX_SSH_USER@$NUVANX_SSH_HOST" \
+            "set -e; cd '$NUVANX_WP_PATH'; /usr/local/bin/wp option update nvx_doctoralia_social_proof_count '$EXPECTED_DOCTORALIA_COUNT'; /usr/local/bin/wp cache flush; /usr/local/bin/wp sg purge"
+
+      - name: Accept public runtime after mutation
+        run: node scripts/social-proof/nuvanx-social-proof-audit.mjs
+
+      - name: Archive acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: wordpress-social-proof-acceptance
+          path: tmp/social-proof-audit
+          if-no-files-found: error
+          retention-days: 14
