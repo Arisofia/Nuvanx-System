@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const { existsSync, readFileSync } = require('node:fs');
 const test = require('node:test');
+const { normalizeSupabaseBase } = require('./sync-google-ads-via-edge.js');
 
 const orchestrator = readFileSync('scripts/run-daily-sync.js', 'utf8');
 const edgeInvoker = readFileSync('scripts/sync-google-ads-via-edge.js', 'utf8');
@@ -73,6 +74,34 @@ test('GitHub Daily Sync uses the governed internal Edge ingress instead of raw s
   );
   assert.doesNotMatch(edgeInvoker, /secretMatches\s*\(/);
   assert.doesNotMatch(edgeInvoker, /console\.(?:log|error)[^\n]*internalSecret/);
+});
+
+test('dispatcher ingress receives only the internal secret, not GitHub service-role credentials', () => {
+  const dispatcherStart = edgeInvoker.indexOf('fetchImpl(`${base}/functions/v1/google-ads-backfill-dispatcher`');
+  const dispatcherEnd = edgeInvoker.indexOf('const payload = await readJson(response)', dispatcherStart);
+  assert.ok(dispatcherStart >= 0 && dispatcherEnd > dispatcherStart, 'dispatcher request block must be discoverable');
+  const dispatcherRequest = edgeInvoker.slice(dispatcherStart, dispatcherEnd);
+  assert.match(dispatcherRequest, /'x-nvx-internal-secret': internalSecret/);
+  assert.doesNotMatch(dispatcherRequest, /apikey\s*:/);
+  assert.doesNotMatch(dispatcherRequest, /Authorization\s*:/);
+  assert.doesNotMatch(dispatcherRequest, /Bearer \$\{key\}/);
+});
+
+test('Supabase base URL is HTTPS-only before privileged requests are built', () => {
+  assert.equal(normalizeSupabaseBase('https://example.supabase.co/'), 'https://example.supabase.co');
+  for (const invalid of [
+    'http://example.supabase.co',
+    'ftp://example.supabase.co',
+    'https://user:pass@example.supabase.co',
+    'https://example.supabase.co/rest/v1',
+    'https://example.supabase.co?next=https://attacker.test',
+    'not-a-url',
+  ]) {
+    assert.throws(() => normalizeSupabaseBase(invalid), /valid HTTPS origin/);
+  }
+  const validationOffset = edgeInvoker.indexOf('const base = normalizeSupabaseBase(rawBase)');
+  const firstPrivilegedRequest = edgeInvoker.indexOf('await readConnectedCustomers(base, key, fetchImpl)');
+  assert.ok(validationOffset >= 0 && firstPrivilegedRequest > validationOffset, 'HTTPS validation must run before privileged requests');
 });
 
 test('GitHub Daily Sync no longer owns Google Ads provider credentials', () => {
