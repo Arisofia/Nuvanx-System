@@ -94,6 +94,17 @@ async function assertSingleValue(client, sql, expected, label) {
   }
 }
 
+async function applyMigrationTransactionally(client) {
+  await client.query('begin');
+  try {
+    await client.query(migration);
+    await client.query('commit');
+  } catch (error) {
+    await client.query('rollback').catch(() => {});
+    throw error;
+  }
+}
+
 async function validDatabaseCase(port) {
   const admin = await connect(port);
   await admin.query('create database nvx_valid');
@@ -113,7 +124,7 @@ async function validDatabaseCase(port) {
       );
     `);
 
-    await client.query(migration);
+    await applyMigrationTransactionally(client);
 
     await assertSingleValue(
       client,
@@ -244,8 +255,10 @@ async function invalidHistoricalCase(port) {
     `);
 
     let rejected = false;
+    await client.query('begin');
     try {
       await client.query(migration);
+      await client.query('commit');
     } catch {
       rejected = true;
       await client.query('rollback').catch(() => {});
