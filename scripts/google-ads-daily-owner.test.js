@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const { existsSync, readFileSync } = require('node:fs');
 const test = require('node:test');
-const { normalizeSupabaseBase } = require('./sync-google-ads-via-edge.js');
+const { normalizeSupabaseBase, readConnectedCustomers } = require('./sync-google-ads-via-edge.js');
 
 const orchestrator = readFileSync('scripts/run-daily-sync.js', 'utf8');
 const edgeInvoker = readFileSync('scripts/sync-google-ads-via-edge.js', 'utf8');
@@ -19,7 +19,7 @@ function validDailySyncEnv(overrides = {}) {
     SUPABASE_URL: 'https://example.supabase.co',
     SUPABASE_ACCESS_TOKEN: 'sbp_TestToken123',
     SUPABASE_PROJECT_REF: 'abcdefghijklmnopqrst',
-    DATABASE_URL: 'postgresql://postgres:password@example.supabase.co:5432/postgres',
+    DATABASE_URL: 'postgresql://postgres@example.supabase.co:5432/postgres',
     META_ACCESS_TOKEN: 'meta-read-token',
     META_AD_ACCOUNT_IDS: '123456789',
     CLINIC_ID: '00000000-0000-4000-8000-000000000001',
@@ -102,6 +102,25 @@ test('Supabase base URL is HTTPS-only before privileged requests are built', () 
   const validationOffset = edgeInvoker.indexOf('const base = normalizeSupabaseBase(rawBase)');
   const firstPrivilegedRequest = edgeInvoker.indexOf('await readConnectedCustomers(base, key, fetchImpl)');
   assert.ok(validationOffset >= 0 && firstPrivilegedRequest > validationOffset, 'HTTPS validation must run before privileged requests');
+});
+
+test('authenticated integration read refuses redirects without a second request', async () => {
+  let calls = 0;
+  const fetchImpl = async (_url, options) => {
+    calls += 1;
+    assert.equal(options.redirect, 'error');
+    return {
+      ok: false,
+      status: 302,
+      json: async () => null,
+    };
+  };
+
+  await assert.rejects(
+    readConnectedCustomers('https://example.supabase.co', 'fixture-service-role', fetchImpl),
+    /Could not read connected Google Ads integrations \(HTTP 302\)/,
+  );
+  assert.equal(calls, 1);
 });
 
 test('GitHub Daily Sync no longer owns Google Ads provider credentials', () => {
