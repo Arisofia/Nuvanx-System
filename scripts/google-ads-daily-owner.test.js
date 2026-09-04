@@ -4,19 +4,22 @@ const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const { existsSync, readFileSync } = require('node:fs');
 const test = require('node:test');
+const { normalizeSupabaseBase, readConnectedCustomers } = require('./sync-google-ads-via-edge.js');
 
 const orchestrator = readFileSync('scripts/run-daily-sync.js', 'utf8');
 const edgeInvoker = readFileSync('scripts/sync-google-ads-via-edge.js', 'utf8');
 const validator = readFileSync('scripts/validate-daily-sync-config.js', 'utf8');
 const edgeWorker = readFileSync('supabase/functions/google-ads-daily-sync/index.ts', 'utf8');
+const edgeDispatcher = readFileSync('supabase/functions/google-ads-backfill-dispatcher/index.ts', 'utf8');
 const masterWorkflow = readFileSync('.github/workflows/master.yml', 'utf8');
+const standaloneWorkflow = readFileSync('.github/workflows/deploy-standalone-edge-functions.yml', 'utf8');
 
 function validDailySyncEnv(overrides = {}) {
   return {
     SUPABASE_URL: 'https://example.supabase.co',
     SUPABASE_ACCESS_TOKEN: 'sbp_TestToken123',
     SUPABASE_PROJECT_REF: 'abcdefghijklmnopqrst',
-    DATABASE_URL: 'postgresql://postgres:password@example.supabase.co:5432/postgres',
+    DATABASE_URL: 'postgresql://postgres@example.supabase.co:5432/postgres',
     META_ACCESS_TOKEN: 'meta-read-token',
     META_AD_ACCOUNT_IDS: '123456789',
     CLINIC_ID: '00000000-0000-4000-8000-000000000001',
@@ -51,9 +54,73 @@ test('Google Ads daily ingestion has one scheduled owner and is fail-closed', ()
     /name: 'sync-google-ads', cmd: 'node scripts\/sync-google-ads-via-edge\.js', critical: true, retry: 1/,
   );
   assert.doesNotMatch(orchestrator, /sync-google-ads-insights\.js/);
-  assert.match(edgeInvoker, /\/functions\/v1\/google-ads-daily-sync/);
+  assert.match(edgeInvoker, /\/functions\/v1\/google-ads-backfill-dispatcher/);
+  assert.doesNotMatch(edgeInvoker, /\/functions\/v1\/google-ads-daily-sync/);
   assert.match(edgeInvoker, /Google Ads account coverage mismatch/);
+  assert.match(edgeDispatcher, /\/functions\/v1\/google-ads-daily-sync/);
   assert.match(edgeWorker, /provider: "google_ads"/);
+});
+
+test('GitHub Daily Sync uses the governed internal Edge ingress instead of raw service-role equality', () => {
+  assert.match(edgeInvoker, /\/rest\/v1\/rpc\/nvx_get_runtime_secret/);
+  assert.match(edgeInvoker, /p_name: 'REVOPS_INTERNAL_SECRET'/);
+  assert.match(edgeInvoker, /'x-nvx-internal-secret': internalSecret/);
+  assert.match(edgeDispatcher, /authenticateInternalRequest\(req/);
+  assert.match(edgeDispatcher, /p_name: "REVOPS_INTERNAL_SECRET"/);
+  assert.match(edgeDispatcher, /Authorization: `Bearer \$\{SERVICE_ROLE\}`/);
+  assert.match(
+    standaloneWorkflow,
+    /supabase functions deploy google-ads-backfill-dispatcher --project-ref "\$SUPABASE_PROJECT_REF" --no-verify-jwt/,
+  );
+  assert.doesNotMatch(edgeInvoker, /secretMatches\s*\(/);
+  assert.doesNotMatch(edgeInvoker, /console\.(?:log|error)[^\n]*internalSecret/);
+});
+
+test('dispatcher ingress receives only the internal secret, not GitHub service-role credentials', () => {
+  const dispatcherStart = edgeInvoker.indexOf('fetchImpl(`${base}/functions/v1/google-ads-backfill-dispatcher`');
+  const dispatcherEnd = edgeInvoker.indexOf('const payload = await readJson(response)', dispatcherStart);
+  assert.ok(dispatcherStart >= 0 && dispatcherEnd > dispatcherStart, 'dispatcher request block must be discoverable');
+  const dispatcherRequest = edgeInvoker.slice(dispatcherStart, dispatcherEnd);
+  assert.match(dispatcherRequest, /'x-nvx-internal-secret': internalSecret/);
+  assert.doesNotMatch(dispatcherRequest, /apikey\s*:/);
+  assert.doesNotMatch(dispatcherRequest, /Authorization\s*:/);
+  assert.doesNotMatch(dispatcherRequest, /Bearer \$\{key\}/);
+});
+
+test('Supabase base URL is HTTPS-only before privileged requests are built', () => {
+  assert.equal(normalizeSupabaseBase('https://example.supabase.co/'), 'https://example.supabase.co');
+  for (const invalid of [
+    'http://example.supabase.co',
+    'ftp://example.supabase.co',
+    'https://user:pass@example.supabase.co',
+    'https://example.supabase.co/rest/v1',
+    'https://example.supabase.co?next=https://attacker.test',
+    'not-a-url',
+  ]) {
+    assert.throws(() => normalizeSupabaseBase(invalid), /valid HTTPS origin/);
+  }
+  const validationOffset = edgeInvoker.indexOf('const base = normalizeSupabaseBase(rawBase)');
+  const firstPrivilegedRequest = edgeInvoker.indexOf('await readConnectedCustomers(base, key, fetchImpl)');
+  assert.ok(validationOffset >= 0 && firstPrivilegedRequest > validationOffset, 'HTTPS validation must run before privileged requests');
+});
+
+test('authenticated integration read refuses redirects without a second request', async () => {
+  let calls = 0;
+  const fetchImpl = async (_url, options) => {
+    calls += 1;
+    assert.equal(options.redirect, 'error');
+    return {
+      ok: false,
+      status: 302,
+      json: async () => null,
+    };
+  };
+
+  await assert.rejects(
+    readConnectedCustomers('https://example.supabase.co', 'fixture-service-role', fetchImpl),
+    /Could not read connected Google Ads integrations \(HTTP 302\)/,
+  );
+  assert.equal(calls, 1);
 });
 
 test('GitHub Daily Sync no longer owns Google Ads provider credentials', () => {
