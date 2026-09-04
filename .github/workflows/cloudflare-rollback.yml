@@ -88,16 +88,13 @@ jobs:
           const payload = JSON.parse(fs.readFileSync(file, 'utf8'));
           const target = String(process.env.TARGET_VERSION_ID || '');
           const expectedSha = String(process.env.EXPECTED_SOURCE_SHA || '');
-          const values = [];
-          const visit = (value) => {
-            if (typeof value === 'string') values.push(value);
-            else if (Array.isArray(value)) value.forEach(visit);
-            else if (value && typeof value === 'object') Object.values(value).forEach(visit);
-          };
-          visit(payload);
-          if (!values.includes(target)) throw new Error('Cloudflare target version response does not contain the requested version ID');
-          if (!values.includes(expectedSha) && !values.includes(`git:${expectedSha}`)) {
-            throw new Error('Cloudflare target version does not carry the expected Git SHA provenance');
+          if (payload?.id !== target) {
+            throw new Error('Cloudflare version response does not match the requested target version ID');
+          }
+          const tag = payload?.annotations?.['workers/tag'];
+          const message = payload?.annotations?.['workers/message'];
+          if (tag !== expectedSha || message !== `git:${expectedSha}`) {
+            throw new Error('Cloudflare target version provenance does not exactly match the expected Git SHA');
           }
           console.log(JSON.stringify({ target_version_verified: true, expected_source_sha: expectedSha }));
           NODE
@@ -116,14 +113,27 @@ jobs:
           const [file] = process.argv.slice(2);
           const payload = JSON.parse(fs.readFileSync(file, 'utf8'));
           const target = String(process.env.TARGET_VERSION_ID || '');
-          const contains = (value) => {
-            if (value === target) return true;
-            if (Array.isArray(value)) return value.some(contains);
-            if (value && typeof value === 'object') return Object.values(value).some(contains);
-            return false;
-          };
-          if (contains(payload)) throw new Error('Target version is already active; this run would not prove a rollback state transition');
-          console.log(JSON.stringify({ pre_rollback_target_active: false }));
+          const versions = payload?.versions;
+          if (!Array.isArray(versions) || versions.length < 1 || versions.length > 2) {
+            throw new Error('Cloudflare current deployment has an invalid version traffic contract');
+          }
+          const normalized = versions.map((entry) => ({
+            versionId: String(entry?.version_id || ''),
+            percentage: Number(entry?.percentage),
+          }));
+          if (normalized.some((entry) => !entry.versionId || !Number.isFinite(entry.percentage) || entry.percentage < 0 || entry.percentage > 100)) {
+            throw new Error('Cloudflare current deployment contains invalid version traffic values');
+          }
+          const total = normalized.reduce((sum, entry) => sum + entry.percentage, 0);
+          if (Math.abs(total - 100) > 0.001) {
+            throw new Error(`Cloudflare current deployment traffic does not total 100%: ${total}`);
+          }
+          const targetAlreadyFullyActive = normalized.length === 1 &&
+            normalized[0].versionId === target && normalized[0].percentage === 100;
+          if (targetAlreadyFullyActive) {
+            throw new Error('Target version already serves 100% of production traffic; this run would not prove a rollback state transition');
+          }
+          console.log(JSON.stringify({ pre_rollback_target_fully_active: false, active_versions: normalized.length }));
           NODE
 
       - name: Roll back to exact verified version
@@ -134,7 +144,7 @@ jobs:
             --config frontend/wrangler.jsonc \
             --message "governed rollback to git:${EXPECTED_SOURCE_SHA}"
 
-      - name: Verify target version is now active
+      - name: Verify target version is now the sole 100% active version
         shell: bash
         run: |
           set -euo pipefail
@@ -148,17 +158,19 @@ jobs:
           const [file] = process.argv.slice(2);
           const payload = JSON.parse(fs.readFileSync(file, 'utf8'));
           const target = String(process.env.TARGET_VERSION_ID || '');
-          const contains = (value) => {
-            if (value === target) return true;
-            if (Array.isArray(value)) return value.some(contains);
-            if (value && typeof value === 'object') return Object.values(value).some(contains);
-            return false;
-          };
-          if (!contains(payload)) throw new Error('Requested rollback version is not present in the current production deployment');
-          console.log(JSON.stringify({ rollback_active_version_verified: true, version_id: target }));
+          const versions = payload?.versions;
+          if (!Array.isArray(versions) || versions.length !== 1) {
+            throw new Error('Rollback did not converge Production to exactly one active Worker version');
+          }
+          const activeVersion = String(versions[0]?.version_id || '');
+          const activePercentage = Number(versions[0]?.percentage);
+          if (activeVersion !== target || activePercentage !== 100) {
+            throw new Error(`Rollback target is not the sole 100% active version: ${activeVersion}@${activePercentage}`);
+          }
+          console.log(JSON.stringify({ rollback_active_version_verified: true, version_id: target, percentage: 100 }));
           NODE
 
-      - name: Verify public runtime after rollback
+      - name: Verify canonical public runtime and security after rollback
         shell: bash
         run: |
           set -euo pipefail
@@ -171,11 +183,17 @@ jobs:
               "${TARGET}${route}")"
             test "$code" = '200' || { echo "${route} returned HTTP ${code}" >&2; exit 1; }
             grep -q 'id="root"' /tmp/cf-body || { echo "${route} is not the SPA shell" >&2; exit 1; }
+
             tr -d '\r' < /tmp/cf-headers > /tmp/cf-headers-normalized
             grep -Eiq '^x-frame-options:[[:space:]]*DENY$' /tmp/cf-headers-normalized || { echo "${route} missing X-Frame-Options: DENY" >&2; exit 1; }
             grep -Eiq '^x-content-type-options:[[:space:]]*nosniff$' /tmp/cf-headers-normalized || { echo "${route} missing X-Content-Type-Options: nosniff" >&2; exit 1; }
+            grep -Eiq '^referrer-policy:[[:space:]]*strict-origin-when-cross-origin$' /tmp/cf-headers-normalized || { echo "${route} missing Referrer-Policy" >&2; exit 1; }
+            grep -Eiq '^permissions-policy:[[:space:]]*camera=\(\), microphone=\(\), geolocation=\(\), payment=\(\), usb=\(\)$' /tmp/cf-headers-normalized || { echo "${route} missing governed Permissions-Policy" >&2; exit 1; }
             grep -Eiq '^content-security-policy:' /tmp/cf-headers-normalized || { echo "${route} missing Content-Security-Policy" >&2; exit 1; }
             grep -Eiq "^content-security-policy:.*frame-ancestors 'none'" /tmp/cf-headers-normalized || { echo "${route} CSP does not deny framing" >&2; exit 1; }
+            grep -Eiq '^content-security-policy:.*https://connect\.facebook\.net' /tmp/cf-headers-normalized || { echo "${route} CSP does not allow the governed Meta Pixel script origin" >&2; exit 1; }
+            grep -Eiq '^content-security-policy:.*https://\*\.supabase\.co' /tmp/cf-headers-normalized || { echo "${route} CSP does not allow Supabase HTTPS connections" >&2; exit 1; }
+            grep -Eiq '^content-security-policy:.*wss://\*\.supabase\.co' /tmp/cf-headers-normalized || { echo "${route} CSP does not allow Supabase realtime connections" >&2; exit 1; }
           done
           echo "CLOUDFLARE_ROLLBACK_PUBLIC_ACCEPTANCE=PASS version=${TARGET_VERSION_ID}"
 
@@ -189,7 +207,7 @@ jobs:
             echo "- Target version: \`${TARGET_VERSION_ID}\`"
             echo "- Expected source SHA: \`${EXPECTED_SOURCE_SHA}\`"
             echo "- Reason: ${ROLLBACK_REASON}"
-            echo '- Active-version verification: PASS'
-            echo '- Public runtime/security acceptance: PASS'
+            echo '- Sole 100% active-version verification: PASS'
+            echo '- Canonical public runtime/security acceptance: PASS'
             echo '- Authenticated acceptance: still required via `Master System · Quality · Playwright smoke · trusted` after the drill.'
           } >> "$GITHUB_STEP_SUMMARY"
