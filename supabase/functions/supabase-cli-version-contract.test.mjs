@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-const supabaseLinkRunAction = readFileSync('.github/actions/supabase-link-run/action.yml', 'utf8');
+const supabaseLinkRunAction = readFileSync(fileURLToPath(new URL('../../.github/actions/supabase-link-run/action.yml', import.meta.url)), 'utf8');
 
 describe('governed Supabase CLI version', () => {
   it('stays past the v2.102.0 machine-output regression used by Edge release inventory checks', () => {
