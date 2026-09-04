@@ -9,23 +9,31 @@ const migration = readFileSync(
 const executable = migration.replace(/^\s*--.*$/gm, '');
 
 describe('Meta lead attribution invariant', () => {
-  it('moves lineage ownership to the database boundary for every Meta lead insertion route', () => {
-    expect(migration).toContain('create or replace function private.nvx_ensure_meta_lead_attribution()');
+  it('uses one convergence owner for new writes and historical repair', () => {
+    expect(migration).toContain('create or replace function private.nvx_converge_meta_lead_attribution(p_lead public.leads)');
+    expect(migration).toContain('perform private.nvx_converge_meta_lead_attribution(new);');
+    expect(migration).toContain('perform private.nvx_converge_meta_lead_attribution(v_lead);');
     expect(migration).toContain('security definer');
     expect(migration).toContain("set search_path = ''");
-    expect(migration).toContain('create trigger meta_lead_attribution_invariant');
-    expect(migration).toContain('after insert or update on public.leads');
-    expect(migration).toContain("= 'meta_leadgen'");
-    expect(migration).toContain('execute function private.nvx_ensure_meta_lead_attribution()');
   });
 
-  it('fails closed when a Meta lead cannot satisfy the attribution identity contract', () => {
+  it('separates insert and lineage-bearing update triggers without a stale fast path', () => {
+    expect(migration).toContain('create trigger meta_lead_attribution_insert_invariant');
+    expect(migration).toContain('after insert on public.leads');
+    expect(migration).toContain('create trigger meta_lead_attribution_update_invariant');
+    expect(migration).toContain('after update of');
+    expect(migration).toMatch(/update of[\s\S]*\bmetadata\b[\s\S]*\bmeta_ad_name\b[\s\S]*\bdeleted_at\b[\s\S]*on public\.leads/i);
+    expect(migration).not.toContain("if tg_op = 'UPDATE'");
+  });
+
+  it('fails closed for both new writes and historical repair when identity is invalid', () => {
     expect(migration).toContain("raise exception 'meta_leadgen lead requires external_id before attribution'");
     expect(migration).toContain("raise exception 'meta_leadgen external_id exceeds meta_attribution.leadgen_id contract'");
     expect(migration).toContain("raise exception 'meta_leadgen lineage identifier exceeds meta_attribution contract'");
+    expect(migration).toMatch(/for v_lead in[\s\S]*perform private\.nvx_converge_meta_lead_attribution\(v_lead\)/i);
   });
 
-  it('converges lineage idempotently without erasing richer existing attribution', () => {
+  it('converges lineage idempotently without erasing richer existing optional attribution', () => {
     expect(migration).toContain('on conflict (lead_id) do update set');
     expect(migration).toContain('page_id = coalesce(excluded.page_id, public.meta_attribution.page_id)');
     expect(migration).toContain('form_id = coalesce(excluded.form_id, public.meta_attribution.form_id)');
@@ -45,6 +53,7 @@ describe('Meta lead attribution invariant', () => {
   it('does not introduce destructive cleanup or broaden function execution', () => {
     expect(executable).not.toMatch(/\bDELETE\s+FROM\s+public\.meta_attribution\b/i);
     expect(executable).not.toMatch(/\bCASCADE\b/i);
+    expect(migration).toContain('revoke all on function private.nvx_converge_meta_lead_attribution(public.leads) from public;');
     expect(migration).toContain('revoke all on function private.nvx_ensure_meta_lead_attribution() from public;');
   });
 });
