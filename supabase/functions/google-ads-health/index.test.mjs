@@ -18,10 +18,6 @@ const runtimeAcceptanceWorkflow = readFileSync(
   fileURLToPath(new URL("../../../.github/workflows/google-ads-runtime-acceptance.yml", import.meta.url)),
   "utf8",
 );
-const credentialWorkflow = readFileSync(
-  fileURLToPath(new URL("../../../.github/workflows/google-ads-credential-provision.yml", import.meta.url)),
-  "utf8",
-);
 const credentialMigration = readFileSync(
   fileURLToPath(new URL("../../migrations/20260903000500_reconcile_credentials_user_service_unique_index.sql", import.meta.url)),
   "utf8",
@@ -167,19 +163,19 @@ describe("Google Ads provider health contract", () => {
     expect(deployWorkflow).toContain('supabase functions deploy google-ads-health --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
     expect(deployWorkflow).not.toContain("Converge Google Ads credential through deployed runtime");
     expect(deployWorkflow).not.toContain("GOOGLE_ADS_DEVELOPER_TOKEN");
+    expect(runtimeAcceptanceWorkflow).toContain("workflows: ['Deploy Standalone Edge Functions']");
     expect(runtimeAcceptanceWorkflow).toContain("Prove governed Edge deployment actually ran");
     expect(runtimeAcceptanceWorkflow).toContain("Deploy governed functions");
     expect(runtimeAcceptanceWorkflow).toContain("Verify current main is the deployed candidate");
     expect(runtimeAcceptanceWorkflow).toContain("Reverify remote main immediately before Google Ads acceptance");
     expect(runtimeAcceptanceWorkflow).toContain("Converge and accept Google Ads credential through deployed runtime");
+    expect(runtimeAcceptanceWorkflow).toContain("GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}");
+    expect(runtimeAcceptanceWorkflow).toContain("name: Production");
     expect(runtimeAcceptanceWorkflow).toContain("refusing stale Google Ads credential mutation");
     expect(runtimeAcceptanceWorkflow).not.toContain("continue-on-error: true");
     expect(runtimeAcceptanceWorkflow).not.toContain("git diff --name-only");
     expect(provisionScript).toContain("credentialContractCurrent(integrations, credentials)");
     expect(provisionScript).toContain("provision_required: false");
-    expect(credentialWorkflow).toContain("workflow_dispatch:");
-    expect(credentialWorkflow).not.toContain("push:");
-    expect(credentialWorkflow).not.toContain("ENCRYPTION_KEY");
   });
 
   it("keeps legacy service-account representation normalization covered", () => {
