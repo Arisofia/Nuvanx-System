@@ -50,6 +50,26 @@ function customerId(value) {
   return String(value || '').replace(/\D/g, '');
 }
 
+function normalizeSupabaseBase(value) {
+  let parsed;
+  try {
+    parsed = new URL(String(value || '').trim());
+  } catch {
+    throw new Error('SUPABASE_URL must be a valid HTTPS origin');
+  }
+  if (
+    parsed.protocol !== 'https:'
+    || parsed.username
+    || parsed.password
+    || parsed.search
+    || parsed.hash
+    || (parsed.pathname !== '/' && parsed.pathname !== '')
+  ) {
+    throw new Error('SUPABASE_URL must be a valid HTTPS origin');
+  }
+  return parsed.origin;
+}
+
 async function readJson(response) {
   const text = await response.text();
   if (!text) return null;
@@ -108,9 +128,10 @@ async function resolveInternalSecret(base, key, fetchImpl = fetch) {
 }
 
 async function syncGoogleAdsViaEdge({ fetchImpl = fetch } = {}) {
-  const base = (env('SUPABASE_URL') || env('VITE_SUPABASE_URL')).replace(/\/$/, '');
+  const rawBase = env('SUPABASE_URL') || env('VITE_SUPABASE_URL');
   const key = env('SUPABASE_SERVICE_ROLE_KEY') || env('NUVANX_SUPABASE_SERVICE_ROLE_KEY');
-  if (!base || !key) throw new Error('SUPABASE_URL and service-role key are required');
+  if (!rawBase || !key) throw new Error('SUPABASE_URL and service-role key are required');
+  const base = normalizeSupabaseBase(rawBase);
 
   const range = resolveDateRange();
   const expectedCustomers = await readConnectedCustomers(base, key, fetchImpl);
@@ -119,8 +140,6 @@ async function syncGoogleAdsViaEdge({ fetchImpl = fetch } = {}) {
     method: 'POST',
     redirect: 'error',
     headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
       'Content-Type': 'application/json',
       'x-nvx-internal-secret': internalSecret,
     },
@@ -177,6 +196,7 @@ if (require.main === module) {
 
 module.exports = {
   customerId,
+  normalizeSupabaseBase,
   readConnectedCustomers,
   resolveDateRange,
   resolveInternalSecret,
