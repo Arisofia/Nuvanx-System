@@ -1,7 +1,7 @@
 begin;
 
-create or replace function private.nvx_ensure_meta_lead_attribution()
-returns trigger
+create or replace function private.nvx_converge_meta_lead_attribution(p_lead public.leads)
+returns void
 language plpgsql
 security definer
 set search_path = ''
@@ -18,12 +18,12 @@ declare
   v_ad_name text;
   v_captured_at timestamptz;
 begin
-  if lower(btrim(coalesce(new.source::text, ''))) <> 'meta_leadgen'
-     or new.deleted_at is not null then
-    return new;
+  if lower(btrim(coalesce(p_lead.source::text, ''))) <> 'meta_leadgen'
+     or p_lead.deleted_at is not null then
+    return;
   end if;
 
-  v_leadgen_id := nullif(btrim(coalesce(new.external_id::text, '')), '');
+  v_leadgen_id := nullif(btrim(coalesce(p_lead.external_id::text, '')), '');
   if v_leadgen_id is null then
     raise exception 'meta_leadgen lead requires external_id before attribution';
   end if;
@@ -31,35 +31,15 @@ begin
     raise exception 'meta_leadgen external_id exceeds meta_attribution.leadgen_id contract';
   end if;
 
-  -- Avoid rewriting attribution on unrelated lead updates once the invariant is
-  -- already satisfied. Relevant lineage changes still converge through the
-  -- upsert below.
-  if tg_op = 'UPDATE'
-     and old.source is not distinct from new.source
-     and old.external_id is not distinct from new.external_id
-     and old.form_id is not distinct from new.form_id
-     and old.meta_form_id is not distinct from new.meta_form_id
-     and old.campaign_id is not distinct from new.campaign_id
-     and old.campaign_name is not distinct from new.campaign_name
-     and old.adset_id is not distinct from new.adset_id
-     and old.adset_name is not distinct from new.adset_name
-     and old.ad_id is not distinct from new.ad_id
-     and old.meta_ad_id is not distinct from new.meta_ad_id
-     and old.ad_name is not distinct from new.ad_name
-     and old.created_at_meta is not distinct from new.created_at_meta
-     and exists (select 1 from public.meta_attribution a where a.lead_id = new.id) then
-    return new;
-  end if;
-
-  v_page_id := nullif(btrim(coalesce(new.metadata ->> 'page_id', '')), '');
-  v_form_id := nullif(btrim(coalesce(new.meta_form_id, new.form_id, '')), '');
-  v_campaign_id := nullif(btrim(coalesce(new.campaign_id, '')), '');
-  v_campaign_name := nullif(left(btrim(coalesce(new.campaign_name, '')), 255), '');
-  v_adset_id := nullif(btrim(coalesce(new.adset_id, '')), '');
-  v_adset_name := nullif(left(btrim(coalesce(new.adset_name, '')), 255), '');
-  v_ad_id := nullif(btrim(coalesce(new.meta_ad_id, new.ad_id, '')), '');
-  v_ad_name := nullif(left(btrim(coalesce(new.meta_ad_name, new.ad_name, '')), 255), '');
-  v_captured_at := coalesce(new.created_at_meta, new.created_at, statement_timestamp());
+  v_page_id := nullif(btrim(coalesce(p_lead.metadata ->> 'page_id', '')), '');
+  v_form_id := nullif(btrim(coalesce(p_lead.meta_form_id, p_lead.form_id, '')), '');
+  v_campaign_id := nullif(btrim(coalesce(p_lead.campaign_id, '')), '');
+  v_campaign_name := nullif(left(btrim(coalesce(p_lead.campaign_name, '')), 255), '');
+  v_adset_id := nullif(btrim(coalesce(p_lead.adset_id, '')), '');
+  v_adset_name := nullif(left(btrim(coalesce(p_lead.adset_name, '')), 255), '');
+  v_ad_id := nullif(btrim(coalesce(p_lead.meta_ad_id, p_lead.ad_id, '')), '');
+  v_ad_name := nullif(left(btrim(coalesce(p_lead.meta_ad_name, p_lead.ad_name, '')), 255), '');
+  v_captured_at := coalesce(p_lead.created_at_meta, p_lead.created_at, statement_timestamp());
 
   if length(coalesce(v_page_id, '')) > 64
      or length(coalesce(v_form_id, '')) > 64
@@ -83,7 +63,7 @@ begin
     captured_at,
     updated_at
   ) values (
-    new.id,
+    p_lead.id,
     v_leadgen_id,
     v_page_id,
     v_form_id,
@@ -108,63 +88,80 @@ begin
     ad_name = coalesce(excluded.ad_name, public.meta_attribution.ad_name),
     captured_at = least(public.meta_attribution.captured_at, excluded.captured_at),
     updated_at = statement_timestamp();
+end;
+$$;
 
+revoke all on function private.nvx_converge_meta_lead_attribution(public.leads) from public;
+
+create or replace function private.nvx_ensure_meta_lead_attribution()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  perform private.nvx_converge_meta_lead_attribution(new);
   return new;
 end;
 $$;
 
 revoke all on function private.nvx_ensure_meta_lead_attribution() from public;
 
--- The DB boundary is the canonical owner of the invariant. Every insertion
--- route (Meta webhook, provider backfill, or future governed owner) must create
--- lineage in the same transaction as the lead row.
+-- The database boundary is the canonical owner. Inserts always converge the
+-- lineage. Updates rerun convergence only when a lineage-bearing field can
+-- have changed, avoiding writes to meta_attribution for pipeline-only updates.
 drop trigger if exists meta_lead_attribution_invariant on public.leads;
-create trigger meta_lead_attribution_invariant
-after insert or update on public.leads
+drop trigger if exists meta_lead_attribution_insert_invariant on public.leads;
+drop trigger if exists meta_lead_attribution_update_invariant on public.leads;
+
+create trigger meta_lead_attribution_insert_invariant
+after insert on public.leads
 for each row
 when (lower(btrim(coalesce(new.source::text, ''))) = 'meta_leadgen')
 execute function private.nvx_ensure_meta_lead_attribution();
 
--- Repair only live orphaned Meta leads by contract, never by hard-coded lead
--- identifiers. Existing attribution rows are left intact.
-insert into public.meta_attribution (
-  lead_id,
-  leadgen_id,
-  page_id,
+create trigger meta_lead_attribution_update_invariant
+after update of
+  source,
+  external_id,
+  metadata,
   form_id,
+  meta_form_id,
   campaign_id,
   campaign_name,
   adset_id,
   adset_name,
   ad_id,
+  meta_ad_id,
   ad_name,
-  captured_at,
-  updated_at
-)
-select
-  l.id,
-  btrim(l.external_id),
-  nullif(btrim(coalesce(l.metadata ->> 'page_id', '')), ''),
-  nullif(btrim(coalesce(l.meta_form_id, l.form_id, '')), ''),
-  nullif(btrim(coalesce(l.campaign_id, '')), ''),
-  nullif(left(btrim(coalesce(l.campaign_name, '')), 255), ''),
-  nullif(btrim(coalesce(l.adset_id, '')), ''),
-  nullif(left(btrim(coalesce(l.adset_name, '')), 255), ''),
-  nullif(btrim(coalesce(l.meta_ad_id, l.ad_id, '')), ''),
-  nullif(left(btrim(coalesce(l.meta_ad_name, l.ad_name, '')), 255), ''),
-  coalesce(l.created_at_meta, l.created_at, statement_timestamp()),
-  statement_timestamp()
-from public.leads l
-left join public.meta_attribution a on a.lead_id = l.id
-where lower(btrim(coalesce(l.source::text, ''))) = 'meta_leadgen'
-  and l.deleted_at is null
-  and a.lead_id is null
-  and nullif(btrim(coalesce(l.external_id::text, '')), '') is not null;
+  meta_ad_name,
+  created_at_meta,
+  deleted_at
+on public.leads
+for each row
+when (lower(btrim(coalesce(new.source::text, ''))) = 'meta_leadgen')
+execute function private.nvx_ensure_meta_lead_attribution();
 
+-- Repair current live orphans through the exact same convergence function used
+-- by future writes. Any missing/oversized identity raises and rolls back the
+-- entire migration instead of persisting a weaker historical contract.
 do $$
 declare
+  v_lead public.leads%rowtype;
   v_orphans integer;
 begin
+  for v_lead in
+    select l.*
+    from public.leads l
+    left join public.meta_attribution a on a.lead_id = l.id
+    where lower(btrim(coalesce(l.source::text, ''))) = 'meta_leadgen'
+      and l.deleted_at is null
+      and a.lead_id is null
+    order by l.created_at, l.id
+  loop
+    perform private.nvx_converge_meta_lead_attribution(v_lead);
+  end loop;
+
   select count(*)
   into v_orphans
   from public.leads l
