@@ -9,7 +9,9 @@ const orchestrator = readFileSync('scripts/run-daily-sync.js', 'utf8');
 const edgeInvoker = readFileSync('scripts/sync-google-ads-via-edge.js', 'utf8');
 const validator = readFileSync('scripts/validate-daily-sync-config.js', 'utf8');
 const edgeWorker = readFileSync('supabase/functions/google-ads-daily-sync/index.ts', 'utf8');
+const edgeDispatcher = readFileSync('supabase/functions/google-ads-backfill-dispatcher/index.ts', 'utf8');
 const masterWorkflow = readFileSync('.github/workflows/master.yml', 'utf8');
+const standaloneWorkflow = readFileSync('.github/workflows/deploy-standalone-edge-functions.yml', 'utf8');
 
 function validDailySyncEnv(overrides = {}) {
   return {
@@ -51,9 +53,26 @@ test('Google Ads daily ingestion has one scheduled owner and is fail-closed', ()
     /name: 'sync-google-ads', cmd: 'node scripts\/sync-google-ads-via-edge\.js', critical: true, retry: 1/,
   );
   assert.doesNotMatch(orchestrator, /sync-google-ads-insights\.js/);
-  assert.match(edgeInvoker, /\/functions\/v1\/google-ads-daily-sync/);
+  assert.match(edgeInvoker, /\/functions\/v1\/google-ads-backfill-dispatcher/);
+  assert.doesNotMatch(edgeInvoker, /\/functions\/v1\/google-ads-daily-sync/);
   assert.match(edgeInvoker, /Google Ads account coverage mismatch/);
+  assert.match(edgeDispatcher, /\/functions\/v1\/google-ads-daily-sync/);
   assert.match(edgeWorker, /provider: "google_ads"/);
+});
+
+test('GitHub Daily Sync uses the governed internal Edge ingress instead of raw service-role equality', () => {
+  assert.match(edgeInvoker, /\/rest\/v1\/rpc\/nvx_get_runtime_secret/);
+  assert.match(edgeInvoker, /p_name: 'REVOPS_INTERNAL_SECRET'/);
+  assert.match(edgeInvoker, /'x-nvx-internal-secret': internalSecret/);
+  assert.match(edgeDispatcher, /authenticateInternalRequest\(req/);
+  assert.match(edgeDispatcher, /p_name: "REVOPS_INTERNAL_SECRET"/);
+  assert.match(edgeDispatcher, /Authorization: `Bearer \$\{SERVICE_ROLE\}`/);
+  assert.match(
+    standaloneWorkflow,
+    /supabase functions deploy google-ads-backfill-dispatcher --project-ref "\$SUPABASE_PROJECT_REF" --no-verify-jwt/,
+  );
+  assert.doesNotMatch(edgeInvoker, /secretMatches\s*\(/);
+  assert.doesNotMatch(edgeInvoker, /console\.(?:log|error)[^\n]*internalSecret/);
 });
 
 test('GitHub Daily Sync no longer owns Google Ads provider credentials', () => {
