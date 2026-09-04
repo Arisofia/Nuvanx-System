@@ -136,6 +136,7 @@ after update of
   ad_name,
   meta_ad_name,
   created_at_meta,
+  created_at,
   deleted_at
 on public.leads
 for each row
