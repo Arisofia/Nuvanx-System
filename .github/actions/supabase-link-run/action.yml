@@ -27,7 +27,10 @@ inputs:
   supabase_cli_version:
     description: 'Supabase CLI version to use'
     required: false
-    default: '2.102.0'
+    # v2.102.0 regressed legacy machine-readable output by emitting spinner ANSI
+    # bytes to stdout. Keep the governed default on a stable release containing
+    # upstream fix supabase/cli#5410 so JSON inventory consumers stay strict.
+    default: '2.116.0'
 
 outputs:
   resolved_db_password:
