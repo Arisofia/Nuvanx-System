@@ -26,39 +26,42 @@ DECLARE
 
   v_expected_canonical_signature constant text := E'1:lead_id:uuid\n2:lead_name:character varying(255)\n3:email_normalized:text\n4:phone_normalized:character varying(20)\n5:source:character varying(64)\n6:stage:text\n7:campaign_id:character varying(64)\n8:campaign_name:character varying(255)\n9:adset_id:character varying(64)\n10:adset_name:character varying(255)\n11:ad_id:character varying(64)\n12:ad_name:character varying(255)\n13:form_id:character varying(64)\n14:form_name:character varying(255)\n15:lead_created_at:timestamp with time zone\n16:first_outbound_at:timestamp with time zone\n17:first_inbound_at:timestamp with time zone\n18:reply_delay_minutes:integer\n19:appointment_status:appointment_status\n20:attended_at:timestamp with time zone\n21:no_show_flag:boolean\n22:estimated_revenue:numeric(12,2)\n23:crm_verified_revenue:numeric(12,2)\n24:lost_reason:text\n25:patient_id:uuid\n26:patient_ltv:numeric(12,2)\n27:settlement_id:text\n28:doctoralia_template_id:character varying(32)\n29:doctoralia_template_name:character varying(255)\n30:doctoralia_net:numeric(12,2)\n31:doctoralia_gross:numeric(12,2)\n32:settlement_date:timestamp with time zone\n33:settlement_intake_date:timestamp with time zone\n34:settlement_source:text\n35:lead_user_id:uuid\n36:patient_name:text\n37:patient_dni:text\n38:patient_phone:character varying(64)\n39:patient_last_visit:timestamp with time zone\n40:doc_patient_id:text\n41:match_confidence:numeric\n42:match_class:character varying(32)\n43:first_settlement_at:timestamp with time zone';
 
+  -- Audited Production ACL identity on 2026-09-04. Grantee, grantor,
+  -- privilege, and grantability are all part of the fail-closed contract.
+  -- PUBLIC is intentionally absent; an explicit PUBLIC entry is drift.
   v_expected_legacy_acl constant text[] := ARRAY[
-    'anon:DELETE:plain',
-    'anon:INSERT:plain',
-    'anon:MAINTAIN:plain',
-    'anon:REFERENCES:plain',
-    'anon:SELECT:plain',
-    'anon:TRIGGER:plain',
-    'anon:TRUNCATE:plain',
-    'anon:UPDATE:plain',
-    'authenticated:DELETE:plain',
-    'authenticated:INSERT:plain',
-    'authenticated:MAINTAIN:plain',
-    'authenticated:REFERENCES:plain',
-    'authenticated:SELECT:plain',
-    'authenticated:TRIGGER:plain',
-    'authenticated:TRUNCATE:plain',
-    'authenticated:UPDATE:plain',
-    'postgres:DELETE:plain',
-    'postgres:INSERT:plain',
-    'postgres:MAINTAIN:plain',
-    'postgres:REFERENCES:plain',
-    'postgres:SELECT:plain',
-    'postgres:TRIGGER:plain',
-    'postgres:TRUNCATE:plain',
-    'postgres:UPDATE:plain',
-    'service_role:DELETE:plain',
-    'service_role:INSERT:plain',
-    'service_role:MAINTAIN:plain',
-    'service_role:REFERENCES:plain',
-    'service_role:SELECT:plain',
-    'service_role:TRIGGER:plain',
-    'service_role:TRUNCATE:plain',
-    'service_role:UPDATE:plain'
+    'anon:postgres:DELETE:plain',
+    'anon:postgres:INSERT:plain',
+    'anon:postgres:MAINTAIN:plain',
+    'anon:postgres:REFERENCES:plain',
+    'anon:postgres:SELECT:plain',
+    'anon:postgres:TRIGGER:plain',
+    'anon:postgres:TRUNCATE:plain',
+    'anon:postgres:UPDATE:plain',
+    'authenticated:postgres:DELETE:plain',
+    'authenticated:postgres:INSERT:plain',
+    'authenticated:postgres:MAINTAIN:plain',
+    'authenticated:postgres:REFERENCES:plain',
+    'authenticated:postgres:SELECT:plain',
+    'authenticated:postgres:TRIGGER:plain',
+    'authenticated:postgres:TRUNCATE:plain',
+    'authenticated:postgres:UPDATE:plain',
+    'postgres:postgres:DELETE:plain',
+    'postgres:postgres:INSERT:plain',
+    'postgres:postgres:MAINTAIN:plain',
+    'postgres:postgres:REFERENCES:plain',
+    'postgres:postgres:SELECT:plain',
+    'postgres:postgres:TRIGGER:plain',
+    'postgres:postgres:TRUNCATE:plain',
+    'postgres:postgres:UPDATE:plain',
+    'service_role:postgres:DELETE:plain',
+    'service_role:postgres:INSERT:plain',
+    'service_role:postgres:MAINTAIN:plain',
+    'service_role:postgres:REFERENCES:plain',
+    'service_role:postgres:SELECT:plain',
+    'service_role:postgres:TRIGGER:plain',
+    'service_role:postgres:TRUNCATE:plain',
+    'service_role:postgres:UPDATE:plain'
   ];
 BEGIN
   v_legacy_oid := to_regclass('public.v_lead_traceability');
@@ -120,13 +123,21 @@ BEGIN
   END IF;
 
   SELECT array_agg(
-    format('%s:%s:%s', grantee.rolname, x.privilege_type, CASE WHEN x.is_grantable THEN 'grantable' ELSE 'plain' END)
-    ORDER BY grantee.rolname, x.privilege_type
+    format(
+      '%s:%s:%s:%s',
+      CASE WHEN x.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(x.grantee) END,
+      pg_get_userbyid(x.grantor),
+      x.privilege_type,
+      CASE WHEN x.is_grantable THEN 'grantable' ELSE 'plain' END
+    )
+    ORDER BY
+      CASE WHEN x.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(x.grantee) END,
+      pg_get_userbyid(x.grantor),
+      x.privilege_type
   )
   INTO v_legacy_acl
   FROM pg_class c
   CROSS JOIN LATERAL aclexplode(c.relacl) x
-  JOIN pg_roles grantee ON grantee.oid = x.grantee
   WHERE c.oid = v_legacy_oid;
 
   IF v_legacy_acl IS DISTINCT FROM v_expected_legacy_acl THEN
