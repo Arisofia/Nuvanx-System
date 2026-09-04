@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const standalone = readFileSync('.github/workflows/deploy-standalone-edge-functions.yml', 'utf8');
-const maintenance = readFileSync('.github/workflows/manual-maintenance.yml', 'utf8');
+const googleAdsAcceptance = readFileSync('.github/workflows/google-ads-runtime-acceptance.yml', 'utf8');
 const hubspotMonitor = readFileSync('.github/workflows/hubspot-marketing-contact-monitor.yml', 'utf8');
 const controlCentre = readFileSync('.github/workflows/control-centre-runtime.yml', 'utf8');
 const master = readFileSync('.github/workflows/master.yml', 'utf8');
@@ -21,13 +21,21 @@ function jobBody(workflow, jobName) {
 }
 
 describe('production Supabase mutation concurrency', () => {
-  it('keeps one automatic governed Edge deploy owner and a serialized manual break-glass path', () => {
+  it('keeps one governed standalone Edge deployment owner for automatic and manual recovery runs', () => {
+    expect(standalone).toContain("workflows: ['Master System']");
+    expect(standalone).toContain('workflow_dispatch:');
     expect(standalone).toContain(`group: ${ORDINARY_EDGE_LOCK}`);
     expect(standalone).toContain('cancel-in-progress: false');
+    expect(standalone).toContain('environment:');
+    expect(standalone).toContain('name: Production');
     expect(standalone).toContain('supabase functions deploy control-centre-provider');
     expect(standalone).toContain('supabase/functions/control-centre-provider/index.ts');
-    expect(maintenance).toContain('- deploy_edge');
-    expect(maintenance).toContain('group: manual-maintenance-${{ inputs.operation }}');
+  });
+
+  it('serializes downstream Google Ads acceptance with governed Edge mutations', () => {
+    expect(googleAdsAcceptance).toContain(`group: ${ORDINARY_EDGE_LOCK}`);
+    expect(googleAdsAcceptance).toContain('cancel-in-progress: false');
+    expect(googleAdsAcceptance).toContain('name: Production');
   });
 
   it('serializes the HubSpot Production monitor with every governed Edge mutation path', () => {
