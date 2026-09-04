@@ -50,13 +50,23 @@ function customerId(value) {
   return String(value || '').replace(/\D/g, '');
 }
 
-async function readConnectedCustomers(base, key) {
+async function readJson(response) {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+async function readConnectedCustomers(base, key, fetchImpl = fetch) {
   const url = new URL(`${base}/rest/v1/integrations`);
   url.searchParams.set('service', 'eq.google_ads');
   url.searchParams.set('status', 'eq.connected');
   url.searchParams.set('select', 'metadata');
 
-  const response = await fetch(url, {
+  const response = await fetchImpl(url, {
     headers: {
       apikey: key,
       Authorization: `Bearer ${key}`,
@@ -78,25 +88,47 @@ async function readConnectedCustomers(base, key) {
   return ids;
 }
 
-async function syncGoogleAdsViaEdge() {
-  const base = (env('SUPABASE_URL') || env('VITE_SUPABASE_URL')).replace(/\/$/, '');
-  const key = env('SUPABASE_SERVICE_ROLE_KEY') || env('NUVANX_SUPABASE_SERVICE_ROLE_KEY');
-  if (!base || !key) throw new Error('SUPABASE_URL and service-role key are required');
-
-  const range = resolveDateRange();
-  const expectedCustomers = await readConnectedCustomers(base, key);
-  const response = await fetch(`${base}/functions/v1/google-ads-daily-sync`, {
+async function resolveInternalSecret(base, key, fetchImpl = fetch) {
+  const response = await fetchImpl(`${base}/rest/v1/rpc/nvx_get_runtime_secret`, {
     method: 'POST',
+    redirect: 'error',
     headers: {
       apikey: key,
       Authorization: `Bearer ${key}`,
       'Content-Type': 'application/json',
     },
+    body: JSON.stringify({ p_name: 'REVOPS_INTERNAL_SECRET' }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  const payload = await readJson(response);
+  if (!response.ok || typeof payload !== 'string' || !payload.trim()) {
+    throw new Error(`Google Ads internal credential resolution failed (HTTP ${response.status})`);
+  }
+  return payload.trim();
+}
+
+async function syncGoogleAdsViaEdge({ fetchImpl = fetch } = {}) {
+  const base = (env('SUPABASE_URL') || env('VITE_SUPABASE_URL')).replace(/\/$/, '');
+  const key = env('SUPABASE_SERVICE_ROLE_KEY') || env('NUVANX_SUPABASE_SERVICE_ROLE_KEY');
+  if (!base || !key) throw new Error('SUPABASE_URL and service-role key are required');
+
+  const range = resolveDateRange();
+  const expectedCustomers = await readConnectedCustomers(base, key, fetchImpl);
+  const internalSecret = await resolveInternalSecret(base, key, fetchImpl);
+  const response = await fetchImpl(`${base}/functions/v1/google-ads-backfill-dispatcher`, {
+    method: 'POST',
+    redirect: 'error',
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+      'x-nvx-internal-secret': internalSecret,
+    },
     body: JSON.stringify(range),
-    signal: AbortSignal.timeout(90_000),
+    signal: AbortSignal.timeout(120_000),
   });
 
-  const payload = await response.json().catch(() => null);
+  const payload = await readJson(response);
   if (!response.ok || !payload || payload.success !== true) {
     const failures = Array.isArray(payload?.failures)
       ? payload.failures.map((item) => ({
@@ -105,7 +137,11 @@ async function syncGoogleAdsViaEdge() {
           message: item?.message || null,
         }))
       : [];
-    throw new Error(`Google Ads Edge sync failed (HTTP ${response.status}): ${JSON.stringify(failures)}`);
+    const kind = String(payload?.kind || '').slice(0, 80);
+    const message = String(payload?.message || '').replace(/\s+/g, ' ').slice(0, 300);
+    throw new Error(
+      `Google Ads Edge sync failed (HTTP ${response.status}${kind ? `, kind=${kind}` : ''})${message ? `: ${message}` : ''}; failures=${JSON.stringify(failures)}`,
+    );
   }
   if (payload.provider !== 'google_ads' || !Array.isArray(payload.accounts)) {
     throw new Error('Google Ads Edge sync returned an invalid provider contract');
@@ -121,6 +157,7 @@ async function syncGoogleAdsViaEdge() {
   const summary = {
     success: true,
     owner: 'supabase_edge/google-ads-daily-sync',
+    ingress: 'supabase_edge/google-ads-backfill-dispatcher',
     provider: payload.provider,
     api_version: payload.api_version || null,
     auth_mode: payload.auth_mode || null,
@@ -140,6 +177,8 @@ if (require.main === module) {
 
 module.exports = {
   customerId,
+  readConnectedCustomers,
   resolveDateRange,
+  resolveInternalSecret,
   syncGoogleAdsViaEdge,
 };
