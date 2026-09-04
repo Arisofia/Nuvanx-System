@@ -22,7 +22,7 @@ describe('Meta lead attribution invariant', () => {
     expect(migration).toContain('after insert on public.leads');
     expect(migration).toContain('create trigger meta_lead_attribution_update_invariant');
     expect(migration).toContain('after update of');
-    expect(migration).toMatch(/update of[\s\S]*\bmetadata\b[\s\S]*\bmeta_ad_name\b[\s\S]*\bdeleted_at\b[\s\S]*on public\.leads/i);
+    expect(migration).toMatch(/update of[\s\S]*\bmetadata\b[\s\S]*\bcreated_at_meta\b[\s\S]*\bcreated_at\b[\s\S]*\bdeleted_at\b[\s\S]*on public\.leads/i);
     expect(migration).not.toContain("if tg_op = 'UPDATE'");
   });
 
