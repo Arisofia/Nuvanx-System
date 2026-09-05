@@ -39,23 +39,34 @@ test('normalizes only a credential-free HTTPS Supabase origin', () => {
   }
 });
 
-test('preserves month-to-date reconciliation defaults and validates explicit dates', async () => {
+test('preserves workflow date defaults and validates explicit dates', async () => {
+  const now = new Date('2026-10-20T12:00:00Z');
+
   await withEnv({ FROM_DATE_INPUT: undefined, TO_DATE_INPUT: undefined }, () => {
-    assert.deepEqual(resolveDateRange(new Date('2026-09-05T12:00:00Z')), {
-      from: '2026-09-01',
-      to: '2026-09-05',
+    assert.deepEqual(resolveDateRange(now), {
+      from: '2026-10-01',
+      to: '2026-10-20',
+    });
+  });
+
+  // Prior workflow semantics: an explicit historical `to` does not move the
+  // implicit `from`; the latter is still the first day of the current UTC month.
+  await withEnv({ FROM_DATE_INPUT: undefined, TO_DATE_INPUT: '2026-10-25' }, () => {
+    assert.deepEqual(resolveDateRange(now), {
+      from: '2026-10-01',
+      to: '2026-10-25',
     });
   });
 
   await withEnv({ FROM_DATE_INPUT: '2026-08-31', TO_DATE_INPUT: '2026-09-05' }, () => {
-    assert.deepEqual(resolveDateRange(new Date('2026-09-05T12:00:00Z')), {
+    assert.deepEqual(resolveDateRange(now), {
       from: '2026-08-31',
       to: '2026-09-05',
     });
   });
 
-  await withEnv({ FROM_DATE_INPUT: '2026-09-06', TO_DATE_INPUT: '2026-09-05' }, () => {
-    assert.throws(() => resolveDateRange(new Date('2026-09-05T12:00:00Z')), /must not be after/);
+  await withEnv({ FROM_DATE_INPUT: '2026-10-21', TO_DATE_INPUT: '2026-10-20' }, () => {
+    assert.throws(() => resolveDateRange(now), /must not be after/);
   });
 });
 
