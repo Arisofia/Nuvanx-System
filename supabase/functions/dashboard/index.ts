@@ -13,7 +13,7 @@ import { buildCorsHeaders } from '../_shared/config.ts';
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
 const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const anonKey     = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
-const MAX_ROWS = 500;
+const MAX_META_ROWS = 500;
 
 type TemplateBreakdown = Record<string, { count: number; revenue: number }>;
 
@@ -52,21 +52,18 @@ Deno.serve(async (req: Request) => {
     .eq('user_id', userId)
     .is('deleted_at', null)
     .neq('source', 'doctoralia')
-    .order('created_at', { ascending: false })
-    .limit(MAX_ROWS);
+    .order('created_at', { ascending: false });
 
   if (clinicId) leadsQuery = leadsQuery.eq('clinic_id', clinicId);
 
   let settlementsQuery = supabase.from('financial_settlements')
     .select('id, clinic_id, amount_net, amount_gross, amount_discount, settled_at, created_at, template_name, patient_name')
-    .limit(MAX_ROWS);
+    .order('settled_at', { ascending: false });
   if (clinicId) {
     settlementsQuery = settlementsQuery.eq('clinic_id', clinicId);
   } else {
     settlementsQuery = settlementsQuery.limit(0);
   }
-  settlementsQuery = settlementsQuery.order('settled_at', { ascending: false });
-
   let patientsQuery = supabase.from('patients')
     .select('id', { count: 'exact', head: true });
   if (clinicId) {
@@ -80,7 +77,7 @@ Deno.serve(async (req: Request) => {
     .select('leadgen_id, campaign_id, form_id, captured_at, leads!inner(user_id, clinic_id)')
     .eq('leads.user_id', userId)
     .order('captured_at', { ascending: false })
-    .limit(MAX_ROWS);
+    .limit(MAX_META_ROWS);
   if (clinicId) metaQuery = metaQuery.eq('leads.clinic_id', clinicId);
 
   const [leadsRes, settlementsRes, patientsRes, integrationsRes, metaRes, agentRes] = await Promise.all([
