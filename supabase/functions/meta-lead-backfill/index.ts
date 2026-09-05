@@ -318,6 +318,7 @@ async function findExistingLead(
     userId,
     clinicId,
   )
+    .eq("source", "meta_leadgen")
     .eq("external_id", leadgenId)
     .is("deleted_at", null)
     .limit(2);

@@ -24,7 +24,6 @@ function requireMatch(source, pattern, label) {
 }
 
 const canonicalSources = {
-  privateSchema: readMigration('20260902124732_harden_authenticated_security_definer_rpc_surface_v2.sql'),
   clinics: readMigration('20260504125900_preview_core_tables.sql'),
   leads: readMigration('20260501090000_create_leads_table.sql'),
   metaAttribution: readMigration('20260504203000_doctoralia_lead_traceability_unified_view.sql'),
@@ -41,7 +40,6 @@ const canonicalSources = {
 // focused PostgreSQL harness deliberately executes only the canonical schema
 // fragments needed to exercise the invariant under test.
 const schemaSql = [
-  requireMatch(canonicalSources.privateSchema, /create schema if not exists private authorization postgres;/i, 'private schema'),
   requireMatch(canonicalSources.clinics, /CREATE TABLE IF NOT EXISTS public\.clinics \([\s\S]*?\n\);/i, 'clinics table'),
   requireMatch(canonicalSources.leads, /CREATE TABLE IF NOT EXISTS public\.leads \([\s\S]*?\n\);/i, 'leads table'),
   requireMatch(canonicalSources.metaAttribution, /CREATE TABLE IF NOT EXISTS public\.meta_attribution \([\s\S]*?\n\);/i, 'meta_attribution table'),

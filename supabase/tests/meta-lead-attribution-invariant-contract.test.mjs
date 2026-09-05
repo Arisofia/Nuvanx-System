@@ -73,4 +73,9 @@ describe('Meta lead attribution invariant', () => {
     expect(executable).toContain('revoke all on function private.nvx_converge_meta_lead_attribution(public.leads) from public;');
     expect(executable).toContain('revoke all on function private.nvx_ensure_meta_lead_attribution() from public;');
   });
+
+  it('guarantees private schema presence and restricts public access', () => {
+    expect(executable).toContain('create schema if not exists private authorization postgres;');
+    expect(executable).toContain('revoke all on schema private from public;');
+  });
 });
