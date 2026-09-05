@@ -1,7 +1,10 @@
--- Reconcile the durable attribution shape before installing the invariant.
--- Production already satisfies this contract; clean replay historically used
--- wider/nullable TEXT columns. Fail before mutation rather than truncating or
--- silently normalizing incompatible data.
+-- Reconcile the durable attribution contract before installing the invariant.
+-- Historical replay created several lineage columns as TEXT while Production
+-- already stores the bounded VARCHAR shape. Do not ALTER TYPE here: reporting
+-- views legitimately depend on these columns and PostgreSQL rejects even a
+-- same-shape ALTER TYPE when a view/rule depends on the column. Enforce the
+-- contract with validation + CHECK/NOT NULL constraints instead, which works
+-- for both historical TEXT replay and the current Production shape.
 do $meta_attribution_schema_contract$
 declare
   v_invalid integer;
@@ -34,17 +37,17 @@ end;
 $meta_attribution_schema_contract$;
 
 alter table public.meta_attribution
-  alter column leadgen_id type varchar(64) using leadgen_id::varchar(64),
-  alter column page_id type varchar(64) using page_id::varchar(64),
-  alter column form_id type varchar(64) using form_id::varchar(64),
-  alter column campaign_id type varchar(64) using campaign_id::varchar(64),
-  alter column campaign_name type varchar(255) using campaign_name::varchar(255),
-  alter column adset_id type varchar(64) using adset_id::varchar(64),
-  alter column adset_name type varchar(255) using adset_name::varchar(255),
-  alter column ad_id type varchar(64) using ad_id::varchar(64),
-  alter column ad_name type varchar(255) using ad_name::varchar(255),
   alter column leadgen_id set not null,
-  alter column captured_at set not null;
+  alter column captured_at set not null,
+  add constraint meta_attribution_leadgen_id_length_chk check (nullif(btrim(leadgen_id::text), '') is not null and length(leadgen_id::text) <= 64),
+  add constraint meta_attribution_page_id_length_chk check (page_id is null or length(page_id::text) <= 64),
+  add constraint meta_attribution_form_id_length_chk check (form_id is null or length(form_id::text) <= 64),
+  add constraint meta_attribution_campaign_id_length_chk check (campaign_id is null or length(campaign_id::text) <= 64),
+  add constraint meta_attribution_campaign_name_length_chk check (campaign_name is null or length(campaign_name::text) <= 255),
+  add constraint meta_attribution_adset_id_length_chk check (adset_id is null or length(adset_id::text) <= 64),
+  add constraint meta_attribution_adset_name_length_chk check (adset_name is null or length(adset_name::text) <= 255),
+  add constraint meta_attribution_ad_id_length_chk check (ad_id is null or length(ad_id::text) <= 64),
+  add constraint meta_attribution_ad_name_length_chk check (ad_name is null or length(ad_name::text) <= 255);
 
 -- Ensure private schema exists and restrict public access before defining
 -- privileged security definer helper functions.
