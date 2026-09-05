@@ -28,7 +28,9 @@ const INPUT_PATH = path.resolve(
     (fs.existsSync(path.resolve(process.cwd(), DEFAULT_CSV)) ? DEFAULT_CSV : DEFAULT_WORKBOOK),
 );
 const INPUT_EXT = path.extname(INPUT_PATH).toLowerCase();
-const SHEET_NAME = process.env.DOCTORALIA_APPOINTMENTS_SHEET_NAME || DEFAULT_SHEET;
+// The governed Doctoralia appointments source is code-owned. This read-only
+// parser must not reintroduce an environment-controlled sheet selector.
+const SHEET_NAME = DEFAULT_SHEET;
 
 const HEADER_ALIASES = {
   estado: ['estado', 'status'],
@@ -338,13 +340,13 @@ async function readRowsFromCsv() {
 async function readRowsFromWorkbook() {
   const workbook = await XlsxPopulate.fromFileAsync(INPUT_PATH);
   const sheet = workbook.sheet(SHEET_NAME);
-  if (!sheet) throw new Error(`Sheet not found: ${SHEET_NAME}`);
+  if (!sheet) throw new Error('Canonical Doctoralia sheet not found');
   const usedRange = sheet.usedRange();
   return usedRange ? (usedRange.value() || []) : [];
 }
 
 async function readRecords() {
-  if (!fs.existsSync(INPUT_PATH)) throw new Error(`Doctoralia appointments input not found: ${INPUT_PATH}`);
+  if (!fs.existsSync(INPUT_PATH)) throw new Error('Doctoralia appointments input file not found');
   const rows = INPUT_EXT === '.csv' ? await readRowsFromCsv() : await readRowsFromWorkbook();
   return recordsFromRows(rows);
 }
@@ -360,8 +362,8 @@ async function main() {
 }
 
 if (require.main === module) {
-  main().catch((error) => {
-    console.error('[doctoralia-appointments] Fatal error:', error.message);
+  main().catch(() => {
+    console.error('[doctoralia-appointments] Fatal error; parser aborted.');
     process.exit(1);
   });
 }
