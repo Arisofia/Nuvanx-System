@@ -40,4 +40,10 @@ describe('Meta attribution migration remains compatible with dependent reporting
     expect(preflight).toBeGreaterThan(-1);
     expect(constraints).toBeGreaterThan(preflight);
   });
+
+  it('disallows empty or whitespace-only leadgen_id in the check constraint', () => {
+    expect(migration).toMatch(
+      /add\s+constraint\s+meta_attribution_leadgen_id_length_chk\s+check\s*\(\s*nullif\s*\(\s*btrim\s*\(\s*leadgen_id::text\s*\)\s*,\s*''\s*\)\s+is\s+not\s+null/i,
+    );
+  });
 });

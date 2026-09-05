@@ -39,7 +39,7 @@ $meta_attribution_schema_contract$;
 alter table public.meta_attribution
   alter column leadgen_id set not null,
   alter column captured_at set not null,
-  add constraint meta_attribution_leadgen_id_length_chk check (length(leadgen_id::text) <= 64),
+  add constraint meta_attribution_leadgen_id_length_chk check (nullif(btrim(leadgen_id::text), '') is not null and length(leadgen_id::text) <= 64),
   add constraint meta_attribution_page_id_length_chk check (page_id is null or length(page_id::text) <= 64),
   add constraint meta_attribution_form_id_length_chk check (form_id is null or length(form_id::text) <= 64),
   add constraint meta_attribution_campaign_id_length_chk check (campaign_id is null or length(campaign_id::text) <= 64),
