@@ -2,15 +2,38 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { authenticateDispatcherRequest } from "./auth.ts";
 
 declare const Deno: any;
+declare const EdgeRuntime: any;
 
 const SUPABASE_URL = (Deno.env.get("SUPABASE_URL") || "").trim();
 const SERVICE_ROLE = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
+const WORKER_TIMEOUT_MS = 30_000;
 
 function reply(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
   });
+}
+
+async function invokeWorker(worker: string, workerBody: Record<string, unknown>): Promise<void> {
+  try {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/${worker}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${SERVICE_ROLE}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(workerBody),
+      signal: AbortSignal.timeout(WORKER_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      console.error(`[revops-dispatcher] worker=${worker} status=${response.status}`);
+    }
+  } catch (error: any) {
+    const kind = String(error?.name || "worker_dispatch_error").slice(0, 80);
+    console.error(`[revops-dispatcher] worker=${worker} dispatch_error=${kind}`);
+  }
 }
 
 Deno.serve(async (req: Request) => {
@@ -64,18 +87,11 @@ Deno.serve(async (req: Request) => {
   const workerBody: Record<string, unknown> = { limit };
   if (mode !== null) workerBody.mode = mode;
 
-  const response = await fetch(`${SUPABASE_URL}/functions/v1/${worker}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${SERVICE_ROLE}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(workerBody),
-  });
-
-  if (!response.ok) {
-    console.error(`[revops-dispatcher] worker=${worker} status=${response.status}`);
-    return reply(502, { success: false, worker, worker_status: response.status });
+  const workerRequest = invokeWorker(worker, workerBody);
+  if (typeof EdgeRuntime !== "undefined" && typeof EdgeRuntime?.waitUntil === "function") {
+    EdgeRuntime.waitUntil(workerRequest);
+  } else {
+    await workerRequest;
   }
 
   return reply(202, { success: true, worker, mode, dispatched: true });

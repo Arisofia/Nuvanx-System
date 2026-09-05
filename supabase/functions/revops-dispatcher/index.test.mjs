@@ -80,5 +80,17 @@ describe("RevOps dispatcher contract", () => {
     expect(hotfixMigration).toContain("exception\n  when others then");
     expect(capiMigration).toContain("perform public.nvx_try_dispatch_revops_worker('meta-capi-dispatch', 25, null)");
     expect(whatsappMigration).toContain("public.nvx_try_dispatch_revops_worker('whatsapp-outbound-worker', 3, null)");
+
+    expect(source).toContain("const WORKER_TIMEOUT_MS = 30_000;");
+    expect(source).toContain("signal: AbortSignal.timeout(WORKER_TIMEOUT_MS)");
+    expect(source).toContain("const workerRequest = invokeWorker(worker, workerBody)");
+    expect(source).toContain("EdgeRuntime.waitUntil(workerRequest)");
+    expect(source).toContain("await workerRequest");
+
+    const waitUntil = source.indexOf("EdgeRuntime.waitUntil(workerRequest)");
+    const accepted = source.indexOf("return reply(202, { success: true, worker, mode, dispatched: true })");
+    expect(waitUntil).toBeGreaterThan(-1);
+    expect(accepted).toBeGreaterThan(waitUntil);
+    expect(source).not.toContain("return reply(502, { success: false, worker, worker_status: response.status })");
   });
 });
