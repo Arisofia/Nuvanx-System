@@ -155,7 +155,11 @@ describe('Control Centre WhatsApp executable control-flow AST', () => {
     const markSending = walk(workerCallback).find((node) => node.type === 'AwaitExpression' && text(workerSource, node).includes('markSending(admin, row)'))
     const providerCall = walk(workerCallback).find((node) => node.type === 'AwaitExpression' && text(workerSource, node).includes('sendWhatsAppText'))
     const missingMessageId = findIf(workerCallback, workerSource, '!messageId')
-    const acceptedFinalize = walk(workerCallback).find((node) => node.type === 'AwaitExpression' && text(workerSource, node).includes('finalizeSend(admin, row, "accepted"'))
+    const acceptedFinalize = walk(workerCallback).find((node) => {
+      if (node.type !== 'AwaitExpression') return false
+      const nodeText = text(workerSource, node)
+      return nodeText.includes('finalizeSend(') && nodeText.includes('"accepted"')
+    })
 
     expect(claim).toBeDefined()
     expect(markSending).toBeDefined()
