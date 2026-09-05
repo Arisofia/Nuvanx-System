@@ -95,13 +95,16 @@ async function markFailure(admin: any, row: any, message: string, permanent: boo
 async function dispatchOne(admin: any, hubspotToken: string, row: any) {
   const { data: lead, error: leadError } = await admin
     .from("leads")
-    .select("id,nvx_lead_id,hubspot_contact_id,source,deleted_at,fbc,fbp,ip_address,user_agent,capi_sent,enviado_a_meta")
+    .select("id,nvx_lead_id,clinic_id,hubspot_contact_id,source,deleted_at,fbc,fbp,ip_address,user_agent,capi_sent,enviado_a_meta")
     .eq("id", row.lead_id)
     .maybeSingle();
 
   if (leadError) return { id: row.id, outcome: await markFailure(admin, row, "Lead lookup failed", false) };
   if (!lead || lead.deleted_at || lead.source !== "website_hubspot" || !lead.nvx_lead_id) {
     return { id: row.id, outcome: await markFailure(admin, row, "Outbox lead is not an eligible website lead", true) };
+  }
+  if (!lead.clinic_id) {
+    return { id: row.id, outcome: await markFailure(admin, row, "Outbox lead missing clinic_id for CAPI tenant resolution", true) };
   }
 
   if (lead.capi_sent === true && lead.enviado_a_meta === true) {
@@ -130,6 +133,7 @@ async function dispatchOne(admin: any, hubspotToken: string, row: any) {
   const payload = {
     event_name: "Lead",
     event_id: String(row.event_id || ""),
+    clinic_id: String(lead.clinic_id),
     nvx_lead_id: String(lead.nvx_lead_id),
     email: identity.email,
     phone: identity.phone,
