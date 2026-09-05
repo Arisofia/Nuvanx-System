@@ -49,7 +49,8 @@ function validate(url, status, finalUrl, html) {
     http200: status === 200,
     canonicalHost: (() => {
       try {
-        return new URL(finalUrl).hostname === 'nuvanx.com';
+        const { hostname } = new URL(finalUrl);
+        return hostname === 'nuvanx.com' || hostname === 'www.nuvanx.com';
       } catch {
         return false;
       }
