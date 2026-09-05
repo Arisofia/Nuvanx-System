@@ -13,6 +13,17 @@ const retiredWordPressOwners = [
   'docs/social-proof/doctoralia-google-meta-activation-plan.md',
   'docs/local-seo/google-business-profile-review-activation.md',
 ];
+const expectedRetiredRuntimeMarkers = [
+  'NVX_DOCTORALIA_SOCIAL_PROOF_V2_START',
+  'nvx-doctoralia-proof',
+  'NVX_GOOGLE_REVIEW_REQUEST_BLOCK_START',
+  'nvx-google-review-request',
+  'NVX_DOCTORALIA_PRICE_BLOCK_START',
+  'nvx-doctoralia-price',
+  'NVX_BARRIO_SALAMANCA_SEO_BLOCK_START',
+  'nvx-barrio-salamanca-seo',
+];
+const retiredCountContract = ['EXPECTED_DOCTORALIA', 'COUNT'].join('_');
 
 describe('retired WordPress injection owners', () => {
   it('keeps non-runtime WordPress mutators and injection owners absent', () => {
@@ -31,11 +42,14 @@ describe('retired WordPress injection owners', () => {
     expect(hygiene).not.toMatch(/requiredProductionPaths[\s\S]*update-wordpress-social-proof\.yml/);
   });
 
-  it('keeps the scheduled public audit focused on detecting retired runtime injection', () => {
+  it('keeps the scheduled public audit focused on detecting every retired runtime injection marker', () => {
     expect(runtimeAudit).toContain("contract: 'retired-wordpress-injection-owners'");
     expect(runtimeAudit).toContain('retiredRuntimeMarkers');
+    for (const marker of expectedRetiredRuntimeMarkers) {
+      expect(runtimeAudit, marker).toContain(`'${marker}'`);
+    }
     expect(runtimeAudit).toContain('noRetiredWordPressInjection');
-    expect(runtimeAudit).not.toContain('EXPECTED_DOCTORALIA_COUNT');
+    expect(runtimeAudit).not.toContain(retiredCountContract);
     expect(runtimeAudit).not.toMatch(/\b98\b/);
   });
 });
