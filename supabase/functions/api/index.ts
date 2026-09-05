@@ -1550,7 +1550,6 @@ async function ensurePublicUserRow(adminClient: any, user: any) {
       id: user.id,
       email: user.email ?? '',
       name: userName,
-      password_hash: '',
     });
   if (insertError) throw insertError;
 }
@@ -4589,7 +4588,7 @@ async function handleMetaOrganicGet(ctx: AuthenticatedRouteContext): Promise<Res
     const limit = Math.min(Math.max(Number.parseInt(url.searchParams.get('limit') ?? '50', 10) || 50, 1), 200);
     const pageSize = 200;
     const uniquePostsMap = new Map();
-    for (let offset = 0; uniquePostsMap.size < limit; offset += pageSize) {
+    for (let offset = 0; offset < limit * pageSize && uniquePostsMap.size < limit; offset += pageSize) {
       let query = adminClient
         .from('meta_post_performance')
         .select('post_id, created_time, message, status_type, permalink_url, impressions, reach, engaged_users, reactions, comments, shares, video_views, is_video, updated_at')
@@ -4668,10 +4667,6 @@ async function handleMetaIgGet(ctx: AuthenticatedRouteContext): Promise<Response
     return sendJson({ success: false, message: 'Instagram Business Account ID not configured in integration metadata' }, 400);
   }
 
-  if (!igId) {
-    return sendJson({ success: false, message: 'No Instagram Business Account linked to this Meta integration.' }, 400);
-  }
-
   const fromParam = url.searchParams.get('from');
   const toParam = url.searchParams.get('to') || new Date().toISOString().slice(0, 10);
   
@@ -4687,7 +4682,7 @@ async function handleMetaIgGet(ctx: AuthenticatedRouteContext): Promise<Response
     const limit = Math.min(Math.max(Number.parseInt(url.searchParams.get('limit') ?? '50', 10) || 50, 1), 200);
     const pageSize = 200;
     const uniquePostsMap = new Map();
-    for (let offset = 0; uniquePostsMap.size < limit; offset += pageSize) {
+    for (let offset = 0; offset < limit * pageSize && uniquePostsMap.size < limit; offset += pageSize) {
       let query = adminClient
         .from('meta_ig_media_performance')
         .select('media_id, media_type, media_product_type, caption, permalink, timestamp, reach, views, likes, comments, shares, saved, total_interactions, updated_at')
@@ -4760,7 +4755,7 @@ function parseMetaBackfillDates(url: URL) {
 
   if (!sinceDate) {
     if (daysParam && /^\d+$/.test(daysParam)) {
-      const numDays = Math.max(1, parseInt(daysParam, 10));
+      const numDays = Math.max(1, Number.parseInt(daysParam, 10));
       sinceDate = new Date(Date.now() - numDays * 86400000).toISOString().slice(0, 10);
     } else {
       const { since } = getKpiDateRange(url);
@@ -6219,10 +6214,11 @@ function parseAiSuggestionsList(text: string): string[] {
     console.debug('parseAiSuggestionsList: el texto no es un array JSON válido', err);
   }
   // Try to locate a JSON array inside the response.
-  const match = /\[[\s\S]*\]/.exec(trimmed);
-  if (match) {
+  const start = trimmed.indexOf('[');
+  const end = trimmed.lastIndexOf(']');
+  if (start >= 0 && end > start) {
     try {
-      const parsed = JSON.parse(match[0]);
+      const parsed = JSON.parse(trimmed.slice(start, end + 1));
       if (Array.isArray(parsed)) {
         return parsed.map((s: any) => String(s ?? '').trim()).filter(Boolean);
       }

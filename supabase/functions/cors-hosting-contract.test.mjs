@@ -14,6 +14,10 @@ const provider = readFileSync(
   fileURLToPath(new URL('./control-centre-provider/index.ts', import.meta.url)),
   'utf8',
 );
+const publicFunctions = ['agent-run', 'auth', 'health', 'playbooks'].map((name) => ({
+  name,
+  source: readFileSync(fileURLToPath(new URL(`./${name}/index.ts`, import.meta.url)), 'utf8'),
+}));
 
 import {
   normalizeFrontendUrl,
@@ -43,6 +47,13 @@ describe('frontend CORS hosting contract', () => {
     expect(api).toContain("from '../_shared/config.ts'");
     expect(provider).toContain("import { ALLOWED_CORS_ORIGINS } from '../_shared/config.ts';");
     expect(provider).toContain("if (origin && ALLOWED_ORIGINS.has(origin)) headers['Access-Control-Allow-Origin'] = origin;");
+  });
+
+  it('keeps public Edge Functions off wildcard CORS', () => {
+    for (const { name, source } of publicFunctions) {
+      expect(source, `${name} must use the shared CORS policy`).toContain('buildCorsHeaders');
+      expect(source).not.toMatch(/Access-Control-Allow-Origin['"]?\s*:\s*['"]\*['"]/);
+    }
   });
 
   describe('runtime CORS contract evaluation', () => {

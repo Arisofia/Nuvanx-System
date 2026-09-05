@@ -31,4 +31,12 @@ describe('agent-run typing contract', () => {
     expect(source).toContain("String((error as { message: unknown }).message)");
     expect(source).toMatch(/function safeErrorMessage\(error: unknown\): string \{[\s\S]*?try \{[\s\S]*?catch \{[\s\S]*?return 'AI provider request failed';[\s\S]*?\}/);
   });
+
+  it('uses configured CORS and bounded provider requests', () => {
+    expect(source).toContain("import { buildCorsHeaders } from '../_shared/config.ts';");
+    expect(source).not.toContain("'Access-Control-Allow-Origin': '*'");
+    expect(source).toContain('AbortSignal.timeout(60_000)');
+    expect(source).toContain('function resolveProvider()');
+    expect(source).toContain('function runProvider(');
+  });
 });

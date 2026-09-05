@@ -395,10 +395,10 @@ const httpHandler = transport.bind(mcp)
 app.get('/', (c: Context) => c.json({
   name: 'Nuvanx MCP Server',
   version: '1.0.0',
-  endpoints: { mcp: '/mcp', health: '/health' },
+  endpoints: { mcp: '/mcp', health: '/mcp/health' },
 }))
 
-app.get('/health', (c: Context) => c.json({
+app.get('/mcp/health', (c: Context) => c.json({
   status: 'ok',
   timestamp: new Date().toISOString(),
   auth: MCP_API_KEY ? 'bearer' : 'disabled',
