@@ -4,7 +4,11 @@ const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const { existsSync, readFileSync } = require('node:fs');
 const test = require('node:test');
-const { normalizeSupabaseBase, readConnectedCustomers } = require('./sync-google-ads-via-edge.js');
+const {
+  normalizeSupabaseBase,
+  readConnectedCustomers,
+  syncGoogleAdsViaEdge,
+} = require('./sync-google-ads-via-edge.js');
 
 const orchestrator = readFileSync('scripts/run-daily-sync.js', 'utf8');
 const edgeInvoker = readFileSync('scripts/sync-google-ads-via-edge.js', 'utf8');
@@ -107,6 +111,32 @@ test('Supabase base URL is pinned before privileged requests are built', () => {
   const validationOffset = edgeInvoker.indexOf('const base = normalizeSupabaseBase(rawBase)');
   const firstPrivilegedRequest = edgeInvoker.indexOf('await readConnectedCustomers(base, key, fetchImpl)');
   assert.ok(validationOffset >= 0 && firstPrivilegedRequest > validationOffset, 'Supabase origin validation must run before privileged requests');
+});
+
+test('Google Ads sync rejects an attacker origin before any request', async () => {
+  const previousUrl = process.env.SUPABASE_URL;
+  const previousKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  let calls = 0;
+  process.env.SUPABASE_URL = 'https://attacker.test';
+  process.env.SUPABASE_SERVICE_ROLE_KEY = 'fixture-service-role';
+
+  try {
+    await assert.rejects(
+      syncGoogleAdsViaEdge({
+        fetchImpl: async () => {
+          calls += 1;
+          throw new Error('fetch must not run');
+        },
+      }),
+      /valid HTTPS origin/,
+    );
+    assert.equal(calls, 0);
+  } finally {
+    if (previousUrl === undefined) delete process.env.SUPABASE_URL;
+    else process.env.SUPABASE_URL = previousUrl;
+    if (previousKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    else process.env.SUPABASE_SERVICE_ROLE_KEY = previousKey;
+  }
 });
 
 test('authenticated integration read refuses redirects without a second request', async () => {
