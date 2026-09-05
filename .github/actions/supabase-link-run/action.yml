@@ -31,8 +31,9 @@ inputs:
     # upstream fix supabase/cli#5410 for legacy machine-readable stdout, while
     # predating supabase/cli#5671, which ported `migration list` to the Glamour
     # renderer and changed its human-readable table cells to backtick-wrapped
-    # values. The governed Edge migration-parity gate consumes the pre-port text
-    # contract, so moving past this boundary requires migrating that gate first.
+    # values. The governed Edge migration-parity gate (in
+    # .github/workflows/deploy-standalone-edge-functions.yml:127) consumes the
+    # pre-port text contract, so moving past this boundary requires migrating that gate first.
     default: '2.108.0'
 
 outputs:
@@ -251,17 +252,16 @@ runs:
         SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
       run: |
         set -euo pipefail
-        # Minimal simple link (removed is_deterministic_link_error + run_link_with_retry per request)
+        link_args=(link --project-ref "$INPUT_PROJECT_REF" --yes)
+        err_msg="Failed to link Supabase project $INPUT_PROJECT_REF"
         if [ -n "$RESOLVED_DB_PASSWORD" ]; then
-          if ! supabase link --project-ref "$INPUT_PROJECT_REF" --password "$RESOLVED_DB_PASSWORD" --yes </dev/null; then
-            echo "::error::Failed to link Supabase project $INPUT_PROJECT_REF"
-            exit 1
-          fi
+          link_args+=(--password "$RESOLVED_DB_PASSWORD")
         else
-          if ! supabase link --project-ref "$INPUT_PROJECT_REF" --yes </dev/null; then
-            echo "::error::Failed to link Supabase project $INPUT_PROJECT_REF (no password provided)"
-            exit 1
-          fi
+          err_msg="Failed to link Supabase project $INPUT_PROJECT_REF (no password provided)"
+        fi
+        if ! supabase "${link_args[@]}" </dev/null; then
+          echo "::error::$err_msg"
+          exit 1
         fi
         echo "skipped=false" >> "$GITHUB_OUTPUT"
 
