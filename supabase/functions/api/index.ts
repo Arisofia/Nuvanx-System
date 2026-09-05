@@ -5095,6 +5095,22 @@ function mapMetaCampaign(c: any) {
   };
 }
 
+
+function campaignHasPeriodActivity(campaign: any): boolean {
+  const insights = campaign?.insights;
+  if (!insights) return false;
+
+  return (
+    parseMetaMetric(insights.impressions) > 0
+    || parseMetaMetric(insights.reach) > 0
+    || parseMetaMetric(insights.clicks) > 0
+    || parseMetaMetric(insights.spend) > 0
+    || parseMetaMetric(insights.conversions) > 0
+    || (Array.isArray(insights.actions)
+      && insights.actions.some((action: any) => parseMetaMetric(action?.value) > 0))
+  );
+}
+
 /** Derives the `time_range` JSON string for the Meta campaigns list fetch.
  *
  * The window matches the caller's requested period (from/to/days) and is
@@ -5129,7 +5145,7 @@ export function buildCampaignsTimeRange(
   return JSON.stringify({ since, until });
 }
 
-async function fetchDbCampaigns(adminClient: any, userId: string, requesterClinicId: string | null, adAccountId: string) {
+async function fetchDbCampaigns(adminClient: any, userId: string, requesterClinicId: string | null) {
   let query = adminClient.from('vw_campaign_performance_real')
     .select('campaign_id, campaign_name, source, total_leads, last_lead_at')
     .order('total_leads', { ascending: false });
@@ -5171,7 +5187,9 @@ async function fetchDbCampaigns(adminClient: any, userId: string, requesterClini
     name: row.campaign_name ?? 'Unknown',
     status: inferStatusFromLastLead(row.last_lead_at, now),
     objective: row.source ?? 'LEAD_GENERATION',
-    accountId: adAccountId,
+    accountId: null,
+    provenance: 'crm_history',
+    telemetryAvailable: false,
     dailyBudget: null,
     lifetimeBudget: null,
     insights: {
@@ -5192,60 +5210,43 @@ async function fetchDbCampaigns(adminClient: any, userId: string, requesterClini
   }));
 }
 
+
 async function fetchMetaCampaignsFallback(params: {
   creds: any;
   sendJson: any;
   e: Error;
   adminClient: any;
   userId: string;
+  campFrom: string;
+  campTo: string;
 }) {
-  const { creds, sendJson, e, adminClient, userId } = params;
-  try {
-    const fallbackResults = await Promise.allSettled(creds.adAccountIds.map(async (accountId: string) => {
-      return await metaFetchAll(`/${accountId}/campaigns`, {
-        fields: 'id,name,status,objective,daily_budget,lifetime_budget',
-        limit: '500',
-      }, creds.accessToken);
-    }));
+  const { creds, sendJson, e, adminClient, userId, campFrom, campTo } = params;
+  const cacheKey = buildMetaCacheKey('meta:campaigns', creds.adAccountIds, campFrom, campTo, null);
+  const cached = await getMetaCache(adminClient, userId, cacheKey);
 
-    const campaigns = creds.adAccountIds.flatMap((accountId: string, index: number) => {
-      const result = fallbackResults[index];
-      if (result.status !== 'fulfilled') return [];
-      return ((result.value ?? []) as any[]).map((campaign: any) => ({ ...campaign, accountId }));
-    });
-
-    // If Meta API returned 0 campaigns, build list from DB (vw_campaign_performance_real)
-    if (campaigns.length === 0) {
-      const dbCampaigns = await fetchDbCampaigns(adminClient, userId, creds.requesterClinicId ?? null, creds.adAccountId);
-      if (dbCampaigns.length > 0) {
-        const dbResult = {
-          success: true,
-          source: 'db',
-          cached: false,
-          accountId: creds.adAccountId,
-          accountIds: creds.adAccountIds,
-          campaigns: dbCampaigns,
-          warning: 'Campaign data sourced from CRM — Meta API returned no campaigns.',
-          dataNote: 'Status inferred from last CRM lead: ACTIVE (<14d), PAUSED (14-60d), ARCHIVED (>60d).',
-        };
-        return sendJson(dbResult);
-      }
-    }
-
-    const fallbackResult = {
-      success: true,
-      source: 'live',
-      cached: false,
+  if (cached) {
+    return sendJson({
+      ...cached.data,
+      source: cached.data?.source || 'cache',
+      cached: true,
+      degraded: true,
       accountId: creds.adAccountId,
       accountIds: creds.adAccountIds,
-      campaigns: campaigns.map(mapMetaCampaign),
-      warning: 'Campaign insights are unavailable; returned campaign metadata only.',
-    };
-    await setMetaCache(adminClient, userId, `meta:campaigns`, fallbackResult);
-    return sendJson(fallbackResult);
-  } catch (fallbackError: any) {
-    return sendJson({ success: false, metaApiError: true, message: fallbackError?.message ?? e?.message ?? 'Meta API error' }, 502);
+      period: { since: campFrom, until: campTo },
+      last_success: cached.updated_at,
+      warning: `Meta API unavailable: ${e.message}. Showing the last verified campaign snapshot for this exact period.`,
+    });
   }
+
+  return sendJson({
+    success: false,
+    metaApiError: true,
+    degraded: true,
+    accountId: creds.adAccountId,
+    accountIds: creds.adAccountIds,
+    period: { since: campFrom, until: campTo },
+    message: `Meta campaign activity unavailable for ${campFrom} to ${campTo}: ${e.message}`,
+  }, 502);
 }
 
 async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
@@ -5264,6 +5265,7 @@ async function handleMetaCampaignsGet(ctx: AuthenticatedRouteContext): Promise<R
   return getMetaCampaignsLiveResult(creds, adminClient, userId, sendJson, since, until);
 }
 
+
 async function getMetaCampaignsLiveResult(
   creds: any,
   adminClient: any,
@@ -5273,6 +5275,7 @@ async function getMetaCampaignsLiveResult(
   campTo: string,
 ): Promise<Response> {
   const insightsDateParam = `time_range(${JSON.stringify({ since: campFrom, until: campTo })})`;
+  const cacheKey = buildMetaCacheKey('meta:campaigns', creds.adAccountIds, campFrom, campTo, null);
 
   try {
     const accountResults = await Promise.allSettled(creds.adAccountIds.map(async (accountId: string) => {
@@ -5286,42 +5289,37 @@ async function getMetaCampaignsLiveResult(
       return { accountId, campaigns, currency: account?.currency ?? 'EUR' };
     }));
 
+    const failedAccountIds = creds.adAccountIds.filter((_: string, index: number) => accountResults[index].status === 'rejected');
+    if (failedAccountIds.length > 0) {
+      throw new Error(`Meta campaign fetch failed for account(s): ${failedAccountIds.join(', ')}`);
+    }
+
     const successfulAccounts = accountResults
       .filter(isFulfilled)
       .map((result) => result.value);
 
-    if (successfulAccounts.length === 0) {
-      throw (accountResults.find((result) => result.status === 'rejected') as PromiseRejectedResult)?.reason ?? new Error('Meta API error');
-    }
-
     const campCurrency: string = successfulAccounts.find((acct: any) => acct.currency)?.currency ?? 'EUR';
-
     const campaigns = successfulAccounts.flatMap((acct: any) => ((acct.campaigns ?? []) as any[])
       .map((campaign) => ({ ...campaign, accountId: acct.accountId })));
-
-    if (campaigns.length === 0) {
-      return fetchMetaCampaignsFallback({ creds, sendJson, e: new Error('Meta API returned 0 campaigns'), adminClient, userId });
-    }
-
-    const metaCampaigns = campaigns.map(mapMetaCampaign);
-    const metaCampaignIds = new Set(metaCampaigns.map((c: any) => String(c.id)));
-
-    const dbCampaigns = await fetchDbCampaigns(adminClient, userId, creds.requesterClinicId ?? null, creds.adAccountId);
-    const dbOnlyCampaigns = dbCampaigns.filter((c: any) => !metaCampaignIds.has(String(c.id)));
+    const metaCampaigns = campaigns
+      .map(mapMetaCampaign)
+      .filter(campaignHasPeriodActivity);
 
     const result = {
       success: true,
       source: 'live',
       cached: false,
+      degraded: false,
       accountId: creds.adAccountId,
       accountIds: creds.adAccountIds,
       currency: campCurrency,
-      campaigns: [...metaCampaigns, ...dbOnlyCampaigns],
+      period: { since: campFrom, until: campTo },
+      campaigns: metaCampaigns,
     };
-    await setMetaCache(adminClient, userId, `meta:campaigns`, result);
+    await setMetaCache(adminClient, userId, cacheKey, result);
     return sendJson(result);
   } catch (e: any) {
-    return fetchMetaCampaignsFallback({ creds, sendJson, e, adminClient, userId });
+    return fetchMetaCampaignsFallback({ creds, sendJson, e, adminClient, userId, campFrom, campTo });
   }
 }
 
@@ -6064,7 +6062,7 @@ async function handleAiGeneratePost(ctx: AuthenticatedRouteContext): Promise<Res
 async function autoFetchCampaignDataForAi(adminClient: any, userId: string): Promise<string> {
   try {
     const clinicId = await resolveClinicId(adminClient, userId);
-    const dbCampaigns = await fetchDbCampaigns(adminClient, userId, clinicId, '');
+    const dbCampaigns = await fetchDbCampaigns(adminClient, userId, clinicId);
     if (dbCampaigns.length > 0) return JSON.stringify(dbCampaigns.slice(0, 25), null, 2);
   } catch (snapshotErr) {
     console.error('[ai.analyze-campaign] snapshot fetch failed', snapshotErr);

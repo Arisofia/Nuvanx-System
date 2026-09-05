@@ -99,7 +99,7 @@ describe('Meta tenant-safe resolution contract', () => {
     expect(source).not.toContain("updateIntegrationStatus(adminClient, userId, 'meta_ads'");
   });
 
-  it('scopes campaign CRM fallback through clinic member user IDs instead of a non-existent view clinic_id', () => {
+  it('scopes historical CRM campaign snapshots for AI through clinic member user IDs', () => {
     const start = api.indexOf('async function fetchDbCampaigns');
     const end = api.indexOf('async function fetchMetaCampaignsFallback', start);
     const source = api.slice(start, end);
