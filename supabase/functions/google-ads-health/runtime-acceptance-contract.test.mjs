@@ -40,6 +40,8 @@ describe("Google Ads runtime acceptance orchestration", () => {
     expect(workflow).toContain("no Production Edge mutation occurred and runtime acceptance is not applicable");
     expect(workflow).toContain("if not_applicable:\n              print(reason)\n              sys.exit(0)");
     expect(workflow).toContain("if not accept:\n              print(f\"::error::{reason}\")\n              sys.exit(1)");
+    expect(workflow.indexOf("if upstream_event != 'workflow_run':")).toBeLessThan(workflow.indexOf("elif upstream_conclusion == 'skipped':"));
+    expect(workflow.indexOf("elif upstream_branch != 'main':")).toBeLessThan(workflow.indexOf("elif upstream_conclusion == 'skipped':"));
   });
 
   it("proves provider auth inside the deployed Edge control plane before credential convergence", () => {

@@ -68,15 +68,15 @@ jobs:
           not_applicable = False
           reason = 'governed deployment provenance was not established'
 
-          if upstream_conclusion == 'skipped':
+            if upstream_event != 'workflow_run':
+              reason = f"upstream deploy workflow was triggered by {upstream_event!r}, not trusted Master workflow_run"
+            elif upstream_branch != 'main':
+              reason = f"upstream deploy workflow branch is {upstream_branch!r}, not main"
+            elif upstream_conclusion == 'skipped':
               not_applicable = True
               reason = 'upstream deploy workflow was skipped; no Production Edge mutation occurred and runtime acceptance is not applicable'
           elif upstream_conclusion != 'success':
               reason = f"upstream deploy workflow conclusion is {upstream_conclusion!r}, not success"
-          elif upstream_event != 'workflow_run':
-              reason = f"upstream deploy workflow was triggered by {upstream_event!r}, not trusted Master workflow_run"
-          elif upstream_branch != 'main':
-              reason = f"upstream deploy workflow branch is {upstream_branch!r}, not main"
           else:
               deploy_jobs = [
                   job for job in payload.get('jobs', [])
