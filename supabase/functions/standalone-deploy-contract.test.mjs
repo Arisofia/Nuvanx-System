@@ -36,6 +36,15 @@ describe('standalone Edge deployment ownership', () => {
     expect(workflow).not.toContain('frontend-git-main-arisofias-projects-c2217452.vercel.app');
   });
 
+  it('owns the production-critical API, MCP and Meta aggregation runtimes', () => {
+    expect(workflow).toContain('supabase functions deploy api --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
+    expect(workflow).toContain('supabase functions deploy mcp --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
+    expect(workflow).toContain('supabase functions deploy daily-aggregates --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
+    expect(workflow).toContain('supabase functions deploy auth --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
+    expect(workflow).toContain('supabase functions deploy health --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
+    expect(workflow).toContain('supabase functions deploy playbooks --project-ref "$SUPABASE_PROJECT_REF"');
+  });
+
   it('owns the canonical Google Ads MCC routing value in the governed Edge deploy', () => {
     expect(workflow).toContain("GOOGLE_ADS_LOGIN_CUSTOMER_ID: '8265708501'");
     expect(workflow).toContain('[[ "$GOOGLE_ADS_LOGIN_CUSTOMER_ID" == "8265708501" ]]');
@@ -75,6 +84,12 @@ describe('standalone Edge deployment ownership', () => {
   it('revalidates tests and all governed Deno entrypoints before deployment', () => {
     expect(packageJson.scripts.test).toContain('vitest run supabase/functions');
     expect(workflow).toContain('npm test');
+    expect(workflow).toContain('supabase/functions/api/index.ts');
+    expect(workflow).toContain('supabase/functions/mcp/index.ts');
+    expect(workflow).toContain('supabase/functions/daily-aggregates/index.ts');
+    expect(workflow).toContain('supabase/functions/auth/index.ts');
+    expect(workflow).toContain('supabase/functions/health/index.ts');
+    expect(workflow).toContain('supabase/functions/playbooks/index.ts');
     expect(workflow).toContain('supabase/functions/dashboard/index.ts');
     expect(workflow).toContain('supabase/functions/agent-run/index.ts');
     expect(workflow).toContain('supabase/functions/runtime-bootstrap/index.ts');
