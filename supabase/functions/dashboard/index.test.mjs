@@ -6,7 +6,10 @@ const source = readFileSync(fileURLToPath(new URL('./index.ts', import.meta.url)
 
 describe('dashboard typing contract', () => {
   it('keeps clinic lookup on the inferred Supabase client without any casts', () => {
-    expect(source).toContain("supabase.from('users').select('clinic_id').eq('id', userId).single()");
+    expect(source).toContain(".from('users')");
+    expect(source).toContain(".select('clinic_id')");
+    expect(source).toContain(".eq('id', userId)");
+    expect(source).toContain('.maybeSingle()');
     expect(source).toContain('const clinicId = owner?.clinic_id ?? null');
     expect(source).not.toContain('SupabaseClientLike');
     expect(source).not.toContain('adminClient: any');
@@ -18,5 +21,17 @@ describe('dashboard typing contract', () => {
     expect(source).toContain('settlements.reduce<TemplateBreakdown>');
     expect(source).not.toContain('{} as any');
     expect(source).not.toContain('(acc: any');
+  });
+
+  it('keeps Meta attribution scoped and preserves leadgen identifiers', () => {
+    expect(source).toContain(".select('leadgen_id, campaign_id, form_id, captured_at, leads!inner(user_id, clinic_id)')");
+    expect(source).toContain(".eq('leads.user_id', userId)");
+    expect(source).toContain(".eq('leads.clinic_id', clinicId)");
+  });
+
+  it('fails closed when the owner or any dashboard query fails', () => {
+    expect(source).toContain('if (ownerError) return json({ success: false, message: \'Failed to fetch user context\' }, 500);');
+    expect(source).toContain('if (queryError) {');
+    expect(source).toContain("return json({ success: false, message: 'Failed to load dashboard data' }, 500);");
   });
 });
