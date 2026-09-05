@@ -37,6 +37,8 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      META_CANONICAL_ACCESS_TOKEN: ${{ secrets.META_CANONICAL_ACCESS_TOKEN }}
+      META_CANONICAL_APP_SECRET: ${{ secrets.META_CANONICAL_APP_SECRET }}
       QUALITY_APPROVED_SHA: ${{ github.event.workflow_run.head_sha }}
       CORS_ALLOWED_ORIGINS: https://nuvanx-frontend.jenineferderas.workers.dev
       FRONTEND_URL: https://nuvanx-frontend.jenineferderas.workers.dev
@@ -80,6 +82,8 @@ jobs:
           set -euo pipefail
           test -n "${SUPABASE_PROJECT_REF:-}"
           test -n "${SUPABASE_ACCESS_TOKEN:-}"
+          test -n "${META_CANONICAL_ACCESS_TOKEN:-}"
+          test -n "${META_CANONICAL_APP_SECRET:-}"
           test -n "${CORS_ALLOWED_ORIGINS:-}"
           test -n "${FRONTEND_URL:-}"
           test -n "${PRODUCTION_FALLBACK_URL:-}"
@@ -93,6 +97,41 @@ jobs:
             echo "::error::DATABASE_URL or SUPABASE_DB_PASSWORD is required for migration parity validation"
             exit 1
           fi
+
+      - name: Validate canonical Meta credential identity
+        if: ${{ steps.candidate.outputs.deploy == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_file="$RUNNER_TEMP/meta-canonical-debug-token.json"
+          app_access_token="1836302544001572|${META_CANONICAL_APP_SECRET}"
+          http_code="$(
+            curl --silent --show-error \
+              --connect-timeout 10 \
+              --max-time 30 \
+              --output "$response_file" \
+              --write-out '%{http_code}' \
+              --get \
+              --data-urlencode "input_token=${META_CANONICAL_ACCESS_TOKEN}" \
+              --data-urlencode "access_token=${app_access_token}" \
+              'https://graph.facebook.com/v22.0/debug_token'
+          )"
+          if [ "$http_code" != 200 ]; then
+            message="$(jq -r '.error.message // "unknown"' "$response_file")"
+            echo "::error::Canonical Meta credential preflight failed status=$http_code message=$message"
+            exit 1
+          fi
+          jq -e '
+            .data.is_valid == true and
+            (.data.app_id | tostring) == "1836302544001572" and
+            (.data.user_id | tostring) == "122098243371455164" and
+            (((.data.scopes // []) | index("leads_retrieval")) != null) and
+            (((.data.scopes // []) | index("pages_show_list")) != null)
+          ' "$response_file" >/dev/null || {
+            echo '::error::Canonical Meta credential identity or required scopes do not match the governed NUVANX stack'
+            exit 1
+          }
+          echo 'META_CANONICAL_CREDENTIAL_PREFLIGHT=PASS app_id=1836302544001572 system_user_id=122098243371455164'
 
       - name: Setup Node.js
         if: ${{ steps.candidate.outputs.deploy == 'true' }}
@@ -186,6 +225,7 @@ jobs:
             supabase/functions/meta-routing-audit/index.ts \
             supabase/functions/meta-leadgen-subscribe/index.ts \
             supabase/functions/meta-hubspot-sync/index.ts \
+            supabase/functions/web-events/index.ts \
             supabase/functions/meta-capi-dispatch/index.ts \
             supabase/functions/hubspot-marketing-contact-monitor/index.ts \
             supabase/functions/web-lead-reconcile/index.ts \
@@ -227,6 +267,7 @@ jobs:
           command: |
             set -euo pipefail
             test -n "${SUPABASE_PROJECT_REF:-}"
+            test -n "${META_CANONICAL_APP_SECRET:-}"
             test -n "${CORS_ALLOWED_ORIGINS:-}"
             test -n "${FRONTEND_URL:-}"
             test -n "${PRODUCTION_FALLBACK_URL:-}"
@@ -236,6 +277,7 @@ jobs:
             [[ "$GOOGLE_ADS_AUTH_MODE" == "service_account" ]]
 
             supabase secrets set \
+              META_CANONICAL_APP_SECRET="$META_CANONICAL_APP_SECRET" \
               CORS_ALLOWED_ORIGINS="$CORS_ALLOWED_ORIGINS" \
               FRONTEND_URL="$FRONTEND_URL" \
               PRODUCTION_FALLBACK_URL="$PRODUCTION_FALLBACK_URL" \
@@ -263,6 +305,7 @@ jobs:
             supabase functions deploy meta-routing-audit --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy meta-leadgen-subscribe --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy meta-hubspot-sync --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+            supabase functions deploy web-events --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy meta-capi-dispatch --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy hubspot-marketing-contact-monitor --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy web-lead-reconcile --project-ref "$SUPABASE_PROJECT_REF"
