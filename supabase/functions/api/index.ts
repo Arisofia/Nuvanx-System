@@ -1644,15 +1644,20 @@ async function getGoogleAccessToken(serviceAccount: any): Promise<string> {
   return tokenData.access_token;
 }
 
-async function googleAdsSearch(customerId: string, devToken: string, accessToken: string, query: string) {
-  const cleanId = customerId.replaceAll('-', '');
+async function googleAdsSearch(customerId: string, devToken: string, accessToken: string, query: string, loginCustomerId?: string) {
+  const cleanId = customerId.replaceAll('-', '').trim();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${accessToken}`,
+    'developer-token': devToken,
+  };
+  const cleanLoginId = loginCustomerId ? loginCustomerId.replaceAll('-', '').trim() : '';
+  if (cleanLoginId) {
+    headers['login-customer-id'] = cleanLoginId;
+  }
   const r = await fetch(`https://googleads.googleapis.com/v17/customers/${cleanId}/googleAds:search`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${accessToken}`,
-      'developer-token': devToken,
-    },
+    headers,
     body: JSON.stringify({ query }),
     signal: AbortSignal.timeout(20_000),
   });
@@ -1670,9 +1675,9 @@ function getGoogleAdsErrorMessage(d: any, status: number): string {
 }
 
 type GoogleAdsCreds =
-  | { notConnected: false; noServiceAccount: true; devToken?: never; customerId?: never; serviceAccount?: never }
-  | { notConnected: true; noServiceAccount: false; devToken?: never; customerId?: never; serviceAccount?: never }
-  | { notConnected: false; noServiceAccount: false; devToken: string; customerId: string; serviceAccount: any };
+  | { notConnected: false; noServiceAccount: true; devToken?: never; customerId?: never; loginCustomerId?: never; serviceAccount?: never }
+  | { notConnected: true; noServiceAccount: false; devToken?: never; customerId?: never; loginCustomerId?: never; serviceAccount?: never }
+  | { notConnected: false; noServiceAccount: false; devToken: string; customerId: string; loginCustomerId?: string; serviceAccount: any };
 
 async function resolveGoogleAdsCreds(adminClient: any, userId: string, qCustomerId: string): Promise<GoogleAdsCreds> {
   const saRaw = Deno.env.get('GOOGLE_ADS_SERVICE_ACCOUNT');
@@ -1680,16 +1685,46 @@ async function resolveGoogleAdsCreds(adminClient: any, userId: string, qCustomer
   let serviceAccount: any;
   try { serviceAccount = JSON.parse(saRaw); } catch { return { notConnected: false, noServiceAccount: true } as const; }
 
-  const { data: credRow } = await adminClient.from('credentials').select('encrypted_key').eq('user_id', userId).eq('service', 'google_ads').limit(1).maybeSingle();
+  const { data: credRow } = await adminClient
+    .from('credentials')
+    .select('encrypted_key')
+    .eq('user_id', userId)
+    .eq('service', 'google_ads')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
   if (!credRow) return { notConnected: true, noServiceAccount: false } as const;
   const devToken = await decryptCred(credRow.encrypted_key);
 
   let customerId = qCustomerId;
+  let loginCustomerId = Deno.env.get('GOOGLE_ADS_LOGIN_CUSTOMER_ID') || '';
   if (!customerId) {
-    const { data: intg } = await adminClient.from('integrations').select('metadata').eq('user_id', userId).eq('service', 'google_ads').limit(1).maybeSingle();
+    const { data: intg } = await adminClient
+      .from('integrations')
+      .select('metadata, status')
+      .eq('user_id', userId)
+      .eq('service', 'google_ads')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
     customerId = intg?.metadata?.customerId ?? intg?.metadata?.customer_id ?? '';
+    if (!loginCustomerId && intg?.metadata?.login_customer_id) {
+      loginCustomerId = String(intg.metadata.login_customer_id);
+    }
+  } else if (!loginCustomerId) {
+    const { data: intg } = await adminClient
+      .from('integrations')
+      .select('metadata')
+      .eq('user_id', userId)
+      .eq('service', 'google_ads')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (intg?.metadata?.login_customer_id) {
+      loginCustomerId = String(intg.metadata.login_customer_id);
+    }
   }
-  return { notConnected: false, noServiceAccount: false, devToken, customerId, serviceAccount } as const;
+  return { notConnected: false, noServiceAccount: false, devToken, customerId, loginCustomerId, serviceAccount } as const;
 }
 
 type SupabaseAuthUser = { id: string; [key: string]: unknown };
@@ -6309,19 +6344,21 @@ async function handleGoogleAdsStatusGet(ctx: AuthenticatedRouteContext): Promise
   const { adminClient, userId, resource, sub, req, sendJson } = ctx;
   if (resource !== 'google-ads' || sub !== 'status' || req.method !== 'GET') return null;
 
-  const { data: row, error } = await adminClient
+  const { data: rawRows, error } = await adminClient
     .from('vw_google_ads_connection_status')
     .select('status, customer_id, credential_present, credential_created_at, credential_last_used, last_sync, last_error, updated_at')
     .eq('user_id', userId)
-    .maybeSingle();
+    .order('updated_at', { ascending: false });
   if (error) throw error;
 
-  if (!row) {
+  const rows = Array.isArray(rawRows) ? rawRows : [];
+  if (rows.length === 0) {
     return sendJson({
       success: true,
       connected: false,
       status: 'not_configured',
       customerId: null,
+      customerIds: [],
       credentialPresent: false,
       credentialCreatedAt: null,
       credentialLastUsed: null,
@@ -6331,61 +6368,167 @@ async function handleGoogleAdsStatusGet(ctx: AuthenticatedRouteContext): Promise
     });
   }
 
-  const customerId = typeof row.customer_id === 'string' && row.customer_id.trim()
-    ? row.customer_id.trim()
+  const connectedRow = rows.find((r: any) =>
+    r.status === 'connected' &&
+    r.credential_present === true &&
+    typeof r.customer_id === 'string' &&
+    r.customer_id.trim()
+  );
+  const primaryRow = connectedRow || rows[0];
+
+  const customerIds = rows
+    .map((r: any) => (typeof r.customer_id === 'string' ? r.customer_id.trim() : ''))
+    .filter(Boolean);
+
+  const customerId = typeof primaryRow.customer_id === 'string' && primaryRow.customer_id.trim()
+    ? primaryRow.customer_id.trim()
     : null;
-  const credentialPresent = row.credential_present === true;
-  const connected = row.status === 'connected' && credentialPresent && Boolean(customerId);
+  const credentialPresent = rows.some((r: any) => r.credential_present === true);
+  const connected = Boolean(connectedRow);
+  const anyLastError = rows.some((r: any) => Boolean(r.last_error));
+
+  const latestSync = rows
+    .map((r: any) => r.last_sync)
+    .filter(Boolean)
+    .sort()
+    .reverse()[0] ?? null;
+
+  const latestCredUsed = rows
+    .map((r: any) => r.credential_last_used)
+    .filter(Boolean)
+    .sort()
+    .reverse()[0] ?? null;
+
+  const latestCredCreated = rows
+    .map((r: any) => r.credential_created_at)
+    .filter(Boolean)
+    .sort()
+    .reverse()[0] ?? null;
 
   return sendJson({
     success: true,
     connected,
-    status: row.status ?? 'unknown',
+    status: primaryRow.status ?? (connected ? 'connected' : 'unknown'),
     customerId,
+    customerIds,
     credentialPresent,
-    credentialCreatedAt: row.credential_created_at ?? null,
-    credentialLastUsed: row.credential_last_used ?? null,
-    lastSync: row.last_sync ?? null,
-    lastErrorPresent: Boolean(row.last_error),
-    updatedAt: row.updated_at ?? null,
+    credentialCreatedAt: latestCredCreated,
+    credentialLastUsed: latestCredUsed,
+    lastSync: latestSync,
+    lastErrorPresent: anyLastError,
+    updatedAt: primaryRow.updated_at ?? null,
   });
 }
 
 async function handleGoogleAdsInsightsGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'google-ads' && sub === 'insights' && req.method === 'GET') {
-    const g = await resolveGoogleAdsCreds(adminClient, userId, url.searchParams.get('customerId') ?? '');
-    if (g.noServiceAccount) return sendJson({ success: false, noServiceAccount: true, message: 'Google Ads service account not configured.' });
-    if (g.notConnected) return sendJson({ success: false, notConnected: true, message: 'Google Ads not connected. Add your developer token in Integrations.' });
-    const { customerId, devToken, serviceAccount } = g;
-    if (!customerId) return sendJson({ success: false, noAccountId: true, message: 'Google Ads Customer ID not configured.' });
+    const requestedCustomerId = url.searchParams.get('customerId') ?? '';
+    const g = await resolveGoogleAdsCreds(adminClient, userId, requestedCustomerId);
     const { since, until, days } = getKpiDateRange(url);
     const prevSince = new Date(new Date(since).getTime() - days * 86_400_000).toISOString().slice(0, 10);
-  
-    const accessToken = await getGoogleAccessToken(serviceAccount);
-  
-    const [currRows, prevRows] = await Promise.allSettled([
-      googleAdsSearch(customerId, devToken, accessToken, `
-        SELECT segments.date, metrics.impressions, metrics.clicks, metrics.cost_micros,
-               metrics.conversions, metrics.ctr, metrics.average_cpc, metrics.average_cpm
-        FROM customer
-        WHERE segments.date BETWEEN '${since}' AND '${until}'
-        ORDER BY segments.date
-      `),
-      googleAdsSearch(customerId, devToken, accessToken, `
-        SELECT metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions
-        FROM customer
-        WHERE segments.date BETWEEN '${prevSince}' AND '${since}'
-      `),
-    ]);
-  
-    const daily = currRows.status === 'fulfilled' ? currRows.value : [];
-    const prevData = prevRows.status === 'fulfilled' ? prevRows.value : [];
-  
-    const { currImp, currClicks, currSpend, currConv, prevImp, prevClicks, prevSpend, prevConv, ctr, cpc, cpm, cpp } = aggregateGoogleAdsInsights(daily, prevData);
     const pct = percentChange;
     const micros2eur = (m: number) => Number.parseFloat((m / 1_000_000).toFixed(2));
-  
+
+    let daily: any[] = [];
+    let prevData: any[] = [];
+    let queryWorked = false;
+
+    if (!g.noServiceAccount && !g.notConnected && g.customerId) {
+      try {
+        const accessToken = await getGoogleAccessToken(g.serviceAccount);
+        const [currRows, prevRows] = await Promise.allSettled([
+          googleAdsSearch(g.customerId, g.devToken, accessToken, `
+            SELECT segments.date, metrics.impressions, metrics.clicks, metrics.cost_micros,
+                   metrics.conversions, metrics.ctr, metrics.average_cpc, metrics.average_cpm
+            FROM customer
+            WHERE segments.date BETWEEN '${since}' AND '${until}'
+            ORDER BY segments.date
+          `, g.loginCustomerId),
+          googleAdsSearch(g.customerId, g.devToken, accessToken, `
+            SELECT metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions
+            FROM customer
+            WHERE segments.date BETWEEN '${prevSince}' AND '${since}'
+          `, g.loginCustomerId),
+        ]);
+
+        if (currRows.status === 'fulfilled' && Array.isArray(currRows.value) && currRows.value.length > 0) {
+          daily = currRows.value;
+          queryWorked = true;
+        }
+        if (prevRows.status === 'fulfilled' && Array.isArray(prevRows.value) && prevRows.value.length > 0) {
+          prevData = prevRows.value;
+        }
+      } catch (err: unknown) {
+        console.warn('[google-ads-insights] live search error, falling back to cached:', err);
+      }
+    }
+
+    // Fallback to cached daily insights from public.google_ads_daily_insights
+    if (!queryWorked) {
+      const targetCustomer = g.customerId || requestedCustomerId;
+      let query = adminClient
+        .from('google_ads_daily_insights')
+        .select('date, impressions, clicks, spend, conversions, ctr, average_cpc, cost_per_conversion')
+        .eq('user_id', userId)
+        .gte('date', since)
+        .lte('date', until)
+        .order('date', { ascending: true });
+      if (targetCustomer) {
+        query = query.eq('customer_id', targetCustomer.replaceAll('-', '').trim());
+      }
+      const { data: dbDaily } = await query;
+
+      if (dbDaily && dbDaily.length > 0) {
+        daily = dbDaily.map((r: any) => ({
+          segments: { date: r.date },
+          metrics: {
+            impressions: Number(r.impressions ?? 0),
+            clicks: Number(r.clicks ?? 0),
+            costMicros: Math.round(Number(r.spend ?? 0) * 1_000_000),
+            conversions: Number(r.conversions ?? 0),
+            ctr: Number(r.ctr ?? 0),
+            averageCpc: Math.round(Number(r.average_cpc ?? 0) * 1_000_000),
+            costPerConversion: Math.round(Number(r.cost_per_conversion ?? 0) * 1_000_000),
+          },
+        }));
+
+        let prevQuery = adminClient
+          .from('google_ads_daily_insights')
+          .select('impressions, clicks, spend, conversions')
+          .eq('user_id', userId)
+          .gte('date', prevSince)
+          .lt('date', since);
+        if (targetCustomer) {
+          prevQuery = prevQuery.eq('customer_id', targetCustomer.replaceAll('-', '').trim());
+        }
+        const { data: dbPrev } = await prevQuery;
+        if (dbPrev && dbPrev.length > 0) {
+          prevData = dbPrev.map((r: any) => ({
+            metrics: {
+              impressions: Number(r.impressions ?? 0),
+              clicks: Number(r.clicks ?? 0),
+              costMicros: Math.round(Number(r.spend ?? 0) * 1_000_000),
+              conversions: Number(r.conversions ?? 0),
+            },
+          }));
+        }
+        queryWorked = true;
+      }
+    }
+
+    if (!queryWorked && g.notConnected) {
+      return sendJson({ success: false, notConnected: true, message: 'Google Ads not connected. Add your developer token in Integrations.' });
+    }
+    if (!queryWorked && g.noServiceAccount) {
+      return sendJson({ success: false, noServiceAccount: true, message: 'Google Ads service account not configured.' });
+    }
+    if (!queryWorked && !g.customerId && !requestedCustomerId) {
+      return sendJson({ success: false, noAccountId: true, message: 'Google Ads Customer ID not configured.' });
+    }
+
+    const { currImp, currClicks, currSpend, currConv, prevImp, prevClicks, prevSpend, prevConv, ctr, cpc, cpm, cpp } = aggregateGoogleAdsInsights(daily, prevData);
+
     return sendJson({
       success: true,
       period: { since, until, days },
@@ -6405,6 +6548,7 @@ async function handleGoogleAdsInsightsGet(ctx: AuthenticatedRouteContext): Promi
         cpc: micros2eur(Number(r.metrics?.averageCpc ?? 0)),
         cpm: micros2eur(Number(r.metrics?.averageCpm ?? 0)),
       })),
+      currency: 'EUR',
     });
   }
   return null;
@@ -6413,26 +6557,102 @@ async function handleGoogleAdsInsightsGet(ctx: AuthenticatedRouteContext): Promi
 async function handleGoogleAdsCampaignsGet(ctx: AuthenticatedRouteContext): Promise<Response | null> {
   const { adminClient, userId, resource, sub, req, url, sendJson } = ctx;
   if (resource === 'google-ads' && sub === 'campaigns' && req.method === 'GET') {
-    const g = await resolveGoogleAdsCreds(adminClient, userId, url.searchParams.get('customerId') ?? '');
-    if (g.noServiceAccount) return sendJson({ success: false, noServiceAccount: true, message: 'Google Ads service account not configured.' });
-    if (g.notConnected) return sendJson({ success: false, notConnected: true, message: 'Google Ads not connected.' });
-    const { customerId, devToken, serviceAccount } = g;
-    if (!customerId) return sendJson({ success: false, noAccountId: true, message: 'Google Ads Customer ID not configured.' });
+    const requestedCustomerId = url.searchParams.get('customerId') ?? '';
+    const g = await resolveGoogleAdsCreds(adminClient, userId, requestedCustomerId);
     const { since, until } = getKpiDateRange(url);
-    const accessToken = await getGoogleAccessToken(serviceAccount);
-    const rows = await googleAdsSearch(customerId, devToken, accessToken, `
-      SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type,
-             campaign_budget.amount_micros,
-             metrics.impressions, metrics.clicks, metrics.cost_micros,
-             metrics.conversions, metrics.ctr, metrics.average_cpc, metrics.cost_per_conversion
-      FROM campaign
-      WHERE segments.date BETWEEN '${since}' AND '${until}'
-        AND campaign.status != 'REMOVED'
-      ORDER BY metrics.cost_micros DESC
-      LIMIT 50
-    `);
-  
     const micros2eur = (m: number) => m > 0 ? Number.parseFloat((m / 1_000_000).toFixed(2)) : null;
+
+    let rows: any[] = [];
+    let queryWorked = false;
+
+    if (!g.noServiceAccount && !g.notConnected && g.customerId) {
+      try {
+        const accessToken = await getGoogleAccessToken(g.serviceAccount);
+        rows = await googleAdsSearch(g.customerId, g.devToken, accessToken, `
+          SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type,
+                 campaign_budget.amount_micros,
+                 metrics.impressions, metrics.clicks, metrics.cost_micros,
+                 metrics.conversions, metrics.ctr, metrics.average_cpc, metrics.cost_per_conversion
+          FROM campaign
+          WHERE segments.date BETWEEN '${since}' AND '${until}'
+            AND campaign.status != 'REMOVED'
+          ORDER BY metrics.cost_micros DESC
+          LIMIT 50
+        `, g.loginCustomerId);
+        if (rows.length > 0) {
+          queryWorked = true;
+        }
+      } catch (err: unknown) {
+        console.warn('[google-ads-campaigns] live search error, falling back to cached:', err);
+      }
+    }
+
+    // Fallback to cached daily insights from public.google_ads_daily_insights
+    if (!queryWorked) {
+      const targetCustomer = g.customerId || requestedCustomerId;
+      let query = adminClient
+        .from('google_ads_daily_insights')
+        .select('campaign_id, campaign_name, campaign_status, campaign_type, impressions, clicks, spend, conversions, currency_code')
+        .eq('user_id', userId)
+        .gte('date', since)
+        .lte('date', until);
+      if (targetCustomer) {
+        query = query.eq('customer_id', targetCustomer.replaceAll('-', '').trim());
+      }
+      const { data: dbCampaigns } = await query;
+
+      if (dbCampaigns && dbCampaigns.length > 0) {
+        const campaignMap = new Map<string, any>();
+        for (const row of dbCampaigns) {
+          const cid = row.campaign_id;
+          const existing = campaignMap.get(cid) || {
+            campaign: {
+              id: cid,
+              name: row.campaign_name,
+              status: row.campaign_status || 'ENABLED',
+              advertisingChannelType: row.campaign_type || 'SEARCH',
+            },
+            campaignBudget: { amountMicros: 0 },
+            metrics: {
+              impressions: 0,
+              clicks: 0,
+              costMicros: 0,
+              conversions: 0,
+              ctr: 0,
+              averageCpc: 0,
+              costPerConversion: 0,
+            },
+          };
+          existing.metrics.impressions += Number(row.impressions ?? 0);
+          existing.metrics.clicks += Number(row.clicks ?? 0);
+          existing.metrics.costMicros += Math.round(Number(row.spend ?? 0) * 1_000_000);
+          existing.metrics.conversions += Number(row.conversions ?? 0);
+          campaignMap.set(cid, existing);
+        }
+        rows = Array.from(campaignMap.values()).map((c) => {
+          const imp = c.metrics.impressions;
+          const clk = c.metrics.clicks;
+          const cost = c.metrics.costMicros;
+          const conv = c.metrics.conversions;
+          c.metrics.ctr = imp > 0 ? clk / imp : 0;
+          c.metrics.averageCpc = clk > 0 ? Math.round(cost / clk) : 0;
+          c.metrics.costPerConversion = conv > 0 ? Math.round(cost / conv) : 0;
+          return c;
+        });
+        queryWorked = true;
+      }
+    }
+
+    if (!queryWorked && g.notConnected) {
+      return sendJson({ success: false, notConnected: true, message: 'Google Ads not connected.' });
+    }
+    if (!queryWorked && g.noServiceAccount) {
+      return sendJson({ success: false, noServiceAccount: true, message: 'Google Ads service account not configured.' });
+    }
+    if (!queryWorked && !g.customerId && !requestedCustomerId) {
+      return sendJson({ success: false, noAccountId: true, message: 'Google Ads Customer ID not configured.' });
+    }
+
     return sendJson({
       success: true,
       campaigns: rows.map((r: any) => ({
@@ -6451,6 +6671,7 @@ async function handleGoogleAdsCampaignsGet(ctx: AuthenticatedRouteContext): Prom
           cpp: micros2eur(Number(r.metrics?.costPerConversion ?? 0)),
         },
       })),
+      currency: 'EUR',
     });
   }
   return null;
