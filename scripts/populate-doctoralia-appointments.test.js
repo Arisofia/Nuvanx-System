@@ -9,6 +9,7 @@ const {
   findHeaderRowIndex,
   recordsFromRows,
 } = require('./populate-doctoralia-appointments.js');
+const { buildStableAppointmentSourceKey } = require('./lib/doctoralia-incremental-sync.js');
 
 const duplicateRecords = [
   { source_key: 'appointment:1', appointment_id: 'appointment:1', sheet_row: 2, value: 'first' },
@@ -34,6 +35,7 @@ const headerMap = {
   patient_name: 4,
   phone: 5,
   treatment: 6,
+  agenda: 7,
 };
 
 const firstVisit = buildRecord([
@@ -41,9 +43,10 @@ const firstVisit = buildRecord([
   '07/05/2026',
   '12:00 - 12:30',
   '48',
-  'TERESA IZQUIERDO DE LAS HERAS',
+  'PACIENTE PRUEBA A',
   '600000000',
   'REVISIÓN TRATAMIENTO',
+  'MEDICINA ESTÉTICA JJRT',
 ], headerMap, 1592);
 
 const secondVisitSameDoctoraliaCode = buildRecord([
@@ -51,9 +54,10 @@ const secondVisitSameDoctoraliaCode = buildRecord([
   '21/05/2026',
   '17:15 - 17:30',
   '48',
-  'TERESA IZQUIERDO DE LAS HERAS',
+  'PACIENTE PRUEBA A',
   '600000000',
   'BOTOX (NEUROMODULADOR)',
+  'MEDICINA ESTÉTICA JJRT',
 ], headerMap, 1688);
 
 assert.notEqual(firstVisit.source_key, secondVisitSameDoctoraliaCode.source_key);
@@ -61,6 +65,22 @@ assert.equal(firstVisit.appointment_id, firstVisit.source_key);
 assert.equal(secondVisitSameDoctoraliaCode.appointment_id, secondVisitSameDoctoraliaCode.source_key);
 assert.equal(firstVisit.doctoralia_id, '48');
 assert.equal(firstVisit.is_control, false, 'Revisión tratamiento is a real appointment, not an internal control');
+
+const malformedHistorical = buildRecord([
+  'Pendiente',
+  '23/04/2026',
+  '16:00 - 18:00',
+  '',
+  '',
+  '',
+  'O/1. REGISTRO HISTÓRICO [612345678] (REVISIÓN TRATAMIENTO)',
+  'MEDICINA ESTÉTICA JJRT',
+], headerMap, 2000);
+assert.equal(malformedHistorical.doctoralia_id, null);
+assert.equal(malformedHistorical.patient_name, null);
+assert.equal(malformedHistorical.phone, '612345678');
+assert.equal(malformedHistorical.phone_normalized, '612345678');
+assert.match(buildStableAppointmentSourceKey(malformedHistorical), /^doctoralia_appt_v3:[0-9a-f]{64}$/);
 
 const baseCompletaHeaders = [
   'Nº Historia',
@@ -98,11 +118,12 @@ const baseCompletaRows = [
   ['CITAS CLINIC CLOUD'],
   baseCompletaHeaders,
   ['99', 'PACIENTE DE PRUEBA', '600000000', 'Pendiente', '21/08/2026', '10:00 - 10:30', '20/08/2026', 'BOTOX', 'MEDICINA ESTÉTICA JJRT', 'Sin asignar', '', '-', '270.00'],
+  baseCompletaHeaders,
 ];
 
 assert.equal(findHeaderRowIndex(baseCompletaRows), 1);
 const baseCompletaRecords = recordsFromRows(baseCompletaRows);
-assert.equal(baseCompletaRecords.length, 1);
+assert.equal(baseCompletaRecords.length, 1, 'Embedded repeated header rows must be ignored');
 assert.equal(baseCompletaRecords[0].doctoralia_id, '99');
 assert.equal(baseCompletaRecords[0].patient_name, 'PACIENTE DE PRUEBA');
 assert.equal(baseCompletaRecords[0].treatment, 'BOTOX');
