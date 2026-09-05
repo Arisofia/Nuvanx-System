@@ -12,6 +12,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const XlsxPopulate = require('xlsx-populate');
+const { getPrimaryPhoneFromSubject } = require('./lib/phone-normalization');
 
 require('dotenv').config({ path: '.env.local' });
 
@@ -180,6 +181,12 @@ function findHeaderRowIndex(rows) {
   });
 }
 
+function isRepeatedHeaderRow(row) {
+  if (!Array.isArray(row)) return false;
+  const candidate = buildHeaderMap(row);
+  return REQUIRED_HEADERS.every((field) => candidate[field] !== undefined);
+}
+
 function isBlankRow(row) {
   return row.every((cell) => clean(cell) === null);
 }
@@ -243,7 +250,12 @@ function buildRecord(row, headerMap, sheetRow) {
   const appointmentDate = parseDate(getCell(row, headerMap, 'appointment_date'));
   const appointmentTime = clean(getCell(row, headerMap, 'appointment_time'));
   const patientName = clean(getCell(row, headerMap, 'patient_name'));
-  const phone = clean(getCell(row, headerMap, 'phone'));
+  const directPhone = clean(getCell(row, headerMap, 'phone'));
+  // A small set of historical Base Completa rows has empty identity columns but
+  // retains a valid bracketed phone inside Concepto cita. Recover only that phone
+  // evidence using the shared normalizer; do not promote the embedded ordinal to
+  // a Doctoralia patient id and do not infer financial meaning from the text.
+  const phone = directPhone || getPrimaryPhoneFromSubject(treatment);
   const sourceKey = buildAppointmentSourceKey({ sheetRow, appointmentDate, appointmentTime, doctoraliaId, phone, treatment });
   const controlText = `${patientName || ''} ${clean(getCell(row, headerMap, 'subject')) || ''} ${treatment || ''}`;
 
@@ -305,7 +317,9 @@ function recordsFromRows(rows) {
   ensureRequiredHeaders(headerMap);
   return rows
     .slice(headerRowIndex + 1)
-    .map((row, index) => (isBlankRow(row) ? null : buildRecord(row, headerMap, index + headerRowIndex + 2)))
+    .map((row, index) => (isBlankRow(row) || isRepeatedHeaderRow(row)
+      ? null
+      : buildRecord(row, headerMap, index + headerRowIndex + 2)))
     .filter(Boolean);
 }
 
