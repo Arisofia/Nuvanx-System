@@ -41,14 +41,12 @@ const doctoraliaAppointmentsEnv = {
   DOCTORALIA_APPOINTMENTS_SHEET_RANGE: String(process.env.DOCTORALIA_APPOINTMENTS_SHEET_RANGE || 'A1:T5000').trim(),
   DOCTORALIA_APPOINTMENTS_MIN_ROWS: String(process.env.DOCTORALIA_APPOINTMENTS_MIN_ROWS || '1800').trim(),
   DOCTORALIA_APPOINTMENTS_PERMISSION_MODE: String(process.env.DOCTORALIA_APPOINTMENTS_PERMISSION_MODE || process.env.DOCTORALIA_SYNC_PERMISSION_MODE || 'fail').trim().toLowerCase(),
-  DOCTORALIA_APPOINTMENTS_REPLACE_MODE: String(process.env.DOCTORALIA_APPOINTMENTS_REPLACE_MODE || 'true').trim(),
 };
 
 const steps = [
   { name: 'scan-secrets', cmd: 'node scripts/scan-secrets.js', critical: true },
   { name: 'verify-meta-access', cmd: 'node scripts/verify-meta-access.js', critical: true },
   { name: 'sync-google-ads', cmd: 'node scripts/sync-google-ads-via-edge.js', critical: true, retry: 1 },
-  { name: 'sync-doctoralia', cmd: 'node scripts/sync-doctoralia.js', critical: false },
   {
     name: 'sync-doctoralia-appointments',
     cmd: withEnv('node scripts/sync-doctoralia-appointments.js', doctoraliaAppointmentsEnv),
