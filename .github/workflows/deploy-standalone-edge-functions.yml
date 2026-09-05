@@ -156,6 +156,12 @@ jobs:
           npm install --include=dev --ignore-scripts
           npm test
           deno check --config=supabase/functions/deno.json \
+            supabase/functions/api/index.ts \
+            supabase/functions/mcp/index.ts \
+            supabase/functions/daily-aggregates/index.ts \
+            supabase/functions/auth/index.ts \
+            supabase/functions/health/index.ts \
+            supabase/functions/playbooks/index.ts \
             supabase/functions/dashboard/index.ts \
             supabase/functions/agent-run/index.ts \
             supabase/functions/runtime-bootstrap/index.ts \
@@ -223,6 +229,12 @@ jobs:
 
             node scripts/converge-google-ads-edge-auth.js
 
+            supabase functions deploy api --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+            supabase functions deploy mcp --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+            supabase functions deploy daily-aggregates --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+            supabase functions deploy auth --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+            supabase functions deploy health --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+            supabase functions deploy playbooks --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy dashboard --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy agent-run --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy runtime-bootstrap --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
