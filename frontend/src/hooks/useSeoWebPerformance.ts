@@ -28,6 +28,7 @@ export function useSeoWebPerformance() {
   const [rows, setRows] = useState<SeoWebPerformanceRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [evaluatedAt, setEvaluatedAt] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -55,6 +56,7 @@ export function useSeoWebPerformance() {
       }
 
       setRows(Array.from(latest.values()).sort((a, b) => a.url.localeCompare(b.url) || a.device.localeCompare(b.device)))
+      setEvaluatedAt(Date.now())
       setError(null)
       setLoading(false)
     }
@@ -67,18 +69,18 @@ export function useSeoWebPerformance() {
 
   const state = useMemo<SeoWebPerformanceState>(() => {
     if (loading) return 'loading'
-    if (error || rows.length === 0) return 'unavailable'
+    if (error || rows.length === 0 || evaluatedAt <= 0) return 'unavailable'
 
     const usableRows = rows.filter((row) => row.quality_status !== 'unavailable')
     if (usableRows.length === 0) return 'unavailable'
 
     const timestamps = usableRows.map((row) => new Date(row.captured_at).getTime()).filter(Number.isFinite)
     if (timestamps.length !== usableRows.length) return 'unavailable'
-    if (timestamps.some((capturedAt) => Date.now() - capturedAt > STALE_AFTER_MS)) return 'stale'
+    if (timestamps.some((capturedAt) => evaluatedAt - capturedAt > STALE_AFTER_MS)) return 'stale'
 
     if (usableRows.length !== rows.length || usableRows.some((row) => row.quality_status === 'partial')) return 'partial'
     return 'fresh'
-  }, [error, loading, rows])
+  }, [error, evaluatedAt, loading, rows])
 
   return { rows, loading, error, state }
 }
