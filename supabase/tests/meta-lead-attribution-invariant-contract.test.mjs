@@ -2,13 +2,18 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-const migration = readFileSync(
-  fileURLToPath(new URL('../migrations/20260904180500_enforce_meta_lead_attribution_invariant.sql', import.meta.url)),
+const readMigration = (name) => readFileSync(
+  fileURLToPath(new URL(`../migrations/${name}`, import.meta.url)),
   'utf8',
 );
-const executable = migration
+const stripComments = (sql) => sql
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^\s*--.*$/gm, '');
+
+const identityMigration = readMigration('20260904180400_remove_global_meta_leadgen_uniqueness.sql');
+const migration = readMigration('20260904180500_enforce_meta_lead_attribution_invariant.sql');
+const identityExecutable = stripComments(identityMigration);
+const executable = stripComments(migration);
 
 describe('Meta lead attribution invariant', () => {
   it('uses one convergence owner for new writes and historical repair', () => {
@@ -43,9 +48,9 @@ describe('Meta lead attribution invariant', () => {
   });
 
   it('removes the unsafe global leadgen uniqueness assumption without removing lookup indexing', () => {
-    expect(executable).toContain('drop index if exists public.meta_attribution_leadgen_id_uidx;');
-    expect(executable).toContain('create index if not exists meta_attribution_leadgen_id_idx');
-    expect(executable).not.toMatch(/create\s+unique\s+index[\s\S]{0,160}meta_attribution[\s\S]{0,160}leadgen_id/i);
+    expect(identityExecutable).toContain('drop index if exists public.meta_attribution_leadgen_id_uidx;');
+    expect(identityExecutable).toContain('create index if not exists meta_attribution_leadgen_id_idx');
+    expect(identityExecutable).not.toMatch(/create\s+unique\s+index[\s\S]{0,160}meta_attribution[\s\S]{0,160}leadgen_id/i);
   });
 
   it('repairs orphaned live Meta leads by contract and proves none remain without embedding Production identifiers', () => {
