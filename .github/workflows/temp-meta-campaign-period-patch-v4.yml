@@ -1,0 +1,62 @@
+name: Temporary Meta Campaign Period Patch v4
+
+on:
+  push:
+    branches:
+      - fix/meta-campaign-period-scope-v2
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout patch branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: fix/meta-campaign-period-scope-v2
+          fetch-depth: 0
+
+      - name: Apply source correction
+        run: python3 scripts/temp-patch-meta-campaign-period-v4.py
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
+        with:
+          deno-version: v2.x
+
+      - name: Validate patched source
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --include=dev --ignore-scripts
+          npm test
+          deno check --config=supabase/functions/deno.json supabase/functions/api/index.ts
+
+      - name: Commit correction and remove temporary patch machinery
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/temp-meta-campaign-period-patch.yml \
+            .github/workflows/temp-meta-campaign-period-patch-v2.yml \
+            .github/workflows/temp-meta-campaign-period-patch-v3.yml \
+            .github/workflows/temp-meta-campaign-period-patch-v4.yml \
+            scripts/temp-patch-meta-campaign-period.py \
+            scripts/temp-patch-meta-campaign-period-v3.py \
+            scripts/temp-patch-meta-campaign-period-v4.py \
+            scripts/.meta-campaign-period-patch-trigger
+          git add supabase/functions/api/index.ts \
+            supabase/tests/meta-tenant-resolution-contract.test.mjs \
+            supabase/functions/meta-campaign-period-scope-contract.test.mjs
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(meta): scope campaigns to verified period activity'
+          git push origin HEAD:fix/meta-campaign-period-scope-v2
