@@ -4,10 +4,12 @@ import { describe, expect, it } from 'vitest';
 const workflow = readFileSync('.github/workflows/deploy-standalone-edge-functions.yml', 'utf8');
 const packageJson = JSON.parse(readFileSync('package.json', 'utf8'));
 const migrationParityRow = (version) => new RegExp(`^[\\s]*${version}[\\s]*[|│][\\s]*${version}[\\s]*([|│]|$)`);
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 function deploymentLines(functionName) {
   const command = `supabase functions deploy ${functionName} --project-ref "$SUPABASE_PROJECT_REF"`;
-  return workflow.split('\n').filter((line) => line.includes(command));
+  const pattern = new RegExp(`^\\s*${escapeRegex(command)}(?:\\s+--no-verify-jwt)?\\s*$`);
+  return workflow.split('\n').filter((line) => pattern.test(line));
 }
 
 function expectDeploymentPolicy(functionName, { noVerifyJwt }) {
@@ -21,11 +23,12 @@ function expectDeploymentPolicy(functionName, { noVerifyJwt }) {
 }
 
 function denoCheckBlock() {
-  const start = workflow.indexOf('deno check --config=supabase/functions/deno.json');
-  const firstDeploy = workflow.indexOf('supabase functions deploy');
-  expect(start, 'governed Deno check command must exist').toBeGreaterThanOrEqual(0);
-  expect(firstDeploy, 'Deno validation must run before the first deploy command').toBeGreaterThan(start);
-  return workflow.slice(start, firstDeploy);
+  const lines = workflow.split('\n');
+  const start = lines.findIndex((line) => /^\s*deno check --config=supabase\/functions\/deno\.json\s*\\\s*$/.test(line));
+  const firstDeploy = lines.findIndex((line) => /^\s*supabase functions deploy\b/.test(line));
+  expect(start, 'governed executable Deno check command must exist').toBeGreaterThanOrEqual(0);
+  expect(firstDeploy, 'Deno validation must run before the first executable deploy command').toBeGreaterThan(start);
+  return lines.slice(start, firstDeploy);
 }
 
 describe('standalone Edge deployment ownership', () => {
@@ -80,27 +83,27 @@ describe('standalone Edge deployment ownership', () => {
   it('waits read-only for the automatic migration owner and fails closed before migration-dependent Edge deploys', () => {
     expect(workflow).toContain('Wait for automatic Production migration owner');
     expect(workflow).toContain('supabase migration list --db-url');
-    expect(workflow).toContain('REQUIRED_MIGRATIONS=(20260901190000 20260901190100 20260901190200 20260903142000)');
+    expect(workflow).toContain('REQUIRED_MIGRATIONS=(20260901190000 20260901190100 20260901190200 20260903142000 20260905144500)');
     expect(workflow).toContain('for ATTEMPT in {1..20}; do');
     expect(workflow).toContain('Automatic Production migration owner did not converge required migrations');
     expect(workflow).toContain('[|│]');
     expect(workflow).not.toContain('bash scripts/supabase-migrate.sh');
     expect(workflow).not.toContain('supabase db push');
 
-    for (const version of ['20260901190000', '20260901190100', '20260901190200', '20260903142000']) {
+    for (const version of ['20260901190000', '20260901190100', '20260901190200', '20260903142000', '20260905144500']) {
       const asciiParity = migrationParityRow(version);
       const unicodeParity = migrationParityRow(version);
-      expect(asciiParity.test(`  ${version} | ${version} | 2026-09-03 14:20:00`)).toBe(true);
-      expect(unicodeParity.test(`  ${version} │ ${version} │ 2026-09-03 14:20:00`)).toBe(true);
+      expect(asciiParity.test(`  ${version} | ${version} | 2026-09-05 14:45:00`)).toBe(true);
+      expect(unicodeParity.test(`  ${version} │ ${version} │ 2026-09-05 14:45:00`)).toBe(true);
 
       const localOnlyAscii = migrationParityRow(version);
       const remoteOnlyAscii = migrationParityRow(version);
       const localOnlyUnicode = migrationParityRow(version);
       const remoteOnlyUnicode = migrationParityRow(version);
-      expect(localOnlyAscii.test(`  ${version} |                | 2026-09-03 14:20:00`)).toBe(false);
-      expect(remoteOnlyAscii.test(`                 | ${version} | 2026-09-03 14:20:00`)).toBe(false);
-      expect(localOnlyUnicode.test(`  ${version} │                │ 2026-09-03 14:20:00`)).toBe(false);
-      expect(remoteOnlyUnicode.test(`                 │ ${version} │ 2026-09-03 14:20:00`)).toBe(false);
+      expect(localOnlyAscii.test(`  ${version} |                | 2026-09-05 14:45:00`)).toBe(false);
+      expect(remoteOnlyAscii.test(`                 | ${version} | 2026-09-05 14:45:00`)).toBe(false);
+      expect(localOnlyUnicode.test(`  ${version} │                │ 2026-09-05 14:45:00`)).toBe(false);
+      expect(remoteOnlyUnicode.test(`                 │ ${version} │ 2026-09-05 14:45:00`)).toBe(false);
     }
   });
 
@@ -131,7 +134,8 @@ describe('standalone Edge deployment ownership', () => {
       'supabase/functions/whatsapp-outbound-worker/index.ts',
       'supabase/functions/whatsapp-status-webhook/index.ts',
     ]) {
-      expect(block, `${path} must be type-checked in the pre-deploy Deno command`).toContain(path);
+      const pathLine = new RegExp(`^\\s*${escapeRegex(path)}\\s*\\\\?\\s*$`);
+      expect(block.some((line) => pathLine.test(line)), `${path} must be an executable Deno-check argument`).toBe(true);
     }
   });
 
