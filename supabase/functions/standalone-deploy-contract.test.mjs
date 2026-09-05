@@ -48,27 +48,27 @@ describe('standalone Edge deployment ownership', () => {
   it('waits read-only for the automatic migration owner and fails closed before migration-dependent Edge deploys', () => {
     expect(workflow).toContain('Wait for automatic Production migration owner');
     expect(workflow).toContain('supabase migration list --db-url');
-    expect(workflow).toContain('REQUIRED_MIGRATIONS=(20260901190000 20260901190100 20260901190200 20260903142000)');
+    expect(workflow).toContain('REQUIRED_MIGRATIONS=(20260901190000 20260901190100 20260901190200 20260903142000 20260905141000)');
     expect(workflow).toContain('for ATTEMPT in {1..20}; do');
     expect(workflow).toContain('Automatic Production migration owner did not converge required migrations');
     expect(workflow).toContain('[|│]');
     expect(workflow).not.toContain('bash scripts/supabase-migrate.sh');
     expect(workflow).not.toContain('supabase db push');
 
-    for (const version of ['20260901190000', '20260901190100', '20260901190200', '20260903142000']) {
+    for (const version of ['20260901190000', '20260901190100', '20260901190200', '20260903142000', '20260905141000']) {
       const asciiParity = migrationParityRow(version);
       const unicodeParity = migrationParityRow(version);
-      expect(asciiParity.test(`  ${version} | ${version} | 2026-09-03 14:20:00`)).toBe(true);
-      expect(unicodeParity.test(`  ${version} │ ${version} │ 2026-09-03 14:20:00`)).toBe(true);
+      expect(asciiParity.test(`  ${version} | ${version} | 2026-09-05 14:10:00`)).toBe(true);
+      expect(unicodeParity.test(`  ${version} │ ${version} │ 2026-09-05 14:10:00`)).toBe(true);
 
       const localOnlyAscii = migrationParityRow(version);
       const remoteOnlyAscii = migrationParityRow(version);
       const localOnlyUnicode = migrationParityRow(version);
       const remoteOnlyUnicode = migrationParityRow(version);
-      expect(localOnlyAscii.test(`  ${version} |                | 2026-09-03 14:20:00`)).toBe(false);
-      expect(remoteOnlyAscii.test(`                 | ${version} | 2026-09-03 14:20:00`)).toBe(false);
-      expect(localOnlyUnicode.test(`  ${version} │                │ 2026-09-03 14:20:00`)).toBe(false);
-      expect(remoteOnlyUnicode.test(`                 │ ${version} │ 2026-09-03 14:20:00`)).toBe(false);
+      expect(localOnlyAscii.test(`  ${version} |                | 2026-09-05 14:10:00`)).toBe(false);
+      expect(remoteOnlyAscii.test(`                 | ${version} | 2026-09-05 14:10:00`)).toBe(false);
+      expect(localOnlyUnicode.test(`  ${version} │                │ 2026-09-05 14:10:00`)).toBe(false);
+      expect(remoteOnlyUnicode.test(`                 │ ${version} │ 2026-09-05 14:10:00`)).toBe(false);
     }
   });
 
@@ -90,6 +90,7 @@ describe('standalone Edge deployment ownership', () => {
     expect(workflow).toContain('supabase/functions/whatsapp-send/index.ts');
     expect(workflow).toContain('supabase/functions/whatsapp-outbound-worker/index.ts');
     expect(workflow).toContain('supabase/functions/whatsapp-status-webhook/index.ts');
+    expect(workflow).toContain('supabase/functions/seo-web-performance/index.ts');
   });
 
   it('preserves JWT policies while deploying the registry, enqueue function and worker together', () => {
@@ -98,6 +99,7 @@ describe('standalone Edge deployment ownership', () => {
     expect(workflow).toContain('supabase functions deploy whatsapp-send --project-ref "$SUPABASE_PROJECT_REF"');
     expect(workflow).toContain('supabase functions deploy whatsapp-outbound-worker --project-ref "$SUPABASE_PROJECT_REF"');
     expect(workflow).toContain('supabase functions deploy whatsapp-status-webhook --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
+    expect(workflow).toContain('supabase functions deploy seo-web-performance --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
     expect(workflow).not.toContain('supabase functions deploy whatsapp-send --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
     expect(workflow).not.toContain('supabase functions deploy whatsapp-outbound-worker --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
   });
