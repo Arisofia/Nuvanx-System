@@ -144,9 +144,8 @@ test('one writer, no destructive parser, no archive, selective financial cleanup
   assert.doesNotMatch(migration, /pg_catalog\.md5/i);
   assert.doesNotMatch(migration, /doctoralia_appointment_value_materialization/i);
 
-  // The cleanup must be scoped to the retired appointment Asunto shape, not all
-  // source_system='doctoralia' financial rows.
-  assert.match(migration, /coalesce\(template_name, ''\) ~ '\^\(O\/\)\?\[0-9\]\+\[\.\] \.*\\\[\.\*\\\]'/);
+  const appointmentShape = "and coalesce(template_name, '') ~ '^(O/)?[0-9]+[.] .*\\[.*\\]'";
+  assert.ok(migration.includes(appointmentShape));
   assert.doesNotMatch(
     migration,
     /delete from public\.financial_settlements\s+where pg_catalog\.lower\(pg_catalog\.btrim\(coalesce\(source_system, ''\)\)\) = 'doctoralia';/i,
