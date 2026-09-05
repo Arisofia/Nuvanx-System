@@ -15,26 +15,41 @@ describe("web-events P0 contract", () => {
     expect(source).not.toContain("x-nvx-web-event-secret");
   });
 
-  it("resolves connected canonical and legacy Meta integrations with canonical preference", () => {
+  it("requires clinic tenant context and scopes both integration and credential lookup", () => {
     const resolvedOwnerStart = source.indexOf('let rows: any[] = []');
     const credentialStart = source.indexOf('const { data: cred } = await admin', resolvedOwnerStart);
     const resolvedOwnerQuery = source.slice(resolvedOwnerStart, credentialStart);
+    const credentialEnd = source.indexOf('if (!cred?.encrypted_key)', credentialStart);
+    const credentialQuery = source.slice(credentialStart, credentialEnd);
+
+    expect(source).toContain("function sanitizeClinicId");
+    expect(source).toContain('throw new RequestValidationError("Valid clinic_id is required")');
+    expect(source).toContain("const clinicId = sanitizeClinicId(body.clinic_id || body.clinicId)");
+    expect(source).toContain("resolveOwnerAndMeta(admin, clinicId)");
+
     expect(resolvedOwnerStart).toBeGreaterThan(-1);
-    expect(resolvedOwnerQuery).toContain('.eq("user_id", userId)');
+    expect(resolvedOwnerQuery).toContain('.eq("clinic_id", clinicId)');
     expect(resolvedOwnerQuery).toContain('.in("service", ["meta_ads", "meta"])');
     expect(resolvedOwnerQuery).toContain('.eq("status", "connected")');
     expect(source).toContain('row?.service === "meta_ads" && metadata?.canonical === true');
     expect(source).toContain('const service = integration.service === "meta_ads" ? "meta_ads" : "meta"');
-    expect(source).toContain('throw new Error("Connected Meta integration not found")');
+    expect(source).toContain('throw new Error("Connected Meta integration not found for clinic")');
+
+    expect(credentialQuery).toContain('.eq("user_id", userId)');
+    expect(credentialQuery).toContain('.eq("clinic_id", clinicId)');
+    expect(credentialQuery).toContain('.eq("service", service)');
+    expect(source).toContain('throw new Error("Meta credential not found for clinic")');
   });
 
-  it("suppresses QA before Meta delivery", () => {
+  it("suppresses QA before tenant or Meta resolution", () => {
     expect(source).toContain("function isTestLead");
     expect(source).toContain('reason: "qa_lead"');
     const qaGuard = source.indexOf("if (isTestLead(body))");
-    const metaResolution = source.indexOf("resolveOwnerAndMeta(admin)");
+    const tenantResolution = source.indexOf("sanitizeClinicId(body.clinic_id || body.clinicId)");
+    const metaResolution = source.indexOf("resolveOwnerAndMeta(admin, clinicId)");
     expect(qaGuard).toBeGreaterThan(-1);
-    expect(metaResolution).toBeGreaterThan(qaGuard);
+    expect(tenantResolution).toBeGreaterThan(qaGuard);
+    expect(metaResolution).toBeGreaterThan(tenantResolution);
   });
 
   it("does not propagate treatment or page-level clinical semantics", () => {
@@ -59,6 +74,7 @@ describe("web-events P0 contract", () => {
     expect(source).toContain("constructor(message: string, status = 422)");
     expect(source).toContain('throw new RequestValidationError("Unsupported event_name")');
     expect(source).toContain('throw new RequestValidationError("Valid event_id is required")');
+    expect(source).toContain('throw new RequestValidationError("Valid clinic_id is required")');
     expect(source).toContain('throw new RequestValidationError("No user_data available for CAPI event")');
     expect(source).toContain("const status = error instanceof RequestValidationError ? error.status : 500");
     expect(source).toContain('const message = status >= 500 ? "Internal error"');
