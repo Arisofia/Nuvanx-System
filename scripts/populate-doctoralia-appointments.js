@@ -146,9 +146,13 @@ function buildHeaderMap(headerRow) {
   for (const [field, aliases] of Object.entries(HEADER_ALIASES)) {
     const normalizedAliases = aliases.map(normalizeHeader);
     const exactIndex = normalizedHeaders.findIndex((header) => normalizedAliases.includes(header));
+    // Fuzzy matching is deliberately one-way: a richer source header may contain
+    // a shorter alias (for example "telefono paciente" contains "telefono"), but
+    // a generic source header must never impersonate a richer absent field
+    // ("hora" is not "hora creacion", "fecha" is not "fecha para normalizar").
     const partialIndex = exactIndex >= 0
       ? exactIndex
-      : normalizedHeaders.findIndex((header) => normalizedAliases.some((alias) => header.includes(alias) || alias.includes(header)));
+      : normalizedHeaders.findIndex((header) => normalizedAliases.some((alias) => header.includes(alias)));
     if (partialIndex >= 0) headerMap[field] = partialIndex;
   }
 
