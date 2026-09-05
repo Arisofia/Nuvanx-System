@@ -20,6 +20,10 @@ const whatsappMigration = readFileSync(
   fileURLToPath(new URL("../../migrations/20260901190000_async_whatsapp_encrypted_outbox.sql", import.meta.url)),
   "utf8",
 );
+const wakeupEnvelopeMigration = readFileSync(
+  fileURLToPath(new URL("../../migrations/20260905181500_restore_revops_dispatcher_wakeup_envelope.sql", import.meta.url)),
+  "utf8",
+);
 
 describe("RevOps dispatcher contract", () => {
   it("authenticates only with the Vault-generated internal secret", () => {
@@ -92,5 +96,11 @@ describe("RevOps dispatcher contract", () => {
     expect(waitUntil).toBeGreaterThan(-1);
     expect(accepted).toBeGreaterThan(waitUntil);
     expect(source).not.toContain("return reply(502, { success: false, worker, worker_status: response.status })");
+  });
+
+  it("keeps pg_net as a short reachability envelope instead of a worker runtime budget", () => {
+    expect(wakeupEnvelopeMigration).toContain("timeout_milliseconds := 5000");
+    expect(wakeupEnvelopeMigration).not.toContain("timeout_milliseconds := 30000");
+    expect(wakeupEnvelopeMigration).toContain("runs the selected worker with EdgeRuntime.waitUntil()");
   });
 });
