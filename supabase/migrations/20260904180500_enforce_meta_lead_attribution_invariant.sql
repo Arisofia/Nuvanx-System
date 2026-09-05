@@ -64,7 +64,10 @@ declare
   v_explicit_page_id text;
   v_candidate_pages text[];
 begin
-  v_explicit_page_id := nullif(btrim(coalesce(p_lead.metadata ->> 'page_id', '')), '');
+  v_explicit_page_id := coalesce(
+    nullif(btrim(coalesce(p_lead.metadata ->> 'page_id', '')), ''),
+    nullif(btrim(coalesce(p_lead.metadata ->> 'pageId', '')), '')
+  );
   if v_explicit_page_id is not null then
     return v_explicit_page_id;
   end if;
@@ -72,7 +75,10 @@ begin
   select array_agg(q.page_id order by q.page_id)
   into v_candidate_pages
   from (
-    select distinct nullif(btrim(coalesce(i.metadata ->> 'page_id', '')), '') as page_id
+    select distinct coalesce(
+      nullif(btrim(coalesce(i.metadata ->> 'page_id', '')), ''),
+      nullif(btrim(coalesce(i.metadata ->> 'pageId', '')), '')
+    ) as page_id
     from public.integrations i
     where i.user_id = p_lead.user_id
       and i.clinic_id is not distinct from p_lead.clinic_id
@@ -212,7 +218,8 @@ begin
 
   v_page_id := private.nvx_resolve_meta_page_id(new);
   if v_page_id is not null
-     and nullif(btrim(coalesce(new.metadata ->> 'page_id', '')), '') is null then
+     and nullif(btrim(coalesce(new.metadata ->> 'page_id', '')), '') is null
+     and nullif(btrim(coalesce(new.metadata ->> 'pageId', '')), '') is null then
     new.metadata := coalesce(new.metadata, '{}'::jsonb)
       || jsonb_build_object('page_id', v_page_id);
   end if;

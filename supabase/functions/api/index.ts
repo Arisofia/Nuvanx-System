@@ -1168,6 +1168,9 @@ export async function processLeadData(adminClient: any, userId: string, leadData
       lead_quality_score: null,
       ad_account_id:   leadData.account_id ?? leadData.ad_account_id ?? null,
       created_at:        createdAt,
+      metadata:          (leadData.page_id || leadData.pageId)
+        ? { page_id: String(leadData.page_id || leadData.pageId).trim() }
+        : {},
     };
 
     const { data: inserted, error: insertError } = await adminClient.from('leads')
@@ -1196,20 +1199,23 @@ export async function processLeadData(adminClient: any, userId: string, leadData
 
   // Record attribution details
   if (leadId) {
+    const attrPayload: Record<string, any> = {
+      lead_id:       leadId,
+      leadgen_id,
+    };
+    const resolvedPageId = (leadData.page_id || leadData.pageId) ? String(leadData.page_id || leadData.pageId).trim() : null;
+    if (resolvedPageId) attrPayload.page_id = resolvedPageId;
+    if (leadData.form_id != null) attrPayload.form_id = leadData.form_id;
+    if (leadData.campaign_id != null) attrPayload.campaign_id = leadData.campaign_id;
+    if (leadData.campaign_name != null) attrPayload.campaign_name = leadData.campaign_name;
+    if (leadData.adset_id != null) attrPayload.adset_id = leadData.adset_id;
+    if (leadData.adset_name != null) attrPayload.adset_name = leadData.adset_name;
+    if (leadData.ad_id != null) attrPayload.ad_id = leadData.ad_id;
+    if (leadData.ad_name != null) attrPayload.ad_name = leadData.ad_name;
+    if (leadData.form_name != null) attrPayload.form_name = leadData.form_name;
+
     await adminClient.from('meta_attribution')
-      .upsert({
-        lead_id:       leadId,
-        leadgen_id,
-        page_id:       leadData.page_id     ?? null,
-        form_id:       leadData.form_id     ?? null,
-        campaign_id:   leadData.campaign_id ?? null,
-        campaign_name: leadData.campaign_name ?? null,
-        adset_id:      leadData.adset_id    ?? null,
-        adset_name:    leadData.adset_name  ?? null,
-        ad_id:         leadData.ad_id       ?? null,
-        ad_name:       leadData.ad_name     ?? null,
-        form_name:     leadData.form_name   ?? null,
-      }, { onConflict: 'lead_id' });
+      .upsert(attrPayload, { onConflict: 'lead_id' });
     return leadId;
   }
   return null;
