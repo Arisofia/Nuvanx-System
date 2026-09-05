@@ -562,31 +562,7 @@ jobs:
         run: node scripts/run-daily-sync.js
 
       - name: Fetch Meta daily insights
-        shell: bash
-        run: |
-          set -euo pipefail
-          from_date="$FROM_DATE_INPUT"
-          to_date="$TO_DATE_INPUT"
-
-          if [ -z "$from_date" ]; then
-            from_date="$(date -u +'%Y-%m-01')"
-          fi
-          if [ -z "$to_date" ]; then
-            to_date="$(date -u +'%Y-%m-%d')"
-          fi
-
-          [[ "$from_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
-          [[ "$to_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
-
-          response="$(curl --fail-with-body --show-error --silent --max-time 60 \
-            -X POST "${SUPABASE_URL}/functions/v1/daily-aggregates" \
-            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
-            -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
-            -H 'Content-Type: application/json' \
-            -d "{\"action\":\"fetch_meta_insights\",\"from\":\"${from_date}\",\"to\":\"${to_date}\"}")"
-
-          printf '%s\n' "$response"
-          grep -q '"success":true' <<<"$response"
+        run: node scripts/fetch-meta-daily-insights-via-edge.js
 
   social-proof-audit:
     name: Scheduled · Social Proof Audit
