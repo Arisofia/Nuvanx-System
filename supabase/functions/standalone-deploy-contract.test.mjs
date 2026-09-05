@@ -69,6 +69,7 @@ describe('standalone Edge deployment ownership', () => {
     expectDeploymentPolicy('auth', { noVerifyJwt: true });
     expectDeploymentPolicy('health', { noVerifyJwt: true });
     expectDeploymentPolicy('playbooks', { noVerifyJwt: false });
+    expectDeploymentPolicy('whatsapp-provider-acceptance', { noVerifyJwt: true });
   });
 
   it('owns the canonical Google Ads MCC routing value in the governed Edge deploy', () => {
@@ -82,28 +83,30 @@ describe('standalone Edge deployment ownership', () => {
 
   it('waits read-only for the automatic migration owner and fails closed before migration-dependent Edge deploys', () => {
     expect(workflow).toContain('Wait for automatic Production migration owner');
-    expect(workflow).toContain('REQUIRED_MIGRATIONS=(20260901190000 20260901190100 20260901190200 20260903142000 20260905141000 20260905144500)');
+    expect(workflow).toContain('REQUIRED_MIGRATIONS=(20260901190000 20260901190100 20260901190200 20260903142000 20260905141000 20260905144500 20260905173500)');
     expect(workflow).toContain('for ATTEMPT in {1..20}; do');
     expect(workflow).toContain('Automatic Production migration owner did not converge required migrations');
     expect(workflow).toContain('[|│]');
     expect(workflow).not.toContain('bash scripts/supabase-migrate.sh');
     expect(workflow).not.toContain('supabase db push');
 
-    for (const version of ['20260901190000', '20260901190100', '20260901190200', '20260903142000', '20260905141000', '20260905144500']) {
-      const ts = version === '20260905141000' ? '2026-09-05 14:10:00' : '2026-09-05 14:45:00';
+    for (const [version, ts] of [
+      ['20260901190000', '2026-09-01 19:00:00'],
+      ['20260901190100', '2026-09-01 19:01:00'],
+      ['20260901190200', '2026-09-01 19:02:00'],
+      ['20260903142000', '2026-09-03 14:20:00'],
+      ['20260905141000', '2026-09-05 14:10:00'],
+      ['20260905144500', '2026-09-05 14:45:00'],
+      ['20260905173500', '2026-09-05 17:35:00'],
+    ]) {
       const asciiParity = migrationParityRow(version);
       const unicodeParity = migrationParityRow(version);
       expect(asciiParity.test(`  ${version} | ${version} | ${ts}`)).toBe(true);
       expect(unicodeParity.test(`  ${version} │ ${version} │ ${ts}`)).toBe(true);
-
-      const localOnlyAscii = migrationParityRow(version);
-      const remoteOnlyAscii = migrationParityRow(version);
-      const localOnlyUnicode = migrationParityRow(version);
-      const remoteOnlyUnicode = migrationParityRow(version);
-      expect(localOnlyAscii.test(`  ${version} |                | ${ts}`)).toBe(false);
-      expect(remoteOnlyAscii.test(`                 | ${version} | ${ts}`)).toBe(false);
-      expect(localOnlyUnicode.test(`  ${version} │                │ ${ts}`)).toBe(false);
-      expect(remoteOnlyUnicode.test(`                 │ ${version} │ ${ts}`)).toBe(false);
+      expect(migrationParityRow(version).test(`  ${version} |                | ${ts}`)).toBe(false);
+      expect(migrationParityRow(version).test(`                 | ${version} | ${ts}`)).toBe(false);
+      expect(migrationParityRow(version).test(`  ${version} │                │ ${ts}`)).toBe(false);
+      expect(migrationParityRow(version).test(`                 │ ${version} │ ${ts}`)).toBe(false);
     }
   });
 
@@ -136,6 +139,7 @@ describe('standalone Edge deployment ownership', () => {
       'supabase/functions/revops-dispatcher/index.ts',
       'supabase/functions/whatsapp-send/index.ts',
       'supabase/functions/whatsapp-outbound-worker/index.ts',
+      'supabase/functions/whatsapp-provider-acceptance/index.ts',
       'supabase/functions/whatsapp-status-webhook/index.ts',
       'supabase/functions/google-click-attribution/index.ts',
       'supabase/functions/google-data-manager-export/index.ts',
@@ -146,11 +150,12 @@ describe('standalone Edge deployment ownership', () => {
     }
   });
 
-  it('preserves JWT policies while deploying the registry, enqueue function and worker together', () => {
+  it('preserves JWT policies while deploying WhatsApp patient and acceptance lanes together', () => {
     expect(workflow).toContain('supabase functions deploy meta-capi-dispatch --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
     expect(workflow).toContain('supabase functions deploy revops-dispatcher --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
     expect(workflow).toContain('supabase functions deploy whatsapp-send --project-ref "$SUPABASE_PROJECT_REF"');
     expect(workflow).toContain('supabase functions deploy whatsapp-outbound-worker --project-ref "$SUPABASE_PROJECT_REF"');
+    expect(workflow).toContain('supabase functions deploy whatsapp-provider-acceptance --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
     expect(workflow).toContain('supabase functions deploy whatsapp-status-webhook --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
     expect(workflow).toContain('supabase functions deploy seo-web-performance --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
     expect(workflow).not.toContain('supabase functions deploy whatsapp-send --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
