@@ -10,9 +10,10 @@ const canonicalRuntimes = [
 ];
 
 describe('canonical meta_ads App Secret runtime boundary', () => {
-  it('requires the governed canonical secret and strips historical aliases before runtime import', () => {
-    expect(boundary).toContain("const CANONICAL_APP_SECRET = 'META_CANONICAL_APP_SECRET'");
-    expect(boundary).toContain("['META_REPORTING_APP_SECRET', 'META_APP_SECRET']");
+  it('requires the governed canonical env and strips historical aliases before runtime import', () => {
+    expect(boundary).toContain("const CANONICAL_ENV_NAME = 'META_CANONICAL_APP_SECRET'");
+    expect(boundary).toContain("const RETIRED_ENV_ALIASES = ['META_REPORTING_APP_SECRET', 'META_APP_SECRET']");
+    expect(boundary).toContain('Deno.env.get(CANONICAL_ENV_NAME)');
     expect(boundary).toContain('if (!canonical)');
     expect(boundary).toContain('Deno.env.delete(alias)');
   });
