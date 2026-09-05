@@ -8,16 +8,12 @@
  * - agent_outputs (AI analysis log)
  */
 import { createClient } from '@supabase/supabase-js';
-
-const cors = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS'
-};
+import { buildCorsHeaders } from '../_shared/config.ts';
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
 const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const anonKey     = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+const MAX_ROWS = 500;
 
 type TemplateBreakdown = Record<string, { count: number; revenue: number }>;
 
@@ -30,6 +26,7 @@ async function getAuthUser(req: Request) {
 }
 
 Deno.serve(async (req: Request) => {
+  const cors = buildCorsHeaders(req.headers.get('Origin'));
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
   const json = (data: unknown, status = 200) =>
@@ -41,43 +38,69 @@ Deno.serve(async (req: Request) => {
   const supabase = createClient(supabaseUrl, serviceKey);
   const userId   = user.id;
 
-  const { data: owner } = await supabase.from('users').select('clinic_id').eq('id', userId).single();
+  const { data: owner, error: ownerError } = await supabase
+    .from('users')
+    .select('clinic_id')
+    .eq('id', userId)
+    .maybeSingle();
+  if (ownerError) return json({ success: false, message: 'Failed to fetch user context' }, 500);
   const clinicId = owner?.clinic_id ?? null;
 
   // === REAL DATA ONLY - proper multi-tenant scoping (matching main api router patterns) ===
   let leadsQuery = supabase.from('leads')
-    .select('*')
+    .select('id, user_id, clinic_id, stage, revenue, source, created_at')
     .eq('user_id', userId)
     .is('deleted_at', null)
-    .neq('source', 'doctoralia');   // exclude doctoralia source for acquisition metrics (real data)
+    .neq('source', 'doctoralia')
+    .order('created_at', { ascending: false })
+    .limit(MAX_ROWS);
 
   if (clinicId) leadsQuery = leadsQuery.eq('clinic_id', clinicId);
 
-  let settlementsQuery = supabase.from('financial_settlements').select('*');
+  let settlementsQuery = supabase.from('financial_settlements')
+    .select('id, clinic_id, amount_net, amount_gross, amount_discount, settled_at, created_at, template_name, patient_name')
+    .limit(MAX_ROWS);
   if (clinicId) {
     settlementsQuery = settlementsQuery.eq('clinic_id', clinicId);
   } else {
-    settlementsQuery = settlementsQuery.eq('user_id', userId);
+    settlementsQuery = settlementsQuery.limit(0);
   }
   settlementsQuery = settlementsQuery.order('settled_at', { ascending: false });
 
-  let patientsQuery = supabase.from('patients').select('*');
+  let patientsQuery = supabase.from('patients')
+    .select('id', { count: 'exact', head: true });
   if (clinicId) {
     patientsQuery = patientsQuery.eq('clinic_id', clinicId);
+  } else {
+    patientsQuery = patientsQuery.limit(0);
   }
+
+  let metaQuery = supabase
+    .from('meta_attribution')
+    .select('leadgen_id, campaign_id, form_id, captured_at, leads!inner(user_id, clinic_id)')
+    .eq('leads.user_id', userId)
+    .order('captured_at', { ascending: false })
+    .limit(MAX_ROWS);
+  if (clinicId) metaQuery = metaQuery.eq('leads.clinic_id', clinicId);
 
   const [leadsRes, settlementsRes, patientsRes, integrationsRes, metaRes, agentRes] = await Promise.all([
     leadsQuery,
     settlementsQuery,
     patientsQuery,
-    supabase.from('integrations').select('*').eq('user_id', userId),
-    supabase.from('meta_attribution').select('*').order('captured_at', { ascending: false }).limit(50),
+    supabase.from('integrations').select('status').eq('user_id', userId),
+    metaQuery,
     supabase.from('agent_outputs').select('id, agent_type, output_text, model_used, status, created_at').eq('user_id', userId).order('created_at', { ascending: false }).limit(5)
   ]);
 
+  const queryError = [leadsRes, settlementsRes, patientsRes, integrationsRes, metaRes, agentRes]
+    .find((result) => result.error)?.error;
+  if (queryError) {
+    console.error('[Dashboard] Failed to load dashboard data:', queryError);
+    return json({ success: false, message: 'Failed to load dashboard data' }, 500);
+  }
+
   const leads       = leadsRes.data ?? [];
   const settlements = settlementsRes.data ?? [];
-  const patients    = patientsRes.data ?? [];
   const integrations = integrationsRes.data ?? [];
   const metaLeads   = metaRes.data ?? [];
   const agentOutputs = agentRes.data ?? [];
@@ -96,7 +119,7 @@ Deno.serve(async (req: Request) => {
   const docTotalGross = settlements.reduce((s, r) => s + Number.parseFloat(r.amount_gross ?? 0), 0);
   const docDiscount   = settlements.reduce((s, r) => s + Number.parseFloat(r.amount_discount ?? 0), 0);
   const avgTicket     = settlements.length > 0 ? docTotalNet / settlements.length : 0;
-  const uniquePatients = patients.length;
+  const uniquePatients = patientsRes.count ?? 0;
 
   // Template breakdown
   const templateBreakdown = settlements.reduce<TemplateBreakdown>((acc, s) => {
@@ -151,7 +174,7 @@ Deno.serve(async (req: Request) => {
       totalSettlements: settlements.length,
       templateBreakdown,
       timeline: settlementTimeline,
-      lastSettlement: settlementTimeline[settlementTimeline.length - 1]?.date ?? null
+      lastSettlement: settlementTimeline.at(-1)?.date ?? null
     },
     // Real Meta acquisition data (from meta_attribution table)
     meta: {
