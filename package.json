@@ -19,7 +19,7 @@
     "install:all": "npm install && npm --prefix frontend install",
     "secrets:scan": "node scripts/scan-secrets.js",
     "production:e2e": "node scripts/production-e2e.js",
-    "verify:doctoralia-config": "node -e 'const checks=[[\"Doctoralia sheet ID\",process.env.DOCTORALIA_APPOINTMENTS_SHEET_ID||process.env.DOCTORALIA_SHEET_ID||process.env.DOCTORALIA_DRIVE_FILE_ID],[\"DOCTORALIA_APPOINTMENTS_SHEET_NAME\",process.env.DOCTORALIA_APPOINTMENTS_SHEET_NAME],[\"GOOGLE_DOCTORALIA_SERVICE_ACCOUNT\",process.env.GOOGLE_DOCTORALIA_SERVICE_ACCOUNT],[\"DATABASE_URL\",process.env.DATABASE_URL],[\"CLINIC_ID\",process.env.CLINIC_ID]]; console.log(\"Verificando configuración de Doctoralia...\"); let ok=true; for(const [name,value] of checks){if(String(value||\"\").trim()) console.log(`✅ ${name} configurada`); else {console.error(`❌ Falta variable: ${name}`); ok=false}} if(!ok) process.exit(1)'",
+    "verify:doctoralia-config": "node -e 'const checks=[[\"Doctoralia sheet ID\",process.env.DOCTORALIA_APPOINTMENTS_SHEET_ID||process.env.DOCTORALIA_SHEET_ID||process.env.DOCTORALIA_DRIVE_FILE_ID],[\"GOOGLE_DOCTORALIA_SERVICE_ACCOUNT\",process.env.GOOGLE_DOCTORALIA_SERVICE_ACCOUNT],[\"DATABASE_URL\",process.env.DATABASE_URL],[\"CLINIC_ID\",process.env.CLINIC_ID]]; console.log(\"Verificando configuración de Doctoralia (tab canónico: Base Completa Doctoralia)...\"); let ok=true; for(const [name,value] of checks){if(String(value||\"\").trim()) console.log(`✅ ${name} configurada`); else {console.error(`❌ Falta variable: ${name}`); ok=false}} if(!ok) process.exit(1)'",
     "daily:sync": "node scripts/run-daily-sync.js",
     "meta:audit": "node scripts/meta-ads-account-report.js",
     "validate:workflow-yaml": "node scripts/validate-github-workflows.js",
