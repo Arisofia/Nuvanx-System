@@ -34,6 +34,7 @@ const forbiddenExactPaths = new Set([
   'scripts/sync-google-ads-service-account.js',
   'scripts/sync-google-ads-service-account.test.js',
   'scripts/validate-retired-edge-inventory.mjs',
+  'scripts/social-proof/doctoralia-public-snapshot.mjs',
   'wp-mu-plugins/nuvanx-doctoralia-price-barrio-salamanca.php',
   'wp-mu-plugins/nuvanx-doctoralia-social-proof.php',
   'wp-mu-plugins/nuvanx-google-review-request-v2.php',
