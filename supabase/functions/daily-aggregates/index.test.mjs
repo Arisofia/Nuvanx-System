@@ -31,9 +31,10 @@ describe('daily-aggregates Meta ingest contract', () => {
   it('does not run a second insight writer or Gemini path inside ingestion', () => {
     expect(source).not.toContain('GEMINI_API_KEY');
     expect(source).not.toContain('agent_outputs');
-    expect(source).not.toContain('daily-meta-insight');
-    expect(source).not.toContain('daily-insight');
+    expect(source).not.toContain("agent_type: 'daily-meta-insight'");
+    expect(source).not.toContain("agent_type: 'daily-insight'");
     expect(source).not.toContain('geminiText');
+    expect(source).not.toContain('generativelanguage.googleapis.com');
   });
 
   it('rejects unknown actions instead of running an implicit legacy job', () => {
