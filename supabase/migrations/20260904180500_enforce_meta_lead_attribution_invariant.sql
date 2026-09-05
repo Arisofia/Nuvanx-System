@@ -46,6 +46,13 @@ alter table public.meta_attribution
   alter column leadgen_id set not null,
   alter column captured_at set not null;
 
+-- Ensure private schema exists and restrict public access before defining
+-- privileged security definer helper functions.
+create schema if not exists private authorization postgres;
+revoke all on schema private from public;
+revoke all on schema private from anon;
+grant usage on schema private to authenticated, service_role;
+
 -- Resolve page ownership once at the database boundary. Explicit lead metadata
 -- wins. Otherwise a page may be inferred only from one connected meta_ads
 -- integration for the same user + clinic. Ambiguity fails closed.
