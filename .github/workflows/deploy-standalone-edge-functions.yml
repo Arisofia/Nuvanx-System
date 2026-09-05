@@ -334,14 +334,14 @@ jobs:
             }
 
             for ATTEMPT in {1..20}; do
-              ROW="$(psql "$DB_URL" -X -v ON_ERROR_STOP=1 -F $'\t' -Atqc "select coalesce(status_code::text,''), coalesce(timed_out::text,'false'), coalesce(error_msg,''), encode(convert_to(coalesce(content,''),'UTF8'),'base64') from net._http_response where id = ${REQUEST_ID};")"
+              ROW="$(psql "$DB_URL" -X -v ON_ERROR_STOP=1 -F $'\t' -Atqc "select coalesce(status_code::text,''), coalesce(timed_out::text,'false'), coalesce(error_msg,'-'), encode(convert_to(coalesce(content,''),'UTF8'),'base64') from net._http_response where id = ${REQUEST_ID};")"
               if [ -z "$ROW" ]; then
                 sleep 2
                 continue
               fi
 
               IFS=$'\t' read -r STATUS_CODE TIMED_OUT ERROR_MSG CONTENT_B64 <<< "$ROW"
-              if [ "$TIMED_OUT" = 'true' ] || [ -n "$ERROR_MSG" ]; then
+              if [ "$TIMED_OUT" = 'true' ] || [ "$ERROR_MSG" != '-' ]; then
                 echo "::error::Meta runtime acceptance transport failed request_id=$REQUEST_ID timed_out=$TIMED_OUT"
                 exit 1
               fi
