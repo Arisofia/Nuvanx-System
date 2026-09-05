@@ -3,10 +3,14 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const VERIFY_TOKEN = Deno.env.get("META_WEBHOOK_VERIFY_TOKEN") || Deno.env.get("WHATSAPP_WEBHOOK_VERIFY_TOKEN") || "";
+const TEST_VERIFY_TOKEN = Deno.env.get("WHATSAPP_TEST_WEBHOOK_VERIFY_TOKEN") || "";
 const APP_SECRET = Deno.env.get("META_CANONICAL_APP_SECRET")
   || Deno.env.get("META_REPORTING_APP_SECRET")
   || Deno.env.get("META_APP_SECRET")
   || "";
+const TEST_APP_SECRET = Deno.env.get("WHATSAPP_TEST_APP_SECRET") || "";
+
+type SignatureScope = "production" | "test";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -40,13 +44,20 @@ function timingSafeEqualHex(left: string, right: string): boolean {
   return diff === 0;
 }
 
-async function verifyMetaSignature(req: Request, rawBody: string): Promise<boolean> {
-  if (!APP_SECRET) return false;
+async function verifyMetaSignature(req: Request, rawBody: string): Promise<SignatureScope | null> {
   const header = String(req.headers.get("x-hub-signature-256") || "").trim();
-  if (!header.startsWith("sha256=")) return false;
+  if (!header.startsWith("sha256=")) return null;
   const received = header.slice(7).toLowerCase();
-  const expected = await hmacSha256Hex(APP_SECRET, rawBody);
-  return timingSafeEqualHex(received, expected);
+
+  if (APP_SECRET) {
+    const expectedProduction = await hmacSha256Hex(APP_SECRET, rawBody);
+    if (timingSafeEqualHex(received, expectedProduction)) return "production";
+  }
+  if (TEST_APP_SECRET) {
+    const expectedTest = await hmacSha256Hex(TEST_APP_SECRET, rawBody);
+    if (timingSafeEqualHex(received, expectedTest)) return "test";
+  }
+  return null;
 }
 
 function eventTime(timestamp: unknown): string {
@@ -73,19 +84,22 @@ Deno.serve(async (req: Request) => {
     const mode = url.searchParams.get("hub.mode") || "";
     const token = url.searchParams.get("hub.verify_token") || "";
     const challenge = url.searchParams.get("hub.challenge") || "";
-    if (mode === "subscribe" && VERIFY_TOKEN && token === VERIFY_TOKEN && challenge) {
+    const verifiedToken = (VERIFY_TOKEN && token === VERIFY_TOKEN)
+      || (TEST_VERIFY_TOKEN && token === TEST_VERIFY_TOKEN);
+    if (mode === "subscribe" && verifiedToken && challenge) {
       return new Response(challenge, { status: 200, headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" } });
     }
     return new Response("verification failed", { status: 403, headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" } });
   }
 
   if (req.method !== "POST") return json({ success: false, message: "GET or POST required" }, 405);
-  if (!SUPABASE_URL || !SERVICE_ROLE || !APP_SECRET) {
+  if (!SUPABASE_URL || !SERVICE_ROLE || (!APP_SECRET && !TEST_APP_SECRET)) {
     return json({ success: false, message: "Webhook runtime configuration incomplete" }, 503);
   }
 
   const rawBody = await req.text();
-  if (!(await verifyMetaSignature(req, rawBody))) {
+  const signatureScope = await verifyMetaSignature(req, rawBody);
+  if (!signatureScope) {
     return json({ success: false, message: "Invalid Meta webhook signature" }, 401);
   }
 
@@ -107,7 +121,10 @@ Deno.serve(async (req: Request) => {
   let ignored = 0;
   let failed = 0;
 
-  // Process the complete signed Meta batch. Successful rows are idempotent, so a later 5xx retry is safe.
+  // Process the complete signed Meta batch. Production signatures may reconcile
+  // either namespace because Test WABA can share the canonical Meta app. A distinct
+  // test-app signature is intentionally restricted to the acceptance namespace and
+  // can never mutate patient delivery state.
   for (const item of statuses) {
     const messageId = String(item?.id || "").trim();
     const status = String(item?.status || "").trim().toLowerCase();
@@ -117,17 +134,32 @@ Deno.serve(async (req: Request) => {
     }
 
     const providerError = Array.isArray(item?.errors) ? item.errors[0] : null;
-    const { data, error } = await admin.rpc("nvx_apply_whatsapp_status", {
+    const args = {
       p_provider_message_id: messageId,
       p_status: status,
       p_event_at: eventTime(item?.timestamp),
       p_error_code: providerError?.code === undefined || providerError?.code === null ? null : String(providerError.code),
       p_error_message: providerError?.title || providerError?.message || providerError?.error_data?.details || null,
-    });
+    };
 
-    if (error) failed += 1;
-    else if (data !== true) ignored += 1;
-    else applied += 1;
+    let persisted = false;
+    let persistenceFailed = false;
+
+    if (signatureScope === "production") {
+      const { data, error } = await admin.rpc("nvx_apply_whatsapp_status", args);
+      if (error) persistenceFailed = true;
+      else if (data === true) persisted = true;
+    }
+
+    if (!persisted && !persistenceFailed) {
+      const { data, error } = await admin.rpc("nvx_apply_whatsapp_provider_acceptance_status", args);
+      if (error) persistenceFailed = true;
+      else if (data === true) persisted = true;
+    }
+
+    if (persistenceFailed) failed += 1;
+    else if (persisted) applied += 1;
+    else ignored += 1;
   }
 
   if (failed > 0) {
