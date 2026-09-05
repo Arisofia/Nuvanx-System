@@ -10,6 +10,10 @@ const googleAdsAcceptanceWorkflow = readFileSync(
   fileURLToPath(new URL("../../../.github/workflows/google-ads-runtime-acceptance.yml", import.meta.url)),
   "utf8",
 );
+const provenanceQualifier = readFileSync(
+  fileURLToPath(new URL("../../../scripts/qualify-governed-edge-deployment.py", import.meta.url)),
+  "utf8",
+);
 const runtimePreflightScript = readFileSync(
   fileURLToPath(new URL("../../../scripts/preflight-google-ads-runtime.js", import.meta.url)),
   "utf8",
@@ -56,29 +60,38 @@ describe("Production release acceptance domains", () => {
     expect(googleAdsAcceptanceWorkflow).toContain("UPSTREAM_EVENT: ${{ github.event.workflow_run.event }}");
     expect(googleAdsAcceptanceWorkflow).toContain("UPSTREAM_BRANCH: ${{ github.event.workflow_run.head_branch }}");
     expect(googleAdsAcceptanceWorkflow).toContain("name: Qualify · governed Edge deployment");
+    expect(googleAdsAcceptanceWorkflow).toContain("Qualify trusted upstream envelope");
     expect(googleAdsAcceptanceWorkflow).toContain("Prove governed Edge deployment actually ran");
     expect(googleAdsAcceptanceWorkflow).toContain("actions/runs/${UPSTREAM_RUN_ID}/jobs?per_page=100");
-    expect(googleAdsAcceptanceWorkflow).toContain("upstream_conclusion != 'success'");
-    expect(googleAdsAcceptanceWorkflow).toContain("upstream_event != 'workflow_run'");
-    expect(googleAdsAcceptanceWorkflow).toContain("upstream_branch != 'main'");
-    expect(googleAdsAcceptanceWorkflow).toContain("Deploy · governed Edge Functions");
-    expect(googleAdsAcceptanceWorkflow).toContain("Deploy governed functions");
-    expect(googleAdsAcceptanceWorkflow).toContain("job.get('head_sha') != expected_sha");
-    expect(googleAdsAcceptanceWorkflow).toContain("if not accept:");
-    expect(googleAdsAcceptanceWorkflow).toContain("sys.exit(1)");
+    expect(googleAdsAcceptanceWorkflow).toContain("python3 -m py_compile scripts/qualify-governed-edge-deployment.py");
+    expect(googleAdsAcceptanceWorkflow).toContain("python3 scripts/qualify-governed-edge-deployment.py");
+    expect(googleAdsAcceptanceWorkflow).not.toContain("python3 - <<'PY'");
+
+    expect(provenanceQualifier).toContain('upstream_conclusion != "success"');
+    expect(provenanceQualifier).toContain('upstream_event != "workflow_run"');
+    expect(provenanceQualifier).toContain('upstream_branch != "main"');
+    expect(provenanceQualifier).toContain('DEPLOY_JOB_NAME = "Deploy · governed Edge Functions"');
+    expect(provenanceQualifier).toContain('"Deploy governed functions"');
+    expect(provenanceQualifier).toContain('job.get("head_sha") != expected_sha');
+    expect(provenanceQualifier).toContain('job.get("run_id") != expected_run_id');
+    expect(provenanceQualifier).toContain("if not accept:");
+    expect(provenanceQualifier).toContain("return 1");
+
     expect(googleAdsAcceptanceWorkflow).toContain("needs: provenance");
     expect(googleAdsAcceptanceWorkflow).toContain("needs.provenance.outputs.accept == 'true'");
     expect(googleAdsAcceptanceWorkflow).toContain("DEPLOYED_SHA: ${{ needs.provenance.outputs.deployed_sha }}");
   });
 
   it("treats a legitimately skipped deploy as not applicable instead of a false Google Ads failure", () => {
-    expect(googleAdsAcceptanceWorkflow).toContain("not_applicable = False");
-    expect(googleAdsAcceptanceWorkflow).toContain("job.get('conclusion') == 'skipped'");
-    expect(googleAdsAcceptanceWorkflow).toContain("not_applicable = True");
-    expect(googleAdsAcceptanceWorkflow).toContain("no Production Edge mutation occurred and runtime acceptance is not applicable");
-    expect(googleAdsAcceptanceWorkflow).toContain("if not_applicable:");
-    expect(googleAdsAcceptanceWorkflow).toContain("sys.exit(0)");
-    expect(googleAdsAcceptanceWorkflow).toContain("accept={'true' if accept else 'false'}");
+    expect(provenanceQualifier).toContain("not_applicable = False");
+    expect(provenanceQualifier).toContain('job.get("conclusion") == "skipped"');
+    expect(provenanceQualifier).toContain("not_applicable = True");
+    expect(provenanceQualifier).toContain("no Production Edge mutation occurred");
+    expect(provenanceQualifier).toContain("if not_applicable:");
+    expect(provenanceQualifier).toContain("return 0");
+    expect(provenanceQualifier).toContain("accept={'true' if accept else 'false'}");
+    expect(googleAdsAcceptanceWorkflow).toContain('if [[ "${UPSTREAM_CONCLUSION:-}" == "skipped" ]]');
+    expect(googleAdsAcceptanceWorkflow).toContain('echo "applicable=false" >> "$GITHUB_OUTPUT"');
   });
 
   it("proves auth inside the deployed Edge control plane before credential convergence", () => {

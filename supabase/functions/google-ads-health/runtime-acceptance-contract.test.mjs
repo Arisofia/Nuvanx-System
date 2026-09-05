@@ -10,6 +10,10 @@ const deployWorkflow = readFileSync(
   fileURLToPath(new URL("../../../.github/workflows/deploy-standalone-edge-functions.yml", import.meta.url)),
   "utf8",
 );
+const provenanceQualifier = readFileSync(
+  fileURLToPath(new URL("../../../scripts/qualify-governed-edge-deployment.py", import.meta.url)),
+  "utf8",
+);
 const healthSource = readFileSync(fileURLToPath(new URL("./index.ts", import.meta.url)), "utf8");
 const edgePreflightSource = readFileSync(
   fileURLToPath(new URL("../google-ads-auth-preflight/index.ts", import.meta.url)),
@@ -34,14 +38,20 @@ const convergenceScript = readFileSync(
 const authSource = readFileSync(fileURLToPath(new URL("../_shared/google-ads-auth.ts", import.meta.url)), "utf8");
 
 describe("Google Ads runtime acceptance orchestration", () => {
-  it("treats an expected skipped deploy as not-applicable instead of a false runtime failure", () => {
-    expect(workflow).toContain("job.get('conclusion') == 'skipped'");
-    expect(workflow).toContain("not_applicable = True");
-    expect(workflow).toContain("no Production Edge mutation occurred and runtime acceptance is not applicable");
-    expect(workflow).toContain("if not_applicable:\n              print(reason)\n              sys.exit(0)");
-    expect(workflow).toContain("if not accept:\n              print(f\"::error::{reason}\")\n              sys.exit(1)");
-    expect(workflow.indexOf("if upstream_event != 'workflow_run':")).toBeLessThan(workflow.indexOf("elif upstream_conclusion == 'skipped':"));
-    expect(workflow.indexOf("elif upstream_branch != 'main':")).toBeLessThan(workflow.indexOf("elif upstream_conclusion == 'skipped':"));
+  it("keeps skipped-deploy handling and provenance decisions in a versioned executable qualifier", () => {
+    expect(workflow).toContain("Qualify trusted upstream envelope");
+    expect(workflow).toContain("python3 -m py_compile scripts/qualify-governed-edge-deployment.py");
+    expect(workflow).toContain("python3 scripts/qualify-governed-edge-deployment.py");
+    expect(workflow).not.toContain("python3 - <<'PY'");
+    expect(provenanceQualifier).toContain('upstream_conclusion == "skipped"');
+    expect(provenanceQualifier).toContain("not_applicable = True");
+    expect(provenanceQualifier).toContain("no Production Edge mutation occurred");
+    expect(provenanceQualifier.indexOf('upstream_event != "workflow_run"')).toBeLessThan(
+      provenanceQualifier.indexOf('upstream_conclusion == "skipped"'),
+    );
+    expect(provenanceQualifier.indexOf('upstream_branch != "main"')).toBeLessThan(
+      provenanceQualifier.indexOf('upstream_conclusion == "skipped"'),
+    );
   });
 
   it("proves provider auth inside the deployed Edge control plane before credential convergence", () => {
