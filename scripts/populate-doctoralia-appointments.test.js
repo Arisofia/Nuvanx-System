@@ -3,6 +3,7 @@
 
 const assert = require('node:assert/strict');
 const {
+  buildHeaderMap,
   buildRecord,
   dedupeRecordsBySourceKey,
   findHeaderRowIndex,
@@ -61,9 +62,41 @@ assert.equal(secondVisitSameDoctoraliaCode.appointment_id, secondVisitSameDoctor
 assert.equal(firstVisit.doctoralia_id, '48');
 assert.equal(firstVisit.is_control, false, 'Revisión tratamiento is a real appointment, not an internal control');
 
+const baseCompletaHeaders = [
+  'Nº Historia',
+  'Paciente',
+  'Teléfono paciente',
+  'Estado',
+  'Fecha',
+  'Hora',
+  'Fecha creación',
+  'Concepto cita',
+  'Agenda',
+  'Sala/Box',
+  'Confirmada',
+  'Procedencia',
+  'Importe',
+];
+const baseCompletaHeaderMap = buildHeaderMap(baseCompletaHeaders);
+assert.equal(baseCompletaHeaderMap.doctoralia_id, 0);
+assert.equal(baseCompletaHeaderMap.patient_name, 1);
+assert.equal(baseCompletaHeaderMap.phone, 2);
+assert.equal(baseCompletaHeaderMap.estado, 3);
+assert.equal(baseCompletaHeaderMap.appointment_date, 4);
+assert.equal(baseCompletaHeaderMap.appointment_time, 5);
+assert.equal(baseCompletaHeaderMap.created_date, 6);
+assert.equal(baseCompletaHeaderMap.treatment, 7);
+assert.equal(baseCompletaHeaderMap.agenda, 8);
+assert.equal(baseCompletaHeaderMap.room, 9);
+assert.equal(baseCompletaHeaderMap.confirmed, 10);
+assert.equal(baseCompletaHeaderMap.origin, 11);
+assert.equal(baseCompletaHeaderMap.amount, 12);
+assert.equal(baseCompletaHeaderMap.created_time, undefined, 'Hora must not impersonate Hora creación');
+assert.equal(baseCompletaHeaderMap.normalized_date, undefined, 'Fecha must not impersonate Fecha para normalizar');
+
 const baseCompletaRows = [
   ['CITAS CLINIC CLOUD'],
-  ['Nº Historia', 'Paciente', 'Teléfono paciente', 'Estado', 'Fecha', 'Hora', 'Fecha creación', 'Concepto cita', 'Agenda', 'Sala/Box', 'Confirmada', 'Procedencia', 'Importe'],
+  baseCompletaHeaders,
   ['99', 'PACIENTE DE PRUEBA', '600000000', 'Pendiente', '21/08/2026', '10:00 - 10:30', '20/08/2026', 'BOTOX', 'MEDICINA ESTÉTICA JJRT', 'Sin asignar', '', '-', '270.00'],
 ];
 
@@ -75,5 +108,8 @@ assert.equal(baseCompletaRecords[0].patient_name, 'PACIENTE DE PRUEBA');
 assert.equal(baseCompletaRecords[0].treatment, 'BOTOX');
 assert.equal(baseCompletaRecords[0].amount, 270);
 assert.equal(baseCompletaRecords[0].sheet_row, 3);
+assert.equal(baseCompletaRecords[0].created_date, '2026-08-20');
+assert.equal(baseCompletaRecords[0].created_time, null);
+assert.equal(baseCompletaRecords[0].normalized_date, '2026-08-21');
 
 console.log('populate-doctoralia-appointments tests passed');
