@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * Syncs the Doctoralia appointments agenda from Google Sheets into
+ * Syncs the canonical Doctoralia appointments agenda from Google Sheets into
  * public.doctoralia_appointments_ingestion.
  *
  * Required env vars:
@@ -12,7 +12,8 @@
  *   SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY
  *
  * Optional env vars:
- *   DOCTORALIA_APPOINTMENTS_SHEET_NAME (default: SHEET_NAME or Base Completa Doctoralia)
+ *   DOCTORALIA_APPOINTMENTS_SHEET_NAME (canonical value: Base Completa Doctoralia)
+ *   DOCTORALIA_ALLOW_NON_CANONICAL_SHEET=true only for a controlled migration
  *   DOCTORALIA_APPOINTMENTS_SHEET_RANGE (default: A1:T5000)
  *   DOCTORALIA_APPOINTMENTS_MIN_ROWS (minimum/default: 1800)
  *   DOCTORALIA_APPOINTMENTS_PERMISSION_MODE (fail|warn; default: fail)
@@ -23,6 +24,9 @@
 
 const fs = require('node:fs');
 const { google } = require('googleapis');
+const {
+  getDoctoraliaAppointmentsSourceDecision,
+} = require('./lib/doctoralia-appointments-source.js');
 const {
   countIngestedRecords,
   recordsFromRows,
@@ -37,7 +41,8 @@ const SHEET_ID = String(
   process.env.DOCTORALIA_DRIVE_FILE_ID ||
   '',
 ).trim();
-const SHEET_NAME = process.env.DOCTORALIA_APPOINTMENTS_SHEET_NAME || process.env.SHEET_NAME || 'Base Completa Doctoralia';
+const SOURCE_DECISION = getDoctoraliaAppointmentsSourceDecision(process.env);
+const SHEET_NAME = SOURCE_DECISION.resolved;
 const SHEET_RANGE = process.env.DOCTORALIA_APPOINTMENTS_SHEET_RANGE || 'A1:T5000';
 const MIN_ROWS = Math.max(parsePositiveInt(process.env.DOCTORALIA_APPOINTMENTS_MIN_ROWS, 1800), 1800);
 const PERMISSION_MODE = (process.env.DOCTORALIA_APPOINTMENTS_PERMISSION_MODE || 'fail').toLowerCase();
@@ -45,12 +50,6 @@ const PERMISSION_MODE = (process.env.DOCTORALIA_APPOINTMENTS_PERMISSION_MODE || 
 function parsePositiveInt(value, fallback) {
   const parsed = Number.parseInt(String(value || ''), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function mask(value) {
-  const text = String(value || '');
-  if (text.length <= 12) return text ? '[redacted]' : '';
-  return `${text.slice(0, 4)}…${text.slice(-4)}`;
 }
 
 function maskError(error) {
@@ -119,7 +118,7 @@ async function fetchRows() {
 
   const sheets = await getSheetsClient();
   const range = buildA1Range();
-  console.log('[sync-doctoralia-appointments] Fetching spreadsheet values (identifiers redacted).');
+  console.log('[sync-doctoralia-appointments] Fetching canonical spreadsheet values (identifiers redacted).');
 
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
@@ -132,6 +131,15 @@ async function fetchRows() {
 }
 
 async function main() {
+  if (SOURCE_DECISION.nonCanonicalIgnored) {
+    console.warn(
+      '[sync-doctoralia-appointments] Ignoring non-canonical configured sheet; governed sync is pinned to Base Completa Doctoralia. ' +
+        'Set DOCTORALIA_ALLOW_NON_CANONICAL_SHEET=true only for a controlled migration.',
+    );
+  } else if (SOURCE_DECISION.overrideAllowed && SOURCE_DECISION.resolved !== SOURCE_DECISION.canonical) {
+    console.warn('[sync-doctoralia-appointments] Controlled non-canonical appointments source override enabled.');
+  }
+
   let rows;
   try {
     rows = await fetchRows();
