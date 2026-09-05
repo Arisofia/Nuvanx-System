@@ -25,6 +25,12 @@ jobs:
       deployed_sha: ${{ steps.proof.outputs.deployed_sha }}
 
     steps:
+      - name: Checkout provenance qualifier
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
       - name: Prove governed Edge deployment actually ran
         id: proof
         shell: bash
@@ -42,91 +48,19 @@ jobs:
           [[ "${DEPLOYED_SHA:-}" =~ ^[0-9a-f]{40}$ ]]
 
           JOBS_JSON="$RUNNER_TEMP/upstream-deploy-jobs.json"
+          export JOBS_JSON DEPLOYED_SHA UPSTREAM_RUN_ID UPSTREAM_CONCLUSION UPSTREAM_EVENT UPSTREAM_BRANCH
+
           curl --fail-with-body --silent --show-error \
+            --proto '=https' --proto-redir '=https' \
+            --connect-timeout 10 --max-time 30 \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/runs/${UPSTREAM_RUN_ID}/jobs?per_page=100" \
             > "$JOBS_JSON"
 
-          export JOBS_JSON DEPLOYED_SHA UPSTREAM_RUN_ID UPSTREAM_CONCLUSION UPSTREAM_EVENT UPSTREAM_BRANCH
-          python3 - <<'PY'
-          import json
-          import os
-          import sys
-
-          with open(os.environ['JOBS_JSON'], encoding='utf-8') as handle:
-              payload = json.load(handle)
-
-          expected_sha = os.environ['DEPLOYED_SHA']
-          expected_run_id = int(os.environ['UPSTREAM_RUN_ID'])
-          upstream_conclusion = os.environ.get('UPSTREAM_CONCLUSION', '')
-          upstream_event = os.environ.get('UPSTREAM_EVENT', '')
-          upstream_branch = os.environ.get('UPSTREAM_BRANCH', '')
-
-          accept = False
-          not_applicable = False
-          reason = 'governed deployment provenance was not established'
-
-            if upstream_event != 'workflow_run':
-              reason = f"upstream deploy workflow was triggered by {upstream_event!r}, not trusted Master workflow_run"
-            elif upstream_branch != 'main':
-              reason = f"upstream deploy workflow branch is {upstream_branch!r}, not main"
-            elif upstream_conclusion == 'skipped':
-              not_applicable = True
-              reason = 'upstream deploy workflow was skipped; no Production Edge mutation occurred and runtime acceptance is not applicable'
-          elif upstream_conclusion != 'success':
-              reason = f"upstream deploy workflow conclusion is {upstream_conclusion!r}, not success"
-          else:
-              deploy_jobs = [
-                  job for job in payload.get('jobs', [])
-                  if job.get('name') == 'Deploy · governed Edge Functions'
-              ]
-              if len(deploy_jobs) != 1:
-                  reason = 'governed deploy job was not uniquely present'
-              else:
-                  job = deploy_jobs[0]
-                  steps = {step.get('name'): step for step in job.get('steps', [])}
-                  required_steps = (
-                      'Verify current main is the quality-approved candidate',
-                      'Revalidate governed Edge candidate',
-                      'Reverify remote main immediately before Production mutation',
-                      'Deploy governed functions',
-                  )
-                  missing_or_failed = [
-                      name for name in required_steps
-                      if steps.get(name, {}).get('conclusion') != 'success'
-                  ]
-                  if job.get('run_id') != expected_run_id:
-                      reason = 'deploy job run_id does not match the triggering workflow run'
-                  elif job.get('head_sha') != expected_sha:
-                      reason = 'deploy job SHA does not match workflow_run.head_sha'
-                  elif job.get('conclusion') == 'skipped':
-                      not_applicable = True
-                      reason = 'governed deploy job was skipped; no Production Edge mutation occurred and runtime acceptance is not applicable'
-                  elif job.get('conclusion') != 'success':
-                      reason = f"deploy job conclusion is {job.get('conclusion')!r}, not success"
-                  elif missing_or_failed:
-                      reason = f"required deploy steps did not complete successfully: {missing_or_failed}"
-                  else:
-                      accept = True
-                      reason = 'governed Edge deployment and exact-SHA guards completed successfully'
-
-          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
-              output.write(f"accept={'true' if accept else 'false'}\n")
-              if accept:
-                  output.write(f"deployed_sha={expected_sha}\n")
-
-          if not_applicable:
-              print(reason)
-              sys.exit(0)
-
-          if not accept:
-              print(f"::error::{reason}")
-              sys.exit(1)
-
-          print(reason)
-          PY
+          python3 -m py_compile scripts/qualify-governed-edge-deployment.py
+          python3 scripts/qualify-governed-edge-deployment.py
 
   acceptance:
     name: Accept · Google Ads runtime
