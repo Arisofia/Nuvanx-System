@@ -87,7 +87,7 @@ test('dispatcher ingress receives only the internal secret, not GitHub service-r
   assert.doesNotMatch(dispatcherRequest, /Bearer \$\{key\}/);
 });
 
-test('Supabase base URL is HTTPS-only before privileged requests are built', () => {
+test('Supabase base URL is pinned before privileged requests are built', () => {
   assert.equal(normalizeSupabaseBase('https://example.supabase.co/'), 'https://example.supabase.co');
   for (const invalid of [
     'http://example.supabase.co',
@@ -95,13 +95,18 @@ test('Supabase base URL is HTTPS-only before privileged requests are built', () 
     'https://user:pass@example.supabase.co',
     'https://example.supabase.co/rest/v1',
     'https://example.supabase.co?next=https://attacker.test',
+    'https://example.supabase.co:8443',
+    'https://supabase.co',
+    'https://foo.bar.supabase.co',
+    'https://example.supabase.co.attacker.test',
+    'https://attacker.test',
     'not-a-url',
   ]) {
     assert.throws(() => normalizeSupabaseBase(invalid), /valid HTTPS origin/);
   }
   const validationOffset = edgeInvoker.indexOf('const base = normalizeSupabaseBase(rawBase)');
   const firstPrivilegedRequest = edgeInvoker.indexOf('await readConnectedCustomers(base, key, fetchImpl)');
-  assert.ok(validationOffset >= 0 && firstPrivilegedRequest > validationOffset, 'HTTPS validation must run before privileged requests');
+  assert.ok(validationOffset >= 0 && firstPrivilegedRequest > validationOffset, 'Supabase origin validation must run before privileged requests');
 });
 
 test('authenticated integration read refuses redirects without a second request', async () => {
