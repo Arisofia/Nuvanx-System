@@ -122,7 +122,7 @@ jobs:
           skip_link: true
           command: |
             set -euo pipefail
-            REQUIRED_MIGRATIONS=(20260901190000 20260901190100 20260901190200 20260903142000)
+            REQUIRED_MIGRATIONS=(20260901190000 20260901190100 20260901190200 20260903142000 20260905141000)
             for ATTEMPT in {1..20}; do
               MIGRATION_STATUS="$(supabase migration list --db-url "${SESSION_URL:-$DATABASE_URL}" 2>&1)"
               MISSING_MIGRATIONS=()
@@ -176,7 +176,8 @@ jobs:
             supabase/functions/whatsapp-outbound-worker/index.ts \
             supabase/functions/whatsapp-status-webhook/index.ts \
             supabase/functions/google-click-attribution/index.ts \
-            supabase/functions/google-data-manager-export/index.ts
+            supabase/functions/google-data-manager-export/index.ts \
+            supabase/functions/seo-web-performance/index.ts
 
       - name: Reverify remote main immediately before Production mutation
         id: mutation_guard
@@ -244,4 +245,5 @@ jobs:
             supabase functions deploy whatsapp-status-webhook --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy google-click-attribution --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy google-data-manager-export --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+            supabase functions deploy seo-web-performance --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions list --project-ref "$SUPABASE_PROJECT_REF"
