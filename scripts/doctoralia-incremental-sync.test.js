@@ -160,7 +160,7 @@ test('one writer, no destructive parser, no archive, selective financial cleanup
   assert.doesNotMatch(migration, /pg_catalog\.md5/i);
   assert.doesNotMatch(migration, /doctoralia_appointment_value_materialization/i);
 
-  assert.match(identityMigration, /doctoralia_id_raw ~ '\^\[0-9\]\+\(\[\.\]0\+\)\?\$'/);
+  assert.ok(identityMigration.includes("doctoralia_id_raw ~ '^[0-9]+([.]0+)?$'"));
   assert.match(identityMigration, /subject_phone_normalized/);
   assert.match(identityMigration, /source_key is distinct from r\.new_key/);
   assert.match(identityMigration, /extensions\.digest/i);
