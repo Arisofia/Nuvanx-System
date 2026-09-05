@@ -4,9 +4,6 @@ const { createHash } = require('node:crypto');
 
 const DEFAULT_CHUNK_SIZE = 100;
 
-// Fields whose source value is allowed to change for the same appointment slot.
-// sheet_row/raw_data/import timestamps are audit metadata and must never force a
-// rewrite when the underlying appointment has not changed.
 const COMPARE_FIELDS = [
   'estado',
   'status',
@@ -53,6 +50,10 @@ function normalizeKeyPart(value) {
     .toLowerCase();
 }
 
+function normalizeDoctoraliaId(value) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
 function normalizePhone(value) {
   let phone = String(value || '').replace(/\D+/g, '');
   if (!phone || /^0+$/.test(phone)) return '';
@@ -62,8 +63,8 @@ function normalizePhone(value) {
 }
 
 function patientIdentity(record) {
-  const doctoraliaId = clean(record?.doctoralia_id);
-  if (doctoraliaId) return `id:${normalizeKeyPart(doctoraliaId)}`;
+  const doctoraliaId = normalizeDoctoraliaId(record?.doctoralia_id);
+  if (doctoraliaId) return `id:${doctoraliaId}`;
 
   const phone = normalizePhone(record?.phone_normalized || record?.patient_phone || record?.phone);
   if (phone) return `ph:${phone}`;
@@ -78,12 +79,9 @@ function patientIdentity(record) {
 }
 
 /**
- * Stable appointment identity.
- *
- * Doctoralia export has no provider appointment id. The narrowest stable
- * business identity available is patient + scheduled date + scheduled time +
- * agenda. Mutable fields such as Estado, Importe, Concepto cita and sheet row
- * are intentionally excluded so lifecycle changes update the same DB row.
+ * Stable appointment identity shared with PostgreSQL function
+ * public.nvx_doctoralia_appointment_source_key(). Mutable lifecycle fields and
+ * source row position are deliberately excluded.
  */
 function buildStableAppointmentSourceKey(record) {
   const appointmentDate = clean(record?.appointment_date);
@@ -122,8 +120,6 @@ function dedupeCanonicalRecords(records) {
   const byKey = new Map();
   for (const original of records) {
     const record = canonicalizeRecord(original);
-    // Base Completa is append-like. If the same appointment slot appears more
-    // than once, the later source row is the latest snapshot and wins.
     const existing = byKey.get(record.source_key);
     if (!existing || Number(record.sheet_row || 0) >= Number(existing.sheet_row || 0)) {
       byKey.set(record.source_key, record);
@@ -237,6 +233,7 @@ module.exports = {
   comparableSnapshot,
   dedupeCanonicalRecords,
   fetchExistingBySourceKey,
+  normalizeDoctoraliaId,
   patientIdentity,
   planIncrementalChanges,
   recordsDiffer,
