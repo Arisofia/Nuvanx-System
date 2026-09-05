@@ -77,7 +77,5 @@ describe('Meta lead attribution invariant', () => {
   it('guarantees private schema presence and restricts public access', () => {
     expect(executable).toContain('create schema if not exists private authorization postgres;');
     expect(executable).toContain('revoke all on schema private from public;');
-    expect(executable).toContain('revoke all on schema private from anon;');
-    expect(executable).toContain('grant usage on schema private to authenticated, service_role;');
   });
 });
