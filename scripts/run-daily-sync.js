@@ -4,6 +4,7 @@
 /**
  * Nuvanx Daily Sync Orchestrator
  * Runs core daily operational jobs with fail-fast semantics on critical steps.
+ * Function mutation stays with the governed Edge deploy owner, not this job.
  */
 
 const { execSync } = require('child_process');
@@ -25,14 +26,6 @@ function resolveDoctoraliaAppointmentsSheetId() {
 
 function sleep(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
-function requireProjectRefWhenDeploying() {
-  const ref = String(process.env.SUPABASE_PROJECT_REF || '').trim();
-  if (!ref) {
-    throw new Error('SUPABASE_PROJECT_REF is required when DAILY_SYNC_DEPLOY_FUNCTIONS=true.');
-  }
-  return ref;
 }
 
 function withEnv(command, env) {
@@ -68,24 +61,11 @@ const steps = [
     critical: true,
     retry: 1,
   },
-  {
-    name: 'deploy-daily-aggregates',
-    cmd: () => 'npx --yes supabase --yes functions deploy daily-aggregates --no-verify-jwt --project-ref ' + requireProjectRefWhenDeploying(),
-    critical: true,
-    retry: 2,
-    enabled: process.env.DAILY_SYNC_DEPLOY_FUNCTIONS === 'true',
-    skipReason: 'Edge Function deployment is handled by the Deploy Supabase workflow. Set DAILY_SYNC_DEPLOY_FUNCTIONS=true to deploy from daily sync.',
-  },
 ];
 
 console.log('Starting Nuvanx daily sync orchestrator...');
 
 for (const step of steps) {
-  if (step.enabled === false) {
-    console.log(`Skipping ${step.name}: ${step.skipReason}`);
-    continue;
-  }
-
   let attempt = 0;
   const maxAttempts = (step.retry || 0) + 1;
   let success = false;
@@ -93,15 +73,13 @@ for (const step of steps) {
   while (attempt < maxAttempts && !success) {
     try {
       attempt += 1;
-      const command = typeof step.cmd === 'function' ? step.cmd() : step.cmd;
-
       if (maxAttempts > 1) {
         console.log(`Running ${step.name} (attempt ${attempt}/${maxAttempts})...`);
       } else {
         console.log(`Running ${step.name}...`);
       }
 
-      execSync(command, { stdio: 'inherit', shell: '/bin/bash' });
+      execSync(step.cmd, { stdio: 'inherit', shell: '/bin/bash' });
       console.log(`${step.name} completed`);
       success = true;
     } catch (error) {

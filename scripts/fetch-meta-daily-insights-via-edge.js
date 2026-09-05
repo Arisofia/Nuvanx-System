@@ -113,7 +113,8 @@ async function fetchMetaDailyInsightsViaEdge({ fetchImpl = fetch, now = new Date
   });
 
   const payload = await readJson(response);
-  if (!response.ok || !payload || payload.success !== true) {
+  const failures = Array.isArray(payload?.failures) ? payload.failures : [];
+  if (!response.ok || !payload || payload.success !== true || failures.length > 0) {
     const kind = String(payload?.kind || '').replace(/\s+/g, ' ').slice(0, 80);
     const message = String(payload?.message || payload?.error || '').replace(/\s+/g, ' ').slice(0, 300);
     throw new Error(
