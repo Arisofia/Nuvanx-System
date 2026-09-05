@@ -354,7 +354,7 @@ jobs:
               printf '%s' "$CONTENT" | jq -e '
                 .success == true and
                 .credential_owner == "supabase_meta_ads" and
-                .app_secret_owner == "production_edge_secret" and
+                .app_credential_authority == "production_edge_secret" and
                 (.appId | tostring) == "1836302544001572" and
                 (.systemUserId | tostring) == "122098243371455164" and
                 (.pageId | tostring) == "113908631183569" and
