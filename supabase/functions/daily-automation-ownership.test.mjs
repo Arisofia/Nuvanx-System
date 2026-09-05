@@ -29,12 +29,19 @@ function scheduledMetaOwnerFiles() {
     .filter((path) => /\.(?:ya?ml|sql)$/.test(path))
     .filter((path) => {
       const source = readFileSync(path, 'utf8');
-      return source.includes('fetch_meta_insights')
-        && (
-          source.includes('cron.schedule')
-          || source.includes('schedule:')
-          || source.includes('workflow_dispatch:')
-        );
+      const hasScheduleAuthority = source.includes('cron.schedule')
+        || source.includes('schedule:')
+        || source.includes('workflow_dispatch:');
+      if (!hasScheduleAuthority) return false;
+
+      // SQL owns the primary Meta ingestion action directly. GitHub owns the
+      // reconciliation schedule by invoking the dedicated canonical caller;
+      // the workflow must not duplicate the Edge action/body inline merely so
+      // an inventory test can see the literal `fetch_meta_insights` string.
+      if (path === masterPath) {
+        return source.includes(`run: node ${reconciliationPath}`);
+      }
+      return source.includes('fetch_meta_insights');
     })
     .sort();
 }
