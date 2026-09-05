@@ -31,8 +31,8 @@ as $function$
       pg_catalog.regexp_replace(
         coalesce(
           pg_catalog.substring(
-            coalesce(p_subject, '')
-            from '\[([0-9][0-9 +()./-]{7,}[0-9])\]'
+            coalesce(p_subject, ''),
+            '\[([0-9][0-9 +()./-]{7,}[0-9])\]'
           ),
           ''
         ),
