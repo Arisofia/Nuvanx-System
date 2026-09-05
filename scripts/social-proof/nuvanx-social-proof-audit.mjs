@@ -32,6 +32,7 @@ function fileName(url) {
 
 async function fetchHtml(url) {
   const response = await fetch(`${url}${url.includes('?') ? '&' : '?'}wordpress_owner_audit=${stamp}`, {
+    signal: AbortSignal.timeout(30_000),
     headers: {
       'User-Agent': 'Mozilla/5.0 NUVANX-WordPress-Owner-Audit',
       'Cache-Control': 'no-cache',
