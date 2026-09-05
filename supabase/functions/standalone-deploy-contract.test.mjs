@@ -4,6 +4,32 @@ import { describe, expect, it } from 'vitest';
 const workflow = readFileSync('.github/workflows/deploy-standalone-edge-functions.yml', 'utf8');
 const packageJson = JSON.parse(readFileSync('package.json', 'utf8'));
 const migrationParityRow = (version) => new RegExp(`^[\\s]*${version}[\\s]*[|│][\\s]*${version}[\\s]*([|│]|$)`);
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+function deploymentLines(functionName) {
+  const command = `supabase functions deploy ${functionName} --project-ref "$SUPABASE_PROJECT_REF"`;
+  const pattern = new RegExp(`^\\s*${escapeRegex(command)}(?:\\s+--no-verify-jwt)?\\s*$`);
+  return workflow.split('\n').filter((line) => pattern.test(line));
+}
+
+function expectDeploymentPolicy(functionName, { noVerifyJwt }) {
+  const lines = deploymentLines(functionName);
+  expect(lines, `${functionName} must have exactly one governed deploy command`).toHaveLength(1);
+  if (noVerifyJwt) {
+    expect(lines[0]).toContain('--no-verify-jwt');
+  } else {
+    expect(lines[0]).not.toContain('--no-verify-jwt');
+  }
+}
+
+function denoCheckBlock() {
+  const lines = workflow.split('\n');
+  const start = lines.findIndex((line) => /^\s*deno check --config=supabase\/functions\/deno\.json\s*\\\s*$/.test(line));
+  const firstDeploy = lines.findIndex((line) => /^\s*supabase functions deploy\b/.test(line));
+  expect(start, 'governed executable Deno check command must exist').toBeGreaterThanOrEqual(0);
+  expect(firstDeploy, 'Deno validation must run before the first executable deploy command').toBeGreaterThan(start);
+  return lines.slice(start, firstDeploy);
+}
 
 describe('standalone Edge deployment ownership', () => {
   it('runs only after successful Master System main-push quality or explicit manual dispatch', () => {
@@ -36,6 +62,15 @@ describe('standalone Edge deployment ownership', () => {
     expect(workflow).not.toContain('frontend-git-main-arisofias-projects-c2217452.vercel.app');
   });
 
+  it('owns each production-critical core runtime exactly once with its intended JWT policy', () => {
+    expectDeploymentPolicy('api', { noVerifyJwt: true });
+    expectDeploymentPolicy('mcp', { noVerifyJwt: true });
+    expectDeploymentPolicy('daily-aggregates', { noVerifyJwt: true });
+    expectDeploymentPolicy('auth', { noVerifyJwt: true });
+    expectDeploymentPolicy('health', { noVerifyJwt: true });
+    expectDeploymentPolicy('playbooks', { noVerifyJwt: false });
+  });
+
   it('owns the canonical Google Ads MCC routing value in the governed Edge deploy', () => {
     expect(workflow).toContain("GOOGLE_ADS_LOGIN_CUSTOMER_ID: '8265708501'");
     expect(workflow).toContain('[[ "$GOOGLE_ADS_LOGIN_CUSTOMER_ID" == "8265708501" ]]');
@@ -47,50 +82,68 @@ describe('standalone Edge deployment ownership', () => {
 
   it('waits read-only for the automatic migration owner and fails closed before migration-dependent Edge deploys', () => {
     expect(workflow).toContain('Wait for automatic Production migration owner');
-    expect(workflow).toContain('supabase migration list --db-url');
-    expect(workflow).toContain('REQUIRED_MIGRATIONS=(20260901190000 20260901190100 20260901190200 20260903142000 20260905141000)');
+    expect(workflow).toContain('REQUIRED_MIGRATIONS=(20260901190000 20260901190100 20260901190200 20260903142000 20260905141000 20260905144500)');
     expect(workflow).toContain('for ATTEMPT in {1..20}; do');
     expect(workflow).toContain('Automatic Production migration owner did not converge required migrations');
     expect(workflow).toContain('[|│]');
     expect(workflow).not.toContain('bash scripts/supabase-migrate.sh');
     expect(workflow).not.toContain('supabase db push');
 
-    for (const version of ['20260901190000', '20260901190100', '20260901190200', '20260903142000', '20260905141000']) {
+    for (const version of ['20260901190000', '20260901190100', '20260901190200', '20260903142000', '20260905141000', '20260905144500']) {
+      const ts = version === '20260905141000' ? '2026-09-05 14:10:00' : '2026-09-05 14:45:00';
       const asciiParity = migrationParityRow(version);
       const unicodeParity = migrationParityRow(version);
-      expect(asciiParity.test(`  ${version} | ${version} | 2026-09-05 14:10:00`)).toBe(true);
-      expect(unicodeParity.test(`  ${version} │ ${version} │ 2026-09-05 14:10:00`)).toBe(true);
+      expect(asciiParity.test(`  ${version} | ${version} | ${ts}`)).toBe(true);
+      expect(unicodeParity.test(`  ${version} │ ${version} │ ${ts}`)).toBe(true);
 
       const localOnlyAscii = migrationParityRow(version);
       const remoteOnlyAscii = migrationParityRow(version);
       const localOnlyUnicode = migrationParityRow(version);
       const remoteOnlyUnicode = migrationParityRow(version);
-      expect(localOnlyAscii.test(`  ${version} |                | 2026-09-05 14:10:00`)).toBe(false);
-      expect(remoteOnlyAscii.test(`                 | ${version} | 2026-09-05 14:10:00`)).toBe(false);
-      expect(localOnlyUnicode.test(`  ${version} │                │ 2026-09-05 14:10:00`)).toBe(false);
-      expect(remoteOnlyUnicode.test(`                 │ ${version} │ 2026-09-05 14:10:00`)).toBe(false);
+      expect(localOnlyAscii.test(`  ${version} |                | ${ts}`)).toBe(false);
+      expect(remoteOnlyAscii.test(`                 | ${version} | ${ts}`)).toBe(false);
+      expect(localOnlyUnicode.test(`  ${version} │                │ ${ts}`)).toBe(false);
+      expect(remoteOnlyUnicode.test(`                 │ ${version} │ ${ts}`)).toBe(false);
     }
   });
 
-  it('revalidates tests and all governed Deno entrypoints before deployment', () => {
+  it('revalidates every governed core entrypoint inside the executable Deno block before any deploy', () => {
     expect(packageJson.scripts.test).toContain('vitest run supabase/functions');
     expect(workflow).toContain('npm test');
-    expect(workflow).toContain('supabase/functions/dashboard/index.ts');
-    expect(workflow).toContain('supabase/functions/agent-run/index.ts');
-    expect(workflow).toContain('supabase/functions/runtime-bootstrap/index.ts');
-    expect(workflow).toContain('supabase/functions/google-ads-auth-preflight/index.ts');
-    expect(workflow).toContain('supabase/functions/google-ads-health/index.ts');
-    expect(workflow).toContain('supabase/functions/google-ads-daily-sync/index.ts');
-    expect(workflow).toContain('supabase/functions/google-ads-backfill-dispatcher/index.ts');
-    expect(workflow).toContain('supabase/functions/meta-lead-backfill/index.ts');
-    expect(workflow).toContain('supabase/functions/meta-daily-insights/index.ts');
-    expect(workflow).toContain('supabase/functions/meta-capi-dispatch/index.ts');
-    expect(workflow).toContain('supabase/functions/hubspot-marketing-contact-monitor/index.ts');
-    expect(workflow).toContain('supabase/functions/revops-dispatcher/index.ts');
-    expect(workflow).toContain('supabase/functions/whatsapp-send/index.ts');
-    expect(workflow).toContain('supabase/functions/whatsapp-outbound-worker/index.ts');
-    expect(workflow).toContain('supabase/functions/whatsapp-status-webhook/index.ts');
-    expect(workflow).toContain('supabase/functions/seo-web-performance/index.ts');
+    const block = denoCheckBlock();
+    for (const path of [
+      'supabase/functions/api/index.ts',
+      'supabase/functions/mcp/index.ts',
+      'supabase/functions/daily-aggregates/index.ts',
+      'supabase/functions/auth/index.ts',
+      'supabase/functions/health/index.ts',
+      'supabase/functions/playbooks/index.ts',
+      'supabase/functions/dashboard/index.ts',
+      'supabase/functions/agent-run/index.ts',
+      'supabase/functions/runtime-bootstrap/index.ts',
+      'supabase/functions/control-centre-provider/index.ts',
+      'supabase/functions/google-ads-auth-preflight/index.ts',
+      'supabase/functions/google-ads-health/index.ts',
+      'supabase/functions/google-ads-daily-sync/index.ts',
+      'supabase/functions/google-ads-backfill-dispatcher/index.ts',
+      'supabase/functions/meta-lead-backfill/index.ts',
+      'supabase/functions/meta-daily-insights/index.ts',
+      'supabase/functions/meta-routing-audit/index.ts',
+      'supabase/functions/meta-leadgen-subscribe/index.ts',
+      'supabase/functions/meta-hubspot-sync/index.ts',
+      'supabase/functions/meta-capi-dispatch/index.ts',
+      'supabase/functions/hubspot-marketing-contact-monitor/index.ts',
+      'supabase/functions/revops-dispatcher/index.ts',
+      'supabase/functions/whatsapp-send/index.ts',
+      'supabase/functions/whatsapp-outbound-worker/index.ts',
+      'supabase/functions/whatsapp-status-webhook/index.ts',
+      'supabase/functions/google-click-attribution/index.ts',
+      'supabase/functions/google-data-manager-export/index.ts',
+      'supabase/functions/seo-web-performance/index.ts',
+    ]) {
+      const pathLine = new RegExp(`^\\s*${escapeRegex(path)}\\s*\\\\?\\s*$`);
+      expect(block.some((line) => pathLine.test(line)), `${path} must be an executable Deno-check argument`).toBe(true);
+    }
   });
 
   it('preserves JWT policies while deploying the registry, enqueue function and worker together', () => {
