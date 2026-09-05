@@ -3,6 +3,8 @@
 
 require('dotenv').config();
 
+const { normalizeSupabaseBase } = require('./lib/supabase-origin');
+
 function env(name, fallback = '') {
   return String(process.env[name] || fallback).trim();
 }
@@ -42,26 +44,6 @@ function resolveDateRange(now = new Date()) {
   return { from, to };
 }
 
-function normalizeSupabaseBase(value) {
-  let parsed;
-  try {
-    parsed = new URL(String(value || '').trim());
-  } catch {
-    throw new Error('SUPABASE_URL must be a valid HTTPS origin');
-  }
-  if (
-    parsed.protocol !== 'https:'
-    || parsed.username
-    || parsed.password
-    || parsed.search
-    || parsed.hash
-    || (parsed.pathname !== '/' && parsed.pathname !== '')
-  ) {
-    throw new Error('SUPABASE_URL must be a valid HTTPS origin');
-  }
-  return parsed.origin;
-}
-
 async function readJson(response) {
   const text = await response.text();
   if (!text) return null;
@@ -96,7 +78,8 @@ async function fetchMetaDailyInsightsViaEdge({ fetchImpl = fetch, now = new Date
   const key = env('SUPABASE_SERVICE_ROLE_KEY') || env('NUVANX_SUPABASE_SERVICE_ROLE_KEY');
   if (!rawBase || !key) throw new Error('SUPABASE_URL and service-role key are required');
 
-  // Validate the origin before any credential-bearing request is possible.
+  // Pin the destination to a real Supabase project origin before any
+  // credential-bearing request is possible.
   const base = normalizeSupabaseBase(rawBase);
   const range = resolveDateRange(now);
   const internalSecret = await resolveInternalSecret(base, key, fetchImpl);
