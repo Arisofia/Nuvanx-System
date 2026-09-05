@@ -1,18 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
-import { buildCorsHeaders, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from '../_shared/config.ts';
+import { buildCorsHeaders, SUPABASE_ANON_KEY, SUPABASE_URL } from '../_shared/config.ts';
 
 function createPublicAuthClient() {
   return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-      detectSessionInUrl: false,
-    },
-  });
-}
-
-function createAdminClient() {
-  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
@@ -27,23 +17,42 @@ Deno.serve(async (req: Request) => {
 
   const url = new URL(req.url);
   const path = url.pathname.replace(/^\/auth\/?/, '').replace(/^\//, '');
-  const body = req.method === 'POST' ? await req.json().catch(() => ({})) : {};
+  const body: unknown = req.method === 'POST' ? await req.json().catch(() => ({})) : {};
 
   const json = (data: unknown, status = 200) =>
     new Response(JSON.stringify(data), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
 
-  // POST /auth/register — public by design, but registration must traverse the
-  // standard Supabase Auth signup endpoint so native signup policy/rate limits apply.
+  // POST /auth/register — public by design. Registration traverses the standard
+  // Supabase Auth signup endpoint so native signup policy/rate limits apply.
+  // public.users is mirrored transactionally by the versioned auth.users trigger.
   if (req.method === 'POST' && path === 'register') {
-    const { email, password, name } = body;
-    if (!email || !password) return json({ success: false, message: 'email and password required' }, 400);
-    if (password.length < 8) return json({ success: false, message: 'password must be at least 8 characters' }, 400);
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return json({ success: false, message: 'invalid request body' }, 400);
+    }
+
+    const { email, password, name } = body as Record<string, unknown>;
+    if (
+      typeof email !== 'string' ||
+      typeof password !== 'string' ||
+      (name !== undefined && typeof name !== 'string')
+    ) {
+      return json({ success: false, message: 'email, password and name must have valid types' }, 400);
+    }
+
+    const normalizedEmail = email.trim();
+    const normalizedName = typeof name === 'string' ? name.trim() : '';
+    if (!normalizedEmail || !password) {
+      return json({ success: false, message: 'email and password required' }, 400);
+    }
+    if (password.length < 8) {
+      return json({ success: false, message: 'password must be at least 8 characters' }, 400);
+    }
 
     const publicAuth = createPublicAuthClient();
     const { data: authData, error: authError } = await publicAuth.auth.signUp({
-      email,
+      email: normalizedEmail,
       password,
-      options: { data: { name: name || '' } },
+      options: { data: { name: normalizedName } },
     });
 
     if (authError || !authData.user) {
@@ -51,18 +60,11 @@ Deno.serve(async (req: Request) => {
       return json({ success: false, message: authError?.message || 'Registration failed' }, status);
     }
 
-    // Mirror identity metadata into public.users for FK integrity. The service role
-    // is used only after Supabase Auth has accepted the standard signup request.
-    const admin = createAdminClient();
-    const { error: insertError } = await admin.from('users').upsert({
-      id: authData.user.id,
-      email: authData.user.email ?? email,
-      name: name || '',
-    }, { onConflict: 'id' });
-
-    if (insertError) console.error('public.users mirror failed:', insertError.message);
-
-    return json({ success: true, message: 'Registration successful. Please use Supabase Auth to log in.' });
+    // Supabase may return an obfuscated user for an already-registered confirmed
+    // address. No auth.users INSERT occurs in that case, so the DB trigger cannot
+    // create a phantom public.users row. Keep the response generic to avoid user
+    // enumeration and do not perform any service-role mirror from this public route.
+    return json({ success: true, message: 'Registration request accepted. Please use Supabase Auth to log in.' });
   }
 
   // GET /auth/me — verify token and return user.
