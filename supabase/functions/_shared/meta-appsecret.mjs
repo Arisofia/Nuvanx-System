@@ -8,17 +8,28 @@ function normalizedSecret(value) {
 }
 
 /**
+ * Build the App Secret proof authority for a Meta request.
+ *
+ * Default calls are canonical `meta_ads` calls. They MUST have exactly one
+ * configured canonical App Secret; a legacy secret and a bare-token request
+ * are not valid recovery candidates. Legacy `service='meta'` callers remain
+ * possible only by passing an explicit override selected by the service owner.
+ *
  * @param {string | null | undefined} canonicalSecret
- * @param {string | null | undefined} legacySecret
+ * @param {string | null | undefined} legacySecret Retained only for call-site
+ *   compatibility; it is never an implicit canonical candidate.
  * @param {string | null | undefined} appSecretOverride
  * @returns {Array<string | null>}
  */
 export function buildMetaAppSecretCandidates(canonicalSecret, legacySecret, appSecretOverride) {
+  void legacySecret;
   if (appSecretOverride !== undefined) return [normalizedSecret(appSecretOverride)];
-  const configured = [canonicalSecret, legacySecret]
-    .map(normalizedSecret)
-    .filter(Boolean);
-  return [...new Set(configured), null];
+
+  const canonical = normalizedSecret(canonicalSecret);
+  if (!canonical) {
+    throw new Error('Canonical Meta App Secret is required; implicit legacy or bare-token fallback is forbidden');
+  }
+  return [canonical];
 }
 
 /**

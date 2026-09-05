@@ -37,7 +37,6 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-      META_CANONICAL_ACCESS_TOKEN: ${{ secrets.META_CANONICAL_ACCESS_TOKEN }}
       META_CANONICAL_APP_SECRET: ${{ secrets.META_CANONICAL_APP_SECRET }}
       QUALITY_APPROVED_SHA: ${{ github.event.workflow_run.head_sha }}
       CORS_ALLOWED_ORIGINS: https://nuvanx-frontend.jenineferderas.workers.dev
@@ -82,7 +81,6 @@ jobs:
           set -euo pipefail
           test -n "${SUPABASE_PROJECT_REF:-}"
           test -n "${SUPABASE_ACCESS_TOKEN:-}"
-          test -n "${META_CANONICAL_ACCESS_TOKEN:-}"
           test -n "${META_CANONICAL_APP_SECRET:-}"
           test -n "${CORS_ALLOWED_ORIGINS:-}"
           test -n "${FRONTEND_URL:-}"
@@ -98,12 +96,12 @@ jobs:
             exit 1
           fi
 
-      - name: Validate canonical Meta credential identity
+      - name: Validate canonical Meta App Secret identity
         if: ${{ steps.candidate.outputs.deploy == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
-          response_file="$RUNNER_TEMP/meta-canonical-debug-token.json"
+          response_file="$RUNNER_TEMP/meta-canonical-app.json"
           app_access_token="1836302544001572|${META_CANONICAL_APP_SECRET}"
           http_code="$(
             curl --silent --show-error \
@@ -112,26 +110,20 @@ jobs:
               --output "$response_file" \
               --write-out '%{http_code}' \
               --get \
-              --data-urlencode "input_token=${META_CANONICAL_ACCESS_TOKEN}" \
+              --data-urlencode 'fields=id' \
               --data-urlencode "access_token=${app_access_token}" \
-              'https://graph.facebook.com/v22.0/debug_token'
+              'https://graph.facebook.com/v22.0/1836302544001572'
           )"
           if [ "$http_code" != 200 ]; then
-            message="$(jq -r '.error.message // "unknown"' "$response_file")"
-            echo "::error::Canonical Meta credential preflight failed status=$http_code message=$message"
+            provider_code="$(jq -r '.error.code // "unknown"' "$response_file")"
+            echo "::error::Canonical Meta App Secret preflight failed status=$http_code provider_code=$provider_code"
             exit 1
           fi
-          jq -e '
-            .data.is_valid == true and
-            (.data.app_id | tostring) == "1836302544001572" and
-            (.data.user_id | tostring) == "122098243371455164" and
-            (((.data.scopes // []) | index("leads_retrieval")) != null) and
-            (((.data.scopes // []) | index("pages_show_list")) != null)
-          ' "$response_file" >/dev/null || {
-            echo '::error::Canonical Meta credential identity or required scopes do not match the governed NUVANX stack'
+          jq -e '(.id | tostring) == "1836302544001572"' "$response_file" >/dev/null || {
+            echo '::error::Canonical Meta App Secret does not belong to the governed NUVANX App'
             exit 1
           }
-          echo 'META_CANONICAL_CREDENTIAL_PREFLIGHT=PASS app_id=1836302544001572 system_user_id=122098243371455164'
+          echo 'META_CANONICAL_APP_SECRET_PREFLIGHT=PASS app_id=1836302544001572'
 
       - name: Setup Node.js
         if: ${{ steps.candidate.outputs.deploy == 'true' }}
@@ -225,6 +217,7 @@ jobs:
             supabase/functions/meta-routing-audit/index.ts \
             supabase/functions/meta-leadgen-subscribe/index.ts \
             supabase/functions/meta-hubspot-sync/index.ts \
+            supabase/functions/meta-runtime-credential-acceptance/index.ts \
             supabase/functions/web-events/index.ts \
             supabase/functions/meta-capi-dispatch/index.ts \
             supabase/functions/hubspot-marketing-contact-monitor/index.ts \
@@ -305,6 +298,7 @@ jobs:
             supabase functions deploy meta-routing-audit --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy meta-leadgen-subscribe --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy meta-hubspot-sync --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+            supabase functions deploy meta-runtime-credential-acceptance --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy web-events --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy meta-capi-dispatch --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy hubspot-marketing-contact-monitor --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
@@ -319,3 +313,61 @@ jobs:
             supabase functions deploy google-data-manager-export --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy seo-web-performance --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions list --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Validate canonical Meta runtime credential
+        if: ${{ steps.candidate.outputs.deploy == 'true' && steps.mutation_guard.outputs.mutate == 'true' }}
+        uses: ./.github/actions/supabase-link-run
+        with:
+          project_ref: ${{ env.SUPABASE_PROJECT_REF }}
+          supabase_access_token: ${{ env.SUPABASE_ACCESS_TOKEN }}
+          database_url: ${{ env.DATABASE_URL }}
+          supabase_db_password: ${{ env.SUPABASE_DB_PASSWORD }}
+          skip_link: true
+          command: |
+            set -euo pipefail
+            DB_URL="${SESSION_URL:-$DATABASE_URL}"
+            test -n "$DB_URL"
+            REQUEST_ID="$(psql "$DB_URL" -X -v ON_ERROR_STOP=1 -Atqc 'select public.nvx_dispatch_meta_runtime_credential_acceptance();')"
+            [[ "$REQUEST_ID" =~ ^[0-9]+$ ]] || {
+              echo '::error::Meta runtime acceptance dispatcher did not return a pg_net request id'
+              exit 1
+            }
+
+            for ATTEMPT in {1..20}; do
+              ROW="$(psql "$DB_URL" -X -v ON_ERROR_STOP=1 -F $'\t' -Atqc "select coalesce(status_code::text,''), coalesce(timed_out::text,'false'), coalesce(error_msg,'-'), encode(convert_to(coalesce(content,''),'UTF8'),'base64') from net._http_response where id = ${REQUEST_ID};")"
+              if [ -z "$ROW" ]; then
+                sleep 2
+                continue
+              fi
+
+              IFS=$'\t' read -r STATUS_CODE TIMED_OUT ERROR_MSG CONTENT_B64 <<< "$ROW"
+              if [ "$TIMED_OUT" = 'true' ] || [ "$ERROR_MSG" != '-' ]; then
+                echo "::error::Meta runtime acceptance transport failed request_id=$REQUEST_ID timed_out=$TIMED_OUT"
+                exit 1
+              fi
+              if [ "$STATUS_CODE" != '200' ]; then
+                echo "::error::Meta runtime acceptance failed request_id=$REQUEST_ID status=$STATUS_CODE"
+                exit 1
+              fi
+
+              CONTENT="$(printf '%s' "$CONTENT_B64" | base64 --decode)"
+              printf '%s' "$CONTENT" | jq -e '
+                .success == true and
+                .credential_owner == "supabase_meta_ads" and
+                .app_credential_authority == "production_edge_secret" and
+                (.appId | tostring) == "1836302544001572" and
+                (.systemUserId | tostring) == "122098243371455164" and
+                (.pageId | tostring) == "113908631183569" and
+                .proof_verified == true and
+                ((.required_scopes | index("leads_retrieval")) != null) and
+                ((.required_scopes | index("pages_show_list")) != null)
+              ' >/dev/null || {
+                echo "::error::Meta runtime acceptance response did not satisfy the canonical credential contract request_id=$REQUEST_ID"
+                exit 1
+              }
+              echo "META_CANONICAL_RUNTIME_ACCEPTANCE=PASS request_id=$REQUEST_ID app_id=1836302544001572 system_user_id=122098243371455164 page_id=113908631183569"
+              exit 0
+            done
+
+            echo "::error::Meta runtime acceptance response was not observed request_id=$REQUEST_ID"
+            exit 1
