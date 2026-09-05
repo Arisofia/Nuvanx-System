@@ -224,10 +224,11 @@ Deno.serve(async (req: Request) => {
       acc[row.quality_status] += 1;
       return acc;
     }, { ok: 0, partial: 0, unavailable: 0 });
+    const fullyAvailable = counts.unavailable === 0;
 
     console.log(`[seo-web-performance] run=${runId} ok=${counts.ok} partial=${counts.partial} unavailable=${counts.unavailable}`);
-    return reply(200, {
-      success: counts.unavailable === 0,
+    return reply(fullyAvailable ? 200 : 502, {
+      success: fullyAvailable,
       runId,
       source: SOURCE,
       cells: rows.length,
