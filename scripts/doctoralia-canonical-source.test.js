@@ -44,7 +44,8 @@ test('canonical source authority belongs to the single appointments sync owner',
   assert.match(orchestrator, /withEnv\('node scripts\/sync-doctoralia-appointments\.js'/);
   assert.doesNotMatch(orchestrator, /sync-doctoralia-appointments-canonical\.js/);
 
-  assert.match(packageJson.scripts['doctoralia:appointments:load'], /node scripts\/sync-doctoralia-appointments\.js$/);
+  assert.equal(packageJson.scripts['doctoralia:appointments:load'], 'npm run doctoralia:appointments:sync');
+  assert.equal(packageJson.scripts['doctoralia:appointments:dry-run'], 'npm run doctoralia:appointments:sync:dry-run');
   assert.match(packageJson.scripts['doctoralia:appointments:sync'], /node scripts\/sync-doctoralia-appointments\.js$/);
   assert.match(packageJson.scripts['doctoralia:appointments:sync:dry-run'], /node scripts\/sync-doctoralia-appointments\.js --dry-run$/);
   assert.equal(existsSync('scripts/sync-doctoralia-appointments-canonical.js'), false);
