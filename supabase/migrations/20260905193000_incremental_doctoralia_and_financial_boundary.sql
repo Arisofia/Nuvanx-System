@@ -266,22 +266,55 @@ before delete on public.doctoralia_appointments_ingestion
 for each row
 execute function public.nvx_guard_doctoralia_appointment_delete();
 
--- Doctoralia appointment values are not verified cash settlements. Remove the
--- invalid materialization instead of preserving a second stale copy.
+-- Financial trust boundary.
+--
+-- Production preflight established that source_system='doctoralia' contains two
+-- historically conflated contracts:
+--   * appointment materialization produced by the retired sync-doctoralia.js;
+--     those rows carry the Doctoralia Asunto shape "<id>. NAME [phone] (...)";
+--   * six pre-existing financing/settlement rows whose template_name is a real
+--     financial product (for example EXPRESS/CAMPAÑA), with DNI/template_id and
+--     no appointment status. They are not proven to have been produced by the
+--     retired appointment writer and therefore must not be deleted by this fix.
+--
+-- Remove only the row class proven to be appointment materialization. No second
+-- archive/quarantine table is created.
 delete from public.financial_settlements
-where pg_catalog.lower(pg_catalog.btrim(coalesce(source_system, ''))) = 'doctoralia';
+where pg_catalog.lower(pg_catalog.btrim(coalesce(source_system, ''))) = 'doctoralia'
+  and coalesce(template_name, '') ~ '^(O/)?[0-9]+[.] .*\[.*\]';
+
+-- Fail closed if any appointment-shaped Doctoralia settlement survived. This is
+-- a contract assertion, not a blanket ban on Doctoralia as a future verified
+-- financial provider.
+do $$
+begin
+  if exists (
+    select 1
+    from public.financial_settlements
+    where pg_catalog.lower(pg_catalog.btrim(coalesce(source_system, ''))) = 'doctoralia'
+      and coalesce(template_name, '') ~ '^(O/)?[0-9]+[.] .*\[.*\]'
+  ) then
+    raise exception 'Doctoralia appointment materialization remains in financial_settlements after cleanup';
+  end if;
+end
+$$;
 
 alter table if exists public.financial_settlements
   drop constraint if exists financial_settlements_no_doctoralia_appointment_materialization;
 alter table if exists public.financial_settlements
   add constraint financial_settlements_no_doctoralia_appointment_materialization
-  check (pg_catalog.lower(pg_catalog.btrim(coalesce(source_system, ''))) <> 'doctoralia')
+  check (
+    not (
+      pg_catalog.lower(pg_catalog.btrim(coalesce(source_system, ''))) = 'doctoralia'
+      and coalesce(template_name, '') ~ '^(O/)?[0-9]+[.] .*\[.*\]'
+    )
+  )
   not valid;
 alter table if exists public.financial_settlements
   validate constraint financial_settlements_no_doctoralia_appointment_materialization;
 
 comment on table public.financial_settlements is
-  'Verified financial settlement authority only. Doctoralia appointment values are operational appointment data and cannot be stored here.';
+  'Financial settlement authority. Doctoralia appointment-shaped materializations are prohibited; non-appointment financial rows require their own verified financial provenance.';
 
 -- Patient identity is operational evidence and must derive from canonical
 -- appointments, not from financial rows or positive appointment amounts.
