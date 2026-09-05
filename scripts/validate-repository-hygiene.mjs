@@ -16,11 +16,12 @@ const activeRoots = [
 ];
 const sourceExtensions = new Set(['.ts', '.tsx', '.js', '.mjs', '.cjs', '.sql', '.yml', '.yaml', '.json']);
 const forbiddenName = /(?:_final|_old|_backup|_copy|\.bak$|\.tmp$|\.old$|~$)/i;
-// Assemble review-only sentinels from fragments so this detector never contains
-// the complete forbidden string it is searching for.
+// Assemble review-only and retired-contract sentinels from fragments so this
+// detector never contains the complete forbidden string it is searching for.
 const forbiddenContentMarkers = [
   ['touch:', 'force inclusion in PR diff'].join(' '),
   ['temporary', 'review-only marker'].join(' '),
+  ['EXPECTED_DOCTORALIA', 'COUNT'].join('_'),
 ];
 const forbiddenExactPaths = new Set([
   '.secret-webhook.example',
@@ -79,7 +80,7 @@ for (const file of files) {
   if (!sourceExtensions.has(extension)) continue;
   const content = await readFile(path.join(root, file), 'utf8');
   for (const marker of forbiddenContentMarkers) {
-    if (content.includes(marker)) failures.push(`temporary review marker in ${file}: ${marker}`);
+    if (content.includes(marker)) failures.push(`temporary or retired contract marker in ${file}: ${marker}`);
   }
 
   if (file.startsWith('supabase/functions/') && /https:\/\/[^\s'"`]+\.vercel\.app/i.test(content)) {
