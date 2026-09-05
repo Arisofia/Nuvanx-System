@@ -18,6 +18,9 @@ begin
   if to_regclass('public.financial_settlements') is null then
     raise exception 'financial_settlements is required';
   end if;
+  if not exists (select 1 from pg_extension where extname = 'pgcrypto') then
+    raise exception 'pgcrypto is required for Doctoralia SHA-256 appointment identity';
+  end if;
 end
 $$;
 
@@ -53,8 +56,8 @@ as $function$
     select
       *,
       case
-        when phone_digits ~ '^0034[0-9]{9}$' then pg_catalog.substring(phone_digits from 5)
-        when phone_digits ~ '^34[0-9]{9}$' then pg_catalog.substring(phone_digits from 3)
+        when phone_digits ~ '^0034[0-9]{9}$' then pg_catalog.substring(phone_digits, 5)
+        when phone_digits ~ '^34[0-9]{9}$' then pg_catalog.substring(phone_digits, 3)
         when phone_digits ~ '^0+$' then ''
         else phone_digits
       end as phone_normalized
@@ -79,14 +82,21 @@ as $function$
       or appointment_time is null
       or agenda is null
       then null
-    else 'doctoralia_appt_v3:' || pg_catalog.md5(
-      pg_catalog.concat_ws(
-        '|',
-        patient_identity,
-        appointment_date::text,
-        appointment_time,
-        agenda
-      )
+    else 'doctoralia_appt_v3:' || pg_catalog.encode(
+      extensions.digest(
+        pg_catalog.convert_to(
+          pg_catalog.concat_ws(
+            '|',
+            patient_identity,
+            appointment_date::text,
+            appointment_time,
+            agenda
+          ),
+          'UTF8'
+        ),
+        'sha256'
+      ),
+      'hex'
     )
   end
   from identity;
@@ -184,7 +194,7 @@ alter table public.doctoralia_appointments_ingestion
   drop constraint if exists doctoralia_appointments_ingestion_source_key_v3_check;
 alter table public.doctoralia_appointments_ingestion
   add constraint doctoralia_appointments_ingestion_source_key_v3_check
-  check (source_key like 'doctoralia_appt_v3:%') not valid;
+  check (source_key ~ '^doctoralia_appt_v3:[0-9a-f]{64}$') not valid;
 alter table public.doctoralia_appointments_ingestion
   validate constraint doctoralia_appointments_ingestion_source_key_v3_check;
 
