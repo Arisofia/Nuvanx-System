@@ -122,11 +122,22 @@ jobs:
           skip_link: true
           command: |
             set -euo pipefail
-            REQUIRED_MIGRATIONS=(20260901190000 20260901190100 20260901190200 20260903142000 20260905141000 20260905144500 20260905173500)
+            LOCAL_MIGRATIONS=()
+            while IFS= read -r MIGRATION_FILE; do
+              MIGRATION_VERSION="$(basename "$MIGRATION_FILE" | cut -d_ -f1)"
+              if [[ "$MIGRATION_VERSION" =~ ^[0-9]{14}$ ]]; then
+                LOCAL_MIGRATIONS+=("$MIGRATION_VERSION")
+              fi
+            done < <(find supabase/migrations -maxdepth 1 -type f -name '*.sql' -print | sort)
+            if [ "${#LOCAL_MIGRATIONS[@]}" -eq 0 ]; then
+              echo "::error::No versioned Supabase migrations found in the accepted candidate."
+              exit 1
+            fi
+
             for ATTEMPT in {1..20}; do
               MIGRATION_STATUS="$(supabase migration list --db-url "${SESSION_URL:-$DATABASE_URL}" 2>&1)"
               MISSING_MIGRATIONS=()
-              for REQUIRED_MIGRATION in "${REQUIRED_MIGRATIONS[@]}"; do
+              for REQUIRED_MIGRATION in "${LOCAL_MIGRATIONS[@]}"; do
                 if ! printf '%s\n' "$MIGRATION_STATUS" | grep -Eq "^[[:space:]]*${REQUIRED_MIGRATION}[[:space:]]*[|│][[:space:]]*${REQUIRED_MIGRATION}[[:space:]]*([|│]|$)"; then
                   MISSING_MIGRATIONS+=("$REQUIRED_MIGRATION")
                 fi
@@ -134,13 +145,13 @@ jobs:
 
               if [ "${#MISSING_MIGRATIONS[@]}" -eq 0 ]; then
                 printf '%s\n' "$MIGRATION_STATUS"
-                echo "All migration-dependent Edge schemas are present in LOCAL and REMOTE history."
+                echo "Every versioned candidate migration is present in LOCAL and REMOTE history."
                 break
               fi
 
               if [ "$ATTEMPT" -eq 20 ]; then
                 printf '%s\n' "$MIGRATION_STATUS"
-                echo "::error::Automatic Production migration owner did not converge required migrations: ${MISSING_MIGRATIONS[*]}. Refusing Edge deployment."
+                echo "::error::Automatic Production migration owner did not converge candidate migrations: ${MISSING_MIGRATIONS[*]}. Refusing Edge deployment."
                 exit 1
               fi
 
@@ -177,6 +188,8 @@ jobs:
             supabase/functions/meta-hubspot-sync/index.ts \
             supabase/functions/meta-capi-dispatch/index.ts \
             supabase/functions/hubspot-marketing-contact-monitor/index.ts \
+            supabase/functions/web-lead-reconcile/index.ts \
+            supabase/functions/deal-factory/index.ts \
             supabase/functions/revops-dispatcher/index.ts \
             supabase/functions/whatsapp-send/index.ts \
             supabase/functions/whatsapp-outbound-worker/index.ts \
@@ -252,6 +265,8 @@ jobs:
             supabase functions deploy meta-hubspot-sync --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy meta-capi-dispatch --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy hubspot-marketing-contact-monitor --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+            supabase functions deploy web-lead-reconcile --project-ref "$SUPABASE_PROJECT_REF"
+            supabase functions deploy deal-factory --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy revops-dispatcher --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
             supabase functions deploy whatsapp-send --project-ref "$SUPABASE_PROJECT_REF"
             supabase functions deploy whatsapp-outbound-worker --project-ref "$SUPABASE_PROJECT_REF"

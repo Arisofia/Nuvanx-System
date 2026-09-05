@@ -186,7 +186,8 @@ describe("HubSpot marketing-contact monitor", () => {
     expect(workflowSource).toContain("cron: '20 6 * * *'");
     expect(workflowSource).toContain("environment:\n      name: Production");
     expect(workflowSource).toContain("node scripts/refresh-hubspot-marketing-contact-monitor.js");
-    expect(deployWorkflow).toContain("20260903142000");
+    expect(deployWorkflow).toContain("find supabase/migrations -maxdepth 1 -type f -name '*.sql' -print | sort");
+    expect(deployWorkflow).toContain('LOCAL_MIGRATIONS+=("$MIGRATION_VERSION")');
     expect(deployWorkflow).toContain("supabase/functions/hubspot-marketing-contact-monitor/index.ts");
     expect(deployWorkflow).toContain('supabase functions deploy hubspot-marketing-contact-monitor --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt');
   });

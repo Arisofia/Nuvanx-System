@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 
 const workflow = readFileSync('.github/workflows/deploy-standalone-edge-functions.yml', 'utf8');
 const packageJson = JSON.parse(readFileSync('package.json', 'utf8'));
-const migrationParityRow = (version) => new RegExp(`^[\\s]*${version}[\\s]*[|│][\\s]*${version}[\\s]*([|│]|$)`);
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 function deploymentLines(functionName) {
@@ -69,6 +68,8 @@ describe('standalone Edge deployment ownership', () => {
     expectDeploymentPolicy('auth', { noVerifyJwt: true });
     expectDeploymentPolicy('health', { noVerifyJwt: true });
     expectDeploymentPolicy('playbooks', { noVerifyJwt: false });
+    expectDeploymentPolicy('web-lead-reconcile', { noVerifyJwt: false });
+    expectDeploymentPolicy('deal-factory', { noVerifyJwt: false });
     expectDeploymentPolicy('whatsapp-provider-acceptance', { noVerifyJwt: true });
   });
 
@@ -81,33 +82,19 @@ describe('standalone Edge deployment ownership', () => {
     expect(workflow).toContain('supabase functions deploy google-ads-daily-sync --project-ref "$SUPABASE_PROJECT_REF"');
   });
 
-  it('waits read-only for the automatic migration owner and fails closed before migration-dependent Edge deploys', () => {
+  it('waits read-only for every versioned candidate migration and fails closed before Edge deploys', () => {
     expect(workflow).toContain('Wait for automatic Production migration owner');
-    expect(workflow).toContain('REQUIRED_MIGRATIONS=(20260901190000 20260901190100 20260901190200 20260903142000 20260905141000 20260905144500 20260905173500)');
+    expect(workflow).toContain('LOCAL_MIGRATIONS=()');
+    expect(workflow).toContain("find supabase/migrations -maxdepth 1 -type f -name '*.sql' -print | sort");
+    expect(workflow).toContain('MIGRATION_VERSION="$(basename "$MIGRATION_FILE" | cut -d_ -f1)"');
+    expect(workflow).toContain('[[ "$MIGRATION_VERSION" =~ ^[0-9]{14}$ ]]');
+    expect(workflow).toContain('for REQUIRED_MIGRATION in "${LOCAL_MIGRATIONS[@]}"; do');
     expect(workflow).toContain('for ATTEMPT in {1..20}; do');
-    expect(workflow).toContain('Automatic Production migration owner did not converge required migrations');
+    expect(workflow).toContain('Automatic Production migration owner did not converge candidate migrations');
     expect(workflow).toContain('[|│]');
+    expect(workflow).not.toContain('REQUIRED_MIGRATIONS=(');
     expect(workflow).not.toContain('bash scripts/supabase-migrate.sh');
     expect(workflow).not.toContain('supabase db push');
-
-    for (const [version, ts] of [
-      ['20260901190000', '2026-09-01 19:00:00'],
-      ['20260901190100', '2026-09-01 19:01:00'],
-      ['20260901190200', '2026-09-01 19:02:00'],
-      ['20260903142000', '2026-09-03 14:20:00'],
-      ['20260905141000', '2026-09-05 14:10:00'],
-      ['20260905144500', '2026-09-05 14:45:00'],
-      ['20260905173500', '2026-09-05 17:35:00'],
-    ]) {
-      const asciiParity = migrationParityRow(version);
-      const unicodeParity = migrationParityRow(version);
-      expect(asciiParity.test(`  ${version} | ${version} | ${ts}`)).toBe(true);
-      expect(unicodeParity.test(`  ${version} │ ${version} │ ${ts}`)).toBe(true);
-      expect(migrationParityRow(version).test(`  ${version} |                | ${ts}`)).toBe(false);
-      expect(migrationParityRow(version).test(`                 | ${version} | ${ts}`)).toBe(false);
-      expect(migrationParityRow(version).test(`  ${version} │                │ ${ts}`)).toBe(false);
-      expect(migrationParityRow(version).test(`                 │ ${version} │ ${ts}`)).toBe(false);
-    }
   });
 
   it('revalidates every governed core entrypoint inside the executable Deno block before any deploy', () => {
@@ -136,6 +123,8 @@ describe('standalone Edge deployment ownership', () => {
       'supabase/functions/meta-hubspot-sync/index.ts',
       'supabase/functions/meta-capi-dispatch/index.ts',
       'supabase/functions/hubspot-marketing-contact-monitor/index.ts',
+      'supabase/functions/web-lead-reconcile/index.ts',
+      'supabase/functions/deal-factory/index.ts',
       'supabase/functions/revops-dispatcher/index.ts',
       'supabase/functions/whatsapp-send/index.ts',
       'supabase/functions/whatsapp-outbound-worker/index.ts',
