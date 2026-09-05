@@ -2,8 +2,8 @@
 'use strict';
 
 /**
- * Syncs the canonical Doctoralia appointments agenda from Google Sheets into
- * public.doctoralia_appointments_ingestion.
+ * Incrementally syncs the canonical Doctoralia appointments agenda from Google
+ * Sheets into public.doctoralia_appointments_ingestion.
  *
  * Required env vars:
  *   GOOGLE_SA_JSON / GOOGLE_DOCTORALIA_SERVICE_ACCOUNT / GOOGLE_SA_JSON_FILE / GOOGLE_API_KEY
@@ -29,10 +29,13 @@ const {
 } = require('./lib/doctoralia-appointments-source.js');
 const {
   countIngestedRecords,
+  getSupabaseClient,
   recordsFromRows,
   summarize,
-  upsertRecords,
 } = require('./populate-doctoralia-appointments');
+const {
+  syncIncrementalAppointments,
+} = require('./lib/doctoralia-incremental-sync.js');
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const SHEET_ID = String(
@@ -165,7 +168,12 @@ async function main() {
     return;
   }
 
-  await upsertRecords(records, { replaceMode: true });
+  const result = await syncIncrementalAppointments(records, {
+    supabase: getSupabaseClient(),
+  });
+  console.log('[sync-doctoralia-appointments] Incremental delta applied.');
+  console.table(result);
+
   const tableCount = await countIngestedRecords();
   console.log(`[sync-doctoralia-appointments] Sync completed. doctoralia_appointments_ingestion now has ${tableCount} rows.`);
 
