@@ -13,6 +13,7 @@ const MAX_ROWS = 100;
 const ENRICHMENT_PROPERTIES = [
   "email",
   "phone",
+  "hubspot_owner_id",
   "nvx_lead_id",
   "nvx_utm_source",
   "nvx_utm_medium",
@@ -163,7 +164,24 @@ function missingOnly(existing: Record<string, unknown>, desired: Record<string, 
   return patch;
 }
 
-async function linkLocalLead(admin: any, lead: any, contactId: string) {
+function hubspotOwnerId(contact: any): string | null {
+  const ownerId = clean(contact?.properties?.hubspot_owner_id, 80);
+  return ownerId && /^\d+$/.test(ownerId) ? ownerId : null;
+}
+
+async function applyOwnerAuthority(admin: any, leadId: string, contactId: string, contact: any) {
+  const { data, error } = await admin.rpc("nvx_apply_hubspot_owner_authority", {
+    p_lead_id: leadId,
+    p_hubspot_contact_id: Number(contactId),
+    p_hubspot_owner_id: hubspotOwnerId(contact),
+  });
+  if (error) throw new Error("HubSpot owner authority reconciliation failed");
+  return data || null;
+}
+
+async function linkLocalLead(admin: any, lead: any, contact: any) {
+  const contactId = String(contact?.id || "").trim();
+  if (!/^\d+$/.test(contactId)) throw new Error("Invalid HubSpot contact id");
   const lineageId = clean(lead?.nvx_lead_id, 64) || clean(lead?.id, 64);
   const patch: Record<string, unknown> = {
     hubspot_contact_id: Number(contactId),
@@ -177,12 +195,7 @@ async function linkLocalLead(admin: any, lead: any, contactId: string) {
     .is("hubspot_contact_id", null);
   if (error) throw new Error("Local HubSpot lineage update failed");
 
-  await admin.from("hubspot_deal_projections").upsert({
-    lead_id: lead.id,
-    hubspot_contact_id: Number(contactId),
-    projection_status: "pending",
-    updated_at: new Date().toISOString(),
-  }, { onConflict: "lead_id" });
+  await applyOwnerAuthority(admin, String(lead.id), contactId, contact);
 }
 
 async function patchMissingContactProperties(token: string, contact: any, desired: Record<string, string>): Promise<string[]> {
@@ -200,7 +213,7 @@ async function syncExistingContact(admin: any, token: string, lead: any, contact
   const contactId = String(contact?.id || "").trim();
   if (!/^\d+$/.test(contactId)) throw new Error("Invalid HubSpot contact id");
   await patchMissingContactProperties(token, contact, desired);
-  await linkLocalLead(admin, lead, contactId);
+  await linkLocalLead(admin, lead, contact);
   return contactId;
 }
 
@@ -265,11 +278,14 @@ Deno.serve(async (req: Request) => {
 
         if (mode === "sync") {
           const patchedProperties = await patchMissingContactProperties(token, contact, desired);
+          const localOwnerUserId = await applyOwnerAuthority(admin, String(lead.id), contactId, contact);
           results.push({
             leadgen_id: attr.leadgen_id,
             hubspot_contact_id: contactId,
             outcome: patchedProperties.length ? "linked_enriched" : "already_linked",
             patched_properties: patchedProperties,
+            hubspot_owner_id: hubspotOwnerId(contact),
+            local_owner_user_id: localOwnerUserId,
           });
         } else if (verifyLinked) {
           results.push({ leadgen_id: attr.leadgen_id, hubspot_contact_id: contactId, outcome: "linked_verified" });
@@ -323,8 +339,14 @@ Deno.serve(async (req: Request) => {
         const created = await hubspotRequest(token, "POST", "/crm/v3/objects/contacts", { properties: desired });
         const contactId = String(created?.id || "");
         if (!/^\d+$/.test(contactId)) throw new Error("HubSpot create returned invalid contact id");
-        await linkLocalLead(admin, lead, contactId);
-        results.push({ leadgen_id: attr.leadgen_id, hubspot_contact_id: contactId, outcome: "created_fallback" });
+        const createdContact = await hubspotContactById(token, contactId);
+        await linkLocalLead(admin, lead, createdContact);
+        results.push({
+          leadgen_id: attr.leadgen_id,
+          hubspot_contact_id: contactId,
+          hubspot_owner_id: hubspotOwnerId(createdContact),
+          outcome: "created_fallback",
+        });
       } catch (error: any) {
         if (Number(error?.status) !== 409) throw error;
         const raceMatches = await searchHubspotByEmail(token, email);
