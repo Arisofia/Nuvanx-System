@@ -48,22 +48,13 @@ test('stable key ignores lifecycle fields and source row position', () => {
     amount: 350,
     is_cancelled: true,
   });
-
-  assert.equal(
-    buildStableAppointmentSourceKey(first),
-    buildStableAppointmentSourceKey(laterSnapshot),
-  );
+  assert.equal(buildStableAppointmentSourceKey(first), buildStableAppointmentSourceKey(laterSnapshot));
 });
 
 test('different appointment slot remains a different appointment', () => {
-  const first = appointment();
-  const nextVisit = appointment({
-    appointment_date: '2026-09-17',
-  });
-
   assert.notEqual(
-    buildStableAppointmentSourceKey(first),
-    buildStableAppointmentSourceKey(nextVisit),
+    buildStableAppointmentSourceKey(appointment()),
+    buildStableAppointmentSourceKey(appointment({ appointment_date: '2026-09-17' })),
   );
 });
 
@@ -72,7 +63,6 @@ test('latest source snapshot wins before persistence', () => {
     appointment({ sheet_row: 10, estado: 'Pendiente', status: 'Pendiente' }),
     appointment({ sheet_row: 11, estado: 'Anulada', status: 'Anulada', is_cancelled: true }),
   ]);
-
   assert.equal(canonical.length, 1);
   assert.equal(canonical[0].sheet_row, 11);
   assert.equal(canonical[0].estado, 'Anulada');
@@ -87,12 +77,10 @@ test('incremental planner writes only missing or changed appointments', () => {
     appointment({ doctoralia_id: '2', appointment_date: '2026-09-11', estado: 'Anulada', status: 'Anulada', is_cancelled: true }),
     appointment({ doctoralia_id: '3', appointment_date: '2026-09-12' }),
   ]);
-
   const existing = new Map([
     [unchanged.source_key, { ...unchanged, sheet_row: 1, raw_data: null }],
     [changed.source_key, { ...changed, estado: 'Pendiente', status: 'Pendiente', is_cancelled: false }],
   ]);
-
   const plan = planIncrementalChanges([unchanged, changed, missing], existing);
   assert.equal(plan.unchanged, 1);
   assert.equal(plan.updates.length, 1);
@@ -107,8 +95,9 @@ test('stable identity uses SHA-256 and contains no weak MD5 path', () => {
   assert.doesNotMatch(incrementalSource, /createHash\(['"]md5['"]\)/i);
 });
 
-test('governed owners contain no destructive Doctoralia path', () => {
+test('there is one operational writer and no destructive parser path', () => {
   const syncOwner = readFileSync('scripts/sync-doctoralia-appointments.js', 'utf8');
+  const parser = readFileSync('scripts/populate-doctoralia-appointments.js', 'utf8');
   const dailyOwner = readFileSync('scripts/run-daily-sync.js', 'utf8');
   const packageJson = readFileSync('package.json', 'utf8');
   const migration = readFileSync(
@@ -118,6 +107,15 @@ test('governed owners contain no destructive Doctoralia path', () => {
 
   assert.match(syncOwner, /syncIncrementalAppointments/);
   assert.doesNotMatch(syncOwner, /replaceMode\s*:\s*true/);
+  assert.doesNotMatch(syncOwner, /DOCTORALIA_ALLOW_NON_CANONICAL_SHEET/);
+
+  assert.match(parser, /Read-only parser/);
+  assert.doesNotMatch(parser, /createClient/);
+  assert.doesNotMatch(parser, /replaceIngestionTable/);
+  assert.doesNotMatch(parser, /\.delete\(\)/);
+  assert.doesNotMatch(parser, /upsertRecords/);
+  assert.doesNotMatch(parser, /DOCTORALIA_APPOINTMENTS_REPLACE_MODE/);
+
   assert.doesNotMatch(dailyOwner, /sync-doctoralia\.js/);
   assert.doesNotMatch(dailyOwner, /DOCTORALIA_APPOINTMENTS_REPLACE_MODE/);
   assert.doesNotMatch(packageJson, /sync-doctoralia\.test\.js/);
